@@ -71,6 +71,7 @@
     {"id":"card--multiple-choice","screen":"Card","state":"Multiple choice","web":{"path":"/card/28","state":null,"mock":"1"}},
     {"id":"card--a-table","screen":"Card","state":"A table","web":{"path":"/card/39","state":null,"mock":"1"}},
     {"id":"card--handed-back","screen":"Card","state":"Handed back","web":{"path":"/card/41","state":null,"mock":"1"}},
+    {"id":"card--being-worked-on","screen":"Card","state":"Being worked on","web":{"path":"/card/30","state":null,"mock":"1"}},
     {"id":"card--done","screen":"Card","state":"Done","web":{"path":"/card/7","state":null,"mock":"1"}},
     {"id":"card--info-with-a-file","screen":"Card","state":"Info with a file","web":{"path":"/card/17","state":null,"mock":"1"}},
     {"id":"what-s-new","screen":"What's new","state":"As it is","web":{"path":"/whats-new","state":null,"mock":"1"}},

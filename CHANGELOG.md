@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- A card its session is working on says so above its title: "<session> is working on it", its status line and how
+  long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
 - iPhone: Settings → Data shows what this iPhone downloaded and uploaded (with a reset), and what your account keeps on
   the hub: messages, cards, files and the total size.
 - Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);
@@ -24,6 +26,10 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- A session shows a switch "All | Questions" under its heading, with the number of questions waiting; the funnel beside
+  the message field is gone (web and iPhone).
+- A session's heading is calmer: under the name a dot, what it is at and its model; its usage (5 h and week) as two
+  small rings at the right, beside the ⋯ on a phone; its files moved into the ⋯ menu.
 - The reverse card on a card: its black oval smaller, with air above and below, as on the send button (web and iPhone).
 - Desk: the headings "Off your mind" and "Artifacts" are links themselves, underlined with an arrow; no separate "Show more" (web and iPhone).
 - A helper's status line follows its question: filing a card turns the line to waiting on you with that card, and
@@ -84,6 +90,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- Web: a picture that could not be loaded keeps its place as a small tile (the reason on hover); a Desk row keeps its
+  title and answers in view. An open tab looks for a new version every 10 minutes, and at once on a file of a newer Trommi.
 - Web: a card handed back and then put before you again no longer slips back to "with the agent" (off the Desk)
   when you open it; a card already stuck that way returns to the Desk by itself.
 - After /mcp → Reconnect a connected agent no longer shows as gone: the old connector's goodbye can't override the new one's hello.

@@ -6,7 +6,7 @@ import * as desk from './desk.mjs'
 import * as sidebar from './sidebar.mjs'
 import * as notes from './notes.mjs'
 import { DRAWER_VEIL, SIDE_FOOT, cornerNote, markCurrent, phoneBar, sidebarRows, tabBar, topbar } from './sidebar.mjs'
-import { Controller, WORDS, calm, readAttachmentsWith, controller, copyLater, curlHTML, html, hueFor, isKnock, keySheet, raw, showToast, sk, startUi, toast, sayError } from './ui.mjs'
+import { Controller, WORDS, attGone, calm, readAttachmentsWith, controller, copyLater, curlHTML, html, hueFor, isKnock, keySheet, raw, showToast, sk, startUi, toast, sayError } from './ui.mjs'
 import { boardNotes, noteStore } from './notes.mjs'
 import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
@@ -399,12 +399,12 @@ document.addEventListener('error', async e => {
   if (blob) { el.removeAttribute('srcset'); el.src = URL.createObjectURL(blob) + (m[2] ?? ''); return }
   // Gone from the hub (after 30 days, or evicted for the room's quota), or not fetched (offline, the hub's error): said
   // in place of the picture, with the reason.
-  const why = whyNot.get(m[1]), gone = document.createElement('span')
-  gone.className = 'att-gone'
-  gone.setAttribute('role', 'status')
-  gone.textContent = !why || why.code === 'not-found' || why.status === 404 ? 'Attachment no longer available' : `This file could not be loaded: ${why.message || why.code || 'no answer from the hub'}`
+  const why = whyNot.get(m[1])
+  // (a file of a newer Trommi: this page is older than the deploy; look for the new version now, it takes over and
+  //  reloads the page: watchPwa)
+  if (why?.code === 'newer-version') navigator.serviceWorker?.getRegistration().then(r => r?.update()).catch(() => {})
   el.closest('.tc-figure')?.classList.remove('is-wait')
-  el.replaceWith(gone)
+  el.replaceWith(attGone(el, why))
 }, true)
 // (the card's picture says "Opening the picture…" until it is there: card.mjs cardMedia)
 document.addEventListener('load', e => { if (e.target instanceof HTMLImageElement) e.target.closest('.tc-figure.is-wait')?.classList.remove('is-wait') }, true)
@@ -415,7 +415,7 @@ document.addEventListener('click', async e => {
   const id = a.getAttribute('href').slice(5)
   const blob = await blobOf(id)
   if (blob) window.open(URL.createObjectURL(blob), '_blank', 'noopener')
-  else a.replaceWith(Object.assign(document.createElement('span'), { className: 'att-gone', textContent: 'Attachment no longer available' }))
+  else a.replaceWith(attGone(a, whyNot.get(id)))
 }, true)
 }
 
@@ -2015,7 +2015,7 @@ requestAnimationFrame(paintBar)
 
 const sw = navigator.serviceWorker
 if (sw) {
-  const CHECK_MS = 30 * 60e3
+  const CHECK_MS = 10 * 60e3
   let checked = Date.now(), stale = false
   const hadController = Boolean(sw.controller)   // the first install also "takes over": that is no new version
   const unsent = () => [...document.querySelectorAll('textarea, input[type="text"], input:not([type])')].some(f => f.value.trim() && !f.closest('[hidden]'))
@@ -2034,12 +2034,17 @@ if (sw) {
   // A new version took over: the page reloads at once, unless a field holds unsent words (then a quiet line offers
   // it, and it reloads by itself once the app is in the background with nothing unsent).
   sw.addEventListener('controllerchange', () => { if (!hadController) return; stale = true; if (unsent()) offer(); else location.reload() })
-  document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'hidden') { if (stale && !unsent()) location.reload(); return }
+  const check = async () => {
     if (Date.now() - checked < CHECK_MS) return
     checked = Date.now()
     try { await (await sw.getRegistration())?.update() } catch {}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { if (stale && !unsent()) location.reload(); return }
+    check()
   })
+  // (a desktop tab that stays in view all day never turns hidden: it looks for a new version on the same clock)
+  setInterval(() => { if (document.visibilityState === 'visible') check() }, CHECK_MS)
 }
 }
 
