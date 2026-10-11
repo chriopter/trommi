@@ -582,67 +582,36 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             let auth = read_auth()?;
             auth.human()?;
             heavy_limit(&auth)?;
+            // a token alone changes no way in: the way in of now, proved once more in this request
+            let (account, revision) = proved(app, rq, &auth, &rq.body["proof"], t)?;
             let pre = app.pooled(|| accounts::Prehashed::of(&[&rq.body]))?;
-            app.write_as(&auth, rq.lease, |x, _| match *what {
-                "password" => accounts::put_password(x.c, &auth.room, &rq.body, x.now, &pre),
-                _ => accounts::put_kit(x.c, &auth.room, &rq.body, x.now, &pre),
+            app.write_as(&auth, rq.lease, |x, _| {
+                unchanged(x.c, &auth, account, revision)?;
+                match *what {
+                    "password" => accounts::put_password(x.c, &auth.room, &rq.body, x.now, &pre),
+                    _ => accounts::put_kit(x.c, &auth.room, &rq.body, x.now, &pre),
+                }
             })
         }
         ("PUT", ["account", "email"]) => {
             let auth = read_auth()?;
             auth.human()?;
             heavy_limit(&auth)?;
+            let (account, revision) = proved(app, rq, &auth, &rq.body["proof"], t)?;
             let pre = app.pooled(|| accounts::Prehashed::of(&[&rq.body["kit"]]))?;
-            app.write_as(&auth, rq.lease, |x, _| accounts::put_email(x.c, &auth.room, &rq.body, x.now, &pre))
+            app.write_as(&auth, rq.lease, |x, _| {
+                unchanged(x.c, &auth, account, revision)?;
+                accounts::put_email(x.c, &auth.room, &rq.body, x.now, &pre)
+            })
         }
         ("DELETE", ["account"]) => {
             // a human device, with the way in proved once more: the account, its rooms and all they hold go
             let auth = read_auth()?;
             auth.human()?;
             heavy_limit(&auth)?;
-            // a guess here costs a slow hash: counted with the logins of the address, and per room
-            limited(app.limits.logins.check(rq.ip.as_bytes(), t, true))?;
-            limited(app.limits.logins.check(&[&b"delete-account:"[..], &auth.room[..]].concat(), t, true))?;
-            let (account, revision, proof) = app.read(|x| {
-                let account = accounts::account_of(x.c, &auth.room)?;
-                let revision = accounts::revision_of(x.c, account)?;
-                Ok::<_, crate::error::Refused>((account, revision, app.accounts.proof(x.c, account, &rq.body, x.now)?))
-            })?;
-            // the login's lasting back-off too (throttle.rs), on the account: a wrong proof makes this source
-            // wait 1 s, 2 s, 4 s … before its next try, across restarts and whichever room of the account it uses
-            let throttle_key = format!("delete:{account}");
-            let source = crate::push::source_hash(&app.ticket_key, &rq.ip);
-            let proven = app.pooled(|| -> Res<bool> {
-                use crate::throttle::{self, Verdict};
-                if !app.cfg.login_throttle {
-                    return Ok(app.accounts.proven(proof));
-                }
-                let key = throttle_key.as_bytes();
-                let attempt = match app.db.write(|c| throttle::admit(c, key, &source, true, now(), t))? {
-                    Verdict::Own(wait) | Verdict::Line { wait, early: None } => {
-                        return Err(refuse("rate-limited", "too many requests").retry(wait))
-                    }
-                    Verdict::Line { early: Some(attempt), .. } | Verdict::Check { attempt } => attempt,
-                };
-                let mut checking = Checking { app, account: key, source: &source, attempt: Some(attempt) };
-                let ok = app.accounts.proven(proof);
-                app.db.write(|c| {
-                    if ok {
-                        throttle::succeeded(c, key, &source, attempt)
-                    } else {
-                        throttle::failed(c, key, &source, attempt, now())
-                    }
-                })?;
-                checking.attempt = None;
-                Ok(ok)
-            })??;
-            if !proven {
-                return Err(refuse("wrong-login", "the password, kit or passkey is wrong"));
-            }
+            let (account, revision) = proved(app, rq, &auth, &rq.body, t)?;
             let rooms = app.write_as(&auth, rq.lease, |x, _| {
-                if accounts::account_of(x.c, &auth.room)? != account || accounts::revision_of(x.c, account)? != revision {
-                    return Err(refuse("account-changed", "the account changed meanwhile: read it again"));
-                }
+                unchanged(x.c, &auth, account, revision)?;
                 accounts::delete_account(x.c, account)
             })?;
             for room in &rooms {
@@ -670,10 +639,26 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                 "email": email,
             }))
         }),
-        ("POST", ["account", "passkeys"]) => human_write(app, rq, |x, auth| app.accounts.add_passkey(x.c, &auth.room, &rq.body, x.now)),
+        ("POST", ["account", "passkeys"]) => {
+            let auth = read_auth()?;
+            auth.human()?;
+            heavy_limit(&auth)?;
+            let (account, revision) = proved(app, rq, &auth, &rq.body["proof"], t)?;
+            app.write_as(&auth, rq.lease, |x, _| {
+                unchanged(x.c, &auth, account, revision)?;
+                app.accounts.add_passkey(x.c, &auth.room, &rq.body, x.now)
+            })
+        }
         ("DELETE", ["account", "passkeys", credential]) => {
             let credential = unb64(credential).ok_or_else(|| refuse("bad-format", "a credential id, base64url"))?;
-            human_write(app, rq, |x, auth| accounts::delete_passkey(x.c, &auth.room, &credential, x.now))
+            let auth = read_auth()?;
+            auth.human()?;
+            heavy_limit(&auth)?;
+            let (account, revision) = proved(app, rq, &auth, &rq.body["proof"], t)?;
+            app.write_as(&auth, rq.lease, |x, _| {
+                unchanged(x.c, &auth, account, revision)?;
+                accounts::delete_passkey(x.c, &auth.room, &credential, x.now)
+            })
         }
 
         // ---- groups: the MLS delivery service
@@ -1045,6 +1030,65 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
         },
         _ => Err(refuse("not-found", "no such route")),
     }
+}
+
+/// The way in of now, proved once more in the request that changes a way in or deletes the account (spec/hub-api.md
+/// "The account"): `{ password: { auth_key } }`, `{ kit: { auth_key } }` or `{ passkey: { … } }`, an assertion on a
+/// challenge of `POST /v1/account/passkeys/challenge`. A bearer token alone sets no password, kit, e-mail or passkey.
+/// A guess costs a slow hash and counts as a login does: with the address's logins, per room, and with the login's
+/// lasting back-off on the account (throttle.rs): a wrong proof makes its source wait 1 s, 2 s, 4 s … before its
+/// next try, across restarts and whichever room or route of the account it uses. Returns the account and its
+/// revision as the proof was read: the change is made only if both are the same in its transaction (`unchanged`).
+fn proved(app: &Arc<App>, rq: &Rq, auth: &Auth, proof: &Value, t: u64) -> Res<(i64, i64)> {
+    if !proof.is_object() {
+        return Err(refuse("bad-format", "proof: the way in proved once more (password, kit or passkey)"));
+    }
+    limited(app.limits.logins.check(rq.ip.as_bytes(), t, true))?;
+    limited(app.limits.logins.check(&[&b"account-proof:"[..], &auth.room[..]].concat(), t, true))?;
+    let (account, revision, proof) = app.read(|x| {
+        let account = accounts::account_of(x.c, &auth.room)?;
+        let revision = accounts::revision_of(x.c, account)?;
+        Ok::<_, crate::error::Refused>((account, revision, app.accounts.proof(x.c, account, proof, x.now)?))
+    })?;
+    let throttle_key = format!("proof:{account}");
+    let source = crate::push::source_hash(&app.ticket_key, &rq.ip);
+    let proven = app.pooled(|| -> Res<bool> {
+        use crate::throttle::{self, Verdict};
+        if !app.cfg.login_throttle {
+            return Ok(app.accounts.proven(proof));
+        }
+        let key = throttle_key.as_bytes();
+        let attempt = match app.db.write(|c| throttle::admit(c, key, &source, true, now(), t))? {
+            Verdict::Own(wait) | Verdict::Line { wait, early: None } => {
+                return Err(refuse("rate-limited", "too many requests").retry(wait))
+            }
+            Verdict::Line { early: Some(attempt), .. } | Verdict::Check { attempt } => attempt,
+        };
+        let mut checking = Checking { app, account: key, source: &source, attempt: Some(attempt) };
+        let ok = app.accounts.proven(proof);
+        app.db.write(|c| {
+            if ok {
+                throttle::succeeded(c, key, &source, attempt)
+            } else {
+                throttle::failed(c, key, &source, attempt, now())
+            }
+        })?;
+        checking.attempt = None;
+        Ok(ok)
+    })??;
+    if !proven {
+        return Err(refuse("wrong-login", "the password, kit or passkey is wrong"));
+    }
+    Ok((account, revision))
+}
+
+/// In the change's transaction: the account the proof was read for, at the same revision (a change made meanwhile,
+/// on another device, is not overwritten with a proof of the way in before it).
+fn unchanged(c: &rusqlite::Connection, auth: &Auth, account: i64, revision: i64) -> Res<()> {
+    if accounts::account_of(c, &auth.room)? != account || accounts::revision_of(c, account)? != revision {
+        return Err(refuse("account-changed", "the account changed meanwhile: read it again"));
+    }
+    Ok(())
 }
 
 fn human_write(

@@ -348,5 +348,9 @@ name = "hub_account_delete"
 path = "hub/account_delete.rs"
 
 [[test]]
+name = "hub_account_proof"
+path = "hub/account_proof.rs"
+
+[[test]]
 name = "hub_metrics"
 path = "hub/metrics.rs"

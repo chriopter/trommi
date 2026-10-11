@@ -168,6 +168,7 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
             "attestation_object": b64(&key.attestation(RP, UP_UV)),
             "client_data_json": b64(&Authenticator::client_data("webauthn.create", &challenge, ORIGIN)),
             "sealed_copy": copy(3), "transports": ["internal"],
+            "proof": { "password": { "auth_key": b64(&auth) } },
         }))
         .ok();
     login(&w.hub, "ada@example.org", &auth).ok();

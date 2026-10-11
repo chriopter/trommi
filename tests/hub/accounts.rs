@@ -48,6 +48,14 @@ fn sign_in_from(hub: &TestHub, source: &str, route: &str, email: &str, key: &[u8
     )
 }
 
+/// The way in of now, proved once more, as a change of a way in carries it (`proof`).
+fn by_kit(kit: &[u8; 32]) -> Value {
+    json!({ "kit": { "auth_key": b64(kit) } })
+}
+fn by_password(auth: &[u8; 32]) -> Value {
+    json!({ "password": { "auth_key": b64(auth) } })
+}
+
 fn login(hub: &TestHub, email: &str, auth: &[u8; 32]) -> Reply {
     sign_in_from(hub, &fresh_source(), "login", email, auth)
 }
@@ -162,11 +170,11 @@ fn password_and_kit_change_under_a_revision_and_only_by_a_human_device() {
         .ok();
     let agent = w.enrol_agent();
     agent.get(&w.hub, "/v1/account").refused(403, "forbidden");
-    agent.put(&w.hub, "/v1/account/password", &json!({ "auth_key": b64(&random::<32>()), "sealed_copy": copy(1), "kdf": kdf(), "revision": 1 })).refused(403, "forbidden");
+    agent.put(&w.hub, "/v1/account/password", &json!({ "auth_key": b64(&random::<32>()), "sealed_copy": copy(1), "kdf": kdf(), "revision": 1, "proof": by_kit(&kit) })).refused(403, "forbidden");
     // a new password re-wraps the code and replaces the login key
     let new_auth: [u8; 32] = random();
     let change =
-        json!({ "auth_key": b64(&new_auth), "sealed_copy": copy(5), "kdf": kdf(), "revision": 1 });
+        json!({ "auth_key": b64(&new_auth), "sealed_copy": copy(5), "kdf": kdf(), "revision": 1, "proof": by_kit(&kit) });
     assert_eq!(
         w.ada.put(&w.hub, "/v1/account/password", &change).ok()["revision"],
         2
@@ -188,14 +196,14 @@ fn password_and_kit_change_under_a_revision_and_only_by_a_human_device() {
         .refused(400, "bad-format");
     let mut old_copy = vec![9u8; 61];
     old_copy[0] = 1;
-    w.ada.put(&w.hub, "/v1/account/password", &json!({ "auth_key": b64(&new_auth), "sealed_copy": b64(&old_copy), "kdf": kdf(), "revision": 2 })).refused(400, "bad-format");
+    w.ada.put(&w.hub, "/v1/account/password", &json!({ "auth_key": b64(&new_auth), "sealed_copy": b64(&old_copy), "kdf": kdf(), "revision": 2, "proof": by_password(&new_auth) })).refused(400, "bad-format");
     // a new kit replaces the one before
     let new_kit: [u8; 32] = random();
     w.ada
         .put(
             &w.hub,
             "/v1/account/kit",
-            &json!({ "auth_key": b64(&new_kit), "sealed_copy": copy(6), "revision": 2 }),
+            &json!({ "auth_key": b64(&new_kit), "sealed_copy": copy(6), "revision": 2, "proof": by_password(&new_auth) }),
         )
         .ok();
     recover(&w.hub, "ada@example.org", &kit).refused(401, "wrong-recovery");
@@ -423,7 +431,13 @@ fn a_passkey_registers_signs_in_and_is_not_the_last_way_in_removed() {
             "sealed_copy": copy(3), "transports": ["internal"],
         })
     };
-    let account = json!({ "email": "ada@example.org", "kit": { "auth_key": b64(&random::<32>()), "sealed_copy": copy(9) }, "passkey": passkey(&key, &challenge, ORIGIN, RP) });
+    let kit: [u8; 32] = random();
+    let account = json!({ "email": "ada@example.org", "kit": { "auth_key": b64(&kit), "sealed_copy": copy(9) }, "passkey": passkey(&key, &challenge, ORIGIN, RP) });
+    // a change of a way in carries the way in of now, proved once more
+    let proved = |mut body: Value, kit: &[u8; 32]| {
+        body["proof"] = by_kit(kit);
+        body
+    };
     hub.post(
         "/v1/rooms",
         &json!({ "group_info": b64(&info), "sealed_key": b64(&sealed), "account": account }),
@@ -524,7 +538,7 @@ fn a_passkey_registers_signs_in_and_is_not_the_last_way_in_removed() {
     ada.post(
         &hub,
         "/v1/account/passkeys",
-        &passkey(&second, &anonymous, ORIGIN, RP),
+        &proved(passkey(&second, &anonymous, ORIGIN, RP), &kit),
     )
     .refused(400, "bad-passkey");
     let scoped = unb64(
@@ -537,7 +551,7 @@ fn a_passkey_registers_signs_in_and_is_not_the_last_way_in_removed() {
     ada.post(
         &hub,
         "/v1/account/passkeys",
-        &passkey(&second, &scoped, ORIGIN, RP),
+        &proved(passkey(&second, &scoped, ORIGIN, RP), &kit),
     )
     .ok();
     // a passkey prepared before the account changed is not registered after
@@ -549,19 +563,20 @@ fn a_passkey_registers_signs_in_and_is_not_the_last_way_in_removed() {
             .unwrap(),
     )
     .unwrap();
+    let new_kit: [u8; 32] = random();
     let revision = ada.get(&hub, "/v1/account").ok()["revision"]
         .as_i64()
         .unwrap();
     ada.put(
         &hub,
         "/v1/account/kit",
-        &json!({ "auth_key": b64(&random::<32>()), "sealed_copy": copy(6), "revision": revision }),
+        &json!({ "auth_key": b64(&new_kit), "sealed_copy": copy(6), "revision": revision, "proof": by_kit(&kit) }),
     )
     .ok();
     ada.post(
         &hub,
         "/v1/account/passkeys",
-        &passkey(&third, &stale, ORIGIN, RP),
+        &proved(passkey(&third, &stale, ORIGIN, RP), &new_kit),
     )
     .refused(400, "bad-passkey");
     // a credential id is registered once
@@ -575,7 +590,7 @@ fn a_passkey_registers_signs_in_and_is_not_the_last_way_in_removed() {
     ada.post(
         &hub,
         "/v1/account/passkeys",
-        &passkey(&second, &scoped, ORIGIN, RP),
+        &proved(passkey(&second, &scoped, ORIGIN, RP), &new_kit),
     )
     .refused(400, "bad-passkey");
     assert_eq!(
@@ -591,21 +606,21 @@ fn a_passkey_registers_signs_in_and_is_not_the_last_way_in_removed() {
         &hub,
         "DELETE",
         &format!("/v1/account/passkeys/{}", b64(&key.credential_id)),
-        &Value::Null,
+        &json!({ "proof": by_kit(&new_kit) }),
     )
     .ok();
     ada.call(
         &hub,
         "DELETE",
         &format!("/v1/account/passkeys/{}", b64(&second.credential_id)),
-        &Value::Null,
+        &json!({ "proof": by_kit(&new_kit) }),
     )
     .refused(409, "last-way-in");
     ada.call(
         &hub,
         "DELETE",
         &format!("/v1/account/passkeys/{}", b64(&key.credential_id)),
-        &Value::Null,
+        &json!({ "proof": by_kit(&new_kit) }),
     )
     .refused(404, "not-found");
     sign_in(&key, ORIGIN, RP, UP_UV, true).refused(401, "wrong-login");
@@ -615,7 +630,7 @@ fn a_passkey_registers_signs_in_and_is_not_the_last_way_in_removed() {
             &hub,
             "DELETE",
             &format!("/v1/account/passkeys/{}", b64(&second.credential_id)),
-            &Value::Null,
+            &json!({ "proof": by_kit(&new_kit) }),
         )
         .refused(404, "not-found");
 }
@@ -929,7 +944,11 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
         .post(
             hub,
             "/v1/account/passkeys",
-            &registration(&second, &scoped, 4),
+            &{
+                let mut r = registration(&second, &scoped, 4);
+                r["proof"] = by_kit(&kit);
+                r
+            },
         )
         .ok();
     assert_eq!(
@@ -941,7 +960,7 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
             hub,
             "DELETE",
             &format!("/v1/account/passkeys/{}", b64(&key.credential_id)),
-            &Value::Null,
+            &json!({ "proof": by_kit(&kit) }),
         )
         .ok();
     w.ada
@@ -949,7 +968,7 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
             hub,
             "DELETE",
             &format!("/v1/account/passkeys/{}", b64(&second.credential_id)),
-            &Value::Null,
+            &json!({ "proof": by_kit(&kit) }),
         )
         .refused(409, "last-way-in");
     sign_in(hub, &key, None).refused(401, "wrong-login");
@@ -1041,16 +1060,16 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
             .unwrap()
     };
     let (auth, mail_kit): ([u8; 32], [u8; 32]) = (random(), random());
-    let password = |w: &World| json!({ "auth_key": b64(&auth), "sealed_copy": copy(8), "kdf": kdf(), "revision": revision(w) });
+    let password = |w: &World, kit: &[u8; 32]| json!({ "auth_key": b64(&auth), "sealed_copy": copy(8), "kdf": kdf(), "revision": revision(w), "proof": by_kit(kit) });
     w.ada
-        .call(hub, "PUT", "/v1/account/password", &password(&w))
+        .call(hub, "PUT", "/v1/account/password", &password(&w, &next_kit))
         .refused(400, "bad-email");
     w.ada
         .call(
             hub,
             "PUT",
             "/v1/account/email",
-            &json!({ "email": "other@example.org", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w) }),
+            &json!({ "email": "other@example.org", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w), "proof": by_kit(&next_kit) }),
         )
         .refused(409, "account-exists");
     w.ada
@@ -1058,7 +1077,7 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
             hub,
             "PUT",
             "/v1/account/email",
-            &json!({ "email": "not an address", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w) }),
+            &json!({ "email": "not an address", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w), "proof": by_kit(&next_kit) }),
         )
         .refused(400, "bad-email");
     w.ada
@@ -1066,7 +1085,7 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
             hub,
             "PUT",
             "/v1/account/email",
-            &json!({ "email": "Ada@Example.org", "revision": revision(&w) }),
+            &json!({ "email": "Ada@Example.org", "revision": revision(&w), "proof": by_kit(&next_kit) }),
         )
         .refused(400, "incomplete");
     w.ada
@@ -1074,7 +1093,7 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
             hub,
             "PUT",
             "/v1/account/email",
-            &json!({ "email": "Ada@Example.org", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w) }),
+            &json!({ "email": "Ada@Example.org", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w), "proof": by_kit(&next_kit) }),
         )
         .ok();
     w.ada
@@ -1082,11 +1101,11 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
             hub,
             "PUT",
             "/v1/account/email",
-            &json!({ "email": "ada2@example.org", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w) }),
+            &json!({ "email": "ada2@example.org", "kit": { "auth_key": b64(&mail_kit), "sealed_copy": copy(1) }, "revision": revision(&w), "proof": by_kit(&mail_kit) }),
         )
         .refused(403, "forbidden");
     w.ada
-        .call(hub, "PUT", "/v1/account/password", &password(&w))
+        .call(hub, "PUT", "/v1/account/password", &password(&w, &mail_kit))
         .ok();
     assert_eq!(login(hub, "ada@example.org", &auth).ok()["account"], id);
     // with the e-mail came the kit made anew under it (8.8.2): the one from before opens nothing, and the
