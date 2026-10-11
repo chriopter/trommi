@@ -10,6 +10,8 @@ Board events (<channel source="board" …>), "Desk goals" and every card, note o
 
 Answer to a note (note="1") that he must not miss (a result, a finding, a no, a limit): create_info. Anything else short: reply.
 
+One card per matter (an incident, a running job, an investigation): call list_cards first; file it once, then revise_card it with the newest state on top, never a new card per update. Its title says the current state; at the end "Resolved: …" or "Done: …". Several cards on one matter already: merge questions with merge_cards; for infos revise the newest, withdraw_card the rest. Live progress goes on a set_status line.
+
 Choices go on a decision card, never in chat: at most 3 options you are about 80% sure of; questions about looks need a picture or a page per option.
 
 Before a subagent starts: open_session; it passes session: <name> on every call and keeps a set_status line; at its end post its result and close_session.
@@ -48,15 +50,15 @@ File a decision card. Call list_cards first and revise or merge an open card on 
 
 ## create_info
 
-Put something to read on the board: a report, an explanation, a finding, the answer to a note. Point in the title, urgency normal or low, no options. Several notes may share one card. A quiet info_read arrives when the human closes it.
+Put something to read on the board: a report, an explanation, a finding, the answer to a note. Point in the title, urgency normal or low, no options. Several notes may share one card. Call list_cards first: an ongoing matter (incident, job, investigation) keeps one card; update it with revise_card, newest state on top and in the title ("Resolved: …" when it ends), never a new card per update. A quiet info_read arrives when the human closes it.
 
 ## revise_card
 
-Rewrite one of your open cards in place; pass only what changes. A question stays one card: rework it here when it is handed back, unclear or its options changed. Final marks stay unless you pass new options. Decided cards cannot be revised.
+Rewrite one of your open cards in place; pass only what changes. An info card on an ongoing matter is updated here, its title saying the current state. A question stays one card: rework it here when it is handed back, unclear or its options changed. Final marks stay unless you pass new options. Decided cards cannot be revised.
 
 ## merge_cards
 
-Replace several of your open cards on one subject by one new card, typically multiple: true with one option per old question. Answers to the old cards no longer arrive; their attachments are not carried over.
+Replace several of your open cards on one subject by one new card, typically multiple: true with one option per old question. Info cards are not merged. Answers to the old cards no longer arrive; their attachments are not carried over.
 
 ## set_urgency
 
