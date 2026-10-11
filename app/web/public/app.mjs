@@ -24,6 +24,7 @@ const LAZY = {
   media: { load: () => import('./media.mjs'), paths: /^\/artifacts(?:\/|$)/ },
   whiteboard: { load: () => import('./whiteboard.mjs'), paths: /^\/scribble-board$/ },
   proof: { load: () => import('./proof.mjs'), paths: PROOF_PATH },
+  news: { load: () => import('./news.mjs'), paths: /^\/whats-new$/ },
 }
 const loaded = {}   // name -> the view's module, once loaded
 /** A lazy view's module (loaded once; registered on the board, when there is one, as it arrives). */
@@ -57,6 +58,14 @@ let work = null
 const workLoaded = import('./gen/vendor/work.mjs').then(m => { work = m }, () => {})
 // The account screens' slow parts (the key derivation, founding and joining) run in the core worker (core/account-remote.ts).
 export const account = () => import('./gen/vendor/account-remote.mjs')
+// What's new (news.mjs): CHANGELOG.md as the build read it. The newest day comes with the first bundle (the menu row's
+// dot); the days themselves only with the page.
+// (loaded at once, not imported statically: the views run in Node's tests too, where gen/ is not)
+let newsLatest = null
+/** The newest day of What's new, or null until it is loaded. */
+export const newsLatestDay = () => newsLatest
+import('./gen/vendor/changelog-latest.mjs').then(m => { newsLatest = m.LATEST; document.dispatchEvent(new CustomEvent('trommi:news')) }, () => {})
+export const changelog = () => import('./gen/vendor/changelog.mjs')
 export const scribbleWire = () => import('./gen/vendor/scribble.mjs')
 // A QR reader for browsers without their own (core/qr-decode.mjs): loaded by the account screens' "Scan a code" only.
 export const qrReader = () => import('./gen/vendor/qr-decode.mjs')

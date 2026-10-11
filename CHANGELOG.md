@@ -9,6 +9,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Drag sessions in the sidebar into your own order; the iPhone shows the same order.
 - Delete your account right from the iPhone app (Settings → Account).
 - Log out straight from the desk menu.
+- What's new in the desk menu (web and iPhone): this list, with a dot until you have read the newest day.
 
 **Better**
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card

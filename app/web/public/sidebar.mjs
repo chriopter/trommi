@@ -1,6 +1,6 @@
 // The sidebar (#agents): one row per session, a main with its subs under it, and the floating Desk's state.
 // The markup is the one app.css and sidebar.css style.
-import { BASE, crownOf, renderStreamMessage, stream } from './app.mjs'
+import { BASE, crownOf, newsLatestDay, renderStreamMessage, stream } from './app.mjs'
 import { BELL, Controller, PLUS, agoSpan, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, toast, sayError } from './ui.mjs'
 const EDGES = 7   // more subs than this lie in a folded stack without an edge of their own
 
@@ -546,6 +546,10 @@ function desksOf(model) {
   return desks.map(d => { const mine = (model.allFresh ?? model.fresh).filter(c => deskOf(c) === d.id); return { id: d.id, name: d.name || 'Personal', open: mine.length, knocks: mine.some(c => ['high', 'critical'].includes(c.urgency)) } })
 }
 
+/** Whether the newest day of What's new was opened on this device (news.mjs remembers it; the row's dot until then). */
+const newsSeen = () => { const latest = newsLatestDay(); if (latest == null) return true; try { return localStorage.getItem('trommi-news-seen') === latest } catch { return true } }
+// (the newest day arrives after the first page was drawn: the dot then shows where it is unseen)
+globalThis.document?.addEventListener('trommi:news', () => { const dot = document.getElementById('menu-news-dot'); if (dot) dot.hidden = newsSeen() })
 /** Whether this tab shows the demo room (app.mjs: ?mock=1, remembered for the tab; ?mock=0 ends it). */
 const inDemo = () => { try { return Boolean(globalThis.sessionStorage?.getItem('trommi-mock')) } catch { return false } }
 // Small drawings of the menu's own, in the pen's line: the plus of "New desk", and the light of the desk lamp.
@@ -592,7 +596,8 @@ const waitingBadge = (n, knocks) => html`<i class="tab-badge${knocks ? ' is-knoc
 const GEAR = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M12 3.2L13.4 5.6L16.1 4.9L16.8 7.6L19.4 8.4L18.6 11.1L20.6 13L18.5 14.8L19.1 17.5L16.4 18.1L15.4 20.7L12.9 19.6L10.6 21.1L9.3 18.6L6.5 18.8L6.4 16L4 14.6L5.5 12.2L4.4 9.6L7 8.6L7.4 5.8L10.2 6.1Z"/><path d="M12.1 9.3Q14.7 9.6 14.8 12Q14.6 14.6 12 14.7Q9.4 14.5 9.3 12Q9.5 9.4 12.1 9.3Z"/></svg>')
 /** The Trommi menu (#brand-doors): the wide screen's (from the sidebar's foot) and the phone's (from the pill), one
  *  component: the desks (each with its drawing and what waits, New Desk…), Settings, and one row of small buttons for
- *  this device: Push (Off → All → Only knocking), Theme (Light → Dark → System), Keyboard Shortcuts, Demo, and Log out
+ *  this device: Push (Off → All → Only knocking), Theme (Light → Dark → System), Keyboard Shortcuts, Demo, What's new
+ *  (news.mjs, a dot while its newest day is unseen here), and Log out
  *  (/logout, the same page that asks first as Settings · Account's Log Out). A phone also has its places here
  *  (Scribble, Artifacts). */
 function menuDoors(model, base) {
@@ -603,6 +608,7 @@ function menuDoors(model, base) {
 <p class="menu-desk-error" data-menu-target="deskError" role="alert"></p></div>
 <a role="menuitem" class="menu-settings" href="${base}/settings" data-nav draggable="false" id="menu-settings">${GEAR}<span>Settings</span></a>
 <button role="menuitemcheckbox" type="button" id="demo-toggle" class="menu-demo-row demo-toggle" aria-checked="${String(inDemo())}" title="${inDemo() ? 'Leave the demo: back to your desks' : 'The demo: a made-up room, nothing is kept'}">${sk('play')}<span>Demo</span><i class="demo-switch" aria-hidden="true"><b></b></i></button>
+<a role="menuitem" class="menu-news-row" href="${base}/whats-new" data-nav draggable="false" id="menu-news">${sk('spark')}<span>What's new</span><i class="menu-news-dot" id="menu-news-dot" title="Something new since you last looked"${newsSeen() ? raw(' hidden') : ''}></i></a>
 <a role="menuitem" class="menu-logout-row" href="${base}/logout" data-nav draggable="false" id="menu-logout">${sk('logout')}<span>Log out</span></a>
 <div class="menu-places">${[['scribble-board', 'pen', 'Scribble'], ['artifacts', 'picture', 'Artifacts']].map(([p, icon, word]) => html`<a role="menuitem" href="${base}/${p}" data-nav draggable="false">${sk(icon)}<span>${word}</span></a>`)}</div>
 <div class="menu-icons" role="group" aria-label="This device">

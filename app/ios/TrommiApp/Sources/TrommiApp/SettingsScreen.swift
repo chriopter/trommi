@@ -25,6 +25,7 @@ struct SettingsScreen: View {
     case "account": AccountPage()
     case "account/password", "account/passkeys", "account/kit": AccountWayPage(way: String(tab.dropFirst("account/".count)))
     case "theme": ThemePage()
+    case "whats-new": WhatsNewPage()
     case "mls-proof": CoreProofPage()   // CoreProofScreen.swift: an info screen, not a setting
     default: SettingsHome()
     }
