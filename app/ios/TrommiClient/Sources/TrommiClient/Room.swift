@@ -896,7 +896,8 @@ public struct Store {
     case .newerVersion(let from):
       board.pushAlert(&change, code: "newer-version", message: Compat.UPDATE_MESSAGE, sender: hex(from))
     case .keys(_, let taken, _):
-      // Keys of older epochs came (a handover): items that took their place without a body can be opened now.
+      // Keys of older epochs came (a handover, also one answering a key request, 7.1.1): items that took their place
+      // without a body can be opened now.
       if taken > 0, record.past?.closed == true { notePast { $0.readBack = true }; pastDue = true; if readingBack { readBackAgain = true } }
     case .recoveryAuth, .recoveryAuthConflict, .dropped: break
     }
@@ -923,6 +924,8 @@ public struct Store {
       // finding. Everything else is one (a forged or replayed item, a chain that does not link): shown, once
       // per sender and code, since every later item of a broken chain is refused the same way (section 16).
       let code = e.code ?? "bad-format"
+      // (an item read back that wants a key: the past stays closed until a handover brings it, 7.1.1)
+      if code == "no-key" { notePast { $0.closed = true } }
       if code == "group-behind" { report.beforeJoining += 1; notePast { $0.passedOver = true }; return }
       report.refused += 1
       if report.refused <= 5 { report.warnings.append("change \(n) refused: \(code)") }
@@ -1040,8 +1043,17 @@ public struct Store {
     case "file_evicted": break
     case "ping":
       // the upkeep of key requests (7.1.1) while the app stays open: a wish's grace and pauses run out without
-      // any change arriving
-      if nowMs() >= keyTendedAt + 60_000 { keyTendedAt = nowMs(); _ = try? await serial { [self] in await self.tendKeys() } }
+      // any change arriving; a read back of the past that is still due (a pass that failed) is taken up too
+      if nowMs() >= keyTendedAt + 60_000 {
+        keyTendedAt = nowMs()
+        _ = try? await serial { [self] in
+          await self.tendKeys()
+          guard self.pastDue else { return }
+          var report = SyncReport(), ch = Change()
+          defer { self.board.project(ch); self.emit(ch) }
+          try await self.tendPast(&report, &ch)
+        }
+      }
     default: break   // events a newer hub adds
     }
   }
