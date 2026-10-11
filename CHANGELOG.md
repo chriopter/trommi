@@ -39,6 +39,8 @@ while it runs.
   and iPhone).
 
 **Better**
+- A session's heading is one line: the name, its connection as a dot (what it is at, model and machine in its tip),
+  All | Questions beside it, and its usage as one mark of two rings, the week outside and 5 h inside (web and iPhone).
 - A session shows a switch "All | Questions" under its heading, with the number of questions waiting; the funnel beside
   the message field is gone (web and iPhone).
 - A session's heading is calmer: under the name a dot, what it is at and its model; its usage (5 h and week) as two

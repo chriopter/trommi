@@ -128,9 +128,9 @@ struct SessionScreen: View {
           }
         }
         // the top row: back, the session's name as a glass pill (its menu), "⋯"; no bar, a soft edge above and below
-        // beside "⋯": the usage as two small rings, 5 h and the week (Usage.swift)
-        .pushedPills(extraTrailing: usage.map { CGFloat($0.meters.count) * 28 + 4 } ?? 0) { header(a, d) } trailing: {
-          HStack(spacing: 6) { if let usage { UsageRings(acc: usage) }; more(a, d, freshCount: fresh.count) }
+        // beside "⋯": the usage as one mark of two rings, the week outside, 5 h inside (Usage.swift)
+        .pushedPills(extraTrailing: usage == nil ? 0 : 36) { header(a, d) } trailing: {
+          HStack(spacing: 6) { if let usage { UsageMark(acc: usage) }; more(a, d, freshCount: fresh.count) }
         }
         // under the top row: the switch "All | Questions n" (as on the web, always in view)
         .overlay(alignment: .top) {
