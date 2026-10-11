@@ -12,6 +12,10 @@
 //! **Codex** gets the connector as a plain MCP server `trommi`. Codex shows no channel events, so the server is
 //! registered with `TROMMI_CHANNEL_EVENTS=off`: board events wait for the `inbox` tool, and the connector wakes the
 //! session with a queued message (`host.rs`). A Codex that is already running loads it only after a restart.
+//! Codex runs hooks as Claude Code does, but a plugin cannot bring them: `setup codex` merges the connector's hooks
+//! (terminal mirror, permission prompts on the board, work trail) into `$CODEX_HOME/hooks.json` (default
+//! `~/.codex/hooks.json`), leaving every other hook there as it is. Codex runs a new or changed hook only once the
+//! human trusted it (its prompt at the start, or /hooks). `remove codex` takes the hooks and the MCP server out again.
 use crate::usage;
 use serde_json::Value;
 use std::path::Path;
@@ -110,12 +114,26 @@ fn verbose(flags: &[String]) -> bool {
 /// `setup claude|codex [--verbose]`: one ✓ line, the details under it when asked for, then what to do next.
 /// `--details` prints only the details, one per line (install.sh frames them itself). Returns the exit code.
 pub fn run_cli(which: Option<&str>, flags: &[String]) -> i32 {
-    use std::io::IsTerminal;
     let done = match which {
         Some("claude") => claude(),
         Some("codex") => codex(),
         _ => Err("use `setup claude` or `setup codex` (add --verbose for the details)".to_string()),
     };
+    report(which.unwrap_or("claude"), flags, done, false)
+}
+
+/// `remove claude` or `remove codex`: what `setup` put in, out again. Returns the exit code.
+pub fn remove_cli(which: Option<&str>, flags: &[String]) -> i32 {
+    let done = match which {
+        Some("claude") => return remove_claude(),
+        Some("codex") => remove_codex(),
+        _ => Err("use `remove claude` or `remove codex`".to_string()),
+    };
+    report("codex", flags, done, true)
+}
+
+fn report(which: &str, flags: &[String], done: Result<Vec<String>, String>, removed: bool) -> i32 {
+    use std::io::IsTerminal;
     let out = std::io::stdout().is_terminal();
     match done {
         Ok(lines) if flags.iter().any(|flag| flag == "--details") => {
@@ -125,18 +143,31 @@ pub fn run_cli(which: Option<&str>, flags: &[String]) -> i32 {
             0
         }
         Ok(lines) => {
-            let which = which.unwrap_or("claude");
             println!(
                 "{} {}",
                 paint(out, "32", "✓"),
-                paint(out, "1", &format!("{} set up", label(which)))
+                paint(
+                    out,
+                    "1",
+                    &format!(
+                        "{} {}",
+                        label(which),
+                        if removed {
+                            "no longer uses Trommi"
+                        } else {
+                            "set up"
+                        }
+                    )
+                )
             );
-            if verbose(flags) {
+            if verbose(flags) || removed {
                 for line in lines {
                     println!("    {}", paint(out, "2", &line));
                 }
             }
-            println!("{} {}", paint(out, "1", "Next:"), next(which));
+            if !removed {
+                println!("{} {}", paint(out, "1", "Next:"), next(which));
+            }
             0
         }
         Err(why) => {
@@ -223,11 +254,7 @@ pub fn claude() -> Result<Vec<String>, String> {
 
 /// `remove claude`: takes out what `setup claude` put in, through Claude Code's own commands, and the status line
 /// (the one before stands there again). Returns the exit code.
-pub fn remove_cli(which: Option<&str>) -> i32 {
-    if which != Some("claude") {
-        eprintln!("[trommi] use `remove claude`");
-        return 1;
-    }
+fn remove_claude() -> i32 {
     let mut failed = false;
     usage::mark_declined(true);
     match usage::settings_file().map(|f| usage::remove_statusline(&f)) {
@@ -296,15 +323,233 @@ pub fn codex() -> Result<Vec<String>, String> {
         );
     }
     done.push(format!("Codex starts {program}"));
+    done.push(merge_hooks(&program)?);
     done.push(
         "a new board event wakes the Codex session with a queued message (`codex queue`); it reads the board with the `inbox` tool"
             .to_string(),
     );
     done.push(
-        "a Codex that was running before this loads Trommi only once it is started again"
+        "a Codex that was running before this loads Trommi only once it is started again; at its start it asks you to trust the new hooks (or /hooks): without that it does not run them"
             .to_string(),
     );
     Ok(done)
+}
+
+/// Codex's own folder: `CODEX_HOME`, else `~/.codex`.
+pub fn codex_home() -> Option<std::path::PathBuf> {
+    match std::env::var_os("CODEX_HOME").filter(|h| !h.is_empty()) {
+        Some(h) => Some(h.into()),
+        None => std::env::var_os("HOME")
+            .filter(|h| !h.is_empty())
+            .map(|h| std::path::PathBuf::from(h).join(".codex")),
+    }
+}
+
+/// The hooks the connector puts into Codex: (event, connector command, timeout in seconds). Codex has no
+/// Notification, PermissionDenied, PostToolUseFailure or MessageDisplay events, and no async hooks.
+pub const CODEX_HOOKS: [(&str, &str, u64); 9] = [
+    ("UserPromptSubmit", "prompt", 5),
+    ("Stop", "stop", 5),
+    ("PermissionRequest", "permission", 3700),
+    ("PreToolUse", "trail", 5),
+    ("PostToolUse", "resolved", 30),
+    ("PostToolUse", "trail", 5),
+    ("SubagentStart", "trail", 5),
+    ("SubagentStop", "trail", 5),
+    ("SessionEnd", "trail", 5),
+];
+
+/// Whether a hook's command is one of the connector's (any connector, at any path).
+fn ours(hook: &Value) -> bool {
+    hook["command"]
+        .as_str()
+        .is_some_and(|c| c.contains("trommi-connector"))
+}
+
+fn quoted(path: &str) -> String {
+    format!("'{}'", path.replace('\'', "'\\''"))
+}
+
+/// The hooks file with every hook of the connector taken out (groups left empty go too).
+fn without_ours(mut doc: Value) -> Result<Value, String> {
+    if doc.is_null() {
+        doc = serde_json::json!({});
+    }
+    let Some(top) = doc.as_object_mut() else {
+        return Err("hooks.json is not a JSON object; nothing was changed".into());
+    };
+    let hooks = top.entry("hooks").or_insert_with(|| serde_json::json!({}));
+    let Some(events) = hooks.as_object_mut() else {
+        return Err("hooks.json's \"hooks\" is not an object; nothing was changed".into());
+    };
+    for groups in events.values_mut() {
+        if let Some(list) = groups.as_array_mut() {
+            for group in list.iter_mut() {
+                if let Some(inner) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) {
+                    inner.retain(|h| !ours(h));
+                }
+            }
+            list.retain(|g| g["hooks"].as_array().is_none_or(|h| !h.is_empty()));
+        }
+    }
+    events.retain(|_, groups| groups.as_array().is_none_or(|l| !l.is_empty()));
+    Ok(doc)
+}
+
+/// `doc` with the connector's hooks for `program`, one group per event at the end, other hooks unchanged.
+pub fn with_codex_hooks(doc: Value, program: &str) -> Result<Value, String> {
+    let mut doc = without_ours(doc)?;
+    let events = doc["hooks"].as_object_mut().expect("an object");
+    for (event, verb, timeout) in CODEX_HOOKS {
+        let hook = serde_json::json!({
+            "type": "command",
+            "command": format!("p={}; [ -x \"$p\" ] || exit 0; exec \"$p\" {verb}", quoted(program)),
+            "timeout": timeout,
+        });
+        let list = events.entry(event).or_insert_with(|| serde_json::json!([]));
+        let Some(list) = list.as_array_mut() else {
+            return Err(format!(
+                "hooks.json's {event} is not a list; nothing was changed"
+            ));
+        };
+        // (one group of the connector's per event, holding its hooks in order)
+        match list.iter_mut().find(|g| {
+            g.get("matcher").is_none()
+                && g["hooks"].as_array().is_some_and(|h| h.iter().all(ours))
+                && g["hooks"].as_array().is_some_and(|h| !h.is_empty())
+        }) {
+            Some(group) => group["hooks"].as_array_mut().unwrap().push(hook),
+            None => list.push(serde_json::json!({ "hooks": [hook] })),
+        }
+    }
+    Ok(doc)
+}
+
+fn read_hooks(file: &Path) -> Result<Value, String> {
+    match std::fs::read_to_string(file) {
+        Ok(text) if text.trim().is_empty() => Ok(Value::Null),
+        Ok(text) => serde_json::from_str(&text).map_err(|e| {
+            format!(
+                "{} is not valid JSON ({e}); nothing was changed",
+                file.display()
+            )
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Null),
+        Err(e) => Err(format!("{} does not read ({e})", file.display())),
+    }
+}
+
+fn write_hooks(file: &Path, doc: &Value) -> Result<(), String> {
+    let dir = file.parent().ok_or("no folder for hooks.json")?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("{} not made ({e})", dir.display()))?;
+    let tmp = dir.join(format!(".hooks.json.trommi-{}", std::process::id()));
+    let text = serde_json::to_string_pretty(doc).unwrap() + "\n";
+    std::fs::write(&tmp, text)
+        .and_then(|_| {
+            if let Ok(m) = std::fs::metadata(file) {
+                std::fs::set_permissions(&tmp, m.permissions())?;
+            }
+            std::fs::rename(&tmp, file)
+        })
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("{} not written ({e})", file.display())
+        })
+}
+
+/// Puts the connector's hooks into Codex's hooks.json; the line says what was done.
+fn merge_hooks(program: &str) -> Result<String, String> {
+    let file = codex_home()
+        .ok_or("HOME is not set to a folder")?
+        .join("hooks.json");
+    let was = read_hooks(&file)?;
+    let now = with_codex_hooks(was.clone(), program)?;
+    if now == was {
+        return Ok(format!(
+            "hooks in {}: there already, unchanged",
+            file.display()
+        ));
+    }
+    write_hooks(&file, &now)?;
+    Ok(format!(
+        "hooks in {}: terminal mirror, permission prompts on the board and work trail {} (other hooks kept)",
+        file.display(),
+        if was.is_null() { "added" } else { "set" }
+    ))
+}
+
+/// `remove codex`. The lines say what was done.
+pub fn remove_codex() -> Result<Vec<String>, String> {
+    let mut done = Vec::new();
+    let file = codex_home()
+        .ok_or("HOME is not set to a folder")?
+        .join("hooks.json");
+    let was = read_hooks(&file)?;
+    if was.is_null() {
+        done.push(format!(
+            "hooks: {} is not there, nothing to take out",
+            file.display()
+        ));
+    } else {
+        let now = without_ours(was.clone())?;
+        if now == was {
+            done.push(format!(
+                "hooks in {}: none of Trommi's there",
+                file.display()
+            ));
+        } else {
+            write_hooks(&file, &now)?;
+            done.push(format!(
+                "hooks in {}: Trommi's taken out, others kept",
+                file.display()
+            ));
+        }
+    }
+    here("codex")?;
+    if run("codex", &["mcp", "get", "trommi", "--json"]).is_ok() {
+        run("codex", &["mcp", "remove", "trommi"])?;
+        done.push("MCP server trommi: removed".to_string());
+    } else {
+        done.push("MCP server trommi: not there".to_string());
+    }
+    Ok(done)
+}
+
+/// Whether this Codex runs the connector's mirror hooks: they are in its hooks.json and the human trusted them
+/// (a trusted hash for the Stop and UserPromptSubmit hooks of that file in its config.toml). Read at start, for the
+/// instructions; a hook trusted later counts from Codex's next start.
+pub fn codex_mirror_hooks() -> bool {
+    let Some(home) = codex_home() else {
+        return false;
+    };
+    let file = home.join("hooks.json");
+    let Ok(doc) = read_hooks(&file) else {
+        return false;
+    };
+    let has = |event: &str, verb: &str| {
+        doc["hooks"][event].as_array().is_some_and(|groups| {
+            groups.iter().any(|g| {
+                g["hooks"].as_array().is_some_and(|h| {
+                    h.iter().any(|h| {
+                        ours(h)
+                            && h["command"]
+                                .as_str()
+                                .is_some_and(|c| c.ends_with(&format!(" {verb}")))
+                    })
+                })
+            })
+        })
+    };
+    if !has("Stop", "stop") || !has("UserPromptSubmit", "prompt") {
+        return false;
+    }
+    let config = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
+    let key = file.display().to_string();
+    ["stop", "user_prompt_submit"].iter().all(|ev| {
+        config
+            .lines()
+            .any(|l| l.starts_with("[hooks.state.") && l.contains(&format!("{key}:{ev}:")))
+    })
 }
 
 /// Whether `path` is the installed connector.

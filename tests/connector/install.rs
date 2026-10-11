@@ -821,6 +821,9 @@ case "$1 $2" in
     [ "$3 $4 $5 $6" = "trommi --env TROMMI_CHANNEL_EVENTS=off --" ] || { echo "unexpected: $*" >&2; exit 2; }
     printf '%s' "$7" > "$state/codex-command"
     printf '"TROMMI_CHANNEL_EVENTS":"off"' > "$state/codex-env" ;;
+  "mcp remove")
+    [ "$3" = "trommi" ] && [ -f "$state/codex-command" ] || { echo "unexpected: $*" >&2; exit 2; }
+    rm -f "$state/codex-command" "$state/codex-env" ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
 esac
 "#;
@@ -850,6 +853,9 @@ impl Desk {
         self.setup_with(which, with_tools, &["--verbose"])
     }
     fn setup_with(&self, which: &str, with_tools: bool, flags: &[&str]) -> Output {
+        self.command_with(&["setup", which], with_tools, flags)
+    }
+    fn command_with(&self, args: &[&str], with_tools: bool, flags: &[&str]) -> Output {
         let mut dirs = vec![];
         if with_tools {
             dirs.push(self.dir.path().join("tools"));
@@ -863,7 +869,7 @@ impl Desk {
                 }),
         );
         Command::new(common::process::connector_binary())
-            .args(["setup", which])
+            .args(args)
             .args(flags)
             .env_clear()
             .env("HOME", self.dir.path())
@@ -1015,6 +1021,125 @@ fn setup_codex_registers_the_connector_as_a_plain_mcp_server_once() {
         said(&third)
     );
     assert_eq!(read(&desk.dir.path().join("codex-command")), desk.program());
+}
+
+/// `setup codex` merges the connector's hooks into Codex's hooks.json (terminal mirror, permission prompts, work
+/// trail), keeps the hooks that were there, does not add them twice, and `remove codex` takes them and the MCP
+/// server out again. The real ~/.codex is never reached: HOME is the desk's.
+#[test]
+fn setup_codex_merges_its_hooks_and_remove_codex_takes_them_out() {
+    let desk = Desk::new(true);
+    let codex_home = desk.dir.path().join(".codex");
+    std::fs::create_dir_all(&codex_home).expect("a folder");
+    let file = codex_home.join("hooks.json");
+    let foreign = serde_json::json!({ "hooks": {
+        "SessionStart": [{ "hooks": [{ "type": "command", "command": "bash other.sh session", "timeout": 10 }] }],
+        "Stop": [{ "hooks": [{ "type": "command", "command": "notify-send done" }] }]
+    } });
+    std::fs::write(&file, foreign.to_string()).expect("written");
+
+    let first = desk.setup("codex", true);
+    let text = said(&first);
+    assert!(first.status.success(), "{text}");
+    assert!(
+        text.contains("hooks in") && text.contains("other hooks kept"),
+        "{text}"
+    );
+    assert!(text.contains("trust"), "the trust prompt is named: {text}");
+    let doc: serde_json::Value = serde_json::from_str(&read(&file)).expect("JSON");
+    let commands = |doc: &serde_json::Value, event: &str| -> Vec<String> {
+        doc["hooks"][event]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|g| g["hooks"].as_array().cloned().unwrap_or_default())
+            .map(|h| h["command"].as_str().unwrap_or("").to_string())
+            .collect()
+    };
+    let program = desk.program();
+    assert_eq!(commands(&doc, "SessionStart"), ["bash other.sh session"]);
+    let stop = commands(&doc, "Stop");
+    assert_eq!(stop.len(), 2, "{stop:?}");
+    assert_eq!(stop[0], "notify-send done");
+    assert!(
+        stop[1].contains(&program) && stop[1].ends_with(" stop"),
+        "{stop:?}"
+    );
+    for (event, verb) in [
+        ("UserPromptSubmit", "prompt"),
+        ("PermissionRequest", "permission"),
+        ("PreToolUse", "trail"),
+        ("PostToolUse", "resolved"),
+        ("PostToolUse", "trail"),
+        ("SubagentStart", "trail"),
+        ("SessionEnd", "trail"),
+    ] {
+        assert!(
+            commands(&doc, event)
+                .iter()
+                .any(|c| c.contains(&program) && c.ends_with(&format!(" {verb}"))),
+            "{event} {verb}: {doc}"
+        );
+    }
+    // Codex has no such events: none is written
+    for absent in [
+        "Notification",
+        "PermissionDenied",
+        "PostToolUseFailure",
+        "MessageDisplay",
+    ] {
+        assert!(doc["hooks"].get(absent).is_none(), "{absent}: {doc}");
+    }
+    // each hook ends quietly when the connector is gone
+    let hook = &stop[1];
+    let gone = Command::new("sh")
+        .args(["-c", &hook.replace(&program, "/nowhere/trommi-connector")])
+        .output()
+        .expect("sh runs");
+    assert!(gone.status.success() && gone.stdout.is_empty());
+
+    // again: the same file
+    let before = read(&file);
+    let second = desk.setup("codex", true);
+    assert!(
+        said(&second).contains("there already, unchanged"),
+        "{}",
+        said(&second)
+    );
+    assert_eq!(read(&file), before);
+
+    // remove codex: Trommi's hooks and the MCP server go, the others stay
+    let removed = desk.command_with(&["remove", "codex"], true, &[]);
+    let text = said(&removed);
+    assert!(removed.status.success(), "{text}");
+    assert!(
+        text.contains("taken out") && text.contains("MCP server trommi: removed"),
+        "{text}"
+    );
+    let doc: serde_json::Value = serde_json::from_str(&read(&file)).expect("JSON");
+    assert_eq!(doc, foreign);
+    assert!(
+        desk.calls().iter().any(|c| c == "codex mcp remove trommi"),
+        "{:?}",
+        desk.calls()
+    );
+    let again = desk.command_with(&["remove", "codex"], true, &[]);
+    assert!(
+        said(&again).contains("none of Trommi's") && said(&again).contains("not there"),
+        "{}",
+        said(&again)
+    );
+
+    // a hooks.json that is not JSON is left alone
+    std::fs::write(&file, "{ not json").expect("written");
+    let broken = desk.setup("codex", true);
+    assert!(!broken.status.success());
+    assert!(
+        said(&broken).contains("nothing was changed"),
+        "{}",
+        said(&broken)
+    );
+    assert_eq!(read(&file), "{ not json");
 }
 
 #[test]

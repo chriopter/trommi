@@ -2131,6 +2131,21 @@ pub async fn main_server() {
                 {
                     return json!({ "ok": false, "error": "another session" });
                 }
+                // Codex names its thread in every hook: a hook of another thread of the same Codex process is not
+                // this session's
+                if crate::host::is_codex() {
+                    if let Some(t) = req.get("thread").and_then(|v| v.as_str()) {
+                        match crate::host::thread() {
+                            Some(mine) if mine != t => {
+                                return json!({ "ok": false, "error": "another session" })
+                            }
+                            None => {
+                                crate::host::note_call_meta(&json!({ "threadId": t }));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 if op == "terminal" {
                     return c.mirror_request(&req);
                 }

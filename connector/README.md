@@ -15,6 +15,7 @@ trommi-connector trail               the work trail's hooks (PreToolUse, PostToo
 trommi-connector monitor             the plugin's monitor: one line per board event
 trommi-connector setup claude|codex  make the installed connector known to Claude Code (plugin) or Codex (MCP server)
 trommi-connector remove claude       take out what setup claude put in; the old status line stands there again
+trommi-connector remove codex        take the connector's hooks and MCP server out of Codex again
 trommi-connector update [--check]    install the newest signed release in place of the installed one
 trommi-connector whoami | allow-tools | --version
 ```
@@ -69,6 +70,16 @@ plan's 5-hour and weekly usage to the board ([`src/usage.rs`](src/usage.rs); the
 agent"). The installed connector does the same once at its start. `trommi-connector remove claude` puts the old
 status line back and removes the plugin and the marketplace.
 
+`setup codex` also merges the connector's hooks into Codex's `hooks.json` (`$CODEX_HOME`, default `~/.codex`): a
+Codex plugin cannot bring hooks. They are the plugin's, as far as Codex has the events: `UserPromptSubmit` and
+`Stop` (the terminal mirror), `PermissionRequest` (permission prompts on the board), `PreToolUse`, `PostToolUse`,
+`SubagentStart`, `SubagentStop`, `SessionEnd` (the work trail). Every other hook in that file stays as it is, the
+connector's are put in once, and `remove codex` takes them out again (and `codex mcp remove trommi`). **Codex runs
+a new or changed hook only once the human trusted it**: at its next start it shows "New hook - review required";
+the human trusts them there (or later in `/hooks`, "trust all"). Codex notes that as `hooks.state."<file>:<event>:…"
+.trusted_hash` in its `config.toml`. Until then the hooks do nothing, and the connector tells the agent that the
+human does not see the terminal.
+
 ## Codex
 
 Codex (known by its `initialize`, `clientInfo.name` "codex-mcp-client", or by the program that started the
@@ -85,6 +96,12 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
 - It never asks for the tool list again: an unconnected session lists every tool with `connect`.
 - It asks for approval of an MCP call unless the tool says it is harmless: every tool carries `annotations`
   (`readOnlyHint`, `destructiveHint`, `openWorldHint`); only `revoke_asset` and `share_asset` still ask.
+- Its hooks come from `setup codex`, not from a plugin (above). The connector reads at its start whether Codex's
+  `hooks.json` holds its Stop and UserPromptSubmit hooks and `config.toml` trusts them; only then do the
+  instructions say that the final text reaches the board by itself. Codex's hook input names the turn (`turn_id`,
+  used where Claude Code has `prompt_id`) and the thread (`session_id`): a connector takes only its own thread's
+  hooks, and the queued wake ("[Trommi] N new board events …") counts as the board's, not as the human's typing,
+  so a turn a card's answer started puts its final text under that card.
 - Its words differ: the instructions take "# In Codex" from `prompt.md` (inbox at every turn, never run the
   connector in a shell, restart Codex when the tools are missing), and every restart or update line says to quit
   Codex and start it again instead of /mcp.
