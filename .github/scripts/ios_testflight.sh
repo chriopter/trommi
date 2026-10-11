@@ -132,7 +132,7 @@ export_options() {
   <key>teamID</key><string>$APPLE_TEAM_ID</string>
   <key>signingStyle</key><string>automatic</string>
   <key>manageAppVersionAndBuildNumber</key><false/>
-  <key>testFlightInternalTestingOnly</key><true/>
+  <key>testFlightInternalTestingOnly</key><false/>
   <key>uploadSymbols</key><true/>
 </dict>
 </plist>
