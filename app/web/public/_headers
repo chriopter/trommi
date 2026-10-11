@@ -23,6 +23,9 @@
 /index.html
   Cache-Control: no-cache
 # The stylesheet bundle and the app's modules (dev/build.mjs): their names change with their content.
+# What's new's pictures (public/changelog/, named by their day; the iOS app loads them from here too).
+/changelog/*
+  Cache-Control: public, max-age=86400
 /gen/bundle.*
   Cache-Control: public, max-age=31536000, immutable
 /gen/app/*

@@ -2,7 +2,18 @@
 
 What changed in Trommi, newest first. One section per day; the release numbers it covers are in brackets.
 
+A day starts with a short summary (one to three plain sentences) and at most one picture, a line
+`![what it shows](app/web/public/changelog/<YYYY-MM-DD>.webp)`: a screenshot of the demo room only (`?mock=1`, never
+real data), webp, at most 150 KB. Then its lines under **New**, **Better** and **Fixed**. What's new (web and iPhone)
+shows the summary and the picture, the lines folded under "All changes".
+
 ## 11 October 2026 (v109 – v120)
+
+Each agent now has its own page in Settings, with its plan, its usage and its sessions. On the iPhone you answer
+the most urgent question straight from the Lock Screen, pushes give nothing away, and the connector updates itself
+while it runs.
+
+![Settings → Agents in the demo room](app/web/public/changelog/2026-10-11.webp)
 
 **New**
 - A card its session is working on says so above its title: "<session> is working on it", its status line and how
@@ -24,6 +35,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - What's new in the desk menu (web and iPhone): this list, with a dot until you have read the newest day.
 - Settings → Agents (web and iPhone): each agent as Claude Code or Codex on its computer, its sessions under it; remove an agent from there. Devices lists only your phones, tablets and browsers.
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
+- What's new tells each day in a few sentences, with a picture; all of its changes unfold under "All changes" (web
+  and iPhone).
 
 **Better**
 - A session shows a switch "All | Questions" under its heading, with the number of questions waiting; the funnel beside
@@ -144,6 +157,11 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 
 ## 10 October 2026 (v49 – v108)
 
+Trommi now runs on one encryption core built on OpenMLS, the same code on the web, the iPhone and the connector.
+Installing the connector is one line, and a new demo room lets you look around before signing up.
+
+![The Desk of the demo room](app/web/public/changelog/2026-10-10.webp)
+
 **New**
 - Trommi now runs on one Rust core built on OpenMLS, the same code in the web app, the iPhone app
   and the connector. Everything on your board stays end-to-end encrypted.
@@ -167,6 +185,11 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 
 ## 9 October 2026
 
+Desks get goals of their own, the connector runs on macOS, and the iPhone keeps what waits for you on the Lock
+Screen with Live Activities.
+
+![A desk's goals under the greeting, in the demo room](app/web/public/changelog/2026-10-09.webp)
+
 **New**
 - Live Activities on the iPhone keep what waits for you in view; pushes carry the card's title.
 - Links to Trommi open in the iPhone app.
@@ -184,6 +207,9 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Long strokes on the Scribble Board no longer slow down the pen.
 
 ## 8 October 2026
+
+The iPhone app arrives: the Desk, chats, notes and the Scribble Board, with push notifications and sharing from
+other apps.
 
 **New**
 - The iPhone app: the Desk, chats, notes and the Scribble Board (with Apple Pencil),
@@ -206,6 +232,9 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 
 ## 7 October 2026
 
+Calmer on a phone and quicker to answer: a drawer for the sidebar, six emoji to connect an agent, and Blitz for
+rapid answers.
+
 **New**
 - On a phone the sidebar is a drawer.
 - Compare six emoji when you connect an agent, instead of picking a number.
@@ -221,6 +250,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - The advised option leads a row; every answer tile has the same size.
 
 ## 6 October 2026
+
+Hand a session to a new agent, answer everything at once with Duck it, and put a card off with Later.
 
 **New**
 - Continue a session: hand it to a new agent, with or without its history.
@@ -240,6 +271,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 
 ## 5 October 2026
 
+Permission prompts from Claude Code reach the board, and each desk shows only its own sessions.
+
 **New**
 - Permission prompts from Claude Code reach the board, and leave it once answered in the terminal.
 - When auto mode blocks a tool, the session says so in one quiet line.
@@ -251,6 +284,9 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - The note is back as a yellow sticky in the bottom-right corner.
 
 ## 4 October 2026
+
+End-to-end encryption: the hub keeps only sealed messages. Accounts, pairing by QR code, the Scribble Board and
+a redesigned Desk.
 
 **New**
 - End-to-end encryption: the hub stores only sealed messages, and only your devices can read them.
@@ -275,10 +311,14 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 
 ## 3 October 2026
 
+Push notifications.
+
 **New**
 - Push notifications and the bell icon.
 
 ## 2 October 2026
+
+The first board: your agents ask, you answer with a tap.
 
 **New**
 - The first board: an inbox of questions from your agents, with sessions, a canvas and dictation.
