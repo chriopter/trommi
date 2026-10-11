@@ -418,25 +418,37 @@ encrypted.
 40. **The admin page** is not part of the API and not on the public port: a second listener on 127.0.0.1:8791
     (`HUB_ADMIN_HOST`, `HUB_ADMIN_PORT`), started only if `HUB_ADMIN_PASSWORD_HASH` is set (Argon2id, PHC text;
     `trommi-hub admin-hash` makes one from a password on standard input). It takes `GET /`, `GET /accounts`,
-    `GET /tables` (`?t=` one of the tables listed), `POST /login` and `POST /logout`, nothing else. Without a session `GET /` is a sign-in form (user name `admin`, the password; a
+    `GET /tables`, `GET /tables/<name>` and `GET /tables/<name>/<key>` (`<name>` one of the tables listed),
+    `GET /admin.js` (the page's one script), `POST /login` and `POST /logout`, nothing else. Without a session `GET /` is a sign-in form (user name `admin`, the password; a
     password manager fills it); a right password gives a session cookie `__Host-trommi_admin` (32 random bytes,
     `HttpOnly; Secure; SameSite=Strict; Path=/`, twelve hours, kept in memory only) and sends the browser back to
     `/`. Both POSTs are taken only with an `Origin` equal to the request's `Host` or `X-Forwarded-Host` (the page
-    is reached through a TLS proxy) and no cross-site `Sec-Fetch-Site` (403 otherwise). Three read-only pages
-    (without a session `/accounts` and `/tables` send the browser to `/`): the overview (CPU, memory, disk of the
+    is reached through a TLS proxy) and no cross-site `Sec-Fetch-Site` (403 otherwise). Read-only pages
+    (without a session `/accounts` and `/tables…` send the browser to `/`): the overview (CPU, memory, disk of the
     data folder, uptime, the hub's own memory, read from `/proc` and `statvfs`; version, release, database size;
     rooms, accounts, devices, sessions, streams, requests at work, push registrations; under CPU, memory, the hub's
     memory, sessions, streams, requests per second and the pool a small line graph, drawn on the server as inline
     SVG, of the last hour or with `?range=24h` the last day, from samples the hub takes every 10 s and keeps in
     memory only, 10 s apart for an hour and averaged per minute for a day, so a restart begins a new history; the
-    page reloads itself every 10 s); the accounts (number,
-    e-mail masked to its first character and its ending, `a•••@•••.org`, how it signs in, passkeys, rooms, times)
-    and the rooms with the counts the hub keeps (devices by role, sessions, changes, envelopes, file bytes against
-    the quota, push registrations, the account by number); and the tables, a side list of every table opened for
-    its columns and number of rows, and one table with what the hub reads in it, what lies in it sealed, its
-    columns and, only for a table that holds nothing sealed and nothing of signing in or pushing, its first ten
-    rows (ids by their first four bytes, numbers and times, a few words such as a role; any other bytes and text
-    by their length only). After a wrong password the page
+    page reloads itself every 10 s); the accounts (number, the
+    e-mail address in full, how it signs in, passkeys, rooms, times) and the rooms with the counts the hub keeps
+    (devices by role, sessions, changes, envelopes, file bytes against the quota, push registrations, the account
+    by number). The e-mail address is sent to the browser in full and only blurred there by CSS (not selectable);
+    a double-click shows one, a "Show all" button all of them, and either blurs them again. The blur keeps an
+    address off a screenshot or out of sight over a shoulder; it does not keep it from whoever holds the session.
+    The tables: a side list of every table with its number of rows; `/tables/<name>` shows one table with what the
+    hub reads in it and what lies in it sealed, its columns, and all its rows, 50 to a page (newest first, or
+    sorted by one column, or only the rows where one column has one value; keyset paging with `a=`/`b=`), and
+    `/tables/<name>/<key>` one row with every value. What a value shows is set per column, and every column of
+    every table is classified (the tables page names any that is not, and shows it as a credential meanwhile):
+    metadata the hub reads (ids, numbers, times, kinds, states, urgency, recipients, sizes, public keys, public
+    MLS state, signed headers, the hub's own keyed hashes) is shown in full, and each such column is tagged "Hub
+    liest mit"; sealed columns (the envelope body, Welcomes, application messages of the log, sealed keys, the
+    sealed copies of the code) are tagged "verschlüsselt" and shown by their length and first bytes only, which
+    are unreadable anyway; credentials (login salts and hashes, the KDF record, MACs, the hash of a share's
+    secret, push endpoints and their keys, Apple's device and Live Activity tokens) are tagged "geheim" and
+    shown only as being there with their length. Neither a sealed nor a secret column can be filtered or sorted
+    by. Table and column names come only from the hub's list, values only as bound parameters. After a wrong password the page
     takes no other for 1 s, 2 s … up to a minute (a session is taken meanwhile). A password is 12 to 1 024 bytes,
     the form at most 4 096. A page is put together by one request at a time and kept five seconds (who asks meanwhile and finds none
     that fresh is told to try again); the
