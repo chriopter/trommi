@@ -123,6 +123,25 @@ helper only: plain `inbox`, the monitor line and channel events skip them, so th
 (`TROMMI_CLAIM_MS`); events still waiting then go to the coordinator with a line "Design: helper gone, N events
 waiting". Claims live in the connector's memory only: after a restart every waiting event is the coordinator's.
 
+A subagent keeps the tool list it was started with: a helper started before a connector update that brought new
+tools or parameters (`notifications/tools/list_changed` reaches the coordinator, not a running subagent) still has
+the old ones, e.g. an `inbox` without `session`. Its plain `inbox` reads the coordinator's events, never a claimed
+session's, so nothing is lost twice; but restart such helpers (end them and start new ones) to give them the new
+tools. `inbox` takes parameters it does not know without an error, so a newer helper never fails on an older
+connector.
+
+## Status lines follow their questions
+
+A status line in state `decision` names its card (`object_id`). The connector keeps it true without the agent's
+help: filing a question (`create_decision`, `merge_cards`) links that session's line to it, the line that says it
+waits on the human ("wartet auf deine Wahl", "waiting for your answer") or else the session's one working line, or
+makes a line of its own (`q-<card>`, the card's title) when there is none. A `set_status` in state `working` whose
+words say it waits on the human, while the session has an open question, becomes `decision` with that card. When
+the human answers, every line on the card, and every line that still says it waits while no question of the
+session is open, turns `working` with "Antwort da: <labels>" (a card he put away unanswered: "Ohne Antwort
+weggelegt"). The connector's own line goes with `close_card` or `withdraw_card`, or when the agent sets a line of
+its own for the card; a final option makes it `done`.
+
 ## What is where
 
 | File | What |

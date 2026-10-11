@@ -85,7 +85,7 @@ Move a decided card to Done after acting on it, with a one-line summary. The ans
 
 ## set_status
 
-Set one status line (one per work stream or subagent): decision (red, pass the card_id), working (yellow), done (green). Update it when its state changes.
+Set one status line (one per work stream or subagent): decision (red, pass the card_id), working (yellow), done (green). Update it when its state changes. Waiting on the human: state decision with card_id. Filing a card links the session's line by itself; the answer turns it working with what he chose.
 
 ## clear_status
 
