@@ -24,12 +24,13 @@ struct SessionScreen: View {
   @Environment(\.horizontalSizeClass) private var hSize
   /** The view is at the newest message: it then follows what comes in, the keyboard and the composer's height. Only
    *  his own scrolling takes it away from there (read when a scroll ends), never a change of the content's height. */
-  @State private var atBottom = true
+  /** At the end (it follows what comes in) or away, with the "N new" count (ChatFollow, TrommiClient). */
+  @State private var follow = ChatFollow()
+  private var atBottom: Bool { follow.atBottom }
   @State private var userScrolling = false
   /** He has scrolled here: only then do earlier pages load by themselves (the top row also appears for a moment while
    *  a chat opens, and the load then moved the view away from the newest message, build 20). */
   @State private var touched = false
-  @State private var unseen = 0
   @State private var lastCount = 0
   @State private var loadingOlder = false
   @State private var topId: String?
@@ -74,10 +75,14 @@ struct SessionScreen: View {
               if prev == nil ? !older : !sameDay(prev!.ts, m.ts) { DayLine(ts: m.ts) }
               row(m, prev: prev, askAt: askAt, freshIds: freshIds, agent: a)
                 .id(m.id)
+                // the newest message seen: what came in is no longer new
+                .onScrollVisibilityChange(threshold: 0.3) { if $0 && m.id == msgs.last?.id { follow.sawNewest() } }
             }
             ForEach(permissions) { c in DeskRow(card: c, agent: a, inSession: true).padding(.vertical, 6) }
             SessionStatus(agent: a, tasks: tasks, messages: all)
             Color.clear.frame(height: 1).id("bottom")
+              // the end on screen, however it got there (his scroll, the keyboard, a taller composer): nothing is new
+              .onScrollVisibilityChange(threshold: 0.01) { if $0 { follow.reachedEnd() } }
           }
           .padding(.horizontal, 14).padding(.top, 6)
           .frame(maxWidth: 760).frame(maxWidth: .infinity)
@@ -89,8 +94,7 @@ struct SessionScreen: View {
           if userScrolling { touched = true }
           if new == .animating { return }   // (on its way, e.g. to a new message: where it lands is read when it ends)
           let g = context.geometry
-          atBottom = g.contentOffset.y + g.containerSize.height - g.contentInsets.bottom >= g.contentSize.height - 80
-          if atBottom { unseen = 0 }
+          follow.scrolled(toEnd: Double(g.contentSize.height - (g.contentOffset.y + g.containerSize.height - g.contentInsets.bottom)))
         }
         // at the newest message it stays there: when the content grows (a message, a picture that loads, rows measured
         // late), and when the keyboard or a taller composer takes room at the bottom
@@ -104,14 +108,13 @@ struct SessionScreen: View {
         .onChange(of: all.count) { old, new in
           if new > old {
             if window < old { window += new - old }
-            if atBottom || all.last?.from == "user" { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
-            else { unseen += new - old }
+            if follow.arrived(new - old, mine: all.last?.from == "user") { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
           }
         }
         .overlay(alignment: .bottom) {
-          if unseen > 0 && !atBottom {
-            Button { atBottom = true; withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }; unseen = 0 } label: {
-              HStack(spacing: 6) { Text(unseen == 1 ? "1 new" : "\(unseen) new").font(Face.text(14, .semibold)); Image(systemName: "arrow.down") }
+          if follow.unseen > 0 && !atBottom {
+            Button { follow.reachedEnd(); withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
+              HStack(spacing: 6) { Text(follow.unseen == 1 ? "1 new" : "\(follow.unseen) new").font(Face.text(14, .semibold)); Image(systemName: "arrow.down") }
                 .foregroundStyle(Ink.fg).padding(.horizontal, 14).padding(.vertical, 8).glass(Capsule(), interactive: true)
             }.padding(.bottom, 8)
           }
@@ -120,13 +123,13 @@ struct SessionScreen: View {
           // the composer stays at the bottom (Messages, WhatsApp): a tap in it brings the keyboard; no tab bar in a chat
           VStack(spacing: 0) {
             SessionLinkNote(agent: a, messages: all)
-            Composer(placeholder: composeWords(a), agent: a.id, onSent: { atBottom = true; withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } })
+            Composer(placeholder: composeWords(a), agent: a.id, onSent: { follow.reachedEnd(); withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } })
           }
         }
         // the top row: back, the session's name as a glass pill (its menu), "⋯"; no bar, a soft edge above and below
         .pushedPills { header(a, d) } trailing: { more(a, d, freshCount: fresh.count) }
         .overlay(alignment: .top) { if let acc = usageOf(model, a) { UsageStrip(acc: acc).padding(.top, 58) } }
-        .onAppear { lastCount = all.count; atBottom = true; proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
+        .onAppear { lastCount = all.count; follow.reachedEnd(); proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
         // the speed run (Perf.swift SpeedScript): up through the drawn messages (300 at most) and back
         .onChange(of: model.perfScroll) { _, _ in
           guard msgs.count > 100 else { return }
@@ -165,7 +168,7 @@ struct SessionScreen: View {
     guard here else { loadOlder(proxy, first: first); return }
     guard !loadingOlder else { return }
     loadingOlder = true
-    atBottom = false   // (the view stays with the message that was at the top, not with the newest)
+    follow.left()   // (the view stays with the message that was at the top, not with the newest)
     window += SessionScreen.page
     Task { @MainActor in
       await Task.yield()
@@ -176,7 +179,7 @@ struct SessionScreen: View {
   private func loadOlder(_ proxy: ScrollViewProxy, first: String?) {
     guard !loadingOlder else { return }
     loadingOlder = true
-    atBottom = false   // (the view stays with the message that was at the top, not with the newest)
+    follow.left()   // (the view stays with the message that was at the top, not with the newest)
     Task {
       await model.loadOlder(agent: agentId)
       // keep the message that was at the top where it was
