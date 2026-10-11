@@ -175,7 +175,11 @@ export function register(t) {
     // its own, and Push. The agents are Settings · Agents (agents.mjs). ----
     const devName = d => d.device_name || (d.device_role === 'human' ? 'Device' : 'Agent')
     const devIcon = d => (d.device_role !== 'human' ? sk('terminal') : /phone|ipad|ios|android/i.test(`${d.device_name ?? ''} ${d.platform ?? ''}`) ? art('phone') : sk('laptop'))
-    const devState = d => (!d.is_active ? 'removed' : d.is_me ? 'this device' : d.is_online ? 'online' : 'away')
+    // A device of yours that never finished signing in: it came into the room (a login that hung or was given up)
+    // and never named itself, which every device does as soon as it is in. It holds no KeyPackage either, so every
+    // new session of the account is refused while it is there: offered for removal.
+    const unfinished = d => d.is_active && !d.is_me && d.device_role === 'human' && !d.device_name && !d.is_online
+    const devState = d => (!d.is_active ? 'removed' : d.is_me ? 'this device' : unfinished(d) ? 'never finished signing in' : d.is_online ? 'online' : 'away')
     const onlineDot = on => html`<i class="set-dot" data-online="${on ? 'yes' : 'no'}"></i>`
     const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${devName(d)}</b><small class="room-fp" title="Key fingerprint from the signed member list">${fp(d)}</small></span><span class="set-detail">${d.is_active ? onlineDot(d.is_online || d.is_me) : ''}${devState(d)}</span>`
     // (.room-device: one per device listed, as the end-to-end runs count them)
@@ -188,8 +192,9 @@ export function register(t) {
       const order = (a, b) => a.added_entry_number - b.added_entry_number
       const people = all.filter(d => d.is_active && d.device_role === 'human').sort(order)
       const gone = all.filter(d => !d.is_active).sort(order)
+      const stuck = isHuman() ? people.filter(unfinished) : []
       return {
-        people: String(html`<div class="set-group" id="room-people">${people.map(member)}</div>`),
+        people: String(html`<div class="set-group" id="room-people">${people.map(member)}</div>${stuck.length ? html`<form method="post" action="/devices/remove-unfinished" class="set-group" id="devices-unfinished">${stuck.map(d => html`<input type="hidden" name="device_id" value="${d.device_id}">`)}<button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>Remove ${stuck.length === 1 ? 'the device' : `the ${stuck.length} devices`} that never finished signing in</b><span class="set-detail"></span><span></span></button></form><p class="set-note" id="devices-unfinished-note">A login that hung or was given up leaves a device behind that never came. While it is there, new sessions can't be opened.</p>` : ''}`),
         gone: String(gone.length ? html`<div class="set-group" id="room-gone">${setRow({ href: '/settings/devices/removed', icon: sk('archive'), word: 'Removed', detail: String(gone.length), id: 'devices-removed' })}</div>` : html`<div id="room-gone" hidden></div>`),
       }
     }
@@ -226,6 +231,12 @@ ${canRemove ? html`<form method="post" action="/devices/remove" class="set-group
       const d = m().members.get(decodeURIComponent(match[1]))
       if (!d) return t.redirect(res, '/settings/devices')
       page(req, res, `${devName(d)} · Devices`, deviceMain(d), { view: 'settings' })
+    })
+    t.post(/^\/devices\/remove-unfinished$/, async ({ req, res, form }) => {
+      // (only what is still one of them when the form comes: a device that named itself meanwhile stays)
+      const ids = form.getAll('device_id').map(String).filter(id => { const d = m().members.get(id); return d && unfinished(d) })
+      try { if (ids.length) await client.removeDevices(ids) } catch (err) { return page(req, res, 'Devices', devicesMain(`Not removed: ${sayError(err)}`), {}, 422) }
+      t.redirect(res, '/settings/devices')
     })
     t.post(/^\/devices\/remove$/, async ({ req, res, form }) => {
       const id = String(form.get('device_id'))
@@ -697,6 +708,7 @@ const accountError = err => ({
   'rate-limited': 'Too many tries. Wait a few minutes.', 'too-many': 'Too many. Try again later.', 'weak-password': 'At least 12 characters.', 'bad-email': 'That is not an email address.',
   'room-exists': 'This browser is logged in already.', 'bad-recovery-code': 'This code does not fit this account.',
   'account-exists': 'This account has a login already.', 'account-changed': 'Changed on another device. Try again.',
+  stalled: 'Logging in takes too long. Check your connection and try again.',
   'no-prf': 'This passkey can\'t unlock Trommi here.', 'passkey-cancelled': 'No passkey used.', 'passkey-aborted': 'No passkey used.', 'passkey-exists': 'This passkey is added already.',
   'passkey-failed': 'The passkey did not work. Try again.', 'bad-passkey': 'That passkey was not accepted. Try again.', 'last-way-in': 'This is your only way in. Add a password or another passkey first.',
   'no-password': 'This account has no password.',
@@ -933,6 +945,8 @@ export async function roomScreen({ start, hub, openError = null, demo = '' }) {
   const on = (sel, ev, fn) => root.querySelector(sel)?.addEventListener(ev, fn)
   const wireBack = () => on('#room-home', 'click', e => { e.preventDefault(); history.replaceState(null, '', '/'); welcome() })
   const say = (error, field = null) => { const p = root.querySelector('#ob-error'); if (p) p.textContent = error; if (field) { field.setAttribute('aria-invalid', 'true'); field.focus() } }
+  // A sign-in's progress on its busy button ("Catching up 1,234 of 5,000…"), while the button is still busy.
+  const busyWord = (form, word) => { const b = form.querySelector('button[type="submit"].is-busy'); if (b) b.textContent = word }
   const busy = (form, word) => { const b = form.querySelector('button[type="submit"]'); b.disabled = true; b.classList.add('is-busy'); b.textContent = word; say('') }
   // The passkey button of the login screen while its prompt is up, and after.
   const keyBusy = word => { const b = root.querySelector('#way-passkey'); if (b) { b.disabled = true; b.classList.add('is-busy'); b.querySelector('span').textContent = word } }
@@ -1132,7 +1146,8 @@ ${pk || offer.off ? '' : NO_PASSKEYS}
         if (!a.prf) return loginFlow(NO_PRF_HERE, 'passkey')
         keyBusy('Logging in…')
         say('')
-        const { client } = await (await account()).loginWithPasskey({ hub_url: hub, assertion: a, device_name, client: CLIENT })
+        const A = await account()
+        const { client } = await A.loginWithPasskey({ hub_url: hub, assertion: a, device_name, client: CLIENT }, step => keyBusy(A.signInWords(step)))
         await done(client)
       } catch (err) {
         if (err.code === 'passkey-aborted' || !root.querySelector('#login-form')) return
@@ -1176,7 +1191,7 @@ ${pk || offer.off ? '' : NO_PASSKEYS}
       if (!pw.value) return say('Enter your password.', pw)
       busy(form, 'Logging in…')
       try {
-        const { client } = await f.A.loginWithPassword({ hub_url: hub, account: f.text, password: pw.value, device_name, client: CLIENT })
+        const { client } = await f.A.loginWithPassword({ hub_url: hub, account: f.text, password: pw.value, device_name, client: CLIENT }, step => busyWord(form, f.A.signInWords(step)))
         await done(client)
       } catch (err) { console.warn(err); if (err.code === 'room-exists') return roomExists(); idle(form); say(accountError(err), form.elements.password) }
     })
@@ -1211,7 +1226,7 @@ ${offer.get ? html`<p class="ob-alt ob-way"><button type="button" class="ob-link
       if (passkey) {
         busy(form, 'Opening…')
         try {
-          const { client } = await f.A.recoverWithKit({ hub_url: at, account: f.text, words: words.value, device_name, client: CLIENT })
+          const { client } = await f.A.recoverWithKit({ hub_url: at, account: f.text, words: words.value, device_name, client: CLIENT }, step => busyWord(form, f.A.signInWords(step)))
           newWayFlow(client, words.value)
         } catch (err) { console.warn(err); if (err.code === 'room-exists') return roomExists(); idle(form); say(missed(err, f.named)) }
         return

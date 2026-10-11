@@ -27,7 +27,8 @@ import { fileURLToPath } from 'node:url'
 import { startFakeHub } from '../stand-in/hub.mjs'
 import { hubReaders } from '../stand-in/core.ts'
 import { AgentStandIn } from '../stand-in/agent.ts'
-import { rooms, storage } from '../client/helpers.mjs'
+import { core as testCore, rooms, storage } from '../client/helpers.mjs'
+import { Hub } from '../../../app/web/core/hub.ts'
 import { buildApp, main, openProfile, run, serveApp, sleep, standInWorker, TMP, until, watch } from './harness.mjs'
 import * as ui from './ui.mjs'
 
@@ -739,12 +740,35 @@ export const steps = [
     await D.until("document.querySelector('#ob-error')?.textContent.trim()", 'the refusal of a wrong password', 30000)
     check(await D.js("return document.querySelector('#ob-error').textContent") === 'Wrong email or password.', 'the sentence for a wrong password', await D.js("return document.querySelector('#ob-error').textContent"))
     await D.type('#login-form input[name=password]', ctx.password)
+    // what the button says while it signs in: how far it is, never only "Logging in…" (kept as it changes)
+    await D.js("window.__words = []; const b = document.querySelector('#login-form button[type=submit]'); new MutationObserver(() => window.__words.push(b.textContent)).observe(b, { childList: true, characterData: true, subtree: true }); return 1")
     await D.click('#login-form button[type=submit]')
     await ui.live(D, 'the new profile live', 60000)
+    const words = await D.js('return window.__words ?? []').catch(() => [])
+    check(words.some(w => /^Catching up [\d,]+ of [\d,]+…$/.test(w)), 'the button said how far the sign-in was ("Catching up … of …")', words)
     await D.until(`document.getElementById('row-${ctx.first}')`, 'the open question on its Desk', 60000)
     check(await D.js(`return document.querySelector('#row-${ctx.first} .inbox-question').textContent.includes('Which database?')`), 'it reads the question (history)')
     await D.shot('standin-23-password-login')
     })
+  }],
+
+  ['a device that never finished signing in (it came into the room and never named itself): Devices names it, one tap removes it', async ctx => {
+    const { check } = ctx.run
+    // the hung login of another browser: the room joined with the code the password opens, then nothing more
+    const C = await testCore(), email = C.normaliseEmail(ctx.email), keys = C.passwordKeys(email, ctx.password)
+    const answer = await new Hub({ hub_url: ctx.fake.url, client_name: null }).login(email, keys.authKey)
+    const room = answer.rooms[0]
+    const code = C.openRecoveryCode(keys.wrapKey, room.room_id, 'password', null, room.sealed_copy)
+    const { client: ghost } = await (await rooms()).joinWithCode({ storage: storage('ghost'), hub_url: ctx.fake.url, room_id: Buffer.from(room.room_id).toString('hex'), code })
+    await ghost.stop()
+    const A = await ctx.profile('A')
+    await ui.openSettingsPage(A, 'devices')
+    await A.until("document.getElementById('devices-unfinished')", 'the offer to remove the device that never came', 30000)
+    check(await A.js("return [...document.querySelectorAll('#room-people .room-device')].some(r => /never finished signing in/.test(r.innerText))"), 'its row says it never finished signing in')
+    await A.shot('standin-23b-unfinished-device')
+    await A.click('#devices-unfinished button[type=submit]')
+    await A.until("location.pathname === '/settings/devices' && !document.getElementById('devices-unfinished') && ![...document.querySelectorAll('#room-people .room-device')].some(r => /never finished/.test(r.innerText))", 'the device is gone from your devices', 30000)
+    await ui.openDesk(A)
   }],
 
   ['the Trommi menu\'s Log out: a logged-in profile opens the menu, Log out, is asked once, lands on the start screen with nothing kept', async ctx => {

@@ -35,6 +35,7 @@ import { Hub, HubError } from './hub.ts'
 import type { AccountCopies, AccountProof, AccountView, Kdf, KitForm, KitPart, LoginAnswer, NewAccount } from './hub.ts'
 import { b64u, hex, unb64u } from './ids.ts'
 import { foundRoom, joinWithCode } from './room.ts'
+import type { SignInStep } from './room.ts'
 import type { DeviceOptions } from './room.ts'
 import type { Client } from './client.ts'
 import { accountName } from './account-name.ts'
@@ -71,7 +72,8 @@ export interface PasskeyAssertion { credential_id: Uint8Array; authenticator_dat
  *  `passkeyChallengeFor` (two minutes, one use; its prf output opens the code). */
 export type Unlock = { password: string } | { passkey: { credential_id: Uint8Array; prf: Uint8Array; authenticator_data: Uint8Array; client_data_json: Uint8Array; signature: Uint8Array } } | { words: string }
 /** What a step that makes this device's room takes besides its own fields; room.ts reads it, this module hands it on. */
-type Opening = DeviceOptions & { hub_url: string }
+/** `progress`: how far a sign-in with the code is (room.ts `SignInStep`), for the screen that waits on it. */
+type Opening = DeviceOptions & { hub_url: string; progress?: ((step: SignInStep) => void) | null }
 
 /** A refusal of this module's own. Its codes: `no-account`, `no-password`, `no-room`, `bad-argument`, `bad-passkey`,
  *  `wrong-login` (a passkey that is not the account's), `needs-email` (a password on an account without e-mail),
@@ -265,7 +267,8 @@ export async function loginWithPasskey(o: Opening & { assertion: PasskeyAssertio
  *  for the kit's). The code must then be the one the room's state names (8.4, room.ts): an older copy joins nothing. */
 async function signIn(core: Core, device: Opening, room: LoginAnswer['rooms'][number], way: Way): Promise<{ client: Client }> {
   const code = open(core, way, room.room_id, room.sealed_copy)
-  try { return await joinWithCode({ ...device, room_id: hex(room.room_id), code }) } finally { zero(code) }
+  // (the session groups are joined behind the sign-in: nothing here waits for them)
+  try { const { client } = await joinWithCode({ ...device, room_id: hex(room.room_id), code }); return { client } } finally { zero(code) }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

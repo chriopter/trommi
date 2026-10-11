@@ -50,8 +50,10 @@ test('a room older than one slice: a new device signs in with the code, in slice
   await age(a)
   const { R, calls } = await counted()
   const since = fake.requests.length
-  const { client: c } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
+  const { client: c, sessions } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
   t.after(() => c.stop().catch(() => {}))
+  // (the session groups are joined behind the sign-in)
+  assert.deepEqual((await sessions).not_joined, [])
   assert.ok(commitPages(fake, since).length >= 2, 'the room group\'s log was read in pages')
   const room = calls.filter(([name]) => name === 'codeCheckSlice')
   assert.ok(room.length >= 2 && room.every(([, n, code]) => n <= 256 && code === null), `the room was checked in slices: ${JSON.stringify(room)}`)

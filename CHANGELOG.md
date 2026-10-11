@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- Settings → Devices names a device of yours that never finished signing in, and removes it with one tap
+  (while it is there, new sessions can't be opened).
 - iPhone: the Live Activity and Dynamic Island show the most urgent question with its two answers; answer it right
   there, without opening the app.
 - The connector updates itself while it runs: no reconnect after an update.
@@ -27,6 +29,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - A Codex session between turns shows as "on its next turn", never as gone or not listening.
 
 **Fixed**
+- Web: logging in to a big account shows how far it is ("Catching up … of …"), opens before every session is
+  joined, and a stuck login stops with a message instead of spinning.
 - iPhone: logging in to a big account no longer hangs at "Logging in…": the button shows how far it is, the
   sessions join after you are in, and a stuck login stops with a message.
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.

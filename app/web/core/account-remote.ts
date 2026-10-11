@@ -24,17 +24,31 @@ type Opens = 'createAccount' | 'createAccountWithPasskey' | 'loginWithPassword' 
 
 /** A step that makes a room, in a new core worker. `onEvent`: what the worker says before it is done; what it
  *  returns (or throws) is the page's answer to that event. */
-async function opening<T extends Opened>(fn: Opens, args: Args, onEvent?: (event: string, data: unknown) => unknown): Promise<T> {
+async function opening<T extends Opened>(fn: Opens, args: Args, onEvent?: (event: string, data: unknown) => unknown, stall_ms?: number): Promise<T> {
   if (typeof Worker !== 'function') throw Object.assign(new Error('this browser runs no workers'), { code: 'worker-failed' })
-  const options = { client: args.client ?? null, ...(onEvent ? { onEvent } : {}) }
+  const options = { client: args.client ?? null, ...(onEvent ? { onEvent } : {}), ...(stall_ms ? { stall_ms } : {}) }
   return await accountInWorker(fn, args, options) as unknown as T
 }
+/** How far a sign-in with the code is (room.ts `SignInStep`), as the worker tells it. */
+export type SignInStep = { step: 'reading' } | { step: 'checking'; done: number; total: number } | { step: 'joining' }
+/** The words a step says on the sign-in's button: "Catching up 1,234 of 5,000…". */
+export function signInWords(p: SignInStep): string {
+  if (p.step === 'reading') return 'Reading your account…'
+  if (p.step === 'joining') return 'Joining…'
+  const n = (v: number): string => v.toLocaleString('en-US')
+  return `Catching up ${n(Math.min(p.done, p.total))} of ${n(p.total)}…`
+}
+/** A sign-in that says nothing for this long is given up (`stalled`): it never spins for ever. */
+export const SIGN_IN_STALL_MS = 120_000
+/** A step that signs in with the code: its progress goes to `onStep`, and silence for `SIGN_IN_STALL_MS` ends it. */
+const signingIn = <T extends Opened>(fn: Opens, args: Args, onStep?: ((step: SignInStep) => void) | null): Promise<T> =>
+  opening<T>(fn, args, (event, data) => { if (event === 'signin-progress') onStep?.(data as SignInStep) }, SIGN_IN_STALL_MS)
 export const createAccount = (args: Args) => opening<Opened & { kit: Kit }>('createAccount', args)
 export const createAccountWithPasskey = (args: Args) => opening<Opened & { kit: Kit }>('createAccountWithPasskey', args)
-export const loginWithPassword = (args: Args) => opening<Opened>('loginWithPassword', args)
-export const loginWithPasskey = (args: Args) => opening<Opened>('loginWithPasskey', args)
-export const recoverWithKit = (args: Args) => opening<Opened>('recoverWithKit', args)
-export const resetPassword = (args: Args) => opening<Opened & { kit: Kit }>('resetPassword', args)
+export const loginWithPassword = (args: Args, onStep?: ((step: SignInStep) => void) | null) => signingIn<Opened>('loginWithPassword', args, onStep)
+export const loginWithPasskey = (args: Args, onStep?: ((step: SignInStep) => void) | null) => signingIn<Opened>('loginWithPasskey', args, onStep)
+export const recoverWithKit = (args: Args, onStep?: ((step: SignInStep) => void) | null) => signingIn<Opened>('recoverWithKit', args, onStep)
+export const resetPassword = (args: Args, onStep?: ((step: SignInStep) => void) | null) => signingIn<Opened & { kit: Kit }>('resetPassword', args, onStep)
 // The light parts of a passkey ceremony, on the page beside navigator.credentials (passkey.ts).
 export const passkeyChallenge = (args: { hub_url: string; client?: string | null }): Promise<{ challenge: string; account: string; user_handle: string }> => challengeFromHub(args)
 export const passkeyPrfInput = async (): Promise<Uint8Array<ArrayBuffer>> => PASSKEY_PRF_INPUT
