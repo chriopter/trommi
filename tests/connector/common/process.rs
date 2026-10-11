@@ -168,6 +168,15 @@ impl Seat {
         Mcp::start(self.command(&[])).await
     }
 
+    /// Starts the MCP server with these variables set besides the seat's.
+    pub async fn serve_with(&self, env: &[(&str, &str)]) -> Mcp {
+        let mut command = self.command(&[]);
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        Mcp::start(command).await
+    }
+
     /// Starts the MCP server as Claude Code does, through the launcher, from `program` (a copy of the binary
     /// that a test may replace).
     pub async fn serve_launched(&self, program: &std::path::Path, env: &[(&str, &str)]) -> Mcp {

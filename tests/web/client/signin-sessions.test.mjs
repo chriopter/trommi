@@ -22,7 +22,8 @@ test('a sign-in with the code says how far it is, stocks its KeyPackages at once
   const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c', progress: s => steps.push(s) })
   t.after(() => c.stop().catch(() => {}))
   assert.deepEqual(steps[0], { step: 'reading' })
-  assert.ok(steps.some(s => s.step === 'reading' && s.total === sessions && s.done === sessions), `the sessions' reading is told group by group: ${JSON.stringify(steps)}`)
+  // (only the room group is read and checked before the join, 8.5: no session's GroupInfos or Commits)
+  assert.ok(!steps.some(s => s.step === 'reading' && s.total), `no session is read before the join: ${JSON.stringify(steps)}`)
   assert.ok(steps.some(s => s.step === 'checking' && s.total > 0 && s.done === s.total), `the check reached its total: ${JSON.stringify(steps)}`)
   assert.deepEqual(steps.at(-1), { step: 'joining' })
   assert.equal(roomOf(fake).key_packages.size, kpBefore + 1, 'the new device has KeyPackages at the hub as soon as it is in')
@@ -62,7 +63,7 @@ test('a session join the core answers busy (a join of the group on its way, or t
         const d = await base.createDevice(store)
         return new Proxy(d, { get(target, name) {
           const f = target[name]
-          if (name !== 'joinSessionChecked') return typeof f === 'function' ? f.bind(target) : f
+          if (name !== 'joinSessionCheckedKeys') return typeof f === 'function' ? f.bind(target) : f
           return async (...args) => { if (busy > 0) { busy--; throw Object.assign(new Error('busy'), { injected: true }) } return f.apply(target, args) }
         } })
       },
@@ -76,6 +77,7 @@ test('a session join the core answers busy (a join of the group on its way, or t
   const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
   t.after(() => c.stop().catch(() => {}))
   const done = await joining
-  assert.equal(busy, 0, 'the core said busy twice')
+  // (another human device may add it meanwhile, 5.2.7: then it is a member before the second busy is asked for)
+  assert.ok(busy < 2, 'the core said busy, and the join was tried again')
   assert.deepEqual([done.joined, done.not_joined.map(n => n.code)], [1, []])
 })

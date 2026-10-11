@@ -22,6 +22,9 @@ struct DeskScreen: View {
   @State private var revealed = false
   /** What of the first screen is left under the stack on an iPhone: the heading of Off your mind, above the tab pill. */
   static let foldHint: CGFloat = 116
+  static let space = "desk-stack"
+  /** The stack's height (the Desk's questions and what stands above them), read off where Off your mind begins. */
+  @State private var stackHeight: CGFloat = 0
   var body: some View {
     let _ = RenderCount.body("DeskScreen")
     let _ = model.version
@@ -39,7 +42,9 @@ struct DeskScreen: View {
         // (the demo has no hub and no catch-up to wait for: its room is all there from the start)
         if let v = v, let d = model.desk, model.demo || !v.units.isEmpty || model.room?.cursor ?? 0 > 0 || model.room?.restored == true {
           let _ = StartClock.desk(cards: v.fresh.count, restored: model.room?.restored ?? false)
-          VStack(alignment: .leading, spacing: 12) {
+          // The stack's parts are rows of this lazy stack (a desk of a thousand questions drew and laid out every row
+          // on every change). Its height, for the fold, is read where Off your mind begins: that row stands after the
+          // stack, one spacing below it, pushed down by `fill` so that a short stack still reaches the fold.
           head(v)
           // a long catch-up says how far it is (what was settled elsewhere meanwhile is already off the Desk)
           if let r = model.room, r.behind {
@@ -48,7 +53,7 @@ struct DeskScreen: View {
           if !v.cut.isEmpty { CutSlip(units: v.cut) }
           let cards = v.deskCards()
           ForEach(runs(cards, d)) { run in
-            VStack(spacing: 10) { ForEach(run.cards) { c in DeskRow(card: c, agent: d.byAgent[c.agent]) } }
+            VStack(spacing: 10) { ForEach(run.cards) { c in DeskRow(card: c, agent: d.byAgent[c.agent]).equatable() } }
           }
           if v.fresh.isEmpty && v.reads.isEmpty && !v.units.isEmpty {
             VStack(spacing: 10) {
@@ -56,14 +61,23 @@ struct DeskScreen: View {
               Text("Questions land here.").font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
             }.frame(maxWidth: .infinity).padding(.vertical, 28)
           }
-          }
-          .frame(minHeight: tucked ? max(0, geo.size.height - DeskScreen.foldHint) : nil, alignment: .top)
-          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
-          OffList(view: v, full: false, chevron: tucked ? (revealed ? "chevron.down" : "chevron.up") : nil)
+          let minStack = tucked ? max(0, geo.size.height - DeskScreen.foldHint) : 0
+          let fill = max(0, minStack - stackHeight)
+          VStack(spacing: 0) { OffList(view: v, full: false, chevron: tucked ? (revealed ? "chevron.down" : "chevron.up") : nil) }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, fill)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(DeskScreen.space)).minY } action: { y in
+              // (the stack starts one spacing below the top marker and ends one spacing above this row, whose frame
+              // here begins above its fill)
+              let h = max(0, y - 12 - 12)
+              if abs(h - stackHeight) > 0.5 { stackHeight = h }
+              pageHeight = max(h, minStack)
+            }
         } else {
           DeskWaiting().frame(maxWidth: .infinity).padding(.top, 80)
         }
       }
+      .coordinateSpace(.named(DeskScreen.space))
       // the last row scrolls clear of the floating tab bar
       .padding(.horizontal, 16).padding(.bottom, 120)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
@@ -262,11 +276,30 @@ func plainText(_ s: String) -> String {
 }
 let BARE: Set<String> = ["yes", "no", "ok", "okay", "allow", "deny", "ja", "nein"]
 
-struct DeskRow: View {
-  @EnvironmentObject var model: BoardModel
+/**
+ * A question on the Desk. Like MessageView it does not observe the model (every change of the board would build all
+ * rows again, with their drawings); it is Equatable over what it shows and what its tiles act on (`look`).
+ */
+struct DeskRow: View, Equatable {
+  private var model: BoardModel { BoardModel.shared }
   let card: DeskCard
   let agent: Agent?
   var inSession = false
+  private let look: Int
+  init(card: DeskCard, agent: Agent?, inSession: Bool = false) {
+    self.card = card; self.agent = agent; self.inSession = inSession
+    look = DeskRow.look(card, agent)
+  }
+  static func == (a: DeskRow, b: DeskRow) -> Bool { a.card.id == b.card.id && a.inSession == b.inSession && a.look == b.look }
+  static func look(_ c: DeskCard, _ a: Agent?) -> Int {
+    var h = Hasher()
+    h.combine(c.id); h.combine(c.number); h.combine(c.kind); h.combine(c.status); h.combine(c.urgency); h.combine(c.title); h.combine(c.version); h.combine(c.versionHash)
+    for o in c.options { h.combine(o.key); h.combine(o.label); h.combine(o.detail); h.combine(o.final); h.combine(o.raw) }
+    h.combine(c.multiple); h.combine(c.recommended); h.combine(c.choices); h.combine(c.unsupported); h.combine(c.withAgent); h.combine(c.pending); h.combine(c.snoozedUntil)
+    h.combine(c.read); h.combine(c.trusted); h.combine(c.settled); h.combine(c.contentState); h.combine(c.answeredVersion); h.combine(c.revised); h.combine(c.decided); h.combine(c.agent)
+    if let a = a { h.combine(a.id); h.combine(a.name); h.combine(a.mark); h.combine(a.icon); h.combine(a.hue) }
+    return h.finalize()
+  }
   var body: some View {
     let _ = RenderCount.body("DeskRow")
     let hue = agent?.hue ?? 162
@@ -387,7 +420,7 @@ struct DeskFold: ViewModifier {
 
 /** The ways out of a row, held (desk.mjs rowSheet): Later, Reverse, Duck it, What??, Shred, Copy, Open. */
 struct RowMenu: View {
-  @EnvironmentObject var model: BoardModel
+  private var model: BoardModel { BoardModel.shared }   // (actions only: DeskRow)
   let card: DeskCard
   var body: some View {
     Button { model.path.append(.card(card.id)) } label: { Label("Open", systemImage: "doc.text") }
@@ -415,7 +448,7 @@ struct UnsupportedLine: View {
 
 /** The answers of a row (ui.mjs tiles). */
 struct Tiles: View {
-  @EnvironmentObject var model: BoardModel
+  private var model: BoardModel { BoardModel.shared }   // (actions only: DeskRow)
   let card: DeskCard
   let hue: Int
   var body: some View {

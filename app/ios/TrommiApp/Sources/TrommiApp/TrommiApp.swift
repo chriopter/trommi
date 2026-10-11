@@ -10,6 +10,7 @@ import UIKit
 import TrommiClient
 import TrommiCoreLive
 import os
+import Combine
 
 /** Cold start to the first rendered Desk (os log "trommi", category "timing"). */
 enum StartClock {
@@ -28,7 +29,8 @@ enum StartClock {
 
 @main
 struct TrommiApp: App {
-  @StateObject private var model = BoardModel.shared
+  // (held, not observed: the scene's body ran again on every change of the board; RootView observes the model)
+  private let model = BoardModel.shared
   @Environment(\.scenePhase) private var scenePhase
   #if canImport(UIKit)
   @UIApplicationDelegateAdaptor(PushDelegate.self) private var push   // Push.swift
@@ -38,14 +40,13 @@ struct TrommiApp: App {
   var body: some Scene {
     WindowGroup {
       RootView().environmentObject(model)
-        .preferredColorScheme(model.theme.scheme)
         .tint(Ink.accent)
       #if canImport(UIKit)
         .onAppear { push.model = model; push.ask() }
-        .onChange(of: model.phase) { _, p in if p == .board { push.ask() } }
+        .onReceive(model.$phase.dropFirst().removeDuplicates()) { p in if p == .board { push.ask() } }   // (as onChange: the scene does not observe the model)
       #endif
         .onChange(of: scenePhase) { _, p in model.scene(active: p == .active) }
-        .onAppear { PerfScript.runIfAsked(model); MegaScript.runIfAsked(model) }
+        .onAppear { PerfScript.runIfAsked(model); MegaScript.runIfAsked(model); SpeedScript.runIfAsked(model) }
         // universal links of app.trommi.com (Links.swift)
         .onOpenURL { model.open(url: $0) }
     }
@@ -197,6 +198,7 @@ final class BoardModel: ObservableObject {
 
   /** Passkeys are switched on (Passkeys.swift): the screens read this, so that they change when the probe says so. */
   @Published var passkeysOn = Passkeys.available
+
   init() {
     // (whether the domain names this app for its passkeys: read once per start, the screens follow; not for the
     // screenshot hooks below, which use no network)
@@ -213,11 +215,18 @@ final class BoardModel: ObservableObject {
       deskId = ALL_DESKS; tab = .chat; chatPath = []
       return
     }
+    // TROMMI_SPEED_FIXTURE=<path>: the speed run (Perf.swift SpeedScript) on that made-up room, no network
+    if let f = env["TROMMI_SPEED_FIXTURE"], !f.isEmpty {
+      startDemo(keep: false)
+      return
+    }
     if let screen = env["TROMMI_SCREEN"], !screen.isEmpty {
       if let t = env["TROMMI_THEME"].flatMap(ThemeMode.init(rawValue:)) { _theme = Published(initialValue: t) }
       _deskId = Published(initialValue: nil)
       startDemo(keep: false)
       openDemoScreen(screen)
+      // TROMMI_PAGE=<settings page>: that page of Settings over it (screenshots of a page the web has no state for)
+      if let page = env["TROMMI_PAGE"], !page.isEmpty { deskPath.append(.settings(page)) }
       #if canImport(ActivityKit) && os(iOS)
       // TROMMI_LIVE=1: the Live Activity with the demo's cards (LiveActivities.startForDemo)
       if env["TROMMI_LIVE"] == "1" { LiveActivities.startForDemo() }
@@ -253,8 +262,13 @@ final class BoardModel: ObservableObject {
       // a batch that changed nothing visible (a refresh with no news): no render at all
       if let r = room {
         let f = r.board.fingerprint
-        if f == lastFingerprint && r.live == live && r.board.newerCount == newer { PerfLog.line("skip: nothing visible changed"); return }
+        if f == lastFingerprint && r.live == live && r.board.newerCount == newer && desk?.board === (r.preview ?? r.board) { PerfLog.line("skip: nothing visible changed"); return }
         lastFingerprint = f
+      }
+      // (a fresh sign-in shows the hub's Desk until its first catch-up is through: Room.deskPreview)
+      if let r = room, !demo {
+        let shown = r.preview ?? r.board
+        if desk?.board !== shown { desk = DeskModel(board: shown); MegaScript.note(r.preview != nil ? "desk from the hub's list" : "desk from the board") }
       }
       PerfLog.time("desk.update") { desk?.update() }
       if let r = room {
@@ -634,7 +648,9 @@ final class BoardModel: ObservableObject {
   /** The web demo's room (Resources/Demo/fixture.json, its times moved to now): his own room rests meanwhile. */
   func startDemo(keep: Bool = true) {
     let chatList = !(ProcessInfo.processInfo.environment["TROMMI_CHATLIST"] ?? "").isEmpty
-    guard let raw = try? Data(contentsOf: DemoData.url("fixture.json")), let b = try? DemoFixture.board(chatList ? ChatListDemo.fixture(raw) : raw) else { error = "The demo is missing in this build."; return }
+    // (TROMMI_SPEED_FIXTURE: a big made-up room of tests/tools/mega-fixture.mjs instead, for the speed run, Perf.swift)
+    let file = ProcessInfo.processInfo.environment["TROMMI_SPEED_FIXTURE"].map { URL(fileURLWithPath: $0) } ?? DemoData.url("fixture.json")
+    guard let raw = try? Data(contentsOf: file), let b = try? DemoFixture.board(chatList ? ChatListDemo.fixture(raw) : raw) else { error = "The demo is missing in this build."; return }
     if keep && !demo { beforeDemo = (room, deskId) }
     liveTask?.cancel(); liveTask = nil
     room?.saveCache()
@@ -647,6 +663,24 @@ final class BoardModel: ObservableObject {
     phase = .board
     version &+= 1
   }
+  /** The speed run (Perf.swift SpeedScript): one batch of the demo's board seen, as changed() does for a room. */
+  func perfChanged() {
+    PerfLog.time("desk.update") { desk?.update() }
+    version &+= 1
+  }
+  /** The speed run: news gathered as changed() gathers a room's, at most one render every 80 ms. */
+  private var perfPending = false
+  func perfNews() {
+    if perfPending { return }
+    perfPending = true
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 80_000_000)
+      perfPending = false
+      perfChanged()
+    }
+  }
+  /** The speed run: a render with nothing changed (what every view that reads `version` costs). */
+  func perfBump() { version &+= 1 }
   /** Back to his own room (or to the sign-in when there is none). */
   func leaveDemo() {
     guard demo else { return }
@@ -1013,6 +1047,7 @@ struct RootView: View {
       }
     }
     .background(Ink.bg)
+    .preferredColorScheme(model.theme.scheme)
     // the demo's tag at the top of every screen, below the island: content starts under it, nothing covers it
     // (an iPad: floating at the foot, right; above it sat over the sidebar's desk box and the centred title)
     .overlay(alignment: .bottomTrailing) { if model.demo && !DemoData.storeShots && model.phase == .board && model.demoKit == nil { DemoTag().padding(.trailing, 24).padding(.bottom, 24) } }

@@ -175,6 +175,16 @@ export interface RoomInSteps {
   /** The Commits of the room group and of the sessions, ascending by change number; a new reading each call. */
   placed(): { next(): Promise<PlacedCommit | null> }
 }
+/** The room group alone, for a sign-in that checks the live session groups after it joined (8.5, `roomOnlyInSteps`). */
+export interface RoomOnlyInSteps {
+  start: ServedStart
+  end: ServedEnd
+  epoch: number
+  /** The live session groups, main sessions first: each read and checked after the sign-in (`sessionInSteps`). */
+  later: Uint8Array[]
+  /** The room group's Commits, ascending. */
+  placed(): { next(): Promise<PlacedCommit | null> }
+}
 export interface DeskObject {
   object_id: Uint8Array; group: Uint8Array; state: number; urgency: number; answered_at: number; owner: Uint8Array
   first_change: number; head_change: number; version: EnvelopeItem | null
@@ -1125,6 +1135,47 @@ export class Hub {
    * of `start` and `end` in the same order, with the epoch its current GroupInfo has. Nothing in the answer is
    * trusted (the core verifies all of it); here it is only checked for its shape and its size.
    */
+  /**
+   * `roomInSteps` for a sign-in that checks only the room group before it joins (8.5): everything of the room
+   * group, and the list of live session groups, none of them read. Each is read with `sessionInSteps` when it is
+   * checked and joined, after the sign-in.
+   */
+  async roomOnlyInSteps(opts: { anchorOf: (rows: Uint8Array[]) => { group: Uint8Array; epoch: number } }): Promise<RoomOnlyInSteps> {
+    if (!this.signer) wrong('this hub client has no signer: useSigner first')
+    const room = this.signer.room_id, budget = { bytes: CAP_SERVED }
+    const spend = (b: Uint8Array): Uint8Array => { if ((budget.bytes -= b.length) < 0) bad('a room larger than a device takes'); return b }
+    const current = await this.groupInfo(room)
+    const founding = current.epoch === 0 ? current : await this.groupInfo(room, 0)
+    const rows: Uint8Array[] = [], links: Uint8Array[] = []
+    for (let after = 0, more = true; more;) {
+      const page = await this.sealedKeys(after, 2000)
+      for (const r of page.rows) rows.push(spend(r.sealed_key))
+      for (const l of page.links) links.push(spend(l.recovery_link))
+      after = page.change
+      more = page.more
+    }
+    const anchor = opts.anchorOf(rows)
+    if (!same(anchor.group, this.signer.room)) wrong('the anchor is an epoch of the room group')
+    const anchored = spend((await this.groupInfo(room, ownInt(anchor.epoch, 'the anchor\'s epoch'))).group_info)
+    const live = (await this.roomGroups()).filter(g => g.live && g.kind !== 'room')
+    const later = (['main', 'helper'] as const).flatMap(kind => live.filter(g => g.kind === kind).map(g => g.group))
+    return {
+      start: { room, founding: spend(founding.group_info), anchor: anchored, rows, sessions: [] },
+      end: { current: spend(current.group_info), sessions: [], rows, links },
+      epoch: current.epoch,
+      later,
+      placed: () => {
+        const commits = this.groupCommits(room, current.epoch)
+        return { async next() { const c = await commits.next(); return c ? { group: room, commit: c } : null } }
+      },
+    }
+  }
+  /** One live session group for its check after the sign-in: its founding and current GroupInfos, the current epoch. */
+  async sessionInSteps(group: Uint8Array): Promise<{ founding: Uint8Array; current: Uint8Array; epoch: number }> {
+    const current = await this.groupInfo(group)
+    const founding = current.epoch === 0 ? current : await this.groupInfo(group, 0)
+    return { founding: founding.group_info, current: current.group_info, epoch: current.epoch }
+  }
   async roomInSteps(opts: { anchorOf: (rows: Uint8Array[]) => { group: Uint8Array; epoch: number }; read?: (done: number, total: number) => void }): Promise<RoomInSteps> {
     if (!this.signer) wrong('this hub client has no signer: useSigner first')
     const room = this.signer.room_id, budget = { bytes: CAP_SERVED }

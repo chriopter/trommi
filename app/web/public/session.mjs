@@ -17,7 +17,7 @@
 // A question never unfolds here: an open one stands in the conversation as its Desk row, whose text links to the
 // card's page; every other one is a quiet line that links there too.
 import { UNHEARD_MS, blockedOf, lineCard, linkOf, quietOf, shareControl, sharesLoaded } from './app.mjs'
-import { Controller, usageCompact, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
+import { Controller, agoShort, usageCompact, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
 const LIVE = 80               // so many of the newest messages are kept up to date by the live stream
 const PAGE = 40               // messages of one render: the page shows the latest, "Earlier" (or scrolling up) brings as many again
 const IN_VIEW = 14            // of them, rendered with the page (a phone shows fewer); the rest of the window right after its first paint
@@ -27,6 +27,7 @@ const MAX_FILES = 12                 // as the hub takes them in one message
 
 // ---- small pieces ----
 const ICONS = {
+  clock: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M12 7.6V12l2.9 1.9'],
   asked: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M9.6 9.7a2.5 2.5 0 1 1 3.7 2.2c-.8.45-1.3 1-1.3 1.9', 'M12 16.7v.1'],
   decided: ['M5 12.5l4.5 4.5L19 7.5'],
   done: ['M2.5 12.5l4 4 8-9', 'M12 16l.5.5 9-9.5'],
@@ -366,7 +367,7 @@ function sessionStatus(s, base, now = Date.now()) {
   const lines = s.tasks.filter(t => t.state !== 'done' || now - (t.updated ?? 0) < WORKING_WINDOW)
   return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
     const card = lineCard(t, s.model, s.cards, s.tasks)
-    const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? agoSpan(t.updated, 'status-ago') : ''}`
+    const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? html`<span class="status-when"><span data-short aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${ico('clock')}${agoSpan(t.updated, 'offscreen')}</span>` : ''}`
     // (on a phone only the title and the time; a tap opens the detail and the way to its question below, a second shuts it)
     const href = card ? questionPath(card, base) : ''
     return html`<div class="status-row" data-key="${t.agent}:${t.id}">${card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${href}" data-action="click->status-lines#toggle">${inner}</a>` : html`<p class="status-line" data-state="${t.state}" data-action="click->status-lines#toggle">${inner}</p>`}${t.detail || card ? html`<div class="status-more">${t.detail ? html`<p>${t.detail}</p>` : ''}${card ? html`<a class="status-open" data-nav href="${href}">Open the question →</a>` : ''}</div>` : ''}</div>`

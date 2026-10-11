@@ -43,4 +43,23 @@ final class DeskGateTests: XCTestCase {
     b.cards["ghost"]!.envelopeNumber = 70
     XCTAssertEqual(shown(b), ["open", "newer", "ghost"])
   }
+
+  /** The Desk of a fresh sign-in comes from the hub's list (Room.deskPreview): a card's newest version stands alone there. */
+  func testAPreviewTakesACardsNewestVersionAlone() {
+    let agent = String(repeating: "b", count: 64), sid = String(repeating: "c", count: 32), id = String(repeating: "1", count: 32)
+    func version3(_ b: Board) -> Bool {
+      let s = b.sessionOf(sid); s.agentDeviceIds = [agent]; s.everAgentIds = [agent]; s.agentDeviceId = agent
+      let rec = Rec(envelopeNumber: 9, envelopeHash: String(format: "%064x", 9), senderDeviceId: agent, senderRole: "agent", recipientDeviceId: nil, sentAt: 9, kind: KIND.OBJECT_VERSION,
+                    isHead: true, object: ObjectHead(objectId: id, objectState: 1, urgency: 1, answeredAt: 0), timelineKind: nil, timelineId: nil, sessionId: sid,
+                    content: ["object_type": "card", "object_version": 3, "previous_version_hash": .str(String(repeating: "7", count: 64)), "title": "Ship it?"], contentState: "ok", bind: nil,
+                    causal: Causal(senderDeviceId: agent, senderSequence: 9, sentAt: 9, lamport: 9), senderSequence: 9, epoch: 1)
+      var ch = Change()
+      return b.apply(rec, change: &ch).applied
+    }
+    XCTAssertFalse(version3(Board()), "the room's own board takes versions in order only")
+    let p = Board(); p.preview = true
+    XCTAssertTrue(version3(p))
+    XCTAssertEqual(p.cards[id]?.objectVersion, 3)
+    XCTAssertEqual(p.cards[id]?.title, "Ship it?")
+  }
 }
