@@ -102,7 +102,7 @@ try {
   await A.until("trommi.client.worker instanceof Worker && trommi.client.model.room.connection === 'live'", 'the room live in the core worker').then(() => check(true, 'the core runs in a worker, the room is live'), () => check(false, 'the core runs in a worker, the room is live'))
   await A.js("trommi.router.visit('/settings/account')")
   await A.until(`document.getElementById('account-email')?.textContent === '${EMAIL.toLowerCase()}'`, 'account in Settings').then(() => check(true, 'Settings shows the account email'), e => check(false, e.message))
-  check(await A.js("return document.querySelector('#account').textContent.includes('Make a new kit')"), 'Settings: kit made')
+  check(await A.js("return document.querySelector('#settings-way-kit .set-detail')?.textContent === 'made'"), 'Settings: kit made')
   await A.shot('e2e-2b-settings.png')
 
   // ---- A invites an agent from the empty Desk ("Invite your first agent"); the agent joins after the emoji are compared ----

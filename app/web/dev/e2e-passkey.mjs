@@ -148,9 +148,12 @@ try {
   const roomId = await A.js('return trommi.client.model.room.room_id')
 
   // ---- Settings -> Account ----
-  await A.js("trommi.router.visit('/settings/account')")
+  await A.js("trommi.router.visit('/settings/account/password')")
+  await A.until("document.querySelector('#password-none')", 'the password page')
+  check(await A.js("return !!document.querySelector('#pw-add') && !document.querySelector('#pw-change')"), 'Settings · Password: "Add a password" in place of "Change password"')
+  await A.js("trommi.router.visit('/settings/account/passkeys')")
   await A.until("document.querySelector('#passkeys .room-passkey')", 'the passkey in Settings')
-  check(await A.js(`return ${text('#passkeys .room-passkey b')} === 'Passkey' && /added .*not used yet|added .*used/.test(${text('#passkeys .room-passkey small')}) && !!document.querySelector('#password-none') && !!document.querySelector('#pw-add') && !document.querySelector('#pw-change')`), 'Settings: the passkey with its name, dates and kind; "Add a password" in place of "Change password"')
+  check(await A.js(`return ${text('#passkeys .room-passkey b')} === 'Passkey' && /added .*not used yet|added .*used/.test(${text('#passkeys .room-passkey small')})`), 'Settings · Passkeys: the passkey with its name and dates')
   await A.shots('real-settings-passkey-only')
   // the last way in cannot be removed
   await A.js("document.querySelector('#passkeys form').requestSubmit()")
@@ -175,15 +178,16 @@ try {
 
   // ---- add a password, then the passkey may go; add one again ----
   await A.until(live, 'live again')
-  await A.js("trommi.router.visit('/settings/account')")
+  await A.js("trommi.router.visit('/settings/account/password')")
   await A.until("document.querySelector('#pw-add-form')", 'Add a password')
   const PW = 'correct horse battery staple'
   await A.js(`document.querySelector('#pw-add').open = true; document.querySelector('#pw-add-form input[name=password]').value = '${PW}'; document.querySelector('#pw-add-form').requestSubmit()`)
   await A.until("/Password added/.test(document.querySelector('main').textContent)", 'Password added')
+  await A.js("trommi.router.visit('/settings/account/passkeys')")
   await A.until("document.querySelector('#password-still')", 'the line about the password')
   st = await A.js(`return ${status}`)
   check(st.has_password === true && st.passkeys.length === 1, 'a password was added with the passkey as the way in')
-  check(await A.js("return !!document.querySelector('#pw-change') && !document.querySelector('#pw-add') && /still opens/.test(document.querySelector('#password-still').textContent)"), 'Settings now: "Change password", and the plain line that the password still opens the account')
+  check(await A.js("return /still opens/.test(document.querySelector('#password-still').textContent)"), 'Settings · Passkeys now: the plain line that the password still opens the account')
   await A.shots('real-settings-passkey-and-password')
   // a second passkey is refused by the authenticator (it holds one for this account): said plainly
   await A.js(`document.querySelector('#passkey-new').open = true; document.querySelector('#passkey-form input[name=password]').value = '${PW}'; document.querySelector('#passkey-form').requestSubmit()`)
@@ -239,7 +243,7 @@ try {
   if (viaOffer) check(await A.js(`return trommi.client.model.room.room_id === '${roomId}' && window.__webauthn.length === 1 && window.__webauthn[0].mediation === 'conditional'`), 'the offer in the email field, answered by the authenticator, logs in (one conditional get(), nothing typed)')
   else { results.push('note: this Chromium does not answer a conditional request from the virtual authenticator; the button logs in instead'); await A.js("document.querySelector('#way-passkey').click()"); await A.until(live, 'logged in', 30000) }
   check((await A.js(`return ${status}`)).passkeys[0].last_used_at > 0, 'the hub noted the login (last used)')
-  await A.js("trommi.router.visit('/settings/account')")
+  await A.js("trommi.router.visit('/settings/account/passkeys')")
   await A.until("document.querySelector('#passkeys .room-passkey')", 'the passkey in Settings')
   await A.shots('real-settings-after-login')
   check(A.errors.length === 0 && (await A.js('return window.__csp')).length === 0, `A: no exception, no CSP violation ${A.errors.join(' | ')}`)

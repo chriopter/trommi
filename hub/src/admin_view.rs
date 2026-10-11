@@ -1,18 +1,21 @@
-//! The pages of the admin page (`admin.rs` signs in and frames them): the overview (the server's health and the
-//! hub's counts), the accounts (with their rooms), and the list of tables (each with what it holds and its number
-//! of rows; `admin_rows.rs` shows a table's rows). Nothing sealed is ever shown; e-mail addresses are blurred until double-clicked.
+//! The three pages of the admin page (`admin.rs` signs in and frames them): the overview (the server's health and
+//! the hub's counts), the accounts (with their rooms), and the tables (each with what it holds, its columns, its
+//! number of rows and, where it holds nothing sealed and nothing of signing in or pushing, a few of its rows with
+//! ids shortened and every other byte string shown by its length only). Nothing sealed is ever shown, and no
+//! e-mail address in full.
 
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use rusqlite::types::ValueRef;
 use rusqlite::Connection;
 
 use crate::admin::{esc, EYE, LOCK};
 use crate::app::App;
 use crate::error::Refused;
 use crate::metrics::{self, Sample, Series};
-use crate::util::{now, short};
+use crate::util::{hex, now, short};
 
 /// What each table holds, as spec/hub-api.md "Tables" has it: its group on the page, what the hub reads, and what
 /// lies in it sealed.
@@ -61,8 +64,20 @@ pub const TABLES: &[(&str, &str, &str, &str)] = &[
     ("Push", "live_activities", "Live Activity tokens, the counts last sent", ""),
 ];
 
-/// The columns that hold what the hub cannot read (shown on the rows pages by their length and first bytes only).
-pub(crate) const SEALED: &[(&str, &str)] = &[
+/// Tables whose rows are not shown although nothing in them is sealed: who signed in from where, and the
+/// addresses and tokens pushes go to.
+const PRIVATE: &[&str] = &[
+    "account_sources",
+    "login_sources",
+    "login_accounts",
+    "login_turns",
+    "shares",
+    "push_subscriptions",
+    "live_activities",
+];
+
+/// The columns that hold what the hub cannot read.
+const SEALED: &[(&str, &str)] = &[
     ("accounts", "password_copy"),
     ("accounts", "kit_copy"),
     ("passkeys", "sealed_copy"),
@@ -74,24 +89,77 @@ pub(crate) const SEALED: &[(&str, &str)] = &[
     ("envelopes", "body"),
 ];
 
-/// Columns of times in ms since 1970.
-pub(crate) fn is_time(column: &str) -> bool {
+/// Text columns whose values are shown (a word out of a short fixed list each); any other text by its length.
+const WORDS: &[&str] = &[
+    "role",
+    "kind",
+    "level",
+    "environment",
+    "kit_form",
+    "void_code",
+    "transports",
+];
+
+/// Byte columns that name something (a room, a device, a group …): shown as their first four bytes in hex.
+fn names_something(column: &str) -> bool {
+    column.ends_with("_id")
+        || matches!(
+            column,
+            "device"
+                | "sender"
+                | "recipient"
+                | "owner"
+                | "writer"
+                | "uploader"
+                | "inviter"
+                | "founder"
+                | "created_by"
+                | "committer"
+                | "parent"
+                | "timeline"
+                | "process"
+                | "revealed_device"
+        )
+}
+
+fn is_time(column: &str) -> bool {
     column.ends_with("_at") || column == "at" || column == "time"
 }
 
-/// An e-mail address as the page shows it: in full, but blurred and not selectable until a double-click shows it
-/// (`admin.js`; a second double-click blurs it again). A page seen over a shoulder or in a screenshot does not
-/// give it away.
-pub fn blurred_email(email: &str) -> String {
-    format!("<code class=\"email\" title=\"Double-click to show\">{}</code>", crate::admin::esc(email))
+/// How a column's values appear in the rows shown.
+fn shown_as(table: &str, column: &str, kind: &str) -> &'static str {
+    if SEALED.contains(&(table, column)) {
+        "sealed"
+    } else if kind.eq_ignore_ascii_case("INTEGER") || kind.eq_ignore_ascii_case("REAL") {
+        if is_time(column) {
+            "time"
+        } else {
+            "number"
+        }
+    } else if kind.eq_ignore_ascii_case("TEXT") && WORDS.contains(&column) {
+        "word"
+    } else if kind.eq_ignore_ascii_case("BLOB") && names_something(column) {
+        "short id"
+    } else {
+        "length only"
+    }
+}
+
+/// An e-mail address as the page shows it: its first character and its ending (`a•••@•••.org`).
+pub fn mask_email(email: &str) -> String {
+    match email.rsplit_once('@') {
+        Some((local, domain)) => {
+            let first = local.chars().next().map(String::from).unwrap_or_default();
+            match domain.rsplit_once('.') {
+                Some((_, tld)) => format!("{first}•••@•••.{tld}"),
+                None => format!("{first}•••@•••"),
+            }
+        }
+        None => "•••".into(),
+    }
 }
 
 pub fn when(ms: i64) -> String {
-    when_exactly(ms)[..16].to_string()
-}
-
-/// A time to the second, UTC.
-pub fn when_exactly(ms: i64) -> String {
     // days since 1970 to a date (civil-from-days), UTC
     let secs = ms.div_euclid(1000);
     let (days, rest) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
@@ -107,10 +175,9 @@ pub fn when_exactly(ms: i64) -> String {
     );
     let y = yoe + era * 400 + i64::from(m <= 2);
     format!(
-        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}",
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}",
         rest / 3600,
-        rest % 3600 / 60,
-        rest % 60
+        rest % 3600 / 60
     )
 }
 
@@ -480,7 +547,7 @@ pub fn overview(app: &App, range_ms: u64) -> Result<String, Refused> {
             // (names from the list above, never from a request)
             let n = one(&format!("SELECT count(*) FROM {table}"))?;
             out.push_str(&format!(
-                "<li><a href=\"/tables/{table}\"><span>{table}</span><span class=\"count\">{n}</span></a></li>"
+                "<li><a href=\"/tables?t={table}\"><span>{table}</span><span class=\"count\">{n}</span></a></li>"
             ));
         }
         out.push_str("</ul></section></div></main>");
@@ -497,7 +564,7 @@ pub fn accounts(app: &App) -> Result<String, Refused> {
         let one = |sql: &str| -> rusqlite::Result<i64> { c.query_row(sql, [], |r| r.get(0)) };
         let (accounts, rooms) = (one("SELECT count(*) FROM accounts")?, one("SELECT count(*) FROM rooms")?);
         let mut out = format!(
-            "<main class=\"page\"><div class=\"head\"><h1>Accounts</h1><span class=\"muted\">{accounts} account{} · {rooms} room{} · e-mail addresses blurred: double-click one to show it</span></div>",
+            "<main class=\"page\"><div class=\"head\"><h1>Accounts</h1><span class=\"muted\">{accounts} account{} · {rooms} room{} · e-mail addresses masked</span></div>",
             if accounts == 1 { "" } else { "s" },
             if rooms == 1 { "" } else { "s" },
         );
@@ -525,11 +592,11 @@ pub fn accounts(app: &App) -> Result<String, Refused> {
                 .collect();
             let used: Option<i64> = r.get(7)?;
             out.push_str(&format!(
-                "<tr><td><code>#{}</code></td><td>{}</td><td>{}</td><td class=\"n\">{passkeys}</td><td class=\"n\">{}</td>\
+                "<tr><td><code>#{}</code></td><td><code>{}</code></td><td>{}</td><td class=\"n\">{passkeys}</td><td class=\"n\">{}</td>\
 <td class=\"when\">{}</td><td class=\"when\">{}</td><td class=\"when\">{}</td></tr>",
                 r.get::<_, i64>(0)?,
                 match email.as_deref() {
-                    Some(e) => blurred_email(e),
+                    Some(e) => esc(&mask_email(e)),
                     None => "<span class=\"faint\">none</span>".into(),
                 },
                 if ways.is_empty() { "<span class=\"faint\">nothing yet</span>".into() } else { ways.join(", ") },
@@ -614,106 +681,205 @@ pub fn table_named(name: &str) -> Option<&'static str> {
     TABLES.iter().map(|(_, t, _, _)| *t).find(|t| *t == name)
 }
 
-/// name, declared type, position in the primary key (0: not in it)
-pub(crate) fn columns(c: &Connection, table: &str) -> rusqlite::Result<Vec<(String, String, i64)>> {
+/// name, declared type, part of the primary key
+fn columns(c: &Connection, table: &str) -> rusqlite::Result<Vec<(String, String, bool)>> {
     let mut s = c.prepare(&format!("PRAGMA table_info({table})"))?;
-    let rows = s.query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(5)?)))?;
+    let rows = s.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(5)? > 0,
+        ))
+    })?;
     rows.collect()
 }
 
-/// The side list of every table with its number of rows, each a link to its rows; the chosen one with its
-/// columns under it.
-pub(crate) fn side(c: &Connection, chosen: Option<&str>) -> rusqlite::Result<(String, Vec<i64>)> {
-    let mut counts = Vec::with_capacity(TABLES.len());
-    for (_, table, _, _) in TABLES {
-        // (names from the list above, never from a request)
-        counts.push(c.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))?);
+fn mark(how: &str) -> String {
+    match how {
+        "sealed" => format!("<span class=\"cm cm-e2e\">{LOCK}<span>sealed</span></span>"),
+        "length only" => "<span class=\"faint\">length only</span>".into(),
+        how => format!("<span class=\"cm cm-plain\">{EYE}<span>{how}</span></span>"),
     }
-    let mut side = String::from("<nav class=\"tree\" aria-label=\"Tables\">");
-    side.push_str(&format!(
-        "<a class=\"node all{}\" href=\"/tables\"><span>All tables</span><span class=\"count\">{}</span></a>",
-        if chosen.is_none() { " on" } else { "" },
-        TABLES.len()
-    ));
-    let mut group = "";
-    for ((g, table, _, sealed), n) in TABLES.iter().zip(&counts) {
-        if *g != group {
-            group = g;
-            side.push_str(&format!("<div class=\"grp\">{g}</div>"));
+}
+
+/// One value of a row, as `shown_as` says.
+fn cell(table: &str, column: &str, value: ValueRef) -> String {
+    match value {
+        ValueRef::Null => "<span class=\"faint\">null</span>".into(),
+        ValueRef::Integer(n) if is_time(column) && n > 100_000_000_000 => when(n),
+        ValueRef::Integer(n) => n.to_string(),
+        ValueRef::Real(x) => format!("{x}"),
+        ValueRef::Text(t) if WORDS.contains(&column) && t.len() <= 40 => {
+            esc(&String::from_utf8_lossy(t))
         }
-        let open = chosen == Some(*table);
+        ValueRef::Text(t) => format!("<span class=\"faint\">{} chars</span>", t.len()),
+        ValueRef::Blob(b) if SEALED.contains(&(table, column)) => {
+            format!(
+                "<span class=\"cm cm-e2e\">{LOCK}<span>{}</span></span>",
+                size(b.len() as u64)
+            )
+        }
+        ValueRef::Blob(b) if names_something(column) && !b.is_empty() => {
+            format!(
+                "<code>{}</code>",
+                if b.len() > 4 {
+                    format!("{}…", short(b))
+                } else {
+                    hex(b)
+                }
+            )
+        }
+        ValueRef::Blob(b) => format!("<span class=\"faint\">{}</span>", size(b.len() as u64)),
+    }
+}
+
+/// The tables: a side list of every table, each opened for its columns and number of rows, and the chosen one
+/// (or the whole list, classified) beside it.
+pub fn tables(app: &App, chosen: Option<&str>) -> Result<String, Refused> {
+    const ROWS: usize = 10;
+    app.db.read(|c| {
+        let one = |sql: &str| -> rusqlite::Result<i64> { c.query_row(sql, [], |r| r.get(0)) };
+        let mut counts = Vec::with_capacity(TABLES.len());
+        for (_, table, _, _) in TABLES {
+            counts.push(one(&format!("SELECT count(*) FROM {table}"))?);
+        }
+
+        // ---- the side list
+        let mut side = String::from("<nav class=\"tree\" aria-label=\"Tables\">");
         side.push_str(&format!(
-            "<a class=\"tbl{}\" href=\"/tables/{table}\"{}><span class=\"name\">{}{table}</span><span class=\"count\">{n}</span></a>",
-            if open { " on" } else { "" },
-            if open { " aria-current=\"page\"" } else { "" },
-            if sealed.is_empty() { String::new() } else { format!("<span class=\"cm cm-e2e\" title=\"holds sealed content\">{LOCK}</span>") },
+            "<a class=\"node all{}\" href=\"/tables\"><span>All tables</span><span class=\"count\">{}</span></a>",
+            if chosen.is_none() { " on" } else { "" },
+            TABLES.len()
         ));
-        if open {
-            side.push_str("<ul class=\"cols-list\">");
+        let mut group = "";
+        for ((g, table, _, sealed), n) in TABLES.iter().zip(&counts) {
+            if *g != group {
+                group = g;
+                side.push_str(&format!("<div class=\"grp\">{g}</div>"));
+            }
+            let open = chosen == Some(*table);
+            side.push_str(&format!(
+                "<details{}><summary><span class=\"name\">{}{table}</span><span class=\"count\">{n}</span></summary><ul class=\"cols-list\">",
+                if open { " open class=\"on\"" } else { "" },
+                if sealed.is_empty() { String::new() } else { format!("<span class=\"cm cm-e2e\" title=\"holds sealed content\">{LOCK}</span>") },
+            ));
             for (name, kind, key) in columns(c, table)? {
-                let show = crate::admin_rows::show(table, &name);
+                let how = shown_as(table, &name, &kind);
                 side.push_str(&format!(
                     "<li><span>{}{}</span><span class=\"faint\">{}</span></li>",
-                    match show {
-                        crate::admin_rows::Show::Sealed => format!("<span class=\"cm cm-e2e\">{LOCK}</span>"),
-                        crate::admin_rows::Show::Secret => "<span class=\"faint\" title=\"secret\">••</span>".into(),
-                        _ => String::new(),
-                    },
-                    if key > 0 { format!("<b>{}</b>", esc(&name)) } else { esc(&name) },
+                    if how == "sealed" { format!("<span class=\"cm cm-e2e\">{LOCK}</span>") } else { String::new() },
+                    if key { format!("<b>{}</b>", esc(&name)) } else { esc(&name) },
                     esc(&kind.to_lowercase())
                 ));
             }
-            side.push_str("</ul>");
+            side.push_str(&format!("<li class=\"open\"><a href=\"/tables?t={table}\">Open {table} →</a></li></ul></details>"));
         }
-    }
-    side.push_str("</nav>");
-    Ok((side, counts))
-}
+        side.push_str("</nav>");
 
-/// The tables pages' frame: the side list (behind a toggle on a phone) beside the page.
-pub(crate) fn framed(chosen: Option<&str>, side: &str, main: &str) -> String {
-    format!(
-        "<input type=\"checkbox\" id=\"tt\" aria-label=\"Show the tables\"><label class=\"treetoggle\" for=\"tt\"><span>Tables: <b>{}</b></span></label>\
-<div class=\"data\">{side}<main class=\"pane\">{main}</main></div>",
-        chosen.unwrap_or("all")
-    )
-}
-
-/// All tables: the side list, and the whole list classified beside it.
-pub fn tables(app: &App) -> Result<String, Refused> {
-    app.db.read(|c| {
-        let (side, counts) = side(c, None)?;
-        let mut main = format!(
-            "<div class=\"head\"><h1>Tables</h1><span class=\"muted\">{} tables · what the hub reads in each and what lies in it sealed</span></div>\
+        // ---- the chosen table, or all of them
+        let mut main = String::from("<main class=\"pane\">");
+        match chosen {
+            None => {
+                main.push_str(&format!(
+                    "<div class=\"head\"><h1>Tables</h1><span class=\"muted\">{} tables · what the hub reads in each and what lies in it sealed</span></div>\
 <section class=\"card\"><p class=\"legend\"><span class=\"cm cm-plain\">{EYE}The hub reads</span><span class=\"cm cm-e2e\">{LOCK}Sealed: the hub cannot read</span></p>\
 <div class=\"scroll\"><table class=\"grid\"><thead><tr><th>Table</th><th class=\"n\">Rows</th><th>The hub reads</th><th>Sealed</th></tr></thead><tbody>",
-            TABLES.len()
-        );
-        for ((_, table, reads, sealed), n) in TABLES.iter().zip(&counts) {
-            main.push_str(&format!(
-                "<tr><td><a href=\"/tables/{table}\"><code>{table}</code></a></td><td class=\"n\">{n}</td><td><span class=\"cm cm-plain\">{EYE}<span>{}</span></span></td><td>{}</td></tr>",
-                esc(reads),
-                if sealed.is_empty() {
-                    "<span class=\"faint\">nothing</span>".to_string()
-                } else {
-                    format!("<span class=\"cm cm-e2e\">{LOCK}<span>{}</span></span>", esc(sealed))
+                    TABLES.len()
+                ));
+                for ((_, table, reads, sealed), n) in TABLES.iter().zip(&counts) {
+                    main.push_str(&format!(
+                        "<tr><td><a href=\"/tables?t={table}\"><code>{table}</code></a></td><td class=\"n\">{n}</td><td><span class=\"cm cm-plain\">{EYE}<span>{}</span></span></td><td>{}</td></tr>",
+                        esc(reads),
+                        if sealed.is_empty() {
+                            "<span class=\"faint\">nothing</span>".to_string()
+                        } else {
+                            format!("<span class=\"cm cm-e2e\">{LOCK}<span>{}</span></span>", esc(sealed))
+                        }
+                    ));
                 }
-            ));
+                main.push_str("</tbody></table></div>");
+                // a table the list does not know is said, not hidden
+                let mut s = c.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?;
+                let unknown: Vec<String> = s
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?
+                    .into_iter()
+                    .filter(|name| name != "login_counts" && table_named(name).is_none())
+                    .collect();
+                if !unknown.is_empty() {
+                    main.push_str(&format!("<p class=\"err\">Not classified yet: <code>{}</code></p>", esc(&unknown.join(", "))));
+                }
+                main.push_str("</section>");
+            }
+            Some(table) => {
+                let (i, (group, _, reads, sealed)) = TABLES
+                    .iter()
+                    .enumerate()
+                    .find(|(_, t)| t.1 == table)
+                    .expect("a table of the list");
+                let n = counts[i];
+                main.push_str(&format!(
+                    "<div class=\"head\"><h1><code class=\"big\">{table}</code></h1><span class=\"muted\">{group} · {n} row{}</span></div>\
+<section class=\"card\"><dl class=\"kv\"><dt>The hub reads</dt><dd><span class=\"cm cm-plain\">{EYE}<span>{}</span></span></dd><dt>Sealed</dt><dd>{}</dd></dl></section>",
+                    if n == 1 { "" } else { "s" },
+                    esc(reads),
+                    if sealed.is_empty() {
+                        "<span class=\"faint\">nothing</span>".to_string()
+                    } else {
+                        format!("<span class=\"cm cm-e2e\">{LOCK}<span>{}</span></span>", esc(sealed))
+                    }
+                ));
+                let cols = columns(c, table)?;
+                main.push_str(&format!(
+                    "<section class=\"card\"><h3>Columns <span class=\"count\">{}</span></h3><div class=\"scroll\"><table class=\"grid\"><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>In the rows below</th></tr></thead><tbody>",
+                    cols.len()
+                ));
+                for (name, kind, key) in &cols {
+                    main.push_str(&format!(
+                        "<tr><td><code>{}</code></td><td class=\"muted\">{}</td><td>{}</td><td>{}</td></tr>",
+                        esc(name),
+                        esc(&kind.to_lowercase()),
+                        if *key { "primary" } else { "" },
+                        mark(shown_as(table, name, kind))
+                    ));
+                }
+                main.push_str("</tbody></table></div></section>");
+
+                main.push_str(&format!("<section class=\"card\"><h3>Rows <span class=\"count\">{}</span></h3>", n.min(ROWS as i64)));
+                if !sealed.is_empty() {
+                    main.push_str("<p class=\"muted\">Not shown: this table holds sealed content. Its columns and its number of rows are all the page says of it.</p>");
+                } else if PRIVATE.contains(&table) {
+                    main.push_str("<p class=\"muted\">Not shown: this table holds who signs in from where, or where pushes go. Its columns and its number of rows are all the page says of it.</p>");
+                } else if n == 0 {
+                    main.push_str("<p class=\"muted\">No rows.</p>");
+                } else {
+                    main.push_str("<div class=\"scroll\"><table class=\"grid\"><thead><tr>");
+                    for (name, _, _) in &cols {
+                        main.push_str(&format!("<th>{}</th>", esc(name)));
+                    }
+                    main.push_str("</tr></thead><tbody>");
+                    let mut s = c.prepare(&format!("SELECT * FROM {table} LIMIT {ROWS}"))?;
+                    let mut rows = s.query([])?;
+                    while let Some(r) = rows.next()? {
+                        main.push_str("<tr>");
+                        for (k, (name, _, _)) in cols.iter().enumerate() {
+                            main.push_str(&format!("<td>{}</td>", cell(table, name, r.get_ref(k)?)));
+                        }
+                        main.push_str("</tr>");
+                    }
+                    main.push_str("</tbody></table></div>");
+                    main.push_str(&format!(
+                        "<p class=\"note\">The first {ROWS} rows at most. Ids by their first four bytes, times in UTC, any other bytes and text by their length only.</p>"
+                    ));
+                }
+                main.push_str("</section>");
+            }
         }
-        main.push_str("</tbody></table></div>");
-        // a table or a column the lists do not know is said, not hidden (its values are shown masked)
-        let mut s = c.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?;
-        let unknown: Vec<String> = s
-            .query_map([], |r| r.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-            .into_iter()
-            .filter(|name| name != "login_counts" && table_named(name).is_none())
-            .chain(crate::admin_rows::unclassified(c)?)
-            .collect();
-        if !unknown.is_empty() {
-            main.push_str(&format!("<p class=\"err\">Not classified yet: <code>{}</code></p>", esc(&unknown.join(", "))));
-        }
-        main.push_str("</section>");
-        Ok::<_, Refused>(framed(None, &side, &main))
+        main.push_str("</main>");
+        Ok::<_, Refused>(format!(
+            "<input type=\"checkbox\" id=\"tt\" aria-label=\"Show the tables\"><label class=\"treetoggle\" for=\"tt\"><span>Tables: <b>{}</b></span></label>\
+<div class=\"data\">{side}{main}</div>",
+            chosen.unwrap_or("all")
+        ))
     })
 }
