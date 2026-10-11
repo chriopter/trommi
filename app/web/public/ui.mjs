@@ -762,6 +762,29 @@ export function thumb(file) {
 /** The src attribute of an <img> for that file (the shown width is the caller's; there are no variants). */
 export const srcOf = file => attrs({ src: thumb(file).src })
 
+/** Why an attachment did not come, in plain words. why: the error of fetching or opening it (null: not there). */
+export const attGoneText = why => !why || why.code === 'not-found' || why.status === 404 ? 'Attachment no longer available'
+  : why.code === 'newer-version' ? 'Made by a newer Trommi: reload the page to open it'
+  : `This file could not be loaded: ${why.message || why.code || 'no answer from the hub'}`
+/** What stands in place of a picture (or a file's link) that did not come. A small picture (a Desk row's fan, a card's
+ *  thumbnail, a session's file strip: an <img> with a width of 96 or less) becomes a tile of its own size that says
+ *  why on hover; a larger one says it in words, inside the place the picture had. */
+export function attGone(el, why) {
+  const text = attGoneText(why), gone = document.createElement('span')
+  gone.className = 'att-gone'
+  gone.setAttribute('role', 'status')
+  const w = Number(el?.getAttribute?.('width')), h = Number(el?.getAttribute?.('height'))
+  if (el?.tagName === 'IMG' && w > 0 && w <= 96) {
+    gone.classList.add('is-tile')
+    gone.style.width = `${w}px`
+    gone.style.height = `${h > 0 ? h : w}px`
+    gone.title = text
+    gone.setAttribute('aria-label', text)
+    gone.innerHTML = String(sk('picture'))
+  } else gone.textContent = text
+  return gone
+}
+
 /** The page behind a picture (the HTML it was rendered from), as one thing to press: a sheet with the file's name.
  *  always: it stands hidden where the picture has no page (the controller shows it for one that has). */
 export const pageChip = (page, always = false, view = '') => (page || always ? html`<a class="page-chip" data-card-target="page"${view && page?.kind === 'file' ? raw(' data-nav') : raw(' target="_blank" rel="noopener noreferrer"')} href="${view && page?.kind === 'file' ? view : page?.url ?? '#'}" title="This picture has a page behind it: open the page"${page ? '' : raw(' hidden')}>${sk('page')}<b>${page?.name ?? ''}</b><i>open</i></a>` : '')
@@ -2969,11 +2992,18 @@ const hot = used => (used >= 80 ? ' is-hot' : '')
 const meterTitle = m => `${m.long}: ${m.used} % used${m.reset ? `, resets ${m.reset}` : ''}`
 const bar = (m, wide = false) => html`<span class="use-bar${hot(m.used)}${wide ? ' is-wide' : ''}" title="${meterTitle(m)}"><i style="--used:${m.used}%"></i></span>`
 const credits = n => `${Number(n).toLocaleString('en-GB', { maximumFractionDigits: 0 })} ${Math.round(n) === 1 ? 'credit' : 'credits'}`
-/** Compact, for a session's heading: each meter its word, a thin bar and its percent. */
-export function usageCompact(acc, now = Date.now()) {
+/** One meter as a small ring: a faint track and, from the top clockwise, the part used; num: the percent inside it. */
+const useRing = (m, num = false) => {
+  const r = 13, c = 2 * Math.PI * r
+  return raw(`<svg class="use-ring${hot(m.used)}" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="${r}" class="use-ring-track"/>${m.used ? `<circle cx="16" cy="16" r="${r}" class="use-ring-fill" stroke-dasharray="${(c * m.used / 100).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 16 16)"/>` : ''}${num ? `<text x="16" y="16.6" class="use-ring-num">${m.used}</text>` : ''}</svg>`)
+}
+/** For a session's heading: each meter (5 h, week) a small ring. Wide: the ring, its percent and its word; mini (a
+ *  phone, beside the More button): the rings alone, the percent inside. The whole in words under the pointer. */
+export function usageRings(acc, { mini = false, now = Date.now() } = {}) {
   const ms = usageMeters(acc, now)
   if (!ms.length) return ''
-  return html`<span class="use-compact" aria-label="Usage of ${usagePlan(acc)}">${ms.map(m => html`<span class="use-m" title="${meterTitle(m)}"><span class="use-l">${m.label}</span>${bar(m)}<b class="${hot(m.used).trim()}">${m.used} %</b></span>`)}</span>`
+  const words = ms.map(meterTitle).join(' · ')
+  return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${usagePlan(acc)}: ${words}" title="${words}">${ms.map(m => (mini ? useRing(m, true) : html`<span class="use-r">${useRing(m)}<b class="${hot(m.used).trim()}">${m.used} %</b><span class="use-l">${m.label}</span></span>`))}</span>`
 }
 /** Fuller, for an agent's card on Settings · Agents: plan and e-mail, one row per meter, Codex's credits and resets. */
 export function usageFull(acc, now = Date.now()) {

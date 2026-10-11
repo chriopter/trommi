@@ -15,8 +15,8 @@
 // "card" adds the pencil for a note on one option, the draft kept while typing,
 // Enter that sends, files that are pasted or dropped, and the pen's arrow from the picture to its option.
 // Styles: card.css.
-import { NEEDS_NEWER, SAID, heardOf, linkOf, walkOf } from './app.mjs'
-import { Controller, PLUS, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, isTyping, letterKeysOn, FINAL_TIP, LATER_TAG, SETTLED, WORDS, act, advisedKeys, advisedLabels, agoSpan, arrowStrokes, cardNote, cardNr, cardPath, controller, copyButton, deskRow, doodleSvg, el, finalSign, html, isKnock, kindOf, knockWord, linkNote, pageChip, plain, raw, rich, sideWays, sk, sketch, srcOf, thumb, sayError } from './ui.mjs'
+import { NEEDS_NEWER, SAID, heardOf, linkOf, runsOf, stackOf, walkOf, workLine } from './app.mjs'
+import { Controller, PLUS, avatar, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, isTyping, letterKeysOn, FINAL_TIP, LATER_TAG, SETTLED, WORDS, act, advisedKeys, advisedLabels, agoSpan, arrowStrokes, cardNote, cardNr, cardPath, controller, copyButton, deskRow, doodleSvg, el, finalSign, html, isKnock, kindOf, knockWord, linkNote, pageChip, plain, raw, rich, sideWays, sk, sketch, srcOf, thumb, sayError } from './ui.mjs'
 const icon = d => raw(`<svg viewBox="0 0 24 24" class="tc-icon" aria-hidden="true"><path d="${d}"/></svg>`)
 const ARROW_L = 'M19 12H5M11 6l-6 6 6 6', ARROW_R = 'M5 12h14M13 6l6 6-6 6', TICK = 'M5 12.5l4.5 4.5L19 7.5', PLAY = 'M9 6.5v11l9-5.5z', GROW = 'M14 5h5v5M19 5l-6 6M10 19H5v-5M5 19l6-6'
 // Drawn with the pen, for the round buttons above a card: an arrow to the left and one to the right, a cross, three
@@ -164,6 +164,27 @@ ${all.length > 1 || files.length ? html`<div class="tc-thumbs"><span class="tc-r
 </turbo-frame>`
 }
 
+/** Whether the card's session is at work on it now: { agent, line, at } or null. A card handed back is worked on while
+ *  its session is connected; an answered one only while that session also has a working status line (the one naming
+ *  this card, else its newest naming none: app.mjs workLine, as the Desk's "Off your mind" pairs them). */
+export function workOf(card, model) {
+  if (card.kind === 'permission' || stackOf(card, { online: runsOf(model) }) !== 'works') return null
+  const agent = model.byAgent.get(card.agent)
+  if (!agent?.online) return null
+  const line = workLine(card, (model.state.tasks ?? []).filter(t => t.state === 'working'))
+  if (!card.with_agent && !line) return null
+  return { agent, line, at: line?.updated || card.with_agent || card.decided || 0 }
+}
+// The pen line under the strip: a faint stroke drawn by hand, and a short darker one that runs along it.
+const PEN_RUN = raw('<svg class="tc-work-run" viewBox="0 0 200 8" preserveAspectRatio="none" aria-hidden="true"><path class="run-base" d="M2 4.6 Q30 2.4 60 4.4 T120 3.8 T198 4.2"/><path class="run-pen" d="M2 4.6 Q30 2.4 60 4.4 T120 3.8 T198 4.2" pathLength="100"/></svg>')
+/** The strip above the title while the card's session works on it: its drawing redrawing itself, "<session> is working
+ *  on it", its status line (label · detail) and how long ago that was said, the pen line under it. */
+function workStrip(card, model) {
+  const w = workOf(card, model)
+  if (!w) return ''
+  const words = w.line ? [w.line.label, w.line.detail].filter(Boolean).join(' · ') : 'Reworking the card'
+  return html`<div class="tc-work" role="status">${avatar(w.agent, { crown: false, working: true })}<span class="tc-work-words"><b>${w.agent.name} is working on it</b><span>${words}${w.at ? html` · ${agoSpan(w.at, 'ago')}` : ''}</span></span>${PEN_RUN}</div>`
+}
 /** The card's left column (#card-left-<id>): title, one quiet line, the text that fits, the picture.
  *  version: as it was then (read-only). pic: the picture shown. self: the base its links are under (a session's page). */
 function cardLeft(card, model, base, { version = null, pic = 1, query = '' } = {}) {
@@ -184,7 +205,7 @@ function cardLead(card, model, base, { version = null } = {}) {
   const notes = [cardNote(card), old ? `version ${old.n}, as it was` : '', said ? (said === 1 ? '1 message below' : `${said} messages below`) : ''].filter(Boolean)
   return html`<div class="tc-lead focus-lead" id="card-lead-${card.id}">
 ${isKnock(card) && card.status === 'open' ? html`<span class="inbox-tab tc-knock">${sk('knock')}${knockWord(card)}</span>` : ''}
-<h1 class="tc-title" id="card-title-${card.id}">${shown.title}</h1>
+${old ? '' : workStrip(card, model)}<h1 class="tc-title" id="card-title-${card.id}">${shown.title}</h1>
 <p class="tc-meta">${from ? html`<a class="tc-from" data-nav href="${base}/chat/${encodeURIComponent(from.id)}" style="--hue:${from.hue}">${raw(doodleSvg(from.mark))}${from.name}</a><span aria-hidden="true">·</span>` : ''}${agoSpan(card.revised ?? card.created, 'tc-ago')}<span aria-hidden="true">·</span><span>${cardNr(card)}</span>${place ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Where this question stands on the Desk">${place.at} of ${place.of}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
 ${text ? html`<div class="tc-text">${rich(text, { assets: model.state.assets })}</div>` : ''}${more ? html`<a class="tc-more-text" href="#card-whole-${card.id}">More in the comments ↓</a>` : ''}
 </div>`

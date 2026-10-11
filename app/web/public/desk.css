@@ -536,7 +536,7 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
   .inbox-row[data-later] { min-height: 100px; }
 }
 .inbox-fan { position: relative; display: flex; align-items: center; height: 44px; text-decoration: none; }
-.inbox-fan > :is(img, video) { flex: none; width: 56px; height: 42px; border-radius: 4px; object-fit: cover; object-position: top center; background: var(--sunken); border: 1.2px solid var(--fg); box-shadow: 0 1px 3px rgb(20 30 25 / .14); }
+.inbox-fan > :is(img, video, .att-gone) { flex: none; width: 56px; height: 42px; border-radius: 4px; object-fit: cover; object-position: top center; background: var(--sunken); border: 1.2px solid var(--fg); box-shadow: 0 1px 3px rgb(20 30 25 / .14); }
 .inbox-fan > :nth-child(1) { rotate: -3deg; z-index: 3; }
 .inbox-fan > :nth-child(2) { margin-left: -38px; rotate: 3deg; z-index: 2; }
 .inbox-fan > :nth-child(3) { margin-left: -38px; rotate: -1deg; translate: 4px 0; z-index: 1; }
