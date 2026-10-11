@@ -750,6 +750,7 @@ impl Human {
                 findings: Vec::new(),
                 trail: Vec::new(),
                 items: Vec::new(),
+                founding_account: None,
             }
         };
         let (newcomer, _) = tokio::join!(joining, self.admit(&mut invite));
