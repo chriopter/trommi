@@ -5,11 +5,14 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- iPhone: the Live Activity and Dynamic Island show the most urgent question with its two answers; answer it right
+  there, without opening the app.
 - The connector updates itself while it runs: no reconnect after an update.
 - Drag sessions in the sidebar into your own order; the iPhone shows the same order.
 - Delete your account right from the iPhone app (Settings → Account).
 - Log out straight from the desk menu.
 - What's new in the desk menu (web and iPhone): this list, with a dot until you have read the newest day.
+- Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
@@ -19,6 +22,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
 - The self-test screen is now called "Security Info".
 - Settings → Account no longer has the "Advanced" block with the old account address; the old recovery-code screen (/recover) is gone. Room, key epoch and hub are shown under Security Info.
+- Codex: the board tools are there from the start, Trommi tool calls no longer ask for approval one by one, and the texts say to restart Codex (not /mcp) when needed.
+- A Codex session between turns shows as "on its next turn", never as gone or not listening.
 
 **Fixed**
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.
@@ -27,6 +32,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - A phone added to a running session could show the agent's raw id instead of its name.
 - The iPhone app could crash while sending.
 - After logging out, the browser kept the key that had protected its local data.
+- Every agent session showed "hears you on its next step" (and later "not listening") even when it heard the board at once.
+- Codex no longer tries to start Trommi through a script when its tools are missing; it tells you to restart Codex.
 
 ## 10 October 2026 (v49 – v108)
 

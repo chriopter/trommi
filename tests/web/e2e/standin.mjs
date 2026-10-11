@@ -617,6 +617,28 @@ export const steps = [
     check(await A.js("return !document.querySelector('#corner-note-box .corner-note-file')"), 'the note is empty again')
   }],
 
+  // (regression: a note sent to the session showed in its chat for a moment and was gone again)
+  ['notes: a note sent to the crowned session stays in its chat, also after a reload', async ctx => {
+    const { check } = ctx.run
+    const A = await ctx.profile('A')
+    await openSession(A)
+    await A.until("document.querySelector('#corner-note-box .corner-note-send')", 'the note has an envelope (a crowned session)')
+    await A.click('#corner-note-box .corner-note-head')
+    await A.until("document.querySelector('#corner-note-box.is-open')", 'the note open')
+    await A.type('#corner-note-box .corner-note-field', 'Look at the logs first.')
+    const before = ctx.commands.length
+    await A.key('Enter', 13, 2)
+    const inChat = "[...document.querySelectorAll('#session .msg-note-at')].some(m => m.innerText.includes('Look at the logs first.'))"
+    await A.until(inChat, 'the note in the chat', 20000)
+    await until(() => ctx.commands.slice(before).some(c => c.kind === 'message' && c.body?.text === 'Look at the logs first.'), 'the note at the agent', 20000)
+    await sleep(4000)
+    check(await A.js(`return ${inChat}`), 'the note still stands in the chat 4 s after it was delivered')
+    await A.reload()
+    await ui.live(A, 'live after the reload')
+    await A.until(inChat, 'the note in the chat after a reload', 20000).catch(() => {})
+    check(await A.js(`return ${inChat}`), 'the note stands in the chat after a reload')
+  }],
+
   ['sidebar order: a second agent joins; its row is dragged above the first, kept after a reload; Alt+↓ puts it back', async ctx => {
     const { check } = ctx.run
     const A = await ctx.profile('A')
@@ -670,6 +692,26 @@ export const steps = [
     if (second) ctx.fake.push(room.room_id, `event: presence\ndata: ${JSON.stringify({ device: Buffer.from(second, 'hex').toString('base64url'), online: false })}\n\n`)
     await ctx.second.stop().catch(() => {})
     await A.until("document.querySelector('#agents > .agent-row[data-order] strong')?.textContent !== 'second-agent'", 'the first session first again')
+  }],
+
+  // (regression: the first message of an empty chat, here a note sent there, stood for a moment and was gone until a
+  // reload: the live log took the hub's numbered copy for an earlier page and only took the pending one out)
+  ['notes: a note sent into the EMPTY chat of the second session stays there', async ctx => {
+    const { check } = ctx.run
+    const A = await ctx.profile('A')
+    await ui.openDesk(A)
+    const id = await A.js("return [...document.querySelectorAll('#agents .agent-row[data-unit]')].find(r => r.textContent.includes('second-agent'))?.dataset.unit")
+    check(await A.js(`const r = await fetch('/sessions/${id}/star', { method: 'POST', headers: { accept: 'text/vnd.turbo-stream.html' }, body: new URLSearchParams({ stay: '1', starred: '1' }) }); return r.status`) === 200, 'the second session is given the crown')
+    await A.js("[...document.querySelectorAll('#agents a.agent-entry')].find(a => a.textContent.includes('second-agent')).click()")
+    await A.until("document.querySelector('#session form.composer textarea') && document.querySelector('#corner-note-box .corner-note-send') && document.querySelector('#session .empty-chat')", 'the second session\'s empty chat')
+    await A.click('#corner-note-box .corner-note-head')
+    await A.until("document.querySelector('#corner-note-box.is-open')", 'the note open')
+    await A.type('#corner-note-box .corner-note-field', 'First words for the second.')
+    await A.key('Enter', 13, 2)
+    const inChat = "[...document.querySelectorAll('#session .msg-note-at')].some(m => m.innerText.includes('First words for the second.'))"
+    await A.until(inChat, 'the note in the chat', 20000)
+    await sleep(5000)   // (the hold of 3 s for Undo, the post, the hub's answer)
+    check(await A.js(`return ${inChat}`), 'the note still stands in the chat after it went (no reload)')
   }],
 
   ['a new profile logs in with e-mail and password and lands on the Desk with history; a wrong password is refused', async ctx => {

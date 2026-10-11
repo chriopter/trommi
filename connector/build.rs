@@ -1,7 +1,7 @@
 // build.rs: connector/prompt.md and connector/tools.json are compiled in (include_str! in src/prompt.rs). Here they
 // are checked, so a binary with a broken text cannot be built: every tool has a
 // section "## <name>" and no section lacks a tool, every description has at most 2048 characters, the instructions at
-// most 1900 (with either paragraph for <mirror>).
+// most 1900 (with either paragraph for <mirror> and for <host>).
 use std::collections::BTreeMap;
 
 fn parse(md: &str) -> BTreeMap<String, String> {
@@ -139,22 +139,27 @@ fn main() {
         ins.contains("<mirror>"),
         "the instructions have no <mirror>"
     );
-    for how in [
-        "# With the terminal mirror",
-        "# Without the terminal mirror",
+    assert!(ins.contains("<host>"), "the instructions have no <host>");
+    let section = |name: &str| {
+        p.get(name)
+            .unwrap_or_else(|| panic!("connector/prompt.md has no section \"{name}\""))
+    };
+    // (the terminal mirror is the Claude Code plugin's: Codex is always without it)
+    for (how, host) in [
+        ("# With the terminal mirror", "# In Claude Code"),
+        ("# Without the terminal mirror", "# In Claude Code"),
+        ("# Without the terminal mirror", "# In Codex"),
     ] {
-        let n = ins
-            .replacen(
-                "<mirror>",
-                p.get(how)
-                    .unwrap_or_else(|| panic!("connector/prompt.md has no section \"{how}\"")),
-                1,
-            )
-            .chars()
-            .count();
-        assert!(
-            n <= 1900,
-            "the instructions ({how}) have {n} characters, at most 1900"
-        );
+        {
+            let n = ins
+                .replacen("<mirror>", section(how), 1)
+                .replacen("<host>", section(host), 1)
+                .chars()
+                .count();
+            assert!(
+                n <= 1900,
+                "the instructions ({how}, {host}) have {n} characters, at most 1900"
+            );
+        }
     }
 }

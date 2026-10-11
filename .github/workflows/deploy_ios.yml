@@ -1,5 +1,6 @@
 # Delivers the iOS app to TestFlight (the internal group "Intern").
 #
+# build.yml calls it on main (with a release) and on staging (without one).
 # Interface (build.yml calls it; see the head of build.yml):
 #   version   the release number of the build run (shown in the run only; the build number is App Store Connect's
 #             highest plus one, so it rises whatever was shipped from elsewhere)
@@ -67,7 +68,7 @@ jobs:
       XCODEGEN_VERSION: 2.46.0
       XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
     steps:
-      # A run named by hand must be a build of the main branch of this repository: a pull request's run also has
+      # A run named by hand must be a build of the main or staging branch of this repository: a pull request's run also has
       # artifacts, and nothing of such a run may be signed, attested or delivered.
       - name: The run that is delivered again
         id: source
@@ -80,8 +81,8 @@ jobs:
           printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
           jq -e --arg r "$GITHUB_REPOSITORY" \
-            '.path == ".github/workflows/build.yml" and .head_branch == "main" and (.event == "push" or .event == "workflow_dispatch") and .repository.full_name == $r and .head_repository.full_name == $r' \
-            "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main branch of this repository"; exit 1; }
+            '.path == ".github/workflows/build.yml" and (.head_branch == "main" or .head_branch == "staging") and (.event == "push" or .event == "workflow_dispatch") and .repository.full_name == $r and .head_repository.full_name == $r' \
+            "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main or staging branch of this repository"; exit 1; }
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
           grep -Fq "iOS (test and build the core)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job iOS (test and build the core) of run $RUN_ID did not succeed"; exit 1; }
           echo "commit=$(jq -r .head_sha "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"

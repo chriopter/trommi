@@ -91,10 +91,12 @@ pub trait Server: Send + Sync + 'static {
     fn initialized(self: Arc<Self>);
     /// The answer to `tools/list`, as JSON text.
     fn list_tools(&self) -> crate::client::BoxFut<'_, String>;
+    /// A tool call; `meta` is the request's `_meta` (Codex names its thread there).
     fn call_tool(
         self: Arc<Self>,
         name: String,
         args: Value,
+        meta: Value,
     ) -> crate::client::BoxFut<'static, Value>;
     fn notification(self: Arc<Self>, method: String, params: Value);
     fn closed(self: Arc<Self>, why: &'static str);
@@ -146,7 +148,8 @@ pub async fn serve<S: Server>(server: Arc<S>, out: Arc<Out>) {
                                     .await;
                             };
                             let args = params.get("arguments").cloned().unwrap_or(json!({}));
-                            let r = s.call_tool(name, args).await;
+                            let meta = params.get("_meta").cloned().unwrap_or(Value::Null);
+                            let r = s.call_tool(name, args, meta).await;
                             o.result(&id, r).await
                         }
                         _ => o.error(&id, -32601, "Method not found").await,

@@ -194,10 +194,73 @@ pub struct Mcp {
     next_id: u64,
     /// Every notification the server sent, in order: `(method, params)`.
     pub notifications: Vec<(String, Value)>,
+    /// The `_meta` every tool call carries (Codex names its thread there).
+    pub call_meta: Option<Value>,
+}
+
+/// What Codex 0.160 says in `initialize`.
+pub fn codex_hello() -> Value {
+    json!({
+        "protocolVersion": "2025-06-18",
+        "capabilities": { "experimental": { "codex/auth-change": {} }, "elicitation": { "form": {}, "url": {} } },
+        "clientInfo": { "name": "codex-mcp-client", "title": "Codex", "version": "0.160.0" },
+    })
+}
+
+/// The `_meta` of a Codex 0.160 tool call in `thread`.
+pub fn codex_meta(thread: &str) -> Value {
+    json!({
+        "callId": "exec-test",
+        "x-codex-turn-metadata": { "session_id": thread, "thread_id": thread, "turn_id": "turn-test", "codex_version": "0.160.0" },
+        "threadId": thread,
+        "sessionId": thread,
+        "progressToken": 1,
+    })
+}
+
+impl Seat {
+    /// Starts the connector as Codex does after `trommi-connector setup codex` (no channel events, Codex's
+    /// `initialize`), with `codex` standing for a script that notes every call (`codex queue …`). With
+    /// `launched`, through the launcher from that copy of the binary. Tool calls carry `_meta` of `thread`.
+    pub async fn serve_codex(
+        &self,
+        codex: &std::path::Path,
+        thread: &str,
+        launched: Option<&std::path::Path>,
+        env: &[(&str, &str)],
+    ) -> Mcp {
+        let mut command = match launched {
+            Some(program) => {
+                let mut c = self.command_of(program, &[]);
+                c.env_remove("TROMMI_LAUNCH");
+                c
+            }
+            None => self.command(&[]),
+        };
+        command
+            .env("TROMMI_CHANNEL_EVENTS", "off")
+            .env("TROMMI_CODEX_BIN", codex)
+            .env("TROMMI_CODEX_WAKE_MS", "300");
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        let mut mcp = Mcp::start_as(command, codex_hello()).await;
+        mcp.call_meta = Some(codex_meta(thread));
+        mcp
+    }
 }
 
 impl Mcp {
-    async fn start(mut command: Command) -> Mcp {
+    async fn start(command: Command) -> Mcp {
+        Mcp::start_as(
+            command,
+            json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "0" } }),
+        )
+        .await
+    }
+
+    /// Starts the server and says `hello` as the client's `initialize`.
+    pub async fn start_as(mut command: Command, hello: Value) -> Mcp {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -216,13 +279,9 @@ impl Mcp {
             lines,
             next_id: 1,
             notifications: Vec::new(),
+            call_meta: None,
         };
-        let hello = mcp
-            .request(
-                "initialize",
-                json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "0" } }),
-            )
-            .await;
+        let hello = mcp.request("initialize", hello).await;
         assert_eq!(hello["serverInfo"]["name"], "trommi", "{hello}");
         mcp.send(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
             .await;
@@ -291,12 +350,11 @@ impl Mcp {
 
     /// Calls a tool: `(its text, whether it is an error)`.
     pub async fn call(&mut self, name: &str, arguments: Value) -> (String, bool) {
-        let result = self
-            .request(
-                "tools/call",
-                json!({ "name": name, "arguments": arguments }),
-            )
-            .await;
+        let mut params = json!({ "name": name, "arguments": arguments });
+        if let Some(meta) = &self.call_meta {
+            params["_meta"] = meta.clone();
+        }
+        let result = self.request("tools/call", params).await;
         let text = result["content"][0]["text"]
             .as_str()
             .unwrap_or("")
