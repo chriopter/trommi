@@ -62,7 +62,7 @@ test('a session join the core answers busy (a join of the group on its way, or t
         const d = await base.createDevice(store)
         return new Proxy(d, { get(target, name) {
           const f = target[name]
-          if (name !== 'joinSessionChecked') return typeof f === 'function' ? f.bind(target) : f
+          if (name !== 'joinSessionCheckedKeys') return typeof f === 'function' ? f.bind(target) : f
           return async (...args) => { if (busy > 0) { busy--; throw Object.assign(new Error('busy'), { injected: true }) } return f.apply(target, args) }
         } })
       },

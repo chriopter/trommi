@@ -235,11 +235,13 @@ methods!(RawDevice {
     learn_abandon(group);
     code_check_start(recovery_code, served);
     code_check_slice(commits);
+    code_check_defer(groups);
     join_room_checked(recovery_code, served, now_ms);
     recover_checked(recovery_code, served, chains, account, now_ms);
     session_check_start(founding);
     session_check_slice(group, commits);
     join_session_checked(recovery_code, group, current, now_ms);
+    join_session_checked_keys(recovery_code, group, current, rows, links, now_ms);
     recovery_plan_start(recovery_code, served);
     recovery_plan_slice(commits);
     recovery_plan_finish(recovery_code, served);

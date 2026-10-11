@@ -948,6 +948,8 @@ export class Device {
   codeCheckStart(recoveryCode: Uint8Array, served: ServedStart): Promise<void>
   /** The next Commits of the room group and the sessions named at the start, ascending by change number. */
   codeCheckSlice(commits: PlacedCommit[]): Promise<void>
+  /** Live session groups checked after the join of the room (8.5): the room check selects none of their keys. */
+  codeCheckDefer(groups: Uint8Array[]): Promise<void>
   joinRoomChecked(recoveryCode: Uint8Array, served: ServedEnd, nowMs: number): Promise<CodeJoin>
   /** `recover` on the held check, with the plan of `prepareRecovery` or `recoveryPlanFinish`. */
   recoverChecked(recoveryCode: Uint8Array, served: ServedEnd, chains: ServedEnvelope[], account: Uint8Array, nowMs: number): Promise<CodeJoin>
@@ -955,6 +957,8 @@ export class Device {
   sessionCheckStart(founding: Uint8Array): Promise<Uint8Array>
   sessionCheckSlice(group: Uint8Array, commits: ServedCommit[]): Promise<void>
   joinSessionChecked(recoveryCode: Uint8Array, group: Uint8Array, current: Uint8Array, nowMs: number): Promise<number>
+  /** `joinSessionChecked` for a deferred session: its keys are selected from the room's rows and links now. */
+  joinSessionCheckedKeys(recoveryCode: Uint8Array, group: Uint8Array, current: Uint8Array, rows: Uint8Array[], links: Uint8Array[], nowMs: number): Promise<number>
   /** `prepareRecovery` in steps, on a check of its own (the device's check for `recoverChecked` is another). */
   recoveryPlanStart(recoveryCode: Uint8Array, served: ServedStart): Promise<void>
   recoveryPlanSlice(commits: PlacedCommit[]): Promise<void>

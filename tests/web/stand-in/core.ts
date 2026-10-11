@@ -366,6 +366,7 @@ function makeDevice(binding: Binding, raw: BindingModule.Device, state: State): 
     // the same in steps
     codeCheckStart: (code: Uint8Array, start: ServedStart) => run(() => raw.codeCheckStart(code, bareStart(start))),
     codeCheckSlice: (placed: PlacedCommit[]) => run(() => raw.codeCheckSlice(barePlaced(placed))),
+    codeCheckDefer: (groups: Uint8Array[]) => run(() => raw.codeCheckDefer(groups)),
     joinRoomChecked: (code: Uint8Array, end: ServedEnd, nowMs: number) => run(async () => {
       const done = await raw.joinRoomChecked(code, bareEnd(end), nowMs)
       for (const id of done.outbox) note(id, { 0: { added: [await me()] } })
@@ -375,6 +376,11 @@ function makeDevice(binding: Binding, raw: BindingModule.Device, state: State): 
     sessionCheckSlice: (g: Uint8Array, commits: ServedCommit[]) => run(() => raw.sessionCheckSlice(g, bareCommits(commits))),
     joinSessionChecked: (code: Uint8Array, g: Uint8Array, current: Uint8Array, nowMs: number) => run(async () => {
       const id = await raw.joinSessionChecked(code, g, splitFacts(current).bytes, nowMs)
+      note(id, { 0: { added: [await me()] } })
+      return id
+    }),
+    joinSessionCheckedKeys: (code: Uint8Array, g: Uint8Array, current: Uint8Array, rows: Uint8Array[], links: Uint8Array[], nowMs: number) => run(async () => {
+      const id = await raw.joinSessionCheckedKeys(code, g, splitFacts(current).bytes, rows, links, nowMs)
       note(id, { 0: { added: [await me()] } })
       return id
     }),

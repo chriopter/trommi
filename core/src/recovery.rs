@@ -1814,6 +1814,8 @@ pub struct RoomCheck {
     anchored: bool,
     /// The change number of the last Commit taken.
     place: Option<u64>,
+    /// Live session groups the device checks after it joined the room (8.5): their rows are left for then.
+    deferred: BTreeSet<GroupId>,
 }
 
 impl RoomCheck {
@@ -1864,7 +1866,15 @@ impl RoomCheck {
             last_committer: None,
             anchored: false,
             place: None,
+            deferred: BTreeSet::new(),
         })
+    }
+
+    /// Names live session groups whose check comes after the join of the room (8.5): none of their
+    /// `SealedKey`s is selected here, whether or not the group was named at the start; each group's keys
+    /// are selected when it is checked and joined ([`session_keys`]).
+    pub fn defer(&mut self, groups: &[GroupId]) {
+        self.deferred.extend(groups.iter().copied());
     }
 
     /// The room being checked.
@@ -2008,6 +2018,7 @@ impl RoomCheck {
         keys.check_room(&history.newest().room)?;
 
         let opened = open_links(keys, &self.room, served.links, &key_changes(history))?;
+        let deferred = std::mem::take(&mut self.deferred);
         let sessions: Vec<Result<CheckedSession, Error>> = self
             .walks
             .into_iter()
@@ -2015,6 +2026,9 @@ impl RoomCheck {
             .map(|(walk, current)| walk.finish(current))
             .collect();
         let begun = |group: &GroupId, epoch: u64| {
+            if deferred.contains(group) {
+                return Began::Never;
+            }
             let verified = sessions
                 .iter()
                 .filter_map(|session| session.as_ref().ok())
@@ -2038,6 +2052,37 @@ impl RoomCheck {
             places: self.places,
         })
     }
+}
+
+/// The content keys of one live session group that a device checked after it joined the room with the code
+/// (8.5, deferred): its rows only, each in force under the room epoch the group's own Commits name
+/// ([`CheckedSession::begun`]), opened with the code and the links back to older codes as at the room's
+/// check. Rows of other groups are not read, so their faults do not fail this group.
+pub fn session_keys(
+    keys: &RecoveryKeys,
+    room: &RoomId,
+    session: &CheckedSession,
+    rows: &[Vec<u8>],
+    links: &[Vec<u8>],
+    history: &RoomHistory,
+) -> Result<Vec<RecoveredKey>, Error> {
+    let group = session.observer.group();
+    let own: Vec<Vec<u8>> = rows
+        .iter()
+        .filter(|row| SealedKey::from_bytes(row).is_ok_and(|row| row.context.group == group))
+        .cloned()
+        .collect();
+    let opened = open_links(keys, room, links, &key_changes(history))?;
+    let begun = |at: &GroupId, epoch: u64| {
+        if *at != group {
+            return Began::Never;
+        }
+        usize::try_from(epoch)
+            .ok()
+            .and_then(|epoch| session.begun.get(epoch))
+            .map_or(Began::Never, |room_epoch| Began::Under(*room_epoch))
+    };
+    select_keys(room, &own, &opened.openers, history, &begun)
 }
 
 /// Checks the room a hub serves before a device joins it with the code (8.4, 8.5), in one call:

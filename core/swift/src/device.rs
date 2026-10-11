@@ -957,6 +957,16 @@ impl CoreDevice {
         self.write(|device| with_placed(&commits, |commits| Ok(device.code_check_slice(commits)?)))
     }
 
+    /// Names the live session groups whose check comes after the join of the room (8.5): the room check
+    /// selects none of their keys; `join_session_checked_keys` does when each is checked. `not-found` without
+    /// a check.
+    pub fn code_check_defer(&self, groups: Vec<Vec<u8>>) -> Result<(), CoreError> {
+        self.write(|device| {
+            let groups = groups.iter().map(|g| group_id(g)).collect::<Result<Vec<_>, _>>()?;
+            Ok(device.code_check_defer(&groups)?)
+        })
+    }
+
     /// Ends the check of the room and, if it holds, builds the join of the room group as
     /// `join_room_with_code` does. `bad-format` when `served` names another number of current GroupInfos
     /// than the start named sessions. Whatever the answer, the check is gone; `not-found` without one.
@@ -1043,6 +1053,24 @@ impl CoreDevice {
         let keys = recovery::keys(&recovery_code)?;
         self.write(|device| {
             Ok(device.join_session_checked(&keys, &group_id(&group)?, &current, now_ms)?)
+        })
+    }
+
+    /// `join_session_checked` for a session whose check was deferred at the join of the room
+    /// (`code_check_defer`): its content keys are selected from `rows` (every `SealedKey` of the room) and
+    /// `links` (every `RecoveryLink`) under the room epochs its own Commits name, and kept with the join.
+    pub fn join_session_checked_keys(
+        &self,
+        recovery_code: Vec<u8>,
+        group: Vec<u8>,
+        current: Vec<u8>,
+        rows: Vec<Vec<u8>>,
+        links: Vec<Vec<u8>>,
+        now_ms: u64,
+    ) -> Result<u64, CoreError> {
+        let keys = recovery::keys(&recovery_code)?;
+        self.write(|device| {
+            Ok(device.join_session_checked_keys(&keys, &group_id(&group)?, &current, &rows, &links, now_ms)?)
         })
     }
 
