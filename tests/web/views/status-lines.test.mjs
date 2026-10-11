@@ -20,3 +20,14 @@ test('on a phone the detail is hidden in the line and shown only in an open row'
   const phone = css.slice(css.indexOf('.status-more { display: none; }'))
   assert.match(phone, /@media \(max-width: 860px\)[\s\S]*\.status-line \.status-detail \{ display: none; \}[\s\S]*\.status-row\[data-open\] \.status-more \{ display: grid;/)
 })
+
+test('on a phone the time is short beside a small clock, the words kept for a screen reader', async () => {
+  const { agoShort } = await import('../../../app/web/public/ui.mjs')
+  const now = Date.now()
+  assert.equal(agoShort(now - 4 * 60000, now), '4m')
+  assert.equal(agoShort(now - 3 * 3600000, now), '3h')
+  assert.equal(agoShort(now, now), 'now')
+  const src = read('session.mjs'), css = read('session.css')
+  assert.match(src, /<span class="status-when">\$\{ico\('clock'\)\}<span data-short aria-hidden="true" data-ts="\$\{t\.updated\}">[\s\S]*agoSpan\(t\.updated, 'offscreen'\)/)
+  assert.match(css, /@media \(max-width: 860px\)[\s\S]*\.status-line \.status-ago \{ display: none; \}[\s\S]*\.status-line \.status-when \{ display: inline-flex;/)
+})

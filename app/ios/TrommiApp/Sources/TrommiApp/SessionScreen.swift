@@ -638,7 +638,11 @@ struct SessionStatus: View {
                 }.frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
                 Text(t.label).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
                 Spacer(minLength: 4)
-                if t.updated > 0 { Text(agoText(t.updated)).font(Face.text(12)).foregroundStyle(Ink.faint) }
+                // (the time short beside a small clock: "4m"; VoiceOver hears "4 min ago")
+                if t.updated > 0 {
+                  HStack(spacing: 3) { Image(systemName: "clock").font(.system(size: 10, weight: .medium)); Text(agoShort(t.updated)).font(Face.text(12)).monospacedDigit() }
+                    .foregroundStyle(Ink.faint).accessibilityElement(children: .ignore).accessibilityLabel(agoText(t.updated))
+                }
               }
               if isOpen {
                 VStack(alignment: .leading, spacing: 8) {
@@ -653,6 +657,15 @@ struct SessionStatus: View {
       }.padding(.vertical, 12)
     }
   }
+}
+/** "now", "4m", "3h", "4 Oct": agoText short, for a time beside a small clock. */
+func agoShort(_ ts: UInt64, now: UInt64 = nowMs()) -> String {
+  let min = Int((Double(Int64(now) - Int64(ts)) / 60000).rounded())
+  if min < 1 { return "now" }
+  if min < 60 { return "\(min)m" }
+  if min < 1440 { return "\(Int((Double(min) / 60).rounded()))h" }
+  let f = DateFormatter(); f.locale = Locale(identifier: "en_GB"); f.dateFormat = "d MMM"
+  return f.string(from: Date(timeIntervalSince1970: Double(ts) / 1000))
 }
 struct TypingDots: View {
   @State private var phase = 0.0
