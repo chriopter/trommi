@@ -548,7 +548,7 @@ fn policies_set_by_configuration() {
             .unwrap();
             w.ada.post(&w.hub, "/v1/account/passkeys", &json!({
                 "attestation_object": b64(&key.attestation(RP, UP_UV)), "client_data_json": b64(&Authenticator::client_data("webauthn.create", &challenge, ORIGIN)),
-                "sealed_copy": b64(&[2u8; 61]),
+                "sealed_copy": b64(&[2u8; 61]), "proof": { "kit": { "auth_key": b64(&[2u8; 32]) } },
             }))
         },
         429,
@@ -622,7 +622,7 @@ fn the_defaults_at_their_exact_values() {
             .unwrap();
             w.ada.post(&w.hub, "/v1/account/passkeys", &json!({
                 "attestation_object": b64(&key.attestation(RP, UP_UV)), "client_data_json": b64(&Authenticator::client_data("webauthn.create", &challenge, ORIGIN)),
-                "sealed_copy": b64(&[2u8; 61]),
+                "sealed_copy": b64(&[2u8; 61]), "proof": { "kit": { "auth_key": b64(&[2u8; 32]) } },
             }))
         },
         429,

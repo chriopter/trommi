@@ -112,14 +112,28 @@ beginning with 0x02; `auth_key` is 32 bytes; `kdf` is the pinned record of v1 §
 | --- | --- | --- |
 | `POST /v1/account` | `{ email?, kit: { auth_key, sealed_copy }, password?: { auth_key, sealed_copy, kdf }, passkey?: { attestation_object, client_data_json, sealed_copy, transports? } }` → the account | a human device of the room, or inside `POST /v1/rooms`; at least one way in; `email` comes with a password and is optional beside a passkey; the id: see below; `bad-email`, `account-exists`, `bad-passkey` |
 | `GET /v1/account` | → `{ email (or null), account, kit_form, revision, has_password, kdf, password_copy, kit_copy, user_handle, passkeys: [ { credential_id, sealed_copy, … } ], rooms }` | a human device; no hash leaves the hub |
-| `PUT /v1/account/password` · `PUT /v1/account/kit` | `{ auth_key, sealed_copy, kdf?, revision }` → `{ revision }` | `account-changed` when `revision` is not the current one; a password on an account without e-mail: `bad-email` |
-| `PUT /v1/account/email` | `{ email, kit: { auth_key, sealed_copy }, revision }` → `{ revision }` | a human device; only for an account that has none (`forbidden` otherwise); the kit made anew under the e-mail (`incomplete` without); `bad-email`, `account-exists` |
-| `POST /v1/account/passkeys/challenge` · `POST /v1/account/passkeys` · `DELETE /v1/account/passkeys/{credential_id}` | → `{ challenge, account, user_handle, email, kit_form }` · a passkey body as above | a human device (the challenge also the recovery key, before `finish`); the challenge is for that account; `last-way-in` |
-| `DELETE /v1/account` | `{ password: { auth_key } }` or `{ kit: { auth_key } }` or `{ passkey: { credential_id, authenticator_data, client_data_json, signature } }` → `{ deleted: true }` | a human device, with the way in proved once more (see below); `wrong-login` for a proof that does not hold, `not-found` for a room without an account, `account-changed` |
+| `PUT /v1/account/password` · `PUT /v1/account/kit` | `{ auth_key, sealed_copy, kdf?, revision, proof }` → `{ revision }` | a human device, with the way in of now proved (`proof`, see below); `account-changed` when `revision` is not the current one; a password on an account without e-mail: `bad-email` |
+| `PUT /v1/account/email` | `{ email, kit: { auth_key, sealed_copy }, revision, proof }` → `{ revision }` | a human device, with `proof`; only for an account that has none (`forbidden` otherwise); the kit made anew under the e-mail (`incomplete` without); `bad-email`, `account-exists` |
+| `POST /v1/account/passkeys/challenge` · `POST /v1/account/passkeys` · `DELETE /v1/account/passkeys/{credential_id}` | → `{ challenge, account, user_handle, email, kit_form }` · a passkey body as above with `proof` · `{ proof }` | a human device (the challenge also the recovery key, before `finish`); the challenge is for that account at its revision, one use: a passkey added with a passkey's proof takes two; `last-way-in` |
+| `DELETE /v1/account` | a proof itself: `{ password: { auth_key } }` or `{ kit: { auth_key } }` or `{ passkey: { credential_id, authenticator_data, client_data_json, signature } }` → `{ deleted: true }` | a human device, with the way in proved once more (see below); `wrong-login` for a proof that does not hold, `not-found` for a room without an account, `account-changed` |
 | `POST /v1/account/login` | `{ account, auth_key }` → `{ rooms: [ { room_id, sealed_copy, challenge } ], kdf, account, email }` | no token; `wrong-login` for an unknown e-mail and a wrong key alike, at one cost; `challenge` is a sign-in challenge of that room (12.3) |
 | `POST /v1/account/recover` | `{ account, auth_key }` (the kit's) → the same with the kit's copy | `wrong-recovery` |
 | `POST /v1/account/passkey/challenge` · `POST /v1/account/passkey/login` | → `{ challenge }` · `{ credential_id, authenticator_data, client_data_json, signature, user_handle? }` → as login | every failure is `wrong-login` |
 
+- **A token alone changes no way in** (v1 8.9.10; owner, 11 October 2026): whoever holds a device's token, and
+  only that, must not set a password, kit or e-mail of their own, add a passkey or remove one, and then sign in
+  or delete the account. So each of these requests carries `proof`, the way in of now, proved once more, as
+  `DELETE /v1/account` carries it: `{ password: { auth_key } }` or `{ kit: { auth_key } }` (the login key the
+  device derives, as for a login: the kit's words for `PUT /v1/account/email`, which makes the kit anew) or
+  `{ passkey: { credential_id, authenticator_data, client_data_json, signature } }`, an assertion of one of the
+  account's passkeys on a challenge of `POST /v1/account/passkeys/challenge` (two minutes, one use, for this
+  account at its revision). The hub checks it before it changes anything, at the cost and with the counting of a
+  deletion's proof (below): with the address's logins, per room, and the login's lasting back-off on the account,
+  one record for every route of it. No `proof`, or one that names nothing: `bad-format`; one that does not hold:
+  `wrong-login`. The change is made only if the account is still at the revision the proof was checked at
+  (`account-changed`). Exempt: `POST /v1/account` (the first way in of a room that has none: nothing to prove
+  yet) and the account's copies with new recovery keys (8.6 on `…/recovery-code`, whose room Commit only the
+  device's own signature key makes; 8.7 under the recovery key).
 - **Deleting an account** (`DELETE /v1/account`; App Store guideline 5.1.1(v)): the account, each of its rooms and
   everything stored for them go in one transaction: every row that names the account, the room, a group of the
   room, a recovery or an invite of it (devices, groups, logs, GroupInfos, Welcomes, sealed keys, recovery rows,
