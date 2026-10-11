@@ -84,6 +84,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- Web: a picture that could not be loaded keeps its place as a small tile (the reason on hover); a Desk row keeps its
+  title and answers in view. An open tab looks for a new version every 10 minutes, and at once on a file of a newer Trommi.
 - Web: a card handed back and then put before you again no longer slips back to "with the agent" (off the Desk)
   when you open it; a card already stuck that way returns to the Desk by itself.
 - After /mcp → Reconnect a connected agent no longer shows as gone: the old connector's goodbye can't override the new one's hello.

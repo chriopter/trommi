@@ -762,6 +762,29 @@ export function thumb(file) {
 /** The src attribute of an <img> for that file (the shown width is the caller's; there are no variants). */
 export const srcOf = file => attrs({ src: thumb(file).src })
 
+/** Why an attachment did not come, in plain words. why: the error of fetching or opening it (null: not there). */
+export const attGoneText = why => !why || why.code === 'not-found' || why.status === 404 ? 'Attachment no longer available'
+  : why.code === 'newer-version' ? 'Made by a newer Trommi: reload the page to open it'
+  : `This file could not be loaded: ${why.message || why.code || 'no answer from the hub'}`
+/** What stands in place of a picture (or a file's link) that did not come. A small picture (a Desk row's fan, a card's
+ *  thumbnail, a session's file strip: an <img> with a width of 96 or less) becomes a tile of its own size that says
+ *  why on hover; a larger one says it in words, inside the place the picture had. */
+export function attGone(el, why) {
+  const text = attGoneText(why), gone = document.createElement('span')
+  gone.className = 'att-gone'
+  gone.setAttribute('role', 'status')
+  const w = Number(el?.getAttribute?.('width')), h = Number(el?.getAttribute?.('height'))
+  if (el?.tagName === 'IMG' && w > 0 && w <= 96) {
+    gone.classList.add('is-tile')
+    gone.style.width = `${w}px`
+    gone.style.height = `${h > 0 ? h : w}px`
+    gone.title = text
+    gone.setAttribute('aria-label', text)
+    gone.innerHTML = String(sk('picture'))
+  } else gone.textContent = text
+  return gone
+}
+
 /** The page behind a picture (the HTML it was rendered from), as one thing to press: a sheet with the file's name.
  *  always: it stands hidden where the picture has no page (the controller shows it for one that has). */
 export const pageChip = (page, always = false, view = '') => (page || always ? html`<a class="page-chip" data-card-target="page"${view && page?.kind === 'file' ? raw(' data-nav') : raw(' target="_blank" rel="noopener noreferrer"')} href="${view && page?.kind === 'file' ? view : page?.url ?? '#'}" title="This picture has a page behind it: open the page"${page ? '' : raw(' hidden')}>${sk('page')}<b>${page?.name ?? ''}</b><i>open</i></a>` : '')

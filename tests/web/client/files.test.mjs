@@ -45,3 +45,29 @@ test('a file of 3 MiB: uploaded in pieces, fetched on another device, shared by 
   await assert.rejects(openShared(await core(), outside, link), { code: 'not-found' })
   assert.throws(() => parseShareLink('https://app.trommi.com/a/nothing'), { code: 'bad-format' })
 })
+
+// A file of head version 3 (padded, spec 11.0) opens in the web app: the connector writes them since release 206, and
+// a web build whose core knew only version 2 showed "newer-version" in place of every picture.
+test('files of head version 3: the spec vectors open, and what the web writes is version 3', async () => {
+  const { getDecrypted, putEncrypted } = await import('../../../app/web/core/client.ts')
+  const fs = await import('node:fs')
+  const vectors = JSON.parse(fs.readFileSync(new URL('../../../spec/vectors/files.json', import.meta.url), 'utf8'))
+  const c = await core()
+  const bytes = h => new Uint8Array(Buffer.from(h, 'hex'))
+  const sha = async b => Buffer.from(await crypto.subtle.digest('SHA-256', b)).toString('hex')
+  for (const f of vectors.files) {
+    const stored = bytes(f.stored)
+    assert.equal(stored[0], 3, `${f.what}: a version 3 head`)
+    const hub = { getFile: async id => { assert.equal(Buffer.from(id).toString('hex'), f.file_id); return { bytes: stored } } }
+    const plain = await getDecrypted(c, hub, { fileId: bytes(f.file_id), fileKey: bytes(f.file_key), sha256: bytes(f.sha256) })
+    assert.equal(plain.length, f.plain_len, f.what)
+    assert.equal(await sha(plain), f.plaintext_sha256, f.what)
+  }
+  // and the web's own upload: version 3 at the hub, opened again
+  let put
+  const hub = { putFile: async (id, blob) => { put = new Uint8Array(await blob.arrayBuffer()) }, getFile: async () => ({ bytes: put }) }
+  const data = new TextEncoder().encode('a picture, in words')
+  const { file } = await putEncrypted(c, hub, data)
+  assert.equal(put[0], 3)
+  assert.deepEqual([...await getDecrypted(c, hub, file)], [...data])
+})

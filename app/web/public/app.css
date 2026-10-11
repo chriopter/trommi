@@ -603,7 +603,9 @@ body[data-scope="all"] #inbox { container: inboxpage / inline-size; display: blo
 }
 
 /* An attachment the hub no longer has (retention, quota). */
-.att-gone { display: inline-flex; align-items: center; min-height: 48px; padding: var(--s-2) var(--s-3); border: 1px dashed var(--line, #d8d6cf); border-radius: 10px; color: var(--muted, #6b6b66); font-size: 13px; }
+.att-gone { display: inline-flex; align-items: center; min-height: 48px; padding: var(--s-2) var(--s-3); border: 1px dashed var(--line, #d8d6cf); border-radius: 10px; color: var(--muted, #6b6b66); font-size: 13px; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; }
+.att-gone.is-tile { flex: none; justify-content: center; min-height: 0; padding: 0; overflow: hidden; border-radius: 4px; background: var(--sunken); color: var(--line-strong, #b9b7af); }
+.att-gone.is-tile > .sketch { width: 18px; height: 18px; }
 
 @keyframes room-pulse { 50% { opacity: .2 } }
 @keyframes room-rise { from { opacity: 0; translate: -50% 12px; } }

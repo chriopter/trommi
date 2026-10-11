@@ -120,6 +120,7 @@ body[data-filter] .jump { display: none; }
 }
 .shots-one .shot { aspect-ratio: 16 / 10; }
 .shot img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.shot > .att-gone { width: 100%; height: 100%; border: 0; border-radius: 0; }
 .shot:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .file-chip {
   display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; min-height: 36px; padding: 0 var(--s-3) 0 9px;
