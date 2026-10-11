@@ -35,6 +35,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - A Codex session between turns shows as "on its next turn", never as gone or not listening.
 
 **Fixed**
+- Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
+  session is repaired first and the message is sent again.
 - Opening a session no longer fails when one of your devices has been away for long: it joins the session when it comes
   back.
 - Web: logging in to a big account shows how far it is ("Catching up … of …"), opens before every session is

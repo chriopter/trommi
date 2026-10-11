@@ -173,7 +173,9 @@ export class Client {
   private change: Change = M.emptyChange()
   private alertsSeen = new Set<string>()
   /** Outbox id of a sealed envelope -> its echo and its item in model.outbox. */
-  private readonly sending = new Map<number, { local_id: string; item: OutboxItem }>()
+  /** `again`: what seals the same item once more, for an envelope the hub held as stale (5.2.8): this device sealed
+   *  it before it knew of the removal. Used once. */
+  private readonly sending = new Map<number, { local_id: string; item: OutboxItem; again?: (() => Promise<unknown>) | null }>()
   private readonly dirty = new Map<string, unknown>()
   private flushTimer: ReturnType<typeof setTimeout> | null = null
   private flushing: Promise<void> = Promise.resolve()
@@ -409,6 +411,18 @@ export class Client {
     if (!sent) return
     this.sending.delete(entry.id)
     const ch = this.change
+    if (refusal === 'stale-session' && sent.again) {
+      // the session waited for a Remove when this was sealed: it is repaired now, and the same words go again
+      const again = sent.again
+      const at = this.model.outbox.indexOf(sent.item)
+      if (at >= 0) this.model.outbox.splice(at, 1)
+      this.change.outbox = true
+      void (async () => { await this.engine.healNow().catch(() => {}); await again() })().catch(e => {
+        M.pushAlert(this.model, this.change, { code: this.core.errorCode(e) ?? 'stale-session', message: 'a message was not sent: its session waits for a repair', at: this.now() })
+        this.publish()
+      })
+      return
+    }
     if (refusal) {
       // the views see the item `failed` in the change that takes the echo back
       sent.item.outbox_state = 'failed'; sent.item.error = refusal
@@ -506,13 +520,15 @@ export class Client {
   // ---- sending: echo, seal, outbox
 
   /** Seals drafts of one echo and puts their items into model.outbox. A failure takes the echo back. */
-  private async send(local_id: string, drafts: { draft: Draft; recipient?: string | null; files?: Uint8Array[]; item?: Partial<OutboxItem> }[], after?: (sealed: Sealed) => void): Promise<Sent> {
+  private async send(local_id: string, drafts: { draft: Draft; recipient?: string | null; files?: Uint8Array[]; item?: Partial<OutboxItem> }[], after?: (sealed: Sealed) => void, retried = false): Promise<Sent> {
     let last: Sealed | null = null
     try {
       for (const d of drafts) {
-        const sealed = last = await this.engine.seal(d.draft, d.recipient ? unhex(d.recipient) : null, d.files ?? [])
+        const sealed = last = await this.sealHealed(d.draft, d.recipient ? unhex(d.recipient) : null, d.files ?? [])
         const item: OutboxItem = { local_id, envelope_kind: d.draft.kind, object_id: null, timeline_key: null, recipient_device_id: d.recipient ?? null, outbox_state: 'sending', error: null, ...d.item }
-        this.sending.set(sealed.outboxId, { local_id, item })
+        // (a single message may go once more if the hub held its session as stale: its words are sealed anew)
+        const again = drafts.length === 1 && !retried && (d.draft.kind === 'sessionChat' || d.draft.kind === 'cardChat') ? () => this.send(local_id, drafts, after, true) : null
+        this.sending.set(sealed.outboxId, { local_id, item, again })
         this.tell(ch => { this.model.outbox.push(item); ch.outbox = true; M.confirmEcho(this.model, local_id, sealed, ch); after?.(sealed) })
       }
     } catch (e) {
@@ -521,6 +537,16 @@ export class Client {
       throw e
     }
     return { local_id, envelope_hash: hex(last!.envelopeHash), seq: last!.seq }
+  }
+  /** Seals into the outbox. A session the core holds as stale (5.2.8: a leaf the room no longer allows, or a helper
+   *  session without its opener) takes nothing until a human device repairs it: this one repairs it now (the
+   *  engine's heal) and seals once more. */
+  private async sealHealed(draft: Draft, recipient: Uint8Array | null, files: Uint8Array[]): Promise<Sealed> {
+    try { return await this.engine.seal(draft, recipient, files) } catch (e) {
+      if (this.core.errorCode(e) !== 'stale-session' || !this.is_human) throw e
+      await this.engine.healNow().catch(() => {})
+      return await this.engine.seal(draft, recipient, files)
+    }
   }
   private needHuman(): void { if (!this.is_human) fail('forbidden', 'only a human device can do this') }
   private card(object_id: string): Card { return this.model.cards.get(object_id) ?? fail('not-found', `no card ${object_id}`) }

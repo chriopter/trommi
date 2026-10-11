@@ -991,7 +991,17 @@ export class Engine {
     const humans = (this.roles?.humans ?? []).filter(h => !coming.includes(hex(h)))
     for (const g of this.groups) {
       if (!g.session || g.archived || covered(g)) continue
-      if (g.disallowed.length) { await this.clean(g.group, null).catch(() => {}); continue }
+      // 5.2.8: a stale group takes nothing but the Commit that removes every leaf the room disallows and adds the
+      // opener a helper session lacks (its main session's agent leaf now: a takeover that was not finished here)
+      if (g.disallowed.length || g.missingOpener) {
+        let replacement: { device: Uint8Array; keyPackage: Uint8Array } | null = null
+        if (g.missingOpener) {
+          try { replacement = { device: g.missingOpener, keyPackage: (await this.hub.claimKeyPackages([g.missingOpener]))[0]!.key_package } }
+          catch (e) { this.healFailed(g.group, e); this.owing = true; this.later(this.timing.heal_delay * 5, () => this.keepSoon(0)); continue }
+        }
+        await this.clean(g.group, replacement).catch(e => this.healFailed(g.group, e))
+        continue
+      }
       for (const device of humans) {
         if (g.leaves.some(l => same(l, device))) continue
         let keyPackage: Uint8Array
@@ -1005,6 +1015,16 @@ export class Engine {
       }
     }
   }
+  /** A stale session this device could not repair: said once per group and reason (nothing is written in it until
+   *  it is repaired), and tried again with the next upkeep. */
+  private healFailed(group: Uint8Array, e: unknown): void {
+    const code = this.core.errorCode(e) ?? (e as { code?: string } | null)?.code ?? 'failed'
+    const key = `${hex(group)}/${code}`
+    if (this.healSaid.has(key)) return
+    this.healSaid.add(key)
+    this.alert('heal-failed', `a session waits for a repair this device could not make (${code}): nothing can be written in it until then`, group)
+  }
+  private readonly healSaid = new Set<string>()
   /** The Commit that removes a session group's leaves the room no longer allows, each with its Cut; `replacement`:
    *  the agent device that takes the seat (a takeover, 5.3). Resolves when the hub took it; null was nothing to do. */
   clean(group: Uint8Array, replacement: { device: Uint8Array; keyPackage: Uint8Array } | null): Promise<void> {
