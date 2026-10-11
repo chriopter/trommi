@@ -17,7 +17,7 @@ fn sample(at: u64, cpu: f64) -> Sample {
 fn the_history_keeps_an_hour_at_ten_seconds_and_a_day_by_the_minute() {
     let mut h = History::default();
     assert!(h.is_empty());
-    let start = 1_800_000_000_000u64 - 1_800_000_000_000 % 60_000;
+    let start: u64 = 1_800_000_000_000; // already a whole minute
     // two days of samples every 10 s
     let end = start + 2 * COARSE_MS;
     let mut at = start;
