@@ -214,7 +214,7 @@ extension Room {
   }
   /** A session's settings (register session/<id>): name, icon, desk, archived… merged into what is there. */
   public func editSession(_ sid: String, _ fields: [String: JV]) async throws {
-    var cur = board.human.sessionSettings[sid]?.object ?? [:]
+    var cur = (board.sessions[sid].map { board.settingsOf($0) } ?? board.human.sessionSettings[sid])?.object ?? [:]
     for (k, v) in fields { cur[k] = v }
     try await setRegisters(["session/\(sid)": .obj(cur)])
   }

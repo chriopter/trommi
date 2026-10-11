@@ -174,3 +174,26 @@ test('a device back after a while: cards settled elsewhere leave its Desk before
   assert.ok(again.model.stack.includes(kept) && settled.every(id => !again.model.stack.includes(id)))
   modelsAgree(a.model, again.model)
 })
+
+test('the hub\'s Desk decides: a card the hub settled whose closing never reached this device stays off its Desk', async t => {
+  const { fake, R, a, b, agent } = await scene(t, { agent: true, second: true })
+  const id = await agent.askCard({ title: 'settled where b never hears of it', options: [{ key: 'x', label: 'X' }] })
+  const other = await agent.askCard({ title: 'open', options: [{ key: 'x', label: 'X' }] })
+  await agent.settle()
+  await until(() => b.model.stack.includes(id) && b.model.stack.includes(other), 'b shows both')
+  await b.flush(); await b.stop()
+  const from = [...fake.state.rooms.values()][0].change
+  await a.answer({ object_id: id, choices: ['x'] }); await agent.closeCard(id)
+  await a.settle(); await agent.settle()
+  const upTo = [...fake.state.rooms.values()][0].change
+  // the hub serves b everything but those envelopes: b would replay the card as open for ever
+  fake.faults.add({ method: 'GET', path: '/v1/changes', times: 1e6, answer: json => ({ ...json, items: json.items.filter(i => i.change <= from || i.change > upTo) }) })
+  const again = await R.openRoom({ storage: b.stored_as })
+  t.after(() => again.stop().catch(() => {}))
+  await again.start({ stream: false })
+  await again.catchUp()
+  await until(() => again.model.cards.get(id)?.catching_up, 'held back by the hub\'s Desk')
+  assert.equal(again.model.cards.get(id).object_state, 'open', 'its own replay still says open')
+  assert.ok(!again.model.stack.includes(id) && again.model.stack.includes(other), 'off the Desk; the open one stays')
+  fake.faults.clear()
+})

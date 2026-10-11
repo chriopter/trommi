@@ -779,6 +779,8 @@ a.focus-stage-step { display: grid; place-items: center; }
   .tc-card .tc-or-pair .tc-tile { min-height: 52px; padding: 6px 10px; }
   .tc-card .tc-or-pair .tc-wtf .sketch-what { width: 66px; height: 23px; stroke-width: 2.3; }
   .tc-card .tc-or-pair .tc-reverse .sketch { width: 26px; height: 26px; }
+  /* (the ink oval as on the send button's reverse card: air above and below it, not the tile's full height) */
+  .tc-card .tc-or-pair .tc-reverse:is(:hover, :focus-visible, :active) { background-size: 40px 44px, auto; }
 }
 
 /* ---- A phone's card: the answers first: the title and its line, then the options, the

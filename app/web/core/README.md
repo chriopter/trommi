@@ -114,9 +114,10 @@ What the fields mean under protocol v1:
 - **Card**: `agent_device_id` is the object's owner now, as the core says (it moves when the owner leaves);
   `version_hash` and `answer.envelope_hash` are envelope hashes; `object_state` `open | answered | closed` is the
   core's replay (9.2.1); `closed_how`, `in_revision`, `versions`, `answers` as before. `content_state` other than
-  `ok` means the body is not readable here (pruned, no key, a newer schema). `catching_up`: open in the cache, but
-  closed at the hub after this device's cursor (a start after a while away reads the hub's Desk first,
-  `deskFirst`); it stays off the stack until the catch-up reaches the Desk's cursor.
+  `ok` means the body is not readable here (pruned, no key, a newer schema). `catching_up`: open here, but the hub's Desk does
+  not list it and this device holds nothing of it newer than that Desk (client.ts `readDesk`, at the start, after
+  every catch-up and every minute): settled elsewhere, off the stack. A card the Desk lists whose newest version
+  this device lacks is read from the Desk's copy of that version.
 - **PermissionRequest**: `permission_state` `pending | allowed | denied | expired`; `catching_up` as a card's.
 - **Timeline**: `items` is a window (`Map<envelope_number | local_id, TimelineItem>`), filled by `loadTimeline` (`since_ms`: a first window that reaches back so far, at most `KEEP_PER_CHAT` items); the cache keeps the newest `KEEP_PER_CHAT` (500) items of each Chat, older ones are read again from the hub;
   `item_count`, `newest_envelope_number`, `loaded_down_to`, `has_more`. An item fetched out of the hub's order

@@ -24,3 +24,21 @@ test('every account has a desk from its creation on: "Personal" (desk/main); two
   await a.settle()
   await assert.rejects(a.setDesk('11'.repeat(16), null), e => e.code === 'last-desk', 'nor the one left after another went')
 })
+
+test('a session\'s settings kept under its agent device (as an older web wrote them) belong to that session; no session of their own', async t => {
+  const { a, agent } = await scene(t, { agent: true })
+  await a.settle(); await agent.settle()
+  const sid = agent.session_id, dev = agent.device_id
+  await until(() => a.model.sessions.get(sid)?.group_id, 'a knows the session')
+  await a.setRegisters({ [`session/${dev}`]: { name: 'Written under the device' } })
+  await a.settle()
+  assert.equal(a.model.sessions.has(dev), false, 'no session made of the device\'s key')
+  assert.equal(a.model.human.session_settings.get(sid)?.name, 'Written under the device', 'the settings are the session\'s')
+  // the session's own key wins over the old one
+  await a.setRegisters({ [`session/${sid}`]: { name: 'Its own' } })
+  await a.settle()
+  assert.equal(a.model.human.session_settings.get(sid)?.name, 'Its own')
+  await a.setRegisters({ [`session/${dev}`]: { name: 'older again' } })
+  await a.settle()
+  assert.equal(a.model.human.session_settings.get(sid)?.name, 'Its own')
+})
