@@ -719,10 +719,14 @@ impl Seeder {
             return Ok(());
         }
         let body = with_schema_map(obj(&json!({ "answer_action": "answer", "choices": ["yes"], "attachments": [] })));
-        self.human
-            .answer(id, Value::Object(body), &["yes"], false)
-            .await
-            .map_err(|e| format!("bulk answer: {e}"))?;
+        // (an epoch that ended under the answer: followed, and answered once more)
+        if let Err(first) = self.human.answer(id, Value::Object(body.clone()), &["yes"], false).await {
+            self.human.sync().await;
+            self.human
+                .answer(id, Value::Object(body), &["yes"], false)
+                .await
+                .map_err(|e| format!("bulk answer: {first}; again: {e}"))?;
+        }
         let client = self.agents[seat.agent].client.clone();
         let want = id.to_string();
         common::eventually("the agent has the bulk answer", || async {

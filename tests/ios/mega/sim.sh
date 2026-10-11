@@ -13,6 +13,7 @@
 #   SIM     [mega iPhone]     the simulator's name (made as an iPhone 18 Pro on iOS 27 if missing)
 #   WORK, PORT                as for run.sh
 #   AWAY    ["60 80 3"]       the away round
+#   PHASES  ["cold warm away logout"]   which launches
 set -euo pipefail
 work=${WORK:-${TMPDIR:-/tmp}/trommi-mega}
 port=${PORT:-18470}
@@ -35,19 +36,21 @@ udid=$(on_mac "xcrun simctl list devices available | grep -F '    $sim (' | tail
 if [ -z "$udid" ]; then
   udid=$(on_mac "xcrun simctl create '$sim' 'iPhone 18 Pro' \$(xcrun simctl list runtimes | grep -o 'com.apple.CoreSimulator.SimRuntime.iOS-27[-0-9]*' | tail -1)")
 fi
-on_mac "xcrun simctl boot $udid 2>/dev/null; xcrun simctl bootstatus $udid -b > /dev/null; xcrun simctl terminate $udid com.trommi.ios 2>/dev/null; xcrun simctl uninstall $udid com.trommi.ios 2>/dev/null; xcrun simctl install $udid $app"
+on_mac "xcrun simctl boot $udid 2>/dev/null; xcrun simctl bootstatus $udid -b > /dev/null"
+# (a fresh install only for a cold start: the later launches go on with what the app stored)
+[[ " ${PHASES:-cold} " == *" cold "* ]] && on_mac "xcrun simctl terminate $udid com.trommi.ios 2>/dev/null; xcrun simctl uninstall $udid com.trommi.ios 2>/dev/null; xcrun simctl install $udid $app"
 
 # one launch: env for the app, then wait until its log says the first catch-up ended (or `until`)
 launch() {   # launch <label> <until regex> [KEY=VALUE…]
   local label=$1 until=$2; shift 2
   local envs="SIMCTL_CHILD_TROMMI_PERF=1 SIMCTL_CHILD_TROMMI_MEGA=1 SIMCTL_CHILD_TROMMI_HUB_URL=http://127.0.0.1:$port"
   for kv in "$@"; do envs="$envs SIMCTL_CHILD_$kv"; done
-  on_mac "data=\$(xcrun simctl get_app_container $udid com.trommi.ios data); rm -f \"\$data/Documents/perf.log\"; xcrun simctl terminate $udid com.trommi.ios 2>/dev/null; env $envs xcrun simctl launch $udid com.trommi.ios > /dev/null"
+  on_mac "data=\$(xcrun simctl get_app_container $udid com.trommi.ios data); rm -f \"\$data/Documents/perf.log\"; xcrun simctl terminate $udid com.trommi.ios 2>/dev/null; env $envs xcrun simctl launch --terminate-running-process --stdout=/tmp/mega-$label.out --stderr=/tmp/mega-$label.err $udid com.trommi.ios > /dev/null"
   local log=""
   for _ in $(seq 1 600); do
     log=$(on_mac "cat \"\$(xcrun simctl get_app_container $udid com.trommi.ios data)/Documents/perf.log\" 2>/dev/null" || true)
     grep -Eq "$until" <<< "$log" && break
-    on_mac "pgrep -f $udid.*Trommi.app/Trommi > /dev/null" || { echo "$label: THE APP IS NOT RUNNING (crashed?)"; break; }
+    on_mac "ps ax -o command | grep -v PlugIns | grep -q '$udid/.*/Trommi.app/Trommi'" || { echo "$label: THE APP IS NOT RUNNING (crashed?)"; break; }
     sleep 1
   done
   sleep 2
@@ -57,13 +60,20 @@ launch() {   # launch <label> <until regex> [KEY=VALUE…]
   echo "   stalls > 30 ms: $(grep -c STALL <<< "$log" || true); the longest: $(grep -o 'STALL [0-9]*' <<< "$log" | sort -k2 -n | tail -1)"
   grep STALL <<< "$log" | sort -t' ' -k4 -n | tail -3 | cut -c1-400
   printf '%s\n' "$log" > "$work/sim-$label.log"
+  # what the app wrote to stderr: a Swift runtime trap says where
+  on_mac "grep -E -i 'fatal|error:|precondition|crash' /tmp/mega-$label.err 2>/dev/null | tail -5" || true
 }
 
-launch cold 'MEGA sync 1 ended' "TROMMI_MEGA_EMAIL=$APPSTORE_DEMO_USER" "TROMMI_MEGA_PASSWORD=$APPSTORE_DEMO_PASSWORD"
-launch warm 'MEGA sync 1 ended'
+phases=${PHASES:-cold warm away logout}
+has() { [[ " $phases " == *" $1 "* ]]; }
+has cold && launch cold 'MEGA sync 1 ended' "TROMMI_MEGA_EMAIL=$APPSTORE_DEMO_USER" "TROMMI_MEGA_PASSWORD=$APPSTORE_DEMO_PASSWORD"
+has warm && launch warm 'MEGA sync 1 ended'
+if has away; then
 cmd="$work/serve/sim-$(date +%s).cmd"
 echo "${AWAY:-60 80 3}" > "$cmd"
 until [ -e "${cmd%.cmd}.done" ]; do sleep 2; done
 launch away 'MEGA sync 1 ended'
-launch logout 'MEGA alive after logout|THE APP' TROMMI_MEGA_LOGOUT=1
-on_mac "pgrep -f $udid.*Trommi.app/Trommi > /dev/null" && echo "after logout: the app runs" || echo "after logout: THE APP IS GONE"
+fi
+has logout && launch logout 'MEGA alive after logout|THE APP' TROMMI_MEGA_LOGOUT=1
+sleep 10
+on_mac "ps ax -o command | grep -v PlugIns | grep -q '$udid/.*/Trommi.app/Trommi'" && echo "10 s after the last step: the app runs" || echo "10 s after the last step: THE APP IS GONE"
