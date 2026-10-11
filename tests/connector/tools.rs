@@ -1716,6 +1716,7 @@ async fn a_second_session_joins_by_itself_vouched_by_the_first() {
     let other = [
         ("TROMMI_SESSION_KEY", "test-second"),
         ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+        ("TROMMI_SELF_JOIN", "1"),
     ];
     let mut second = seat.serve_with(&other).await;
     // its first call starts the self-join and answers at once, politely
@@ -1786,6 +1787,7 @@ async fn a_second_session_joins_by_itself_vouched_by_the_first() {
         .serve_with(&[
             ("TROMMI_SESSION_KEY", "test-third"),
             ("CLAUDE_CONFIG_DIR", foreign_config.to_str().unwrap()),
+            ("TROMMI_SELF_JOIN", "1"),
         ])
         .await;
     let mut said = String::new();
@@ -1829,6 +1831,7 @@ async fn a_self_join_the_person_denies_stays_off_the_board() {
         .serve_with(&[
             ("TROMMI_SESSION_KEY", "test-denied"),
             ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+            ("TROMMI_SELF_JOIN", "1"),
         ])
         .await;
     let mut said = String::new();

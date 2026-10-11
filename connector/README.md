@@ -187,7 +187,9 @@ to vouch for it; that one writes `join_ask/<nonce>` into its main session; the h
 session …?", and on Allow answers with an invite link (`join_link/<nonce>`; on Deny with `denied`, and this process
 does not ask again); the new session joins with it, the voucher passes the Request's hash on, and the app confirms
 that Request (one tap instead of the emoji). Meanwhile the tools answer "joining by itself … waiting for the human to
-allow it"; the new session's first message says who vouched. `TROMMI_SELF_JOIN=0` turns it off; another account needs one invite by link.
+allow it"; the new session's first message says who vouched. It is off by default for now (`TROMMI_SELF_JOIN=1`
+turns it on): the web app and the iPhone app answer asks first, and a later connector release turns it on. Another
+account needs one invite by link.
 `trommi-connector claim-key`, run inside a session, makes
 the key its running connector holds that session's when nobody owns it yet (a key from a terminal `join`).
 

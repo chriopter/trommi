@@ -44,9 +44,10 @@ pub fn account() -> (String, String) {
     (id, format!("{kind} {label}"))
 }
 
-/// Whether self-join is on (TROMMI_SELF_JOIN=0 turns it off).
+/// Whether self-join is on: off by default until the apps that answer it are out everywhere; TROMMI_SELF_JOIN=1
+/// turns it on.
 pub fn enabled() -> bool {
-    env("TROMMI_SELF_JOIN").as_deref() != Some("0")
+    env("TROMMI_SELF_JOIN").as_deref() == Some("1")
 }
 
 /// The name a new session proposes for itself: its folder's name.
