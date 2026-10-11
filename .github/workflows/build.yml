@@ -99,6 +99,7 @@ jobs:
       release: ${{ steps.inputs.outputs.release }}
       parts: ${{ steps.inputs.outputs.parts }}
       reuse: ${{ steps.inputs.outputs.reuse }}
+      since: ${{ steps.inputs.outputs.since }}
       changed_web: ${{ steps.inputs.outputs.web }}
       changed_connector: ${{ steps.inputs.outputs.connector }}
       changed_ios: ${{ steps.inputs.outputs.ios }}
@@ -138,6 +139,11 @@ jobs:
           [ -n "$newest" ] || echo '{}' > "$old/manifest.json"
           # the release the unchanged parts are taken from
           echo "reuse=${newest:+v$newest}" >> "$GITHUB_OUTPUT"
+          # the commit that release was built from: on main every check compares with it, not with the commit before,
+          # so what a failed main build left untested is tested again (empty: every part counts as changed)
+          since=$(jq -r '.commit // ""' "$old/manifest.json")
+          printf '%s' "$since" | grep -Eq '^[0-9a-f]{40}$' || since=
+          echo "since=$since" >> "$GITHUB_OUTPUT"
           any=false
           : > "$RUNNER_TEMP/parts"
           while read -r part sum; do
@@ -157,6 +163,8 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
+          MAIN: ${{ github.ref == 'refs/heads/main' }}
+          SINCE: ${{ steps.inputs.outputs.since }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
@@ -164,7 +172,9 @@ jobs:
           echo "version=$((RUN_NUMBER + RELEASE_BASE))" >> "$GITHUB_OUTPUT"
           base=
           case "$EVENT" in
-            push) base=$BEFORE ;;
+            # main: since the newest release, as the parts' inputs above; a main build that failed or was cancelled
+            # leaves its changes in that range, so the next one runs their checks again (not only the last push's)
+            push) if [ "$MAIN" = true ]; then base=$SINCE; else base=$BEFORE; fi ;;
             pull_request) base=$(git merge-base "$PR_BASE" HEAD || true) ;;
           esac
           # no known commit to compare with (a run by hand, a first push, a rewritten branch): everything changed
@@ -179,7 +189,8 @@ jobs:
           fi
           shared='core/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/build\.yml$'
           # part <job> '<its own paths>' [<its parts in the release>]: the job runs when its paths changed since the commit
-          # before, and (main) when the inputs of one of its parts differ from the newest release's, to build them
+          # compared with (main: the newest release's), and (main) when the inputs of one of its parts differ from the
+          # newest release's, to build them
           part() {
             if [ "$all" = 1 ] || grep -Eq "^($2|$shared)" "$RUNNER_TEMP/files"; then value=true; else value=false; fi
             if [ -n "${3:-}" ] && grep -Eqs "^($3) [0-9a-f]{64} true$" "$RUNNER_TEMP/parts"; then value=true; fi
