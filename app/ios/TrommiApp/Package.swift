@@ -14,7 +14,7 @@ let package = Package(
     .library(name: "TrommiShare", targets: ["TrommiShare"]),
     // The Notification Service Extension: opens a push's sealed part and shows the fixed text (links PushNotify and the core's one opening call, not the engine).
     .library(name: "TrommiNotify", targets: ["TrommiNotify"]),
-    // The Live Activity's widget (Dynamic Island, lock screen).
+    // The Live Activity's widget (Dynamic Island, lock screen); links the core's opening of its sealed counts.
     .library(name: "TrommiLive", targets: ["TrommiLive"]),
   ],
   dependencies: [
@@ -43,7 +43,8 @@ let package = Package(
     ),
     .target(
       name: "TrommiLive",
-      dependencies: [.product(name: "PushNotify", package: "TrommiClient")]
+      // the core's opening of the Live Activity's sealed counts (NotifyCoreLive), as the notification extension links it
+      dependencies: [.product(name: "PushNotify", package: "TrommiClient"), .product(name: "NotifyCoreLive", package: "TrommiClient")]
     ),
   ],
   swiftLanguageModes: [.v5]

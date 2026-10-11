@@ -162,7 +162,7 @@ enum LiveActivities {
       let s = a.content.state
       if s.done != nil { continue }   // the moment after an answer: answer() goes on from there
       var next = LiveState.state(working: s.working, waiting: list, readable: canRead)
-      if !canRead { next.waiting = s.waiting; next.exact = s.exact }   // the hub's mark stands; nothing of a card
+      if !canRead { next.waiting = s.waiting; next.exact = s.exact; next.s = s.s }   // the hub's marks and sealed counts stand; nothing of a card
       if next.card?.id == s.card?.id, s.needsApp == true { next.needsApp = true }
       if next == s { continue }
       await a.update(ActivityContent(state: next, staleDate: a.content.staleDate, relevanceScore: a.content.relevanceScore))

@@ -1,11 +1,14 @@
 // TrommiLive: the Live Activity's widget. The bell of the logo and the count of questions waiting; with the most
 // urgent card, its title and its two answers, which answer in place (LiveAnswer: the intent runs in the app). The
-// card comes from the app on this phone (LiveState); the hub's pushes carry two marks only (anyone working, anything
-// waiting), and then the widget says that something waits, without a number. The widget reads nothing else: no Keychain item, no file, no key. A tap opens the card (or
+// card comes from the app on this phone (LiveState); the hub's pushes carry two marks (anyone working, anything
+// waiting) and the exact counts sealed under this phone's push key, which the widget opens with the core
+// (NotifyCoreLive, the key from the Keychain item the app writes for the notification extension). What does not open
+// leaves the marks: the widget says that something waits, without a number. The widget reads nothing else: no Keychain item, no file, no key. A tap opens the card (or
 // the Desk). Past the push's stale date the widget dims and says so. The island is always black: its colours are
 // the board's dark tones; the lock screen follows the system's light or dark.
 import Foundation
 import PushNotify
+import NotifyCoreLive
 #if canImport(ActivityKit) && canImport(WidgetKit) && os(iOS)
 import ActivityKit
 import AppIntents
@@ -19,14 +22,24 @@ public struct TrommiLiveBundle: WidgetBundle {
 }
 
 private let deskURL = URL(string: "https://app.trommi.com/")!
+
+/** The state to show: the hub's sealed counts opened under this phone's push key, when they open. */
+func shown(_ s: LiveCounts) -> LiveCounts {
+  #if os(iOS)
+  let key = NotifyGroup.readContext().flatMap { NotifyOpenKey.bytes($0.pushKey) }
+  return s.opened(key: key, core: NotifyCoreLive())
+  #else
+  return s
+  #endif
+}
 func cardURL(_ c: LiveCard?) -> URL { c.flatMap { URL(string: "https://app.trommi.com/card/\($0.id)") } ?? deskURL }
 
 struct TrommiLiveActivity: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: TrommiActivityAttributes.self) { ctx in
-      LockLive(s: ctx.state, stale: ctx.isStale)
+      LockLive(s: shown(ctx.state), stale: ctx.isStale)
     } dynamicIsland: { ctx in
-      let s = ctx.state, top = s.card, ring = Isle.ring(top)
+      let s = shown(ctx.state), top = s.card, ring = Isle.ring(top)
       return DynamicIsland {
         DynamicIslandExpandedRegion(.bottom) {
           IslandBody(s: s, stale: ctx.isStale).padding(.horizontal, 4).padding(.bottom, 2)

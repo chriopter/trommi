@@ -563,8 +563,8 @@ impl App {
         });
     }
 
-    /// The two marks Apple sees, 0 or 1 each (15.3): whether an agent device's link report says working, and
-    /// whether a card or a permission request is open. Never how many.
+    /// The two counts of 15.3: agent devices whose link report says working, and open cards and permission
+    /// requests. Apple sees them as marks (0 or 1); the exact counts go sealed for the phone.
     pub fn live_counts(&self, room: &Room) -> Res<(u64, u64)> {
         let now = util::now();
         self.db.read(|c| {
@@ -576,7 +576,7 @@ impl App {
                     "SELECT (SELECT count(*) FROM cards WHERE room_id = ?1 AND state = 1) + (SELECT count(*) FROM permission_requests WHERE room_id = ?1 AND state = 1)",
                 )?
                 .query_row([&room[..]], |r| r.get(0))?;
-            Ok((u64::from(working > 0), u64::from(waiting > 0)))
+            Ok((working as u64, waiting as u64))
         })
     }
 
@@ -606,16 +606,19 @@ impl App {
             Option<i64>,
             Option<i64>,
             Option<i64>,
+            Option<Vec<u8>>,
         );
         let rows: Vec<Row> = self
             .db
             .read(|c| {
                 let mut s = c.prepare_cached(
-                    "SELECT device, environment, topic, tag, start_token, activity_token, started_at, sent_working, sent_waiting, sent_at FROM live_activities WHERE room_id = ?1",
+                    "SELECT a.device, a.environment, a.topic, a.tag, a.start_token, a.activity_token, a.started_at, a.sent_working, a.sent_waiting, a.sent_at,
+                       (SELECT p.apns_key FROM push_subscriptions p WHERE p.room_id = a.room_id AND p.device = a.device AND p.kind = 'apns' AND p.apns_key IS NOT NULL ORDER BY p.id DESC LIMIT 1)
+                     FROM live_activities a WHERE a.room_id = ?1",
                 )?;
                 let rows = s
                     .query_map([&room[..]], |r| {
-                        Ok((store::fixed::<32>(r.get(0)?)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?))
+                        Ok((store::fixed::<32>(r.get(0)?)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?))
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()?;
                 Ok::<_, Refused>(rows)
@@ -632,8 +635,11 @@ impl App {
             sent_working,
             sent_waiting,
             sent_at,
+            push_key,
         ) in rows
         {
+            // the exact counts go sealed under the device's push key, when it registered one
+            let push_key = push_key.and_then(|k| <[u8; 32]>::try_from(k).ok());
             // start when a question waits and none runs (again only after it ended or 8 hours); update when a
             // count changed or the beat is due; end when nothing waits (an island that says "0" says nothing)
             let running = started_at.is_some_and(|t| now.saturating_sub(t as u64) < 8 * 3_600_000);
@@ -668,6 +674,7 @@ impl App {
                     event,
                     working,
                     waiting,
+                    push_key.as_ref(),
                     self.cfg.live_beat_ms,
                     now,
                 ) {

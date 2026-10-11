@@ -112,6 +112,30 @@ final class RoomTests: XCTestCase {
     room.close()
   }
 
+  /// Pages the notification extension read ahead are taken by their start instead of asking the hub; one that
+  /// does not start at the cursor is not taken, and the core judges what is taken like any page of the hub.
+  func testPagesReadAheadAreTakenInsteadOfTheHubs() async throws {
+    let room = try await founded()
+    _ = try await room.sync()
+    let start = room.cursor
+    addSession(room)
+    agentSays(room, seq: 1, "one"); agentSays(room, seq: 2, "two")
+    // what the hub would give from the cursor, read ahead; then the hub forgets it, so only the page can bring it
+    let ahead: JSON = FakeHub.shared.lock.withLock {
+      let page = FakeHub.shared.items.filter { ($0["change"] as! UInt64) > start }
+      return ["items": page, "change": FakeHub.shared.change, "more": false]
+    }
+    var asked = [UInt64]()
+    room.takeAhead = { after in asked.append(after); return after == start ? ahead : nil }
+    FakeHub.shared.lock.withLock { FakeHub.shared.items.removeAll { ($0["change"] as! UInt64) > start } }
+    let before = FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/changes" }.count }
+    _ = try await room.sync()
+    XCTAssertEqual(asked.first, start)
+    XCTAssertEqual(texts(room), ["one", "two"])
+    XCTAssertEqual(FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/changes" }.count }, before)
+    room.close()
+  }
+
   func testAMessageIsEchoedPostedAndReplacedByTheHubsCopy() async throws {
     let room = try await founded()
     addSession(room)

@@ -554,6 +554,20 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             let invite = id::<16>(invite)?;
             app.read(|x| invites::read_reveal(x.c, &invite))
         }
+        ("GET", ["push-changes"]) => {
+            // 15.2: with the ticket the notification extension reads ahead what the app would catch up on, up to the
+            // change that rang, as GET /v1/changes gives it to that human device
+            open_limit()?;
+            let (room, device, change) = crate::push::check_ticket(&app.ticket_key, rq.q("ticket").unwrap_or(""), t)?;
+            let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?);
+            app.read(|x| {
+                if store::standing(x.c, &room, &device)? != Some(Who::Human) {
+                    return Err(refuse("unauthorised", "the ticket is wrong or ran out"));
+                }
+                let auth = store::Auth { room, device, who: Who::Human };
+                content::changes_upto(x.c, &auth, after, limit, Some(change))
+            })
+        }
         ("GET", ["push-envelope"]) => {
             open_limit()?;
             let (room, device, change) = crate::push::check_ticket(&app.ticket_key, rq.q("ticket").unwrap_or(""), t)?;

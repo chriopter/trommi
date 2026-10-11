@@ -3,7 +3,8 @@
 // the core (UniFFI), handed in by whoever links it; the tests hand in a fake.
 //
 // There is no call that opens an envelope: a content key never leaves the core, and the core opens an envelope only
-// on the device that holds its group, whose store the app owns. So the extension shows no content.
+// on the device that holds its group, whose store the app owns. So the extension shows no content. It opens the two
+// things the hub sealed for this phone's push key: a notification, and a Live Activity's counts.
 import Foundation
 
 /** What a sealed APNs notification says (spec/v1.md 15.2, core `push::ApnsPush`). No content. */
@@ -27,4 +28,6 @@ public protocol NotifyCore {
    * Throws when it does not open or is not the one spelling of the four fields.
    */
   func openPush(key: [UInt8], sealed: [UInt8]) throws -> ApnsPush
+  /** Opens a Live Activity's sealed counts (core `push::open_live`): `(working, waiting)`. Throws when they do not open. */
+  func openLive(key: [UInt8], sealed: [UInt8]) throws -> (working: UInt64, waiting: UInt64)
 }

@@ -233,6 +233,23 @@ output in the Actions cache under the hash of those paths, and CI leaves out the
   through is what the first run on the runner shows; that the archive carries `PrivacyInfo.xcprivacy` at the bundle's
   root (`project.yml` lists it) is to be checked on its output.
 
+**Signing the extensions (what CI needs for the push work of 11 October 2026).** Nothing new to set up: no new
+target, bundle id, entitlement or secret.
+- `TrommiNotify` (`com.trommi.ios.notify`) and `TrommiLive` (`com.trommi.ios.live`) keep their one entitlement, the App
+  Group `group.com.trommi.ios` (`AppStore/TrommiNotify.entitlements`, `TrommiLive.entitlements`); `asc.py` turns on
+  APP_GROUPS for both ids, and `ios_entitlements.py` checks the signed .appex against those files. The App Group is
+  also the Keychain access group of the context item, which the widget now reads too (the push key): on iOS an App
+  Group entitlement is enough for that, no `keychain-access-groups` entry.
+- The notification extension's reading ahead is plain HTTPS to the hub: no entitlement, no background mode.
+- The widget now links the Rust core (`NotifyCoreLive`), like the notification extension: each .appex is about 8 MB
+  (a device build, Release). The package links `lib/ios` by a search path as for the app; nothing else changes in
+  `project.yml`.
+- Checked on the Mac mini with Xcode 27.0 (unsigned builds, `CODE_SIGNING_ALLOWED=NO`): the device build and the
+  simulator build (`TROMMI_IOS_SIMULATOR=1`, its own derived data: the package's link path is cached per manifest
+  evaluation) both succeed, and the app launches in the simulator. Signing itself is the cloud-managed export as
+  above; its first run with these changes shows whether Apple's profiles for `.notify` and `.live` need renewing
+  (`-allowProvisioningUpdates` does that).
+
 `AppStore/asc.py` holds the App Store Connect API steps (the bundle ids with their
 capabilities, the app record check, waiting for the processed build, the group and its tester, "What to Test", the
 external group "Trommi" and Beta App Review, see "Public beta").
@@ -534,7 +551,12 @@ and could come from a push the extension never saw).
 `mutable-content: 1`). The extension opens the hub's sealed message with the push key and shows the text its urgency
 calls for ("A new question.", "Urgent: a new question.", "An agent lost its connection." for a push without a
 ticket; `NotifyOpen.text`), threaded by room. It shows no title of a card: it holds no content key ("Who owns the
-state", "Not there yet"). Anything that does not open keeps the neutral text. An extension has 24 MB of memory: it never opens the
+state", "Not there yet"). Anything that does not open keeps the neutral text. With the push's ticket it then reads ahead, for a few
+seconds at most, what the app will catch up on (`GET /v1/push-changes`, PushNotify `NotifyPrefetch`): the hub's pages
+as they come, ciphertext, into the App Group's container (`ahead/<room>/<after>-<change>.json`, at most 8 MB). The
+app takes a page whose start is its cursor instead of asking the hub (`Room.takeAhead`), and the core checks it like
+any other; signed out, the folder goes. The context (version 4) carries the hub's address, the client name and the
+room's cursor for this. An extension has 24 MB of memory: it never opens the
 device and never follows a group.
 
 **Live Activity** (`Sources/TrommiLive`, a WidgetKit extension; `LiveActivities.swift`): the bell and the count of
@@ -543,8 +565,10 @@ permission request first, then a knock, then the one waiting longest), its sessi
 with two options, its two answers as buttons. The hub starts it with a push-to-start push when agents begin to work,
 updates it with two marks (`working`, `waiting`: 0 or 1 each, never how many), and ends it when none works. The card is the app's: after a
 change of the board and after each push of the hub, the app puts it into the running activity from what it opened on
-the phone (PushNotify `LiveState`); no title leaves the phone. Without the app running, a hub's push shows "Questions
-waiting" and "Agents at work" without numbers until the app runs again and writes its own count (`exact`). The buttons are `AnswerCardIntent` (a `LiveActivityIntent`, unlock required): iOS
+the phone (PushNotify `LiveState`); no title leaves the phone. The hub's pushes also carry the exact counts sealed under
+this phone's push key (`s`); the widget opens them with the core (NotifyCoreLive, the key from the context's Keychain
+item) and shows the numbers. What does not open shows "Questions waiting" and "Agents at work" without numbers until
+the app runs again and writes its own count (`exact`). The buttons are `AnswerCardIntent` (a `LiveActivityIntent`, unlock required): iOS
 runs it in the app's process, which answers the card through the room as a tap on the card would, shows "Answered"
 for a moment, then the next card; an answer that cannot go out offers to open the card. A permission request and
 any other card open in the app. The app hands over tokens: its push-to-start token to every room's hub with a random

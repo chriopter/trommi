@@ -1733,7 +1733,7 @@ mod push_tests {
     }
 
     #[test]
-    fn a_live_activity_push_carries_two_counts() {
+    fn a_live_activity_push_carries_two_marks_and_the_counts_sealed() {
         let a = apns();
         let start = a
             .live_activity(
@@ -1743,16 +1743,24 @@ mod push_tests {
                 "tag-1",
                 "start",
                 2,
-                1,
+                5,
+                Some(&[6; 32]),
                 600_000,
                 1_700_000_000_000,
             )
             .unwrap();
         let payload: Value = serde_json::from_slice(&start.body).unwrap();
-        assert_eq!(
-            payload["aps"]["content-state"],
-            json!({ "working": 2, "waiting": 1 })
-        );
+        let state = &payload["aps"]["content-state"];
+        assert_eq!((&state["working"], &state["waiting"]), (&json!(1), &json!(1)));
+        let sealed = unb64(state["s"].as_str().unwrap()).unwrap();
+        assert_eq!(open_live_on_phone(&[6; 32], &sealed), Some((2, 5)));
+        assert_eq!(open_live_on_phone(&[7; 32], &sealed), None);
+        // without a push key of the device: the marks alone
+        let plain = a
+            .live_activity("production", &"cd".repeat(32), "com.trommi.app", "tag-1", "update", 2, 5, None, 600_000, 1_700_000_000_000)
+            .unwrap();
+        let plain: Value = serde_json::from_slice(&plain.body).unwrap();
+        assert_eq!(plain["aps"]["content-state"], json!({ "working": 1, "waiting": 1 }));
         assert_eq!(payload["aps"]["attributes"], json!({ "tag": "tag-1" }));
         assert_eq!(payload["aps"]["relevance-score"], 100);
         assert!(start
@@ -1768,6 +1776,7 @@ mod push_tests {
                 "end",
                 0,
                 0,
+                None,
                 600_000,
                 1_700_000_000_000,
             )

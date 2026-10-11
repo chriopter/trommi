@@ -564,6 +564,31 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     hub.get(&format!("/v1/push-envelope?ticket={}", b64(&forged)))
         .refused(401, "unauthorised");
     hub.get("/v1/push-envelope").refused(401, "unauthorised");
+    // every sealed payload has one length
+    assert_eq!(unb64(payload["e"].as_str().unwrap()).unwrap().len(), 512);
+
+    // with the ticket the extension reads ahead what the app catches up on: as GET /v1/changes gives it to this
+    // device, up to the change that rang, and no further
+    let own = s.w.ada.get(hub, "/v1/changes?after=0").ok();
+    let ahead = hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0")).ok();
+    let rang = opened["change"].as_i64().unwrap();
+    let changes = |page: &Value| -> Vec<i64> {
+        page["items"].as_array().unwrap().iter().map(|i| i["change"].as_i64().unwrap()).collect()
+    };
+    assert!(!changes(&ahead).is_empty());
+    assert_eq!(*changes(&ahead).last().unwrap(), rang);
+    assert_eq!(
+        changes(&own).into_iter().filter(|c| *c <= rang).collect::<Vec<_>>(),
+        changes(&ahead)
+    );
+    assert_eq!(ahead["more"], false);
+    assert_eq!(ahead["change"].as_i64(), Some(rang));
+    let page = hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0&limit=1")).ok();
+    assert_eq!(changes(&page).len(), 1);
+    assert_eq!(page["more"], true);
+    hub.get(&format!("/v1/push-changes?ticket={}&after=0", b64(&forged)))
+        .refused(401, "unauthorised");
+    hub.get("/v1/push-changes?after=0").refused(401, "unauthorised");
 
     // Live Activity: two marks (0 or 1) and a tag. Work begins: start; a mark changes: update
     let start_token = "cd".repeat(32);
@@ -593,14 +618,24 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
         (Some("start"), Some(1), Some(1))
     );
     assert_eq!(started["attributes"], json!({ "tag": "tag-1" }));
-    // more cards waiting change no mark: Apple never learns how many
+    // the exact counts are sealed for the phone, under the key it registered for its pushes; one length
+    let counts = |a: &Value| {
+        let sealed = unb64(a["content-state"]["s"].as_str().unwrap()).unwrap();
+        assert_eq!(sealed.len(), 12 + 16 + 16);
+        trommi_hub::push::open_live_on_phone(&phone_key, &sealed).unwrap()
+    };
+    assert_eq!(counts(started), (1, 1));
+    assert_eq!(started["relevance-score"], 100);
+    // more cards waiting change no mark: Apple never learns how many; the phone does
     card(&mut s, 1, 0);
     card(&mut s, 1, 0);
     let hub = &s.w.hub;
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    hub.eventually("the sealed count of three", || {
+        live(hub, &"ef".repeat(32)).iter().any(|a| counts(a) == (1, 3))
+    });
     assert!(live(hub, &"ef".repeat(32))
         .iter()
-        .all(|a| a["content-state"]["waiting"] == 1));
+        .all(|a| a["content-state"]["waiting"] == 1 && a["content-state"]["working"] == 1));
     let report = |s: &mut Scene, working: bool| {
         let hub = &s.w.hub;
         let lease = s.agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "hears": true, "working": working, "last_call_at": 2 })).ok();

@@ -3,7 +3,9 @@
 //   1. the context is read from its Keychain item (PushNotify: NotifyGroup; the app writes it): the push key and
 //      the room's id;
 //   2. `e` is opened by trommi-core (NotifyCore.openPush): the room, the change number, the urgency;
-//   3. the notification goes out with the text that urgency calls for (NotifyOpen.text), threaded by its room.
+//   3. with the push's ticket it reads ahead what the app will catch up on (NotifyPrefetch: the hub's pages,
+//      ciphertext, into the App Group's container), a few seconds at most;
+//   4. the notification goes out with the text that urgency calls for (NotifyOpen.text), threaded by its room.
 // No title of a card is shown: a content key never leaves the core, so the extension has none and opens no
 // envelope (PushNotify's NotifyContext.swift and NotifyCore.swift). A push that does not open leaves the fixed text
 // exactly as it came. No error is ever shown.
@@ -69,7 +71,19 @@ enum NotifyWork {
           let c = fallback.mutableCopy() as? UNMutableNotificationContent else { return fallback }
     c.threadIdentifier = NotifyOpen.thread(push)
     c.body = NotifyOpen.text(push)
+    if let store = NotifyGroup.prefetch(room: NotifyOpen.roomHex(push)) {
+      _ = await NotifyPrefetch.run(push, context: context, store: store, get: fetch)
+    }
     return c
+  }
+
+  /** One GET, bounded in time; nil on anything but 200. The ticket in the URL is never logged. */
+  static func fetch(_ url: URL, _ headers: [String: String]) async -> Data? {
+    var req = URLRequest(url: url, timeoutInterval: 6)
+    for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+    guard let (data, response) = try? await URLSession.shared.data(for: req),
+          (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+    return data
   }
 }
 #endif

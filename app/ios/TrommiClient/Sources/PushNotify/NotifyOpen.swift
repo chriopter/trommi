@@ -7,6 +7,11 @@
 // phone is not in, gives nil, and the notification keeps the neutral text. No error is shown.
 import Foundation
 
+/** The push key of a context as bytes, for the widget. */
+public enum NotifyOpenKey {
+  public static func bytes(_ b64u: String) -> [UInt8]? { NotifyText.unb64u(b64u).flatMap { $0.count == 32 ? $0 : nil } }
+}
+
 public enum NotifyOpen {
   /** The longest sealed blob (core `push::MAX_APNS_LEN`). */
   static let maxSealed = 512
@@ -24,6 +29,9 @@ public enum NotifyOpen {
   public static func text(_ push: ApnsPush) -> String {
     push.ticket.isEmpty ? "An agent lost its connection." : push.urgency >= 2 ? "Urgent: a new question." : "A new question."
   }
+
+  /** The room's id as hex: the name of its folder of pages read ahead. */
+  public static func roomHex(_ push: ApnsPush) -> String { NotifyText.hex(push.roomId) }
 
   /** What the notifications of one room are threaded by: the start of its id, no content. */
   public static func thread(_ push: ApnsPush) -> String { String(NotifyText.hex(push.roomId).prefix(16)) }

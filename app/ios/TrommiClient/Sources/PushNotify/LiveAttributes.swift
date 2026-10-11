@@ -17,6 +17,8 @@ public struct LiveCounts: Codable, Hashable {
   public var waiting: Int
   /** Set by the app, which counted the waiting cards itself: `waiting` is a count, not a mark. */
   public var exact: Bool?
+  /** From the hub: the exact counts sealed under this phone's push key (spec/v1.md 15.3), base64url. */
+  public var s: String?
   /** The most urgent waiting card (LiveState.pick), or nil: the widget shows the count alone. */
   public var card: LiveCard?
   /** Just answered from the island: shown for a moment before the next card. */
@@ -25,6 +27,17 @@ public struct LiveCounts: Codable, Hashable {
   public var needsApp: Bool?
   public init(working: Int, waiting: Int, card: LiveCard? = nil, done: LiveDone? = nil, needsApp: Bool? = nil, exact: Bool? = nil) {
     self.working = working; self.waiting = waiting; self.card = card; self.done = done; self.needsApp = needsApp; self.exact = exact
+  }
+  /**
+   * What to show: with the hub's sealed counts opened under this phone's push key, the exact numbers; else as it
+   * stands (the app's own count, or the marks). Never throws: what does not open leaves the marks.
+   */
+  public func opened(key: [UInt8]?, core: NotifyCore) -> LiveCounts {
+    guard exact != true, let s, let key, let sealed = NotifyText.unb64u(s),
+          let counts = try? core.openLive(key: key, sealed: sealed) else { return self }
+    var out = self
+    out.working = Int(clamping: counts.working); out.waiting = Int(clamping: counts.waiting); out.exact = true
+    return out
   }
   /** Whether `waiting` counts the questions (the app counted them), not only marks that some wait. */
   public var counted: Bool { exact == true }
