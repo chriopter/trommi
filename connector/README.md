@@ -14,6 +14,8 @@ trommi-connector prompt|stop         the terminal mirror's hooks (UserPromptSubm
 trommi-connector trail               the work trail's hooks (PreToolUse, PostToolUse, …)
 trommi-connector monitor             the plugin's monitor: one line per board event
 trommi-connector setup claude|codex  make the installed connector known to Claude Code (plugin) or Codex (MCP server)
+trommi-connector remove claude       take out what setup claude put in; the old status line stands there again
+trommi-connector remove codex        take the connector's hooks and MCP server out of Codex again
 trommi-connector update [--check]    install the newest signed release in place of the installed one
 trommi-connector whoami | allow-tools | --version
 ```
@@ -62,6 +64,22 @@ Codex shows no channel events, board events wait for the `inbox` tool). Both can
 changed. A Codex that was running loads the server only when it is started again; setup, install.sh and the
 invite page say so.
 
+`setup claude` also puts `trommi-connector statusline` in as Claude Code's status line (the user settings'
+`statusLine`, every other byte as it was), around one already there, which keeps showing as before. It hands the
+plan's 5-hour and weekly usage to the board ([`src/usage.rs`](src/usage.rs); the main README, "Account and usage per
+agent"). The installed connector does the same once at its start. `trommi-connector remove claude` puts the old
+status line back and removes the plugin and the marketplace.
+
+`setup codex` also merges the connector's hooks into Codex's `hooks.json` (`$CODEX_HOME`, default `~/.codex`): a
+Codex plugin cannot bring hooks. They are the plugin's, as far as Codex has the events: `UserPromptSubmit` and
+`Stop` (the terminal mirror), `PermissionRequest` (permission prompts on the board), `PreToolUse`, `PostToolUse`,
+`SubagentStart`, `SubagentStop`, `SessionEnd` (the work trail). Every other hook in that file stays as it is, the
+connector's are put in once, and `remove codex` takes them out again (and `codex mcp remove trommi`). **Codex runs
+a new or changed hook only once the human trusted it**: at its next start it shows "New hook - review required";
+the human trusts them there (or later in `/hooks`, "trust all"). Codex notes that as `hooks.state."<file>:<event>:…"
+.trusted_hash` in its `config.toml`. Until then the hooks do nothing, and the connector tells the agent that the
+human does not see the terminal.
+
 ## Codex
 
 Codex (known by its `initialize`, `clientInfo.name` "codex-mcp-client", or by the program that started the
@@ -72,10 +90,18 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
   "[Trommi] … call the trommi inbox tool …"` (once until the agent reads the board; `TROMMI_CODEX_WAKE=off` turns
   it off, `TROMMI_CODEX_BIN` names the program). That starts a turn in an idle session, or the next one after a
   running turn; the agent reads the event with `inbox`. So a Codex session hears at once (its lease reports
-  `hears: true`), also after a restart (`codex resume`) or a swapped-in connector, before its first call.
+  `hears: true`), also after a restart (`codex resume`) or a swapped-in connector, before its first call. A
+  woken turn that never called `inbox` does not leave the session deaf: the next event wakes it again once
+  `TROMMI_CODEX_REWAKE_MS` (3 minutes) passed since the last wake.
 - It never asks for the tool list again: an unconnected session lists every tool with `connect`.
 - It asks for approval of an MCP call unless the tool says it is harmless: every tool carries `annotations`
   (`readOnlyHint`, `destructiveHint`, `openWorldHint`); only `revoke_asset` and `share_asset` still ask.
+- Its hooks come from `setup codex`, not from a plugin (above). The connector reads at its start whether Codex's
+  `hooks.json` holds its Stop and UserPromptSubmit hooks and `config.toml` trusts them; only then do the
+  instructions say that the final text reaches the board by itself. Codex's hook input names the turn (`turn_id`,
+  used where Claude Code has `prompt_id`) and the thread (`session_id`): a connector takes only its own thread's
+  hooks, and the queued wake ("[Trommi] N new board events …") counts as the board's, not as the human's typing,
+  so a turn a card's answer started puts its final text under that card.
 - Its words differ: the instructions take "# In Codex" from `prompt.md` (inbox at every turn, never run the
   connector in a shell, restart Codex when the tools are missing), and every restart or update line says to quit
   Codex and start it again instead of /mcp.
@@ -84,6 +110,16 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
 list, a `codex` script that notes the queued wakes). `tests/connector/codex_real.rs` runs a real Codex (its app server,
 one session over many turns) against a local hub, opt-in: `cargo test -p trommi-tests --test connector_codex_real
 -- --ignored --nocapture` (`CODEX_MODEL`, `TROMMI_CODEX_RUNS`).
+
+## Helpers read their own events
+
+A helper (a subagent in a child session from `open_session`) calls `inbox` with `session: "<name>"`: it gets that
+session's events alone, and the call claims the session. While the claim holds, the session's events wait for that
+helper only: plain `inbox`, the monitor line and channel events skip them, so the coordinator forwards nothing. A
+"Done: …" (or Fertig, Erledigt, Resolved, Gelöst) card the helper files there gives the coordinator one short line
+(`kind="helper"`). The claim ends with `close_session`, or after 10 minutes without an `inbox(session)` call
+(`TROMMI_CLAIM_MS`); events still waiting then go to the coordinator with a line "Design: helper gone, N events
+waiting". Claims live in the connector's memory only: after a restart every waiting event is the coordinator's.
 
 ## What is where
 
@@ -100,6 +136,7 @@ one session over many turns) against a local hub, opt-in: `cargo test -p trommi-
 | `src/server.rs`, `src/mcp.rs`, `src/member.rs`, `src/slots.rs`, `src/slotstore.rs`, `src/door.rs` | the MCP server, this process as a member, key slots per folder, the sockets hooks reach it through |
 | `src/line.rs`, `src/mirror.rs`, `src/trail.rs`, `src/hooks.rs` | the monitor's line, the terminal mirror, the work trail, the permission hooks |
 | `src/update.rs` | the check a new binary must pass, and `update` |
+| `src/usage.rs` | the account and usage of Claude Code or Codex for the board, the status line, `remove claude` |
 | `src/launch.rs` | the launcher: passes the MCP session through to the connector and swaps in a new one |
 | `prompt.md`, `tools.json` | every text the agent reads and every tool's schema: the one source, compiled in and checked by `build.rs` |
 

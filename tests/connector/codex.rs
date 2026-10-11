@@ -108,7 +108,10 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
         std::os::unix::fs::PermissionsExt::from_mode(0o755),
     )
     .unwrap();
-    let env = [("TROMMI_UPDATE_POLL_MS", "1000")];
+    let env = [
+        ("TROMMI_UPDATE_POLL_MS", "1000"),
+        ("TROMMI_CODEX_REWAKE_MS", "4000"),
+    ];
     let mut mcp = seat.serve_codex(&codex, thread, Some(&program), &env).await;
 
     // Codex lists the tools once, at its start: in a folder in no room yet that is every board tool and connect
@@ -283,6 +286,48 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
         "the long reply arrives as it was"
     );
 
+    // A woken turn that never read the board does not leave the session deaf: a later event wakes it once more,
+    // but not before TROMMI_CODEX_REWAKE_MS, so a busy turn is not flooded with queued messages.
+    let before = wakes(&codex_calls, thread);
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Erste Nachricht." }),
+        )
+        .await
+        .expect("the human writes");
+    woken(&codex_calls, thread, before).await;
+    let first_wake = std::time::Instant::now();
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Zweite Nachricht." }),
+        )
+        .await
+        .expect("the human writes");
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert_eq!(
+        wakes(&codex_calls, thread),
+        before + 1,
+        "no second wake while the first is fresh"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(4500).saturating_sub(first_wake.elapsed()))
+        .await;
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Dritte Nachricht." }),
+        )
+        .await
+        .expect("the human writes");
+    let again = woken(&codex_calls, thread, before + 1).await;
+    assert!(again.contains("3 new board events"), "{again}");
+    let said = inbox_holds(&mut mcp, "Dritte Nachricht.").await;
+    assert!(
+        said.contains("Erste Nachricht.") && said.contains("Zweite Nachricht."),
+        "{said}"
+    );
+
     // Restart (`codex resume`): Codex ends, the human writes meanwhile; the new connector wakes the same thread
     // before Codex called anything.
     mcp.close().await;
@@ -350,5 +395,180 @@ async fn codex_is_told_how_it_hears_the_board_and_never_to_script_the_connector(
     for never in ["Trommi · ", "--urgent via Bash", "/mcp", "Claude Code"] {
         assert!(!instructions.contains(never), "{never:?} in {instructions}");
     }
+    // without Trommi's hooks in Codex (no `setup codex` here) the human never sees the terminal
+    assert!(
+        instructions.contains("never sees this terminal"),
+        "{instructions}"
+    );
+    // A card's event is answered under the card (Claude Code's mirror does that by itself).
+    assert!(instructions.contains("card_id"), "{instructions}");
+    // No tool text tells Codex about Claude Code's /mcp.
+    let listed = mcp.request("tools/list", json!({})).await;
+    for tool in listed["tools"].as_array().expect("tools") {
+        let text = tool["description"].as_str().unwrap_or("");
+        assert!(!text.contains("/mcp"), "{}: {text}", tool["name"]);
+    }
+    mcp.close().await;
+}
+
+/// Codex with the hooks `setup codex` writes into its hooks.json, trusted by the human: the terminal mirror works as
+/// in Claude Code. The instructions say so; the turn a queued wake started for a card puts its final text under
+/// that card (the chat gets one line pointing there); his typed words are mirrored; a hook of another thread of the
+/// same Codex is not this session's.
+#[tokio::test(flavor = "multi_thread")]
+async fn codex_with_trusted_hooks_mirrors_its_turns_and_answers_under_the_card() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let (codex, codex_calls) = fake_codex(seat.home.path());
+    let thread = "01a129c9-b755-7380-8769-c46a0f75a6a1";
+
+    // what `setup codex` writes, and the trust Codex notes once the human accepted the hooks
+    let codex_home = seat.home.path().join(".codex");
+    std::fs::create_dir_all(&codex_home).unwrap();
+    let hooks_file = codex_home.join("hooks.json");
+    let program = connector_binary().display().to_string();
+    let hooks = trommi_connector::setup::with_codex_hooks(Value::Null, &program).expect("hooks");
+    std::fs::write(&hooks_file, hooks.to_string()).unwrap();
+    std::fs::write(
+        codex_home.join("config.toml"),
+        format!(
+            "[hooks.state.\"{f}:user_prompt_submit:0:0\"]\ntrusted_hash = \"sha256:00\"\n\n[hooks.state.\"{f}:stop:0:0\"]\ntrusted_hash = \"sha256:00\"\n",
+            f = hooks_file.display()
+        ),
+    )
+    .unwrap();
+
+    let mut mcp = seat.serve_codex(&codex, thread, None, &[]).await;
+    let again = mcp
+        .request("initialize", common::process::codex_hello())
+        .await;
+    let instructions = again["instructions"].as_str().unwrap_or("").to_string();
+    assert!(
+        instructions.contains("reach the board by themselves"),
+        "{instructions}"
+    );
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = mcp.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), group) = tokio::join!(connect, admit);
+    assert!(!failed, "{said}");
+    mcp.ready().await;
+    let me = human.seat(&group).await.expect("the agent");
+
+    let made = mcp
+        .ok(
+            "create_decision",
+            json!({ "title": "Ship it?", "options": [{ "key": "yes", "label": "Ship" }, { "key": "no", "label": "Wait" }] }),
+        )
+        .await;
+    let card = made
+        .split_whitespace()
+        .nth(1)
+        .expect("the card's id")
+        .to_string();
+    let codex_input = |turn: &str, thread: &str, more: Value| {
+        let mut all = json!({ "session_id": thread, "turn_id": turn, "transcript_path": null, "cwd": seat.folder.display().to_string(), "model": "gpt-6-luna", "permission_mode": "default" });
+        all.as_object_mut()
+            .unwrap()
+            .extend(more.as_object().cloned().unwrap());
+        all
+    };
+
+    // The human asks on the card; the session is woken, the wake starts a turn, inbox hands over the question.
+    let before = wakes(&codex_calls, thread);
+    human
+        .answer(
+            &card,
+            json!({ "answer_action": "answer", "choices": ["no"], "note": "Warum warten?" }),
+            &["no"],
+            false,
+        )
+        .await
+        .expect("taken");
+    let wake = woken(&codex_calls, thread, before).await;
+    let wake_text = wake.split("--message ").nth(1).unwrap_or("").to_string();
+    seat.hook(
+        "prompt",
+        &codex_input(
+            "t1",
+            thread,
+            json!({ "hook_event_name": "UserPromptSubmit", "prompt": wake_text }),
+        ),
+    )
+    .await;
+    inbox_holds(&mut mcp, "Warum warten?").await;
+    let answer = "Warten gibt dem Release einen Tag Luft.";
+    seat.hook(
+        "stop",
+        &codex_input("t1", thread, json!({ "hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": answer })),
+    )
+    .await;
+    // A hook of another thread of this Codex is not this session's.
+    seat.hook(
+        "stop",
+        &codex_input("t9", "02b239d9-c866-7480-9879-d57a1f86b7b2", json!({ "hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "Fremder Thread." })),
+    )
+    .await;
+    // His typed words, and the answer of that turn, go to the chat.
+    seat.hook(
+        "prompt",
+        &codex_input(
+            "t2",
+            thread,
+            json!({ "hook_event_name": "UserPromptSubmit", "prompt": "Und die Logs?" }),
+        ),
+    )
+    .await;
+    seat.hook(
+        "stop",
+        &codex_input("t2", thread, json!({ "hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "Die Logs sind sauber." })),
+    )
+    .await;
+
+    let mut seen = (false, false, false, false);
+    for _ in 0..600 {
+        human.sync().await;
+        let in_chat = |kind: &str, text: &str| {
+            human
+                .items
+                .iter()
+                .any(|(_, sender, p)| *sender == me && p["terminal"] == kind && p["text"] == text)
+        };
+        seen = (
+            human
+                .card_chats
+                .iter()
+                .any(|(c, p)| *c == card && p["text"] == answer),
+            human.items.iter().any(|(_, sender, p)| {
+                *sender == me && p["terminal"] == "answer" && p["copied_cards"] == json!([card])
+            }),
+            in_chat("input", "Und die Logs?"),
+            in_chat("answer", "Die Logs sind sauber."),
+        );
+        if seen == (true, true, true, true) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(seen, (true, true, true, true), "{:?}", human.findings);
+    assert!(
+        !human
+            .items
+            .iter()
+            .any(|(_, _, p)| p["text"] == "Fremder Thread."),
+        "another thread's hook is not mirrored"
+    );
+    assert!(
+        !human.items.iter().any(|(_, _, p)| p["terminal"] == "input"
+            && p["text"]
+                .as_str()
+                .is_some_and(|t| t.starts_with("[Trommi]"))),
+        "the wake is not his typing"
+    );
     mcp.close().await;
 }

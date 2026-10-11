@@ -140,12 +140,19 @@ interface Launch { url: string | URL; client: string | null; timeout_ms: number;
  * at all ('ready'); a step may take as long as it takes (a join waits for the other device).
  */
 let reloadOnShow = false
+/** A page shown again replaces a stream that heard nothing for this long: the hub pings every 25 s, so a quieter one
+ *  is likely a connection the phone's sleep left half open. Coming online replaces it whatever it heard. */
+const FRESHEN_SHOWN_MS = 30_000
 function launch({ url, client, timeout_ms, early = null, worker: given, first, onEvent, stall_ms }: Launch): Promise<{ remote: RemoteClient | null; value: unknown }> {
   const worker = early?.worker ?? given ?? new Worker(url, { type: 'module', name: 'trommi-core' })
   // the page goes: the worker's streams end now, whatever the browser does with the worker and its connections
   // after (a page that comes back from the back-forward cache is loaded anew: its streams are gone)
   if (typeof addEventListener === 'function' && typeof document !== 'undefined') {
     addEventListener('pagehide', () => { try { worker.postMessage({ t: 'pagehide' } satisfies ToWorker) } catch {} })
+    // the page is back: a stream that slept with the phone is replaced now, not when its read finally fails
+    const freshen = (silent_ms: number): void => { try { worker.postMessage({ t: 'freshen', silent_ms } satisfies ToWorker) } catch {} }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') freshen(FRESHEN_SHOWN_MS) })
+    addEventListener('online', () => freshen(0))
     if (!reloadOnShow) { reloadOnShow = true; addEventListener('pageshow', e => { if ((e as PageTransitionEvent).persisted) location.reload() }) }
   }
   return new Promise((resolve, reject) => {

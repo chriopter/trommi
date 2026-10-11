@@ -354,6 +354,9 @@ public final class DeskModel {
   public private(set) var byCard: [String: DeskCard] = [:]
   public private(set) var numberOf: [String: Int] = [:]
   public private(set) var tasks: [Task1] = []
+  /** By agent id, built once per update (a big room has hundreds of sessions: no scan of every card or line per row). */
+  private var workingOf: [String: [Task1]] = [:]
+  private var waitingOf: [String: [DeskCard]] = [:]
   public private(set) var desks: [DeskDesc] = []
   private(set) var devToAgent: [String: String] = [:]
   private(set) var agentToDev: [String: String] = [:]
@@ -366,14 +369,29 @@ public final class DeskModel {
   private var viewCache: [String: View] = [:]
   private var messageCache: [String: [Message]] = [:]
   private var cardMessageCache: [String: [Message]] = [:]
+  /** A timeline's messages, kept ACROSS updates while nothing they were built from changed: the timeline (its revision),
+   *  who is human, and the artifacts and notes its messages named. A live message elsewhere then costs the open
+   *  5,000-item chat no rebuild. */
+  private struct ItemsBuilt {
+    // (the timeline itself, held: a board reset makes new ones, which start their revisions at 0 again)
+    var timeline: Timeline; var revision: Int; var humans: Set<String>; var me: String?; var agent: String; var cardId: String?
+    var published: [String: String?]; var notes: [String: JV?]
+    var messages: [Message]
+  }
+  private var itemsCache: [String: ItemsBuilt] = [:]
   /** Bumped by every update: a view keyed on it re-reads, others keep what they built. */
   public private(set) var revision = 0
   public func update(now: UInt64 = nowMs()) {
-    viewCache = [:]; messageCache = [:]; cardMessageCache = [:]; revision &+= 1
+    viewCache = [:]; messageCache = [:]; cardMessageCache = [:]; askAtCache = [:]; revision &+= 1
     let m = board
     devToAgent = [:]; agentToDev = [:]
     let sessions = m.sessions.values.sorted { $0.sessionId < $1.sessionId }
-    for s in sessions { let id = agentIdOf(s); devToAgent[s.sessionId] = id; agentToDev[id] = s.sessionId }
+    // (two sessions may name the same agent id, e.g. one agent_session_id twice: the newest session holds the id)
+    for s in sessions {
+      let id = agentIdOf(s); devToAgent[s.sessionId] = id
+      if let had = agentToDev[id], let h = m.sessions[had], h.lastActivityAt > s.lastActivityAt { continue }
+      agentToDev[id] = s.sessionId
+    }
     humans = Set(m.members.values.filter { $0.deviceRole == "human" }.map { $0.deviceId })
     // Card numbers: the order cards and permission requests were first filed in, from 1.
     var numbered = m.cards.values.map { ($0.firstEnvelopeNumber, $0.objectId, false) } + m.permissions.values.map { ($0.envelopeNumber, $0.objectId, true) }
@@ -387,11 +405,13 @@ public final class DeskModel {
       else if let c = m.cards[x.1], !m.heldBack(c.objectId, open: c.objectState == "open") { out.append(boardCard(c, numberOf[x.1]!, now: now)) }
     }
     cards = out
-    byCard = Dictionary(uniqueKeysWithValues: out.map { ($0.id, $0) })
+    byCard = Dictionary(out.map { ($0.id, $0) }, uniquingKeysWith: { a, b in b.created >= a.created ? b : a })
     agents = makeAgents()
-    byAgent = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
+    byAgent = DeskModel.newestById(agents)
     tasks = []
     for s in sessions { for t in s.statusLines { tasks.append(Task1(agent: devToAgent[s.sessionId] ?? "", id: t.id, label: t.label, state: t.state, detail: t.detail, cardId: t.objectId, updated: t.updatedAt)) } }
+    workingOf = Dictionary(grouping: tasks.filter { $0.state == "working" }, by: { $0.agent })
+    waitingOf = Dictionary(grouping: cards.filter { $0.status == "open" && $0.withAgent == nil }, by: { $0.agent })
     var d = m.human.desks.compactMap { (id, v) -> DeskDesc? in
       guard v.object != nil else { return nil }
       let name = (v["name"].string ?? "").trimmingCharacters(in: .whitespaces)
@@ -407,6 +427,10 @@ public final class DeskModel {
     desks = d
   }
 
+  /** Agents by id; for an id twice (no input may crash the app), the one active last. */
+  static func newestById(_ list: [Agent]) -> [String: Agent] {
+    Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, b in b.active >= a.active ? b : a })
+  }
   func agentIdOf(_ s: Session) -> String {
     if let a = s.agentSessionId, !(a.count >= 12 && a.allSatisfy { $0.isHexDigit && !$0.isUppercase }) { return a }
     return String(s.sessionId.prefix(SESSION_ID_LEN))
@@ -445,7 +469,7 @@ public final class DeskModel {
       a.placed = set["position"].int != nil
       return a
     }
-    let ids = Dictionary(uniqueKeysWithValues: out.map { ($0.id, $0) })
+    let ids = DeskModel.newestById(out)
     for i in out.indices where out[i].parent == nil || ids[out[i].parent!] == nil { if out[i].desk == nil { out[i].desk = "main" } }
     for i in out.indices { if let p = out[i].parent, let pa = ids[p] { out[i].desk = pa.desk ?? "main" } }
     return out.sorted { ($0.position, $0.id) < ($1.position, $1.id) }
@@ -566,7 +590,7 @@ public final class DeskModel {
     }
     let onDesk: (Agent?) -> Bool = { a in !hasDesks || all || self.deskOf(a) == deskId }
     let here = everyone.filter { !$0.archived && onDesk($0) }
-    let byA = Dictionary(uniqueKeysWithValues: everyone.map { ($0.id, $0) })
+    let byA = DeskModel.newestById(everyone)
     let shelved = Set(everyone.filter { $0.archived }.map { $0.id })
     let mine: (DeskCard) -> Bool = { onDesk(byA[$0.agent]) }
     let allOpen = cards.filter { $0.status == "open" && !shelved.contains($0.agent) && $0.snoozedUntil == nil }.sorted { ($0.created, $0.number) < ($1.created, $1.number) }
@@ -583,18 +607,17 @@ public final class DeskModel {
     }
     snoozed.sort { ($0.snoozedAt ?? 0) > ($1.snoozedAt ?? 0) }
     done.sort { ($0.status == "shredded" ? $0.shredded : $0.decided) ?? 0 > ($1.status == "shredded" ? $1.shredded : $1.decided) ?? 0 }
-    func summary(_ ids: Set<String>) -> (open: Int, online: Bool, running: Bool, stuck: Bool, blocked: (String, String)?) {
-      let mineF = fresh.filter { ids.contains($0.agent) }
-      let online = everyone.contains { ids.contains($0.id) && $0.online }
-      let running = everyone.contains { a in ids.contains(a.id) && a.online && tasks.contains { $0.agent == a.id && $0.state == "working" } }
-      let blocked = everyone.filter { ids.contains($0.id) }.compactMap { blockedOf($0, now: now) }.first
-      return (mineF.count, online, running, mineF.contains { $0.isKnock }, blocked)
+    // (one session's summary; the agent ids are unique, so "every agent of the set" is the one agent)
+    let freshOf = Dictionary(grouping: fresh, by: { $0.agent })
+    func summary(_ a: Agent) -> (open: Int, online: Bool, running: Bool, stuck: Bool, blocked: (String, String)?) {
+      let mineF = freshOf[a.id] ?? []
+      return (mineF.count, a.online, a.online && workingOf[a.id] != nil, mineF.contains { $0.isKnock }, blockedOf(a, now: now))
     }
     var units: [DeskUnit] = here.map { a in
-      let s = summary([a.id])
+      let s = summary(a)
       return DeskUnit(id: a.id, agent: a, open: s.open, online: s.online, running: s.running, stuck: s.stuck, blocked: s.blocked.map { (why: $0.0, text: $0.1) })
     }
-    let ix = Dictionary(uniqueKeysWithValues: units.enumerated().map { ($1.id, $0) })
+    let ix = Dictionary(units.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, b in units[b].agent.active >= units[a].agent.active ? b : a })
     for i in units.indices {
       if let p = units[i].agent.parent, let j = ix[p], j != i, units[j].agent.parent == nil { units[i].parent = p; units[j].subs.append(units[i].id) }
     }
@@ -614,13 +637,13 @@ public final class DeskModel {
     if a.archived { return nil }
     let link = linkOf(a, now: now)
     if link?.state == "cut" { return ("cut", link!.short) }
-    let working = tasks.filter { $0.agent == a.id && $0.state == "working" }
+    let working = workingOf[a.id] ?? []
     if !a.online {
       let since = a.offlineSince
       if !working.isEmpty && now - min(now, max(since ?? a.seen, 0)) >= OFFLINE_GRACE_MS { return ("offline", since.map { "Connection lost since \(clockText($0, now: now))" } ?? "Disconnected while working") }
       return nil
     }
-    let waiting = cards.filter { $0.agent == a.id && $0.status == "open" && $0.withAgent == nil }
+    let waiting = waitingOf[a.id] ?? []
     if waiting.contains(where: { $0.kind == "permission" }) { return ("permission", "Waiting for permission") }
     if waiting.contains(where: { $0.urgency == "critical" }) { return ("blocking", "Waiting for you: a blocking question") }
     return nil
@@ -628,7 +651,7 @@ public final class DeskModel {
   /** The quiet hint: "quiet for 24 min". */
   public func quietOf(_ a: Agent, now: UInt64 = nowMs()) -> String? {
     if a.archived || !a.online { return nil }
-    let working = tasks.filter { $0.agent == a.id && $0.state == "working" }
+    let working = workingOf[a.id] ?? []
     if working.isEmpty { return nil }
     let last = max(a.active, a.parent != nil ? a.deviceActive : 0, working.map { $0.updated }.max() ?? 0)
     if now - min(now, last) < QUIET_MS { return nil }
@@ -728,8 +751,24 @@ public final class DeskModel {
     guard let dev = agentToDev[agent] else { return false }
     let keys = [timelineKeyOf("chat", "session/\(dev)")] + (board.sessions[dev]?.cardIds ?? []).map { timelineKeyOf("chat", "card/\($0)") }
     // headers without bodies, or (after a snapshot boot) items the hub holds that are not here at all
-    return keys.contains { k in board.timelines[k].map { t in t.items.values.contains { $0.itemState == "header" } || (t.hasMore && t.items.count < t.itemCount) } ?? false }
+    return keys.contains { k in board.timelines[k].map { t in hasHeaders(t) || (t.hasMore && t.items.count < t.itemCount) } ?? false }
   }
+  /** Whether a timeline holds items without their bodies: scanned once per change of it (a chat screen asks on every run). */
+  private var headersCache: [String: (timeline: Timeline, revision: Int, any: Bool)] = [:]
+  private func hasHeaders(_ t: Timeline) -> Bool {
+    if let c = headersCache[t.key], c.timeline === t, c.revision == t.revision { return c.any }
+    let any = t.items.values.contains { $0.itemState == "header" }
+    headersCache[t.key] = (t, t.revision, any)
+    return any
+  }
+  /** A session's questions as asked in its chat: card id -> the id of its "asked" row (once per update). */
+  public func askAt(agent: String) -> [String: String] {
+    if let m = askAtCache[agent] { return m }
+    let m = Dictionary(messagesOf(agent: agent).filter { $0.from == "event" && $0.kind == "asked" && $0.cardId != nil }.map { ($0.cardId!, $0.id) }, uniquingKeysWith: { $1 })
+    askAtCache[agent] = m
+    return m
+  }
+  private var askAtCache: [String: [String: String]] = [:]
 
   /** Whose message a chat item is, and its terminal mark. The terminal mirror (README, shared/types.ts `terminal`):
    *  an AGENT's device sends what the human typed into its terminal as an ordinary message with terminal "input",
@@ -743,6 +782,19 @@ public final class DeskModel {
 
   private func itemsOf(_ t: Timeline?, agent: String, cardId: String?, into out: inout [Message]) {
     guard let t = t else { return }
+    if let c = itemsCache[t.key], c.timeline === t, c.revision == t.revision, c.agent == agent, c.cardId == cardId, c.me == board.myDeviceId, c.humans == humans,
+       c.published.allSatisfy({ board.published[$0.key]?.objectState == $0.value }),
+       c.notes.allSatisfy({ board.notes[$0.key]?.extra["attachments"] == $0.value }) {
+      out += c.messages
+      return
+    }
+    var built = [Message]()
+    var published = [String: String?](), notes = [String: JV?]()
+    buildItems(t, agent: agent, cardId: cardId, into: &built, published: &published, notes: &notes)
+    itemsCache[t.key] = ItemsBuilt(timeline: t, revision: t.revision, humans: humans, me: board.myDeviceId, agent: agent, cardId: cardId, published: published, notes: notes, messages: built)
+    out += built
+  }
+  private func buildItems(_ t: Timeline, agent: String, cardId: String?, into out: inout [Message], published seenPublished: inout [String: String?], notes seenNotes: inout [String: JV?]) {
     let me = board.myDeviceId
     // a turn's id -> its message's place in out, its envelopes, where each of them stands
     var trails = [String: (at: Int, envelopes: [JV], places: [(seq: Double, ts: UInt64)])]()
@@ -792,11 +844,14 @@ public final class DeskModel {
       msg.cardId = cardId
       msg.details = c["details"].string
       msg.html = c["html"].string
-      if let p = c["published_object_id"].string { if board.published[p]?.objectState == "closed" { continue }; msg.published = p }
+      if let p = c["published_object_id"].string { seenPublished.updateValue(board.published[p]?.objectState, forKey: p); if board.published[p]?.objectState == "closed" { continue }; msg.published = p }
       if c["note"].object != nil {
         msg.noteWritten = .some(c["note"]["written_at"].int.map { UInt64($0) })
         // a note's pictures and files: those the message names, else the note object's own (the web shows these too)
-        if msg.attachments.isEmpty, let id = c["note"]["object_id"].string, let n = board.notes[id] { msg.attachments = n.extra["attachments"]?.array ?? [] }
+        if msg.attachments.isEmpty, let id = c["note"]["object_id"].string {
+          seenNotes.updateValue(board.notes[id]?.extra["attachments"], forKey: id)
+          if let n = board.notes[id] { msg.attachments = n.extra["attachments"]?.array ?? [] }
+        }
       }
       msg.handback = c["hand_back"].truthy
       msg.explain = c["explain"].truthy

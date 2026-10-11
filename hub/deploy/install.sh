@@ -412,9 +412,8 @@ HUB_ORIGINS=https://app.trommi.com
 # the tunnel on this machine names the client's address in a header; without this every client is one source
 HUB_TRUST_CF=1
 HUB_WEB_PUSH_SUBJECT=mailto:trommi@mail101.de
-# HSTS: "on" makes every answer tell browsers to use HTTPS only for this name and every name below it, for two
-# years, marked as fit for the browsers' preload list. Switch it on only when that is decided; then:
-# systemctl restart trommi-hub
+# HSTS: "on" makes every answer tell browsers to use HTTPS only for this name and every name below it, for a
+# year (no preload). To switch it on: HUB_HSTS=on here, then systemctl restart trommi-hub
 HUB_HSTS=off
 # The admin page (later, on 127.0.0.1:8791 behind tailscale serve) starts only when its password hash is set,
 # in hub-secrets.env: HUB_ADMIN_PASSWORD_HASH=...

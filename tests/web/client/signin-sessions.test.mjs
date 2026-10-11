@@ -22,6 +22,7 @@ test('a sign-in with the code says how far it is, stocks its KeyPackages at once
   const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c', progress: s => steps.push(s) })
   t.after(() => c.stop().catch(() => {}))
   assert.deepEqual(steps[0], { step: 'reading' })
+  assert.ok(steps.some(s => s.step === 'reading' && s.total === sessions && s.done === sessions), `the sessions' reading is told group by group: ${JSON.stringify(steps)}`)
   assert.ok(steps.some(s => s.step === 'checking' && s.total > 0 && s.done === s.total), `the check reached its total: ${JSON.stringify(steps)}`)
   assert.deepEqual(steps.at(-1), { step: 'joining' })
   assert.equal(roomOf(fake).key_packages.size, kpBefore + 1, 'the new device has KeyPackages at the hub as soon as it is in')

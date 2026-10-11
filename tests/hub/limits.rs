@@ -506,7 +506,7 @@ fn policies_set_by_configuration() {
     let hub = TestHub::start_with(&[("HUB_MIN_CLIENT", "1.0.1")]);
     hub.get("/v1/desk").refused(426, "client-too-old");
     assert_eq!(hub.get("/healthz").status, 200);
-    // HSTS with preload is prepared behind one switch, and off unless it is thrown
+    // HSTS (a year, with subdomains, no preload) is behind one switch, and off unless it is thrown
     let plain = TestHub::start();
     assert_eq!(
         plain.get("/healthz").header("strict-transport-security"),
@@ -516,7 +516,7 @@ fn policies_set_by_configuration() {
     for path in ["/healthz", "/v1/desk"] {
         assert_eq!(
             strict.get(path).header("strict-transport-security"),
-            Some("max-age=63072000; includeSubDomains; preload")
+            Some("max-age=31536000; includeSubDomains")
         );
     }
     // the health route names the running version

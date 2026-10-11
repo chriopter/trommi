@@ -1614,3 +1614,16 @@ fn a_denial_goes_as_one_line_with_the_reason_or_the_call_and_secrets_taken_out()
         "Auto mode blocked: Bash — x"
     );
 }
+
+/// Codex's tool hooks carry the turn and the thread: the turn stands for the prompt, the thread goes along.
+#[test]
+fn codex_tool_hooks_name_their_turn_and_thread() {
+    let pre = json!({ "session_id": "019a1b2c-3d4e", "turn_id": "t7", "transcript_path": null, "cwd": "/home/me/p", "model": "gpt-6-luna", "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_use_id": "call_1", "tool_input": { "command": "ls" } });
+    let r = hook_request(&pre, &[7], Level::Steps).unwrap();
+    assert_eq!(r["prompt"], "t7");
+    assert_eq!(r["thread"], "019a1b2c-3d4e");
+    assert_eq!(r["tool"], "Bash");
+    let board = json!({ "session_id": "019a1b2c-3d4e", "turn_id": "t7", "transcript_path": null, "cwd": "/home/me/p", "model": "gpt-6-luna", "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "mcp__trommi__reply", "tool_use_id": "call_2", "tool_input": { "text": "hi" } });
+    let r = hook_request(&board, &[7], Level::Steps).unwrap();
+    assert_eq!(r["board"], true);
+}

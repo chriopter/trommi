@@ -9,6 +9,14 @@ use trommi_core::ids::GroupId;
 
 /// A hub, a human, and a connector joined by link with a main session, served over MCP.
 async fn seated() -> (HubProc, Human, Seat, common::process::Mcp, GroupId) {
+    seated_as(None, &[]).await
+}
+
+/// The same, the server started with `env` and, given, `hello` as its client's `initialize`.
+async fn seated_as(
+    hello: Option<Value>,
+    env: &[(&str, std::ffi::OsString)],
+) -> (HubProc, Human, Seat, common::process::Mcp, GroupId) {
     let hub = HubProc::start().await;
     let mut human = Human::found(&hub.url).await;
     let seat = Seat::new(&hub.url);
@@ -28,7 +36,16 @@ async fn seated() -> (HubProc, Human, Seat, common::process::Mcp, GroupId) {
     if std::env::var_os("TROMMI_TEST_LOG").is_some() {
         eprintln!("--- join ---\n{log}--- server ---");
     }
-    let mut mcp = seat.serve().await;
+    let mut mcp = if hello.is_none() && env.is_empty() {
+        seat.serve().await
+    } else {
+        let mut command = seat.command(&[]);
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        let hello = hello.unwrap_or(json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "0" } }));
+        common::process::Mcp::start_as(command, hello).await
+    };
     mcp.ready().await;
     (hub, human, seat, mcp, group)
 }
@@ -845,6 +862,171 @@ async fn without_channel_and_monitor_board_events_wait_for_the_inbox_tool() {
     mcp.close().await;
 }
 
+/// A helper reads its child session's events itself with `inbox(session)`, which claims the session: the
+/// coordinator's inbox and the channel skip them, it hears of a "Done: …" card in one line, and the events come back
+/// to it with a notice when the helper stops reading or the session is closed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_helper_claims_its_session_and_reads_its_own_events() {
+    let (_hub, mut human, seat, _group) = joined().await;
+    let mut mcp = seat.serve_plain_with(&[("TROMMI_CLAIM_MS", "8000")]).await;
+    mcp.ready().await;
+    mcp.ok("open_session", json!({ "name": "Design", "task": "logo" }))
+        .await;
+    let card = |made: String| {
+        made.split_whitespace()
+            .nth(1)
+            .expect("the card's id")
+            .to_string()
+    };
+    let ask = |title: &str| json!({ "session": "Design", "title": title, "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] });
+    let first = card(mcp.ok("create_decision", ask("First?")).await);
+    let second = card(mcp.ok("create_decision", ask("Second?")).await);
+
+    // The helper's first look claims the session.
+    let said = mcp.ok("inbox", json!({ "session": "design" })).await;
+    assert_eq!(said, "No new board events in design.");
+
+    human
+        .answer(
+            &first,
+            json!({ "answer_action": "answer", "choices": ["a"] }),
+            &["a"],
+            false,
+        )
+        .await
+        .expect("taken");
+    let mut helper = String::new();
+    for _ in 0..150 {
+        helper = mcp.ok("inbox", json!({ "session": "Design" })).await;
+        if helper.contains(&first) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(
+        helper.contains(&first) && helper.contains("choice=\"a\""),
+        "the helper reads its answer: {helper}"
+    );
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        !coordinator.contains(&first),
+        "the coordinator does not see it: {coordinator}"
+    );
+    let sent = |mcp: &common::process::Mcp, id: &str| {
+        mcp.notifications
+            .iter()
+            .any(|(_, p)| p["meta"]["card_id"].as_str() == Some(id))
+    };
+    assert!(
+        !sent(&mcp, &first),
+        "no channel event for a claimed session"
+    );
+
+    // A "Done: …" card of the helper: one line for the coordinator.
+    mcp.ok(
+        "create_info",
+        json!({ "session": "Design", "title": "Done: logo drawn", "body": "Three drafts." }),
+    )
+    .await;
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        coordinator.contains("kind=\"helper\"") && coordinator.contains("Design: filed"),
+        "{coordinator}"
+    );
+    let line = trommi_connector::line::monitor_line(
+        &json!({ "meta": { "kind": "helper", "helper": "Design", "note": "filed \"Done: logo drawn\"" } }),
+    )
+    .expect("a line");
+    assert_eq!(
+        line,
+        "Trommi · Design · filed 'Done: logo drawn' · call inbox"
+    );
+
+    // The helper stops reading: the claim lapses, and the waiting answer goes to the coordinator with a notice.
+    human
+        .answer(
+            &second,
+            json!({ "answer_action": "answer", "choices": ["b"] }),
+            &["b"],
+            false,
+        )
+        .await
+        .expect("taken");
+    let decided = |out: &str, id: &str| {
+        serde_json::from_str::<Value>(out)
+            .ok()
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .any(|c| c["id"] == id && c["status"] == "decided")
+    };
+    for _ in 0..150 {
+        if decided(
+            &mcp.ok("list_cards", json!({ "session": "Design" })).await,
+            &second,
+        ) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        !coordinator.contains(&second),
+        "still the helper's: {coordinator}"
+    );
+    let mut coordinator = String::new();
+    for _ in 0..150 {
+        coordinator.push_str(&mcp.ok("inbox", json!({})).await);
+        if coordinator.contains(&second) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(
+        coordinator.contains("Design: helper gone, 1 event waiting")
+            && coordinator.contains(&second),
+        "{coordinator}"
+    );
+
+    // Claimed again, then closed: what waits goes to the coordinator.
+    mcp.ok("inbox", json!({ "session": "Design" })).await;
+    let third = card(mcp.ok("create_decision", ask("Third?")).await);
+    human
+        .answer(
+            &third,
+            json!({ "answer_action": "answer", "choices": ["a"] }),
+            &["a"],
+            false,
+        )
+        .await
+        .expect("taken");
+    for _ in 0..150 {
+        if decided(
+            &mcp.ok("list_cards", json!({ "session": "Design" })).await,
+            &third,
+        ) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(
+        !sent(&mcp, &third),
+        "no channel event for a claimed session"
+    );
+    mcp.ok(
+        "close_session",
+        json!({ "name": "Design", "summary": "Done." }),
+    )
+    .await;
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        coordinator.contains("Design: session closed, 1 event waiting")
+            && coordinator.contains(&third),
+        "{coordinator}"
+    );
+    mcp.close().await;
+}
+
 /// A link past its deadline is refused by the connector itself, at once and with a plain reason, before a slot
 /// is made or the hub is asked.
 #[tokio::test(flavor = "multi_thread")]
@@ -1042,4 +1224,111 @@ async fn an_unconnected_session_connects_by_the_connect_tool_without_a_restart()
             .any(|l| l.contains("ignored") && l.contains("0123456789abcdef")),
         "{told}"
     );
+}
+
+// ---- the account and usage of the program (connector/src/usage.rs) -----------------------------------------------
+
+fn script(path: &std::path::Path, text: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, text).expect("written");
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("executable");
+}
+
+/// The account in the main session's profile, once the human has it.
+async fn account_on_the_board(human: &mut Human, group: &GroupId) -> Value {
+    for _ in 0..120 {
+        human.sync().await;
+        if let Some(account) = human
+            .register(group, "profile")
+            .await
+            .and_then(|p| p.get("account").cloned())
+        {
+            return account;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    panic!("no account in the profile");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn claude_codes_plan_and_windows_reach_the_board_in_the_profile() {
+    let dir = common::TempDir::new("usage-claude");
+    let claude = dir.path().join("claude");
+    script(&claude, "#!/bin/sh\n[ \"$*\" = 'auth status --json' ] || exit 2\necho '{\"loggedIn\":true,\"authMethod\":\"claude.ai\",\"email\":\"ada@example.org\",\"subscriptionType\":\"max\"}'\n");
+    let env = [
+        ("TROMMI_USAGE", std::ffi::OsString::from("on")),
+        ("TROMMI_USAGE_POLL_MS", "1000".into()),
+        ("TROMMI_CLAUDE_BIN", claude.into_os_string()),
+    ];
+    let (_hub, mut human, seat, mut mcp, group) = seated_as(None, &env).await;
+    // Claude Code's status line hands over the windows (rate_limits, resets in seconds)
+    let mut line = seat.command(&["statusline"]);
+    let mut child = line
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .expect("runs");
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(br#"{"rate_limits":{"five_hour":{"used_percentage":62,"resets_at":4102444800},"seven_day":{"used_percentage":84,"resets_at":4102531200}}}"#).await.unwrap();
+    }
+    assert!(child.wait().await.unwrap().success());
+    mcp.ok(
+        "introduce",
+        json!({ "model": "test-model", "task": "counting" }),
+    )
+    .await;
+    let mut account = account_on_the_board(&mut human, &group).await;
+    for _ in 0..40 {
+        if account.get("weekly").is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        account = account_on_the_board(&mut human, &group).await;
+    }
+    assert_eq!(
+        account,
+        json!({ "kind": "claude", "plan": "max", "email": "ada@example.org",
+        "five_hour": { "used": 62, "resets_at": 4102444800000u64 }, "weekly": { "used": 84, "resets_at": 4102531200000u64 } })
+    );
+    // the rest of the profile stays: the account is written beside it, never over it
+    let profile = human.register(&group, "profile").await.unwrap();
+    assert_eq!(profile["model"], "test-model");
+    assert_eq!(profile["task"], "counting");
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    mcp.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn codexs_account_comes_from_its_app_server() {
+    let dir = common::TempDir::new("usage-codex");
+    let codex = dir.path().join("codex");
+    script(
+        &codex,
+        r#"#!/bin/sh
+[ "$1" = app-server ] || exit 0
+while IFS= read -r line; do
+  case "$line" in
+    *'"id":2'*) echo '{"id":2,"result":{"account":{"type":"chatgpt","email":"ada@work.example","planType":"plus"}}}' ;;
+    *'"id":3'*) echo '{"id":3,"result":{"rateLimits":{"primary":{"usedPercent":41,"windowDurationMins":10080,"resetsAt":4102444800},"secondary":null,"credits":{"hasCredits":true,"unlimited":false,"balance":"12.5"}},"rateLimitResetCredits":{"availableCount":2}}}' ;;
+  esac
+done
+"#,
+    );
+    let env = [
+        ("TROMMI_USAGE", std::ffi::OsString::from("on")),
+        ("TROMMI_USAGE_POLL_MS", "1000".into()),
+        ("TROMMI_CHANNEL_EVENTS", "off".into()),
+        ("TROMMI_CODEX_BIN", codex.into_os_string()),
+    ];
+    let (_hub, mut human, _seat, mcp, group) =
+        seated_as(Some(common::process::codex_hello()), &env).await;
+    let account = account_on_the_board(&mut human, &group).await;
+    assert_eq!(
+        account,
+        json!({ "kind": "codex", "plan": "plus", "email": "ada@work.example",
+        "weekly": { "used": 41, "resets_at": 4102444800000u64 }, "credits": 12.5, "full_resets": 2 })
+    );
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    mcp.close().await;
 }

@@ -926,3 +926,33 @@ fn a_card_reply_in_the_turn_is_not_said_again_on_the_card_and_the_pointer_names_
     let long = "x".repeat(300);
     assert_eq!(pointer_line(&long), format!("→ {}…", "x".repeat(120)));
 }
+
+/// Codex's hooks (0.160, `setup codex`): the same inputs with `turn_id` and `model` and without `prompt_id`. The
+/// turn's id stands for the prompt's, the thread (`session_id`) goes along so that a connector takes only its own
+/// thread's hooks, and the message that wakes a Codex session for board events is the board's, not his typing.
+#[test]
+fn the_hook_reads_codex_input() {
+    let ups = json!({ "session_id": "019a1b2c-3d4e", "turn_id": "t7", "transcript_path": null, "cwd": "/home/me/p", "model": "gpt-6-luna", "permission_mode": "default", "hook_event_name": "UserPromptSubmit", "prompt": "Mach weiter" });
+    let r = hook_request("prompt", &ups, &[7]).unwrap();
+    assert_eq!(
+        r,
+        json!({ "op": "terminal", "kind": "input", "text": "Mach weiter", "prompt_id": "t7", "ancestors": [7], "from": "terminal", "cards": [], "thread": "019a1b2c-3d4e" })
+    );
+    let stop = json!({ "session_id": "019a1b2c-3d4e", "turn_id": "t7", "transcript_path": null, "cwd": "/home/me/p", "model": "gpt-6-luna", "permission_mode": "default", "hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "Erledigt." });
+    let r = hook_request("stop", &stop, &[7]).unwrap();
+    assert_eq!(r["text"], "Erledigt.");
+    assert_eq!(r["prompt_id"], "t7");
+    assert_eq!(r["thread"], "019a1b2c-3d4e");
+
+    let wake = "[Trommi] 2 new board events for you: call the trommi inbox tool and act on them.";
+    assert!(is_codex_wake(wake));
+    assert_eq!(terminal_input(wake), None);
+    assert_eq!(prompt_origin(wake, false), ("board", vec![]));
+    let mut woken = ups.clone();
+    woken["prompt"] = json!(wake);
+    let r = hook_request("prompt", &woken, &[7]).unwrap();
+    assert_eq!(r["text"], Value::Null);
+    assert_eq!(r["from"], "board");
+    // typed words that only mention Trommi are his
+    assert!(terminal_input("[Trommi] ist das Board").is_some());
+}

@@ -32,10 +32,12 @@ struct TrommiLiveActivity: Widget {
           IslandBody(s: s, stale: ctx.isStale).padding(.horizontal, 4).padding(.bottom, 2)
         }
       } compactLeading: {
-        Bell(size: 24, ink: .white, rings: ring).padding(.leading, 2)
+        Bell(size: 24, ink: .white, rings: ring).padding(.leading, 2).transaction { $0.animation = nil }
       } compactTrailing: {
+        // (a fixed width and no transition: the island keeps its shape when the count or the card changes)
         Text(s.done != nil ? "✓" : "\(s.waiting)").font(.system(size: 17, weight: .bold, design: .rounded)).monospacedDigit()
           .foregroundStyle(s.done != nil ? Isle.green : ring)
+          .frame(minWidth: 22).contentTransition(.identity)
       } minimal: {
         MinimalLive(s: s)
       }

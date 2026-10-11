@@ -462,6 +462,8 @@ pub async fn run(argv: &[String]) -> i32 {
             }
         },
         "setup" => crate::setup::run_cli(given.as_deref(), argv.get(2..).unwrap_or_default()),
+        "remove" => crate::setup::remove_cli(given.as_deref(), argv.get(2..).unwrap_or_default()),
+        "statusline" => crate::usage::statusline(&argv[1..]),
         "update" => match crate::update::update(given.as_deref() == Some("--check")).await {
             Ok(said) => {
                 println!("{said}");
@@ -483,7 +485,7 @@ pub async fn run(argv: &[String]) -> i32 {
             0
         }
         other => {
-            eprintln!("[trommi] unknown command {other}; use connect <link>, say \"<text>\" [--session <name>] [--urgent], whoami, setup claude|codex, update [--check] or --version, or no argument for the MCP server");
+            eprintln!("[trommi] unknown command {other}; use connect <link>, say \"<text>\" [--session <name>] [--urgent], whoami, setup claude|codex, remove claude|codex, update [--check] or --version, or no argument for the MCP server");
             1
         }
     }

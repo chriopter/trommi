@@ -5,7 +5,9 @@
 //   4. the inline scripts and styles of index.html and help.html are allowed by their hash in _headers (CSP), and no
 //      'unsafe-inline' for style elements (style attributes only: style-src-attr);
 //   5. the demo room's data (the repository's demo/data/, demo/check.mjs): whole, every named file there, no copy of it
-//      kept by a consumer (public/demo/fixture.json and public/demo/files/ are made by the build, never committed).
+//      kept by a consumer (public/demo/fixture.json and public/demo/files/ are made by the build, never committed);
+//   6. _headers holds every address to HTTPS for a year with the names below it (no preload), and keeps the app's
+//      window and files to its own origin (COOP, CORP), once, for every address.
 //   node dev/check.mjs
 import fs from 'node:fs'
 import path from 'node:path'
@@ -55,6 +57,20 @@ for (const page of ['index.html', 'help.html']) {
     const hash = `'sha256-${crypto.createHash('sha256').update(body).digest('base64')}'`
     if (!styleSrc.includes(hash)) problems.push(`${page}: an inline style whose hash ${hash} is not in the style-src of _headers`)
   }
+}
+
+// 6. HSTS, COOP, CORP in the block for every address, and in no other
+const HEADERS = { 'strict-transport-security': 'max-age=31536000; includeSubDomains', 'cross-origin-opener-policy': 'same-origin', 'cross-origin-resource-policy': 'same-origin' }
+const blocks = {}
+let block = null
+for (const line of read('_headers').split('\n')) {
+  if (!line.trim() || line.startsWith('#')) continue
+  if (!/^\s/.test(line)) { block = line.trim(); blocks[block] = {} }
+  else if (block) { const [name, ...value] = line.trim().split(':'); blocks[block][name.trim().toLowerCase()] = value.join(':').trim() }
+}
+for (const [name, value] of Object.entries(HEADERS)) {
+  if (blocks['/*']?.[name] !== value) problems.push(`_headers: /* must carry ${name}: ${value} (has ${blocks['/*']?.[name] ?? 'none'})`)
+  for (const [at, rules] of Object.entries(blocks)) if (at !== '/*' && name in rules) problems.push(`_headers: ${name} again in ${at}; it belongs to /* alone`)
 }
 
 // 5. the demo data

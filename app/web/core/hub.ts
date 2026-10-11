@@ -49,6 +49,8 @@ const MAX_SMALL_STRUCT = 1024
 const CAP_SERVED = 256 * MIB
 /** How many Commits one page of a group's log is asked for when a history is read (`groupCommits`): one slice. */
 const LOG_PAGE = 256
+/** How many groups a sign-in with the code reads at the same time (`roomInSteps`). */
+const READ_AT_ONCE = 8
 /** A signature or a MAC: 64 and 32 bytes in v1.md; their exact form is the core's to check, here only that they are small. */
 const MAX_TAG = 128
 /** hub-api.md "Decided for the first hub" 32: one catch-up answer looks at most so many change numbers ahead. */
@@ -667,12 +669,19 @@ interface Send {
   once?: boolean
 }
 
-/** Every stream of this context that is open: `closeAllStreams` ends them (the page goes: a reload, a tab closed). */
-const OPEN_STREAMS = new Set<() => void>()
+/** Every stream of this context that is open, by its close(), with its freshen(): `closeAllStreams` ends them (the
+ *  page goes: a reload, a tab closed), `freshenStreams` renews them (the page is back). */
+const OPEN_STREAMS = new Map<() => void, (silent_ms: number) => void>()
 /** Ends every live stream of this context at once, its connection aborted. A browser may keep a stream's connection
  *  open past the page that opened it (Firefox under a service worker did, one more per reload, until the six
  *  connections to the host were taken): the page says when it goes, and nothing is left behind. */
-export function closeAllStreams(): void { for (const close of [...OPEN_STREAMS]) close() }
+export function closeAllStreams(): void { for (const close of [...OPEN_STREAMS.keys()]) close() }
+/** The page is back (shown again after a while, or the browser went online): every stream of this context that
+ *  waits to reconnect tries now, and every connection that heard nothing for `silent_ms` is replaced at once, without
+ *  a wait. A phone that slept leaves half-open connections behind that no read ever reports; waiting for the stale
+ *  deadline would leave the desk behind for up to a minute. A replaced connection resumes after the last change it
+ *  handed over, as any reconnect does. */
+export function freshenStreams(silent_ms: number): void { for (const freshen of [...OPEN_STREAMS.values()]) freshen(silent_ms) }
 
 export class Hub {
   hub_url: string
@@ -1116,7 +1125,7 @@ export class Hub {
    * of `start` and `end` in the same order, with the epoch its current GroupInfo has. Nothing in the answer is
    * trusted (the core verifies all of it); here it is only checked for its shape and its size.
    */
-  async roomInSteps(opts: { anchorOf: (rows: Uint8Array[]) => { group: Uint8Array; epoch: number } }): Promise<RoomInSteps> {
+  async roomInSteps(opts: { anchorOf: (rows: Uint8Array[]) => { group: Uint8Array; epoch: number }; read?: (done: number, total: number) => void }): Promise<RoomInSteps> {
     if (!this.signer) wrong('this hub client has no signer: useSigner first')
     const room = this.signer.room_id, budget = { bytes: CAP_SERVED }
     const spend = (b: Uint8Array): Uint8Array => { if ((budget.bytes -= b.length) < 0) bad('a room larger than a device takes'); return b }
@@ -1139,9 +1148,17 @@ export class Hub {
     if (!same(anchor.group, this.signer.room)) wrong('the anchor is an epoch of the room group')
     const anchored = spend((await this.groupInfo(room, ownInt(anchor.epoch, 'the anchor\'s epoch'))).group_info)
     const live = (await this.roomGroups()).filter(g => g.live && g.kind !== 'room')
-    const sessions: { group: Uint8Array; founding: Uint8Array; current: Uint8Array; epoch: number }[] = []
-    for (const kind of ['main', 'helper'] as const) {
-      for (const g of live) if (g.kind === kind) sessions.push({ group: g.group, ...await groupOf(g.group) })
+    // the sessions' GroupInfos READ_AT_ONCE at a time (each one or two requests; a phone's line makes a big account's
+    // hundred of them one after another take minutes), kept in their order, main sessions first
+    const ordered = (['main', 'helper'] as const).flatMap(kind => live.filter(g => g.kind === kind))
+    const sessions: { group: Uint8Array; founding: Uint8Array; current: Uint8Array; epoch: number }[] = new Array(ordered.length)
+    let read = 0
+    opts.read?.(0, ordered.length)
+    for (let at = 0; at < ordered.length; at += READ_AT_ONCE) {
+      await Promise.all(ordered.slice(at, at + READ_AT_ONCE).map(async (g, k) => {
+        sessions[at + k] = { group: g.group, ...await groupOf(g.group) }
+        opts.read?.(++read, ordered.length)
+      }))
     }
     const groups = [{ group: room, epoch: roomGroup.epoch }, ...sessions]
     return {
@@ -1151,9 +1168,16 @@ export class Hub {
       sessions: sessions.map(s => ({ group: s.group, epoch: s.epoch })),
       placed: () => {
         const readers = groups.map(g => ({ group: g.group, commits: this.groupCommits(g.group, g.epoch) }))
+        // every group's first page READ_AT_ONCE at a time before the first Commit is handed on: the walk needs the
+        // lowest change number among all groups, and asked one group after another that alone took minutes
+        let primed: Promise<void> | null = null
+        const prime = (): Promise<void> => (primed ??= (async () => {
+          for (let at = 0; at < readers.length; at += READ_AT_ONCE) await Promise.all(readers.slice(at, at + READ_AT_ONCE).map(r => r.commits.peek()))
+        })())
         return {
           // the lowest change number among the groups' next Commits; two groups never share one
           async next(): Promise<PlacedCommit | null> {
+            await prime()
             let first: { group: Uint8Array; commits: CommitReader; change: number } | null = null
             for (const r of readers) {
               const c = await r.commits.peek()
@@ -1414,6 +1438,8 @@ export class Hub {
    */
   stream(after: () => number, on: (event: StreamEvent) => void | Promise<void>, onState: (s: 'connecting' | 'live' | 'offline') => void, onError?: (e: unknown) => void): () => void {
     let closed = false, last = -1, connection: AbortController | null = null
+    // `heard_at`: when the open connection last brought a byte (0: none is open); `renew`: its end was freshen()'s
+    let heard_at = 0, renew = false
     // what the caller's own callbacks throw is the caller's: it never ends the stream's loop
     const tell = (state: 'connecting' | 'live' | 'offline'): void => { try { onState(state) } catch { /* the caller's */ } }
     const report = (e: unknown): void => { try { onError?.(e) } catch { /* the caller's */ } }
@@ -1423,7 +1449,7 @@ export class Hub {
         const ac = connection = new AbortController()
         tell('connecting')
         let stale: ReturnType<typeof setTimeout> | undefined
-        const kick = (): void => { clearTimeout(stale); stale = setTimeout(() => ac.abort(), this.timing.stale) }
+        const kick = (): void => { heard_at = Date.now(); clearTimeout(stale); stale = setTimeout(() => ac.abort(), this.timing.stale) }
         let ended_by_hub = false, opened_at = 0, wait: number | null = null
         try {
           kick()
@@ -1489,15 +1515,19 @@ export class Hub {
           ended_by_hub = true
         } catch (e) {
           if (closed) return
+          // replaced on purpose (freshen): no failure, no wait, the next connection opens at once
+          if (renew) { renew = false; continue }
           if (e instanceof HubError && e.code === 'unauthorised' && ++signins <= 2) continue
           if (e instanceof HubError && e.retry_after !== null) wait = e.retry_after * 1000
           tell('offline')
           report(e)
         } finally {
           clearTimeout(stale)
+          heard_at = 0
           ac.abort()
         }
         if (closed) return
+        if (renew) { renew = false; continue }
         // Only a connection that stood for a while counts as one that worked: then the count of failures starts
         // anew, and if the hub ended it (its token ran out, the hub restarts) the next one opens at once. Every
         // other end waits longer each time, to at most `backoff_max`; a hub cannot shorten that by what it sends.
@@ -1509,7 +1539,12 @@ export class Hub {
     }
     void run().catch(e => { if (!closed) { tell('offline'); report(e) } })
     const close = (): void => { closed = true; connection?.abort(); OPEN_STREAMS.delete(close); this.wake() }
-    OPEN_STREAMS.add(close)
+    const freshen = (silent_ms: number): void => {
+      if (closed) return
+      if (heard_at > 0 && Date.now() - heard_at >= silent_ms) { renew = true; connection?.abort() }
+      this.wake()
+    }
+    OPEN_STREAMS.set(close, freshen)
     return close
   }
 

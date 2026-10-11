@@ -37,3 +37,19 @@
 
 /* The drawings of one session, as their own page (fetched by the picker). */
 .t-marks-page { position: static; margin: var(--s-6) auto; width: max-content; max-width: calc(100vw - 16px); }
+
+/* The account and usage on an agent's card (ui.mjs usageFull): plan and e-mail, then one row per meter. */
+.use-full { display: grid; gap: 8px; padding: var(--s-3) var(--s-4) var(--s-3) calc(var(--s-4) + 40px + var(--s-3)); border-bottom: 1.2px dashed color-mix(in srgb, var(--fg) 20%, transparent); }
+.use-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; font-size: var(--t-sm); }
+.use-plan { padding: 3px 8px; border: 1.3px solid var(--fg); border-radius: 7px 6px 8px 6px; font: 700 var(--t-xs)/1 var(--font); }
+.use-mail { color: var(--muted); overflow-wrap: anywhere; }
+.use-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 3rem 7.2rem; align-items: center; gap: 10px; font-size: var(--t-sm); }
+.use-row .use-l { color: var(--muted); }
+.use-row b { text-align: right; }
+.use-row small { color: var(--muted); font-size: var(--t-xs); white-space: nowrap; }
+.use-facts { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 0; font-size: var(--t-xs); }
+@media (max-width: 860px) {
+  .use-full { padding-left: var(--s-4); }
+  .use-row { grid-template-columns: 4.6rem minmax(0, 1fr) 2.6rem; }
+  .use-row small { grid-column: 2 / -1; margin-top: -6px; }
+}

@@ -18,6 +18,8 @@ export type ToWorker =
   | { t: 'join'; id: number; args: Record<string, unknown>; storage: StorageName; client: string | null }
   /** The page goes (pagehide): every live stream of the worker ends now. */
   | { t: 'pagehide' }
+  /** The page is back (shown again, or online): streams that heard nothing for `silent_ms` are replaced now (hub.ts freshenStreams). */
+  | { t: 'freshen'; silent_ms: number }
 
 /** What the worker sends. */
 export type FromWorker =

@@ -56,31 +56,20 @@ env:
   # file is renamed or made anew: raise the base then by at least the highest number released so far, because a
   # server never takes a release older than one it has accepted.
   RELEASE_BASE: 0
-  # sccache: every crate compiled by the Rust jobs (dependencies and the workspace's own libraries) is kept in the
-  # GitHub Actions cache, one entry per compilation, and taken from there when the same crate is compiled again with
-  # the same compiler, flags and sources. Only a run on main writes; every other run (pull requests,
-  # including those from forks) only reads. GitHub scopes cache writes by branch as well, so a pull request could not
-  # reach main's entries even if it wrote. Each Rust job installs sccache (mozilla-actions/sccache-action) and sets
-  # RUSTC_WRAPPER itself; Swatinem/rust-cache keeps only the downloaded crates (~/.cargo), not target/.
-  # A new SCCACHE_GHA_VERSION starts an empty cache (the old entries expire unused after seven days).
-  # Not active: the Cloudflare R2 variant, for a cache that outlives GitHub's 10 GB and 7 days. It needs an R2 bucket
-  # and an API token with Object Read & Write on that bucket only, as secrets SCCACHE_R2_KEY_ID / SCCACHE_R2_SECRET
-  # (account ID in the endpoint). In each Rust job, instead of the two GHA lines:
-  #   SCCACHE_BUCKET: trommi-sccache
-  #   SCCACHE_REGION: auto
-  #   SCCACHE_ENDPOINT: https://<account id>.r2.cloudflarestorage.com
-  #   AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_KEY_ID }}
-  #   AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET }}
-  #   SCCACHE_GHA_ENABLED: 'false'
-  # Only main gets the token (an `environment` or an `if` on the ref); a pull request from a fork gets no
-  # secrets and builds without sccache there, or reads a public bucket with SCCACHE_S3_NO_CREDENTIALS=true.
-  SCCACHE_GHA_ENABLED: 'true'
-  SCCACHE_GHA_VERSION: '1'
-  SCCACHE_GHA_RW_MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
-  # an unreachable cache (rate limit, outage) compiles without it instead of failing the build
-  SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
-  # sccache cannot cache incremental compilations (rust-cache sets the same)
+  # The Rust jobs' cache (Swatinem/rust-cache): per job, the downloaded crates (~/.cargo) and the compiled ones
+  # (target/, without the workspace's own crates), keyed by the compiler, Cargo.lock and the job. Only a run on main
+  # saves; a pull request restores main's (GitHub lets a branch read the caches of the default branch, not those of
+  # other branches) and saves nothing. All jobs together stay well under GitHub's 10 GB per repository; a new
+  # prefix-key starts them anew (the old entries expire unused after seven days).
+  # (sccache on the GitHub Actions cache was tried: one cache entry per compiled crate, over 2000 entries, up to 400
+  # write errors per job from the cache service's limits, 10-40 % hits, and in its first runs the jobs slower than with
+  # target/ cached.
+  # sccache on a bucket of its own (Cloudflare R2) would avoid the limits; the next step if this is not enough.)
+  # Incremental compilation is not worth caching in CI and makes target/ larger.
   CARGO_INCREMENTAL: '0'
+  # cargo-nextest (.config/nextest.toml): the scenario tests, each test a process of its own, many at once
+  NEXTEST_PROFILE: ci
+  NEXTEST_VERSION: 0.9.148
 
 jobs:
   changes:
@@ -187,7 +176,7 @@ jobs:
             : > "$RUNNER_TEMP/files"
             echo "nothing to compare with: every part counts as changed"
           fi
-          shared='core/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/build\.yml$'
+          shared='core/|Cargo\.toml$|\.config/nextest\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/build\.yml$'
           # part <job> '<its own paths>' [<its parts in the release>]: the job runs when its paths changed since the commit
           # compared with (main: the newest release's), and (main) when the inputs of one of its parts differ from the
           # newest release's, to build them
@@ -216,9 +205,6 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
-    env:
-      # sccache is installed by the step after rust-cache
-      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -228,17 +214,16 @@ jobs:
           rustup toolchain install || rustup show
           rustup component add clippy
           rustc --version
-      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
-      # sccache's (env above)
+      # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
+      # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          prefix-key: v1-rust-deps
-          cache-targets: false
+          prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          version: v0.18.0
-          disable_annotations: true
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
         run: cargo clippy --locked -p trommi-core -p trommi-core-wasm -p trommi-core-swift --all-targets -- -D warnings
       # the licence tables are what cargo reports for this Cargo.lock (.github/scripts/third_party.mjs)
@@ -253,13 +238,7 @@ jobs:
           tests=$(sed -n 's/^name = "\(\(core\|bindings\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
           [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no core test"; exit 1; }
           # shellcheck disable=SC2086
-          cargo test --locked -p trommi-tests --no-fail-fast --lib $tests
-      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
-      - name: sccache statistics
-        if: always()
-        run: |
-          "$SCCACHE_PATH" --show-stats || true
-          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
+          cargo nextest run --locked -p trommi-tests --no-fail-fast --lib $tests
 
   web:
     name: Web app (check)
@@ -270,13 +249,8 @@ jobs:
     permissions:
       contents: read
     env:
-      # sccache is installed by the step after rust-cache
-      RUSTC_WRAPPER: sccache
       # The hub the app speaks to. The build is checked against it: the page's policy must name this hub and no other.
       WEB_HUB_URL: https://hub.trommi.com
-      # Strict-Transport-Security with preload on every answer: `on` once the owner says so. Not to be taken back
-      # quickly: browsers then refuse plain http for app.trommi.com and what lies under it for two years.
-      WEB_HSTS: 'off'
       VERSION: ${{ needs.changes.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -292,17 +266,12 @@ jobs:
           rustup toolchain install || rustup show
           rustc --version
           echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
-      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
-      # sccache's (env above)
+      # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
+      # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          prefix-key: v1-rust-deps
-          cache-targets: false
+          prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.18.0
-          disable_annotations: true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: bindgen
         with:
@@ -338,7 +307,7 @@ jobs:
           {
             echo "### Web app, build $VERSION"
             echo
-            echo "hub \`$WEB_HUB_URL\`, HSTS \`$WEB_HSTS\`, $(jq '.files | length' out/manifest.json) files, manifest \`$(sha256sum out/manifest.json | cut -d' ' -f1)\`"
+            echo "hub \`$WEB_HUB_URL\`, $(jq '.files | length' out/manifest.json) files, manifest \`$(sha256sum out/manifest.json | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.event_name != 'pull_request' && needs.changes.outputs.changed_web != 'false'
@@ -347,12 +316,6 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
-      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
-      - name: sccache statistics
-        if: always()
-        run: |
-          "$SCCACHE_PATH" --show-stats || true
-          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   deploy_web:
     name: Web app
@@ -380,15 +343,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-    env:
-      # sccache is installed by the step after rust-cache
-      RUSTC_WRAPPER: sccache
-      VERSION: ${{ needs.changes.outputs.version }}
-      # what the macOS binaries are linked with (connector/build-plugin.mjs): zig, by its published SHA-256, and
-      # cargo-zigbuild
-      ZIG_VERSION: 0.14.1
-      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
-      ZIGBUILD_VERSION: 0.23.4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -402,38 +356,16 @@ jobs:
           rustup toolchain install || rustup show
           rustup component add clippy
           rustc --version
-      # the cross builds of the release (main only): clang and zig
-      - name: clang, zig
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
-        run: |
-          set -eu
-          clang --version | head -n 1
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
-          echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
-          mkdir "$RUNNER_TEMP/zig"
-          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components 1
-          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
-          "$RUNNER_TEMP/zig/zig" version
-      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
-      # sccache's (env above)
+      # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
+      # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          prefix-key: v1-rust-deps
-          cache-targets: false
+          prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          version: v0.18.0
-          disable_annotations: true
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: zigbuild
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
-        with:
-          path: ~/.cargo/bin/cargo-zigbuild
-          key: cargo-zigbuild-${{ runner.os }}-${{ env.ZIGBUILD_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
-      - name: cargo-zigbuild
-        if: github.event_name != 'pull_request' && steps.zigbuild.outputs.cache-hit != 'true' && needs.changes.outputs.changed_connector != 'false'
-        run: cargo install cargo-zigbuild --version "$ZIGBUILD_VERSION" --locked
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
         run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
       # The scenario tests start the hub of this repository and the built connector (tests/connector/common/mod.rs).
@@ -446,23 +378,117 @@ jobs:
           # shellcheck disable=SC2086
           # TROMMI_HUB_SERVES_REMOVAL: this repository's hub has the removal route, so a removed connector must verify
           # its removal there (without it the test accepts a connector that only keeps its state)
-          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo test --locked -p trommi-tests $tests
-      # The four binaries, as connector/build-plugin.mjs makes them; then the manifest that names them. (The plugin
-      # for Claude Code is no release file: it is the folder connector/plugin, which names the installed connector.)
-      # A target that did not build is an error here, not a smaller release. Main only, and only when the connector's
-      # inputs differ from the newest release's; otherwise release.yml takes the binaries from it.
-      - name: Build the release
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
+          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked -p trommi-tests --no-fail-fast $tests
+
+  # Main only, and only when the connector's inputs differ from the newest release's (otherwise release.yml takes the
+  # binaries from it): the four release binaries, as connector/build-plugin.mjs makes them, one machine per target at
+  # the same time (one after another they took 11-12 minutes) and beside the job connector's tests. The job
+  # connector_release puts them together.
+  connector_build:
+    name: Connector build (${{ matrix.target }})
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.connector == 'true' && needs.changes.outputs.changed_connector != 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      # one target that does not build stops the others: there is no release without all four
+      fail-fast: true
+      matrix:
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl, aarch64-apple-darwin, x86_64-apple-darwin]
+    env:
+      VERSION: ${{ needs.changes.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      # what the macOS binaries are linked with (connector/build-plugin.mjs): zig, by its published SHA-256, and
+      # cargo-zigbuild
+      ZIG_VERSION: 0.14.1
+      ZIG_SHA256: 24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+      ZIGBUILD_VERSION: 0.23.4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      # clang compiles ring's C for the Linux targets; zig links the macOS ones
+      - name: Compiler (rust-toolchain.toml), clang, zig
+        run: |
+          set -eu
+          rustup toolchain install || rustup show
+          rustc --version
+          clang --version | head -n 1
+          case "$TARGET" in *-apple-darwin) ;; *) exit 0 ;; esac
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components 1
+          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/zig/zig" version
+      # the downloaded and compiled crates of this target (see env above); only main runs this job
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust
+          key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: zigbuild
+        if: endsWith(matrix.target, '-apple-darwin')
+        with:
+          path: ~/.cargo/bin/cargo-zigbuild
+          key: cargo-zigbuild-${{ runner.os }}-${{ env.ZIGBUILD_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: cargo-zigbuild
+        if: endsWith(matrix.target, '-apple-darwin') && steps.zigbuild.outputs.cache-hit != 'true'
+        run: cargo install cargo-zigbuild --version "$ZIGBUILD_VERSION" --locked
+      # A target that did not build is an error here, not a smaller release.
+      - name: Build
         run: |
           set -eu
           # the release number is compiled in: a connector refuses a release older than itself (update.rs)
-          TROMMI_RELEASE_VERSION="$VERSION" node connector/build-plugin.mjs "$RUNNER_TEMP/dist"
+          TROMMI_RELEASE_VERSION="$VERSION" node connector/build-plugin.mjs "$RUNNER_TEMP/dist" --targets "$TARGET"
+          [ -f "$RUNNER_TEMP/dist/trommi-connector-$TARGET" ] || { echo "::error::no build for $TARGET"; exit 1; }
           mkdir out
+          cp "$RUNNER_TEMP/dist/trommi-connector-$TARGET" out/
+          file "out/trommi-connector-$TARGET"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: connector-build-${{ matrix.target }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 1
+
+  # The connector's release: the four binaries of connector_build and the manifest that names them (the plugin for
+  # Claude Code is no release file: it is the folder connector/plugin, which names the installed connector).
+  connector_release:
+    name: Connector release
+    needs: [changes, connector_build]
+    if: github.event_name != 'pull_request' && needs.changes.outputs.connector == 'true' && needs.changes.outputs.changed_connector != 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.changes.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: connector-build-*
+          merge-multiple: true
+          path: out/
+      - name: Put the release together
+        run: |
+          set -eu
           for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin; do
-            [ -f "$RUNNER_TEMP/dist/trommi-connector-$target" ] || { echo "::error::no build for $target"; exit 1; }
-            cp "$RUNNER_TEMP/dist/trommi-connector-$target" "out/trommi-connector-$target"
+            [ -f "out/trommi-connector-$target" ] || { echo "::error::no build for $target"; exit 1; }
+            # an artifact does not keep the executable bit
+            chmod 755 "out/trommi-connector-$target"
             file "out/trommi-connector-$target"
           done
+          [ "$(find out -type f | wc -l)" = 4 ] || { echo "::error::out/ holds more than the four binaries"; ls -la out; exit 1; }
           for f in out/trommi-connector-*-linux-musl; do
             file "$f" | grep -Eq 'static(ally|-pie) linked' || { echo "::error::$f is not a static binary"; exit 1; }
           done
@@ -472,21 +498,13 @@ jobs:
           cat out/manifest.json
       # The very file that will be released is started once.
       - name: Try the built connector
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
         run: out/trommi-connector-x86_64-unknown-linux-musl --version
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
         with:
           name: connector-release
           path: out/
           if-no-files-found: error
           retention-days: 30
-      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
-      - name: sccache statistics
-        if: always()
-        run: |
-          "$SCCACHE_PATH" --show-stats || true
-          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # Main only: a pull request checks the iOS client on Linux (job ios_client) and uses no Mac.
   ios:
@@ -498,9 +516,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-    env:
-      # sccache is installed by the step after rust-cache
-      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -531,19 +546,13 @@ jobs:
           rustup component add llvm-tools
           rustc --version
           xcodebuild -version
-      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
-      # sccache's (env above)
+      # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
+      # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.core_cache.outputs.cache-hit != 'true'
         with:
-          prefix-key: v1-rust-deps
-          cache-targets: false
+          prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        if: steps.core_cache.outputs.cache-hit != 'true'
-        with:
-          version: v0.18.0
-          disable_annotations: true
       # The Rust core for this Mac (for the tests) and for an iOS device (the archive); the helpers it removes from the
       # iOS library are checked against Apple's runtime of this Xcode. No simulator library: nothing here runs one.
       - name: The Rust core for Swift
@@ -590,12 +599,6 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
-      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
-      - name: sccache statistics
-        if: always() && steps.core_cache.outputs.cache-hit != 'true'
-        run: |
-          "$SCCACHE_PATH" --show-stats || true
-          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # The app's client package (app/ios/TrommiClient) with its tests (tests/ios), on Linux: the package does not compile for
   # macOS (ActivityKit). This is the iOS check of a pull request; the Mac (job ios) runs on main only.
@@ -607,9 +610,6 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-    env:
-      # sccache is installed by the step after rust-cache
-      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -636,19 +636,13 @@ jobs:
           swift --version
         env:
           HIT: ${{ steps.core_cache.outputs.cache-hit }}
-      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
-      # sccache's (env above)
+      # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
+      # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.core_cache.outputs.cache-hit != 'true'
         with:
-          prefix-key: v1-rust-deps
-          cache-targets: false
+          prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        if: steps.core_cache.outputs.cache-hit != 'true'
-        with:
-          version: v0.18.0
-          disable_annotations: true
       - name: The Rust core for Swift on this machine
         if: steps.core_cache.outputs.cache-hit != 'true'
         run: sh core/swift/build.sh host
@@ -662,24 +656,20 @@ jobs:
             core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Test
         run: swift test --package-path tests/ios
-      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
-      - name: sccache statistics
-        if: always() && steps.core_cache.outputs.cache-hit != 'true'
-        run: |
-          "$SCCACHE_PATH" --show-stats || true
-          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # main: when a release is due and the app's inputs changed since the newest release. It starts beside the release
   # (archive and signing take minutes); its upload waits until this run's release is published and verified
   # (gate: release, .github/scripts/ios_release_gate.sh), so only a released app ships.
   deploy_ios:
     name: iOS
-    needs: [changes, core, web, connector, ios, ios_client, hub]
+    needs: [changes, core, web, connector, connector_build, connector_release, ios, ios_client, hub]
     if: >-
       ${{ !cancelled() && needs.ios.result == 'success' && needs.ios_client.result == 'success'
         && contains(fromJSON('["success","skipped"]'), needs.core.result)
         && contains(fromJSON('["success","skipped"]'), needs.web.result)
         && contains(fromJSON('["success","skipped"]'), needs.connector.result)
+        && contains(fromJSON('["success","skipped"]'), needs.connector_build.result)
+        && contains(fromJSON('["success","skipped"]'), needs.connector_release.result)
         && contains(fromJSON('["success","skipped"]'), needs.hub.result) && (
         github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
           && needs.changes.outputs.release == 'true' && needs.changes.outputs.changed_ios == 'true') }}
@@ -703,8 +693,6 @@ jobs:
     permissions:
       contents: read
     env:
-      # sccache is installed by the step after rust-cache
-      RUSTC_WRAPPER: sccache
       VERSION: ${{ needs.changes.outputs.version }}
       TARGET: x86_64-unknown-linux-musl
     steps:
@@ -723,17 +711,16 @@ jobs:
           set -eu
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
-      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
-      # sccache's (env above)
+      # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
+      # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          prefix-key: v1-rust-deps
-          cache-targets: false
+          prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          version: v0.18.0
-          disable_annotations: true
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
         run: cargo clippy --locked -p trommi-hub -p trommi-hub-updater --all-targets -- -D warnings
       # the hub's tests and the deploy path's (updater, release form, settings)
@@ -743,7 +730,7 @@ jobs:
           tests=$(sed -n 's/^name = "\(\(hub\|deploy\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
           [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no hub test"; exit 1; }
           # shellcheck disable=SC2086
-          cargo test --locked -p trommi-tests $tests
+          cargo nextest run --locked -p trommi-tests --no-fail-fast $tests
       - name: Scripts of the deploy path
         run: |
           set -eu
@@ -805,24 +792,20 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
-      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
-      - name: sccache statistics
-        if: always()
-        run: |
-          "$SCCACHE_PATH" --show-stats || true
-          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # The one release of this run: every part's files and one signed manifest (release.yml): the parts built here, the
   # unchanged ones taken from the newest release. Only on main, only when the inputs of a part changed since the
   # newest release, and only when every part that ran passed.
   release:
     name: Release
-    needs: [changes, core, web, connector, ios, ios_client, hub]
+    needs: [changes, core, web, connector, connector_build, connector_release, ios, ios_client, hub]
     if: >-
       ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
       && needs.changes.outputs.release == 'true'
       && contains(fromJSON('["success","skipped"]'), needs.web.result)
       && contains(fromJSON('["success","skipped"]'), needs.connector.result)
+      && contains(fromJSON('["success","skipped"]'), needs.connector_build.result)
+      && contains(fromJSON('["success","skipped"]'), needs.connector_release.result)
       && contains(fromJSON('["success","skipped"]'), needs.hub.result)
       && contains(fromJSON('["success","skipped"]'), needs.core.result)
       && contains(fromJSON('["success","skipped"]'), needs.ios.result)
@@ -860,7 +843,7 @@ jobs:
   # or comment on the open one; when all passed, close it. A failed delivery has its own issue (deploy_*.yml).
   report:
     name: Report
-    needs: [changes, core, web, connector, ios, ios_client, hub, release]
+    needs: [changes, core, web, connector, connector_build, connector_release, ios, ios_client, hub, release]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5

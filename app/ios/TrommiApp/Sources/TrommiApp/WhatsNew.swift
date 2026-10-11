@@ -3,6 +3,7 @@
 // Better, Fixed. The same file and the same reading as the web app's page (app/web/dev/build.mjs parseChangelog,
 // app/web/public/news.mjs). Opening it marks the newest day as seen on this phone; until then the menu's row says so.
 import SwiftUI
+import TrommiClient
 
 /** One day of the changelog: its date, the releases it covers, its parts. */
 struct ChangelogDay: Equatable {
@@ -21,6 +22,19 @@ enum Changelog {
   }()
   /** Whether the newest day was opened on this phone. */
   static var seen: Bool { days.first.map { UserDefaults.standard.string(forKey: seenKey) == $0.day } ?? true }
+  /** What runs on this phone, for the top of What's New: "1.0.0 (37) · updated today, 14:32" (the app's version, its build number,
+   *  when this build came onto the phone: the time of its bundle). */
+  static var running: String {
+    let info = Bundle.main.infoDictionary ?? [:]
+    let version = info["CFBundleShortVersionString"] as? String ?? HubClient.appVersion, build = info["CFBundleVersion"] as? String
+    var line = build.map { "\(version) (\($0))" } ?? version
+    if let at = (try? Bundle.main.bundleURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+      let f = DateFormatter(); f.locale = Locale(identifier: "en_GB")
+      f.dateFormat = Calendar.current.isDateInToday(at) ? "'today', HH:mm" : "d MMM, HH:mm"
+      line += " · updated \(f.string(from: at))"
+    }
+    return line
+  }
   static func markSeen() { if let d = days.first { UserDefaults.standard.set(d.day, forKey: seenKey) } }
 
   /** A day is a "## " heading ("11 October 2026 (v109 – v115)"), a part a line "**New**", an item a line "- …" (a line
@@ -58,6 +72,7 @@ struct WhatsNewPage: View {
   var body: some View {
     SettingsPage(title: "What's New") {
       Text("What changed in Trommi, newest first.").font(Face.text(15)).foregroundStyle(Ink.muted)
+      Text(Changelog.running).font(Face.text(12)).foregroundStyle(Ink.muted).accessibilityLabel("This app: \(Changelog.running)")
       if Changelog.days.isEmpty { Text("Nothing written down yet.").font(Face.text(15)).foregroundStyle(Ink.muted) }
       ForEach(Array(Changelog.days.enumerated()), id: \.offset) { _, d in
         VStack(alignment: .leading, spacing: 8) {

@@ -28,6 +28,7 @@ pub mod slotstore;
 pub mod store;
 pub mod trail;
 pub mod update;
+pub mod usage;
 pub mod util;
 pub mod vault;
 

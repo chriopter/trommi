@@ -24,10 +24,16 @@ public struct PastWork: Codable, Equatable {
   public var closed = false
   /** The changes are to be read again from the start; false again once that read came to its end. */
   public var readBack = false
+  /** The read back is for a Cut (the core dropped what a removed device signed beyond it): nothing is taken from the
+   *  cache, everything is judged by the core again. nil: no. */
+  public var afterCut: Bool? = nil
   public init(toLearn: [String] = []) { self.toLearn = toLearn }
 }
 
 extension Room {
+  /** Reading back puts what is held whole back without the core (off only to measure the difference: MegaRunTests). */
+  nonisolated(unsafe) static var readBackFromCache = true
+
   /** Changes what is left to do for the past and writes it down, if it changed. */
   func notePast(_ edit: (inout PastWork) -> Void) {
     var past = record.past ?? PastWork()
@@ -99,10 +105,23 @@ extension Room {
     // The board and its cache are built again from the hub's changes. What the core holds (keys, chains, objects)
     // stays; the two notes are taken anew by this read.
     await saveTail?.value
+    // What this device holds whole already (this run's records and the cache's) is put back as it is, without the
+    // core: only what came without its body goes through the core again. (A big room read every envelope twice
+    // here, one by one, each time keys came: most of a long "Catching up".)
+    let rs = try? recordStore()
+    let cached: [Rec] = await Task.detached(priority: .userInitiated) { rs?.readAll() ?? [] }.value
+    var whole = [UInt64: Rec]()
+    for r in cached where r.contentState == "ok" { whole[UInt64(r.envelopeNumber)] = r }
+    for (n, r) in log where r.contentState == "ok" { whole[n] = r }
+    readBackWhole = Room.readBackFromCache && record.past?.afterCut != true ? whole : [:]
+    defer { readBackWhole = [:] }
+    // (the Desk on screen stays as it was until the read is through: no emit in between; its progress is shown)
+    catchingUp = (0, max(cursor, coreCursor))
+    defer { catchingUp = nil }
     dropCache()
     board.reset()
     try applyGroups(Array(groups.values), &change)
-    notePast { $0.passedOver = false; $0.closed = false }
+    notePast { $0.passedOver = false; $0.closed = false; $0.afterCut = nil }
     readingBack = true
     readBackAgain = false
     defer { readingBack = false }

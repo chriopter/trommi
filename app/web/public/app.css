@@ -788,3 +788,23 @@ html body .inbox-answer.is-take.is-advised { padding-bottom: var(--s-3); }
 .att-off { position: absolute; top: -7px; right: -7px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: var(--fg); color: var(--surface); box-shadow: 0 0 0 2px var(--surface); font: 500 14px/1 var(--font); cursor: pointer; }
 .att-off::after { content: ""; position: absolute; inset: -8px; }
 .att-off:hover, .att-off:focus-visible { background: var(--urg-critical, #b3261e); color: #fff; }
+
+/* An agent's account and usage in a session's heading (ui.mjs usageCompact): each meter a word, a thin bar, its percent.
+   The track is the ink at 12 %, the fill the accent; from 80 % on, fill and percent turn urgent. */
+.use-compact { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-left: 10px; color: var(--muted); font: 500 var(--t-xs)/1 var(--font); }
+.use-m { display: inline-flex; align-items: center; gap: 5px; }
+.use-l { text-transform: none; letter-spacing: 0; }
+.use-m b { color: var(--fg); font-weight: 700; }
+:is(.use-m, .use-row) b.is-hot { color: var(--urg-high, #b4551b); }
+.use-bar { position: relative; display: inline-block; width: 46px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--fg) 12%, transparent); overflow: hidden; }
+.use-bar.is-wide { width: 100%; height: 7px; }
+.use-bar > i { position: absolute; inset: 0 auto 0 0; width: var(--used); border-radius: 3px; background: var(--accent); }
+.use-bar.is-hot > i { background: var(--urg-high, #b4551b); }
+.use-fact { padding: 3px 7px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg); }
+/* under 1200 px: a centred line of its own under the session's title (session.mjs sessionUsage) */
+.use-narrow { display: none; }
+@media (max-width: 1199px) {
+  .use-narrow:not(:empty) { display: flex; justify-content: center; margin: 4px var(--s-3) 2px; }
+  .use-narrow .use-compact { margin: 0; justify-content: center; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 82%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .pane-title:has(.t-blocked) + .use-narrow:not(:empty) { margin-top: 36px; }
+}

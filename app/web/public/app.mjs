@@ -66,6 +66,21 @@ let newsLatest = null
 export const newsLatestDay = () => newsLatest
 import('./gen/vendor/changelog-latest.mjs').then(m => { newsLatest = m.LATEST; document.dispatchEvent(new CustomEvent('trommi:news')) }, () => {})
 export const changelog = () => import('./gen/vendor/changelog.mjs')
+// What runs here, for the small line at the top of What's new: the release (gen/release.json, which the release writes
+// beside the build: number, commit, time), else the build's commit (gen/build.txt, the dev server's too). Asked once,
+// after the page has started; offline it says nothing.
+let running = null
+/** { release: 'v152' | '', commit, when: 'today, 14:32' | '' }, or null until known. */
+export const runningBuild = () => running
+/** The same as one line, for the top of What's new: "v152 · 97f72b6 · updated today, 14:32" ('' until known). */
+export const runningLine = () => (running ? [running.release, running.commit, running.when && `updated ${running.when}`].filter(Boolean).join(' · ') : '')
+setTimeout(() => {
+  const when = iso => { const at = iso ? new Date(iso) : null; if (!at || Number.isNaN(+at)) return ''; const day = at.toDateString() === new Date().toDateString() ? 'today' : at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); return `${day}, ${at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` }
+  fetch('/gen/release.json', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+    .then(rel => (rel?.version ? { release: `v${rel.version}`, commit: String(rel.commit ?? '').slice(0, 7), when: when(rel.released) }
+      : fetch('/gen/build.txt', { cache: 'no-store' }).then(r => (r.ok ? r.text() : '')).then(t => { const c = /^commit: (\S+)$/m.exec(t)?.[1]; return c ? { release: '', commit: c.slice(0, 7), when: '' } : null })))
+    .then(b => { if (b) { running = b; document.dispatchEvent(new CustomEvent('trommi:news')) } }, () => {})
+}, 1500)
 export const scribbleWire = () => import('./gen/vendor/scribble.mjs')
 // A QR reader for browsers without their own (core/qr-decode.mjs): loaded by the account screens' "Scan a code" only.
 export const qrReader = () => import('./gen/vendor/qr-decode.mjs')
@@ -680,6 +695,12 @@ export class BoardState {
     // When the agent process behind a session last said anything, in any of its sessions (main or child).
     const lastOfDevice = new Map()
     for (const s of list) if (s.agent_device_id) lastOfDevice.set(s.agent_device_id, Math.max(lastOfDevice.get(s.agent_device_id) ?? 0, s.last_activity_at ?? 0))
+    // The account and usage an agent process names (its main session's profile `account`): shown on each of its sessions.
+    const accountOf = new Map()
+    for (const s of list) {
+      const acc = s.profile?.account
+      if (s.agent_device_id && acc && typeof acc === 'object' && (!accountOf.has(s.agent_device_id) || !s.parent_session_id)) accountOf.set(s.agent_device_id, acc)
+    }
     const out = list.map((s, i) => {
       const key = sessionKey(s), set = m.human.session_settings.get(key) ?? s.settings ?? {}
       const p = s.profile ?? {}
@@ -696,7 +717,7 @@ export class BoardState {
       const dev = m.members.get(s.agent_device_id)
       return {
         id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: p.agent_name || s.device_name || id, label: set.name || '', icon: set.icon || p.icon || '', icon_by: set.icon ? 'human' : 'agent',
-        online: Boolean(s.is_online), offline_since: s.offline_since ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: crown === key || crown === s.agent_device_id, parent, main: Boolean(p.is_main),
+        online: Boolean(s.is_online), offline_since: s.offline_since ?? null, account: accountOf.get(s.agent_device_id) ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: crown === key || crown === s.agent_device_id, parent, main: Boolean(p.is_main),
         desk: set.desk ?? null, archived: chosen && !back, replaced: false, group: set.group ?? null, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position), seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: lastOfDevice.get(s.agent_device_id) ?? 0,
         removed: s.is_active === false,
         // (a session on a person's own device, not an agent's: it is never deleted from the board: session.mjs Delete)
@@ -712,6 +733,8 @@ export class BoardState {
     const byId = new Map(out.map(a => [a.id, a]))
     for (const a of out) if (!a.parent || !byId.has(a.parent)) a.desk ??= 'main'
     for (const a of out) if (a.parent && byId.has(a.parent)) a.desk = byId.get(a.parent).desk
+    // (a helper that is a device of its own runs on its main's account)
+    for (const a of out) if (!a.account && a.parent && byId.has(a.parent)) a.account = byId.get(a.parent).account
     return out.sort((a, b) => a.position - b.position)
   }
 
@@ -1794,6 +1817,9 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {}, flush 
     const chosenRows = form.id === 'sel-bar' && data.get('way') !== 'later' ? String(data.get('ids') ?? '').split(',').filter(Boolean).map(id => document.getElementById(`row-${id}`)).filter(Boolean) : []
     const gone = leaves ? flipOut([row]) : chosenRows.length ? flipOut(chosenRows) : null
     if (gone?.length) await new Promise(r => setTimeout(r, calm() ? 0 : 260 + (chosenRows.length > 1 ? (chosenRows.length - 1) * 45 : 0)))
+    // (a page visited while the form was on its way is where he is now: a late answer that leads elsewhere, as a
+    // removal that is done only when the room's next change came, does not take him away from it)
+    const seen = visiting
     let res, error = null
     try { res = await board.request({ method: 'POST', path: action.pathname + action.search, form: data, headers: { accept: STREAM_ACCEPT, referer: location.href } }) }
     catch (err) { error = err; console.error('form', err) }
@@ -1801,6 +1827,7 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {}, flush 
     flush()
     if (gone?.length && (!success || (res?.kind === 'stream' && [row, ...chosenRows].some(r => r?.id && res.body.includes(`action="replace" target="${r.id}"`))))) putBack(gone)
     if (res?.kind === 'stream') { forget(res.body); renderStreamMessage(res.body) }
+    else if (visiting !== seen) {}
     else if (res?.kind === 'redirect') await visit(res.to)
     else if (res?.kind === 'page') { history.replaceState({ trommi: true }, '', location.href); paint(location.pathname + location.search, res.opts, { scroll: window.scrollY }) }
     fire(form.isConnected ? form : document, 'turbo:submit-end', { formSubmission, success, fetchResponse: res ? { response: { status: res.code } } : null, error })

@@ -588,6 +588,19 @@ turbo-frame.log-earlier[busy] > .log-earlier-link { opacity: .5; pointer-events:
 .status-line[data-state="decision"] .status-mark { color: var(--urg-high); }
 .status-line[data-state="done"] .status-mark { color: var(--faint); }
 .session-status .working { margin-top: var(--s-2); }
+/* a status row: its line, and on a phone what a tap opens below it (session.mjs status-lines) */
+.status-row { display: grid; max-width: 100%; min-width: 0; }
+.status-more { display: none; }
+@media (max-width: 860px) {
+  .session-status { justify-items: stretch; }
+  .status-line { cursor: pointer; }
+  .status-line b { flex: 1 1 auto; max-width: none; text-align: left; }
+  .status-line .status-detail { display: none; }
+  .status-line .status-ago { margin-left: auto; }
+  .status-row[data-open] .status-more { display: grid; gap: 6px; padding: 4px 0 6px calc(18px + var(--s-2)); }
+  .status-more p { margin: 0; color: var(--muted); font-size: var(--t-sm); line-height: 1.45; }
+  .status-open { justify-self: start; color: var(--accent); font-weight: 600; font-size: var(--t-sm); text-decoration: none; }
+}
 /* The composer: the clip is the label of a real file field; the chosen files stand above the words. */
 .composer-clip { cursor: pointer; }
 /* The heading's controls (ui.mjs), on the heading's line: the name in the heading's letters. */

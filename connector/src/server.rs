@@ -147,6 +147,17 @@ pub(crate) fn clean_name(v: &Value) -> String {
         .to_string();
     crate::util::js_trim(&b).chars().take(40).collect()
 }
+/// The child session an event belongs to, lower case ("" for the agent's own session).
+fn event_session(params: &Value) -> String {
+    params
+        .get("meta")
+        .and_then(|m| m.get("session"))
+        .filter(|v| !v.is_null())
+        .map(js_string)
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+}
 /// A channel event as Claude Code gets it: without `echo`, which is the monitor line's alone (line.rs).
 fn wire(mut params: Value) -> Value {
     if let Some(o) = params.as_object_mut() {
@@ -263,6 +274,9 @@ pub struct Conn {
     heard: AtomicBool,
     /// A wake of the Codex session is queued or on its way (host::wake); cleared when the agent reads the board.
     waking: AtomicBool,
+    /// When the last wake was queued (ms): a session that took it but never read the board is woken again by a
+    /// new event once TROMMI_CODEX_REWAKE_MS passed.
+    woke_at: std::sync::atomic::AtomicU64,
     feed: Option<MonitorFeed>,
     out: Arc<Out>,
     member: Arc<Member>,
@@ -276,6 +290,9 @@ pub struct Conn {
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
     marks: Mutex<HashMap<String, u64>>,
+    /// Child sessions a helper reads itself (`inbox` with session): lower-case name → (name, last read in ms).
+    /// Their events wait for that helper alone; plain `inbox`, the monitor and channel events skip them.
+    claims: Mutex<HashMap<String, (String, u64)>>,
     mark_timer: AtomicBool,
     hint: Mutex<Option<String>>,
     door: Mutex<Option<Door>>,
@@ -329,10 +346,25 @@ impl Conn {
     }
     /// A board event waits for a Codex session that can be woken: after a short pause (events that come together
     /// wake it once), a queued message starts its next turn, unless it read the board in between.
+    ///
+    /// A queued message that started a turn in which the agent did not read the board (it answered something else,
+    /// or the turn failed) would leave the session deaf: a new event then wakes it again, at most once per
+    /// TROMMI_CODEX_REWAKE_MS (default 3 minutes).
     fn wake_codex(&self) {
-        if !crate::host::can_wake() || self.waking.swap(true, Ordering::SeqCst) {
+        if !crate::host::can_wake() {
             return;
         }
+        if self.waking.swap(true, Ordering::SeqCst) {
+            let woke = self.woke_at.load(Ordering::SeqCst);
+            if woke == 0
+                || crate::util::now_ms().saturating_sub(woke)
+                    < env_ms("TROMMI_CODEX_REWAKE_MS", 180_000)
+            {
+                return;
+            }
+        }
+        // (claimed now: a second event in the pause does not start another wake)
+        self.woke_at.store(crate::util::now_ms(), Ordering::SeqCst);
         let c = self.arc();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(env_ms(
@@ -368,6 +400,11 @@ impl Conn {
         }
     }
     fn queue(&self, params: Value, about: Option<About>) {
+        self.stash(params, about);
+        self.wake_codex();
+    }
+    /// Keeps an event in the waiting list (and on disk), without waking anyone.
+    fn stash(&self, params: Value, about: Option<About>) {
         {
             let mut m = self.missed.lock().unwrap();
             m.push(Missed {
@@ -380,7 +417,89 @@ impl Conn {
             }
         }
         self.save_missed();
-        self.wake_codex();
+    }
+    /// Whether a helper reads this child session itself (a claim that has not lapsed).
+    fn claimed(&self, name: &str) -> bool {
+        !name.is_empty() && self.claims.lock().unwrap().contains_key(name)
+    }
+    /// A helper reads its child session: claims it, or keeps its claim.
+    fn claim(&self, key: &str, name: &str) {
+        self.claims
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), (name.to_string(), now_ms()));
+    }
+    /// How many events wait for a child session.
+    fn waiting_in(&self, key: &str) -> usize {
+        self.missed
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| event_session(&e.params) == key)
+            .count()
+    }
+    /// Ends a claim; the events it held go to the coordinator again, with a notice when some wait.
+    async fn unclaim(&self, key: &str, why: &str) {
+        let Some((name, _)) = self.claims.lock().unwrap().remove(key) else {
+            return;
+        };
+        let n = self.waiting_in(key);
+        if n > 0 {
+            let s = if n == 1 { "" } else { "s" };
+            self.helper_notice(&name, format!("{why}, {n} event{s} waiting"))
+                .await;
+        }
+    }
+    /// Claims whose helper has not read its session for `TROMMI_CLAIM_MS` (10 minutes) lapse.
+    async fn lapse_claims(&self) {
+        let ttl = env_ms("TROMMI_CLAIM_MS", 600_000);
+        let now = now_ms();
+        let gone: Vec<String> = self
+            .claims
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, (_, at))| now.saturating_sub(*at) >= ttl)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in gone {
+            self.unclaim(&k, "helper gone").await;
+        }
+    }
+    /// A short line for the coordinator about a claimed child session (README "Helpers read their own events").
+    async fn helper_notice(&self, name: &str, note: String) {
+        let params = json!({ "content": format!("{name}: {note}"), "meta": { "kind": "helper", "helper": name, "note": note } });
+        self.notify("notifications/claude/channel", params, None)
+            .await;
+    }
+    /// After a helper's tool call in its claimed session: a card it marked "Done: …" is told to the coordinator.
+    async fn note_done(&self, name: &str, args: &Value) {
+        let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        let done = regex::Regex::new(r"(?i)^\s*(done|fertig|erledigt|resolved|gelöst)\b").unwrap();
+        if !done.is_match(title) {
+            return;
+        }
+        let key = if name == "revise_card" {
+            let bridge = self.bridge.lock().unwrap().clone();
+            match bridge {
+                Some(b) => b
+                    .card_session_name(args.get("card_id"))
+                    .await
+                    .map(|n| n.trim().to_lowercase())
+                    .unwrap_or_default(),
+                None => String::new(),
+            }
+        } else {
+            args.get("session")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_lowercase())
+                .unwrap_or_default()
+        };
+        let who = self.claims.lock().unwrap().get(&key).map(|c| c.0.clone());
+        if let Some(who) = who {
+            let t: String = title.trim().chars().take(80).collect();
+            self.helper_notice(&who, format!("filed \"{t}\"")).await;
+        }
     }
     fn waits_for(&self, about: &Option<About>) -> bool {
         let Some(sid) = about.as_ref().and_then(|a| a.session_id.clone()) else {
@@ -434,6 +553,11 @@ impl Conn {
             }
         }
         let event = method == "notifications/claude/channel";
+        if event && self.claimed(&event_session(&params)) {
+            // a helper reads this session itself: no monitor line, no channel event, it waits for inbox(session)
+            self.stash(params, about);
+            return;
+        }
         if !self.heard() && event {
             if let Some(a) = &about {
                 if a.envelope_number.is_some_and(|n| n > 0) && !self.waits_for(&about) {
@@ -501,16 +625,10 @@ impl Conn {
             .lock()
             .unwrap()
             .iter()
-            .filter(|e| {
-                child.is_none_or(|c| {
-                    e.params
-                        .get("meta")
-                        .and_then(|m| m.get("session"))
-                        .map(js_string)
-                        .unwrap_or_default()
-                        .to_lowercase()
-                        == c
-                })
+            .filter(|e| match child {
+                Some(c) => event_session(&e.params) == c,
+                // the coordinator: not the events of a session a helper reads itself
+                None => !self.claimed(&event_session(&e.params)),
             })
             .cloned()
             .collect();
@@ -791,6 +909,7 @@ impl Conn {
         }
     }
     async fn tick(&self) {
+        self.lapse_claims().await;
         self.look_around();
         self.sync_link().await;
         self.present();
@@ -899,7 +1018,8 @@ impl Conn {
                         .to_string()
                 }
                 Some(r) if r.used => format!(
-                    ", whose Claude Code session is using it (its last Trommi call was {} ago)",
+                    ", whose {} session is using it (its last Trommi call was {} ago)",
+                    crate::host::name(),
                     secs(r.quiet_ms)
                 ),
                 Some(r) => format!(
@@ -917,6 +1037,10 @@ impl Conn {
                 .map(|x| x.to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
+            if crate::host::is_codex() {
+                return format!("This session is not in the Trommi room: the key of this folder ({}) is held by {who}{why}. This session asks again on every Trommi tool call: it takes the key as soon as it is free, and a holder whose session does not use Trommi hands it over (never used: after {}; used: after {} without a Trommi call). If the holder is an earlier Codex of this same folder that still runs (an old terminal, or Codex was started again while the old one lived): tell the human to quit it, or to run `kill {}` in a terminal, then call any Trommi tool again (no restart needed). If a second Codex or Claude Code session in this folder is at work, this one needs an invite of its own (two sessions are two members): in the Trommi app \"Invite an agent\", then the human gives you the link and you call connect with it. Never run trommi-connector yourself.",
+                    kf.display(), secs(self.unused_ms), secs(self.idle_ms), if pid_list.is_empty() { "<pid>".to_string() } else { pid_list });
+            }
             return format!("This session is not in the Trommi room: the key of this folder ({}) is held by {who}{why}. This session asks again on every Trommi tool call: it takes the key as soon as it is free, and a holder whose session does not use Trommi hands it over (never used: after {}, a Claude Code spare at once; used: after {} without a Trommi call). If the human just pressed Reconnect in /mcp and the holder is the old connector of this same session: tell the human to run `kill {}` in a terminal, then call any Trommi tool again (no restart needed). If a second Claude Code session in this folder is at work, this one needs an invite of its own (two sessions are two members): in the Trommi app \"invite an agent\", then in this folder {}. Do not join yourself.",
                 kf.display(), secs(self.unused_ms), secs(self.idle_ms), if pid_list.is_empty() { "<pid>".to_string() } else { pid_list }, join_hint());
         }
@@ -958,7 +1082,7 @@ impl Conn {
             }
         }
         let list = pids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        let text = format!("A Claude Code session in {} is cut off from Trommi: its connector (pid {}) has no key, the key is held by connector pid {}, whose session is using it. If that is the old connector of a reconnect: kill {} in a terminal; the session takes the key on its next Trommi tool call. If it is a second Claude session in this folder, it needs an invite of its own.", self.cfg.shown, pid(), list.join(", "), list.join(" "));
+        let text = format!("A {} session in {} is cut off from Trommi: its connector (pid {}) has no key, the key is held by connector pid {}, whose session is using it. If that is the old connector of a reconnect or restart: kill {} in a terminal; the session takes the key on its next Trommi tool call. If it is a second session in this folder, it needs an invite of its own.", crate::host::name(), self.cfg.shown, pid(), list.join(", "), list.join(" "));
         tokio::spawn(async move {
             match door::knock(
                 &held,
@@ -1770,6 +1894,26 @@ impl mcp::Server for Conn {
                     };
                 }
                 self.wake().await;
+                if name == "inbox" {
+                    if let Some(c) = &child {
+                        // a helper reads its own child session, and claims it (README "Helpers read their own events")
+                        let shown = args
+                            .get("session")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        self.claim(c, &shown);
+                        let events =
+                            crate::util::js_trim(&self.with_missed("", Some(c))).to_string();
+                        return text(if events.is_empty() {
+                            format!("No new board events in {shown}.")
+                        } else {
+                            events
+                        });
+                    }
+                }
+                self.lapse_claims().await;
                 if name == "inbox"
                     && (!self.missed.lock().unwrap().is_empty()
                         || self.bridge.lock().unwrap().is_some())
@@ -1806,7 +1950,24 @@ impl mcp::Server for Conn {
                                 card.as_deref(),
                             );
                         }
-                        let out = self.with_missed(&out, child.as_deref());
+                        let claimed = child.as_deref().is_some_and(|c| self.claimed(c));
+                        // (a claimed session's events go out with inbox(session) alone)
+                        let out = if claimed {
+                            out
+                        } else {
+                            self.with_missed(&out, child.as_deref())
+                        };
+                        if name == "close_session" {
+                            let key = args
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .trim()
+                                .to_lowercase();
+                            self.unclaim(&key, "session closed").await;
+                        } else if name == "create_info" || name == "revise_card" {
+                            self.note_done(&name, &args).await;
+                        }
                         self.touch();
                         self.sync_link().await;
                         let out = if child.is_none() {
@@ -1896,6 +2057,7 @@ pub async fn main_server() {
         cfg: cfg.clone(),
         heard: AtomicBool::new(heard),
         waking: AtomicBool::new(false),
+        woke_at: std::sync::atomic::AtomicU64::new(0),
         feed,
         out: Out::new(),
         member: member.clone(),
@@ -1908,6 +2070,7 @@ pub async fn main_server() {
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
         marks: Mutex::new(HashMap::new()),
+        claims: Mutex::new(HashMap::new()),
         mark_timer: AtomicBool::new(false),
         hint: Mutex::new(None),
         door: Mutex::new(None),
@@ -1967,6 +2130,21 @@ pub async fn main_server() {
                         .is_some_and(|a| a.iter().any(|x| x.as_u64() == Some(ppid() as u64)))
                 {
                     return json!({ "ok": false, "error": "another session" });
+                }
+                // Codex names its thread in every hook: a hook of another thread of the same Codex process is not
+                // this session's
+                if crate::host::is_codex() {
+                    if let Some(t) = req.get("thread").and_then(|v| v.as_str()) {
+                        match crate::host::thread() {
+                            Some(mine) if mine != t => {
+                                return json!({ "ok": false, "error": "another session" })
+                            }
+                            None => {
+                                crate::host::note_call_meta(&json!({ "threadId": t }));
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 if op == "terminal" {
                     return c.mirror_request(&req);
@@ -2042,6 +2220,45 @@ pub async fn main_server() {
                     Ok(said) => eprintln!("[trommi] update: {said}"),
                     Err(why) => eprintln!("[trommi] update: {why}"),
                 }
+            }
+        });
+    }
+    // the account and usage of the program this runs in (usage.rs): looked at about once a minute, sent into the
+    // main session's profile when it changed. The installed connector under Claude Code puts its status line in once
+    // (as `setup claude` does), unless `remove claude` took it out.
+    if crate::usage::on() {
+        let c = conn.clone();
+        let every = env_ms("TROMMI_USAGE_POLL_MS", 60_000).max(1000);
+        tokio::spawn(async move {
+            let mut poller = crate::usage::Poller::default();
+            let mut looked_at_line = false;
+            tokio::time::sleep(std::time::Duration::from_millis(every.min(15_000))).await;
+            loop {
+                let codex = crate::host::is_codex();
+                if !looked_at_line && !codex {
+                    looked_at_line = true;
+                    if crate::setup::is_installed(&self_path()) && !crate::usage::declined() {
+                        if let Some(f) = crate::usage::settings_file() {
+                            match crate::usage::ensure_statusline(&f) {
+                                Ok(said) => eprintln!("[trommi] {said}"),
+                                Err(why) => eprintln!("[trommi] status line not set: {why}"),
+                            }
+                        }
+                    }
+                }
+                let bridge = c.bridge.lock().unwrap().clone();
+                if let Some(bridge) = bridge {
+                    if let Some(account) = poller.changed(codex, crate::util::now_ms()).await {
+                        match bridge.put_account(account.clone()).await {
+                            Ok(_) => poller.sent(account),
+                            Err(e) => eprintln!(
+                                "[trommi] usage not sent: {}",
+                                if e.code.is_empty() { "failed" } else { &e.code }
+                            ),
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(every)).await;
             }
         });
     }

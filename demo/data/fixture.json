@@ -587,7 +587,20 @@
         "icon": "draw:leaf",
         "agent_name": "Fernly Website",
         "parent_session": null,
-        "is_main": true
+        "is_main": true,
+        "account": {
+          "kind": "claude",
+          "plan": "max",
+          "email": "ada@example.org",
+          "five_hour": {
+            "used": 62,
+            "resets_at": 1791477600000
+          },
+          "weekly": {
+            "used": 84,
+            "resets_at": 1791741000000
+          }
+        }
       },
       "status_lines": [
         {
@@ -843,7 +856,20 @@
         "icon": "draw:phone",
         "agent_name": "Fernly App",
         "parent_session": null,
-        "is_main": true
+        "is_main": true,
+        "account": {
+          "kind": "claude",
+          "plan": "max",
+          "email": "ada@example.org",
+          "five_hour": {
+            "used": 62,
+            "resets_at": 1791477600000
+          },
+          "weekly": {
+            "used": 84,
+            "resets_at": 1791741000000
+          }
+        }
       },
       "status_lines": [
         {
@@ -1019,7 +1045,20 @@
         "icon": "draw:diamond",
         "agent_name": "Design System",
         "parent_session": null,
-        "is_main": true
+        "is_main": true,
+        "account": {
+          "kind": "claude",
+          "plan": "max",
+          "email": "ada@example.org",
+          "five_hour": {
+            "used": 62,
+            "resets_at": 1791477600000
+          },
+          "weekly": {
+            "used": 36,
+            "resets_at": 1791741000000
+          }
+        }
       },
       "status_lines": [
         {
@@ -1155,7 +1194,20 @@
         "icon": "draw:lock",
         "agent_name": "Payments",
         "parent_session": null,
-        "is_main": true
+        "is_main": true,
+        "account": {
+          "kind": "claude",
+          "plan": "max",
+          "email": "ada@example.org",
+          "five_hour": {
+            "used": 91,
+            "resets_at": 1791477600000
+          },
+          "weekly": {
+            "used": 36,
+            "resets_at": 1791741000000
+          }
+        }
       },
       "status_lines": [
         {
@@ -1363,7 +1415,18 @@
         "icon": "draw:database",
         "agent_name": "Data Pipeline",
         "parent_session": null,
-        "is_main": true
+        "is_main": true,
+        "account": {
+          "kind": "codex",
+          "plan": "prolite",
+          "email": "ada@work.example",
+          "weekly": {
+            "used": 87,
+            "resets_at": 1791833400000
+          },
+          "credits": 2400,
+          "full_resets": 2
+        }
       },
       "status_lines": [
         {
@@ -1507,7 +1570,18 @@
         "icon": "draw:mountain",
         "agent_name": "Infrastructure",
         "parent_session": null,
-        "is_main": true
+        "is_main": true,
+        "account": {
+          "kind": "codex",
+          "plan": "prolite",
+          "email": "ada@work.example",
+          "weekly": {
+            "used": 41,
+            "resets_at": 1791833400000
+          },
+          "credits": 2400,
+          "full_resets": 2
+        }
       },
       "status_lines": [
         {
@@ -1819,7 +1893,20 @@
         "icon": "draw:book",
         "agent_name": "Docs",
         "parent_session": null,
-        "is_main": true
+        "is_main": true,
+        "account": {
+          "kind": "claude",
+          "plan": "max",
+          "email": "ada@example.org",
+          "five_hour": {
+            "used": 91,
+            "resets_at": 1791477600000
+          },
+          "weekly": {
+            "used": 36,
+            "resets_at": 1791741000000
+          }
+        }
       },
       "status_lines": [
         {

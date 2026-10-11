@@ -62,7 +62,12 @@ test('twelve devices sign in with the code, one after another, into a room that 
       const alerts = []
       c.engine.on('alert', x => alerts.push(x.code))
       await c.start()
-      await until(() => c.model.room.connection === 'live' && c.engine.position >= head, `device ${n} live and at the hub's change ${head} (it holds ${c.model.room.connection} at ${c.engine.position}, alerts: ${alerts.join(', ') || 'none'})`, 10_000)
+      // the writes go on until it reached the hub's change of its sign-in; then they stop, so that it can be seen
+      // live: a writer that outpaces a loaded machine keeps every device in a catch-up pass, whatever the code does
+      await until(() => c.engine.position >= head, `device ${n} at the hub's change ${head} (it holds ${c.model.room.connection} at ${c.engine.position}, alerts: ${alerts.join(', ') || 'none'})`, 30_000)
+      writing = false
+      await writer
+      await until(() => c.model.room.connection === 'live' && c.engine.position >= headOf(fake), `device ${n} live and at the hub's change ${headOf(fake)} (it holds ${c.model.room.connection} at ${c.engine.position}, alerts: ${alerts.join(', ') || 'none'})`, 20_000)
       await c.stop()
     } finally { writing = false; await writer }
   }

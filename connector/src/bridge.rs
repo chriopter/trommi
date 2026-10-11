@@ -836,6 +836,8 @@ pub struct Bridge {
     pub state: Mutex<Map<String, Value>>,
     save: SaveState,
     opening: tokio::sync::Mutex<()>,
+    /// Held while a session's profile is read, changed and written again (introduce, the account: put_account).
+    profile: tokio::sync::Mutex<()>,
     asking: Mutex<HashSet<String>>,
     dropped: Mutex<HashSet<String>>,
     /// Per turn of the trail: the next step number and the items already sent.
@@ -863,6 +865,7 @@ impl Bridge {
             state: Mutex::new(state),
             save,
             opening: tokio::sync::Mutex::new(()),
+            profile: tokio::sync::Mutex::new(()),
             asking: Mutex::new(HashSet::new()),
             dropped: Mutex::new(HashSet::new()),
             trail_sent: Mutex::new(HashMap::new()),
@@ -914,6 +917,11 @@ impl Bridge {
             return Some(sid);
         }
         None
+    }
+    /// The child session one of this agent's cards is in, by name (None: the agent's own session or no such card).
+    pub async fn card_session_name(&self, card_id: Option<&Value>) -> Option<String> {
+        let card = self.find_card(card_id).await.ok()?;
+        self.child_name(card.session_id.as_deref()).await
     }
     async fn child_name(&self, sid: Option<&str>) -> Option<String> {
         let sid = sid?;
@@ -1000,6 +1008,25 @@ impl Bridge {
         v.insert("profile".into(), Value::Object(p));
         self.client.set_status(v, Some(sid.into())).await?;
         Ok(())
+    }
+    /// Writes the account and usage of the program this agent runs in (`usage.rs`) into its main session's profile,
+    /// as `account`, when it is not what stands there. Returns whether it wrote.
+    pub async fn put_account(&self, account: Value) -> Result<bool> {
+        let _held = self.profile.lock().await;
+        let mut p = self
+            .my_session(None)
+            .await
+            .and_then(|s| s.profile)
+            .and_then(|p| p.as_object().cloned())
+            .unwrap_or_default();
+        if p.get("account") == Some(&account) {
+            return Ok(false);
+        }
+        p.insert("account".into(), account);
+        let mut v = Map::new();
+        v.insert("profile".into(), Value::Object(p));
+        self.client.set_status(v, None).await?;
+        Ok(true)
     }
     async fn my_session(&self, sid: Option<&str>) -> Option<model::Session> {
         let c = self.client.core.lock().await;
@@ -1665,6 +1692,7 @@ impl Bridge {
                     return Err(err("model is required"));
                 }
                 let sid = self.session_of(args, Map::new()).await?;
+                let _held = self.profile.lock().await;
                 let was = self
                     .my_session(sid.as_deref())
                     .await

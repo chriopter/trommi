@@ -290,6 +290,27 @@ sequenceDiagram
 </details>
 
 <details>
+<summary><b>Account and usage per agent</b> · plan, e-mail, 5-hour window and week</summary>
+
+Each agent's card in Settings → Agents shows the plan and e-mail its program is signed in with and how much of the
+5-hour window and of the week is used; a session's heading shows the two bars. The connector
+([`connector/src/usage.rs`](connector/src/usage.rs)) writes them as `account` into its main session's `profile`
+register: end-to-end encrypted like the rest of the profile, never in the hub's metadata, never in a log. It looks
+about once a minute and sends only what changed.
+
+- **Claude Code:** `claude auth status --json` names the e-mail and the plan. The windows Claude Code hands only to
+  a status line, so `setup claude` (and the installed connector once at its start) puts `trommi-connector
+  statusline` in as the status line of Claude Code's user settings (`settings.json`, only that member). A status
+  line that was there runs as before, with the same input, its output passed on unchanged. The windows land in
+  `~/.local/share/trommi/usage/` (0600, no e-mail). `trommi-connector remove claude` puts the old status line back
+  and removes the plugin.
+- **Codex:** its app server (`codex app-server`: `account/read`, `account/rateLimits/read`) gives plan, e-mail, the
+  week, credits and free full resets. Without Codex nothing is sent.
+- No credential file of another program is read. `TROMMI_USAGE=off` turns it off.
+
+</details>
+
+<details>
 <summary><b>Protocol</b> · spec, deviations, hub API</summary>
 
 | | |

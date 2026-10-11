@@ -135,6 +135,8 @@ impl Seat {
             )
             // `say` gives up after half a minute by default; a busy test machine may need longer to go online
             .env("TROMMI_SAY_MS", "120000")
+            // the account and usage of the program (usage.rs) only where a test asks for them
+            .env("TROMMI_USAGE", "off")
             .current_dir(&self.folder)
             .kill_on_drop(true);
         command
@@ -182,6 +184,16 @@ impl Seat {
     pub async fn serve_plain(&self) -> Mcp {
         let mut command = self.command(&[]);
         command.env("TROMMI_CHANNEL_EVENTS", "off");
+        Mcp::start(command).await
+    }
+
+    /// `serve_plain` with more environment.
+    pub async fn serve_plain_with(&self, env: &[(&str, &str)]) -> Mcp {
+        let mut command = self.command(&[]);
+        command.env("TROMMI_CHANNEL_EVENTS", "off");
+        for (key, value) in env {
+            command.env(key, value);
+        }
         Mcp::start(command).await
     }
 }

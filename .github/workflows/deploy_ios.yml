@@ -157,7 +157,8 @@ jobs:
       - name: Install the 1Password CLI
         uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
         with:
-          version: latest-beta
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
       - name: Build, sign, upload
         id: upload
         env:
@@ -203,7 +204,8 @@ jobs:
       - name: Install the 1Password CLI
         uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
         with:
-          version: latest-beta
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
       - name: Wait until processed, hand to the group
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}

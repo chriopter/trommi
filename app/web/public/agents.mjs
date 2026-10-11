@@ -6,7 +6,7 @@
 // connector from here have no way on the hub yet: the connector names itself and updates itself.
 // The old Settings · Sessions (/settings/sessions) leads here.
 // The routes of a session's forms (<base>/sessions/<id>/…) are here too: a session's own page and the sidebar use them.
-import { PLUS, SET_CHEVRON, agentsOf, avatar, agoSpan, html, marksFrame, sessionForms, settingsPage, sk, sayError } from './ui.mjs'
+import { PLUS, SET_CHEVRON, agentsOf, usageFull, avatar, agoSpan, html, marksFrame, sessionForms, settingsPage, sk, sayError } from './ui.mjs'
 
 const dot = on => html`<i class="set-dot" data-online="${on ? 'yes' : 'no'}"></i>`
 const agentName = g => html`${g.program} <span>on ${g.host || 'an unnamed computer'}</span>`
@@ -15,7 +15,7 @@ function agentCard(g, i, base, deskName) {
   return html`<section class="set-group ag-card" id="agent-${i}" aria-label="${g.program} on ${g.host || 'an unnamed computer'}">
 <div class="ag-head"><span class="ag-head-ico">${sk('terminal')}</span><span class="ag-head-words"><b>${agentName(g)}</b><small>${dot(g.online)}${g.online ? 'connected' : html`away · last seen ${agoSpan(g.seen)}`} · ${g.tops.length} ${g.tops.length === 1 ? 'session' : 'sessions'}${helpers ? `, ${helpers} ${helpers === 1 ? 'helper' : 'helpers'}` : ''}</small></span>
 ${g.devices.length ? html`<details class="ag-more"><summary title="More" aria-label="More for ${g.program} on ${g.host || 'an unnamed computer'}">${sk('more')}</summary><form method="post" action="${base}/agents/remove" class="ag-menu"><input type="hidden" name="key" value="${g.key}"><p>${g.program} on ${g.host || 'this computer'} and its ${g.sessions.length} ${g.sessions.length === 1 ? 'session' : 'sessions'} can read nothing new after this. The others get a new key; the history stays.</p><button type="submit" class="room-danger">Remove from This Account</button></form></details>` : ''}</div>
-<ul class="ag-tree">${g.tops.map(({ a, helpers: n, folder }) => html`<li><a class="ag-sess" href="${base}/chat/${encodeURIComponent(a.id)}" data-nav>${avatar(a, { crown: false })}<span class="set-two"><b>${a.name}</b><small>${deskName(a)} desk${folder ? html` · <span class="room-mono">${folder}</span>` : ''}</small></span>${n ? html`<span class="ag-helpers">+${n} ${n === 1 ? 'helper' : 'helpers'}</span>` : html`<span></span>`}<span class="set-detail">${dot(a.online)}${a.online ? 'connected' : 'away'}</span>${SET_CHEVRON}</a></li>`)}</ul></section>`
+${usageFull(g.sessions.find(a => a.main && a.account)?.account ?? g.sessions.find(a => a.account)?.account)}<ul class="ag-tree">${g.tops.map(({ a, helpers: n, folder }) => html`<li><a class="ag-sess" href="${base}/chat/${encodeURIComponent(a.id)}" data-nav>${avatar(a, { crown: false })}<span class="set-two"><b>${a.name}</b><small>${deskName(a)} desk${folder ? html` · <span class="room-mono">${folder}</span>` : ''}</small></span>${n ? html`<span class="ag-helpers">+${n} ${n === 1 ? 'helper' : 'helpers'}</span>` : html`<span></span>`}<span class="set-detail">${dot(a.online)}${a.online ? 'connected' : 'away'}</span>${SET_CHEVRON}</a></li>`)}</ul></section>`
 }
 /** The page's main. groups: agentsOf(); deskName(a): the name of a session's desk. */
 export function agentsMain(groups, base, deskName, { error = '' } = {}) {

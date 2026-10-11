@@ -282,8 +282,8 @@ const deskStacks = (model, base) => html`<div class="inbox-stacks stack-tabs is-
 // ---- the end of the Desk's list: Off your mind, a plain feed (no archiving, no ticking: the feed runs off at the
 // bottom) ----
 // After the open questions: one slim list. First what the agents are still working on (a small green dot), then what is
-// put off (Later: the three Z), then what is closed, the newest first (answered, done by its agent, read; shredded and
-// withdrawn ones struck through). Nothing to tick, nothing to archive. Five rows, then "Show more" opens the whole list
+// put off (Later: the three Z), then what is closed, the newest first: answered, done by its agent or read with a green
+// tick; shredded with the shredder and struck through, withdrawn by its agent with the return arrow. Nothing to tick, nothing to archive. Five rows, then "Show more" opens the whole list
 // with its search (/stacks/off). A title opens its card.
 const END_STEP = 5
 /** A section's heading at the Desk's foot: a pen rule with its small label; a link (Show more) where the rule ends, at
@@ -305,8 +305,9 @@ function endList(model, base, { full = false, q = '' } = {}) {
     const c = s.card, href = cardPath(c, base)
     const box = s.g === 'works' ? html`<span class="end-tick is-working" title="Being worked on" role="img" aria-label="Being worked on"><i class="work-dot"></i></span>`
       : s.g === 'later' ? html`<span class="end-tick is-later" title="Put off: Later" role="img" aria-label="Later">${sk('snooze')}</span>`
-        : ''
-    return html`<li class="end-row" data-g="${s.g}" data-id="${c.id}">${box}<a class="end-title" data-nav href="${href}" title="${c.title} · ${s.said}">${c.title}</a><span class="end-said">${s.said}</span>${agoSpan(s.at, 'ago end-ago')}</li>`
+        : s.g === 'trash' ? html`<span class="end-tick is-thrown" title="${s.said}" role="img" aria-label="${s.said}">${sk(c.status === 'shredded' ? 'shred' : 'withdraw')}</span>`
+          : html`<span class="end-tick is-done" title="Done" role="img" aria-label="Done">${sk('tick')}</span>`
+    return html`<li class="end-row" data-g="${s.g}"${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''} data-id="${c.id}">${box}<a class="end-title" data-nav href="${href}" title="${c.title} · ${s.said}">${c.title}</a><span class="end-said">${s.said}</span>${agoSpan(s.at, 'ago end-ago')}</li>`
   }
   return html`<section id="${id}" class="endlist${full ? ' is-full' : ''}" aria-label="Off your mind">
 ${divider('Off your mind', !full && (terms.length ? items.length : total) > END_STEP ? html`<a class="end-link" data-nav href="${base}/stacks/off">Show more</a>` : '')}
