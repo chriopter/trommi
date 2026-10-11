@@ -691,9 +691,9 @@ impl Member {
     fn out_text(was: &Value) -> String {
         let kf = was["key_file"].as_str().unwrap_or("");
         if was["verified"] == Value::Bool(false) {
-            format!("This connector stopped: the hub no longer takes its device. Either the human removed it or let another connector continue this Trommi session while this one was away, or the hub is wrong. Its state is kept ({kf}); nothing sent from here reaches the board. To use Trommi again here, the human reconnects this session in the Trommi app (a new invite link), then /trommi:connect '<link>' in this session.")
+            format!("This connector stopped: the hub no longer takes its device. Either the human removed it or let another connector continue this Trommi session while this one was away, or the hub is wrong. Its state is kept ({kf}); nothing sent from here reaches the board. To use Trommi again here, the human reconnects this session in the Trommi app (a new invite link), then {}.", if crate::host::is_codex() { "gives you the link here and you call connect with it" } else { "/trommi:connect '<link>' in this session" })
         } else if was["replaced"] == Value::Bool(true) {
-            format!("This connector is retired: the human let another connector continue this Trommi session (a new invite link for the same session), and this key ({kf}) no longer belongs to the room; it is put aside, and no other usable key is left in this folder. Nothing sent from here reaches the board. If this Claude Code session should use Trommi again, the human invites this session again in the Trommi app.")
+            format!("This connector is retired: the human let another connector continue this Trommi session (a new invite link for the same session), and this key ({kf}) no longer belongs to the room; it is put aside, and no other usable key is left in this folder. Nothing sent from here reaches the board. If this {} session should use Trommi again, the human invites this session again in the Trommi app.", crate::host::name())
         } else {
             format!("This connector is retired: the human removed its key ({kf}) from the Trommi room; it is put aside, and no other usable key is left in this folder. Nothing sent from here reaches the board. To use Trommi again here, the human invites this session again in the Trommi app.")
         }
@@ -1240,7 +1240,7 @@ impl Member {
                     eprintln!("[trommi] this session's connector ran on another session's key (slot {}, device {}…); it gave that key back, which stays where it is, and this session uses the new one from now on.", before.slot, was_id.as_deref().map(|d| &d[..12]).unwrap_or("?"));
                 } else {
                     eprintln!("[trommi] this session was {dev} before (slot {}); {}. The old device is still a member of the room: remove it under Agents & devices → Devices in the Trommi app if you no longer need it.", before.slot,
-                        match &aside { Some(a) => format!("that key is put aside as {} and this session uses the new one from now on", a.display()), None => "its connector did not give that key up: restart this Claude Code session to use the new key".into() });
+                        match &aside { Some(a) => format!("that key is put aside as {} and this session uses the new one from now on", a.display()), None => format!("its connector did not give that key up: restart this {} session to use the new key", crate::host::name()) });
                 }
             }
         }

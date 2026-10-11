@@ -108,7 +108,10 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
         std::os::unix::fs::PermissionsExt::from_mode(0o755),
     )
     .unwrap();
-    let env = [("TROMMI_UPDATE_POLL_MS", "1000")];
+    let env = [
+        ("TROMMI_UPDATE_POLL_MS", "1000"),
+        ("TROMMI_CODEX_REWAKE_MS", "4000"),
+    ];
     let mut mcp = seat.serve_codex(&codex, thread, Some(&program), &env).await;
 
     // Codex lists the tools once, at its start: in a folder in no room yet that is every board tool and connect
@@ -283,6 +286,48 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
         "the long reply arrives as it was"
     );
 
+    // A woken turn that never read the board does not leave the session deaf: a later event wakes it once more,
+    // but not before TROMMI_CODEX_REWAKE_MS, so a busy turn is not flooded with queued messages.
+    let before = wakes(&codex_calls, thread);
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Erste Nachricht." }),
+        )
+        .await
+        .expect("the human writes");
+    woken(&codex_calls, thread, before).await;
+    let first_wake = std::time::Instant::now();
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Zweite Nachricht." }),
+        )
+        .await
+        .expect("the human writes");
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert_eq!(
+        wakes(&codex_calls, thread),
+        before + 1,
+        "no second wake while the first is fresh"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(4500).saturating_sub(first_wake.elapsed()))
+        .await;
+    human
+        .say(
+            &group,
+            json!({ "content_type": "message", "text": "Dritte Nachricht." }),
+        )
+        .await
+        .expect("the human writes");
+    let again = woken(&codex_calls, thread, before + 1).await;
+    assert!(again.contains("3 new board events"), "{again}");
+    let said = inbox_holds(&mut mcp, "Dritte Nachricht.").await;
+    assert!(
+        said.contains("Erste Nachricht.") && said.contains("Zweite Nachricht."),
+        "{said}"
+    );
+
     // Restart (`codex resume`): Codex ends, the human writes meanwhile; the new connector wakes the same thread
     // before Codex called anything.
     mcp.close().await;
@@ -349,6 +394,14 @@ async fn codex_is_told_how_it_hears_the_board_and_never_to_script_the_connector(
     assert!(instructions.contains("codex resume"), "{instructions}");
     for never in ["Trommi · ", "--urgent via Bash", "/mcp", "Claude Code"] {
         assert!(!instructions.contains(never), "{never:?} in {instructions}");
+    }
+    // A card's event is answered under the card (Claude Code's mirror does that by itself).
+    assert!(instructions.contains("card_id"), "{instructions}");
+    // No tool text tells Codex about Claude Code's /mcp.
+    let listed = mcp.request("tools/list", json!({})).await;
+    for tool in listed["tools"].as_array().expect("tools") {
+        let text = tool["description"].as_str().unwrap_or("");
+        assert!(!text.contains("/mcp"), "{}: {text}", tool["name"]);
     }
     mcp.close().await;
 }

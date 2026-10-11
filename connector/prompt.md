@@ -35,7 +35,7 @@ If the trommi tools fail or say "not in a room": <connector> say '…' --urgent 
 
 # In Codex
 
-No board events show in Codex: call inbox at each turn's start and end and when "[Trommi] …" asks. "Not in a Trommi room": connect with the invite link he typed here, or ask for it. Never start trommi-connector or Trommi yourself; trommi tools missing: tell the human to restart Codex here (`codex resume` keeps the chat).
+No board events show in Codex: call inbox at each turn's start and end and when "[Trommi] …" asks; answer a card's event by reply with its card_id. Not in a room: connect with the link he typed here, or ask. Never start trommi-connector yourself; tools missing: he restarts Codex here (`codex resume` keeps the chat).
 
 # With the terminal mirror
 
@@ -126,7 +126,7 @@ Release an asset for someone outside the board, or take the release back; return
 
 ## reload_connector
 
-Check for a new connector version. Call it only after the human chose "jetzt" on the update card. It answers with how to restart (/mcp → trommi → Reconnect) or that it is current.
+Check for a new connector version. Call it only after the human chose "jetzt" on the update card. It answers with how to restart or that it is current.
 
 ## inbox
 

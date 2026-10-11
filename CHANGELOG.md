@@ -31,6 +31,9 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - What's new says what runs: at its top the release, its build and when it was updated (web; on the iPhone the app's version and build).
 - Helpers read their own board events: a subagent's child session goes to it directly, so the main agent no longer
   passes them on; it gets one line when the helper is done, and the events back if the helper stops reading.
+- Codex: a session that was woken but did not read the board is woken again by the next message (at most every
+  3 minutes); it answers a card's question under that card; restart and "key in use" messages speak Codex's language
+  instead of Claude Code's.
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
 - iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster

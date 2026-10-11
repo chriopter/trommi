@@ -274,6 +274,9 @@ pub struct Conn {
     heard: AtomicBool,
     /// A wake of the Codex session is queued or on its way (host::wake); cleared when the agent reads the board.
     waking: AtomicBool,
+    /// When the last wake was queued (ms): a session that took it but never read the board is woken again by a
+    /// new event once TROMMI_CODEX_REWAKE_MS passed.
+    woke_at: std::sync::atomic::AtomicU64,
     feed: Option<MonitorFeed>,
     out: Arc<Out>,
     member: Arc<Member>,
@@ -343,10 +346,25 @@ impl Conn {
     }
     /// A board event waits for a Codex session that can be woken: after a short pause (events that come together
     /// wake it once), a queued message starts its next turn, unless it read the board in between.
+    ///
+    /// A queued message that started a turn in which the agent did not read the board (it answered something else,
+    /// or the turn failed) would leave the session deaf: a new event then wakes it again, at most once per
+    /// TROMMI_CODEX_REWAKE_MS (default 3 minutes).
     fn wake_codex(&self) {
-        if !crate::host::can_wake() || self.waking.swap(true, Ordering::SeqCst) {
+        if !crate::host::can_wake() {
             return;
         }
+        if self.waking.swap(true, Ordering::SeqCst) {
+            let woke = self.woke_at.load(Ordering::SeqCst);
+            if woke == 0
+                || crate::util::now_ms().saturating_sub(woke)
+                    < env_ms("TROMMI_CODEX_REWAKE_MS", 180_000)
+            {
+                return;
+            }
+        }
+        // (claimed now: a second event in the pause does not start another wake)
+        self.woke_at.store(crate::util::now_ms(), Ordering::SeqCst);
         let c = self.arc();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(env_ms(
@@ -1000,7 +1018,8 @@ impl Conn {
                         .to_string()
                 }
                 Some(r) if r.used => format!(
-                    ", whose Claude Code session is using it (its last Trommi call was {} ago)",
+                    ", whose {} session is using it (its last Trommi call was {} ago)",
+                    crate::host::name(),
                     secs(r.quiet_ms)
                 ),
                 Some(r) => format!(
@@ -1018,6 +1037,10 @@ impl Conn {
                 .map(|x| x.to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
+            if crate::host::is_codex() {
+                return format!("This session is not in the Trommi room: the key of this folder ({}) is held by {who}{why}. This session asks again on every Trommi tool call: it takes the key as soon as it is free, and a holder whose session does not use Trommi hands it over (never used: after {}; used: after {} without a Trommi call). If the holder is an earlier Codex of this same folder that still runs (an old terminal, or Codex was started again while the old one lived): tell the human to quit it, or to run `kill {}` in a terminal, then call any Trommi tool again (no restart needed). If a second Codex or Claude Code session in this folder is at work, this one needs an invite of its own (two sessions are two members): in the Trommi app \"Invite an agent\", then the human gives you the link and you call connect with it. Never run trommi-connector yourself.",
+                    kf.display(), secs(self.unused_ms), secs(self.idle_ms), if pid_list.is_empty() { "<pid>".to_string() } else { pid_list });
+            }
             return format!("This session is not in the Trommi room: the key of this folder ({}) is held by {who}{why}. This session asks again on every Trommi tool call: it takes the key as soon as it is free, and a holder whose session does not use Trommi hands it over (never used: after {}, a Claude Code spare at once; used: after {} without a Trommi call). If the human just pressed Reconnect in /mcp and the holder is the old connector of this same session: tell the human to run `kill {}` in a terminal, then call any Trommi tool again (no restart needed). If a second Claude Code session in this folder is at work, this one needs an invite of its own (two sessions are two members): in the Trommi app \"invite an agent\", then in this folder {}. Do not join yourself.",
                 kf.display(), secs(self.unused_ms), secs(self.idle_ms), if pid_list.is_empty() { "<pid>".to_string() } else { pid_list }, join_hint());
         }
@@ -1059,7 +1082,7 @@ impl Conn {
             }
         }
         let list = pids.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        let text = format!("A Claude Code session in {} is cut off from Trommi: its connector (pid {}) has no key, the key is held by connector pid {}, whose session is using it. If that is the old connector of a reconnect: kill {} in a terminal; the session takes the key on its next Trommi tool call. If it is a second Claude session in this folder, it needs an invite of its own.", self.cfg.shown, pid(), list.join(", "), list.join(" "));
+        let text = format!("A {} session in {} is cut off from Trommi: its connector (pid {}) has no key, the key is held by connector pid {}, whose session is using it. If that is the old connector of a reconnect or restart: kill {} in a terminal; the session takes the key on its next Trommi tool call. If it is a second session in this folder, it needs an invite of its own.", crate::host::name(), self.cfg.shown, pid(), list.join(", "), list.join(" "));
         tokio::spawn(async move {
             match door::knock(
                 &held,
@@ -2034,6 +2057,7 @@ pub async fn main_server() {
         cfg: cfg.clone(),
         heard: AtomicBool::new(heard),
         waking: AtomicBool::new(false),
+        woke_at: std::sync::atomic::AtomicU64::new(0),
         feed,
         out: Out::new(),
         member: member.clone(),

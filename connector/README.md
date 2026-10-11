@@ -79,7 +79,9 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
   "[Trommi] … call the trommi inbox tool …"` (once until the agent reads the board; `TROMMI_CODEX_WAKE=off` turns
   it off, `TROMMI_CODEX_BIN` names the program). That starts a turn in an idle session, or the next one after a
   running turn; the agent reads the event with `inbox`. So a Codex session hears at once (its lease reports
-  `hears: true`), also after a restart (`codex resume`) or a swapped-in connector, before its first call.
+  `hears: true`), also after a restart (`codex resume`) or a swapped-in connector, before its first call. A
+  woken turn that never called `inbox` does not leave the session deaf: the next event wakes it again once
+  `TROMMI_CODEX_REWAKE_MS` (3 minutes) passed since the last wake.
 - It never asks for the tool list again: an unconnected session lists every tool with `connect`.
 - It asks for approval of an MCP call unless the tool says it is harmless: every tool carries `annotations`
   (`readOnlyHint`, `destructiveHint`, `openWorldHint`); only `revoke_asset` and `share_asset` still ask.
