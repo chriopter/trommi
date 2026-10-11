@@ -7,7 +7,7 @@
     "my_role": "human",
     "key_epoch": 1,
     "last_entry_number": 40,
-    "last_envelope_number": 877488,
+    "last_envelope_number": 877491,
     "connection": "live"
   },
   "members": [
@@ -464,14 +464,14 @@
     {
       "agent_device_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
       "agent_session_id": "fernly-web",
-      "device_name": "fernly-web",
+      "device_name": "Fernly Website",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Fernly web app: launch on Monday",
         "icon": "draw:leaf",
-        "agent_name": "fernly-web",
+        "agent_name": "Fernly Website",
         "parent_session": null,
         "is_main": true
       },
@@ -520,14 +520,14 @@
     {
       "agent_device_id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
       "agent_session_id": "landing-page",
-      "device_name": "landing-page",
+      "device_name": "Landing Page",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Landing page and the hero",
         "icon": "draw:brush",
-        "agent_name": "landing-page",
+        "agent_name": "Landing Page",
         "parent_session": "fernly-web",
         "is_main": false
       },
@@ -552,14 +552,14 @@
     {
       "agent_device_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
       "agent_session_id": "copy",
-      "device_name": "copy",
+      "device_name": "Copywriting",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "The words on the site and in the e-mails",
         "icon": "draw:pen",
-        "agent_name": "copy",
+        "agent_name": "Copywriting",
         "parent_session": "fernly-web",
         "is_main": false
       },
@@ -584,14 +584,14 @@
     {
       "agent_device_id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
       "agent_session_id": "onboarding",
-      "device_name": "onboarding",
+      "device_name": "Onboarding",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Sign-up and the first plant",
         "icon": "draw:kite",
-        "agent_name": "onboarding",
+        "agent_name": "Onboarding",
         "parent_session": "fernly-web",
         "is_main": false
       },
@@ -624,14 +624,14 @@
     {
       "agent_device_id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
       "agent_session_id": "web-perf",
-      "device_name": "web-perf",
+      "device_name": "Page Speed",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Speed on slow phones",
         "icon": "draw:bolt",
-        "agent_name": "web-perf",
+        "agent_name": "Page Speed",
         "parent_session": "fernly-web",
         "is_main": false
       },
@@ -656,14 +656,14 @@
     {
       "agent_device_id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
       "agent_session_id": "e2e-tests",
-      "device_name": "e2e-tests",
+      "device_name": "Testing",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Playwright: sign-up, checkout, reminders",
         "icon": "draw:flask",
-        "agent_name": "e2e-tests",
+        "agent_name": "Testing",
         "parent_session": "fernly-web",
         "is_main": false
       },
@@ -688,14 +688,14 @@
     {
       "agent_device_id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
       "agent_session_id": "seo",
-      "device_name": "seo",
+      "device_name": "Search & Social",
       "is_active": true,
       "is_online": false,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Meta tags, sitemap, social cards",
         "icon": "draw:eye",
-        "agent_name": "seo",
+        "agent_name": "Search & Social",
         "parent_session": "fernly-web",
         "is_main": false
       },
@@ -720,14 +720,14 @@
     {
       "agent_device_id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
       "agent_session_id": "fernly-ios",
-      "device_name": "fernly-ios",
+      "device_name": "Fernly App",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "iOS 1.2: widgets, dark mode, release",
         "icon": "draw:phone",
-        "agent_name": "fernly-ios",
+        "agent_name": "Fernly App",
         "parent_session": null,
         "is_main": true
       },
@@ -768,14 +768,14 @@
     {
       "agent_device_id": "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
       "agent_session_id": "widgets",
-      "device_name": "widgets",
+      "device_name": "Widgets",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Home Screen widgets",
         "icon": "draw:grid",
-        "agent_name": "widgets",
+        "agent_name": "Widgets",
         "parent_session": "fernly-ios",
         "is_main": false
       },
@@ -800,14 +800,14 @@
     {
       "agent_device_id": "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
       "agent_session_id": "push-reminders",
-      "device_name": "push-reminders",
+      "device_name": "Push Reminders",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Reminders: one a day, at a chosen time",
         "icon": "draw:bell",
-        "agent_name": "push-reminders",
+        "agent_name": "Push Reminders",
         "parent_session": "fernly-ios",
         "is_main": false
       },
@@ -832,14 +832,14 @@
     {
       "agent_device_id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
       "agent_session_id": "app-store",
-      "device_name": "app-store",
+      "device_name": "App Store",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "App Store text and screenshots",
         "icon": "draw:star",
-        "agent_name": "app-store",
+        "agent_name": "App Store",
         "parent_session": "fernly-ios",
         "is_main": false
       },
@@ -864,14 +864,14 @@
     {
       "agent_device_id": "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e",
       "agent_session_id": "crash-triage",
-      "device_name": "crash-triage",
+      "device_name": "Crash Fixes",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Crash reports from TestFlight",
         "icon": "draw:bug",
-        "agent_name": "crash-triage",
+        "agent_name": "Crash Fixes",
         "parent_session": "fernly-ios",
         "is_main": false
       },
@@ -896,14 +896,14 @@
     {
       "agent_device_id": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
       "agent_session_id": "design-system",
-      "device_name": "design-system",
+      "device_name": "Design System",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Tokens and components for web and iOS",
         "icon": "draw:diamond",
-        "agent_name": "design-system",
+        "agent_name": "Design System",
         "parent_session": null,
         "is_main": true
       },
@@ -936,14 +936,14 @@
     {
       "agent_device_id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
       "agent_session_id": "tokens",
-      "device_name": "tokens",
+      "device_name": "Design Tokens",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Colour, type and space as tokens",
         "icon": "draw:drop",
-        "agent_name": "tokens",
+        "agent_name": "Design Tokens",
         "parent_session": "design-system",
         "is_main": false
       },
@@ -968,14 +968,14 @@
     {
       "agent_device_id": "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
       "agent_session_id": "icons",
-      "device_name": "icons",
+      "device_name": "Icons",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Icon set: 48 icons, one stroke",
         "icon": "draw:flower",
-        "agent_name": "icons",
+        "agent_name": "Icons",
         "parent_session": "design-system",
         "is_main": false
       },
@@ -1000,14 +1000,14 @@
     {
       "agent_device_id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
       "agent_session_id": "dark-mode",
-      "device_name": "dark-mode",
+      "device_name": "Dark Mode",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Dark mode for every screen",
         "icon": "draw:moon",
-        "agent_name": "dark-mode",
+        "agent_name": "Dark Mode",
         "parent_session": "design-system",
         "is_main": false
       },
@@ -1032,14 +1032,14 @@
     {
       "agent_device_id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
       "agent_session_id": "payments-service",
-      "device_name": "payments-service",
+      "device_name": "Payments",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Subscriptions with Stripe: checkout, renewals, invoices",
         "icon": "draw:lock",
-        "agent_name": "payments-service",
+        "agent_name": "Payments",
         "parent_session": null,
         "is_main": true
       },
@@ -1080,14 +1080,14 @@
     {
       "agent_device_id": "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
       "agent_session_id": "webhooks",
-      "device_name": "webhooks",
+      "device_name": "Webhooks",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Stripe webhooks, idempotent and replayable",
         "icon": "draw:arrow",
-        "agent_name": "webhooks",
+        "agent_name": "Webhooks",
         "parent_session": "payments-service",
         "is_main": false
       },
@@ -1112,14 +1112,14 @@
     {
       "agent_device_id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
       "agent_session_id": "checkout",
-      "device_name": "checkout",
+      "device_name": "Checkout",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "The checkout screen",
         "icon": "draw:cup",
-        "agent_name": "checkout",
+        "agent_name": "Checkout",
         "parent_session": "payments-service",
         "is_main": false
       },
@@ -1144,14 +1144,14 @@
     {
       "agent_device_id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
       "agent_session_id": "invoices",
-      "device_name": "invoices",
+      "device_name": "Invoices",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Invoices and receipts as PDF",
         "icon": "draw:book",
-        "agent_name": "invoices",
+        "agent_name": "Invoices",
         "parent_session": "payments-service",
         "is_main": false
       },
@@ -1176,14 +1176,14 @@
     {
       "agent_device_id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
       "agent_session_id": "tax",
-      "device_name": "tax",
+      "device_name": "Tax & VAT",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "VAT for 27 countries",
         "icon": "draw:key",
-        "agent_name": "tax",
+        "agent_name": "Tax & VAT",
         "parent_session": "payments-service",
         "is_main": false
       },
@@ -1208,14 +1208,14 @@
     {
       "agent_device_id": "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
       "agent_session_id": "load-test",
-      "device_name": "load-test",
+      "device_name": "Load Testing",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "k6 load test on staging",
         "icon": "draw:burst",
-        "agent_name": "load-test",
+        "agent_name": "Load Testing",
         "parent_session": "payments-service",
         "is_main": false
       },
@@ -1240,14 +1240,14 @@
     {
       "agent_device_id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
       "agent_session_id": "data-pipeline",
-      "device_name": "data-pipeline",
+      "device_name": "Data Pipeline",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Events pipeline and the retention dashboard",
         "icon": "draw:database",
-        "agent_name": "data-pipeline",
+        "agent_name": "Data Pipeline",
         "parent_session": null,
         "is_main": true
       },
@@ -1288,14 +1288,14 @@
     {
       "agent_device_id": "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
       "agent_session_id": "ingest",
-      "device_name": "ingest",
+      "device_name": "Event Intake",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Collector: validate, drop personal data",
         "icon": "draw:waves",
-        "agent_name": "ingest",
+        "agent_name": "Event Intake",
         "parent_session": "data-pipeline",
         "is_main": false
       },
@@ -1320,14 +1320,14 @@
     {
       "agent_device_id": "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
       "agent_session_id": "dbt-models",
-      "device_name": "dbt-models",
+      "device_name": "Data Models",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "dbt models and their tests",
         "icon": "draw:branch",
-        "agent_name": "dbt-models",
+        "agent_name": "Data Models",
         "parent_session": "data-pipeline",
         "is_main": false
       },
@@ -1352,14 +1352,14 @@
     {
       "agent_device_id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
       "agent_session_id": "dashboard",
-      "device_name": "dashboard",
+      "device_name": "Dashboards",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "The retention dashboard",
         "icon": "draw:eye",
-        "agent_name": "dashboard",
+        "agent_name": "Dashboards",
         "parent_session": "data-pipeline",
         "is_main": false
       },
@@ -1384,14 +1384,14 @@
     {
       "agent_device_id": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
       "agent_session_id": "infra",
-      "device_name": "infra",
+      "device_name": "Infrastructure",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Second region, Kubernetes 1.33, a smaller bill",
         "icon": "draw:mountain",
-        "agent_name": "infra",
+        "agent_name": "Infrastructure",
         "parent_session": null,
         "is_main": true
       },
@@ -1432,14 +1432,14 @@
     {
       "agent_device_id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
       "agent_session_id": "terraform",
-      "device_name": "terraform",
+      "device_name": "Terraform",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Terraform for us-east",
         "icon": "draw:house",
-        "agent_name": "terraform",
+        "agent_name": "Terraform",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1464,14 +1464,14 @@
     {
       "agent_device_id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
       "agent_session_id": "k8s-upgrade",
-      "device_name": "k8s-upgrade",
+      "device_name": "Kubernetes",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Kubernetes 1.31 → 1.33",
         "icon": "draw:boat",
-        "agent_name": "k8s-upgrade",
+        "agent_name": "Kubernetes",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1504,14 +1504,14 @@
     {
       "agent_device_id": "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
       "agent_session_id": "postgres-replica",
-      "device_name": "postgres-replica",
+      "device_name": "Database Replica",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Read replica in us-east",
         "icon": "draw:database",
-        "agent_name": "postgres-replica",
+        "agent_name": "Database Replica",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1536,14 +1536,14 @@
     {
       "agent_device_id": "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
       "agent_session_id": "cdn",
-      "device_name": "cdn",
+      "device_name": "CDN",
       "is_active": true,
       "is_online": false,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Images through the CDN",
         "icon": "draw:cloud",
-        "agent_name": "cdn",
+        "agent_name": "CDN",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1568,14 +1568,14 @@
     {
       "agent_device_id": "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26",
       "agent_session_id": "backups",
-      "device_name": "backups",
+      "device_name": "Backups",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Backups and the weekly restore test",
         "icon": "draw:anchor",
-        "agent_name": "backups",
+        "agent_name": "Backups",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1600,14 +1600,14 @@
     {
       "agent_device_id": "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
       "agent_session_id": "observability",
-      "device_name": "observability",
+      "device_name": "Monitoring",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Dashboards and alerts",
         "icon": "draw:eye",
-        "agent_name": "observability",
+        "agent_name": "Monitoring",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1632,14 +1632,14 @@
     {
       "agent_device_id": "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
       "agent_session_id": "cost",
-      "device_name": "cost",
+      "device_name": "Cloud Costs",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "The cloud bill",
         "icon": "draw:comb",
-        "agent_name": "cost",
+        "agent_name": "Cloud Costs",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1664,14 +1664,14 @@
     {
       "agent_device_id": "81af95457b22d63d2ac4c30b995a7efe1ae2ee5d86ceda512c5a4c53371a85e9",
       "agent_session_id": "secrets",
-      "device_name": "secrets",
+      "device_name": "Secrets",
       "is_active": true,
       "is_online": false,
       "profile": {
         "model": "gpt-6.1-sol",
         "task": "Rotate the database and Stripe keys",
         "icon": "draw:key",
-        "agent_name": "secrets",
+        "agent_name": "Secrets",
         "parent_session": "infra",
         "is_main": false
       },
@@ -1696,14 +1696,14 @@
     {
       "agent_device_id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
       "agent_session_id": "docs-site",
-      "device_name": "docs-site",
+      "device_name": "Docs",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "docs.fernly.app: guides and the API reference",
         "icon": "draw:book",
-        "agent_name": "docs-site",
+        "agent_name": "Docs",
         "parent_session": null,
         "is_main": true
       },
@@ -1736,14 +1736,14 @@
     {
       "agent_device_id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
       "agent_session_id": "api-reference",
-      "device_name": "api-reference",
+      "device_name": "API Reference",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "API reference from the OpenAPI file",
         "icon": "draw:terminal",
-        "agent_name": "api-reference",
+        "agent_name": "API Reference",
         "parent_session": "docs-site",
         "is_main": false
       },
@@ -1768,14 +1768,14 @@
     {
       "agent_device_id": "761b525b4045435aea626e866242d436daf6cf2a22ea2b4ec7e20431376cbe9b",
       "agent_session_id": "docs-search",
-      "device_name": "search",
+      "device_name": "Docs Search",
       "is_active": true,
       "is_online": true,
       "profile": {
         "model": "claude-opus-5-5",
         "task": "Search for the docs",
         "icon": "draw:flag",
-        "agent_name": "search",
+        "agent_name": "Docs Search",
         "parent_session": "docs-site",
         "is_main": false
       },
@@ -1803,14 +1803,14 @@
       "object_id": "a38afef6dbdd056db8042980f2b83336",
       "agent_device_id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
       "first_envelope_number": 876040,
-      "created_at": 1791468240000,
+      "created_at": 1791460800000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "2a217656fef990dde768d805000f727f8418f3a8e9a6db7ab70029de826c12d9",
           "previous_version_hash": null,
           "envelope_number": 876040,
-          "sent_at": 1791468240000,
+          "sent_at": 1791460800000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -1928,20 +1928,20 @@
       "object_version": 1,
       "version_hash": "2a217656fef990dde768d805000f727f8418f3a8e9a6db7ab70029de826c12d9",
       "envelope_number": 876040,
-      "updated_at": 1791468240000
+      "updated_at": 1791460800000
     },
     {
       "object_id": "daa202f98097523fa1f1fe18068f8322",
       "agent_device_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
       "first_envelope_number": 875620,
-      "created_at": 1791467820000,
+      "created_at": 1791462240000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "5c4e9527ebfeaec68fa645c3391da2998a043b16eb485ef3ffdd79fe7e291b47",
           "previous_version_hash": null,
           "envelope_number": 875620,
-          "sent_at": 1791467820000,
+          "sent_at": 1791462240000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -2059,20 +2059,20 @@
       "object_version": 1,
       "version_hash": "5c4e9527ebfeaec68fa645c3391da2998a043b16eb485ef3ffdd79fe7e291b47",
       "envelope_number": 875620,
-      "updated_at": 1791467820000
+      "updated_at": 1791462240000
     },
     {
       "object_id": "637adcc6eae4b4ac30b47509a3071884",
       "agent_device_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
       "first_envelope_number": 875200,
-      "created_at": 1791467400000,
+      "created_at": 1791466200000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "e4f90cbcde00dfe5e68522a3eff99ec7b452d4e0fdbbc5584d773447f97e0901",
           "previous_version_hash": null,
           "envelope_number": 875200,
-          "sent_at": 1791467400000,
+          "sent_at": 1791466200000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -2150,22 +2150,22 @@
       "object_version": 1,
       "version_hash": "e4f90cbcde00dfe5e68522a3eff99ec7b452d4e0fdbbc5584d773447f97e0901",
       "envelope_number": 875200,
-      "updated_at": 1791467400000
+      "updated_at": 1791466200000
     },
     {
       "object_id": "95a7444523d097bff745b891bc2166cf",
       "agent_device_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
       "first_envelope_number": 876520,
-      "created_at": 1791468720000,
+      "created_at": 1791464400000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "33e1b7cf9860203f6c429708bcd0d9105b67c039c5387ebbd4ebe35ae6a08bcb",
           "previous_version_hash": null,
           "envelope_number": 876520,
-          "sent_at": 1791468720000,
+          "sent_at": 1791464400000,
           "object_state": "open",
-          "urgency": "high",
+          "urgency": "normal",
           "content": {
             "card_type": "decision",
             "title": "Launch on Monday at 09:00, or on Tuesday?",
@@ -2202,7 +2202,7 @@
             "html": null,
             "allows_multiple": false,
             "recommended": "monday",
-            "urgency_reason": "The announcement e-mail is scheduled tonight",
+            "urgency_reason": "",
             "attachments": [
               {
                 "attachment_id": "5e206d84ca2b38134b8164b2135760cd",
@@ -2263,7 +2263,7 @@
       "html": null,
       "allows_multiple": false,
       "recommended": "monday",
-      "urgency_reason": "The announcement e-mail is scheduled tonight",
+      "urgency_reason": "",
       "attachments": [
         {
           "attachment_id": "5e206d84ca2b38134b8164b2135760cd",
@@ -2281,24 +2281,24 @@
       "merged_into_object_id": null,
       "merged_from_object_ids": null,
       "object_state": "open",
-      "urgency": "high",
+      "urgency": "normal",
       "object_version": 1,
       "version_hash": "33e1b7cf9860203f6c429708bcd0d9105b67c039c5387ebbd4ebe35ae6a08bcb",
       "envelope_number": 876520,
-      "updated_at": 1791468720000
+      "updated_at": 1791464400000
     },
     {
       "object_id": "7e86fa6e752b2ff5cf636658aa14f1f0",
       "agent_device_id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
       "first_envelope_number": 874480,
-      "created_at": 1791466680000,
+      "created_at": 1791465120000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "4e0355e1552b63f7b491bee371293e35b1d9bb17f8a26ae8d18d159401548216",
           "previous_version_hash": null,
           "envelope_number": 874480,
-          "sent_at": 1791466680000,
+          "sent_at": 1791465120000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -2370,20 +2370,20 @@
       "object_version": 1,
       "version_hash": "4e0355e1552b63f7b491bee371293e35b1d9bb17f8a26ae8d18d159401548216",
       "envelope_number": 874480,
-      "updated_at": 1791466680000
+      "updated_at": 1791465120000
     },
     {
       "object_id": "9c9f4031e513b80e68c67139a12e408b",
       "agent_device_id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
       "first_envelope_number": 877240,
-      "created_at": 1791469440000,
+      "created_at": 1791467280000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "8620c66f4e7cd5301130b4f00eaa487497a1d89380b8c950c38f6598390ee2c1",
           "previous_version_hash": null,
           "envelope_number": 877240,
-          "sent_at": 1791469440000,
+          "sent_at": 1791467280000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -2455,7 +2455,7 @@
       "object_version": 1,
       "version_hash": "8620c66f4e7cd5301130b4f00eaa487497a1d89380b8c950c38f6598390ee2c1",
       "envelope_number": 877240,
-      "updated_at": 1791469440000
+      "updated_at": 1791467280000
     },
     {
       "object_id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
@@ -2828,14 +2828,14 @@
       "object_id": "177482f5593de33230dfeb8e72506993",
       "agent_device_id": "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
       "first_envelope_number": 873760,
-      "created_at": 1791465960000,
+      "created_at": 1791461520000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "a67a463d43425a2fde90c3228d4f7622538d60707b8e3d8ef7937bf85fa41c49",
           "previous_version_hash": null,
           "envelope_number": 873760,
-          "sent_at": 1791465960000,
+          "sent_at": 1791461520000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -2953,20 +2953,20 @@
       "object_version": 1,
       "version_hash": "a67a463d43425a2fde90c3228d4f7622538d60707b8e3d8ef7937bf85fa41c49",
       "envelope_number": 873760,
-      "updated_at": 1791465960000
+      "updated_at": 1791461520000
     },
     {
       "object_id": "de6f89dc61b5db9b5ad8cd2eaf14abce",
       "agent_device_id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
       "first_envelope_number": 872800,
-      "created_at": 1791465000000,
+      "created_at": 1791464040000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "db0063cb43d087ea6a56daf1631ade20ebec417c8a2def2295bc58ba258ef588",
           "previous_version_hash": null,
           "envelope_number": 872800,
-          "sent_at": 1791465000000,
+          "sent_at": 1791464040000,
           "object_state": "open",
           "urgency": "low",
           "content": {
@@ -3090,20 +3090,20 @@
       "object_version": 1,
       "version_hash": "db0063cb43d087ea6a56daf1631ade20ebec417c8a2def2295bc58ba258ef588",
       "envelope_number": 872800,
-      "updated_at": 1791465000000
+      "updated_at": 1791464040000
     },
     {
       "object_id": "29e26860adecd0578df14c491915b27a",
       "agent_device_id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
       "first_envelope_number": 876280,
-      "created_at": 1791468480000,
+      "created_at": 1791464760000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "77fcf9eaf35e13552780f1c4527d56a1e8d6f5d1d52cf74814cc3915a2137813",
           "previous_version_hash": null,
           "envelope_number": 876280,
-          "sent_at": 1791468480000,
+          "sent_at": 1791464760000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -3199,20 +3199,20 @@
       "object_version": 1,
       "version_hash": "77fcf9eaf35e13552780f1c4527d56a1e8d6f5d1d52cf74814cc3915a2137813",
       "envelope_number": 876280,
-      "updated_at": 1791468480000
+      "updated_at": 1791464760000
     },
     {
       "object_id": "8b91e8761d15b3933a6412af44da7851",
       "agent_device_id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
       "first_envelope_number": 870400,
-      "created_at": 1791462600000,
+      "created_at": 1791463680000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "84db47851c3e8087f1c7aa962adcb17d66e4f3bc42c6fd514cc4afb17f0f867c",
           "previous_version_hash": null,
           "envelope_number": 870400,
-          "sent_at": 1791462600000,
+          "sent_at": 1791463680000,
           "object_state": "open",
           "urgency": "low",
           "content": {
@@ -3312,20 +3312,20 @@
       "object_version": 1,
       "version_hash": "84db47851c3e8087f1c7aa962adcb17d66e4f3bc42c6fd514cc4afb17f0f867c",
       "envelope_number": 870400,
-      "updated_at": 1791462600000
+      "updated_at": 1791463680000
     },
     {
       "object_id": "e77e5a529e1d3a4bd3046ce602a34c1e",
       "agent_device_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
       "first_envelope_number": 871900,
-      "created_at": 1791464100000,
+      "created_at": 1791460200000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "d67c96065135a60b8bc6a0f21ca1c69169c353f06d491805e55eca25c599c1a7",
           "previous_version_hash": null,
           "envelope_number": 871900,
-          "sent_at": 1791464100000,
+          "sent_at": 1791460200000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -3399,20 +3399,20 @@
       "object_version": 1,
       "version_hash": "d67c96065135a60b8bc6a0f21ca1c69169c353f06d491805e55eca25c599c1a7",
       "envelope_number": 871900,
-      "updated_at": 1791464100000
+      "updated_at": 1791460200000
     },
     {
       "object_id": "185b315a758472a6fc1faed37e49f875",
       "agent_device_id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
       "first_envelope_number": 873401,
-      "created_at": 1791465600000,
+      "created_at": 1791459000000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "00bd5a8f0054e10c1bc6565eb571dba11d0677a42887494fa7ccfcbf71470d22",
           "previous_version_hash": null,
           "envelope_number": 873401,
-          "sent_at": 1791465600000,
+          "sent_at": 1791459000000,
           "object_state": "open",
           "urgency": "low",
           "content": {
@@ -3462,7 +3462,7 @@
       "object_version": 1,
       "version_hash": "00bd5a8f0054e10c1bc6565eb571dba11d0677a42887494fa7ccfcbf71470d22",
       "envelope_number": 873401,
-      "updated_at": 1791465600000
+      "updated_at": 1791459000000
     },
     {
       "object_id": "cac2dd6c8c804cbff53f50e0bf8c239e",
@@ -4412,7 +4412,7 @@
           "content": {
             "card_type": "info",
             "title": "TestFlight: build 418 is out to 1,240 testers",
-            "teaser": "Widgets, dark mode, sharing. Feedback goes to crash-triage.",
+            "teaser": "Widgets, dark mode, sharing. Feedback goes to Crash Fixes.",
             "body": "Build 418 with widgets, dark mode and sharing is on TestFlight. **1,240 testers**, 9 days, crash-free sessions **99.71%**.",
             "options": [],
             "sections": null,
@@ -4469,7 +4469,7 @@
       "content_state": "ok",
       "card_type": "info",
       "title": "TestFlight: build 418 is out to 1,240 testers",
-      "teaser": "Widgets, dark mode, sharing. Feedback goes to crash-triage.",
+      "teaser": "Widgets, dark mode, sharing. Feedback goes to Crash Fixes.",
       "body": "Build 418 with widgets, dark mode and sharing is on TestFlight. **1,240 testers**, 9 days, crash-free sessions **99.71%**.",
       "options": [],
       "sections": null,
@@ -4901,16 +4901,16 @@
       "object_id": "992640bed603743781e3241f6a2de105",
       "agent_device_id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
       "first_envelope_number": 876401,
-      "created_at": 1791468600000,
+      "created_at": 1791463320000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "e426de4822239765f098398164e499ed9f3c2acae9ab8a4e3b986c155c6bcec0",
           "previous_version_hash": null,
           "envelope_number": 876401,
-          "sent_at": 1791468600000,
+          "sent_at": 1791463320000,
           "object_state": "open",
-          "urgency": "high",
+          "urgency": "normal",
           "content": {
             "card_type": "decision",
             "title": "Checkout: a sheet over the app, or its own page?",
@@ -4932,7 +4932,7 @@
             "html": null,
             "allows_multiple": false,
             "recommended": "sheet",
-            "urgency_reason": "The web launch needs it by Thursday",
+            "urgency_reason": "",
             "attachments": [
               {
                 "attachment_id": "4d062f8ab1e0e84eef827262aa82a3bd",
@@ -4991,7 +4991,7 @@
       "html": null,
       "allows_multiple": false,
       "recommended": "sheet",
-      "urgency_reason": "The web launch needs it by Thursday",
+      "urgency_reason": "",
       "attachments": [
         {
           "attachment_id": "4d062f8ab1e0e84eef827262aa82a3bd",
@@ -5022,24 +5022,24 @@
       "merged_into_object_id": null,
       "merged_from_object_ids": null,
       "object_state": "open",
-      "urgency": "high",
+      "urgency": "normal",
       "object_version": 1,
       "version_hash": "e426de4822239765f098398164e499ed9f3c2acae9ab8a4e3b986c155c6bcec0",
       "envelope_number": 876401,
-      "updated_at": 1791468600000
+      "updated_at": 1791463320000
     },
     {
       "object_id": "a2706545530be0dce3b13417c2728966",
       "agent_device_id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
       "first_envelope_number": 873100,
-      "created_at": 1791465300000,
+      "created_at": 1791466560000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "3e91e7940d9eaffb8a6ec6201bdb9188445bd76d5a81002cd9b5d443f432d940",
           "previous_version_hash": null,
           "envelope_number": 873100,
-          "sent_at": 1791465300000,
+          "sent_at": 1791466560000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -5111,20 +5111,20 @@
       "object_version": 1,
       "version_hash": "3e91e7940d9eaffb8a6ec6201bdb9188445bd76d5a81002cd9b5d443f432d940",
       "envelope_number": 873100,
-      "updated_at": 1791465300000
+      "updated_at": 1791466560000
     },
     {
       "object_id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
       "agent_device_id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
       "first_envelope_number": 874120,
-      "created_at": 1791466320000,
+      "created_at": 1791466920000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "2f25171d24cffbd120577fec7003a2dcea320cc6fce2d3b2ee06c3e110aad234",
           "previous_version_hash": null,
           "envelope_number": 874120,
-          "sent_at": 1791466320000,
+          "sent_at": 1791466920000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -5224,20 +5224,20 @@
       "object_version": 1,
       "version_hash": "2f25171d24cffbd120577fec7003a2dcea320cc6fce2d3b2ee06c3e110aad234",
       "envelope_number": 874120,
-      "updated_at": 1791466320000
+      "updated_at": 1791466920000
     },
     {
       "object_id": "9abad6a52b4b6dc3d096f87bff346aa9",
       "agent_device_id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
       "first_envelope_number": 875440,
-      "created_at": 1791467640000,
+      "created_at": 1791465840000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "9317722ee202878df99cae2cae9f9d7ef56a8b49e0599e2fb902533be7992f78",
           "previous_version_hash": null,
           "envelope_number": 875440,
-          "sent_at": 1791467640000,
+          "sent_at": 1791465840000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -5347,20 +5347,20 @@
       "object_version": 1,
       "version_hash": "9317722ee202878df99cae2cae9f9d7ef56a8b49e0599e2fb902533be7992f78",
       "envelope_number": 875440,
-      "updated_at": 1791467640000
+      "updated_at": 1791465840000
     },
     {
       "object_id": "43a72b8f7d9de1aac4aeeae1367076c0",
       "agent_device_id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
       "first_envelope_number": 875920,
-      "created_at": 1791468120000,
+      "created_at": 1791465480000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "65337f6696afba3e791431099898c86161a393b9519da5a5b75333f3e45e46a0",
           "previous_version_hash": null,
           "envelope_number": 875920,
-          "sent_at": 1791468120000,
+          "sent_at": 1791465480000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -5456,22 +5456,22 @@
       "object_version": 1,
       "version_hash": "65337f6696afba3e791431099898c86161a393b9519da5a5b75333f3e45e46a0",
       "envelope_number": 875920,
-      "updated_at": 1791468120000
+      "updated_at": 1791465480000
     },
     {
       "object_id": "8b26d4c112fa4617ad968fe6f311704e",
       "agent_device_id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
       "first_envelope_number": 876761,
-      "created_at": 1791468960000,
+      "created_at": 1791467640000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "610d7ed1506adec4890d4c866b00b4d392b803057aa38daf00eecf2225dfa544",
           "previous_version_hash": null,
           "envelope_number": 876761,
-          "sent_at": 1791468960000,
+          "sent_at": 1791467640000,
           "object_state": "open",
-          "urgency": "high",
+          "urgency": "normal",
           "content": {
             "card_type": "decision",
             "title": "Apply the us-east plan? 23 to add, 2 to change, 1 to destroy",
@@ -5493,7 +5493,7 @@
             "html": null,
             "allows_multiple": false,
             "recommended": "apply",
-            "urgency_reason": "The replica sync needs the network first",
+            "urgency_reason": "",
             "attachments": [
               {
                 "attachment_id": "14ee0604905a1e2a022f2b67708f8abd",
@@ -5550,7 +5550,7 @@
       "html": null,
       "allows_multiple": false,
       "recommended": "apply",
-      "urgency_reason": "The replica sync needs the network first",
+      "urgency_reason": "",
       "attachments": [
         {
           "attachment_id": "14ee0604905a1e2a022f2b67708f8abd",
@@ -5579,24 +5579,24 @@
       "merged_into_object_id": null,
       "merged_from_object_ids": null,
       "object_state": "open",
-      "urgency": "high",
+      "urgency": "normal",
       "object_version": 1,
       "version_hash": "610d7ed1506adec4890d4c866b00b4d392b803057aa38daf00eecf2225dfa544",
       "envelope_number": 876761,
-      "updated_at": 1791468960000
+      "updated_at": 1791467640000
     },
     {
       "object_id": "d50337f0e7318660c4d9a0062426dea5",
       "agent_device_id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
       "first_envelope_number": 874600,
-      "created_at": 1791466800000,
+      "created_at": 1791468000000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "9014fb58f059136f01fa7362486c4b667cc4c62c7fafe3ca9d13603ce1a3a66a",
           "previous_version_hash": null,
           "envelope_number": 874600,
-          "sent_at": 1791466800000,
+          "sent_at": 1791468000000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -5674,7 +5674,7 @@
       "object_version": 1,
       "version_hash": "9014fb58f059136f01fa7362486c4b667cc4c62c7fafe3ca9d13603ce1a3a66a",
       "envelope_number": 874600,
-      "updated_at": 1791466800000
+      "updated_at": 1791468000000
     },
     {
       "object_id": "0d9331a1172e43e9157fbd722d87bf1a",
@@ -5767,14 +5767,14 @@
       "object_id": "e842d16a6c7d9a0075b0a77b5932f3bb",
       "agent_device_id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
       "first_envelope_number": 875080,
-      "created_at": 1791467280000,
+      "created_at": 1791462960000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "6cdfe67f662568a656caae590644dbe68afddd8dcb93b4c1391d8587cf36f2e1",
           "previous_version_hash": null,
           "envelope_number": 875080,
-          "sent_at": 1791467280000,
+          "sent_at": 1791462960000,
           "object_state": "open",
           "urgency": "normal",
           "content": {
@@ -5892,20 +5892,20 @@
       "object_version": 1,
       "version_hash": "6cdfe67f662568a656caae590644dbe68afddd8dcb93b4c1391d8587cf36f2e1",
       "envelope_number": 875080,
-      "updated_at": 1791467280000
+      "updated_at": 1791462960000
     },
     {
       "object_id": "41bc4fad4b14457d7f16a660d518d474",
       "agent_device_id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
       "first_envelope_number": 872200,
-      "created_at": 1791464400000,
+      "created_at": 1791468360000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "b7802e4f9bcba4068a6ec43070342394da8b7f76df54a176d3b9d02992342c6d",
           "previous_version_hash": null,
           "envelope_number": 872200,
-          "sent_at": 1791464400000,
+          "sent_at": 1791468360000,
           "object_state": "open",
           "urgency": "low",
           "content": {
@@ -5983,20 +5983,20 @@
       "object_version": 1,
       "version_hash": "b7802e4f9bcba4068a6ec43070342394da8b7f76df54a176d3b9d02992342c6d",
       "envelope_number": 872200,
-      "updated_at": 1791464400000
+      "updated_at": 1791468360000
     },
     {
       "object_id": "6deb90374cb873045fe03e39c3ab0348",
       "agent_device_id": "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
       "first_envelope_number": 870401,
-      "created_at": 1791462600000,
+      "created_at": 1791458400000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "1b5ba485cbfdf3dd36395b9b5a32b2591d0ac8f969018fde6be057e518f5e4d9",
           "previous_version_hash": null,
           "envelope_number": 870401,
-          "sent_at": 1791462600000,
+          "sent_at": 1791458400000,
           "object_state": "open",
           "urgency": "low",
           "content": {
@@ -6046,20 +6046,20 @@
       "object_version": 1,
       "version_hash": "1b5ba485cbfdf3dd36395b9b5a32b2591d0ac8f969018fde6be057e518f5e4d9",
       "envelope_number": 870401,
-      "updated_at": 1791462600000
+      "updated_at": 1791458400000
     },
     {
       "object_id": "a67da9b30d2f07d256c6b646e8c34f36",
       "agent_device_id": "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
       "first_envelope_number": 869800,
-      "created_at": 1791462000000,
+      "created_at": 1791457800000,
       "versions": [
         {
           "object_version": 1,
           "version_hash": "b6a7bbc51cf6d7c12ee251911968e64c468077b2489c1d1c011da3d8ada40cf0",
           "previous_version_hash": null,
           "envelope_number": 869800,
-          "sent_at": 1791462000000,
+          "sent_at": 1791457800000,
           "object_state": "open",
           "urgency": "low",
           "content": {
@@ -6133,7 +6133,7 @@
       "object_version": 1,
       "version_hash": "b6a7bbc51cf6d7c12ee251911968e64c468077b2489c1d1c011da3d8ada40cf0",
       "envelope_number": 869800,
-      "updated_at": 1791462000000
+      "updated_at": 1791457800000
     },
     {
       "object_id": "f35bf13aea8cdbfd193cfddc38f543fb",
@@ -7455,6 +7455,431 @@
       "version_hash": "c57252289387e5ef6fbc39e69c14a1b09a118cb6672a1851b06ec83c81d500e2",
       "envelope_number": 631600,
       "updated_at": 1791225600000
+    },
+    {
+      "object_id": "e3eb869558332fec907b2752f54a608a",
+      "agent_device_id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+      "first_envelope_number": 877489,
+      "created_at": 1791461160000,
+      "versions": [
+        {
+          "object_version": 1,
+          "version_hash": "94ec39db1987376180b8dddc7917a5ec20bba558d36c022753a582fed98e9f29",
+          "previous_version_hash": null,
+          "envelope_number": 877489,
+          "sent_at": 1791461160000,
+          "object_state": "open",
+          "urgency": "normal",
+          "content": {
+            "card_type": "decision",
+            "title": "Which colour palette for the launch?",
+            "teaser": "Three palettes, each tried on the Today screen. One goes into the tokens for web and iOS.",
+            "body": "All three pass contrast in light and dark. Meadow is closest to what testers know; Terracotta feels warmest; Dusk is the calmest at night.",
+            "options": [
+              {
+                "key": "meadow",
+                "label": "Meadow",
+                "detail": "Greens, one warm accent"
+              },
+              {
+                "key": "terracotta",
+                "label": "Terracotta",
+                "detail": "Warm clay and sun"
+              },
+              {
+                "key": "dusk",
+                "label": "Dusk",
+                "detail": "Soft evening blues"
+              }
+            ],
+            "sections": null,
+            "html": null,
+            "allows_multiple": false,
+            "recommended": "meadow",
+            "urgency_reason": "",
+            "attachments": [
+              {
+                "attachment_id": "ee41edd7dcc3f396c12066b3aff8e0b6",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "palette-meadow.png",
+                "media_type": "image/png",
+                "total_size": 135367,
+                "width": 2560,
+                "height": 1600,
+                "url": "/demo/files/palette-meadow.png"
+              },
+              {
+                "attachment_id": "45bfccfbadd6f9a28cba11422b510522",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "palette-terracotta.png",
+                "media_type": "image/png",
+                "total_size": 137458,
+                "width": 2560,
+                "height": 1600,
+                "url": "/demo/files/palette-terracotta.png"
+              },
+              {
+                "attachment_id": "e75b8f4244345935c8e12073a4e871d7",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "palette-dusk.png",
+                "media_type": "image/png",
+                "total_size": 131805,
+                "width": 2560,
+                "height": 1600,
+                "url": "/demo/files/palette-dusk.png"
+              }
+            ],
+            "change_note": "",
+            "close_summary": null,
+            "withdraw_reason": null,
+            "merged_into_object_id": null,
+            "merged_from_object_ids": null
+          }
+        }
+      ],
+      "answer": null,
+      "answers": [],
+      "closed_how": null,
+      "in_revision": null,
+      "timeline_key": "chat:card/e3eb869558332fec907b2752f54a608a",
+      "content_state": "ok",
+      "card_type": "decision",
+      "title": "Which colour palette for the launch?",
+      "teaser": "Three palettes, each tried on the Today screen. One goes into the tokens for web and iOS.",
+      "body": "All three pass contrast in light and dark. Meadow is closest to what testers know; Terracotta feels warmest; Dusk is the calmest at night.",
+      "options": [
+        {
+          "key": "meadow",
+          "label": "Meadow",
+          "detail": "Greens, one warm accent"
+        },
+        {
+          "key": "terracotta",
+          "label": "Terracotta",
+          "detail": "Warm clay and sun"
+        },
+        {
+          "key": "dusk",
+          "label": "Dusk",
+          "detail": "Soft evening blues"
+        }
+      ],
+      "sections": null,
+      "html": null,
+      "allows_multiple": false,
+      "recommended": "meadow",
+      "urgency_reason": "",
+      "attachments": [
+        {
+          "attachment_id": "ee41edd7dcc3f396c12066b3aff8e0b6",
+          "file_key": "",
+          "sha256": "",
+          "file_name": "palette-meadow.png",
+          "media_type": "image/png",
+          "total_size": 135367,
+          "width": 2560,
+          "height": 1600,
+          "url": "/demo/files/palette-meadow.png"
+        },
+        {
+          "attachment_id": "45bfccfbadd6f9a28cba11422b510522",
+          "file_key": "",
+          "sha256": "",
+          "file_name": "palette-terracotta.png",
+          "media_type": "image/png",
+          "total_size": 137458,
+          "width": 2560,
+          "height": 1600,
+          "url": "/demo/files/palette-terracotta.png"
+        },
+        {
+          "attachment_id": "e75b8f4244345935c8e12073a4e871d7",
+          "file_key": "",
+          "sha256": "",
+          "file_name": "palette-dusk.png",
+          "media_type": "image/png",
+          "total_size": 131805,
+          "width": 2560,
+          "height": 1600,
+          "url": "/demo/files/palette-dusk.png"
+        }
+      ],
+      "change_note": "",
+      "close_summary": null,
+      "withdraw_reason": null,
+      "merged_into_object_id": null,
+      "merged_from_object_ids": null,
+      "object_state": "open",
+      "urgency": "normal",
+      "object_version": 1,
+      "version_hash": "94ec39db1987376180b8dddc7917a5ec20bba558d36c022753a582fed98e9f29",
+      "envelope_number": 877489,
+      "updated_at": 1791461160000
+    },
+    {
+      "object_id": "58f19345f724a39460db70a4377995c8",
+      "agent_device_id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+      "first_envelope_number": 877490,
+      "created_at": 1791461880000,
+      "versions": [
+        {
+          "object_version": 1,
+          "version_hash": "790df07673f762c9dc9832e07827ded939f882c51093cb2a6b0035c4136f6c4d",
+          "previous_version_hash": null,
+          "envelope_number": 877490,
+          "sent_at": 1791461880000,
+          "object_state": "open",
+          "urgency": "normal",
+          "content": {
+            "card_type": "decision",
+            "title": "Which drawing welcomes new people?",
+            "teaser": "The first screen of sign-up gets one illustration. Both are drawn and ready.",
+            "body": "The watering can says what Fernly does; the seedling says how it feels to have plants that are fine. The seedling also works as the app icon later.",
+            "options": [
+              {
+                "key": "seedling",
+                "label": "Happy seedling",
+                "detail": "Calm, friendly"
+              },
+              {
+                "key": "can",
+                "label": "Watering can",
+                "detail": "Playful, says the job"
+              }
+            ],
+            "sections": null,
+            "html": null,
+            "allows_multiple": false,
+            "recommended": "seedling",
+            "urgency_reason": "",
+            "attachments": [
+              {
+                "attachment_id": "574e8196f2e02ec8f2f70e688e486e9d",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "onboarding-seedling.png",
+                "media_type": "image/png",
+                "total_size": 102898,
+                "width": 2560,
+                "height": 1600,
+                "url": "/demo/files/onboarding-seedling.png"
+              },
+              {
+                "attachment_id": "e64cf09f6137c36798d71ba354434af1",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "onboarding-watering-can.png",
+                "media_type": "image/png",
+                "total_size": 112277,
+                "width": 2560,
+                "height": 1600,
+                "url": "/demo/files/onboarding-watering-can.png"
+              }
+            ],
+            "change_note": "",
+            "close_summary": null,
+            "withdraw_reason": null,
+            "merged_into_object_id": null,
+            "merged_from_object_ids": null
+          }
+        }
+      ],
+      "answer": null,
+      "answers": [],
+      "closed_how": null,
+      "in_revision": null,
+      "timeline_key": "chat:card/58f19345f724a39460db70a4377995c8",
+      "content_state": "ok",
+      "card_type": "decision",
+      "title": "Which drawing welcomes new people?",
+      "teaser": "The first screen of sign-up gets one illustration. Both are drawn and ready.",
+      "body": "The watering can says what Fernly does; the seedling says how it feels to have plants that are fine. The seedling also works as the app icon later.",
+      "options": [
+        {
+          "key": "seedling",
+          "label": "Happy seedling",
+          "detail": "Calm, friendly"
+        },
+        {
+          "key": "can",
+          "label": "Watering can",
+          "detail": "Playful, says the job"
+        }
+      ],
+      "sections": null,
+      "html": null,
+      "allows_multiple": false,
+      "recommended": "seedling",
+      "urgency_reason": "",
+      "attachments": [
+        {
+          "attachment_id": "574e8196f2e02ec8f2f70e688e486e9d",
+          "file_key": "",
+          "sha256": "",
+          "file_name": "onboarding-seedling.png",
+          "media_type": "image/png",
+          "total_size": 102898,
+          "width": 2560,
+          "height": 1600,
+          "url": "/demo/files/onboarding-seedling.png"
+        },
+        {
+          "attachment_id": "e64cf09f6137c36798d71ba354434af1",
+          "file_key": "",
+          "sha256": "",
+          "file_name": "onboarding-watering-can.png",
+          "media_type": "image/png",
+          "total_size": 112277,
+          "width": 2560,
+          "height": 1600,
+          "url": "/demo/files/onboarding-watering-can.png"
+        }
+      ],
+      "change_note": "",
+      "close_summary": null,
+      "withdraw_reason": null,
+      "merged_into_object_id": null,
+      "merged_from_object_ids": null,
+      "object_state": "open",
+      "urgency": "normal",
+      "object_version": 1,
+      "version_hash": "790df07673f762c9dc9832e07827ded939f882c51093cb2a6b0035c4136f6c4d",
+      "envelope_number": 877490,
+      "updated_at": 1791461880000
+    },
+    {
+      "object_id": "76ab0cafab45f8b2011853527a3dc10e",
+      "agent_device_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+      "first_envelope_number": 877491,
+      "created_at": 1791462600000,
+      "versions": [
+        {
+          "object_version": 1,
+          "version_hash": "15c3627c309bfea6bcc8428f64ae1e1cb2b0cb554f10f51a1dd6046e9254c552",
+          "previous_version_hash": null,
+          "envelope_number": 877491,
+          "sent_at": 1791462600000,
+          "object_state": "open",
+          "urgency": "normal",
+          "content": {
+            "card_type": "decision",
+            "title": "Which headline for the launch?",
+            "teaser": "Two lines for the landing page, the App Store and the launch post.",
+            "body": "Both fit on one phone screen above the button. A names the problem, B promises the result.",
+            "options": [
+              {
+                "key": "thirsty",
+                "label": "Thirsty plant",
+                "detail": "Never forget a thirsty plant."
+              },
+              {
+                "key": "autopilot",
+                "label": "On autopilot",
+                "detail": "Happy plants, on autopilot."
+              }
+            ],
+            "sections": null,
+            "html": null,
+            "allows_multiple": false,
+            "recommended": "thirsty",
+            "urgency_reason": "",
+            "attachments": [
+              {
+                "attachment_id": "d0251727672dc341e809f3887bd18eda",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "launch-copy-thirsty.png",
+                "media_type": "image/png",
+                "total_size": 137331,
+                "width": 2560,
+                "height": 1600,
+                "url": "/demo/files/launch-copy-thirsty.png"
+              },
+              {
+                "attachment_id": "4cd498ba9f1b9f007c756119b2d039f9",
+                "file_key": "",
+                "sha256": "",
+                "file_name": "launch-copy-happy.png",
+                "media_type": "image/png",
+                "total_size": 128666,
+                "width": 2560,
+                "height": 1600,
+                "url": "/demo/files/launch-copy-happy.png"
+              }
+            ],
+            "change_note": "",
+            "close_summary": null,
+            "withdraw_reason": null,
+            "merged_into_object_id": null,
+            "merged_from_object_ids": null
+          }
+        }
+      ],
+      "answer": null,
+      "answers": [],
+      "closed_how": null,
+      "in_revision": null,
+      "timeline_key": "chat:card/76ab0cafab45f8b2011853527a3dc10e",
+      "content_state": "ok",
+      "card_type": "decision",
+      "title": "Which headline for the launch?",
+      "teaser": "Two lines for the landing page, the App Store and the launch post.",
+      "body": "Both fit on one phone screen above the button. A names the problem, B promises the result.",
+      "options": [
+        {
+          "key": "thirsty",
+          "label": "Thirsty plant",
+          "detail": "Never forget a thirsty plant."
+        },
+        {
+          "key": "autopilot",
+          "label": "On autopilot",
+          "detail": "Happy plants, on autopilot."
+        }
+      ],
+      "sections": null,
+      "html": null,
+      "allows_multiple": false,
+      "recommended": "thirsty",
+      "urgency_reason": "",
+      "attachments": [
+        {
+          "attachment_id": "d0251727672dc341e809f3887bd18eda",
+          "file_key": "",
+          "sha256": "",
+          "file_name": "launch-copy-thirsty.png",
+          "media_type": "image/png",
+          "total_size": 137331,
+          "width": 2560,
+          "height": 1600,
+          "url": "/demo/files/launch-copy-thirsty.png"
+        },
+        {
+          "attachment_id": "4cd498ba9f1b9f007c756119b2d039f9",
+          "file_key": "",
+          "sha256": "",
+          "file_name": "launch-copy-happy.png",
+          "media_type": "image/png",
+          "total_size": 128666,
+          "width": 2560,
+          "height": 1600,
+          "url": "/demo/files/launch-copy-happy.png"
+        }
+      ],
+      "change_note": "",
+      "close_summary": null,
+      "withdraw_reason": null,
+      "merged_into_object_id": null,
+      "merged_from_object_ids": null,
+      "object_state": "open",
+      "urgency": "normal",
+      "object_version": 1,
+      "version_hash": "15c3627c309bfea6bcc8428f64ae1e1cb2b0cb554f10f51a1dd6046e9254c552",
+      "envelope_number": 877491,
+      "updated_at": 1791462600000
     }
   ],
   "permissions": [
@@ -7468,8 +7893,8 @@
       "version_hash": "e476417b99732c8d7f76c1cd5004d48205043763bed67cd7ce72ad2a27190517",
       "envelope_number": 876820,
       "sent_at": 1791469020000,
-      "permission_state": "pending",
-      "withdraw_reason": null,
+      "permission_state": "withdrawn",
+      "withdraw_reason": "answered in the terminal",
       "verdict": null
     },
     {
@@ -7482,9 +7907,13 @@
       "version_hash": "297231f12fb68560f696d34d43198abf58df135ff00eb76e651725bc5d0f1d94",
       "envelope_number": 877421,
       "sent_at": 1791469620000,
-      "permission_state": "pending",
+      "permission_state": "allowed",
       "withdraw_reason": null,
-      "verdict": null
+      "verdict": {
+        "allow": true,
+        "by_device_id": "30090210037da72834a586216fcc6a458bdab6a275519f6675e6c412f0dd8242",
+        "envelope_number": 877441
+      }
     }
   ],
   "notes": [
@@ -8067,7 +8496,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "On it. I split it up:\n\n- **landing-page**: the hero and the sections\n- **copy**: plan names, buttons, the e-mails\n- **onboarding**: sign-up in three steps\n- **web-perf** and **e2e-tests** in parallel\n- **seo** last\n\nQuestions come to your Desk as cards.",
+          "text": "On it. I split it up:\n\n- **Landing Page**: the hero and the sections\n- **Copywriting**: plan names, buttons, the e-mails\n- **Onboarding**: sign-up in three steps\n- **Page Speed** and **Testing** in parallel\n- **Search & Social** last\n\nQuestions come to your Desk as cards.",
           "attachments": []
         }
       },
@@ -8856,7 +9285,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Helpers: **widgets**, **push-reminders**, **app-store**, and **crash-triage** once TestFlight runs.",
+          "text": "Helpers: **Widgets**, **Push Reminders**, **App Store**, and **Crash Fixes** once TestFlight runs.",
           "attachments": []
         }
       },
@@ -9223,7 +9652,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Tokens in one JSON file, built into CSS variables and a Swift file. **tokens**, **icons** and **dark-mode** work on it.",
+          "text": "Tokens in one JSON file, built into CSS variables and a Swift file. **Design Tokens**, **Icons** and **Dark Mode** work on it.",
           "attachments": []
         }
       },
@@ -9482,7 +9911,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "It is built twice, as a sheet and as a page; **checkout** put both on your Desk. **load-test** runs k6 against staging once you allow it.",
+          "text": "It is built twice, as a sheet and as a page; **Checkout** put both on your Desk. **Load Testing** runs k6 against staging once you allow it.",
           "attachments": []
         }
       },
@@ -9843,7 +10272,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "The backfill wrote **140 GB of WAL** today and the sync reads all of it. It catches up by tonight; the backfill is done. It also fills the primary disk: **infra** has a card about that.",
+          "text": "The backfill wrote **140 GB of WAL** today and the sync reads all of it. It catches up by tonight; the backfill is done. It also fills the primary disk: **Infrastructure** has a card about that.",
           "attachments": [],
           "terminal": "answer"
         }
@@ -10002,7 +10431,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "Plan: us-east with a read replica, Kubernetes 1.33 first, then the bill. Eight helpers: **terraform**, **k8s-upgrade**, **postgres-replica**, **cdn**, **backups**, **observability**, **cost**, **secrets**.",
+          "text": "Plan: us-east with a read replica, Kubernetes 1.33 first, then the bill. Eight helpers: **Terraform**, **Kubernetes**, **Database Replica**, **CDN**, **Backups**, **Monitoring**, **Cloud Costs**, **Secrets**.",
           "attachments": [],
           "published_object_id": "1b2ebdec0397a21920a7582660d17321"
         }
@@ -10093,7 +10522,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "The us-east plan is ready; **terraform** asks you to apply.",
+          "text": "The us-east plan is ready; **Terraform** asks you to apply.",
           "attachments": []
         }
       },
@@ -10363,7 +10792,7 @@
         "item_state": "loaded",
         "content_type": "message",
         "content": {
-          "text": "**api-reference** builds the reference, **search** the index. I write the guides.",
+          "text": "**API Reference** builds the reference, **Docs Search** the index. I write the guides.",
           "attachments": []
         }
       },
