@@ -1,13 +1,13 @@
 # Changelog
 
-What changed in Trommi, newest first. One section per day; the release numbers it covers are in brackets.
+What changed in Trommi, newest first. One section per day; each GitHub release adds the day's release numbers to its heading.
 
 A day starts with a short summary (one to three plain sentences) and at most one picture, a line
 `![what it shows](app/web/public/changelog/<YYYY-MM-DD>.webp)`: a screenshot of the demo room only (`?mock=1`, never
 real data), webp, at most 150 KB. Then its lines under **New**, **Better** and **Fixed**. What's new (web and iPhone)
 shows the summary and the picture, the lines folded under "All changes".
 
-## 11 October 2026 (v109 – v120)
+## 11 October 2026
 
 Each agent now has its own page in Settings, with its plan, its usage and its sessions. On the iPhone you answer
 the most urgent question straight from the Lock Screen, pushes give nothing away, and the connector updates itself
@@ -18,6 +18,8 @@ while it runs.
 **New**
 - A card its session is working on says so above its title: "<session> is working on it", its status line and how
   long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
+- Trommi for Mac: the iPad's layout in a window, the questions waiting in the menu bar, Return sends and
+  Shift+Return hands a card back; pairing by pasting the link.
 - iPhone: Settings → Data shows what this iPhone downloaded and uploaded (with a reset), and what your account keeps on
   the hub: messages, cards, files and the total size.
 - Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);
@@ -39,6 +41,8 @@ while it runs.
   and iPhone).
 
 **Better**
+- A session's heading is one line: the name, its connection as a dot (what it is at, model and machine in its tip),
+  All | Questions beside it, and its usage as one mark of two rings, the week outside and 5 h inside (web and iPhone).
 - A session shows a switch "All | Questions" under its heading, with the number of questions waiting; the funnel beside
   the message field is gone (web and iPhone).
 - A session's heading is calmer: under the name a dot, what it is at and its model; its usage (5 h and week) as two
@@ -161,7 +165,7 @@ while it runs.
   buttons, the invite commands break at sensible places, and Artifacts has its heading again.
 - A note of only a pasted picture, folded right after the paste, is no longer thrown away.
 
-## 10 October 2026 (v49 – v108)
+## 10 October 2026
 
 Trommi now runs on one encryption core built on OpenMLS, the same code on the web, the iPhone and the connector.
 Installing the connector is one line, and a new demo room lets you look around before signing up.

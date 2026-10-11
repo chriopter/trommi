@@ -2,6 +2,10 @@
 """App Store Connect API steps of the TestFlight workflow (.github/workflows/deploy_ios.yml). Standard library only; the
 JWT is signed with the openssl command line tool, so it runs on a stock macOS runner and on Linux alike.
 
+  asc.py prepare-mac BUNDLE_ID      the Mac app (ASC_PLATFORM=MAC_OS): the bundle id with Push Notifications and
+                                    Associated Domains is registered; prints ready: yes when its app record exists and
+                                    has the macOS platform (a universal purchase: the iOS record with macOS added),
+                                    else ready: no with what to click; never fails for a missing record
   asc.py prepare BUNDLE_ID          the bundle id (Push Notifications, App Groups, Associated Domains) and
                                     BUNDLE_ID.share, .notify, .live (App Groups) are registered, their INVALID App Store
                                     profiles removed; the app record exists
@@ -24,7 +28,7 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     uploads the signed .ipa through the Build Uploads API (no second Xcode export),
                                     after checking it is BUNDLE_ID VERSION (BUILD); waits until the upload is COMPLETE.
                                     --dry-run: the same checks, offline, and prints what would be sent; nothing is sent
-  asc.py next-build                 the highest build number App Store Connect has for the app, plus one
+  asc.py next-build                 the highest build number App Store Connect has for the app (any platform), plus one
   asc.py last-sha                   the commit of the newest build whose What to Test names one ("(abc1234)")
   asc.py crashes OUT_DIR [SINCE]    read only: TestFlight crash feedback newer than SINCE (ISO 8601, default 3 days
                                     ago) with each crash log as a file, the diagnostic signatures (hangs, launches,
@@ -33,11 +37,21 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
   asc.py export-code                the code of the app's APPROVED export compliance documentation (the newest if
                                     several), read only; fails listing every declaration's state and date if none is
 
-Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). Nothing here prints key material or tokens.
+Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). ASC_PLATFORM: IOS (the default) or MAC_OS; with
+MAC_OS, wait, last-sha and upload look at the Mac's builds only (IOS: the iOS ones) and upload takes a signed .pkg. Nothing here prints
+key material or tokens.
 """
 import base64, datetime, hashlib, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
 
 API = "https://api.appstoreconnect.apple.com"
+PLATFORM = os.environ.get("ASC_PLATFORM") or "IOS"
+if PLATFORM not in ("IOS", "MAC_OS"):
+    sys.exit(f"ASC_PLATFORM is IOS or MAC_OS, not {PLATFORM}")
+
+
+def platform_filter():
+    """The builds of this platform only: in a universal purchase one app record holds the iOS and the Mac builds."""
+    return f"&filter[preReleaseVersion.platform]={PLATFORM}"
 
 
 def die(msg):
@@ -118,8 +132,8 @@ def app_id(bundle):
     return apps[0]["id"] if apps else None
 
 
-def bundle_id(identifier, name, wanted):
-    """The bundle id registered, with every capability in `wanted` turned on."""
+def bundle_id(identifier, name, wanted, platform="IOS"):
+    """The bundle id registered (as `platform` when it is new), with every capability in `wanted` turned on."""
     found = [b for b in call("GET", f"/v1/bundleIds?filter[identifier]={q(identifier)}&limit=200")["data"]
              if b["attributes"]["identifier"] == identifier]
     if found:
@@ -127,7 +141,7 @@ def bundle_id(identifier, name, wanted):
     else:
         print(f"registering bundle id {identifier}")
         bid = call("POST", "/v1/bundleIds", {"data": {"type": "bundleIds", "attributes": {
-            "identifier": identifier, "name": name, "platform": "IOS"}}})["data"]["id"]
+            "identifier": identifier, "name": name, "platform": platform}}})["data"]["id"]
     caps = [c["attributes"]["capabilityType"] for c in call("GET", f"/v1/bundleIds/{bid}/bundleIdCapabilities")["data"]]
     for cap in wanted:
         if cap not in caps:
@@ -163,12 +177,34 @@ def prepare(bundle):
     gh_out("app_id", aid)
 
 
+def prepare_mac(bundle):
+    # The Mac app: push (the hub's topic is the bundle id) and the universal links of app.trommi.com. No App Group: the
+    # Mac has no extensions. A bundle id of the iOS app serves the Mac as well (a universal purchase); a new one is
+    # registered for the Mac. The Mac App Store profile and the certificates (Apple Distribution, Mac Installer
+    # Distribution) are made by Xcode's export, cloud-managed through the Admin key (mac_testflight.sh).
+    bundle_id(bundle, "Trommi Mac", ["PUSH_NOTIFICATIONS", "ASSOCIATED_DOMAINS"], platform="MAC_OS")
+    aid = app_id(bundle)
+    if not aid:
+        print(f"::warning::no App Store Connect app record for {bundle}: the Mac build is not delivered. Once in App Store "
+              "Connect (the API cannot create apps or add a platform): app/ios/README.md 'On a Mac'")
+        gh_out("ready", "no")
+        return
+    gh_out("app_id", aid)
+    versions = call("GET", f"/v1/apps/{aid}/appStoreVersions?filter[platform]=MAC_OS&limit=1")["data"]
+    if not versions:
+        print(f"::warning::the app record of {bundle} has no macOS platform yet: the Mac build is not delivered. Once in "
+              "App Store Connect: Apps > Trommi > the + beside 'iOS App' in the sidebar > macOS (app/ios/README.md 'On a Mac')")
+        gh_out("ready", "no")
+        return
+    gh_out("ready", "yes")
+
+
 def wait(version, build):
     aid = app_id(os.environ["BUNDLE_ID"]) or die("no app record")
     # The build shows up a few minutes after the upload, then goes PROCESSING -> VALID (or FAILED / INVALID).
     for i in range(80):
         rows = call("GET", f"/v1/builds?filter[app]={aid}&filter[version]={q(build)}"
-                           f"&filter[preReleaseVersion.version]={q(version)}&limit=1")["data"]
+                           f"&filter[preReleaseVersion.version]={q(version)}{platform_filter()}&limit=1")["data"]
         state = rows[0]["attributes"]["processingState"] if rows else "not there yet"
         print(f"attempt {i + 1}: build {version} ({build}): {state}", flush=True)
         if state == "VALID":
@@ -235,19 +271,30 @@ def notes(build_id, text, locale="de-DE"):
         print(f"What to Test ({locale}): {text}")
 
 
+def ipa_info(ipa):
+    """(Info.plist of the one app under Payload/, the number of symbol files) of an .ipa."""
+    with zipfile.ZipFile(ipa) as z:
+        names = z.namelist()
+        infos = [n for n in names if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", n)]
+        if len(infos) != 1:
+            die(f"{ipa}: not one app under Payload/ ({len(infos)})")
+        return plistlib.loads(z.read(infos[0])), sum(1 for n in names if n.startswith("Symbols/") and not n.endswith("/"))
+
+
 def upload(ipa, version, build, *flags):
     dry = "--dry-run" in flags
     unknown = [f for f in flags if f != "--dry-run"]
     if unknown:
         die(f"upload: unknown option {unknown[0]}")
     bundle = os.environ["BUNDLE_ID"]
-    with zipfile.ZipFile(ipa) as z:
-        names = z.namelist()
-        infos = [n for n in names if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", n)]
-        if len(infos) != 1:
-            die(f"{ipa}: not one app under Payload/ ({len(infos)})")
-        info = plistlib.loads(z.read(infos[0]))
-        symbols = sum(1 for n in names if n.startswith("Symbols/") and not n.endswith("/"))
+    if PLATFORM == "MAC_OS":
+        # a flat installer package (xar): mac_testflight.sh has checked the app inside it (bundle id, version, build,
+        # entitlements) before this; its dSYMs go with the package
+        if not ipa.endswith(".pkg"):
+            die(f"{ipa}: the Mac build is uploaded as the signed .pkg of the export")
+        info, symbols = {"CFBundleIdentifier": bundle, "CFBundleShortVersionString": version, "CFBundleVersion": build}, -1
+    else:
+        info, symbols = ipa_info(ipa)
     have = (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion"))
     if have != (bundle, version, build):
         die(f"{ipa} is {have[0]} {have[1]} ({have[2]}), not {bundle} {version} ({build})")
@@ -256,19 +303,22 @@ def upload(ipa, version, build, *flags):
     with open(ipa, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             md5.update(chunk)
-    print(f"ipa: {bundle} {version} ({build}), {size} bytes, md5 {md5.hexdigest()}, {symbols} symbol file(s)")
+    kind = "pkg" if PLATFORM == "MAC_OS" else "ipa"
+    print(f"{kind}: {bundle} {version} ({build}), {size} bytes, md5 {md5.hexdigest()}"
+          + (f", {symbols} symbol file(s)" if symbols >= 0 else ""))
     if symbols == 0:
         print("::warning::the .ipa carries no Symbols/: crash reports in TestFlight will not be symbolicated")
+    uti = "com.apple.pkg" if PLATFORM == "MAC_OS" else "com.apple.ipa"
     if dry:
-        print("dry run: would POST /v1/buildUploads (platform IOS), POST /v1/buildUploadFiles (com.apple.ipa), "
+        print(f"dry run: would POST /v1/buildUploads (platform {PLATFORM}), POST /v1/buildUploadFiles ({uti}), "
               "PUT the parts, PATCH uploaded=true with the MD5, then poll until COMPLETE; nothing was sent")
         return
     aid = app_id(bundle) or die("no app record")
     upload_id = call("POST", "/v1/buildUploads", {"data": {"type": "buildUploads", "attributes": {
-        "cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": "IOS"},
+        "cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": PLATFORM},
         "relationships": {"app": rel("apps", aid)}}})["data"]["id"]
     file = call("POST", "/v1/buildUploadFiles", {"data": {"type": "buildUploadFiles", "attributes": {
-        "assetType": "ASSET", "fileName": os.path.basename(ipa), "fileSize": size, "uti": "com.apple.ipa"},
+        "assetType": "ASSET", "fileName": os.path.basename(ipa), "fileSize": size, "uti": uti},
         "relationships": {"buildUpload": rel("buildUploads", upload_id)}}})["data"]
     ops = file["attributes"]["uploadOperations"]
     with open(ipa, "rb") as f:
@@ -304,8 +354,9 @@ def upload(ipa, version, build, *flags):
         die(f"App Store Connect did not take the upload ({state.get('state') or 'no answer'})")
 
 
-def builds(aid):
-    rows, path = [], f"/v1/builds?filter[app]={aid}&limit=200&fields[builds]=version,uploadedDate"
+def builds(aid, every_platform=False):
+    rows, path = [], (f"/v1/builds?filter[app]={aid}{'' if every_platform else platform_filter()}"
+                      "&limit=200&fields[builds]=version,uploadedDate")
     while path:
         page = call("GET", path)
         rows += page["data"]
@@ -316,7 +367,8 @@ def builds(aid):
 
 def next_build():
     aid = app_id(os.environ["BUNDLE_ID"]) or die("no app record")
-    numbers = [int(b["attributes"]["version"]) for b in builds(aid) if b["attributes"]["version"].isdigit()]
+    # over every platform of the record: an iOS and a Mac build never share a number
+    numbers = [int(b["attributes"]["version"]) for b in builds(aid, every_platform=True) if b["attributes"]["version"].isdigit()]
     print(max(numbers, default=0) + 1)
 
 
@@ -777,7 +829,7 @@ def gh_out(name, value):
 
 
 if __name__ == "__main__":
-    cmds = {"prepare": prepare, "wait": wait, "upload": upload, "internal": internal, "notes": notes, "next-build": next_build,
+    cmds = {"prepare": prepare, "prepare-mac": prepare_mac, "wait": wait, "upload": upload, "internal": internal, "notes": notes, "next-build": next_build,
             "last-sha": last_sha, "export-code": export_code, "external": external, "beta-review": beta_review,
             "whats-new": whats_new, "crashes": crashes}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:

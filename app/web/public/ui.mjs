@@ -2993,18 +2993,24 @@ const hot = used => (used >= 80 ? ' is-hot' : '')
 const meterTitle = m => `${m.long}: ${m.used} % used${m.reset ? `, resets ${m.reset}` : ''}`
 const bar = (m, wide = false) => html`<span class="use-bar${hot(m.used)}${wide ? ' is-wide' : ''}" title="${meterTitle(m)}"><i style="--used:${m.used}%"></i></span>`
 const credits = n => `${Number(n).toLocaleString('en-GB', { maximumFractionDigits: 0 })} ${Math.round(n) === 1 ? 'credit' : 'credits'}`
-/** One meter as a small ring: a faint track and, from the top clockwise, the part used; num: the percent inside it. */
-const useRing = (m, num = false) => {
-  const r = 13, c = 2 * Math.PI * r
-  return raw(`<svg class="use-ring${hot(m.used)}" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="${r}" class="use-ring-track"/>${m.used ? `<circle cx="16" cy="16" r="${r}" class="use-ring-fill" stroke-dasharray="${(c * m.used / 100).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 16 16)"/>` : ''}${num ? `<text x="16" y="16.6" class="use-ring-num">${m.used}</text>` : ''}</svg>`)
+// A whole circle (or an arc) of radius r around (16,16), from the top clockwise over `span` degrees.
+const arcD = (r, span) => {
+  const pt = d => { const a = (d - 90) * Math.PI / 180; return `${(16 + r * Math.cos(a)).toFixed(2)} ${(16 + r * Math.sin(a)).toFixed(2)}` }
+  if (span >= 359.9) return `M${pt(0)} A${r} ${r} 0 1 1 ${pt(180)} A${r} ${r} 0 1 1 ${pt(0)}`
+  return `M${pt(0)} A${r} ${r} 0 ${span > 180 ? 1 : 0} 1 ${pt(span)}`
 }
-/** For a session's heading: each meter (5 h, week) a small ring. Wide: the ring, its percent and its word; mini (a
- *  phone, beside the More button): the rings alone, the percent inside. The whole in words under the pointer. */
-export function usageRings(acc, { mini = false, now = Date.now() } = {}) {
+/** A meter's ring of radius r: a faint track and, from the top clockwise, the part used (urgent from 80 %). */
+const useRing = (m, r) => `<path d="${arcD(r, 360)}" class="use-track"/>${m?.used ? `<path d="${arcD(r, m.used * 3.6)}" class="use-fill${hot(m.used)}"/>` : ''}`
+/** For a session's heading: one mark of two rings, one inside the other (as a watch's activity rings): the week
+ *  outside, the 5-hour window inside. Wide: beside it the two percents with their words; mini (a phone): the mark
+ *  alone. The whole in words under the pointer and for a screen reader. */
+export function usageMark(acc, { mini = false, now = Date.now() } = {}) {
   const ms = usageMeters(acc, now)
   if (!ms.length) return ''
+  const five = ms.find(m => m.key === 'five_hour'), week = ms.find(m => m.key === 'weekly')
   const words = ms.map(meterTitle).join(' · ')
-  return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${usagePlan(acc)}: ${words}" title="${words}">${ms.map(m => (mini ? useRing(m, true) : html`<span class="use-r">${useRing(m)}<b class="${hot(m.used).trim()}">${m.used} %</b><span class="use-l">${m.label}</span></span>`))}</span>`
+  const mark = raw(`<svg class="use-mark" viewBox="0 0 32 32" aria-hidden="true">${week ? useRing(week, 13) : ''}${five ? useRing(five, week ? 7.6 : 13) : ''}</svg>`)
+  return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${usagePlan(acc)}: ${words}" title="${words}">${mark}${mini ? '' : html`<span class="use-words">${ms.map(m => html`<span><b class="${hot(m.used).trim()}">${m.used} %</b> ${m.label}</span>`)}</span>`}</span>`
 }
 /** Fuller, for an agent's card on Settings · Agents: plan and e-mail, one row per meter, Codex's credits and resets. */
 export function usageFull(acc, now = Date.now()) {

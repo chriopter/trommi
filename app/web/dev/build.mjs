@@ -206,7 +206,8 @@ function vendorFiles(repo, { sourcemap = false } = {}) {
   return out
 }
 /** CHANGELOG.md as data: [{ day, releases, summary, picture, groups: [{ kind, items: [text] }] }], newest first. A day
- *  is a "## " heading ("11 October 2026 (v109 – v115)": the releases in brackets); the plain lines before its first
+ *  is a "## " heading ("11 October 2026"; releases in brackets after it are read, but CHANGELOG.md names none: a GitHub
+ *  release's notes count them, .github/scripts/release_notes.sh); the plain lines before its first
  *  part are its summary, a line "![words](app/web/public/changelog/<name>.webp)" there its one picture ({ alt, src },
  *  src as the app serves it: "/changelog/<name>.webp"); a part is a line "**New**" (Better, Fixed), an item a line
  *  "- …" (a line indented under it goes on with it). The words before the first day are the file's own. */

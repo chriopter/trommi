@@ -17,7 +17,7 @@
 // A question never unfolds here: an open one stands in the conversation as its Desk row, whose text links to the
 // card's page; every other one is a quiet line that links there too.
 import { UNHEARD_MS, blockedOf, lineCard, linkOf, quietOf, shareControl, sharesLoaded } from './app.mjs'
-import { Controller, agoShort, usageRings, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
+import { Controller, agoShort, usageMark, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
 const LIVE = 80               // so many of the newest messages are kept up to date by the live stream
 const PAGE = 40               // messages of one render: the page shows the latest, "Earlier" (or scrolling up) brings as many again
 const IN_VIEW = 14            // of them, rendered with the page (a phone shows fewer); the rest of the window right after its first paint
@@ -340,26 +340,25 @@ function sessionWho(s, base) {
   // The mark opens the drawings, the name renames (ui.mjs); the live stream brings what was changed.
   // The raised red hand when the session is really stopped (app.mjs blockedOf), with the cause in words.
   const stopped = blockedOf(a, s.model.state), quiet = stopped ? null : quietOf(a, s.model.state)
-  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}<span class="head-use-mini">${usageRings(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status" title="Stopped: ${stopped.text}">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Connected and working, nothing new for a while">${quiet.text}</span>` : ''}</div>`
+  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}${sessionDot(a)}<span class="head-use-mini">${usageMark(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status" title="Stopped: ${stopped.text}">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Connected and working, nothing new for a while">${quiet.text}</span>` : ''}</div>`
 }
-/** The quiet line under the name: a dot (green while connected), what the session is at, its model and machine. */
-function sessionNow(s, base = '') {
-  const a = s.agent
-  // (A session that does not hear at once says so here; one that does says what it is at.)
-  const link = linkOf(a)
-  const words = link && link.state !== 'live' ? link.word : a.online ? a.task || 'connected' : 'disconnected'
-  const facts = [a.model, a.host].filter(Boolean).join(' · ')
-  return html`<p class="pane-now" id="session-now-${a.id}"${link && link.state !== 'live' ? html` data-link="${link.state}" title="${link.line}"` : ''}><span><i class="now-dot${a.online ? ' is-on' : ''}" aria-hidden="true"></i>${words}</span>${facts ? html`<span class="caps">${facts}</span>` : ''}</p>`
+/** The connection beside the name, as a dot: green while the session is connected (else grey, or how it hears when it
+ *  does not hear at once). What it is at, its model and machine are its tip: the heading is one line. */
+function sessionDot(a) {
+  const link = linkOf(a), late = link && link.state !== 'live'
+  const words = late ? link.word : a.online ? 'connected' : 'disconnected'
+  const tip = [words, a.online && !late ? a.task : '', a.model, a.host].filter(Boolean).join(' · ')
+  return html`<span class="head-dot${a.online ? ' is-on' : ''}"${late ? html` data-link="${link.state}"` : ''} role="img" aria-label="${tip}" title="${tip}"><i></i></span>`
 }
-/** The usage at the heading's right end (a wide window): two small rings, 5 h and the week (ui.mjs usageRings).
- *  (always there, empty without an account: the live stream replaces it when the agent's numbers come or change) */
-const sessionUsage = s => html`<div class="head-use" id="session-use-${s.agent.id}">${usageRings(s.agent.account)}</div>`
-/** What the session page shows: a quiet two-way switch "All | Questions n" in its own row under the heading
- *  (independent of the heading's markup). Real links (the choice lives in the address, ?only=questions), so it works
- *  without scripts; the number is the questions waiting for him, replaced live when it changes. */
-export function sessionFilters(s, base, mode = '') {
+/** The usage at the heading's right end (a wide window): one mark of two rings, the week outside, 5 h inside
+ *  (ui.mjs usageMark). (always there, empty without an account: the live stream replaces it when the numbers change) */
+const sessionUsage = s => html`<div class="head-use" id="session-use-${s.agent.id}">${usageMark(s.agent.account)}</div>`
+/** What the session page shows: a quiet two-way switch "All | Questions n", in the heading's line beside the name (a
+ *  phone: its own row under the top line, phone: true). Real links (the choice lives in the address,
+ *  ?only=questions), so it works without scripts; the number is the questions waiting for him, replaced live. */
+export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
   const here = sessionPath(s.id, base), on = mode === 'questions', n = s.fresh.length
-  return html`<nav class="column session-mode" id="session-filters-${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${here}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${here}?only=questions"${on ? raw(' aria-current="page"') : ''} data-controller="title" data-title-count-value="${n}">Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
+  return html`<nav class="session-mode${phone ? ' is-phone' : ''}" id="session-filters-${phone ? 'phone-' : ''}${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${here}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${here}?only=questions"${on ? raw(' aria-current="page"') : ''}${phone ? '' : raw(` data-controller="title" data-title-count-value="${n}"`)}>Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
 }
 /** The status lines of the session's running work, and that it is answering. They stand at the end of the conversation. */
 function sessionStatus(s, base, now = Date.now()) {
@@ -558,7 +557,7 @@ function sessionMain(s, base, { mode = '', before = null, error = '', text = '',
     body = html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${w.total ? part : empty(s, base)}${latest ? html`<div id="log-end-${s.id}" hidden></div>${sessionStatus(s, base)}` : html`<a class="log-earlier-link is-later" data-nav href="${sessionPath(s.id, base)}">To the latest messages</a>`}</div></div>`
   }
   return html`<main id="session" aria-label="Session: ${s.agent.name}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}>
-<header class="pane-title">${sessionWho(s, base)}${sessionNow(s, base)}${sessionUsage(s)}</header>${sessionFilters(s, base, mode)}
+<header class="pane-title">${sessionWho(s, base)}${sessionFilters(s, base, mode)}${sessionUsage(s)}</header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
 <div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${open}<div class="column session-compose">${sendError(s, error)}${sessionLink(s)}${composer(s, base, { text, focus })}</div></div>
@@ -718,7 +717,7 @@ export function register(t) {
         if (!p) {
           const s = current(id, m)
           if (!s) { out.set(id, null); continue }
-          p = { s, who: sessionWho(s, BASE), now: sessionNow(s, BASE), use: sessionUsage(s), link: sessionLink(s), count: `${s.fresh.length} ${fileCount(s)}`, modes: {} }
+          p = { s, who: sessionWho(s, BASE), use: sessionUsage(s), link: sessionLink(s), count: `${s.fresh.length} ${fileCount(s)}`, modes: {} }
           out.set(id, p)
         }
         if (p && !(mode in p.modes)) {
@@ -747,10 +746,9 @@ export function register(t) {
       if (!a) return ''
       const out = []
       if (t.differs(a.who, b.who)) out.push(t.stream('replace', `session-who-${id}`, b.who))
-      if (t.differs(a.now, b.now)) out.push(t.stream('replace', `session-now-${id}`, b.now))
       if (t.differs(a.use, b.use)) out.push(t.stream('replace', `session-use-${id}`, b.use))
       if (t.differs(a.link, b.link)) out.push(t.stream('replace', `session-link-${id}`, b.link))
-      if (a.count !== b.count) out.push(t.stream('replace', `session-filters-${id}`, sessionFilters(b.s, BASE, mode)))
+      if (a.count !== b.count) out.push(t.stream('replace', `session-filters-${id}`, sessionFilters(b.s, BASE, mode)), t.stream('replace', `session-filters-phone-${id}`, sessionFilters(b.s, BASE, mode, { phone: true })))
       if (mode === 'questions') { if (a.questions != null && t.differs(a.questions, b.questions)) out.push(t.stream('replace', `session-questions-${id}`, b.questions)) }
       else if (a.items && b.items) {
         // What stood there and stands there still, changed: that element. What is new goes in before the first message

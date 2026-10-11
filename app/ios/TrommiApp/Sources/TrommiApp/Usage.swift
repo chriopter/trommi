@@ -1,5 +1,5 @@
-// Usage.swift: an agent's account and usage (TrommiClient/Usage.swift reads them): two small rings beside a session's
-// More button, and the plan, the e-mail and one row per window on the agent's card in Settings · Agents.
+// Usage.swift: an agent's account and usage (TrommiClient/Usage.swift reads them): one mark of two rings beside a
+// session's More button, and the plan, the e-mail and one row per window on the agent's card in Settings · Agents.
 // The track is the ink at 12 %, the fill the accent; from 80 % on, fill and percent turn urgent.
 import SwiftUI
 import TrommiClient
@@ -24,30 +24,35 @@ struct UsageBar: View {
     }.frame(height: height)
   }
 }
-/** One meter as a small ring: a faint track and, from the top clockwise, the part used, the percent inside. */
-struct UsageRing: View {
+/** One meter's ring: a faint track and, from the top clockwise, the part used (urgent from 80 %). */
+private struct MeterRing: View {
   let used: Int
-  var size: CGFloat = 26
+  let width: CGFloat
   var body: some View {
     ZStack {
-      Circle().stroke(Ink.fg.opacity(0.12), lineWidth: size / 8)
+      Circle().stroke(Ink.fg.opacity(0.12), lineWidth: width)
       Circle().trim(from: 0, to: CGFloat(used) / 100)
-        .stroke(hot(used) ? Ink.urgHigh : Ink.accent, style: StrokeStyle(lineWidth: size / 8, lineCap: .round))
+        .stroke(hot(used) ? Ink.urgHigh : Ink.accent, style: StrokeStyle(lineWidth: width, lineCap: .round))
         .rotationEffect(.degrees(-90))
-      Text("\(used)").font(Face.text(size * 0.37, .bold)).foregroundStyle(hot(used) ? Ink.urgHigh : Ink.fg).monospacedDigit()
     }
-    .padding(size / 16).frame(width: size, height: size)
   }
 }
-/** Beside a session's More button (session.mjs sessionWho, ui.mjs usageRings): each meter (5 h, the week) a small ring
- *  with its percent; the whole in words for VoiceOver. */
-struct UsageRings: View {
+/** Beside a session's More button (session.mjs sessionWho, ui.mjs usageMark): one mark of two rings, one inside the
+ *  other (as the watch's activity rings): the week outside, the 5-hour window inside; the whole in words for VoiceOver. */
+struct UsageMark: View {
   let acc: UsageAccount
+  var size: CGFloat = 30
   var body: some View {
+    let five = acc.meters.first { $0.id == "five_hour" }, week = acc.meters.first { $0.id == "weekly" }
+    let w = size * 0.115
     if !acc.meters.isEmpty {
-      HStack(spacing: 2) { ForEach(acc.meters) { m in UsageRing(used: m.used) } }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(acc.meters.map { "\($0.long): \($0.used) percent used" }.joined(separator: ", "))
+      ZStack {
+        if let week { MeterRing(used: week.used, width: w).padding(w / 2) }
+        if let five { MeterRing(used: five.used, width: w).padding(week == nil ? w / 2 : w * 2.05) }
+      }
+      .frame(width: size, height: size)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(acc.meters.map { "\($0.long): \($0.used) percent used" }.joined(separator: ", "))
     }
   }
 }

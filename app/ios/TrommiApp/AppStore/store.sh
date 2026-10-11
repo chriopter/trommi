@@ -6,6 +6,7 @@
 #   store.sh submit --yes       the version goes to App Review
 #   store.sh release --yes      an approved version (release type MANUAL) goes on sale
 #   store.sh status             read only
+#   ASC_PLATFORM=MAC_OS store.sh …   the same for the Mac app (texts in metadata/macos, screenshots/macos)
 #
 # Environment as for ship-local.sh: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH [~/.appstoreconnect/private_keys/
 # AuthKey_<id>.p8], read first from ~/.config/trommi/ios.env (TROMMI_IOS_ENV names another file). Or run it under
@@ -38,5 +39,11 @@ export ASC_KEY_ID=${ASC_KEY_ID:?set ASC_KEY_ID (or run under op run with APPLE_A
 export ASC_ISSUER_ID=${ASC_ISSUER_ID:?set ASC_ISSUER_ID}
 export ASC_KEY_PATH=${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8}
 [ -r "$ASC_KEY_PATH" ] || { echo "no API key at $ASC_KEY_PATH" >&2; exit 1; }
-export BUNDLE_ID=com.trommi.ios
+# ASC_PLATFORM=MAC_OS: the Mac app, under the bundle id of the TrommiMac target in project.yml
+if [ "${ASC_PLATFORM:-IOS}" = MAC_OS ]; then
+  BUNDLE_ID=$(awk '/^  TrommiMac:/{t=1} t && /PRODUCT_BUNDLE_IDENTIFIER:/{print $2; exit}' "$here/project.yml")
+  export BUNDLE_ID ASC_PLATFORM
+else
+  export BUNDLE_ID=com.trommi.ios
+fi
 python3 "$here/store.py" "$@"

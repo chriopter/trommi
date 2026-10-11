@@ -224,7 +224,9 @@ struct PicturesView: View {
           ZoomableImage(ref: a).tag(i)
         }
       }
+      #if os(iOS)
       .tabViewStyle(.page(indexDisplayMode: list.count > 1 ? .automatic : .never))
+      #endif
       Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundStyle(.white).frame(width: 44, height: 44).glass(Circle(), interactive: true) }
         .padding(16)
     }
@@ -362,8 +364,10 @@ struct NoteScreen: View {
       }
       HStack(spacing: 6) {
         Menu {
+          #if os(iOS)
           Button { camera = true } label: { Label("Take Photo", systemImage: "camera") }
           Button { pickingPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+          #endif
           Button { importing = true } label: { Label("Choose File", systemImage: "doc") }
         } label: { Image(systemName: "paperclip").font(.system(size: 19, weight: .medium)).frame(width: 44, height: 44) }
         .accessibilityLabel("Attach")
@@ -420,8 +424,12 @@ struct NoteScreen: View {
       guard let id = n.userInfo?["id"] as? String, let t = n.userInfo?["text"] as? String, let f = n.userInfo?["files"] as? [JV] else { return }
       keepTask?.cancel(); noteId = id; text = t; files = f
     }
+    #if os(iOS)
     .sheet(isPresented: $pickingPhotos) { PhotoPicker(limit: 12) { picked in Task { await add(picked) } }.ignoresSafeArea() }
+    #endif
+    #if os(iOS)
     .sheet(isPresented: $camera) { CameraPicker { data in Task { await add([(data, .jpeg)]) } }.ignoresSafeArea() }
+    #endif
     .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
       if case .success(let urls) = r {
         var got = [(data: Data, type: UTType?)]()

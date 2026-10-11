@@ -6,6 +6,7 @@
 #   submit   the version goes to App Review (a step of its own: nothing else sends it)
 #   release  a version approved with release type MANUAL goes on sale
 #   status   read only
+# platform: ios (the default) or mac (the Mac app: metadata/macos and screenshots/macos, its own App Store version).
 # Secrets: the environment `ios` (OP_SERVICE_ACCOUNT_TOKEN, OP_ENVIRONMENT_ID), as deploy_ios; APPLE_ASC_KEY,
 # APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID from the 1Password Environment; APPSTORE_DEMO_PASSWORD there only if
 # metadata/review_information/demo_user.txt names a demo account.
@@ -20,6 +21,12 @@ on:
         type: choice
         options: [check, upload, submit, release, status]
         default: check
+      platform:
+        description: Which app
+        required: true
+        type: choice
+        options: [ios, mac]
+        default: ios
       build:
         description: The build number to attach (upload only; empty = the newest VALID build of the version)
         required: false
@@ -33,7 +40,7 @@ concurrency:
 
 jobs:
   store:
-    name: App Store (${{ inputs.step }})
+    name: App Store (${{ inputs.platform }}, ${{ inputs.step }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment:
@@ -46,6 +53,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Check (offline)
+        env:
+          ASC_PLATFORM: ${{ inputs.platform == 'mac' && 'MAC_OS' || 'IOS' }}
         run: python3 app/ios/TrommiApp/AppStore/store.py check
       - name: Install the 1Password CLI
         if: inputs.step != 'check'
@@ -60,6 +69,7 @@ jobs:
           OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
           STEP: ${{ inputs.step }}
           BUILD: ${{ inputs.build }}
+          ASC_PLATFORM: ${{ inputs.platform == 'mac' && 'MAC_OS' || 'IOS' }}
         run: |
           set -eu
           printf '%s' "$BUILD" | grep -Eq '^[0-9]*$' || { echo "::error::not a build number: $BUILD"; exit 1; }

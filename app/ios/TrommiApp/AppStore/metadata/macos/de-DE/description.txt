@@ -1,0 +1,31 @@
+Deine Agenten rufen. Du entscheidest.
+
+Claude Code und Codex fragen als Karten auf deinem Mac. Ein Klick, und sie arbeiten weiter. Ende-zu-Ende verschlüsselt.
+
+Coding-Agenten halten an, wenn sie dich brauchen: eine Designfrage, eine Freigabe, eine Frage, die nur du beantworten kannst. Trommi legt dir diese Frage vor, im eigenen Fenster und in der Menüleiste, damit die Arbeit weitergeht, während du in einer anderen App bist.
+
+AGENTEN FRAGEN, DU ENTSCHEIDEST
+Eine Session legt eine Karte mit ihrer Frage und ein paar Optionen an, mit Bildern oder einer Seite zum Ausprobieren, wenn es hilft. Ein Klick antwortet, und der Agent macht weiter.
+
+IN DER MENÜLEISTE
+Eine Glocke in der Menüleiste zeigt, wie viele Fragen warten. Ihr Fenster listet sie auf, die dringenden zuerst; ein Klick öffnet die Karte.
+
+DAS GANZE GESPRÄCH
+Schreib mit jeder Session, sieh, woran sie arbeitet, gib eine Karte mit einer Notiz zurück, erteile eine Freigabe. Return sendet; Shift+Return gibt eine Karte mit deinen Worten zurück.
+
+ÜBERALL DASSELBE BOARD
+Mac, iPhone und die Web-App zeigen denselben Desk. Was du auf einem Gerät beantwortest, ist auf allen beantwortet.
+
+ENDE-ZU-ENDE VERSCHLÜSSELT
+Karten, Antworten, Chats, Notizen und Dateien werden auf deinen Geräten mit MLS verschlüsselt, dem IETF-Standard für Gruppennachrichten. Der Server stellt versiegelte Umschläge zu und hat keinen Schlüssel, der sie öffnet. App, Connector und Server sind Open Source.
+
+SO VERBINDET ES SICH
+Trommi arbeitet mit Agenten, die du selbst betreibst. Installiere auf einem Linux- oder macOS-Rechner mit Claude Code oder Codex einmal den Trommi-Connector und verbinde eine Session mit dem Einladungslink aus „Invite Agent…“ in der App. Sechs Emoji vergleichen, bestätigen, und die nächste Frage der Session landet auf deinem Desk. Anleitung: trommi.com
+
+Erst mal umsehen? „Try the demo“ auf dem Startbildschirm öffnet einen vollständigen, erfundenen Desk; nichts wird gesendet.
+
+Trommi ist vorerst kostenlos. Registriere dich mit E-Mail-Adresse und Passwort, oder füge diesen Mac mit einem Link von einem deiner anderen Geräte zu deinem Konto hinzu. Dein Konto kannst du jederzeit in den Einstellungen löschen.
+
+Die App selbst ist auf Englisch.
+
+Claude Code ist ein Produkt von Anthropic, Codex ein Produkt von OpenAI. Trommi ist eine unabhängige App und mit keinem der beiden verbunden.

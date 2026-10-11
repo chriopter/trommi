@@ -1,0 +1,29 @@
+Your agents ring. You decide.
+
+Claude Code and Codex ask as cards on your Mac. One click, and they keep working. End-to-end encrypted.
+
+Coding agents stop when they need you: a design choice, a permission, a question only you can answer. Trommi puts that question in front of you, in its own window and in the menu bar, so the work goes on while you are busy in another app.
+
+AGENTS ASK, YOU DECIDE
+A session files a card with its question and a few options, with pictures or a page to try when it helps. One click answers, and the agent carries on.
+
+IN THE MENU BAR
+A bell in the menu bar shows how many questions are waiting. Its panel lists them, the urgent ones first; a click opens the card.
+
+THE WHOLE CONVERSATION
+Chat with any session, see what it is working on, hand a card back with a note, approve a permission request. Return sends; Shift+Return hands a card back with your words.
+
+THE SAME BOARD EVERYWHERE
+Your Mac, your iPhone and the web app show the same Desk. Answer on one, and it is answered on all.
+
+END-TO-END ENCRYPTED
+Cards, answers, chats, notes and files are encrypted on your devices with MLS, the IETF standard for group messaging. The server delivers sealed envelopes and holds no key that opens them. App, connector and server are open source.
+
+HOW IT CONNECTS
+Trommi works with agents you run yourself. On a Linux or macOS machine with Claude Code or Codex, install the Trommi connector once, then connect a session with the invite link from "Invite Agent…" in the app. Compare six emoji, confirm, and the session's next question lands on your Desk. Instructions: trommi.com
+
+Want to look around first? "Try the demo" on the start screen opens a full made-up Desk; nothing is sent.
+
+Trommi is free for now. Sign up with an email address and a password, or add this Mac to your account with a link from another of your devices. You can delete your account in Settings at any time.
+
+Claude Code is a product of Anthropic; Codex is a product of OpenAI. Trommi is an independent app and is not affiliated with either.

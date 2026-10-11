@@ -7,24 +7,69 @@
 //
 // The token goes to the hub through the room the app has open (the model's), never through a second `Room`: the
 // device's state has one owner.
-#if canImport(UIKit)
+//
+// On a Mac the same: the app delegate is AppKit's (NSApplication registers with APNs), the push key lies in the data
+// protection Keychain, and the topic is the Mac app's bundle id. No Notification Service Extension there yet: a push
+// shows its fixed text.
+#if canImport(UIKit) || os(macOS)
 import Foundation
 import PushNotify
 import Security
 import TrommiClient
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 import UserNotifications
 import os
 
 private let log = Logger(subsystem: "com.trommi.ios", category: "push")
 
+#if os(macOS)
+final class PushDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+  @MainActor weak var model: BoardModel? { didSet { Push.model = model } }
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    UNUserNotificationCenter.current().delegate = self
+    NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.ask() }
+  }
+  /** The last window closed: the app stays in the menu bar (MenuBarExtra), as a mail app does. */
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+  func ask() {
+    Task { @MainActor in
+      guard self.model?.room != nil else { return }
+      UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+        guard granted else { return }
+        DispatchQueue.main.async { NSApplication.shared.registerForRemoteNotifications() }
+      }
+    }
+  }
+  func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    let t = deviceToken.map { String(format: "%02x", $0) }.joined()
+    log.notice("trommi push: APNs token received")
+    Task { await Push.register(token: t) }
+  }
+  func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    log.error("trommi push: no APNs token: \(error.localizedDescription, privacy: .public)")
+  }
+  func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+    await model?.refresh()
+    return [.banner, .list, .sound]
+  }
+  func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    await model?.refresh()
+  }
+}
+#else
 final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
   /** The board to refresh (set by the App struct). */
   @MainActor weak var model: BoardModel? { didSet { Push.model = model } }
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     UNUserNotificationCenter.current().delegate = self
-    #if canImport(ActivityKit)
+    #if canImport(ActivityKit) && os(iOS)
     Task { @MainActor in
       // the answer buttons of the Live Activity run here (AnswerCardIntent)
       LiveAnswer.handler = { id, key in await LiveActivities.answer(card: id, key: key) }
@@ -70,6 +115,7 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
     await model?.refresh()
   }
 }
+#endif
 
 enum Push {
   /** The model whose open room the tokens are registered through (set with PushDelegate.model). */
@@ -78,7 +124,11 @@ enum Push {
   // ---- the push key ----
 
   private static var keyItem: [String: Any] {
-    [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.trommi.push-key", kSecAttrAccount as String: "apns"]
+    var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.trommi.push-key", kSecAttrAccount as String: "apns"]
+    #if os(macOS)
+    q[kSecUseDataProtectionKeychain as String] = true
+    #endif
+    return q
   }
 
   /**
@@ -103,9 +153,16 @@ enum Push {
 
   /** A development build (xtool, the profile says aps-environment development) talks to Apple's sandbox. */
   static var environment: String {
+    #if os(macOS)
+    // a Mac app's profile lies in Contents/, and its key is com.apple.developer.aps-environment
+    let profile = Bundle.main.bundleURL.appendingPathComponent("Contents/embedded.provisionprofile")
+    guard let data = try? Data(contentsOf: profile), let text = String(data: data, encoding: .isoLatin1) else { return "production" }
+    return text.range(of: #"<key>com.apple.developer.aps-environment</key>\s*<string>development</string>"#, options: .regularExpression) != nil ? "sandbox" : "production"
+    #else
     guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
           let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .isoLatin1) else { return "production" }
     return text.range(of: #"<key>aps-environment</key>\s*<string>development</string>"#, options: .regularExpression) != nil ? "sandbox" : "production"
+    #endif
   }
 
   /** The push level of this phone (Settings · Devices): all, knocking, or off. */
@@ -118,7 +175,7 @@ enum Push {
     level = l
     for k in UserDefaults.standard.dictionaryRepresentation().keys where k.hasPrefix("push.") { UserDefaults.standard.removeObject(forKey: k) }
     if let t = UserDefaults.standard.string(forKey: "trommi-push-token") { await register(token: t) }
-    #if canImport(ActivityKit)
+    #if canImport(ActivityKit) && os(iOS)
     LiveActivities.levelChanged()
     #endif
   }
@@ -130,7 +187,7 @@ enum Push {
   @MainActor static func register(token: String) async {
     UserDefaults.standard.set(token, forKey: "trommi-push-token")
     guard let room = model?.room, model?.demo != true else { return }
-    #if canImport(ActivityKit)
+    #if canImport(ActivityKit) && os(iOS)
     LiveActivities.again()
     #endif
     let level = Push.level, env = environment, topic = Bundle.main.bundleIdentifier ?? "com.trommi.ios"
