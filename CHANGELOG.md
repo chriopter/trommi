@@ -30,6 +30,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   the message field is gone (web and iPhone).
 - A session's heading is calmer: under the name a dot, what it is at and its model; its usage (5 h and week) as two
   small rings at the right, beside the ⋯ on a phone; its files moved into the ⋯ menu.
+- On an opened question ← → step through its pictures and never switch questions; Shift ↓ ↑ go to the next or
+  previous question (web).
 - A question's options explained stand at the end of the card, after the pictures, all open; the pointer on an
   answer marks its text and the pen's arrow points at it (web; iPhone lists them at the end too).
 - The reverse card on a card: its black oval smaller, with air above and below, as on the send button (web and iPhone).
