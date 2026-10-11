@@ -81,6 +81,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Web: a card handed back and then put before you again no longer slips back to "with the agent" (off the Desk)
   when you open it; a card already stuck that way returns to the Desk by itself.
 - After /mcp → Reconnect a connected agent no longer shows as gone: the old connector's goodbye can't override the new one's hello.
+- iPhone: the app no longer crashes when it starts with an account already signed in.
 - iPhone: a session renamed on another device no longer shows up twice; the new name lands on the session itself.
 - Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
 - Open cards are the same on every device: the web takes them from the hub's list of open questions, so a card
