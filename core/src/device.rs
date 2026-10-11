@@ -89,6 +89,7 @@ mod content;
 mod facts;
 mod history;
 mod invite;
+mod key_requests;
 
 pub use content::{
     board_reduce, BoardItem, BoardSnapshot, Confirmation, Draft, EnvelopeOutcome, ReceivedEnvelope,
@@ -99,6 +100,10 @@ pub use history::{GroupPast, LearnProgress, Learned};
 pub use invite::{
     InviteAccepted, InviteConfirmed, InviteOpened, InviteStep, JoinLink, JoinRequest,
     MAX_OPEN_INVITES,
+};
+pub use key_requests::{
+    KeyRequest, KEY_ANSWER_PAUSE_MS, KEY_REQUEST_FIRST_PAUSE_MS, KEY_REQUEST_GRACE_MS,
+    KEY_REQUEST_MAX_PAUSE_MS, MAX_KEY_REQUESTS,
 };
 
 const SUB_OWN_HISTORY: u8 = 0;
@@ -960,6 +965,8 @@ pub struct Device<S: Storage> {
     /// The walk of a group's past that was started and not finished ([`Device::learn_start`]), at most
     /// one. It is no state: nothing here is stored, and nothing the device answers reads it.
     walks: BTreeMap<GroupId, history::PastWalk>,
+    /// The content keys this device found missing, asked for, and answered others for (7.1.1). No state either.
+    key_wants: key_requests::KeyWants,
     /// The check of a served room that was started and not finished ([`Device::code_check_start`]), and
     /// the check of a session group ([`Device::session_check_start`]), one at a time. The same holds for
     /// them.
@@ -1330,6 +1337,7 @@ impl<S: Storage> Device<S> {
                 ..Memory::default()
             },
             walks: BTreeMap::new(),
+            key_wants: key_requests::KeyWants::default(),
             room_check: None,
             session_check: None,
             lost: false,
@@ -1358,6 +1366,7 @@ impl<S: Storage> Device<S> {
             provider: Provider::new(entropy, mls)?,
             memory,
             walks: BTreeMap::new(),
+            key_wants: key_requests::KeyWants::default(),
             room_check: None,
             session_check: None,
             lost: false,
@@ -5051,7 +5060,10 @@ impl<S: Storage> Device<S> {
             // it took the Welcome: it was passed while the device could not open it. The key handover the
             // adder sends right behind the Add is one (7.1). One that opened before does not open again.
             return self.memory.groups.get(&entry.group).is_some_and(|meta| {
-                !meta.removed && meta.place > 0 && entry.change > meta.place && entry.change <= meta.passed
+                !meta.removed
+                    && meta.place > 0
+                    && entry.change > meta.place
+                    && entry.change <= meta.passed
             });
         };
         let Ok(message) = rules::parse_commit(bytes) else {
@@ -5672,10 +5684,42 @@ impl<S: Storage> Device<S> {
         group: &GroupId,
         recipient: &DeviceId,
     ) -> Result<Vec<u64>, Error> {
+        let human = self.is_human();
+        let only = if group.is_room() && human {
+            None
+        } else {
+            Some(*group)
+        };
+        self.send_keys_with(group, only.as_ref(), recipient, true)
+    }
+
+    /// Sends `recipient` the content keys this device holds of `only` (of every group of the room when none),
+    /// through `group`, as [`Device::send_handover`] does; nothing when it holds none of them.
+    fn send_keys(
+        &mut self,
+        group: &GroupId,
+        only: Option<&GroupId>,
+        recipient: &DeviceId,
+    ) -> Result<Vec<u64>, Error> {
+        self.send_keys_with(group, only, recipient, false)
+    }
+
+    fn send_keys_with(
+        &mut self,
+        group: &GroupId,
+        only: Option<&GroupId>,
+        recipient: &DeviceId,
+        even_empty: bool,
+    ) -> Result<Vec<u64>, Error> {
+        let only = only.copied();
         self.transact(|this, batch| {
             let human = this.is_human();
             let session = this.meta(group)?.session;
             if !human && !session.is_some_and(|session| this.opens(&session)) {
+                return Err(Error::Forbidden);
+            }
+            // Keys of another group travel only in the room group, from a human device.
+            if only.is_none_or(|of| of != *group) && !(group.is_room() && human) {
                 return Err(Error::Forbidden);
             }
             // 5.2.6: no key of a group that failed its first contact is handed on.
@@ -5690,10 +5734,13 @@ impl<S: Storage> Device<S> {
                 .memory
                 .keys
                 .keys()
-                .filter(|(of, _)| of == group || (group.is_room() && human))
+                .filter(|(of, _)| only.is_none_or(|only| *of == only))
                 .filter(|(of, _)| !quarantined.contains(of))
                 .copied()
                 .collect();
+            if places.is_empty() && !even_empty {
+                return Ok(Vec::new());
+            }
             let mut chunks: Vec<Vec<(GroupId, u64)>> = places
                 .chunks(MAX_HANDOVER_KEYS)
                 .map(<[(GroupId, u64)]>::to_vec)

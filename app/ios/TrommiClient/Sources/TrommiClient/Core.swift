@@ -499,6 +499,14 @@ public protocol CoreDevice: CoreSigner {
   func logFinding(_ error: Error) -> LogFinding
 
   func sendHandover(group: GroupId, recipient: DeviceId) throws -> [UInt64]
+  /** 7.1.1: the groups whose content keys this device is to ask for now (`POST /v1/requests`, kind `handover`): an
+   *  envelope of them did not open for lack of its key five minutes ago or more, and asked again after a pause that
+   *  doubles up to a day. Only a human device asks. Returned counts as asked. */
+  func keyRequests(nowMs: UInt64) throws -> [GroupId]
+  /** 7.1.1: answers a human device's key request with a key handover in the room group: this device's keys of `group`,
+   *  or of every group when nil. `forbidden` unless both are human devices; [] when none is held or it was answered
+   *  within the hour. Returns the outbox ids. */
+  func answerKeyRequest(group: GroupId?, recipient: DeviceId, nowMs: UInt64) throws -> [UInt64]
   /** `epoch-full` when the epoch took its share of pieces: an update of the room group is due first (`update`, forced). */
   func sendStrokePiece(board: BoardId, piece: Bytes) throws -> UInt64
   /**

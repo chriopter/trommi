@@ -172,6 +172,9 @@ public struct Store {
   var roomGroup: GroupId?
   /** The hub's last word on how many of this device's KeyPackages are unused; nil before it said so in this run. */
   var keyPackagesAtHub: Int?
+  /** 7.1.1: when the hub's list of wishes was last read, and the wishes for keys answered in this run. */
+  var keyWishesReadAt: UInt64 = 0
+  var keyWishesAnswered = Set<Int>()
   /** Which session a message of a group belongs to: group id (hex) to session id (hex). */
   var sessionIdOfGroup: [String: String] = [:]
   /** Findings about a sender's chain that were shown in this run ("<group>/<sender>/<code>"): each is said once. */
@@ -435,6 +438,7 @@ public struct Store {
     // the next sync tries again)
     try? await publishKeyPackages()
     await writeHeads()
+    await tendKeys()
     synced = true
     Task { await self.refreshPresence() }
     board.project()
@@ -600,6 +604,36 @@ public struct Store {
         _ = try device.seal(.register(group: group, name: "heads", value: value), files: [], nowMs: nowMs())
       }
     }
+  }
+
+  /**
+   * 7.1.1: the content keys this device still lacks a while after an envelope did not open for them are asked for
+   * (the core says which, and when again); the keys come as a handover, after which what was skipped is read again.
+   * The wishes of the other human devices that came while this one was away are answered from the hub's list, at
+   * most every ten minutes.
+   */
+  func tendKeys() async {
+    let due = (try? await onCore { try $0.keyRequests(nowMs: nowMs()) }) ?? []
+    for group in due {
+      _ = try? await noted { try await hub.request("POST", "/requests", body: ["kind": "handover", "group": b64u(group)]) }
+    }
+    guard nowMs() >= keyWishesReadAt + 600_000 else { return }
+    keyWishesReadAt = nowMs()
+    guard let rows = try? await noted({ try await hub.requests() }) else { return }
+    for row in rows { await answerKeys(row) }
+  }
+  /**
+   * Answers a human device's wish for content keys (7.1.1) once: a key handover in the room group. A wish older than a
+   * day is passed over: a device that still lacks the keys has asked again since. The core refuses one that is not a
+   * human device's, and answers the same requester and group once an hour.
+   */
+  func answerKeys(_ row: JSON) async {
+    guard row["kind"] as? String == "handover", let id = Wire.int(row["id"]), !keyWishesAnswered.contains(id),
+          let device = (row["device"] as? String).flatMap({ try? unb64u($0) }), hex(device) != deviceIdHex else { return }
+    if let at = Wire.uint(row["at"]), at + 86_400_000 < nowMs() { return }
+    keyWishesAnswered.insert(id)
+    let group = (row["group_id"] as? String).flatMap { try? unb64u($0) }
+    if (try? await onCore { try $0.answerKeyRequest(group: group, recipient: device, nowMs: nowMs()) })?.isEmpty == false { pumpOutbox() }
   }
 
   /** Keeps the hub stocked with this device's KeyPackages (spec 14.2). */
@@ -992,7 +1026,9 @@ public struct Store {
       board.applyPresence(Records.presence(data), change: &ch)
       emit(ch)
     case "request":
-      // a wish of a signed-in device (readmit, handover, session) or a join request of an invite
+      // a wish of a signed-in device (readmit, handover, session) or a join request of an invite; a wish for keys
+      // is answered (7.1.1)
+      if data["kind"].string == "handover", let row = data.any as? JSON { await answerKeys(row) }
       var ch = Change(); ch.invites.insert(data["invite_id"].string ?? ""); emit(ch)
     case "file_evicted": break
     default: break   // ping, and events a newer hub adds

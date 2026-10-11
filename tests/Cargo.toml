@@ -236,6 +236,10 @@ name = "connector_e2e"
 path = "connector/e2e.rs"
 
 [[test]]
+name = "connector_keys"
+path = "connector/keys.rs"
+
+[[test]]
 name = "connector_tools"
 path = "connector/tools.rs"
 

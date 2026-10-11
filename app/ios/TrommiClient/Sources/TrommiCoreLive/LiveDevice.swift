@@ -289,6 +289,12 @@ public final class LiveDevice: TrommiClient.CoreDevice {
   public func sendHandover(group: GroupId, recipient: DeviceId) throws -> [UInt64] {
     try core { try device.sendHandover(group: group.data, recipient: recipient.data) }
   }
+  public func keyRequests(nowMs: UInt64) throws -> [GroupId] {
+    try core { try device.keyRequests(nowMs: nowMs).map(\.group.bytes) }
+  }
+  public func answerKeyRequest(group: GroupId?, recipient: DeviceId, nowMs: UInt64) throws -> [UInt64] {
+    try core { try device.answerKeyRequest(group: group?.data, recipient: recipient.data, nowMs: nowMs) }
+  }
   public func sendStrokePiece(board: BoardId, piece: Bytes) throws -> UInt64 {
     try core { try device.sendStrokePiece(board: board.data, piece: piece.data) }
   }
