@@ -16,7 +16,7 @@
 //
 // A question never unfolds here: an open one stands in the conversation as its Desk row, whose text links to the
 // card's page; every other one is a quiet line that links there too.
-import { UNHEARD_MS, blockedOf, linkOf, quietOf, shareControl, sharesLoaded } from './app.mjs'
+import { UNHEARD_MS, blockedOf, lineCard, linkOf, quietOf, shareControl, sharesLoaded } from './app.mjs'
 import { Controller, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
 const LIVE = 80               // so many of the newest messages are kept up to date by the live stream
 const PAGE = 40               // messages of one render: the page shows the latest, "Earlier" (or scrolling up) brings as many again
@@ -361,7 +361,7 @@ function sessionStatus(s, base, now = Date.now()) {
   const answering = last?.from === 'user' && now - last.ts < WORKING_WINDOW
   const lines = s.tasks.filter(t => t.state !== 'done' || now - (t.updated ?? 0) < WORKING_WINDOW)
   return html`<div class="session-status" id="session-status-${s.id}"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
-    const card = t.card_id ? s.model.byCard.get(t.card_id) : null
+    const card = lineCard(t, s.model, s.cards, s.tasks)
     const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? agoSpan(t.updated, 'status-ago') : ''}`
     return card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${questionPath(card, base)}">${inner}</a>` : html`<p class="status-line" data-state="${t.state}">${inner}</p>`
   })}</div>`

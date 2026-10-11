@@ -215,7 +215,7 @@ ${raw(L.gone)}
       return settingsPage(devName(d), html`${errorLine(error)}<div class="set-group">
 <div class="set-row set-fact"><span class="set-ico">${devIcon(d)}</span><b>Kind</b><span class="set-detail">${human ? 'Person' : 'Agent'}</span><span></span></div>
 <div class="set-row set-fact"><span class="set-ico">${onlineDot(d.is_active && (d.is_online || me))}</span><b>Status</b><span class="set-detail" id="device-state">${devState(d)}</span><span></span></div>
-<div class="set-row set-fact"><span class="set-ico">${sk('key')}</span><b>Key fingerprint</b><span class="set-detail room-mono" id="device-fp">${fp(d)}</span><span></span></div></div>
+<div class="set-row set-fact set-fp-row"><span class="set-ico">${sk('key')}</span><b>Key fingerprint</b><span class="set-detail room-mono" id="device-fp">${fp(d)}</span><span></span></div></div>
 <p class="set-note">The fingerprint comes from the signed member list: it must look the same on every device.</p>
 ${me && d.is_active && has(client, 'setRegisters') ? html`<h3 class="set-label">Name</h3><form method="post" action="/devices/rename" class="set-group set-form" id="device-rename"><label class="set-field"><span>Name of this device</span><input name="device_name" value="${d.device_name ?? ''}" maxlength="40" required autocomplete="off"></label><button type="submit" class="room-primary">Rename</button></form><p class="set-note">A device names itself; this name is what your other devices see.</p>` : ''}
 ${canRemove ? html`<form method="post" action="/devices/remove" class="set-group" id="device-remove"><input type="hidden" name="device_id" value="${d.device_id}"><button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>Remove ${devName(d)}</b><span class="set-detail"></span><span></span></button></form><p class="set-note">${removeWords(d)}</p>` : ''}`,
@@ -291,7 +291,8 @@ ${canRemove ? html`<form method="post" action="/devices/remove" class="set-group
     // agent is in, and shows who came; last, start the program there.
     const CLAMP = raw('<svg class="clip-clamp" viewBox="0 0 120 44" aria-hidden="true"><path class="clamp-plate" d="M22 40 Q21 25 26 22 L43 21 Q46 9 60 8 Q74 9 77 21 L94 22 Q99 25 98 40 Z"/><path d="M52 21 Q53 15 60 14.6 Q67 15 68 21"/><path d="M30 31 Q60 29.4 90 31"/></svg>')
     const TICKBOX = raw('<svg class="clip-box" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6 5.2 Q12 4.4 19.3 4.9 Q20 12 19.5 19.2 Q12 20 4.9 19.4 Q4.2 12 4.6 5.2 Z"/><path class="clip-tick" d="M7.4 12.6 Q9.6 14.6 10.9 16.6 Q14.6 10.2 20.6 5.2"/></svg>')
-    const wrapAt = text => text.split(/(?<=[^/:]\/)/).map((part, i) => html`${i ? raw('<wbr>') : ''}${part}`)
+    // (a line breaks after a slash, after the scheme, after a short first host label: a phone never breaks inside a word)
+    const wrapAt = text => text.split(/(?<=[^/:]\/|:\/\/|\/\/[^/.]{1,12}\.)/).map((part, i) => html`${i ? raw('<wbr>') : ''}${part}`)
     const copyLine = (text, word, line, shown = wrapAt(text)) => html`<button type="button" class="clip-copy" data-line="${line}" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${shown}</code><span class="clip-copy-word" data-word="${word}">${word}</span></button>`
     /** The connect command as shown: every invite link of an account starts alike (app, version, hub, room), so the
      *  hub and the room are folded into an ellipsis and the part that is this invite's own (its secret and deadline)

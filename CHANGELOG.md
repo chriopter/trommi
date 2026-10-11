@@ -23,24 +23,34 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
+- The reverse card's middle is now an oval drawn by the pen, a little uneven and tilted (web and iPhone).
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
   instead of a stack of red ones.
 - Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out
   like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with its own page.
 - An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
 - An agent you ask for something keeps one card for it, from Working on to Done.
+- A main agent coordinates: cards about a topic (design, iOS, release …) sit in that helper's session, so your
+  answers go straight to the helper working on it.
 - The self-test screen is now called "Security Info".
 - Settings → Account no longer has the "Advanced" block with the old account address; the old recovery-code screen (/recover) is gone. Room, key epoch and hub are shown under Security Info.
 - Codex: the board tools are there from the start, Trommi tool calls no longer ask for approval one by one, and the texts say to restart Codex (not /mcp) when needed.
 - A Codex session between turns shows as "on its next turn", never as gone or not listening.
+- In a conversation, a running status line opens the card it works on, the same card its row on the Desk opens
+  (web and iPhone).
 
 **Fixed**
+- Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
+  session is repaired first and the message is sent again.
 - Opening a session no longer fails when one of your devices has been away for long: it joins the session when it comes
   back.
 - Web: logging in to a big account shows how far it is ("Catching up … of …"), opens before every session is
   joined, and a stuck login stops with a message instead of spinning.
 - iPhone: logging in to a big account no longer hangs at "Logging in…": the button shows how far it is, the
   sessions join after you are in, and a stuck login stops with a message.
+- Opening Trommi after a long time away: questions answered elsewhere no longer show up as open while it catches
+  up, and logging in on a new browser is ready in seconds instead of a minute.
+- Web: the number keys 1, 2, 3 … switch the desk without opening the desk menu, which then blocked the next key.
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.
 - Changing your password, Emergency Kit or passkeys now asks for proof that you know a current one:
   being logged in is not enough.
@@ -49,6 +59,11 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - After logging out, the browser kept the key that had protected its local data.
 - Every agent session showed "hears you on its next step" (and later "not listening") even when it heard the board at once.
 - Codex no longer tries to start Trommi through a script when its tools are missing; it tells you to restart Codex.
+- The web app on phones: Settings pages fit a small screen (password, passkeys, the device fingerprint shown whole),
+  the ••• of a chat is no longer under the page corner, the tab bar is solid and stands beside the page in landscape,
+  nothing sits in the home-indicator strip, fields no longer make iPhone zoom in, long answers stay inside their
+  buttons, the invite commands break at sensible places, and Artifacts has its heading again.
+- A note of only a pasted picture, folded right after the paste, is no longer thrown away.
 
 ## 10 October 2026 (v49 – v108)
 

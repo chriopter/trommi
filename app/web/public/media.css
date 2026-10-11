@@ -77,4 +77,7 @@ body[data-page="gallery"] #gallery {
   .art-share-body { top: 44px; right: -5px; }
   .art-act { width: 36px; height: 36px; }
   .art-ago { display: none; }
+  /* (a tile's title in two lines: cut after a dozen letters it said nothing) */
+  .art-line { height: auto; min-height: 20px; align-items: flex-start; }
+  .art-t { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; line-height: 1.25; }
 }

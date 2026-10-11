@@ -244,7 +244,7 @@ body:not([data-shift]) .inbox-tab-act.inbox-shred { display: none; }
    with it: above it in a square tile, beside it where tiles are flat. The word stands whole. */
 .inbox-answer.is-thumb.is-short { padding-inline: var(--s-1); }
 .inbox-answer.is-thumb.is-short .sketch { width: 26px; height: 26px; stroke-width: 1.7; }
-.inbox-answer.is-thumb.is-short > span.inbox-short { min-width: 0; max-width: 100%; font: 700 var(--t-md)/1.15 var(--display); white-space: nowrap; text-wrap: balance; overflow-wrap: normal; text-align: center; }
+.inbox-answer.is-thumb.is-short > span.inbox-short { min-width: 0; max-width: 100%; font: 700 var(--t-md)/1.15 var(--display); white-space: nowrap; text-wrap: balance; overflow-wrap: normal; text-align: center; overflow: hidden; text-overflow: ellipsis; }
 .inbox-answer.is-thumb.is-short.is-two > span.inbox-short { white-space: normal; }
 
 /* Who asks, on a wide screen: no tab above the rows; the session's drawing stands alone in a
@@ -939,15 +939,15 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 .inbox-actions.is-advised-pair .inbox-answer.is-take > small { font: 500 .68rem/1 var(--font); opacity: .85; }
 .inbox-actions.is-advised-pair .inbox-answer.is-take > .sketch { width: 22px; height: 22px; }
 .inbox-actions.is-advised-pair .inbox-answer.is-others { display: grid; grid-auto-flow: row; justify-items: center; align-content: center; gap: 2px; text-decoration: none; color: var(--card-ink, var(--fg)); }
-.inbox-actions.is-advised-pair .inbox-answer.is-others > b { font: 800 1.35rem/1 var(--display); }
-.inbox-actions.is-advised-pair .inbox-answer.is-others > span { font: 600 var(--t-xs)/1.1 var(--font); }
+.inbox-actions.is-advised-pair .inbox-answer.is-others > b { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 1.35rem/1 var(--display); }
+.inbox-actions.is-advised-pair .inbox-answer.is-others > span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font: 600 var(--t-xs)/1.1 var(--font); }
 /* every tile the same size: the advised words in two lines at most,
    then the ellipsis; one pen mark, under "advised" */
 .inbox-actions.is-advised-pair .inbox-answer.is-take > strong { font-size: var(--t-xs); line-height: 1.15; overflow-wrap: break-word; }
 @media (max-width: 860px) {
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-take { flex: 1 1 0; grid-auto-flow: row; display: grid; height: auto; min-height: 50px; padding: 6px 10px; gap: 2px; }
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-take > .sketch { display: none; }
-  html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-others { flex-direction: row; display: flex; gap: 6px; }
+  html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-others { flex-direction: row; display: flex; gap: 6px; min-width: 0; overflow: hidden; }
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-others > b { font-size: 1.05rem; }
 }
 

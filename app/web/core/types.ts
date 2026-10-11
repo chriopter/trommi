@@ -288,6 +288,9 @@ export type ClosedHow = 'answered' | 'settled' | 'read' | 'shredded' | 'withdraw
 
 export interface Card {
   object_id: Hex
+  /** The hub closed this card after this device's cursor, and this device has not taken the closing yet (a start
+   *  after a long time away: client.ts `deskFirst`). It stays off the Desk until the catch-up reaches it. */
+  catching_up?: boolean
   /** The device that owns the card now (spec 9.2): the one a human addresses an answer to. */
   agent_device_id: Hex
   session_id: Hex | null
@@ -333,6 +336,8 @@ export interface Card {
 export type PermissionState = 'pending' | 'allowed' | 'denied' | 'withdrawn' | 'expired'
 export interface PermissionRequest {
   object_id: Hex
+  /** As a card's: settled at the hub after this device's cursor, not taken yet. Off the Desk until then. */
+  catching_up?: boolean
   agent_device_id: Hex
   session_id: Hex | null
   tool_name: string

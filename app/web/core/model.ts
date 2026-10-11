@@ -1057,6 +1057,8 @@ const byCreated = (model: Model) => (a: string, b: string) => (model.cards.get(a
  * the clock passed the end of a snooze: a chat message, a stroke or a status line costs nothing here. A pending
  * permission request whose time has run out becomes 'expired'.
  */
+/** A card that stands on the Desk: open, and not one the hub closed meanwhile (`catching_up`). */
+const onDesk = (c: Card | undefined): boolean => c?.object_state === 'open' && !c.catching_up
 export function project(model: Model, change: Change, now: number = Date.now()): void {
   const before = model.stack, beforePerm = model.open_permission_ids
   const B = builder(model)
@@ -1064,8 +1066,8 @@ export function project(model: Model, change: Change, now: number = Date.now()):
   if (!P) {
     const p: Projection = B.proj = { keys: new Map(), sorted: [], nextPermExpiry: Infinity, stackDirty: true, nextWake: Infinity, permsDirty: true }
     P = p
-    for (const s of model.sessions.values()) { s.card_ids.sort(byCreated(model)); s.open_card_ids = s.card_ids.filter(id => model.cards.get(id)?.object_state === 'open') }
-    for (const c of model.cards.values()) if (c.object_state === 'open') p.keys.set(c.object_id, stackKey(c))
+    for (const s of model.sessions.values()) { s.card_ids.sort(byCreated(model)); s.open_card_ids = s.card_ids.filter(id => onDesk(model.cards.get(id))) }
+    for (const c of model.cards.values()) if (onDesk(c)) p.keys.set(c.object_id, stackKey(c))
     p.sorted = [...p.keys.keys()].sort((x, y) => cmpKey(p.keys.get(x)!, p.keys.get(y)!))
   } else {
     const p = P
@@ -1076,12 +1078,12 @@ export function project(model: Model, change: Change, now: number = Date.now()):
       const s = c?.session_id ? model.sessions.get(c.session_id) : null
       if (s && c) {
         const at = s.open_card_ids.indexOf(id)
-        const open = c.object_state === 'open'
+        const open = onDesk(c)
         if (open && at < 0) { let i = s.open_card_ids.length; while (i > 0 && (model.cards.get(s.open_card_ids[i - 1]!)?.created_at ?? 0) > c.created_at) i--; s.open_card_ids.splice(i, 0, id) }
         else if (!open && at >= 0) s.open_card_ids.splice(at, 1)
       }
       if (old) { const at = bisect(p.sorted, old, k => p.keys.get(k)!); if (p.sorted[at] === id) p.sorted.splice(at, 1); else p.sorted.splice(p.sorted.indexOf(id), 1); p.keys.delete(id) }
-      if (c && c.object_state === 'open') { const key = stackKey(c); p.sorted.splice(bisect(p.sorted, key, k => p.keys.get(k)!), 0, id); p.keys.set(id, key) }
+      if (c && onDesk(c)) { const key = stackKey(c); p.sorted.splice(bisect(p.sorted, key, k => p.keys.get(k)!), 0, id); p.keys.set(id, key) }
     }
     if (change.permissions.size || now > p.nextPermExpiry) p.permsDirty = true
     // The stack is filtered again only when something it depends on changed: a card, a session (archived), a snooze, or
@@ -1108,7 +1110,7 @@ export function project(model: Model, change: Change, now: number = Date.now()):
     P.permsDirty = false
     const pending: PermissionRequest[] = []
     for (const p of model.permissions.values()) {
-      if (p.permission_state !== 'pending') continue
+      if (p.permission_state !== 'pending' || p.catching_up) continue
       if (p.expires_at && now > p.expires_at) { p.permission_state = 'expired'; change.permissions.add(p.object_id); if (p.session_id) change.sessions.add(p.session_id) }
       else pending.push(p)
     }

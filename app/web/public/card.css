@@ -141,7 +141,7 @@ a.agent-badge:hover, a.agent-badge:focus-visible { scale: 1.08; }
 .tc-card[data-urgency="critical"] .tc-knock { --urg-color: var(--urg-critical); }
 .tc-title { margin: 0; font: 800 var(--t-2xl)/1.12 var(--display); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .tc-meta { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--s-2); color: var(--muted); font: 500 var(--t-xs)/1.4 var(--font); }
-.tc-meta a { color: inherit; text-decoration: none; }
+.tc-meta a { color: inherit; text-decoration: none; white-space: nowrap; }
 .tc-meta a:hover { color: var(--fg); text-decoration: underline; }
 .tc-from { display: inline-flex; align-items: center; gap: 5px; }
 .tc-from .doodle { width: 18px; height: 18px; fill: none; stroke: var(--tone-pen); stroke-width: 2.2; stroke-linecap: round; }
@@ -372,7 +372,7 @@ label.tc-opt:has(> input:checked) .tc-tick { background: var(--accent); color: v
 .tc-deed-in > .tc-turn-before { text-align: left; }
 .tc-deed.is-undone .tc-deed-thing { opacity: .5; }
 /* handed back: the reverse card, the wild card's four fields round the turn on its ink ground */
-.tc-uno { box-sizing: border-box; display: grid; place-items: center; width: 30px; height: 42px; border: 1.5px solid var(--uno-ink); border-radius: 6px 7px 6px 8px / 7px 6px 8px 6px; background: radial-gradient(ellipse 10px 14px at 50% 50%, var(--uno-ink) 0 94%, transparent 100%), conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; rotate: -7deg; box-shadow: 1px 2px 0 rgb(20 22 26 / .22); }
+.tc-uno { box-sizing: border-box; display: grid; place-items: center; width: 30px; height: 42px; border: 1.5px solid var(--uno-ink); border-radius: 6px 7px 6px 8px / 7px 6px 8px 6px; background: var(--uno-oval) 50% 50% / 24px 32px no-repeat, conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; rotate: -7deg; box-shadow: 1px 2px 0 rgb(20 22 26 / .22); }
 .tc-uno .sketch { width: 17px; height: 17px; stroke-width: 2; }
 .tc-deed.is-undone .tc-uno { filter: grayscale(1); rotate: 5deg; box-shadow: none; }
 /* answered: the option's tile, small, in the pen's circle; a final option's says that it settled the card */
@@ -619,6 +619,8 @@ a.focus-stage-step { display: grid; place-items: center; }
    colour on its grey button (pen and glasses in ink, the bill a shade warmer, the water it swims on in the button's
    own ink); under the pointer the button turns the palest yellow and the duck stays the strong one. The same duck,
    small, in the strip (.tc-mini). The colours, in one place: ---- */
+/* (the UNO card's middle: an oval drawn by the pen, a little uneven and tilted, a stroke over its top; in the card's ink) */
+:root { --uno-oval: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2060%2060'%3E%3Cg%20transform='rotate(-9%2030%2030)'%3E%3Cpath%20fill='%2314161a'%20d='M33.4%202.8Q49.6%206.4%2053.8%2019.6Q55.4%2028.2%2052.6%2036.4Q47.8%2052.8%2031.4%2057.4Q15.2%2058.2%208.2%2045.6Q2.4%2033.2%206.8%2020.2Q11.6%207.2%2024.4%204.2Q29.2%202.6%2033.4%202.8Z'/%3E%3Cpath%20fill='none'%20stroke='%2314161a'%20stroke-width='2.4'%20stroke-linecap='round'%20d='M23.6%205.4Q34.8%201.2%2044.2%206.8'/%3E%3C/g%3E%3C/svg%3E"); }
 .tc-page, .t-picture { --duck-yellow: #ffcf1f; --duck-pale: #fff4b8; --duck-bill: #f59a23; --duck-ink: #1f1a05; --what-violet: #7a5bc7; --uno-red: #d9483b; --uno-yellow: #f3c52f; --uno-green: #3f9f58; --uno-blue: #2f70c4; }
 :is(.tc-opt.tc-whatever, .tc-wtf, .tc-reverse) { transition: translate 90ms, background-color 120ms, color 120ms; }
 :is(.tc-opt.tc-whatever, .tc-wtf, .tc-reverse):is(:hover, :focus-visible, :active) { filter: none; translate: -1px -2px; }
@@ -628,7 +630,7 @@ a.focus-stage-step { display: grid; place-items: center; }
 .tc-opt.tc-whatever:is(:hover, :focus-visible, :active) { background: var(--duck-pale); color: var(--duck-ink); box-shadow: inset 0 0 0 1.5px var(--duck-ink); }
 .tc-opt.tc-whatever:active { background: color-mix(in srgb, var(--duck-pale) 72%, var(--duck-yellow)); }
 .tc-wtf:is(:hover, :focus-visible, :active) { background: var(--what-violet); color: #fff; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--what-violet) 70%, #000); }
-.tc-reverse:is(:hover, :focus-visible, :active) { background: radial-gradient(ellipse 25px 27px at 50% 50%, var(--uno-ink) 0 96%, transparent 100%), conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; box-shadow: inset 0 0 0 1.5px var(--uno-ink); }
+.tc-reverse:is(:hover, :focus-visible, :active) { background: var(--uno-oval) 50% 50% / 58px 62px no-repeat, conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; box-shadow: inset 0 0 0 1.5px var(--uno-ink); }
 
 /* ---- The head of a large view (.t-picture-bar): the card's question (display face, up to two lines) and the way
    back, an arrow at its left; beside it which picture or page this is. ---- */
@@ -771,7 +773,7 @@ a.focus-stage-step { display: grid; place-items: center; }
 .tc-send:has(> .tc-send-uno) > * { grid-area: 1 / 1; }
 .tc-send-uno { display: grid; place-items: center; visibility: hidden; }
 :root:is([data-shift], [data-shift-swap]) .tc-send, :root:is([data-shift], [data-shift-swap]) .tc-send * { transition: none !important; animation: none !important; }
-:root[data-shift] .tc-send:has(> .tc-send-uno) { background: radial-gradient(ellipse 13px 15px at 50% 50%, var(--uno-ink) 0 94%, transparent 100%), conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; box-shadow: inset 0 0 0 1.5px var(--uno-ink); rotate: -6deg; }
+:root[data-shift] .tc-send:has(> .tc-send-uno) { background: var(--uno-oval) 50% 50% / 31px 34px no-repeat, conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; box-shadow: inset 0 0 0 1.5px var(--uno-ink); rotate: -6deg; }
 :root[data-shift] .tc-send:has(> .tc-send-uno) > .sketch { visibility: hidden; }
 :root[data-shift] .tc-send:has(> .tc-send-uno) > .tc-send-uno { visibility: visible; }
 .tc-send .tc-send-uno .sketch { width: 22px; height: 22px; stroke-width: 2.2; }
@@ -791,7 +793,7 @@ a.focus-stage-step { display: grid; place-items: center; }
 .tc-send-pop { position: absolute; z-index: var(--z-pop); right: 0; bottom: calc(100% + 6px); width: max-content; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--shadow-md); }
 .tc-send-rev { display: grid; grid-template-columns: 30px auto; grid-template-rows: auto auto auto; align-items: center; column-gap: 10px; min-height: 44px; padding: 5px 12px 5px 6px; border: 0; border-radius: 9px; background: none; color: var(--fg); font: 600 var(--t-sm)/1.2 var(--font); text-align: left; cursor: pointer; }
 .tc-send-rev:hover, .tc-send-rev:focus-visible { background: var(--sunken); outline: none; }
-.tc-send-rev-uno { grid-row: 1 / 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: radial-gradient(ellipse 10px 12px at 50% 50%, var(--uno-ink) 0 94%, transparent 100%), conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; rotate: -6deg; }
+.tc-send-rev-uno { grid-row: 1 / 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--uno-oval) 50% 50% / 24px 28px no-repeat, conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; rotate: -6deg; }
 .tc-send-rev-uno .sketch { width: 18px; height: 18px; stroke-width: 2.2; }
 .tc-send-rev small { grid-column: 2; color: var(--muted); font: 500 var(--t-xs)/1.2 var(--font); }
 .tc-send-hint { margin-top: 3px; opacity: .85; }

@@ -54,8 +54,11 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 ## Repository
 - How a change reaches `main`:
   1. Any feature branch: no rules, anything goes.
-  2. `staging` (optional): protected against deletion and force-push; CI tests every push, and TestFlight builds come from here.
-  3. A pull request into `main`, merged by the owner with "Squash and merge". A change may go straight from its branch to `main` without passing `staging`.
+  2. A frozen `release/<date>-<n>` branch: one finished change, or a bundle per topic.
+  3. Its pull request into `main`: CI tests it, and it merges by auto-merge with "Squash and merge" once all required
+     checks are green. Builds, TestFlight and deliveries come only from `main`.
+- A pull request runs quick checks only (tests, clippy, the web app's build), without secrets. `main` runs the full
+  builds; when one fails, an issue is opened and nothing is released or delivered.
 - `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
   The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.

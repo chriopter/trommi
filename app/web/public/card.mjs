@@ -241,6 +241,8 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1 } =
   const stamp = card.revised ? html`<input type="hidden" name="revised" value="${card.revised}" form="${form}">` : ''
   const box = inner => html`<div class="tc-answer" id="card-answer-${card.id}">${err}${stamp}${inner}${old ? '' : cardLink(card, model)}</div>`
   if (old) return box(html`<div class="tc-opts">${(old.options ?? []).map(o => still(o.label, plain(o.detail)))}</div><p class="tc-quiet">Version ${old.n} cannot be answered. <a data-nav href="${cardPath(card, base)}">The question as it stands now</a></p>`)
+  // Settled on another device while this one was away: its outcome is on the way, nothing to answer here meanwhile.
+  if (card.status === 'catching') return box(html`<p class="tc-quiet">Catching up: this question was settled on another device. Its outcome arrives in a moment.</p>`)
   if (card.status !== 'open') {
     const picked = card.choices?.length ? card.choices : [card.choice]
     const said = card.status === 'shredded' ? 'Shredded' : card.kind === 'info' ? 'Read' : card.trusted ? `${WORDS.trust}${advisedLabels(card) ? `: ${advisedLabels(card)}` : ''}` : card.options.filter(o => picked.includes(o.key)).map(o => o.label).join(', ') || 'Withdrawn by the agent'

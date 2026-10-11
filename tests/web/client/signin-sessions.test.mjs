@@ -3,7 +3,9 @@
 // throws the device away. STAND-IN core and FAKE hub: nothing here is evidence against a hub.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addAgent, rooms, scene, storage, until } from './helpers.mjs'
+import { Hub } from '../../../app/web/core/hub.ts'
+import { roomsOn } from '../../../app/web/core/room.ts'
+import { MemoryStore, TIMING, addAgent, core, memoryCache, rooms, scene, storage, until, wipe } from './helpers.mjs'
 
 const roomOf = fake => [...fake.state.rooms.values()][0]
 
@@ -42,4 +44,37 @@ test('a session join the hub refuses leaves the device in the room and lists the
   const done = await joining
   assert.equal(done.joined + done.not_joined.length, 1)
   assert.ok(c.engine.is_human, 'the device is in the room whatever the sessions did')
+})
+
+test('a session join the core answers busy (a join of the group on its way, or this device added meanwhile) is tried again and goes through', async t => {
+  const { fake, a, recovery_code } = await scene(t, { agent: true })
+  await a.settle()
+  // the stand-in core, its session joins answered `busy` twice: what a device answers while a join of the group
+  // waits for its place in the log, or another human device's Add of it waits as a Welcome
+  const base = await core()
+  let busy = 2
+  const R = roomsOn({
+    core: async () => ({
+      ...base,
+      errorCode: e => (e?.injected ? 'busy' : base.errorCode(e)),
+      createDevice: async store => {
+        const d = await base.createDevice(store)
+        return new Proxy(d, { get(target, name) {
+          const f = target[name]
+          if (name !== 'joinSessionChecked') return typeof f === 'function' ? f.bind(target) : f
+          return async (...args) => { if (busy > 0) { busy--; throw Object.assign(new Error('busy'), { injected: true }) } return f.apply(target, args) }
+        } })
+      },
+    }),
+    store: name => new MemoryStore(name),
+    cache: async name => memoryCache(name),
+    destroy: async name => { wipe(name) },
+    timing: TIMING,
+    hub: opts => Object.assign(new Hub(opts), { timing: { ...new Hub(opts).timing, get_retry: [20, 40], backoff_first: 30, backoff_max: 200, stream_stood: 50 } }),
+  })
+  const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
+  t.after(() => c.stop().catch(() => {}))
+  const done = await joining
+  assert.equal(busy, 0, 'the core said busy twice')
+  assert.deepEqual([done.joined, done.not_joined.map(n => n.code)], [1, []])
 })
