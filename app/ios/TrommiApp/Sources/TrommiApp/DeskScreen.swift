@@ -2,7 +2,7 @@
 // by the pen, the duck for all and Blitz; the open questions as calm cards in their session's tones, the answers as
 // tiles (thumbs for a plain yes/no, two named tiles, the advised one with "+N other ways", or Choose); a long press
 // brings Later, Reverse, Duck it, What??, Shred, Copy. Below: what is with the agents, then the slim end list (Done rows
-// Later, what is done), "Show more" opens Off your mind.
+// Later, what is done), its heading opens Off your mind.
 import SwiftUI
 import TrommiClient
 
@@ -622,22 +622,28 @@ struct EndDivider: View {
   let title: String
   /** A small arrow after the title: the section lies under the fold (up: pull it up; down: it is up). */
   var chevron: String? = nil
-  /** "Show more" where the rule ends, as the web's heading has it (desk.mjs divider, .end-link). */
+  /** Where the heading leads: then the title itself is the link, underlined with an arrow (desk.mjs divider, .end-head). */
   var more: (() -> Void)? = nil
   var body: some View {
     HStack(spacing: 10) {
       PenMark(doc: SVGReader.parse("<svg viewBox=\"0 0 300 8\" preserveAspectRatio=\"none\"><path d=\"M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4\"/></svg>"), inks: PenInks(stroke: Ink.lineStrong, width: 1.4))
         .frame(height: 8).frame(maxWidth: .infinity)
-      HStack(spacing: 6) {
-        Text(title.uppercased()).font(Face.text(12, .semibold)).kerning(1.2).foregroundStyle(Ink.muted).fixedSize()
-        if let c = chevron { Image(systemName: c).font(.system(size: 10, weight: .semibold)).foregroundStyle(Ink.faint).accessibilityHidden(true) }
+      if let more = more {
+        // (the heading itself opens the whole list: underlined, an arrow after it)
+        Button(action: more) {
+          HStack(spacing: 5) {
+            Text(title.uppercased()).font(Face.text(12, .semibold)).kerning(1.2).foregroundStyle(Ink.fg).underline(color: Ink.accent).fixedSize()
+            Sketch("go", color: Ink.accent).frame(width: 15, height: 15)
+          }.frame(minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel("All of \(title)")
+      } else {
+        HStack(spacing: 6) {
+          Text(title.uppercased()).font(Face.text(12, .semibold)).kerning(1.2).foregroundStyle(Ink.muted).fixedSize()
+          if let c = chevron { Image(systemName: c).font(.system(size: 10, weight: .semibold)).foregroundStyle(Ink.faint).accessibilityHidden(true) }
+        }
       }
       PenMark(doc: SVGReader.parse("<svg viewBox=\"0 0 300 8\" preserveAspectRatio=\"none\"><path d=\"M2 4.2 Q70 5.4 140 3.8 T298 4.6\"/></svg>"), inks: PenInks(stroke: Ink.lineStrong, width: 1.4))
         .frame(height: 8).frame(maxWidth: .infinity)
-      if let more = more {
-        Button(action: more) { Text("Show more").font(Face.text(13, .medium)).underline().foregroundStyle(Ink.muted).fixedSize().frame(minHeight: 44).contentShape(Rectangle()) }
-          .buttonStyle(.plain)
-      }
     }.padding(.vertical, more == nil ? 4 : 0)
   }
 }

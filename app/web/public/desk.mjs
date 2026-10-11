@@ -283,13 +283,13 @@ const deskStacks = (model, base) => html`<div class="inbox-stacks stack-tabs is-
 // bottom) ----
 // After the open questions: one slim list. First what the agents are still working on (a small green dot), then what is
 // put off (Later: the three Z), then what is closed, the newest first: answered, done by its agent or read with a green
-// tick; shredded with the shredder and struck through, withdrawn by its agent with the return arrow. Nothing to tick, nothing to archive. Five rows, then "Show more" opens the whole list
+// tick; shredded with the shredder and struck through, withdrawn by its agent with the return arrow. Nothing to tick, nothing to archive. Five rows; its heading, a link, opens the whole list
 // with its search (/stacks/off). A title opens its card.
 const END_STEP = 5
-/** A section's heading at the Desk's foot: a pen rule with its small label; a link (Show more) where the rule ends, at
- *  its right. With href the label itself is the link to the section's whole page (Artifacts, with its count). */
-const divider = (label, link = '', { href = '', count = null } = {}) => html`<div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg>${href ? html`<a class="end-head" data-nav href="${href}" aria-label="All ${label}${count == null ? '' : `, ${count}`}">${label}${count == null ? '' : html` <span class="off-count">${count}</span>`}</a>` : html`<span aria-hidden="true">${label}</span>`}${link}</div>`
-/** The end list. On the Desk the first five rows and "Show more"; full (the page /stacks/off): every row, with its search. */
+/** A section's heading at the Desk's foot: a pen rule with its small label. With href the label itself is the link to
+ *  the section's whole page, underlined and with an arrow (Off your mind; Artifacts, with its count). */
+const divider = (label, link = '', { href = '', count = null } = {}) => html`<div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg>${href ? html`<a class="end-head" data-nav href="${href}" aria-label="All ${label}${count == null ? '' : `, ${count}`}"><span class="end-head-words">${label}</span>${count == null ? '' : html` <span class="off-count">${count}</span>`}${sk('go')}</a>` : html`<span aria-hidden="true">${label}</span>`}${link}</div>`
+/** The end list. On the Desk the first five rows under a heading that links to the rest; full (the page /stacks/off): every row, with its search. */
 function endList(model, base, { full = false, q = '' } = {}) {
   const { later, closedTop, closedSize } = offParts(model)
   const works = workItems(model).map(i => ({ card: i.card, g: 'works', at: i.line?.updated ?? i.at, said: `${i.sender.name}${i.line?.label ? ` · ${i.line.label}` : ' is on it'}` }))
@@ -310,7 +310,7 @@ function endList(model, base, { full = false, q = '' } = {}) {
     return html`<li class="end-row" data-g="${s.g}"${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''} data-id="${c.id}">${box}<a class="end-title" data-nav href="${href}" title="${c.title} · ${s.said}">${c.title}</a><span class="end-said">${s.said}</span>${agoSpan(s.at, 'ago end-ago')}</li>`
   }
   return html`<section id="${id}" class="endlist${full ? ' is-full' : ''}" aria-label="Off your mind">
-${divider('Off your mind', !full && (terms.length ? items.length : total) > END_STEP ? html`<a class="end-link" data-nav href="${base}/stacks/off">Show more</a>` : '')}
+${divider('Off your mind', '', full ? {} : { href: `${base}/stacks/off` })}
 <ol class="end-rows">${(full ? items : items.slice(0, END_STEP)).map(row)}</ol>${full && !items.length ? html`<p class="end-none">${terms.length ? 'Nothing here has these words.' : 'Nothing yet.'}</p>` : ''}
 </section>`
 }

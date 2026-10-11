@@ -332,7 +332,7 @@ try {
 
   // ---- the end list at the foot of the Desk's list (#desk-end): Off your mind, a plain feed: the work (a dot), what is
   //      put off (Later), what is closed (answered, done; shredded: struck); nothing to tick or archive; five rows,
-  //      then "Show more", which opens the whole list with its search (/stacks/off); the way back is on the card ----
+  //      under a heading that is a link, which opens the whole list with its search (/stacks/off); the way back is on the card ----
   const pile = {}
   for (const [k, title] of [['snooze', 'Stapel: später'], ['shred', 'Stapel: weg'], ['revise', 'Stapel: erklären'], ['done', 'Stapel: erledigt'], ['acting', 'Stapel: beantwortet']]) pile[k] = await agent.sendCard({ title, options: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }] })
   await A.js("trommi.router.visit('/')")
@@ -382,11 +382,11 @@ try {
   check(await A.js("return !document.querySelector('#desk-stacks [data-pile=off], #desk-stacks [data-stack=off], .off-head') && !!document.querySelector('#desk-stacks #desk-artifacts')"), 'no pile Off the desk at the foot any more; Artifacts stays')
   // more than five: four more questions their session withdraws
   for (let i = 1; i <= 4; i++) await agent.close(await agent.sendCard({ title: `Ende ${i}`, options: [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }] }), `zurückgezogen ${i}`)
-  await A.until("document.querySelector('#desk-end .end-link')", 'more than five in the end list')
-  const ends = await A.js("const r = [...document.querySelectorAll('#desk-end .end-row')]; return { all: r.length, shown: r.filter(x => !x.hidden && x.getClientRects().length).length, more: document.querySelector('#desk-end .end-link')?.textContent.trim() ?? null }")
-  check(ends.all === 5 && ends.shown === 5 && ends.more === 'Show more', `five rows on the Desk (only those are drawn), then Show more (${JSON.stringify(ends)})`)
-  await A.js("document.querySelector('#desk-end .end-link').click()")
-  await A.until(`location.pathname === '/stacks/off' && document.querySelector('#off-end .end-row[data-id="${pile.snooze}"]')`, 'Show more opens the whole list').then(() => check(true, '"Show more" opens the whole list at /stacks/off'), e => check(false, e.message))
+  await A.until("document.querySelectorAll('#desk-end .end-row').length === 5", 'more than five in the end list')
+  const ends = await A.js("const r = [...document.querySelectorAll('#desk-end .end-row')]; const h = document.querySelector('#desk-end a.end-head'); return { all: r.length, shown: r.filter(x => !x.hidden && x.getClientRects().length).length, head: h?.textContent.trim() ?? null, arrow: !!h?.querySelector('.sketch'), more: !!document.querySelector('#desk-end .end-link') }")
+  check(ends.all === 5 && ends.shown === 5 && ends.head === 'Off your mind' && ends.arrow && !ends.more, `five rows on the Desk (only those are drawn); the heading is the link, with its arrow, no Show more (${JSON.stringify(ends)})`)
+  await A.js("document.querySelector('#desk-end a.end-head').click()")
+  await A.until(`location.pathname === '/stacks/off' && document.querySelector('#off-end .end-row[data-id="${pile.snooze}"]')`, 'the heading opens the whole list').then(() => check(true, 'the heading "Off your mind" opens the whole list at /stacks/off'), e => check(false, e.message))
   check(await A.js("const l = [...document.querySelectorAll('#off-end .end-row')]; return l.length > 0 && l.every(x => x.querySelector('a.end-title')) && l.every(x => !x.hidden) && !!document.querySelector('.off-page .end-search input')"), 'the whole list: each row its title, all shown, with its search')
   // the way back is on the card: a row opens it, its Wake up brings it back to the Desk
   await A.js(`document.querySelector('#off-end .end-row[data-id="${pile.snooze}"] a.end-title').click()`)

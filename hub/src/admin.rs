@@ -314,6 +314,11 @@ a.same{font-size:.74rem;margin-left:8px}
 .colchips li{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:.78rem}
 .colchips li code{font-size:.78rem}.colchips .cm svg{margin-top:0}
 p.masked{font-size:.8rem;margin:-4px 0 12px}
+.ctag{display:inline-block;margin-left:6px;padding:0 6px;border:1px solid var(--line);border-radius:4px;font:500 .66rem/1.5 var(--font);letter-spacing:.02em;white-space:nowrap;vertical-align:middle;color:var(--muted);background:var(--surface-2)}
+.grid th .ctag{display:block;margin:3px 0 0;width:max-content}
+.ctag-read{color:var(--warn);border-color:currentColor}.ctag-sealed{color:var(--accent);border-color:currentColor}.ctag-secret{color:var(--faint)}
+.tags-legend{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-size:.8rem;margin:-10px 0 14px}.tags-legend .ctag{margin-left:0}
+.tags-legend .ctag:not(:first-child){margin-left:10px}
 .treetoggle{display:none}
 #tt{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
 @media (max-width:820px){

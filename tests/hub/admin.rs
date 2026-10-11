@@ -533,6 +533,16 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     assert!(at("The hub reads:") < at("Not in full:") && at("Not in full:") < at("<table class=\"grid rows\">"));
     assert!(first.contains("Not in full: <code>endpoint, p256dh, auth, apns_key</code> (credentials, shown by their length only)."));
     assert!(first.contains("<li><span class=\"secret\" title=\"credential: not shown\">••</span><code>endpoint</code>"));
+    // every column tagged by what the hub can read of it, under a legend at the top
+    let read = "<span class=\"ctag ctag-read\" title=\"metadata in clear: the hub reads it\">Hub liest mit</span>";
+    let secret = "<span class=\"ctag ctag-secret\" title=\"credential: never shown\">geheim</span>";
+    let sealed = "<span class=\"ctag ctag-sealed\" title=\"sealed: the hub cannot read it\">verschlüsselt</span>";
+    assert!(at("<p class=\"tags-legend muted\">") < at("<details class=\"card cols-card\">"));
+    assert!(first.contains(&format!("level</a>{read}</th>")) && first.contains(&format!("created_at</a>{read}</th>")));
+    assert!(first.contains(&format!("<th class=\"muted\">endpoint{secret}</th>")));
+    assert!(first.contains(&format!("<th class=\"muted\">apns_key{secret}</th>")));
+    assert!(first.contains(&format!("<code>endpoint</code><span class=\"faint\">text</span>{secret}</li>")));
+    assert!(!first.contains(sealed));
     // the side list: names and counts only, each a link to its rows
     assert!(!first.contains("<ul class=\"cols-list") && !first.contains("Open push_subscriptions"));
     // no e-mail address on the page, no "Show all"
@@ -603,6 +613,14 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
         assert!(!page.contains("eeeeeeee") && !page.contains("5a5a5a5a") && !page.contains("argon2id"), "{path}");
         assert!(page.contains("80 bytes · <code>77777777"), "{path}");
     }
+    // the account's columns: the e-mail read by the hub, the sealed copies sealed, the login hashes secret
+    let accounts = text(&get("/tables/accounts"));
+    assert!(accounts.contains(&format!("email</a>{read}</th>")) && accounts.contains(&format!("account_id</a>{read}</th>")));
+    assert!(accounts.contains(&format!("<th class=\"muted\">password_copy{sealed}</th>")));
+    assert!(accounts.contains(&format!("<th class=\"muted\">auth_hash{secret}</th>")) && accounts.contains(&format!("<th class=\"muted\">kdf{secret}</th>")));
+    let account = text(&get("/tables/accounts/7"));
+    assert!(account.contains(&format!("<code>password_copy</code><span class=\"faint\">blob</span>{sealed}</dt>")));
+    assert!(account.contains(&format!("<code>auth_salt</code><span class=\"faint\">blob</span>{secret}</dt>")));
 
     // a table without rowid: every row once, page by page, in either order, sorted by a column with nulls
     let walk = |start: &str, label: &str| {
