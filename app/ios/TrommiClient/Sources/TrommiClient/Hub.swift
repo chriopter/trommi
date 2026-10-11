@@ -423,6 +423,7 @@ final class Transport: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         if ended { return nil }
         let t = session.dataTask(with: req)
         pending[t.taskIdentifier] = Pending(cap: cap, done: cont)
+        Traffic.add(up: req.httpBody?.count ?? 0)
         return t
       }
       if let task = task { task.resume() } else { cont.resume(throwing: Failure(message: "the connection pool was closed")) }
@@ -432,6 +433,7 @@ final class Transport: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     completionHandler(nil)   // the 3xx answer itself is what the caller gets
   }
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    Traffic.add(down: data.count)
     let over = lock.withLock { () -> Bool in
       guard var p = pending[dataTask.taskIdentifier], !p.over else { return false }
       if p.data.count + data.count > p.cap { p.over = true; p.data = Data() } else { p.data.append(data) }

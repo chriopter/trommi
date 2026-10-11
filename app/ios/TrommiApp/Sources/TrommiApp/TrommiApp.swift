@@ -218,6 +218,8 @@ final class BoardModel: ObservableObject {
       _deskId = Published(initialValue: nil)
       startDemo(keep: false)
       openDemoScreen(screen)
+      // TROMMI_PAGE=<settings page>: that page of Settings over it (screenshots of a page the web has no state for)
+      if let page = env["TROMMI_PAGE"], !page.isEmpty { deskPath.append(.settings(page)) }
       #if canImport(ActivityKit) && os(iOS)
       // TROMMI_LIVE=1: the Live Activity with the demo's cards (LiveActivities.startForDemo)
       if env["TROMMI_LIVE"] == "1" { LiveActivities.startForDemo() }

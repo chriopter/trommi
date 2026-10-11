@@ -580,6 +580,11 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             auth.human()?;
             accounts::account_view(x.c, accounts::account_of(x.c, &auth.room)?)
         }),
+        ("GET", ["account", "usage"]) => app.read(|x| {
+            let auth = rq.auth(app, x.c)?;
+            auth.human()?;
+            accounts::usage(x.c, accounts::account_of(x.c, &auth.room)?)
+        }),
         ("PUT", ["account", what @ ("password" | "kit")]) => {
             // who asks comes first: nobody without a human device's token has the hub make a slow hash
             let auth = read_auth()?;

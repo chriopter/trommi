@@ -568,6 +568,42 @@ pub fn rooms_of(c: &Connection, account: i64) -> Res<Vec<Room>> {
 }
 
 /// What a human device of the room sees of its account. The e-mail is the person's own; no hash leaves the hub.
+/// What the account keeps on the hub (GET /v1/account/usage): counts and sizes of its own rooms only, no content,
+/// nothing of another account. Sizes in bytes, as stored: envelopes (header, signature and sealed body), the
+/// groups' logs (Commits and messages) and the files not deleted.
+pub fn usage(c: &Connection, account: i64) -> Res<Value> {
+    let rooms: Vec<Vec<u8>> = c
+        .prepare_cached("SELECT room_id FROM account_rooms WHERE account_id = ?1 ORDER BY position")?
+        .query_map([account], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let one = |sql: &str, room: &[u8]| -> Res<i64> { Ok(c.prepare_cached(sql)?.query_row([room], |r| r.get::<_, Option<i64>>(0))?.unwrap_or(0)) };
+    let (mut groups, mut live, mut commits, mut messages, mut log_bytes) = (0, 0, 0, 0, 0);
+    let (mut envelopes, mut envelope_bytes, mut cards, mut open_cards, mut files, mut file_bytes, mut devices) = (0, 0, 0, 0, 0, 0, 0);
+    for room in &rooms {
+        groups += one("SELECT count(*) FROM groups WHERE room_id = ?1", room)?;
+        live += one("SELECT count(*) FROM groups WHERE room_id = ?1 AND live = 1 AND archived_at IS NULL", room)?;
+        commits += one("SELECT count(*) FROM group_log WHERE room_id = ?1 AND kind = 'commit'", room)?;
+        messages += one("SELECT count(*) FROM group_log WHERE room_id = ?1 AND kind = 'message'", room)?;
+        log_bytes += one("SELECT sum(length(bytes)) FROM group_log WHERE room_id = ?1", room)?;
+        envelopes += one("SELECT count(*) FROM envelopes WHERE room_id = ?1", room)?;
+        envelope_bytes += one(
+            "SELECT sum(length(header) + length(signature) + length(nonce) + length(body_hash) + coalesce(length(body), 0)) FROM envelopes WHERE room_id = ?1",
+            room,
+        )?;
+        cards += one("SELECT count(*) FROM cards WHERE room_id = ?1", room)?;
+        open_cards += one("SELECT count(*) FROM cards WHERE room_id = ?1 AND state = 1", room)?;
+        files += one("SELECT count(*) FROM files WHERE room_id = ?1 AND deleted_at IS NULL", room)?;
+        file_bytes += one("SELECT sum(size) FROM files WHERE room_id = ?1 AND deleted_at IS NULL", room)?;
+        devices += one("SELECT count(*) FROM devices WHERE room_id = ?1 AND removed_epoch IS NULL", room)?;
+    }
+    Ok(json!({
+        "rooms": rooms.len(), "groups": groups, "live_groups": live, "devices": devices,
+        "commits": commits, "messages": messages, "envelopes": envelopes, "cards": cards, "open_cards": open_cards,
+        "files": files, "file_bytes": file_bytes, "log_bytes": log_bytes, "envelope_bytes": envelope_bytes,
+        "total_bytes": log_bytes + envelope_bytes + file_bytes,
+    }))
+}
+
 pub fn account_view(c: &Connection, account: i64) -> Res<Value> {
     let (email, created, updated, revision, has_password, kdf, password_copy, kit_copy, handle, kit_form): (Option<String>, i64, i64, i64, bool, Option<String>, Option<Vec<u8>>, Vec<u8>, Vec<u8>, String) = c
         .prepare_cached(

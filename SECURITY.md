@@ -8,6 +8,7 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - One fixed set of algorithms, never negotiated: `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`.
 - Everything is encrypted on your device. The hub stores only encrypted data and never has the keys to read it.
 - The hub does see: your e-mail, which devices are in which group, when something is written, sizes, push tokens.
+- Settings → Data shows you what the hub keeps of your account: counts and sizes only, to your own devices only.
 - Your password never leaves your device; the hub keeps only a slow hash of a key derived from it.
 - Each wrong password makes that guesser wait longer (up to 15 minutes); no account is ever locked.
 - A recovery code opens everything. The hub keeps it only encrypted under your password or Emergency Kit words.
