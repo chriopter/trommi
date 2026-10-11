@@ -174,7 +174,7 @@ try {
   await open('/settings')
   await until("document.querySelector('#settings-proof')", 'Settings shows the row')
   const row = await evaluate("(() => { const rows = [...document.querySelectorAll('main .set-row')]; const a = document.querySelector('#settings-proof'); return { last: rows.at(-1) === a, word: a.querySelector('b').textContent, detail: a.querySelector('.set-detail').textContent } })()")
-  check(row.last && row.word === 'MLS proof' && row.detail === 'self test', 'MLS proof is the last row of Settings', row)
+  check(row.last && row.word === 'Security Info' && row.detail === 'self test', 'Security Info is the last row of Settings', row)
   if (SHOTS) for (const [width, height] of [[1440, 900], [390, 844]]) for (const theme of ['light', 'dark']) {
     await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 })
     await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
