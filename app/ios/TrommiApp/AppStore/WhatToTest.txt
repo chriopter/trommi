@@ -6,7 +6,7 @@ New in this build: a pairing code or agent link carries its deadline. A device c
 
 Please look at, in this order:
 1. Does it start, and do the screens look as before (sign-in, Desk, Settings)? Nothing in the looks was meant to change.
-2. Settings, last row "MLS proof": it should say OK with the steps and times. "Copy result" and send it, whatever it says.
+2. Settings, last row "Security Info": it should say OK with the steps and times. "Copy result" and send it, whatever it says.
 3. Creating an account or signing in with e-mail and password. Tell us the exact words on screen if it stops.
 4. If you get in: write to an agent, answer a card, write a note. Each of these has passed tests on Linux and has never met the real hub.
 

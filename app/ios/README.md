@@ -159,7 +159,7 @@ after that, building and shipping are plain commands.
    ~/.local/share/omarchy-apple-dev/device-run.sh    # installs and starts it on the phone
    ```
 
-   `xtool dev run` installs only; start the app by tapping its icon. Settings → **MLS proof** (the last row) runs the
+   `xtool dev run` installs only; start the app by tapping its icon. Settings → **Security Info** (the last row) runs the
    core's own check of itself on the phone and shows the result (`CoreProofScreen.swift`).
 
 6. **TestFlight (paid Apple Developer account).** Once, in App Store Connect: Users and Access → Integrations → Team

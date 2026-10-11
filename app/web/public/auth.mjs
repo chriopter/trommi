@@ -397,7 +397,7 @@ ${setRow({ href: '/settings/theme', icon: sk('moon'), word: 'Theme', detail: SHO
 ${setRow({ href: '/settings/keys', icon: sk('keycap'), word: 'Keyboard Shortcuts', id: 'settings-keys' })}
 </nav>
 <nav class="set-group" aria-label="About">
-${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'MLS proof', detail: 'self test', id: 'settings-proof' })}
+${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Security Info', detail: 'self test', id: 'settings-proof' })}
 </nav>
 `, { back: false })
     }
