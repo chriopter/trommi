@@ -324,6 +324,9 @@ export interface Card {
   answers: Answer[]
   closed_how: ClosedHow | null
   in_revision: { by: 'hand_back' | 'explain'; envelope_number: EnvelopeNumber } | null
+  /** The change number of the newest message that put the card before the human again (present_card). A hand back
+   *  older than it is over, in whatever order the two are read (a page of its Chat comes newest first). */
+  presented_envelope_number?: EnvelopeNumber
   timeline_key: string
   content_state: ContentState
   unsupported?: 'newer_schema' | 'card_type' | null

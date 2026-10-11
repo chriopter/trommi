@@ -1468,8 +1468,9 @@ impl Bridge {
                     "attachments".into(),
                     Value::Array(self.upload_all(args.get("attachments")).await?),
                 );
-                let id = self.client.send_card(fields, sid).await?;
+                let id = self.client.send_card(fields, sid.clone()).await?;
                 self.caught_up().await?;
+                self.link_question(sid, &id, &s(args.get("title"))).await;
                 Ok(format!(
                     "card {id} created, {}; {}{}",
                     self.place_of(&id).await,
@@ -1544,7 +1545,12 @@ impl Bridge {
                     Value::Array(self.upload_all(args.get("attachments")).await?),
                 );
                 let old_ids: Vec<String> = old.iter().map(|c| c.object_id.clone()).collect();
-                let id = self.client.merge(&old_ids, fields, sid).await?;
+                let id = self.client.merge(&old_ids, fields, sid.clone()).await?;
+                for c in &old {
+                    self.retire_lines(c.session_id.clone(), &c.object_id, Some(&id))
+                        .await;
+                }
+                self.link_question(sid, &id, &s(args.get("title"))).await;
                 Ok(format!("card {id} created, replacing {}; answers to the replaced cards will no longer arrive, {}{}", old_ids.join(", "), choice_arrives(), stripped_hint()))
             }
             "set_urgency" => {
@@ -1585,6 +1591,8 @@ impl Bridge {
                 self.client
                     .withdraw(&card.object_id, &trim(&s(args.get("reason"))))
                     .await?;
+                self.retire_lines(card.session_id.clone(), &card.object_id, None)
+                    .await;
                 Ok("withdrawn".into())
             }
             "close_card" => {
@@ -1595,6 +1603,8 @@ impl Bridge {
                 self.client
                     .close(&card.object_id, &s(args.get("summary")))
                     .await?;
+                self.retire_lines(card.session_id.clone(), &card.object_id, None)
+                    .await;
                 Ok("closed".into())
             }
             "set_status" => {
@@ -1622,7 +1632,7 @@ impl Bridge {
                         "label is required for the new status line \"{id}\""
                     )));
                 }
-                let card = if args.get("card_id").is_some_and(truthy) {
+                let mut card = if args.get("card_id").is_some_and(truthy) {
                     Some(self.find_card(args.get("card_id")).await?)
                 } else {
                     None
@@ -1649,8 +1659,28 @@ impl Bridge {
                         })
                         .unwrap_or(json!(""))
                 };
+                // A line that waits on the human waits on a question: one that says so in words is linked to the
+                // session's newest open question, and a decision line without a card to it too.
+                let mut state = state;
+                let mut linked = String::new();
+                if card.is_none() {
+                    let says =
+                        waits_on_human(&format!("{} {}", plain(&json!(label)), plain(&detail)));
+                    let kept = before
+                        .as_ref()
+                        .map(|b| b.object_id.clone())
+                        .filter(|v| !v.is_null());
+                    if (state == "decision" && kept.is_none()) || (state == "working" && says) {
+                        if let Some(q) = self.open_questions(sid.as_deref()).await.first() {
+                            card = Some(q.clone());
+                            state = "decision";
+                            linked = format!(" (linked to card {}, it turns working again when the human answers)", q.object_id);
+                        }
+                    }
+                }
                 let object_id = if state == "decision" {
-                    card.map(|c| json!(c.object_id))
+                    card.as_ref()
+                        .map(|c| json!(c.object_id))
                         .or_else(|| {
                             before
                                 .as_ref()
@@ -1663,8 +1693,24 @@ impl Bridge {
                 };
                 let mut v = Map::new();
                 v.insert(format!("status_line/{id}"), json!({ "label": label, "state": state, "detail": detail, "object_id": object_id }));
+                // (the agent's own line for a question replaces the one the connector made for it)
+                if let Some(q) = object_id.as_str() {
+                    for l in self
+                        .my_session(sid.as_deref())
+                        .await
+                        .map(|x| x.status_lines)
+                        .unwrap_or_default()
+                    {
+                        if l.id != id
+                            && l.id.starts_with(AUTO_LINE)
+                            && l.object_id.as_str() == Some(q)
+                        {
+                            v.insert(format!("status_line/{}", l.id), Value::Null);
+                        }
+                    }
+                }
                 self.client.set_status(v, sid).await?;
-                Ok(format!("status \"{id}\" is {state}"))
+                Ok(format!("status \"{id}\" is {state}{linked}"))
             }
             "clear_status" => {
                 let sid = self.session_of(args, Map::new()).await?;
@@ -2655,6 +2701,31 @@ impl Bridge {
                         .unwrap_or_default()
                 };
                 let k = card.clone().unwrap_or_default();
+                if is_mine && !cmd.history {
+                    let picked = if choices.is_empty() {
+                        k.recommended_list()
+                    } else {
+                        choices.clone()
+                    };
+                    let labels: Vec<String> = picked
+                        .iter()
+                        .map(|key| {
+                            k.options()
+                                .iter()
+                                .find(|o| o.get("key").map(js_str).as_deref() == Some(key))
+                                .and_then(|o| o.get("label"))
+                                .map(js_str)
+                                .unwrap_or_else(|| key.clone())
+                        })
+                        .collect();
+                    self.settle_lines(
+                        k.session_id.clone(),
+                        &k.object_id,
+                        Some(labels.join(", ")),
+                        cmd.settled,
+                    )
+                    .await;
+                }
                 if cmd.command == "trust" || c.get("trusted").is_some_and(truthy) {
                     let advised = k.recommended_list();
                     let labels: Vec<String> = advised
@@ -2813,6 +2884,10 @@ impl Bridge {
                 .await
             }
             "shred" => {
+                if let Some(k) = card.as_ref().filter(|_| is_mine && !cmd.history) {
+                    self.settle_lines(k.session_id.clone(), &k.object_id, None, false)
+                        .await;
+                }
                 let (paths, image, _) = self.download(c.get("attachments")).await;
                 let marks = list_arg(c.get("marks"), "marks").unwrap_or_default();
                 let mut lines = vec![if card.as_ref().is_some_and(|k| k.card_type() == "info") {
@@ -2849,6 +2924,13 @@ impl Bridge {
                     && was.as_ref().is_some_and(|w| w.answer_action == "read")
                 {
                     return;
+                }
+                if let Some(k) = card
+                    .as_ref()
+                    .filter(|k| is_mine && !cmd.history && k.card_type() == "decision")
+                {
+                    self.link_question(k.session_id.clone(), &k.object_id, &k.title())
+                        .await;
                 }
                 let previous: Vec<String> = cmd.previous_choices.clone();
                 let multiple = card
@@ -3224,3 +3306,278 @@ pub fn civil(z: i64) -> (i64, u32, u32) {
 }
 
 pub fn unused(_: &HashMap<String, String>) {}
+
+// ---- status lines that follow their cards ------------------------------------------------------------------------
+/// The id prefix of a status line the connector made for a question when the session had no line to link.
+const AUTO_LINE: &str = "q-";
+
+/// Whether a status line's words say that it waits on the human ("wartet auf deine Wahl", "waiting for your
+/// answer", …). Waiting on anything else (a build, CI) does not count.
+pub fn waits_on_human(text: &str) -> bool {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)\b(wartet|warte|warten|waiting|awaiting|waits|wait)\b[^.;:]{0,30}?\b(dich|dir|deine?[mnrs]?|ihn|ihre?[mnrs]?|antwort|wahl|auswahl|entscheidung|freigabe|you|your|human|owner|answer|reply|choice|pick|decision|approval)\b")
+            .unwrap()
+    })
+    .is_match(text)
+}
+
+/// A register value as plain text: empty for null.
+fn plain(v: &Value) -> String {
+    if v.is_null() {
+        String::new()
+    } else {
+        js_str(v)
+    }
+}
+
+fn line_words(l: &model::StatusLine) -> String {
+    format!("{} {}", plain(&l.label), plain(&l.detail))
+}
+
+/// What a line says once its question was answered.
+fn answered_detail(labels: &str) -> String {
+    brief(&format!("Antwort da: {labels}"), 120)
+}
+
+impl Bridge {
+    /// The session a card or line lives in as `set_status` writes it: None for the main session.
+    async fn line_session(&self, sid: Option<&str>) -> Option<String> {
+        let main = self.client.core.lock().await.session_id();
+        sid.filter(|s| Some(s.to_string()) != main)
+            .map(String::from)
+    }
+
+    /// This agent's open decision cards in a session (None: the main session), newest first.
+    async fn open_questions(&self, sid: Option<&str>) -> Vec<Card> {
+        let main = self.client.core.lock().await.session_id();
+        let want = sid.map(String::from).or(main.clone());
+        let mut v: Vec<Card> = self
+            .my_cards()
+            .await
+            .into_iter()
+            .filter(|k| {
+                k.object_state == "open"
+                    && k.card_type() == "decision"
+                    && k.session_id.clone().or(main.clone()) == want
+            })
+            .collect();
+        v.reverse();
+        v
+    }
+
+    async fn put_line(
+        &self,
+        sid: Option<String>,
+        id: &str,
+        line: Option<(Value, &str, Value, Value)>,
+    ) -> Result<()> {
+        let mut v = Map::new();
+        v.insert(
+            format!("status_line/{id}"),
+            match line {
+                Some((label, state, detail, object_id)) => json!({ "label": label, "state": state, "detail": detail, "object_id": object_id }),
+                None => Value::Null,
+            },
+        );
+        self.client.set_status(v, sid).await.map(|_| ())
+    }
+
+    /// A question was filed: its session's status line now waits on it (decision, with the card), so that the
+    /// human sees it and the line follows the answer. A line that already names the card stays; else the line
+    /// that says it waits on the human, else the session's one working line, else a line of its own.
+    async fn link_question(&self, sid: Option<String>, card: &str, title: &str) {
+        let sid = self.line_session(sid.as_deref()).await;
+        let lines = self
+            .my_session(sid.as_deref())
+            .await
+            .map(|s| s.status_lines)
+            .unwrap_or_default();
+        let naming: Vec<&model::StatusLine> = lines
+            .iter()
+            .filter(|l| l.object_id.as_str() == Some(card))
+            .collect();
+        if !naming.is_empty() {
+            // (an answer taken back: the lines that said it came wait on the card again)
+            for l in naming
+                .into_iter()
+                .filter(|l| l.state.as_str() != Some("decision"))
+            {
+                let detail = plain(&l.detail);
+                let detail = if detail.starts_with("Antwort da") {
+                    String::new()
+                } else {
+                    detail
+                };
+                if let Err(e) = self
+                    .put_line(
+                        sid.clone(),
+                        &l.id,
+                        Some((l.label.clone(), "decision", json!(detail), json!(card))),
+                    )
+                    .await
+                {
+                    eprintln!("[trommi] status line {} not linked again: {e}", l.id);
+                }
+            }
+            return;
+        }
+        let working: Vec<&model::StatusLine> = lines
+            .iter()
+            .filter(|l| l.state.as_str() == Some("working"))
+            .collect();
+        let target =
+            working
+                .iter()
+                .find(|l| waits_on_human(&line_words(l)))
+                .or(if working.len() == 1 {
+                    working.first()
+                } else {
+                    None
+                });
+        let done = match target {
+            Some(l) => {
+                self.put_line(
+                    sid,
+                    &l.id,
+                    Some((
+                        l.label.clone(),
+                        "decision",
+                        json!(plain(&l.detail)),
+                        json!(card),
+                    )),
+                )
+                .await
+            }
+            None => {
+                let id = format!("{AUTO_LINE}{}", card.chars().take(8).collect::<String>());
+                self.put_line(
+                    sid,
+                    &id,
+                    Some((json!(brief(title, 48)), "decision", json!(""), json!(card))),
+                )
+                .await
+            }
+        };
+        if let Err(e) = done {
+            eprintln!("[trommi] status line for card {card} not linked: {e}");
+        }
+    }
+
+    /// A card of this agent was answered (`labels`: what the human chose) or put away without an answer: every
+    /// line of its session that waits on it goes back to working and says so; a line that says it waits on the
+    /// human while no question of the session is open any more says the same. Lines the connector made itself
+    /// for a card that was put away go.
+    async fn settle_lines(
+        &self,
+        sid: Option<String>,
+        card: &str,
+        labels: Option<String>,
+        settled: bool,
+    ) {
+        let sid = self.line_session(sid.as_deref()).await;
+        let lines = self
+            .my_session(sid.as_deref())
+            .await
+            .map(|s| s.status_lines)
+            .unwrap_or_default();
+        let still_open = self
+            .open_questions(sid.as_deref())
+            .await
+            .into_iter()
+            .any(|k| k.object_id != card);
+        let detail = match &labels {
+            Some(l) => answered_detail(l),
+            None => "Ohne Antwort weggelegt".to_string(),
+        };
+        for l in &lines {
+            let names = l.object_id.as_str() == Some(card);
+            let waited = names && l.state.as_str() == Some("decision");
+            let stale = l.state.as_str() == Some("working")
+                && !still_open
+                && (names || l.object_id.is_null())
+                && waits_on_human(&line_words(l));
+            if !waited && !stale {
+                continue;
+            }
+            let auto = l.id.starts_with(AUTO_LINE);
+            let out = if labels.is_none() && auto {
+                self.put_line(sid.clone(), &l.id, None).await
+            } else {
+                // (a final option left nothing to do: the connector's own line for it is done)
+                let state = if settled && auto { "done" } else { "working" };
+                self.put_line(
+                    sid.clone(),
+                    &l.id,
+                    Some((l.label.clone(), state, json!(detail), json!(card))),
+                )
+                .await
+            };
+            if let Err(e) = out {
+                eprintln!("[trommi] status line {} not settled: {e}", l.id);
+            }
+        }
+    }
+
+    /// The agent closed, withdrew or merged a card: the lines the connector made for it go, and a line that still
+    /// waits on it is moved to `to` (a merged card's replacement) or back to working.
+    async fn retire_lines(&self, sid: Option<String>, card: &str, to: Option<&str>) {
+        let sid = self.line_session(sid.as_deref()).await;
+        let lines = self
+            .my_session(sid.as_deref())
+            .await
+            .map(|s| s.status_lines)
+            .unwrap_or_default();
+        for l in lines.iter().filter(|l| l.object_id.as_str() == Some(card)) {
+            let out = match to {
+                Some(new) if l.state.as_str() == Some("decision") => {
+                    self.put_line(
+                        sid.clone(),
+                        &l.id,
+                        Some((l.label.clone(), "decision", l.detail.clone(), json!(new))),
+                    )
+                    .await
+                }
+                _ if l.id.starts_with(AUTO_LINE) => self.put_line(sid.clone(), &l.id, None).await,
+                _ if l.state.as_str() == Some("decision") => {
+                    self.put_line(
+                        sid.clone(),
+                        &l.id,
+                        Some((l.label.clone(), "working", l.detail.clone(), Value::Null)),
+                    )
+                    .await
+                }
+                _ => continue,
+            };
+            if let Err(e) = out {
+                eprintln!("[trommi] status line {} not retired: {e}", l.id);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::waits_on_human;
+
+    #[test]
+    fn a_line_waits_on_the_human_only_when_it_says_so() {
+        for yes in [
+            "UNO-Kachel – 2 Vorschläge, wartet auf deine Wahl",
+            "Wartet auf Antwort",
+            "waiting for your answer",
+            "awaiting the human's choice",
+            "Waiting on you",
+        ] {
+            assert!(waits_on_human(yes), "{yes}");
+        }
+        for no in [
+            "wartet auf den Build",
+            "waiting for CI",
+            "baut Vorschläge",
+            "Antwort da: Kreis",
+        ] {
+            assert!(!waits_on_human(no), "{no}");
+        }
+    }
+}

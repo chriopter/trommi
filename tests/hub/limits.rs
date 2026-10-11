@@ -69,6 +69,49 @@ fn only_the_lease_holder_replaces_an_agent_devices_stream() {
     assert!(!second.ended(), "the holder's stream stays open");
 }
 
+/// A restart of an agent's connector (/mcp Reconnect): the new process takes the lease, and so says it is here,
+/// before the old process's stream closes. That close must not tell the human devices the agent went offline: the
+/// older "offline" would come after the newer "here" and the board would show a working agent as gone. A stream of
+/// the lease holder that closes still says offline.
+#[test]
+fn an_older_process_closing_its_stream_never_overrides_a_newer_processs_here() {
+    let mut w = world(&[]);
+    let mut agent = w.enrol_agent();
+    let hub = &w.hub;
+    let device = b64(&agent.id());
+    let mut human = w.ada.events(hub, None);
+    assert_eq!(human.status, 200);
+    let old = agent.events(hub, None);
+    assert_eq!(old.status, 200);
+    // the new process links (its "here"), then the old process ends before the new one opens its stream
+    agent.link(hub).ok();
+    drop(old);
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    // what the human device saw for the agent, up to a mark of its own
+    let seen = |human: &mut Events, w: &mut World| {
+        w.ada.send(&w.hub, &w.room, &register(&random(), "mark")).ok();
+        let mut presence = vec![];
+        loop {
+            let e = human.next(std::time::Duration::from_secs(5)).expect("the mark comes");
+            match e.name.as_str() {
+                "envelope" => return presence,
+                "presence" if e.data["device"] == device.as_str() => presence.push(e.data),
+                _ => {}
+            }
+        }
+    };
+    let told = seen(&mut human, &mut w);
+    assert!(told.iter().any(|p| p["online"] == true && p["hears"] == true), "the new process's here: {told:?}");
+    assert!(told.iter().all(|p| p["online"] == true), "no offline after the newer here: {told:?}");
+    // the new process's own stream closes: that is offline
+    let new = agent.events(&w.hub, None);
+    assert_eq!(new.status, 200);
+    drop(new);
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let told = seen(&mut human, &mut w);
+    assert_eq!(told.last().map(|p| p["online"].clone()), Some(json!(false)), "the holder's close says offline: {told:?}");
+}
+
 #[test]
 fn counts_per_device() {
     let mut w = world(&[]);

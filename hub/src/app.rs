@@ -741,19 +741,39 @@ impl App {
         let _ = device;
     }
 
-    /// An agent device's last stream closed: if it stays away for `loss_ms` and its lease ran out, the human
-    /// A stream closed: the human devices see the device go offline. (Whether an agent is lost is its lease's
+    /// A stream closed: the human devices see the device go offline, unless another stream of it is open. An agent
+    /// device's stream carries the lease generation it was opened under: when a later generation holds the lease
+    /// now, a newer process of the device already said it is here (`POST /v1/link`), and the close of the older
+    /// process's stream says nothing (its "offline" would come after that newer "here" and win). The look and the
+    /// telling happen under the writer, as a link's report and a stream's opening are told, so a presence event
+    /// never reaches the human devices after a later one it contradicts. (Whether an agent is lost is its lease's
     /// matter: `lease_watch`.)
-    pub fn stream_closed(self: &Arc<Self>, auth: Auth) {
+    pub fn stream_closed(self: &Arc<Self>, auth: Auth, generation: Option<u64>) {
         if self.closing.load(Ordering::Relaxed) {
             return;
         }
-        let online = self.live.online(&auth.room, &auth.device);
-        self.presence(
-            &auth.room,
-            &auth.device,
-            json!({ "device": b64(&auth.device), "online": online }),
-        );
+        let app = self.clone();
+        let tell = move || app.tell_closed(&auth, generation);
+        // a stream is dropped on the runtime: the writer is waited for off it
+        match tokio::runtime::Handle::try_current() {
+            Ok(rt) => drop(rt.spawn_blocking(tell)),
+            Err(_) => tell(),
+        }
+    }
+
+    fn tell_closed(self: &Arc<Self>, auth: &Auth, generation: Option<u64>) {
+        let _ = self.db.write(|c| {
+            let online = self.live.online(&auth.room, &auth.device);
+            if !online && newer_lease_held(c, auth, generation, util::now())? {
+                return Ok::<_, Refused>(());
+            }
+            self.presence(
+                &auth.room,
+                &auth.device,
+                json!({ "device": b64(&auth.device), "online": online }),
+            );
+            Ok(())
+        });
     }
 
     /// The watch over agents' leases, by timer: a lease that ran out no longer counts as working (the Live
@@ -1022,6 +1042,29 @@ pub fn check_lease(c: &rusqlite::Connection, auth: &Auth, given: Option<u64>, no
             "this process does not hold the device's lease",
         )),
     }
+}
+
+/// Whether the device's lease is held, unexpired, under a generation later than `generation` (the one an agent
+/// process's stream was opened under): then a newer process of the device took over.
+pub fn newer_lease_held(
+    c: &rusqlite::Connection,
+    auth: &Auth,
+    generation: Option<u64>,
+    now: u64,
+) -> Res<bool> {
+    let Some(g) = generation else {
+        return Ok(false);
+    };
+    use rusqlite::OptionalExtension;
+    let held: Option<(i64, i64)> = c
+        .prepare_cached(
+            "SELECT generation, expires_at FROM agent_leases WHERE room_id = ?1 AND device = ?2",
+        )?
+        .query_row(params![&auth.room[..], &auth.device[..]], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .optional()?;
+    Ok(held.is_some_and(|(held, expires)| held as u64 > g && expires as u64 > now))
 }
 
 /// `POST /v1/link` (13.7): a new process id acquires the lease with a generation one above the last, valid 60 s;

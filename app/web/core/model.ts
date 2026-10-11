@@ -492,10 +492,14 @@ function applyItem(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
     if (card) {
       // In revision until the agent's next version or a message with present_card. Only an open card goes back to its
       // agent; an own answer still in flight (echo) does not count yet: the hub may order it after this message.
-      if (content?.['present_card']) card.in_revision = null
-      // (a hand back older than the card's newest version is over: the agent answered it with that version; read
-      //  again later, as a rescan does, it must not put a card that was presented again back into revision)
-      else if (human && content && (content['hand_back'] || content['explain']) && r.change > card.envelope_number && (card.object_state === 'open' || card.answer?.pending)) card.in_revision = { by: content['hand_back'] ? 'hand_back' : 'explain', envelope_number: r.change }
+      // The newest of these deeds decides, by change number, not by the order they are read in: a page of the card's
+      // Chat comes newest first (the present before the hand back it answered), and a rescan reads them again.
+      if (content?.['present_card']) {
+        card.presented_envelope_number = Math.max(card.presented_envelope_number ?? 0, r.change)
+        if (card.in_revision && card.in_revision.envelope_number < r.change) card.in_revision = null
+      }
+      // (a hand back older than the card's newest version or the newest present is over: the agent answered it)
+      else if (human && content && (content['hand_back'] || content['explain']) && r.change > handedBackAfter(card) && (card.object_state === 'open' || card.answer?.pending)) card.in_revision = { by: content['hand_back'] ? 'hand_back' : 'explain', envelope_number: r.change }
       change.cards.add(card.object_id)
       if (card.session_id) change.sessions.add(card.session_id)
     }
@@ -506,6 +510,22 @@ function applyItem(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
   }
   return { applied: true }
 }
+
+/**
+ * The deeds on cards (hand back, What??, present) of a page of card Chats read out of the hub's order: they settle
+ * whether each card is in revision, and nothing else of the model is touched (the page's items go into a scratch
+ * model's timelines, not into the windows the views show).
+ */
+export function applyCardDeeds(model: Model, received: readonly ReceivedEnvelope[], change: Change, now: number): void {
+  const scratch: Model = { ...emptyModel(), members: model.members, cards: model.cards }
+  const ch = emptyChange()
+  for (const r of received) if (r.outcome !== 'refused' && r.header.kind === 'item' && r.header.timeline?.kind === 'cardChat') applyEnvelope(scratch, r, ch, { now })
+  for (const id of ch.cards) { change.cards.add(id); const s = model.cards.get(id)?.session_id; if (s) change.sessions.add(s) }
+}
+
+/** A hand back counts only when it is newer than all of this: the card's newest version, the newest present, the hand
+ *  back in force. */
+const handedBackAfter = (card: Card): number => Math.max(card.envelope_number, card.presented_envelope_number ?? 0, card.in_revision?.envelope_number ?? 0)
 
 // ---- objects: cards, Notes, permission requests, Artifacts ------------------------------------------------------------
 
@@ -599,7 +619,7 @@ function applyCard(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
       else card.content_state = content_state
       card.unsupported = card.content_state === 'newer_schema' ? 'newer_schema' : card.content_state === 'ok' && !CARD_TYPES.includes(card.card_type) ? 'card_type' : null
       if (card.unsupported === 'card_type') noteNewer(model, change, `card_type ${card.card_type}`, { envelope_number: n })
-      if (ordered) card.in_revision = null      // a new version from the agent ends "in revision"
+      if (ordered && card.in_revision && card.in_revision.envelope_number < n) card.in_revision = null      // a new version from the agent ends "in revision" (one read again does not end a later hand back)
     }
     if (n >= card.state_envelope_number) {
       const wasOpen = card.object_state === 'open'
@@ -639,7 +659,7 @@ function applyCard(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
       card.answer = a
       card.closed_how = answerClosedHow(card, a)
       card.updated_at = h.time
-      if (ordered) card.in_revision = null
+      if (ordered && card.in_revision && card.in_revision.envelope_number < n) card.in_revision = null
     } else if (card.answer === a) card.closed_how = answerClosedHow(card, a)
     touched()
     return { applied: true }

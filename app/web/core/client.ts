@@ -211,6 +211,8 @@ export class Client {
   private desk: { open: Set<string>; versions: Map<string, number>; at: number } | null = null
   private deskTimer: ReturnType<typeof setTimeout> | null = null
   private deskReading: Promise<void> | null = null
+  /** The cards `readDesk` read the newest Chat page of, with the hand back it was read for. */
+  private revisionRead = new Map<string, number>()
   /** The cursor the cache was last written with. */
   private written = -2
   private goalsTimer: ReturnType<typeof setTimeout> | null = null
@@ -603,8 +605,19 @@ export class Client {
       if (got && got.head_change > c.state_envelope_number) missing.push(...got.items)
     }
     const received = missing.length ? await this.engine.receivePage(missing.sort((x, y) => x.change - y.change)).catch(() => []) : []
+    // a card the hub lists as open that this device holds as handed back: the newest page of its Chat says whether
+    // the agent put it before the human again since (a present this device missed, or one an older app read before
+    // the hand back it answered); once per hand back and run, the few there are
+    const handed = listed.map(o => this.model.cards.get(hex(o.object_id))).filter((c): c is Card => !!c?.in_revision && this.revisionRead.get(c.object_id) !== c.in_revision.envelope_number).slice(0, ANSWERED_ASKED)
+    const deeds: ReceivedEnvelope[] = []
+    for (const c of handed) {
+      this.revisionRead.set(c.object_id, c.in_revision!.envelope_number)
+      const got = await this.hub.chatItems('card', unhex(c.object_id), { limit: 20 }).catch(() => null)
+      if (got?.items.length) deeds.push(...await this.engine.receivePage(got.items).catch(() => []))
+    }
     this.tell(ch => {
       for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() })
+      if (deeds.length) M.applyCardDeeds(this.model, deeds, ch, this.now())
       this.judgeDesk(ch, null)
     })
   }

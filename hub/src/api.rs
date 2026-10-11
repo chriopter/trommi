@@ -1428,12 +1428,14 @@ struct StreamGuard {
     app: Arc<App>,
     auth: Auth,
     id: u64,
+    /// an agent device's: the lease generation the stream was opened under
+    generation: Option<u64>,
 }
 
 impl Drop for StreamGuard {
     fn drop(&mut self) {
         self.app.live.close(&self.auth.room, self.id);
-        self.app.stream_closed(self.auth);
+        self.app.stream_closed(self.auth, self.generation);
     }
 }
 
@@ -1533,6 +1535,7 @@ async fn stream(
         app: app.clone(),
         auth,
         id: s.id,
+        generation,
     };
     s.send_now(bytes::Bytes::from_static(b": trommi hub\n\n"));
     let catch_up = app.clone();

@@ -113,7 +113,8 @@ What the fields mean under protocol v1:
   `session/<id>`.
 - **Card**: `agent_device_id` is the object's owner now, as the core says (it moves when the owner leaves);
   `version_hash` and `answer.envelope_hash` are envelope hashes; `object_state` `open | answered | closed` is the
-  core's replay (9.2.1); `closed_how`, `in_revision`, `versions`, `answers` as before. `content_state` other than
+  core's replay (9.2.1); `closed_how`, `in_revision`, `versions`, `answers` as before; `in_revision` is decided by the newest deed by
+  change number (hand back, What??, present: `presented_envelope_number`), whatever order they are read in. `content_state` other than
   `ok` means the body is not readable here (pruned, no key, a newer schema). `catching_up`: open here, but the hub's Desk does
   not list it and this device holds nothing of it newer than that Desk (client.ts `readDesk`, at the start, after
   every catch-up and every minute): settled elsewhere, off the stack. A card the Desk lists whose newest version
