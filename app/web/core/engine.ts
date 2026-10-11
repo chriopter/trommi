@@ -186,6 +186,8 @@ export class Engine {
   private readonly waiters = new Map<number, (outcome: string) => void>()
   private readonly outcomes = new Map<number, string>()
   private readonly badWelcomes = new Set<string>()
+  /** The hub's list of Welcomes was read in this batch and nothing new was joined from it (`repairByWelcome`). */
+  private welcomesRead = false
   /** Per group, the log number up to which `handLog` handed the log to the device. */
   private readonly logRead = new Map<string, number>()
   private rescanDue = false
@@ -524,6 +526,7 @@ export class Engine {
    */
   private async ingest(items: readonly ChangeItem[], upTo: number): Promise<void> {
     let changed = false, told = this.now()
+    this.welcomesRead = false
     const step = (item: ChangeItem, moved: boolean): void => {
       if (moved) changed = true
       this.position = this.cursor = item.change
@@ -610,7 +613,7 @@ export class Engine {
     const was = this.repairs
     if (behind()) {
       // a Welcome this device has not taken yet may be what it lacks
-      if (await this.joinWelcomes(null)) { this.repairs++; received = await this.receive(item, true) }
+      if (await this.repairByWelcome()) { this.repairs++; received = await this.receive(item, true) }
       if (behind()) { await this.wantRescan(); return }
     }
     if (received?.outcome === 'refused' && received.code === 'gap') { this.repairs++; received = await this.fillGap(item, received) }
@@ -630,7 +633,7 @@ export class Engine {
       if (!(e instanceof Halt) || e.code !== 'early') throw e
       // what it builds on may be a Welcome not taken yet. Nothing is read ahead of the hub's order for it: an
       // entry that still comes early halts the batch, and the next catch-up tries it again.
-      if (!(await this.joinWelcomes(null))) throw e
+      if (!(await this.repairByWelcome())) throw e
       done = await this.process(item)
     }
     if (!done) return false
@@ -880,7 +883,7 @@ export class Engine {
         if (message) { this.emit('relay', message); this.emit('batch', null) }
         return
       }
-      case 'welcome': this.keepSoon(0); return
+      case 'welcome': this.welcomesRead = false; this.keepSoon(0); return
       case 'request':
         // a human device that holds the keys sends them again on a newcomer's wish (7.1)
         // a human device that holds the keys hands them to a human device that asks (7.1.1)
@@ -902,12 +905,20 @@ export class Engine {
   /** Joins every group the hub holds a Welcome of this device for; `committer`: who must have committed it (12.1.5),
    *  null where any device the group's rules allow may have. True when a group was joined. Inside a job. */
   private joinWelcomes(committer: Uint8Array | null): Promise<boolean> { return timed('welcome', () => this.joinWelcomesNow(committer)) }
+  /** For a repair inside a batch (an envelope or entry that waits for a group this device may not be in yet): the
+   *  hub's list is read once per batch, not once per item. A history full of groups this device was never welcomed
+   *  to otherwise asked the hub once per envelope of them (a fresh sign-in: a minute of requests). A Welcome that
+   *  comes meanwhile is said on the stream, and the next batch reads the list again. */
+  private repairByWelcome(): Promise<boolean> {
+    if (this.welcomesRead) return Promise.resolve(false)
+    return this.joinWelcomes(null)
+  }
   private async joinWelcomesNow(committer: Uint8Array | null): Promise<boolean> {
     if (!this.room_id) return false
     const room = this.room_id
     let rows
     try { rows = await this.hub.welcomes() } catch { return false }
-    let joined = false
+    let joined = false, later = false
     // a device that only follows the room group (it holds the room's roles and is no leaf of it) takes the room's
     // Commits first: the Welcome is judged against them (5.2.6)
     if (rows.length && !this.is_human && this.roles) await this.handLog(this.core.roomGroupId(room), Infinity)
@@ -936,8 +947,11 @@ export class Engine {
         const code = this.core.errorCode(e)
         // behind: the Welcome is taken again after the log (core/README.md); anything else is no Welcome for this device
         if (code !== 'room-behind' && code !== 'group-behind') { this.badWelcomes.add(id); this.alert(String(code ?? 'bad-format'), 'a Welcome was not taken', row.group) }
+        else later = true
       }
     }
+    // (a Welcome that came too early for this device is tried again at the next repair, as before)
+    this.welcomesRead = !joined && !later
     if (joined) {
       await this.refresh()
       // a device that came in by link knows nothing of the time before: its groups' past is learned, then read

@@ -115,6 +115,7 @@ while it runs.
   (web and iPhone).
 
 **Fixed**
+- Web: signing in on a new browser in a room with a long history is live in seconds again, not after a minute.
 - Desk: a row no longer grows when the pointer rests on it; the text under the title stays hidden (web).
 - Web, signing in on a new browser: the Desk no longer shows old, empty approvals or "Go outside." while your room is
   still being read. It says "Catching up…", open questions show as quiet "Loading …" placeholders until they are
