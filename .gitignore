@@ -13,3 +13,6 @@ app/web/public/demo/files/
 
 # What the release steps of .github/workflows/build.yml write when they are run by hand.
 /out/
+
+# Python byte code (the iOS tools and their tests).
+__pycache__/

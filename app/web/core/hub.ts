@@ -1263,13 +1263,16 @@ export class Hub {
     return { unused: int(obj(await this.send('PUT', '/v1/key-packages', json), 'a KeyPackage answer').unused, 'unused') }
   }
   /** `POST /v1/key-packages/claim`: one KeyPackage of each device, all or nothing. NOT repeatable: a claim that was
-   *  not answered used its KeyPackages up. The answer is in the order asked. */
-  async claimKeyPackages(devices: Uint8Array[]): Promise<{ device: Uint8Array; key_package: Uint8Array }[]> {
+   *  not answered used its KeyPackages up. The answer is in the order asked. `partial`: the devices the hub holds
+   *  none of are left out of the answer instead (a founding, 5.2.5). */
+  async claimKeyPackages(devices: Uint8Array[], { partial = false }: { partial?: boolean } = {}): Promise<{ device: Uint8Array; key_package: Uint8Array }[]> {
     const asked = devices.map(d => own(d, 'device', 32))
     if (asked.length < 1 || asked.length > 64 || new Set(asked).size !== asked.length) wrong('devices: 1 to 64, each once')
-    const got = obj(obj(await this.send('POST', '/v1/key-packages/claim', { devices: asked }), 'a claim answer').key_packages, 'key_packages')
-    if (Object.keys(got).length !== asked.length) bad('KeyPackages of other devices than the ones asked for')
-    return asked.map((d, i) => ({ device: devices[i] as Uint8Array, key_package: Object.hasOwn(got, d) ? bytes(got[d], 'a KeyPackage', 1, MAX_KEY_PACKAGE) : bad('a KeyPackage is missing') }))
+    const answer = obj(await this.send('POST', '/v1/key-packages/claim', partial ? { devices: asked, partial: true } : { devices: asked }), 'a claim answer')
+    const got = obj(answer.key_packages, 'key_packages')
+    const missing = partial ? list(answer.missing, 'missing', asked.length).map(m => (typeof m === 'string' ? m : bad('missing: device ids'))) : []
+    if (Object.keys(got).some(d => !asked.includes(d)) || missing.some(d => !asked.includes(d) || Object.hasOwn(got, d)) || Object.keys(got).length + missing.length !== asked.length) bad('KeyPackages of other devices than the ones asked for')
+    return asked.flatMap((d, i) => (Object.hasOwn(got, d) ? [{ device: devices[i] as Uint8Array, key_package: bytes(got[d], 'a KeyPackage', 1, MAX_KEY_PACKAGE) }] : partial ? [] : bad('a KeyPackage is missing')))
   }
   /** `PUT /v1/sealed-keys` (8.3). */
   async putSealedKey(sealed_key: Uint8Array): Promise<void> {

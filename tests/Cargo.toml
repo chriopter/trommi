@@ -200,6 +200,10 @@ name = "hub_time"
 path = "hub/time.rs"
 
 [[test]]
+name = "hub_key_packages"
+path = "hub/key_packages.rs"
+
+[[test]]
 name = "hub_load"
 path = "hub/load.rs"
 
@@ -282,6 +286,10 @@ path = "deploy/rights.rs"
 [[test]]
 name = "deploy_hub_settings"
 path = "deploy/hub_settings.rs"
+
+[[test]]
+name = "deploy_dry_run"
+path = "deploy/dry_run.rs"
 
 [[test]]
 name = "core_device_content"

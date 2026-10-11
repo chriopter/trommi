@@ -89,7 +89,9 @@ async function make(m: Extract<ToWorker, { t: 'account' | 'join' }>, cache: Cach
   const made = await adoptInTabs({
     name: m.storage.name, store: store(m.storage), cache, calls,
     make: async (held: Store) => {
-      const opts = { ...m.args, storage: m.storage, store: held, client: m.client }
+      // (a sign-in with the code says how far it is: the page shows it on the button and gives up when it stops)
+      const progress = (step: unknown): void => post({ t: 'event', event: 'signin-progress', data: step })
+      const opts = { ...m.args, storage: m.storage, store: held, client: m.client, progress }
       if (m.t === 'join') {
         const j = joinRoom(opts as unknown as Parameters<typeof joinRoom>[0])
         joining = j

@@ -234,6 +234,7 @@ final class RoomRecoveryTests: XCTestCase {
     // The hub takes the join of the room group and fails on the session's: the device is in, and kept.
     PocketRoutes.refuseOnce["POST /groups/\(b64u(session))/commits"] = "internal"
     let joined = try await Room.joinWithRecoveryCode(hubURL: PocketRoutes.url, roomId: hex(room), code: secret, base: base)
+    await joined.codeJoinSettled()
     XCTAssertEqual(Store.rooms(base: base), [hex(room)])
     XCTAssertEqual(try joined.store.load().codeJoin, true)
     let item = Room.joinCodeItem(joined.store.dir), folder = joined.store.dir

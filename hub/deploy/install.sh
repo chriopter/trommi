@@ -11,10 +11,12 @@
 #
 # What is installed here and only here (root's; no release can change it): the users `trommi` and `trommi-updater`,
 # the pinned release key and the settings in /etc/trommi, the units trommi-hub.service, trommi-hub-updater.service,
-# trommi-hub-ctl.socket and trommi-hub-ctl@.service, and the scripts hub-prestart.sh, updater-prestart.sh and
-# hub-ctl.sh in /usr/local/lib/trommi. What arrives by release afterwards: the hub and the updater, as programs
+# trommi-hub-ctl.socket, trommi-hub-ctl@.service, trommi-hub-dryrun.service and trommi-hub-restore.service, and the
+# scripts hub-prestart.sh, updater-prestart.sh, hub-ctl.sh, hub-dryrun.sh and hub-restore.sh in /usr/local/lib/trommi,
+# and the journald drop-in /etc/systemd/journald.conf.d/trommi.conf (logs kept 30 days, at most 500 MB). What arrives
+# by release afterwards: the hub and the updater, as programs
 # under /srv/trommi/deploy, which belongs to trommi-updater. Nothing of Trommi runs as root except hub-ctl.sh, which
-# starts or stops the hub's unit when the updater asks. A change to one of the fixed parts: run `install` again.
+# starts or stops the hub's unit (or its dry run, or its data restore) when the updater asks. A change to one of the fixed parts: run `install` again.
 #
 # `install` prints each step before it takes it and checks it after; it deletes nothing and can be run again at any
 # time. On a server whose updater still runs as root (installed before this) it converts in place: about a minute
@@ -166,6 +168,7 @@ export LC_ALL=C
 umask 022
 ROOT=/srv/trommi DEPLOY=/srv/trommi/deploy ETC=/etc/trommi LIB=/usr/local/lib/trommi UNITS=/etc/systemd/system
 SAVE=/etc/trommi/before-noroot
+JOURNALD=/etc/systemd/journald.conf.d/trommi.conf
 MOVED="releases current previous updater updater-previous state.json deploy.lock updater-reverted"
 step() { printf '\n--> %s\n' "$*"; }
 ok() { printf '    ok: %s\n' "$*"; }
@@ -388,12 +391,13 @@ as_updater mkdir -p "$DEPLOY/releases"
 [ "$(stat -c '%U' "$ROOT")" = root ] && [ "$(stat -c '%U' "$DEPLOY")" = trommi-updater ] && [ "$(stat -c '%U %a' "$ROOT/data")" = "trommi 700" ]
 ok "in place"
 
-step "What is installed once and belongs to root: the pinned release key, four units, three scripts, the command"
+step "What is installed once and belongs to root: the pinned release key, six units, five scripts, the command"
 install -m 0644 "$STAGE/public-key.pem" "$ETC/release-public-key.pem"
-install -m 0755 "$STAGE/updater-prestart.sh" "$STAGE/hub-prestart.sh" "$STAGE/hub-ctl.sh" "$LIB/"
+install -m 0755 "$STAGE/updater-prestart.sh" "$STAGE/hub-prestart.sh" "$STAGE/hub-ctl.sh" "$STAGE/hub-dryrun.sh" "$STAGE/hub-restore.sh" "$LIB/"
 # until now a link into the release
 rm -f "${UNITS:?}/trommi-hub.service"
-install -m 0644 "$STAGE/trommi-hub.service" "$STAGE/trommi-hub-updater.service" "$STAGE/trommi-hub-ctl.socket" "$STAGE/trommi-hub-ctl@.service" "$UNITS/"
+install -m 0644 "$STAGE/trommi-hub.service" "$STAGE/trommi-hub-updater.service" "$STAGE/trommi-hub-ctl.socket" "$STAGE/trommi-hub-ctl@.service" \
+  "$STAGE/trommi-hub-dryrun.service" "$STAGE/trommi-hub-restore.service" "$UNITS/"
 install -m 0755 "$STAGE/command" /usr/local/bin/trommi-hub-updater
 cmp -s "$STAGE/public-key.pem" "$ETC/release-public-key.pem"
 ok "installed"
@@ -422,6 +426,21 @@ printf '%s\n' "# Settings of the updater (hub/updater/src/main.rs lists them). W
   "UPDATER_CALLER_USERS=$OWNER" > "$ETC/updater.env"
 chmod 0644 "$ETC/updater.env"
 ok "the endpoint will listen on $TSIP:9443 only; callers: tag:trommi-ci${OWNER:+ and $OWNER}"
+
+step "Server logs: kept 30 days, at most 500 MB ($JOURNALD)"
+install -d -m 0755 "$(dirname "$JOURNALD")"
+printf '%s\n' "# Written by hub/deploy/install.sh: the server's logs are kept 30 days and hold no personal data." \
+  "[Journal]" "MaxRetentionSec=30day" "SystemMaxUse=500M" > "$JOURNALD.tmp"
+if cmp -s "$JOURNALD.tmp" "$JOURNALD"; then
+  rm -f "$JOURNALD.tmp"
+  ok "already so"
+else
+  chmod 0644 "$JOURNALD.tmp" && mv -f "$JOURNALD.tmp" "$JOURNALD"
+  systemctl restart systemd-journald
+  ok "set; journald restarted"
+fi
+[ "$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null | sed -n 's/^MaxRetentionSec=//p' | tail -1)" = 30day ] \
+  || stop "journald does not read $JOURNALD"
 
 step "The release $TAG, as it was checked on the laptop, into $DEPLOY/releases/$TAG (written as trommi-updater)"
 if as_updater test -d "$DEPLOY/releases/$TAG"; then
@@ -622,7 +641,8 @@ print(max(tags, key=lambda t: int(t[1:])) if tags else "")') || die "GitHub coul
   fetch_release "$stage" "$tag"
   cp "$REPO/release/public-key.pem" "$HERE"/trommi-hub.service "$HERE"/trommi-hub-updater.service \
     "$HERE"/trommi-hub-ctl.socket "$HERE/trommi-hub-ctl@.service" "$HERE"/updater-prestart.sh "$HERE"/hub-prestart.sh \
-    "$HERE"/hub-ctl.sh "$stage/"
+    "$HERE"/hub-ctl.sh "$HERE"/hub-dryrun.sh "$HERE"/hub-restore.sh "$HERE"/trommi-hub-dryrun.service \
+    "$HERE"/trommi-hub-restore.service "$stage/"
   remote_command > "$stage/command"
   { printf 'TARGET=%q\nREPOSITORY=%q\n' "$TARGET" "$REPOSITORY"; remote_install; } > "$stage/install-remote.sh"
   (cd "$stage" && sha256sum -- * > SHA256SUMS)

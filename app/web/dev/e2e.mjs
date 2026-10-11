@@ -294,14 +294,14 @@ try {
   // ---- the note: it waits at the window's bottom-right; sent from there (to the crown) it reaches the agent marked as a note and stands in
   //      the session's chat taped on, from the optimistic echo on, never as a bubble ----
   const noteText = 'Notiz e2e: Backup vor der Migration'
-  // (a note goes to the session that wears the crown: given by hand on the Agents page)
-  await A.js("trommi.router.visit('/settings/sessions')")
-  await A.until("document.querySelector('#ledger-list details.set-desk .ledger-crown[aria-pressed=false]')", 'Sessions with the crown to give')
-  check(await A.js("return [...document.querySelectorAll('#ledger-list details.set-desk')].every(d => !d.open) && !!document.querySelector('.ledger-find input')"), 'Settings · Sessions: the desks folded, the search on top')
-  await A.js("document.querySelector('#ledger-list details.set-desk > summary').click()")
-  await A.until("document.querySelector('#ledger-list details.set-desk[open] .ledger-crown[aria-pressed=false]')?.getClientRects().length", 'a desk unfolded')
-  await A.js("document.querySelector('#ledger-list details.set-desk[open] .ledger-crown[aria-pressed=false]').click()")
-  await A.until("trommi.model().agents.some(a => a.starred) && document.querySelector('.ledger-crown[aria-pressed=true]')", 'crown given').then(() => check(true, 'Agents page: the crown is given with one click'), e => check(false, e.message))
+  // (a note goes to the session that wears the crown: given by hand in the session's heading, reached from Settings · Agents)
+  await A.js("trommi.router.visit('/settings/agents')")
+  await A.until("document.querySelector('#agent-0 .ag-tree a.ag-sess')", 'Settings · Agents with an agent and its session')
+  check(await A.js("return /^(Claude Code|Codex|Agent) on /.test(document.querySelector('#agent-0 .ag-head-words b').textContent)"), 'Settings · Agents: the agent named by program and computer')
+  await A.js("document.querySelector('#agent-0 .ag-tree a.ag-sess').click()")
+  await A.until("document.querySelector('.t-session-edit .crown-toggle')", 'the session with its crown to give')
+  await A.js("document.querySelector('.t-session-edit .crown-toggle').click()")
+  await A.until("trommi.model().agents.some(a => a.starred)", 'crown given').then(() => check(true, 'the crown is given with one click in the session\'s heading'), e => check(false, e.message))
   await A.js(`const now = Date.now(); await trommi.client.saveNote({ text: '${noteText}', created_at: now, updated_at: now })`)
   await A.js("trommi.router.visit('/')")
   await A.until(`document.querySelector('#corner-note-box.has-words .corner-note-field')?.value.startsWith('Notiz e2e')`, 'the note at the bottom-right').then(() => check(true, 'the note waits at the bottom-right, the sticky shows it holds words'), e => check(false, e.message))
@@ -588,10 +588,10 @@ try {
   const afterReload = await agent.sendCard({ title: 'nach dem Neuladen', card_type: 'info' })
   await A.until(`trommi.client.model.cards.has('${afterReload}')`, 'card after the reload', 2000).then(() => { check(true, 'a card sent after the warm reload arrives live within 2 s'); timing('card after the warm reload -> on A', Date.now() - t0) }, e => check(false, e.message))
 
-  // ---- devices: B removes nobody; A sees both humans and the agent ----
+  // ---- devices: B removes nobody; A sees the person's devices (the agent is under Agents) ----
   await A.js("trommi.router.visit('/settings/devices')")
-  await A.until("document.querySelectorAll('.room-device').length >= 5", 'five devices listed')
-  check(true, 'devices page lists laptop, phone, desktop, phone (kit), agent')
+  await A.until("document.querySelectorAll('.room-device').length >= 4", 'four devices listed')
+  check(true, 'devices page lists laptop, phone, desktop, phone (kit)')
   await A.shot('e2e-10-devices.png')
 
   // ---- C logs out (Trommi menu -> Settings -> Account -> Log Out, asked once): removed from the member list, everything local gone ----

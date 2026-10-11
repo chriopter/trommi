@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""App Store Connect API steps of the TestFlight workflow (.github/workflows/ios-beta.yml). Standard library only; the
+"""App Store Connect API steps of the TestFlight workflow (.github/workflows/deploy_ios.yml). Standard library only; the
 JWT is signed with the openssl command line tool, so it runs on a stock macOS runner and on Linux alike.
 
   asc.py prepare BUNDLE_ID          the bundle id (Push Notifications, App Groups, Associated Domains) and
@@ -9,7 +9,21 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
   asc.py internal BUILD_ID GROUP [EMAIL]
                                     the internal TestFlight group GROUP exists (every build), holds BUILD_ID, and
                                     EMAIL (a user of the team) is one of its testers
-  asc.py notes BUILD_ID TEXT        TestFlight "What to Test" of that build (every localization; de-DE if none)
+  asc.py notes BUILD_ID TEXT [LOCALE]
+                                    TestFlight "What to Test" of that build (every localization; LOCALE, default
+                                    de-DE, if none)
+  asc.py external BUILD_ID GROUP    the external TestFlight group GROUP (made once by hand in App Store Connect; fails
+                                    saying so if it is missing) holds BUILD_ID; prints its public link, if enabled
+  asc.py beta-review BUILD_ID       the beta app's test information (Beta App Review contact, demo account, notes from
+                                    metadata/review_information, description and feedback address) is filled in, and
+                                    the build goes to Beta App Review when Apple asks for it (READY_FOR_BETA_SUBMISSION
+                                    and no submission yet; later builds of a reviewed version usually need none).
+                                    The demo account's password comes from APPSTORE_DEMO_PASSWORD
+  asc.py whats-new CHANGELOG        offline: the newest day of CHANGELOG.md as plain text for "What to Test"
+  asc.py upload IPA VERSION BUILD [--dry-run]
+                                    uploads the signed .ipa through the Build Uploads API (no second Xcode export),
+                                    after checking it is BUNDLE_ID VERSION (BUILD); waits until the upload is COMPLETE.
+                                    --dry-run: the same checks, offline, and prints what would be sent; nothing is sent
   asc.py next-build                 the highest build number App Store Connect has for the app, plus one
   asc.py last-sha                   the commit of the newest build whose What to Test names one ("(abc1234)")
   asc.py export-code                the code of the app's APPROVED export compliance documentation (the newest if
@@ -17,7 +31,7 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
 
 Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). Nothing here prints key material or tokens.
 """
-import base64, json, os, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import base64, hashlib, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
 
 API = "https://api.appstoreconnect.apple.com"
 
@@ -202,7 +216,7 @@ def internal(build_id, group, email=""):
                       "testers must be users of the team")
 
 
-def notes(build_id, text):
+def notes(build_id, text, locale="de-DE"):
     text = text.strip()[:4000]
     locs = call("GET", f"/v1/builds/{build_id}/betaBuildLocalizations?limit=50")["data"]
     for loc in locs:
@@ -211,8 +225,77 @@ def notes(build_id, text):
         print(f"What to Test ({loc['attributes'].get('locale')}): {text}")
     if not locs:
         call("POST", "/v1/betaBuildLocalizations", {"data": {"type": "betaBuildLocalizations",
-             "attributes": {"locale": "de-DE", "whatsNew": text}, "relationships": {"build": rel("builds", build_id)}}})
-        print(f"What to Test (de-DE): {text}")
+             "attributes": {"locale": locale, "whatsNew": text}, "relationships": {"build": rel("builds", build_id)}}})
+        print(f"What to Test ({locale}): {text}")
+
+
+def upload(ipa, version, build, *flags):
+    dry = "--dry-run" in flags
+    unknown = [f for f in flags if f != "--dry-run"]
+    if unknown:
+        die(f"upload: unknown option {unknown[0]}")
+    bundle = os.environ["BUNDLE_ID"]
+    with zipfile.ZipFile(ipa) as z:
+        names = z.namelist()
+        infos = [n for n in names if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", n)]
+        if len(infos) != 1:
+            die(f"{ipa}: not one app under Payload/ ({len(infos)})")
+        info = plistlib.loads(z.read(infos[0]))
+        symbols = sum(1 for n in names if n.startswith("Symbols/") and not n.endswith("/"))
+    have = (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion"))
+    if have != (bundle, version, build):
+        die(f"{ipa} is {have[0]} {have[1]} ({have[2]}), not {bundle} {version} ({build})")
+    size = os.path.getsize(ipa)
+    md5 = hashlib.md5()
+    with open(ipa, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            md5.update(chunk)
+    print(f"ipa: {bundle} {version} ({build}), {size} bytes, md5 {md5.hexdigest()}, {symbols} symbol file(s)")
+    if symbols == 0:
+        print("::warning::the .ipa carries no Symbols/: crash reports in TestFlight will not be symbolicated")
+    if dry:
+        print("dry run: would POST /v1/buildUploads (platform IOS), POST /v1/buildUploadFiles (com.apple.ipa), "
+              "PUT the parts, PATCH uploaded=true with the MD5, then poll until COMPLETE; nothing was sent")
+        return
+    aid = app_id(bundle) or die("no app record")
+    upload_id = call("POST", "/v1/buildUploads", {"data": {"type": "buildUploads", "attributes": {
+        "cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": "IOS"},
+        "relationships": {"app": rel("apps", aid)}}})["data"]["id"]
+    file = call("POST", "/v1/buildUploadFiles", {"data": {"type": "buildUploadFiles", "attributes": {
+        "assetType": "ASSET", "fileName": os.path.basename(ipa), "fileSize": size, "uti": "com.apple.ipa"},
+        "relationships": {"buildUpload": rel("buildUploads", upload_id)}}})["data"]
+    ops = file["attributes"]["uploadOperations"]
+    with open(ipa, "rb") as f:
+        for op in ops:
+            f.seek(op["offset"])
+            part = f.read(op["length"])
+            headers = {h["name"]: h["value"] for h in op.get("requestHeaders") or []}
+            for attempt in range(3):
+                try:
+                    req = urllib.request.Request(op["url"], data=part, method=op["method"], headers=headers)
+                    with urllib.request.urlopen(req, timeout=600) as resp:
+                        resp.read()
+                    break
+                except (urllib.error.URLError, TimeoutError) as e:
+                    if attempt == 2:
+                        die(f"upload of the part at {op['offset']} failed: {e}")
+                    time.sleep(5)
+    print(f"uploaded {size} bytes in {len(ops)} part(s)", flush=True)
+    call("PATCH", f"/v1/buildUploadFiles/{file['id']}", {"data": {"type": "buildUploadFiles", "id": file["id"],
+         "attributes": {"uploaded": True, "sourceFileChecksums": {
+             "file": {"hash": md5.hexdigest(), "algorithm": "MD5"}}}}})
+    state = {}
+    for _ in range(120):
+        state = call("GET", f"/v1/buildUploads/{upload_id}")["data"]["attributes"].get("state") or {}
+        if state.get("state") in ("COMPLETE", "FAILED"):
+            break
+        time.sleep(15)
+    print(f"buildUpload {upload_id}: {state.get('state')}")
+    for kind in ("errors", "warnings", "infos"):
+        for item in state.get(kind) or []:
+            print(f"  {kind[:-1]} {item.get('code')}: {item.get('description')}")
+    if state.get("state") != "COMPLETE":
+        die(f"App Store Connect did not take the upload ({state.get('state') or 'no answer'})")
 
 
 def builds(aid):
@@ -284,6 +367,127 @@ def export_code():
     print(code)
 
 
+# ---- the public beta: an external group, Beta App Review ------------------------------------------------------------
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+META = os.path.join(HERE, "metadata")
+
+
+def meta_text(*parts):
+    path = os.path.join(META, *parts)
+    return open(path, encoding="utf-8").read().strip() if os.path.exists(path) else ""
+
+
+def external(build_id, group):
+    aid = app_id(os.environ["BUNDLE_ID"]) or die("no app record")
+    found = [g for g in call("GET", f"/v1/apps/{aid}/betaGroups?limit=200")["data"] if g["attributes"]["name"] == group]
+    if not found:
+        die(f"there is no TestFlight group \"{group}\" for {os.environ['BUNDLE_ID']}: create it once in App Store Connect "
+            f"(the app > TestFlight > External Testing > +, name \"{group}\", then Enable Public Link) and run the "
+            "delivery again (app/ios/README.md \"Public beta\")")
+    g = found[0]
+    if g["attributes"].get("isInternalGroup"):
+        die(f"the TestFlight group \"{group}\" is an internal group; the public beta needs an external one of that name")
+    call("POST", f"/v1/betaGroups/{g['id']}/relationships/builds", {"data": [{"type": "builds", "id": build_id}]})
+    print(f"group {group} ({g['id']}, external): build {build_id} added")
+    link = g["attributes"].get("publicLink") if g["attributes"].get("publicLinkEnabled") else None
+    if link:
+        gh_out("public_link", link)
+    else:
+        print(f"::warning::the group {group} has no public link enabled: App Store Connect > TestFlight > {group} > "
+              "Public Link > Enable")
+
+
+def review_detail():
+    """The Beta App Review contact and demo account as metadata/review_information has them (empty values left out,
+    so what was entered by hand in App Store Connect stays)."""
+    demo = meta_text("review_information", "demo_user.txt")
+    want = {"contactFirstName": meta_text("review_information", "first_name.txt"),
+            "contactLastName": meta_text("review_information", "last_name.txt"),
+            "contactEmail": meta_text("review_information", "email_address.txt"),
+            "contactPhone": meta_text("review_information", "phone_number.txt"),
+            "notes": meta_text("review_information", "notes.txt")[:4000],
+            "demoAccountRequired": bool(demo)}
+    if demo:
+        want["demoAccountName"] = demo
+        want["demoAccountPassword"] = os.environ.get("APPSTORE_DEMO_PASSWORD") or die(
+            "APPSTORE_DEMO_PASSWORD is not set: Beta App Review signs in with the demo account "
+            "(metadata/review_information/demo_user.txt); add its password to the 1Password Environment of `ios`")
+    return {k: v for k, v in want.items() if v != ""}
+
+
+def beta_review(build_id):
+    aid = app_id(os.environ["BUNDLE_ID"]) or die("no app record")
+    # 1. Test information of the app: contact and demo account for Beta App Review
+    detail = call("GET", f"/v1/apps/{aid}/betaAppReviewDetail")["data"]
+    want = review_detail()
+    have = detail.get("attributes") or {}
+    if not (want.get("contactPhone") or have.get("contactPhone")):
+        die("Beta App Review needs a contact phone number: fill in metadata/review_information/phone_number.txt "
+            "(or once in App Store Connect > TestFlight > Test Information)")
+    call("PATCH", f"/v1/betaAppReviewDetails/{detail['id']}", {"data": {"type": "betaAppReviewDetails",
+         "id": detail["id"], "attributes": want}})
+    print(f"Beta App Review information set: {', '.join(k for k in sorted(want) if k != 'demoAccountPassword')}")
+    # 2. Beta description and feedback address (every localization; en-US if none)
+    loc_want = {"description": meta_text("en-US", "description.txt")[:4000],
+                "feedbackEmail": meta_text("review_information", "email_address.txt")}
+    locs = call("GET", f"/v1/apps/{aid}/betaAppLocalizations?limit=50")["data"]
+    for loc in locs:
+        missing = {k: v for k, v in loc_want.items() if v and not (loc.get("attributes") or {}).get(k)}
+        if missing:
+            call("PATCH", f"/v1/betaAppLocalizations/{loc['id']}", {"data": {"type": "betaAppLocalizations",
+                 "id": loc["id"], "attributes": missing}})
+            print(f"beta app localization {(loc.get('attributes') or {}).get('locale')}: set {', '.join(sorted(missing))}")
+    if not locs:
+        call("POST", "/v1/betaAppLocalizations", {"data": {"type": "betaAppLocalizations",
+             "attributes": {"locale": "en-US", **{k: v for k, v in loc_want.items() if v}},
+             "relationships": {"app": rel("apps", aid)}}})
+        print("beta app localization en-US: created")
+    # 3. Beta App Review of the build, when Apple asks for it
+    state = (call("GET", f"/v1/builds/{build_id}/buildBetaDetail")["data"].get("attributes") or {}).get("externalBuildState")
+    subs = call("GET", f"/v1/betaAppReviewSubmissions?filter[build]={q(build_id)}&limit=5")["data"]
+    print(f"external state of build {build_id}: {state}; review submissions: {len(subs)}")
+    if subs:
+        print(f"already submitted ({(subs[0].get('attributes') or {}).get('betaReviewState')}): nothing to send")
+    elif state == "READY_FOR_BETA_SUBMISSION":
+        sub = call("POST", "/v1/betaAppReviewSubmissions", {"data": {"type": "betaAppReviewSubmissions",
+                   "relationships": {"build": rel("builds", build_id)}}})["data"]
+        print(f"submitted for Beta App Review: {sub['id']} ({(sub.get('attributes') or {}).get('betaReviewState')})")
+    elif state == "MISSING_EXPORT_COMPLIANCE":
+        die("export compliance of the build is not answered: Beta App Review cannot be asked (app/ios/README.md "
+            "\"Export compliance\")")
+    else:
+        print(f"no Beta App Review needed now ({state})")
+    gh_out("external_state", state)
+
+
+def whats_new(changelog):
+    """The newest day of CHANGELOG.md as plain text: "New:", "Better:", "Fixed:", one line per entry."""
+    lines, out, inside = open(changelog, encoding="utf-8").read().splitlines(), [], False
+    for line in lines:
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = True
+            continue
+        if not inside or not line.strip():
+            continue
+        m = re.fullmatch(r"\*\*(.+?)\*\*\s*", line.strip())
+        if m:
+            out.append(f"{m.group(1)}:")
+        elif line.startswith("- "):
+            out.append("- " + line[2:].strip())
+        elif out and out[-1].startswith("- "):
+            out[-1] += " " + line.strip()
+    if not out:
+        die(f"{changelog}: no day with entries")
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", "\n".join(out)).replace("**", "").replace("`", "")
+    # (room for the "Build N (commit)." in front, within What to Test's 4000 characters)
+    if len(text) > 3900:
+        text = text[:3890].rsplit("\n", 1)[0] + "\n…"
+    print(text)
+
+
 def gh_out(name, value):
     print(f"{name}: {value}")
     if os.environ.get("GITHUB_OUTPUT"):
@@ -292,8 +496,9 @@ def gh_out(name, value):
 
 
 if __name__ == "__main__":
-    cmds = {"prepare": prepare, "wait": wait, "internal": internal, "notes": notes, "next-build": next_build,
-            "last-sha": last_sha, "export-code": export_code}
+    cmds = {"prepare": prepare, "wait": wait, "upload": upload, "internal": internal, "notes": notes, "next-build": next_build,
+            "last-sha": last_sha, "export-code": export_code, "external": external, "beta-review": beta_review,
+            "whats-new": whats_new}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)
     cmds[sys.argv[1]](*sys.argv[2:])

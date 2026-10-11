@@ -5,6 +5,10 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- Public iPhone beta via TestFlight: join from [trommi.com/beta](https://trommi.com/beta); every release arrives there
+  first.
+- Settings → Devices names a device of yours that never finished signing in, and removes it with one tap
+  (while it is there, new sessions can't be opened).
 - iPhone: the Live Activity and Dynamic Island show the most urgent question with its two answers; answer it right
   there, without opening the app.
 - The connector updates itself while it runs: no reconnect after an update.
@@ -12,20 +16,31 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Delete your account right from the iPhone app (Settings → Account).
 - Log out straight from the desk menu.
 - What's new in the desk menu (web and iPhone): this list, with a dot until you have read the newest day.
+- Settings → Agents (web and iPhone): each agent as Claude Code or Codex on its computer, its sessions under it; remove an agent from there. Devices lists only your phones, tablets and browsers.
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
+  line pointing to the card.
+- The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
   instead of a stack of red ones.
 - Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out
   like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with its own page.
 - An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
+- An agent you ask for something keeps one card for it, from Working on to Done.
 - The self-test screen is now called "Security Info".
 - Settings → Account no longer has the "Advanced" block with the old account address; the old recovery-code screen (/recover) is gone. Room, key epoch and hub are shown under Security Info.
 - Codex: the board tools are there from the start, Trommi tool calls no longer ask for approval one by one, and the texts say to restart Codex (not /mcp) when needed.
 - A Codex session between turns shows as "on its next turn", never as gone or not listening.
 
 **Fixed**
+- Opening a session no longer fails when one of your devices has been away for long: it joins the session when it comes
+  back.
+- Web: logging in to a big account shows how far it is ("Catching up … of …"), opens before every session is
+  joined, and a stuck login stops with a message instead of spinning.
+- iPhone: logging in to a big account no longer hangs at "Logging in…": the button shows how far it is, the
+  sessions join after you are in, and a stuck login stops with a message.
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.
 - Changing your password, Emergency Kit or passkeys now asks for proof that you know a current one:
   being logged in is not enough.

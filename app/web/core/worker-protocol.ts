@@ -28,7 +28,7 @@ export type FromWorker =
   | { t: 'result'; id: number; ok: false; error: WireError }
   | { t: 'change'; patch: ModelPatch }
   | { t: 'snapshot'; model: ModelSnapshot; extra: Extra }
-  | { t: 'event'; event: 'alert' | 'error' | 'reset' | 'join-code'; data: unknown }
+  | { t: 'event'; event: 'alert' | 'error' | 'reset' | 'join-code' | 'signin-progress'; data: unknown }
 
 /** What travels beside the model: the client's counters and this tab's role (tabs.ts). */
 export interface Extra { stats?: Record<string, number> | null; tabRole?: string | null; [k: string]: unknown }

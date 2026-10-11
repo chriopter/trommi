@@ -2,6 +2,11 @@
 
 **Your agents ring. You decide.**
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/public/images/hero-dark.png">
+  <img src="site/public/images/hero-light.png" width="880" alt="Trommi on a laptop and an iPhone: the Desk of the web app with the questions agents wait on, and one decision card on the phone">
+</picture>
+
 Your Claude Code and Codex sessions ask, you answer: chat, decision cards and a Scribble Board, on the web and on
 the iPhone. Everything is encrypted on the devices with MLS (RFC 9420); the server only passes sealed messages on.
 One Rust core does the cryptography for the web app, the iOS app and the connector.
@@ -12,12 +17,20 @@ One Rust core does the cryptography for the web app, the iOS app and the connect
 - 🗂 **Desks** to sort your agents, with their helpers under them
 - 🔒 **End-to-end encrypted**: the server never holds a key or reads content
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/gallery-dark.png">
+  <img src=".github/readme/gallery-light.png" width="880" alt="The iPhone app: the Desk, a decision card with pictures, a chat with an agent, the Scribble Board">
+</picture>
+
+<sub>Desk · Card · Chat · Scribble Board, from the made-up demo room (`demo/`).</sub>
+
 **[→ Open Trommi](https://app.trommi.com)**
 
 ## Install
 
-1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. The iOS app is on TestFlight for testers
-   for now.
+1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. On an iPhone: the public beta on
+   TestFlight, [trommi.com/beta](https://trommi.com/beta) (every release of main; the App Store gets reviewed versions
+   less often).
 2. **An agent**, on a Linux or macOS computer with Claude Code or Codex. Once per machine:
 
    ```sh

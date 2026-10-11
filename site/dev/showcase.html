@@ -1,0 +1,73 @@
+<!doctype html>
+<!-- The site's and the README's pictures of the apps: real screenshots of the demo room in device frames drawn here
+     (no mockup images). dev/showcase.mjs opens it once per picture, on a transparent page:
+       showcase.html?layout=hero&laptop=<web png>&phone=<iPhone png>
+       showcase.html?layout=phone&phone=<iPhone png>
+       showcase.html?layout=gallery&phones=<png>,<png>,...
+     and theme=light|dark for the frames' shade. Sizes are CSS pixels; the picture is taken at 2x. -->
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family: 'IBM Plex Sans'; font-weight: 400 600; src: url(../public/fonts/f7.woff2) format('woff2'); }
+:root { --bezel: #141c18; --rim: #3a4540; --chrome: #eceee8; --chrome-fg: #5c6862; --pill: #ffffff; --lid: #c9cfca; --base1: #d9ded9; --base2: #aab1ab;
+        --shade: rgb(20 30 25 / .30); }
+:root[data-theme="dark"] { --bezel: #0b0f0d; --rim: #4a5650; --chrome: #1d2420; --chrome-fg: #9aa8a0; --pill: #121815; --lid: #59635d; --base1: #6b756f; --base2: #3b433e;
+        --shade: rgb(0 0 0 / .55); }
+* { margin: 0; box-sizing: border-box; }
+html, body { background: transparent; font-family: 'IBM Plex Sans', sans-serif; }
+body { width: var(--w); height: var(--h); position: relative; overflow: hidden; }
+
+/* the iPhone: a dark band with a thin metal rim, the screen's rounded corners, the Dynamic Island, the side buttons */
+.phone { position: absolute; width: var(--pw); padding: calc(var(--pw) * .032); border-radius: calc(var(--pw) * .165);
+         background: var(--bezel); box-shadow: 0 0 0 calc(var(--pw) * .006) var(--rim), 0 calc(var(--pw) * .03) calc(var(--pw) * .06) -0.01px var(--shade), 0 calc(var(--pw) * .12) calc(var(--pw) * .22) calc(var(--pw) * -.08) var(--shade); }
+.phone .screen { position: relative; border-radius: calc(var(--pw) * .135); overflow: hidden; }
+.phone img { display: block; width: 100%; }
+.phone .island { position: absolute; left: 50%; top: calc(var(--pw) * .025); width: 31%; height: calc(var(--pw) * .086); translate: -50% 0; background: #000; border-radius: 999px; }
+.phone .btn { position: absolute; width: calc(var(--pw) * .012); background: var(--rim); border-radius: 2px; }
+.phone .b1 { left: calc(var(--pw) * -.014); top: 18%; height: 4%; }
+.phone .b2 { left: calc(var(--pw) * -.014); top: 25%; height: 8%; }
+.phone .b3 { left: calc(var(--pw) * -.014); top: 35%; height: 8%; }
+.phone .b4 { right: calc(var(--pw) * -.014); top: 28%; height: 12%; }
+
+/* the laptop: the lid with its black band and camera, a browser's bar over the web app, the base with its notch */
+.laptop { position: absolute; width: var(--lw); }
+.lid { padding: calc(var(--lw) * .018) calc(var(--lw) * .018) calc(var(--lw) * .022); background: var(--bezel); border-radius: calc(var(--lw) * .022) calc(var(--lw) * .022) calc(var(--lw) * .006) calc(var(--lw) * .006);
+       box-shadow: 0 0 0 calc(var(--lw) * .0018) var(--rim); position: relative; }
+.lid .cam { position: absolute; left: 50%; top: calc(var(--lw) * .0075); width: calc(var(--lw) * .004); height: calc(var(--lw) * .004); translate: -50% 0; background: #2b3530; border-radius: 50%; }
+.win { overflow: hidden; border-radius: calc(var(--lw) * .004); background: var(--chrome); }
+.bar { height: calc(var(--lw) * .026); display: flex; align-items: center; gap: calc(var(--lw) * .005); padding: 0 calc(var(--lw) * .01); position: relative; }
+.bar i { width: calc(var(--lw) * .0062); height: calc(var(--lw) * .0062); border-radius: 50%; background: #ec6a5e; }
+.bar i:nth-child(2) { background: #f4bf4f; } .bar i:nth-child(3) { background: #61c554; }
+.bar b { position: absolute; left: 50%; translate: -50% 0; height: 62%; min-width: 30%; display: grid; place-items: center; border-radius: 999px; background: var(--pill);
+         color: var(--chrome-fg); font-weight: 400; font-size: calc(var(--lw) * .0095); }
+.win img { display: block; width: 100%; }
+.base { position: relative; height: calc(var(--lw) * .028); margin: 0 calc(var(--lw) * -.07); border-radius: 0 0 calc(var(--lw) * .05) calc(var(--lw) * .05) / 0 0 calc(var(--lw) * .02) calc(var(--lw) * .02);
+        background: linear-gradient(var(--base1), var(--base2)); box-shadow: 0 calc(var(--lw) * .03) calc(var(--lw) * .05) calc(var(--lw) * -.02) var(--shade); }
+.base::before { content: ""; position: absolute; left: 50%; top: 0; width: 13%; height: 36%; translate: -50% 0; background: var(--base2); border-radius: 0 0 calc(var(--lw) * .008) calc(var(--lw) * .008); opacity: .7; }
+.base::after { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: var(--lid); }
+
+.row { position: absolute; inset: 0; display: flex; justify-content: center; align-items: flex-start; gap: var(--gap); padding-top: var(--pad); }
+.row .phone { position: relative; }
+</style></head><body>
+<script>
+const q = new URLSearchParams(location.search)
+document.documentElement.dataset.theme = q.get('theme') || 'light'
+const layout = q.get('layout') || 'hero'
+const set = o => { for (const [k, v] of Object.entries(o)) document.documentElement.style.setProperty('--' + k, v + 'px') }
+const phone = (src, style = '') => `<div class="phone" style="${style}"><span class="btn b1"></span><span class="btn b2"></span><span class="btn b3"></span><span class="btn b4"></span><div class="screen"><img src="${src}"><span class="island"></span></div></div>`
+let html = ''
+if (layout === 'hero') {
+  // the laptop at the left, the iPhone standing in front of its right corner
+  set({ w: 1100, h: 700, lw: 900, pw: 250 })
+  html = `<div class="laptop" style="left:70px;top:24px"><div class="lid"><span class="cam"></span><div class="win"><div class="bar"><i></i><i></i><i></i><b>app.trommi.com</b></div><img src="${q.get('laptop')}"></div></div><div class="base"></div></div>`
+       + phone(q.get('phone'), 'left:820px;top:118px')
+} else if (layout === 'phone') {
+  set({ w: 300, h: 640, pw: 270 })
+  html = phone(q.get('phone'), 'left:15px;top:14px')
+} else if (layout === 'gallery') {
+  const list = q.get('phones').split(',')
+  set({ w: 1100, h: 560, pw: 240, gap: 32, pad: 14 })
+  html = `<div class="row">${list.map(s => phone(s)).join('')}</div>`
+}
+document.body.innerHTML = html
+Promise.all([...document.images].map(i => i.decode())).then(() => document.fonts.ready).then(() => { document.body.dataset.ready = '1' })
+</script>
+</body></html>

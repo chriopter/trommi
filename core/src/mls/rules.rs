@@ -811,11 +811,13 @@ pub fn check_session_commit(
     }
 
     if founding {
-        // 5.2.5: the first Commit adds every device of H(r) but the founder; a human device founds a main
-        // session with its agent device, the opener a helper session.
+        // 5.2.5: the first Commit adds the devices of H(r) whose KeyPackages could be had (the hub refuses one
+        // that leaves out a device it holds a KeyPackage of), at least one human device; a human device founds a
+        // main session with its agent device, the opener a helper session. A human device left out is added
+        // later by a human device of the group (5.2.7).
         refuse(!facts.removes.is_empty(), Error::BadCommit)?;
         refuse(
-            before.leaves.len() != 1 || !room.humans.iter().all(|human| leaves.contains(human)),
+            before.leaves.len() != 1 || !room.humans.iter().any(|human| leaves.contains(human)),
             Error::BadCommit,
         )?;
         if helper {

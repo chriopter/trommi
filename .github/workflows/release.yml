@@ -173,7 +173,10 @@ jobs:
           else
             take web web.tar.gz
           fi
-          PARTS="$PARTS" sh repo/release/manifest.sh trommi "$VERSION" "$COMMIT" publish/* > manifest.json
+          # the hub's data epoch (hub/deploy/README.md, "Migrations"): signed, so the updater knows before a swap
+          # whether the hub before can run on what this one leaves
+          DATA_EPOCH=$(tr -d ' \n' < repo/hub/data-epoch)
+          PARTS="$PARTS" DATA_EPOCH="$DATA_EPOCH" sh repo/release/manifest.sh trommi "$VERSION" "$COMMIT" publish/* > manifest.json
           mv manifest.json publish/manifest.json
           sh repo/release/sign.sh files publish/manifest.json
           cat publish/manifest.json

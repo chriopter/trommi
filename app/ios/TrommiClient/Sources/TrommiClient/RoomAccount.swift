@@ -158,9 +158,12 @@ extension Room {
     let hub: HubClient
     do { hub = try HubClient(hubURL: hubURL, room: room, signer: try tools.recoverySigner(code: code)) } catch { abandon(made); throw error }
     do {
+      let started = Date()
       _ = try await hub.signIn(challenge: challenge)
+      SignInWatch.log("signed in as the recovery key", since: started)
       // The core reads the room from the hub under the recovery key's token, checks it, and posts the join.
       _ = try await tools.joinRoomWithRecoveryCode(device: made.device, code: code, hub: hub, nowMs: nowMs())
+      SignInWatch.log("room joined", since: started)
     } catch {
       // No answer to a join that was posted: the hub may have taken it. The room group's log, read under the
       // recovery key, is handed to the core, which says whether its own join is in it; what cannot be told yet is
@@ -180,7 +183,12 @@ extension Room {
     return try await settleCodeJoin(made, hubURL: hubURL, roomId: roomId, code: code, recoveryHub: hub)
   }
 
-  /** The device is in the room: the record at once, then the session groups (`finishCodeJoin`). */
+  /**
+   * The device is in the room: the record at once, its KeyPackages at the hub (without them every new session of
+   * the account is refused: `not-found`), then the session groups (`finishCodeJoin`), behind the sign-in: a big
+   * account has many, each read and checked from its founding, and the person waits for none of it. The first
+   * catch-up waits for that work (`codeJoinWork`); `codeJoinSettled` waits for it too.
+   */
   private static func settleCodeJoin(_ made: (store: Store, state: DeviceStore, device: CoreDevice), hubURL: String, roomId: String, code: Bytes, recoveryHub: HubClient) async throws -> Room {
     let joined: Room
     do {
@@ -190,8 +198,22 @@ extension Room {
       made.store.markUnsureJoin(nil)
       joined = try Room(store: made.store, record: record, deviceStore: made.state, device: made.device)
     } catch { abandon(made); throw error }
-    await joined.finishCodeJoin(as: recoveryHub, code: code)
+    let started = Date()
+    // (upkeep: a failure here is tried again by every catch-up)
+    try? await joined.publishKeyPackages()
+    try? await joined.flush(timeoutMs: 10_000)
+    SignInWatch.log("key packages published", since: started)
+    joined.codeJoinWork = Task { @MainActor in
+      let t = Date()
+      await joined.finishCodeJoin(as: recoveryHub, code: code)
+      SignInWatch.log("session groups joined", since: t)
+    }
     return joined
+  }
+
+  /** Waits until the session joins of a sign-in with the code (`settleCodeJoin`) are through. */
+  public func codeJoinSettled() async {
+    if let work = codeJoinWork { await work.value }
   }
 
   /** An error after which nothing is known of what the hub did: no answer, or one it could not give. */

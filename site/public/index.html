@@ -45,9 +45,15 @@
   <h1>Trommi</h1>
   <p class="tagline">Your agents ring. You <span class="under">decide.<svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path d="M1.0 5.0 Q18.0 3.4 26.0 4.3 Q34.0 5.2 43.0 4.4 Q52.0 3.6 61.0 4.3 Q70.0 5.0 78.0 4.4 Q86.0 3.8 92.5 4.2 L99.0 4.6"/></svg></span></p>
   <p class="lede"><strong>Claude Code and Codex ask as cards on your phone.</strong> One tap, and they keep working. End-to-end encrypted.</p>
-  <p class="acts"><a class="btn" href="https://app.trommi.com/">Start with your agents now</a> <a class="btn quiet" href="https://github.com/trommi/trommi">View on GitHub</a></p>
+  <p class="acts"><a class="btn" href="https://app.trommi.com/">Start with your agents now</a> <a class="btn quiet" href="/beta">Beta for iPhone</a> <a class="btn quiet" href="https://github.com/trommi/trommi">View on GitHub</a></p>
   <p class="open-note">Free for now. Register with an email address and a password or a passkey.</p>
 </div>
+
+<!-- The apps: real screenshots of the demo room (the made-up Fernly) in drawn frames, light and dark
+     (site/dev/showcase.mjs). theme.js points the dark sources at the picked theme. -->
+<figure class="wrap hero-shot">
+  <picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/hero-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/hero-dark.png"><source type="image/webp" srcset="/images/hero-light.webp"><img src="/images/hero-light.png" width="1100" height="700" alt="Trommi on a laptop and an iPhone: the Desk in the web app lists the questions agents are waiting on, each with its answers as buttons; the iPhone shows one card, a design question with two pictures to choose from." decoding="async"></picture>
+</figure>
 
 <section id="what" class="wrap narrow" aria-labelledby="what-h">
   <h2 id="what-h" class="hid">What it does</h2>
@@ -60,12 +66,22 @@
   </ul>
 </section>
 
+<section id="see" class="wrap" aria-labelledby="see-h">
+  <h2 id="see-h" class="hid">The apps</h2>
+  <ul class="shots">
+    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-desk-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-desk-dark.png"><source type="image/webp" srcset="/images/phone-desk-light.webp"><img src="/images/phone-desk-light.png" width="300" height="640" alt="The Desk on an iPhone: the desk goals at the top, then questions with two answer buttons each." loading="lazy" decoding="async"></picture><figcaption><b>Desk</b>Every open question, the one that blocks first. One tap answers.</figcaption></figure></li>
+    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-card-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-card-dark.png"><source type="image/webp" srcset="/images/phone-card-light.webp"><img src="/images/phone-card-light.png" width="300" height="640" alt="A decision card on an iPhone: should the checkout be a sheet over the app or its own page, with a picture of each." loading="lazy" decoding="async"></picture><figcaption><b>Card</b>A question with its reasons and pictures, and a chat with the agent under it.</figcaption></figure></li>
+    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-chat-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-chat-dark.png"><source type="image/webp" srcset="/images/phone-chat-light.webp"><img src="/images/phone-chat-light.png" width="300" height="640" alt="A chat with an agent session on an iPhone: its messages, a reply, and the steps it is working on." loading="lazy" decoding="async"></picture><figcaption><b>Chat</b>Talk to a session, see what it is working on right now.</figcaption></figure></li>
+    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-scribble-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-scribble-dark.png"><source type="image/webp" srcset="/images/phone-scribble-light.webp"><img src="/images/phone-scribble-light.png" width="300" height="640" alt="The Scribble Board on an iPhone: a handwritten heading, a sticky note with a checklist and ticks." loading="lazy" decoding="async"></picture><figcaption><b>Scribble</b>A board per desk for notes, sketches and plans.</figcaption></figure></li>
+  </ul>
+</section>
+
 <section id="apps" class="wrap narrow" aria-labelledby="apps-h">
   <h2 id="apps-h">Where Trommi runs</h2>
   <ul class="tiles">
     <li><h3>Agents</h3><p>Claude Code and Codex, through the connector on Linux and macOS.</p><a href="#connect">Connect an agent</a></li>
     <li><h3>Desktop</h3><p>The web app in any browser.</p><a href="https://app.trommi.com/">app.trommi.com</a></li>
-    <li><h3>Mobile</h3><p>The web app on any phone, added to the Home Screen; the iPhone app in TestFlight for now.</p><a href="https://app.trommi.com/">Open on your phone</a></li>
+    <li><h3>Mobile</h3><p>The web app on any phone, added to the Home Screen; the iPhone app as a public beta on TestFlight (<a href="/beta">Beta for iPhone</a>).</p><a href="https://app.trommi.com/">Open on your phone</a></li>
   </ul>
 </section>
 

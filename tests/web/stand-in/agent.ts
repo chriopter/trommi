@@ -15,7 +15,7 @@
 // their place in the hub's order, so the agent knows who is a human device when it judges a command.
 import { getDecrypted, putEncrypted } from '../../../app/web/core/client.ts'
 import type { Client } from '../../../app/web/core/client.ts'
-import { attachmentRef, encodeBodyBytes, fileIdsOf, fileRefOf } from '../../../app/web/core/codec.ts'
+import { attachmentRef, encodeBodyBytes, encodeRegister, fileIdsOf, fileRefOf } from '../../../app/web/core/codec.ts'
 import type { Fields } from '../../../app/web/core/codec.ts'
 import type { Draft, Urgency } from '../../../app/web/core/core-api.ts'
 import { Hub } from '../../../app/web/core/hub.ts'
@@ -138,6 +138,12 @@ export class AgentStandIn {
   async say(fields: Fields, card: string | null = null): Promise<void> {
     const payload = encodeBodyBytes('message', { content_type: 'message', ...fields })
     await this.client.engine.seal(card ? { kind: 'cardChat', session: this.session, card: unhex(card), payload } : { kind: 'sessionChat', session: this.session, payload }, null, fileIdsOf('message', fields))
+  }
+  /** Its own device register, as the connector writes it: { device_name, platform, folder, host }. */
+  async reportDevice(info: { device_name: string; platform: string; folder: string; host: string }): Promise<void> {
+    // (in its session's group, as the connector's ensure_device_register; the id in the name as the codec writes it)
+    const { name, value } = encodeRegister(`device/${this.client.my_device_id}`, info)
+    await this.client.engine.seal({ kind: 'register', group: this.client.core.sessionGroupId(this.client.room_id, this.session), name, value }, null, [])
   }
   /** A register of its session group: `profile`, `status_line/<id>`, `heard`, `alert/<hash>`. */
   async setRegister(name: string, value: unknown): Promise<void> {

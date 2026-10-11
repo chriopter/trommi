@@ -1,4 +1,4 @@
-//! A main session (5.2.2, 5.2.5): who holds which key, a founding that misses a KeyPackage, the last-resort
+//! A main session (5.2.2, 5.2.5): who holds which key, a founding that leaves out a device without a KeyPackage, the last-resort
 //! KeyPackage, and a device that cannot make the `SealedKey` of its Commits.
 
 use trommi_core::device::{key_package_info, Processed, Received};
@@ -108,50 +108,66 @@ fn the_content_keys_of_a_group_differ_per_epoch() {
 }
 
 #[test]
-fn a_founding_with_a_missing_key_package_fails_and_is_tried_again() {
+fn a_founding_leaves_out_a_human_device_without_a_key_package_which_is_added_later() {
     let (mut a, mut b, mut agent) = (new_device(), new_device(), new_device());
     let (mut hub, room_group) = found_room(&mut a);
     add_human(&mut hub, &mut a, &mut b);
     enrol(&mut hub, &mut a, &mut agent);
     publish_some(&mut hub, &mut agent, 2);
 
-    // The hub holds no KeyPackage of the second human device: the claim hands out nothing at all.
+    // The hub holds no KeyPackage of the second human device: a claim of all hands out nothing at all.
     assert_eq!(hub.claim(&[b.id(), agent.id()]), Err(Error::NotFound));
     assert_eq!(hub.unused(&agent.id()), 2);
 
-    // With the agent's alone the founding is refused before anything is built or stored.
+    // The agent device's KeyPackage is needed: without it nothing is built or stored.
+    assert_eq!(a.found_session(&agent.id(), &[], now()), Err(Error::Incomplete));
     let of_agent = hub.claim(&[agent.id()]).unwrap();
     assert_eq!(hub.unused(&agent.id()), 1);
-    assert_eq!(
-        a.found_session(&agent.id(), &of_agent, now()),
-        Err(Error::Incomplete)
-    );
-    assert!(a.outbox().is_empty());
-    assert_eq!(a.groups().unwrap().len(), 1);
-    // Two KeyPackages of one device do not stand in for the missing one.
+    // Two KeyPackages of one device are refused.
     let twice = [of_agent[0].clone(), of_agent[0].clone()];
     assert_eq!(
         a.found_session(&agent.id(), &twice, now()),
         Err(Error::BadKeyPackage)
     );
     assert!(a.outbox().is_empty());
-    assert_eq!(hub.change(), 4);
+    assert_eq!(a.groups().unwrap().len(), 1);
 
-    // Tried again with fresh ones; what was handed out stays used.
-    publish_some(&mut hub, &mut b, 1);
-    let fresh = hub.claim(&[b.id(), agent.id()]).unwrap();
-    assert_ne!(fresh[1], of_agent[0]);
-    assert_eq!(hub.unused(&agent.id()), 0);
-    let session = a.found_session(&agent.id(), &fresh, now()).unwrap();
+    // With the agent's alone the session is founded: the human device without a KeyPackage is left out (5.2.5).
+    let session = a.found_session(&agent.id(), &of_agent, now()).unwrap();
     post_ok(&mut hub, &mut a);
     let group = GroupId::session(room_group.room_id(), session);
     assert_eq!(hub.epoch(&group), Some(1));
     settle(&hub, &mut b);
     settle(&hub, &mut agent);
-    assert_eq!(b.group(&group).unwrap().leaves.len(), 3);
+    assert_eq!(b.group(&group).err(), Some(Error::NotFound));
+    let leaves = [a.id(), agent.id()].into_iter().collect();
+    assert_eq!(agent.group(&group).unwrap().leaves, leaves);
+
+    // A helper session is founded with at least one human device: the opener with none builds nothing.
     assert_eq!(
-        agent.content_key(&group, 1).unwrap(),
-        a.content_key(&group, 1).unwrap()
+        agent.found_helper(&session, &[], now()),
+        Err(Error::Incomplete)
+    );
+    assert!(agent.outbox().is_empty());
+
+    // Once it has KeyPackages at the hub a human device of the group adds it (5.2.7); everyone takes the Commit.
+    publish_some(&mut hub, &mut b, 1);
+    let of_b = hub.claim(&[b.id()]).unwrap().remove(0);
+    a.add_to_session(&group, &b.id(), &of_b, now()).unwrap();
+    post_ok(&mut hub, &mut a);
+    settle(&hub, &mut b);
+    settle(&hub, &mut agent);
+    assert_eq!(hub.epoch(&group), Some(2));
+    for device in [&a, &b, &agent] {
+        assert_eq!(device.group(&group).unwrap().leaves.len(), 3);
+    }
+    assert_eq!(
+        b.content_key(&group, 2).unwrap(),
+        a.content_key(&group, 2).unwrap()
+    );
+    assert_eq!(
+        agent.content_key(&group, 2).unwrap(),
+        a.content_key(&group, 2).unwrap()
     );
 }
 

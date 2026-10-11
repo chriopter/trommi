@@ -523,18 +523,28 @@ impl Client {
                     "the room's devices are not known yet",
                 ));
             }
-            // A claim is all or nothing; a founding that fails is tried again with fresh KeyPackages.
+            // A partial claim: a human device the hub holds no KeyPackage of (one away for long, or not yet
+            // stocked) is left out and added later by a human device of the group (5.2.5, 5.2.7). With none at
+            // all there is nobody to read the session: the founding waits.
             let claimed = self
                 .hub
                 .post(
                     "/v1/key-packages/claim",
-                    &json!({ "devices": humans.iter().map(DeviceId::to_base64url).collect::<Vec<_>>() }),
+                    &json!({ "devices": humans.iter().map(DeviceId::to_base64url).collect::<Vec<_>>(), "partial": true }),
                 )
                 .await?;
+            let by_device = claimed.get("key_packages").unwrap_or(&Value::Null);
             let mut packages = Vec::new();
             for human in &humans {
-                let by_device = claimed.get("key_packages").unwrap_or(&Value::Null);
-                packages.push(unb64(by_device, &human.to_base64url())?);
+                if by_device.get(human.to_base64url()).is_some() {
+                    packages.push(unb64(by_device, &human.to_base64url())?);
+                }
+            }
+            if packages.is_empty() {
+                return Err(Fault::new(
+                    "not-found",
+                    "none of the human devices has a KeyPackage at the hub: open the app on one of them and try again",
+                ));
             }
             let now = now_ms();
             let (session, outbox_id) = self

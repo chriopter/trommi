@@ -5,14 +5,15 @@
 //   - no link opens a new tab; the one mail address is the contact;
 //   - head and foot are the same on every page;
 //   - public/_headers carries the policy and leaves Strict-Transport-Security to the zone;
-//   - the worker sends http to https and www to the apex, and nothing else anywhere.
+//   - the worker sends http to https and www to the apex, /beta to the TestFlight link (or the install steps), and
+//     nothing else anywhere.
 //
 //   node tests/site/check.mjs
 // Exit 3 when a check fails.
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { redirectOf } from '../../site/worker.js'
+import { redirectOf, betaOf, BETA, BETA_FALLBACK } from '../../site/worker.js'
 
 const site = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'site')
 const pub = path.join(site, 'public')
@@ -69,6 +70,7 @@ for (const page of pages) {
   const local = (ref, what) => {
     const url = new URL(ref, `${ORIGIN}/${page}`)
     if (url.origin !== ORIGIN) return bad.push(`${what} from another origin: ${ref}`)
+    if (url.pathname === BETA && !url.search && !url.hash) return // the worker answers it (the TestFlight link)
     const file = fileOf(url.pathname)
     if (!file) return bad.push(`${what} leads to no file: ${ref}`)
     named.add(file)
@@ -159,6 +161,19 @@ const redirects = [
 ]
 const wrong = redirects.filter(([from, to]) => redirectOf(from) !== to).map(([from]) => `${from} -> ${redirectOf(from)}`)
 check(wrong.length === 0, 'worker: http goes to https, www to the apex, everything else is served', wrong)
+const betas = [
+  ['https://testflight.apple.com/join/AbCd1234', 'https://testflight.apple.com/join/AbCd1234'],
+  ['', BETA_FALLBACK],
+  [undefined, BETA_FALLBACK],
+  ['https://testflight.apple.com/join/', BETA_FALLBACK],
+  ['https://example.com/join/AbCd1234', BETA_FALLBACK],
+  ['http://testflight.apple.com/join/AbCd1234', BETA_FALLBACK],
+]
+const wrongBeta = betas.filter(([link, to]) => betaOf(link) !== to).map(([link]) => `${link} -> ${betaOf(link)}`)
+check(wrongBeta.length === 0 && fileOf(BETA) === null, 'worker: /beta goes to a TestFlight link or the install steps, and is no file', wrongBeta)
+const wrangler = fs.readFileSync(path.join(site, 'wrangler.jsonc'), 'utf8')
+const link = wrangler.match(/"TESTFLIGHT_URL":\s*"([^"]*)"/)
+check(link && (link[1] === '' || betaOf(link[1]) === link[1]), 'wrangler.jsonc: TESTFLIGHT_URL is empty or a TestFlight public link', link?.[1])
 
 console.log(failed ? `${failed} check(s) failed` : 'all checks passed')
 process.exit(failed ? 3 : 0)

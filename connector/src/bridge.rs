@@ -1299,6 +1299,39 @@ impl Bridge {
         Ok(())
     }
 
+    /// The terminal mirror's answer of a turn one card started: into that card's thread, as a reply with its card_id
+    /// would. Returns the card's title for the pointer line, or None when this session has no such card (the
+    /// answer then goes into the session's chat).
+    pub async fn answer_on_card(&self, card: &str, text: &str) -> Result<Option<String>> {
+        self.caught_up().await?;
+        let Ok(k) = self.find_card(Some(&json!(card))).await else {
+            return Ok(None);
+        };
+        let text =
+            clean_fences(text, "text").unwrap_or_else(|_| text.replace("```html", "```text"));
+        let mut f = Map::new();
+        f.insert("text".into(), json!(text));
+        // (as reply: the answer to "Explain" puts the card before the human again)
+        if k.in_revision.as_ref().is_some_and(|t| t.by == "explain") {
+            f.insert("present_card".into(), json!(true));
+        }
+        self.client
+            .send_message(f, Some(k.object_id.clone()), None)
+            .await?;
+        Ok(Some(k.title()))
+    }
+    /// The line in the session's chat that points to the card the turn's answer went to: the card rides along as
+    /// a copied card (a chip that opens it), and the line ends the turn like an answer (`terminal: answer`).
+    pub async fn pointer(&self, card: &str, line: &str) -> Result<()> {
+        self.caught_up().await?;
+        let mut f = Map::new();
+        f.insert("text".into(), json!(line));
+        f.insert("copied_cards".into(), json!([card]));
+        f.insert("terminal".into(), json!("answer"));
+        self.client.send_message(f, None, None).await?;
+        Ok(())
+    }
+
     /// A block of a turn's trail (`trail.rs`) as the work trail of protocol v1 (spec/v1.md 7.3): one MLS message
     /// per step, numbered from 1 within the turn, in this agent's session group or in the group of the child
     /// session `target` (one that exists; never opened here). An item is sent when it is first seen, and once

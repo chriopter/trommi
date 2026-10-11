@@ -50,7 +50,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "fernly-web"
+      "agent_session_id": "fernly-web",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-web"
     },
     {
       "device_id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
@@ -61,7 +64,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "landing-page"
+      "agent_session_id": "landing-page",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-web/landing-page"
     },
     {
       "device_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
@@ -72,7 +78,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "copy"
+      "agent_session_id": "copy",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-web/copy"
     },
     {
       "device_id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
@@ -83,7 +92,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "onboarding"
+      "agent_session_id": "onboarding",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-web/onboarding"
     },
     {
       "device_id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
@@ -94,7 +106,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "web-perf"
+      "agent_session_id": "web-perf",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-web/web-perf"
     },
     {
       "device_id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
@@ -105,7 +120,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "e2e-tests"
+      "agent_session_id": "e2e-tests",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-web/e2e-tests"
     },
     {
       "device_id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
@@ -116,7 +134,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": false,
-      "agent_session_id": "seo"
+      "agent_session_id": "seo",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-web/seo"
     },
     {
       "device_id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
@@ -127,7 +148,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "fernly-ios"
+      "agent_session_id": "fernly-ios",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-ios"
     },
     {
       "device_id": "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
@@ -138,7 +162,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "widgets"
+      "agent_session_id": "widgets",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-ios/widgets"
     },
     {
       "device_id": "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
@@ -149,7 +176,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "push-reminders"
+      "agent_session_id": "push-reminders",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-ios/push-reminders"
     },
     {
       "device_id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
@@ -160,7 +190,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "app-store"
+      "agent_session_id": "app-store",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-ios/app-store"
     },
     {
       "device_id": "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e",
@@ -171,7 +204,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "crash-triage"
+      "agent_session_id": "crash-triage",
+      "platform": "claude-code",
+      "host": "MacBook Pro",
+      "folder": "~/code/fernly-ios/crash-triage"
     },
     {
       "device_id": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
@@ -182,7 +218,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "design-system"
+      "agent_session_id": "design-system",
+      "platform": "claude-code",
+      "host": "build-01",
+      "folder": "~/code/design-system"
     },
     {
       "device_id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
@@ -193,7 +232,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "tokens"
+      "agent_session_id": "tokens",
+      "platform": "claude-code",
+      "host": "build-01",
+      "folder": "~/code/design-system/tokens"
     },
     {
       "device_id": "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
@@ -204,7 +246,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "icons"
+      "agent_session_id": "icons",
+      "platform": "claude-code",
+      "host": "build-01",
+      "folder": "~/code/design-system/icons"
     },
     {
       "device_id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
@@ -215,7 +260,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "dark-mode"
+      "agent_session_id": "dark-mode",
+      "platform": "claude-code",
+      "host": "build-01",
+      "folder": "~/code/design-system/dark-mode"
     },
     {
       "device_id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
@@ -226,7 +274,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "payments-service"
+      "agent_session_id": "payments-service",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/payments-service"
     },
     {
       "device_id": "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
@@ -237,7 +288,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "webhooks"
+      "agent_session_id": "webhooks",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/payments-service/webhooks"
     },
     {
       "device_id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
@@ -248,7 +302,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "checkout"
+      "agent_session_id": "checkout",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/payments-service/checkout"
     },
     {
       "device_id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
@@ -259,7 +316,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "invoices"
+      "agent_session_id": "invoices",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/payments-service/invoices"
     },
     {
       "device_id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
@@ -270,7 +330,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "tax"
+      "agent_session_id": "tax",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/payments-service/tax"
     },
     {
       "device_id": "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
@@ -281,7 +344,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "load-test"
+      "agent_session_id": "load-test",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/payments-service/load-test"
     },
     {
       "device_id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
@@ -292,7 +358,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "data-pipeline"
+      "agent_session_id": "data-pipeline",
+      "platform": "codex",
+      "host": "build-01",
+      "folder": "~/code/data-pipeline"
     },
     {
       "device_id": "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
@@ -303,7 +372,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "ingest"
+      "agent_session_id": "ingest",
+      "platform": "codex",
+      "host": "build-01",
+      "folder": "~/code/data-pipeline/ingest"
     },
     {
       "device_id": "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
@@ -314,7 +386,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "dbt-models"
+      "agent_session_id": "dbt-models",
+      "platform": "codex",
+      "host": "build-01",
+      "folder": "~/code/data-pipeline/dbt-models"
     },
     {
       "device_id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
@@ -325,7 +400,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "dashboard"
+      "agent_session_id": "dashboard",
+      "platform": "codex",
+      "host": "build-01",
+      "folder": "~/code/data-pipeline/dashboard"
     },
     {
       "device_id": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
@@ -336,7 +414,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "infra"
+      "agent_session_id": "infra",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra"
     },
     {
       "device_id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
@@ -347,7 +428,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "terraform"
+      "agent_session_id": "terraform",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/terraform"
     },
     {
       "device_id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
@@ -358,7 +442,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "k8s-upgrade"
+      "agent_session_id": "k8s-upgrade",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/k8s-upgrade"
     },
     {
       "device_id": "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
@@ -369,7 +456,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "postgres-replica"
+      "agent_session_id": "postgres-replica",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/postgres-replica"
     },
     {
       "device_id": "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
@@ -380,7 +470,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": false,
-      "agent_session_id": "cdn"
+      "agent_session_id": "cdn",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/cdn"
     },
     {
       "device_id": "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26",
@@ -391,7 +484,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "backups"
+      "agent_session_id": "backups",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/backups"
     },
     {
       "device_id": "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
@@ -402,7 +498,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "observability"
+      "agent_session_id": "observability",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/observability"
     },
     {
       "device_id": "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
@@ -413,7 +512,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "cost"
+      "agent_session_id": "cost",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/cost"
     },
     {
       "device_id": "81af95457b22d63d2ac4c30b995a7efe1ae2ee5d86ceda512c5a4c53371a85e9",
@@ -424,7 +526,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": false,
-      "agent_session_id": "secrets"
+      "agent_session_id": "secrets",
+      "platform": "codex",
+      "host": "MacBook Pro",
+      "folder": "~/code/infra/secrets"
     },
     {
       "device_id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
@@ -435,7 +540,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "docs-site"
+      "agent_session_id": "docs-site",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/docs-site"
     },
     {
       "device_id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
@@ -446,7 +554,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "api-reference"
+      "agent_session_id": "api-reference",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/docs-site/api-reference"
     },
     {
       "device_id": "761b525b4045435aea626e866242d436daf6cf2a22ea2b4ec7e20431376cbe9b",
@@ -457,7 +568,10 @@
       "removed_entry_number": null,
       "is_me": false,
       "is_online": true,
-      "agent_session_id": "docs-search"
+      "agent_session_id": "docs-search",
+      "platform": "claude-code",
+      "host": "Mac mini",
+      "folder": "~/code/docs-site/docs-search"
     }
   ],
   "sessions": [

@@ -681,7 +681,6 @@ body[data-t-view="card"] .curl-grab { width: 44px; height: 44px; }
 @media (max-width: 860px) {
   :is(.desk-duck-yes, .desk-duck-no, .tc-more-item, .tc-more .tc-more-list > .cardclip-copy, .t-picture-back, .session-buttons button) { min-height: 44px; }
   
-  .ledger-find { height: 44px; }
   :is(.row-mark, .tc-from, .tc-clip, .tc-draw-pen, .tc-send, .ledger-mark, .ledger-rename, .room-devices summary, .art-kinds a, #settings-logout) { position: relative; }
   :is(.row-mark, .tc-from, .tc-step, .tc-clip, .tc-draw-pen, .tc-send, .ledger-mark, .ledger-rename, .room-devices summary, .art-kinds a, #settings-logout)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); translate: -50% -50%; }
 }

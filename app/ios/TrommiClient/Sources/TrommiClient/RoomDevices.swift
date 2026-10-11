@@ -19,6 +19,23 @@ public func checkEmoji(_ code: String) -> [(emoji: String, word: String)] {
 public func checkEmojiLine(_ code: String) -> String { checkEmoji(code).map { "\($0.emoji) \($0.word)" }.joined(separator: " · ") }
 
 extension Room {
+  /**
+   * 5.2.7: a live session group of this device that lacks a human device of the room (one left out of the founding
+   * while the hub held no KeyPackage of it, 5.2.5) gets it added: one Commit and one KeyPackage, one device per group
+   * and round. A device the hub still holds none of is looked at again at the next sync. While an invite of this
+   * device is at work its own steps add the newcomer: nothing is done beside them. Runs inside a sync; the Commit
+   * comes back with the log.
+   */
+  func healSessions() async {
+    guard let room = roomGroup, let humans = groups[hex(room)]?.leaves, humans.contains(where: { hex($0) == deviceIdHex }) else { return }
+    guard let steps = try? await onCore({ try $0.inviteSteps() }), steps.isEmpty else { return }
+    for g in groups.values where g.session != nil && !g.archived && !g.pending && g.disallowed.isEmpty && g.leaves.contains(where: { hex($0) == deviceIdHex }) {
+      guard let device = humans.first(where: { !g.leaves.contains($0) }) else { continue }
+      guard let kp = try? await noted({ try await hub.claimKeyPackages([device]) }).first?.keyPackage else { continue }
+      if (try? await onCore({ try $0.addToSession(group: g.group, device: device, keyPackage: kp, nowMs: nowMs()) })) != nil { pumpOutbox() }
+    }
+  }
+
   public struct Pairing {
     public let inviteId: String      // hex
     public let link: String
@@ -140,10 +157,10 @@ extension Room {
         // (the old keys of that session, 7.1: the core names no step for them)
         try await serial { [self] in _ = try await self.onCore { try $0.sendHandover(group: group, recipient: device) }; self.pumpOutbox() }
       case .foundSession(_, let agent, let keyPackage):
-        // A session group holds the agent device and EVERY human device (5.2.5): one KeyPackage of each, all or nothing.
+        // A session group holds the agent device and the human devices the hub has a KeyPackage of (5.2.5): a
+        // partial claim; one without is left out and added later by a human device of the group (5.2.7).
         let others = (roomGroup.flatMap { groups[hex($0)]?.leaves } ?? []).filter { hex($0) != deviceIdHex }
-        let claimed = others.isEmpty ? [] : try await noted { try await hub.claimKeyPackages(others) }
-        guard claimed.count == others.count else { throw TrommiError("not-found", "a device has no KeyPackage left at the hub") }
+        let claimed = others.isEmpty ? [] : try await noted { try await hub.claimKeyPackages(others, partial: true) }
         let (sid, founding): (SessionId, UInt64?) = try await serial { [self] in
           let r = try await self.onCore { d -> (SessionId, UInt64?) in
             let s = try d.foundSession(agent: agent, keyPackages: [keyPackage] + claimed.map(\.keyPackage), nowMs: nowMs())

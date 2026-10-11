@@ -1,5 +1,6 @@
 //! The Trommi hub for protocol v1: one binary. `trommi-hub` serves; `trommi-hub healthcheck` asks a running hub
-//! on this machine whether it is well (for the container's health check, which has no other tool).
+//! on this machine whether it is well (for the container's health check, which has no other tool);
+//! `trommi-hub dry-run <data> <scratch>` tries this release on a copy of the data (dry_run.rs).
 
 #![forbid(unsafe_code)]
 
@@ -52,6 +53,23 @@ fn main() {
             println!("{}", trommi_hub::admin::hash_password(password));
             return;
         }
+        Some("dry-run") => {
+            // trommi-hub dry-run <live data> <scratch> [seconds]: hub/deploy/hub-dryrun.sh (see dry_run.rs)
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let (Some(source), Some(scratch)) = (args.first(), args.get(1)) else {
+                eprintln!("usage: trommi-hub dry-run <data folder> <scratch folder> [seconds]");
+                std::process::exit(2);
+            };
+            let seconds = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(60);
+            let verdict = trommi_hub::dry_run::run(
+                std::path::Path::new(source),
+                std::path::Path::new(scratch),
+                &cfg.commit,
+                std::time::Duration::from_secs(seconds),
+            );
+            println!("{verdict}");
+            std::process::exit(if verdict["ok"] == json!(true) { 0 } else { 1 });
+        }
         Some("version") => {
             println!("{}", cfg.commit);
             return;
@@ -69,6 +87,8 @@ fn main() {
     runtime.block_on(async {
         // pushes go out over HTTPS; if no client can be built, they are recorded and dropped
         let transport: Arc<dyn Transport> = match Network::new() {
+            // a dry run sends nothing anywhere
+            _ if cfg.dry_run => Arc::new(Recorder::default()),
             Ok(n) => Arc::new(n),
             Err(e) => {
                 eprintln!("push transport unavailable: {e}");
@@ -112,7 +132,7 @@ fn main() {
         );
         // the admin page: on this machine only (127.0.0.1 unless configured), and only if a password hash is set
         let admin_stop = Arc::new(tokio::sync::Notify::new());
-        if app.cfg.admin_password_hash.is_some() {
+        if app.cfg.admin_password_hash.is_some() && !app.cfg.dry_run {
             match tokio::net::TcpListener::bind((app.cfg.admin_host.as_str(), app.cfg.admin_port))
                 .await
             {
@@ -134,7 +154,9 @@ fn main() {
                 ),
             }
         }
-        trommi_hub::server::spawn_jobs(&app);
+        if !app.cfg.dry_run {
+            trommi_hub::server::spawn_jobs(&app);
+        }
         let stop = Arc::new(tokio::sync::Notify::new());
         let signalled = stop.clone();
         tokio::spawn(async move {

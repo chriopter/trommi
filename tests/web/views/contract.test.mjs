@@ -164,7 +164,7 @@ test('every name a view reads from a module of the core is exported by it', asyn
 test('the account steps the page names are the ones the worker runs', () => {
   const text = readText(path.join(CORE, 'account-remote.ts'))
   const calls = [...new Set([...text.matchAll(/onClient(?:<[^>]*>)?\('(\w+)'/g)].map(m => m[1]))]
-  const opens = [...new Set([...text.matchAll(/opening(?:<[^>]*>)?\('(\w+)'/g)].map(m => m[1]))]
+  const opens = [...new Set([...text.matchAll(/(?:opening|signingIn)(?:<[^>]*>)?\('(\w+)'/g)].map(m => m[1]))]
   assert.ok(calls.length > 5 && opens.length > 5, 'account-remote.ts names its steps as this test reads them')
   assert.deepEqual(calls.filter(c => !ACCOUNT_CALLS.includes(c)), [], 'account-remote.ts calls a step the worker refuses (ACCOUNT_CALLS)')
   assert.deepEqual(opens.filter(c => !ACCOUNT_OPENS.includes(c)), [], 'account-remote.ts opens with a step the worker refuses (ACCOUNT_OPENS)')

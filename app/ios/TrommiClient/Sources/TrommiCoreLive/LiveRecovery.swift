@@ -319,14 +319,35 @@ struct ServedByHub {
     let anchor = try await hub.groupInfoBytes(hub.room, epoch: try anchorEpoch(sealed.sealedKeys)).bytes
     let ids = try await liveSessions()
     var groups = [(group: GroupId, below: UInt64)](), foundings = [Bytes](), currents = [Bytes]()
-    for id in [hub.room] + ids {
+    // (a big account has many groups: their GroupInfos are asked for several at a time, each group's current one
+    // before its founding as before; only the order of the answers is kept)
+    let all = [hub.room] + ids
+    let infos = try await Self.each(all, at: 8) { [hub] id -> (current: (epoch: UInt64, bytes: Bytes), founding: Bytes) in
       let current = try await hub.groupInfoBytes(id)
-      foundings.append(try await hub.groupInfoBytes(id, epoch: 0).bytes)
-      currents.append(current.bytes)
-      groups.append((id, current.epoch))
+      return (current, try await hub.groupInfoBytes(id, epoch: 0).bytes)
+    }
+    for (id, info) in zip(all, infos) {
+      foundings.append(info.founding)
+      currents.append(info.current.bytes)
+      groups.append((id, info.current.epoch))
     }
     return ((hub.room, foundings[0], anchor, sealed.sealedKeys, Array(foundings.dropFirst())),
             (currents[0], Array(currents.dropFirst()), sealed.sealedKeys, sealed.links), groups)
+  }
+
+  /// `work` for every item, at most `width` at a time, the answers in the order of `items`; the first failure throws.
+  static func each<T, R: Sendable>(_ items: [T], at width: Int, _ work: @escaping @Sendable (T) async throws -> R) async throws -> [R] where T: Sendable {
+    var out = [R?](repeating: nil, count: items.count)
+    try await withThrowingTaskGroup(of: (Int, R).self) { group in
+      var next = 0
+      func start() { let at = next; let item = items[at]; next += 1; group.addTask { (at, try await work(item)) } }
+      while next < min(width, items.count) { start() }
+      while let (at, r) = try await group.next() {
+        out[at] = r
+        if next < items.count { start() }
+      }
+    }
+    return out.map { $0! }
   }
 
   /// Hands the Commits of `groups` to `take` in the hub's order across the groups, ascending by change number, in
@@ -335,12 +356,20 @@ struct ServedByHub {
   func commits(of groups: [(group: GroupId, below: UInt64)], _ take: ([PlacedPastCommit]) throws -> Void) async throws {
     var pages = groups.map { var p = GroupLogPages(hub: hub, group: $0.group, below: $0.below); p.limit = 64; return p }
     var held = groups.map { _ in [PastCommit]()[...] }
+    // (each group's first page is asked for several at a time: a big account has many groups, most with a page or two)
+    let first = try await Self.each(Array(pages.indices), at: 8) { [pages] at -> (GroupLogPages, [PastCommit]?) in
+      var p = pages[at]
+      let page = try await p.next()
+      return (p, page)
+    }
+    for (at, read) in first.enumerated() { pages[at] = read.0; held[at] = (read.1 ?? [])[...] }
     var pending = [PlacedPastCommit](), bytes = 0, cap = Slices.maxCommits
     func hand() throws {
       try Slices.feed(pending, size: { $0.commit.commit.count }, cap: &cap) { try take($0); return true }
       pending = []; bytes = 0
     }
     while true {
+      try Task.checkCancellation()
       var next: Int?
       for at in groups.indices {
         while held[at].isEmpty, let page = try await pages[at].next() { held[at] = page[...] }
@@ -390,9 +419,22 @@ extension LiveCore {
   public func joinRoomWithRecoveryCode(device: TrommiClient.CoreDevice, code: Bytes, hub: HubClient, nowMs now: UInt64) async throws -> Bytes? {
     let device = try live(device)
     let reader = ServedByHub(hub: hub)
+    SignInWatch.say(.reading)
+    let started = Date()
     let read = try await reader.room { try self.recoveryAnchor(code: code, room: hub.room, sealedKeys: $0).epoch }
+    SignInWatch.log("room read (\(read.groups.count) groups)", since: started)
     try device.codeCheckStart(code, served: read.start)
-    try await reader.commits(of: read.groups) { try device.codeCheckSlice($0) }
+    // (what is to be read is known from the current epochs: each group's Commits up to it)
+    let total = read.groups.reduce(0) { $0 + Int($1.below) }
+    var done = 0
+    SignInWatch.say(.checking(done: 0, total: total))
+    try await reader.commits(of: read.groups) {
+      try device.codeCheckSlice($0)
+      done += $0.count
+      SignInWatch.say(.checking(done: done, total: total))
+    }
+    SignInWatch.log("\(done) Commits checked", since: started)
+    SignInWatch.say(.joining)
     let joined = try device.joinRoomChecked(code, served: read.end, nowMs: now)
     for id in joined.outbox { try await post(id, of: device, to: hub) }
     return joined.missingLink
