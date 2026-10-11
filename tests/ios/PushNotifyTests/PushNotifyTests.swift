@@ -186,7 +186,7 @@ final class PushNotifyTests: XCTestCase {
 
   func page(_ after: UInt64, _ change: UInt64, more: Bool) -> Data {
     let items = (after + 1...change).map { ["kind": "envelope", "change": $0] as [String: Any] }
-    return try! JSONSerialization.data(withJSONObject: ["items": items, "change": change, "more": more])
+    return try! JSONSerialization.data(withJSONObject: ["items": items, "change": change, "more": more], options: .sortedKeys)
   }
 
   func testTheStoreKeepsPagesByTheirStart() {
@@ -212,20 +212,28 @@ final class PushNotifyTests: XCTestCase {
     let push = ApnsPush(roomId: roomId, change: 30, urgency: 1, ticket: ticket)
     var c = context(); c.hub = "https://hub.example"; c.client = "ios/9.9.9"; c.cursor = 10
     var asked = [(URL, [String: String])]()
+    var top: UInt64 = 30
     let get: (URL, [String: String]) async -> Data? = { url, headers in
       asked.append((url, headers))
       let q = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
       let after = UInt64(q.first { $0.name == "after" }!.value!)!
-      let to = min(after + 10, 30)
-      return self.page(after, to, more: to < 30)
+      let to = min(after + 10, top)
+      return self.page(after, to, more: to < top)
     }
     let kept = await NotifyPrefetch.run(push, context: c, store: store, get: get)
     XCTAssertEqual(kept, 2)
     XCTAssertEqual(store.end(), 30)
     XCTAssertEqual(asked.first?.0.path, "/v1/push-changes")
     XCTAssertEqual(asked.first?.1["trommi-client"], "ios/9.9.9")
-    XCTAssertTrue(asked.first!.0.query!.contains("ticket=\(NotifyText.b64u(ticket))"))
+    XCTAssertEqual(asked.first?.1["trommi-ticket"], NotifyText.b64u(ticket))
+    XCTAssertFalse(asked.first!.0.query!.contains("ticket"))
     XCTAssertTrue(asked.first!.0.query!.contains("after=10"))
+    // a second push before the app opened: the pages kept stay, reading goes on where they end
+    asked = []; top = 35
+    let later = await NotifyPrefetch.run(ApnsPush(roomId: roomId, change: 35, urgency: 1, ticket: ticket), context: c, store: store, get: get)
+    XCTAssertEqual(later, 1)
+    XCTAssertTrue(asked.first!.0.query!.contains("after=30"))
+    XCTAssertEqual(store.end(), 35)
     XCTAssertNotNil(store.take(after: 10))
     // nothing more to read: the app is at the change that rang, or there is no ticket, hub or cursor
     asked = []

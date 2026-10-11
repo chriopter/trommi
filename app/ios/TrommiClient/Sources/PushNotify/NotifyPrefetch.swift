@@ -62,6 +62,11 @@ public struct PrefetchStore {
     return found
   }
 
+  /** The pages that end at or before `after` go: the app has read them. The page that starts there stays. */
+  public func drop(upTo after: UInt64) {
+    for e in entries() where e.change <= after { try? FileManager.default.removeItem(at: e.url) }
+  }
+
   /** Everything goes (signed out, or the app read past it all). */
   public func clear() { try? FileManager.default.removeItem(at: dir) }
 }
@@ -80,15 +85,16 @@ public enum NotifyPrefetch {
                          get: (URL, [String: String]) async -> Data?) async -> Int {
     guard !push.ticket.isEmpty, let hub = context.hub, let cursor = context.cursor, push.change > cursor,
           hub.hasPrefix("https://") || hub.hasPrefix("http://127.0.0.1") || hub.hasPrefix("http://localhost") else { return 0 }
+    // what the app has read already is not kept; the page it reads next stays
+    store.drop(upTo: cursor)
     var after = max(cursor, store.end() ?? 0)
-    // what the app has read already is not kept
-    _ = store.take(after: cursor)
     var kept = 0
     for _ in 0..<pagesPerPush {
       guard after < push.change, var comps = URLComponents(string: "\(hub)/v1/push-changes") else { break }
-      comps.queryItems = [URLQueryItem(name: "after", value: String(after)), URLQueryItem(name: "limit", value: String(pageLimit)),
-                          URLQueryItem(name: "ticket", value: NotifyText.b64u(push.ticket))]
-      guard let url = comps.url, let data = await get(url, ["trommi-client": context.client ?? "ios/0.0.0"]),
+      // the ticket goes in a header, never in the URL (which proxies log)
+      comps.queryItems = [URLQueryItem(name: "after", value: String(after)), URLQueryItem(name: "limit", value: String(pageLimit))]
+      guard let url = comps.url,
+            let data = await get(url, ["trommi-client": context.client ?? "ios/0.0.0", "trommi-ticket": NotifyText.b64u(push.ticket)]),
             let page = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             page["items"] is [Any], let change = (page["change"] as? NSNumber)?.uint64Value, change > after,
             store.put(after: after, change: change, page: data) else { break }

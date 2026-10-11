@@ -3,7 +3,8 @@
 // card comes from the app on this phone (LiveState); the hub's pushes carry two marks (anyone working, anything
 // waiting) and the exact counts sealed under this phone's push key, which the widget opens with the core
 // (NotifyCoreLive, the key from the Keychain item the app writes for the notification extension). What does not open
-// leaves the marks: the widget says that something waits, without a number. The widget reads nothing else: no Keychain item, no file, no key. A tap opens the card (or
+// leaves the marks: the widget says that something waits, without a number. The widget reads nothing else: no other
+// Keychain item, no file, no content key. A tap opens the card (or
 // the Desk). Past the push's stale date the widget dims and says so. The island is always black: its colours are
 // the board's dark tones; the lock screen follows the system's light or dark.
 import Foundation

@@ -1573,7 +1573,10 @@ pub fn changes_upto(
     if !cut_short {
         cursor = upto;
     }
-    Ok(json!({ "items": items, "change": cursor.max(after), "more": cursor < head }))
+    // "more" by the room's head, also under a ceiling: a page read ahead up to a push's change does not tell the
+    // app that it caught up
+    let end = cursor.max(after);
+    Ok(json!({ "items": items, "change": end, "more": end < room_head }))
 }
 
 // ---- retention (9.4)

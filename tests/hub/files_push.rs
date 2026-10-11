@@ -570,7 +570,10 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     // with the ticket the extension reads ahead what the app catches up on: as GET /v1/changes gives it to this
     // device, up to the change that rang, and no further
     let own = s.w.ada.get(hub, "/v1/changes?after=0").ok();
-    let ahead = hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0")).ok();
+    let ahead_with = |ticket: &str, query: &str| {
+        common::request(hub.port, "GET", &format!("/v1/push-changes?{query}"), &[("trommi-ticket", ticket.to_string())], &[])
+    };
+    let ahead = ahead_with(ticket, "after=0").ok();
     let rang = opened["change"].as_i64().unwrap();
     let changes = |page: &Value| -> Vec<i64> {
         page["items"].as_array().unwrap().iter().map(|i| i["change"].as_i64().unwrap()).collect()
@@ -581,14 +584,18 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
         changes(&own).into_iter().filter(|c| *c <= rang).collect::<Vec<_>>(),
         changes(&ahead)
     );
-    assert_eq!(ahead["more"], false);
     assert_eq!(ahead["change"].as_i64(), Some(rang));
-    let page = hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0&limit=1")).ok();
+    // "more" says whether the room goes on past the page, as GET /v1/changes says it: a page up to the change that
+    // rang does not tell the app it caught up while the room has more
+    let head = own["change"].as_i64().unwrap();
+    assert_eq!(ahead["more"], json!(rang < head));
+    let page = ahead_with(ticket, "after=0&limit=1").ok();
     assert_eq!(changes(&page).len(), 1);
     assert_eq!(page["more"], true);
-    hub.get(&format!("/v1/push-changes?ticket={}&after=0", b64(&forged)))
-        .refused(401, "unauthorised");
+    ahead_with(&b64(&forged), "after=0").refused(401, "unauthorised");
     hub.get("/v1/push-changes?after=0").refused(401, "unauthorised");
+    // the ticket is taken from its header only, never from the URL
+    hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0")).refused(401, "unauthorised");
 
     // Live Activity: two marks (0 or 1) and a tag. Work begins: start; a mark changes: update
     let start_token = "cd".repeat(32);

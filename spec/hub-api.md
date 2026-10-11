@@ -20,7 +20,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `GET /v1/invites/{invite_id}`, `POST …/request`, `GET …/reveal` | → `{ offer, signature, mac, expires_at }` (`mac` null for an invite stored before the MAC); Request + mac + signature; Reveal | by `invite_id` only (12.1); 4 requests per invite |
 | `GET /v1/shares/{share_id}` | header `x-share-secret` → the file's bytes (`Range` honoured) | 11.5; every refusal is the same `not-found` |
 | `GET /v1/push-envelope?ticket=` | → one envelope | 15.2 |
-| `GET /v1/push-changes?ticket=&after=&limit=` | → `{ items, change, more }` | 15.2: as `GET /v1/changes` for the ticket's human device, up to the ticket's change; for reading ahead |
+| `GET /v1/push-changes?after=&limit=` | header `trommi-ticket` → `{ items, change, more }` | 15.2: as `GET /v1/changes` for the ticket's human device, up to the ticket's change (`more` by the room's head); for reading ahead; the ticket never in the URL |
 | **Groups (MLS delivery service)** | | |
 | `POST /v1/groups` | `{ group_info_0, sealed_key_0, commit, group_info, welcome?, sealed_key }` → `{ group_id }` | founding of a session group (5.2.5); `incomplete` when it leaves out a human device the hub holds a KeyPackage of (claim again) |
 | `POST /v1/groups/{group}/commits` | `{ epoch, commit, group_info, welcome?, sealed_key, recovery_auth? }` → `{ epoch, change }` | `epoch` = the epoch it builds on; `epoch-taken`, `room-behind`, `bad-commit`, `incomplete` |
@@ -81,7 +81,7 @@ written. Catch-up is "everything above N".
 | `shares` | `share_id`, `file_id`, `secret_hash`, `expires_at`, `created_by` | | by id |
 | `invites`, `invite_requests` | signed Offer with its `offer_mac` (added to schema 5 in place), Requests, Reveal, `expires_at`, `used_at`, `burned_at` | | by `invite_id` |
 | `requests` | `room_id`, `device`, `kind`, `group_id`, `at` | | by room |
-| `push_subscriptions`, `live_activities` | endpoints, tokens, `level`, the marks last sent (0 or 1 each) | | by device |
+| `push_subscriptions`, `live_activities` | endpoints, tokens, `level`, the counts last sent (Apple got their marks, 0 or 1 each, and the counts sealed) | | by device |
 | `agent_leases` | `device`, `process`, `generation`, `expires_at` | | |
 
 - The four object tables, `chats`, `boards` and `registers` are indexes over `envelopes`, written in the same

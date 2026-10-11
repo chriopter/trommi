@@ -27,6 +27,8 @@ struct Rq {
     bearer: Option<String>,
     lease: Option<u64>,
     found_token: Option<String>,
+    /// header `trommi-ticket`: a push ticket (15.2), kept out of the URL
+    ticket: Option<String>,
     ip: String,
     body: Value,
 }
@@ -235,7 +237,7 @@ async fn respond(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer {
         return Response::builder()
             .status(204)
             .header("access-control-allow-methods", "GET, POST, PUT, DELETE")
-            .header("access-control-allow-headers", "authorization, content-type, trommi-client, trommi-lease, x-share-secret, x-found-token, range, last-event-id")
+            .header("access-control-allow-headers", "authorization, content-type, trommi-client, trommi-lease, x-share-secret, x-found-token, trommi-ticket, range, last-event-id")
             .header("access-control-max-age", "86400")
             .body(Body::empty())
             .expect("a valid response");
@@ -271,6 +273,7 @@ async fn respond(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer {
     let lease = http::header(&parts.headers, "trommi-lease").and_then(|l| l.parse().ok());
     let query = http::query(parts.uri.query());
     let found_token = http::header(&parts.headers, "x-found-token").map(str::to_string);
+    let ticket = http::header(&parts.headers, "trommi-ticket").map(str::to_string);
 
     // the routes that stream
     let streamed = match (&parts.method, &segs[1..]) {
@@ -358,6 +361,7 @@ async fn respond(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer {
         bearer,
         lease,
         found_token,
+        ticket,
         ip,
         body: parsed,
     };
@@ -556,9 +560,10 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
         }
         ("GET", ["push-changes"]) => {
             // 15.2: with the ticket the notification extension reads ahead what the app would catch up on, up to the
-            // change that rang, as GET /v1/changes gives it to that human device
+            // change that rang, as GET /v1/changes gives it to that human device. The ticket comes in a header, never
+            // in the URL, where proxies and their logs keep it.
             open_limit()?;
-            let (room, device, change) = crate::push::check_ticket(&app.ticket_key, rq.q("ticket").unwrap_or(""), t)?;
+            let (room, device, change) = crate::push::check_ticket(&app.ticket_key, rq.ticket.as_deref().unwrap_or(""), t)?;
             let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?);
             app.read(|x| {
                 if store::standing(x.c, &room, &device)? != Some(Who::Human) {

@@ -9,9 +9,12 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Everything is encrypted on your device. The hub stores only encrypted data and never has the keys to read it.
 - The hub does see: your e-mail, which devices are in which group, when something is written, padded sizes, push
   tokens, and of every card, Note, permission request and Artifact its kind, its state (open, answered, closed) and
-  one knock bit (urgent or not). The urgency level and when you answered stay in the encrypted body.
-- Sizes are padded: stored messages, MLS messages and new files are rounded up to fixed buckets (files at most
-  about 12 % larger), so a size tells little of the content. Files from before 11 October 2026 keep their exact size.
+  one knock bit (urgent or not). The urgency level stays in the encrypted body, and new headers carry no separate
+  answer time; the hub still sees when each answer is written, as it sees when anything is written. Headers written
+  before 11 October 2026 keep the level and the answer time they had.
+- Sizes are padded: stored messages, MLS messages and new files are rounded up to fixed buckets (a file to 4 KiB at
+  least, and above that at most about 12 % larger), so a size tells little of the content. Files from before
+  11 October 2026 keep their exact size.
 - Settings → Data shows you what the hub keeps of your account: counts and sizes only, to your own devices only.
 - Your password never leaves your device; the hub keeps only a slow hash of a key derived from it.
 - Each wrong password makes that guesser wait longer (up to 15 minutes); no account is ever locked.
@@ -35,8 +38,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   change; the counts themselves travel sealed for the iPhone, never a title.
 - With a push the iPhone's notification extension reads ahead what the app will catch up on: the hub's encrypted
   pages, fetched straight from the hub (not through Apple) with the push's one-day ticket, kept in the app's shared
-  container until the app opens. The extension holds no content key and opens none of it; the app checks those
-  pages like any other.
+  container until the app opens. The ticket travels sealed in the push and then in a request header, never in a
+  URL; while it lasts it reads the room's encrypted changes up to that push as the device itself may, and nothing
+  newer. The extension holds no content key and opens none of it; the app checks those pages like any other.
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.
