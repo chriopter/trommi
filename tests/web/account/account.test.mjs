@@ -526,7 +526,9 @@ test('change password: the old one stops working, the new one opens the same cod
   assert.equal(s.posts('/v1/account/password', 'PUT').length, 0)
   assert.deepEqual(await A.changePassword(client, { current: PASSWORD, next: OTHER }), { kit: null })
   const put = s.posts('/v1/account/password', 'PUT')[0].body
-  assert.deepEqual([Object.keys(put).sort(), put.revision], [['auth_key', 'kdf', 'revision', 'sealed_copy'], 1])
+  assert.deepEqual([Object.keys(put).sort(), put.revision], [['auth_key', 'kdf', 'proof', 'revision', 'sealed_copy'], 1])
+  // the current password proves the way in to the hub: its login key, as at a login (the token alone changes none)
+  assert.deepEqual(put.proof, { password: { auth_key: b64u(core.passwordKeys(s.email, PASSWORD).authKey) } })
   assert.equal(await opensWith(s, { password: OTHER }), code)
   await refused(opensWith(s, { password: PASSWORD }), 'wrong-login')
   assert.equal(await opensWith(s, { words: kit.words }), code, 'the kit is untouched')
@@ -543,13 +545,15 @@ test('add a passkey (password given again), log in with it, remove it', { skip }
   assert.deepEqual(added, { credential_id: b64u(passkey.credential_id), kit: null })
   assert.equal(await opensWith(s, { passkey }), code)
   // the passkey itself is a way in given again: for a second one, and for a password
-  const second = await addPasskey(client, unlockWith(passkey))
+  const second = await addPasskey(client, await unlockWith(passkey, client))
   assert.equal(await opensWith(s, { passkey: second.passkey }), code)
   assert.equal((await A.accountStatus(client)).passkeys.length, 2)
-  await A.removePasskey(client, added.credential_id)
+  // a passkey goes with the way in of now given again; the token alone removes none
+  await refused(client.hub.removePasskey(unb64u(added.credential_id), { password: { auth_key: bytes(32) } }), 'wrong-login')
+  await A.removePasskey(client, { credential_id: added.credential_id, unlock: { password: PASSWORD } })
   await refused(opensWith(s, { passkey }), 'wrong-login')
   assert.deepEqual((await A.accountStatus(client)).passkeys.map(p => p.credential_id), [b64u(second.passkey.credential_id)])
-  await refused(A.removePasskey(client, added.credential_id), 'not-found')
+  await refused(A.removePasskey(client, { credential_id: added.credential_id, unlock: { password: PASSWORD } }), 'not-found')
 })
 
 test('add a passkey: a wrong way in adds none; a passkey that is not the account\'s; one without a prf output', { skip }, async t => {
@@ -558,7 +562,7 @@ test('add a passkey: a wrong way in adds none; a passkey that is not the account
   const posts = () => s.posts('/v1/account/passkeys').length
   const fresh = async () => passkeyFor(await A.passkeyChallengeFor(client))
   await refused(A.addPasskey(client, { unlock: { password: secretText('wrong wrong wrong wrong') }, passkey: await fresh() }), 'wrong-login')
-  await refused(A.addPasskey(client, { unlock: unlockWith(passkeyFor('x')), passkey: await fresh() }), 'wrong-login')
+  await refused(A.addPasskey(client, { unlock: await unlockWith(passkeyFor('x'), client), passkey: await fresh() }), 'wrong-login')
   await refused(A.addPasskey(client, { unlock: { password: PASSWORD }, passkey: { ...await fresh(), prf: new Uint8Array(5) } }), 'no-prf')
   assert.equal(posts(), 0)
   // a registration whose id is not the one its copy was sealed for is taken back
@@ -575,22 +579,23 @@ test('last-way-in: the only passkey of an account without a password stays; with
   const s = await scene(t)
   const { client, passkey } = await withPasskey(s)
   const id = b64u(passkey.credential_id)
-  const e = await refused(A.removePasskey(client, id), 'last-way-in')
+  const e = await refused(A.removePasskey(client, { credential_id: id, unlock: await unlockWith(passkey, client) }), 'last-way-in')
   assert.equal(e.status, 409)
   assert.equal((await A.accountStatus(client)).passkeys.length, 1)
   // "Add a password" with the passkey, then the passkey may go
   await refused(A.checkUnlock(client, { password: PASSWORD }), 'no-password')
-  assert.deepEqual(await A.setPassword(client, { unlock: unlockWith(passkey), next: PASSWORD }), { kit: null })
+  assert.deepEqual(await A.setPassword(client, { unlock: await unlockWith(passkey, client), next: PASSWORD }), { kit: null })
   assert.equal((await A.accountStatus(client)).has_password, true)
-  await A.removePasskey(client, id)
+  await A.removePasskey(client, { credential_id: id, unlock: { password: PASSWORD } })
   assert.equal(await opensWith(s, { password: PASSWORD }), s.last('foundRoom').code)
 })
 
 test('last-way-in is the hub\'s to decide: two removals at once leave one passkey', { skip }, async t => {
   const s = await scene(t)
-  const { client, passkey } = await withPasskey(s)
-  const second = await addPasskey(client, unlockWith(passkey))
-  const done = await Promise.allSettled([A.removePasskey(client, b64u(passkey.credential_id)), A.removePasskey(client, b64u(second.passkey.credential_id))])
+  const { client, passkey, kit } = await withPasskey(s)
+  const second = await addPasskey(client, await unlockWith(passkey, client))
+  // (proved with the kit's words: a passkey's challenge is for the account at its revision, which the first removal changes)
+  const done = await Promise.allSettled([A.removePasskey(client, { credential_id: b64u(passkey.credential_id), unlock: { words: kit.words } }), A.removePasskey(client, { credential_id: b64u(second.passkey.credential_id), unlock: { words: kit.words } })])
   assert.deepEqual(done.map(d => d.status).sort(), ['fulfilled', 'rejected'])
   const lost = done.find(d => d.status === 'rejected').reason
   thrown.push(lost)
@@ -733,7 +738,7 @@ test('replace the recovery code from Settings (8.6): the way in given again keep
   await refused(opensWith(s, { passkey }), 'wrong-login')
   // with a passkey as the way in: the password goes
   const again = await addPasskey(client, { password: PASSWORD })
-  const next = await A.replaceRecoveryCode(client, unlockWith(again.passkey))
+  const next = await A.replaceRecoveryCode(client, await unlockWith(again.passkey, client))
   secretText(next.words)
   secretBytes(unhex(s.last('replaceRecoveryCode').new_code))
   assert.equal(await opensWith(s, { passkey: again.passkey }), s.last('replaceRecoveryCode').new_code)
@@ -806,14 +811,16 @@ test('the kit of an account without e-mail: the id as typed opens it, the device
 test('an e-mail added later: once, with the SAME words sealed anew under the e-mail in one request; then a password is possible', { skip }, async t => {
   const s = await scene(t)
   const { client, kit, passkey, named, code } = await withoutEmail(s)
-  await refused(A.setPassword(client, { unlock: unlockWith(passkey), next: PASSWORD }), 'needs-email')
+  await refused(A.setPassword(client, { unlock: await unlockWith(passkey, client), next: PASSWORD }), 'needs-email')
   await refused(A.setEmail(client, { email: 'no address', words: kit.words }), 'bad-email')
   await refused(A.setEmail(client, { email: s.email, words: secretText(core.generateKitWords()) }), 'wrong-recovery')
   assert.equal(s.posts('/v1/account/email', 'PUT').length, 0, 'words that are not the kit\'s set nothing')
   const again = await A.setEmail(client, { email: ` ${s.email.toUpperCase()} `, words: kit.words.toUpperCase().replaceAll(' ', '\n') })
   assert.deepEqual(again, { words: kit.words, email: s.email, account: named.account, form: 'email' }, 'the same words; the sheet opens with the e-mail from now on')
   const put = s.posts('/v1/account/email', 'PUT').at(-1).body
-  assert.deepEqual([Object.keys(put).sort(), put.email, put.revision, Object.keys(put.kit).sort()], [['email', 'kit', 'revision'], s.email, 1, ['auth_key', 'sealed_copy']])
+  assert.deepEqual([Object.keys(put).sort(), put.email, put.revision, Object.keys(put.kit).sort()], [['email', 'kit', 'proof', 'revision'], s.email, 1, ['auth_key', 'sealed_copy']])
+  assert.deepEqual(Object.keys(put.proof), ['kit'], 'the words typed once more prove the way in: the kit\'s login key of before')
+  assert.notEqual(put.proof.kit.auth_key, put.kit.auth_key, 'the proof is the kit of before, under the id; the new one is under the e-mail')
   const st = await A.accountStatus(client)
   assert.deepEqual([st.email, st.kit_form, st.account], [s.email, 'email', named.account])
   // the same words now open under the e-mail, on the device and from outside; under the id they open nothing
@@ -824,7 +831,7 @@ test('an e-mail added later: once, with the SAME words sealed anew under the e-m
   const e = await refused(A.setEmail(client, { email: `other-${s.email}`, words: kit.words }), 'email-set')
   assert.equal(s.posts('/v1/account/email', 'PUT').length, 1)
   void e
-  assert.deepEqual(await A.setPassword(client, { unlock: unlockWith(passkey), next: PASSWORD }), { kit: null })
+  assert.deepEqual(await A.setPassword(client, { unlock: await unlockWith(passkey, client), next: PASSWORD }), { kit: null })
   assert.equal(await opensWith(s, { password: PASSWORD }), code)
   // a second account cannot take that address
   const second = await withoutEmail({ ...s, device: () => s.device('second') })

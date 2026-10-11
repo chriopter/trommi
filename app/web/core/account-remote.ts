@@ -56,7 +56,7 @@ export const setPassword = (client: RemoteClient, args: { unlock: Unlock; next: 
 export const checkUnlock = (client: RemoteClient, args: Unlock) => onClient<void>('checkUnlock', client, args)
 export const passkeyChallengeFor = (client: RemoteClient) => onClient<string>('passkeyChallengeFor', client)
 export const addPasskey = (client: RemoteClient, args: { unlock: Unlock; passkey: PasskeyRegistration }) => onClient<{ credential_id: string; kit: Kit | null }>('addPasskey', client, args)
-export const removePasskey = (client: RemoteClient, credential_id: string) => onClient<void>('removePasskey', client, credential_id)
+export const removePasskey = (client: RemoteClient, args: { credential_id: string; unlock: Unlock }) => onClient<void>('removePasskey', client, args)
 export const setEmail = (client: RemoteClient, args: { email: string; words: string }) => onClient<Kit>('setEmail', client, args)
 export const replaceRecoveryCode = (client: RemoteClient, args: Unlock) => onClient<Kit>('replaceRecoveryCode', client, args)
 

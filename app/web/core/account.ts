@@ -34,7 +34,7 @@
 import { loadCore } from './core-wasm.ts'
 import type { AccountKeys, AccountName, AccountWay, Core } from './core-api.ts'
 import { Hub, HubError } from './hub.ts'
-import type { AccountCopies, AccountView, Kdf, KitForm, KitPart, LoginAnswer, NewAccount } from './hub.ts'
+import type { AccountCopies, AccountProof, AccountView, Kdf, KitForm, KitPart, LoginAnswer, NewAccount } from './hub.ts'
 import { b64u, hex, unb64u, unhex } from './ids.ts'
 import { foundRoom, joinWithCode } from './room.ts'
 import type { DeviceOptions } from './room.ts'
@@ -67,8 +67,11 @@ export interface AccountStatus { email: string | null; account: string; kit_form
 export interface PasskeyRegistration { credential_id: Uint8Array; attestation_object: Uint8Array; client_data_json: Uint8Array; transports?: string[]; prf: Uint8Array }
 /** What navigator.credentials.get() gave, as bytes, with the prf output. */
 export interface PasskeyAssertion { credential_id: Uint8Array; authenticator_data: Uint8Array; client_data_json: Uint8Array; signature: Uint8Array; user_handle?: Uint8Array | null; prf: Uint8Array }
-/** A way in given again on a signed-in device: the password, a passkey of the account, or the kit's words. */
-export type Unlock = { password: string } | { passkey: { credential_id: Uint8Array; prf: Uint8Array } } | { words: string }
+/** A way in given again on a signed-in device: the password, a passkey of the account, or the kit's words. It opens
+ *  the code here and proves the way in to the hub in the request that changes a way in (a token alone changes
+ *  none): the password's and the kit's login key, or the passkey's assertion, which is made on a challenge of
+ *  `passkeyChallengeFor` (two minutes, one use; its prf output opens the code). */
+export type Unlock = { password: string } | { passkey: { credential_id: Uint8Array; prf: Uint8Array; authenticator_data: Uint8Array; client_data_json: Uint8Array; signature: Uint8Array } } | { words: string }
 /** What a step that makes this device's room takes besides its own fields; room.ts reads it, this module hands it on. */
 type Opening = DeviceOptions & { hub_url: string }
 
@@ -389,7 +392,7 @@ export async function accountStatus(client: AccountClient): Promise<AccountStatu
 }
 
 /** The code in hand on a signed-in device, with the account it was read from and the way that opened it. */
-interface Unlocked { view: AccountView; code: Uint8Array; way: Way }
+interface Unlocked { view: AccountView; code: Uint8Array; way: Way; proof: AccountProof }
 /**
  * The room's recovery code from a way in the person gives again: the account's password, one of its passkeys (the
  * prf output of a get() on the page) or the Emergency Kit's words. `wrong-login` (`wrong-recovery` for the words)
@@ -399,7 +402,7 @@ interface Unlocked { view: AccountView; code: Uint8Array; way: Way }
  */
 async function unlock(client: AccountClient, given: Unlock): Promise<Unlocked> {
   const { core, room_id } = client
-  let way: Way | null = null, code: Uint8Array | null = null
+  let way: Way | null = null, code: Uint8Array | null = null, proof: AccountProof | null = null
   try {
     const view = await viewOf(client)
     if (!view) throw new AccountError('no-account', 'this room has no account yet')
@@ -409,30 +412,35 @@ async function unlock(client: AccountClient, given: Unlock): Promise<Unlocked> {
       if (!held) throw new AccountError('wrong-login', 'this passkey does not belong to the account')
       way = passkeyWay(core, room_id, given.passkey)
       copy = held.sealed_copy
+      const { credential_id, authenticator_data, client_data_json, signature } = given.passkey
+      if (!(authenticator_data instanceof Uint8Array && client_data_json instanceof Uint8Array && signature instanceof Uint8Array)) throw new AccountError('bad-passkey', 'a passkey proves the way in with its assertion')
+      proof = { passkey: { credential_id, authenticator_data, client_data_json, signature } }
     } else if ('words' in given) {
       // the kit is opened in the form it was made in, which the account's later e-mail does not change
       if (view.kit_form === 'email' && view.email === null) throw new AccountError('internal', 'a kit under an e-mail the account does not have')
       const keys = core.kitKeysFor(view.kit_form === 'email' ? { email: view.email } : { id: view.account }, given.words)
-      zero(keys.authKey)
+      proof = { kit: { auth_key: keys.authKey } }
       way = kitWay(keys)
       copy = view.kit_copy
     } else {
       if (!view.password_copy || view.email === null) throw new AccountError('no-password', 'this account has no password')
       const keys = core.passwordKeys(view.email, given.password, view.kdf ? JSON.stringify(view.kdf) : null)
-      zero(keys.authKey)
+      proof = { password: { auth_key: keys.authKey } }
       way = passwordWay(keys)
       copy = view.password_copy
     }
     code = open(core, way, room_id, copy)
     // a hub can hand out an authentic OLD copy: only the code in force is sealed anew
     await client.checkRecoveryCode(code)
-    return { view, way, code }
+    return { view, way, code, proof }
   } catch (e) {
-    zero(way?.wrap_key, code)
+    zero(way?.wrap_key, code, proofKey(proof))
     throw e
   } finally { if ('passkey' in given) zero(given.passkey.prf) }
 }
-const forget = (u: Unlocked | null): void => zero(u?.code, u?.way.wrap_key)
+/** The login key a proof holds (a passkey's assertion holds none): zeroed with the rest. */
+const proofKey = (p: AccountProof | null | undefined): Uint8Array | null => (!p ? null : 'password' in p ? p.password.auth_key : 'kit' in p ? p.kit.auth_key : null)
+const forget = (u: Unlocked | null): void => zero(u?.code, u?.way.wrap_key, proofKey(u?.proof))
 const kitOf = (kit: { words: string; form: KitForm }, view: { email: string | null; account: string }): Kit => ({ words: kit.words, email: view.email, account: view.account, form: kit.form })
 
 /** Does this way in open the account? Asked before a passkey is made, so a wrong password leaves no stray passkey. */
@@ -472,7 +480,7 @@ export async function makeEmergencyKit(client: AccountClient, given: Unlock): Pr
   try {
     kit = newKit(core, kitNameOf(u.view.email, u.view.account))
     part = kitPart(core, kit, room_id, u.code)
-    await hub.putKit({ ...part, revision: u.view.revision })
+    await hub.putKit({ ...part, revision: u.view.revision, proof: u.proof })
     return kitOf(kit, u.view)
   } finally { forget(u); zero(part?.auth_key); zeroKeys(kit?.keys) }
 }
@@ -495,7 +503,7 @@ export async function setPassword(client: AccountClient, { unlock: given, next }
     if (u.view.email === null) throw new AccountError('needs-email', 'a password needs an e-mail: this account has none')
     keys = core.passwordKeys(u.view.email, next)
     part = passwordPart(core, keys, room_id, u.code)
-    const { revision } = await hub.putPassword({ ...part, revision: u.view.revision })
+    const { revision } = await hub.putPassword({ ...part, revision: u.view.revision, proof: u.proof })
     return { kit: 'words' in given ? await replaceCode(client, u.view, passwordWay(keys), u.code, revision) : null }
   } finally { forget(u); zero(part?.auth_key); zeroKeys(keys) }
 }
@@ -516,7 +524,7 @@ export async function setEmail(client: AccountClient, { email: given, words }: {
     if (u.view.email !== null) throw new AccountError('email-set', 'this account has an e-mail already')
     keys = core.kitKeysFor({ email }, words)
     part = kitPart(core, { keys }, room_id, u.code)
-    await hub.putEmail({ email, kit: part, revision: u.view.revision })
+    await hub.putEmail({ email, kit: part, revision: u.view.revision, proof: u.proof })
     return { words: core.parseKitWords(words), email, account: u.view.account, form: 'email' }
   } finally { forget(u); zero(part?.auth_key); zeroKeys(keys) }
 }
@@ -542,10 +550,12 @@ export async function addPasskey(client: AccountClient, { unlock: given, passkey
   try {
     u = await unlock(client, given)
     way = passkeyWay(core, room_id, passkey)
-    const added = await hub.addPasskey(passkeyPart(core, passkey, room_id, u.code))
-    // the hub read the id out of the attestation; the copy is sealed for the id the page named
+    const proof = u.proof
+    const added = await hub.addPasskey(passkeyPart(core, passkey, room_id, u.code), proof)
+    // the hub read the id out of the attestation; the copy is sealed for the id the page named (taken back with the
+    // same proof: a login key proves again, a passkey's assertion was used up and the passkey stays)
     if (!equal(added.credential_id, passkey.credential_id)) {
-      await hub.removePasskey(added.credential_id).catch(() => {})
+      await hub.removePasskey(added.credential_id, proof).catch(() => {})
       throw new AccountError('bad-passkey', 'the passkey\'s id is not the one in its registration')
     }
     if (!('words' in given)) return { credential_id: b64u(added.credential_id), kit: null }
@@ -553,7 +563,7 @@ export async function addPasskey(client: AccountClient, { unlock: given, passkey
     // still open it). If it cannot be taken back either, or the replacement may have gone through unanswered, the
     // error says `passkey_kept`: the passkey may be a way in, and the screen must not tell its store to drop it.
     try { return { credential_id: b64u(added.credential_id), kit: await replaceCode(client, u.view, way, u.code, u.view.revision + 1) } } catch (e) {
-      const gone = await hub.removePasskey(added.credential_id).then(() => true, () => false)
+      const gone = await hub.removePasskey(added.credential_id, proof).then(() => true, () => false)
       throw gone ? e : kept(e)
     }
   } finally { forget(u); zero(way?.wrap_key, passkey.prf) }
@@ -562,9 +572,13 @@ export async function addPasskey(client: AccountClient, { unlock: given, passkey
 /** Marks an error of a step after which a passkey may be registered: the screen keeps the passkey then. */
 const kept = (e: unknown): unknown => (e instanceof Error ? Object.assign(e, { passkey_kept: true }) : e)
 
-/** Remove a passkey (its id, base64url). `last-way-in` when the account has no password and no other passkey: the
- *  hub decides that in the transaction that would remove it. */
-export const removePasskey = (client: AccountClient, credential_id: string): Promise<void> => client.hub.removePasskey(unb64u(credential_id))
+/** Remove a passkey (its id, base64url), with the way in of now given again (`unlock`: the password, a passkey of
+ *  the account, this one too, or the kit's words), which the hub checks in the same request. `last-way-in` when the
+ *  account has no password and no other passkey: the hub decides that in the transaction that would remove it. */
+export async function removePasskey(client: AccountClient, { credential_id, unlock: given }: { credential_id: string; unlock: Unlock }): Promise<void> {
+  const u = await unlock(client, given)
+  try { await client.hub.removePasskey(unb64u(credential_id), u.proof) } finally { forget(u) }
+}
 
 /**
  * Replace the room's recovery code (8.6): for after a human device was removed that is not in the person's hands.

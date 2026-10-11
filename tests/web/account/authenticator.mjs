@@ -39,7 +39,8 @@ export function softPasskey(origin) {
       const signature = sign('sha256', Buffer.concat([authenticator_data, sha256(client_data_json)]), privateKey)
       return { credential_id: u8(credential_id), authenticator_data: u8(authenticator_data), client_data_json: u8(client_data_json), signature: u8(signature), user_handle, prf: u8(prf) }
     },
-    /** The way in a signed-in device gives again with this passkey. */
-    unlock() { return { passkey: { credential_id: u8(credential_id), prf: u8(prf) } } },
+    /** The way in a signed-in device gives again with this passkey: a get() over the account's challenge
+     *  (`passkeyChallengeFor`, base64url), whose assertion proves the way in to the hub. */
+    unlock(challenge) { const { user_handle: _, ...assertion } = this.get(challenge); return { passkey: assertion } },
   }
 }

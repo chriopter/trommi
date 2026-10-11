@@ -405,6 +405,25 @@ export async function startFakeHub(opts = {}) {
     return scope
   }
   const scopeOf = account => ({ account: account.account, revision: account.revision, user_handle: account.user_handle })
+  /** A change of a way in carries the way in of now, proved once more (hub api.rs `proved`): the login key of the
+   *  password or the kit, compared as it is, or a passkey of the account on a challenge for it at its revision (its
+   *  signature is not checked here). No throttle. */
+  function proved(account, proof) {
+    if (!proof || typeof proof !== 'object' || Array.isArray(proof)) throw refuse('bad-format', 'proof: the way in proved once more')
+    const names = ['password', 'kit', 'passkey'].filter(n => proof[n] != null)
+    if (names.length !== 1) throw refuse('bad-format', 'one of password, kit or passkey')
+    let ok = false
+    if (names[0] === 'password') ok = account.auth !== null && authKey(proof.password) === account.auth
+    else if (names[0] === 'kit') ok = authKey(proof.kit) === account.kit_auth
+    else {
+      const p = proof.passkey
+      if (['credential_id', 'authenticator_data', 'client_data_json', 'signature'].some(n => !unb64(p[n])?.length)) throw refuse('bad-format', 'a passkey proof')
+      let scope = null
+      try { scope = takePasskeyChallenge(unb64(p.client_data_json), 'wrong-login') } catch { scope = null }
+      ok = scope !== null && scope.account === account.account && scope.revision === account.revision && account.passkeys.some(k => k.credential_id === p.credential_id)
+    }
+    if (!ok) throw refuse('wrong-login', 'the password, kit or passkey is wrong')
+  }
   function createAccount(r, v) {
     const email = v.email == null ? null : normalEmail(v.email)
     if (v.email != null && !email) throw refuse('bad-email', 'not an e-mail address this hub takes')
@@ -603,6 +622,7 @@ export async function startFakeHub(opts = {}) {
     if (is('GET', 'account')) return accountView(accountOf(human(auth(rq)).room))
     if (is('PUT', 'account', 'password')) {
       const account = accountOf(human(writer(rq)).room)
+      proved(account, body.proof)
       if (body.revision === account.revision) needsEmail(account)
       const answer = revised(account, body)
       Object.assign(account, { auth: authKey(body), password_copy: sealedCopy(body, 'sealed_copy'), kdf: kdfRecord(body) })
@@ -610,6 +630,7 @@ export async function startFakeHub(opts = {}) {
     }
     if (is('PUT', 'account', 'kit')) {
       const account = accountOf(human(writer(rq)).room)
+      proved(account, body.proof)
       const form = body.revision === account.revision ? kitForm(body, account.email !== null) : account.kit_form
       const answer = revised(account, body)
       Object.assign(account, { kit_auth: authKey(body), kit_copy: sealedCopy(body, 'sealed_copy'), kit_form: form })
@@ -617,6 +638,7 @@ export async function startFakeHub(opts = {}) {
     }
     if (is('PUT', 'account', 'email')) {
       const account = accountOf(human(writer(rq)).room)
+      proved(account, body.proof)
       if (body.revision !== account.revision) throw refuse('account-changed', 'the account changed meanwhile: read it again')
       const email = normalEmail(body.email)
       if (!email) throw refuse('bad-email', 'not an e-mail address this hub takes')
@@ -637,7 +659,9 @@ export async function startFakeHub(opts = {}) {
       return { ...passkeyChallenge(scopeOf(account)), email: account.email, kit_form: account.kit_form }
     }
     if (is('POST', 'account', 'passkeys')) {
-      const account = accountOf(human(writer(rq)).room), added = passkey(body, scopeOf(account))
+      const account = accountOf(human(writer(rq)).room)
+      proved(account, body.proof)
+      const added = passkey(body, scopeOf(account))
       account.passkeys.push(added)
       account.revision += 1
       return { credential_id: added.credential_id, created_at: added.created_at }
@@ -645,6 +669,7 @@ export async function startFakeHub(opts = {}) {
     if (is('DELETE', 'account', 'passkeys', null)) {
       const account = accountOf(human(writer(rq)).room)
       if (!unb64(segs[2])) throw refuse('bad-format', 'a credential id, base64url')
+      proved(account, body?.proof)
       if (!account.passkeys.some(p => p.credential_id === segs[2])) throw refuse('not-found', 'no such passkey')
       if (!account.auth && account.passkeys.length <= 1) throw refuse('last-way-in', 'this is the last way into the account')
       account.passkeys = account.passkeys.filter(p => p.credential_id !== segs[2])
