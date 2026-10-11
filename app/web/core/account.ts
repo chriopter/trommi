@@ -19,13 +19,11 @@
 //   forgot password     the kit's words open the kit's copy; with a new password the device runs the recovery of
 //                       8.7 as one request (resetPassword); for a new passkey it signs in (8.4, recoverWithKit),
 //                       the passkey is added and the code is replaced by 8.6 (addPasskey with the words)
-//   bare recovery code  recoverWithCode: the recovery of 8.7 for a room without an account
 //   settings            a new password, a passkey more or less, a new kit: the code is opened with a way in given
 //                       again and sealed anew; the account's revision guards against a change from elsewhere
 //
 // It runs in the core worker only: the slow key derivation (Argon2id over 64 MiB) never runs on the page's thread,
-// and the page gets nothing secret back except what it must show once: the kit's words and, after a recovery
-// with the bare code, the new recovery code. WebAuthn's prompts are the page's (public/auth.mjs); what a ceremony
+// and the page gets nothing secret back except what it must show once: the kit's words. WebAuthn's prompts are the page's (public/auth.mjs); what a ceremony
 // returned comes here as bytes.
 //
 // Secrets: codes, wrap keys, login keys and prf outputs are zeroed here once used (also the prf bytes a caller
@@ -35,7 +33,7 @@ import { loadCore } from './core-wasm.ts'
 import type { AccountKeys, AccountName, AccountWay, Core } from './core-api.ts'
 import { Hub, HubError } from './hub.ts'
 import type { AccountCopies, AccountProof, AccountView, Kdf, KitForm, KitPart, LoginAnswer, NewAccount } from './hub.ts'
-import { b64u, hex, unb64u, unhex } from './ids.ts'
+import { b64u, hex, unb64u } from './ids.ts'
 import { foundRoom, joinWithCode } from './room.ts'
 import type { DeviceOptions } from './room.ts'
 import type { Client } from './client.ts'
@@ -271,7 +269,7 @@ async function signIn(core: Core, device: Opening, room: LoginAnswer['rooms'][nu
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The Emergency Kit and the bare code: forgot password, recovery (8.7, 8.6)
+// The Emergency Kit: forgot password, recovery (8.7, 8.6)
 
 /**
  * The Emergency Kit without a new password: the one field and the words, and this device signs in (8.4). The
@@ -338,40 +336,6 @@ export async function resetPassword(o: Opening & { account: string; words: strin
       return { client, kit }
     } finally { zero(code) }
   } finally { zeroKeys(keys, password) }
-}
-
-/**
- * Recovery with the bare recovery code (8.7), for a room without an account whose id the person has: the device
- * joins, removes every other human device and replaces the code. The new code is the only way back from then on,
- * so `on_recovery_code` is called with it, as it is shown, and has returned, BEFORE anything of the recovery is
- * posted; if it fails, nothing is posted. It must not wait for the person (the hub holds the room for ten
- * minutes): it puts the code on the screen. The code comes back in the result too. `bad-recovery-code` for a text
- * that is no code; `wrong-recovery` when it is not this room's. A room WITH an account is recovered with its
- * Emergency Kit (`resetPassword`, `recoverWithKit`): the hub refuses this one for it (`incomplete`).
- */
-export async function recoverWithCode(o: Opening & { room_id: string; code: string; on_recovery_code: (code: string) => unknown }): Promise<{ client: Client; recovery_code: string }> {
-  const { room_id: room, code: typed, on_recovery_code, ...device } = o
-  const core = await loadCore()
-  const room_id = unhex(room)
-  if (room_id.length !== 32) throw new AccountError('bad-argument', 'a room id is 32 bytes')
-  if (typeof on_recovery_code !== 'function') throw new AccountError('bad-argument', 'the new code must be shown before the recovery: on_recovery_code')
-  const code = core.parseRecoveryCode(typed)
-  try {
-    const told: string[] = []
-    const none = async (new_code: Uint8Array): Promise<null> => {
-      const text = core.formatRecoveryCode(new_code)
-      await on_recovery_code(text)
-      told.push(text)
-      return null
-    }
-    const { client } = await joinWithCode({ ...device, room_id: hex(room_id), code, recover: true, account: none })
-    const recovery_code = told.at(-1)
-    if (recovery_code === undefined) {
-      await stop(client)
-      throw new AccountError('internal', 'the recovery told no new code')
-    }
-    return { client, recovery_code }
-  } finally { zero(code) }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -445,28 +409,6 @@ const kitOf = (kit: { words: string; form: KitForm }, view: { email: string | nu
 
 /** Does this way in open the account? Asked before a passkey is made, so a wrong password leaves no stray passkey. */
 export async function checkUnlock(client: AccountClient, given: Unlock): Promise<void> { forget(await unlock(client, given)) }
-
-/**
- * Add a login to a room that has none (founded without an account). It needs the room's recovery code, which only
- * the person has. Returns the Emergency Kit made with it. `bad-recovery-code` for a text that is no code, and for
- * a code that is not this room's.
- */
-export async function addAccount(client: AccountClient, { email: given, password, recovery_code }: { email: string; password: string; recovery_code: string }): Promise<{ kit: Kit }> {
-  const { core, hub, room_id } = client
-  const email = core.normaliseEmail(given)
-  core.checkPassword(password)
-  const code = core.parseRecoveryCode(recovery_code)
-  let keys: AccountKeys | null = null, kit: ReturnType<typeof newKit> | null = null, body: (NewAccount & { password: NonNullable<NewAccount['password']> }) | null = null
-  try {
-    // a code of another room would make an account whose copies open nothing here
-    await client.checkRecoveryCode(code).catch((e: unknown) => { throw (e as { code?: unknown } | null)?.code === 'wrong-recovery' ? new AccountError('bad-recovery-code', 'this is not the recovery code of this room') : e })
-    keys = core.passwordKeys(email, password)
-    kit = newKit(core, { email })
-    body = { email, kit: kitPart(core, kit, room_id, code), password: passwordPart(core, keys, room_id, code) }
-    const view = await hub.createAccount(body)
-    return { kit: kitOf(kit, view) }
-  } finally { zero(code, body?.kit.auth_key, body?.password.auth_key); zeroKeys(keys, kit?.keys) }
-}
 
 /**
  * A new Emergency Kit for the same code: new words, the code (opened with `given`) sealed under them, replacing the

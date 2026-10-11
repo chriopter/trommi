@@ -601,7 +601,7 @@ struct AccountPage: View {
           way("kit", "Emergency Kit", f.hasRecovery ? "Made" : "Not Made Yet", "page")
         }
       } else {
-        SettingsGroup(footer: "This account was made before email and password: add a login at app.trommi.com → Settings → Account (it needs the recovery code shown when you started).") {
+        SettingsGroup {
           SettingsRow(title: "No Login Yet") { Sketch("letter") }
         }
       }

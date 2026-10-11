@@ -16,9 +16,9 @@ import { Client, ClientError, engineMeta } from './client.ts'
 import type { Core, Device, PlacedCommit, ServedEnvelope, Store } from './core-api.ts'
 import { Engine } from './engine.ts'
 import type { EngineTiming } from './engine.ts'
-import { accountCopiesBytes, Hub, HubError, hubAddress } from './hub.ts'
+import { accountCopiesBytes, Hub, HubError } from './hub.ts'
 import type { AccountCopies, NewAccount } from './hub.ts'
-import { b64u, hex, unb64u, unhex } from './ids.ts'
+import { unhex } from './ids.ts'
 import { halving, inSlices } from './slices.ts'
 import type { Cache } from './store-idb.ts'
 
@@ -325,18 +325,3 @@ const product: RoomEnv = (() => {
   }
 })()
 export const { foundRoom, openRoom, openRoomOver, joinRoom, joinWithCode } = roomsOn(product)
-
-/** The address a fresh device needs to log in to a room by hand: `<app>#r1.<hub>.<room id>`, both base64url. Its
- *  form is the app's own and older than protocol v1; it names no secret. */
-export function roomLink(hub_url: string, room_id: string, app = 'https://app.trommi.com/login'): string {
-  return `${app}#r1.${b64u(new TextEncoder().encode(hubAddress(hub_url)))}.${b64u(unhex(room_id))}`
-}
-export function parseRoomLink(text: unknown): { hub_url: string; room_id: string } {
-  const s = String(text).trim()
-  const parts = (s.includes('#') ? s.slice(s.indexOf('#') + 1) : s).split('.')
-  if (parts[0] !== 'r1' || parts.length !== 3) throw new ClientError('bad-format', 'not a room link')
-  let room: Uint8Array, hub: string
-  try { room = unb64u(parts[2]!); hub = hubAddress(new TextDecoder('utf-8', { fatal: true }).decode(unb64u(parts[1]!))) } catch { throw new ClientError('bad-format', 'not a room link') }
-  if (room.length !== 32) throw new ClientError('bad-format', 'not a room link')
-  return { hub_url: hub, room_id: hex(room) }
-}

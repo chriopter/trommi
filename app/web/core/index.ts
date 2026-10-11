@@ -4,7 +4,7 @@
 import { openShared as openSharedWith } from './client.ts'
 import type { Hub } from './hub.ts'
 
-export { foundRoom, openRoom, joinRoom, joinWithCode, roomLink, parseRoomLink } from './room.ts'
+export { foundRoom, openRoom, joinRoom, joinWithCode } from './room.ts'
 // Accounts (e-mail and password, passkeys, the Emergency Kit): './account-remote.ts' for a page, './account.ts' in the worker.
 export { Client, ClientError, parseShareLink, isHumanRegisterKey, isAgentRegisterKey } from './client.ts'
 export { Hub, HubError, hubAddress } from './hub.ts'

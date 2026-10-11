@@ -39,9 +39,6 @@ const post = (m: FromWorker): void => port.postMessage(m)
 let tab: TabClient | null = null
 let clientName: string | null = null
 let joining: { cancel(): void } | null = null
-const ASK_MS = 30_000
-let asks = 0
-const asked = new Map<number, (ok: boolean) => void>()
 
 /** An error as it travels: its message and every own field (code, status, …), so the page throws the same. */
 function wireError(e: unknown): WireError {
@@ -51,17 +48,6 @@ function wireError(e: unknown): WireError {
   return out
 }
 const extra = () => ({ stats: null, tabRole: tab?.tabRole ?? null })
-
-/** Says an event to the page and waits until the page took it: rejects when its handler failed or it did not
- *  answer in time. For the one moment where the worker must not go on before the page has shown something. */
-function ask(event: 'recovery-code', data: unknown): Promise<void> {
-  const ack = ++asks
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { asked.delete(ack); reject(Object.assign(new Error('the page did not take the event'), { code: 'worker-timeout' })) }, ASK_MS)
-    asked.set(ack, ok => { clearTimeout(timer); asked.delete(ack); if (ok) resolve(); else reject(Object.assign(new Error('the page could not take the event'), { code: 'worker-failed' })) })
-    post({ t: 'event', event, data, ack })
-  })
-}
 
 /** The client as tabs.ts runs it: its own methods the page may call, and what the worker adds for the page. */
 function host(client: Client): ClientLike {
@@ -111,9 +97,7 @@ async function make(m: Extract<ToWorker, { t: 'account' | 'join' }>, cache: Cach
         try { return host(await j.client) } finally { joining = null }
       }
       if (!ACCOUNT_OPENS.includes(m.fn)) throw Object.assign(new Error(`not an account call: ${m.fn}`), { code: 'bad-argument' })
-      // a new recovery code is said to the page, and the step goes on only once the page has it on screen
-      const step = { ...opts, on_recovery_code: (code: string) => ask('recovery-code', code) }
-      const { client, ...rest } = await ((await accountModule()) as unknown as Record<string, (o: unknown) => Promise<{ client: Client } & Record<string, unknown>>>)[m.fn]!(step)
+      const { client, ...rest } = await ((await accountModule()) as unknown as Record<string, (o: unknown) => Promise<{ client: Client } & Record<string, unknown>>>)[m.fn]!(opts)
       value = rest
       return host(client)
     },
@@ -123,7 +107,6 @@ async function make(m: Extract<ToWorker, { t: 'account' | 'join' }>, cache: Cach
 }
 
 port.onmessage = async ({ data: m }) => {
-  if (m.t === 'ack') { asked.get(m.ack)?.(m.ok); return }
   if (m.t === 'pagehide') { closeAllStreams(); return }
   if (m.t === 'call' && m.method === 'join.cancel') { joining?.cancel(); post({ t: 'result', id: m.id, ok: true, value: null }); return }
   if (m.t === 'open' || m.t === 'account' || m.t === 'join') {

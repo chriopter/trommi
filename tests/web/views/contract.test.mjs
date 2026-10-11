@@ -156,7 +156,7 @@ test('every name a view reads from a module of the core is exported by it', asyn
     if (!(name in await core(file))) missing.push(`${where(s, at)}  ${file} exports no ${name}`)
   }
   // (the reading works at all: these are read by the views today)
-  for (const k of ['core.parseShareLink', 'account.accountStatus', 'account.generatePassword', 'scribbleWire.CanvasState', 'scribbleWire.deskBoard', 'qrReader.decodeQR', 'core.roomLink', 'core.parseRoomLink', 'remote.ts:openRemote', 'check-emoji.ts:checkEmoji']) assert.ok(seen.has(k), `the scan no longer finds ${k}: its patterns are out of step with the views`)
+  for (const k of ['core.parseShareLink', 'account.accountStatus', 'account.generatePassword', 'scribbleWire.CanvasState', 'scribbleWire.deskBoard', 'qrReader.decodeQR', 'remote.ts:openRemote', 'check-emoji.ts:checkEmoji']) assert.ok(seen.has(k), `the scan no longer finds ${k}: its patterns are out of step with the views`)
   assert.deepEqual(missing, [], 'names the views read that the core does not export')
 })
 

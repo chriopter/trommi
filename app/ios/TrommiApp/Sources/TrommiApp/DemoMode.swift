@@ -17,10 +17,10 @@ struct DemoScreen: Identifiable, Hashable {
   let mock: String
   /** The state of the sign-in screens it names (`/?onboard=<state>`), else nil. */
   var onboard: String? { path.hasPrefix("/?onboard=") ? String(path.dropFirst("/?onboard=".count)) : nil }
-  /** Screens the web has and this app does not: the older account's recovery code, the stored account that does not
+  /** Screens the web has and this app does not: the stored account that does not
    *  open (a browser's storage), the keyboard shortcuts page; and moments of a page it has no like of: the selection
    *  bar (no multi-select on the Desk here) and the two sheets of keys. They are left out of the list and never opened. */
-  static let webOnly: Set<String> = ["recover", "recovery-code", "broken"]
+  static let webOnly: Set<String> = ["broken"]
   static let webOnlyMoments: Set<String> = ["select", "keys", "board-help"]
   var onPhone: Bool {
     !(onboard.map { DemoScreen.webOnly.contains($0) } ?? false) && path != "/settings/keys" && !(webState.map { DemoScreen.webOnlyMoments.contains($0) } ?? false)
