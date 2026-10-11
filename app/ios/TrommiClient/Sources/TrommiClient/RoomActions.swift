@@ -69,6 +69,14 @@ extension Room {
       let session = try unhex(sid), cardBytes = try cardId.map { try unhex($0) }
       try await send(localId: lid, files: w.files) { cardBytes.map { .cardChat(session: session, card: $0, payload: w.payload) } ?? .sessionChat(session: session, payload: w.payload) }
     } catch { var c = Change(); dropEcho(lid, &c); emit(c); throw error }
+    // handed back (the reverse card) or "What??": the card goes to its agent and comes back up awake
+    if let id = cardId, fields["hand_back"]?.truthy == true || fields["explain"]?.truthy == true { await wakeCard(id) }
+  }
+  /** A card put off (Later) that he acts on is woken, as the wake action does: its snooze ends now. */
+  func wakeCard(_ cardId: String) async {
+    guard let s = board.human.snoozes[cardId], s.object != nil else { return }
+    if let u = s["until"].double, clampedU64(u) <= nowMs() { return }
+    try? await snooze(cardId: cardId, until: nowMs())
   }
 
   // ---- cards ---------------------------------------------------------------------------------------------
@@ -115,6 +123,8 @@ extension Room {
       board.project(); var c = Change(); c.cards.insert(cardId); c.stack = true; emit(c)
       throw error
     }
+    // answered while put off: awake, so a reworked or reopened card is back on the Desk
+    await wakeCard(cardId)
   }
   /** The session a card or a request belongs to, as the core's drafts name it. */
   private func sessionOf(_ sid: String?) throws -> SessionId {

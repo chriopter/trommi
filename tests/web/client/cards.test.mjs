@@ -156,3 +156,32 @@ test('a card presented again after a hand back stays on the Desk when its Chat i
   await until(() => again.model.cards.get(card)?.in_revision === null, 'healed by the hub\'s Desk and the card\'s Chat')
   assert.ok(again.model.stack.includes(card))
 })
+
+test('a card put off (Later) that he answers, trusts or hands back is woken: reworked, it comes back up', async t => {
+  const { a, b, agent } = await scene(t, { agent: true, second: true })
+  const asleep = id => { const s = a.model.human.snoozes.get(id); return Boolean(s && (s.until == null || s.until > Date.now())) }
+  const ask = title => agent.askCard({ title, options: [{ key: 'yes', label: 'Yes' }, { key: 'no', label: 'No' }], recommended: 'yes' })
+  const [handed, answered, trusted, untouched] = [await ask('Hand me back?'), await ask('Answer me?'), await ask('Trust me?'), await ask('Leave me?')]
+  await agent.settle(); await a.settle(); await b.settle()
+  for (const id of [handed, answered, trusted, untouched]) await a.snooze(id, Date.now() + 3_600_000)
+  await a.settle(); await b.settle()
+  assert.deepEqual(a.model.stack, [])
+
+  // the reverse card: woken at once, and the reworked card is on the stack again
+  await a.sendMessage({ object_id: handed, text: 'Say it plainly', hand_back: true })
+  assert.equal(asleep(handed), false, 'handed back: awake on this device at once')
+  await a.settle(); await agent.settle(); await b.settle()
+  assert.equal(b.model.human.snoozes.get(handed).until <= Date.now(), true, 'and on his other device')
+  await agent.reviseCard(handed, { body: 'Plainly now.' })
+  await agent.settle(); await a.settle(); await b.settle()
+  assert.equal(a.model.stack.includes(handed), true, 'reworked, it is back on the stack')
+  assert.equal(b.model.stack.includes(handed), true)
+
+  await a.answer({ object_id: answered, choices: ['no'], note: 'not yet' })
+  await a.trust({ object_id: trusted })
+  assert.equal(asleep(answered), false, 'answered: awake')
+  assert.equal(asleep(trusted), false, 'left to the agent: awake')
+  assert.equal(asleep(untouched), true, 'a card he did not touch sleeps on')
+  await a.settle(); await b.settle()
+  modelsAgree(a.model, b.model)
+})
