@@ -314,9 +314,11 @@ public final class HubClient: @unchecked Sendable {
       return try await request("POST", "/rooms/\(b64u(room))/recovery/\(b64u(id))/commits", body: ["group_id": group, "epoch": e.epoch, "commit": part(0), "group_info": part(1), "welcome": optional(2), "sealed_key": part(3), "recovery_auth": optional(4)])
     }
   }
-  /** One KeyPackage of each device, all or nothing (5.2.7, 12.1). */
-  public func claimKeyPackages(_ devices: [DeviceId]) async throws -> [(device: DeviceId, keyPackage: Bytes)] {
-    let r = try await request("POST", "/key-packages/claim", body: ["devices": devices.map { b64u($0) }])
+  /** One KeyPackage of each device, all or nothing; `partial`: the devices the hub holds none of are left out of the answer (5.2.5). */
+  public func claimKeyPackages(_ devices: [DeviceId], partial: Bool = false) async throws -> [(device: DeviceId, keyPackage: Bytes)] {
+    var body: JSON = ["devices": devices.map { b64u($0) }]
+    if partial { body["partial"] = true }
+    let r = try await request("POST", "/key-packages/claim", body: body)
     return try (r["key_packages"] as? [String: String] ?? [:]).map { (try unb64u($0.key), try unb64u($0.value)) }
   }
   /** The wishes of signed-in devices to the human devices (readmit, handover, session). Nothing follows without a Commit. */

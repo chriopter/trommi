@@ -51,6 +51,31 @@ env:
   # file is renamed or made anew: raise the base then by at least the highest number released so far, because a
   # server never takes a release older than one it has accepted.
   RELEASE_BASE: 0
+  # sccache: every crate compiled by the Rust jobs (dependencies and the workspace's own libraries) is kept in the
+  # GitHub Actions cache, one entry per compilation, and taken from there when the same crate is compiled again with
+  # the same compiler, flags and sources. Only a run on main or staging writes; every other run (pull requests,
+  # including those from forks) only reads. GitHub scopes cache writes by branch as well, so a pull request could not
+  # reach main's entries even if it wrote. Each Rust job installs sccache (mozilla-actions/sccache-action) and sets
+  # RUSTC_WRAPPER itself; Swatinem/rust-cache keeps only the downloaded crates (~/.cargo), not target/.
+  # A new SCCACHE_GHA_VERSION starts an empty cache (the old entries expire unused after seven days).
+  # Not active: the Cloudflare R2 variant, for a cache that outlives GitHub's 10 GB and 7 days. It needs an R2 bucket
+  # and an API token with Object Read & Write on that bucket only, as secrets SCCACHE_R2_KEY_ID / SCCACHE_R2_SECRET
+  # (account ID in the endpoint). In each Rust job, instead of the two GHA lines:
+  #   SCCACHE_BUCKET: trommi-sccache
+  #   SCCACHE_REGION: auto
+  #   SCCACHE_ENDPOINT: https://<account id>.r2.cloudflarestorage.com
+  #   AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_KEY_ID }}
+  #   AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET }}
+  #   SCCACHE_GHA_ENABLED: 'false'
+  # Only main and staging get the token (an `environment` or an `if` on the ref); a pull request from a fork gets no
+  # secrets and builds without sccache there, or reads a public bucket with SCCACHE_S3_NO_CREDENTIALS=true.
+  SCCACHE_GHA_ENABLED: 'true'
+  SCCACHE_GHA_VERSION: '1'
+  SCCACHE_GHA_RW_MODE: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging') && 'READ_WRITE' || 'READ_ONLY' }}
+  # an unreachable cache (rate limit, outage) compiles without it instead of failing the build
+  SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
+  # sccache cannot cache incremental compilations (rust-cache sets the same)
+  CARGO_INCREMENTAL: '0'
 
 jobs:
   changes:
@@ -162,8 +187,8 @@ jobs:
           part core 'tests/core/|tests/src/|tests/bindings/|tests/Cargo\.toml$|spec/vectors/|spec/account-vectors\.json$|THIRD-PARTY\.md$|\.github/scripts/third_party\.mjs$'
           part web 'app/web/|tests/web/|connector/tools\.json$|connector/prompt\.md$|demo/|\.node-version$|\.github/scripts/web_release\.mjs$|\.github/tools/wrangler/|\.github/workflows/deploy_web\.yml$' web
           part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connector/|tests/Cargo\.toml$|\.github/workflows/release\.yml$' connector
-          part ios 'app/ios/|tests/ios/|\.github/scripts/ios_(testflight\.sh|archive\.sh|entitlements\.py)$|\.github/workflows/deploy_ios\.yml$' ios
-          part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/deploy_hub\.yml$' 'hub|updater'
+          part ios 'app/ios/|tests/ios/|\.github/scripts/ios_(testflight\.sh|archive\.sh|entitlements\.py|release_gate\.sh)$|\.github/workflows/deploy_ios\.yml$' ios
+          part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/deploy_hub\.yml$|\.github/scripts/hub_compat\.sh$' 'hub|updater'
 
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
   # Every other part builds on the core, and none of their jobs runs these. It builds and delivers nothing.
@@ -175,6 +200,9 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+    env:
+      # sccache is installed by the step after rust-cache
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -183,10 +211,17 @@ jobs:
         run: |
           rustup toolchain install || rustup show
           rustc --version
-      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
+      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          prefix-key: v1-rust-deps
+          cache-targets: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.18.0
+          disable_annotations: true
       # the licence tables are what cargo reports for this Cargo.lock (.github/scripts/third_party.mjs)
       - name: THIRD-PARTY.md is current
         run: node .github/scripts/third_party.mjs --check
@@ -200,6 +235,12 @@ jobs:
           [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no core test"; exit 1; }
           # shellcheck disable=SC2086
           cargo test --locked -p trommi-tests --no-fail-fast --lib $tests
+      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
+      - name: sccache statistics
+        if: always()
+        run: |
+          "$SCCACHE_PATH" --show-stats || true
+          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   web:
     name: Web app (test and build)
@@ -210,6 +251,8 @@ jobs:
     permissions:
       contents: read
     env:
+      # sccache is installed by the step after rust-cache
+      RUSTC_WRAPPER: sccache
       # The hub the app speaks to. The build is checked against it: the page's policy must name this hub and no other.
       WEB_HUB_URL: https://hub.trommi.com
       # Strict-Transport-Security with preload on every answer: `on` once the owner says so. Not to be taken back
@@ -230,10 +273,17 @@ jobs:
           rustup toolchain install || rustup show
           rustc --version
           echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
-      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
+      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          prefix-key: v1-rust-deps
+          cache-targets: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.18.0
+          disable_annotations: true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: bindgen
         with:
@@ -278,6 +328,12 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
+      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
+      - name: sccache statistics
+        if: always()
+        run: |
+          "$SCCACHE_PATH" --show-stats || true
+          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   deploy_web:
     name: Web app
@@ -288,6 +344,8 @@ jobs:
       actions: read
       id-token: write
       attestations: write
+      # deploy_web.yml's job report opens or closes the issue of a failed delivery
+      issues: write
     uses: ./.github/workflows/deploy_web.yml
     with:
       version: ${{ needs.changes.outputs.version }}
@@ -304,6 +362,8 @@ jobs:
     permissions:
       contents: read
     env:
+      # sccache is installed by the step after rust-cache
+      RUSTC_WRAPPER: sccache
       VERSION: ${{ needs.changes.outputs.version }}
       # what the macOS binaries are linked with (connector/build-plugin.mjs): zig, by its published SHA-256, and
       # cargo-zigbuild
@@ -329,10 +389,17 @@ jobs:
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components 1
           echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/zig/zig" version
-      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
+      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          prefix-key: v1-rust-deps
+          cache-targets: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.18.0
+          disable_annotations: true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: zigbuild
         with:
@@ -386,6 +453,12 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
+      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
+      - name: sccache statistics
+        if: always()
+        run: |
+          "$SCCACHE_PATH" --show-stats || true
+          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   ios:
     name: iOS (test and build the core)
@@ -396,34 +469,80 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      # sccache is installed by the step after rust-cache
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The core for Swift is what core/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
+      # what the iOS library is checked against). When they are the same as in an earlier run of main or staging, that
+      # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone). A pull request
+      # reads that cache and never writes it.
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       # llvm-tools: core/swift/build.sh takes the compiler runtime's helpers out of the iOS library with llvm-ar
       - name: Compiler (rust-toolchain.toml)
+        if: steps.core_cache.outputs.cache-hit != 'true'
         run: |
           set -eu
           rustup toolchain install || rustup show
           rustup component add llvm-tools
           rustc --version
           xcodebuild -version
-      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
+      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
         with:
+          prefix-key: v1-rust-deps
+          cache-targets: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
-      # The Rust core for this Mac (for the tests) and for iOS; the helpers it removes from the iOS library are
-      # checked against Apple's runtime of this Xcode.
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          version: v0.18.0
+          disable_annotations: true
+      # The Rust core for this Mac (for the tests) and for an iOS device (the archive); the helpers it removes from the
+      # iOS library are checked against Apple's runtime of this Xcode. No simulator library: nothing here runs one.
       - name: The Rust core for Swift
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        env:
+          TROMMI_SIMULATOR: "0"
         run: |
           set -eu
           DARWIN_CLANG_RT="$(xcrun --sdk iphoneos clang -print-resource-dir)/lib/darwin"
           export DARWIN_CLANG_RT
           sh core/swift/build.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.core_cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       # The core's Swift binding on this Mac. The app's own package (app/ios/TrommiClient) is tested on Linux only: it
       # does not compile for macOS (ActivityKit), and the archive in deploy_ios.yml is its build for iOS.
       - name: Test
         run: swift test --package-path tests/bindings/swift
+      # The App Store Connect steps of the public beta (asc.py external, beta-review, whats-new) against fixtures:
+      # nothing goes to the network, no key is needed.
+      - name: App Store Connect steps (fixtures)
+        run: python3 -B -m unittest discover -s tests/ios/asc -v
       # A pull request delivers nothing, so the app itself would first be compiled when its commit is on main
       # (deploy_ios.yml archives it). Here it is archived for a device once, as the delivery does (signed ad hoc, without
       # any secret, entitlements checked), so what does not compile or sign shows before the merge.
@@ -459,6 +578,12 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
+      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
+      - name: sccache statistics
+        if: always() && steps.core_cache.outputs.cache-hit != 'true'
+        run: |
+          "$SCCACHE_PATH" --show-stats || true
+          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # The app's client package (app/ios/TrommiClient) with its tests (tests/ios), on Linux: the package does not compile for
   # macOS (ActivityKit), and the Mac job builds the app for a device without running tests.
@@ -470,35 +595,81 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      # sccache is installed by the step after rust-cache
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # the core for Swift on this machine, taken from an earlier run of main or staging when built from the same paths
+      # (as in the job ios)
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+          echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Compiler (rust-toolchain.toml), Swift
         run: |
-          rustup toolchain install || rustup show
-          rustc --version
+          if [ "$HIT" != true ]; then rustup toolchain install || rustup show; rustc --version; fi
           swift --version
-      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
+        env:
+          HIT: ${{ steps.core_cache.outputs.cache-hit }}
+      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
         with:
+          prefix-key: v1-rust-deps
+          cache-targets: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          version: v0.18.0
+          disable_annotations: true
       - name: The Rust core for Swift on this machine
+        if: steps.core_cache.outputs.cache-hit != 'true'
         run: sh core/swift/build.sh host
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.core_cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Test
         run: swift test --package-path tests/ios
+      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
+      - name: sccache statistics
+        if: always() && steps.core_cache.outputs.cache-hit != 'true'
+        run: |
+          "$SCCACHE_PATH" --show-stats || true
+          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
-  # main: with the release, when the app's inputs changed since the newest release. staging: no release; when the iOS
-  # part ran (its paths changed since the commit before) and its tests and the core's passed.
+  # main: when a release is due and the app's inputs changed since the newest release. It starts beside the release
+  # (archive and signing take minutes); its upload waits until this run's release is published and verified
+  # (gate: release, .github/scripts/ios_release_gate.sh), so only a released app ships. staging: no release; when the
+  # iOS part ran (its paths changed since the commit before) and its tests and the core's passed.
   deploy_ios:
     name: iOS
-    needs: [changes, core, ios, ios_client, release]
+    needs: [changes, core, ios, ios_client]
     if: >-
-      ${{ !cancelled() && needs.ios.result == 'success' && (
-        (needs.release.outputs.published == 'true' && needs.changes.outputs.changed_ios == 'true')
-        || (github.ref == 'refs/heads/staging' && github.event_name == 'push'
-          && needs.ios_client.result == 'success'
-          && contains(fromJSON('["success","skipped"]'), needs.core.result))) }}
+      ${{ !cancelled() && needs.ios.result == 'success' && needs.ios_client.result == 'success'
+        && contains(fromJSON('["success","skipped"]'), needs.core.result) && (
+        (github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+          && needs.changes.outputs.release == 'true' && needs.changes.outputs.changed_ios == 'true')
+        || (github.ref == 'refs/heads/staging' && github.event_name == 'push')) }}
     permissions:
       contents: read
       actions: read
@@ -507,6 +678,7 @@ jobs:
       version: ${{ needs.changes.outputs.version }}
       commit: ${{ github.sha }}
       artifact: ios-release
+      gate: ${{ github.ref == 'refs/heads/main' && 'release' || '' }}
     secrets: inherit
 
   hub:
@@ -518,6 +690,8 @@ jobs:
     permissions:
       contents: read
     env:
+      # sccache is installed by the step after rust-cache
+      RUSTC_WRAPPER: sccache
       VERSION: ${{ needs.changes.outputs.version }}
       TARGET: x86_64-unknown-linux-musl
     steps:
@@ -531,10 +705,17 @@ jobs:
           rustc --version
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
-      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
+      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
+          prefix-key: v1-rust-deps
+          cache-targets: false
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.18.0
+          disable_annotations: true
       # the hub's tests and the deploy path's (updater, release form, settings)
       - name: Test
         run: |
@@ -567,7 +748,7 @@ jobs:
           for f in "out/trommi-hub-$TARGET" "out/trommi-hub-updater-$TARGET"; do
             file "$f" | grep -Eq 'static(ally|-pie) linked' || { echo "::error::$f is not a static binary"; exit 1; }
           done
-          release/manifest.sh trommi-hub "$VERSION" "$GITHUB_SHA" out/* > "$RUNNER_TEMP/manifest.json"
+          DATA_EPOCH=$(tr -d ' \n' < hub/data-epoch) release/manifest.sh trommi-hub "$VERSION" "$GITHUB_SHA" out/* > "$RUNNER_TEMP/manifest.json"
           mv "$RUNNER_TEMP/manifest.json" out/manifest.json
           release/sign.sh files out/manifest.json
           cat out/manifest.json
@@ -588,6 +769,15 @@ jobs:
           [ -n "$got" ] || { echo "::error::the built hub did not answer"; exit 1; }
           echo "$got"
           [ "$(printf '%s' "$got" | jq -r .commit)" = "$GITHUB_SHA" ] || { echo "::error::the built hub does not report this commit"; exit 1; }
+      # Expand, then contract (hub/deploy/README.md, "Migrations"): the hub of the newest release must still start
+      # and answer on a database this build's hub has migrated, so that putting the program back after a failed
+      # deploy is always safe. A build that raises hub/data-epoch declares that it is not; the check is then skipped
+      # and the updater never puts the program back past it once the new hub has served.
+      - name: The hub before runs on data this one migrated
+        if: needs.changes.outputs.changed_hub != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh .github/scripts/hub_compat.sh "out/trommi-hub-$TARGET" "$TARGET"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: needs.changes.outputs.changed_hub != 'false'
         with:
@@ -595,6 +785,12 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
+      # what sccache found in the cache and what it compiled anew (compare between runs: hits / requests)
+      - name: sccache statistics
+        if: always()
+        run: |
+          "$SCCACHE_PATH" --show-stats || true
+          echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # The one release of this run: every part's files and one signed manifest (release.yml): the parts built here, the
   # unchanged ones taken from the newest release. Only on main (never staging), only when the inputs of a part changed since the
@@ -632,6 +828,9 @@ jobs:
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.release.outputs.published == 'true' && needs.changes.outputs.changed_hub == 'true' }}
     permissions:
       id-token: write
+      # deploy_hub.yml's job report opens or closes the issue of a failed delivery
+      contents: read
+      issues: write
     uses: ./.github/workflows/deploy_hub.yml
     with:
       tag: v${{ needs.changes.outputs.version }}

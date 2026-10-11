@@ -1,8 +1,8 @@
 // SettingsScreen.swift: Settings as one list, the way iOS Settings reads, on Trommi's paper (agents.mjs, auth.mjs): on
 // top the two invitations as equal tiles (Invite a Device: its QR code blurred until Show Code, the invite made only
-// then, six emoji and They Match; Invite an Agent: the command for a terminal), then a row for each page: Sessions
-// (grouped by desk, folded, the main session first, a search), Devices (each device a page of its own; Push on this
-// phone: Yes, Only Knocking, No), Account (who, the ways in, each a page of its own that asks "Confirm It Is You"; Log Out), Theme (the Demo is a row of the pill menu, under Settings). Route .settings(<page>): "" or "agents" is the list itself.
+// then, six emoji and They Match; Invite an Agent: the command for a terminal), then a row for each page: Agents
+// (each a program on a computer, its sessions under it as a tree; route "sessions", the web's /settings/agents), Devices
+// (only the person's: each a page of its own; Push on this phone: Yes, Only Knocking, No), Account (who, the ways in, each a page of its own that asks "Confirm It Is You"; Log Out), Theme (the Demo is a row of the pill menu, under Settings). Route .settings(<page>): "" or "agents" is the list itself.
 import SwiftUI
 import TrommiClient
 #if canImport(CoreImage)
@@ -19,7 +19,7 @@ struct SettingsScreen: View {
   init(tab: String) { self.tab = tab }
   var body: some View {
     switch tab {
-    case "sessions": SessionsPage()
+    case "sessions": AgentsPage()   // (the page of the web's /settings/agents; the old Sessions page leads here)
     case "devices": DevicesPage()
     case let t where t.hasPrefix("devices/"): DevicePage(deviceId: String(t.dropFirst("devices/".count)))
     case "account": AccountPage()
@@ -104,15 +104,15 @@ struct SettingsHome: View {
   @State private var account: AccountStatus?
   var body: some View {
     let _ = model.version
-    let agents = (model.desk?.agents ?? []).filter { !$0.archived && !$0.removed }
-    let connected = agents.filter { $0.online }.count
+    let agents = concreteAgents(model.desk?.agents ?? [], members: model.board?.members ?? [:])
+    let sessions = agents.reduce(0) { $0 + $1.sessions.count }
     let devices = (model.board?.members.values.filter { $0.isActive && $0.deviceRole == "human" }.count) ?? 0
     SettingsPage(title: "Settings") {
       InviteTiles(device: { inviteDevice = true }, agent: { agentName = ""; askAgentName = true })
       SettingsGroup {
-        link("sessions") { SettingsRow(title: "Sessions", detail: agents.isEmpty ? nil : "\(connected) of \(agents.count) connected", chevron: true) { Sketch("bubble") } }
+        link("sessions") { SettingsRow(title: "Agents", detail: agents.isEmpty ? nil : "\(agents.count) · \(sessions) sessions", chevron: true) { Sketch("terminal") } }
         RowRule()
-        link("devices") { SettingsRow(title: "Devices", detail: devices > 0 ? "\(devices)" : nil, chevron: true) { Sketch("keycap") } }
+        link("devices") { SettingsRow(title: "Devices", detail: devices > 0 ? "\(devices)" : nil, chevron: true) { PenMark("draw:phone", color: Ink.fg) } }
         RowRule()
         link("account") { SettingsRow(title: "Account", detail: model.demo ? "Demo" : account?.email, chevron: true) { Sketch("key") } }
       }
@@ -202,125 +202,92 @@ struct InviteTiles: View {
   }
 }
 
-// ---- Sessions ---------------------------------------------------------------------------------------------------
+// ---- Agents -----------------------------------------------------------------------------------------------------
+// Each agent (a program on a computer, Agents.swift) as a group, its main sessions under it as the branches of a tree:
+// name, "<desk> desk · folder", "+N helpers", connected or away; a tap opens the session. Its "…" removes it from the
+// account (the agent devices of its sessions). Renaming an agent and updating its connector have no way on the hub
+// yet: the connector names itself and updates itself.
 
-struct SessionsPage: View {
+struct AgentsPage: View {
   @EnvironmentObject var model: BoardModel
-  @State private var query = ""
-  @State private var open = Set<String>()
-  @State private var renaming: Agent?
-  @State private var name = ""
-  @State private var drawingFor: Agent?
-  @State private var deleting: Agent?
+  @State private var removing: ConcreteAgent?
+  @State private var askAgentName = false
+  @State private var agentName = ""
+  @State private var inviteAgent = false
   var body: some View {
     let _ = model.version
-    let d = model.desk
-    let terms = query.lowercased().split(separator: " ").map(String.init)
-    let matches: (Agent) -> Bool = { a in terms.allSatisfy { "\(a.name) \(a.given) \(a.model) \(a.task)".lowercased().contains($0) } }
-    let desks = d?.desks ?? []
-    let groups: [(id: String, name: String, list: [Agent])] = desks.isEmpty
-      ? [("", "Sessions", ordered((d?.view(desk: nil).here ?? []).filter(matches)))]
-      : desks.map { desk in (desk.id, desk.name, ordered((d?.view(desk: desk.id).here ?? []).filter(matches))) }
-    let archived = (d?.agents ?? []).filter { $0.archived && matches($0) }
-    SettingsPage(title: "Sessions") {
-      if groups.allSatisfy({ $0.list.isEmpty }) && archived.isEmpty {
-        Text(terms.isEmpty ? "No session yet: Invite Agent… in Settings." : "No session has these words.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(.top, 20)
+    let agents = concreteAgents(model.desk?.agents ?? [], members: model.board?.members ?? [:], me: model.board?.myDeviceId)
+    let desks = model.desk?.desks ?? []
+    SettingsPage(title: "Agents") {
+      if !agents.isEmpty {
+        let n = agents.reduce(0) { $0 + $1.sessions.count }, computers = Set(agents.map(\.host)).count
+        Text("\(agents.count) \(agents.count == 1 ? "agent" : "agents") on \(computers) \(computers == 1 ? "computer" : "computers") · \(n) \(n == 1 ? "session" : "sessions")").font(Face.text(15)).foregroundStyle(Ink.muted)
       }
-      ForEach(groups, id: \.id) { g in
-        if !g.list.isEmpty { group(id: g.id, name: g.name, list: g.list, desk: !desks.isEmpty) }
-      }
-      if !archived.isEmpty { group(id: "#archive", name: "Archive", list: archived, desk: false) }
-    }
-    .searchable(text: $query, prompt: "Search Sessions")
-    .alert("Rename Session", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-      TextField("Name", text: $name)
-      Button("Cancel", role: .cancel) {}
-      Button("Rename") { if let a = renaming { model.editSession(a, ["name": .str(String(name.prefix(60)))]) } }
-    }
-    .sheet(item: $drawingFor) { a in DrawingPicker(agent: a) }
-    .confirmationDialog("Delete \(deleting?.name ?? "this session")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-      Button("Delete Session", role: .destructive) { if let a = deleting { model.deleteSession(a) } }
-    } message: { Text("Its connector leaves the room, its open questions are shredded and it goes to the archive.") }
-  }
-  /** The main session (the crown) first, then the board's order. */
-  private func ordered(_ list: [Agent]) -> [Agent] {
-    list.enumerated().sorted { ($0.element.starred ? 0 : 1, $0.offset) < ($1.element.starred ? 0 : 1, $1.offset) }.map { $0.element }
-  }
-  @ViewBuilder private func group(id: String, name: String, list: [Agent], desk: Bool) -> some View {
-    // folded by default; a search opens every group that has a match
-    let shown = !query.isEmpty || open.contains(id)
-    let connected = list.filter { $0.online }.count
-    SettingsGroup {
-      Button { withAnimation(.snappy) { if open.contains(id) { open.remove(id) } else { open.insert(id) } } } label: {
-        HStack(spacing: 14) {
-          Group { if id == "#archive" { Sketch("archive") } else if desk { Sketch("desk") } else { Sketch("bubble") } }.frame(width: 26, height: 26)
-          Text(name).font(Face.text(17, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
-          Spacer(minLength: 8)
-          Text(id == "#archive" ? "\(list.count)" : "\(connected) of \(list.count) connected").font(Face.text(14)).foregroundStyle(Ink.muted)
-          Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint).rotationEffect(.degrees(shown ? 90 : 0))
-        }
-        .padding(.horizontal, 16).frame(minHeight: 54).contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("\(name), \(list.count) sessions, \(shown ? "open" : "folded")")
-      if shown {
-        ForEach(list) { a in
-          RowRule(inset: 16)
-          row(a)
-        }
-      }
-    }
-  }
-  private func row(_ a: Agent) -> some View {
-    let open = model.view?.fresh.filter { $0.agent == a.id }.count ?? 0
-    return HStack(spacing: 12) {
-      Button { model.path.append(.session(a.id)) } label: {
-        HStack(spacing: 12) {
-          AgentMark(agent: a, size: 30).padding(.leading, a.parent != nil ? 14 : 0)
-          VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-              Text(a.name).font(Face.text(17, .medium)).foregroundStyle(Ink.fg).lineLimit(1)
-              if a.starred { Text("Main").font(Face.text(11, .bold)).foregroundStyle(Ink.goldPen).padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().strokeBorder(Ink.goldPen)) }
-            }
-            Text([a.model, a.archived ? "archived" : a.online ? "connected" : "away"].filter { !$0.isEmpty }.joined(separator: " · ")).font(Face.text(13)).foregroundStyle(Ink.muted).lineLimit(1)
+      ForEach(agents) { g in
+        SettingsGroup {
+          head(g)
+          ForEach(Array(g.tops.enumerated()), id: \.element.agent.deviceId) { i, b in
+            Button { model.path.append(.session(b.agent.id)) } label: { branch(b, last: i == g.tops.count - 1, desk: desks.first { $0.id == (b.agent.desk ?? desks.first?.id) }?.name ?? "Personal") }.buttonStyle(.plain)
           }
-          Spacer(minLength: 4)
-          if open > 0 { Text("\(open)").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted).frame(minWidth: 26, minHeight: 26).overlay(Circle().strokeBorder(Ink.lineStrong)) }
-        }.contentShape(Rectangle())
-      }.buttonStyle(.plain)
-      Menu { SessionActions(agent: a, rename: { name = a.label.isEmpty ? a.name : a.label; renaming = a }, icon: { drawingFor = a }, delete: { deleting = a }) } label: {
-        Image(systemName: "ellipsis.circle").font(.system(size: 20)).foregroundStyle(Ink.muted).frame(width: 40, height: 40)
+        }
       }
-      .accessibilityLabel("More for \(a.name)")
+      SettingsGroup(footer: "An agent is Claude Code or Codex on one of your computers, connected by the Trommi connector. Its sessions stand under it; a session's helpers are counted beside it.") {
+        if agents.isEmpty { Text("No agent yet.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(16).frame(maxWidth: .infinity, alignment: .leading); RowRule() }
+        Button { agentName = ""; askAgentName = true } label: { SettingsRow(title: "Invite an Agent…", tint: Ink.accent) { PenMark("ui:PLUS", color: Ink.accent) } }.buttonStyle(.plain)
+      }
     }
-    .padding(.leading, 16).padding(.trailing, 6).padding(.vertical, 6)
-    .contextMenu { SessionActions(agent: a, rename: { name = a.label.isEmpty ? a.name : a.label; renaming = a }, icon: { drawingFor = a }, delete: { deleting = a }) }
+    .sheet(isPresented: $inviteAgent) { AgentInviteSheet(label: agentName.trimmingCharacters(in: .whitespaces)) }
+    .alert("Invite Agent", isPresented: $askAgentName) {
+      TextField("Name of the Session (e.g. Website)", text: $agentName)
+      Button("Cancel", role: .cancel) {}
+      Button("Continue") { inviteAgent = true }
+    } message: { Text("The session gets this name on the board. You can leave it empty and rename it later.") }
+    .confirmationDialog(removing.map { "Remove \($0.program) on \(computer($0))?" } ?? "", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
+      Button("Remove from This Account", role: .destructive) {
+        if let g = removing, let room = model.acting() { model.act("Not removed") { try await room.removeDevices(g.devices); model.say("Removed", "\(g.program) on \(computer(g))") } }
+      }
+    } message: { Text(removing.map { "It and its \($0.sessions.count) sessions can read nothing new after this. The others get a new key; the history stays." } ?? "") }
   }
-}
-
-/** What can be done with a session, in Apple's words. */
-struct SessionActions: View {
-  @EnvironmentObject var model: BoardModel
-  let agent: Agent
-  let rename: () -> Void
-  let icon: () -> Void
-  let delete: () -> Void
-  var body: some View {
-    let a = agent
-    Button(action: rename) { Label("Rename…", systemImage: "pencil") }
-    Button(action: icon) { Label("Change Icon…", systemImage: "scribble") }
-    if !a.archived {
-      if a.starred { Button { model.star(a, false) } label: { Label("Remove as Main Session", systemImage: "crown") } }
-      else { Button { model.star(a, true) } label: { Label("Make Main Session", systemImage: "crown") } }
+  private func computer(_ g: ConcreteAgent) -> String { g.host.isEmpty ? "an unnamed computer" : g.host }
+  private func head(_ g: ConcreteAgent) -> some View {
+    let helpers = g.sessions.count - g.tops.count
+    return HStack(spacing: 12) {
+      Sketch("terminal").frame(width: 24, height: 24).frame(width: 40, height: 40)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Ink.surface)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.fg, lineWidth: 1.5))
+      VStack(alignment: .leading, spacing: 3) {
+        (Text(g.program).font(Face.display(17, .bold)) + Text(" on \(computer(g))").font(Face.text(16, .medium)).foregroundColor(Ink.muted)).lineLimit(1)
+        HStack(spacing: 5) {
+          Circle().fill(g.online ? Ink.stDone : Ink.lineStrong).frame(width: 7, height: 7)
+          Text("\(g.online ? "connected" : "away") · \(g.tops.count) \(g.tops.count == 1 ? "session" : "sessions")\(helpers > 0 ? ", \(helpers) \(helpers == 1 ? "helper" : "helpers")" : "")").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
+        }
+      }
+      Spacer(minLength: 0)
+      if !g.devices.isEmpty && !model.demo {
+        Menu { Button("Remove from This Account…", role: .destructive) { removing = g } } label: {
+          Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Ink.fg).frame(width: 40, height: 40)
+        }.accessibilityLabel("More for \(g.program) on \(computer(g))")
+      }
     }
-    let others = (model.desk?.desks ?? []).filter { $0.id != model.desk?.deskOf(a) }
-    if !others.isEmpty && a.parent == nil {
-      Menu { ForEach(others) { d in Button(d.name) { model.editSession(a, ["desk": .str(d.id)]) } } } label: { Label("Move to Desk…", systemImage: "rectangle.portrait.and.arrow.forward") }
+    .padding(.horizontal, 14).padding(.vertical, 12).background(Ink.sunken)
+  }
+  private func branch(_ b: ConcreteAgent.Branch, last: Bool, desk: String) -> some View {
+    HStack(spacing: 12) {
+      // the branch of the tree: down from the agent, across to the session
+      ZStack(alignment: .topLeading) {
+        Rectangle().fill(Ink.lineStrong).frame(width: 1.4).frame(maxHeight: last ? 30 : .infinity, alignment: .top)
+        Rectangle().fill(Ink.lineStrong).frame(width: 12, height: 1.4).offset(y: 29)
+      }.frame(width: 14, alignment: .leading).frame(maxHeight: .infinity, alignment: .top)
+      AgentMark(agent: b.agent, size: 24, crown: false).frame(width: 24, height: 24)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(b.agent.name).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+        Text(b.folder.isEmpty ? "\(desk) desk" : "\(desk) desk · \(b.folder)").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1).truncationMode(.tail)
+      }
+      Spacer(minLength: 4)
+      if b.helpers > 0 { Text("+\(b.helpers) \(b.helpers == 1 ? "helper" : "helpers")").font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 7).padding(.vertical, 3).overlay(Capsule().strokeBorder(Ink.lineStrong)) }
+      Circle().fill(b.agent.online ? Ink.stDone : Ink.lineStrong).frame(width: 8, height: 8).accessibilityLabel(b.agent.online ? "connected" : "away")
+      Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint)
     }
-    Divider()
-    Button { model.editSession(a, ["archived": .bool(!a.archived)]) } label: { Label(a.archived ? "Unarchive" : "Archive", systemImage: "archivebox") }
-      .disabled(a.online && !a.archived)
-    Button(role: .destructive, action: delete) { Label("Delete…", systemImage: "trash") }
+    .padding(.leading, 34).padding(.trailing, 16).frame(height: 60).contentShape(Rectangle())
   }
 }
 
@@ -357,14 +324,11 @@ struct DeviceRow: View {
 struct DevicesPage: View {
   @EnvironmentObject var model: BoardModel
   @State private var pushLevel = Push.level
-  @State private var askAgentName = false
-  @State private var agentName = ""
-  @State private var inviteAgent = false
   var body: some View {
     let _ = model.version
-    let members = (model.board?.members.values.map { $0 } ?? []).sorted { $0.addedEntryNumber < $1.addedEntryNumber }
-    let people = members.filter { $0.isActive && $0.deviceRole == "human" }
-    let agents = members.filter { $0.isActive && $0.deviceRole != "human" }
+    // (only the person's devices: phones, tablets, browsers; the agents are Settings · Agents)
+    let members = (model.board?.members.values.filter { $0.deviceRole == "human" } ?? []).sorted { $0.addedEntryNumber < $1.addedEntryNumber }
+    let people = members.filter { $0.isActive }
     let gone = members.filter { !$0.isActive }
     SettingsPage(title: "Devices") {
       SettingsGroup(header: "Your Devices") {
@@ -383,26 +347,12 @@ struct DevicesPage: View {
           .accessibilityAddTraits(pushLevel == l.0 ? .isSelected : [])
         }
       }
-      SettingsGroup(header: "Agents", footer: "Every device holds its own keys; the hub sees sealed envelopes only.") {
-        ForEach(Array(agents.enumerated()), id: \.element.deviceId) { i, d in
-          if i > 0 { RowRule() }
-          Button { model.path.append(.settings("devices/\(d.deviceId)")) } label: { DeviceRow(d: d) }.buttonStyle(.plain)
-        }
-        if !agents.isEmpty { RowRule() }
-        Button { agentName = ""; askAgentName = true } label: { SettingsRow(title: "Invite Agent…", detail: "a command", tint: Ink.accent) { PenMark("ui:PLUS", color: Ink.accent) } }.buttonStyle(.plain)
-      }
       if !gone.isEmpty {
         SettingsGroup {
           Button { model.path.append(.settings("devices/removed")) } label: { SettingsRow(title: "Removed", detail: "\(gone.count)", chevron: true) { Sketch("archive") } }.buttonStyle(.plain)
         }
       }
     }
-    .sheet(isPresented: $inviteAgent) { AgentInviteSheet(label: agentName.trimmingCharacters(in: .whitespaces)) }
-    .alert("Invite Agent", isPresented: $askAgentName) {
-      TextField("Name of the Session (e.g. Website)", text: $agentName)
-      Button("Cancel", role: .cancel) {}
-      Button("Continue") { inviteAgent = true }
-    } message: { Text("The session gets this name on the board. You can leave it empty and rename it later.") }
   }
 }
 
@@ -420,7 +370,7 @@ struct DevicePage: View {
     if deviceId == "removed" {
       SettingsPage(title: "Removed") {
         SettingsGroup(footer: "They open nothing new; what they had before stays with them.") {
-          ForEach(Array(members.filter { !$0.isActive }.enumerated()), id: \.element.deviceId) { i, d in
+          ForEach(Array(members.filter { !$0.isActive && $0.deviceRole == "human" }.enumerated()), id: \.element.deviceId) { i, d in
             if i > 0 { RowRule() }
             DeviceRow(d: d, chevron: false)
           }

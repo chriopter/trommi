@@ -2007,11 +2007,6 @@ function onKey(e) {
     if (last) { e.preventDefault(); e.stopPropagation(); close(last, { focus: true }) }
     return
   }
-  const typing = e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
-  if (e.key === '/' && !typing && !opened().length) {
-    const find = document.querySelector('.ledger-find input')
-    if (find) { e.preventDefault(); find.focus(); find.select() }
-  }
 }
 
 // A form that was sent has done its work: its control closes, so the answer and the live stream can land.
@@ -2189,7 +2184,7 @@ const crownControl = (agent, base, { stay = false, back = '' } = {}) => html`<fo
 // (controller "keys") and by the "?" sheet (keySheet), so what the sheet
 // lists and what works cannot drift apart. Plain data and two helpers: nothing here touches a page.
 
-/** scope: where the keys count ('desk' | 'card' | 'picture' | 'agents' | 'app'). keys: 'j', 'ArrowDown', 'g d' (g, then d),
+/** scope: where the keys count ('desk' | 'card' | 'picture' | 'app'). keys: 'j', 'ArrowDown', 'g d' (g, then d),
  *  '1…9' (any of them; the action gets the number), 'Mod+k'. repeat: may fire while held. typing: also in a field.
  *  needs: listed and taken only where the page has it ('sidebar': the sessions' list; 'desks': the menu's desks,
  *  and not on the Agents page, where D is a line's drawing). native: listed, handled where it lives (the key is left alone). verb: the longer wording for the sheet. */
@@ -2229,21 +2224,11 @@ const LAYOUT = [
     { id: 'pic.prev', keys: ['ArrowLeft', 'k'], does: 'previous picture', repeat: true },
     { id: 'pic.leave', keys: ['Escape'], does: 'back to the question' },
   ] },
-  { scope: 'agents', title: 'In Settings · Sessions', keys: [
-    { id: 'ledger.next', keys: ['ArrowDown', 'j'], does: 'next session', repeat: true },
-    { id: 'ledger.prev', keys: ['ArrowUp', 'k'], does: 'previous session', repeat: true },
-    { id: 'ledger.open', keys: ['Enter'], does: 'open its conversation' },
-    { id: 'ledger.rename', keys: ['r'], does: 'rename' },
-    { id: 'ledger.mark', keys: ['d'], does: 'another drawing' },
-    { id: 'ledger.crown', keys: ['c'], does: 'Make Main Session: its questions come first' },
-    { id: 'ledger.find', keys: ['/'], does: 'find a session', native: true },
-    { id: 'ledger.leave', keys: ['Escape'], does: 'close what is open, then drop the mark' },
-  ] },
   { scope: 'app', title: 'Anywhere', keys: [
     { id: 'help', keys: ['?'], does: 'this list' },
     { id: 'note.new', keys: ['n'], does: 'a new note' },
     { id: 'go.desk', keys: ['g d', 'g i'], does: 'Desk', verb: 'go to the Desk' },
-    { id: 'go.agents', keys: ['g a'], does: 'Sessions', verb: 'go to Settings · Sessions' },
+    { id: 'go.agents', keys: ['g a'], does: 'Agents', verb: 'go to Settings · Agents' },
     { id: 'go.jump', keys: ['Mod+k', 'g j'], does: 'menu', verb: 'open the Trommi menu: desks and places' },
     { id: 'go.walk', keys: ['g b'], does: 'Blitz', verb: 'Blitz: every open card, one after the other' },
     { id: 'go.artifacts', keys: ['g m', 'g p'], does: 'Artifacts', verb: 'go to the Artifacts: every picture, video, file and page your agents made' },
@@ -2272,7 +2257,7 @@ export const SHORT = [
 ]
 
 /** The scopes that listen on a view, first to hear first. */
-const scopesOf = view => (['desk', 'card', 'picture', 'agents'].includes(view) ? [view, 'app'] : ['app'])
+const scopesOf = view => (['desk', 'card', 'picture'].includes(view) ? [view, 'app'] : ['app'])
 
 const NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', ' ': 'Space', Delete: 'Del', Backspace: '⌫' }
 /** One part of a key ('Shift+ArrowUp', 'g', 'Mod+k') as the caps it is printed on. mod: what "Mod" is on this machine. */
@@ -2367,9 +2352,8 @@ function start(signal) {
 
   // ---- the mark on the Desk: which row the keyboard is on ----
   // Kept by the card's id (and its place, for when that card leaves), so it holds across stream updates and page changes.
-  // The Agents page has the same mark on its lines; each list keeps its own.
-  const LISTS = { desk: '#desk-list .inbox-row, #desk-list .inbox-pile.is-open .inbox-done', agents: '#ledger-list .ledger-line[data-id]' }
-  const HOSTS = '#desk-list .is-current, #ledger-list .is-current'
+  const LISTS = { desk: '#desk-list .inbox-row, #desk-list .inbox-pile.is-open .inbox-done' }
+  const HOSTS = '#desk-list .is-current'
   const marks = {}   // view -> { id, pile, at }
   try { Object.assign(marks, JSON.parse(sessionStorage.getItem(MARK_KEY))) } catch {}
   const keep = () => { try { sessionStorage.setItem(MARK_KEY, JSON.stringify(marks)) } catch {} }
@@ -2430,7 +2414,7 @@ function start(signal) {
   const sessions = () => [...document.querySelectorAll('#agents .agent-row[data-unit]')].filter(shown).map(r => r.querySelector('.agent-entry')).filter(Boolean)
   const desks = () => [...document.querySelectorAll('#brand-doors .menu-desk[data-desk]')]
   const HAS = {
-    desks: () => desks().length > 0 && view() !== 'agents',
+    desks: () => desks().length > 0,
     sidebar: () => Boolean($('#agents')),
   }
   function sessionStep(by) {
@@ -2485,15 +2469,6 @@ function start(signal) {
     'card.pic.prev': () => press($('.tc-card .tc-step.is-prev')),
     'card.leave': (n, e) => { if (typingIn(e.target)) return e.target.blur(); const leave = $('.tc-rails .tc-full.is-leave'); return press(leave?.getClientRects().length ? leave : $('.tc-rails .tc-back')) },
 
-    'ledger.next': () => step(1),
-    'ledger.prev': () => step(-1),
-    'ledger.open': () => (current()?.matches('.is-archived') ? false : inRow('[data-ledger="open"], a.ledger-open')),
-    'ledger.rename': () => inRow('[data-ledger="rename"]'),
-    'ledger.mark': () => inRow('[data-ledger="mark"]'),
-    'ledger.crown': () => inRow('[data-ledger="crown"]'),
-    // Escape closes what is open first (the page's own "pops" controller); only then the mark goes.
-    'ledger.leave': () => { if (!current() || $('#ledger-list details[open]')) return false; setMark(null); document.activeElement?.blur?.() },
-
     'pic.next': () => press($('.t-picture .tc-step.is-next')),
     'pic.prev': () => press($('.t-picture .tc-step.is-prev')),
     'pic.leave': () => press($('.t-picture-back')),
@@ -2501,7 +2476,7 @@ function start(signal) {
     'help': () => toggleSheet(),
     'note.new': () => document.dispatchEvent(new CustomEvent('trommi:note')),
     'go.desk': () => go(`${base()}/`),
-    'go.agents': () => go(`${base()}/settings/sessions`),
+    'go.agents': () => go(`${base()}/settings/agents`),
     'go.walk': () => go(`${base()}/blitz`),
     'go.artifacts': () => go(`${base()}/artifacts`),
     'go.jump': () => openJump(),
@@ -2933,6 +2908,34 @@ export const roomShell = (title, inner, cls = '') => html`<main id="room" class=
 // the way back. The list and most pages are auth.mjs (/settings), Sessions is agents.mjs; their frame is this. ----
 export const SET_CHEVRON = raw('<svg class="set-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.2 5.4Q12.6 8.8 15.4 12.1Q12.4 15.3 9.4 18.7"/></svg>')
 const BACK_CHEVRON = raw('<svg class="set-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.8 5.4Q11.4 8.8 8.6 12.1Q11.6 15.3 14.6 18.7"/></svg>')
+// ---- the concrete agents: a program on a computer, its sessions (Settings · Agents, agents.mjs; the Settings list) ----
+const PROGRAM = { 'claude-code': 'Claude Code', codex: 'Codex' }
+/** The program an agent device runs: what the connector says (platform), else what the session's model tells. */
+export const programOf = (member, a) => PROGRAM[member?.platform] ?? (/^(gpt|o\d|codex)/i.test(a?.model ?? '') ? 'Codex' : /claude/i.test(a?.model ?? '') ? 'Claude Code' : 'Agent')
+
+/**
+ * The concrete agents of the board: the sessions (not archived, not removed) grouped by program and computer.
+ * members: the room's members (device id -> { platform, host, folder, device_role }); deskName(a): a session's desk.
+ * [{ key, program, host, sessions, tops: [{ a, helpers, folder }], online, seen, devices }], the most sessions first.
+ */
+export function agentsOf(everyone, members, { me = null } = {}) {
+  const groups = new Map()
+  for (const a of everyone) {
+    if (a.archived || a.removed || a.own) continue
+    const d = members.get(a.agent_device_id)
+    const program = programOf(d, a), host = d?.host || ''
+    const key = `${program} · ${host}`
+    if (!groups.has(key)) groups.set(key, { key, program, host, sessions: [] })
+    groups.get(key).sessions.push(a)
+  }
+  return [...groups.values()].map(g => {
+    const ids = new Set(g.sessions.map(a => a.id))
+    const tops = g.sessions.filter(a => !a.parent || !ids.has(a.parent)).map(a => ({ a, helpers: g.sessions.filter(x => x.parent === a.id).length, folder: members.get(a.agent_device_id)?.folder || '' }))
+    const devices = [...new Set(g.sessions.map(a => a.agent_device_id).filter(d => d && d !== me && members.get(d)?.device_role !== 'human'))]
+    return { ...g, tops, devices, online: g.sessions.some(a => a.online), seen: Math.max(0, ...g.sessions.map(a => a.seen || 0)) }
+  }).sort((x, y) => y.sessions.length - x.sessions.length || x.program.localeCompare(y.program) || x.host.localeCompare(y.host))
+}
+
 /** One row of a Settings list: a link with its drawing, its word, what it says now (detail) and the chevron. */
 export const setRow = ({ href, icon = '', word, detail = '', id = '' }) => html`<a class="set-row" href="${href}" data-nav${id ? raw(` id="${id}"`) : ''}><span class="set-ico">${icon}</span><b>${word}</b><span class="set-detail">${detail}</span>${SET_CHEVRON}</a>`
 /** A page under Settings: the way back (back: true for Settings, or the address of the page above, named backWord), its title (and a line under it), then its parts. id/cls: of the main element. */

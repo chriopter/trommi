@@ -328,9 +328,9 @@ struct EmailView: View {
       ObPassword(text: $password, bad: .constant(false)) { Button("Forgot?") { model.go(.forgot) }.buttonStyle(ObLink()).frame(height: 20) }
       ObError(text: model.error)
       if model.passkeysOn {
-        Button(model.signing ? "Logging in…" : "Log in") { login() }.buttonStyle(ObSecond()).disabled(model.signing)
+        Button(model.signing ? (model.signInStep ?? "Logging in…") : "Log in") { login() }.buttonStyle(ObSecond()).disabled(model.signing)
       } else {
-        Button(model.signing ? "Logging in…" : "Log in") { login() }.buttonStyle(ObGo()).disabled(model.signing)
+        Button(model.signing ? (model.signInStep ?? "Logging in…") : "Log in") { login() }.buttonStyle(ObGo()).disabled(model.signing)
       }
       ObOr()
       Button("Scan a code") { model.go(.scan) }.buttonStyle(ObSecond()).disabled(model.signing)

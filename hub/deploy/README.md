@@ -136,10 +136,17 @@ server (updater, as its own user without root, port 9443, tailnet address only)
         ├── checks the signature against the public key pinned on the server, then each file against the manifest
         ├── refuses anything older than what it once accepted
         ├── the same hub inputs as the running release: notes v<N> as accepted, the hub keeps running
-        ├── has the hub stopped, swaps, has it started (its unit copies the database and the hub's keys first),
-        │   asks the hub whether it is well
-        ├── not well: puts the release before back and starts it
+        ├── dry run: the new hub on a copy of the live data, without network, while the old one serves;
+        │   fails → nothing is touched, the old hub runs on, the call answers dry-run-failed
+        ├── has the hub stopped, swaps, has it started (its unit copies the database, the hub's keys and a
+        │   hard-link snapshot of the uploaded files first), asks the hub whether it is well
+        ├── not well: puts the release before back and starts it; the data goes back with it only if the new
+        │   hub never served a request
         └── answers with what happened; the run shows it and fails unless the release runs
+deploy_hub.yml
+├── asks https://hub.trommi.com/healthz until it answers as the new commit (three minutes)
+└── report     a failed delivery opens the issue "Hub update v<N> failed" (label deploy-failed) or comments on the
+               open one; the next delivery that goes through closes it (the same for the web app)
 ```
 
 **The release** has the form of every signed release (above); a release never brings a key. The hub is released as static programs, not as an image: one file each, hashable, no registry
@@ -168,7 +175,10 @@ devices. If tailscaled cannot be asked, nobody is served.
 | GitHub does not answer, or has no such release | nothing is touched; the hub runs on; the call answers `fetch-failed` |
 | signature or a file does not match | nothing is touched; `not-verified`; what was fetched is deleted |
 | older release | refused before anything is fetched |
-| the new hub does not become well in 60 s, or says another commit | the release before is put back and started; `rolled-back`; the copy of the database made before the new release started lies in `/srv/trommi/backups` and is not restored by itself |
+| the new hub fails on a copy of the data (dry run: its migration, its start, `/healthz`, a `/v1/` route, SQLite's checks of the migrated copy) | nothing is touched, the old hub serves on; `dry-run-failed` (HTTP 424), the reason in the answer and the issue; the release is not noted, a fixed later one goes through |
+| the new hub does not become well in 60 s, or says another commit, and has served no request | the hub is stopped, its data is put back to the copy made right before it started (database, keys, uploaded files), the release before is put back and started; `rolled-back`, `data: restored` |
+| the same, after it served a request | only the program goes back: the release before runs on the data as the new hub left it; `rolled-back`, `data: kept`. A release with a higher data epoch is not put back at all (below): it stays, is started again, and the call fails saying so |
+| the data cannot be put back (halfway) | nothing is started on it; the hub stands and the updater tries again at its next start (`trommi-hub-updater status` shows the note) |
 | the disk is full | a fetch that cannot be written changes nothing; if the copy of the database cannot be made, the new release is not started and the release before is put back |
 | the machine or the updater goes down in the middle | a note written before the swap is found at the next start (the hub is started by the updater, never by itself, so a release whose health was never known does not serve): if the new release is in place, proves, runs and is well, it stays; otherwise (also after a reboot, when it does not run) the release before is put back: a recovery never starts a release whose health was never known; if not even that can be written (a full disk), the hub stays stopped until the next start of the updater or the next deploy |
 | two calls at once | one after the other; the second finds its release running (`unchanged`) or older (`refused`) |
@@ -185,8 +195,9 @@ credentials), can stop the hub and can refuse further updates, and does not get 
 machine. Three things remain root's and are named here so that the claim can be checked:
 
 - `hub/deploy/hub-ctl.sh` behind `trommi-hub-ctl.socket`: the updater cannot start or stop a unit, so it asks this
-  helper through a socket only its user can open. The helper takes one word, `start` or `stop`, and does that to
-  the hub's unit; nothing else, and nothing the caller sends reaches a command.
+  helper through a socket only its user can open. The helper takes one word: `start` or `stop` (the hub's unit),
+  `dryrun` or `restore` (two fixed oneshot units that run as `trommi`, below); nothing else, and nothing the caller
+  sends reaches a command.
 - `hub/deploy/install.sh`, run by the owner over SSH: users, units, scripts, settings, the pinned key.
 - systemd, which starts the units as their users.
 
@@ -194,6 +205,35 @@ The hub's data is not the updater's to read either: the copy of the database bef
 made by the hub's unit (`hub/deploy/hub-prestart.sh`, as `trommi`, while the hub stands still, so `hub.db` and its
 `-wal` and `-shm` files are one consistent state). The rest rests on the machine: on users being kept apart by the
 kernel, and on tailscaled telling any local user who a tailnet address is (`tailscale whois`).
+
+**When a new hub fails.** Three steps keep a bad release away from the data people use.
+
+1. *Dry run before the swap.* The updater points the link `candidate` at the release and asks for `dryrun`:
+   `trommi-hub-dryrun.service` (as `trommi`; no network at all, `PrivateNetwork`; the live data only to read; no push
+   credentials) runs `hub/deploy/hub-dryrun.sh`, which runs `trommi-hub dry-run` of the new release
+   (`hub/src/dry_run.rs`): a consistent copy of the database while the old hub goes on writing (`VACUUM INTO` over a
+   read-only connection) and of the keys, the new hub started on it (`HUB_DRY_RUN=1`: no push, no jobs, no admin page)
+   on 127.0.0.1, `/healthz` well and as its commit, a `/v1/` route without a server error, then SQLite's
+   `quick_check` and `foreign_key_check`, the schema version and every table read on the migrated copy. Only then the
+   swap. A server whose helper is older than this skips the step and says `dry_run: skipped` in its answer.
+2. *Data back only before the first request.* The hub writes the mark `hub.served` beside its database before it
+   works on its first request (anything but `/healthz` and a preflight; the admin page too), and `/healthz` says
+   `"served"`. `hub-prestart.sh` removes the mark when a newer release begins and notes the copy it made in
+   `backups/last-copy`. When the new hub does not become well, the updater stops it and asks for `restore`
+   (unless the hub already said it served): `trommi-hub-restore.service` runs `hub/deploy/hub-restore.sh`, which puts
+   back database, keys and the uploaded files from that copy, but only when the copy is the one made right before the
+   release in place started and there is no mark. What it replaces goes to `backups/after-<release>-<time>/` (three
+   kept). After the first request only the program goes back, never the data.
+3. *Migrations: expand, then contract.* A hub release must start on a database its successor has migrated, because
+   that is what a program rollback starts. So a migration only adds (tables, columns with defaults, indexes) and the
+   code that stops using something ships first; dropping or reshaping what the hub before reads comes one release
+   later, once no hub that needs it can come back. CI checks it on every hub build (`.github/scripts/hub_compat.sh`
+   in `build.yml`): the hub of the newest release makes a database, this build's hub migrates it, the hub before
+   must start on it and answer `/healthz`. A migration that cannot be made this way raises the number in
+   `hub/data-epoch` in the same change: the release's manifest says `"data_epoch"`, the CI check is skipped for it,
+   and the updater does not put the program back past it once the new hub has served (before that the data goes back
+   with it, step 2). `SCHEMA_VERSION` in `hub/src/db.rs` changes only together with `hub/data-epoch`: an older hub
+   refuses another schema version.
 
 **The updater updates itself.** Every release brings the updater too. When it differs from the one that runs, the
 deploy puts it in place beside the old one, answers its caller, and ends; systemd starts the new one, which has to
@@ -211,23 +251,37 @@ pre-start scripts are installed once and are the fixed point; a change to one of
     current, previous                links: the hub that runs, the one before
     updater, updater-previous        the same for the updater
     state.json                       the highest version ever accepted
+    candidate                        a link to the release being tried, only during its dry run
 /srv/trommi/data/                trommi's: the database (hub.db), the hub's own keys (vapid.key, push-ticket.key), files/
-/srv/trommi/backups/             trommi's: the three newest copies of database and keys, one before each newer release starts
+/srv/trommi/backups/             trommi's: the three newest copies of database, keys and uploaded files (hard links), one
+                                 before each newer release starts (before-<release>-<time>/); last-release, last-copy;
+                                 after-<release>-<time>/: what a restore replaced (three kept)
+/var/cache/trommi-hub-dryrun/    trommi's: the copy a dry run works on, removed after it
 /etc/trommi/                     root's: release-public-key.pem (pinned), hub.env, hub-secrets.env, apns-key.p8, updater.env
-/etc/systemd/system/             trommi-hub.service, trommi-hub-updater.service, trommi-hub-ctl.socket, trommi-hub-ctl@.service
-/usr/local/lib/trommi/           hub-ctl.sh, hub-prestart.sh, updater-prestart.sh
+/etc/systemd/system/             trommi-hub.service, trommi-hub-updater.service, trommi-hub-ctl.socket, trommi-hub-ctl@.service,
+                                 trommi-hub-dryrun.service, trommi-hub-restore.service
+/usr/local/lib/trommi/           hub-ctl.sh, hub-prestart.sh, updater-prestart.sh, hub-dryrun.sh, hub-restore.sh
+/etc/systemd/journald.conf.d/    trommi.conf: the journal keeps 30 days (MaxRetentionSec=30day), at most 500 MB
 ```
+
+**Logs.** Hub and updater write one JSON line per event to the journal (`journalctl -u trommi-hub`,
+`-u trommi-hub-updater`). No line names a person: no e-mail address, no IP address of a caller or a client, no
+token, no user agent; ids are cut short, the rest are counts. The updater logs the tags allowed to deploy and only
+how many owner logins are (`caller_users` is a number). `install.sh` sets the journal to keep 30 days and at most
+500 MB (the drop-in above, then `systemctl restart systemd-journald`), so nothing older is on the server.
 
 Which hub and which updater run: `ssh root@<server> trommi-hub-updater status`, and the summary of every
 `deploy_hub` run. A backup of the server must hold `/srv/trommi/data` whole (the two key files with the database:
 without `vapid.key` every web push subscription is lost) and `/etc/trommi`.
 
 Rules that follow from this: a hub release must be able to run on the database of the release before it and leave
-it usable for that one, because that is what a rollback starts; renaming `build.yml` restarts the run number, so
+it usable for that one, because that is what a rollback starts (expand, then contract, above; or a raised
+`hub/data-epoch`); renaming `build.yml` restarts the run number, so
 `RELEASE_BASE` is raised then; HSTS is off until `HUB_HSTS=on` is set in `/etc/trommi/hub.env`.
 
 **The installation** is `hub/deploy/install.sh` on the owner's laptop: `inventory` reads the server and changes
-nothing; `install` puts the users, the fixed units and scripts, the pinned key and a first release in place (run
+nothing; `install` puts the users, the fixed units and scripts, the pinned key, the journal's 30 days and a first
+release in place (run
 again, it renews the fixed parts; on a server whose updater still runs as root it converts the installation in
 place and moves everything back if a step fails); `secrets` sends the push credentials from the 1Password
 Environment. Until the server is installed, `deploy_hub` publishes each release and then fails saying that nothing

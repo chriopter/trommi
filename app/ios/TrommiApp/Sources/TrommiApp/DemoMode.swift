@@ -21,7 +21,7 @@ struct DemoScreen: Identifiable, Hashable {
    *  open (a browser's storage), the keyboard shortcuts page; and moments of a page it has no like of: the selection
    *  bar (no multi-select on the Desk here) and the two sheets of keys. They are left out of the list and never opened. */
   static let webOnly: Set<String> = ["broken"]
-  static let webOnlyMoments: Set<String> = ["select", "keys", "board-help"]
+  static let webOnlyMoments: Set<String> = ["select", "keys", "board-help", "agent-more"]
   var onPhone: Bool {
     !(onboard.map { DemoScreen.webOnly.contains($0) } ?? false) && path != "/settings/keys" && !(webState.map { DemoScreen.webOnlyMoments.contains($0) } ?? false)
   }
@@ -89,7 +89,8 @@ extension BoardModel {
     case "chat", "s": if segs.count > 1 { path = [.session(segs[1])] }
     case "blitz": path = [.blitz]
     // (/settings is the page of Settings itself; /settings/<page> one of its pages)
-    case "settings": path = [.settings(segs.count > 1 && segs[1] != "agents" ? segs[1...].joined(separator: "/") : "")]
+    // (the web's /settings/agents is the Agents page, "sessions" here)
+    case "settings": path = [.settings(segs.count > 1 ? (segs[1] == "agents" ? "sessions" : segs[1...].joined(separator: "/")) : "")]
     case "assets": path = [.media]
     case "artifacts": path = [query == "kind=pages" ? .pages : .media]
     case "pages": path = [.pages]

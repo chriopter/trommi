@@ -15,6 +15,14 @@ import FoundationNetworking
 @testable import TrommiClient
 @testable import TrommiCoreLive
 
+/// The progress a sign-in reported, from whichever thread it came.
+final class Steps: @unchecked Sendable {
+  private let lock = NSLock()
+  private var list = [SignInProgress]()
+  func add(_ p: SignInProgress) { lock.withLock { list.append(p) } }
+  var all: [SignInProgress] { lock.withLock { list } }
+}
+
 /// One hub process for one test.
 final class HubProcess {
   let url: String
@@ -118,6 +126,43 @@ final class RealHubTests: XCTestCase {
   private func leaves(_ room: Room, of group: GroupId) async throws -> Set<Bytes> {
     let listed = try await room.hub.groups().first { ($0["group_id"] as? String).flatMap { try? unb64u($0) } == group }
     return Set((listed?["leaves"] as? [String] ?? []).compactMap { try? unb64u($0) })
+  }
+
+  /// A big account: the room group moved on many epochs (TROMMI_BIG_EPOCHS, 400 by default). A second device logs in
+  /// with the password the way the app does (`Room.signInWithPassword`) and is in within a bound, with its progress
+  /// reported on the way, and holds KeyPackages at the hub right after (a device in the room without any blocks
+  /// every new session of the account).
+  func testASignInIntoABigAccountFinishesInTime() async throws {
+    let hubURL = try XCTUnwrap(hub).url
+    let email = "big@example.com", password = "correct horse battery"
+    let made = try await Room.createAccount(hubURL: hubURL, email: email, password: password, base: try scratchFolder(self))
+    let first = made.room
+    defer { first.close() }
+    let a = try XCTUnwrap(first.device as? LiveDevice)
+    let epochs = Int(ProcessInfo.processInfo.environment["TROMMI_BIG_EPOCHS"] ?? "") ?? 400
+    let built = Date()
+    for _ in 0..<epochs {
+      _ = try a.update(group: first.roomId, forced: true, nowMs: nowMs())
+      first.pumpOutbox()
+      try await first.flush(timeoutMs: 10_000)
+    }
+    print("big account: \(epochs) epochs built in \(Int(Date().timeIntervalSince(built) * 1000)) ms")
+
+    let seen = Steps()
+    let started = Date()
+    let outcome = try await Room.signInWithPassword(hubURL: hubURL, account: email, password: password, base: try scratchFolder(self)) { seen.add($0) }
+    let steps = seen.all
+    let took = Date().timeIntervalSince(started)
+    guard case .joined(let second) = outcome else { return XCTFail("not joined") }
+    defer { second.close() }
+    print("big account: sign-in took \(Int(took * 1000)) ms, \(steps.count) progress reports, last \(steps.last.map { "\($0)" } ?? "-")")
+    XCTAssertLessThan(took, Double(epochs) * 0.05 + 10, "the sign-in of a big account stays within its bound")
+    XCTAssertFalse(steps.isEmpty, "the sign-in reports its progress")
+    let b = try XCTUnwrap(second.device as? LiveDevice)
+    XCTAssertEqual(try b.groups().first?.epoch, UInt64(epochs + 1))
+    // (the hub holds KeyPackages of the new device at once: a session founded now finds one)
+    let claimed = try await first.hub.claimKeyPackages([b.id])
+    XCTAssertEqual(claimed.count, 1)
   }
 
   /// The founding as the app does it: the hub takes the SealedKey the core made, and the device signs in.
@@ -283,11 +328,14 @@ final class RealHubTests: XCTestCase {
 
     // The code is replaced by the first device: the Commit, the link and the account's new copies in one request.
     let next = try a.newRecoveryCode(current: opened.code)
+    let revision = try await first.accountStatus()?.revision
     let keys = try tools.passwordKeys(email: email, password: password, kdf: nil)
     let kit = try tools.kitKeysFor(.email(email), words: try tools.generateKitWords())
     let account: JSON = [
       "kit": ["auth_key": kit.authKey, "sealed_copy": b64u(try tools.sealCode(next, room: roomId, way: .kit(wrapKey: kit.wrapKey)))] as JSON,
       "password": ["sealed_copy": b64u(try tools.sealCode(next, room: roomId, way: .password(wrapKey: keys.wrapKey)))] as JSON,
+      // (the account's revision the copies were made at: the hub refuses them if it changed since)
+      "revision": try XCTUnwrap(revision),
     ]
     let id = try a.replaceCode(current: opened.code, account: Bytes(try JSONSerialization.data(withJSONObject: account)), nowMs: nowMs())
     let entry = try XCTUnwrap(a.outbox().first { $0.id == id })

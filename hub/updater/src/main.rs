@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use trommi_hub_updater::{log, public_key, serve, Config, HubCtl, Tailnet, Updater};
 
 fn env(name: &str) -> Option<String> {
@@ -162,11 +162,12 @@ async fn run(updater: Arc<Updater>) -> i32 {
         tags: list("UPDATER_CALLER_TAGS", "tag:trommi-ci"),
         users: list("UPDATER_CALLER_USERS", ""),
     };
-    log(
-        "listening",
-        json!({ "on": listen.to_string(), "repository": updater.cfg.repository, "target": updater.cfg.target,
-                "caller_tags": callers.tags, "caller_users": callers.users }),
-    );
+    let mut fields = json!({ "on": listen.to_string(), "repository": updater.cfg.repository,
+                             "target": updater.cfg.target });
+    if let (Value::Object(f), Value::Object(c)) = (&mut fields, callers.log_fields()) {
+        f.extend(c);
+    }
+    log("listening", fields);
     // up: a trial of this program ends here, and systemd is told
     updater.confirm();
     notify_ready();

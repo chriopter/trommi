@@ -4,8 +4,10 @@
 #
 # When the release about to start is newer than the last one that started, it copies the database
 # (hub.db with its -wal and -shm files: the hub stands still at this moment, so the three are one consistent state)
-# and the hub's own keys (*.key) into <backups>/before-<release>-<time>/ and keeps the three newest copies. Not the
-# files people uploaded.
+# and the hub's own keys (*.key) into <backups>/before-<release>-<time>/ and keeps the three newest copies. The
+# files people uploaded (<data>/files) go into the copy's files/ as hard links (`cp -al`): a stored file is written
+# once and never changed in place, so this costs no room and keeps each file as it was. Where hard links cannot be
+# made (another file system), the copy is made without them and says so; that never stops a start.
 #
 # When the copy fails:
 # - a NEWER release than the last one is not started on data that could not be copied first: this ends with 1, which
@@ -13,6 +15,10 @@
 #   Asked a second time for the same release, it lets it start without a copy and says so: a full disk must not
 #   keep the hub down for good. (The note of the first try lies in the runtime folder, which is memory.)
 # The release before coming back (a rollback), or the same one, always starts, and no copy is made for it.
+#
+# For hub-restore.sh: <backups>/last-copy names the copy made right before the release in place first started
+# (and nothing when no copy was made for it), and the hub's mark <data>/hub.served (written by the hub before its
+# first request) is removed when a newer release begins on this data. A copy may be put back only while both hold.
 set -u
 deploy=${1:-/srv/trommi/deploy} data=${2:-/srv/trommi/data} backups=${3:-/srv/trommi/backups} run=${4:-/run/trommi-hub}
 umask 077
@@ -31,11 +37,16 @@ case "$last_number" in ''|*[!0-9]*) last_number=0 ;; esac
 
 # written whole and flushed, or not at all
 note() { printf '%s\n' "$2" > "$backups/$1.part" && sync "$backups/$1.part" && mv -f "$backups/$1.part" "$backups/$1" && sync "$backups"; }
+# Another release than the last one begins on this data: whatever copy last-copy named is no longer one to go back
+# to. (Should it stay, hub-restore.sh still takes it only together with last-release naming the release in place.)
+rm -f "$backups/last-copy" 2>/dev/null || true
 # going back (a rollback): no copy, so that the copies made before newer releases are not pushed out by it
 if [ "$number" -lt "$last_number" ]; then
   note last-release "$release" || true
   exit 0
 fi
+# a newer release: what it serves is its own (the mark is the hub's, written before its first request)
+rm -f "$data/hub.served" 2>/dev/null || true
 
 set -- "$data"/hub.db* "$data"/*.key
 found=''
@@ -52,9 +63,17 @@ for f in "$@"; do
   [ -f "$f" ] || continue
   [ -n "$ok" ] && { cp "$f" "$dir.part/" || ok=''; }
 done
+if [ -n "$ok" ] && [ -d "$data/files" ]; then
+  cp -al "$data/files" "$dir.part/files" 2>/dev/null || {
+    rm -rf "${dir:?}.part/files"
+    echo "hub-prestart: no hard-link snapshot of the uploaded files (another file system?); the copy holds the database and keys only"
+  }
+fi
 [ -n "$ok" ] && { sync "$dir.part"/* "$dir.part" || ok=''; }
 [ -n "$ok" ] && { mv -T "$dir.part" "$dir" || ok=''; }
 [ -n "$ok" ] && { note last-release "$release" || ok=''; }
+# should this note not be written, the copy is still there; it is only never put back by itself
+[ -n "$ok" ] && { note last-copy "$(basename "$dir")" || true; }
 if [ -z "$ok" ]; then
   rm -rf "${dir:?}.part" "${dir:?}"
   if [ "$(cat "$run/copy-failed" 2>/dev/null)" = "$release" ]; then

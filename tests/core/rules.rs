@@ -505,8 +505,18 @@ fn main_session_commits_follow_5_2() {
         session_verdict(&history, &SESSIONS, &founder, &founding),
         Ok(())
     );
-    // A founding that leaves a human device out, has no agent device, or two.
-    for adds in [&[AGENT][..], &[H2], &[H2, AGENT, OTHER_AGENT]] {
+    // A founding that leaves out a human device the hub had no KeyPackage of is taken (5.2.5; the hub refuses one
+    // it had a KeyPackage of); one with no agent device, or two, is not.
+    assert_eq!(
+        session_verdict(
+            &history,
+            &SESSIONS,
+            &founder,
+            &adding(facts(group, 0, H1, 2), &[AGENT])
+        ),
+        Ok(())
+    );
+    for adds in [&[H2][..], &[H2, AGENT, OTHER_AGENT]] {
         assert_eq!(
             session_verdict(
                 &history,
@@ -678,7 +688,8 @@ fn helper_session_commits_follow_5_2_3_to_5_2_5() {
         session_verdict(&history, &SESSIONS, &founder, &founding),
         Ok(())
     );
-    // Not the opener; a human device left out; too many helper sessions; no such main session.
+    // Not the opener; no human device at all; too many helper sessions; no such main session. (A human device
+    // left out is taken: 5.2.5.)
     let empty_seat = Sessions {
         seat: Parent::Seat(None),
         ..SESSIONS
@@ -690,6 +701,11 @@ fn helper_session_commits_follow_5_2_3_to_5_2_5() {
     let partial = adding(facts(group, 0, AGENT, 2), &[H1]);
     assert_eq!(
         session_verdict(&history, &SESSIONS, &founder, &partial),
+        Ok(())
+    );
+    let no_human = adding(facts(group, 0, AGENT, 2), &[SUB]);
+    assert_eq!(
+        session_verdict(&history, &SESSIONS, &founder, &no_human),
         Err(Error::BadCommit)
     );
     let crowded = Sessions {

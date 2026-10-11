@@ -1,0 +1,18 @@
+{
+  "GET /v1/apps?filter[bundleId]=com.trommi.ios": {"data": [{"id": "app1", "attributes": {"bundleId": "com.trommi.ios"}}]},
+  "GET /v1/apps/app1/betaGroups?limit=200": {"data": [
+    {"id": "g-intern", "attributes": {"name": "Intern", "isInternalGroup": true, "hasAccessToAllBuilds": true}},
+    {"id": "g-public", "attributes": {"name": "Public", "isInternalGroup": false, "publicLinkEnabled": true,
+      "publicLink": "https://testflight.apple.com/join/AbCd1234"}}
+  ]},
+  "POST /v1/betaGroups/g-public/relationships/builds": {},
+  "GET /v1/apps/app1/betaAppReviewDetail": {"data": {"id": "rd1", "attributes": {"contactPhone": "+49 30 0000000"}}},
+  "PATCH /v1/betaAppReviewDetails/rd1": {"data": {"id": "rd1"}},
+  "GET /v1/apps/app1/betaAppLocalizations?limit=50": {"data": [
+    {"id": "loc1", "attributes": {"locale": "en-US", "description": "", "feedbackEmail": "trommi@mail101.de"}}
+  ]},
+  "PATCH /v1/betaAppLocalizations/loc1": {"data": {"id": "loc1"}},
+  "GET /v1/builds/b1/buildBetaDetail": {"data": {"id": "bd1", "attributes": {"externalBuildState": "READY_FOR_BETA_SUBMISSION"}}},
+  "GET /v1/betaAppReviewSubmissions?filter[build]=b1&limit=5": {"data": []},
+  "POST /v1/betaAppReviewSubmissions": {"data": {"id": "sub1", "attributes": {"betaReviewState": "WAITING_FOR_REVIEW"}}}
+}

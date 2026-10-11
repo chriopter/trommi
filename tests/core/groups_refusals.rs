@@ -114,7 +114,7 @@ fn an_opener_removing_a_human_leaf() {
 }
 
 #[test]
-fn a_founding_commit_missing_a_human_device() {
+fn a_founding_commit_without_the_agent_or_behind_the_room() {
     let World {
         mut hub,
         mut a,
@@ -123,11 +123,10 @@ fn a_founding_commit_missing_a_human_device() {
         ..
     } = world(true);
     publish_some(&mut hub, &mut other, 2);
-    // A device does not build it: the founding fails before anything is made.
-    // (`rules.rs`, main_session_commits_follow_5_2: a founding that leaves out a device of H(r).)
-    let of_agent = hub.claim(&[other.id()]).unwrap();
+    // Without the agent device's KeyPackage a device does not build it: the founding fails before anything is
+    // made. (A human device without one is left out, 5.2.5; `rules.rs`, main_session_commits_follow_5_2.)
     assert_eq!(
-        a.found_session(&other.id(), &of_agent, now()),
+        a.found_session(&other.id(), &[], now()),
         Err(Error::Incomplete)
     );
     assert!(a.outbox().is_empty());
@@ -141,12 +140,10 @@ fn a_founding_commit_missing_a_human_device() {
     let group = GroupId::session(a.room().unwrap(), session);
     assert_eq!(hub.epoch(&group), None);
     assert_eq!(a.group(&group).err(), Some(Error::NotFound));
-    // Once it has, it cannot found without the newcomer's KeyPackage.
+    // Once it has, it builds the founding without the newcomer (5.2.5): whether the newcomer had a KeyPackage
+    // to claim is the hub's to judge (it refuses the founding then, `incomplete`), and it is added later (5.2.7).
     sync_ok(&hub, &mut a);
-    assert_eq!(
-        a.found_session(&other.id(), &packages, now()),
-        Err(Error::Incomplete)
-    );
+    assert!(a.found_session(&other.id(), &packages, now()).is_ok());
 }
 
 #[test]

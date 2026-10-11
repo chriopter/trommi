@@ -132,7 +132,7 @@ export interface RemoteClient {
 declare const __TROMMI_CORE_WORKER__: string | undefined
 const CORE_WORKER_URL: string = typeof __TROMMI_CORE_WORKER__ === 'string' ? __TROMMI_CORE_WORKER__ : '/gen/vendor/core-worker.mjs'
 
-interface Launch { url: string | URL; client: string | null; timeout_ms: number; early?: EarlyCore | null; worker?: Worker; first: ToWorker | null; onEvent?: ((event: string, data: unknown) => unknown) | undefined }
+interface Launch { url: string | URL; client: string | null; timeout_ms: number; early?: EarlyCore | null; worker?: Worker; first: ToWorker | null; onEvent?: ((event: string, data: unknown) => unknown) | undefined; stall_ms?: number }
 
 /**
  * A worker (started here, or core-start.ts's) up to its 'opened': the RemoteClient on the room it holds then (null: no
@@ -140,7 +140,7 @@ interface Launch { url: string | URL; client: string | null; timeout_ms: number;
  * at all ('ready'); a step may take as long as it takes (a join waits for the other device).
  */
 let reloadOnShow = false
-function launch({ url, client, timeout_ms, early = null, worker: given, first, onEvent }: Launch): Promise<{ remote: RemoteClient | null; value: unknown }> {
+function launch({ url, client, timeout_ms, early = null, worker: given, first, onEvent, stall_ms }: Launch): Promise<{ remote: RemoteClient | null; value: unknown }> {
   const worker = early?.worker ?? given ?? new Worker(url, { type: 'module', name: 'trommi-core' })
   // the page goes: the worker's streams end now, whatever the browser does with the worker and its connections
   // after (a page that comes back from the back-forward cache is loaded anew: its streams are gone)
@@ -152,20 +152,29 @@ function launch({ url, client, timeout_ms, early = null, worker: given, first, o
     let remote: RemoteClient | null = null
     let settled = false, up = false
     const timer = setTimeout(() => { if (!settled && !up) { settled = true; worker.terminate(); reject(Object.assign(new Error('the core worker did not answer'), { code: 'worker-timeout' })) } }, timeout_ms)
+    // `stall_ms`: a step that says nothing for so long once the worker is up (no event, no answer) is given up: the
+    // worker ends, and with it the step (`stalled`). What the hub took before stays: the stored room opens next time.
+    let stall: ReturnType<typeof setTimeout> | undefined
+    const watch = (): void => {
+      if (!stall_ms) return
+      clearTimeout(stall)
+      stall = setTimeout(() => { if (!settled) { settled = true; worker.terminate(); reject(Object.assign(new Error('the sign-in made no progress'), { code: 'stalled' })) } }, stall_ms)
+    }
     const failed = (e: { message?: string } | null) => {
       const err = Object.assign(new Error(`the core worker failed: ${e?.message || 'not loaded'}`), { code: 'worker-failed' })
       if (!settled) { settled = true; clearTimeout(timer); worker.terminate(); reject(err) } else remote?.fail(err)
     }
     const onMessage = ({ data: m }: MessageEvent<FromWorker>) => {
       if (remote) return remote.receive(m)
-      if (m.t === 'ready') { up = true; clearTimeout(timer); return }
+      if (m.t === 'ready') { up = true; clearTimeout(timer); watch(); return }
       if (m.t === 'event') {
+        watch()
         ;(async () => onEvent?.(m.event, m.data))().catch(() => {})
         return
       }
       if (m.t !== 'opened' || settled) return
       settled = true
-      clearTimeout(timer)
+      clearTimeout(timer); clearTimeout(stall)
       if (m.error) { worker.terminate(); return reject(errorOf(m.error)) }
       if (!m.model) { worker.terminate(); return resolve({ remote: null, value: m.value }) }
       remote = new RemoteClient(worker, mirrorOf(m.model), m.extra)
@@ -195,9 +204,9 @@ const STORAGE: StorageName = { name: 'trommi' }
 /** An account screen's step that makes a room (account.ts createAccount, loginWithPassword, recoverWithKit, …), run
  *  in a new core worker that then holds the room: { client: RemoteClient } and everything else the step returned (a
  *  new account's kit). args: the function's own, without storage. `onEvent`: what the worker says meanwhile. */
-export async function accountInWorker(fn: string, args: Record<string, unknown>, { url = CORE_WORKER_URL, client = null, timeout_ms = 20_000, onEvent }: { url?: string; client?: string | null; timeout_ms?: number; onEvent?: (event: string, data: unknown) => unknown } = {}): Promise<{ client: RemoteClient } & Record<string, unknown>> {
+export async function accountInWorker(fn: string, args: Record<string, unknown>, { url = CORE_WORKER_URL, client = null, timeout_ms = 20_000, onEvent, stall_ms }: { url?: string; client?: string | null; timeout_ms?: number; onEvent?: (event: string, data: unknown) => unknown; stall_ms?: number } = {}): Promise<{ client: RemoteClient } & Record<string, unknown>> {
   const { storage: _storage, client: _client, ...rest } = args
-  const { remote, value } = await launch({ url, client, timeout_ms, first: { t: 'account', id: 0, fn, args: rest, storage: STORAGE, client }, onEvent })
+  const { remote, value } = await launch({ url, client, timeout_ms, first: { t: 'account', id: 0, fn, args: rest, storage: STORAGE, client }, onEvent, ...(stall_ms ? { stall_ms } : {}) })
   if (!remote) throw Object.assign(new Error('the core worker made no room'), { code: 'worker-failed' })
   return { ...(value as Record<string, unknown> | null ?? {}), client: remote }
 }

@@ -4,6 +4,8 @@
 #   build.sh            the host (Linux or macOS: for `swift test`) and iOS (device and simulator)
 #   build.sh host       the host only
 #   build.sh ios        iOS only
+# TROMMI_SIMULATOR=0 leaves out the simulator's library (CI: the archive is for a device, nothing there runs the
+# simulator; it saves one full build of the core).
 # Everything it writes is build output and not in the repository: lib/<platform>/libtrommi_core_ffi.a,
 # Sources/TrommiCoreFFI/include/TrommiCoreFFI.h, Sources/TrommiCoreRust/TrommiCoreRust.swift. A script that ships
 # the app from a clean checkout runs `build.sh ios` first.
@@ -93,6 +95,8 @@ without_builtins() {   # without_builtins <rust target> <folder under lib/> <App
 if [ "$what" != host ]; then
   IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-17.0} staticlib aarch64-apple-ios ios
   without_builtins aarch64-apple-ios ios ios
-  IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-17.0} staticlib aarch64-apple-ios-sim ios-simulator
+  if [ "${TROMMI_SIMULATOR:-1}" != 0 ]; then
+    IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-17.0} staticlib aarch64-apple-ios-sim ios-simulator
+  fi
 fi
 ls -l "$package"/lib/*/libtrommi_core_ffi.a

@@ -469,6 +469,120 @@ async fn the_plugins_hooks_mirror_the_terminal_and_ask_for_permission() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_answer_of_a_turn_one_card_started_goes_into_its_thread_and_a_note_turn_stays_in_the_chat(
+) {
+    let (_hub, mut human, seat, group) = joined().await;
+    let mut mcp = seat.serve_as_plugin().await;
+    mcp.ready().await;
+    let me = human.seat(&group).await.expect("the agent");
+    let made = mcp
+        .ok(
+            "create_decision",
+            json!({ "title": "Ship it?", "body": "Everything passes.",
+                "options": [{ "key": "yes", "label": "Ship" }, { "key": "no", "label": "Wait" }] }),
+        )
+        .await;
+    let card = made
+        .split_whitespace()
+        .nth(1)
+        .expect("the card's id")
+        .to_string();
+    let turn = |prompt_id: &str, more: Value| {
+        let mut all = json!({ "session_id": "s1", "prompt_id": prompt_id, "cwd": seat.folder.display().to_string() })
+            .as_object()
+            .cloned()
+            .expect("an object");
+        all.extend(more.as_object().cloned().expect("an object"));
+        Value::Object(all)
+    };
+
+    // A chat about the card starts the turn: its final text goes into the card's thread, one line points there.
+    let about = format!(
+        "<channel source=\"trommi\" kind=\"chat\" card_id=\"{card}\">\nWhy wait?\n</channel>"
+    );
+    seat.hook(
+        "prompt",
+        &turn(
+            "p1",
+            json!({ "hook_event_name": "UserPromptSubmit", "prompt": about }),
+        ),
+    )
+    .await;
+    let answer = "Waiting gives the release window a day of slack.";
+    seat.hook(
+        "stop",
+        &turn(
+            "p1",
+            json!({ "hook_event_name": "Stop", "last_assistant_message": answer }),
+        ),
+    )
+    .await;
+    // A note starts the next turn: its final text stays in the session's chat.
+    let note =
+        "<channel source=\"trommi\" kind=\"chat\" note=\"1\">\nLook at the logs.\n</channel>";
+    seat.hook(
+        "prompt",
+        &turn(
+            "p2",
+            json!({ "hook_event_name": "UserPromptSubmit", "prompt": note }),
+        ),
+    )
+    .await;
+    seat.hook(
+        "stop",
+        &turn(
+            "p2",
+            json!({ "hook_event_name": "Stop", "last_assistant_message": "The logs are clean." }),
+        ),
+    )
+    .await;
+
+    let mut seen = (false, false, false);
+    for _ in 0..600 {
+        human.sync().await;
+        let in_chat = |text: &str| {
+            human.items.iter().any(|(_, sender, p)| {
+                *sender == me && p["terminal"] == "answer" && p["text"] == text
+            })
+        };
+        seen = (
+            human
+                .card_chats
+                .iter()
+                .any(|(c, p)| *c == card && p["text"] == answer),
+            human.items.iter().any(|(_, sender, p)| {
+                *sender == me
+                    && p["terminal"] == "answer"
+                    && p["text"] == "→ Ship it?"
+                    && p["copied_cards"] == json!([card])
+            }),
+            in_chat("The logs are clean."),
+        );
+        if seen == (true, true, true) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(seen, (true, true, true), "{:?}", human.findings);
+    assert!(
+        !human
+            .items
+            .iter()
+            .any(|(_, _, p)| p["text"] == answer && p["terminal"] == "answer"),
+        "the card's answer is not in the session's chat as well"
+    );
+    assert!(
+        !human
+            .card_chats
+            .iter()
+            .any(|(_, p)| p["text"] == "The logs are clean."),
+        "a note's turn stays in the chat"
+    );
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    mcp.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_connector_killed_at_work_is_the_same_member_when_it_starts_again() {
     let (_hub, mut human, seat, group) = joined().await;
     let me = human.seat(&group).await.expect("the agent");

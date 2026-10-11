@@ -294,8 +294,9 @@ impl CoreDevice {
         self.write(|device| Ok(device.found_room(&keys, now_ms)?.as_bytes().to_vec()))
     }
 
-    /// Founds a main session as a human device, adding the agent device `agent` and every other human device
-    /// of the room. `key_packages` holds exactly one KeyPackage of each of them (`incomplete` otherwise).
+    /// Founds a main session as a human device, adding the agent device `agent` and the other human devices
+    /// of the room the hub had a KeyPackage of: one of the agent device (`incomplete` without), one of each
+    /// human device given (5.2.5; one left out is added later, 5.2.7).
     /// Returns the session id, 16 bytes.
     pub fn found_session(
         &self,

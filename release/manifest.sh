@@ -6,7 +6,8 @@
 # trommi-connector) get the product without "trommi-", then -v<version> (hub-v123). version: a whole number that
 # only grows. With $PARTS set (the release of every part), the manifest also says per part what its build read and
 # whether that changed since the release before: $PARTS is lines of `<part> <inputs sha256> <true|false>`. Every file is named with its size and SHA-256; the name in
-# the manifest is the file's name without its folder, which is also its name as a release asset.
+# the manifest is the file's name without its folder, which is also its name as a release asset. With $DATA_EPOCH set
+# (the number in hub/data-epoch), the manifest says it as "data_epoch" (hub/deploy/README.md, "Migrations").
 # The repository is $GITHUB_REPOSITORY (default trommi/trommi).
 set -eu
 [ $# -ge 4 ] || { echo "usage: $0 <product> <version> <commit> <file>..." >&2; exit 2; }
@@ -25,6 +26,10 @@ case $product in trommi) tag=v$version ;; *) tag=${product#trommi-}-v$version ;;
 
 printf '{\n  "product": "%s",\n  "repository": "%s",\n  "version": %s,\n  "tag": "%s",\n  "commit": "%s",\n' \
   "$product" "$repository" "$version" "$tag" "$commit"
+if [ -n "${DATA_EPOCH:-}" ]; then
+  case $DATA_EPOCH in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "DATA_EPOCH: a whole number below 1000" >&2; exit 2 ;; esac
+  printf '  "data_epoch": %s,\n' "$DATA_EPOCH"
+fi
 # per part: "inputs": {"hub": "<sha256>", ...} (the updater reads its two) and "changed": {"hub": true, ...}
 if [ -n "${PARTS:-}" ]; then
   inputs='' changed='' sep=''

@@ -766,6 +766,19 @@ fn commit_in(
         let kind = store::session_kind(x.c, &view, &row)?;
         let was_stale = rules::is_stale(kind, &view, &facts.before.leaves);
         rules::check_session_commit(kind, &view, &facts, founding, was_stale, scope.recovery)?;
+        if founding {
+            // 5.2.5: a human device is left out of a founding only while the hub holds no KeyPackage of it; it is
+            // added later (5.2.7). One the hub could have handed out: claim again and found again.
+            for human in view.humans.iter().filter(|h| !facts.after.leaves.contains(h)) {
+                if claimable(x, &room, human)?.is_some() {
+                    return Err(refuse(
+                        "incomplete",
+                        "the founding leaves out a human device that has a KeyPackage at the hub: claim again",
+                    )
+                    .with(json!({ "device": b64(human) })));
+                }
+            }
+        }
         if let By::External(joiner) = &facts.by {
             verify_recovery_auth(
                 x,
@@ -1525,9 +1538,23 @@ pub fn put_key_packages(
     Ok(json!({ "unused": unused }))
 }
 
-/// One KeyPackage of each named device, all or nothing: a single-use one (then gone), else the last-resort one;
-/// none that was uploaded more than 90 days ago.
-pub fn claim_key_packages(x: &Ctx, auth: &Auth, devices: &[Device]) -> Res<Value> {
+/// The KeyPackage the hub would hand out for `device` now: a single-use one, else the last-resort one; none that
+/// was uploaded more than 90 days ago. (id, last_resort, bytes, ref)
+fn claimable(x: &Ctx, room: &[u8], device: &[u8]) -> Res<Option<(i64, bool, Vec<u8>, Vec<u8>)>> {
+    Ok(x
+        .c
+        .prepare_cached(
+            "SELECT id, last_resort, bytes, ref FROM key_packages WHERE room_id = ?1 AND device = ?2 AND expires_at > ?3
+               AND (last_resort = 1 OR ref NOT IN (SELECT ref FROM spent_key_packages))
+             ORDER BY last_resort, id LIMIT 1",
+        )?
+        .query_row(params![room, device, x.now as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .optional()?)
+}
+
+/// One KeyPackage of each named device. All or nothing; with `partial`, the devices the hub holds none of are
+/// named in `missing` instead (5.2.5: a founding leaves them out, and they are added later).
+pub fn claim_key_packages(x: &Ctx, auth: &Auth, devices: &[Device], partial: bool) -> Res<Value> {
     // founding and adding are a human device's and an opener's acts; a helper device adds nobody
     if !matches!(auth.who, Who::Human | Who::Agent) {
         return Err(refuse(
@@ -1536,20 +1563,16 @@ pub fn claim_key_packages(x: &Ctx, auth: &Auth, devices: &[Device]) -> Res<Value
         ));
     }
     let mut out = serde_json::Map::new();
+    let mut missing = Vec::new();
     for (i, device) in devices.iter().enumerate() {
         if devices[..i].contains(device) {
             return Err(refuse("bad-format", "a device is named once"));
         }
-        let found: Option<(i64, bool, Vec<u8>, Vec<u8>)> = x
-            .c
-            .prepare_cached(
-                "SELECT id, last_resort, bytes, ref FROM key_packages WHERE room_id = ?1 AND device = ?2 AND expires_at > ?3
-                   AND (last_resort = 1 OR ref NOT IN (SELECT ref FROM spent_key_packages))
-                 ORDER BY last_resort, id LIMIT 1",
-            )?
-            .query_row(params![&auth.room[..], &device[..], x.now as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-            .optional()?;
-        let Some((id, last_resort, bytes, package_ref)) = found else {
+        let Some((_, last_resort, bytes, package_ref)) = claimable(x, &auth.room, device)? else {
+            if partial {
+                missing.push(json!(b64(device)));
+                continue;
+            }
             // the transaction is rolled back: what was taken for the others is not used up
             return Err(refuse("not-found", "no KeyPackage for a device")
                 .with(json!({ "device": b64(device) })));
@@ -1562,11 +1585,13 @@ pub fn claim_key_packages(x: &Ctx, auth: &Auth, devices: &[Device]) -> Res<Value
             )?
             .execute(params![&package_ref, x.now as i64])?;
             // it goes from every room that holds it
-            let _ = id;
             x.c.prepare_cached("DELETE FROM key_packages WHERE ref = ?1 AND last_resort = 0")?
                 .execute([&package_ref])?;
         }
         out.insert(b64(device), json!(b64(&bytes)));
+    }
+    if partial {
+        return Ok(json!({ "key_packages": out, "missing": missing }));
     }
     Ok(json!({ "key_packages": out }))
 }

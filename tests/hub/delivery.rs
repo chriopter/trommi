@@ -564,7 +564,7 @@ fn a_main_session_is_founded_in_one_request_with_every_human_device_and_its_agen
     let mut agent = w.enrol_agent();
     w.catch_up(&mut bea, &w.room.clone());
 
-    // a founding Commit that leaves a human device out
+    // a founding Commit that leaves out a human device the hub holds a KeyPackage of: claim again (5.2.5)
     let session: [u8; 16] = random();
     let adds = w.claim(&w.ada, &[agent.id()]);
     let (group, info0) = w.ada.create_session(&session, &ZERO16);
@@ -594,7 +594,7 @@ fn a_main_session_is_founded_in_one_request_with_every_human_device_and_its_agen
             "/v1/groups",
             &founding_json(&info0, &key0, &out, &key1),
         )
-        .refused(400, "bad-commit");
+        .refused(400, "incomplete");
     w.ada.forget(&group);
     // nothing of the refused founding stays
     assert_eq!(groups(&w, &w.ada).len(), 1);
@@ -1666,6 +1666,19 @@ fn key_packages_are_handed_out_once_and_the_last_resort_one_when_none_is_left() 
     let last = w.claim(&w.ada, &[bea.id()]).remove(0);
     assert!(seen.insert(last.clone()));
     assert_eq!(w.claim(&w.ada, &[bea.id()]).remove(0), last);
+    // `partial`: a device without any is named in `missing`, the others' are handed out
+    let stranger = Dev::new();
+    let partial = w
+        .ada
+        .post(
+            &w.hub,
+            "/v1/key-packages/claim",
+            &json!({ "devices": [b64(&bea.id()), b64(&stranger.id())], "partial": true }),
+        )
+        .ok();
+    assert_eq!(partial["missing"], json!([b64(&stranger.id())]));
+    assert_eq!(partial["key_packages"][b64(&bea.id())].as_str().map(|k| unb64(k).unwrap()), Some(last.clone()));
+    assert!(partial["key_packages"].get(b64(&stranger.id())).is_none());
     // all or nothing: a device without any makes the claim fail, and what was taken for the others stays unused
     bea.put(
         &w.hub,
@@ -2147,6 +2160,14 @@ fn what_the_second_review_found_stays_refused() {
     let mut agent = w.enrol_agent();
     w.catch_up(&mut bea, &room);
     let (session, _main) = w.found_main(&mut [&mut bea], Some(&mut agent));
+    // 5.2.5: a helper session's founding adds at least one human device, and leaves out none the hub holds a
+    // KeyPackage of
+    w.found_helper(&mut agent, &session, &[], &[&Dev::new()])
+        .1
+        .refused(400, "bad-commit");
+    w.found_helper(&mut agent, &session, &[w.ada.id()], &[])
+        .1
+        .refused(400, "incomplete");
     let now = w.ada.room_now();
     let (helper_group, info0) = agent.create_session(&random(), &session);
     let key0 = agent.sealed_key(

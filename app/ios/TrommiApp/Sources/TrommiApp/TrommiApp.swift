@@ -88,6 +88,8 @@ final class BoardModel: ObservableObject {
   @Published var error: String?
   /** A form of the sign-in screens is at work (Creating…, Logging in…, Setting…): it keeps its fields and waits. */
   @Published var signing = false
+  /** How far a sign-in is ("Catching up 1,234 of 5,000…"), shown on its button; nil: no word yet. */
+  @Published var signInStep: String?
   /** Said once on the start screen after a log out. */
   @Published var loggedOut = false
   /** A sheet of Settings a state of the demo's list opens ("pair", "invite"); taken by SettingsHome. */
@@ -331,6 +333,7 @@ final class BoardModel: ObservableObject {
     try? await r.sendDeviceRegister(name: UIDeviceName.model, platform: "ios")
     attach(r)
     signing = false
+    signInStep = nil
     phase = .board
     await refresh()
     checkKit()
@@ -437,12 +440,53 @@ final class BoardModel: ObservableObject {
     await began(account)
     do {
       // The one place the sign-in's outcome is handled: a later "check your email" step of the hub lands here.
-      switch try await Room.signInWithPassword(hubURL: Self.hubURL, account: account, password: password) {
+      let outcome = try await watched { report in
+        try await Room.signInWithPassword(hubURL: Self.hubURL, account: account, password: password, progress: report)
+      }
+      switch outcome {
       case .joined(let r): await entered(r)
       }
     } catch {
       signing = false
+      signInStep = nil
       self.error = accountError(error)
+    }
+  }
+
+  /** How long a sign-in may go without a word of progress before it is given up (`stalled`). */
+  private static let signInStall: TimeInterval = 120
+  /** When the sign-in under way last said how far it is. */
+  private var signInHeard = Date()
+
+  /**
+   * A sign-in that never spins for ever: its steps go to the button (`signInStep`), and when no step came for
+   * `signInStall` the work is cancelled and `stalled` thrown. What the hub took before stays: the next try goes on.
+   */
+  private func watched<T: Sendable>(_ work: @escaping @Sendable (@escaping @Sendable (SignInProgress) -> Void) async throws -> T) async throws -> T {
+    signInStep = nil
+    signInHeard = Date()
+    let report: @Sendable (SignInProgress) -> Void = { step in
+      Task { @MainActor in
+        guard self.signing else { return }
+        self.signInStep = step.description
+        self.signInHeard = Date()
+      }
+    }
+    let task = Task { try await work(report) }
+    let watchdog = Task { @MainActor in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        if Date().timeIntervalSince(self.signInHeard) > Self.signInStall { task.cancel(); return true }
+      }
+      return false
+    }
+    defer { watchdog.cancel() }
+    do {
+      let value = try await task.value
+      return value
+    } catch {
+      if task.isCancelled { throw TrommiError("stalled", "the sign-in made no progress") }
+      throw error
     }
   }
 
@@ -452,10 +496,13 @@ final class BoardModel: ObservableObject {
     error = nil
     signing = true
     do {
-      switch try await Room.signInWithPasskey(hubURL: Self.hubURL, assert: { try await Passkeys.assert(challenge: $0) }) {
+      // (the system's passkey sheet is before any progress: the watch starts once the passkey is given)
+      switch try await Room.signInWithPasskey(hubURL: Self.hubURL, progress: { step in Task { @MainActor in if self.signing { self.signInStep = step.description } } },
+                                             assert: { try await Passkeys.assert(challenge: $0) }) {
       case .joined(let r): await entered(r)
       }
     } catch {
+      signInStep = nil
       signing = false
       self.error = accountError(error)
     }
@@ -903,6 +950,7 @@ final class BoardModel: ObservableObject {
     case "room-exists": return "This device is logged in already."
     case "account-exists": return "This account has a login already."
     case "account-changed": return "Changed on another device. Try again."
+    case "stalled": return "Logging in takes too long. Check your connection and try again."
     case "no-prf": return "This passkey can’t unlock Trommi here."
     case "passkey-cancelled": return "No passkey used."
     case "passkey-failed": return "The passkey did not work. Try again."

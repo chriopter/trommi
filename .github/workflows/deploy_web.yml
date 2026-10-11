@@ -13,6 +13,9 @@
 #            build provenance for each file and for the manifest (no secret; who built what, from which commit)
 #   deliver  `wrangler deploy` of exactly those files, then asks app.trommi.com which commit it serves; a build
 #            that arrives after a newer one is not delivered (the newest commit stays)
+#   report   when attest or deliver failed: opens the issue "Web update <build> failed" (label deploy-failed) with the
+#            reason, the run and what app.trommi.com serves, or comments on the open one; when it went through:
+#            closes that issue
 #
 # Secrets: the environment `web` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; CLOUDFLARE_API_TOKEN
 # and CLOUDFLARE_ACCOUNT_ID come from the 1Password Environment and are seen by the wrangler command only.
@@ -131,6 +134,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      reason: ${{ steps.ask.outputs.reason }}
     env:
       COMMIT: ${{ needs.attest.outputs.commit }}
       VERSION: ${{ needs.attest.outputs.version }}
@@ -236,6 +241,7 @@ jobs:
           op run --environment "$OP_ENVIRONMENT_ID" -- "$wrangler" deploy --message "build $VERSION of $COMMIT"
       # What the site serves now must be this build (a rollout takes a moment).
       - name: Ask app.trommi.com
+        id: ask
         if: steps.newer.outputs.skip != 'true'
         run: |
           set -u
@@ -256,7 +262,11 @@ jobs:
             echo "| app.trommi.com serves | \`${got:-nothing}\` |"
             echo "| manifest (SHA-256) | \`$MANIFEST\` |"
           } >> "$GITHUB_STEP_SUMMARY"
-          [ "$got" = "$short" ] || { echo "::error::app.trommi.com does not serve $short"; exit 1; }
+          [ "$got" = "$short" ] || {
+            echo "reason=app.trommi.com does not serve $short after two and a half minutes (it serves ${got:-nothing})" >> "$GITHUB_OUTPUT"
+            echo "::error::app.trommi.com does not serve $short"
+            exit 1
+          }
       - name: Nothing was delivered
         if: steps.newer.outputs.skip == 'true'
         env:
@@ -267,3 +277,29 @@ jobs:
             echo
             echo "app.trommi.com already serves \`$SERVED\`, a commit that comes after \`$COMMIT\` on main."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # One open issue per failing delivery, closed by the next one that goes through. Only this job may write issues.
+  report:
+    name: Report
+    needs: [attest, deliver]
+    if: ${{ !cancelled() && (needs.attest.result == 'failure' || needs.deliver.result == 'failure' || needs.deliver.result == 'success') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: build ${{ needs.attest.outputs.version || inputs.version || inputs.run_id }}
+      RESULT: ${{ (needs.attest.result == 'failure' || needs.deliver.result == 'failure') && 'failure' || 'success' }}
+      REASON: ${{ needs.deliver.outputs.reason || (needs.attest.result == 'failure' && 'the files could not be checked or attested (job Check and attest)') || 'a step of the job Deliver to Cloudflare failed' }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      HEALTH_URL: https://app.trommi.com/gen/build.txt
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Open, comment on or close the issue
+        run: sh .github/scripts/deploy_issue.sh Web

@@ -3,7 +3,7 @@
 // (real groups and envelopes of the binding) and FAKE hub: nothing here is evidence against a hub.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { rooms, scene, sleep, storage, until } from './helpers.mjs'
+import { addHuman, rooms, scene, sleep, storage, until } from './helpers.mjs'
 
 const headOf = fake => [...fake.state.rooms.values()][0].change
 
@@ -69,4 +69,30 @@ test('twelve devices sign in with the code, one after another, into a room that 
   fake.faults.clear()
   await a.settle()
   assert.equal([...a.model.members.values()].filter(m => m.device_role === 'human' && m.is_active).length, 13, 'the founder sees all twelve')
+})
+
+test('a device back after long stocks its KeyPackages before its catch-up is through, though the count it kept says the hub holds enough', async t => {
+  const { fake, R, a, agent } = await scene(t, { agent: true })
+  const b = await addHuman(t, R, a, 'b')
+  await b.stop()
+  for (let i = 0; i < 20; i++) await agent.say({ text: `said ${i}` })
+  await a.settle(); await agent.settle()
+  // while it was away its KeyPackages ran out at the hub (handed out, or older than 90 days): none is left
+  const room = [...fake.state.rooms.values()][0]
+  assert.ok(room.key_packages.delete(Buffer.from(b.engine.device_id).toString('base64url')))
+  assert.equal((await a.engine.hub.claimKeyPackages([b.engine.device_id], { partial: true })).length, 0, 'none at the hub')
+  // the catch-up is slow: every page of the hub's order takes a second and a half
+  fake.faults.add({ method: 'GET', path: '/v1/changes', delay_ms: 1500, times: 1e6 })
+  const again = await R.openRoom({ storage: b.stored_as })
+  t.after(() => again.stop().catch(() => {}))
+  const asked = fake.requests.length
+  const uploads = () => fake.requests.slice(asked).filter(r => r.method === 'PUT' && r.path === '/v1/key-packages' && r.status === 200 && (r.body?.single_use ?? []).length > 0)
+  const starting = again.start({ stream: false })
+  await until(() => uploads().length, 'the device uploads KeyPackages', 5000)
+  assert.notEqual(again.model.room.connection, 'live', 'while it still catches up')
+  assert.equal(fake.requests.slice(asked).filter(r => r.method === 'GET' && r.path === '/v1/changes' && r.status !== null).length, 0, 'before the first page of its catch-up was answered')
+  // a session founded now finds one of it
+  assert.equal((await a.engine.hub.claimKeyPackages([b.engine.device_id], { partial: true })).length, 1, 'its KeyPackage is at the hub')
+  fake.faults.clear()
+  await starting
 })

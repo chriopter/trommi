@@ -67,7 +67,14 @@ pub struct App {
     /// one round of Live Activity pushes per room at a time
     live_rounds: Mutex<HashMap<Room, Arc<tokio::sync::Mutex<()>>>>,
     pub started_at: u64,
+    /// Whether this data has served a request since the copy made before this release started: the mark
+    /// `hub.served` beside the database, written before the first request is worked on (see `mark_served`).
+    served: std::sync::OnceLock<()>,
 }
+
+/// The mark beside the database that it has served a request (hub/deploy/hub-restore.sh reads it: data that
+/// served is never put back to the copy made before).
+pub const SERVED_MARK: &str = "hub.served";
 
 /// A 32-byte secret of the hub's own, kept beside the database (mode 0600), made on first start.
 fn own_secret(dir: &std::path::Path, name: &str) -> std::io::Result<[u8; 32]> {
@@ -99,6 +106,7 @@ impl App {
         }
         std::fs::create_dir_all(&cfg.data).map_err(|e| format!("data directory: {e}"))?;
         let db = Db::open(&cfg.data.join("hub.db")).map_err(|e| format!("database: {e}"))?;
+        let data = cfg.data.clone();
         db.write(crate::throttle::recover)
             .map_err(|e| format!("database: {}", e.message))?;
         let files = cfg.data.join("files");
@@ -166,7 +174,36 @@ impl App {
             uploads: Mutex::new(HashMap::new()),
             live_rounds: Mutex::new(HashMap::new()),
             started_at: util::now(),
+            served: {
+                let served = std::sync::OnceLock::new();
+                if data.join(SERVED_MARK).exists() {
+                    let _ = served.set(());
+                }
+                served
+            },
         }))
+    }
+
+    /// Whether this data has served a request (any but `/healthz` and a preflight) since it was copied before
+    /// this release started; also across restarts of the hub.
+    pub fn served(&self) -> bool {
+        self.served.get().is_some()
+    }
+
+    /// Before the first request is worked on: the mark `hub.served` is written and flushed, so that the updater's
+    /// helper never puts this data back to the copy made before the release started once a request may have
+    /// changed it. Requests that arrive meanwhile wait for it; a mark that cannot be written is logged and the
+    /// request goes on (the helper then finds no mark, and the hub's own answer says `served`).
+    pub fn mark_served(&self) {
+        self.served.get_or_init(|| {
+            let path = self.cfg.data.join(SERVED_MARK);
+            let written = std::fs::File::create(&path)
+                .and_then(|f| f.sync_all())
+                .and_then(|()| std::fs::File::open(&self.cfg.data)?.sync_all());
+            if let Err(e) = written {
+                crate::log::warn("served_mark", json!({ "error": e.to_string() }));
+            }
+        });
     }
 
     /// Reserves room for an upload of `bytes` in a room whose files hold `used`: refused when stored and

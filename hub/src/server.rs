@@ -105,7 +105,11 @@ pub async fn serve_admin(app: Arc<App>, listener: TcpListener, stop: Arc<Notify>
             let _place = place;
             let service = service_fn(move |req| {
                 let app = app.clone();
-                async move { Ok::<_, std::convert::Infallible>(crate::admin::handle(app, req).await) }
+                async move {
+                    // the admin page can change the data too (see `App::mark_served`)
+                    app.mark_served();
+                    Ok::<_, std::convert::Infallible>(crate::admin::handle(app, req).await)
+                }
             });
             let serving = http1::Builder::new()
                 .timer(TokioTimer::new())

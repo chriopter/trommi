@@ -499,18 +499,16 @@ mod rules_tests {
             false,
         )
         .unwrap();
-        // a human device is never left out
-        assert_eq!(
-            code(check_session_commit(
-                MAIN,
-                &r,
-                &facts(By::Member(d(1)), &[1], &[2, 10], &[]),
-                true,
-                false,
-                false
-            )),
-            "bad-commit"
-        );
+        // a human device may be left out (5.2.5: whether the hub held a KeyPackage of it is delivery.rs's check)
+        check_session_commit(
+            MAIN,
+            &r,
+            &facts(By::Member(d(1)), &[1], &[2, 10], &[]),
+            true,
+            false,
+            false,
+        )
+        .unwrap();
         // two agent leaves
         assert_eq!(
             code(check_session_commit(
@@ -583,11 +581,21 @@ mod rules_tests {
             false,
         )
         .unwrap();
+        // a human device left out is taken (5.2.5); no human device at all is not
+        check_session_commit(
+            helper,
+            &r,
+            &facts(By::Member(d(10)), &[10], &[1, 50], &[]),
+            true,
+            false,
+            false,
+        )
+        .unwrap();
         assert_eq!(
             code(check_session_commit(
                 helper,
                 &r,
-                &facts(By::Member(d(10)), &[10], &[1, 50], &[]),
+                &facts(By::Member(d(10)), &[10], &[50], &[]),
                 true,
                 false,
                 false

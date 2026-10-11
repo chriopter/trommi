@@ -1,0 +1,41 @@
+# Puts the hub's data back to the copy made right before the release in place first started, when that release
+# failed before it served a single request (hub-restore.sh decides; it declines otherwise). Started only by
+# hub-ctl.sh (`restore`) while the hub stands, never at boot. Installed once by hub/deploy/install.sh and NOT part
+# of a release. It runs as the hub's user and writes only the hub's data and its copies.
+[Unit]
+Description=Trommi hub data restore after a release that never served
+
+[Service]
+Type=oneshot
+User=trommi
+Group=trommi
+RuntimeDirectory=trommi-hub-restore
+RuntimeDirectoryPreserve=yes
+# what an earlier run found never passes for this one's
+ExecStartPre=/bin/rm -f /run/trommi-hub-restore/result
+ExecStart=/bin/sh /usr/local/lib/trommi/hub-restore.sh /srv/trommi/deploy /srv/trommi/data /srv/trommi/backups /run/trommi-hub-restore/result
+TimeoutStartSec=300
+UMask=0077
+
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/srv/trommi/data /srv/trommi/backups
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=

@@ -11,6 +11,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::{Connection, OpenFlags};
 
+/// Changes only together with `hub/data-epoch`: a hub refuses a database of another schema version, so a raised
+/// version is a migration the hub before cannot run on (hub/deploy/README.md, "Migrations: expand, then contract").
 pub const SCHEMA_VERSION: i64 = 5;
 
 /// 10.9: the board frontier posts (created in place with schema 5; a table of an earlier layout is rebuilt: one

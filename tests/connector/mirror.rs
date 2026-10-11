@@ -218,7 +218,7 @@ fn the_hook_reads_claude_codes_input() {
     let r = hook_request("prompt", &ups, &[7, 8]).unwrap();
     assert_eq!(
         r,
-        json!({ "op": "terminal", "kind": "input", "text": "Reply with exactly: **ok** done", "prompt_id": "c771", "ancestors": [7, 8] })
+        json!({ "op": "terminal", "kind": "input", "text": "Reply with exactly: **ok** done", "prompt_id": "c771", "ancestors": [7, 8], "from": "terminal", "cards": [] })
     );
     let stop = json!({ "session_id": "a3f1", "transcript_path": "/nowhere.jsonl", "cwd": "/home/me/p", "prompt_id": "c771", "permission_mode": "default", "hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "**ok** done\n", "background_tasks": [], "session_crons": [] });
     let r = hook_request("stop", &stop, &[7]).unwrap();
@@ -383,7 +383,7 @@ fn the_queue_keeps_the_order_and_knows_a_turn() {
         ]
     );
     // a reply in the turn: short chatter after it is left out; the next turn starts clean
-    m.replied("Deployed, all green.");
+    m.replied("Deployed, all green.", None);
     assert_eq!(
         m.accept(&answer("Sent.", "p2"), false)["why"],
         json!("already said with reply")
@@ -393,7 +393,7 @@ fn the_queue_keeps_the_order_and_knows_a_turn() {
         json!(true),
         "the replies of the turn before are forgotten"
     );
-    m.replied("Deployed, all green.");
+    m.replied("Deployed, all green.", None);
     assert_eq!(
         m.accept(
             &json!({ "op": "terminal", "kind": "input", "text": null, "prompt_id": "p4" }),
@@ -414,7 +414,7 @@ fn the_queue_keeps_the_order_and_knows_a_turn() {
         json!(false)
     );
     // a prompt typed into the running turn (the same prompt_id) is his message too, and the turn keeps its replies
-    m.replied("Deployed, all green.");
+    m.replied("Deployed, all green.", None);
     assert_eq!(
         m.accept(&input("and the tests?", "p5"), true)["queued"],
         json!(true)
@@ -475,7 +475,7 @@ fn the_typed_prompt_and_the_final_answer_go_as_they_are_under_the_turns_prompt_i
     let b = hook_request("stop", &stop(answer, "c771"), &[41, 7]).unwrap();
     assert_eq!(
         a,
-        json!({ "op": "terminal", "kind": "input", "text": prompt, "prompt_id": "c771", "ancestors": [41, 7] }),
+        json!({ "op": "terminal", "kind": "input", "text": prompt, "prompt_id": "c771", "ancestors": [41, 7], "from": "terminal", "cards": [] }),
         "his words as he typed them: nothing is taken out of a prompt"
     );
     assert_eq!(
@@ -633,13 +633,13 @@ fn after_a_reply_the_same_answer_and_short_chatter_are_left_out_and_the_next_tur
     let m = Mirror::default();
     let long = "The rollout is finished: three services restarted one after another, the migration ran in 41 seconds, the smoke tests are green and the old pods are gone. Nothing is left for you to do, the dashboards look calm and the error rate is where it was before.";
     hooked(&m, "prompt", &ups("roll it out", "p3")).unwrap();
-    m.replied(long);
+    m.replied(long, None);
     assert_eq!(
         hooked(&m, "stop", &stop(&format!("{long}\n"), "p3")).unwrap()["why"],
         json!("already said with reply")
     );
     hooked(&m, "prompt", &ups("thanks", "p4")).unwrap();
-    m.replied("You are welcome.");
+    m.replied("You are welcome.", None);
     assert_eq!(
         hooked(&m, "stop", &stop("Sent to the board.", "p4")).unwrap()["why"],
         json!("already said with reply")
@@ -754,4 +754,175 @@ fn a_picture_pasted_into_the_terminal_rides_with_his_message_and_a_lost_one_leav
         !items.iter().any(|i| i.text.contains("[Image #")),
         "the raw mark never goes to the chat"
     );
+}
+
+// ---- the answer of a turn one card started goes into that card's thread --------------------------------------------
+
+const CARD: &str = "0123456789abcdef0123456789abcdef";
+
+#[test]
+fn the_prompt_hook_says_where_a_turn_comes_from_and_which_cards_started_it() {
+    let chat = format!("<channel source=\"trommi\" kind=\"chat\" card_id=\"{CARD}\" explain=\"1\">\nWhat??\n</channel>");
+    assert_eq!(
+        prompt_origin(&chat, false),
+        ("board", vec![CARD.to_string()])
+    );
+    let two = format!(
+        "{chat}\n<channel source=\"trommi\" kind=\"chat\" note=\"1\">\nAnd this.\n</channel>"
+    );
+    assert_eq!(
+        prompt_origin(&two, false),
+        ("board", vec![CARD.to_string(), String::new()])
+    );
+    let child = format!("<channel source=\"trommi\" kind=\"decision\" card_id=\"{CARD}\" session=\"Design\" choice=\"a\">\nDecision\n</channel>");
+    assert_eq!(prompt_origin(&child, false), ("board", vec![String::new()]));
+    let monitor = "<task-notification>\n<task-id>bfx52ap4v</task-id>\n<summary>Monitor event: \"Trommi board events\"</summary>\n<event>Trommi · The human wrote on the board: \"Oh\" · call inbox</event>\n</task-notification>";
+    assert_eq!(prompt_origin(monitor, false), ("board", vec![]));
+    let helper = "<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent \"Design\" finished</summary>\n</task-notification>";
+    assert_eq!(prompt_origin(helper, false), ("other", vec![]));
+    assert_eq!(prompt_origin("please check", true), ("terminal", vec![]));
+    let r = hook_request("prompt", &ups(&chat, "p1"), &[7]).unwrap();
+    assert_eq!(
+        (r["text"].clone(), r["from"].clone(), r["cards"].clone()),
+        (Value::Null, json!("board"), json!([CARD]))
+    );
+    let r = hook_request("prompt", &ups("run the tests", "p2"), &[7]).unwrap();
+    assert_eq!(
+        (r["from"].clone(), r["cards"].clone()),
+        (json!("terminal"), json!([]))
+    );
+    assert!(hook_request("stop", &stop("Done.", "p2"), &[7])
+        .unwrap()
+        .get("from")
+        .is_none());
+}
+
+/// The queue's items as (kind, text, card).
+fn routed(m: &Mirror) -> Vec<(&'static str, String, Option<String>)> {
+    std::iter::from_fn(|| m.next())
+        .map(|i| (i.kind, i.text, i.card))
+        .collect()
+}
+
+#[test]
+fn a_turn_one_card_started_answers_on_that_card_and_any_other_turn_in_the_chat() {
+    let m = Mirror::default();
+    let chat =
+        format!("<channel source=\"trommi\" kind=\"chat\" card_id=\"{CARD}\">\nWhy?\n</channel>");
+    // a chat about one card: the answer is for that card
+    hooked(&m, "prompt", &ups(&chat, "p1"));
+    hooked(&m, "stop", &stop("Because the window closes.", "p1"));
+    assert_eq!(
+        routed(&m),
+        vec![(
+            "answer",
+            "Because the window closes.".into(),
+            Some(CARD.into())
+        )]
+    );
+    // the same card handed over again by inbox in the turn changes nothing; a note besides makes it the chat's
+    hooked(&m, "prompt", &ups(&chat, "p2"));
+    m.heard(Some(&json!({ "kind": "chat", "card_id": CARD })), true);
+    hooked(&m, "stop", &stop("Answer two.", "p2"));
+    assert_eq!(
+        routed(&m),
+        vec![("answer", "Answer two.".into(), Some(CARD.into()))]
+    );
+    hooked(&m, "prompt", &ups(&chat, "p3"));
+    m.heard(Some(&json!({ "kind": "chat", "note": "1" })), true);
+    hooked(&m, "stop", &stop("Answer three.", "p3"));
+    assert_eq!(routed(&m), vec![("answer", "Answer three.".into(), None)]);
+    // two cards, a card in a child session, one from another session: the chat
+    for (n, (meta, own)) in [
+        (
+            json!({ "kind": "decision", "card_id": "ffffffffffffffffffffffffffffffff" }),
+            true,
+        ),
+        (
+            json!({ "kind": "decision", "card_id": CARD, "session": "Design" }),
+            true,
+        ),
+        (json!({ "kind": "chat", "card_id": CARD }), false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = format!("q{n}");
+        hooked(&m, "prompt", &ups(&chat, &id));
+        m.heard(Some(&meta), own);
+        assert_eq!(
+            hooked(&m, "stop", &stop("Answer four.", &id)).unwrap()["queued"],
+            json!(true)
+        );
+        assert_eq!(
+            routed(&m),
+            vec![("answer", "Answer four.".into(), None)],
+            "{meta}"
+        );
+    }
+}
+
+#[test]
+fn the_monitor_or_a_channel_without_a_prompt_hook_hands_over_the_card_and_typing_or_a_helper_keeps_the_chat(
+) {
+    let m = Mirror::default();
+    // the monitor's line starts the turn, inbox hands over the card's event
+    let monitor = "<task-notification>\n<task-id>b</task-id>\n<event>Trommi · The human answered \"Ship it?\": \"Ship\" · call inbox</event>\n</task-notification>";
+    hooked(&m, "prompt", &ups(monitor, "p1"));
+    m.heard(
+        Some(&json!({ "kind": "decision", "card_id": CARD, "choice": "yes" })),
+        true,
+    );
+    hooked(&m, "stop", &stop("Shipped.", "p1"));
+    assert_eq!(
+        routed(&m),
+        vec![("answer", "Shipped.".into(), Some(CARD.into()))]
+    );
+    // a channel message handed over before the turn's start, with no prompt hook for it
+    m.heard(Some(&json!({ "kind": "chat", "card_id": CARD })), true);
+    hooked(&m, "stop", &stop("Answered on the card.", "p2"));
+    assert_eq!(
+        routed(&m),
+        vec![("answer", "Answered on the card.".into(), Some(CARD.into()))]
+    );
+    // typed into the terminal, or a helper's end: the chat, whatever the turn is handed later
+    for (prompt, id) in [("how is it going?", "p3"), ("<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>", "p4")] {
+        hooked(&m, "prompt", &ups(prompt, id));
+        m.heard(Some(&json!({ "kind": "chat", "card_id": CARD })), true);
+        hooked(&m, "stop", &stop("Fine.", id));
+        assert!(routed(&m).iter().all(|(_, _, c)| c.is_none()), "{prompt}");
+    }
+    // the human typing into a turn one card started: the chat
+    let chat =
+        format!("<channel source=\"trommi\" kind=\"chat\" card_id=\"{CARD}\">\nWhy?\n</channel>");
+    hooked(&m, "prompt", &ups(&chat, "p5"));
+    m.accept(
+        &hook_request("prompt", &ups("and also this", "p5"), &[7]).unwrap(),
+        true,
+    );
+    hooked(&m, "stop", &stop("Both done.", "p5"));
+    assert_eq!(routed(&m).last().map(|i| i.2.clone()), Some(None));
+}
+
+#[test]
+fn a_card_reply_in_the_turn_is_not_said_again_on_the_card_and_the_pointer_names_the_card() {
+    let m = Mirror::default();
+    let chat =
+        format!("<channel source=\"trommi\" kind=\"chat\" card_id=\"{CARD}\">\nWhy?\n</channel>");
+    hooked(&m, "prompt", &ups(&chat, "p1"));
+    m.replied("Sent the reason on the card.", Some(CARD));
+    assert_eq!(
+        hooked(&m, "stop", &stop("Done.", "p1")).unwrap()["why"],
+        json!("already said with reply")
+    );
+    // a reply in the chat does not silence the card's answer
+    hooked(&m, "prompt", &ups(&chat, "p2"));
+    m.replied("Working on it.", None);
+    assert_eq!(
+        hooked(&m, "stop", &stop("Done.", "p2")).unwrap()["queued"],
+        json!(true)
+    );
+    assert_eq!(pointer_line("Ship   it?"), "→ Ship it?");
+    let long = "x".repeat(300);
+    assert_eq!(pointer_line(&long), format!("→ {}…", "x".repeat(120)));
 }

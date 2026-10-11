@@ -6,5 +6,8 @@
   "compatibility_date": "2026-10-01",
   // Static, nothing to build: public/ as it is. An address that is no file gets public/404.html.
   // The worker runs first: http to https, www to the apex.
+  // The public TestFlight link of the iPhone app (https://testflight.apple.com/join/<code>), where /beta goes;
+  // empty: /beta goes to the install steps on GitHub. App Store Connect > TestFlight > Public > Public Link.
+  "vars": { "TESTFLIGHT_URL": "https://testflight.apple.com/join/vFXuzR5K" },
   "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "404-page", "run_worker_first": true }
 }

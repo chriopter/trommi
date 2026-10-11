@@ -457,6 +457,51 @@ async fn the_opener_admits_a_helper_device_and_lets_it_back_in_after_it_lost_its
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_child_session_opens_while_a_human_device_has_no_key_package_at_the_hub() {
+    let (_hub, mut human, agent, _group) = room().await;
+    // A second human device is let in and never comes online: the hub holds no KeyPackage of it (5.2.5).
+    let phone = human.add_human().await.id();
+    // The agent founds the helper session with the human device that has one, once it knows the room's new state.
+    let mut session = None;
+    for _ in 0..100 {
+        let _ = agent.client.settle(5_000).await;
+        match agent
+            .client
+            .open_child_session(fields(json!({ "agent_name": "Design" })))
+            .await
+        {
+            Ok(id) => {
+                session = Some(id);
+                break;
+            }
+            Err(fault) => {
+                assert_ne!(fault.code, "not-found", "{fault:?}");
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+    }
+    let session = session.expect("the helper session is founded without the phone");
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    let helper_group = human
+        .groups()
+        .await
+        .into_iter()
+        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
+        .expect("the human device is in the helper session");
+    assert!(helper_group.leaves.contains(&human.id()));
+    assert!(!helper_group.leaves.contains(&phone));
+    // The session takes the opener's writes.
+    agent
+        .client
+        .send_message(fields(json!({ "text": "in the helper session" })), None, Some(session))
+        .await
+        .expect("sent");
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_new_agent_reads_an_object_two_senders_wrote_in_turns() {
     let (_hub, mut human, mut first, group) = room().await;
     let options = json!([{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }]);

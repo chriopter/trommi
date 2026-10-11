@@ -486,8 +486,12 @@ impl Conn {
         }
         if !sent {
             self.queue(params, about);
-        } else if !self.waits_for(&about) {
-            self.receipt(&[about]);
+        } else {
+            // (what the agent was handed: the terminal mirror puts a turn one card started into that card's thread)
+            self.mirror.heard(params.get("meta"), true);
+            if !self.waits_for(&about) {
+                self.receipt(&[about]);
+            }
         }
     }
     /// `said` with the waiting events for this caller: a helper's call (child) gets only its own.
@@ -531,6 +535,12 @@ impl Conn {
                 }
             }
             self.save_missed();
+            if child.is_none() {
+                for e in &events {
+                    let own = e.from.is_empty() || e.from == self.cfg.session;
+                    self.mirror.heard(e.params.get("meta"), own);
+                }
+            }
             let abouts: Vec<Option<About>> = events.iter().map(|e| e.about.clone()).collect();
             self.receipt(&abouts);
             if child.is_none() {
@@ -1238,9 +1248,31 @@ impl Conn {
             let Some(item) = self.mirror.next() else {
                 return;
             };
-            let sent = match &item.work {
-                Some(e) => b.work(e.target.as_deref(), &e.work).await,
-                None => b.mirror(item.kind, &item.text, &item.pictures).await,
+            // an answer of a turn one card started goes into the card's thread, then a pointer line to the card into
+            // the session's chat; a card this connector does not know (any more) gets the answer in the chat
+            let sent = match (&item.work, item.kind, &item.card) {
+                (Some(e), _, _) => b.work(e.target.as_deref(), &e.work).await,
+                (None, "answer", Some(card)) => match b.answer_on_card(card, &item.text).await {
+                    Ok(Some(title)) => {
+                        self.touch();
+                        self.mirror.back(mirror::Item {
+                            kind: "pointer",
+                            text: mirror::pointer_line(&title),
+                            at: item.at,
+                            work: None,
+                            pictures: vec![],
+                            card: item.card.clone(),
+                        });
+                        continue;
+                    }
+                    Ok(None) => {
+                        self.mirror.back(mirror::Item { card: None, ..item });
+                        continue;
+                    }
+                    Err(e) => Err(e),
+                },
+                (None, "pointer", Some(card)) => b.pointer(card, &item.text).await,
+                _ => b.mirror(item.kind, &item.text, &item.pictures).await,
             };
             match sent {
                 Ok(()) => self.touch(),
@@ -1764,12 +1796,15 @@ impl mcp::Server for Conn {
                 match self.call_once(&name, &args).await {
                     Ok(out) => {
                         // (what the agent wrote into its own chat this turn: the Stop hook does not say it again)
-                        if name == "reply"
-                            && child.is_none()
-                            && !args.get("card_id").is_some_and(crate::util::truthy)
-                        {
-                            self.mirror
-                                .replied(args.get("text").and_then(|v| v.as_str()).unwrap_or(""));
+                        if name == "reply" && child.is_none() {
+                            let card = args
+                                .get("card_id")
+                                .filter(|v| crate::util::truthy(v))
+                                .map(crate::util::js_string);
+                            self.mirror.replied(
+                                args.get("text").and_then(|v| v.as_str()).unwrap_or(""),
+                                card.as_deref(),
+                            );
                         }
                         let out = self.with_missed(&out, child.as_deref());
                         self.touch();
@@ -2102,7 +2137,11 @@ impl Conn {
             }
         };
         // (Codex gives up on a tool call after 60 s by default: it is answered before, and calls again)
-        let wait = if crate::host::is_codex() { 50_000 } else { 120_000 };
+        let wait = if crate::host::is_codex() {
+            50_000
+        } else {
+            120_000
+        };
         let until = now_ms() + env_ms("TROMMI_CONNECT_WAIT_MS", wait);
         loop {
             let outcome = run.lock().unwrap().clone();

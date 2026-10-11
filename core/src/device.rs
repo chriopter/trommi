@@ -2940,12 +2940,23 @@ impl<S: Storage> Device<S> {
     /// them (13.2). The last-resort one before it is retired when the hub accepted that entry, and its
     /// private part kept [`LAST_RESORT_FOR_MS`] more, counted from the first call of this function after the
     /// hub's answer; a refused entry leaves it the current one. Returns the entry's id, or none when nothing
-    /// is due.
+    /// is due. The single-use ones of an upload still in the outbox count as held.
     pub fn key_packages_to_upload(
         &mut self,
         unused_at_hub: usize,
         now_ms: u64,
     ) -> Result<Option<u64>, Error> {
+        // The single-use ones of an upload that still waits in the outbox are not in the hub's count yet: they
+        // count as held, or a second call before the hub's answer would make them twice. (Its first part is the
+        // last-resort one or empty.)
+        let queued: usize = self
+            .memory
+            .outbox
+            .values()
+            .filter(|entry| entry.kind == OutboxKind::KeyPackages)
+            .map(|entry| entry.parts.len().saturating_sub(1))
+            .sum();
+        let unused_at_hub = unused_at_hub.saturating_add(queued);
         self.transact(|device, batch| {
             // A last-resort one that the hub replaced is kept for a period from now on.
             let replaced: Vec<Hash32> = device
@@ -3170,9 +3181,9 @@ impl<S: Storage> Device<S> {
     }
 
     /// Founds a main session (5.2.5) as a human device: one request with the GroupInfo of epoch 0 and the
-    /// first Commit, which adds the agent device and every other human device of the room. `key_packages` must
-    /// hold exactly one KeyPackage of each of them; a missing one fails the founding (`incomplete`), and it is
-    /// tried again with fresh ones.
+    /// first Commit, which adds the agent device and the other human devices of the room. `key_packages` holds
+    /// one KeyPackage of the agent device (without it: `incomplete`) and of each human device the hub had one of
+    /// (a partial claim); a human device left out is added later (5.2.7).
     pub fn found_session(
         &mut self,
         agent: &DeviceId,
@@ -3182,8 +3193,8 @@ impl<S: Storage> Device<S> {
         self.found(SessionId::ZERO, Some(agent), key_packages, now_ms)
     }
 
-    /// Founds a helper session under the main session `parent` as its opener (5.2.5), adding every human
-    /// device of the room and the helper devices whose KeyPackages are given.
+    /// Founds a helper session under the main session `parent` as its opener (5.2.5), adding the human devices
+    /// and the helper devices whose KeyPackages are given: at least one human device (`incomplete`).
     pub fn found_helper(
         &mut self,
         parent: &SessionId,
@@ -3219,13 +3230,13 @@ impl<S: Storage> Device<S> {
                 }
                 adds.push(package);
             }
-            // All or nothing: every other human device, and for a main session its agent device.
-            let needed = room
-                .humans
-                .iter()
-                .chain(agent)
-                .filter(|needed| **needed != device.id);
-            if !needed.clone().all(|needed| added.contains(needed)) {
+            // 5.2.5: a main session's agent device always; of the human devices those whose KeyPackages could be
+            // had (the hub refuses a founding that leaves out one it holds a KeyPackage of), at least one. A human
+            // device left out is added later by a human device of the group (5.2.7).
+            if agent.is_some_and(|agent| !added.contains(agent)) {
+                return Err(Error::Incomplete);
+            }
+            if !room.humans.iter().any(|h| *h == device.id || added.contains(h)) {
                 return Err(Error::Incomplete);
             }
             let mut id = [0u8; 16];

@@ -216,6 +216,8 @@ pub struct Human {
     pub trail: Vec<(String, u32, Value)>,
     /// The Chat messages, versions and register values that opened: (session hex, sender, payload).
     pub items: Vec<(String, DeviceId, Value)>,
+    /// The Chat messages on a card's own Chat that opened: (card's object id as hex, payload).
+    pub card_chats: Vec<(String, Value)>,
 }
 
 pub fn fault_of(error: Error) -> Fault {
@@ -278,6 +280,7 @@ impl Human {
             findings: Vec::new(),
             trail: Vec::new(),
             items: Vec::new(),
+            card_chats: Vec::new(),
         };
         human.post_all().await.expect("the founding is taken");
         human
@@ -750,6 +753,7 @@ impl Human {
                 findings: Vec::new(),
                 trail: Vec::new(),
                 items: Vec::new(),
+                card_chats: Vec::new(),
                 founding_account: None,
             }
         };
@@ -1081,7 +1085,12 @@ impl Human {
                 .session_id()
                 .map(|sid| hex(sid.as_bytes()))
                 .unwrap_or_default();
-            let payload = serde_json::from_slice(body.payload()).unwrap_or(Value::Null);
+            let payload: Value = serde_json::from_slice(body.payload()).unwrap_or(Value::Null);
+            if let Subject::Item(trommi_core::envelope::Timeline::CardChat(card)) = &header.subject
+            {
+                self.card_chats
+                    .push((hex(card.as_bytes()), payload.clone()));
+            }
             self.items.push((session, header.sender, payload));
         }
     }

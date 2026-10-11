@@ -559,7 +559,12 @@ extension Room {
    * A password's keys are derived from the e-mail, so with a password the field must hold the e-mail: an account id
    * is `needs-email`, and nothing is sent. One error for an unknown e-mail and a wrong password: `wrong-login`.
    */
-  public static func signInWithPassword(hubURL: String, account: String, password: String, base: URL = Store.defaultBase()) async throws -> LoginOutcome {
+  public static func signInWithPassword(hubURL: String, account: String, password: String, base: URL = Store.defaultBase(),
+                                       progress: (@Sendable (SignInProgress) -> Void)? = nil) async throws -> LoginOutcome {
+    // (how far it is goes to `progress`: a big account's catch-up is long, and the screen says so)
+    guard progress == nil else {
+      return try await SignInWatch.$report.withValue(progress) { try await signInWithPassword(hubURL: hubURL, account: account, password: password, base: base) }
+    }
     let tools = Core.tools
     if !account.contains("@") && looksLikeAccountId(account.trimmingCharacters(in: .whitespacesAndNewlines)) { throw TrommiError("needs-email", "a password opens the account together with its e-mail") }
     guard case .email(let e) = try accountName(account) else { throw TrommiError("bad-account", "neither an e-mail address nor an account id") }
@@ -577,7 +582,11 @@ extension Room {
    * Passkeys.swift), the hub finds the account by the credential, checks the signature and hands back the code
    * sealed under that passkey, which its prf output opens.
    */
-  public static func signInWithPasskey(hubURL: String, base: URL = Store.defaultBase(), assert: (Bytes) async throws -> PasskeyAssertion) async throws -> LoginOutcome {
+  public static func signInWithPasskey(hubURL: String, base: URL = Store.defaultBase(), progress: (@Sendable (SignInProgress) -> Void)? = nil,
+                                      assert: (Bytes) async throws -> PasskeyAssertion) async throws -> LoginOutcome {
+    guard progress == nil else {
+      return try await SignInWatch.$report.withValue(progress) { try await signInWithPasskey(hubURL: hubURL, base: base, assert: assert) }
+    }
     let tools = Core.tools
     let hub = try HubClient(hubURL: try tools.canonicalHub(hubURL))
     let challenge = try passkeyChallenge(try await hub.request("POST", "/account/passkey/challenge", body: [:], auth: false))

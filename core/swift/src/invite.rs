@@ -294,7 +294,7 @@ choice! {
         /// the hub and call `add_to_session`.
         AddToSession = "addToSession",
         /// Found the agent device's main session with `found_session`: `device`, its `key_package`, and one
-        /// KeyPackage of every other human device.
+        /// KeyPackage of each other human device the hub has one of (a partial claim, 5.2.5).
         FoundSession = "foundSession",
         /// Take the session `group` over with `clean_session`: `cuts`, and `device` with `key_package` as the
         /// replacement. There is one such step for the main session's group, and after it one for every live

@@ -3,22 +3,45 @@
 # the App Store Connect key comes from. Steps: the bundle ids and the app record (asc.py prepare) -> the build
 # number (the highest App Store Connect has, plus one) -> Trommi.xcodeproj from AppStore/project.yml (XcodeGen) ->
 # archive (ios_archive.sh: signed ad hoc, nothing created on the Apple account) -> check the archive -> export for
-# App Store Connect, signed with the team's cloud-managed distribution certificate through the API key, first to a
-# file whose entitlements are checked, then with destination upload (internal testing only) -> wait until the build is processed -> the group "Intern" holds
-# it -> "What to Test".
+# App Store Connect, signed with the team's cloud-managed distribution certificate through the API key, to a file whose
+# entitlements are checked -> (main: the release of this run is published and verified, ios_release_gate.sh) ->
+# upload of that very file through the App Store Connect Build Uploads API (asc.py upload) -> wait until the build is
+# processed -> the group "Intern" holds it -> "What to Test" -> (TF_CHANNEL=public, a build of main: the external group
+# "Public", whose public link is the rolling beta, holds it, and Beta App Review gets it when Apple asks for it).
+#   ios_testflight.sh              every step, one after another
+#   ios_testflight.sh upload       up to the upload; writes version and build to GITHUB_OUTPUT
+#   ios_testflight.sh after        the rest (processed, groups, What to Test, review) for TF_VERSION and TF_BUILD, on any
+#                                  machine with python3 and openssl: deploy_ios.yml runs it on Linux, so the Mac is
+#                                  not held while App Store Connect processes the build
 #
 # Environment, from the 1Password Environment: APPLE_ASC_KEY (the .p8 of a team key with the Admin role; it may
 # arrive with its line breaks turned into spaces), APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_TEAM_ID.
-# From the workflow: RUNNER_TEMP, COMMIT (the commit that is built), XCODEGEN (the command), and optionally
+# From the workflow: RUNNER_TEMP, COMMIT (the commit that is built), XCODEGEN (the command; not for `after`),
+# TF_VERSION and TF_BUILD (`after` only), and optionally
 # ITS_NON_EXEMPT_ENCRYPTION (YES or NO, default NO: standard algorithms only, exempt), ITS_EXPORT_COMPLIANCE_CODE
 # (only with YES: the code of the app's export compliance documentation in App Store Connect; when empty, the code of
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
-# TESTFLIGHT_TESTER (an address kept in the group), NOTES.
+# TESTFLIGHT_TESTER (an address kept in the group), NOTES, TF_CHANNEL (public: main's builds also go to the external
+# group "Trommi" and to Beta App Review, What to Test is the newest day of CHANGELOG.md; with APPSTORE_DEMO_PASSWORD,
+# the demo account's password for Beta App Review; empty: the internal group only),
+# TF_GATE=release (main: upload only once the release of build run RUN_ID, v$VERSION_RELEASE, is published and
+# verified; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed, checked .ipa; the gate
+# only verifies an existing release, if any is named; the upload is checked offline and NOT sent; no wait, no group),
+# TF_UPLOADER=xcode (the fallback: a second Xcode export with destination upload instead of the API).
 # Nothing here prints a value of the first four. The key lies in one file under RUNNER_TEMP, mode 600, removed when
 # the script ends (and once more by the workflow, whatever happened).
 set -euo pipefail
 
-for name in APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID APPLE_TEAM_ID RUNNER_TEMP COMMIT XCODEGEN; do
+mode=${1:-all}
+case "$mode" in
+  all|upload) required="APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID APPLE_TEAM_ID RUNNER_TEMP COMMIT XCODEGEN" ;;
+  after) required="APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID RUNNER_TEMP COMMIT TF_VERSION TF_BUILD" ;;
+  *) echo "usage: ios_testflight.sh [upload|after]" >&2; exit 2 ;;
+esac
+[ "${TF_GATE:-}" != release ] || required="$required GH_TOKEN GITHUB_REPOSITORY RUN_ID VERSION_RELEASE"
+case "${TF_GATE:-}" in ''|release) ;; *) echo "::error::TF_GATE is release or empty, not ${TF_GATE}"; exit 1 ;; esac
+case "${TF_CHANNEL:-}" in ''|public) ;; *) echo "::error::TF_CHANNEL is public or empty, not ${TF_CHANNEL}"; exit 1 ;; esac
+for name in $required; do
   [ -n "${!name:-}" ] || { echo "::error::$name is not set for this run"; exit 1; }
 done
 
@@ -49,6 +72,60 @@ umask 022
 export ASC_KEY_ID=$APPLE_ASC_KEY_ID ASC_ISSUER_ID=$APPLE_ASC_ISSUER_ID ASC_KEY_PATH=$key
 asc() { python3 "$appstore/asc.py" "$@"; }
 auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$APPLE_ASC_KEY_ID" -authenticationKeyIssuerID "$APPLE_ASC_ISSUER_ID")
+
+# 7. to 9.: the uploaded build is processed, the group holds it, What to Test
+after() {   # after <version> <build> <short commit>
+  echo "== 7. App Store Connect processes the build =="
+  asc wait "$1" "$2" | tee "$RUNNER_TEMP/wait.txt"
+  build_id=$(sed -n 's/^build_id: //p' "$RUNNER_TEMP/wait.txt" | tail -n 1)
+  [ -n "$build_id" ] || { echo "::error::App Store Connect named no build"; exit 1; }
+
+  echo "== 8. Internal group \"Intern\" =="
+  asc internal "$build_id" Intern "${TESTFLIGHT_TESTER:-}"
+
+  echo "== 9. What to Test =="
+  # the text the app's folder carries (AppStore/WhatToTest.txt, at most 4000 characters), else the commit's subject
+  notes=${NOTES:-}
+  # the public beta: what changed for people, the newest day of the changelog
+  if [ -z "$notes" ] && [ "${TF_CHANNEL:-}" = public ]; then
+    changes=$(asc whats-new "$repo/CHANGELOG.md")
+    notes="Build $2 ($3). $changes"
+  fi
+  [ -n "$notes" ] || [ ! -s "$appstore/WhatToTest.txt" ] || notes="Build $2 ($3). $(head -c 3900 "$appstore/WhatToTest.txt")"
+  [ -n "$notes" ] || notes="Neu in Build $2 ($3): $(git -C "$repo" log -1 --format=%s "$COMMIT" | cut -c1-300)"
+  if [ "${TF_CHANNEL:-}" = public ]; then
+    # external testers see What to Test, and Beta App Review asks for it: here it must be set
+    asc notes "$build_id" "$notes" en-US
+  else
+    asc notes "$build_id" "$notes" || echo "::warning::What to Test was not set"
+  fi
+
+  groups="the group Intern"
+  if [ "${TF_CHANNEL:-}" = public ]; then
+    echo "== 10. External group \"Public\" (the public link) =="
+    asc external "$build_id" Trommi | tee "$RUNNER_TEMP/external.txt"
+    echo "== 11. Beta App Review =="
+    asc beta-review "$build_id" | tee "$RUNNER_TEMP/review.txt"
+    groups="the groups Intern and Trommi ($(sed -n 's/^external_state: //p' "$RUNNER_TEMP/review.txt"))"
+  fi
+
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+      echo "### iOS: TestFlight build $2"
+      echo
+      echo "Version $1, build $2, commit \`$COMMIT\`, in $groups."
+      link=$(sed -n 's/^public_link: //p' "$RUNNER_TEMP/external.txt" 2>/dev/null || true)
+      [ -z "$link" ] || { echo; echo "Public link: $link"; }
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+}
+
+if [ "$mode" = after ]; then
+  printf '%s' "$TF_BUILD" | grep -Eq '^[1-9][0-9]*$' || { echo "::error::not a build number: $TF_BUILD"; exit 1; }
+  printf '%s' "$TF_VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)*$' || { echo "::error::not a version: $TF_VERSION"; exit 1; }
+  after "$TF_VERSION" "$TF_BUILD" "$(printf '%s' "$COMMIT" | cut -c1-7)"
+  exit 0
+fi
 
 echo "== 1. Bundle ids and app record =="
 asc prepare "$BUNDLE_ID"
@@ -116,11 +193,11 @@ for extension in TrommiShare TrommiNotify TrommiLive; do
 done
 # (the archive is signed ad hoc and ios_archive.sh has checked its entitlements; the export signs for distribution)
 
-echo "== 6. Export and upload =="
+echo "== 6. Export =="
 # Signing style automatic with the Admin key: Xcode signs with the team's cloud-managed Apple Distribution
 # certificate (Apple keeps its private key) and makes or renews the App Store profiles of the four bundle ids.
-# No certificate is created on the account. The first export writes the signed app to a file, whose entitlements
-# are checked against the files (nothing goes to Apple); the second, the same signing, uploads.
+# No certificate is created on the account. The export writes the signed app to a file, whose entitlements are
+# checked against the files (nothing goes to Apple); that file is uploaded.
 export_options() {
   cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -148,32 +225,45 @@ mkdir -p "$RUNNER_TEMP/ipa"
 unzip -q "$ipa" -d "$RUNNER_TEMP/ipa"
 python3 "$here/ios_entitlements.py" "$appstore" "$RUNNER_TEMP/ipa/Payload/Trommi.app" --distribution
 codesign -dvv "$RUNNER_TEMP/ipa/Payload/Trommi.app" 2>&1 | grep '^Authority=' | head -n 1 || true
-export_options upload
-xcodebuild -exportArchive \
-  -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-  -exportPath "$RUNNER_TEMP/export" \
-  "${auth[@]}"
+
+if [ "${TF_GATE:-}" = release ]; then
+  echo "== 6b. The release of this run =="
+  # COMMIT and VERSION are the gate's names; here VERSION is the release number, not the app's
+  gate='wait'
+  [ "${TF_DRY_RUN:-}" = 1 ] && gate=verify
+  VERSION=$VERSION_RELEASE bash "$here/ios_release_gate.sh" "$gate"
+fi
+
+echo "== 6c. Upload =="
+if [ "${TF_DRY_RUN:-}" = 1 ]; then
+  asc upload "$ipa" "$version" "$build" --dry-run
+  if [ "${TF_CHANNEL:-}" = public ]; then
+    # offline: what the public beta would get; the group and Beta App Review are not touched
+    echo "dry run: would add the build to the groups Intern and Trommi and ask Beta App Review if Apple asks for it; What to Test:"
+    asc whats-new "$repo/CHANGELOG.md"
+  fi
+  echo "dry run: build $version ($build) was NOT uploaded; nothing waits for it"
+  [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "### iOS: dry run, build $version ($build) signed and checked, not uploaded" >> "$GITHUB_STEP_SUMMARY"
+  exit 0
+fi
+if [ "${TF_UPLOADER:-api}" = xcode ]; then
+  export_options upload
+  xcodebuild -exportArchive \
+    -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+    -exportPath "$RUNNER_TEMP/export" \
+    "${auth[@]}"
+else
+  # the file whose entitlements were just checked is the one that goes; no second signing
+  asc upload "$ipa" "$version" "$build"
+fi
 rm -f "$RUNNER_TEMP/ExportOptions.plist"
 
-echo "== 7. App Store Connect processes the build =="
-asc wait "$version" "$build" | tee "$RUNNER_TEMP/wait.txt"
-build_id=$(sed -n 's/^build_id: //p' "$RUNNER_TEMP/wait.txt" | tail -n 1)
-[ -n "$build_id" ] || { echo "::error::App Store Connect named no build"; exit 1; }
-
-echo "== 8. Internal group \"Intern\" =="
-asc internal "$build_id" Intern "${TESTFLIGHT_TESTER:-}"
-
-echo "== 9. What to Test =="
-# the text the app's folder carries (AppStore/WhatToTest.txt, at most 4000 characters), else the commit's subject
-notes=${NOTES:-}
-[ -n "$notes" ] || [ ! -s "$appstore/WhatToTest.txt" ] || notes="Build $build ($short). $(head -c 3900 "$appstore/WhatToTest.txt")"
-[ -n "$notes" ] || notes="Neu in Build $build ($short): $(git -C "$repo" log -1 --format=%s "$COMMIT" | cut -c1-300)"
-asc notes "$build_id" "$notes" || echo "::warning::What to Test was not set"
-
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  {
-    echo "### iOS: TestFlight build $build"
-    echo
-    echo "Version $version, build $build, commit \`$COMMIT\`, in the group Intern."
-  } >> "$GITHUB_STEP_SUMMARY"
+if [ "$mode" = upload ]; then
+  # the rest runs elsewhere (ios_testflight.sh after) with these
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    { echo "version=$version"; echo "build=$build"; } >> "$GITHUB_OUTPUT"
+  fi
+  echo "uploaded: $BUNDLE_ID $version ($build) from $short"
+  exit 0
 fi
+after "$version" "$build" "$short"

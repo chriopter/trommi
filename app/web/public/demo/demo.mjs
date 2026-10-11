@@ -734,8 +734,7 @@ export async function demoState(name, { now = false } = {}) {
     trail: () => { const d = $('.msg-work details.work'); if (d) { d.open = true; d.scrollIntoView({ block: 'center' }) } },
     pair: () => click('#settings-pair'),
     'pair-emoji': () => click('#settings-pair'),   // (the demo's new device answers after a moment: the six emoji come in place)
-    'desk-open': () => click('#ledger-list details.set-desk > summary'),
-    'session-dots': async () => { click('#ledger-list details.set-desk > summary'); await wait(150); click('#ledger-list .ledger-menu') },
+    'agent-more': () => click('#agent-0 .ag-more > summary'),
     invite: () => click('#settings-invite-agent'),
     'desk-invite': () => click('#desk-invite-go'),
     'invite-emoji': async () => { click('.t-head-more'); await wait(200); [...document.querySelectorAll('.desk-move button')].find(b => /invite link/.test(b.textContent))?.click() },
