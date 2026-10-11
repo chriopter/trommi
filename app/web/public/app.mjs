@@ -155,23 +155,29 @@ export const ASLEEP_MS = 10 * 60000
 /** An answer the session has not picked up for this long is worth a word. */
 export const UNHEARD_MS = 2 * 60000
 const RECONNECT = '/mcp → trommi → Reconnect', LIVE_FLAG = 'claude --resume --dangerously-load-development-channels server:trommi'
+/** What differs for a session in Codex (its device says platform "codex"): it is restarted, never reconnected in
+ *  /mcp; it shows no live events but is woken by its connector, and without that reads the board on its next turn. */
+const codexOf = agent => agent?.client === 'codex'
 /** The session's link: { state: 'live' | 'oncall' | 'asleep' | 'cut' | 'gone', sign, word, short, line, since, fix: { say, code } | null }; null for none. */
 export function linkOf(agent, now = Date.now()) {
   if (!agent || agent.archived || agent.removed) return null
-  const n = agent.name, l = agent.link ?? null
+  const n = agent.name, l = agent.link ?? null, codex = codexOf(agent)
+  const prog = codex ? 'Codex' : 'Claude Code', reconnect = codex ? 'quit Codex, then: codex resume' : RECONNECT
   if (!agent.online) {
     const since = agent.offline_since ?? null, at = since ? clock(since, now) : ''
-    if (l?.exit?.claude === 'alive') return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `${n} is cut off${at ? ` since ${at}` : ''}: its Claude Code runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: RECONNECT } }
-    const how = l?.exit ? 'its Claude Code session ended.' : 'it stopped without a word: its session ended, was killed, or its machine is off the network.'
-    return { state: 'gone', sign: 'plug', since, word: `gone${at ? ` · ${at}` : ''}`, short: at ? `Gone since ${at}` : 'Gone', line: `${n} is gone${at ? ` since ${at}` : ''}: ${how}`, fix: { say: 'Start it again in its folder:', code: 'claude --continue' } }
+    if (l?.exit?.claude === 'alive') return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `${n} is cut off${at ? ` since ${at}` : ''}: its ${prog} runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: reconnect } }
+    const how = l?.exit ? `its ${prog} session ended.` : 'it stopped without a word: its session ended, was killed, or its machine is off the network.'
+    return { state: 'gone', sign: 'plug', since, word: `gone${at ? ` · ${at}` : ''}`, short: at ? `Gone since ${at}` : 'Gone', line: `${n} is gone${at ? ` since ${at}` : ''}: ${how}`, fix: { say: 'Start it again in its folder:', code: codex ? 'codex resume' : 'claude --continue' } }
   }
   if (l?.cut_since || (l && l.attached === false)) {
     const since = l.cut_since ?? l.since ?? null, at = since ? clock(since, now) : ''
-    return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `A Claude Code session in ${n}'s folder is cut off${at ? ` since ${at}` : ''}: it runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: RECONNECT } }
+    return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `A ${prog} session in ${n}'s folder is cut off${at ? ` since ${at}` : ''}: it runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: reconnect } }
   }
   if (!l || l.hears !== 'oncall') return { state: 'live', sign: 'ear', since: null, word: '', short: '', line: `${n} hears you at once.`, fix: null }
   const last = l.last_call_at ?? l.since ?? null, idle = last ? Math.max(0, now - last) : null, min = idle == null ? null : minutes(idle)
   const ago = min == null ? '' : `; its last one was ${min} min ago`
+  // Codex between turns is there, not asleep: it reads what you write when its next turn starts
+  if (codex) return { state: 'oncall', sign: 'ear-later', since: last, word: 'on its next turn', short: 'Reads you on its next turn', line: `${n} runs in Codex: it reads what you write when its next turn starts${ago}.`, fix: idle != null && idle >= ASLEEP_MS ? { say: 'To start a turn now, type anything in its Codex terminal. Trommi wakes Codex by itself once the connector is current:', code: 'trommi-connector update' } : null }
   if (idle != null && idle >= ASLEEP_MS) return { state: 'asleep', sign: 'ear-later', since: last, word: `not listening · ${min} min`, short: `Not listening for ${min} min`, line: `${n} is not listening: it hears you only on its next step, and its last one was ${min} min ago.`, fix: { say: 'Wake it: type anything in its terminal. To be heard at once, start it with', code: LIVE_FLAG } }
   return { state: 'oncall', sign: 'ear-later', since: last, word: 'on its next step', short: 'Hears you on its next step', line: `${n} hears you on its next step${ago}.`, fix: { say: 'To be heard at once, start it with', code: LIVE_FLAG } }
 }
@@ -660,7 +666,7 @@ export class BoardState {
       const dev = m.members.get(s.agent_device_id)
       return {
         id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: p.agent_name || s.device_name || id, label: set.name || '', icon: set.icon || p.icon || '', icon_by: set.icon ? 'human' : 'agent',
-        online: Boolean(s.is_online), offline_since: s.offline_since ?? null, model: p.model ?? '', task: p.task ?? '', client: '', host: '', starred: crown === key || crown === s.agent_device_id, parent, main: Boolean(p.is_main),
+        online: Boolean(s.is_online), offline_since: s.offline_since ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: crown === key || crown === s.agent_device_id, parent, main: Boolean(p.is_main),
         desk: set.desk ?? null, archived: chosen && !back, replaced: false, group: set.group ?? null, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position), seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: lastOfDevice.get(s.agent_device_id) ?? 0,
         removed: s.is_active === false,
         // (a session on a person's own device, not an agent's: it is never deleted from the board: session.mjs Delete)

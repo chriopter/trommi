@@ -213,14 +213,14 @@ function cardLink(card, model) {
   if (h.heard == null) return state ? linkNote(state, { receipt: `Your answer waits for ${n}.` }) : ''   // a connector without receipts
   const receipt = h.heard ? `${n} has your answer.` : h.late ? `${n} has not picked up your answer, sent ${mins(h.waiting)} ago.` : `Your answer is on its way to ${n}.`
   if (state) return linkNote(state, { receipt })
-  return linkNote(h.late ? { state: 'unheard', fix: { say: 'Look at its terminal: type anything to wake it, or reconnect it with', code: '/mcp → trommi → Reconnect' } } : null, { receipt, sign: h.heard ? 'tick' : 'letter', tone: h.heard ? 'heard' : h.late ? 'unheard' : 'sent' })
+  return linkNote(h.late ? { state: 'unheard', fix: agent?.client === 'codex' ? { say: 'Look at its terminal: type anything to start a turn, or start it again with', code: 'codex resume' } : { say: 'Look at its terminal: type anything to wake it, or reconnect it with', code: '/mcp → trommi → Reconnect' } } : null, { receipt, sign: h.heard ? 'tick' : 'letter', tone: h.heard ? 'heard' : h.late ? 'unheard' : 'sent' })
 }
 /** What the field to write in says: who reads it, and when, if the session does not hear at once. */
 function askWords(card, model, asker) {
   const link = linkOf(model.byAgent.get(card.agent))
   if (link?.state === 'cut') return `${asker || 'The agent'} cannot hear you right now. What you write waits for it…`
   if (link?.state === 'gone') return `${asker || 'The agent'} is gone. What you write waits for it…`
-  if (link?.state === 'asleep' || link?.state === 'oncall') return `Reaches ${asker || 'the agent'} on its next step…`
+  if (link?.state === 'asleep' || link?.state === 'oncall') return `Reaches ${asker || 'the agent'} on its next ${model.byAgent.get(card.agent)?.client === 'codex' ? 'turn' : 'step'}…`
   return asker ? `Ask ${asker} something, or say what is missing…` : 'Ask something, or say what is missing…'
 }
 /** The options' own paragraphs (a card written as sections), folded under the options. Only when one says more than its

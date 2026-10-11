@@ -37,8 +37,9 @@ the plugin's command `/trommi:connect` tells the agent to call it. The tool runs
 `trommi-connector connect` for this folder (an expired link is refused before a hub is asked, the Offer's MAC is
 checked, …) and answers with the six emoji and their words, which the agent shows in the chat. Once the human taps
 "They match" in the app, the same process goes online and announces its board tools (`notifications/tools/list_changed`);
-no restart. In Codex the human asks the agent to connect with the link. `trommi-connector connect '<link>'` in a
-terminal does the same for scripts.
+no restart. In Codex the human asks the agent to connect with the link; Codex never asks for the tool list
+again, so it is given every board tool beside `connect` from the start (a call before the join says how to
+connect). `trommi-connector connect '<link>'` in a terminal does the same for scripts.
 
 A folder's keys of an earlier format (a room folder whose name is no room id of this protocol, or whose key file is
 not one of it) are ignored with one log line. With keys of several rooms, the room the folder joined last decides
@@ -58,7 +59,31 @@ installs the plugin `trommi@trommi` for the user. The plugin (`plugin/`) holds n
 hooks and monitor name `${HOME}/.local/share/trommi/bin/trommi-connector`, so `trommi-connector update` needs no new
 plugin. `setup codex` registers the same program as Codex's MCP server `trommi` (with `TROMMI_CHANNEL_EVENTS=off`:
 Codex shows no channel events, board events wait for the `inbox` tool). Both can be run again and say what they
-changed.
+changed. A Codex that was running loads the server only when it is started again; setup, install.sh and the
+invite page say so.
+
+## Codex
+
+Codex (known by its `initialize`, `clientInfo.name` "codex-mcp-client", or by the program that started the
+connector; `src/host.rs`) differs from Claude Code in four ways, and the connector meets each:
+
+- It shows no channel events. Every tool call carries the thread's id in `_meta` (`threadId`); the connector keeps
+  it in the slot (`codex_thread`) and, when a board event comes, runs `codex queue --thread <id> --message
+  "[Trommi] … call the trommi inbox tool …"` (once until the agent reads the board; `TROMMI_CODEX_WAKE=off` turns
+  it off, `TROMMI_CODEX_BIN` names the program). That starts a turn in an idle session, or the next one after a
+  running turn; the agent reads the event with `inbox`. So a Codex session hears at once (its lease reports
+  `hears: true`), also after a restart (`codex resume`) or a swapped-in connector, before its first call.
+- It never asks for the tool list again: an unconnected session lists every tool with `connect`.
+- It asks for approval of an MCP call unless the tool says it is harmless: every tool carries `annotations`
+  (`readOnlyHint`, `destructiveHint`, `openWorldHint`); only `revoke_asset` and `share_asset` still ask.
+- Its words differ: the instructions take "# In Codex" from `prompt.md` (inbox at every turn, never run the
+  connector in a shell, restart Codex when the tools are missing), and every restart or update line says to quit
+  Codex and start it again instead of /mcp.
+
+`tests/connector/codex.rs` drives the connector as Codex 0.160 does (its `initialize`, `_meta`, no new tool
+list, a `codex` script that notes the queued wakes). `tests/connector/codex_real.rs` runs a real Codex (its app server,
+one session over many turns) against a local hub, opt-in: `cargo test -p trommi-tests --test connector_codex_real
+-- --ignored --nocapture` (`CODEX_MODEL`, `TROMMI_CODEX_RUNS`).
 
 ## What is where
 

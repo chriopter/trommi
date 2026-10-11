@@ -286,7 +286,8 @@ say "${B}Next${Z}"
 say "  Start claude in a project folder and paste the line from \"Invite an agent\" in the Trommi app:"
 say "    ${B}/trommi:connect '<link>'${Z}"
 say "  Claude Code asks once whether to use the trommi MCP server: choose \"Use this MCP server\"."
-[ -z "$codex" ] || say "  Codex: start it in a project folder and ask it to connect to Trommi with that link."
+[ -z "$codex" ] || say "  Codex: quit every running Codex and start it again (a running Codex does not load Trommi),"
+[ -z "$codex" ] || say "  in a project folder, and ask it to connect to Trommi with that link."
 }
 
 main "$@"

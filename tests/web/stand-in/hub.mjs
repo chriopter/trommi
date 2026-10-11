@@ -281,14 +281,17 @@ export async function startFakeHub(opts = {}) {
     if (!Number.isSafeInteger(h.seq) || h.seq < 1) throw refuse('bad-format', 'seq')
     if (h.seq !== chain.length + 1) throw refuse('gap', 'the chain misses envelopes before this one', { seq: chain.length })
     const item = { kind: 'envelope', envelope: text, received_at: now(), group: h.group, header: h }
-    const void_code = a.rule?.void ?? null
+    // 11.3: a file belongs to the group and object of the first envelope that names it; another group or object
+    // naming it is refused, and kept as a void record (as the real hub does)
+    const elsewhere = (h.file_ids ?? []).some(f => { const file = r.files.get(f); return file && !file.deleted && file.group && (file.group !== h.group || file.object !== (h.object?.object_id ?? null)) })
+    const void_code = a.rule?.void ?? (elsewhere ? 'forbidden' : null)
     if (void_code) item.void_code = void_code
     chain.push(item)
     r.chains.set(key, chain)
     r.envelopes.push(item)
     const change = record(r, item, h.group)
     joined(r, g, a.device)
-    for (const f of h.file_ids ?? []) { const file = r.files.get(f); if (file && !file.group) Object.assign(file, { group: h.group, object: h.object?.object_id ?? null }) }
+    if (!void_code) for (const f of h.file_ids ?? []) { const file = r.files.get(f); if (file && !file.group) Object.assign(file, { group: h.group, object: h.object?.object_id ?? null }) }
     if (void_code) throw refuse(void_code, 'refused, and kept as a void record', { voided: true })
     return { change }
   }

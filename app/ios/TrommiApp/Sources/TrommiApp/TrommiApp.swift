@@ -28,7 +28,7 @@ enum StartClock {
 
 @main
 struct TrommiApp: App {
-  @StateObject private var model = BoardModel()
+  @StateObject private var model = BoardModel.shared
   @Environment(\.scenePhase) private var scenePhase
   #if canImport(UIKit)
   @UIApplicationDelegateAdaptor(PushDelegate.self) private var push   // Push.swift
@@ -77,6 +77,8 @@ enum Route: Hashable {
 
 @MainActor
 final class BoardModel: ObservableObject {
+  /** The one model of the app: the App's, and the one an answer from the Live Activity reaches in the background. */
+  static let shared = BoardModel()
   /** The screens before the board, as the web app's sign-in (app/web/public/auth.mjs: welcome, scan, join, log in). */
   enum Phase: Equatable { case start, create, email, forgot, scan, asking, checkCode(String), pairFailed(String), board }
   /** The hub of app.trommi.com (app.mjs): accounts are made and logged in to there. A pairing link names its own hub. */
@@ -214,6 +216,10 @@ final class BoardModel: ObservableObject {
       _deskId = Published(initialValue: nil)
       startDemo(keep: false)
       openDemoScreen(screen)
+      #if canImport(ActivityKit) && os(iOS)
+      // TROMMI_LIVE=1: the Live Activity with the demo's cards (LiveActivities.startForDemo)
+      if env["TROMMI_LIVE"] == "1" { LiveActivities.startForDemo() }
+      #endif
       return
     }
     if let id = Store.rooms(base: Store.defaultBase()).first, let r = try? Room.open(roomId: id) {
@@ -263,6 +269,9 @@ final class BoardModel: ObservableObject {
       }
       // what the Notification Service Extension and the Live Activity may know (NotifyBridge.swift); a link that waited
       NotifyBridge.shared.boardChanged(self)
+      #if canImport(ActivityKit) && os(iOS)
+      LiveActivities.cardsChanged()
+      #endif
       openPendingLink()
       let t0 = DispatchTime.now().uptimeNanoseconds
       version &+= 1

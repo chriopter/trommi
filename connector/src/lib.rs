@@ -9,6 +9,7 @@ pub mod client;
 pub mod door;
 pub mod error;
 pub mod hooks;
+pub mod host;
 pub mod html;
 pub mod hub;
 pub mod join;

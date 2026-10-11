@@ -918,11 +918,22 @@ impl Human {
     pub async fn sync(&mut self) {
         loop {
             let cursor = self.v(|v| v.device.cursor()).await;
-            let answer = self
-                .hub
-                .get(&format!("/v1/changes?after={cursor}&limit=500"))
-                .await
-                .expect("changes");
+            // a hub that restarts (a deploy) answers 502 for a moment: asked again, for up to a minute
+            let mut tries = 0;
+            let answer = loop {
+                match self
+                    .hub
+                    .get(&format!("/v1/changes?after={cursor}&limit=500"))
+                    .await
+                {
+                    Ok(answer) => break answer,
+                    Err(fault) if tries < 30 && fault.status.is_none_or(|s| s >= 500) => {
+                        tries += 1;
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                    Err(fault) => panic!("changes: {fault:?}"),
+                }
+            };
             let items = answer["items"].as_array().cloned().unwrap_or_default();
             for item in &items {
                 let change = item["change"].as_u64().unwrap_or(0);

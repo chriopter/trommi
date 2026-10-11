@@ -18,7 +18,22 @@ pub const SHARE_MAX_DAYS: u64 = 180;
 const SHARE_MAX_HOURS: f64 = (SHARE_MAX_DAYS * 24) as f64;
 pub const URGENCIES: [&str; 4] = ["low", "normal", "high", "critical"];
 pub const STATUSES: [&str; 3] = ["decision", "working", "done"];
-pub const NEEDS_UPDATE: &str = "Tell the human that the Trommi connector needs an update to show it (Claude Code: update the trommi plugin, or run the connect script again, then /mcp → trommi → Reconnect). Do not guess what it said.";
+/// How the human's choice on a card reaches the agent.
+fn choice_arrives() -> &'static str {
+    if crate::host::is_codex() {
+        "the choice arrives as a board event: inbox shows it (a queued \"[Trommi] …\" message starts your next turn for it); do not wait for it"
+    } else {
+        "the choice will arrive as a channel event"
+    }
+}
+
+/// What the agent tells the human when the connector is too old to read what came.
+pub fn needs_update() -> String {
+    format!(
+        "Tell the human that the Trommi connector needs an update to show it ({}). Do not guess what it said.",
+        crate::host::update_line()
+    )
+}
 pub const SESSION_ENDED: &str = "Closed with its session.";
 pub const SHORT_MAX: usize = 18;
 pub const TEASER_MAX: usize = 160;
@@ -1396,8 +1411,9 @@ impl Bridge {
                 let id = self.client.send_card(fields, sid).await?;
                 self.caught_up().await?;
                 Ok(format!(
-                    "card {id} created, {}; the choice will arrive as a channel event{}",
+                    "card {id} created, {}; {}{}",
                     self.place_of(&id).await,
+                    choice_arrives(),
                     stripped_hint()
                 ))
             }
@@ -1469,7 +1485,7 @@ impl Bridge {
                 );
                 let old_ids: Vec<String> = old.iter().map(|c| c.object_id.clone()).collect();
                 let id = self.client.merge(&old_ids, fields, sid).await?;
-                Ok(format!("card {id} created, replacing {}; answers to the replaced cards will no longer arrive, the choice on this one will arrive as a channel event{}", old_ids.join(", "), stripped_hint()))
+                Ok(format!("card {id} created, replacing {}; answers to the replaced cards will no longer arrive, {}{}", old_ids.join(", "), choice_arrives(), stripped_hint()))
             }
             "set_urgency" => {
                 let card = self.find_card(args.get("card_id")).await?;
@@ -2462,7 +2478,7 @@ impl Bridge {
                 m.insert("card_id".into(), json!(card.object_id));
             }
             m.insert("update_required".into(), json!("1"));
-            send(format!("The human sent something on {} that this Trommi connector is too old to read ({what}). {NEEDS_UPDATE}", if card.is_some() { format!("\"{title}\"") } else { "the board".into() }), m)
+            send(format!("The human sent something on {} that this Trommi connector is too old to read ({what}). {}", if card.is_some() { format!("\"{title}\"") } else { "the board".into() }, needs_update()), m)
         };
         match cmd.command.as_str() {
             "unsupported" => unsupported(cmd.what.as_deref().unwrap_or("a newer format")).await,

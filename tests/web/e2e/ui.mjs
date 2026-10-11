@@ -67,7 +67,10 @@ export async function openSettings(page) {
 /** Settings → one of its rows (sessions, devices, account, theme, keys, proof). */
 export async function openSettingsPage(page, row) {
   await openSettings(page)
-  await page.click(`#settings-${row}`)
+  // (a live update may draw the list anew right then, the row a moment without a box: pressed again)
+  for (let i = 0; ; i++) {
+    try { await page.click(`#settings-${row}`); break } catch (err) { if (i === 4) throw err; await sleep(300) }
+  }
   await page.until(`location.pathname === '/settings/${row}'`, `Settings · ${row}`)
 }
 /** Settings → Account → one of its ways in (password, passkeys, kit, email): its own page. */

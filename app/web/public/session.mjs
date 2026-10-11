@@ -404,7 +404,7 @@ function composeWords(s) {
   const link = linkOf(s.agent)
   if (link?.state === 'cut') return 'It cannot hear you right now. What you write waits for it'
   if (link?.state === 'gone') return 'It is gone. What you write waits for it'
-  if (link?.state === 'asleep' || link?.state === 'oncall') return 'Reaches the agent on its next step'
+  if (link?.state === 'asleep' || link?.state === 'oncall') return s.agent?.client === 'codex' ? 'Reaches the agent on its next turn' : 'Reaches the agent on its next step'
   return 'Message to the agent'
 }
 /** Above the field: why the session does not hear (cut off, gone, not listening) and the step in its terminal, or that
@@ -415,7 +415,7 @@ function sessionLink(s) {
   const waits = mine && a.heard_up_to != null && mine.seq > a.heard_up_to && Date.now() - (mine.ts ?? 0) >= UNHEARD_MS
   const receipt = waits ? `${a.name} has not picked up your last message.` : ''
   if (link && ['cut', 'gone', 'asleep'].includes(link.state)) return linkNote(link, { receipt, id })
-  if (waits) return linkNote({ state: 'unheard', fix: { say: 'Look at its terminal: type anything to wake it, or reconnect it with', code: '/mcp → trommi → Reconnect' } }, { receipt, sign: 'letter', tone: 'unheard', id })
+  if (waits) return linkNote({ state: 'unheard', fix: a.client === 'codex' ? { say: 'Look at its terminal: type anything to start a turn, or start it again with', code: 'codex resume' } : { say: 'Look at its terminal: type anything to wake it, or reconnect it with', code: '/mcp → trommi → Reconnect' } }, { receipt, sign: 'letter', tone: 'unheard', id })
   return html`<aside class="link-note" id="${id}" hidden></aside>`
 }
 /** The composer: a plain form. The island "composer" adds Enter to send, the field that grows, the list of chosen files. */
@@ -729,7 +729,11 @@ export function register(t) {
         // in older than all that stood there is an earlier page ("Earlier" shows it).
         // (a log that stood empty, its first page still on the way from the hub: drawn whole once it is there)
         if (!a.items.length && b.items.length) return String(t.stream('refresh'))
-        const first = a.items[0]?.seq ?? Infinity
+        // (where the log began: its oldest item the hub numbered. One still on its way has no number yet (seq stands
+        //  at the end): a log of only such items began nowhere, and the hub's own copy of one, numbered now, is new
+        //  there, not an earlier page; counted as earlier it was taken out and never put in, and the first message
+        //  of an empty chat showed for a moment and was gone until a reload)
+        const first = a.items.find(i => i.seq < Number.MAX_SAFE_INTEGER - 1)?.seq ?? (a.s.more ? Infinity : -Infinity)
         const fresh = b.items.filter(i => !a.byId.has(i.id) && i.seq >= first)
         // (More new ones than a window holds: the latest window again, rather than a log that grows without end.)
         if (fresh.length > PAGE) return String(t.stream('refresh'))

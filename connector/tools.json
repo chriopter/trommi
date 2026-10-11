@@ -5,6 +5,11 @@
         "anthropic/alwaysLoad": true
       },
       "name": "reply",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -110,6 +115,11 @@
         "anthropic/alwaysLoad": true
       },
       "name": "create_decision",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -332,6 +342,11 @@
         "anthropic/alwaysLoad": true
       },
       "name": "create_info",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -468,6 +483,11 @@
     },
     {
       "name": "revise_card",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -690,6 +710,11 @@
     },
     {
       "name": "merge_cards",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -918,6 +943,11 @@
     },
     {
       "name": "set_urgency",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -946,6 +976,11 @@
     },
     {
       "name": "withdraw_card",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -967,6 +1002,11 @@
         "anthropic/alwaysLoad": true
       },
       "name": "close_card",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -988,6 +1028,11 @@
         "anthropic/alwaysLoad": true
       },
       "name": "set_status",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1029,6 +1074,11 @@
     },
     {
       "name": "clear_status",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1044,6 +1094,11 @@
     },
     {
       "name": "introduce",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1079,6 +1134,10 @@
     },
     {
       "name": "list_cards",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1091,6 +1150,11 @@
     },
     {
       "name": "publish_asset",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1130,6 +1194,10 @@
     },
     {
       "name": "list_assets",
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -1137,6 +1205,11 @@
     },
     {
       "name": "revoke_asset",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1155,6 +1228,11 @@
         "anthropic/alwaysLoad": true
       },
       "name": "open_session",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1185,6 +1263,11 @@
         "anthropic/alwaysLoad": true
       },
       "name": "close_session",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1204,6 +1287,11 @@
     },
     {
       "name": "share_asset",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1228,6 +1316,11 @@
   ],
   "reload": {
     "name": "reload_connector",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    },
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -1236,6 +1329,10 @@
   },
   "inbox": {
     "name": "inbox",
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    },
     "_meta": {
       "anthropic/alwaysLoad": true
     },
@@ -1247,6 +1344,11 @@
   },
   "connect": {
     "name": "connect",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    },
     "inputSchema": {
       "type": "object",
       "properties": {

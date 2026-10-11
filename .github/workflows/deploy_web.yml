@@ -195,10 +195,24 @@ jobs:
           # a site that names no commit (never delivered to, or not this app): delivering
           printf '%s' "$served" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "the site names no commit (HTTP $(printf '%s\n' "$page" | tail -n 1)): delivering"; exit 0; }
           # how the served commit lies to this one: ahead = it comes after this one
+          missing=
           for try in 1 2 3; do
-            full=$(gh api "repos/$GITHUB_REPOSITORY/commits/$served" --jq .sha 2>/dev/null) && status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$COMMIT...$full" --jq .status 2>/dev/null) && break
+            if full=$(gh api "repos/$GITHUB_REPOSITORY/commits/$served" --jq .sha 2>"$RUNNER_TEMP/commit.err"); then
+              status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$COMMIT...$full" --jq .status 2>/dev/null) && break
+            elif grep -Eq 'HTTP (404|422)' "$RUNNER_TEMP/commit.err"; then
+              # GitHub does not know the served commit (history rewritten, e.g. re-signed): it cannot be newer
+              missing=1; break
+            fi
             status= ; sleep 5
           done
+          if [ -n "$missing" ]; then
+            if [ "$GITHUB_REF" = refs/heads/main ]; then
+              echo "::notice::app.trommi.com serves $served, a commit this repository does not know: unknown, delivering"
+              exit 0
+            fi
+            echo "::error::app.trommi.com serves $served, a commit this repository does not know; only main delivers then. Nothing was delivered."
+            exit 1
+          fi
           echo "app.trommi.com serves $served, which is ${status:-unknown} compared with $COMMIT"
           [ -n "$status" ] || { echo "::error::how $served lies to $COMMIT could not be found out, nothing was delivered. Deliver by hand (deploy_web, run_id $GITHUB_RUN_ID)."; exit 1; }
           if [ "$status" = ahead ]; then

@@ -721,7 +721,11 @@ impl Client {
                 // What answers is no hub of this protocol: said so, and not asked again by this client.
                 return Err(Fault::new(
                     "hub-unusable",
-                    format!("the hub does not answer as a Trommi hub of this version ({}). Update the trommi plugin, then /mcp → trommi → Reconnect", fault.code),
+                    format!(
+                        "the hub does not answer as a Trommi hub of this version ({}): {}",
+                        fault.code,
+                        crate::host::update_line()
+                    ),
                 ));
             }
             if !is_transient(fault) {
@@ -1134,7 +1138,7 @@ impl Client {
                         let _ = self.stop_signal.send(true);
                         self.emit(ClientEvent::Error(Fault::new(
                             "hub-unusable",
-                            format!("the hub does not answer as a Trommi hub of this version ({}); the connector stopped asking. Update the trommi plugin, then /mcp → trommi → Reconnect", fault.code),
+                            format!("the hub does not answer as a Trommi hub of this version ({}); the connector stopped asking: {}", fault.code, crate::host::update_line()),
                         )));
                         return;
                     }

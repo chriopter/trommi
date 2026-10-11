@@ -49,10 +49,16 @@ pub fn terminal_mirrored() -> bool {
 /// The server's instructions; `<connector>` stands for the connector's path. `<mirror>` is filled in here: how the
 /// agent's words reach the human, with the terminal mirror or without it.
 pub fn instructions() -> String {
-    let how = if terminal_mirrored() {
+    // (the terminal mirror is the Claude Code plugin's: Codex never has it)
+    let how = if terminal_mirrored() && !crate::host::is_codex() {
         "# With the terminal mirror"
     } else {
         "# Without the terminal mirror"
+    };
+    let host = if crate::host::is_codex() {
+        "# In Codex"
+    } else {
+        "# In Claude Code"
     };
     prompt()
         .get("# Instructions")
@@ -61,6 +67,11 @@ pub fn instructions() -> String {
         .replacen(
             "<mirror>",
             prompt().get(how).map(String::as_str).unwrap_or(""),
+            1,
+        )
+        .replacen(
+            "<host>",
+            prompt().get(host).map(String::as_str).unwrap_or(""),
             1,
         )
 }
@@ -168,6 +179,17 @@ pub fn tools_list_json(inbox: bool) -> String {
         tools.push(raw_tool(doc.inbox));
     }
     format!("{{\"tools\":[{}]}}", tools.join(","))
+}
+
+/// The same with the connect tool in front: for a client that never asks for the list again (Codex), in a
+/// session whose folder is in no room yet.
+pub fn tools_list_json_with_connect(inbox: bool) -> String {
+    let Ok(doc) = serde_json::from_str::<RawTools>(TOOLS_JSON) else {
+        return "{\"tools\":[]}".into();
+    };
+    let all = tools_list_json(inbox);
+    let rest = all.strip_prefix("{\"tools\":[").unwrap_or("]}");
+    format!("{{\"tools\":[{},{rest}", raw_tool(doc.connect))
 }
 
 /// The answer to `tools/list` of a session whose folder is in no room yet: the connect tool alone.
