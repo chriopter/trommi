@@ -303,6 +303,30 @@ final class RoomTests: XCTestCase {
     room.close()
   }
 
+  /** The agent files an open question card in its session. */
+  func agentAsks(_ room: Room, seq: Int, card: String, _ title: String) {
+    FakeHub.shared.envelope(["sender": agent, "group": hex(FakeDevice.sessionGroup(room.roomIdHex, session)), "seq": seq, "time": 1000 + seq, "kind": KIND.OBJECT_VERSION,
+                             "otype": OBJECT_TYPE.CARD, "ostate": CARD_STATE.OPEN, "oid": card, "files": [String]()],
+                            payload: ["object_type": "card", "object_version": 1, "card_type": "decision", "title": title, "options": [["key": "yes", "label": "Yes"]]])
+  }
+
+  func testACardPutOffThatHeAnswersOrHandsBackIsWoken() async throws {
+    let room = try await founded()
+    addSession(room)
+    let handed = String(repeating: "e1", count: 16), answered = String(repeating: "e2", count: 16), left = String(repeating: "e3", count: 16)
+    agentAsks(room, seq: 1, card: handed, "Hand me back?"); agentAsks(room, seq: 2, card: answered, "Answer me?"); agentAsks(room, seq: 3, card: left, "Leave me?")
+    _ = try await room.sync()
+    func asleep(_ id: String) -> Bool { guard let s = room.board.human.snoozes[id], s.object != nil else { return false }; return s["until"].isNull || clampedU64(s["until"].double) > nowMs() }
+    for id in [handed, answered, left] { try await room.snooze(cardId: id, until: nowMs() + 3_600_000) }
+    XCTAssertTrue(asleep(handed))
+    try await room.sendMessage(cardId: handed, text: "Say it plainly", fields: ["hand_back": true])
+    XCTAssertFalse(asleep(handed), "handed back: awake, so the reworked card comes back up")
+    try await room.answer(cardId: answered, choices: ["yes"])
+    XCTAssertFalse(asleep(answered), "answered: awake")
+    XCTAssertTrue(asleep(left), "a card he did not touch sleeps on")
+    room.close()
+  }
+
   func testTheCacheShowsTheBoardBeforeTheHubAnswers() async throws {
     var room = try await founded()
     addSession(room)

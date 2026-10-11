@@ -167,6 +167,15 @@ final class FakeDevice: CoreDevice {
       guard state.sessions[hex(session)] != nil else { throw TrommiError("no-key", "not in that session") }
       group = Self.sessionGroup(r, hex(session)); payload = p
       h["kind"] = KIND.TIMELINE_ITEM; h["tk"] = TIMELINE.CHAT; h["ts"] = TIMELINE_SCOPE.SESSION; h["tr"] = hex(session); h["recipient"] = state.sessions[hex(session)]![0]
+    case let .cardChat(session, card, p):
+      guard state.sessions[hex(session)] != nil else { throw TrommiError("no-key", "not in that session") }
+      group = Self.sessionGroup(r, hex(session)); payload = p
+      h["kind"] = KIND.TIMELINE_ITEM; h["tk"] = TIMELINE.CHAT; h["ts"] = TIMELINE_SCOPE.CARD; h["tr"] = hex(card); h["recipient"] = state.sessions[hex(session)]![0]
+    case let .answer(session, object, _, closes, p):
+      guard state.sessions[hex(session)] != nil else { throw TrommiError("no-key", "not in that session") }
+      group = Self.sessionGroup(r, hex(session)); payload = p
+      h["kind"] = KIND.ANSWER; h["oid"] = hex(object); h["otype"] = OBJECT_TYPE.CARD; h["ostate"] = closes ? CARD_STATE.CLOSED : CARD_STATE.ANSWERED
+      h["recipient"] = state.sessions[hex(session)]![0]
     case let .boardItem(board, p):
       payload = p; h["kind"] = KIND.TIMELINE_ITEM; h["tk"] = TIMELINE.CANVAS; h["ts"] = TIMELINE_SCOPE.DESK; h["tr"] = hex(board)
     case let .register(g, name, value):
