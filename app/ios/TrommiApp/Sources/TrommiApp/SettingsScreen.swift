@@ -9,6 +9,10 @@ import TrommiClient
 import CoreImage.CIFilterBuiltins
 #endif
 
+/** What every change of how the account opens says: the way in of now is asked for once more (the hub checks it). */
+private let confirmPassword = "To change how your account opens, enter your current password. Being logged in on this iPhone is not enough."
+private let confirmPasskey = "To change how your account opens, confirm with one of your passkeys. Being logged in on this iPhone is not enough."
+
 struct SettingsScreen: View {
   @EnvironmentObject var model: BoardModel
   let tab: String
@@ -433,6 +437,7 @@ struct AccountPage: View {
           } else {
             VStack(alignment: .leading, spacing: 10) {
               Text(st.hasRecovery ? "Make a New Kit" : "Make the Emergency Kit").font(Face.text(17, .medium))
+              Text(st.hasPassword ? confirmPassword : confirmPasskey).font(Face.text(14)).foregroundStyle(Ink.muted)
               if st.hasPassword {
                 HStack {
                   SecureField("Your Password", text: $kitPassword).textContentType(.password).font(Face.text(16)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
@@ -466,6 +471,7 @@ struct AccountPage: View {
         } else {
         SettingsGroup(header: "Password", footer: "If you lose your password and your Emergency Kit, nobody (not even Trommi) can recover your data.") {
           VStack(alignment: .leading, spacing: 8) {
+            Text(confirmPassword).font(Face.text(14)).foregroundStyle(Ink.muted)
             SecureField("Current Password", text: $current).textContentType(.password).font(Face.text(16)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
             HStack {
               SecureField("New Password (at least 12 characters)", text: $next).textContentType(.password).font(Face.text(16)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
@@ -505,7 +511,7 @@ struct AccountPage: View {
               run(passkey: true) { try await model.room?.addPasskey(password: p) { try await Passkeys.make($0) }; said = "Passkey added."; await load() }
             }
             Button("Cancel", role: .cancel) { passkeyPassword = "" }
-          }
+          } message: { Text(confirmPassword) }
         }
         }
       } else {

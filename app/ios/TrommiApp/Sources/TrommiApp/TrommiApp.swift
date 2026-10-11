@@ -540,7 +540,7 @@ final class BoardModel: ObservableObject {
   func wayIn(_ r: Room, password: String?) async throws -> WayIn {
     if let p = password { return .password(p) }
     guard let st = try await r.accountStatus() else { throw TrommiError("no-account", "this room has no account") }
-    return try await Passkeys.unlock(st.passkeys)
+    return try await Passkeys.unlock(st.passkeys, challenge: try await r.accountChallenge())
   }
   /** The text of the kit's QR code for this account (Account.swift `kitQRText`: hub and account id, never the words). */
   func kitQR(_ accountId: String) -> String? { kitQRText(hubURL: room?.record.hubURL ?? Self.hubURL, accountId: accountId) }
