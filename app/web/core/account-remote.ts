@@ -20,7 +20,7 @@ export { accountName, kitAddress, parseKitAddress } from './account-name.ts'
 type Args = Record<string, unknown> & { client?: string | null }
 type Opened = { client: RemoteClient }
 /** A step of account.ts that makes this device's room (worker-protocol.ts ACCOUNT_OPENS). */
-type Opens = 'createAccount' | 'createAccountWithPasskey' | 'loginWithPassword' | 'loginWithPasskey' | 'resetPassword' | 'recoverWithKit' | 'recoverWithCode'
+type Opens = 'createAccount' | 'createAccountWithPasskey' | 'loginWithPassword' | 'loginWithPasskey' | 'resetPassword' | 'recoverWithKit'
 
 /** A step that makes a room, in a new core worker. `onEvent`: what the worker says before it is done; what it
  *  returns (or throws) is the page's answer to that event. */
@@ -35,13 +35,6 @@ export const loginWithPassword = (args: Args) => opening<Opened>('loginWithPassw
 export const loginWithPasskey = (args: Args) => opening<Opened>('loginWithPasskey', args)
 export const recoverWithKit = (args: Args) => opening<Opened>('recoverWithKit', args)
 export const resetPassword = (args: Args) => opening<Opened & { kit: Kit }>('resetPassword', args)
-/** `on_recovery_code` cannot cross to the worker as a function: the worker says the new code as its event
- *  `recovery-code` before anything of the recovery is posted, waits until the page has taken it (remote.ts), and
- *  the code is shown here. A recovery without it is refused in the worker. */
-export function recoverWithCode({ on_recovery_code, ...args }: Args & { on_recovery_code: (code: string) => unknown }) {
-  return opening<Opened & { recovery_code: string }>('recoverWithCode', args, (event, data) => (event === 'recovery-code' ? on_recovery_code(String(data)) : undefined))
-}
-
 // The light parts of a passkey ceremony, on the page beside navigator.credentials (passkey.ts).
 export const passkeyChallenge = (args: { hub_url: string; client?: string | null }): Promise<{ challenge: string; account: string; user_handle: string }> => challengeFromHub(args)
 export const passkeyPrfInput = async (): Promise<Uint8Array<ArrayBuffer>> => PASSKEY_PRF_INPUT
@@ -49,7 +42,6 @@ export const passkeyPrfInput = async (): Promise<Uint8Array<ArrayBuffer>> => PAS
 /** A route of the signed-in device's account, in its worker (worker-protocol.ts ACCOUNT_CALLS). */
 const onClient = <T>(fn: string, client: RemoteClient, args?: unknown): Promise<T> => client.call('account', fn, args) as Promise<T>
 export const accountStatus = (client: RemoteClient) => onClient<AccountStatus | null>('accountStatus', client)
-export const addAccount = (client: RemoteClient, args: { email: string; password: string; recovery_code: string }) => onClient<{ kit: Kit }>('addAccount', client, args)
 export const makeEmergencyKit = (client: RemoteClient, args: Unlock) => onClient<Kit>('makeEmergencyKit', client, args)
 export const changePassword = (client: RemoteClient, args: { current: string; next: string }) => onClient<{ kit: Kit | null }>('changePassword', client, args)
 export const setPassword = (client: RemoteClient, args: { unlock: Unlock; next: string }) => onClient<{ kit: Kit | null }>('setPassword', client, args)

@@ -17,6 +17,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with its own page.
 - An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
 - The self-test screen is now called "Security Info".
+- Settings → Account no longer has the "Advanced" block with the old account address; the old recovery-code screen (/recover) is gone. Room, key epoch and hub are shown under Security Info.
 
 **Fixed**
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.

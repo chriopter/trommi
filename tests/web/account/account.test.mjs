@@ -325,8 +325,6 @@ test('forgot password (kit words + new password): the ONE request of 8.7 with a 
   await refused(opensWith(s, { passkey }), 'wrong-login')
   const st = await A.accountStatus(client)
   assert.deepEqual([st.has_password, st.passkeys], [true, []])
-  // the old code is no longer the room's
-  await refused(A.recoverWithCode({ ...s.device('thief'), room_id: hex(room), code: core.formatRecoveryCode(unhex(code)), on_recovery_code: () => {} }), 'wrong-recovery')
   // it is the recovery of 8.7: every other human device is out of the room
   assert.equal(s.fake.state.rooms.get(b64u(room)).devices.size, 1)
 })
@@ -443,60 +441,6 @@ test('the kit, then a new password instead (setPassword with the words): the sam
   await refused(opensWith(s, { password: PASSWORD }), 'wrong-login')
   await refused(opensWith(s, { passkey }), 'wrong-login')
   await refused(opensWith(s, { words: old_kit.words }), 'wrong-recovery')
-})
-
-test('the bare code, a room without an account: the new code is told before the recovery is posted, and comes back', { skip }, async t => {
-  const s = await scene(t)
-  // a room founded without an account (room.ts foundRoom alone), whose code the person holds
-  const { foundRoom } = await import('./room-fake.mjs')
-  const founded = await foundRoom({ ...s.device() })
-  const code = s.last('foundRoom').code, room_id = hex(founded.client.room_id)
-  secretBytes(unhex(code))
-  const typed = secretText(core.formatRecoveryCode(unhex(code)))
-  const posted = () => s.fake.requests.filter(x => /\/recovery\/[^/]+\/(commits|finish)$/.test(x.path)).length
-  const seen = []
-  const r = await A.recoverWithCode({ ...s.device('new'), room_id, code: typed.toLowerCase(), on_recovery_code: async shown => { await new Promise(done => setTimeout(done, 20)); seen.push([shown, posted()]) } })
-  secretText(r.recovery_code)
-  const call = s.last('joinWithCode')
-  assert.deepEqual(seen, [[r.recovery_code, 0]], 'shown, and waited for, before a part of the recovery was posted')
-  assert.deepEqual([call.room_id, call.code, call.recover, call.account, call.posted_before_copies], [room_id, code, true, null, 0])
-  assert.equal(hex(core.parseRecoveryCode(r.recovery_code)), call.new_code)
-  assert.deepEqual(Object.keys(r).sort(), ['client', 'recovery_code'])
-  assert.equal(s.fake.requests.find(x => /\/finish$/.test(x.path)).body.account, null)
-  assert.equal(await A.accountStatus(r.client), null)
-  // 8.7: the device that founded the room is out
-  assert.deepEqual([...s.fake.state.rooms.get(b64u(founded.client.room_id)).devices.keys()], [b64u(r.client.device)])
-  // the old code opens nothing now; the new one does
-  await refused(A.recoverWithCode({ ...s.device('again'), room_id, code: typed, on_recovery_code: () => {} }), 'wrong-recovery')
-  await A.recoverWithCode({ ...s.device('third'), room_id, code: r.recovery_code, on_recovery_code: () => {} }).then(x => secretText(x.recovery_code))
-})
-
-test('the bare code: the new code that cannot be shown is not made the way back; a text that is no code; another room\'s code', { skip }, async t => {
-  const s = await scene(t)
-  const { foundRoom } = await import('./room-fake.mjs')
-  const founded = await foundRoom({ ...s.device() })
-  const code = s.last('foundRoom').code, room_id = hex(founded.client.room_id), typed = secretText(core.formatRecoveryCode(unhex(code)))
-  secretBytes(unhex(code))
-  const before = s.fake.requests.length
-  await refused(A.recoverWithCode({ ...s.device('new'), room_id, code: 'TRMI-4K7Q-9XWD', on_recovery_code: () => {} }), 'bad-recovery-code')
-  await refused(A.recoverWithCode({ ...s.device('new'), room_id: room_id.slice(2), code: typed, on_recovery_code: () => {} }), 'bad-argument')
-  await refused(A.recoverWithCode({ ...s.device('new'), room_id, code: typed }), 'bad-argument')
-  assert.equal(s.fake.requests.length, before)
-  await refused(A.recoverWithCode({ ...s.device('new'), room_id, code: secretText(core.formatRecoveryCode(core.generateRecoveryCode())), on_recovery_code: () => {} }), 'wrong-recovery')
-  // the screen could not show it: no part of the recovery is posted, and the old code is still the room's
-  await refused(A.recoverWithCode({ ...s.device('new'), room_id, code: typed, on_recovery_code: () => { throw Object.assign(new Error('the page is gone'), { code: 'worker-failed' }) } }), 'worker-failed')
-  assert.equal(s.fake.requests.filter(x => /\/recovery\/[^/]+\/(commits|finish)$/.test(x.path)).length, 0)
-  await founded.client.checkRecoveryCode(unhex(code))
-})
-
-test('the bare code for a room that has an account is refused by the hub: such a room is recovered with its kit', { skip }, async t => {
-  const s = await scene(t)
-  const { code, room, kit } = await withPassword(s)
-  const shown = []
-  await refused(A.recoverWithCode({ ...s.device('new'), room_id: hex(room), code: core.formatRecoveryCode(unhex(code)), on_recovery_code: c => { shown.push(secretText(c)) } }), 'incomplete')
-  assert.equal(shown.length, 1)
-  assert.equal(await opensWith(s, { password: PASSWORD }), code)
-  assert.equal(await opensWith(s, { words: kit.words }), code)
 })
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -698,7 +642,7 @@ test('the code is not replaced over an account that changed meanwhile (a passwor
   assert.equal(await opensWith(s, { words: kit.words }), code)
 })
 
-test('a room without an account: the status is null, the ways in are no-account, and a login is added with the code', { skip }, async t => {
+test('a room without an account: the status is null, the ways in are no-account', { skip }, async t => {
   const s = await scene(t)
   const { foundRoom } = await import('./room-fake.mjs')
   const { client } = await foundRoom({ ...s.device() })
@@ -707,17 +651,6 @@ test('a room without an account: the status is null, the ways in are no-account,
   assert.equal(await A.accountStatus(client), null)
   await refused(A.checkUnlock(client, { password: PASSWORD }), 'no-account')
   await refused(A.makeEmergencyKit(client, { password: PASSWORD }), 'no-account')
-  await refused(A.addAccount(client, { email: s.email, password: PASSWORD, recovery_code: 'not a code' }), 'bad-recovery-code')
-  // a well-formed code that is not this room's would make an account whose copies open nothing here
-  await refused(A.addAccount(client, { email: s.email, password: PASSWORD, recovery_code: secretText(core.formatRecoveryCode(core.generateRecoveryCode())) }), 'bad-recovery-code')
-  assert.equal(s.posts('/v1/account').length, 0)
-  await refused(A.addAccount(client, { email: s.email, password: secretText('short'), recovery_code: core.formatRecoveryCode(unhex(code)) }), 'weak-password')
-  const { kit } = await A.addAccount(client, { email: ` ${s.email.toUpperCase()} `, password: PASSWORD, recovery_code: secretText(core.formatRecoveryCode(unhex(code))).toLowerCase() })
-  secretText(kit.words)
-  assert.equal(kit.email, s.email)
-  assert.equal(await opensWith(s, { password: PASSWORD }), code)
-  assert.equal(await opensWith(s, { words: kit.words }), code)
-  await refused(A.addAccount(client, { email: `b-${s.email}`, password: PASSWORD, recovery_code: core.formatRecoveryCode(unhex(code)) }), 'account-exists')
 })
 
 test('replace the recovery code from Settings (8.6): the way in given again keeps its copy, a new kit, the rest removed', { skip }, async t => {

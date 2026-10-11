@@ -16,22 +16,19 @@ export type ToWorker =
   | { t: 'account'; id: number; fn: string; args: Record<string, unknown>; storage: StorageName; client: string | null }
   /** Join with an invite link (room.ts joinRoom): 'join-code' when the check code is there, 'opened' once added. */
   | { t: 'join'; id: number; args: Record<string, unknown>; storage: StorageName; client: string | null }
-  /** The page took an event that asked for it (`ack` on the event): `ok` false when its handler failed. */
-  | { t: 'ack'; ack: number; ok: boolean }
   /** The page goes (pagehide): every live stream of the worker ends now. */
   | { t: 'pagehide' }
 
 /** What the worker sends. */
 export type FromWorker =
   | { t: 'ready' }
-  /** `value`: everything the step returned beside its client (a new account's Emergency Kit, a new recovery code). */
+  /** `value`: everything the step returned beside its client (a new account's Emergency Kit). */
   | { t: 'opened'; id: number; model: ModelSnapshot | null; error?: WireError; extra: Extra; value?: unknown }
   | { t: 'result'; id: number; ok: true; value: unknown }
   | { t: 'result'; id: number; ok: false; error: WireError }
   | { t: 'change'; patch: ModelPatch }
   | { t: 'snapshot'; model: ModelSnapshot; extra: Extra }
-  /** `ack`: the worker waits until the page answers with that number ('recovery-code': the new code is on screen). */
-  | { t: 'event'; event: 'alert' | 'error' | 'reset' | 'join-code' | 'recovery-code'; data: unknown; ack?: number }
+  | { t: 'event'; event: 'alert' | 'error' | 'reset' | 'join-code'; data: unknown }
 
 /** What travels beside the model: the client's counters and this tab's role (tabs.ts). */
 export interface Extra { stats?: Record<string, number> | null; tabRole?: string | null; [k: string]: unknown }
@@ -56,6 +53,6 @@ export const CALLS: readonly string[] = Object.freeze([
  *  the app's name for the hub. */
 export const HOST_CALLS: readonly string[] = Object.freeze(['account', 'pushKey', 'configure'])
 /** account.ts functions that make a room (run in the worker, which then holds it). */
-export const ACCOUNT_OPENS: readonly string[] = Object.freeze(['createAccount', 'createAccountWithPasskey', 'loginWithPassword', 'loginWithPasskey', 'resetPassword', 'recoverWithKit', 'recoverWithCode'])
+export const ACCOUNT_OPENS: readonly string[] = Object.freeze(['createAccount', 'createAccountWithPasskey', 'loginWithPassword', 'loginWithPasskey', 'resetPassword', 'recoverWithKit'])
 /** account.ts functions that take the signed-in client (run in the worker on its client). */
-export const ACCOUNT_CALLS: readonly string[] = Object.freeze(['accountStatus', 'addAccount', 'makeEmergencyKit', 'changePassword', 'setPassword', 'checkUnlock', 'setEmail', 'passkeyChallengeFor', 'addPasskey', 'removePasskey', 'replaceRecoveryCode'])
+export const ACCOUNT_CALLS: readonly string[] = Object.freeze(['accountStatus', 'makeEmergencyKit', 'changePassword', 'setPassword', 'checkUnlock', 'setEmail', 'passkeyChallengeFor', 'addPasskey', 'removePasskey', 'replaceRecoveryCode'])

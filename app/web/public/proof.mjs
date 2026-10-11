@@ -58,16 +58,21 @@ ${a.steps.length ? html`<section class="room-section" aria-labelledby="proof-ste
 ${facts('Versions', 'proof-versions-head', a.versions)}
 ${facts('This browser', 'proof-here-head', a.here)}`
 
-/** The page's main. alone: the screen without a room around it (no Settings to go back to). */
-const proofMain = ({ alone = false } = {}) => settingsPage(TITLE, html`<div class="proof" data-controller="proof">
+/** The page's main. alone: the screen without a room around it (no Settings to go back to). room: this device's
+ *  account as the room has it (its id's start, key epoch, hub), shown under the run; none on the demo. */
+const proofMain = ({ alone = false, room = null } = {}) => settingsPage(TITLE, html`<div class="proof" data-controller="proof">
 <p class="proof-line room-wait" id="proof-line" role="status" data-proof-target="line">${RUNNING}</p>
 <div data-proof-target="out"></div>
 <p class="proof-do"><button type="button" class="set-pill" id="proof-again" data-action="proof#run" data-proof-target="again" disabled>Run again</button><button type="button" class="set-pill" id="proof-copy" data-action="proof#copy" data-proof-target="copy" disabled>Copy result</button></p>
+${room?.room_id ? facts('This account', 'proof-room-head', [['Room', `${room.room_id.slice(0, 16)}…`], ['Key epoch', String(room.key_epoch)], ['Hub', room.hub_url]]) : ''}
 ${alone ? html`<p class="room-meta"><a href="/">Open Trommi</a></p>` : ''}
 </div>`, { lead: 'The encryption core tests itself on this device. Nothing is sent, nothing is stored.', back: !alone })
 
 export function register(t) {
-  t.get(/^\/settings\/proof$/, ({ req, res }) => t.page(req, res, { title: `${TITLE} · Settings · Trommi`, view: 'settings-proof', css: 'room', main: proofMain() }))
+  const client = t.hub.client
+  // (the room of this device: the demo has no hub, and shows none)
+  const room = () => (client?.hub ? { room_id: client.model.room.room_id, key_epoch: client.model.room.key_epoch, hub_url: client.model.room.hub_url } : null)
+  t.get(/^\/settings\/proof$/, ({ req, res }) => t.page(req, res, { title: `${TITLE} · Settings · Trommi`, view: 'settings-proof', css: 'room', main: proofMain({ room: room() }) }))
 }
 
 /** The screen on a device without a room (app.mjs boot): a page of its own, as the account screens are. */

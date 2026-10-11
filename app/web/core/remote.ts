@@ -160,11 +160,7 @@ function launch({ url, client, timeout_ms, early = null, worker: given, first, o
       if (remote) return remote.receive(m)
       if (m.t === 'ready') { up = true; clearTimeout(timer); return }
       if (m.t === 'event') {
-        // an event that asks for it is answered once the page's handler is through with it (or has failed)
-        const { ack } = m
-        const taken = (async () => onEvent?.(m.event, m.data))()
-        if (ack !== undefined) taken.then(() => worker.postMessage({ t: 'ack', ack, ok: true } satisfies ToWorker), () => worker.postMessage({ t: 'ack', ack, ok: false } satisfies ToWorker))
-        else taken.catch(() => {})
+        ;(async () => onEvent?.(m.event, m.data))().catch(() => {})
         return
       }
       if (m.t !== 'opened' || settled) return
@@ -196,10 +192,9 @@ export async function openRemote({ url, storage = { name: 'trommi' }, client = n
 
 const STORAGE: StorageName = { name: 'trommi' }
 
-/** An account screen's step that makes a room (account.ts createAccount, loginWithPassword, recoverWithCode, …), run
+/** An account screen's step that makes a room (account.ts createAccount, loginWithPassword, recoverWithKit, …), run
  *  in a new core worker that then holds the room: { client: RemoteClient } and everything else the step returned (a
- *  new account's kit, a new recovery code). args: the function's own, without storage. `onEvent`: what the worker
- *  says meanwhile; for an event the worker waits on ('recovery-code'), its returning is the page's "taken". */
+ *  new account's kit). args: the function's own, without storage. `onEvent`: what the worker says meanwhile. */
 export async function accountInWorker(fn: string, args: Record<string, unknown>, { url = CORE_WORKER_URL, client = null, timeout_ms = 20_000, onEvent }: { url?: string; client?: string | null; timeout_ms?: number; onEvent?: (event: string, data: unknown) => unknown } = {}): Promise<{ client: RemoteClient } & Record<string, unknown>> {
   const { storage: _storage, client: _client, ...rest } = args
   const { remote, value } = await launch({ url, client, timeout_ms, first: { t: 'account', id: 0, fn, args: rest, storage: STORAGE, client }, onEvent })

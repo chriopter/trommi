@@ -66,7 +66,6 @@ openRoom(o & { hub_url? }): Promise<Client | null>                 // null: noth
 openRoomOver(o & { hub_url? }, store): Promise<Client | null>      // over a store whose lock the caller holds (tabs.ts)
 joinRoom(o & { link, poll_ms?, timeout_ms? }): { check_code: Promise<string>, client: Promise<Client>, cancel() }
 joinWithCode(o & { hub_url, room_id /* hex */, code: Uint8Array, recover?, account?: (new_code) => body | null }): Promise<{ client }>
-roomLink(hub_url, room_id, app?) / parseRoomLink(text)             // '<app>#r1.<hub>.<room>': an address, no secret
 ```
 
 - `foundRoom`: `account(room_id)` is called before the founding is posted (the account's sealed copies bind the room
@@ -236,11 +235,9 @@ await client.leaveRoom()                                  // → { key_epoch, hu
 `account.ts` (in the worker) and `account-remote.ts` (what the page calls): e-mail and password, passkeys, the
 Emergency Kit, each a sealed copy of the room's recovery code (spec/v1.md 8.8), made and opened by the core. The
 steps that make a room (`createAccount`, `createAccountWithPasskey`, `loginWithPassword`, `loginWithPasskey`,
-`recoverWithKit`, `resetPassword`, `recoverWithCode`) run in a new worker that then holds the room; the others
-(`accountStatus`, `addAccount`, `makeEmergencyKit`, `changePassword`, `setPassword`, `checkUnlock`,
-`passkeyChallengeFor`, `addPasskey`, `removePasskey`, `replaceRecoveryCode`) run on the signed-in client. A new
-recovery code is said to the page as the event `recovery-code`, and the worker goes on only when the page has
-taken it. Their headers are the contract.
+`recoverWithKit`, `resetPassword`) run in a new worker that then holds the room; the others
+(`accountStatus`, `makeEmergencyKit`, `changePassword`, `setPassword`, `checkUnlock`,
+`passkeyChallengeFor`, `addPasskey`, `removePasskey`, `replaceRecoveryCode`) run on the signed-in client. Their headers are the contract.
 
 ## Storage and tabs
 
