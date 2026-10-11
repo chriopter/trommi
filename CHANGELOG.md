@@ -23,6 +23,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
+- The reverse card's middle is now an oval drawn by the pen, a little uneven and tilted (web and iPhone).
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
   instead of a stack of red ones.
 - Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out

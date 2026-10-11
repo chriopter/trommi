@@ -564,14 +564,14 @@ private struct SideWayBody<L: View>: View {
             case .duck: shape.fill(Ink.duckPale)
             case .what: shape.fill(Color(hex: 0x7a5bc7))
             case .reverse:
-              // four flat fields round a point a little off the middle, the card's ink ground in the middle
+              // four flat fields round a point a little off the middle, the card's ink oval in the middle, drawn by the pen
               AngularGradient(stops: [.init(color: Color(hex: 0xd9483b), location: 0), .init(color: Color(hex: 0xd9483b), location: 0.25),
                                       .init(color: Color(hex: 0xf3c52f), location: 0.25), .init(color: Color(hex: 0xf3c52f), location: 0.5),
                                       .init(color: Color(hex: 0x3f9f58), location: 0.5), .init(color: Color(hex: 0x3f9f58), location: 0.75),
                                       .init(color: Color(hex: 0x2f70c4), location: 0.75), .init(color: Color(hex: 0x2f70c4), location: 1)],
                               center: UnitPoint(x: 0.53, y: 0.47), angle: .degrees(-83))
                 .clipShape(shape)
-              Ellipse().fill(Self.unoInk).frame(width: 50, height: 54)
+              UnoOval().frame(width: 56, height: 60)
             }
           }
         }
@@ -581,5 +581,35 @@ private struct SideWayBody<L: View>: View {
       .scaleEffect(on ? 0.97 : 1)
       .animation(.easeOut(duration: 0.12), value: on)
       .sensoryFeedback(.impact(weight: .light), trigger: on) { _, now in now }
+  }
+}
+
+/** The UNO card's middle as the pen draws it (card.css --uno-oval): a filled oval, a little uneven and tilted, with a
+ *  stroke over its top, in the card's ink. Drawn in a 60 x 60 box. */
+struct UnoOval: View {
+  private static let ink = Color(hex: 0x14161a)
+  var body: some View {
+    ZStack {
+      PenOvalShape().fill(Self.ink)
+      PenOvalTick().stroke(Self.ink, style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+    }
+    .rotationEffect(.degrees(-9))
+  }
+}
+private struct PenOvalShape: Shape {
+  func path(in r: CGRect) -> Path {
+    let p = { (x: CGFloat, y: CGFloat) in CGPoint(x: r.minX + x * r.width / 60, y: r.minY + y * r.height / 60) }
+    var a = Path()
+    a.move(to: p(33.4, 2.8)); a.addQuadCurve(to: p(53.8, 19.6), control: p(49.6, 6.4)); a.addQuadCurve(to: p(52.6, 36.4), control: p(55.4, 28.2))
+    a.addQuadCurve(to: p(31.4, 57.4), control: p(47.8, 52.8)); a.addQuadCurve(to: p(8.2, 45.6), control: p(15.2, 58.2)); a.addQuadCurve(to: p(6.8, 20.2), control: p(2.4, 33.2))
+    a.addQuadCurve(to: p(24.4, 4.2), control: p(11.6, 7.2)); a.addQuadCurve(to: p(33.4, 2.8), control: p(29.2, 2.6)); a.closeSubpath()
+    return a
+  }
+}
+private struct PenOvalTick: Shape {
+  func path(in r: CGRect) -> Path {
+    let p = { (x: CGFloat, y: CGFloat) in CGPoint(x: r.minX + x * r.width / 60, y: r.minY + y * r.height / 60) }
+    var a = Path(); a.move(to: p(23.6, 5.4)); a.addQuadCurve(to: p(44.2, 6.8), control: p(34.8, 1.2))
+    return a
   }
 }
