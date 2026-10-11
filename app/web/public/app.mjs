@@ -710,7 +710,8 @@ export class BoardState {
 
   boardCard(c, number) {
     const m = this.model, a = c.answer, h = m.human
-    const status = c.object_state === 'open' ? 'open'
+    // (settled on another device while this one was away, and not taken yet: on no list until the catch-up has it)
+    const status = c.catching_up ? 'catching' : c.object_state === 'open' ? 'open'
       : c.closed_how === 'shredded' ? 'shredded'
         : c.closed_how === 'answered' && c.object_state === 'answered' ? 'decided' : 'done'
     const snooze = h.snoozes.get(c.object_id)
@@ -2148,7 +2149,10 @@ async function start(client, { fresh = false } = {}) {
     if (change.room) newerNotice()
     if (!pending) pending = merge({ cards: new Set(), sessions: new Set(), permissions: new Set(), notes: new Set(), published: new Set(), timelines: new Set(), registers: new Set(), invites: new Set() }, change)
     else merge(pending, change)
-    if (catchingUp()) { if (!wasCatchingUp) { wasCatchingUp = true; conn() } catchUpTimer ||= setTimeout(renderWhole, CATCH_UP_MS); return }
+    // (questions settled elsewhere while this device was away leave the Desk at once, not with the next whole render)
+    const settledAway = [...(change.cards ?? [])].some(id => client.model.cards.get(id)?.catching_up)
+    if (catchingUp() && !settledAway) { if (!wasCatchingUp) { wasCatchingUp = true; conn() } catchUpTimer ||= setTimeout(renderWhole, CATCH_UP_MS); return }
+    if (catchingUp()) { wasCatchingUp = true; clearTimeout(catchUpTimer); catchUpTimer = 0; renderWhole(); return }
     if (wasCatchingUp) { wasCatchingUp = false; clearTimeout(catchUpTimer); renderWhole(); return }
     frame ||= requestAnimationFrame(() => apply())
   })

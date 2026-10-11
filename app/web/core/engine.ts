@@ -46,7 +46,7 @@
 // - An envelope that arrived before this device joined its group, or before its key was handed over, is not taken
 //   in the hub's order. The engine then reads the room's changes once more from the start (`rescan`): what the
 //   chain could not take is taken, what it holds is read back (`receiveEnvelope(…, ordered = false)`).
-import { measuring, spent, timed, timedSync } from './spent.ts'
+import { mark, measuring, spent, timed, timedSync } from './spent.ts'
 import type {
   Core, Cut, Device, Draft, ErrorCode, Fed, FeedItem, FeedOutcome, GroupSummary, InviteStep, OutboxEntry, Processed, ReceivedEnvelope, ReceivedMessage, RoomRoles, Sealed, Store,
 } from './core-api.ts'
@@ -136,7 +136,7 @@ export interface EngineOptions {
 const DEAD: readonly string[] = ['gone', 'not-member', 'removed-sender', 'no-room']
 /** Refusals that mean "the group moved on under this Commit or message": process the log and build again. */
 const MOVED: readonly string[] = ['epoch-taken', 'room-behind', 'wrong-epoch', 'stale-session', 'group-behind']
-const PAGE = 500
+const PAGE = 1000
 /** How many items of a page the core is handed in one call (`feed`): one write of the store for all of them. */
 const FEED = 200
 const same = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
@@ -189,6 +189,9 @@ export class Engine {
   /** Per group, the log number up to which `handLog` handed the log to the device. */
   private readonly logRead = new Map<string, number>()
   private rescanDue = false
+  /** The changes whose envelope this engine told in the hub's order with its body: a rescan does not read them again.
+   *  (In memory: a rescan after a restart reads everything from its start, as before.) */
+  private readonly whole = new Set<number>()
   /** How often an envelope of the hub's order was repaired (a Welcome joined for it, its sender's chain fetched). */
   private repairs = 0
   /** The change after which the next rescan reads (0: everything). */
@@ -612,7 +615,12 @@ export class Engine {
     }
     if (received?.outcome === 'refused' && received.code === 'gap') { this.repairs++; received = await this.fillGap(item, received) }
     if (batched && this.repairs !== was) await this.wantRescan(item.change)
-    if (received) this.emit('envelope', { received, how: 'ordered' })
+    if (received) {
+      // (told whole: applied with its body; a repair after it in the same batch asks for a rescan from here on,
+      //  and what it judged without the repaired one is then not counted)
+      if (received.outcome !== 'refused' && received.payload && !(batched && this.repairs !== was)) { if (this.whole.size >= 1_000_000) this.whole.clear(); this.whole.add(item.change) }
+      this.emit('envelope', { received, how: 'ordered' })
+    }
   }
   /** One item. Returns whether the device's groups may have changed. Throws Halt when it does not process. */
   private async take(item: ChangeItem): Promise<boolean> {
@@ -631,7 +639,7 @@ export class Engine {
   }
   /** What follows from a log entry the device took: keys that open what was closed, this device's own removal. */
   private async processed(item: LogItem, done: Processed): Promise<void> {
-    if (done.message?.kind === 'keys' && done.message.keysTaken > 0) await this.wantRescan()
+    if (done.message?.kind === 'keys' && done.message.keysTaken > 0) { mark(`keys taken at ${item.change}`); await this.wantRescan() }
     // another Commit took the epoch of one of this device's: whoever waits for it builds it again
     if (done.superseded !== null) { this.awaiting.delete(done.superseded); this.settleEntry(done.superseded, 'epoch-taken') }
     // this device's own Commit, back from the hub: if its POST is still without an answer, it is the one in flight
@@ -666,7 +674,7 @@ export class Engine {
     this.mergedNow()
   }
   private async process(item: LogItem): Promise<Processed | null> {
-    try { return await this.call(d => d.processLogEntry(logEntry(item), this.now())) } catch (e) {
+    try { return await timed('log', () => this.call(d => d.processLogEntry(logEntry(item), this.now()))) } catch (e) {
       const code = this.core.errorCode(e)
       if (code === null || code === 'core-missing') throw e
       const finding = this.core.logFinding(code)
@@ -759,11 +767,17 @@ export class Engine {
   }
   private async pages(): Promise<void> {
     const was = this.connection, from = this.position
+    mark(`catch-up from ${from}`)
     this.setConnection('catching_up')
     try {
+      // The next page is asked for while the core takes this one: the hub's cursor after a page is where the next
+      // starts, whatever the core makes of it (a page that halts throws, and the one fetched ahead is dropped).
+      let next = timed('hub', () => this.hub.changes(this.position, PAGE))
       for (;;) {
-        const page = await timed('hub', () => this.hub.changes(this.position, PAGE))
+        const page = await next
+        if (page.more) { next = timed('hub', () => this.hub.changes(page.change, PAGE)); next.catch(() => {}) }
         spent.items += page.items.length
+        for (const item of page.items) if (item.kind !== 'envelope') spent.commits++
         await this.serial(() => this.ingest(page.items, page.change))
         if (!page.more) break
       }
@@ -776,6 +790,7 @@ export class Engine {
     } finally {
       this.setConnection(this.streamLive ? 'live' : was === 'catching_up' ? 'offline' : was === 'live' ? 'offline' : was)
     }
+    mark(`catch-up end at ${this.position}`)
     // a device without a stream hears of no Welcome: it looks after each catch-up that brought something
     if (!this.streamLive && this.position !== from) this.keepSoon(0)
     if (this.rescanDue) await this.rescan()
@@ -792,18 +807,28 @@ export class Engine {
     this.keepSoon(0)
   }
   /** Reads the room's envelopes once more from the start, up to the position (see the header). */
-  private async rescan(): Promise<void> {
+  private rescan(): Promise<void> {
+    mark(`rescan from ${this.rescanFrom} to ${this.position}`)
+    return timed('rescan', () => this.rescanNow()).finally(() => mark('rescan end'))
+  }
+  private async rescanNow(): Promise<void> {
     const asked = this.rescanAsked
     const upTo = this.position
     for (let after = this.rescanFrom; after < upTo;) {
       const page = await this.hub.changes(after, PAGE)
       await this.serial(async () => {
         // (what the chain could not take before is written now: in batches, like a page of a catch-up)
-        const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo)
+        // (an envelope this engine told whole in the hub's order is not read again: the chain holds it and the
+        //  model has it; a device that signed in with the code takes the room from its start in order, and its
+        //  rescan was otherwise one more call per envelope of the whole history)
+        const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo && !this.whole.has(item.change))
         const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null): Promise<void> => {
           let received = first
-          if (received?.outcome === 'refused' && received.code === 'replay') { received = await this.receive(item, false); if (received) received = await this.readBack(received) }
-          if (received && received.outcome !== 'refused') this.emit('envelope', { received, how: 'again' })
+          if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
+          if (received && received.outcome !== 'refused') {
+            if (received.payload) this.whole.add(item.change)
+            this.emit('envelope', { received, how: 'again' })
+          }
         }
         for (let at = 0; at < due.length;) {
           const batch = due.slice(at, at + FEED)
@@ -867,7 +892,8 @@ export class Engine {
 
   /** Joins every group the hub holds a Welcome of this device for; `committer`: who must have committed it (12.1.5),
    *  null where any device the group's rules allow may have. True when a group was joined. Inside a job. */
-  private async joinWelcomes(committer: Uint8Array | null): Promise<boolean> {
+  private joinWelcomes(committer: Uint8Array | null): Promise<boolean> { return timed('welcome', () => this.joinWelcomesNow(committer)) }
+  private async joinWelcomesNow(committer: Uint8Array | null): Promise<boolean> {
     if (!this.room_id) return false
     const room = this.room_id
     let rows
@@ -890,6 +916,7 @@ export class Engine {
           done = await this.call(join)
         }
         joined = true
+        spent.welcomes++
         // a Welcome taken later than its place in the hub's order: the group's entries since are handed again
         await this.handLog(row.group, this.position)
         if (done.offending.length) this.alert('bad-group', 'a session failed its first contact: its content stays closed until its wrong leaves are removed', row.group)
@@ -932,15 +959,16 @@ export class Engine {
     if (!this.stockAsked && !this.stocking && this.now() - this.timedAt < this.timing.upkeep_every) void this.stockKeyPackages().catch(() => {})
     await this.serial(async () => { await this.joinWelcomes(null); await this.tellFindings(); this.emit('batch', null) })
     if (this.is_human) await this.heal(await this.invited())
-    if (this.is_human) await this.askForKeys()
+    if (this.is_human) await timed('keys', () => this.askForKeys())
     if (this.now() - this.timedAt >= this.timing.upkeep_every) { this.timedAt = this.now(); await this.timed() }
-    if (this.learnDue) await this.learn()
+    if (this.learnDue) { mark('learn'); await timed('learn', () => this.learn()); mark('learn end') }
     if (this.rescanDue && !this.catching) await this.rescan()
   }
   /**
    * The past of the groups a device joined by link (`learnGroup`): each group's founding GroupInfo and its
    * Commits from the hub, the room group first, then main sessions, then helper sessions. After that the envelopes
-   * of the earlier epochs are handed over again (`rescan`); the keys to read them come by the handover. A group
+   * of the earlier epochs are handed over again (`rescan`, from the first Commit of the earliest group that had
+   * epochs before this device's own; none when no group had); the keys to read them come by the handover. A group
    * that is not learned now (the hub not reached) is tried again with the next upkeep.
    */
   private async learn(): Promise<void> {
@@ -950,7 +978,10 @@ export class Engine {
     const sessions = this.groups.filter(g => g.session && !g.archived).sort((x, y) => rank(x) - rank(y)).map(g => g.group)
     for (const group of [...(this.room_id ? [this.core.roomGroupId(this.room_id)] : []), ...sessions]) {
       try {
-        await this.learnGroup(group)
+        // Read again only from where a group with a past begins (asked at once, so that a run cut short keeps
+        // it): a session this device was welcomed to at its founding has none, and the room is not read again.
+        const past = await this.learnGroup(group)
+        if (past !== null) await this.wantRescan(past)
       } catch (e) {
         if (this.isLocal(e)) throw e
         if (e instanceof HubError && e.transient) open = true
@@ -959,17 +990,22 @@ export class Engine {
     if (open) { this.owing = true; return }
     this.learnDue = false
     await this.opts.meta.delete('learn').catch(() => {})
-    await this.wantRescan()
   }
   /** One group's past (core `learnStart`, `learnSlice`, `learnFinish`): its Commits are read from the hub's log while
    *  the core takes them in slices, up to the epoch this device's own knowledge begins at. The walk is the device's,
    *  in memory: one the hub broke off is given up, and the next upkeep starts again from the founding. */
-  private async learnGroup(group: Uint8Array): Promise<void> {
+  private async learnGroup(group: Uint8Array): Promise<number | null> {
     const founding = (await this.hub.groupInfo(group, 0)).group_info
     let progress = await this.serial(() => this.call(d => d.learnStart(group, founding)))
+    // Where what it holds of the group's past begins: nothing when there is no epoch before this device's own;
+    // the room's start for the room group (its epoch 0 has envelopes: the founder writes before any Commit); a
+    // session's founding otherwise, which is one request with its first Commit.
+    const room = group.length === 32
+    let from: number | null = room && progress.epoch < progress.upto ? 0 : null
     if (progress.epoch < progress.upto) {
       try {
         await inSlices(this.hub.groupCommits(group, progress.upto).next, c => c.commit.length, halving(async slice => {
+          if (from === null && slice.length) from = Math.max(0, slice[0]!.change - 1)
           progress = await this.serial(() => this.call(d => d.learnSlice(group, slice)))
           return progress.epoch >= progress.upto
         }, e => this.core.errorCode(e) === 'too-large'))
@@ -979,6 +1015,7 @@ export class Engine {
       }
     }
     await this.serial(() => this.call(d => d.learnFinish(group)))
+    return from
   }
   /** Closes the gaps any human device closes when it sees them: a stale session group gets its missing Remove
    *  (5.2.8), a live one that lacks a human device gets it added (5.2.7), one Commit and one KeyPackage each. */
