@@ -30,7 +30,9 @@ const PASSWORD = 'correct horse battery staple 42', OTHER = 'another-long-passwo
 
 async function startRealHub() {
   const data = await mkdtemp(join(process.env.TROMMI_HUB_TMP ?? tmpdir(), 'trommi-account-test-'))
-  const env = { HUB_HOST: '127.0.0.1', HUB_DATA: data, HUB_QUIET: '1', HUB_LOGIN_THROTTLE: 'off', HUB_MIN_CLIENT: CLIENT, HUB_ORIGINS: ORIGIN, PATH: process.env.PATH ?? '' }
+  const env = { HUB_HOST: '127.0.0.1', HUB_DATA: data, HUB_QUIET: '1', HUB_LOGIN_THROTTLE: 'off',
+    // (every login, and every change of a way in with its proof, counts against one address's 30 in ten minutes: this file makes more)
+    HUB_LIMIT_LOGINS_PER_IP_10MIN: '200', HUB_MIN_CLIENT: CLIENT, HUB_ORIGINS: ORIGIN, PATH: process.env.PATH ?? '' }
   const { child, url, stderr: errors, exited } = await spawnHub(BIN, env)
   for (let i = 0; ; i++) {
     if (await fetch(`${url}/healthz`).then(r => r.ok, () => false)) break
@@ -135,8 +137,10 @@ test('the account against the real hub', { skip }, async t => {
     await refused(A.addPasskey(client, { unlock: { password: OTHER }, passkey: softPasskey(ORIGIN).create(b64u((await outside().passkeyChallenge()).challenge)) }), 'bad-passkey')
     await refused(A.addPasskey(client, { unlock: { password: OTHER }, passkey: softPasskey('https://evil.example').create(await A.passkeyChallengeFor(client)) }), 'bad-passkey')
     // the passkey as the way in given again: a new kit with it
-    t.account.kit = await A.makeEmergencyKit(client, key.unlock())
-    await A.removePasskey(client, added.credential_id)
+    t.account.kit = await A.makeEmergencyKit(client, key.unlock(await A.passkeyChallengeFor(client)))
+    // a passkey goes with the way in of now proved: the token alone removes none (a wrong proof: tests/hub/account_proof.rs)
+    await refused(client.hub.request('DELETE', `/v1/account/passkeys/${added.credential_id}`), 'bad-format')
+    await A.removePasskey(client, { credential_id: added.credential_id, unlock: { words: t.account.kit.words } })
     await refused(A.loginWithPasskey({ ...device('e4'), assertion: key.get(b64u((await outside().passkeyChallenge()).challenge)) }), 'wrong-login')
     assert.deepEqual((await A.accountStatus(client)).passkeys, [])
   })
@@ -151,13 +155,13 @@ test('the account against the real hub', { skip }, async t => {
     await reaches(A.loginWithPasskey({ ...device('f2'), assertion: key.get(b64u((await outside().passkeyChallenge()).challenge), user_handle) }), code2)
     await refused(A.loginWithPasskey({ ...device('f3'), assertion: key.get(b64u((await outside().passkeyChallenge()).challenge), bytes(16)) }), 'wrong-login')
     await reaches(A.recoverWithKit({ ...device('f4'), account: mail2, words: made.kit.words }), code2)
-    const e = await refused(A.removePasskey(made.client, b64u(key.credential_id)), 'last-way-in')
+    const e = await refused(A.removePasskey(made.client, { credential_id: b64u(key.credential_id), unlock: key.unlock(await A.passkeyChallengeFor(made.client)) }), 'last-way-in')
     assert.equal(e.status, 409)
     await refused(A.checkUnlock(made.client, { password: PASSWORD }), 'no-password')
     // "Add a password" with the passkey; then the passkey may go
-    assert.deepEqual(await A.setPassword(made.client, { unlock: key.unlock(), next: PASSWORD }), { kit: null })
+    assert.deepEqual(await A.setPassword(made.client, { unlock: key.unlock(await A.passkeyChallengeFor(made.client)), next: PASSWORD }), { kit: null })
     await reaches(A.loginWithPassword({ ...device('f5'), account: mail2, password: PASSWORD }), code2)
-    await A.removePasskey(made.client, b64u(key.credential_id))
+    await A.removePasskey(made.client, { credential_id: b64u(key.credential_id), unlock: { password: PASSWORD } })
     // a passkey whose registration was made for another kind of challenge makes no account, and no room
     const stray = softPasskey(ORIGIN)
     await refused(A.createAccountWithPasskey({ ...device('f6'), email: email(), account: named.account, passkey: stray.create(b64u(bytes(32))) }), 'bad-passkey')

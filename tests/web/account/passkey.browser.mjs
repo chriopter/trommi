@@ -312,10 +312,53 @@ export const steps = [
     const shown = await page.js("return { words: [...document.querySelectorAll('.room-kit #kit-words li')].map(l => l.textContent.trim()).join(' '), account: document.querySelector('.room-kit #kit-account')?.textContent.trim() ?? null, text: document.querySelector('.room-kit')?.innerText ?? document.querySelector('#room')?.innerText.slice(0, 300) }")
     ctx.run.check(shown.words === ctx.bare.words && shown.account === ctx.bare.account && shown.text.includes(email) && /your email and these 12 words/.test(shown.text), 'the same words, the ID, the e-mail; the sheet says it opens with the e-mail', shown)
     const put = since().find(r => r.path === '/v1/account/email')
-    ctx.run.check(put?.status === 200 && Object.keys(put.body).sort().join() === 'email,kit,revision', 'one request: the e-mail with the kit made anew under it', put && [put.status, Object.keys(put.body)])
+    ctx.run.check(put?.status === 200 && Object.keys(put.body).sort().join() === 'email,kit,proof,revision' && Object.keys(put.body.proof).join() === 'kit', 'one request: the e-mail with the kit made anew under it, the words of before as its proof', put && [put.status, Object.keys(put.body)])
     const account = [...ctx.fake.state.accounts.values()].find(a => a.account === ctx.bare.account)
     ctx.run.check(account.email === email && account.kit_form === 'email', 'the hub holds the e-mail; the kit is under it', [account.email, account.kit_form])
     await pictures(ctx, page, 'settings-email-added')
+  }],
+
+  // (adding a passkey with the password: tests/web/account; this browser's one virtual authenticator holds the
+  //  account's passkey already and makes no second one for it)
+  ['A change of how the account opens asks for the way in once more: a password (with the passkey), the passkey removed (with the password)', async ctx => {
+    const page = await ctx.profile('new'), since = ctx.mark(), password = 'a long password for the proof'
+    const account = () => [...ctx.fake.state.accounts.values()].find(a => a.account === ctx.bare.account)
+    // (what the page said before is taken off first: the answer to this submission is the next line that comes)
+    const clear = () => page.js("document.querySelectorAll('.room-ok, .room-error').forEach(e => e.remove()); return true")
+    const submit = async selector => { await clear(); await page.click(selector) }
+    const said = async what => {
+      await page.until("document.querySelector('.room-ok, .room-error')?.textContent.trim()", what, 60000)
+      return { ok: await text(page, '.room-ok'), error: await text(page, '.room-error') }
+    }
+    await ui.openSettings(page)
+    await ui.openSettingsPage(page, 'account')
+    await page.until("document.querySelector('#pw-add')", 'the account page with "Add a password"')
+    // a password, confirmed with the passkey: its assertion on the account's challenge goes along as the proof
+    await page.click('#pw-add summary')
+    ctx.run.check(/Being logged in here is not enough/.test(await text(page, '#pw-add')), 'the form says why the passkey is asked for', await text(page, '#pw-add'))
+    await page.type('#pw-add-form input[name=password]', password)
+    await submit('#pw-add-form button[type=submit]')
+    let out = await said('the password added, or the page\'s error')
+    if (out.error) throw new Error(`adding the password stops here: "${out.error}"`)
+    const pw = since().find(r => r.path === '/v1/account/password' && r.method === 'PUT')
+    ctx.run.check(pw?.status === 200 && Object.keys(pw.body.proof ?? {}).join() === 'passkey' && Object.keys(pw.body.proof.passkey).sort().join() === 'authenticator_data,client_data_json,credential_id,signature', 'PUT /v1/account/password carries the passkey\'s assertion as its proof', pw && [pw.status, pw.body.proof && Object.keys(pw.body.proof)])
+    // the passkey removed (the password opens the account now): the remove form asks for the password too; a wrong one removes nothing
+    await page.until("document.querySelectorAll('#passkeys .room-passkey').length === 1", 'the passkey listed')
+    await page.click('#passkeys .room-passkey:first-child .room-remove summary')
+    ctx.run.check(await page.js("return !!document.querySelector('#passkeys .room-passkey:first-child .room-remove input[name=password]')"), 'removing a passkey asks for the password')
+    await pictures(ctx, page, 'settings-passkey-remove')
+    await page.type('#passkeys .room-passkey:first-child .room-remove input[name=password]', 'not the password at all')
+    await submit('#passkeys .room-passkey:first-child .room-remove button[type=submit]')
+    out = await said('the page\'s error for a wrong password')
+    ctx.run.check(!out.ok && out.error && account().passkeys.length === 1, 'a wrong password removes nothing and says so', out)
+    await page.until("document.querySelectorAll('#passkeys .room-passkey').length === 1", 'the passkey listed again')
+    await page.click('#passkeys .room-passkey:first-child .room-remove summary')
+    await page.type('#passkeys .room-passkey:first-child .room-remove input[name=password]', password)
+    await submit('#passkeys .room-passkey:first-child .room-remove button[type=submit]')
+    out = await said('the passkey removed, or the page\'s error')
+    if (out.error) throw new Error(`removing the passkey stops here: "${out.error}"`)
+    const removed = since().filter(r => /^\/v1\/account\/passkeys\/[^/]+$/.test(r.path) && r.method === 'DELETE')
+    ctx.run.check(removed.length === 1 && removed[0].status === 200 && Object.keys(removed[0].body?.proof ?? {}).join() === 'password' && account().passkeys.length === 0 && account().auth !== null, 'one DELETE reached the hub, with the password\'s proof; the password is the way in now', removed.map(r => [r.status, r.body && Object.keys(r.body)]))
     await ctx.close('new')
   }],
 

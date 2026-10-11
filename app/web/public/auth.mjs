@@ -136,13 +136,19 @@ async function passkeyMake({ challenge, user_handle, name, exclude = [] }) {
     return { credential_id: id, attestation_object: a.field('attestationObject'), client_data_json: a.field('clientDataJSON'), transports: a.transports(), prf }
   } catch (err) { passkeyForget(id); throw err }
 }
-/** A signed-in device opens the account with one of its passkeys (for a new kit, a password, another passkey): { credential_id, prf }. */
-async function passkeyUnlock(st) {
-  const got = await passkeyGet({ allow: (st?.passkeys ?? []).map(p => unb64u(p.credential_id)) })
+/** A signed-in device opens the account with one of its passkeys (for a new kit, a password, a passkey more or less),
+ *  on the hub's challenge for the account: its prf output opens the code here, its assertion proves the way in to
+ *  the hub in the request that makes the change (a token alone changes no way in). */
+async function passkeyUnlock(st, client) {
+  const challenge = await (await account()).passkeyChallengeFor(client)
+  const got = await passkeyGet({ challenge, allow: (st?.passkeys ?? []).map(p => unb64u(p.credential_id)) })
   if (!got.prf) throw pkError('no-prf', 'this passkey gives no key here')
-  return { credential_id: got.credential_id, prf: got.prf }
+  return { credential_id: got.credential_id, prf: got.prf, authenticator_data: got.authenticator_data, client_data_json: got.client_data_json, signature: got.signature }
 }
 const NO_PRF = 'The passkey was saved but cannot unlock Trommi. Delete it in your password manager and use a password.'
+// A change of how the account opens asks for the way in of now once more: being logged in on this device is not enough.
+const CONFIRM_PASSWORD = 'To change how your account opens, enter your current password. Being logged in here is not enough.'
+const CONFIRM_PASSKEY = 'To change how your account opens, confirm with one of your passkeys. Being logged in here is not enough.'
 /** Said once, quietly, where a browser has no WebAuthn at all: the password is the way then. */
 const NO_PASSKEYS = html`<p class="ob-alt ob-way ob-none" id="no-passkeys">No passkeys in this browser. A password works everywhere.</p>`
 const NO_PRF_HERE = 'This passkey can\'t unlock Trommi here. Use your password.'
@@ -423,7 +429,7 @@ ${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Security Info', det
       const link = client.hub && has(k, 'roomLink') && room.hub_url ? k.roomLink(room.hub_url, room.room_id) : null
       const form = (action, inner, word, id) => html`<form method="post" action="${action}" class="room-form" data-controller="room" id="${id}">${inner}<button type="submit" class="room-primary">${word}</button></form>`
       // The way in a change asks for again: the password where the account has one, else one of its passkeys.
-      const unlockField = a => (a.has_password === false ? html`<p class="room-meta">You confirm with your passkey.</p>` : pwField({ label: 'Your password', gen: false, autocomplete: 'current-password' }))
+      const unlockField = a => (a.has_password === false ? html`<p class="room-meta">${CONFIRM_PASSKEY}</p>` : html`<p class="room-meta">${CONFIRM_PASSWORD}</p>${pwField({ label: 'Your password', gen: false, autocomplete: 'current-password' })}`)
       const day = ts => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
       const accountPart = !client.hub ? html`<p class="room-meta">No account in the demo.</p>`
         : st === undefined ? html`<p class="room-wait">${room.account_error ? `Not reachable: ${room.account_error}` : 'Loading…'}</p>`
@@ -431,7 +437,7 @@ ${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Security Info', det
 ${form('/settings/account', html`<label>Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label>${pwField()}<label>Recovery code<input name="recovery_code" required autocomplete="off" spellcheck="false" class="room-mono" placeholder="XXXX-XXXX-…"></label>`, 'Add login', 'account-add')}`
             : html`<p class="room-lead">${st.email ? html`Logged in as <b id="account-email">${st.email}</b>` : html`Logged in with a passkey. <span id="account-email">No email.</span>`}</p>
 <p class="room-meta">Account ID <span class="room-mono" id="account-id">${st.account}</span></p>
-${st.email ? '' : html`<details class="room-more" id="email-add"><summary>Add an email</summary><p class="room-meta">A second name for your account. It cannot be changed later. Your Emergency Kit keeps its twelve words and opens with the email from then on: type them once more.</p>${form('/settings/email', html`<label>Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label><label>Twelve words<textarea name="words" rows="3" required autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label>`, 'Add email', 'email-form')}</details>`}
+${st.email ? '' : html`<details class="room-more" id="email-add"><summary>Add an email</summary><p class="room-meta">A second name for your account. It cannot be changed later. Your Emergency Kit keeps its twelve words and opens with the email from then on: type them once more. They also confirm it is you.</p>${form('/settings/email', html`<label>Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label><label>Twelve words<textarea name="words" rows="3" required autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label>`, 'Add email', 'email-form')}</details>`}
 <h4 class="room-sub">Emergency Kit</h4>
 ${kit ? html`<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now.${first ? '' : ' The old kit no longer works.'}</p>${kitBox({ ...kit, account: kit.account ?? st.account }, kitLink(kit.account ?? st.account), true)}`
   : html`<p class="room-lead">${st.has_recovery ? 'Made.' : 'Not made yet.'} ${st.has_password === false ? 'It opens your account if you lose your passkey.' : 'With it you can set a new password if you forget yours.'}</p>
@@ -439,14 +445,14 @@ ${kit ? html`<p class="room-lead">Download or print it, and keep it somewhere sa
 ${passkeysOff && !(st.passkeys ?? []).length ? '' : html`<h4 class="room-sub">Passkeys</h4>
 ${(st.passkeys ?? []).length ? html`<ul class="room-devices room-passkeys" id="passkeys">${st.passkeys.map(p => html`<li class="room-device room-passkey" id="passkey-${p.credential_id.slice(0, 12)}">
 <span class="room-device-name"><b>Passkey</b><small>added ${day(p.created_at)} · ${p.last_used_at ? `used ${day(p.last_used_at)}` : 'not used yet'}</small></span>
-<form method="post" action="/settings/passkeys/remove" class="room-remove"><input type="hidden" name="id" value="${p.credential_id}"><details><summary>Remove</summary><p>Passkey no longer opens your account after this.</p><button type="submit" class="room-danger">Remove passkey</button></details></form></li>`)}</ul>`
+<form method="post" action="/settings/passkeys/remove" class="room-remove"><input type="hidden" name="id" value="${p.credential_id}"><details><summary>Remove</summary><p>Passkey no longer opens your account after this.</p>${unlockField(st)}<button type="submit" class="room-danger">Remove passkey</button></details></form></li>`)}</ul>`
   : html`<p class="room-lead" id="passkeys-none">None yet. A passkey logs you in without a password.</p>`}
 ${st.has_password !== false && (st.passkeys ?? []).length ? html`<p class="room-meta" id="password-still">Your password still opens this account.</p>` : ''}
 ${canPasskey ? html`<details class="room-more" id="passkey-new"><summary>Add passkey</summary>${form('/settings/passkeys', unlockField(st), 'Add passkey', 'passkey-form')}</details>` : passkeysOff ? '' : html`<p class="room-meta" id="passkey-cannot">This browser makes no passkeys.</p>`}`}
 <h4 class="room-sub">Password</h4>
 ${st.has_password === false
   ? html`<p class="room-lead" id="password-none">None. Your passkey opens this account.</p>
-${st.email ? html`<details class="room-more" id="pw-add"><summary>Add a password</summary>${form('/settings/password/add', html`${pwField({ label: 'New password' })}<p class="room-meta">You confirm with your passkey.</p>`, 'Add password', 'pw-add-form')}</details>` : html`<p class="room-meta" id="pw-needs-email">A password needs an email. Add one first.</p>`}`
+${st.email ? html`<details class="room-more" id="pw-add"><summary>Add a password</summary>${form('/settings/password/add', html`${pwField({ label: 'New password' })}<p class="room-meta">${CONFIRM_PASSKEY}</p>`, 'Add password', 'pw-add-form')}</details>` : html`<p class="room-meta" id="pw-needs-email">A password needs an email. Add one first.</p>`}`
   : html`<details class="room-more" id="pw-change"><summary>Change password</summary>${form('/settings/password', html`${pwField({ name: 'current', label: 'Current password', gen: false, autocomplete: 'current-password' })}${pwField({ label: 'New password' })}`, 'Change password', 'pw-form')}</details>`}
 <p class="room-meta">${st.has_password === false ? NO_RECOVERY_PASSKEY : NO_RECOVERY}</p>`
       return roomPage('Account', html`${errorLine(error)}${said ? html`<p class="room-lead room-ok" role="status">${said}</p>` : ''}
@@ -463,7 +469,7 @@ ${link ? html`<details class="room-section room-more" id="advanced"><summary>Adv
     let canPasskey = false, passkeysOff = !passkeysOn()
     passkeyOffer().then(o => { canPasskey = o.get; passkeysOff = Boolean(o.off); if (canPasskey && m().room.account) client._setRoom?.({ account: { ...m().room.account } }) })
     /** The way in for a change on this page: the form's password, or a passkey of the account (a prompt). */
-    const unlockOf = async (f, st) => (st?.has_password === false ? { passkey: await passkeyUnlock(st) } : { password: String(f.get('password') ?? '') })
+    const unlockOf = async (f, st) => (st?.has_password === false ? { passkey: await passkeyUnlock(st, client) } : { password: String(f.get('password') ?? '') })
     // A kit just made is held here (memory only) for ten minutes, so that the page drawn again (a stream's refresh, a
     // visit back) still shows it; while it is held the page is not refreshed by the account's own change.
     let held = null
@@ -506,10 +512,10 @@ ${link ? html`<details class="room-section room-more" id="advanced"><summary>Adv
     }, 'passkey-added')
     accountPost(/^\/settings\/passkeys\/remove$/, async (f, A) => {
       const id = String(f.get('id'))
-      await A.removePasskey(client, id)
+      await A.removePasskey(client, { credential_id: id, unlock: await unlockOf(f, await A.accountStatus(client)) })
       passkeyForget(unb64u(id))
     }, 'passkey-removed')
-    accountPost(/^\/settings\/password\/add$/, async (f, A) => A.setPassword(client, { unlock: { passkey: await passkeyUnlock(await A.accountStatus(client)) }, next: String(f.get('password')) }), 'password-added')
+    accountPost(/^\/settings\/password\/add$/, async (f, A) => A.setPassword(client, { unlock: { passkey: await passkeyUnlock(await A.accountStatus(client), client) }, next: String(f.get('password')) }), 'password-added')
     accountPost(/^\/settings\/kit$/, async (f, A) => {
       const kit = await A.makeEmergencyKit(client, await unlockOf(f, await A.accountStatus(client)))
       return { kit, account: { account: { ...m().room.account, has_recovery: true, kit_form: kit.form } } }
@@ -821,7 +827,7 @@ export function kitGate(client, { fresh = false } = {}) {
     kit: { email: (kit ?? st)?.email ?? client.model.room.account?.email ?? null, account: kit?.account ?? st?.account ?? client.model.room.account?.account ?? null, form: kit?.form ?? st?.kit_form ?? 'email' }, words: kit?.words ?? null,
     linkOf: id => { try { return A?.kitAddress(location.origin, client.model.room.hub_url, id) ?? null } catch { return null } },
     ways: { password: (st ?? kit)?.has_password !== false, passkey: Boolean(st?.passkeys?.length) },
-    make: async way => { const A = await account(); return A.makeEmergencyKit(client, way.passkey ? { passkey: await passkeyUnlock(st ?? await A.accountStatus(client)) } : { password: way.password }) },
+    make: async way => { const A = await account(); return A.makeEmergencyKit(client, way.passkey ? { passkey: await passkeyUnlock(st ?? await A.accountStatus(client), client) } : { password: way.password }) },
     // (a core that seals no register yet, `core-missing`: nothing was written when the account was made either,
     //  and the gate rests on this browser's mark alone)
     open: async () => { await client.setRegisters({ kit: null }).catch(err => { if (err?.code !== 'core-missing') throw err }); try { localStorage.removeItem(KIT_MARK) } catch {} close() },

@@ -204,6 +204,13 @@ export interface PasskeyRegistration { attestation_object: Uint8Array; client_da
 export type KitForm = 'email' | 'id'
 /** A kit's part of a body: its login key and the code sealed under its wrap key. */
 export interface KitPart { auth_key: Uint8Array; sealed_copy: Uint8Array }
+/** The way in of now, proved once more, as every change of a way in carries it (hub-api.md "A token alone changes no
+ *  way in"): the login key of the password or of the kit, or a passkey's assertion on a challenge of
+ *  `POST /v1/account/passkeys/challenge` (one use). */
+export type AccountProof =
+  | { password: { auth_key: Uint8Array } }
+  | { kit: { auth_key: Uint8Array } }
+  | { passkey: { credential_id: Uint8Array; authenticator_data: Uint8Array; client_data_json: Uint8Array; signature: Uint8Array } }
 /** `POST /v1/account`, and `account` of `POST /v1/rooms`: the Emergency Kit and at least one way in. An e-mail
  *  comes with a password and is optional beside a passkey. The account's id is the hub's: with a passkey the one
  *  it named with the registration's challenge (`passkeyChallenge`). */
@@ -485,6 +492,15 @@ function passkeyBody(p: PasskeyRegistration): Record<string, unknown> {
   return { attestation_object: enc(p.attestation_object), client_data_json: enc(p.client_data_json), sealed_copy: enc(p.sealed_copy), ...(p.transports ? { transports: p.transports } : {}) }
 }
 const kitBody = (k: KitPart): Record<string, unknown> => ({ auth_key: enc(k.auth_key), sealed_copy: enc(k.sealed_copy) })
+function proofBody(p: AccountProof): Record<string, unknown> {
+  if ('password' in p) return { password: { auth_key: enc(p.password.auth_key) } }
+  if ('kit' in p) return { kit: { auth_key: enc(p.kit.auth_key) } }
+  if ('passkey' in p) {
+    const a = p.passkey
+    return { passkey: { credential_id: enc(a.credential_id), authenticator_data: enc(a.authenticator_data), client_data_json: enc(a.client_data_json), signature: enc(a.signature) } }
+  }
+  return wrong('a proof: password, kit or passkey')
+}
 function accountBody(a: NewAccount): Record<string, unknown> {
   return {
     ...(a.email != null ? { email: a.email } : {}),
@@ -1678,21 +1694,22 @@ export class Hub {
   async createAccount(account: NewAccount): Promise<AccountView> { return accountView(await this.send('POST', '/v1/account', accountBody(account))) }
   /** `GET /v1/account`: the account of this device's room with its sealed copies; no hash leaves the hub. */
   async account(): Promise<AccountView> { return accountView(await this.get('/v1/account')) }
-  /** `PUT /v1/account/password`: `account-changed` when `revision` is not the current one. */
-  async putPassword(p: { auth_key: Uint8Array; sealed_copy: Uint8Array; kdf: Kdf; revision: number }): Promise<{ revision: number }> {
-    const json = { auth_key: enc(p.auth_key), sealed_copy: enc(p.sealed_copy), kdf: p.kdf, revision: ownInt(p.revision, 'revision') }
+  /** `PUT /v1/account/password`: `account-changed` when `revision` is not the current one; `wrong-login` when
+   *  `proof` does not hold. */
+  async putPassword(p: { auth_key: Uint8Array; sealed_copy: Uint8Array; kdf: Kdf; revision: number; proof: AccountProof }): Promise<{ revision: number }> {
+    const json = { auth_key: enc(p.auth_key), sealed_copy: enc(p.sealed_copy), kdf: p.kdf, revision: ownInt(p.revision, 'revision'), proof: proofBody(p.proof) }
     return { revision: int(obj(await this.send('PUT', '/v1/account/password', json), 'a revision').revision, 'revision') }
   }
   /** `PUT /v1/account/kit`: a new Emergency Kit replaces the one before. */
-  async putKit(k: KitPart & { revision: number }): Promise<{ revision: number }> {
-    const json = { ...kitBody(k), revision: ownInt(k.revision, 'revision') }
+  async putKit(k: KitPart & { revision: number; proof: AccountProof }): Promise<{ revision: number }> {
+    const json = { ...kitBody(k), revision: ownInt(k.revision, 'revision'), proof: proofBody(k.proof) }
     return { revision: int(obj(await this.send('PUT', '/v1/account/kit', json), 'a revision').revision, 'revision') }
   }
   /** `PUT /v1/account/email`: gives an account without e-mail one, once (`forbidden` when it has one), together
    *  with its kit made anew under that e-mail (`incomplete` without); `bad-email`, `account-exists`, `account-changed`. */
-  async putEmail(e: { email: string; kit: KitPart; revision: number }): Promise<{ revision: number }> {
+  async putEmail(e: { email: string; kit: KitPart; revision: number; proof: AccountProof }): Promise<{ revision: number }> {
     if (typeof e.email !== 'string' || e.email.length > 254) wrong('an e-mail address')
-    return { revision: int(obj(await this.send('PUT', '/v1/account/email', { email: e.email, kit: kitBody(e.kit), revision: ownInt(e.revision, 'revision') }), 'a revision').revision, 'revision') }
+    return { revision: int(obj(await this.send('PUT', '/v1/account/email', { email: e.email, kit: kitBody(e.kit), revision: ownInt(e.revision, 'revision'), proof: proofBody(e.proof) }), 'a revision').revision, 'revision') }
   }
   /** `POST /v1/account/passkeys/challenge`: a challenge for adding a passkey to this room's account, with the
    *  account's id, which that passkey carries as its user handle, and what a new kit of the account is salted with. */
@@ -1700,15 +1717,15 @@ export class Hub {
     const o = await this.send('POST', '/v1/account/passkeys/challenge', {}), more = obj(o, 'a challenge answer')
     return { ...passkeyChallengeAnswer(o), email: maybe(more.email, e => text(e, 'email', 254)), kit_form: oneOf(more.kit_form, 'kit_form', 'email', 'id') }
   }
-  /** `POST /v1/account/passkeys`. */
-  async addPasskey(passkey: PasskeyRegistration): Promise<{ credential_id: Uint8Array; created_at: number }> {
-    const o = obj(await this.send('POST', '/v1/account/passkeys', passkeyBody(passkey)), 'a passkey answer')
+  /** `POST /v1/account/passkeys`, with the way in of now proved (a passkey's proof takes a challenge of its own). */
+  async addPasskey(passkey: PasskeyRegistration, proof: AccountProof): Promise<{ credential_id: Uint8Array; created_at: number }> {
+    const o = obj(await this.send('POST', '/v1/account/passkeys', { ...passkeyBody(passkey), proof: proofBody(proof) }), 'a passkey answer')
     return { credential_id: bytes(o.credential_id, 'credential_id', 1, 1023), created_at: int(o.created_at, 'created_at') }
   }
   /** `DELETE /v1/account/passkeys/{credential_id}`: `last-way-in` when it is the only way into the account. */
-  async removePasskey(credential_id: Uint8Array): Promise<void> {
+  async removePasskey(credential_id: Uint8Array, proof: AccountProof): Promise<void> {
     if (credential_id.length < 1 || credential_id.length > 1023) wrong('a credential id is 1 to 1023 bytes')
-    if (obj(await this.call('DELETE', `/v1/account/passkeys/${enc(credential_id)}`, { auth: true }), 'a deletion').deleted !== true) bad('deleted')
+    if (obj(await this.call('DELETE', `/v1/account/passkeys/${enc(credential_id)}`, { auth: true, json: { proof: proofBody(proof) } }), 'a deletion').deleted !== true) bad('deleted')
   }
 
   // ---- push (v1.md 15), human devices

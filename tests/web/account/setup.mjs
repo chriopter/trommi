@@ -51,8 +51,14 @@ export const assertionOf = (passkey, challenge) => ({
   credential_id: passkey.credential_id.slice(), authenticator_data: bytes(37), signature: bytes(70), user_handle: null, prf: passkey.prf.slice(),
   client_data_json: utf8(JSON.stringify({ type: 'webauthn.get', challenge, origin: 'https://app.trommi.test' })),
 })
-/** The way in a signed-in device gives again with that passkey (its own copy of the prf: account.ts zeroes it). */
-export const unlockWith = passkey => ({ passkey: { credential_id: passkey.credential_id.slice(), prf: passkey.prf.slice() } })
+/** The way in a signed-in device gives again with that passkey (its own copy of the prf: account.ts zeroes it): a
+ *  get() over the account's challenge (`passkeyChallengeFor`), whose assertion proves the way in to the hub. Without
+ *  `client`, over a challenge the hub never gave. */
+export const unlockWith = async (passkey, client = null) => {
+  const challenge = client ? await account.passkeyChallengeFor(client) : 'never-given'
+  const { user_handle: _, ...assertion } = assertionOf(passkey, challenge)
+  return { passkey: assertion }
+}
 
 /** Every error a test saw thrown, for the scan at the end: no secret in a message or a field. */
 export const thrown = []

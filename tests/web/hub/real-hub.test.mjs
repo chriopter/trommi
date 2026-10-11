@@ -417,7 +417,9 @@ test(`${REMOTE ? 'deployed' : 'real'} hub, real core: a room with its account, a
     assert.deepEqual(core.openRecoveryCode(password.wrapKey, room, 'password', null, login.rooms[0].sealed_copy), code)
     const recovered = await outside.recover(email, kit.authKey)
     assert.deepEqual(core.openRecoveryCode(kit.wrapKey, room, 'kit', null, recovered.rooms[0].sealed_copy), code)
-    await assert.rejects(hub.putKit({ auth_key: kit.authKey, sealed_copy: view.kit_copy, revision: 0 }), refused('account-changed', 409))
+    // a token alone changes no way in: the way in of now goes with the change, proved once more
+    await assert.rejects(hub.request('PUT', '/v1/account/kit', { body: { auth_key: Buffer.from(kit.authKey).toString('base64url'), sealed_copy: Buffer.from(view.kit_copy).toString('base64url'), revision: 1 } }), refused('bad-format', 400))
+    await assert.rejects(hub.putKit({ auth_key: kit.authKey, sealed_copy: view.kit_copy, revision: 0, proof: { password: { auth_key: password.authKey } } }), refused('account-changed', 409))
     assert.deepEqual([(await hub.accountPasskeyChallenge()).account, view.kit_form, login.account, login.email], [view.account, 'email', view.account, email])
   })
 
