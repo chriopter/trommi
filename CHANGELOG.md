@@ -27,6 +27,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - A Codex session between turns shows as "on its next turn", never as gone or not listening.
 
 **Fixed**
+- iPhone: logging in to a big account no longer hangs at "Logging in…": the button shows how far it is, the
+  sessions join after you are in, and a stuck login stops with a message.
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.
 - Changing your password, Emergency Kit or passkeys now asks for proof that you know a current one:
   being logged in is not enough.

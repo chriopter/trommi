@@ -172,6 +172,11 @@ public struct Store {
   var roomGroup: GroupId?
   /** The hub's last word on how many of this device's KeyPackages are unused; nil before it said so in this run. */
   var keyPackagesAtHub: Int?
+  /**
+   * The session groups a sign-in with the code joins after the device is in (`finishCodeJoin`), run behind the
+   * sign-in so that a big account opens at once; the first catch-up waits for it. nil: none under way.
+   */
+  var codeJoinWork: Task<Void, Never>?
   /** 7.1.1: when the hub's list of wishes was last read, and the wishes for keys answered in this run. */
   var keyWishesReadAt: UInt64 = 0
   var keyWishesAnswered = Set<Int>()
@@ -432,6 +437,7 @@ public struct Store {
     }
     var change = Change()
     try await takeWelcomes(&change)
+    if let work = codeJoinWork { await work.value; codeJoinWork = nil }
     await finishCodeJoin()
     try await readChanges(&report, &change)
     // (the log said that this device was removed: nothing more is written or read)

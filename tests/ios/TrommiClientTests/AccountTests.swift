@@ -435,6 +435,7 @@ final class AccountTests: XCTestCase {
     let (room, _) = try await created()
     tools.sessionsLeft = ([], true)
     let second = try await Room.loginWithPassword(hubURL: hubURL, account: email, password: password, base: device("second"))
+    await second.codeJoinSettled()
     let item = Room.joinCodeItem(second.store.dir)
     XCTAssertEqual(Store.rooms(base: device("second")), [room.roomIdHex], "the device is kept")
     XCTAssertEqual(try second.store.load().codeJoin, true)
@@ -457,6 +458,7 @@ final class AccountTests: XCTestCase {
   func testAFinishedCodeJoinKeepsNoCode() async throws {
     let (room, _) = try await created()
     let second = try await Room.loginWithPassword(hubURL: hubURL, account: email, password: password, base: device("second"))
+    await second.codeJoinSettled()
     XCTAssertNil(second.record.codeJoin)
     XCTAssertNil(try LocalKey.read(Room.joinCodeItem(second.store.dir), dir: second.store.dir))
     room.close(); second.close()
@@ -612,7 +614,8 @@ final class AccountTests: XCTestCase {
     XCTAssertEqual(recover["account"] as? String, hub.id, "the id goes out in its canonical text")
     XCTAssertEqual(recover["auth_key"] as? String, try tools.kitKeysFor(.id(hub.id), words: made.kit.words).authKey)
     XCTAssertEqual(tools.joinedWith, tools.codes.last)
-    XCTAssertEqual(hub.paths("PUT"), [])
+    // (no password is set; the new device stocks its KeyPackages at once)
+    XCTAssertEqual(hub.paths("PUT").filter { $0 != "/v1/key-packages" }, [])
     let neither = await failure { _ = try await Room.resetPassword(hubURL: self.hubURL, account: "0f8fad5b", words: made.kit.words, newPassword: nil, base: self.device("third")) }
     XCTAssertEqual(code(of: try XCTUnwrap(neither)), "bad-account")
     made.room.close(); second.close()

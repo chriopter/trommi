@@ -18,6 +18,47 @@ public struct LearnProgress: Equatable {
   public var reachedEnd: Bool { epoch >= upto }
 }
 
+/**
+ * How far a sign-in on a new device is, for the screen that waits on it: a sign-in into a big account reads and
+ * checks every Commit of the room's groups, which takes a while on a phone. Reported through `SignInWatch.report`.
+ */
+public enum SignInProgress: Equatable, Sendable, CustomStringConvertible {
+  /** The room's keys and groups are read. */
+  case reading
+  /** `done` of `total` Commits of the room's groups are checked. */
+  case checking(done: Int, total: Int)
+  /** The room group is joined; the device comes in. */
+  case joining
+  public var description: String {
+    switch self {
+    case .reading: return "Reading your account…"
+    case .checking(let done, let total):
+      let f = NumberFormatter(); f.numberStyle = .decimal; f.locale = Locale(identifier: "en_US")
+      func n(_ v: Int) -> String { f.string(from: NSNumber(value: v)) ?? String(v) }
+      return "Catching up \(n(min(done, total))) of \(n(total))…"
+    case .joining: return "Joining…"
+    }
+  }
+}
+
+/** Where the steps of a sign-in are told: a task-local hook, set by the caller around the sign-in (`withValue`). */
+public enum SignInWatch {
+  @TaskLocal public static var report: (@Sendable (SignInProgress) -> Void)?
+  public static func say(_ p: SignInProgress) { report?(p) }
+  /** A timing line of a sign-in's step (TROMMI_SIGNIN_LOG=1, or a debug build), for finding where a sign-in waits. */
+  public static func log(_ step: String, since: Date) {
+    guard verbose else { return }
+    FileHandle.standardError.write(Data("sign-in: \(step) in \(Int(Date().timeIntervalSince(since) * 1000)) ms\n".utf8))
+  }
+  static let verbose: Bool = {
+    #if DEBUG
+    return true
+    #else
+    return ProcessInfo.processInfo.environment["TROMMI_SIGNIN_LOG"] == "1"
+    #endif
+  }()
+}
+
 /** The core's slices: what one call of a walk takes. */
 public enum Slices {
   /** The most Commits one slice holds (core `recovery::MAX_SLICE_COMMITS`). */
@@ -58,7 +99,7 @@ public enum Slices {
  * builds on it or a later one is not read (the GroupInfo read as current names it, so log and GroupInfo agree).
  * Nothing in it is trusted: the core checks it.
  */
-public struct GroupLogPages {
+public struct GroupLogPages: @unchecked Sendable {
   public let hub: HubClient
   public let group: GroupId
   public let below: UInt64?
