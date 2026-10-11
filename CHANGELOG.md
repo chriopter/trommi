@@ -44,8 +44,9 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Status lines under a chat: the time short with a small clock after it ("4m"); on the phone one line each, the title and the time, and a tap shows the detail and the way to its question (iPhone and web).
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
-- iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster
-  per change, and an open long chat is no longer rebuilt when a message arrives elsewhere.
+- iPhone: big boards stay smooth while news comes in: a change of the board costs a fraction of before, a long chat
+  opens three times faster with its newest 150 messages ("Earlier messages" shows more), swiping back from a chat no
+  longer stutters, and a huge desk needs a fifth of the memory.
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
@@ -75,6 +76,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   update.
 - Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
   session is repaired first and the message is sent again.
+- iPhone: "N new" in a chat goes away once you are at the end or see the newest message.
 - iPhone: decisions answered, read or closed on another device no longer stay on the Desk as open questions, also
   while the phone catches up.
 - iPhone: logging out no longer crashes the app.
