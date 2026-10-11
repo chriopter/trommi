@@ -2992,11 +2992,18 @@ const hot = used => (used >= 80 ? ' is-hot' : '')
 const meterTitle = m => `${m.long}: ${m.used} % used${m.reset ? `, resets ${m.reset}` : ''}`
 const bar = (m, wide = false) => html`<span class="use-bar${hot(m.used)}${wide ? ' is-wide' : ''}" title="${meterTitle(m)}"><i style="--used:${m.used}%"></i></span>`
 const credits = n => `${Number(n).toLocaleString('en-GB', { maximumFractionDigits: 0 })} ${Math.round(n) === 1 ? 'credit' : 'credits'}`
-/** Compact, for a session's heading: each meter its word, a thin bar and its percent. */
-export function usageCompact(acc, now = Date.now()) {
+/** One meter as a small ring: a faint track and, from the top clockwise, the part used; num: the percent inside it. */
+const useRing = (m, num = false) => {
+  const r = 13, c = 2 * Math.PI * r
+  return raw(`<svg class="use-ring${hot(m.used)}" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="${r}" class="use-ring-track"/>${m.used ? `<circle cx="16" cy="16" r="${r}" class="use-ring-fill" stroke-dasharray="${(c * m.used / 100).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 16 16)"/>` : ''}${num ? `<text x="16" y="16.6" class="use-ring-num">${m.used}</text>` : ''}</svg>`)
+}
+/** For a session's heading: each meter (5 h, week) a small ring. Wide: the ring, its percent and its word; mini (a
+ *  phone, beside the More button): the rings alone, the percent inside. The whole in words under the pointer. */
+export function usageRings(acc, { mini = false, now = Date.now() } = {}) {
   const ms = usageMeters(acc, now)
   if (!ms.length) return ''
-  return html`<span class="use-compact" aria-label="Usage of ${usagePlan(acc)}">${ms.map(m => html`<span class="use-m" title="${meterTitle(m)}"><span class="use-l">${m.label}</span>${bar(m)}<b class="${hot(m.used).trim()}">${m.used} %</b></span>`)}</span>`
+  const words = ms.map(meterTitle).join(' · ')
+  return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${usagePlan(acc)}: ${words}" title="${words}">${ms.map(m => (mini ? useRing(m, true) : html`<span class="use-r">${useRing(m)}<b class="${hot(m.used).trim()}">${m.used} %</b><span class="use-l">${m.label}</span></span>`))}</span>`
 }
 /** Fuller, for an agent's card on Settings · Agents: plan and e-mail, one row per meter, Codex's credits and resets. */
 export function usageFull(acc, now = Date.now()) {

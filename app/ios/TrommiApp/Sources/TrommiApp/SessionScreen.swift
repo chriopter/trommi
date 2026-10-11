@@ -59,6 +59,7 @@ struct SessionScreen: View {
       let older = d.hasOlder(agent: agentId)
       let tasks = d.tasks.filter { $0.agent == agentId }
       let permissions = v?.fresh.filter { $0.agent == agentId && $0.kind == "permission" } ?? []
+      let usage = usageOf(model, a).flatMap { $0.meters.isEmpty ? nil : $0 }
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 0) {
@@ -127,13 +128,13 @@ struct SessionScreen: View {
           }
         }
         // the top row: back, the session's name as a glass pill (its menu), "⋯"; no bar, a soft edge above and below
-        .pushedPills { header(a, d) } trailing: { more(a, d, freshCount: fresh.count) }
+        // beside "⋯": the usage as two small rings, 5 h and the week (Usage.swift)
+        .pushedPills(extraTrailing: usage.map { CGFloat($0.meters.count) * 28 + 4 } ?? 0) { header(a, d) } trailing: {
+          HStack(spacing: 6) { if let usage { UsageRings(acc: usage) }; more(a, d, freshCount: fresh.count) }
+        }
+        // under the top row: the switch "All | Questions n" (as on the web, always in view)
         .overlay(alignment: .top) {
-          // under the top row: the usage, then the switch "All | Questions n" (as on the web, always in view)
-          VStack(spacing: 6) {
-            if let acc = usageOf(model, a) { UsageStrip(acc: acc) }
-            ModeSwitch(onlyQuestions: $onlyQuestions, count: fresh.count)
-          }.padding(.top, 58)
+          ModeSwitch(onlyQuestions: $onlyQuestions, count: fresh.count).padding(.top, 58)
         }
         .onAppear { lastCount = all.count; follow.reachedEnd(); proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
         // the speed run (Perf.swift SpeedScript): up through the drawn messages (300 at most) and back
@@ -244,7 +245,7 @@ struct SessionScreen: View {
       // composer (SessionLinkNote), a stop by a red dot here
       HStack(spacing: 7) {
         ZStack { if working { WorkingRing(working: true, color: Tone.color(hue: a.hue, .mid)).frame(width: 30, height: 30) }; AgentMark(agent: a, size: 22) }
-        Text(a.name).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1).truncationMode(.middle)
+        Text(a.name).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
         if stopped != nil { Circle().fill(Ink.urgCritical).frame(width: 7, height: 7) }
         Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
       }
@@ -259,6 +260,7 @@ struct SessionScreen: View {
   private func more(_ a: Agent, _ d: DeskModel, freshCount: Int) -> some View {
     Menu {
       Button { filesOpen = true } label: { Label("Files", systemImage: "paperclip") }
+      Toggle(isOn: $onlyQuestions) { Label(freshCount > 0 ? "Questions Only (\(freshCount))" : "Questions Only", systemImage: "questionmark.circle") }
       Button { name = a.label.isEmpty ? a.name : a.label; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
       Button { drawings = true } label: { Label("Change Icon…", systemImage: "scribble") }
       Button { model.star(a, !a.starred) } label: { Label(a.starred ? "Remove Main Session" : "Make Main Session", systemImage: "crown") }

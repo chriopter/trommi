@@ -1,5 +1,5 @@
-// Usage.swift: an agent's account and usage (TrommiClient/Usage.swift reads them): two thin bars under a session's
-// name, and the plan, the e-mail and one row per window on the agent's card in Settings · Agents.
+// Usage.swift: an agent's account and usage (TrommiClient/Usage.swift reads them): two small rings beside a session's
+// More button, and the plan, the e-mail and one row per window on the agent's card in Settings · Agents.
 // The track is the ink at 12 %, the fill the accent; from 80 % on, fill and percent turn urgent.
 import SwiftUI
 import TrommiClient
@@ -24,23 +24,30 @@ struct UsageBar: View {
     }.frame(height: height)
   }
 }
-/** Compact, under a session's name pill: each meter its word, a thin bar, its percent, in a glass pill. */
-struct UsageStrip: View {
+/** One meter as a small ring: a faint track and, from the top clockwise, the part used, the percent inside. */
+struct UsageRing: View {
+  let used: Int
+  var size: CGFloat = 26
+  var body: some View {
+    ZStack {
+      Circle().stroke(Ink.fg.opacity(0.12), lineWidth: size / 8)
+      Circle().trim(from: 0, to: CGFloat(used) / 100)
+        .stroke(hot(used) ? Ink.urgHigh : Ink.accent, style: StrokeStyle(lineWidth: size / 8, lineCap: .round))
+        .rotationEffect(.degrees(-90))
+      Text("\(used)").font(Face.text(size * 0.37, .bold)).foregroundStyle(hot(used) ? Ink.urgHigh : Ink.fg).monospacedDigit()
+    }
+    .padding(size / 16).frame(width: size, height: size)
+  }
+}
+/** Beside a session's More button (session.mjs sessionWho, ui.mjs usageRings): each meter (5 h, the week) a small ring
+ *  with its percent; the whole in words for VoiceOver. */
+struct UsageRings: View {
   let acc: UsageAccount
   var body: some View {
     if !acc.meters.isEmpty {
-      HStack(spacing: 12) {
-        ForEach(acc.meters) { m in
-          HStack(spacing: 5) {
-            Text(m.label).font(Face.text(12)).foregroundStyle(Ink.muted)
-            UsageBar(used: m.used).frame(width: 46)
-            Text("\(m.used) %").font(Face.text(12, .bold)).foregroundStyle(hot(m.used) ? Ink.urgHigh : Ink.fg)
-          }
-          .accessibilityElement(children: .ignore)
-          .accessibilityLabel("\(m.long): \(m.used) percent used")
-        }
-      }
-      .padding(.horizontal, 12).padding(.vertical, 6).glass(Capsule(), interactive: false)
+      HStack(spacing: 2) { ForEach(acc.meters) { m in UsageRing(used: m.used) } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(acc.meters.map { "\($0.long): \($0.used) percent used" }.joined(separator: ", "))
     }
   }
 }

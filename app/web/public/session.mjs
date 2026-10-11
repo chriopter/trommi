@@ -17,7 +17,7 @@
 // A question never unfolds here: an open one stands in the conversation as its Desk row, whose text links to the
 // card's page; every other one is a quiet line that links there too.
 import { UNHEARD_MS, blockedOf, lineCard, linkOf, quietOf, shareControl, sharesLoaded } from './app.mjs'
-import { Controller, agoShort, usageCompact, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
+import { Controller, agoShort, usageRings, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
 const LIVE = 80               // so many of the newest messages are kept up to date by the live stream
 const PAGE = 40               // messages of one render: the page shows the latest, "Earlier" (or scrolling up) brings as many again
 const IN_VIEW = 14            // of them, rendered with the page (a phone shows fewer); the rest of the window right after its first paint
@@ -326,11 +326,12 @@ function sessionMore(s, base) {
   const a = s.agent, desks = s.model.state.desks ?? []
   const subs = (s.model.agents ?? []).some(x => x.parent === a.id)
   const del = a.own ? '' : deleteEntry(a, base, subs)
-  if (a.parent) return del ? html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${a.name}: more">${DOTS}</summary><div class="desk-move t-pop" role="menu" aria-label="More for ${a.name}">${del}</div></details>` : ''
+  const files = filesItem(s, base)
+  if (a.parent) return del || files ? html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${a.name}: more">${DOTS}</summary><div class="desk-move t-pop" role="menu" aria-label="More for ${a.name}">${files}${files && del ? raw('<hr class="desk-move-rule">') : ''}${del}</div></details>` : ''
   const others = desks.length < 2 ? [] : desks.filter(d => d.id !== a.desk)
   const move = d => html`<form method="post" action="${base}/sessions/${encodeURIComponent(a.id)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="moved" value="1"><input type="hidden" name="leave" value="1"><button type="submit" role="menuitem" name="desk" value="${d.id}">${sk('desk')}<span>${d.name || 'Personal'}</span></button></form>`
   return html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${a.name}: more">${DOTS}</summary>
-<div class="desk-move t-pop" role="menu" aria-label="More for ${a.name}">${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Desk…</span></summary>${others.map(move)}</details>` : ''}
+<div class="desk-move t-pop" role="menu" aria-label="More for ${a.name}">${files ? html`${files}<hr class="desk-move-rule">` : ''}${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Desk…</span></summary>${others.map(move)}</details>` : ''}
 <form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="continue" value="${a.device_id}"><button type="submit" role="menuitem">${sk('key')}<span>Copy Invite Link</span></button></form>${del ? html`<hr class="desk-move-rule">${del}` : ''}</div></details>`
 }
 /** The session's drawing and name: the page's heading, on its own line at the page's top (session.css). */
@@ -339,21 +340,20 @@ function sessionWho(s, base) {
   // The mark opens the drawings, the name renames (ui.mjs); the live stream brings what was changed.
   // The raised red hand when the session is really stopped (app.mjs blockedOf), with the cause in words.
   const stopped = blockedOf(a, s.model.state), quiet = stopped ? null : quietOf(a, s.model.state)
-  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status" title="Stopped: ${stopped.text}">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Connected and working, nothing new for a while">${quiet.text}</span>` : ''}</div>`
+  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}<span class="head-use-mini">${usageRings(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status" title="Stopped: ${stopped.text}">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Connected and working, nothing new for a while">${quiet.text}</span>` : ''}</div>`
 }
-/** The quiet line under the name: what the session is at, its model and machine, and "N files" (the drawer). */
+/** The quiet line under the name: a dot (green while connected), what the session is at, its model and machine. */
 function sessionNow(s, base = '') {
   const a = s.agent
   // (A session that does not hear at once says so here; one that does says what it is at.)
   const link = linkOf(a)
   const words = link && link.state !== 'live' ? link.word : a.online ? a.task || 'connected' : 'disconnected'
   const facts = [a.model, a.host].filter(Boolean).join(' · ')
-  const usage = usageCompact(a.account)
-  return html`<p class="pane-now" id="session-now-${a.id}"${link && link.state !== 'live' ? html` data-link="${link.state}" title="${link.line}"` : ''}><span>${words}</span>${facts ? html`<span class="caps">${facts}</span>` : ''}${usage}${filesChip(s, base)}</p>`
+  return html`<p class="pane-now" id="session-now-${a.id}"${link && link.state !== 'live' ? html` data-link="${link.state}" title="${link.line}"` : ''}><span><i class="now-dot${a.online ? ' is-on' : ''}" aria-hidden="true"></i>${words}</span>${facts ? html`<span class="caps">${facts}</span>` : ''}</p>`
 }
-/** Under 1200 px the usage stands on a line of its own under the heading, centred (app.css .use-narrow). */
-// (always there, empty without an account: the live stream replaces it when the agent's numbers come or change)
-const sessionUsage = s => html`<p class="use-narrow" id="session-use-${s.agent.id}">${usageCompact(s.agent.account)}</p>`
+/** The usage at the heading's right end (a wide window): two small rings, 5 h and the week (ui.mjs usageRings).
+ *  (always there, empty without an account: the live stream replaces it when the agent's numbers come or change) */
+const sessionUsage = s => html`<div class="head-use" id="session-use-${s.agent.id}">${usageRings(s.agent.account)}</div>`
 /** What the session page shows: a quiet two-way switch "All | Questions n" in its own row under the heading
  *  (independent of the heading's markup). Real links (the choice lives in the address, ?only=questions), so it works
  *  without scripts; the number is the questions waiting for him, replaced live when it changes. */
@@ -508,10 +508,10 @@ function looseFiles(s) {
 }
 const fileCount = s => looseFiles(s).reduce((n, g) => n + g.items.length, 0)
 
-/** "N files" beside the quiet line: opens the drawer (controller "files"); without scripts, the page with it open. */
-function filesChip(s, base) {
+/** "Files" at the top of the session's More menu: opens the drawer (controller "files"); without scripts, the page with it open. */
+function filesItem(s, base) {
   const n = fileCount(s)
-  return n ? html`<a class="files-chip" href="${sessionPath(s.id, base)}/files" data-turbo-frame="files-frame-${s.id}" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="What was sent and published here, without the questions' own pictures">${ico('clip')}<span>${n === 1 ? '1 file' : `${n} files`}</span></a>` : ''
+  return n ? html`<a role="menuitem" class="desk-move-files" href="${sessionPath(s.id, base)}/files" data-turbo-frame="files-frame-${s.id}" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="What was sent and published here, without the questions' own pictures">${ico('clip')}<span>Files</span><b>${n}</b></a>` : ''
 }
 
 const FILE_GLYPH = { video: 'video', audio: 'audio', image: 'image', scribble: 'image' }
@@ -558,7 +558,7 @@ function sessionMain(s, base, { mode = '', before = null, error = '', text = '',
     body = html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${w.total ? part : empty(s, base)}${latest ? html`<div id="log-end-${s.id}" hidden></div>${sessionStatus(s, base)}` : html`<a class="log-earlier-link is-later" data-nav href="${sessionPath(s.id, base)}">To the latest messages</a>`}</div></div>`
   }
   return html`<main id="session" aria-label="Session: ${s.agent.name}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}>
-<header class="pane-title">${sessionWho(s, base)}${sessionNow(s, base)}</header>${sessionUsage(s)}${sessionFilters(s, base, mode)}
+<header class="pane-title">${sessionWho(s, base)}${sessionNow(s, base)}${sessionUsage(s)}</header>${sessionFilters(s, base, mode)}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
 <div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${open}<div class="column session-compose">${sendError(s, error)}${sessionLink(s)}${composer(s, base, { text, focus })}</div></div>
@@ -1152,7 +1152,7 @@ controller('files', class extends Controller {
   }
   outside(event) {
     if (!this.isOpen || !event.target.isConnected) return
-    if (this.drawerTarget.contains(event.target) || event.target.closest('.files-chip, .session-mode')) return
+    if (this.drawerTarget.contains(event.target) || event.target.closest('.desk-move-files, .session-mode')) return
     this.close()
   }
   jump(event) {

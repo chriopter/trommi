@@ -184,11 +184,12 @@ extension View {
    *  middle (centred between the two circles), its "⋯" at the right; the row's measures are topPills'. No navigation
    *  bar, so no band and no hairline: the content scrolls under the row and the status bar and fades out softly. The
    *  swipe from the left edge still goes back (PopGesture: UIKit turns it off with the bar). */
-  func pushedPills<C: View, T: View>(@ViewBuilder center: () -> C, @ViewBuilder trailing: () -> T) -> some View {
+  /// extraTrailing: room the trailing side takes beyond its one round button (the centre keeps clear of it).
+  func pushedPills<C: View, T: View>(extraTrailing: CGFloat = 0, @ViewBuilder center: () -> C, @ViewBuilder trailing: () -> T) -> some View {
     self.toolbar(.hidden, for: .navigationBar)
       .safeAreaBar(edge: .top, spacing: 0) {
         HStack(spacing: 10) { BackPill(); Spacer(minLength: 0); trailing() }
-          .overlay { center().padding(.horizontal, 54) }
+          .overlay { center().padding(.leading, 54).padding(.trailing, 54 + extraTrailing) }
           .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 6)
       }
       .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])

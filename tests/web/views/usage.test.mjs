@@ -1,4 +1,4 @@
-// usage.test.mjs: an agent's account and usage (ui.mjs usageMeters, usageCompact, usageFull; app.mjs BoardState
+// usage.test.mjs: an agent's account and usage (ui.mjs usageMeters, usageRings, usageFull; app.mjs BoardState
 // carries it onto each session of the agent; session.mjs and agents.mjs show it). The connector writes it into its
 // main session's profile as `account` (connector/src/usage.rs).
 //   node --test tests/web/views/
@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { emptyModel } from '../../../app/web/core/model-shape.ts'
 import { sessionOf } from '../../../app/web/core/model.ts'
 import { BoardState } from '../../../app/web/public/app.mjs'
-import { usageCompact, usageFull, usageMeters, usagePlan, usageReset, agentsOf } from '../../../app/web/public/ui.mjs'
+import { usageRings, usageFull, usageMeters, usagePlan, usageReset, agentsOf } from '../../../app/web/public/ui.mjs'
 import { agentsMain } from '../../../app/web/public/agents.mjs'
 
 process.env.TZ = 'UTC'
@@ -30,14 +30,18 @@ test('the plan tag names the program\'s company and the plan', () => {
   assert.equal(usagePlan({ kind: 'claude', plan: 'ultra' }), 'Claude Ultra')
 })
 
-test('compact, in the heading: each meter its word, a 46 px bar and its percent; from 80 % on hot', () => {
-  const html = String(usageCompact(claude, NOW))
-  assert.equal((html.match(/class="use-m"/g) ?? []).length, 2)
-  assert.match(html, /<span class="use-l">5 h<\/span><span class="use-bar" [^>]*><i style="--used:62%"><\/i><\/span><b class="">62 %<\/b>/)
-  assert.match(html, /<span class="use-l">week<\/span><span class="use-bar is-hot"[^>]*><i style="--used:84%"><\/i><\/span><b class="is-hot">84 %<\/b>/)
+test('rings, in the heading: each meter a ring, its percent and its word; from 80 % on hot; a phone: the percent inside', () => {
+  const html = String(usageRings(claude, { now: NOW }))
+  assert.equal((html.match(/class="use-r"/g) ?? []).length, 2)
+  assert.match(html, /<svg class="use-ring" [^>]*>.*<\/svg><b class="">62 %<\/b><span class="use-l">5 h<\/span>/)
+  assert.match(html, /<svg class="use-ring is-hot" [^>]*>.*<\/svg><b class="is-hot">84 %<\/b><span class="use-l">week<\/span>/)
+  assert.match(html, /title="5-hour window: 62 % used, resets 13:43 · This week: 84 % used, resets Wed 14 Oct"/)
   assert.doesNotMatch(html, /ada@example\.org/, 'no e-mail in the heading')
-  assert.equal(String(usageCompact({ kind: 'claude', plan: 'max' }, NOW)), '', 'no meters, no line')
-  assert.equal(String(usageCompact(null)), '')
+  const mini = String(usageRings(claude, { mini: true, now: NOW }))
+  assert.match(mini, /class="use-rings is-mini"/)
+  assert.match(mini, /class="use-ring-num">62<\/text>.*class="use-ring-num">84<\/text>/)
+  assert.equal(String(usageRings({ kind: 'claude', plan: 'max' }, { now: NOW })), '', 'no meters, nothing')
+  assert.equal(String(usageRings(null)), '')
 })
 
 test('full, on the agent\'s card: the plan tag and the e-mail, one row per meter with its reset, Codex\'s credits and resets', () => {

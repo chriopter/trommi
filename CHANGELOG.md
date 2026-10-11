@@ -26,6 +26,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 **Better**
 - A session shows a switch "All | Questions" under its heading, with the number of questions waiting; the funnel beside
   the message field is gone (web and iPhone).
+- A session's heading is calmer: under the name a dot, what it is at and its model; its usage (5 h and week) as two
+  small rings at the right, beside the ⋯ on a phone; its files moved into the ⋯ menu.
 - The reverse card on a card: its black oval smaller, with air above and below, as on the send button (web and iPhone).
 - Desk: the headings "Off your mind" and "Artifacts" are links themselves, underlined with an arrow; no separate "Show more" (web and iPhone).
 - A helper's status line follows its question: filing a card turns the line to waiting on you with that card, and
