@@ -24,6 +24,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
 - The reverse card's middle is now an oval drawn by the pen, a little uneven and tilted (web and iPhone).
+- The writing field under a card is calmer: one "+" on the left for attaching and drawing, Send on the right. Shift+Enter hands the card back with your words, Alt+Enter (⌥+Enter) starts a new line (web; on the iPad with a keyboard too).
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
   instead of a stack of red ones.
 - Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out

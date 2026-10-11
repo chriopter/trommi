@@ -451,6 +451,29 @@ export const steps = [
     check(ctx.commands.slice(before).filter(c => c.kind === 'message').length === 1, 'the agent heard the card message once')
   }],
 
+  ['the card\'s field: "+" at its left (Attach, Draw), no chevron; Alt+Enter a new line, Shift+Enter hands the card back with the words', async ctx => {
+    const { check } = ctx.run
+    const A = await ctx.profile('A')
+    const card = await ctx.agent.askCard({ title: 'Which chart?', body: 'Bars or lines for the monthly numbers.', options: [{ key: 'bars', label: 'Bars' }, { key: 'lines', label: 'Lines' }] })
+    await ui.openDesk(A)
+    await A.until(`document.getElementById('row-${card}')`, 'the new question on the Desk')
+    await A.js(`await new Promise(r => { const t = setInterval(() => { if (trommi.model().state?.cards?.some(c => c.id === '${card}')) { clearInterval(t); r() } }, 100) }); trommi.router.visit('/card/' + trommi.model().state.cards.find(c => c.id === '${card}').number); return 1`)
+    await A.until(`location.pathname.startsWith('/card/') && document.querySelector('#cardpage form.tc-chat textarea.tc-field') && /Which chart/.test(document.querySelector('#cardpage').innerText)`, 'the card page with its field')
+    check(await A.js("const f = document.querySelector('#cardpage form.tc-chat'); return !!f.querySelector('.tc-plus .tc-plus-pop .tc-clip input[type=file]') && !!f.querySelector('.tc-plus .tc-draw') && !f.querySelector('.tc-send-menu')"), 'the field has its "+" (Attach, Draw on the card) and no chevron beside Send')
+    await A.type('#cardpage form.tc-chat textarea.tc-field', 'Both, please')
+    // (Alt+Enter as the page sees it: the harness's Enter also types a character of its own, which no browser does after a key the page took)
+    await A.js("document.querySelector('#cardpage form.tc-chat textarea.tc-field').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', altKey: true, bubbles: true, cancelable: true })); return 1")
+    await A.js("const f = document.querySelector('#cardpage form.tc-chat textarea.tc-field'); f.setRangeText('bars on top', f.selectionEnd, f.selectionEnd, 'end'); f.dispatchEvent(new Event('input', { bubbles: true })); return 1")
+    check(await A.js("return document.querySelector('#cardpage form.tc-chat textarea.tc-field').value") === 'Both, please\nbars on top', 'Alt+Enter made a new line and sent nothing', await A.js("return document.querySelector('#cardpage form.tc-chat textarea.tc-field').value"))
+    const before = ctx.commands.length
+    await A.key('Enter', 13, 8)
+    await until(() => ctx.commands.slice(before).some(c => c.kind === 'message' && c.object_id === card), 'the hand-back at the agent', 20000)
+    const sent = ctx.commands.slice(before).filter(c => c.object_id === card)
+    check(sent.length === 1 && sent[0].body?.text === 'Both, please\nbars on top' && sent[0].body?.hand_back === true, 'Shift+Enter sent the words once, as the hand-back of the card', sent.map(c => [c.kind, c.body]))
+    await A.shot('standin-15b-card-field')
+    await ui.openDesk(A)
+  }],
+
   ['files: A attaches a picture of about 3 MiB to a message; B sees it and opens it large, its bytes are the same', async ctx => {
     const { check } = ctx.run
     const A = await ctx.profile('A'), B = await ctx.profile('B')
