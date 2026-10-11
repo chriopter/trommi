@@ -120,7 +120,7 @@ fn page(status: StatusCode, body: &str) -> Response<Full<Bytes>> {
 fn page_with(status: StatusCode, body: &str, head: &str) -> Response<Full<Bytes>> {
     let html = format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
-<meta name=\"color-scheme\" content=\"light dark\">{head}<title>Trommi hub admin</title><style>{STYLE}</style></head><body>{body}</body></html>"
+<meta name=\"color-scheme\" content=\"light dark\">{head}<script src=\"/admin.js\" defer></script><title>Trommi hub admin</title><style>{STYLE}</style></head><body>{body}</body></html>"
     );
     Response::builder()
         .status(status)
@@ -132,9 +132,35 @@ fn page_with(status: StatusCode, body: &str, head: &str) -> Response<Full<Bytes>
         .header("cross-origin-resource-policy", "same-origin")
         .header(
             "content-security-policy",
-            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+            CSP,
         )
         .body(Full::new(Bytes::from(html)))
+        .expect("a valid response")
+}
+
+/// The pages' policy: no script but the hub's own `admin.js`, no inline script or handler, nothing fetched.
+pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+
+/// The one script of the page: a double-click on a blurred e-mail address shows it, a second blurs it again.
+/// Served as a file of its own (`GET /admin.js`), so that the policy needs no inline script.
+pub const SCRIPT: &str = "document.addEventListener('dblclick', function (e) {\n\
+  var t = e.target instanceof Element ? e.target.closest('.email') : null;\n\
+  if (!t) return;\n\
+  e.preventDefault();\n\
+  t.classList.toggle('shown');\n\
+  t.title = t.classList.contains('shown') ? 'Double-click to blur' : 'Double-click to show';\n\
+  if (!t.classList.contains('shown')) { var s = window.getSelection(); if (s) s.removeAllRanges(); }\n\
+});\n";
+
+fn script() -> Response<Full<Bytes>> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "text/javascript; charset=utf-8")
+        .header("cache-control", "no-store")
+        .header("x-content-type-options", "nosniff")
+        .header("cross-origin-resource-policy", "same-origin")
+        .header("content-security-policy", CSP)
+        .body(Full::new(Bytes::from_static(SCRIPT.as_bytes())))
         .expect("a valid response")
 }
 
@@ -262,6 +288,8 @@ code.big{font-size:1.3rem;font-weight:600}
 .tree a.tbl .name{display:inline-flex;align-items:center;gap:4px;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);font-size:.8rem}
 .tree a.tbl .count{margin-left:auto}
 .secret{color:var(--faint);white-space:nowrap}
+code.email{filter:blur(4.5px);user-select:none;-webkit-user-select:none;cursor:pointer;white-space:nowrap}
+code.email.shown{filter:none;user-select:text;-webkit-user-select:text;cursor:text}
 .filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;font-size:.84rem;color:var(--muted)}
 .filter label{display:flex;align-items:center;gap:6px}
 .filter input{width:22em;max-width:60vw}
@@ -507,6 +535,7 @@ pub async fn handle(app: Arc<App>, req: Request<Incoming>) -> Response<Full<Byte
             }
             None => login(StatusCode::OK, ""),
         },
+        (Method::GET, "/admin.js") => script(),
         (Method::GET, "/accounts") if session.is_some() => shown(app, Page::Accounts).await,
         (Method::GET, "/tables") if session.is_some() => shown(app, Page::Tables).await,
         (Method::GET, path) if path.starts_with("/tables/") && session.is_some() => {

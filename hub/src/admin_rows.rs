@@ -1,10 +1,10 @@
 //! The rows of one table on the admin page: `/tables/<name>` lists them, 50 to a page (newest first, or sorted by
 //! one column, or only those where one column is one value), `/tables/<name>/<key>` shows one row with every
-//! value in full. Read-only, in one read transaction, without a script.
+//! value in full. Read-only, in one read transaction, with one small script of the hub's own (`admin.js`: a double-click shows an e-mail address).
 //!
 //! What a value shows is set per column (`show`): only the columns named in `FULL` are shown in full; what lies
-//! sealed (`admin_view::SEALED`) by its length and first bytes (it is unreadable anyway); the e-mail address masked
-//! as on the accounts page; everything else, the credentials of `SECRET` and any column no list names, as
+//! sealed (`admin_view::SEALED`) by its length and first bytes (it is unreadable anyway); the e-mail address
+//! blurred as on the accounts page (a double-click shows it); everything else, the credentials of `SECRET` and any column no list names, as
 //! `•••• (secret, n bytes)`. A secret column can be neither filtered nor sorted by (that would answer questions
 //! about its values). Table and column names come only from the schema list, values only as bound parameters.
 //!
@@ -17,7 +17,7 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 
 use crate::admin::{esc, EYE, LOCK};
-use crate::admin_view::{columns, framed, is_time, mask_email, side, table_named, when_exactly, SEALED, TABLES};
+use crate::admin_view::{columns, framed, is_time, blurred_email, side, table_named, when_exactly, SEALED, TABLES};
 use crate::app::App;
 use crate::error::Refused;
 use crate::util::{hex, unhex};
@@ -36,7 +36,7 @@ const BYTES_IN_FULL: usize = 4096;
 pub enum Show {
     /// as it is
     Full,
-    /// first character and ending only, as on the accounts page
+    /// in full but blurred until double-clicked, as on the accounts page
     Email,
     /// what the hub cannot read: its length and first bytes
     Sealed,
@@ -359,7 +359,7 @@ fn cell(col: &Col, value: &Value, whole: bool) -> String {
             other => format!("<span class=\"cm cm-e2e\">{LOCK}<span>{} bytes</span></span>", length(other)),
         },
         Show::Email => match value {
-            Value::Text(t) => format!("<code>{}</code>", esc(&mask_email(t))),
+            Value::Text(t) => blurred_email(t),
             other => format!("<span class=\"secret\">•••• ({} bytes)</span>", length(other)),
         },
         Show::Full => match value {
@@ -395,7 +395,7 @@ fn cell(col: &Col, value: &Value, whole: bool) -> String {
 fn shown_label(show: Show) -> String {
     match show {
         Show::Full => format!("<span class=\"cm cm-plain\">{EYE}<span>in full</span></span>"),
-        Show::Email => format!("<span class=\"cm cm-plain\">{EYE}<span>masked e-mail</span></span>"),
+        Show::Email => format!("<span class=\"cm cm-plain\">{EYE}<span>e-mail, blurred until double-clicked</span></span>"),
         Show::Sealed => format!("<span class=\"cm cm-e2e\">{LOCK}<span>sealed: length and first bytes</span></span>"),
         Show::Secret => "<span class=\"secret\">•••• secret: length only</span>".into(),
     }
