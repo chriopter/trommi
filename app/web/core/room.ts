@@ -14,7 +14,7 @@
 // the room is made); a caller that knows it may pass `hub_url` to `openRoom` for a cache that was lost.
 import { Client, ClientError, engineMeta } from './client.ts'
 import type { Core, Device, PlacedCommit, ServedCommit, ServedEnvelope, Store } from './core-api.ts'
-import { Engine } from './engine.ts'
+import { Engine, EngineError } from './engine.ts'
 import type { EngineTiming } from './engine.ts'
 import { accountCopiesBytes, Hub, HubError } from './hub.ts'
 import type { AccountCopies, NewAccount, RoomInSteps, RoomOnlyInSteps } from './hub.ts'
@@ -410,7 +410,7 @@ export function roomsOn(env: RoomEnv): Rooms {
         const member = async (): Promise<boolean> => (await engine.do(d => d.groups())).some(g => sameBytes(g.group, session.group))
         for (let tries = 0; ; tries++) {
           try { await join(); break } catch (e) {
-            const code = engine.core.errorCode(e) ?? (e instanceof HubError ? e.code : null)
+            const code = engine.core.errorCode(e) ?? (e instanceof HubError || e instanceof EngineError ? e.code : null)
             // the group moved on under the join (another Commit took its epoch): read it again, then build again
             const moved = code !== null && MOVED_ON.includes(code)
             if ((code !== 'busy' && !moved) || tries >= BUSY_TRIES) throw e

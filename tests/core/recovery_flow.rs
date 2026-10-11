@@ -2355,11 +2355,13 @@ fn a_room_only_check_takes_no_key_of_a_deferred_session() {
     let (mut w, mut loose, _, sessions) = room_only_sign_in(None);
     join_checked_session(&mut w, &mut loose, &sessions[0], None);
     assert!(loose.content_key(&sessions[0], 1).is_ok());
-    // Room-only, none of them is taken with the room: only the session's own check selects them. Also when
-    // the hub left the session out of the list the device deferred.
-    for named in [true, false] {
-        let (mut w, mut c, _, sessions) = room_only_sign_in(Some(named));
-        join_checked_session(&mut w, &mut c, &sessions[0], None);
-        assert!(c.content_key(&sessions[0], 1).is_err());
-    }
+    // Deferred, none of them is taken with the room: only the session's own check selects them.
+    let (mut w, mut c, _, sessions) = room_only_sign_in(Some(true));
+    join_checked_session(&mut w, &mut c, &sessions[0], None);
+    assert!(c.content_key(&sessions[0], 1).is_err());
+    // A session the hub left out of the list is taken as an archived one (any room epoch), as without
+    // `code_check_defer`: no new way for a hub, which could always call a live session archived.
+    let (mut w, mut c, _, sessions) = room_only_sign_in(Some(false));
+    join_checked_session(&mut w, &mut c, &sessions[0], None);
+    assert!(c.content_key(&sessions[0], 1).is_ok());
 }
