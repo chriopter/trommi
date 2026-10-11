@@ -1347,6 +1347,50 @@ fn a_relayed_stroke_piece_is_taken_without_the_log() {
     );
 }
 
+/// 7.0: an application message is padded to its bucket: pieces of different lengths in one bucket travel alike,
+/// and still open to what was sent.
+#[test]
+fn application_messages_are_padded_to_buckets() {
+    use trommi_core::device::Received;
+    let (mut w, mut other) = world_of_two();
+    let piece = |pad: usize| {
+        format!(
+            r#"{{"stroke":"AAAAAAAAAAAAAAAAAAAAAA","number":1,"x":"{}"}}"#,
+            "a".repeat(pad)
+        )
+        .into_bytes()
+    };
+    let mut sizes = Vec::new();
+    for pad in [0usize, 200, 2000, 2500] {
+        let sent = piece(pad);
+        w.human
+            .send_stroke_piece(&BoardId::ALL_DESKS, &sent)
+            .unwrap();
+        post_ok(&mut w.hub, &mut w.human);
+        let (group, relayed) = w.hub.relayed.last().unwrap().clone();
+        sizes.push(relayed.len());
+        let got = other.receive_relay(&group, &relayed, now()).unwrap();
+        assert_eq!(
+            got,
+            Some(Received::StrokePiece {
+                from: w.human.id(),
+                board: BoardId::ALL_DESKS,
+                piece: sent,
+            })
+        );
+    }
+    // 0 and 200 bytes more fit the bucket of 512; 2000 and 2500 that of 4096
+    assert_eq!(sizes[0], sizes[1]);
+    assert_eq!(sizes[2], sizes[3]);
+    assert!(sizes[2] > sizes[1] + 3000);
+    assert_eq!(trommi_core::mls::message::bucket(0), Some(512));
+    assert_eq!(
+        trommi_core::mls::message::bucket(40_000),
+        Some(trommi_core::mls::message::TOP_BUCKET)
+    );
+    assert_eq!(trommi_core::mls::message::bucket(48_769), None);
+}
+
 #[test]
 fn the_heads_envelope_itself_calls_for_no_other_heads() {
     let store = trommi_tests::MemoryStorage::new();

@@ -765,11 +765,8 @@ mod format {
         let answer = object(7);
         assert_eq!(
             (answer.state, answer.object_ref, answer.answered_at),
-            (
-                ObjectState::Answered,
-                Hash32::new([9; 32]),
-                1_700_000_000_000
-            )
+            // the answer time stands in the body now, not in the header (9)
+            (ObjectState::Answered, Hash32::new([9; 32]), 0)
         );
         assert_eq!(header(7).recipient, device(2));
 

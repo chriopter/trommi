@@ -8,6 +8,13 @@
 //!   ([`seal`], [`open`]). The ticket is the hub's own MAC, with which the notification extension fetches one
 //!   envelope; here it is opaque bytes, empty when there is nothing to fetch.
 //!
+//! The sealed JSON is padded with zero bytes to [`APNS_PLAIN_LEN`], so that every sealed payload has one length
+//! (a push without a ticket, about a lost agent, looks like any other).
+//!
+//! **Live Activity** (15.3): beside its two marks the hub may send the exact counts sealed under the same key,
+//! `nonce(12) ‖ AEAD.Seal(key, nonce, aad = "trommi live v1", uint64 working ‖ uint64 waiting)` ([`seal_live`],
+//! [`open_live`]), which the widget opens on the phone.
+//!
 //! The JSON has one spelling: the fields in the order given, no white space, bytes as base64url, numbers as plain
 //! decimals. A reader refuses any other text (`bad-format`), so that what is parsed is what was sealed.
 
@@ -30,6 +37,13 @@ pub const MAX_TICKET_LEN: usize = 256;
 pub const MAX_WEB_PUSH_LEN: usize = 128;
 /// The longest sealed APNs payload: the JSON with the longest ticket, the nonce and the tag.
 pub const MAX_APNS_LEN: usize = 512;
+/// The length every sealed APNs plaintext is padded to with zero bytes: a sealed payload is always
+/// [`MAX_APNS_LEN`] bytes.
+pub const APNS_PLAIN_LEN: usize = MAX_APNS_LEN - NONCE_LEN - TAG_LEN;
+/// The associated data of a Live Activity's sealed counts.
+const LIVE_AAD: &[u8] = b"trommi live v1";
+/// The length of a sealed Live Activity block: nonce, two `uint64`, tag.
+pub const LIVE_SEALED_LEN: usize = NONCE_LEN + 16 + TAG_LEN;
 
 /// The payload of a Web Push.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,10 +219,44 @@ pub fn seal(
     push: &ApnsPush,
     entropy: &mut dyn Entropy,
 ) -> Result<Vec<u8>, Error> {
-    let json = Zeroizing::new(push.encode()?);
+    let mut json = Zeroizing::new(push.encode()?);
+    if json.len() > APNS_PLAIN_LEN {
+        return Err(Error::TooLarge);
+    }
+    json.resize(APNS_PLAIN_LEN, 0);
     let nonce: [u8; NONCE_LEN] = crypto::random(entropy)?;
     let ciphertext = crypto::aead_seal(key, &nonce, APNS_AAD, &json)?;
     Ok([nonce.as_slice(), &ciphertext].concat())
+}
+
+/// Hub side: a Live Activity's exact counts, sealed under the key the device registered for its pushes (15.3).
+pub fn seal_live(
+    key: &Secret<32>,
+    working: u64,
+    waiting: u64,
+    entropy: &mut dyn Entropy,
+) -> Result<Vec<u8>, Error> {
+    let mut plain = [0u8; 16];
+    plain[..8].copy_from_slice(&working.to_be_bytes());
+    plain[8..].copy_from_slice(&waiting.to_be_bytes());
+    let nonce: [u8; NONCE_LEN] = crypto::random(entropy)?;
+    let ciphertext = crypto::aead_seal(key, &nonce, LIVE_AAD, &plain)?;
+    Ok([nonce.as_slice(), &ciphertext].concat())
+}
+
+/// Device side: the counts of a sealed Live Activity block, `(working, waiting)`. `bad-format` for another
+/// length, `decrypt-failed` when it does not open under `key`.
+pub fn open_live(key: &Secret<32>, sealed: &[u8]) -> Result<(u64, u64), Error> {
+    if sealed.len() != LIVE_SEALED_LEN {
+        return Err(Error::BadFormat);
+    }
+    let (nonce, ciphertext) = sealed
+        .split_first_chunk::<NONCE_LEN>()
+        .ok_or(Error::BadFormat)?;
+    let plain = crypto::aead_open(key, nonce, LIVE_AAD, ciphertext)?;
+    let (working, waiting) = plain.split_first_chunk::<8>().ok_or(Error::BadFormat)?;
+    let waiting: [u8; 8] = waiting.try_into().map_err(|_| Error::BadFormat)?;
+    Ok((u64::from_be_bytes(*working), u64::from_be_bytes(waiting)))
 }
 
 /// Device side: what a sealed notification says. `too-large` above [`MAX_APNS_LEN`], `bad-format` when it is too
@@ -224,7 +272,8 @@ pub fn open(key: &Secret<32>, sealed: &[u8]) -> Result<ApnsPush, Error> {
     if ciphertext.len() < TAG_LEN {
         return Err(Error::BadFormat);
     }
-    ApnsPush::decode(&Zeroizing::new(crypto::aead_open(
-        key, nonce, APNS_AAD, ciphertext,
-    )?))
+    let plain = Zeroizing::new(crypto::aead_open(key, nonce, APNS_AAD, ciphertext)?);
+    // the padding: zero bytes after the JSON, which holds none (a payload of before has none)
+    let end = plain.iter().rposition(|b| *b != 0).map_or(0, |at| at + 1);
+    ApnsPush::decode(plain.get(..end).ok_or(Error::BadFormat)?)
 }

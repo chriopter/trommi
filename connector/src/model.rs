@@ -503,7 +503,14 @@ impl Model {
                 });
                 card.agent_device_id = sender;
                 card.object_state = state_name(fields.state).into();
-                card.urgency = urgency_name(fields.urgency).into();
+                // the level from the body; a header written before 11 October 2026 had it, one since has only the
+                // knock bit (and is the fallback for a body that did not open)
+                card.urgency = content
+                    .get("urgency")
+                    .and_then(Value::as_str)
+                    .filter(|name| URGENCIES.contains(name))
+                    .unwrap_or(urgency_name(fields.urgency))
+                    .into();
                 card.version_hash = Some(hash);
                 card.envelope_number = seen.change;
                 card.updated_at = seen.header.time;

@@ -144,6 +144,11 @@ public struct Store {
   public internal(set) var upgrade: UpgradeNotice?
   /** Called after every batch that changed the board (on the main actor). */
   public var onChange: ((Change) -> Void)?
+  /**
+   * A page of GET /v1/changes read ahead by the notification extension (PushNotify NotifyPrefetch), taken by its
+   * start: the hub's answer for exactly that cursor, which the core checks like any page. nil: ask the hub.
+   */
+  public var takeAhead: ((UInt64) -> JSON?)?
   /** Live: the stream is open. */
   public internal(set) var live = false
   /**
@@ -814,9 +819,14 @@ public struct Store {
       let before = cursor
       let page: JSON
       let waited = Spent.now
-      if let fetching = ahead { ahead = nil; page = try await noted { try await fetching.value } } else { page = try await noted { try await hub.changes(after: cursor) } }
+      if let fetching = ahead { ahead = nil; page = try await noted { try await fetching.value } }
+      else if let read = takeAhead?(cursor) { page = read; Spent.count("pages read ahead", 1) }
+      else { page = try await noted { try await hub.changes(after: cursor) } }
       Spent.add("hub page wait", since: waited)
-      if page["more"] as? Bool == true, let next = Wire.uint(page["change"]), next > cursor { let hub = self.hub; ahead = Task { try await hub.changes(after: next) } }
+      if page["more"] as? Bool == true, let next = Wire.uint(page["change"]), next > cursor {
+        let hub = self.hub
+        if let read = takeAhead?(next) { ahead = Task { read } } else { ahead = Task { try await hub.changes(after: next) } }
+      }
       let raw = page["items"] as? [JSON] ?? []
       let items = try Self.ordered(raw, after: cursor)
       Spent.count(readingBack ? "items read back" : "items", items.count)

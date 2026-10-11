@@ -1001,7 +1001,7 @@ export function base64urlEncode(bytes: Uint8Array): string
 export function base64urlDecode(text: string): Uint8Array
 export function fileLayout(storedLen: number): FileLayout
 export function fileChunk(storedLen: number, index: number): FileChunk
-export function openFileChunk(fileKey: Uint8Array, fileId: Uint8Array, index: number, last: boolean, sealed: Uint8Array): Uint8Array
+export function openFileChunk(fileKey: Uint8Array, head: Uint8Array, index: number, last: boolean, sealed: Uint8Array): Uint8Array
 export function shareLinkCreate(app: string, file: FileRef): ShareLink
 export function shareLinkParse(text: string): ShareLink
 export function checkShareExpiry(expiresAt: number, nowMs: number): void

@@ -148,12 +148,57 @@ fn apns_is_nonce_then_the_suites_aead_over_the_json() {
     let sealed = seal(&key(1), &push(), &mut Fixed(0x42)).expect("seals");
     let (nonce, ciphertext) = sealed.split_at(NONCE_LEN);
     assert_eq!(nonce, [0x42; NONCE_LEN]);
-    let json = crypto::aead_open(&key(1), &[0x42; NONCE_LEN], b"trommi apns v1", ciphertext)
+    let padded = crypto::aead_open(&key(1), &[0x42; NONCE_LEN], b"trommi apns v1", ciphertext)
         .expect("opens");
+    // the JSON, then zero bytes up to the one length of every payload
+    assert_eq!(padded.len(), APNS_PLAIN_LEN);
+    let json = format!(r#"{{"room_id":"{ROOM_TEXT}","change":4711,"urgency":2,"ticket":"AQIDBAU"}}"#);
+    assert_eq!(&padded[..json.len()], json.as_bytes());
+    assert!(padded[json.len()..].iter().all(|b| *b == 0));
+}
+
+#[test]
+fn every_sealed_payload_has_one_length() {
+    let lost = ApnsPush {
+        ticket: vec![],
+        urgency: 2,
+        ..push()
+    };
+    let small = ApnsPush {
+        change: 1,
+        ..push()
+    };
+    let lengths: Vec<usize> = [push(), lost, small]
+        .iter()
+        .map(|p| seal(&key(1), p, &mut SystemEntropy).expect("seals").len())
+        .collect();
+    assert_eq!(lengths, [MAX_APNS_LEN; 3]);
+    // a payload of before, unpadded, still opens
+    let json = format!(r#"{{"room_id":"{ROOM_TEXT}","change":4711,"urgency":2,"ticket":"AQIDBAU"}}"#);
+    let nonce = [9; NONCE_LEN];
+    let old = crypto::aead_seal(&key(1), &nonce, APNS_AAD, json.as_bytes()).expect("seals");
+    assert_eq!(open(&key(1), &[nonce.as_slice(), &old].concat()), Ok(push()));
+}
+
+#[test]
+fn a_live_activity_block_opens_to_its_counts() {
+    let sealed = seal_live(&key(1), 3, 7, &mut SystemEntropy).expect("seals");
+    assert_eq!(sealed.len(), LIVE_SEALED_LEN);
+    assert_eq!(open_live(&key(1), &sealed), Ok((3, 7)));
     assert_eq!(
-        String::from_utf8(json).expect("utf-8"),
-        format!(r#"{{"room_id":"{ROOM_TEXT}","change":4711,"urgency":2,"ticket":"AQIDBAU"}}"#)
+        seal_live(&key(1), 0, 1, &mut SystemEntropy).expect("seals").len(),
+        LIVE_SEALED_LEN
     );
+    assert_eq!(open_live(&key(2), &sealed), Err(Error::DecryptFailed));
+    assert_eq!(open_live(&key(1), &sealed[1..]), Err(Error::BadFormat));
+    // a push payload does not open as a Live Activity block, nor the other way
+    let mut flipped = sealed.clone();
+    flipped[20] ^= 1;
+    assert_eq!(open_live(&key(1), &flipped), Err(Error::DecryptFailed));
+    let (nonce, ct) = sealed.split_first_chunk::<NONCE_LEN>().expect("nonce");
+    let plain = crypto::aead_open(&key(1), nonce, b"trommi live v1", ct).expect("opens");
+    let as_push = crypto::aead_seal(&key(1), nonce, APNS_AAD, &plain).expect("seals");
+    assert_eq!(open_live(&key(1), &[nonce.as_slice(), &as_push].concat()), Err(Error::DecryptFailed));
 }
 
 #[test]
@@ -173,7 +218,7 @@ fn apns_holds_the_longest_payload_within_its_bound() {
         ticket: vec![0xff; MAX_TICKET_LEN],
     };
     let sealed = seal(&key(1), &longest, &mut SystemEntropy).expect("seals");
-    assert!(sealed.len() <= MAX_APNS_LEN);
+    assert_eq!(sealed.len(), MAX_APNS_LEN);
     assert_eq!(open(&key(1), &sealed), Ok(longest));
 }
 

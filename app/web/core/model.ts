@@ -47,12 +47,20 @@ import { emptyModel, emptyChange, emptyNewer } from './model-shape.ts'
 import { stepEnvelope } from './work.ts'
 import type {
   Alert, Answer, Body, Card, CardOption, Causal, Change, ContentState, HumanRegister, ItemState, Link, Linked, LinkState, Member, Model, Note,
-  ObjectState, PermissionRequest, Published, Session, SessionSettings, StackKey, Timeline, TimelineItem, WorkEnvelope,
+  ObjectState, PermissionRequest, Published, Session, SessionSettings, StackKey, Timeline, TimelineItem, Urgency, WorkEnvelope,
 } from './types.ts'
 
 export { emptyModel, emptyChange }
 const ALERTS_MAX = 200
 const URGENCY_RANK: Record<string, number> = { critical: 3, high: 2, normal: 1, low: 0 }
+/**
+ * A card's level (v1.md 9): the body's `urgency`; a header written since 11 October 2026 carries only the knock bit
+ * (low or high), one of before the level itself, so the header stands in where no body says it.
+ */
+const levelOf = (content: Fields | null | undefined, header: Urgency): Urgency => {
+  const u = content?.['urgency']
+  return typeof u === 'string' && u in URGENCY_RANK ? u as Urgency : header
+}
 type Obj = Record<string, any>
 const isObject = (v: unknown): v is Obj => !!v && typeof v === 'object' && !Array.isArray(v)
 /** A live message's JSON as text ('' for bytes that are no UTF-8: no body reads it). */
@@ -411,6 +419,11 @@ function bodyOf(r: ReceivedEnvelope, kind: BodyKind): { content: Fields | null; 
   return { content: null, state: UNREAD_STATE[r.code ?? ''] ?? 'header' }
 }
 const zeroHash = (h: string | null | undefined): boolean => !h || /^0*$/.test(h)
+/** When an answer was given: the body's `answered_at`, else the header's of before 11 October 2026, else its time. */
+const answeredAt = (content: Fields | null | undefined, header: number, time: number): number => {
+  const a = content?.['answered_at']
+  return typeof a === 'number' && Number.isSafeInteger(a) && a > 0 ? a : header || time
+}
 const refHex = (id: Uint8Array | null | undefined): string | null => { const h = id ? hex(id) : null; return zeroHash(h) ? null : h }
 
 /**
@@ -603,18 +616,19 @@ function applyCard(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
     if (first && (n < card.first_envelope_number || card.created_at !== h.time)) { card.first_envelope_number = Math.min(card.first_envelope_number, n); card.created_at = h.time; B.proj = null }
     let v = card.versions.find(x => x.version_hash === hash)
     if (!v) {
-      v = { object_version: 0, version_hash: hash, previous_version_hash: refHex(o.objectRef), envelope_number: n, sent_at: h.time, object_state: state, urgency: o.urgency, content: content as Body | null }
+      v = { object_version: 0, version_hash: hash, previous_version_hash: refHex(o.objectRef), envelope_number: n, sent_at: h.time, object_state: state, urgency: levelOf(content, o.urgency), content: content as Body | null }
       insertByNumber(card.versions, v)
       v.object_version = Number.isInteger(content?.['object_version']) ? content!['object_version'] as number : card.versions.indexOf(v) + 1
     } else if (content && !v.content) {
       v.content = content as Body
+      v.urgency = levelOf(content, v.urgency)
       if (Number.isInteger(content['object_version'])) v.object_version = content['object_version'] as number
     }
     if (n >= card.envelope_number) {      // the newest version this device knows: the card's own fields
       card.envelope_number = n
       card.version_hash = hash
       card.object_version = v.object_version
-      card.urgency = o.urgency
+      card.urgency = v.urgency
       if (v.content) { for (const f of CARD_CONTENT_FIELDS) (card as Obj)[f] = (v.content as Obj)[f] ?? defaultOf(f); card.content_state = 'ok' }
       else card.content_state = content_state
       card.unsupported = card.content_state === 'newer_schema' ? 'newer_schema' : card.content_state === 'ok' && !CARD_TYPES.includes(card.card_type) ? 'card_type' : null
@@ -649,7 +663,7 @@ function applyCard(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
     let a = card.answers.find(x => x.envelope_hash === hash)
     if (!a) {
       a = { ...fields, bound_version_hash: bound, bound_object_version: card.versions.find(v => v.version_hash === bound)?.object_version ?? card.object_version,
-        envelope_number: n, envelope_hash: hash, by_device_id: hex(h.sender), answered_at: o.answeredAt || h.time, taken_back_at: null, taken_back_sent_at: null, pending: false,
+        envelope_number: n, envelope_hash: hash, by_device_id: hex(h.sender), answered_at: answeredAt(content, o.answeredAt, h.time), taken_back_at: null, taken_back_sent_at: null, pending: false,
         ...(newer ? { unsupported: true as const } : {}), ...(content ? {} : { no_body: true }) }
       insertByNumber(card.answers, a)
     } else if (content && a['no_body']) { Object.assign(a, fields); delete a['no_body'] }

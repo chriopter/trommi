@@ -136,6 +136,15 @@ async fn the_tools_write_to_the_board_and_answers_come_back() {
     assert!(payloads(&human, "card_type")
         .iter()
         .any(|p| p["title"] == "Ship it?" && p["body"] == "Everything passes, twice."));
+    // the level stands in the body of every version (the header carries only whether it knocks)
+    let levels: Vec<Value> = payloads(&human, "card_type")
+        .iter()
+        .filter(|p| p["title"] == "Ship it?")
+        .map(|p| p["urgency"].clone())
+        .collect();
+    assert_eq!(levels, ["normal", "normal", "high"], "{levels:?}");
+    let listed: Value = serde_json::from_str(&mcp.ok("list_cards", json!({})).await).expect("JSON");
+    assert_eq!(listed[0]["urgency"], "high", "{listed}");
     assert!(payloads(&human, "name")
         .iter()
         .any(|p| p["name"] == "status_line/tests"));

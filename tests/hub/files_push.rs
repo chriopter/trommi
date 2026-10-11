@@ -534,8 +534,8 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
         format!("https://api.push.apple.com/3/device/{token}")
     );
     let payload: Value = serde_json::from_slice(&push.body).unwrap();
-    // Apple sees a fixed text; the number is sealed under the key the phone registered
-    assert_eq!(payload["aps"]["alert"]["body"], "Urgent: a new question.");
+    // Apple sees the one fixed text of every push; urgency and number are sealed under the key the phone registered
+    assert_eq!(payload["aps"]["alert"]["body"], "Something new.");
     let opened: Value = serde_json::from_slice(
         &trommi_hub::push::open_on_phone(
             &phone_key,
@@ -564,8 +564,40 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     hub.get(&format!("/v1/push-envelope?ticket={}", b64(&forged)))
         .refused(401, "unauthorised");
     hub.get("/v1/push-envelope").refused(401, "unauthorised");
+    // every sealed payload has one length
+    assert_eq!(unb64(payload["e"].as_str().unwrap()).unwrap().len(), 512);
 
-    // Live Activity: two counts and a tag. Work begins: start; a count changes: update
+    // with the ticket the extension reads ahead what the app catches up on: as GET /v1/changes gives it to this
+    // device, up to the change that rang, and no further
+    let own = s.w.ada.get(hub, "/v1/changes?after=0").ok();
+    let ahead_with = |ticket: &str, query: &str| {
+        common::request(hub.port, "GET", &format!("/v1/push-changes?{query}"), &[("trommi-ticket", ticket.to_string())], &[])
+    };
+    let ahead = ahead_with(ticket, "after=0").ok();
+    let rang = opened["change"].as_i64().unwrap();
+    let changes = |page: &Value| -> Vec<i64> {
+        page["items"].as_array().unwrap().iter().map(|i| i["change"].as_i64().unwrap()).collect()
+    };
+    assert!(!changes(&ahead).is_empty());
+    assert_eq!(*changes(&ahead).last().unwrap(), rang);
+    assert_eq!(
+        changes(&own).into_iter().filter(|c| *c <= rang).collect::<Vec<_>>(),
+        changes(&ahead)
+    );
+    assert_eq!(ahead["change"].as_i64(), Some(rang));
+    // "more" says whether the room goes on past the page, as GET /v1/changes says it: a page up to the change that
+    // rang does not tell the app it caught up while the room has more
+    let head = own["change"].as_i64().unwrap();
+    assert_eq!(ahead["more"], json!(rang < head));
+    let page = ahead_with(ticket, "after=0&limit=1").ok();
+    assert_eq!(changes(&page).len(), 1);
+    assert_eq!(page["more"], true);
+    ahead_with(&b64(&forged), "after=0").refused(401, "unauthorised");
+    hub.get("/v1/push-changes?after=0").refused(401, "unauthorised");
+    // the ticket is taken from its header only, never from the URL
+    hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0")).refused(401, "unauthorised");
+
+    // Live Activity: two marks (0 or 1) and a tag. Work begins: start; a mark changes: update
     let start_token = "cd".repeat(32);
     s.w.ada.post(hub, "/v1/live-activity", &json!({ "kind": "start", "token": start_token, "tag": "tag-1", "environment": "production", "topic": "com.trommi.app" })).ok();
     s.w.ada.post(hub, "/v1/live-activity", &json!({ "kind": "activity", "token": "ef".repeat(32), "tag": "tag-1", "environment": "production", "topic": "com.trommi.app" })).ok();
@@ -593,36 +625,59 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
         (Some("start"), Some(1), Some(1))
     );
     assert_eq!(started["attributes"], json!({ "tag": "tag-1" }));
+    // the exact counts are sealed for the phone, under the key it registered for its pushes; one length
+    let counts = |a: &Value| {
+        let sealed = unb64(a["content-state"]["s"].as_str().unwrap()).unwrap();
+        assert_eq!(sealed.len(), 12 + 16 + 16);
+        trommi_hub::push::open_live_on_phone(&phone_key, &sealed).unwrap()
+    };
+    assert_eq!(counts(started), (1, 1));
+    assert_eq!(started["relevance-score"], 100);
+    // more cards waiting change no mark: Apple never learns how many; the phone does
     card(&mut s, 1, 0);
+    card(&mut s, 1, 0);
+    let hub = &s.w.hub;
+    hub.eventually("the sealed count of three", || {
+        live(hub, &"ef".repeat(32)).iter().any(|a| counts(a) == (1, 3))
+    });
+    assert!(live(hub, &"ef".repeat(32))
+        .iter()
+        .all(|a| a["content-state"]["waiting"] == 1 && a["content-state"]["working"] == 1));
+    let report = |s: &mut Scene, working: bool| {
+        let hub = &s.w.hub;
+        let lease = s.agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "hears": true, "working": working, "last_call_at": 2 })).ok();
+        s.agent.lease = lease["generation"].as_u64();
+    };
+    report(&mut s, false);
     let hub = &s.w.hub;
     hub.eventually("the update of the Live Activity", || {
         live(hub, &"ef".repeat(32))
             .iter()
-            .any(|a| a["event"] == "update" && a["content-state"]["waiting"] == 2)
+            .any(|a| a["event"] == "update" && a["content-state"]["working"] == 0)
     });
-    // Apple says the activity's token is gone, for an update with new counts: the token is forgotten, and the
-    // counts are not taken for sent. The token registered next is sent them.
+    // Apple says the activity's token is gone, for an update with new marks: the token is forgotten, and the
+    // marks are not taken for sent. The token registered next is sent them.
     hub.recorder
         .answers
         .lock()
         .unwrap()
         .push(("ef".repeat(32), 410, "Unregistered".to_string()));
-    card(&mut s, 1, 0);
+    report(&mut s, true);
     let hub = &s.w.hub;
     hub.eventually("the update that Apple refuses", || {
         live(hub, &"ef".repeat(32))
             .iter()
-            .any(|a| a["event"] == "update" && a["content-state"]["waiting"] == 3)
+            .any(|a| a["event"] == "update" && a["content-state"]["working"] == 1)
     });
     std::thread::sleep(std::time::Duration::from_millis(300));
     let next = "12".repeat(32);
     s.w.ada.post(hub, "/v1/live-activity", &json!({ "kind": "activity", "token": next, "tag": "tag-1", "environment": "production", "topic": "com.trommi.app" })).ok();
     hub.eventually(
-        "the new token is sent the counts the old one never got",
+        "the new token is sent the marks the old one never got",
         || {
             live(hub, &next)
                 .iter()
-                .any(|a| a["event"] == "update" && a["content-state"]["waiting"] == 3)
+                .any(|a| a["event"] == "update" && a["content-state"]["working"] == 1)
         },
     );
 }

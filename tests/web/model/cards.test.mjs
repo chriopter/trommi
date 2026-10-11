@@ -191,3 +191,26 @@ test('the owner moves with the core\'s word (a takeover): the card names whom an
   w.card(id, { title: 'Q, again', object_version: 2 }, { sender: second, previous: v1.hash, object_after: { object_id: id, owner: second, object_state: 'open', current_version: w.hash() } })
   assert.equal(w.model.cards.get(hex(id)).agent_device_id, hex(second))
 })
+
+test('the level and the answer time come from the body; headers of before still give them', () => {
+  const w = new World(); w.groups()
+  // since 11 October 2026: the header knocks (high) or not (low), the body names the level
+  const id = id16(0xd1), hid = hex(id)
+  const v1 = w.card(id, { card_type: 'decision', title: 'Release now?', options: OPTIONS, urgency: 'critical', object_version: 1 }, { urgency: 'high' })
+  assert.equal(w.model.cards.get(hid).urgency, 'critical')
+  w.card(id, { card_type: 'decision', title: 'Release now?', options: OPTIONS, urgency: 'normal', object_version: 2 }, { urgency: 'low', previous: v1.hash })
+  assert.equal(w.model.cards.get(hid).urgency, 'normal')
+  // the answer time from the body; the header's is 0
+  const at = 1_760_000_123_456
+  w.take({ kind: 'answer', sender: w.me, recipient: w.agent, object: w.object(id, 'card', 'answered', { answered_at: 0, object_ref: w.objects.get(id).current }),
+    payload: { schema_version: 2, answer_action: 'answer', choices: ['sqlite'], answered_at: at }, bind: { kind: 'answer', object_id: id, version_hash: w.objects.get(id).current, choices: ['sqlite'] } })
+  assert.equal(w.model.cards.get(hid).answer.answered_at, at)
+
+  // a card of before: the level in the header, no urgency in the body; the answer time in the header
+  const old = id16(0xd2), oldHex = hex(old)
+  w.card(old, { card_type: 'decision', title: 'Old one', options: OPTIONS, object_version: 1 }, { urgency: 'normal' })
+  assert.equal(w.model.cards.get(oldHex).urgency, 'normal')
+  w.answer(old, { answer_action: 'answer', choices: ['sqlite'] })
+  const answer = w.model.cards.get(oldHex).answer
+  assert.ok(answer.answered_at > 0)
+})

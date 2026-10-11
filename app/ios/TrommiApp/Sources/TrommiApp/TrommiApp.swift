@@ -249,6 +249,7 @@ final class BoardModel: ObservableObject {
     room = r
     desk = DeskModel(board: r.board)
     r.onChange = { [weak self] _ in self?.changed() }
+    r.takeAhead = NotifyBridge.takeAhead(room: r.roomIdHex)   // pages the notification extension read ahead
     ShareImport.shared.attach(self)   // the Share Extension's inbox (ShareImport.swift)
     // the board from the encrypted cache first (no network), then live: the catch-up starts where the cache stopped
     Task { @MainActor in

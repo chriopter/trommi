@@ -44,7 +44,7 @@ const FIELDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   card: ['object_version', 'previous_version_hash', 'card_type', 'title', 'teaser', 'body', 'options', 'sections', 'html', 'allows_multiple', 'recommended', 'urgency_reason', 'attachments',
     'change_note', 'close_summary', 'withdraw_reason', 'merged_into_object_id', 'merged_from_object_ids'],
   artifact: ['object_version', 'previous_version_hash', 'artifact_type', 'title', 'note', 'attachments', 'released_until'],
-  answer: ['answer_action', 'choices', 'note', 'option_notes', 'attachments', 'marks', 'trusted'],
+  answer: ['answer_action', 'choices', 'note', 'option_notes', 'attachments', 'marks', 'trusted', 'answered_at'],
   request: ['tool_name', 'description', 'input_preview'],
   take_back: [],
   verdict: [],

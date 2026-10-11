@@ -63,6 +63,7 @@ final class LiveStateTests: XCTestCase {
     let s = LiveState.state(working: 2, waiting: [cand("a", created: 5), cand("b", urgency: "high", created: 9)], readable: true)
     XCTAssertEqual(s.working, 2)
     XCTAssertEqual(s.waiting, 2)
+    XCTAssertEqual(s.exact, true)
     XCTAssertEqual(s.card?.id, "b")
     XCTAssertNil(s.done)
     XCTAssertNil(LiveState.state(working: 1, waiting: [], readable: true).card)
@@ -80,12 +81,13 @@ final class LiveStateTests: XCTestCase {
     XCTAssertFalse(json.contains("\"card\""))
   }
 
-  /** The hub's content-state: two counts, nothing else; the card's keys are absent and decode as nil. */
+  /** The hub's content-state: two marks, nothing else; the card's keys are absent and decode as nil. */
   func testHubPushDecodesWithoutACard() throws {
-    let s = try JSONDecoder().decode(LiveCounts.self, from: Data(#"{"working":3,"waiting":4}"#.utf8))
-    XCTAssertEqual(s, LiveCounts(working: 3, waiting: 4))
+    let s = try JSONDecoder().decode(LiveCounts.self, from: Data(#"{"working":1,"waiting":1}"#.utf8))
+    XCTAssertEqual(s, LiveCounts(working: 1, waiting: 1))
     XCTAssertNil(s.card)
-    XCTAssertEqual(s.line, "3 agents working · 4 questions waiting")
+    XCTAssertNil(s.exact)
+    XCTAssertEqual(s.line, "Agents at work · Questions waiting")
     let full = LiveState.state(working: 1, waiting: [cand("a")], readable: true)
     XCTAssertEqual(try JSONDecoder().decode(LiveCounts.self, from: JSONEncoder().encode(full)), full)
   }

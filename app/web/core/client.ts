@@ -725,7 +725,9 @@ export class Client {
     if (!M.cardSupported(card)) fail('needs-update', UPDATE_MESSAGE)
     if (card.content_state !== 'ok') fail('card-pruned', 'this device holds only the header of this card; answer it on a device that shows it')
     if (!card.session_id) fail('not-found', 'the card has no session')
-    const content: Fields = { answer_action, choices, note, option_notes, attachments, marks, trusted }
+    // when it was answered stands in the body (v1.md 9), not in the header the hub reads
+    const answered_at = this.now()
+    const content: Fields = { answer_action, choices, note, option_notes, attachments, marks, trusted, answered_at }
     // An answer whose every choice is an option the agent marked final settles the card in the same step, as read
     // and shred close it. Anything said beside the choice is for the agent to read, so the card stays with it; so
     // does a trusted answer, where the agent still chooses.
@@ -734,7 +736,7 @@ export class Client {
     const state = answer_action === 'answer' && !settles ? 'answered' : 'closed'
     const recipient = M.holderOf(this.model, card)
     const echo: Omit<Answer, 'pending'> = { answer_action, choices, note: note ?? null, option_notes: option_notes ?? {}, attachments: attachments ?? [], marks: marks ?? [], trusted: !!trusted,
-      bound_version_hash: card.version_hash, bound_object_version: card.object_version, envelope_number: null, envelope_hash: null, by_device_id: this.my_device_id, answered_at: this.now(), taken_back_at: null, taken_back_sent_at: null }
+      bound_version_hash: card.version_hash, bound_object_version: card.object_version, envelope_number: null, envelope_hash: null, by_device_id: this.my_device_id, answered_at, taken_back_at: null, taken_back_sent_at: null }
     const local_id = `local-${randomHex(8)}`
     this.tell(ch => { M.echoAnswer(this.model, { local_id, object_id, answer: echo, object_state: state }, ch) })
     const draft: Draft = { kind: 'answer', session: unhex(card.session_id!), objectId: unhex(object_id), choices, closes: state === 'closed', payload: encodeBodyBytes('answer', content) }

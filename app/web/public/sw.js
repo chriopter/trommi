@@ -4,7 +4,7 @@
 //      (requests to the hub are not touched at all; the room lives in IndexedDB, encrypted where the core says so).
 //   2. Attachments: /att/<attachment_id> is answered by asking an open page of the app, which fetches and decrypts
 //      the file with the client core (only when the browser actually needs it: a visible <img loading=lazy>, a click).
-//   3. Push: a notification per push (the hub sends only { room_id, envelope_number, urgency }); a tap opens the app.
+//   3. Push: a notification per push (the hub sends only { room_id, change, urgency }, encrypted for this browser); a tap opens the app.
 const VERSION = "dev"   // written by dev/build.mjs at deploy time (a hash of the shell)
 const SHELL = []        // written by dev/build.mjs at deploy time: every file the app serves
 const CACHE = `shell-${VERSION}`
@@ -102,7 +102,8 @@ self.addEventListener('push', event => {
     message.tag = `lost-${String(message.device_id ?? '').slice(0, 16)}`
   }
   event.waitUntil(self.registration.showNotification(message.title || 'Trommi', {
-    body: message.body || (message.urgency === 'critical' || message.urgency === 'high' ? 'Something knocks' : 'A new question'),
+    // the hub's urgency is a number (v1.md 15.2), encrypted for this browser alone: 2 and 3 knock
+    body: message.body || (Number(message.urgency) >= 2 || message.urgency === 'critical' || message.urgency === 'high' ? 'Something knocks' : 'A new question'),
     tag: message.tag || 'trommi', renotify: true, icon: '/icons/trommi-192.png',
     data: { url: ownUrl(message.url) },
   }))

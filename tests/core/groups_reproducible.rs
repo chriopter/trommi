@@ -171,7 +171,7 @@ fn digest(trace: &Trace) -> String {
 }
 
 /// The digest of [`play`] without the two Removes: the same in every process.
-const PLAYED: &str = "5c8d118e7af074db22c688da4889827edf122589bd6c6a755acc53452affced8";
+const PLAYED: &str = "2147d68fda94cf01b0ae22725670dd1d45e497d273f99196297dee9bf75dfe9f";
 
 #[test]
 fn the_same_seeds_give_the_same_bytes_twice_in_one_process() {

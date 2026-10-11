@@ -25,6 +25,15 @@ public final class NotifyCoreLive: NotifyCore {
   /** The version of the core this extension links: proof that the library is in the binary. */
   public var version: String { versions().core }
 
+  public func openLive(key: [UInt8], sealed: [UInt8]) throws -> (working: UInt64, waiting: UInt64) {
+    do {
+      let counts = try openLiveActivity(key: Data(key), sealed: Data(sealed))
+      return (counts.working, counts.waiting)
+    } catch let CoreError.Refused(code, message) {
+      throw NotifyCoreError(code: errorCodeText(code: code), message: message)
+    }
+  }
+
   public func openPush(key: [UInt8], sealed: [UInt8]) throws -> ApnsPush {
     do {
       let note = try openApnsPush(key: Data(key), sealed: Data(sealed))

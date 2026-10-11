@@ -52,12 +52,21 @@ fn the_timers_do_their_work() {
             .map(|p| serde_json::from_slice::<Value>(&p.body).unwrap()["aps"].clone())
             .collect()
     };
+    // the alerts about a lost agent: every alert has the one neutral text; what it is about is sealed for the
+    // phone (a push without a ticket: no envelope, the hub's word that an agent was lost)
     let alerts = || -> Vec<String> {
         hub.pushes()
             .iter()
             .filter_map(|p| serde_json::from_slice::<Value>(&p.body).ok())
+            .filter(|v| {
+                v["e"]
+                    .as_str()
+                    .and_then(unb64)
+                    .and_then(|sealed| trommi_hub::push::open_on_phone(&[5u8; 32], &sealed))
+                    .and_then(|plain| serde_json::from_slice::<Value>(&plain).ok())
+                    .is_some_and(|opened| opened["ticket"] == "")
+            })
             .filter_map(|v| v["aps"]["alert"]["body"].as_str().map(str::to_string))
-            .filter(|text| text.contains("lost"))
             .collect()
     };
 
@@ -98,13 +107,16 @@ fn the_timers_do_their_work() {
     // the agent's process dies: no renewal, no closed stream to tell. A minute later the lease has run out and
     // the timer tells the Live Activity that nobody works any more (it goes on: the question still waits)
     hub.clock(MINUTE + 1000);
-    hub.eventually("the Live Activity counts no work when the lease ran out", || {
-        live(&activity).iter().any(|a| {
-            a["event"] == "update"
-                && a["content-state"]["working"] == 0
-                && a["content-state"]["waiting"] == 1
-        })
-    });
+    hub.eventually(
+        "the Live Activity counts no work when the lease ran out",
+        || {
+            live(&activity).iter().any(|a| {
+                a["event"] == "update"
+                    && a["content-state"]["working"] == 0
+                    && a["content-state"]["waiting"] == 1
+            })
+        },
+    );
     assert!(
         alerts().is_empty(),
         "not lost yet: the agent may come back within a minute"
@@ -112,7 +124,7 @@ fn the_timers_do_their_work() {
     // another minute without it: the human devices are told, once
     hub.clock(MINUTE);
     hub.eventually("the agent is reported lost", || alerts().len() == 1);
-    assert_eq!(alerts()[0], "An agent lost its connection.");
+    assert_eq!(alerts()[0], "Something new.");
     let lost = loop {
         let e = events.until("presence");
         if e.data["lost"] == true {

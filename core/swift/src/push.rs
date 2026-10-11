@@ -39,6 +39,24 @@ pub fn open_apns_push(key: Vec<u8>, sealed: Vec<u8>) -> Result<PushNote, CoreErr
     })
 }
 
+record! {
+    /// The exact counts of a Live Activity, as the hub sealed them for this phone (spec/v1.md 15.3).
+    pub struct LiveActivityCounts {
+        /// Agents at work.
+        pub working: u64,
+        /// Questions waiting.
+        pub waiting: u64,
+    }
+}
+
+/// Opens a Live Activity's sealed block under the key the app registered for its pushes; `decrypt-failed` when it
+/// does not open, `bad-format` for another length.
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+pub fn open_live_activity(key: Vec<u8>, sealed: Vec<u8>) -> Result<LiveActivityCounts, CoreError> {
+    let (working, waiting) = push::open_live(&Secret::<32>::from_slice(&key)?, &sealed)?;
+    Ok(LiveActivityCounts { working, waiting })
+}
+
 /// Reads the payload of a Web Push, after the browser decrypted it; `bad-format` for another spelling.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn read_web_push(payload: Vec<u8>) -> Result<PushNote, CoreError> {

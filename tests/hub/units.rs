@@ -1579,7 +1579,32 @@ mod push_tests {
                 header("ttl").as_str(),
                 header("content-encoding").as_str()
             ),
-            ("high", "86400", "aes128gcm")
+            ("normal", "86400", "aes128gcm")
+        );
+        // the topic is random to the push service: no room in it, one per subscription, stable for it
+        let topic = header("topic");
+        assert_ne!(topic, b64(&[3u8; 32][..12]));
+        assert!(!topic.is_empty() && topic.len() <= 32);
+        let again =
+            web_push_request(&vapid, &sub, &[], &[4; 32], 43, 0, 1_700_000_000_000).unwrap();
+        let topic_of = |r: &PushRequest| {
+            r.headers
+                .iter()
+                .find(|(k, _)| k == "topic")
+                .unwrap()
+                .1
+                .clone()
+        };
+        assert_eq!(topic_of(&again), topic);
+        let other = WebSubscription {
+            auth: vec![8; 16],
+            ..sub.clone()
+        };
+        assert_ne!(
+            topic_of(
+                &web_push_request(&vapid, &other, &[], &[3; 32], 42, 2, 1_700_000_000_000).unwrap()
+            ),
+            topic
         );
         let auth = header("authorization");
         let token = auth
@@ -1657,22 +1682,16 @@ mod push_tests {
                 && !a.accepts(&reg.token, "production", "com.other")
         );
         let r = a
-            .alert(
-                &reg,
-                Text::Urgent,
-                &[3; 32],
-                77,
-                3,
-                Some("TICKET"),
-                1_700_000_000_000,
-            )
+            .alert(&reg, &[3; 32], 77, 3, Some("TICKET"), 1_700_000_000_000)
             .unwrap();
         assert_eq!(
             r.url,
             format!("https://api.push.apple.com/3/device/{}", reg.token)
         );
         let payload: Value = serde_json::from_slice(&r.body).unwrap();
-        assert_eq!(payload["aps"]["alert"]["body"], "Urgent: a new question.");
+        // one text for every kind: what it is about stands only in the sealed part
+        assert_eq!(payload["aps"]["alert"]["body"], "Something new.");
+        assert_eq!(payload["aps"]["alert"]["title"], "Trommi");
         assert_eq!(payload["aps"]["mutable-content"], 1);
         assert_eq!(
             String::from_utf8(
@@ -1704,33 +1723,17 @@ mod push_tests {
         );
         // the provider token is reused within 40 minutes
         let again = a
-            .alert(
-                &reg,
-                Text::Question,
-                &[3; 32],
-                78,
-                1,
-                None,
-                1_700_000_060_000,
-            )
+            .alert(&reg, &[3; 32], 78, 1, None, 1_700_000_060_000)
             .unwrap();
         assert_eq!(again.headers[1], r.headers[1]);
         let later = a
-            .alert(
-                &reg,
-                Text::Question,
-                &[3; 32],
-                79,
-                1,
-                None,
-                1_700_003_000_000,
-            )
+            .alert(&reg, &[3; 32], 79, 1, None, 1_700_003_000_000)
             .unwrap();
         assert_ne!(later.headers[1], r.headers[1]);
     }
 
     #[test]
-    fn a_live_activity_push_carries_two_counts() {
+    fn a_live_activity_push_carries_two_marks_and_the_counts_sealed() {
         let a = apns();
         let start = a
             .live_activity(
@@ -1740,16 +1743,24 @@ mod push_tests {
                 "tag-1",
                 "start",
                 2,
-                1,
+                5,
+                Some(&[6; 32]),
                 600_000,
                 1_700_000_000_000,
             )
             .unwrap();
         let payload: Value = serde_json::from_slice(&start.body).unwrap();
-        assert_eq!(
-            payload["aps"]["content-state"],
-            json!({ "working": 2, "waiting": 1 })
-        );
+        let state = &payload["aps"]["content-state"];
+        assert_eq!((&state["working"], &state["waiting"]), (&json!(1), &json!(1)));
+        let sealed = unb64(state["s"].as_str().unwrap()).unwrap();
+        assert_eq!(open_live_on_phone(&[6; 32], &sealed), Some((2, 5)));
+        assert_eq!(open_live_on_phone(&[7; 32], &sealed), None);
+        // without a push key of the device: the marks alone
+        let plain = a
+            .live_activity("production", &"cd".repeat(32), "com.trommi.app", "tag-1", "update", 2, 5, None, 600_000, 1_700_000_000_000)
+            .unwrap();
+        let plain: Value = serde_json::from_slice(&plain.body).unwrap();
+        assert_eq!(plain["aps"]["content-state"], json!({ "working": 1, "waiting": 1 }));
         assert_eq!(payload["aps"]["attributes"], json!({ "tag": "tag-1" }));
         assert_eq!(payload["aps"]["relevance-score"], 100);
         assert!(start
@@ -1765,6 +1776,7 @@ mod push_tests {
                 "end",
                 0,
                 0,
+                None,
                 600_000,
                 1_700_000_000_000,
             )
