@@ -138,6 +138,15 @@ enum PerfScript {
       await window("typing 40 keys", seconds: 2.5) {
         for _ in 0..<40 { NotificationCenter.default.post(name: typeKey, object: nil); try? await Task.sleep(nanoseconds: 50_000_000) }
       }
+      // back from the chat to the list (the swipe back, his case on build 59): quiet, then while news arrive
+      await window("back to the chat list", seconds: 1.5) { withAnimation { model.chatPath = [] } }
+      model.openChat(agent)
+      try? await Task.sleep(nanoseconds: 2_000_000_000)
+      await window("back to the chat list, news arriving", seconds: 3.5) {
+        Task { @MainActor in await burst { others[$0 % others.count] } }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        withAnimation { model.chatPath = [] }
+      }
       RenderCount.flush("speed run")
       say("done")
     }

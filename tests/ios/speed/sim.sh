@@ -6,7 +6,7 @@
 # (taskpolicy -b), nearer to an older iPhone.
 #
 #   tests/ios/speed/sim.sh                 # build, run, print the SPEED/WINDOW lines
-#   BEFORE=<ref> HARNESS=<commit> tests/ios/speed/sim.sh   # <ref>'s app with the harness of <commit> put in
+#   BEFORE=<ref> HARNESS="<commit>…" tests/ios/speed/sim.sh   # <ref>'s app with the harness commits put in
 #
 # Environment: MAC [trommidev@mac], MAC_KEY (optional), SIM [speed iPhone], RUNS [3], SLOW [0], KEEP_BUILD [0]
 set -euo pipefail
@@ -24,7 +24,7 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/src"
 if [ -n "${BEFORE:-}" ]; then
   git -C "$repo" archive "$BEFORE" app/ios core/swift demo CHANGELOG.md | tar xf - -C "$tmp/src"
-  git -C "$repo" diff "${HARNESS:?HARNESS=<the harness commit>}~1" "$HARNESS" -- app/ios | (cd "$tmp/src" && git apply)
+  for c in ${HARNESS:?HARNESS=<the harness commits, oldest first>}; do git -C "$repo" diff "$c~1" "$c" -- app/ios | (cd "$tmp/src" && git apply); done
 else
   git -C "$repo" ls-files -z app/ios core/swift demo CHANGELOG.md | (cd "$repo" && xargs -0 tar cf -) | tar xf - -C "$tmp/src"
 fi
