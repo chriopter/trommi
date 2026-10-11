@@ -10,6 +10,7 @@ import UIKit
 import TrommiClient
 import TrommiCoreLive
 import os
+import Combine
 
 /** Cold start to the first rendered Desk (os log "trommi", category "timing"). */
 enum StartClock {
@@ -28,7 +29,8 @@ enum StartClock {
 
 @main
 struct TrommiApp: App {
-  @StateObject private var model = BoardModel.shared
+  // (held, not observed: the scene's body ran again on every change of the board; RootView observes the model)
+  private let model = BoardModel.shared
   @Environment(\.scenePhase) private var scenePhase
   #if canImport(UIKit)
   @UIApplicationDelegateAdaptor(PushDelegate.self) private var push   // Push.swift
@@ -38,11 +40,10 @@ struct TrommiApp: App {
   var body: some Scene {
     WindowGroup {
       RootView().environmentObject(model)
-        .preferredColorScheme(model.theme.scheme)
         .tint(Ink.accent)
       #if canImport(UIKit)
         .onAppear { push.model = model; push.ask() }
-        .onChange(of: model.phase) { _, p in if p == .board { push.ask() } }
+        .onReceive(model.$phase.dropFirst().removeDuplicates()) { p in if p == .board { push.ask() } }   // (as onChange: the scene does not observe the model)
       #endif
         .onChange(of: scenePhase) { _, p in model.scene(active: p == .active) }
         .onAppear { PerfScript.runIfAsked(model); MegaScript.runIfAsked(model); SpeedScript.runIfAsked(model) }
@@ -1035,6 +1036,7 @@ struct RootView: View {
       }
     }
     .background(Ink.bg)
+    .preferredColorScheme(model.theme.scheme)
     // the demo's tag at the top of every screen, below the island: content starts under it, nothing covers it
     // (an iPad: floating at the foot, right; above it sat over the sidebar's desk box and the centred title)
     .overlay(alignment: .bottomTrailing) { if model.demo && !DemoData.storeShots && model.phase == .board && model.demoKit == nil { DemoTag().padding(.trailing, 24).padding(.bottom, 24) } }
