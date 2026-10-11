@@ -36,6 +36,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex: a session that was woken but did not read the board is woken again by the next message (at most every
   3 minutes); it answers a card's question under that card; restart and "key in use" messages speak Codex's language
   instead of Claude Code's.
+- iPhone: after another device of yours hands over older keys, the app no longer empties the Desk and reads the whole
+  room again: what it has is kept, only what was missing is read (about fifteen times faster).
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
 - iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster
@@ -65,6 +67,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   takes you away from that page.
 - Logging in on the web reads a big account several times faster, keeps saying how far it is, and a log in that
   was given up no longer leaves this browser stuck on "Not opened": logging in again works.
+- iPhone: the Dynamic Island shows only while a question waits (no more "0"), and its bell no longer jumps on every
+  update.
 - Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
   session is repaired first and the message is sent again.
 - iPhone: decisions answered, read or closed on another device no longer stay on the Desk as open questions, also
