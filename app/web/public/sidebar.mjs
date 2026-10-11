@@ -592,8 +592,9 @@ const waitingBadge = (n, knocks) => html`<i class="tab-badge${knocks ? ' is-knoc
 const GEAR = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M12 3.2L13.4 5.6L16.1 4.9L16.8 7.6L19.4 8.4L18.6 11.1L20.6 13L18.5 14.8L19.1 17.5L16.4 18.1L15.4 20.7L12.9 19.6L10.6 21.1L9.3 18.6L6.5 18.8L6.4 16L4 14.6L5.5 12.2L4.4 9.6L7 8.6L7.4 5.8L10.2 6.1Z"/><path d="M12.1 9.3Q14.7 9.6 14.8 12Q14.6 14.6 12 14.7Q9.4 14.5 9.3 12Q9.5 9.4 12.1 9.3Z"/></svg>')
 /** The Trommi menu (#brand-doors): the wide screen's (from the sidebar's foot) and the phone's (from the pill), one
  *  component: the desks (each with its drawing and what waits, New Desk…), Settings, and one row of small buttons for
- *  this device: Push (Off → All → Only knocking), Theme (Light → Dark → System), Keyboard Shortcuts, Demo. A phone
- *  also has its places here (Scribble, Artifacts). Log Out is in Settings · Account. */
+ *  this device: Push (Off → All → Only knocking), Theme (Light → Dark → System), Keyboard Shortcuts, Demo, and Log out
+ *  (/logout, the same page that asks first as Settings · Account's Log Out). A phone also has its places here
+ *  (Scribble, Artifacts). */
 function menuDoors(model, base) {
   return html`<nav class="sidedoors" id="brand-doors" role="menu" aria-label="Desks and settings" data-controller="menu" data-menu-desk-value="${base}/" data-action="keydown->menu#walk click->menu#chosen" data-owns-keys hidden>
 <div class="menu-desks" id="menu-desks">${menuDeskRows(model, base)}
@@ -602,6 +603,7 @@ function menuDoors(model, base) {
 <p class="menu-desk-error" data-menu-target="deskError" role="alert"></p></div>
 <a role="menuitem" class="menu-settings" href="${base}/settings" data-nav draggable="false" id="menu-settings">${GEAR}<span>Settings</span></a>
 <button role="menuitemcheckbox" type="button" id="demo-toggle" class="menu-demo-row demo-toggle" aria-checked="${String(inDemo())}" title="${inDemo() ? 'Leave the demo: back to your desks' : 'The demo: a made-up room, nothing is kept'}">${sk('play')}<span>Demo</span><i class="demo-switch" aria-hidden="true"><b></b></i></button>
+<a role="menuitem" class="menu-logout-row" href="${base}/logout" data-nav draggable="false" id="menu-logout">${sk('logout')}<span>Log out</span></a>
 <div class="menu-places">${[['scribble-board', 'pen', 'Scribble'], ['artifacts', 'picture', 'Artifacts']].map(([p, icon, word]) => html`<a role="menuitem" href="${base}/${p}" data-nav draggable="false">${sk(icon)}<span>${word}</span></a>`)}</div>
 <div class="menu-icons" role="group" aria-label="This device">
 <button role="menuitem" type="button" id="push-toggle" class="menu-ico" data-level="off" aria-label="Push on this device: No" title="Push on this device">${sk('bell')}${raw('<svg class="push-mark push-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 3.8Q12 12.2 19.9 20.4"/></svg><svg class="push-mark push-knock" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.6Q11.9 10.4 12.1 12.9"/><path d="M12 15.6Q12.1 15.8 12 16"/></svg>')}</button>

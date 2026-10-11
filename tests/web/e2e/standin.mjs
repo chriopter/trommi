@@ -643,6 +643,32 @@ export const steps = [
     })
   }],
 
+  ['the Trommi menu\'s Log out: a logged-in profile opens the menu, Log out, is asked once, lands on the start screen with nothing kept', async ctx => {
+    const { check } = ctx.run
+    await ctx.within('L', async L => {
+      await ui.logIn(L, ctx.app.start(), ctx.email, ctx.password)
+      await ui.live(L, 'the profile live', 60000)
+      await L.click(await L.js("return document.querySelector('.desk-switch-open')?.getClientRects().length ? '.desk-switch-open' : '#brand-menu'"))
+      await L.until("document.getElementById('brand-doors')?.hidden === false && document.querySelector('#menu-logout')?.getClientRects().length", 'the menu open, with Log out')
+      check(await L.js("const m = document.getElementById('brand-doors'), at = id => [...m.querySelectorAll('[id]')].findIndex(e => e.id === id); return at('demo-toggle') < at('menu-logout') && at('menu-logout') < at('push-toggle')"), 'Log out stands under Demo, above the small buttons')
+      // the keyboard reaches it: End is the last entry, the arrows walk up to Log out
+      await L.key('End', 35)
+      for (let i = 0; i < 8 && !await L.js("return document.activeElement?.id === 'menu-logout'"); i++) await L.key('ArrowUp', 38)
+      check(await L.js("return document.activeElement?.id === 'menu-logout'"), 'the menu\'s arrows reach Log out')
+      await L.shot('standin-23b-menu-logout')
+      await ui.logOutFromMenu(L)
+      check(await L.js("return !!document.querySelector('#way-create') && !!document.querySelector('#way-login')"), 'the start screen after Log out')
+      const where = await L.js(`const out = {}
+        for (const d of await indexedDB.databases()) {
+          const db = await new Promise((ok, no) => { const r = indexedDB.open(d.name); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error) })
+          for (const n of db.objectStoreNames) { const c = await new Promise(ok => { const r = db.transaction(n).objectStore(n).count(); r.onsuccess = () => ok(r.result) }); if (c) out[d.name + '/' + n] = c }
+          db.close()
+        }
+        return out`).catch(() => null)
+      ctx.run.note(`after the menu's Log out (the same /logout as Settings) the profile keeps: ${JSON.stringify(where)}`)
+    })
+  }],
+
   ['takeover: the session\'s "Copy Invite Link" → a new agent stand-in joins with it → the old one is out, the new one reads the history and answers', async ctx => {
     const { check } = ctx.run
     const A = await ctx.profile('A')

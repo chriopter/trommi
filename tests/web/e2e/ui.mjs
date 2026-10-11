@@ -121,6 +121,18 @@ export async function logOut(page) {
   await page.until("document.querySelector('#way-create') && document.querySelector('#way-login')", 'the welcome screen after logging out', 30000)
 }
 
+/** The menu at the Desk's name → Log out → asked once (the same page as Settings · Account's) → the welcome screen. */
+export async function logOutFromMenu(page) {
+  if (await page.js("return document.getElementById('brand-doors')?.hidden !== false")) {
+    await page.click(await page.js("return document.querySelector('.desk-switch-open')?.getClientRects().length ? '.desk-switch-open' : '#brand-menu'"))
+    await page.until("document.getElementById('brand-doors')?.hidden === false && document.querySelector('#menu-logout')?.getClientRects().length", 'the menu open, with Log out')
+  }
+  await page.click('#menu-logout')
+  await page.until("location.pathname === '/logout' && document.getElementById('logout-go')", 'the question before logging out')
+  await page.click('#logout-go')
+  await page.until("document.querySelector('#way-create') && document.querySelector('#way-login')", 'the welcome screen after logging out', 30000)
+}
+
 /** What is stored in the page's origin: IndexedDB records and localStorage keys. */
 export const storedCount = page => page.js(`const dbs = indexedDB.databases ? await indexedDB.databases() : []
   let records = 0
