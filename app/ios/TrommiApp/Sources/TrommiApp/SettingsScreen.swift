@@ -117,7 +117,7 @@ struct SettingsHome: View {
         link("theme") { SettingsRow(title: "Theme", detail: model.theme.word, chevron: true) { Sketch(model.theme == .dark ? "moon" : "sun") } }
       }
       SettingsGroup {
-        link("mls-proof") { SettingsRow(title: "MLS proof", chevron: true) { Image(systemName: "checkmark.shield").font(.system(size: 20)).foregroundStyle(Ink.fg) } }
+        link("mls-proof") { SettingsRow(title: "Security Info", chevron: true) { Image(systemName: "checkmark.shield").font(.system(size: 20)).foregroundStyle(Ink.fg) } }
         RowRule()
         // (App Review 5.1.1(i): the privacy policy reachable inside the app, the same page App Store Connect names)
         Link(destination: URL(string: "https://trommi.com/privacy")!) { SettingsRow(title: "Privacy Policy", chevron: true) { Image(systemName: "hand.raised").font(.system(size: 20)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)

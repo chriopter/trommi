@@ -14,7 +14,7 @@ import { Controller, controller, copyText, html, settingsPage } from './ui.mjs'
 /* global __TROMMI_PROOF_WORKER__ */
 // The worker's address: the deployed bundle names its file (dev/build.mjs), the dev server serves the source.
 const WORKER = typeof __TROMMI_PROOF_WORKER__ === 'string' ? __TROMMI_PROOF_WORKER__ : '/gen/vendor/proof-worker.mjs'
-const TITLE = 'MLS proof'
+const TITLE = 'Security Info'
 const RUNNING = 'The Rust core is testing itself…'
 
 /** A time the core measured (microseconds) in milliseconds: one decimal under 100 ms. */

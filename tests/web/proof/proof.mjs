@@ -149,7 +149,7 @@ try {
   await settled()
   const first = await read()
   const okLine = /^OK: the Rust core ran (\d+) steps in \d+ ms$/.exec(first.line ?? '')
-  check(first.title === 'MLS proof' && first.back === 'Settings', 'the screen is a page of Settings: its title, the way back', first)
+  check(first.title === 'Security Info' && first.back === 'Settings', 'the screen is a page of Settings: its title, the way back', first)
   check(Boolean(okLine), 'the first line starts with OK and says how many steps ran in how many ms', first.line)
   check(first.steps.length > 0 && Number(okLine?.[1]) === first.steps.length, 'every step the line counts has a row', first.steps.length)
   check(first.steps.every(s => s.name && /^OK \d+(\.\d)? ms$/.test(s.time)), 'every step row shows OK and its time in ms', first.steps)
