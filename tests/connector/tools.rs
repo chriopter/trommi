@@ -1117,6 +1117,51 @@ fn tool_names(listed: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The connect tool's answer does not depend on how fast the human confirms: a human whose app admits the newcomer
+/// at once (the join may end before the call looks at it) still gets the six emoji first, and a second call once the
+/// board tools are there says connected already. Stress: 200 joins in a row against one hub (TROMMI_STRESS_RUNS
+/// sets another count). Run by hand: `cargo test -p trommi-tests --test connector_tools -- --ignored connect_stress`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "stress, by hand: 200 joins"]
+async fn connect_stress_the_check_code_comes_first_however_fast_the_human_confirms() {
+    let runs: usize = std::env::var("TROMMI_STRESS_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    for run in 0..runs {
+        let seat = Seat::new(&hub.url);
+        let mut mcp = seat.serve().await;
+        let listed = mcp.request("tools/list", json!({})).await;
+        assert_eq!(tool_names(&listed), ["connect"], "run {run}: {listed}");
+        let mut invite = human.invite(None).await;
+        let link = invite.link.clone();
+        let connect = mcp.call("connect", json!({ "link": link }));
+        let admit = async {
+            let admitted = human.admit(&mut invite).await;
+            human.found_session(&admitted).await
+        };
+        let ((said, failed), _group) = tokio::join!(connect, admit);
+        assert!(
+            !failed && said.starts_with("Check code:"),
+            "run {run}: {said}"
+        );
+        mcp.notification("notifications/tools/list_changed").await;
+        let (said, failed) = mcp
+            .call(
+                "connect",
+                json!({ "link": "https://example.invalid/join#x" }),
+            )
+            .await;
+        assert!(
+            failed && said.contains("connected to Trommi already"),
+            "run {run}: {said}"
+        );
+        mcp.close().await;
+    }
+}
+
 /// A session whose folder is in no room starts unconnected and offers the connect tool alone. A bad or expired
 /// link is a tool error; a good one answers with the six emoji, and once the human confirmed them the same
 /// process goes online, says its tools changed, and lists the board tools. A restart after that ignores keys

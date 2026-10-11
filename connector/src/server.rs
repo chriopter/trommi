@@ -325,8 +325,23 @@ pub struct Conn {
     self_ref: Mutex<Weak<Conn>>,
 }
 
-/// The outcome of a join the connect tool started; `None` while it runs.
-type Connecting = Arc<Mutex<Option<std::result::Result<(), String>>>>;
+/// A join the connect tool started: its outcome (`None` while it runs), and whether a connect call answered with its
+/// check code. Both change under this one lock, so a call sees them as one state: a join the human confirmed before
+/// any call saw its code still answers that call with the code (the agent shows it), and only then with "connected".
+#[derive(Default)]
+struct JoinRun {
+    outcome: Option<std::result::Result<(), String>>,
+    shown: bool,
+}
+type Connecting = Arc<Mutex<JoinRun>>;
+
+/// What one look at a join run says to the connect call.
+enum JoinStep {
+    Code(Vec<String>, Vec<String>),
+    Connected,
+    Failed(String),
+    Wait,
+}
 
 impl Conn {
     fn arc(&self) -> Arc<Conn> {
@@ -2311,22 +2326,28 @@ impl Conn {
     /// answers with the six emoji of the check code as soon as the inviter's app revealed them. The join goes on
     /// in this process: once the human confirmed the emoji, the session is online and its tools are announced.
     async fn connect(self: Arc<Self>, args: &Value) -> std::result::Result<String, String> {
-        // Online already: the board tools are listed before the join task has stored its outcome, so this is
-        // checked first, not only once no join is running.
-        if self.member.phase() == "ready" {
-            return Err("This session is connected to Trommi already; no link is needed. If the board tools are not listed, list the tools again.".to_string());
+        const ALREADY: &str = "This session is connected to Trommi already; no link is needed. If the board tools are not listed, list the tools again.";
+        // A join of this process that has not ended, or ended well before any call showed its check code: this
+        // call answers from it. (Online and its code shown: connected already, also in the moment between the
+        // board tools being announced and the join task storing its outcome.)
+        let running = self.connecting.lock().unwrap().clone().filter(|run| {
+            let r = run.lock().unwrap();
+            r.outcome.is_none() || (!r.shown && matches!(r.outcome, Some(Ok(()))))
+        });
+        if self.member.phase() == "ready"
+            && running.as_ref().is_none_or(|run| run.lock().unwrap().shown)
+        {
+            return Err(ALREADY.to_string());
         }
-        let running = self
-            .connecting
-            .lock()
-            .unwrap()
-            .clone()
-            .filter(|run| run.lock().unwrap().is_none());
         let run = match running {
             Some(run) => run,
             None => {
                 if !self.unconnected() {
-                    return Err(self.not_ready());
+                    return Err(if self.member.phase() == "ready" {
+                        ALREADY.to_string()
+                    } else {
+                        self.not_ready()
+                    });
                 }
                 let link = args
                     .get("link")
@@ -2340,7 +2361,7 @@ impl Conn {
                 crate::join::check_link(&link, now_ms())
                     .map_err(|e| format!("not connected: {}", e.text()))?;
                 self.member.me.lock().unwrap().check_code = None;
-                let run: Connecting = Arc::new(Mutex::new(None));
+                let run: Connecting = Arc::new(Mutex::new(JoinRun::default()));
                 *self.connecting.lock().unwrap() = Some(run.clone());
                 let member = self.member.clone();
                 let done = run.clone();
@@ -2349,7 +2370,7 @@ impl Conn {
                     if let Err(e) = &outcome {
                         eprintln!("[trommi] not connected: {}", e.text());
                     }
-                    *done.lock().unwrap() = Some(outcome.map_err(|e| e.text()));
+                    done.lock().unwrap().outcome = Some(outcome.map_err(|e| e.text()));
                 });
                 run
             }
@@ -2362,14 +2383,31 @@ impl Conn {
         };
         let until = now_ms() + env_ms("TROMMI_CONNECT_WAIT_MS", wait);
         loop {
-            let outcome = run.lock().unwrap().clone();
-            match outcome {
-                Some(Ok(())) => {
+            // (the check code is set before the join can end, so an outcome seen here comes with its code)
+            let step = {
+                let mut r = run.lock().unwrap();
+                let code = self.member.me.lock().unwrap().check_code.clone();
+                match (&r.outcome, code) {
+                    (Some(Err(why)), _) => JoinStep::Failed(why.clone()),
+                    (Some(Ok(())), Some((emoji, words))) if !r.shown => {
+                        r.shown = true;
+                        JoinStep::Code(emoji, words)
+                    }
+                    (Some(Ok(())), _) => JoinStep::Connected,
+                    (None, Some((emoji, words))) => {
+                        r.shown = true;
+                        JoinStep::Code(emoji, words)
+                    }
+                    (None, None) => JoinStep::Wait,
+                }
+            };
+            match step {
+                JoinStep::Connected => {
                     return Ok(
                         "This session is connected to Trommi: the board tools are there.".into(),
                     )
                 }
-                Some(Err(why)) => {
+                JoinStep::Failed(why) => {
                     let spent = ["expired", "used", "burned", "contested", "make a new"]
                         .iter()
                         .any(|w| why.contains(w));
@@ -2382,19 +2420,18 @@ impl Conn {
                         }
                     ));
                 }
-                None => {}
-            }
-            let code = self.member.me.lock().unwrap().check_code.clone();
-            if let Some((emoji, words)) = code {
-                let lines: Vec<String> = emoji
-                    .iter()
-                    .zip(&words)
-                    .map(|(e, w)| format!("{e}  {w}"))
-                    .collect();
-                return Ok(format!(
-                    "Check code:\n{}\n\nShow these six lines to the human as they are. The Trommi app shows six emoji on its invite page: the same six in the same order? Then tap \"They match\" there; if not, \"They don't match\". This session goes online by itself once they match: the board tools appear, no restart needed.",
-                    lines.join("\n")
-                ));
+                JoinStep::Code(emoji, words) => {
+                    let lines: Vec<String> = emoji
+                        .iter()
+                        .zip(&words)
+                        .map(|(e, w)| format!("{e}  {w}"))
+                        .collect();
+                    return Ok(format!(
+                        "Check code:\n{}\n\nShow these six lines to the human as they are. The Trommi app shows six emoji on its invite page: the same six in the same order? Then tap \"They match\" there; if not, \"They don't match\". This session goes online by itself once they match: the board tools appear, no restart needed.",
+                        lines.join("\n")
+                    ));
+                }
+                JoinStep::Wait => {}
             }
             if now_ms() > until {
                 return Err("The Trommi app has not answered this invite yet: the human keeps its invite page open; then call connect again (same link), which waits for the same join.".into());
