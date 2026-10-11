@@ -141,6 +141,14 @@ test('a device back after a while: cards settled elsewhere leave its Desk before
   await b.stop()
   // while b is away: two are answered on a and closed by the agent, and the history grows
   for (const id of settled) { await a.answer({ object_id: id, choices: ['x'] }); await agent.closeCard(id) }
+  // and one asked and settled while it was away: never on its Desk while it reads the history
+  const passing = await ask('asked and settled meanwhile')
+  await agent.settle()
+  await until(() => a.model.stack.includes(passing), 'a shows it')
+  // (a page and more between its asking and its settling: the device publishes in between)
+  for (let i = 0; i < 1100; i++) await agent.say({ text: `in between ${i}` })
+  await agent.settle()
+  await a.answer({ object_id: passing, choices: ['y'] }); await agent.closeCard(passing)
   for (let i = 0; i < 30; i++) await agent.say({ text: `meanwhile ${i}` })
   await a.settle(); await agent.settle()
   const again = await R.openRoom({ storage: b.stored_as })
@@ -153,8 +161,11 @@ test('a device back after a while: cards settled elsewhere leave its Desk before
   assert.ok(settled.every(id => !again.model.stack.includes(id)), 'and off the Desk')
   assert.ok(again.model.stack.includes(kept), 'the open one stays')
   fake.faults.clear()
+  const shown = new Set()
+  again.on('change', () => { for (const id of again.model.stack) shown.add(id) })
   await starting
   await again.catchUp()
+  assert.ok(![...settled, passing].some(id => shown.has(id)), 'nothing settled elsewhere stood on the Desk during the catch-up')
   await until(() => settled.every(id => again.model.cards.get(id)?.object_state !== 'open' && !again.model.cards.get(id)?.catching_up), 'taken: closed, no mark left')
   assert.ok(again.model.stack.includes(kept) && settled.every(id => !again.model.stack.includes(id)))
   modelsAgree(a.model, again.model)

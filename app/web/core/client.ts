@@ -200,6 +200,8 @@ export class Client {
   /** The hub's cursor of the Desk read at the start (`deskFirst`): until the catch-up reaches it, the cards the hub
    *  closed meanwhile stay off the Desk (`catching_up`). 0: nothing waits. */
   private catchingUntil = 0
+  /** The cards and permission requests the Desk of `deskFirst` listed as open. */
+  private deskOpen = new Set<string>()
   /** The cursor the cache was last written with. */
   private written = -2
   private goalsTimer: ReturnType<typeof setTimeout> | null = null
@@ -537,11 +539,19 @@ export class Client {
       for (const r of this.model.permissions.values()) if (r.permission_state === 'pending' && !open.has(r.object_id)) { r.catching_up = true; ch.permissions.add(r.object_id); if (r.session_id) ch.sessions.add(r.session_id) }
     })
     this.catchingUntil = desk.change
+    this.deskOpen = open
   }
   /** The catch-up reached the Desk's cursor of the start: what was marked as settled meanwhile is taken by now. */
   private caughtUp(ch: Change): void {
-    if (!this.catchingUntil || this.engine.cursor < this.catchingUntil) return
+    if (!this.catchingUntil) return
+    if (this.engine.cursor < this.catchingUntil) {
+      // what the history brings meanwhile: a card it opens that the Desk did not list is closed further on
+      for (const id of ch.cards) { const c = this.model.cards.get(id); if (c && c.object_state === 'open' && !c.catching_up && !this.deskOpen.has(id)) c.catching_up = true }
+      for (const id of ch.permissions) { const r = this.model.permissions.get(id); if (r && r.permission_state === 'pending' && !r.catching_up && !this.deskOpen.has(id)) r.catching_up = true }
+      return
+    }
     this.catchingUntil = 0
+    this.deskOpen = new Set()
     for (const c of this.model.cards.values()) if (c.catching_up) { delete c.catching_up; ch.cards.add(c.object_id); if (c.session_id) ch.sessions.add(c.session_id) }
     for (const r of this.model.permissions.values()) if (r.catching_up) { delete r.catching_up; ch.permissions.add(r.object_id); if (r.session_id) ch.sessions.add(r.session_id) }
   }
