@@ -359,6 +359,14 @@ path = "hub/account_proof.rs"
 name = "hub_metrics"
 path = "hub/metrics.rs"
 
+[[test]]
+name = "connector_codex"
+path = "connector/codex.rs"
+
+[[test]]
+name = "connector_codex_real"
+path = "connector/codex_real.rs"
+
 # A tool, not a test: seeds an account on a hub from a demo fixture (tools/seed_account.rs).
 [[bin]]
 name = "seed-account"

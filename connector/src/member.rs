@@ -799,7 +799,7 @@ impl Member {
                             continue;
                         }
                         if err.code == "client-too-old" || err.code == "upgrade_required" {
-                            let text = format!("The Trommi hub needs a newer connector than {}: update the trommi plugin (or run the connect script again), then /mcp → trommi → Reconnect. Nothing is sent or acted on until then.", crate::CLIENT);
+                            let text = format!("The Trommi hub needs a newer connector than {}: {}. Nothing is sent or acted on until then.", crate::CLIENT, crate::host::update_line());
                             {
                                 let mut m = me.me.lock().unwrap();
                                 m.phase = "too-old".into();
@@ -886,7 +886,12 @@ impl Member {
         }
         let sid = client.core.lock().await.session_id();
         self.me.lock().unwrap().session = Some(json!({ "agent_session_id": sid }));
-        if let Err(e) = client.ensure_device_register(&self.device_info).await {
+        // (the client is known once it said initialize: Codex or Claude Code)
+        let mut device_info = self.device_info.clone();
+        if crate::host::is_codex() {
+            device_info["platform"] = json!("codex");
+        }
+        if let Err(e) = client.ensure_device_register(&device_info).await {
             eprintln!("[trommi] label not written: {}", e.text());
         }
         {

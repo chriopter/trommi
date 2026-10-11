@@ -8,7 +8,8 @@
 //! new plugin.
 //!
 //! **Codex** gets the connector as a plain MCP server `trommi`. Codex shows no channel events, so the server is
-//! registered with `TROMMI_CHANNEL_EVENTS=off`: board events then wait for the `inbox` tool.
+//! registered with `TROMMI_CHANNEL_EVENTS=off`: board events wait for the `inbox` tool, and the connector wakes the
+//! session with a queued message (`host.rs`). A Codex that is already running loads it only after a restart.
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
@@ -79,7 +80,7 @@ fn label(which: &str) -> &'static str {
 /// What to do next, one line.
 fn next(which: &str) -> &'static str {
     if which == "codex" {
-        "start codex in a project folder and ask it to connect to Trommi with the link from \"Invite an agent\" in the Trommi app."
+        "quit every running Codex and start it again (a running Codex does not load new MCP servers), in a project folder; then ask it to connect to Trommi with the link from \"Invite an agent\" in the Trommi app."
     } else {
         "start claude in a project folder and paste /trommi:connect '<link>' from \"Invite an agent\" in the Trommi app."
     }
@@ -254,7 +255,14 @@ pub fn codex() -> Result<Vec<String>, String> {
         );
     }
     done.push(format!("Codex starts {program}"));
-    done.push("board events wait for the `inbox` tool: Codex has no live events".to_string());
+    done.push(
+        "a new board event wakes the Codex session with a queued message (`codex queue`); it reads the board with the `inbox` tool"
+            .to_string(),
+    );
+    done.push(
+        "a Codex that was running before this loads Trommi only once it is started again"
+            .to_string(),
+    );
     Ok(done)
 }
 
