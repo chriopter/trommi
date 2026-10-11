@@ -28,6 +28,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Pairing a device or an agent survives a network blip: a step that did not reach Trommi is tried again, and if it
   still fails you are told it was the connection, with "Try again" on the same code instead of asking for a new one.
 - The desk menu says what runs: under What's new the release, its build and when it was updated (web; on the iPhone the app's version and build).
+- What's new says what runs: at its top the release, its build and when it was updated (web; on the iPhone the app's version and build).
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
 - iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster

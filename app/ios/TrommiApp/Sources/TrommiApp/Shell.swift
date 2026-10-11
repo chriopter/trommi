@@ -283,11 +283,10 @@ struct MenuPill: View {
         .pickerStyle(.menu)
         Button { go(.settings("agents")) } label: { Label("Settings", systemImage: "gearshape") }
         if !model.demo { Button { model.startDemo() } label: { Label("Demo", systemImage: "play.rectangle") } }
-        // What's new (WhatsNew.swift): its second line says what runs on this phone (version, build, when it came), and
-        // that something is new while the newest day is unseen here
+        // What's new (WhatsNew.swift): its second line says so while the newest day is unseen on this phone
         Button { go(.settings("whats-new")) } label: {
           Text("What's New")
-          Text(Changelog.seen ? Changelog.running : "Something new · \(Changelog.running)")
+          if !Changelog.seen { Text("Something new since you last looked") }
           Image(systemName: "sparkles")
         }
       }

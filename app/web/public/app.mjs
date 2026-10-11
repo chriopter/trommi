@@ -66,12 +66,14 @@ let newsLatest = null
 export const newsLatestDay = () => newsLatest
 import('./gen/vendor/changelog-latest.mjs').then(m => { newsLatest = m.LATEST; document.dispatchEvent(new CustomEvent('trommi:news')) }, () => {})
 export const changelog = () => import('./gen/vendor/changelog.mjs')
-// What runs here, for the line under What's new in the menu: the release (gen/release.json, which the release writes
+// What runs here, for the small line at the top of What's new: the release (gen/release.json, which the release writes
 // beside the build: number, commit, time), else the build's commit (gen/build.txt, the dev server's too). Asked once,
 // after the page has started; offline it says nothing.
 let running = null
 /** { release: 'v152' | '', commit, when: 'today, 14:32' | '' }, or null until known. */
 export const runningBuild = () => running
+/** The same as one line, for the top of What's new: "v152 · 97f72b6 · updated today, 14:32" ('' until known). */
+export const runningLine = () => (running ? [running.release, running.commit, running.when && `updated ${running.when}`].filter(Boolean).join(' · ') : '')
 setTimeout(() => {
   const when = iso => { const at = iso ? new Date(iso) : null; if (!at || Number.isNaN(+at)) return ''; const day = at.toDateString() === new Date().toDateString() ? 'today' : at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); return `${day}, ${at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` }
   fetch('/gen/release.json', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null)

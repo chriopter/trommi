@@ -5,6 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { topbar } from '../../../app/web/public/sidebar.mjs'
+import { readFileSync } from 'node:fs'
 
 const model = { fresh: [], byAgent: new Map(), state: { desks: [] }, deskName: 'Personal', desk: null, all: false }
 const menu = () => String(topbar(model, '', null)).match(/<nav class="sidedoors" id="brand-doors"[\s\S]*?<\/nav>/)[0]
@@ -45,16 +46,15 @@ test('a desk switched by its number key leaves the menu shut; one picked in the 
   } finally { delete globalThis.sessionStorage }
 })
 
-test('What\'s new carries a line for what runs here, filled once it is known', () => {
-  const m = menu()
-  const row = m.match(/<a [^>]*id="menu-news"[^>]*>[\s\S]*?<\/a>/)?.[0]
-  assert.ok(row, 'the What\'s new row')
-  assert.match(row, /<span class="menu-news-words"><span>What's new<\/span><small class="menu-build" id="menu-build"><\/small><\/span>/, 'an empty line under its words until the release is known')
+test('the menu stays as it was: what runs here is on the What\'s new page, not under its row', () => {
+  assert.doesNotMatch(menu(), /menu-build/)
+  const news = ((readFileSync(new URL('../../../app/web/public/news.mjs', import.meta.url), 'utf8')))
+  assert.match(news, /<p class="news-build" id="news-build">\$\{runningLine\(\)\}<\/p>/, 'a small line at the top of What\'s new')
 })
 
 test('the release script writes what runs there beside the build, outside the build\'s manifest', async () => {
-  const src = (await import('node:fs')).readFileSync(new URL('../../../.github/scripts/web_release.mjs', import.meta.url), 'utf8')
+  const src = readFileSync(new URL('../../../.github/scripts/web_release.mjs', import.meta.url), 'utf8')
   assert.match(src, /'public', 'gen', 'release\.json'\)[\s\S]*version, commit, released/, 'gen/release.json: number, commit, time')
-  const app = (await import('node:fs')).readFileSync(new URL('../../../app/web/public/app.mjs', import.meta.url), 'utf8')
+  const app = readFileSync(new URL('../../../app/web/public/app.mjs', import.meta.url), 'utf8')
   assert.match(app, /fetch\('\/gen\/release\.json'[\s\S]*fetch\('\/gen\/build\.txt'/, 'the app asks for it, else for the build\'s commit')
 })

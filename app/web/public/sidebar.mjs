@@ -1,6 +1,6 @@
 // The sidebar (#agents): one row per session, a main with its subs under it, and the floating Desk's state.
 // The markup is the one app.css and sidebar.css style.
-import { BASE, crownOf, newsLatestDay, runningBuild, renderStreamMessage, stream } from './app.mjs'
+import { BASE, crownOf, newsLatestDay, renderStreamMessage, stream } from './app.mjs'
 import { BELL, Controller, PLUS, agoSpan, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, toast, sayError } from './ui.mjs'
 const EDGES = 7   // more subs than this lie in a folded stack without an edge of their own
 
@@ -549,9 +549,7 @@ function desksOf(model) {
 /** Whether the newest day of What's new was opened on this device (news.mjs remembers it; the row's dot until then). */
 const newsSeen = () => { const latest = newsLatestDay(); if (latest == null) return true; try { return localStorage.getItem('trommi-news-seen') === latest } catch { return true } }
 // (the newest day arrives after the first page was drawn: the dot then shows where it is unseen)
-/** What runs here, under What's new: "v152 · a02fba7 · updated today, 14:32" (app.mjs runningBuild; empty until known). */
-const buildLine = () => { const b = runningBuild(); return b ? [b.release, b.commit, b.when && `updated ${b.when}`].filter(Boolean).join(' · ') : '' }
-globalThis.document?.addEventListener('trommi:news', () => { const dot = document.getElementById('menu-news-dot'); if (dot) dot.hidden = newsSeen(); const line = document.getElementById('menu-build'); if (line) line.textContent = buildLine() })
+globalThis.document?.addEventListener('trommi:news', () => { const dot = document.getElementById('menu-news-dot'); if (dot) dot.hidden = newsSeen() })
 /** Whether this tab shows the demo room (app.mjs: ?mock=1, remembered for the tab; ?mock=0 ends it). */
 const inDemo = () => { try { return Boolean(globalThis.sessionStorage?.getItem('trommi-mock')) } catch { return false } }
 // Small drawings of the menu's own, in the pen's line: the plus of "New desk", and the light of the desk lamp.
@@ -610,7 +608,7 @@ function menuDoors(model, base) {
 <p class="menu-desk-error" data-menu-target="deskError" role="alert"></p></div>
 <a role="menuitem" class="menu-settings" href="${base}/settings" data-nav draggable="false" id="menu-settings">${GEAR}<span>Settings</span></a>
 <button role="menuitemcheckbox" type="button" id="demo-toggle" class="menu-demo-row demo-toggle" aria-checked="${String(inDemo())}" title="${inDemo() ? 'Leave the demo: back to your desks' : 'The demo: a made-up room, nothing is kept'}">${sk('play')}<span>Demo</span><i class="demo-switch" aria-hidden="true"><b></b></i></button>
-<a role="menuitem" class="menu-news-row" href="${base}/whats-new" data-nav draggable="false" id="menu-news">${sk('spark')}<span class="menu-news-words"><span>What's new</span><small class="menu-build" id="menu-build">${buildLine()}</small></span><i class="menu-news-dot" id="menu-news-dot" title="Something new since you last looked"${newsSeen() ? raw(' hidden') : ''}></i></a>
+<a role="menuitem" class="menu-news-row" href="${base}/whats-new" data-nav draggable="false" id="menu-news">${sk('spark')}<span>What's new</span><i class="menu-news-dot" id="menu-news-dot" title="Something new since you last looked"${newsSeen() ? raw(' hidden') : ''}></i></a>
 <a role="menuitem" class="menu-logout-row" href="${base}/logout" data-nav draggable="false" id="menu-logout">${sk('logout')}<span>Log out</span></a>
 <div class="menu-places">${[['scribble-board', 'pen', 'Scribble'], ['artifacts', 'picture', 'Artifacts']].map(([p, icon, word]) => html`<a role="menuitem" href="${base}/${p}" data-nav draggable="false">${sk(icon)}<span>${word}</span></a>`)}</div>
 <div class="menu-icons" role="group" aria-label="This device">

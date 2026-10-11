@@ -539,6 +539,9 @@ details.set-group.set-exp > summary { border-radius: 12px; }
 
 /* ---- What's new (news.mjs): CHANGELOG.md, one day under the other ---- */
 .news { display: grid; gap: var(--s-5); }
+/* what runs here, a small grey line at the top (news.mjs) */
+.news-build { margin: calc(-1 * var(--s-3)) 0 0; color: var(--muted); font: 500 var(--t-xs)/1.4 var(--font); }
+.news-build:empty { display: none; }
 .news-day { display: grid; gap: var(--s-2); }
 .news-date { margin: 0 2px; font: 700 var(--t-md)/1.2 var(--display); }
 .news-date small { margin-left: 6px; color: var(--muted); font: 500 var(--t-xs)/1 var(--font); }

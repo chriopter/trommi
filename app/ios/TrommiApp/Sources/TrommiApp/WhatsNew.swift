@@ -22,7 +22,7 @@ enum Changelog {
   }()
   /** Whether the newest day was opened on this phone. */
   static var seen: Bool { days.first.map { UserDefaults.standard.string(forKey: seenKey) == $0.day } ?? true }
-  /** What runs on this phone, for the menu: "1.0.0 (37) · updated today, 14:32" (the app's version, its build number,
+  /** What runs on this phone, for the top of What's New: "1.0.0 (37) · updated today, 14:32" (the app's version, its build number,
    *  when this build came onto the phone: the time of its bundle). */
   static var running: String {
     let info = Bundle.main.infoDictionary ?? [:]
@@ -72,6 +72,7 @@ struct WhatsNewPage: View {
   var body: some View {
     SettingsPage(title: "What's New") {
       Text("What changed in Trommi, newest first.").font(Face.text(15)).foregroundStyle(Ink.muted)
+      Text(Changelog.running).font(Face.text(12)).foregroundStyle(Ink.muted).accessibilityLabel("This app: \(Changelog.running)")
       if Changelog.days.isEmpty { Text("Nothing written down yet.").font(Face.text(15)).foregroundStyle(Ink.muted) }
       ForEach(Array(Changelog.days.enumerated()), id: \.offset) { _, d in
         VStack(alignment: .leading, spacing: 8) {

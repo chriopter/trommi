@@ -1175,8 +1175,3 @@ html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width
   /* a card with the keyboard up: the screen is short, and the desk pill lay over the card's strip of pictures */
   [data-keyboard] body[data-t-view="card"] .phone-bar { visibility: hidden; }
 }
-/* What runs here, a small grey line under What's new (sidebar.mjs buildLine) */
-html body .topbar #brand-doors .menu-news-row { align-items: center; }
-.menu-news-words { display: grid; gap: 2px; min-width: 0; text-align: left; }
-.menu-build { color: var(--muted); font: 500 var(--t-xs)/1.25 var(--font); }
-.menu-build:empty { display: none; }
