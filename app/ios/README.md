@@ -357,7 +357,7 @@ fading out over 44 points.
   Installer Distribution" certificate; nothing is kept on the runner. The app inside the `.pkg` is checked (bundle id,
   version, build, profile, entitlements, no `get-task-allow`).
 - Upload of that `.pkg` with the Build Uploads API (`asc.py upload`, `ASC_PLATFORM=MAC_OS`); the repository variable
-  `MAC_UPLOADER=xcode` switches to Xcode's own upload. Build numbers are the highest Mac build plus one. Then the group
+  `MAC_UPLOADER=xcode` switches to Xcode's own upload. Build numbers are the highest build of the app record plus one (any platform, so an iOS and a Mac build never share one). Then the group
   "Intern" and What to Test; the public group and Beta App Review stay with iOS for now.
 
 **Once by hand in App Store Connect** (the API cannot create an app record or add a platform to one). A universal

@@ -28,7 +28,7 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     uploads the signed .ipa through the Build Uploads API (no second Xcode export),
                                     after checking it is BUNDLE_ID VERSION (BUILD); waits until the upload is COMPLETE.
                                     --dry-run: the same checks, offline, and prints what would be sent; nothing is sent
-  asc.py next-build                 the highest build number App Store Connect has for the app, plus one
+  asc.py next-build                 the highest build number App Store Connect has for the app (any platform), plus one
   asc.py last-sha                   the commit of the newest build whose What to Test names one ("(abc1234)")
   asc.py crashes OUT_DIR [SINCE]    read only: TestFlight crash feedback newer than SINCE (ISO 8601, default 3 days
                                     ago) with each crash log as a file, the diagnostic signatures (hangs, launches,
@@ -38,7 +38,7 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     several), read only; fails listing every declaration's state and date if none is
 
 Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). ASC_PLATFORM: IOS (the default) or MAC_OS; with
-MAC_OS, wait, next-build and upload look at the Mac's builds only and upload takes a signed .pkg. Nothing here prints
+MAC_OS, wait, last-sha and upload look at the Mac's builds only (IOS: the iOS ones) and upload takes a signed .pkg. Nothing here prints
 key material or tokens.
 """
 import base64, datetime, hashlib, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
@@ -50,8 +50,8 @@ if PLATFORM not in ("IOS", "MAC_OS"):
 
 
 def platform_filter():
-    """The builds of this platform only; empty for iOS (the only one before the Mac, and the calls stay as they were)."""
-    return "" if PLATFORM == "IOS" else f"&filter[preReleaseVersion.platform]={PLATFORM}"
+    """The builds of this platform only: in a universal purchase one app record holds the iOS and the Mac builds."""
+    return f"&filter[preReleaseVersion.platform]={PLATFORM}"
 
 
 def die(msg):
@@ -354,8 +354,9 @@ def upload(ipa, version, build, *flags):
         die(f"App Store Connect did not take the upload ({state.get('state') or 'no answer'})")
 
 
-def builds(aid):
-    rows, path = [], f"/v1/builds?filter[app]={aid}{platform_filter()}&limit=200&fields[builds]=version,uploadedDate"
+def builds(aid, every_platform=False):
+    rows, path = [], (f"/v1/builds?filter[app]={aid}{'' if every_platform else platform_filter()}"
+                      "&limit=200&fields[builds]=version,uploadedDate")
     while path:
         page = call("GET", path)
         rows += page["data"]
@@ -366,7 +367,8 @@ def builds(aid):
 
 def next_build():
     aid = app_id(os.environ["BUNDLE_ID"]) or die("no app record")
-    numbers = [int(b["attributes"]["version"]) for b in builds(aid) if b["attributes"]["version"].isdigit()]
+    # over every platform of the record: an iOS and a Mac build never share a number
+    numbers = [int(b["attributes"]["version"]) for b in builds(aid, every_platform=True) if b["attributes"]["version"].isdigit()]
     print(max(numbers, default=0) + 1)
 
 
