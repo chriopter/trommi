@@ -383,6 +383,8 @@ public struct HumanRegisters {
   public var drafts: [String: JV] = [:]
   public var snoozes: [String: JV] = [:]
   public var ducks: [String: JV] = [:]
+  /** Cards he starred (`star/<card>` = `{ at }`): his own mark, on all his devices. */
+  public var stars: [String: JV] = [:]
   public var crown: JV = .null
   public var desks: [String: JV] = [:]
   public var sessionSettings: [String: JV] = [:]
@@ -1192,7 +1194,7 @@ public final class Board {
 
   // ---- registers --------------------------------------------------------------------------------
 
-  static let humanPrefixes = ["draft/", "snooze/", "duck/", "desk/", "session/", "session_history/", "scribble_snapshot/", "goals/"]
+  static let humanPrefixes = ["draft/", "snooze/", "duck/", "star/", "desk/", "session/", "session_history/", "scribble_snapshot/", "goals/"]
   public static func isHumanKey(_ k: String) -> Bool { k == "crown" || k == "room_snapshot" || humanPrefixes.contains { k.hasPrefix($0) } }
   public static func isAgentKey(_ k: String) -> Bool { k == "profile" || k == "heard" || k.hasPrefix("status_line/") || k.hasPrefix("alert/") }
 
@@ -1254,6 +1256,7 @@ public final class Board {
     case "draft": put(&human.drafts); change.cards.insert(id)
     case "snooze": put(&human.snoozes); change.cards.insert(id); change.stack = true
     case "duck": put(&human.ducks); change.cards.insert(id)
+    case "star": put(&human.stars); change.cards.insert(id); change.stack = true
     case "crown": human.crown = value
     case "desk": put(&human.desks)
     case "session":

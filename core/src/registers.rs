@@ -243,6 +243,7 @@ pub fn name_owner(name: &str, in_room: bool) -> Option<NameOwner> {
                 "draft/",
                 "snooze/",
                 "duck/",
+                "star/",
                 "read/",
                 BOARD_SNAPSHOT,
             ]);

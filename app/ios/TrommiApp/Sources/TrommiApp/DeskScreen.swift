@@ -312,6 +312,7 @@ struct DeskRow: View, Equatable {
               if card.urgency == "critical" { PenMark("hand", color: Ink.surface, blocked: true).frame(width: 24, height: 24).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 4 } }
               else { Sketch("knock", color: Ink.urgHigh).frame(width: 20, height: 20).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 } }
             }
+            if card.starred != nil { StarMark().frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }.accessibilityLabel("Starred") }
             Text(card.title.isEmpty ? "(no title)" : card.title).font(Face.display(20, .bold)).foregroundStyle(Ink.fg).lineLimit(3).multilineTextAlignment(.leading)
           }
           .frame(maxWidth: .infinity, alignment: .leading)

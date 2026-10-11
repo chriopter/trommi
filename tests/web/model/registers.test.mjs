@@ -6,7 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { World, device, hex, id16, bytes } from './factory.mjs'
 
-test('human registers: drafts, snoozes, ducks, crown, desks, session settings, under the model\'s keys', () => {
+test('human registers: drafts, snoozes, ducks, stars, crown, desks, session settings, under the model\'s keys', () => {
   const w = new World(); w.groups()
   const card = id16(0xc1), desk = id16(0xde), hc = hex(card), hd = hex(desk), hs = hex(w.session)
   w.register(`draft/${card}`, { keys: ['a'], note: 'maybe' })
@@ -15,6 +15,7 @@ test('human registers: drafts, snoozes, ducks, crown, desks, session settings, u
   assert.equal(raw.by_device_id, hex(w.me)); assert.equal(raw.pending, false); assert.equal(raw.envelope_number, 1); assert.equal(raw.causal.lamport, 1)
   w.register(`snooze/${card}`, { until: w.clock + 60_000 }); assert.equal(w.model.human.snoozes.get(hc).until, w.clock + 60_000 - 1000)
   w.register(`duck/${card}`, { at: 1 }); assert.deepEqual(w.model.human.ducks.get(hc), { at: 1 })
+  w.register(`star/${card}`, { at: 7 }); assert.deepEqual(w.model.human.stars.get(hc), { at: 7 }); assert.ok(w.last.cards.has(hc) && w.last.stack, 'a star redraws the card and the lists')
   w.register('crown', { session_id: w.session, agent_device_id: w.agent })
   assert.deepEqual(w.model.human.crown, { session_id: hs, agent_device_id: hex(w.agent) }, 'ids inside a value are the model\'s hex')
   w.register(`desk/${desk}`, { name: 'Work', created_at: 1, order: 0, goals: 'ship it', crown: { session_id: w.session } })
@@ -26,6 +27,7 @@ test('human registers: drafts, snoozes, ducks, crown, desks, session settings, u
   // a desk whose id is no 16 bytes (the app's 'main') keeps its name
   w.register('desk/main', { name: 'Desk' }); assert.ok(w.model.human.desks.has('main'))
   // deleted: gone from the map, a tombstone in raw
+  w.register(`star/${card}`, null); assert.equal(w.model.human.stars.has(hc), false, 'the star taken off')
   w.register(`draft/${card}`, null)
   assert.equal(w.model.human.drafts.has(hc), false); assert.equal(w.model.human.raw.get(`draft/${hc}`).value, null)
 })

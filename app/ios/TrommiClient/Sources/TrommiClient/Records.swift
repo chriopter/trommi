@@ -192,7 +192,7 @@ enum Records {
    * it is lower-case hex. A tail that is no such id (`desk/main`) stays as it is.
    */
   static let idNames: [(prefix: String, bytes: Int)] = [
-    ("draft/", 16), ("snooze/", 16), ("duck/", 16), ("desk/", 16), ("session/", 16),
+    ("draft/", 16), ("snooze/", 16), ("duck/", 16), ("star/", 16), ("desk/", 16), ("session/", 16),
     ("read/session/", 16), ("read/card/", 16), ("read/desk/", 16), ("device/", 32), ("alert/", 32),
   ]
   /**

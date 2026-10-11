@@ -781,6 +781,12 @@ final class BoardModel: ObservableObject {
     guard let room = acting() else { return }
     act { try await room.shred(cardId: c.id, note: note.isEmpty ? nil : String(note.prefix(2000))); self.say("Shredded", c.title, undo: { [weak self] in self?.reopen(c.id) }) }
   }
+  /** Star a card or take its star off: his own mark, on all his devices. */
+  func star(_ c: DeskCard) {
+    guard let room = acting() else { return }
+    let on = c.starred == nil
+    act { try await room.star(cardId: c.id, on) }
+  }
   func snooze(_ c: DeskCard) {
     guard let room = acting() else { return }
     act { try await room.snooze(cardId: c.id, until: BoardModel.nextMorning()); self.say(Words.later, c.title, undo: { [weak self] in self?.wake(c.id) }) }

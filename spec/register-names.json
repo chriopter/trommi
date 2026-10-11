@@ -17,6 +17,11 @@
    "legacy_wire": "duck/c1c8cfd6dde4ebf2f900070e151c232a"
   },
   {
+   "wire": "star/wcjP1t3k6_L5AAcOFRwjKg",
+   "model": "star/c1c8cfd6dde4ebf2f900070e151c232a",
+   "legacy_wire": "star/c1c8cfd6dde4ebf2f900070e151c232a"
+  },
+  {
    "wire": "desk/3uXs8_oBCA8WHSQrMjlARw",
    "model": "desk/dee5ecf3fa01080f161d242b32394047",
    "legacy_wire": "desk/dee5ecf3fa01080f161d242b32394047"

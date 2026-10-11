@@ -1197,3 +1197,6 @@ body > main#inbox { contain: strict; }
   .inbox-shift-duck:hover { background: var(--duck-yellow, #ffcf1f); }
   :root:is([data-shift], [data-shift-swap]) .inbox-actions :is(.inbox-answer, .inbox-answer *) { transition: none !important; animation: none !important; }
 }
+
+/* His starred rows pinned at the top of Off your mind: a firmer rule under the last of them */
+.end-row[data-pinned]:not(:has(+ [data-pinned])) { border-bottom: 1.5px solid var(--line-strong); }

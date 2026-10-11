@@ -185,3 +185,17 @@ test('a card put off (Later) that he answers, trusts or hands back is woken: rew
   await a.settle(); await b.settle()
   modelsAgree(a.model, b.model)
 })
+
+test('a star is his own mark on a card: set on one device, on his other one too, and taken off again', async t => {
+  const { a, b, agent } = await scene(t, { agent: true, second: true })
+  const card = await agent.askCard({ title: 'Keep this one?', options: [{ key: 'yes', label: 'Yes' }, { key: 'no', label: 'No' }], recommended: 'yes' })
+  await agent.settle(); await a.settle(); await b.settle()
+  const starring = a.star(card, true)
+  assert.ok(a.model.human.stars.get(card)?.at > 0, 'starred on this device at once')
+  await starring; await a.settle(); await b.settle()
+  await until(() => b.model.human.stars.has(card), 'and on his other device')
+  assert.ok(!agent.model?.human?.stars?.has(card), 'the agent holds no star')
+  await b.star(card, false); await b.settle(); await a.settle()
+  await until(() => !a.model.human.stars.has(card), 'taken off on the other device, gone here too')
+  assert.equal(a.model.human.raw.get(`star/${card}`).value, null)
+})

@@ -625,6 +625,7 @@ mod rules {
             ("draft/x", true, false, false, false),
             ("snooze/x", true, false, false, false),
             ("duck/x", true, false, false, false),
+            ("star/x", true, false, false, false),
             ("read/session/x", true, false, false, false),
             ("board_snapshot/x", true, false, false, false),
             (own.as_str(), true, true, true, true),

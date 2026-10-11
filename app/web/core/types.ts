@@ -445,6 +445,8 @@ export interface HumanRegisters {
   drafts: Map<Hex, any>
   snoozes: Map<Hex, { until?: Ms | null; [field: string]: unknown }>
   ducks: Map<Hex, unknown>
+  /** Cards he starred (the register `star/<object>`: `{ at }`, his own, on all his devices). */
+  stars: Map<Hex, { at?: Ms | null; [field: string]: unknown }>
   crown: unknown
   desks: Map<string, any>
   session_settings: Map<Hex, SessionSettings>

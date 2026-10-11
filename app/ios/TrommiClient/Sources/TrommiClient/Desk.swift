@@ -197,6 +197,8 @@ public struct DeskCard: Identifiable {
   public var snoozedUntil: UInt64?
   public var snoozedAt: UInt64?
   public var unsnoozed: UInt64?
+  /** His star: when he set it (`star/<card>`); nil when not starred. */
+  public var starred: UInt64?
   /** Its agent closed it after his answer (close_card): What?? asks about what it did. */
   public var finished = false
   public var mergedInto: String?
@@ -507,6 +509,7 @@ public final class DeskModel {
       d.withAgent = m.timelines[c.timelineKey]?.items[r.envelopeNumber]?.sentAt ?? c.updatedAt
     }
     if let dr = h.drafts[c.objectId], status == "open" { d.draft = dr }
+    if let st = h.stars[c.objectId], st.object != nil { d.starred = max(1, clampedU64(st["at"].double)) }
     if let sn = h.snoozes[c.objectId], status == "open", let until = sn["until"].double {
       if clampedU64(until) > now { d.snoozedUntil = clampedU64(until); d.snoozedAt = clampedU64(sn["at"].double) } else { d.unsnoozed = clampedU64(until) }
     }

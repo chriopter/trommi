@@ -439,6 +439,9 @@ function placeOf(card, model) {
   return at < 0 ? null : { at: at + 1, of: walk.length, prev: walk[at - 1] ?? null, next: walk[at + 1] ?? null }
 }
 
+/** The star beside the way back: his own mark on a card, to find it again in Off your mind. Live (t.live 'card'). */
+export const starButton = (card, base) => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, base, 'star')}"><input type="hidden" name="stay" value="1"><input type="hidden" name="on" value="${card.starred ? '' : '1'}"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(Boolean(card.starred))}" title="${card.starred ? 'Starred: take the star off' : 'Star this card'}" aria-label="${card.starred ? 'Starred' : 'Star this card'}">${sk('star')}</button></form>`
+
 /** The whole <main> of a card's page. pic: which picture stands. walk: a step of "Next, please". version: as it was
  *  then. from: the session it was opened from (/chat/<id>/card/<n>): the way back and the links lead there. */
 function cardPage(card, model, base, { pic = 1, walk = false, error = '', version = null, from = null, more: older = false, full = false, focus = false } = {}) {
@@ -486,6 +489,7 @@ ${open && card.kind !== 'permission' && !card.snoozed_until ? html`<form class="
 ${pad}<div class="tc-frame">
 <nav class="tc-rails" aria-label="Around this question">
 <a class="tc-rail tc-back" data-nav href="${home}" aria-keyshortcuts="Escape" title="Back to ${session ? session.name : WORDS.desk} · Esc" aria-label="Back to ${session ? session.name : WORDS.desk}">${CROSS}</a>
+${old ? '' : starButton(card, base)}
 ${place ? html`${step(place.prev, 'is-prev', 'The question before', BACK)}${step(place.next, 'is-next', 'The next question', FORTH)}` : ''}
 ${large ? html`<a class="tc-rail tc-full is-leave" data-nav href="${cardPath(card, self)}?pic=${shownPic}${focus ? '&focus=1' : ''}" data-card-target="gallery" data-back data-turbo-action="replace" title="Back to the card · Esc" aria-label="Back to the card">${CROSS}</a>`
     : html`<a class="tc-rail tc-full${focus ? ' is-leave' : ''}" data-nav href="${focusAt(`${cardPath(card, self)}?${shownPic > 1 ? `pic=${shownPic}` : ''}${query}`, !focus)}" data-turbo-action="replace" data-action="card#focus" role="button" aria-pressed="${String(focus)}" title="${FOCUS_WORDS[focus]}" aria-label="${FOCUS_WORDS[focus]}">${FULL}${LESS}</a>`}
@@ -1787,6 +1791,7 @@ export function register(t) {
     close: card => hub.closeInfo(card.id),
     snooze: card => hub.snooze(card.id, {}),
     wake: card => hub.snooze(card.id, { clear: true }),
+    star: (card, f) => hub.star(card.id, f.get('on') === '1'),
     shred: (card, f, files) => hub.shred(card.id, noteOf(f).slice(0, 2000), marksIn(f), files),
     reopen: card => hub.reopen(card.id),
     takeback: card => hub.takeBack(card.id),
@@ -1834,7 +1839,7 @@ export function register(t) {
     const fromSession = home.startsWith(`${BASE}/chat/`) && /^[\w\-/%+.]+$/.test(home)
     // (the focus mode goes along to the card that comes next: name="focus" in the card's forms)
     const to = (c, under, ...query) => focusAt(`${cardPath(c, under)}?${query.filter(Boolean).join('&')}`, form.has('focus'))
-    if (['message', 'reopen', 'takeback', 'wake'].includes(what) && !form.has('stay')) return redirect(res, to(card, fromSession ? home : BASE, what === 'message' ? `said=${id}:message` : ''))
+    if (['message', 'reopen', 'takeback', 'wake', 'star'].includes(what) && !form.has('stay')) return redirect(res, to(card, fromSession ? home : BASE, what === 'message' ? `said=${id}:message` : ''))
     if (fromSession) return redirect(res, `${home}${said ? `?${said}` : ''}`)
     // (in the walk, and after the reverse card on a card's own page: on to the next open card)
     if (form.has('walk') || (form.has('next') && what === 'revise')) {
@@ -1894,13 +1899,14 @@ export function register(t) {
     t.live('card', {
       take: (m, clients) => new Map([...new Set(clients.filter(c => c.params.get('card')).map(c => `${c.params.get('card')}|${c.params.get('from') ?? ''}`))].map(k => {
         const [id, from] = k.split('|'), card = m.byCard.get(id), self = from ? `${BASE}/chat/${encodeURIComponent(from)}` : BASE
-        return [k, card ? { face: cardLead(card, m, self), say: String(optionsSaid(card, m.state.assets)), answer: cardAnswer(card, m, BASE), answerSig: cardAnswer({ ...card, draft: undefined }, m, BASE), thread: cardThread(card, m, self, { more: moreOf(card) }) } : null]
+        return [k, card ? { star: String(starButton(card, BASE)), face: cardLead(card, m, self), say: String(optionsSaid(card, m.state.assets)), answer: cardAnswer(card, m, BASE), answerSig: cardAnswer({ ...card, draft: undefined }, m, BASE), thread: cardThread(card, m, self, { more: moreOf(card) }) } : null]
       })),
       diff(was, now, client) {
         const id = client.params.get('card'), k = `${id}|${client.params.get('from') ?? ''}`, a = was.get(k), b = now.get(k)
         if (!b) return a ? String(stream('refresh')) : ''
         if (!a) return ''
-        const face = (t.differs(a.face, b.face) ? String(stream('replace', `card-lead-${id}`, b.face)) : '') + (a.say !== b.say ? String(stream('replace', `card-say-${id}`, b.say)) : '')
+        const star = a.star !== b.star ? String(stream('replace', `card-star-${id}`, b.star)) : ''
+        const face = star + (t.differs(a.face, b.face) ? String(stream('replace', `card-lead-${id}`, b.face)) : '') + (a.say !== b.say ? String(stream('replace', `card-say-${id}`, b.say)) : '')
         if (client.params.has('old')) return t.differs(a.thread, b.thread) ? String(stream('replace', `card-thread-${id}`, b.thread)) : ''
         return face + (t.differs(a.answerSig, b.answerSig) ? stream('replace', `card-answer-${id}`, b.answer) : '') + (t.differs(a.thread, b.thread) ? stream('replace', `card-thread-${id}`, b.thread) : '')
       },

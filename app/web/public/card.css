@@ -952,3 +952,12 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 .tc-say-text > :last-child { margin-bottom: 0; }
 .tc-say-one[data-match] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .tc-say[data-hover] .tc-say-one:not([data-match]) { opacity: .55; }
+
+/* His star (card.mjs starButton): a round drawn button beside the way back; starred, the star is washed gold. */
+.tc-rails > .tc-star-form { position: absolute; z-index: 3; top: -57px; left: var(--step); margin: 0; }
+.tc-star.is-on { color: var(--gold-pen); }
+.tc-star.is-on .sketch { fill: var(--crown-wash); }
+@container cardpage (max-width: 760px) {
+  .tc-rails > .tc-star-form { top: -48px; left: calc(30px + var(--step)); }
+  .tc-rails > .tc-star-form > .tc-rail { width: 44px; height: 44px; }
+}
