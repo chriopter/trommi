@@ -9,6 +9,7 @@
 // device's state has one owner.
 #if canImport(UIKit)
 import Foundation
+import PushNotify
 import Security
 import TrommiClient
 import UIKit
@@ -24,7 +25,11 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
   func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     UNUserNotificationCenter.current().delegate = self
     #if canImport(ActivityKit)
-    Task { @MainActor in LiveActivities.watch() }
+    Task { @MainActor in
+      // the answer buttons of the Live Activity run here (AnswerCardIntent)
+      LiveAnswer.handler = { id, key in await LiveActivities.answer(card: id, key: key) }
+      LiveActivities.watch()
+    }
     #endif
     // A room signed in later gets the token the next time the app comes to the front.
     NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.ask() }

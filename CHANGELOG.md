@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- iPhone: the Live Activity and Dynamic Island show the most urgent question with its two answers; answer it right
+  there, without opening the app.
 - The connector updates itself while it runs: no reconnect after an update.
 - Drag sessions in the sidebar into your own order; the iPhone shows the same order.
 - Delete your account right from the iPhone app (Settings → Account).

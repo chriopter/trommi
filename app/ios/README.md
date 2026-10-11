@@ -94,7 +94,9 @@ different items under one number.
     urgency). It gets no content key: none ever leaves the core, so the extension opens no envelope and shows no
     title. Every member of the App Group (the three extensions) can read the item. A title in the notification
     needs a title the core seals separately, or a call of the binding that opens one envelope without the device.
-  - **Live Activity widget:** shows two counts; it holds no key and reads no file.
+  - **Live Activity widget:** holds no key and reads no file. It shows what ActivityKit hands it: the hub's two
+    counts, and the most urgent card (title, session name, urgency, two answers) that the app put in after opening
+    it on the phone. The hub never sees that card; while the phone cannot read the room the app puts none in.
 - **Removed by another device.** The hub ends a removed device's access and names it `role: "removed"` at its next
   sign-in; that token reads only `GET /v1/groups/{room}/removal`, the room group's Commits up to the removing one.
   The device hands them to its core; only when the core says a Commit removed it (or it read that Commit in the
@@ -487,13 +489,21 @@ threaded by room. It shows no title of a card: it holds no content key ("Who own
 Anything that does not open leaves the fixed text as it came. An extension has 24 MB of memory: it never opens the
 device and never follows a group.
 
-**Live Activity** (`Sources/TrommiLive`, a WidgetKit extension; `LiveActivities.swift`): "2 agents working · 3
-questions waiting" on the lock screen and in the Dynamic Island, with the drawing of the crowned session of the desk
-on screen. The hub starts it with a push-to-start push when agents begin to work, updates it with the two counts, and
-ends it when none works. The app only hands over tokens: its push-to-start token to every room's hub with a random
+**Live Activity** (`Sources/TrommiLive`, a WidgetKit extension; `LiveActivities.swift`): the bell and the count of
+questions waiting in the Dynamic Island and on the lock screen; with the most urgent waiting card (blocking or a
+permission request first, then a knock, then the one waiting longest), its session, its title and, for a decision
+with two options, its two answers as buttons. The hub starts it with a push-to-start push when agents begin to work,
+updates it with the two counts (`working`, `waiting`), and ends it when none works. The card is the app's: after a
+change of the board and after each push of the hub, the app puts it into the running activity from what it opened on
+the phone (PushNotify `LiveState`); no title leaves the phone. Without the app running, a hub's push shows the count
+alone until the app runs again. The buttons are `AnswerCardIntent` (a `LiveActivityIntent`, unlock required): iOS
+runs it in the app's process, which answers the card through the room as a tap on the card would, shows "Answered"
+for a moment, then the next card; an answer that cannot go out offers to open the card. A permission request and
+any other card open in the app. The app hands over tokens: its push-to-start token to every room's hub with a random
 tag per room, and each running activity's token to the hub whose tag its attributes carry; iOS wakes the app in the
 background for that. Push off (Settings · Devices) removes them and ends what runs; signing out ends it too. Past the
-push's stale date the widget dims the counts and says "Not up to date". `NSSupportsLiveActivities` is in `Info.plist`.
+push's stale date the widget dims and says "Not up to date". `NSSupportsLiveActivities` is in `Info.plist`. The
+screenshot hook `TROMMI_SCREEN=desk TROMMI_LIVE=1` starts one with the demo's cards in the simulator.
 
 **Universal links** (`Links.swift`): `https://app.trommi.com/card/<Nr. or id>`, `/chat/<session>`,
 `/chat/<session>/card/<ref>` (and `/s/…`, the form of before), `/settings` and `/settings/<sessions|devices|account|theme>` open in the app when it is
