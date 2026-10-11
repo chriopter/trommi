@@ -11,6 +11,7 @@
 //                    exports are not handlers ("Incorrect type for map entry 'FAVICON'")
 //   wrangler.jsonc   app/web/wrangler.jsonc without its build step (the deploy delivers these files and builds
 //                    nothing), with entry.js as the script and app.trommi.com as the worker's address
+//   public/gen/release.json   the release's number, commit and time, for the app's menu (not in the build's manifest)
 //   manifest.json    what this release is (product, repository, version, commit, hub, hsts) and every file
 //                    above with its size and SHA-256
 //   checksums.txt    the same hashes and manifest.json's, in the form of sha256sum: `sha256sum -c checksums.txt`
@@ -77,6 +78,9 @@ if (hsts === 'on') {
   lines.splice(at + 1, 0, `  ${HSTS}`)
   fs.writeFileSync(path.join(out, 'public', '_headers'), lines.join('\n'))
 }
+// What runs there, for the line under What's new in the app's menu: the release's number, its commit, when it was made.
+// Not in the build's own manifest (gen/manifest.json): the same source built anywhere stays the same bytes.
+fs.writeFileSync(path.join(out, 'public', 'gen', 'release.json'), `${JSON.stringify({ version, commit, released: new Date().toISOString() })}\n`)
 fs.copyFileSync(path.join(REPO, 'app/web/worker.js'), path.join(out, 'worker.js'))
 fs.writeFileSync(path.join(out, 'entry.js'), "import worker from './worker.js'\nexport default worker\n")
 fs.writeFileSync(path.join(out, 'wrangler.jsonc'), `${JSON.stringify(config, null, 2)}\n`)

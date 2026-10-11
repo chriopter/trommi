@@ -44,3 +44,17 @@ test('a desk switched by its number key leaves the menu shut; one picked in the 
     assert.deepEqual(kept, [['trommi-menu-keep', '1']], 'a desk picked in the open menu still opens it again')
   } finally { delete globalThis.sessionStorage }
 })
+
+test('What\'s new carries a line for what runs here, filled once it is known', () => {
+  const m = menu()
+  const row = m.match(/<a [^>]*id="menu-news"[^>]*>[\s\S]*?<\/a>/)?.[0]
+  assert.ok(row, 'the What\'s new row')
+  assert.match(row, /<span class="menu-news-words"><span>What's new<\/span><small class="menu-build" id="menu-build"><\/small><\/span>/, 'an empty line under its words until the release is known')
+})
+
+test('the release script writes what runs there beside the build, outside the build\'s manifest', async () => {
+  const src = (await import('node:fs')).readFileSync(new URL('../../../.github/scripts/web_release.mjs', import.meta.url), 'utf8')
+  assert.match(src, /'public', 'gen', 'release\.json'\)[\s\S]*version, commit, released/, 'gen/release.json: number, commit, time')
+  const app = (await import('node:fs')).readFileSync(new URL('../../../app/web/public/app.mjs', import.meta.url), 'utf8')
+  assert.match(app, /fetch\('\/gen\/release\.json'[\s\S]*fetch\('\/gen\/build\.txt'/, 'the app asks for it, else for the build\'s commit')
+})

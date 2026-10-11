@@ -66,6 +66,19 @@ let newsLatest = null
 export const newsLatestDay = () => newsLatest
 import('./gen/vendor/changelog-latest.mjs').then(m => { newsLatest = m.LATEST; document.dispatchEvent(new CustomEvent('trommi:news')) }, () => {})
 export const changelog = () => import('./gen/vendor/changelog.mjs')
+// What runs here, for the line under What's new in the menu: the release (gen/release.json, which the release writes
+// beside the build: number, commit, time), else the build's commit (gen/build.txt, the dev server's too). Asked once,
+// after the page has started; offline it says nothing.
+let running = null
+/** { release: 'v152' | '', commit, when: 'today, 14:32' | '' }, or null until known. */
+export const runningBuild = () => running
+setTimeout(() => {
+  const when = iso => { const at = iso ? new Date(iso) : null; if (!at || Number.isNaN(+at)) return ''; const day = at.toDateString() === new Date().toDateString() ? 'today' : at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); return `${day}, ${at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` }
+  fetch('/gen/release.json', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null)
+    .then(rel => (rel?.version ? { release: `v${rel.version}`, commit: String(rel.commit ?? '').slice(0, 7), when: when(rel.released) }
+      : fetch('/gen/build.txt', { cache: 'no-store' }).then(r => (r.ok ? r.text() : '')).then(t => { const c = /^commit: (\S+)$/m.exec(t)?.[1]; return c ? { release: '', commit: c.slice(0, 7), when: '' } : null })))
+    .then(b => { if (b) { running = b; document.dispatchEvent(new CustomEvent('trommi:news')) } }, () => {})
+}, 1500)
 export const scribbleWire = () => import('./gen/vendor/scribble.mjs')
 // A QR reader for browsers without their own (core/qr-decode.mjs): loaded by the account screens' "Scan a code" only.
 export const qrReader = () => import('./gen/vendor/qr-decode.mjs')
