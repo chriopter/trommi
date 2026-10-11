@@ -23,6 +23,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out
   like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with its own page.
 - An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
+- An agent you ask for something keeps one card for it, from Working on to Done.
 - The self-test screen is now called "Security Info".
 - Settings → Account no longer has the "Advanced" block with the old account address; the old recovery-code screen (/recover) is gone. Room, key epoch and hub are shown under Security Info.
 - Codex: the board tools are there from the start, Trommi tool calls no longer ask for approval one by one, and the texts say to restart Codex (not /mcp) when needed.
