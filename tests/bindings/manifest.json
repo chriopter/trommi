@@ -270,7 +270,7 @@
           "type": "bytes"
         },
         {
-          "name": "fileId",
+          "name": "head",
           "type": "bytes"
         },
         {
@@ -436,6 +436,19 @@
         }
       ],
       "returns": "PushNote"
+    },
+    "openLiveActivity": {
+      "arguments": [
+        {
+          "name": "key",
+          "type": "bytes"
+        },
+        {
+          "name": "sealed",
+          "type": "bytes"
+        }
+      ],
+      "returns": "LiveActivityCounts"
     },
     "readWebPush": {
       "arguments": [
@@ -2167,6 +2180,10 @@
       "change": "number",
       "urgency": "number",
       "ticket": "bytes"
+    },
+    "LiveActivityCounts": {
+      "working": "number",
+      "waiting": "number"
     },
     "SessionInfo": {
       "roomId": "bytes",
