@@ -24,6 +24,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- A session shows a switch "All | Questions" under its heading, with the number of questions waiting; the funnel beside
+  the message field is gone (web and iPhone).
 - The reverse card on a card: its black oval smaller, with air above and below, as on the send button (web and iPhone).
 - Desk: the headings "Off your mind" and "Artifacts" are links themselves, underlined with an arrow; no separate "Show more" (web and iPhone).
 - A helper's status line follows its question: filing a card turns the line to waiting on you with that card, and

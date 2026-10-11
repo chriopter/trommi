@@ -84,7 +84,7 @@ struct SessionScreen: View {
               // the end on screen, however it got there (his scroll, the keyboard, a taller composer): nothing is new
               .onScrollVisibilityChange(threshold: 0.01) { if $0 { follow.reachedEnd() } }
           }
-          .padding(.horizontal, 14).padding(.top, 6)
+          .padding(.horizontal, 14).padding(.top, 6 + 44 + (usageOf(model, a) == nil ? 0 : 26))   // (room for the switch and the usage over the first rows)
           .frame(maxWidth: 760).frame(maxWidth: .infinity)
         }
         .defaultScrollAnchor(.bottom)
@@ -128,7 +128,13 @@ struct SessionScreen: View {
         }
         // the top row: back, the session's name as a glass pill (its menu), "⋯"; no bar, a soft edge above and below
         .pushedPills { header(a, d) } trailing: { more(a, d, freshCount: fresh.count) }
-        .overlay(alignment: .top) { if let acc = usageOf(model, a) { UsageStrip(acc: acc).padding(.top, 58) } }
+        .overlay(alignment: .top) {
+          // under the top row: the usage, then the switch "All | Questions n" (as on the web, always in view)
+          VStack(spacing: 6) {
+            if let acc = usageOf(model, a) { UsageStrip(acc: acc) }
+            ModeSwitch(onlyQuestions: $onlyQuestions, count: fresh.count)
+          }.padding(.top, 58)
+        }
         .onAppear { lastCount = all.count; follow.reachedEnd(); proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
         // the speed run (Perf.swift SpeedScript): up through the drawn messages (300 at most) and back
         .onChange(of: model.perfScroll) { _, _ in
@@ -252,7 +258,6 @@ struct SessionScreen: View {
   }
   private func more(_ a: Agent, _ d: DeskModel, freshCount: Int) -> some View {
     Menu {
-      Toggle(isOn: $onlyQuestions) { Label(freshCount > 0 ? "Questions Only (\(freshCount))" : "Questions Only", systemImage: "questionmark.circle") }
       Button { filesOpen = true } label: { Label("Files", systemImage: "paperclip") }
       Button { name = a.label.isEmpty ? a.name : a.label; renaming = true } label: { Label("Rename…", systemImage: "pencil") }
       Button { drawings = true } label: { Label("Change Icon…", systemImage: "scribble") }
@@ -1098,5 +1103,42 @@ struct SessionFiles: View {
       .navigationTitle("Files").navigationBarTitleDisplayMode(.inline)
       .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
     }
+  }
+}
+
+/** What the session shows: a quiet two-way switch "All | Questions n" under the top row (the web's session-seg).
+ *  The number is the questions waiting for him, in the orange of the open questions. */
+struct ModeSwitch: View {
+  @Binding var onlyQuestions: Bool
+  let count: Int
+  var body: some View {
+    HStack(spacing: 2) {
+      side("All", on: !onlyQuestions) { onlyQuestions = false }
+      side("Questions", on: onlyQuestions, count: count) { onlyQuestions = true }
+    }
+    .padding(3)
+    .background(Capsule().fill(Ink.sunken))
+    .frame(maxWidth: 320)
+    .padding(.horizontal, 16)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Show")
+  }
+  private func side(_ word: String, on: Bool, count: Int = 0, _ act: @escaping () -> Void) -> some View {
+    Button(action: { withAnimation(.easeOut(duration: 0.15)) { act() } }) {
+      HStack(spacing: 6) {
+        Text(word).font(Face.text(14, .semibold))
+        if count > 0 {
+          Text("\(count)").font(Face.text(11, .bold)).foregroundStyle(.white)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18).background(Capsule().fill(Ink.urgHigh))
+        }
+      }
+      .foregroundStyle(on ? Ink.fg : Ink.muted)
+      .frame(maxWidth: .infinity, minHeight: 32)
+      .background { if on { Capsule().fill(Ink.surface).shadow(color: .black.opacity(0.12), radius: 1, y: 1) } }
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(on ? .isSelected : [])
+    .accessibilityLabel(count > 0 ? "\(word), \(count) waiting" : word)
   }
 }

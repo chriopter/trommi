@@ -354,11 +354,12 @@ function sessionNow(s, base = '') {
 /** Under 1200 px the usage stands on a line of its own under the heading, centred (app.css .use-narrow). */
 // (always there, empty without an account: the live stream replaces it when the agent's numbers come or change)
 const sessionUsage = s => html`<p class="use-narrow" id="session-use-${s.agent.id}">${usageCompact(s.agent.account)}</p>`
-/** The filter beside the composer: one round button that switches straight to the questions only and back; filled
- *  while it is on. A real link (the choice lives in the address, ?only=questions), so it works without scripts. */
-function sessionFilters(s, base, mode = '') {
-  const here = sessionPath(s.id, base), on = mode === 'questions'
-  return html`<a class="session-filter session-filter-btn" id="session-filters-${s.id}" role="button" aria-pressed="${on ? 'true' : 'false'}" data-nav href="${on ? here : `${here}?only=questions`}" title="Questions only" aria-label="Questions only" data-controller="title" data-title-count-value="${s.fresh.length}">${ico('filter')}</a>`
+/** What the session page shows: a quiet two-way switch "All | Questions n" in its own row under the heading
+ *  (independent of the heading's markup). Real links (the choice lives in the address, ?only=questions), so it works
+ *  without scripts; the number is the questions waiting for him, replaced live when it changes. */
+export function sessionFilters(s, base, mode = '') {
+  const here = sessionPath(s.id, base), on = mode === 'questions', n = s.fresh.length
+  return html`<nav class="column session-mode" id="session-filters-${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${here}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${here}?only=questions"${on ? raw(' aria-current="page"') : ''} data-controller="title" data-title-count-value="${n}">Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
 }
 /** The status lines of the session's running work, and that it is answering. They stand at the end of the conversation. */
 function sessionStatus(s, base, now = Date.now()) {
@@ -557,10 +558,10 @@ function sessionMain(s, base, { mode = '', before = null, error = '', text = '',
     body = html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${w.total ? part : empty(s, base)}${latest ? html`<div id="log-end-${s.id}" hidden></div>${sessionStatus(s, base)}` : html`<a class="log-earlier-link is-later" data-nav href="${sessionPath(s.id, base)}">To the latest messages</a>`}</div></div>`
   }
   return html`<main id="session" aria-label="Session: ${s.agent.name}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}>
-<header class="pane-title">${sessionWho(s, base)}${sessionNow(s, base)}</header>${sessionUsage(s)}
+<header class="pane-title">${sessionWho(s, base)}${sessionNow(s, base)}</header>${sessionUsage(s)}${sessionFilters(s, base, mode)}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
-<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${open}<div class="column session-compose">${sendError(s, error)}${sessionLink(s)}${composer(s, base, { text, focus })}${sessionFilters(s, base, mode)}</div></div>
+<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${open}<div class="column session-compose">${sendError(s, error)}${sessionLink(s)}${composer(s, base, { text, focus })}</div></div>
 </div></section>
 ${filesDrawer(s, base, mode === 'files')}
 </main>`
@@ -1151,7 +1152,7 @@ controller('files', class extends Controller {
   }
   outside(event) {
     if (!this.isOpen || !event.target.isConnected) return
-    if (this.drawerTarget.contains(event.target) || event.target.closest('.files-chip, .session-filter')) return
+    if (this.drawerTarget.contains(event.target) || event.target.closest('.files-chip, .session-mode')) return
     this.close()
   }
   jump(event) {

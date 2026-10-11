@@ -617,27 +617,22 @@ turbo-frame.log-earlier[busy] > .log-earlier-link { opacity: .5; pointer-events:
 .session-past { display: grid; justify-items: start; }
 .session-past .event { margin-top: 0; }
 a.open-jump { text-decoration: none; }
-/* The filter beside the composer (session.mjs sessionFilters): one round button at the bar's right, filled while
-   the filter is on. */
-#session .session-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s-2); align-items: end; }
-#session .session-compose > :not(.composer, .session-filter) { grid-column: 1 / -1; }
-/* (a wide window: the line ends at least 96px before the window's right edge, where the corner note lies, sidebar.css;
+/* (a wide window: the composer ends at least 96px before the window's right edge, where the corner note lies, sidebar.css;
    the free room beside the 47.5rem column counts, so on a wide window nothing moves) */
 @media (min-width: 861px) { #session .session-compose { padding-right: clamp(var(--gutter), calc(96px - (100vw - var(--side) - 47.5rem) / 2), 96px); } }
-.session-filter { margin-bottom: 7px; }
 /* (On a wide screen nothing stands under the composer: no row is kept free there. A phone keeps its row.) */
 @media (min-width: 861px) { body[data-view="chat"]:not([data-pair]) #session .dock { padding-bottom: max(var(--s-4), env(safe-area-inset-bottom, 0px)); }
 }
-.session-filter-btn { position: relative; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--muted); transition: color var(--d-fast) var(--ease-out), border-color var(--d-fast) var(--ease-out); }
-.session-filter-btn:hover { color: var(--fg); border-color: var(--line-strong); }
-.session-filter-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
-.session-filter-btn[aria-pressed="true"]:hover { color: var(--accent-fg); border-color: var(--accent); filter: brightness(1.08); }
-.session-filter-btn .ico { width: 19px; height: 19px; }
-@media (max-width: 860px) {
-  .session-filter { margin-bottom: 6px; }
-  .session-filter-btn { width: 44px; height: 44px; }
-  #session .session-compose { column-gap: 6px; }
-}
+/* What the page shows (session.mjs sessionFilters): a quiet two-way switch "All | Questions n" in its own row under
+   the heading; the number in the orange of the open questions. A phone: across the width under the bar. */
+#session .session-mode { flex: none; display: flex; padding-top: var(--s-1); padding-bottom: var(--s-1); position: relative; z-index: 3; }
+.session-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--sunken); font: 600 var(--t-sm)/1 var(--font); }
+.session-seg a { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 999px; color: var(--muted); text-decoration: none; }
+.session-seg a:hover { color: var(--fg); }
+.session-seg a[aria-current] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgb(20 30 25 / .12), 0 0 0 1px var(--line); }
+.session-seg b { min-width: 18px; height: 18px; padding: 0 5px; display: inline-grid; place-items: center; border-radius: 9px; background: var(--urg-high); color: #fff; font-size: .7rem; }
+@media (min-width: 861px) { #session .session-mode { padding-left: calc(var(--gutter) + 56px); } }
+@media (max-width: 860px) { #session .session-mode { justify-content: center; padding-top: 2px; } .session-seg { width: 100%; max-width: 320px; } .session-seg a { flex: 1; } }
 
 /* ---- the session's files (session.mjs filesChip, filesDrawer; controller "files"): "N files"
    beside the quiet line opens a drawer from the right, the conversation stays; on a phone it opens as a sheet from below. Sober: lines and tokens, nothing drawn. ---- */
