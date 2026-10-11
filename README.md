@@ -319,7 +319,7 @@ The whole list, with everything that is in place: [SECURITY.md](SECURITY.md).
 | `app/ios/` | the iOS app (Swift, SwiftUI) |
 | `connector/` | the connector: the program and the Claude Code plugin |
 | `demo/` | the demo room, built into the web app and the iOS app |
-| `tests/` | every part's tests, one folder per part |
+| `tests/` | every part's tests, one folder per part; `tests/tools/`: `seed_account.rs`, which fills an account from the demo room (the App Store review account) |
 | `spec/` | the protocol, the hub's API, the test vectors |
 | `release/` | the signed release: manifest, signature, public key |
 | `site/` | the website trommi.com |

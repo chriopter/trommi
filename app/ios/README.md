@@ -259,9 +259,10 @@ compliance") only when the app has none; it replaces a screenshot set only when 
 
 Once by hand in App Store Connect, the API has no route for it: App Privacy, from `metadata/app_privacy.json` (Email
 Address and User ID, linked, App Functionality, no tracking). Before the first `upload`:
-`review_information/phone_number.txt` (App Review calls it if something blocks the review). App Review uses the demo
-("Try the demo" on the start screen, no account), as `review_information/notes.txt` says; a demo account
-(`demo_user.txt`, its password in `APPSTORE_DEMO_PASSWORD`) is optional.
+`review_information/phone_number.txt` (App Review calls it if something blocks the review). App Review signs in with the demo account
+named in `demo_user.txt` (a filled room, made by `tests/tools/seed_account.rs`; its password in
+`APPSTORE_DEMO_PASSWORD`, which `store.sh` reads from `~/.config/trommi/app-review.env`), or uses the demo ("Try
+the demo" on the start screen), as `review_information/notes.txt` says.
 
 ## Privacy manifest
 
