@@ -324,6 +324,7 @@ function boardModel(state, agents = state.agents, desk = null) {
 
   return {
     state, agents: here, everyone, byAgent, byCard, open, fresh, reads, allFresh, onDesk, desk: deskId, homeDesk, all, deskOf, desks: desks ?? [], revising, snoozed, done, units,
+    reading: Boolean(state.reading),
     cut, unheard: units.reduce((n, u) => n + u.unheard, 0),
     knocking: fresh.filter(isKnock).length,
     blocked: units.filter(u => u.blocked).length,
@@ -500,6 +501,8 @@ export function replaceInSlots(agents) {
   for (const a of agents) if (a.parent && gone.has(a.parent) && !a.archived && !a.online && !a.waiting && !a.fetched) { a.archived = true; a.replaced = true }
   return agents
 }
+/** A card or request that is open but not read on this device yet (`boardCard`, `permissionCard`). */
+const LOADING_CARD = Object.freeze({ kind: 'info', loading: true, urgency: 'normal', urgency_reason: '', title: 'Loading …', teaser: 'Still being decrypted on this device.', body: '', options: [] })
 const agentIdOf = s => (s.agent_session_id && !/^[0-9a-f]{12,}$/.test(s.agent_session_id) ? s.agent_session_id : sessionKey(s).slice(0, SESSION_ID_LEN))
 
 /**
@@ -683,6 +686,8 @@ export class BoardState {
     const self = this
     const state = {
       cards, byId: this.byId, queue, closedGen: this.closedGen, agents, tasks, desks, notes, assets,
+      // (the room is still being read: a sign-in joining its sessions, the past read again; the Desk says so)
+      get reading() { return Boolean(self.model.room.reading) },
       get messages() { return (self.allMsgs ??= self.messages()) },
       messagesOf: agent => self.messagesOf(agent),
       messagesOfCard: id => self.messagesOfCard(id),
@@ -723,7 +728,7 @@ export class BoardState {
       // device with a new session; the older one of the same slot is replaced (replaceInSlots), never a second entry.
       const dev = m.members.get(s.agent_device_id)
       return {
-        id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: p.agent_name || s.device_name || id, label: set.name || '', icon: set.icon || p.icon || '', icon_by: set.icon ? 'human' : 'agent',
+        id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: p.agent_name || s.device_name || (m.room.reading && s.registers?.has?.('profile') === false ? 'Loading …' : id), label: set.name || '', icon: set.icon || p.icon || '', icon_by: set.icon ? 'human' : 'agent',
         online: Boolean(s.is_online), offline_since: s.offline_since ?? null, account: accountOf.get(s.agent_device_id) ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: crown === key || crown === s.agent_device_id, parent, main: Boolean(p.is_main),
         desk: set.desk ?? null, archived: chosen && !back, replaced: false, group: set.group ?? null, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position), seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: lastOfDevice.get(s.agent_device_id) ?? 0,
         removed: s.is_active === false,
@@ -788,8 +793,11 @@ export class BoardState {
       created: c.created_at ?? 0, decided: a?.answered_at ?? (status === 'done' ? c.updated_at : null), recommended: c.recommended ?? null,
       version_hash: c.version_hash, content_state: c.content_state,
     }
+    // Open, but its body is not read on this device yet (just signed in, its keys still on the way): a quiet
+    // placeholder that stands where the question will, nothing to answer and no knock until it is read.
+    if (status === 'open' && !c.unsupported && (c.content_state === 'undecryptable' || c.content_state === 'header')) Object.assign(card, LOADING_CARD)
     // A card of a newer Trommi (card type or schema): its title where readable, the update line, nothing to answer.
-    if (c.unsupported) Object.assign(card, { kind: 'info', unsupported: true, title: card.title || 'A card from a newer Trommi', body: c.unsupported === 'card_type' && card.body ? card.body : '', teaser: NEEDS_NEWER, options: [] })
+    else if (c.unsupported) Object.assign(card, { kind: 'info', unsupported: true, title: card.title || 'A card from a newer Trommi', body: c.unsupported === 'card_type' && card.body ? card.body : '', teaser: NEEDS_NEWER, options: [] })
     else if (c.sections) card.sections = c.sections
     if (c.html && !c.unsupported) card.html = c.html
     if (versions.length) { card.versions = versions; card.revised = current?.sent_at ?? c.updated_at; card.revisions = versions.length; card.revision_note = c.change_note ?? '' }
@@ -819,7 +827,11 @@ export class BoardState {
     return card
   }
   permissionCard(p, number) {
-    const status = p.permission_state === 'pending' && !(p.expires_at && p.expires_at < Date.now()) ? 'open' : 'done'
+    // (settled at the hub while this device was away and not taken yet: off the Desk, as a card)
+    const status = p.catching_up ? 'catching' : p.permission_state === 'pending' && !(p.expires_at && p.expires_at < Date.now()) ? 'open' : 'done'
+    // (not read here yet: what it asks to run is unknown, so it is not offered to allow; it waits quietly)
+    const unread = status === 'open' && p.content_state != null && p.content_state !== 'ok'
+    if (unread) return { id: p.object_id, object_id: p.object_id, agent: this.devToAgent.get(keyOf(p)) ?? keyOf(p).slice(0, SESSION_ID_LEN), number, status, request_id: p.object_id, version: 1, multiple: false, choice: null, choices: [], note: '', summary: '', created: p.sent_at ?? 0, decided: null, recommended: null, attachments: [], ...LOADING_CARD }
     return {
       id: p.object_id, object_id: p.object_id, agent: this.devToAgent.get(keyOf(p)) ?? keyOf(p).slice(0, SESSION_ID_LEN), number, kind: 'permission', status, urgency: 'critical', urgency_reason: '',
       request_id: p.object_id, title: `Approval: ${p.tool_name}`, body: `${p.description ?? ''}\n\n${p.input_preview ?? ''}`,

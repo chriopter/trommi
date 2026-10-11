@@ -334,7 +334,14 @@ export function applyCommit(model: Model, facts: CommitSummary, change: Change, 
   if (removed_me) pushAlert(model, change, { code: 'removed', message: 'this device was removed from the room', sender_device_id: hex(facts.committer), at: now })
 }
 
-/** What the hub says of a device (GET, and the stream's `presence` event): ids as the model's hex. */
+/** The longest a permission request waits for its verdict: a connector's hook waits at most an hour
+ *  (TROMMI_PERMISSION_MS), and two minutes more for the clocks. */
+export const REQUEST_LIFE_MAX_MS = 62 * 60_000
+/** A permission request whose body was not read here (a cache of before has no mark: it was read). */
+export const unreadRequest = (p: { content_state?: ContentState }): boolean => p.content_state != null && p.content_state !== 'ok'
+/** What the hub says of a device (GET, and the stream's `presence` event): ids as the model's hex. `link` left out:
+ *  the event says nothing of it (a stream that opened), and the link report this device holds stands while the
+ *  device is online. */
 export interface DeviceReport { device_id: string; is_online?: boolean; offline_since?: number | null; link?: unknown }
 /** Who is connected, and each agent's link report. A device that stopped working, or went, ends its running turns. */
 export function applyPresence(model: Model, reports: Iterable<DeviceReport>, change: Change, now: number = Date.now()): void {
@@ -343,7 +350,8 @@ export function applyPresence(model: Model, reports: Iterable<DeviceReport>, cha
     if (!m) continue
     m.is_online = !!d.is_online
     m.offline_since = m.is_online ? null : d.offline_since ?? null
-    m.link = cleanLink(d.link)
+    if ('link' in d) m.link = cleanLink(d.link)
+    else if (!m.is_online) m.link = null
     if (m.device_role === 'agent') {
       touchAgent(model, d.device_id, change)
       if (!m.is_online || (m.link && !m.link.working)) endTurns(model, t => t.sender === d.device_id, now, change)
@@ -742,15 +750,16 @@ function applyRequest(model: Model, r: ReceivedEnvelope, change: Change, hash: s
   let p = model.permissions.get(object_id)
   const touched = () => { change.permissions.add(object_id); if (p?.session_id) change.sessions.add(p.session_id); change.stack = true }
   if (h.kind === 'request') {
-    const { content } = bodyOf(r, 'request')
+    const { content, state } = bodyOf(r, 'request')
     const bind = r.bind?.kind === 'request' ? r.bind : null
     if (!p) {
       p = { object_id, agent_device_id: hex(r.objectAfter?.owner ?? h.sender), session_id: h.sessionId ? hex(h.sessionId) : null, tool_name: '', description: '', input_preview: '',
-        expires_at: 0, version_hash: hash, envelope_number: n, sent_at: h.time, permission_state: stateAfter(r) === 'open' ? 'pending' : 'denied', verdict: null, withdraw_reason: null }
+        expires_at: 0, version_hash: hash, envelope_number: n, sent_at: h.time, permission_state: stateAfter(r) === 'open' ? 'pending' : 'denied', content_state: 'header', verdict: null, withdraw_reason: null }
       model.permissions.set(object_id, p)
     } else if (p.version_hash !== hash) return { applied: false }
     if (bind) p.expires_at = bind.expiresAt
     if (content) { p.tool_name = String(content['tool_name'] ?? ''); p.description = String(content['description'] ?? ''); p.input_preview = String(content['input_preview'] ?? '') }
+    p.content_state = content || bind || p.content_state === 'ok' ? 'ok' : state
     touched()
     return { applied: true }
   }
@@ -1162,10 +1171,13 @@ export function project(model: Model, change: Change, now: number = Date.now()):
     const pending: PermissionRequest[] = []
     for (const p of model.permissions.values()) {
       if (p.permission_state !== 'pending' || p.catching_up) continue
-      if (p.expires_at && now > p.expires_at) { p.permission_state = 'expired'; change.permissions.add(p.object_id); if (p.session_id) change.sessions.add(p.session_id) }
+      // (one whose body is not read here yet has no expiry known: past the longest wait a connector gives one, it
+      //  expired whatever it said. The hub cannot tell, so its Desk lists such requests as open for ever.)
+      const ends = p.expires_at || (unreadRequest(p) ? p.sent_at + REQUEST_LIFE_MAX_MS : 0)
+      if (ends && now > ends) { p.permission_state = 'expired'; change.permissions.add(p.object_id); if (p.session_id) change.sessions.add(p.session_id) }
       else pending.push(p)
     }
-    P.nextPermExpiry = Math.min(Infinity, ...pending.filter(p => p.expires_at).map(p => p.expires_at))
+    P.nextPermExpiry = Math.min(Infinity, ...pending.map(p => p.expires_at || (unreadRequest(p) ? p.sent_at + REQUEST_LIFE_MAX_MS : Infinity)))
     model.open_permission_ids = pending.sort((a, b) => a.envelope_number - b.envelope_number).map(p => p.object_id)
   }
   const same = (x: string[], y: string[]) => x.length === y.length && x.every((v, i) => v === y[i])

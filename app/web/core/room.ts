@@ -364,6 +364,8 @@ export function roomsOn(env: RoomEnv): Rooms {
         const own = code.slice(), running = engine
         sessions = joinSessions(running, own, later).finally(() => own.fill(0))
         sessions.catch(() => {})
+        // (the Desk says "catching up" until they are joined: each brings its open cards)
+        client.readingUntil(sessions)
       }
       return { client, sessions }
     } catch (e) {
@@ -397,10 +399,15 @@ export function roomsOn(env: RoomEnv): Rooms {
       try {
         let input = await ahead[at]!
         delete ahead[at]
+        // Another human device of the person may add this one to the session first (5.2.7, its Welcome): then the
+        // code selected none of the session's keys, and what was written before the Welcome stays closed until a
+        // human device hands them over. They are asked for at once, not after the usual grace (7.1.1): the person
+        // signed in a moment ago and waits for exactly this.
+        let welcomed = false
         const join = (): Promise<void> => engine.land(async d => {
           const { founding, current, commits } = input
-          // (already a member: an earlier try went through)
-          if ((await d.groups()).some(g => sameBytes(g.group, session.group))) return null
+          // (already a member: an earlier try went through, or a Welcome came first)
+          if ((await d.groups()).some(g => sameBytes(g.group, session.group))) { welcomed = true; return null }
           const checked = await d.sessionCheckStart(founding)
           // (a founding GroupInfo of another group than the one listed: not this session)
           if (!sameBytes(checked, session.group)) throw new ClientError('bad-group', 'the hub served another group\'s founding')
@@ -424,10 +431,11 @@ export function roomsOn(env: RoomEnv): Rooms {
             if (moved) input = await read(at)
             await engine.catchUp().catch(() => {})
             await engine.joinNow(null).catch(() => false)
-            if (await member()) break
+            if (await member()) { welcomed = true; break }
             await sleep(Math.min(50 * 2 ** tries, 1000))
           }
         }
+        if (welcomed) await engine.askKeysNow(session.group)
         out.joined++
       } catch (e) {
         const why = engine.core.errorCode(e) ?? (e instanceof HubError ? e.code : 'failed')

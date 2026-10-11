@@ -802,6 +802,8 @@ export class Engine {
     if (!this.streamLive && this.position !== from) this.keepSoon(0)
     if (this.rescanDue) await this.rescan()
   }
+  /** A rescan is asked for or running: the room's past is still being read (the client's `room.reading`). */
+  get rescanPending(): boolean { return this.rescanDue }
   /** Asks for a rescan (see the header): also the client's, when it has to build its model again from nothing. */
   async wantRescan(from = 0): Promise<void> {
     this.rescanAsked++
@@ -1171,6 +1173,11 @@ export class Engine {
   private async askForKeys(): Promise<void> {
     const due = await this.do(d => d.keyRequests(this.now())).catch(() => [])
     for (const request of due) await this.hub.postRequest({ kind: 'handover', group: request.group }).catch(() => {})
+  }
+  /** A wish for a session group's content keys now (7.1.1), without the grace `askForKeys` keeps: a device signed in
+   *  with the code that another human device added to the group before its own join (room.ts `joinSessions`). */
+  async askKeysNow(group: Uint8Array): Promise<void> {
+    if (this.is_human) await this.hub.postRequest({ kind: 'handover', group }).catch(() => {})
   }
   /** Answers a human device's wish for content keys once (7.1.1); the core refuses one that is not a human device's,
    *  and makes nothing for a requester and group it answered within the hour. */

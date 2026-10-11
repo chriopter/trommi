@@ -180,6 +180,9 @@ export interface Room {
   /** THE cursor: the hub's change number up to which this device has processed. */
   last_envelope_number: EnvelopeNumber
   connection: Connection
+  /** This device is still reading what the room holds (a sign-in, a cache that was lost): the session groups it is
+   *  joining, the room's past read again. The Desk says "catching up" meanwhile instead of "all quiet". */
+  reading: boolean
   outbox_blocked: { local_id: string; code: string; message: string } | null
   [field: string]: unknown
 }
@@ -351,6 +354,9 @@ export interface PermissionRequest {
   envelope_number: EnvelopeNumber
   sent_at: Ms
   permission_state: PermissionState
+  /** `ok` once its body was read here; until then its tool, words and expiry are unknown (a device just signed in
+   *  that lacks the keys yet): the views show it as loading, never as a question to answer. */
+  content_state: ContentState
   withdraw_reason: string | null
   verdict: { allow: boolean; by_device_id: Hex; envelope_number: EnvelopeNumber } | null
 }

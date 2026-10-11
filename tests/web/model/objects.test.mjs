@@ -53,6 +53,32 @@ test('a permission request has no later version in protocol v1: nothing withdraw
   assert.equal(p.permission_state, 'denied', 'allow or deny stood in the pruned body: what is left is "closed", never shown as allowed'); assert.equal(p.verdict, null)
 })
 
+test('a permission request not read here yet (a device just signed in): loading, and past the longest wait it expired', () => {
+  const w = new World(); w.groups()
+  const [young, old] = [id16(0xa5), id16(0xa6)]
+  // the hub's Desk lists both as open (it cannot see an expiry: that is in the body); their keys are not here yet
+  request(w, old, 0, { outcome: 'chained', code: 'no-key', time: w.clock - 3 * 3_600_000 })
+  const first = request(w, young, 0, { outcome: 'chained', code: 'no-key' })
+  const p = w.model.permissions.get(hex(young))
+  assert.equal(p.content_state, 'undecryptable'); assert.equal(p.tool_name, '')
+  assert.equal(w.model.permissions.get(hex(old)).permission_state, 'expired', 'older than any wait a connector gives: not a question any more')
+  assert.deepEqual(w.model.open_permission_ids, [hex(young)], 'the young one stays (the views show it as loading)')
+  // its keys came: read again with its body, it is what it says
+  request(w, young, w.clock + 60_000, { hash: first.hash, change: first.change })
+  const read = w.model.permissions.get(hex(young))
+  assert.deepEqual([read.content_state, read.tool_name, read.permission_state], ['ok', 'Bash', 'pending'])
+  w.clock += 2 * 3_600_000
+  w.run(() => {})
+  assert.equal(w.model.permissions.get(hex(young)).permission_state, 'expired')
+})
+
+test('a permission request read here: its body counts, content_state ok', () => {
+  const w = new World(); w.groups()
+  const id = id16(0xa7)
+  request(w, id, w.clock + 60_000)
+  assert.equal(w.model.permissions.get(hex(id)).content_state, 'ok')
+})
+
 const note = (w, id, fields, { sender = w.me, state = 'open', previous = null, current, ...rest } = {}) => {
   const hash = w.hash()
   const known = w.objects.get(id)
