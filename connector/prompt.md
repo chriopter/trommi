@@ -114,6 +114,7 @@ Delete a published asset; its link stops working for everyone.
 ## open_session
 
 Open (or reopen) a child session for a subagent. Events from it carry session="<name>": route them to that helper.
+Keep your own context small: you coordinate, helpers work. Keep a few long-lived helpers, one per topic (e.g. release, design, server), not one per card. A card belongs to one topic; its follow-ups, explain and rework go to that helper as one line from you – the helper reads pictures and long text, not you. Keep a short "open matters" file (topic, card, state) and update it whenever a matter starts or ends.
 
 ## close_session
 

@@ -18,6 +18,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
+  line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
   instead of a stack of red ones.

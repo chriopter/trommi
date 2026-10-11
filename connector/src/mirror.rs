@@ -315,6 +315,44 @@ fn read_transcript(path: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&bytes[from..]).into_owned())
 }
 
+/// Where a prompt that starts or joins a turn comes from, as the prompt hook tells its connector: `from` "terminal"
+/// (the human typed it), "board" (board events as <channel …> blocks, or the monitor's line), or "other" (a finished
+/// background task, another session's message, anything else Claude Code submits by itself); and for board events
+/// the card each <channel …> block is about, "" for one about no card of this session (a note, a child session's
+/// event). At most CARDS_MAX entries, each cut to 64 characters.
+pub fn prompt_origin(prompt: &str, typed: bool) -> (&'static str, Vec<String>) {
+    if typed {
+        return ("terminal", vec![]);
+    }
+    let tags = Regex::new(r"<channel(\s[^>]*)?>").unwrap();
+    let attr = |tag: &str, name: &str| {
+        Regex::new(&format!(r#"\s{name}="([^"]*)""#))
+            .unwrap()
+            .captures(tag)
+            .map(|c| c[1].to_string())
+    };
+    let mut cards = vec![];
+    for t in tags.find_iter(prompt) {
+        let tag = t.as_str();
+        let card = match (attr(tag, "card_id"), attr(tag, "session")) {
+            (Some(id), None) => id.chars().take(64).collect(),
+            _ => String::new(),
+        };
+        if cards.len() < CARDS_MAX {
+            cards.push(card);
+        }
+    }
+    let monitor = Regex::new(r"(?m)^\s*(<event>)?Trommi · .* · call inbox\s*(</event>)?\s*$")
+        .unwrap()
+        .is_match(prompt);
+    if !cards.is_empty() || monitor {
+        ("board", cards)
+    } else {
+        ("other", vec![])
+    }
+}
+const CARDS_MAX: usize = 8;
+
 /// The line a hook hands its connector, or None when this hook has nothing to say. `kind`: "prompt" or "stop".
 /// A prompt that is not mirrored still goes as a line without text: it starts a turn (the replies of the turn before
 /// are forgotten).
@@ -348,6 +386,14 @@ pub fn hook_request(kind: &str, input: &Value, ancestors: &[u32]) -> Option<Valu
     let pictures = pictures.filter(|dir| dir.len() <= 4096);
     loop {
         let mut r = json!({ "op": "terminal", "kind": what, "text": text, "prompt_id": prompt_id, "ancestors": ancestors });
+        if kind == "prompt" {
+            let (from, cards) = prompt_origin(
+                input.get("prompt").and_then(|v| v.as_str()).unwrap_or(""),
+                text.is_some(),
+            );
+            r["from"] = json!(from);
+            r["cards"] = json!(cards);
+        }
         if let Some(d) = &pictures {
             r["pictures_dir"] = json!(d);
         }
@@ -380,17 +426,60 @@ pub fn already_said(answer: &str, replies: &[String]) -> bool {
         .any(|r| !r.is_empty() && (r.contains(&a) || a.contains(r.as_str())))
 }
 
+/// The line in the session's chat for an answer that went into a card's thread: "→ " and the card's title.
+pub fn pointer_line(title: &str) -> String {
+    let t = folded(title);
+    let cut: String = t.chars().take(POINTER_TITLE_MAX).collect();
+    if cut.chars().count() < t.chars().count() {
+        format!("→ {}…", cut.trim_end())
+    } else {
+        format!("→ {t}")
+    }
+}
+const POINTER_TITLE_MAX: usize = 120;
+
 pub struct Item {
-    /// "input", "answer", or "work": an envelope of the turn's trail (trail.rs).
+    /// "input", "answer", "pointer" (the line to the card an answer went to), or "work": an envelope of the turn's
+    /// trail (trail.rs).
     pub kind: &'static str,
     pub text: String,
     pub at: u64,
     pub work: Option<crate::trail::Envelope>,
     /// An input's pasted pictures: files to send with it as attachments.
     pub pictures: Vec<String>,
+    /// An answer of a turn one card started: it goes into that card's thread, and a "pointer" item (this card,
+    /// `text` the line) into the session's chat.
+    pub card: Option<String>,
+}
+
+/// What started the running turn, so far: the cards of the board events handed to the agent in it, and whether
+/// anything else came in (the human's typing, a note, a helper, a child session's event, more than one card).
+#[derive(Default)]
+struct Origin {
+    mixed: bool,
+    cards: Vec<String>,
+}
+impl Origin {
+    fn add(&mut self, card: &str) {
+        if card.is_empty() {
+            self.mixed = true;
+        } else if !self.cards.iter().any(|c| c == card) {
+            self.cards.push(card.to_string());
+        }
+    }
+    /// The one card the turn is about, or None (no card, several, or something else besides).
+    fn card(&self) -> Option<String> {
+        match (self.mixed, self.cards.as_slice()) {
+            (false, [one]) => Some(one.clone()),
+            _ => None,
+        }
+    }
 }
 struct State {
     replies: Vec<String>,
+    /// The replies of the turn on cards (reply with card_id), with the card.
+    card_replies: Vec<(String, String)>,
+    origin: Origin,
     queue: VecDeque<Item>,
     recent: VecDeque<(String, u64)>,
 }
@@ -407,6 +496,8 @@ impl Default for Mirror {
         Mirror {
             st: Mutex::new(State {
                 replies: vec![],
+                card_replies: vec![],
+                origin: Origin::default(),
                 queue: VecDeque::new(),
                 recent: VecDeque::new(),
             }),
@@ -416,13 +507,35 @@ impl Default for Mirror {
     }
 }
 impl Mirror {
-    /// The agent wrote into its session's chat with `reply` (no card, no child session).
-    pub fn replied(&self, text: &str) {
+    /// The agent wrote with `reply` (no child session): into its session's chat, or on `card`.
+    pub fn replied(&self, text: &str, card: Option<&str>) {
         let mut st = self.st.lock().unwrap();
-        st.replies.push(folded(text));
-        if st.replies.len() > 40 {
-            st.replies.remove(0);
+        match card {
+            Some(c) => {
+                st.card_replies.push((c.to_string(), folded(text)));
+                if st.card_replies.len() > 40 {
+                    st.card_replies.remove(0);
+                }
+            }
+            None => {
+                st.replies.push(folded(text));
+                if st.replies.len() > 40 {
+                    st.replies.remove(0);
+                }
+            }
         }
+    }
+    /// A board event was handed to the agent (a channel message, or an inbox or other tool result): `meta` is the
+    /// event's meta. One about a card of this session counts for that card; any other (a note, a chat without card,
+    /// a child session's event, one from another session) makes the turn one of more than a card.
+    pub fn heard(&self, meta: Option<&Value>, own: bool) {
+        let card = meta
+            .filter(|m| own && m.get("session").is_none_or(|s| s.is_null()))
+            .and_then(|m| m.get("card_id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let card: String = card.chars().take(64).collect();
+        self.st.lock().unwrap().origin.add(&card);
     }
     /// A hook's line: `{ ok, queued }`, and `why` when nothing was queued. Never an error the hook would show.
     /// `same_turn`: a prompt typed while a turn runs, which Claude Code takes into that turn (trail.rs `prompt`).
@@ -443,10 +556,38 @@ impl Mirror {
         let mut st = self.st.lock().unwrap();
         // a prompt starts a turn and a stop ends one: either way the replies so far belong to the turn that is over
         // (not a prompt that comes into the running turn)
-        let replies = if kind == "input" && same_turn {
-            vec![]
+        let (replies, card_replies) = if kind == "input" && same_turn {
+            (vec![], vec![])
         } else {
-            std::mem::take(&mut st.replies)
+            (
+                std::mem::take(&mut st.replies),
+                std::mem::take(&mut st.card_replies),
+            )
+        };
+        // what started the turn: a new prompt starts it afresh, what comes into the running turn adds to it, and its
+        // answer goes to the one card that started it (Origin)
+        let target = if kind == "input" {
+            if !same_turn {
+                st.origin = Origin::default();
+            }
+            match req.get("from").and_then(|v| v.as_str()) {
+                Some("board") => {
+                    for c in req
+                        .get("cards")
+                        .and_then(|v| v.as_array())
+                        .into_iter()
+                        .flatten()
+                        .take(CARDS_MAX)
+                    {
+                        let c: String = c.as_str().unwrap_or("").chars().take(64).collect();
+                        st.origin.add(&c);
+                    }
+                }
+                _ => st.origin.mixed = true,
+            }
+            None
+        } else {
+            std::mem::take(&mut st.origin).card()
         };
         let Some(said) = said else {
             return json!({ "ok": true, "queued": false, "why": "nothing to mirror" });
@@ -459,6 +600,14 @@ impl Mirror {
             )
         } else {
             (said.clone(), vec![])
+        };
+        let replies = match &target {
+            Some(card) => card_replies
+                .into_iter()
+                .filter(|(c, _)| c == card)
+                .map(|(_, r)| r)
+                .collect(),
+            None => replies,
         };
         if kind == "answer" && already_said(&text, &replies) {
             return json!({ "ok": true, "queued": false, "why": "already said with reply" });
@@ -494,6 +643,7 @@ impl Mirror {
             at: now,
             work: None,
             pictures,
+            card: target,
         });
         json!({ "ok": true, "queued": true, "pictures": n })
     }
@@ -509,6 +659,7 @@ impl Mirror {
             at: now_ms(),
             work: Some(e),
             pictures: vec![],
+            card: None,
         });
     }
     /// The next text to send; what waited longer than KEEP_MS is dropped.
