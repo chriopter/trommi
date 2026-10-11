@@ -34,6 +34,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   is); the Live Activity's updates from the hub say only whether agents work and whether something waits (the app
   shows the numbers); the hub sees only whether a card knocks, not its urgency, and no longer when you answered;
   messages and new files are padded to fixed sizes.
+- iPhone: a notification makes the app open almost up to date (what it brings is fetched ahead, still encrypted),
+  and the Live Activity shows the real numbers again, sealed for your phone alone.
 - iPhone: right after you log in, the Desk shows the open questions from the hub's list, before the history is read.
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer

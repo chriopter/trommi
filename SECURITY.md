@@ -29,9 +29,14 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Files are encrypted on the device. Push notifications carry no content.
 - What push reveals: Apple and the browser's push service learn that something happened for a device, when, and how
   often. Every push looks the same to them: one text ("Something new."), the same clear headers (Web Push: urgency
-  normal and a topic that is random per subscription and names no room). Room, change number and urgency travel
-  encrypted to the device, which picks the text it shows. The Live Activity tells Apple two marks, whether an
-  agent works and whether something waits (0 or 1 each), never how many and never a title.
+  normal and a topic that is random per subscription and names no room; on the iPhone a sealed part of one length).
+  Room, change number and urgency travel encrypted to the device, which picks the text it shows. The Live Activity
+  tells Apple two marks, whether an agent works and whether something waits (0 or 1 each), and when the counts
+  change; the counts themselves travel sealed for the iPhone, never a title.
+- With a push the iPhone's notification extension reads ahead what the app will catch up on: the hub's encrypted
+  pages, fetched straight from the hub (not through Apple) with the push's one-day ticket, kept in the app's shared
+  container until the app opens. The extension holds no content key and opens none of it; the app checks those
+  pages like any other.
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.

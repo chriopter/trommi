@@ -20,6 +20,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `GET /v1/invites/{invite_id}`, `POST …/request`, `GET …/reveal` | → `{ offer, signature, mac, expires_at }` (`mac` null for an invite stored before the MAC); Request + mac + signature; Reveal | by `invite_id` only (12.1); 4 requests per invite |
 | `GET /v1/shares/{share_id}` | header `x-share-secret` → the file's bytes (`Range` honoured) | 11.5; every refusal is the same `not-found` |
 | `GET /v1/push-envelope?ticket=` | → one envelope | 15.2 |
+| `GET /v1/push-changes?ticket=&after=&limit=` | → `{ items, change, more }` | 15.2: as `GET /v1/changes` for the ticket's human device, up to the ticket's change; for reading ahead |
 | **Groups (MLS delivery service)** | | |
 | `POST /v1/groups` | `{ group_info_0, sealed_key_0, commit, group_info, welcome?, sealed_key }` → `{ group_id }` | founding of a session group (5.2.5); `incomplete` when it leaves out a human device the hub holds a KeyPackage of (claim again) |
 | `POST /v1/groups/{group}/commits` | `{ epoch, commit, group_info, welcome?, sealed_key, recovery_auth? }` → `{ epoch, change }` | `epoch` = the epoch it builds on; `epoch-taken`, `room-behind`, `bad-commit`, `incomplete` |
@@ -373,7 +374,9 @@ encrypted.
     branch). A room has at most 1 000 Share links, a device ten push registrations.
 26. A Web Push carries `Urgency: normal` and a `Topic` random to the push service, one per subscription (v1.md 15.2:
     HMAC under the subscription's `auth` secret; one waiting notification per subscription, nothing names the
-    room). An APNs alert carries one text for every push ("Trommi", "Something new."). The ticket of 15.2 is the hub's own
+    room). An APNs alert carries one text for every push ("Trommi", "Something new."), its sealed part padded to 512
+    bytes. A Live Activity push carries the two marks and, for a device with an APNs push key, the exact counts
+    sealed (`s`, v1.md 15.3). The ticket of 15.2 is the hub's own
     `room ‖ device ‖ change ‖ expiry ‖ HMAC`; only the hub reads it. One device's envelopes cause at most ten
     pushes a minute (owner, 9 October 2026); a push service is called on port 443 and no redirect is followed.
 27. Uploads in progress count against the room's quota; a room has at most 16 at a time.
