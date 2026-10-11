@@ -357,7 +357,7 @@ try {
   const endRow = (id, g) => `document.querySelector(':is(#desk-end, #off-end) .end-row[data-id="${id}"]${g ? `[data-g=${g}]` : ''}')`
   await A.until(`${endRow(pile.done, 'done')}`, 'the finished card in the end list').then(() => check(true, 'a card its session closed stands in the end list'), e => check(false, e.message))
   check(await A.js(`return !document.querySelector('#row-${pile.done}') && !document.querySelector('#desk-list .is-archive, #desk-list .is-done')`), 'no Done rows among the open questions')
-  check(await A.js(`const r = ${endRow(pile.done)}; return !r.querySelector('button, form, .end-tick') && !getComputedStyle(r.querySelector('.end-title')).textDecorationLine.includes('line-through') && !document.querySelector('.end-row [formaction*=archive], .end-row form[action*=archive]')`), 'a finished row is plain: nothing to tick, no Archive, not struck through')
+  check(await A.js(`const r = ${endRow(pile.done)}; return !r.querySelector('button, form') && !!r.querySelector('.end-tick.is-done') && !getComputedStyle(r.querySelector('.end-title')).textDecorationLine.includes('line-through') && !document.querySelector('.end-row [formaction*=archive], .end-row form[action*=archive]')`), 'a finished row: its green tick, nothing to press, no Archive, not struck through')
   // answered, its session still at it: Working
   await A.js(`document.querySelector('#row-${pile.acting} form[action$="/decide"] button[value="a"], #row-${pile.acting} button[name=key][value=a]')?.click()`)
   await A.until(`!document.getElementById('row-${pile.acting}')`, 'answered row leaves')
@@ -376,7 +376,7 @@ try {
   const g = await A.js(`return Object.fromEntries(['${pile.snooze}', '${pile.shred}', '${pile.done}'].map(id => [id, document.querySelector('#off-end .end-row[data-id="' + id + '"]')?.dataset.g]))`)
   check(g[pile.snooze] === 'later' && g[pile.shred] === 'trash' && g[pile.done] === 'done', `each card in its place (${Object.values(g).join(', ')})`)
   check(await A.js(`const o = [...document.querySelectorAll('#off-end .end-row')].map(r => r.dataset.g), rank = g => (g === 'works' ? 0 : g === 'later' ? 1 : 2); return o.every((x, i) => !i || rank(o[i - 1]) <= rank(x))`), 'the end list: the work first, then Later, then what is closed')
-  check(await A.js(`return getComputedStyle(${endRow(pile.shred)}.querySelector('.end-title')).textDecorationLine.includes('line-through')`), 'a shredded row is struck through')
+  check(await A.js(`const r = ${endRow(pile.shred)}; return !!r.querySelector('.end-tick.is-done') && !getComputedStyle(r.querySelector('.end-title')).textDecorationLine.includes('line-through')`), 'a shredded row has the same green tick, not struck through')
   await A.js("trommi.router.visit('/')")
   await A.until("document.querySelector('#desk-stacks')", 'the Desk again')
   check(await A.js("return !document.querySelector('#desk-stacks [data-pile=off], #desk-stacks [data-stack=off], .off-head') && !!document.querySelector('#desk-stacks #desk-artifacts')"), 'no pile Off the desk at the foot any more; Artifacts stays')
