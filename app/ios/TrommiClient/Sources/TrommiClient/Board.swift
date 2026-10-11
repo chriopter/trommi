@@ -595,6 +595,17 @@ public final class Board {
   /** A stream `presence` event for one device. */
   public func applyPresence(_ d: JV, change: inout Change) { applyDevices([d], change: &change) }
 
+  /** The sessions a register `session/<key>` sets: the session of that id, or the main sessions of that agent device. */
+  func sessionsSetBy(_ key: String) -> [Session] {
+    if let s = sessions[key] { return [s] }
+    return sessions.values.filter { $0.agentDeviceId == key && $0.parentSessionId == nil && $0.sessionId != key }
+  }
+  /** A session's settings (register `session/<id>`): by its session id; for a main session also by its agent device's id. */
+  public func settingsOf(_ s: Session) -> JV {
+    if let v = human.sessionSettings[s.sessionId] { return v }
+    if s.parentSessionId == nil, let d = s.agentDeviceId, let v = human.sessionSettings[d] { return v }
+    return s.settings
+  }
   public func sessionOf(_ id: String) -> Session {
     if let s = sessions[id] { return s }
     let s = Session(id)
@@ -1180,8 +1191,12 @@ public final class Board {
     case "crown": human.crown = value
     case "desk": put(&human.desks)
     case "session":
+      // (keyed by a session id, or, for a main session, by its agent device's id, as an older web client wrote it:
+      // the settings go to that session; a register makes no session of its own, which the list would show as a
+      // second one, empty, under the new name)
       put(&human.sessionSettings)
-      let s = sessionOf(id); s.settings = value; change.sessions.insert(id); change.stack = true
+      for s in sessionsSetBy(id) { s.settings = value; change.sessions.insert(s.sessionId) }
+      change.stack = true
     case "scribble_snapshot": put(&human.scribbleSnapshots); change.timelines.insert(timelineKeyOf("scribble", id))
     default: break
     }

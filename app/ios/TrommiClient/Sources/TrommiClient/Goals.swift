@@ -74,7 +74,7 @@ public enum GoalsSync {
     var out = [(sessionId: String, value: JV)]()
     for s in board.sessions.values.sorted(by: { $0.sessionId < $1.sessionId }) {
       if !s.isActive || s.createdByAgent || s.agentDeviceIds.isEmpty || !holdsKey(s.sessionId) { continue }
-      let named = board.human.sessionSettings[s.sessionId]?["desk"].string
+      let named = board.settingsOf(s)["desk"].string
       guard let desk = desks.first(where: { $0.id == named }) ?? desks.first, !desk.goals.isEmpty else { out.append((s.sessionId, .null)); continue }
       out.append((s.sessionId, .obj(["desk_id": .str(desk.id), "desk_name": .str(desk.name), "goals": .str(desk.goals), "epoch": .n(s.sessionKeyEpoch)])))
     }

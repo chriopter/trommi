@@ -72,6 +72,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- iPhone: a session renamed on another device no longer shows up twice; the new name lands on the session itself.
 - Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
 - Open cards are the same on every device: the web takes them from the hub's list of open questions, so a card
   settled elsewhere no longer stays on the Desk, and a card put before you again no longer hides under "Off your mind".
