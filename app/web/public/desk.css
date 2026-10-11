@@ -997,7 +997,7 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 @media (max-width: 860px) { html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-answer.is-advised::after { bottom: 3px; } html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer { height: 60px; } html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-take { padding-bottom: 14px; } }
 
 /* ---- the end of the Desk's list (desk.mjs endList): Off your mind, a plain feed of slim rows: the work with a green
-   dot, Later's three Z in its ink, then what is closed; nothing to tick. Max five, then Show more. ---- */
+   dot, Later's three Z in its ink, then what is closed; nothing to tick. Max five; the heading links to the rest. ---- */
 .endlist { display: grid; gap: 2px; margin: var(--s-6) 0 0; }
 .endlist[hidden] { display: none; }
 .end-rows { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
@@ -1041,16 +1041,18 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 :is(#inbox, #session) .inbox-groups > .tail { gap: 0; margin: var(--s-6) 0 0; border-top: 1px solid var(--line); }
 
 .end-divider { display: none; position: relative; align-items: center; gap: var(--s-2); height: 30px; margin: 6px 0 0; color: var(--muted); }
-.end-divider svg { position: absolute; left: 0; right: 0; top: 50%; width: 100%; height: 8px; translate: 0 -50%; fill: none; stroke: var(--line-strong); stroke-width: 1.6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.end-divider svg path { vector-effect: non-scaling-stroke; }
-.end-divider > .end-link { position: relative; margin-left: auto; padding: 4px 2px 4px 10px; background: var(--bg); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; text-decoration-color: var(--accent); white-space: nowrap; }
-.end-divider > .end-link:hover { color: var(--accent); }
-.end-divider > .end-link .off-count { color: var(--muted); font-weight: 500; }
+.end-divider > svg { position: absolute; left: 0; right: 0; top: 50%; width: 100%; height: 8px; translate: 0 -50%; fill: none; stroke: var(--line-strong); stroke-width: 1.6; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.end-divider > svg path { vector-effect: non-scaling-stroke; }
 .end-divider > :is(span, .end-head) { position: relative; margin-left: var(--s-4); padding: 0 8px; background: var(--bg); font: 600 1rem/1 var(--display); rotate: -2deg; letter-spacing: .01em; }
 /* (a heading that is the link to its whole page: Artifacts) */
 .end-divider > .end-head { padding-block: 6px; color: inherit; text-decoration: none; border-radius: var(--r-sm); }
 .end-divider > .end-head .off-count { margin-left: 4px; font: 500 var(--t-sm)/1 var(--font); font-variant-numeric: tabular-nums; opacity: .8; }
-.end-divider > .end-head:is(:hover, :focus-visible) { color: var(--fg); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; text-decoration-color: var(--accent); }
+/* (a heading that opens its whole page: underlined, an arrow after it, so it reads as a link at rest) */
+.end-divider > .end-head { display: inline-flex; align-items: center; gap: 4px; }
+.end-divider > .end-head .end-head-words { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; text-decoration-color: var(--accent); }
+.end-divider > .end-head .sketch { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; color: var(--accent); translate: 0 1px; transition: translate 120ms; }
+.end-divider > .end-head:is(:hover, :focus-visible) { color: var(--fg); }
+.end-divider > .end-head:is(:hover, :focus-visible) .sketch { translate: 3px 1px; }
 #desk-ip:not([hidden]) + .endlist { margin-top: 0; }
 #desk-ip:not([hidden]) + .endlist .end-divider { display: flex; }
 #desk-ip:not([hidden]) + .endlist .end-rows { border-top: 0; }
@@ -1085,7 +1087,7 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 }
 
 /* ---- Off your mind: one heading for the whole list; a small drawn gear turns slowly (still where motion is
-   reduced). "Show more" is a quiet link to the whole list, /stacks/off. ---- */
+   reduced). On the Desk the heading itself links to the whole list, /stacks/off. ---- */
 
 .gear { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; animation: gear-turn 9s linear infinite; }
 @keyframes gear-turn { to { rotate: 360deg; } }

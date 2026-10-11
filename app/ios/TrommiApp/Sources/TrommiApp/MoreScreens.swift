@@ -71,7 +71,7 @@ struct OffScreen: View {
  * Off your mind as ONE list, a plain feed (his word, 9 October: "no archiving, no ticking: the feed runs off at the
  * bottom, that is enough"): what the agents are still working on first (a small pulsing green dot), then Later, then
  * what is closed, the newest first (shredded and withdrawn ones struck through). One line per row, the title only; a
- * tap opens the card. On the Desk five rows; "Show more" at the end of its heading opens this list in full, with its search.
+ * tap opens the card. On the Desk five rows; its heading, a link, opens this list in full, with its search.
  */
 struct OffList: View {
   @EnvironmentObject var model: BoardModel
@@ -89,7 +89,7 @@ struct OffList: View {
     let shown = terms.isEmpty ? rows : rows.filter { r in terms.allSatisfy { "\(r.card.title) \(d.byAgent[r.card.agent]?.name ?? "")".lowercased().contains($0) } }
     if !shown.isEmpty || full {
       VStack(alignment: .leading, spacing: 0) {
-        if !full { EndDivider(title: "Off your mind", chevron: chevron, more: shown.count > 5 ? { model.path.append(.off) } : nil).padding(.bottom, 4) }
+        if !full { EndDivider(title: "Off your mind", chevron: chevron, more: { model.path.append(.off) }).padding(.bottom, 4) }
         ForEach(full ? shown : Array(shown.prefix(5))) { r in row(r) }
         if full && shown.isEmpty { Text(terms.isEmpty ? "Nothing yet." : "Nothing here has these words.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20) }
       }.padding(.top, 8)
