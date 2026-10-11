@@ -28,8 +28,9 @@ One Rust core does the cryptography for the web app, the iOS app and the connect
 
 ## Install
 
-1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. The iOS app is on TestFlight for testers
-   for now.
+1. **The app:** [app.trommi.com](https://app.trommi.com) in any browser. On an iPhone: the public beta on
+   TestFlight, [trommi.com/beta](https://trommi.com/beta) (every release of main; the App Store gets reviewed versions
+   less often).
 2. **An agent**, on a Linux or macOS computer with Claude Code or Codex. Once per machine:
 
    ```sh

@@ -457,6 +457,10 @@ jobs:
       # does not compile for macOS (ActivityKit), and the archive in deploy_ios.yml is its build for iOS.
       - name: Test
         run: swift test --package-path tests/bindings/swift
+      # The App Store Connect steps of the public beta (asc.py external, beta-review, whats-new) against fixtures:
+      # nothing goes to the network, no key is needed.
+      - name: App Store Connect steps (fixtures)
+        run: python3 -B -m unittest discover -s tests/ios/asc -v
       # A pull request delivers nothing, so the app itself would first be compiled when its commit is on main
       # (deploy_ios.yml archives it). Here it is archived for a device once, as the delivery does (signed ad hoc, without
       # any secret, entitlements checked), so what does not compile or sign shows before the merge.

@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- Public iPhone beta via TestFlight: join from [trommi.com/beta](https://trommi.com/beta); every release arrives there
+  first.
 - Settings → Devices names a device of yours that never finished signing in, and removes it with one tap
   (while it is there, new sessions can't be opened).
 - iPhone: the Live Activity and Dynamic Island show the most urgent question with its two answers; answer it right

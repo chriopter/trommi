@@ -234,10 +234,37 @@ output in the Actions cache under the hash of those paths, and CI leaves out the
   root (`project.yml` lists it) is to be checked on its output.
 
 `AppStore/asc.py` holds the App Store Connect API steps (the bundle ids with their
-capabilities, the app record check, waiting for the processed build, the group and its tester, "What to Test").
+capabilities, the app record check, waiting for the processed build, the group and its tester, "What to Test", the
+external group "Public" and Beta App Review, see "Public beta").
 Internal testers must be users of the team under the address they sign in with; when the API refuses the tester (409
 "Tester(s) cannot be assigned"), add them once in App Store Connect → TestFlight → Intern → Testers → +. Cloud-managed
 distribution signing refuses App Manager keys: the key needs the Admin role.
+
+## Public beta
+
+TestFlight's public link is the rolling channel; the App Store gets reviewed versions less often, by hand ("App Store
+release"). `deploy_ios.yml` sends every build of staging to the internal group "Intern" only. A build of main (a
+release) also goes, once App Store Connect has processed it (VALID), to the external group "Public"
+(`asc.py external`), with "What to Test" from the newest day of `CHANGELOG.md` (`asc.py whats-new`), and to Beta App
+Review when Apple asks for it (`asc.py beta-review`: the build's external state is `READY_FOR_BETA_SUBMISSION` and it
+has no `betaAppReviewSubmissions` yet; the first build of a new version is reviewed, later builds of it usually go
+without). Before that it fills in the test information: Beta App Review's contact and demo account from
+`metadata/review_information/` (password: `APPSTORE_DEMO_PASSWORD`), the beta description from
+`metadata/en-US/description.txt` and the feedback address. Empty values are not sent, so what was typed in App Store
+Connect stays. The run's summary names the public link. Tests against fixtures, no network:
+`python3 -B -m unittest discover -s tests/ios/asc -v`.
+
+Once by hand (the API cannot make the group's public link):
+
+1. App Store Connect → the app → TestFlight → External Testing → "+": a group named exactly `Public`.
+2. In the group: Public Link → Enable, a tester limit (for example 10,000), copy the link.
+3. The 1Password Environment of the GitHub environment `ios`: `APPSTORE_DEMO_PASSWORD`, the password of
+   `appreview@trommi.com` (`demo_user.txt`).
+4. A contact phone number for Beta App Review: `metadata/review_information/phone_number.txt`, or once in App Store
+   Connect → TestFlight → Test Information.
+5. The link into `site/wrangler.jsonc` (`vars.TESTFLIGHT_URL`): trommi.com/beta then leads there.
+
+While "Public" is missing, the delivery of main fails saying so; staging is not affected.
 
 ## Export compliance
 

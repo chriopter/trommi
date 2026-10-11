@@ -1,4 +1,7 @@
-# Delivers the iOS app to TestFlight (the internal group "Intern").
+# Delivers the iOS app to TestFlight: every build to the internal group "Intern"; a build of main also to the external
+# group "Public", whose public link is the rolling beta for everyone, and to Beta App Review when Apple asks for it
+# (the first build of a new version; later builds of a reviewed version usually go without). The App Store gets
+# reviewed versions less often, by hand (release_ios.yml).
 #
 # build.yml calls it on main (with a release) and on staging (without one).
 # Interface (build.yml calls it; see the head of build.yml):
@@ -18,12 +21,15 @@
 # that file through the App Store Connect API. On main (gate: release) build.yml starts this workflow while the release
 # of the same run is still being made; only the upload waits for it (ios_release_gate.sh: published, signature,
 # commit, iOS inputs), so only a released app ships. Waiting for App Store Connect
-# to process the build, the group and What to Test run on Linux (job processed), so the Mac is free minutes earlier.
+# to process the build, the groups, What to Test and Beta App Review run on Linux (job processed), so the Mac is free
+# minutes earlier. Main's What to Test is the newest day of CHANGELOG.md. The group "Public" is made once by hand
+# (app/ios/README.md "Public beta"); while it is missing, main's delivery fails saying so.
 # The workflow's concurrency holds both jobs: the next delivery reads the highest build number only once this one's
 # build is processed and listed.
 #
 # Secrets: the environment `ios` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; APPLE_ASC_KEY,
-# APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID and APPLE_TEAM_ID come from the 1Password Environment. Optional repository
+# APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID and APPLE_TEAM_ID come from the 1Password Environment, and for main's
+# Beta App Review APPSTORE_DEMO_PASSWORD (the password of the demo account in review_information). Optional repository
 # variables: IOS_NON_EXEMPT_ENCRYPTION (YES or NO, default NO: standard algorithms only,
 # so exempt; app/ios/README.md "Export compliance"), IOS_EXPORT_COMPLIANCE_CODE (only with YES: the code of the app's
 # export compliance documentation, written into Info.plist as ITSEncryptionExportComplianceCode; left empty, the code
@@ -86,6 +92,7 @@ jobs:
       commit: ${{ steps.core.outputs.commit }}
       version: ${{ steps.upload.outputs.version }}
       build: ${{ steps.upload.outputs.build }}
+      channel: ${{ steps.upload.outputs.channel }}
     env:
       # XcodeGen, by the SHA-256 of its release archive
       XCODEGEN_VERSION: 2.46.0
@@ -109,6 +116,7 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
           grep -Fq "iOS (test and build the core)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job iOS (test and build the core) of run $RUN_ID did not succeed"; exit 1; }
           echo "commit=$(jq -r .head_sha "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
+          echo "branch=$(jq -r .head_branch "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.artifact || 'ios-release' }}
@@ -162,6 +170,8 @@ jobs:
           ITS_EXPORT_COMPLIANCE_CODE: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
           TF_GATE: ${{ inputs.gate }}
           TF_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          # main (by build.yml with the release gate, or by hand from a run of main): the public beta as well
+          TF_CHANNEL: ${{ (inputs.gate == 'release' || steps.source.outputs.branch == 'main') && 'public' || '' }}
           TF_UPLOADER: ${{ vars.IOS_UPLOADER || 'api' }}
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
@@ -171,13 +181,15 @@ jobs:
           test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
           test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
           op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh upload
+          echo "channel=$TF_CHANNEL" >> "$GITHUB_OUTPUT"
       - name: No key file is left
         if: always()
         run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/ExportOptions.plist"
 
-  # App Store Connect processes the uploaded build (minutes); then the group "Intern" holds it and What to Test is set.
+  # App Store Connect processes the uploaded build (minutes); then the group "Intern" holds it and What to Test is set;
+  # a build of main also goes to the group "Public" and, when Apple asks for it, to Beta App Review.
   processed:
-    name: TestFlight (processed, group, What to Test)
+    name: TestFlight (processed, groups, What to Test, review)
     needs: testflight
     # nothing was uploaded in a dry run
     if: needs.testflight.outputs.build != ''
@@ -205,6 +217,7 @@ jobs:
           TF_VERSION: ${{ needs.testflight.outputs.version }}
           TF_BUILD: ${{ needs.testflight.outputs.build }}
           TESTFLIGHT_TESTER: ${{ vars.IOS_TESTFLIGHT_TESTER }}
+          TF_CHANNEL: ${{ needs.testflight.outputs.channel }}
         run: |
           set -eu
           test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }

@@ -2,7 +2,8 @@
 
 The website [trommi.com](https://trommi.com): one page, the imprint, the privacy page and a not-found page, served as
 they are from `public/` by the Cloudflare Worker `trommi-com` (`worker.js`: http to https, www.trommi.com to
-trommi.com). Nothing is built (the pictures of the apps in `public/images/` are made once by `dev/showcase.mjs`
+trommi.com; `/beta` to the iPhone app's public TestFlight link, `vars.TESTFLIGHT_URL` in `wrangler.jsonc`, or to the
+install steps on GitHub while that is empty). Nothing is built (the pictures of the apps in `public/images/` are made once by `dev/showcase.mjs`
 from real screenshots of the demo room, see its head); Node 22 or newer, no packages. Font licences: `THIRD-PARTY.md`.
 
 ```
