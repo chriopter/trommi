@@ -729,7 +729,11 @@ export function register(t) {
         // in older than all that stood there is an earlier page ("Earlier" shows it).
         // (a log that stood empty, its first page still on the way from the hub: drawn whole once it is there)
         if (!a.items.length && b.items.length) return String(t.stream('refresh'))
-        const first = a.items[0]?.seq ?? Infinity
+        // (where the log began: its oldest item the hub numbered. One still on its way has no number yet (seq stands
+        //  at the end): a log of only such items began nowhere, and the hub's own copy of one, numbered now, is new
+        //  there, not an earlier page; counted as earlier it was taken out and never put in, and the first message
+        //  of an empty chat showed for a moment and was gone until a reload)
+        const first = a.items.find(i => i.seq < Number.MAX_SAFE_INTEGER - 1)?.seq ?? (a.s.more ? Infinity : -Infinity)
         const fresh = b.items.filter(i => !a.byId.has(i.id) && i.seq >= first)
         // (More new ones than a window holds: the latest window again, rather than a log that grows without end.)
         if (fresh.length > PAGE) return String(t.stream('refresh'))

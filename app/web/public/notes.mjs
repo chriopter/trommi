@@ -103,13 +103,22 @@ export function noteStore(client, board) {
     if (client.deleteNote) await client.deleteNote(id)
     else await client.saveNote({ object_id: id, object_state: 'closed' })   // (the mock room)
   }
+  /** One of the note's files uploaded again as a file of its own (its words and kind kept, a new id and key). */
+  async function copyFile(ref) {
+    const { attachment_id: _id, file_key: _key, sha256: _sha, ...meta } = ref
+    return client.uploadAttachment(await client.fetchAttachment(ref), meta)
+  }
   async function deliver(id) {
     holds.delete(id)
     const n = current(id)
     if (!n?.held) return
     const text = String(n.text ?? '').trim()
+    // The note's files belong to the note (spec 11.3: a file belongs to the group and object of the first envelope
+    // that names it); a message to the session that named the same files was refused (forbidden) and left the chat
+    // again a moment after it showed. The message carries copies of its own.
+    const attachments = await Promise.all((n.attachments ?? []).map(copyFile))
     // (note: that it was a note, so the conversation shows it taped on: README "message", core/codec.ts noteRefValid.)
-    await client.sendMessage({ ...addressOf(m(), n.held.to), text, ...(n.attachments?.length ? { attachments: n.attachments } : {}), note: { object_id: id, written_at: Number.isSafeInteger(n.created_at) && n.created_at >= 0 ? n.created_at : null } })
+    await client.sendMessage({ ...addressOf(m(), n.held.to), text, ...(attachments.length ? { attachments } : {}), note: { object_id: id, written_at: Number.isSafeInteger(n.created_at) && n.created_at >= 0 ? n.created_at : null } })
     went.set(id, n.held.to)
     if (went.size > 200) went.delete(went.keys().next().value)
     await remove(id)

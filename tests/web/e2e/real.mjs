@@ -22,6 +22,9 @@ import zlib from 'node:zlib'
 import { buildApp, main, openProfile, run, serveApp, skip, sleep, TMP, watch } from './harness.mjs'
 import * as ui from './ui.mjs'
 import { spawnHub } from '../hub-process.mjs'
+import { roomsOn } from '../../../app/web/core/room.ts'
+import { AgentStandIn } from '../stand-in/agent.ts'
+import { MemoryStore, memoryCache, storage, TIMING } from '../client/helpers.mjs'
 
 /** The hub's binary on a free port, its public address `publicUrl`; `env` adds to (or overrides) its settings. */
 export async function startHub(publicUrl, env = {}) {
@@ -56,6 +59,7 @@ export async function setUp() {
   return ctx
 }
 export async function tearDown(ctx) {
+  for (const done of ctx.cleanups ?? []) await Promise.resolve().then(done).catch(() => {})
   for (const name of Object.keys(ctx.profiles)) await ctx.closeProfile(name)
   await ctx.app.close().catch(() => {})
   await ctx.hub.close().catch(() => {})
@@ -403,6 +407,90 @@ export const steps = [
     const command = await A.js("return document.querySelector('[data-state=open] .clip-copy[data-line=connect] code').textContent")
     ctx.run.check(/'http\S+\/join#v1\.[^']+'/.test(command), 'the connect command carries a join link', command.replace(/#v1\.\S+/, '#v1.…'))
     await A.shot('real-14-agent-invite')
+  }],
+
+  // (regression: a note sent to a session stood in its chat for a moment and was gone again. A note's pictures are
+  // files of the note (the room group, 11.3): the message that carried the same file ids to the session group was
+  // refused (forbidden) and its echo taken back. The agent here is the stand-in of tests/web/stand-in/agent.ts on the
+  // REAL core in Node, joined by the agent invite's link; nothing of the hub is replaced.)
+  ['a note sent to a session (an agent on the real core joined by link) stays in its chat, words and a picture, also after a reload', async ctx => {
+    const { check } = ctx.run
+    const A = await ctx.profile('A')
+    // (the note of the steps before is thrown away first: the corner holds one note)
+    if (await A.js("return Boolean(document.querySelector('#corner-note-box.has-words'))")) {
+      await openNote(A)
+      await A.click('#corner-note-box .corner-note-bin')
+      await arrives(A, "!document.querySelector('#corner-note-box.has-words')", 'the note of the steps before thrown away')
+    }
+    await ui.openSettings(A)
+    await A.click('#settings-invite-agent')
+    await arrives(A, "location.pathname.startsWith('/pair/') && document.querySelector('[data-state=open] .clip-copy[data-line=connect] code')", 'the agent invite page')
+    const link = /'(http\S+\/join#v1\.[^']+)'/.exec(await A.js("return document.querySelector('[data-state=open] .clip-copy[data-line=connect] code').textContent"))?.[1]
+    const binding = await import('../../../core/wasm/pkg/trommi-core.js')
+    await binding.init(fs.readFileSync(new URL('../../../core/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
+    const { init: _i, Device, TrommiError, StoreConflict: _s, ...stateless } = binding
+    const core = { ...stateless, createDevice: store => Device.create(store), openDevice: store => Device.open(store), errorCode: e => (e instanceof TrommiError ? e.code : null) }
+    const R = roomsOn({ core: async () => core, store: name => new MemoryStore(name), cache: async name => memoryCache(name), destroy: async () => {}, timing: TIMING })
+    const joining = R.joinRoom({ link, storage: storage('real-agent'), poll_ms: 100, device_name: 'real-agent' })
+    await joining.check_code
+    await arrives(A, "document.querySelector('[data-state=confirm_code] .clip-ask .check-yes')", 'the agent\'s six emoji on the invite page')
+    await A.click('[data-state=confirm_code] .clip-ask .check-yes')
+    const client = await joining.client
+    const agent = new AgentStandIn(client)
+    const heard = []
+    agent.onCommand = c => heard.push(c)
+    ctx.cleanups = [...(ctx.cleanups ?? []), () => client.close?.()]
+    await client.start()
+    await agent.setRegister('profile', { model: 'claude-opus-5-5', task: 'End to end', agent_name: 'real-agent' })
+    await arrives(A, "document.querySelector('[data-state=joined]')", 'the invite page says the agent is in')
+    await ui.openDesk(A)
+    await arrives(A, "document.querySelector('#agents a.agent-entry')", 'the session in the sidebar')
+    const id = await A.js("return document.querySelector('#agents .agent-row[data-unit]').dataset.unit")
+    await A.js(`await fetch('/sessions/${id}/star', { method: 'POST', headers: { accept: 'text/vnd.turbo-stream.html' }, body: new URLSearchParams({ stay: '1', starred: '1' }) })`)
+    await A.js("document.querySelector('#agents a.agent-entry').click()")   // (a press: the row may be scrolled under the sidebar's foot)
+    await arrives(A, "document.querySelector('#session form.composer textarea') && document.querySelector('#corner-note-box .corner-note-send')", 'the session page with a note that can be sent')
+    const chat = words => `[...document.querySelectorAll('#session .msg-note-at')].some(m => m.innerText.includes(${q(words)}))`
+    const send = async (words, pic) => {
+      await openNote(A)
+      await A.click(NOTE)
+      await A.session.send('Input.insertText', { text: words })
+      if (pic) {
+        const png = picture(48, 48).toString('base64')
+        await A.js(`const bytes = Uint8Array.from(atob(${q(png)}), c => c.charCodeAt(0)), dt = new DataTransfer()
+          dt.items.add(new File([bytes], 'pasted.png', { type: 'image/png' }))
+          document.querySelector(${q(NOTE)}).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))`)
+        await arrives(A, "document.querySelectorAll('#corner-note-box .corner-note-file.is-pic:not(.is-uploading)').length === 1", 'the pasted picture on the note')
+      }
+      await sleep(800)
+      await A.key('Enter', 13, 2)
+      await arrives(A, chat(words), `"${words}" in the chat`)
+    }
+    await send('Look at the logs first.', false)
+    await send('And this screenshot.', true)
+    await sleep(6000)   // (the hold of 3 s for Undo, the post, the hub's answer)
+    for (const [words, files] of [['Look at the logs first.', 0], ['And this screenshot.', 1]]) {
+      check(await A.js(`return ${chat(words)}`), `"${words}" still stands in the chat after it went`)
+      const got = heard.find(c => c.kind === 'message' && c.body?.text === words)
+      check(got && (got.body.attachments?.length ?? 0) === files, `the agent got "${words}" with ${files} picture(s)`, got?.body ?? heard.map(c => [c.kind, c.body?.text]))
+    }
+    await A.reload()
+    await ui.live(A, 'live after the reload')
+    for (const words of ['Look at the logs first.', 'And this screenshot.']) {
+      await A.until(chat(words), `"${words}" after the reload`, 20000).catch(() => {})
+      check(await A.js(`return ${chat(words)}`), `"${words}" stands in the chat after a reload`)
+    }
+    check(await A.js("return [...document.querySelectorAll('#session .msg-note-at img')].length") >= 1, 'the note\'s picture is shown in the chat')
+    await A.shot('real-14b-note-in-chat')
+    // (what the steps after this one expect: no agent device in the room, the note of before on the corner)
+    const agentDevice = client.my_device_id
+    await client.close?.()
+    await A.js(`await trommi.client.removeDevices([${q(agentDevice)}])`)
+    await openNote(A)
+    await A.click(NOTE)
+    await A.session.send('Input.insertText', { text: ctx.note })
+    await foldNote(A)
+    await arrives(A, noteIs(ctx.note), 'the note of the steps before written again')
+    await sleep(1500)
   }],
 
   ['log in with the password on fresh profiles (joins with the recovery code, 8.4), five times: each lands on the Desk, live, and reads the note', async ctx => {
