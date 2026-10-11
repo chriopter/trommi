@@ -762,7 +762,14 @@ export class Engine {
       return this.catching.then(() => (this.again ? this.catchUp() : undefined), () => this.catchUp())
     }
     this.again = false
-    const pass = this.catching = this.pages().finally(() => { if (this.catching === pass) this.catching = null })
+    // A pass ends after its rescan, which follows the pages: a stream that went live meanwhile was not said
+    // (`openStream` leaves the connection to a running pass), so it is said now, or the device stays "connecting"
+    // until the stream's next change of state.
+    const pass = this.catching = this.pages().finally(() => {
+      if (this.catching !== pass) return
+      this.catching = null
+      if (this.running && this.streamLive && this.connection !== 'live') this.setConnection('live')
+    })
     return pass
   }
   private async pages(): Promise<void> {
