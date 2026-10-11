@@ -346,10 +346,12 @@ jobs:
               [ "$tagged" = "$COMMIT" ] || { echo "::error::the tag $TAG is there already and names $tagged, not $COMMIT"; exit 1; }
             fi
             changed=$(jq -r '[.changed | to_entries[] | select(.value) | .key] | join(", ")' publish/manifest.json)
-            # the notes: the release day's block of CHANGELOG.md; empty notes never stop a release
+            # the notes: the release day's block of CHANGELOG.md, its heading with the day's releases (counted from
+            # the published ones); empty notes never stop a release
             gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$COMMIT" > "$RUNNER_TEMP/changelog.md" 2>/dev/null || : > "$RUNNER_TEMP/changelog.md"
+            gh release list --exclude-drafts --limit 400 --json tagName,createdAt --jq '.[] | "\(.tagName) \(.createdAt)"' > "$RUNNER_TEMP/releases.txt" 2>/dev/null || : > "$RUNNER_TEMP/releases.txt"
             {
-              sh repo/.github/scripts/release_notes.sh "$RUNNER_TEMP/changelog.md" || true
+              NOTES_BASE="https://raw.githubusercontent.com/$GH_REPO/$COMMIT/" sh repo/.github/scripts/release_notes.sh "$RUNNER_TEMP/changelog.md" "$TAG" "$RUNNER_TEMP/releases.txt" || true
               echo
               echo "---"
               echo
