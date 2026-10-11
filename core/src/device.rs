@@ -4325,6 +4325,18 @@ impl<S: Storage> Device<S> {
         Ok(())
     }
 
+    /// Names the live session groups whose check comes after the join of the room (8.5): the room check
+    /// selects none of their keys; [`Device::join_session_checked_keys`] does when each is checked. `not-found`
+    /// without a check.
+    pub fn code_check_defer(&mut self, groups: &[GroupId]) -> Result<(), Error> {
+        self.owner()?;
+        self.room_check
+            .as_mut()
+            .ok_or(Error::NotFound)?
+            .defer(groups);
+        Ok(())
+    }
+
     /// Ends the check of the room ([`recovery::RoomCheck::finish`]) and, if it holds, builds the join of
     /// the room group as [`Device::join_room_with_code`] does. Whatever the answer, the check is gone.
     /// `not-found` without a check.
@@ -4473,6 +4485,32 @@ impl<S: Storage> Device<S> {
         self.join_session_from(keys, checked, current, now_ms)
     }
 
+    /// [`Device::join_session_checked`] for a session whose check was deferred at the join of the room
+    /// ([`Device::code_check_defer`]): its content keys are selected from `rows` and `links` now, under the
+    /// room epochs its own verified Commits name ([`recovery::session_keys`]), and kept with the join.
+    pub fn join_session_checked_keys(
+        &mut self,
+        keys: &RecoveryKeys,
+        group: &GroupId,
+        current: &[u8],
+        rows: &[Vec<u8>],
+        links: &[Vec<u8>],
+        now_ms: u64,
+    ) -> Result<u64, Error> {
+        self.owner()?;
+        let check = self.session_check_of(group)?;
+        if !self.is_human() {
+            return Err(Error::Forbidden);
+        }
+        let checked = check.finish(current)?;
+        checked
+            .walked
+            .still_placed(&|change| self.room_epoch_at(change))?;
+        let room = self.memory.record.room.ok_or(Error::NoRoom)?;
+        let found = recovery::session_keys(keys, &room, &checked, rows, links, self.history()?)?;
+        self.join_session_keeping(keys, checked, current, found, now_ms)
+    }
+
     /// Takes the check of the session `group` out of the device; `not-found` when the check held, if any,
     /// is of another group, and that one stays.
     fn session_check_of(&mut self, group: &GroupId) -> Result<recovery::SessionCheck, Error> {
@@ -4493,6 +4531,18 @@ impl<S: Storage> Device<S> {
         current: &[u8],
         now_ms: u64,
     ) -> Result<u64, Error> {
+        self.join_session_keeping(keys, checked, current, Vec::new(), now_ms)
+    }
+
+    /// The join of a checked session group, with the content keys `found` for it kept beside the join.
+    fn join_session_keeping(
+        &mut self,
+        keys: &RecoveryKeys,
+        checked: CheckedSession,
+        current: &[u8],
+        found: Vec<recovery::RecoveredKey>,
+        now_ms: u64,
+    ) -> Result<u64, Error> {
         if self.joining(&checked.observer.group()) {
             return Err(Error::Busy);
         }
@@ -4505,6 +4555,12 @@ impl<S: Storage> Device<S> {
         }
         let seats = checked.observer.seats().to_vec();
         let (posting, copy) = self.shadow(|this, batch| {
+            for key in found {
+                if this.keep_key(batch, &key.group, key.epoch, key.key) && !key.confirmed {
+                    batch.put(unconfirmed_key(&key.group, key.epoch), Vec::new());
+                    this.memory.unconfirmed.insert((key.group, key.epoch));
+                }
+            }
             this.join_built(batch, keys, current, &seats, &checked.walked, now_ms)
         })?;
         self.post_join(posting, copy)

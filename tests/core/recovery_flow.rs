@@ -2235,3 +2235,133 @@ fn the_one_call_room_check_places_the_commits_of_a_session_it_cannot_name() {
         Some(Error::TooLarge)
     );
 }
+
+/// A room with sessions and epochs, and a new device's room-only check of it (8.5): the room group's
+/// Commits alone, no session named; `defer`: `None` no room-only mode, `Some(all)` room-only, naming every live
+/// session (`true`) or none (`false`: a hub that leaves them out of its list). Returns the world, the device
+/// after its posted join, and what the hub served.
+fn room_only_sign_in(defer: Option<bool>) -> (World, TestDevice, trommi_tests::Fetched, Vec<GroupId>) {
+    use trommi_tests::placed_commits;
+    let mut w = world(true);
+    w.write_epochs(3);
+    let keys = test_keys();
+    let fetched = fetch(&w.hub, &keys);
+    let room_group = fetched.room.group;
+    let sessions = w.hub.live_sessions();
+    assert!(!sessions.is_empty());
+    let room_only: Vec<_> = fetched
+        .placed()
+        .into_iter()
+        .filter(|commit| commit.0 == room_group)
+        .collect();
+    assert!(room_only.len() < fetched.placed().len());
+    let mut c = new_device();
+    assert_eq!(c.code_check_defer(&sessions), Err(Error::NotFound));
+    c.code_check_start(
+        &keys,
+        &recovery::ServedStart {
+            room: room_group.room_id(),
+            founding: &fetched.room.founding,
+            anchor: &fetched.anchor,
+            rows: &fetched.rows,
+            sessions: &[],
+        },
+    )
+    .unwrap();
+    match defer {
+        Some(true) => c.code_check_defer(&sessions).unwrap(),
+        Some(false) => c.code_check_defer(&[]).unwrap(),
+        None => {}
+    }
+    for slice in room_only.chunks(4) {
+        placed_commits(slice, |slice| c.code_check_slice(slice)).unwrap();
+    }
+    let built = c
+        .join_room_checked(
+            &keys,
+            &recovery::ServedEnd {
+                current: &fetched.room.current,
+                sessions: &[],
+                rows: &fetched.rows,
+                links: &fetched.links,
+            },
+            now(),
+        )
+        .unwrap();
+    assert!(built.unverified.is_empty() && built.missing_link.is_none());
+    post_ok(&mut w.hub, &mut c);
+    assert!(c.is_human() && c.holds_recovery_mac());
+    (w, c, fetched, sessions)
+}
+
+/// The room's `SealedKey`s and `RecoveryLink`s, as a deferred session's join takes them.
+type RowsAndLinks<'a> = (&'a [Vec<u8>], &'a [Vec<u8>]);
+
+/// The session `group` checked from its founding after the sign-in; `rows`: its keys selected with the join.
+fn join_checked_session(
+    w: &mut World,
+    c: &mut TestDevice,
+    group: &GroupId,
+    rows: Option<RowsAndLinks<'_>>,
+) {
+    use trommi_tests::{fetch_group, served_commits};
+    let keys = test_keys();
+    let served = fetch_group(&w.hub, group);
+    assert_eq!(c.session_check_start(&served.founding), Ok(*group));
+    for slice in served.commits.chunks(2) {
+        served_commits(slice, |slice| c.session_check_slice(group, slice)).unwrap();
+    }
+    match rows {
+        Some((rows, links)) => c
+            .join_session_checked_keys(&keys, group, &served.current, rows, links, now())
+            .unwrap(),
+        None => c
+            .join_session_checked(&keys, group, &served.current, now())
+            .unwrap(),
+    };
+    post_ok(&mut w.hub, c);
+}
+
+#[test]
+fn a_device_signs_in_checking_the_room_group_alone_and_each_session_after() {
+    let (mut w, mut c, fetched, sessions) = room_only_sign_in(Some(true));
+    let room_group = fetched.room.group;
+    for (epoch, key) in keys_of(&w.hub, &w.a, &room_group) {
+        assert_eq!(c.content_key(&room_group, epoch).unwrap(), key);
+    }
+    // Each session after the sign-in: checked from its founding, its keys selected under the room epochs its own
+    // Commits name, and joined.
+    for group in &sessions {
+        join_checked_session(&mut w, &mut c, group, Some((&fetched.rows, &fetched.links)));
+    }
+    w.settle_all();
+    assert_eq!(c.groups().unwrap().len(), 1 + sessions.len());
+    for group in w.groups() {
+        for (epoch, key) in keys_of(&w.hub, &w.a, &group) {
+            assert_eq!(c.content_key(&group, epoch).unwrap(), key);
+        }
+    }
+    // Without a check of that group, the call holds nothing.
+    assert_eq!(
+        c.join_session_checked_keys(&test_keys(), &sessions[0], &[], &fetched.rows, &fetched.links, now()),
+        Err(Error::NotFound)
+    );
+}
+
+#[test]
+fn a_room_only_check_takes_no_key_of_a_deferred_session() {
+    // Not deferred, a session's rows count as of a group nobody verified (any room epoch): its earlier keys come
+    // with the room's join.
+    let (mut w, mut loose, _, sessions) = room_only_sign_in(None);
+    join_checked_session(&mut w, &mut loose, &sessions[0], None);
+    assert!(loose.content_key(&sessions[0], 1).is_ok());
+    // Deferred, none of them is taken with the room: only the session's own check selects them.
+    let (mut w, mut c, _, sessions) = room_only_sign_in(Some(true));
+    join_checked_session(&mut w, &mut c, &sessions[0], None);
+    assert!(c.content_key(&sessions[0], 1).is_err());
+    // A session the hub left out of the list is taken as an archived one (any room epoch), as without
+    // `code_check_defer`: no new way for a hub, which could always call a live session archived.
+    let (mut w, mut c, _, sessions) = room_only_sign_in(Some(false));
+    join_checked_session(&mut w, &mut c, &sessions[0], None);
+    assert!(c.content_key(&sessions[0], 1).is_ok());
+}

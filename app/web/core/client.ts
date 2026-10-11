@@ -48,6 +48,10 @@ const fail = (code: string, message: string): never => { throw new ClientError(c
 type Listener = (data: any) => void
 type Sent = { local_id: string; envelope_hash: string; seq: number }
 
+/** How many items of each Chat this browser keeps in its cache; older ones are read again from the hub on scroll. */
+export const KEEP_PER_CHAT = 500
+/** How many items of a Chat are written to the cache between two trims of it. */
+const TRIM_EVERY = 100
 /** How long the model's changes are gathered before one write to the cache. Short: a page that goes away meanwhile
  *  finds its cache behind the device and reads the difference back (see `open`). */
 const FLUSH_MS = 40
@@ -286,6 +290,34 @@ export class Client {
     if (this.alertsSeen.size > 1000) this.alertsSeen = new Set(this.model.alerts.map(a => a.alert_id))
     if (this.is_human && (ch.sessions.size || [...ch.registers].some(k => k.startsWith('desk/') || k.startsWith('session/')))) this.goalsSoon()
   }
+  /** Chat items written to the cache since each Chat was last trimmed (`trim`). */
+  private readonly sinceTrim = new Map<string, number>()
+  private trimming: Promise<void> = Promise.resolve()
+  private noteWritten(taken: [string, unknown][]): void {
+    for (const [key] of taken) {
+      if (!key.startsWith('tl/chat:')) continue
+      const timeline = key.slice(3, key.lastIndexOf('/'))
+      this.sinceTrim.set(timeline, (this.sinceTrim.get(timeline) ?? 0) + 1)
+    }
+    const due = [...this.sinceTrim].filter(([, n]) => n >= TRIM_EVERY).map(([k]) => k)
+    if (!due.length) return
+    for (const k of due) this.sinceTrim.delete(k)
+    this.trimming = this.trimming.then(async () => { for (const k of due) await this.trim(k).catch(() => {}) })
+  }
+  /**
+   * Keeps the newest `KEEP_PER_CHAT` items of a Chat in this browser's cache and drops the older ones. They are not
+   * lost: history is not forward secret (spec 1), the hub keeps a session's Chat, and scrolling up reads it again
+   * from the hub through the core (`older`); a settled card's Chat the hub prunes after 30 days (9.4.1), and a device
+   * drops what the hub prunes (9.4). The model's open window is left as it is.
+   */
+  private async trim(timeline_key: string): Promise<void> {
+    const prefix = `tl/${timeline_key}/`
+    const newest = await this.cache.range(prefix, { reverse: true, limit: KEEP_PER_CHAT + 1 })
+    if (newest.length <= KEEP_PER_CHAT) return
+    const edge = newest.at(-1)![0]
+    const older = await this.cache.range(prefix, { before: edge })
+    await this.cache.setMany([...older.map(([k]): [string, undefined] => [k, undefined]), [edge, undefined]])
+  }
   /** The cache's cursor is to be written although no record changed. */
   private touched(): void { if (this.flushTimer === null) this.flushTimer = setTimeout(() => { this.flushTimer = null; void this.flush().catch(() => {}) }, FLUSH_MS) }
   /** A change made outside the engine's batches (an action's echo): published at once. */
@@ -302,7 +334,7 @@ export class Client {
       const taken = [...this.dirty], stamp = this.rebuild === null ? this.stamped : -1
       this.dirty.clear()
       const entries: [string, unknown | undefined][] = [...taken, ['client/at', { cursor: stamp, device: this.my_device_id }]]
-      try { await this.cache.setMany(entries); this.written = stamp } catch (e) {
+      try { await this.cache.setMany(entries); this.written = stamp; this.noteWritten(taken) } catch (e) {
         // not written: the records stay due (a newer value of one wins), so a later write cannot stamp the cursor
         // over a cache that lacks them
         for (const [key, value] of taken) if (!this.dirty.has(key)) this.dirty.set(key, value)
@@ -885,7 +917,17 @@ export class Client {
     }
   }
   /** Loads the next older page of a timeline into the window. */
-  async loadTimeline(timeline_key: string, { limit = 50 }: { limit?: number } = {}): Promise<{ loaded: number; has_more: boolean }> {
+  async loadTimeline(timeline_key: string, { limit = 50, since_ms }: { limit?: number; since_ms?: number } = {}): Promise<{ loaded: number; has_more: boolean }> {
+    // A Chat's first window: its last `since_ms` (24 hours) or `limit` items, whichever holds more, at most
+    // `KEEP_PER_CHAT`; what lies before it is read when the person scrolls up.
+    if (since_ms !== undefined && !timeline_key.startsWith('scribble:')) {
+      const t = M.timelineOf(this.model, timeline_key), from = this.now() - since_ms
+      let loaded = 0, got = await this.loadTimeline(timeline_key, { limit })
+      loaded += got.loaded
+      const oldest = (): number => t.items.get(t.loaded_down_to)?.sent_at ?? 0
+      while (got.has_more && got.loaded > 0 && loaded < KEEP_PER_CHAT && oldest() > from) { got = await this.loadTimeline(timeline_key, { limit: Math.min(200, KEEP_PER_CHAT - loaded) }); loaded += got.loaded }
+      return { loaded, has_more: got.has_more }
+    }
     // a board has no pages towards the past (its route reads forwards from a change): all of it, once
     if (timeline_key.startsWith('scribble:')) return { loaded: (await this.loadTimelineAfter(timeline_key, 0)).loaded, has_more: false }
     const t = M.timelineOf(this.model, timeline_key)

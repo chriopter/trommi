@@ -10,6 +10,8 @@ import { Controller, WORDS, calm, readAttachmentsWith, controller, copyLater, cu
 import { boardNotes, noteStore } from './notes.mjs'
 import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
+/** A Chat's first window reaches back this far (or 50 items, if that is more). */
+const DAY_MS = 86_400_000
 // The views a cold start needs (the Desk, its frame, the notes) come with this module; every other view is loaded
 // when an address of it is first asked for (LAZY: the addresses it answers), and all of them once the page is idle,
 // so a later navigation finds them in memory.
@@ -1083,7 +1085,8 @@ function hubFacade(client, board) {
     agents: () => board.state.agents.map(a => ({ ...a, main: Boolean(a.main || board.state.agents.some(b => b.parent === a.id)) })),
     client,
     /** The next older page of a timeline into the window ("Earlier"): { loaded, has_more }. */
-    loadOlder: ref => client.loadTimeline(timelineOf(ref), { limit: 50 }),
+    // (a Chat opened the first time: its last 24 hours, or 50 items if that is more; scrolling up reads further)
+    loadOlder: ref => { const key = timelineOf(ref), t = m().timelines.get(key); return client.loadTimeline(key, { limit: 50, ...(t && Number.isFinite(t.loaded_down_to) ? {} : { since_ms: DAY_MS }) }) },
     /** Are there older items of that timeline than the window holds? */
     hasMore: ref => Boolean(m().timelines.get(timelineOf(ref))?.has_more),
 

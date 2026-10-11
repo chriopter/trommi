@@ -46,3 +46,15 @@ public enum PerfLog {
     return r
   }
 }
+
+extension PerfLog {
+  /** The speed run (the app's SpeedScript, SpeedTests): a chat line from the agent of `session`, as the live stream
+   *  brings one; made up, applied only to a board without a room. */
+  public static func chatLine(_ b: Board, session: String, number n: Int, text: String) -> Rec? {
+    guard let agent = b.sessions[session]?.agentDeviceId else { return nil }
+    return Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: agent, senderRole: "agent", recipientDeviceId: nil, sentAt: nowMs(),
+               kind: KIND.TIMELINE_ITEM, isHead: false, object: nil, timelineKind: "chat", timelineId: "session/\(session)", sessionId: session,
+               content: .obj(["text": .str(text), "attachments": .arr([])]), contentState: "ok", bind: nil,
+               causal: Causal(senderDeviceId: agent, senderSequence: UInt64(n), sentAt: nowMs(), lamport: 1), senderSequence: UInt64(n), epoch: 1)
+  }
+}

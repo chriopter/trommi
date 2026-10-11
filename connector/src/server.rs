@@ -2436,7 +2436,12 @@ impl Conn {
             if now_ms() > until {
                 return Err("The Trommi app has not answered this invite yet: the human keeps its invite page open; then call connect again (same link), which waits for the same join.".into());
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            // (TROMMI_CONNECT_POLL_MS: a test widens the gap between two looks, so that the join ends in it)
+            tokio::time::sleep(std::time::Duration::from_millis(env_ms(
+                "TROMMI_CONNECT_POLL_MS",
+                100,
+            )))
+            .await;
         }
     }
 

@@ -1117,6 +1117,39 @@ fn tool_names(listed: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The join ends between two looks of the connect call (one look every 3 s here): the human's app confirmed before
+/// the call saw the six emoji. The call still answers with them, and a second call says connected already.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_join_confirmed_between_two_looks_still_answers_with_the_check_code() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let mut mcp = seat.serve_with(&[("TROMMI_CONNECT_POLL_MS", "3000")]).await;
+    let listed = mcp.request("tools/list", json!({})).await;
+    assert_eq!(tool_names(&listed), ["connect"], "{listed}");
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = mcp.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), _group) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    mcp.notification("notifications/tools/list_changed").await;
+    let (said, failed) = mcp
+        .call(
+            "connect",
+            json!({ "link": "https://example.invalid/join#x" }),
+        )
+        .await;
+    assert!(
+        failed && said.contains("connected to Trommi already"),
+        "{said}"
+    );
+    mcp.close().await;
+}
+
 /// The connect tool's answer does not depend on how fast the human confirms: a human whose app admits the newcomer
 /// at once (the join may end before the call looks at it) still gets the six emoji first, and a second call once the
 /// board tools are there says connected already. Stress: 200 joins in a row against one hub (TROMMI_STRESS_RUNS

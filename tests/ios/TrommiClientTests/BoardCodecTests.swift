@@ -3,7 +3,7 @@ import XCTest
 
 final class BoardCodecTests: XCTestCase {
   /** Every stored field of the board's parts is in BoardCodec: a new field makes this count differ (then add it there).
-   *  (The Board's count holds `deskGate` and `hubSettled` too, which are not stored: each start reads the hub's Desk again, Room.deskFirst.
+   *  (The Board's count holds `deskGate`, `hubSettled` and `preview` too, which are not stored: each start reads the hub's Desk again, Room.deskFirst.
    *  The Timeline's count holds `revision`, which is not stored either: a counter of changes in memory, DeskModel's cache key.) */
   func testFieldsCovered() {
     let rec = Rec(envelopeNumber: 1, envelopeHash: "aa", senderDeviceId: "bb", senderRole: "agent", recipientDeviceId: nil, sentAt: 1, kind: 2, isHead: true, object: nil,
@@ -12,7 +12,7 @@ final class BoardCodecTests: XCTestCase {
     let counts: [(Any, Int)] = [
       (RoomMember(deviceId: "aa", role: "human"), 15), (Session("s"), 27), (Card("c", agent: "a", rec: rec), 21),
       (Permission(objectId: "p", agentDeviceId: "a", sessionId: nil, toolName: "t", description: "d", inputPreview: "i", expiresAt: 1, versionHash: "v", envelopeNumber: 1, sentAt: 1), 13),
-      (Timeline("chat:session/x"), 15), (Board(), 27), (HumanRegisters(), 8),
+      (Timeline("chat:session/x"), 15), (Board(), 28), (HumanRegisters(), 8),
     ]
     for (x, n) in counts { XCTAssertEqual(Mirror(reflecting: x).children.count, n, "fields of \(type(of: x)): update BoardCodec and this count") }
   }

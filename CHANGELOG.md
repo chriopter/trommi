@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- iPhone: Settings → Data shows what this iPhone downloaded and uploaded (with a reset), and what your account keeps on
+  the hub: messages, cards, files and the total size.
 - Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);
   a session's heading shows the two bars, end-to-end encrypted like the rest.
 - Public iPhone beta via TestFlight: join from [trommi.com/beta](https://trommi.com/beta); every release arrives there
@@ -22,6 +24,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- iPhone: right after you log in, the Desk shows the open questions from the hub's list, before the history is read.
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer
   wait up to a minute behind a connection the sleeping phone left half open.
@@ -32,17 +35,22 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   passes them on; it gets one line when the helper is done, and the events back if the helper stops reading.
 - Codex as Claude Code: `setup codex` adds Trommi's hooks to Codex, so its terminal, its answers (under the card
   they belong to), its permission prompts and its work trail reach the board too, once you trust the hooks in Codex.
-  `trommi-connector remove codex` takes them out again.
+  `trommi-connector remove codex` takes them out again. A Codex with its own `CODEX_HOME` is woken too.
 - Codex: a session that was woken but did not read the board is woken again by the next message (at most every
   3 minutes); it answers a card's question under that card; restart and "key in use" messages speak Codex's language
   instead of Claude Code's.
 - iPhone: after another device of yours hands over older keys, the app no longer empties the Desk and reads the whole
   room again: what it has is kept, only what was missing is read (about fifteen times faster).
-- Status lines under a chat on the phone: one line each, the title and the time; a tap shows the detail and the way to its question (iPhone and mobile web).
+- Status lines under a chat: the time short with a small clock after it ("4m"); on the phone one line each, the title and the time, and a tap shows the detail and the way to its question (iPhone and web).
+- Logging in on the web checks only your account's own history before it opens; each conversation is checked
+  right after, in the background.
+- Long chats open on the last day and load further back as you scroll up; this browser keeps only the newest
+  500 messages of each chat and reads older ones again when needed.
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
-- iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster
-  per change, and an open long chat is no longer rebuilt when a message arrives elsewhere.
+- iPhone: big boards stay smooth while news comes in: a change of the board costs a fraction of before, a long chat
+  opens three times faster with its newest 150 messages ("Earlier messages" shows more), swiping back from a chat no
+  longer stutters, and a huge desk needs a fifth of the memory.
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
@@ -72,6 +80,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   update.
 - Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
   session is repaired first and the message is sent again.
+- iPhone: "N new" in a chat goes away once you are at the end or see the newest message.
 - iPhone: decisions answered, read or closed on another device no longer stay on the Desk as open questions, also
   while the phone catches up.
 - iPhone: logging out no longer crashes the app.

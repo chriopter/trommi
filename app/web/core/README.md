@@ -118,7 +118,7 @@ What the fields mean under protocol v1:
   closed at the hub after this device's cursor (a start after a while away reads the hub's Desk first,
   `deskFirst`); it stays off the stack until the catch-up reaches the Desk's cursor.
 - **PermissionRequest**: `permission_state` `pending | allowed | denied | expired`; `catching_up` as a card's.
-- **Timeline**: `items` is a window (`Map<envelope_number | local_id, TimelineItem>`), filled by `loadTimeline`;
+- **Timeline**: `items` is a window (`Map<envelope_number | local_id, TimelineItem>`), filled by `loadTimeline` (`since_ms`: a first window that reaches back so far, at most `KEEP_PER_CHAT` items); the cache keeps the newest `KEEP_PER_CHAT` (500) items of each Chat, older ones are read again from the hub;
   `item_count`, `newest_envelope_number`, `loaded_down_to`, `has_more`. An item fetched out of the hub's order
   carries `provisional: true` until its chain confirms it. A turn's work trail stands in the session's Chat as
   items with `content.terminal === 'work'` (`work.ts` folds them); a stroke still being drawn as

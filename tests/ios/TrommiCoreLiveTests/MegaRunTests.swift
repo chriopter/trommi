@@ -101,7 +101,7 @@ final class MegaRunTests: XCTestCase {
     let signInSpent = Spent.take()
     var w = Watch()
     w.truth = try await truth(room)
-    room.onChange = { [w] _ in w.see(room.board) }
+    room.onChange = { [w] _ in w.see(room.preview ?? room.board) }
     try? await room.sendDeviceRegister(name: "iPhone", platform: "ios")
     let registered = w.ms
     let report = try await room.sync()

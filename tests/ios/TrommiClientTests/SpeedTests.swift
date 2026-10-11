@@ -33,13 +33,7 @@ final class SpeedTests: XCTestCase {
     b.timelines.values.filter { $0.timelineId.hasPrefix("session/") }.max { $0.items.count < $1.items.count }!.objectId
   }
   /** One new chat message from an agent of `session`, as the live stream brings it. */
-  private func message(_ b: Board, session: String, n: Int) -> Rec {
-    let agent = b.sessions[session]!.agentDeviceId!
-    return Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: agent, senderRole: "agent", recipientDeviceId: nil, sentAt: nowMs(),
-               kind: KIND.TIMELINE_ITEM, isHead: false, object: nil, timelineKind: "chat", timelineId: "session/\(session)", sessionId: session,
-               content: ["text": .str("one more line \(n)"), "attachments": .arr([])], contentState: "ok", bind: nil,
-               causal: Causal(senderDeviceId: agent, senderSequence: UInt64(n), sentAt: nowMs(), lamport: 1), senderSequence: UInt64(n), epoch: 1)
-  }
+  private func message(_ b: Board, session: String, n: Int) -> Rec { PerfLog.chatLine(b, session: session, number: n, text: "one more line \(n)")! }
 
   func testTheMainThreadPerChange() throws {
     let path = ProcessInfo.processInfo.environment["TROMMI_SPEED_FIXTURE"] ?? ""

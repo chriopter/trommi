@@ -26,6 +26,7 @@ struct SettingsScreen: View {
     case "account/password", "account/passkeys", "account/kit": AccountWayPage(way: String(tab.dropFirst("account/".count)))
     case "theme": ThemePage()
     case "whats-new": WhatsNewPage()
+    case "data": DataPage()
     case "mls-proof": CoreProofPage()   // CoreProofScreen.swift: an info screen, not a setting
     default: SettingsHome()
     }
@@ -102,6 +103,7 @@ struct SettingsHome: View {
   @State private var agentName = ""
   @State private var inviteAgent = false
   @State private var account: AccountStatus?
+  @State private var hubBytes: Int64?
   var body: some View {
     let _ = model.version
     let agents = concreteAgents(model.desk?.agents ?? [], members: model.board?.members ?? [:])
@@ -120,6 +122,8 @@ struct SettingsHome: View {
         link("theme") { SettingsRow(title: "Theme", detail: model.theme.word, chevron: true) { Sketch(model.theme == .dark ? "moon" : "sun") } }
       }
       SettingsGroup {
+        link("data") { SettingsRow(title: "Data", detail: hubBytes.map { "\(megabytes($0)) on the hub" }, chevron: true) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) } }
+        RowRule()
         link("mls-proof") { SettingsRow(title: "Security Info", chevron: true) { Image(systemName: "checkmark.shield").font(.system(size: 20)).foregroundStyle(Ink.fg) } }
         RowRule()
         // (App Review 5.1.1(i): the privacy policy reachable inside the app, the same page App Store Connect names)
@@ -142,7 +146,10 @@ struct SettingsHome: View {
       Button("Cancel", role: .cancel) {}
       Button("Continue") { inviteAgent = true }
     } message: { Text("The session gets this name on the board. You can leave it empty and rename it later.") }
-    .task { if account == nil, !model.demo { account = try? await model.room?.accountStatus() } }
+    .task {
+      if account == nil, !model.demo { account = try? await model.room?.accountStatus() }
+      if model.demo { hubBytes = AccountUsage.demo.totalBytes } else if let u = try? await model.room?.accountUsage() { hubBytes = u.totalBytes }
+    }
   }
   private func link<L: View>(_ page: String, @ViewBuilder _ label: () -> L) -> some View {
     Button { model.path.append(.settings(page)) } label: { label() }.buttonStyle(.plain)

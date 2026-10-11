@@ -14,10 +14,10 @@
 // the room is made); a caller that knows it may pass `hub_url` to `openRoom` for a cache that was lost.
 import { Client, ClientError, engineMeta } from './client.ts'
 import type { Core, Device, PlacedCommit, ServedCommit, ServedEnvelope, Store } from './core-api.ts'
-import { Engine } from './engine.ts'
+import { Engine, EngineError } from './engine.ts'
 import type { EngineTiming } from './engine.ts'
 import { accountCopiesBytes, Hub, HubError } from './hub.ts'
-import type { AccountCopies, NewAccount, RoomInSteps } from './hub.ts'
+import type { AccountCopies, NewAccount, RoomInSteps, RoomOnlyInSteps } from './hub.ts'
 import { unhex } from './ids.ts'
 import { halving, inSlices, SLICE } from './slices.ts'
 import type { Cache } from './store-idb.ts'
@@ -63,8 +63,16 @@ export type SignInStep = { step: 'reading'; done?: number; total?: number } | { 
 export interface SessionJoins { joined: number; not_joined: { group: Uint8Array; code: string }[] }
 /** How many session groups' Commits are read from the hub at a time while they are joined behind a sign-in. */
 const SESSION_READS = 6
+/** Refusals of a session join that mean the group moved on: its GroupInfos and Commits are read again. A
+ *  `bad-commit` is among them: the hub (and the stand-in) answers it for a Commit built on an epoch the group has
+ *  not reached, which a join built from a reading the group has moved past since can come to (the hub's epoch
+ *  and the device's view of it cross while another human device adds this one, 5.2.7). Read again and built
+ *  anew, a join that breaks a rule is refused again, and given up after BUSY_TRIES. */
+const MOVED_ON: readonly string[] = ['epoch-taken', 'wrong-epoch', 'group-behind', 'wrong-recovery', 'bad-commit']
 /** How often a session join that met `busy` is tried again (about half a minute in all). */
 const BUSY_TRIES = 20
+/** How often a session join is read again after the group moved on under it. */
+const MOVES = 4
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
 /** A joining device's sign-in while it is no leaf yet: asked again after these waits, then every LEAF_WAIT_EVERY_MS, LEAF_WAIT_MS in all. */
@@ -282,8 +290,12 @@ export function roomsOn(env: RoomEnv): Rooms {
       // The room in steps: everything but the Commits at once, the Commits read from the hub's logs while the core
       // takes them in slices (a room's whole history may be more than one call carries).
       tell({ step: 'reading' })
-      const steps = await hub.roomInSteps({ anchorOf: rows => core.recoveryAnchor(code, room, rows), read: (done, total) => tell({ step: 'reading', done, total }) })
+      const anchorOf = (rows: Uint8Array[]): { group: Uint8Array; epoch: number } => core.recoveryAnchor(code, room, rows)
+      // A recovery checks the room with its sessions (8.7 removes devices from them); a sign-in only the room group,
+      // and each live session group after it is in (8.5): the person waits for the room group's history alone.
+      let later: RoomOnlyInSteps | null = null
       if (o.recover) {
+        const steps = await hub.roomInSteps({ anchorOf, read: (done, total) => tell({ step: 'reading', done, total }) })
         // The new code is made, and the account's copies of it (or the person's own copy: the caller's `account`
         // resolves once the code is on their screen), BEFORE the recovery is opened: the hub locks the room for
         // ten minutes from then on, and nothing of a recovery is posted for a code nobody holds.
@@ -318,11 +330,14 @@ export function roomsOn(env: RoomEnv): Rooms {
           inRoom = true
         } catch (e) { await hub.dropRecovery(recovery.recovery_id).catch(() => {}); throw e }
       } else {
-        // what is to be read is known from the current epochs: each group's Commits up to it
-        const total = steps.epoch + steps.sessions.reduce((n, s) => n + s.epoch, 0)
+        const steps = later = await hub.roomOnlyInSteps({ anchorOf })
+        // what is to be read is known from the room group's current epoch: its Commits up to it
+        const total = steps.epoch
         let done = 0
         tell({ step: 'checking', done, total })
         await held.codeCheckStart(code, steps.start)
+        // (room-only, also with no session listed: no session's row is taken with the room, 8.5)
+        await held.codeCheckDefer(steps.later)
         // (progress is told as the Commits are read, every few, not only once a slice of up to 256 was checked: a
         //  phone that reads slowly says it moves, and the sign-in's watch for silence is not tripped)
         const placed = steps.placed()
@@ -345,9 +360,9 @@ export function roomsOn(env: RoomEnv): Rooms {
       // The live session groups are joined behind the sign-in: a big account has many, each read and checked from
       // its founding, and the person waits for none of them. A session that is not joined here (the page went,
       // the hub refused) is added by another human device of the person when it sees it (engine `heal`).
-      if (!o.recover && steps.sessions.length) {
+      if (later && later.later.length) {
         const own = code.slice(), running = engine
-        sessions = joinSessions(running, own, steps).finally(() => own.fill(0))
+        sessions = joinSessions(running, own, later).finally(() => own.fill(0))
         sessions.catch(() => {})
       }
       return { client, sessions }
@@ -364,37 +379,49 @@ export function roomsOn(env: RoomEnv): Rooms {
    * session by session in one job of the engine (its check, then its join), whose Commit the engine's pump posts.
    * Main sessions come first. Never throws: what was not joined is listed.
    */
-  async function joinSessions(engine: Engine, code: Uint8Array, steps: RoomInSteps): Promise<SessionJoins> {
+  async function joinSessions(engine: Engine, code: Uint8Array, steps: RoomOnlyInSteps): Promise<SessionJoins> {
     const out: SessionJoins = { joined: 0, not_joined: [] }
-    const read = async (at: number): Promise<ServedCommit[]> => {
-      const reader = engine.hub.groupCommits(steps.sessions[at]!.group, steps.sessions[at]!.epoch), all: ServedCommit[] = []
+    // each session: its GroupInfos and its Commits, read from the hub
+    const read = async (at: number): Promise<{ founding: Uint8Array; current: Uint8Array; commits: ServedCommit[] }> => {
+      const group = steps.later[at]!, infos = await engine.hub.sessionInSteps(group)
+      const reader = engine.hub.groupCommits(group, infos.epoch), all: ServedCommit[] = []
       for (let c = await reader.next(); c; c = await reader.next()) all.push(c)
-      return all
+      return { founding: infos.founding, current: infos.current, commits: all }
     }
-    const ahead: Promise<ServedCommit[]>[] = []
-    const fetch = (at: number): void => { if (at < steps.sessions.length && !ahead[at]) { ahead[at] = read(at); ahead[at]!.catch(() => {}) } }
+    const ahead: Promise<{ founding: Uint8Array; current: Uint8Array; commits: ServedCommit[] }>[] = []
+    const fetch = (at: number): void => { if (at < steps.later.length && !ahead[at]) { ahead[at] = read(at); ahead[at]!.catch(() => {}) } }
     for (let at = 0; at < SESSION_READS; at++) fetch(at)
-    for (const [at, session] of steps.sessions.entries()) {
+    for (const [at, group] of steps.later.entries()) {
+      const session = { group }
       fetch(at + SESSION_READS)
       try {
-        const commits = await ahead[at]!
+        let input = await ahead[at]!
         delete ahead[at]
         const join = (): Promise<void> => engine.land(async d => {
+          const { founding, current, commits } = input
           // (already a member: an earlier try went through)
           if ((await d.groups()).some(g => sameBytes(g.group, session.group))) return null
-          const group = await d.sessionCheckStart(steps.start.sessions[at]!)
+          const checked = await d.sessionCheckStart(founding)
+          // (a founding GroupInfo of another group than the one listed: not this session)
+          if (!sameBytes(checked, session.group)) throw new ClientError('bad-group', 'the hub served another group\'s founding')
           for (let i = 0; i < commits.length; i += SLICE.commits) {
-            await halving(async (slice: ServedCommit[]) => { await d.sessionCheckSlice(group, slice); return false }, e => engine.core.errorCode(e) === 'too-large')(commits.slice(i, i + SLICE.commits))
+            await halving(async (slice: ServedCommit[]) => { await d.sessionCheckSlice(checked, slice); return false }, e => engine.core.errorCode(e) === 'too-large')(commits.slice(i, i + SLICE.commits))
           }
-          return await d.joinSessionChecked(code, group, steps.end.sessions[at]!, Date.now())
+          // its keys are selected now, under the room epochs its own verified Commits name (8.5)
+          return await d.joinSessionCheckedKeys(code, checked, current, steps.end.rows, steps.end.links, Date.now())
         })
         // `busy`: a join of this group is on its way already (an earlier try, posted and waiting for its place in
         // the log), or another human device added this one meanwhile (5.2.7: its Welcome waits). The log and the
         // Welcomes are taken, and the join is tried again while the device is not in the group, a while.
         const member = async (): Promise<boolean> => (await engine.do(d => d.groups())).some(g => sameBytes(g.group, session.group))
-        for (let tries = 0; ; tries++) {
+        for (let tries = 0, moves = 0; ; tries++) {
           try { await join(); break } catch (e) {
-            if (engine.core.errorCode(e) !== 'busy' || tries >= BUSY_TRIES) throw e
+            const code = engine.core.errorCode(e) ?? (e instanceof HubError || e instanceof EngineError ? e.code : null)
+            // the group moved on under the join (another Commit took its epoch): read it again, then build again,
+            // unless the device is a member by then (another human device's Add, whose Welcome it takes below)
+            const moved = code !== null && MOVED_ON.includes(code)
+            if ((code !== 'busy' && !moved) || tries >= BUSY_TRIES || (moved && ++moves > MOVES)) throw e
+            if (moved) input = await read(at)
             await engine.catchUp().catch(() => {})
             await engine.joinNow(null).catch(() => false)
             if (await member()) break
@@ -407,6 +434,9 @@ export function roomsOn(env: RoomEnv): Rooms {
         out.not_joined.push({ group: session.group, code: String(why) })
       }
     }
+    // the sessions' keys came with their joins, after the room's history was read: what it could not open then
+    // is read again now
+    if (out.joined) await engine.wantRescan().catch(() => {})
     return out
   }
 

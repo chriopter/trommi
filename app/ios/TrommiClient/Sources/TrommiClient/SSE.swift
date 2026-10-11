@@ -70,6 +70,7 @@ public final class SSEReader: NSObject, URLSessionDataDelegate, @unchecked Senda
     if status != 200 { stop() }
   }
   public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive d: Data) {
+    Traffic.add(down: d.count)
     // (checked before anything is kept: no piece of the stream grows the buffer past its bound)
     if buffer.count + d.count > 2 * Self.maxLine { stop(); return }
     buffer += Array(d)

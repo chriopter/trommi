@@ -5,7 +5,10 @@
 // session of the first copy gets a chat of CHAT items (his words, the agent's answers, work trails, details).
 // All of it is made up, as the demo is.
 //
-//   node tests/tools/mega-fixture.mjs [out.json] [COPIES=10] [CHAT=5000]
+//   node tests/tools/mega-fixture.mjs [out.json] [COPIES=10] [CHAT=5000] [CARD_X=1] [PICTURE_EVERY=0]
+//
+// CARD_X: each copy's cards that many times (fresh ids); PICTURE_EVERY: every n-th message of the long chat carries
+// one of the demo's pictures (0: none). The extreme run: 53 2000 … `53 50000 2 100` (2,014 sessions, 5,512 cards).
 //
 // Read by tests/ios/TrommiClientTests/SpeedTests.swift (TROMMI_SPEED=1) and, on the simulator, by the app's demo
 // (TROMMI_FIXTURE=<path>, DemoMode.swift).
@@ -19,6 +22,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const out = process.argv[2] ?? join(tmpdir(), "trommi-mega.json");
 const COPIES = Number(process.argv[3] ?? 10);
 const CHAT = Number(process.argv[4] ?? 5000);
+const CARD_X = Number(process.argv[5] ?? 1);
+const PICTURE_EVERY = Number(process.argv[6] ?? 0);
 const base = JSON.parse(readFileSync(join(here, "../../demo/data/fixture.json"), "utf8"));
 
 const humans = new Set(base.members.filter((m) => m.device_role === "human").map((m) => m.device_id));
@@ -54,6 +59,16 @@ for (let k = 0; k < COPIES; k++) {
     session_settings: base.human.session_settings, snoozes: base.human.snoozes, ducks: base.human.ducks, drafts: base.human.drafts,
   }, k);
   room.members.push(...c.members); room.sessions.push(...c.sessions); room.cards.push(...c.cards);
+  // (more cards: each one again under a fresh id, filed a little later, in the same session)
+  for (let x = 1; x < CARD_X; x++) {
+    for (const card of c.cards) {
+      const more = structuredClone(card);
+      more.object_id = fresh(card.object_id, `x${x}`);
+      for (const key of ["first_envelope_number", "envelope_number"]) if (typeof more[key] === "number") more[key] += x * 100;
+      for (const v of more.versions ?? []) v.envelope_number += x * 100;
+      room.cards.push(more);
+    }
+  }
   room.permissions.push(...c.permissions); room.published.push(...c.published);
   Object.assign(room.timelines, c.timelines);
   Object.assign(room.human.session_settings, c.session_settings); Object.assign(room.human.snoozes, c.snoozes);
@@ -67,6 +82,7 @@ const key = `chat:session/${agent}`;
 const chat = room.timelines[key] ?? (room.timelines[key] = []);
 const start = (COPIES + 1) * 1_000_000;
 const t0 = base.made_at - CHAT * 20_000;
+const pictures = base.cards.flatMap((c) => c.versions.flatMap((v) => v.content?.attachments ?? [])).filter((a) => a.media_type?.startsWith("image/"));
 const words = ["the build", "the landing page", "push reminders", "the checkout", "the design tokens", "the onboarding", "the iPad layout", "the release notes"];
 for (let i = 0; i < CHAT; i++) {
   const n = start + i * 10, mine = i % 7 === 0, trail = !mine && i % 5 === 2;
@@ -74,6 +90,7 @@ for (let i = 0; i < CHAT; i++) {
   const content = mine ? { text: `Please look at ${w} again (${i}).`, attachments: [] }
     : trail ? { text: `Read ${w}: 3 files, ran the tests.`, attachments: [], terminal: "work" }
     : { text: `Done with ${w}: ${i % 3 === 0 ? "**two** fixes, one test added, see the details." : "all green."}`, attachments: [],
+        ...(PICTURE_EVERY > 0 && i % PICTURE_EVERY === 1 && pictures.length ? { attachments: [pictures[(i / PICTURE_EVERY | 0) % pictures.length]] } : {}),
         ...(i % 11 === 0 ? { details: `| step | ms |\n| --- | --- |\n| build | ${100 + i % 50} |\n| test | ${200 + i % 70} |` } : {}) };
   chat.push({ envelope_number: n, local_id: null, pending: false, envelope_hash: createHash("sha256").update(`m${i}`).digest("hex"),
     sender_device_id: mine ? me : agent, recipient_device_id: mine ? agent : null, sent_at: t0 + i * 20_000, item_state: "loaded",

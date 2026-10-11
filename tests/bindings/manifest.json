@@ -893,6 +893,32 @@
         ],
         "returns": "list<number>"
       },
+      "keyRequests": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "list<KeyRequest>"
+      },
+      "answerKeyRequest": {
+        "arguments": [
+          {
+            "name": "group",
+            "type": "optional<bytes>"
+          },
+          {
+            "name": "recipient",
+            "type": "bytes"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "list<number>"
+      },
       "handoversSent": {
         "arguments": [],
         "returns": "list<HandoverSent>"
@@ -1185,6 +1211,15 @@
         ],
         "returns": "void"
       },
+      "codeCheckDefer": {
+        "arguments": [
+          {
+            "name": "groups",
+            "type": "list<bytes>"
+          }
+        ],
+        "returns": "void"
+      },
       "joinRoomChecked": {
         "arguments": [
           {
@@ -1262,6 +1297,35 @@
           {
             "name": "current",
             "type": "bytes"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "number"
+      },
+      "joinSessionCheckedKeys": {
+        "arguments": [
+          {
+            "name": "recoveryCode",
+            "type": "bytes"
+          },
+          {
+            "name": "group",
+            "type": "bytes"
+          },
+          {
+            "name": "current",
+            "type": "bytes"
+          },
+          {
+            "name": "rows",
+            "type": "list<bytes>"
+          },
+          {
+            "name": "links",
+            "type": "list<bytes>"
           },
           {
             "name": "nowMs",
@@ -2188,6 +2252,10 @@
       "superseded": "optional<number>",
       "removed": "bool",
       "message": "optional<ReceivedMessage>"
+    },
+    "KeyRequest": {
+      "group": "bytes",
+      "epochs": "list<number>"
     },
     "HandoverSent": {
       "recipient": "bytes",

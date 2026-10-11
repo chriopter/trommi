@@ -87,10 +87,10 @@ struct ChatsScreen: View {
 
   @ViewBuilder private func block(_ u: DeskUnit, byId: [String: DeskUnit]) -> some View {
     let subs = u.subs.compactMap { byId[$0] }
-    if subs.isEmpty { ChatRow(unit: u, shown: u) } else {
+    if subs.isEmpty { ChatRow(unit: u, shown: u).equatable() } else {
       let stack = UnitStack(main: u, subs: subs, unread: { model.unread($0) })
       let folded = !openStacks.contains(u.id)
-      ChatRow(unit: u, shown: stack.whole, stack: stack, folded: folded, news: stack.waiting > 0) { withAnimation(.snappy) { toggle(u.id) } }
+      ChatRow(unit: u, shown: stack.whole, stack: stack, folded: folded, news: stack.waiting > 0) { withAnimation(.snappy) { toggle(u.id) } }.equatable()
       if !folded { HelperGroup(main: u, subs: unfolded(subs)) }
     }
   }
@@ -120,7 +120,7 @@ struct HelperGroup: View {
     VStack(spacing: 0) {
       ForEach(Array(subs.enumerated()), id: \.element.id) { i, s in
         if i > 0 { Rectangle().fill(Ink.line).frame(height: 1).padding(.leading, 36 + 12) }
-        ChatRow(unit: s, shown: s, small: true)
+        ChatRow(unit: s, shown: s, small: true).equatable()
       }
     }
     .padding(.horizontal, 8).padding(.vertical, 2)
@@ -131,8 +131,12 @@ struct HelperGroup: View {
   }
 }
 
-struct ChatRow: View {
-  @EnvironmentObject var model: BoardModel
+/**
+ * One session in the Chat list. It does not observe the model (the list holds a row per session: every change of the
+ * board built them all again); what it shows is read when the list makes it, and it is Equatable over that (`look`).
+ */
+struct ChatRow: View, Equatable {
+  private var model: BoardModel { BoardModel.shared }
   @Environment(\.dynamicTypeSize) private var type
   let unit: DeskUnit
   let shown: DeskUnit
@@ -142,12 +146,33 @@ struct ChatRow: View {
   var news = false
   var small = false
   var unfold: (() -> Void)? = nil
+  private let teaser: ChatTeaser
+  private let unread: Bool
+  private let look: Int
+  init(unit: DeskUnit, shown: DeskUnit, stack: UnitStack? = nil, folded: Bool = true, news: Bool = false, small: Bool = false, unfold: (() -> Void)? = nil) {
+    self.unit = unit; self.shown = shown; self.stack = stack; self.folded = folded; self.news = news; self.small = small; self.unfold = unfold
+    let model = BoardModel.shared
+    teaser = ChatTeaser.of(model.desk?.messagesOf(agent: unit.id) ?? [], task: unit.agent.task)
+    unread = model.unread(unit.agent)
+    var h = Hasher()
+    func put(_ u: DeskUnit) {
+      let a = u.agent
+      h.combine(u.id); h.combine(a.name); h.combine(a.mark); h.combine(a.icon); h.combine(a.hue); h.combine(a.starred); h.combine(a.task)
+      h.combine(u.open); h.combine(u.online); h.combine(u.running); h.combine(u.blocked?.why); h.combine(u.blocked?.text)
+    }
+    put(unit); put(shown)
+    if let s = stack {
+      let cut = s.inline(4)
+      h.combine(s.count); h.combine(cut.more); for x in cut.shown { put(x) }
+    }
+    h.combine(stack == nil); h.combine(folded); h.combine(news); h.combine(small); h.combine(teaser.text); h.combine(teaser.ts); h.combine(unread)
+    look = h.finalize()
+  }
+  static func == (a: ChatRow, b: ChatRow) -> Bool { a.unit.id == b.unit.id && a.look == b.look }
 
   var body: some View {
-    let _ = model.version
     let a = unit.agent
     let side: CGFloat = small ? 36 : 50
-    let teaser = ChatTeaser.of(model.desk?.messagesOf(agent: unit.id) ?? [], task: a.task)
     let when = teaser.ts.map { ChatTeaser.stamp($0) } ?? ""
     let working = shown.online && shown.running
     let row = HStack(spacing: 12) {
@@ -235,7 +260,7 @@ struct ChatRow: View {
       Text("\(shown.open)").font(Face.text(13, .bold, relativeTo: .footnote)).foregroundStyle(Ink.bg).monospacedDigit()
         .padding(.horizontal, 6).frame(minWidth: 22, minHeight: 22).background(Capsule().fill(Ink.fg))
         .accessibilityLabel(shown.open == 1 ? "1 question waits" : "\(shown.open) questions wait")
-    } else if model.unread(unit.agent) || news {
+    } else if unread || news {
       Circle().fill(Ink.accent).frame(width: 10, height: 10).accessibilityLabel("New message")
     }
   }

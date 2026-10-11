@@ -30,7 +30,8 @@ fn fake_codex(dir: &Path) -> (PathBuf, PathBuf) {
     std::fs::write(
         &program,
         format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n",
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nprintf '%s\\n' \"$CODEX_HOME\" >> '{}.home'\n",
+            calls.display(),
             calls.display()
         ),
     )
@@ -439,7 +440,11 @@ async fn codex_with_trusted_hooks_mirrors_its_turns_and_answers_under_the_card()
     )
     .unwrap();
 
-    let mut mcp = seat.serve_codex(&codex, thread, None, &[]).await;
+    // (the Codex home as `setup codex` registers it: its `codex queue` must go there, not to ~/.codex)
+    let home_text = codex_home.display().to_string();
+    let mut mcp = seat
+        .serve_codex(&codex, thread, None, &[("CODEX_HOME", &home_text)])
+        .await;
     let again = mcp
         .request("initialize", common::process::codex_hello())
         .await;
@@ -492,6 +497,13 @@ async fn codex_with_trusted_hooks_mirrors_its_turns_and_answers_under_the_card()
         .expect("taken");
     let wake = woken(&codex_calls, thread, before).await;
     let wake_text = wake.split("--message ").nth(1).unwrap_or("").to_string();
+    let homes =
+        std::fs::read_to_string(format!("{}.home", codex_calls.display())).unwrap_or_default();
+    assert_eq!(
+        homes.lines().last(),
+        Some(home_text.as_str()),
+        "the wake goes to this Codex home"
+    );
     seat.hook(
         "prompt",
         &codex_input(

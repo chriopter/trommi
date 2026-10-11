@@ -165,6 +165,26 @@ final class RealHubTests: XCTestCase {
     XCTAssertEqual(claimed.count, 1)
   }
 
+  /// Settings → Data: the hub names what the account keeps (counts and sizes), and this device counts its traffic.
+  func testTheAccountsUsageAndTheTraffic() async throws {
+    let hubURL = try XCTUnwrap(hub).url
+    let before = Traffic.totals
+    let made = try await Room.createAccount(hubURL: hubURL, email: "usage@example.com", password: "correct horse battery", base: try scratchFolder(self))
+    let room = made.room
+    defer { room.close() }
+    try await room.sendDeviceRegister(name: "iPhone", platform: "ios")   // one envelope
+    _ = try await room.sync()
+    let got = try await room.accountUsage()
+    let u = try XCTUnwrap(got)
+    XCTAssertEqual(u.rooms, 1)
+    XCTAssertGreaterThanOrEqual(u.groups, 1)
+    XCTAssertGreaterThan(u.totalBytes, 0)
+    XCTAssertEqual(u.totalBytes, u.logBytes + u.envelopeBytes + u.fileBytes)
+    let after = Traffic.totals
+    XCTAssertGreaterThan(after.down, before.down, "the answers were counted")
+    XCTAssertGreaterThan(after.up, before.up, "the requests were counted")
+  }
+
   /// The founding as the app does it: the hub takes the SealedKey the core made, and the device signs in.
   func testFoundingAsTheAppDoesIt() async throws {
     let hubURL = try XCTUnwrap(hub).url

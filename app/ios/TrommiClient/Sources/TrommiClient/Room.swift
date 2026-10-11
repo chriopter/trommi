@@ -388,7 +388,8 @@ public struct Store {
     groups.values.first { $0.session.map { hex($0.session) } == sid && !$0.archived }
   }
   /** The members and sessions of the board from the groups the core holds. No network: the core verified them. */
-  func applyGroups(_ list: [GroupSummary], _ change: inout Change) throws {
+  func applyGroups(_ list: [GroupSummary], _ change: inout Change, into other: Board? = nil) throws {
+    let board = other ?? self.board
     groups = Dictionary(list.map { (hex($0.group), $0) }, uniquingKeysWith: { a, _ in a })
     guard let room = list.first(where: { $0.session == nil }) else { return }   // not in a room yet (founding, joining)
     roomGroup = room.group
@@ -472,6 +473,7 @@ public struct Store {
     await healSessions()
     Spent.add("upkeep", since: upkeep)
     synced = true
+    if preview != nil { preview = nil; change.room = true }
     Task { await self.refreshPresence() }
     board.project()
     change.stack = true
@@ -495,6 +497,8 @@ public struct Store {
       for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
     }
     deskSeen = (open, at)
+    // (a device that holds nothing yet: the Desk from the hub's list, before any of the history is read)
+    if cursor == 0 && board.cards.isEmpty { await Spent.time("desk preview") { await deskPreview(desk) } }
     var change = Change()
     if at > cursor {
       board.deskGate = open
@@ -510,6 +514,51 @@ public struct Store {
     emit(change)
     return at > cursor ? at : nil
   }
+  /**
+   * The Desk at once for a device that has nothing yet (a fresh sign-in): the newest version of every open card and
+   * permission request, and the registers (names, desks), as the hub's Desk lists them, read out of order (not
+   * `ordered`: the chains are not touched) into a board of their own. What does not open here yet (an epoch this
+   * device was not in) is left out. The views show it until the first catch-up is through (`preview`).
+   */
+  func deskPreview(_ desk: JSON) async {
+    let p = Board()
+    p.preview = true
+    p.roomId = record.roomId; p.hubURL = record.hubURL; p.myDeviceId = record.myDeviceId; p.myRole = record.role
+    var change = Change()
+    try? applyGroups(Array(groups.values), &change, into: p)
+    var items = [(UInt64, Bytes)]()
+    func take(_ j: JSON?) { if let j, let n = Wire.uint(j["change"]), let b = (j["envelope"] as? String).flatMap({ try? unb64u($0) }) { items.append((n, b)) } }
+    for r in desk["registers"] as? [JSON] ?? [] { take(r) }
+    for kind in ["cards", "permission_requests"] { for o in desk[kind] as? [JSON] ?? [] { take(o["version"] as? JSON) } }
+    items.sort { $0.0 < $1.0 }
+    guard !items.isEmpty, let opened = try? await onCore({ device in
+      items.compactMap { item -> ReceivedEnvelope? in
+        guard let e = try? device.receiveEnvelope(item.1, change: item.0, ordered: false, voidCode: nil, nowMs: nowMs()), e.outcome != .refused else { return nil }
+        return e
+      }
+    }) else { return }
+    var shown = 0
+    for e in opened {
+      if e.header.kind == .register, e.register?.name == "heads" { continue }
+      guard var rec = Records.record(e, senderRole: roleOf(e.header.sender)), rec.contentState == "ok" else { continue }
+      if e.header.kind == .register { rec.winner = true }
+      if let sid = rec.sessionId {
+        if rec.senderRole == "agent" { p.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
+        else if let to = rec.recipientDeviceId { p.sawAgent(sid, to, epoch: rec.epoch) }
+      }
+      if p.apply(rec, change: &change).applied { shown += 1 }
+    }
+    p.project()
+    Spent.count("desk preview items", shown)
+    PerfLog.line("desk preview: \(shown) of \(items.count) taken, \(p.stack.count) cards on the Desk")
+    guard !p.stack.isEmpty else { return }
+    preview = p
+    var ch = Change(); ch.room = true; ch.stack = true
+    emit(ch)
+  }
+  /** The Desk the views show until the first catch-up of a fresh sign-in is through (`deskPreview`); nil: the board. */
+  public internal(set) var preview: Board?
+
   /** The hub's Desk of the last `deskFirst`: its open cards and requests, and its cursor. */
   var deskSeen: (open: Set<String>, at: UInt64)?
   /** The catch-up reached the Desk's cursor of `deskFirst`: nothing is held back for being behind any more. */

@@ -24,15 +24,21 @@ struct SessionScreen: View {
   @Environment(\.horizontalSizeClass) private var hSize
   /** The view is at the newest message: it then follows what comes in, the keyboard and the composer's height. Only
    *  his own scrolling takes it away from there (read when a scroll ends), never a change of the content's height. */
-  @State private var atBottom = true
+  /** At the end (it follows what comes in) or away, with the "N new" count (ChatFollow, TrommiClient). */
+  @State private var follow = ChatFollow()
+  private var atBottom: Bool { follow.atBottom }
   @State private var userScrolling = false
   /** He has scrolled here: only then do earlier pages load by themselves (the top row also appears for a moment while
    *  a chat opens, and the load then moved the view away from the newest message, build 20). */
   @State private var touched = false
-  @State private var unseen = 0
   @State private var lastCount = 0
   @State private var loadingOlder = false
   @State private var topId: String?
+  /** How many of the newest messages are drawn: a long chat opens with a page of them, "Earlier messages" shows the
+   *  next page before it asks the hub for older ones (a chat of 5,000 drew all 5,000 rows on every change). It grows
+   *  with what comes in, so what he is reading never slides away. */
+  @State private var window = SessionScreen.page
+  static let page = 150
   @State private var renaming = false
   @State private var name = ""
   @State private var drawings = false
@@ -46,7 +52,9 @@ struct SessionScreen: View {
       let v = model.view
       let fresh = v?.fresh.filter { $0.agent == agentId } ?? []
       let freshIds = Set(fresh.map { $0.id } + (v?.reads.filter { $0.agent == agentId }.map { $0.id } ?? []))
-      let msgs = onlyQuestions ? all.filter { $0.from == "event" && $0.kind == "asked" && freshIds.contains($0.cardId ?? "") } : all
+      let every = onlyQuestions ? all.filter { $0.from == "event" && $0.kind == "asked" && freshIds.contains($0.cardId ?? "") } : all
+      let cut = max(0, every.count - window)
+      let msgs = cut > 0 ? Array(every[cut...]) : every
       let askAt = d.askAt(agent: agentId)
       let older = d.hasOlder(agent: agentId)
       let tasks = d.tasks.filter { $0.agent == agentId }
@@ -54,23 +62,27 @@ struct SessionScreen: View {
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 0) {
-            if older && !onlyQuestions {
-              Button { loadOlder(proxy, first: msgs.first?.id) } label: {
+            if (older || cut > 0) && !onlyQuestions {
+              Button { earlier(proxy, first: msgs.first?.id, here: cut > 0) } label: {
                 HStack(spacing: 8) { if loadingOlder { ProgressView().controlSize(.small) }; Text("Earlier messages").font(Face.text(14, .semibold)) }
                   .foregroundStyle(Ink.accent).frame(maxWidth: .infinity).padding(.vertical, 14)
               }
-              .onAppear { if touched { loadOlder(proxy, first: msgs.first?.id) } }
+              .onAppear { if touched { earlier(proxy, first: msgs.first?.id, here: cut > 0) } }
             }
             if msgs.isEmpty && !older { EmptyChat(agent: a) }
             ForEach(Array(msgs.enumerated()), id: \.element.id) { i, m in
-              let prev = i > 0 ? msgs[i - 1] : nil
+              let prev = i > 0 ? msgs[i - 1] : cut > 0 ? every[cut - 1] : nil
               if prev == nil ? !older : !sameDay(prev!.ts, m.ts) { DayLine(ts: m.ts) }
               row(m, prev: prev, askAt: askAt, freshIds: freshIds, agent: a)
                 .id(m.id)
+                // the newest message seen: what came in is no longer new
+                .onScrollVisibilityChange(threshold: 0.3) { if $0 && m.id == msgs.last?.id { follow.sawNewest() } }
             }
             ForEach(permissions) { c in DeskRow(card: c, agent: a, inSession: true).padding(.vertical, 6) }
             SessionStatus(agent: a, tasks: tasks, messages: all)
             Color.clear.frame(height: 1).id("bottom")
+              // the end on screen, however it got there (his scroll, the keyboard, a taller composer): nothing is new
+              .onScrollVisibilityChange(threshold: 0.01) { if $0 { follow.reachedEnd() } }
           }
           .padding(.horizontal, 14).padding(.top, 6)
           .frame(maxWidth: 760).frame(maxWidth: .infinity)
@@ -82,8 +94,7 @@ struct SessionScreen: View {
           if userScrolling { touched = true }
           if new == .animating { return }   // (on its way, e.g. to a new message: where it lands is read when it ends)
           let g = context.geometry
-          atBottom = g.contentOffset.y + g.containerSize.height - g.contentInsets.bottom >= g.contentSize.height - 80
-          if atBottom { unseen = 0 }
+          follow.scrolled(toEnd: Double(g.contentSize.height - (g.contentOffset.y + g.containerSize.height - g.contentInsets.bottom)))
         }
         // at the newest message it stays there: when the content grows (a message, a picture that loads, rows measured
         // late), and when the keyboard or a taller composer takes room at the bottom
@@ -96,14 +107,14 @@ struct SessionScreen: View {
         .refreshable { await model.refresh() }
         .onChange(of: all.count) { old, new in
           if new > old {
-            if atBottom || all.last?.from == "user" { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
-            else { unseen += new - old }
+            if window < old { window += new - old }
+            if follow.arrived(new - old, mine: all.last?.from == "user") { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
           }
         }
         .overlay(alignment: .bottom) {
-          if unseen > 0 && !atBottom {
-            Button { atBottom = true; withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }; unseen = 0 } label: {
-              HStack(spacing: 6) { Text(unseen == 1 ? "1 new" : "\(unseen) new").font(Face.text(14, .semibold)); Image(systemName: "arrow.down") }
+          if follow.unseen > 0 && !atBottom {
+            Button { follow.reachedEnd(); withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } } label: {
+              HStack(spacing: 6) { Text(follow.unseen == 1 ? "1 new" : "\(follow.unseen) new").font(Face.text(14, .semibold)); Image(systemName: "arrow.down") }
                 .foregroundStyle(Ink.fg).padding(.horizontal, 14).padding(.vertical, 8).glass(Capsule(), interactive: true)
             }.padding(.bottom, 8)
           }
@@ -112,13 +123,23 @@ struct SessionScreen: View {
           // the composer stays at the bottom (Messages, WhatsApp): a tap in it brings the keyboard; no tab bar in a chat
           VStack(spacing: 0) {
             SessionLinkNote(agent: a, messages: all)
-            Composer(placeholder: composeWords(a), agent: a.id, onSent: { atBottom = true; withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } })
+            Composer(placeholder: composeWords(a), agent: a.id, onSent: { follow.reachedEnd(); withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } })
           }
         }
         // the top row: back, the session's name as a glass pill (its menu), "⋯"; no bar, a soft edge above and below
         .pushedPills { header(a, d) } trailing: { more(a, d, freshCount: fresh.count) }
         .overlay(alignment: .top) { if let acc = usageOf(model, a) { UsageStrip(acc: acc).padding(.top, 58) } }
-        .onAppear { lastCount = all.count; atBottom = true; proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
+        .onAppear { lastCount = all.count; follow.reachedEnd(); proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
+        // the speed run (Perf.swift SpeedScript): up through the drawn messages (300 at most) and back
+        .onChange(of: model.perfScroll) { _, _ in
+          guard msgs.count > 100 else { return }
+          let up = msgs[max(0, msgs.count - 300)].id
+          Task { @MainActor in
+            withAnimation(.easeInOut(duration: 1.5)) { proxy.scrollTo(up, anchor: .top) }
+            try? await Task.sleep(nanoseconds: 1_700_000_000)
+            withAnimation(.easeInOut(duration: 1.5)) { proxy.scrollTo("bottom", anchor: .bottom) }
+          }
+        }
         .onChange(of: model.version) { _, _ in model.markRead(a) }
         // what a catch-up brought as headers only (the app was away, the hub restarted): filled while the chat is open
         .task(id: model.version) { try? await Task.sleep(nanoseconds: 150_000_000); await model.loadNewer(agent: a.id) }
@@ -142,10 +163,23 @@ struct SessionScreen: View {
   private func sameDay(_ a: UInt64, _ b: UInt64) -> Bool {
     Calendar.current.isDate(Date(timeIntervalSince1970: Double(a) / 1000), inSameDayAs: Date(timeIntervalSince1970: Double(b) / 1000))
   }
+  /** The next page: the drawn window grows while there is more in memory, then the hub is asked. */
+  private func earlier(_ proxy: ScrollViewProxy, first: String?, here: Bool) {
+    guard here else { loadOlder(proxy, first: first); return }
+    guard !loadingOlder else { return }
+    loadingOlder = true
+    follow.left()   // (the view stays with the message that was at the top, not with the newest)
+    window += SessionScreen.page
+    Task { @MainActor in
+      await Task.yield()
+      if let f = first { proxy.scrollTo(f, anchor: .top) }
+      loadingOlder = false
+    }
+  }
   private func loadOlder(_ proxy: ScrollViewProxy, first: String?) {
     guard !loadingOlder else { return }
     loadingOlder = true
-    atBottom = false   // (the view stays with the message that was at the top, not with the newest)
+    follow.left()   // (the view stays with the message that was at the top, not with the newest)
     Task {
       await model.loadOlder(agent: agentId)
       // keep the message that was at the top where it was
@@ -167,7 +201,7 @@ struct SessionScreen: View {
       if m.from == "event", ["decided", "done", "shredded"].contains(m.kind ?? ""), let cid = m.cardId, askAt[cid] != nil {
         EmptyView()   // (what became of a question is said by its line where it was asked)
       } else {
-        MessageView(message: m, cont: cont).padding(.top, cont ? 2 : 10)
+        MessageView(message: m, cont: cont).equatable().padding(.top, cont ? 2 : 10)
       }
     }
   }
@@ -324,12 +358,38 @@ struct EventRow: View {
   private func tint(_ k: String) -> Color { k == "asked" ? Ink.urgHigh : k == "decided" || k == "done" || k == "read" ? Ink.accent : Ink.muted }
 }
 
-struct MessageView: View {
-  @EnvironmentObject var model: BoardModel
+/**
+ * One message of a conversation. It does not observe the model: a chat of 5,000 messages would otherwise build all its
+ * rows again on every change of the board (seen in the speed run, tests/ios/speed/sim.sh). It is Equatable over what
+ * it shows instead (`look`, read from the model when the conversation makes it), so a row is built again only when
+ * that changed; actions reach the model as before.
+ */
+struct MessageView: View, Equatable {
+  private var model: BoardModel { BoardModel.shared }
   let message: Message
   var cont = false
   var inCard = false
+  private let look: Int
   @State private var picture: Int? = nil
+  init(message: Message, cont: Bool = false, inCard: Bool = false) {
+    self.message = message; self.cont = cont; self.inCard = inCard
+    look = MessageView.look(message, BoardModel.shared)
+  }
+  static func == (a: MessageView, b: MessageView) -> Bool { a.message.id == b.message.id && a.cont == b.cont && a.inCard == b.inCard && a.look == b.look }
+  /** Everything a message's row shows: the message, and what of the board it names (its card, artifact, agent). */
+  private static func look(_ m: Message, _ model: BoardModel) -> Int {
+    var h = Hasher()
+    h.combine(m.id); h.combine(m.seq); h.combine(m.agent); h.combine(m.from); h.combine(m.kind); h.combine(m.text); h.combine(m.attachments); h.combine(m.ts)
+    h.combine(m.cardId); h.combine(m.details); h.combine(m.html); h.combine(m.published); h.combine(m.noteWritten.map { $0 ?? 0 }); h.combine(m.noteWritten == nil)
+    h.combine(m.handback); h.combine(m.explain); h.combine(m.present); h.combine(m.marks); h.combine(m.copiedCards); h.combine(m.pending); h.combine(m.itemState)
+    h.combine(m.labels); for (k, v) in m.optionNotes { h.combine(k); h.combine(v) }; h.combine(m.trusted); h.combine(m.settled); h.combine(m.version)
+    h.combine(m.contentType); h.combine(m.terminal); h.combine(m.work == nil); if let w = m.work { h.combine(String(describing: w)) }
+    if let id = m.cardId, let c = model.card(id) { h.combine(c.title); h.combine(c.number); h.combine(c.status) }
+    if let p = m.published, let pub = model.board?.published[p] { h.combine(pub.title); h.combine(pub.objectState); h.combine(pub.note); h.combine(pub.attachments); h.combine(pub.objectVersion) }
+    for id in m.copiedCards { if let c = model.card(id) { h.combine(c.title); h.combine(c.number); h.combine(c.status) } }
+    if let a = model.desk?.byAgent[m.agent] { h.combine(a.name); h.combine(a.mark); h.combine(a.icon); h.combine(a.hue) }
+    return h.finalize()
+  }
   var body: some View {
     let _ = RenderCount.body("MessageView")
     let m = message
@@ -413,7 +473,7 @@ struct MessageView: View {
       VStack(alignment: .trailing, spacing: 4) {
         about(m)
         if !m.attachments.isEmpty && m.noteWritten == nil { Attachments(list: m.attachments, onPicture: { picture = $0 }) }
-        CopiedCards(ids: m.copiedCards)
+        if !m.copiedCards.isEmpty { CopiedCards(ids: m.copiedCards) }
         MarksLine(marks: m.marks)
         if m.noteWritten != nil {
           VStack(alignment: .leading, spacing: 6) {
@@ -467,7 +527,7 @@ struct MessageView: View {
         RichText(text: m.text + (m.html.map { "\n\n```html\n\($0)\n```" } ?? ""))
       }
       if !m.attachments.isEmpty { Attachments(list: m.attachments, onPicture: { picture = $0 }) }
-      CopiedCards(ids: m.copiedCards)
+      if !m.copiedCards.isEmpty { CopiedCards(ids: m.copiedCards) }
       MarksLine(marks: m.marks)
       if let det = m.details, !det.isEmpty {
         DisclosureGroup { RichText(text: det, size: 15, color: Ink.muted).padding(.top, 4) } label: { Text("Details").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted) }.tint(Ink.muted)
@@ -638,7 +698,11 @@ struct SessionStatus: View {
                 }.frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
                 Text(t.label).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
                 Spacer(minLength: 4)
-                if t.updated > 0 { Text(agoText(t.updated)).font(Face.text(12)).foregroundStyle(Ink.faint) }
+                // (the time short, a small clock after it: "4m"; VoiceOver hears "4 min ago")
+                if t.updated > 0 {
+                  HStack(spacing: 3) { Text(agoShort(t.updated)).font(Face.text(12)).monospacedDigit(); Image(systemName: "clock").font(.system(size: 10, weight: .medium)) }
+                    .foregroundStyle(Ink.faint).accessibilityElement(children: .ignore).accessibilityLabel(agoText(t.updated))
+                }
               }
               if isOpen {
                 VStack(alignment: .leading, spacing: 8) {
@@ -653,6 +717,15 @@ struct SessionStatus: View {
       }.padding(.vertical, 12)
     }
   }
+}
+/** "now", "4m", "3h", "4 Oct": agoText short, for a time beside a small clock. */
+func agoShort(_ ts: UInt64, now: UInt64 = nowMs()) -> String {
+  let min = Int((Double(Int64(now) - Int64(ts)) / 60000).rounded())
+  if min < 1 { return "now" }
+  if min < 60 { return "\(min)m" }
+  if min < 1440 { return "\(Int((Double(min) / 60).rounded()))h" }
+  let f = DateFormatter(); f.locale = Locale(identifier: "en_GB"); f.dateFormat = "d MMM"
+  return f.string(from: Date(timeIntervalSince1970: Double(ts) / 1000))
 }
 struct TypingDots: View {
   @State private var phase = 0.0
@@ -856,6 +929,7 @@ struct Composer: View {
           if !files.isEmpty { PendingFiles(files: $files) }
           HStack(alignment: .bottom, spacing: 4) {
             TextField(placeholder, text: $text, axis: .vertical)
+              .onReceive(NotificationCenter.default.publisher(for: SpeedScript.typeKey)) { _ in text += "a" }
               .font(Face.text(17))
               .lineLimit(1...7)
               .focused($focused)

@@ -225,6 +225,17 @@ fn deleting_the_account_removes_every_row_and_file_of_its_room_and_nothing_else(
         .ok();
     let files = w.hub.dir.join("files").join(hex(&w.room));
     assert!(files.join(hex(&file)).is_file());
+    // what the account keeps on the hub (GET /v1/account/usage): counts and sizes of its own room, a human device's
+    let usage = w.ada.get(&w.hub, "/v1/account/usage").ok();
+    assert_eq!((usage["rooms"].as_u64(), usage["files"].as_u64(), usage["file_bytes"].as_u64(), usage["cards"].as_u64()), (Some(1), Some(1), Some(10), Some(1)));
+    assert!(usage["groups"].as_u64() >= Some(2) && usage["envelopes"].as_u64() >= Some(5) && usage["messages"].as_u64() >= Some(1));
+    assert_eq!(
+        usage["total_bytes"].as_u64(),
+        Some(usage["log_bytes"].as_u64().unwrap() + usage["envelope_bytes"].as_u64().unwrap() + 10)
+    );
+    agent.get(&w.hub, "/v1/account/usage").refused(403, "forbidden");
+    let theirs = other.get(&w.hub, "/v1/account/usage").ok();
+    assert_eq!((theirs["cards"].as_u64(), theirs["files"].as_u64()), (Some(0), Some(0)), "another account sees only its own");
     let room = w.room;
     let marks: Vec<Vec<u8>> = vec![
         room.to_vec(),

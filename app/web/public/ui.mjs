@@ -612,6 +612,14 @@ function ago(ts, now = Date.now()) {
   if (min < 1440) return `${Math.round(min / 60)} h ago`
   return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
+/** The same, short, beside a small clock: "now", "4m", "3h", "4 Oct". */
+export function agoShort(ts, now = Date.now()) {
+  const min = Math.round((now - ts) / 60000)
+  if (min < 1) return 'now'
+  if (min < 60) return `${min}m`
+  if (min < 1440) return `${Math.round(min / 60)}h`
+  return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
 /** A time that keeps itself current in the page (ui.mjs rewrites every [data-ts] each 30 s). */
 export const agoSpan = (ts, cls = 'ago') => html`<span class="${cls}" data-ts="${ts}">${ago(ts)}</span>`
 
@@ -1504,7 +1512,7 @@ export function startUi() {
   watchShift()
   stimulus.start()
   watchLater()
-  setInterval(() => { for (const n of document.querySelectorAll('[data-ts]')) n.textContent = ago(Number(n.dataset.ts)) }, 30000)
+  setInterval(() => { for (const n of document.querySelectorAll('[data-ts]')) n.textContent = 'short' in n.dataset ? agoShort(Number(n.dataset.ts)) : ago(Number(n.dataset.ts)) }, 30000)
   document.addEventListener('turbo:submit-start', e => { e.detail.formSubmission.submitter?.classList.add('is-picked') })
   document.addEventListener('turbo:submit-end', e => { e.detail.formSubmission.submitter?.classList.remove('is-picked') })
 }
