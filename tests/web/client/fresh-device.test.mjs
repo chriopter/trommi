@@ -23,6 +23,9 @@ test('a fresh sign-in: the Desk never shows a settled question, unread requests 
     const id = await agent.askCard({ title: `old card ${i}`, options: [{ key: 'y', label: 'Yes' }] })
     await until(() => a.model.cards.get(id), 'the founder sees the card')
     await a.answer({ object_id: id, choices: ['y'] })
+    // (the agent closes a card of its own once the hub's copy of it came back: before that its core does not hold
+    //  the object, and a later version of it is forbidden; a slow hub showed it in CI)
+    await agent.client.settle()
     await agent.closeCard(id, { close_summary: 'done' })
     settled.add(id)
   }
