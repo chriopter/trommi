@@ -154,6 +154,15 @@ public struct Store {
   public internal(set) var removedAt: UInt64?
   /** DELETE /v1/account was sent from here and its answer may have been lost (Account.swift deleteAccount). */
   var deletionSent = false
+  /** A catch-up behind the hub's Desk: from which cursor to which (deskFirst); nil once it is through. */
+  public internal(set) var catchingUp: (from: UInt64, to: UInt64)?
+  /** How far that catch-up is, 0…1; nil when none runs. */
+  public var catchUpShare: Double? {
+    guard let c = catchingUp, c.to > c.from else { return nil }
+    return min(1, Double(cursor > c.from ? cursor - c.from : 0) / Double(c.to - c.from))
+  }
+  /** Not caught up yet: no catch-up went through in this run, or one is behind the hub's Desk. */
+  public var behind: Bool { !synced || catchingUp != nil }
   /** Whether the board came from the cache (shown before the first catch-up). */
   public internal(set) var restored = false
 
@@ -438,7 +447,7 @@ public struct Store {
     }
     var change = Change()
     // (a device back after a while: what was settled elsewhere leaves the Desk before the long history is read)
-    let until = cursor > 0 ? await Spent.time("desk first") { await deskFirst() } : nil
+    let until = await Spent.time("desk first") { await deskFirst() }
     try await Spent.time("welcomes") { try await takeWelcomes(&change) }
     if let work = codeJoinWork { await Spent.time("wait session joins") { await work.value }; codeJoinWork = nil }
     await Spent.time("finish code join") { await finishCodeJoin() }
@@ -470,11 +479,12 @@ public struct Store {
   }
 
   /**
-   * A start from a cursor behind the hub: before the history since then is read, which can be long, the hub's Desk
-   * says what is open now. A card or permission request the board holds as open that the Desk no longer lists was
-   * settled elsewhere meanwhile: it is marked `catchingUp` and stays off the Desk until the catch-up reached the
-   * Desk's cursor (the web client's `deskFirst`). Returns that cursor; nil when nothing is marked or the Desk was
-   * not had (a failure here only leaves the old view a moment longer).
+   * A start behind the hub (a device back after a while, or one just signed in): before the history since the
+   * cursor is read, which can be long, the hub's Desk says what is open now (the web client's `deskFirst`). Until the
+   * catch-up reaches the Desk's cursor, a card or permission request this device holds as open that the Desk does not
+   * list was settled elsewhere and is held back (`Board.deskGate`): no old question stands on the Desk as if it
+   * waited. Returns that cursor; nil when the Desk was not had or is not ahead (a failure here only leaves the old
+   * view a moment longer).
    */
   func deskFirst() async -> UInt64? {
     guard let desk = try? await noted({ try await hub.desk() }), desk["truncated"] as? Bool != true,
@@ -483,23 +493,23 @@ public struct Store {
     for kind in ["cards", "permission_requests"] {
       for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
     }
+    board.deskGate = open
+    catchingUp = (cursor, at)
     var change = Change()
-    for c in board.cards.values where c.objectState == "open" && !open.contains(c.objectId) {
-      c.catchingUp = true; change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) }
-    }
-    for p in board.permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) {
-      p.catchingUp = true; change.permissions.insert(p.objectId); if let sid = p.sessionId { change.sessions.insert(sid) }
-    }
-    if change.cards.isEmpty && change.permissions.isEmpty { return nil }
+    for c in board.cards.values where c.objectState == "open" && !open.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
+    for p in board.permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) { change.permissions.insert(p.objectId); if let sid = p.sessionId { change.sessions.insert(sid) } }
     change.stack = true
     board.project(change)
     emit(change)
     return at
   }
-  /** The catch-up reached the Desk's cursor of `deskFirst`: every mark is taken by now. */
+  /** The catch-up reached the Desk's cursor of `deskFirst`: nothing is held back any more. */
   func caughtUp(_ change: inout Change) {
-    for c in board.cards.values where c.catchingUp { c.catchingUp = false; change.cards.insert(c.objectId) }
-    for p in board.permissions.values where p.catchingUp { p.catchingUp = false; change.permissions.insert(p.objectId) }
+    catchingUp = nil
+    guard let gate = board.deskGate else { return }
+    board.deskGate = nil
+    for c in board.cards.values where c.objectState == "open" && !gate.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
+    for p in board.permissions.values where p.permissionState == "pending" && !gate.contains(p.objectId) { change.permissions.insert(p.objectId) }
     change.stack = true
   }
 
@@ -735,6 +745,9 @@ public struct Store {
       if let upTo = Wire.uint(page["change"]), upTo > cursor { cursor = upTo; board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(upTo)) }
       if page["more"] as? Bool != true { return }
       if cursor <= before { throw finding("bad-format", "the hub says there is more and gives nothing new") }
+      // A long catch-up shows what it has page by page (what the hub settled meanwhile is held back: deskFirst);
+      // reading back builds the board anew and shows it at its end.
+      if !readingBack && !change.isEmpty { board.project(change); emit(change); change = Change() }
     }
     throw finding("bad-format", "the hub's changes do not end")
   }

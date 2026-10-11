@@ -125,12 +125,12 @@ enum MainSampler {
                 free(syms)
               }
             }
-            let mine = lines.filter { $0.contains("TrommiApp") || $0.contains("Trommi") }.prefix(14).map { l -> String in
-              // "3 TrommiApp 0x... symbol + 12": keep the symbol
+            // "3 TrommiApp 0x... symbol + 12": the image and the symbol of each frame, the signal's own frames left out
+            let frames = lines.dropFirst(3).prefix(28).map { l -> String in
               let parts = l.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
-              return parts.count > 3 ? String(parts[3]) : l
+              return parts.count > 3 ? "\(parts[1]):\(parts[3].split(separator: " ").first ?? "")" : l
             }
-            PerfLog.line("STALL \((now - b) / 1_000_000) ms main at: " + (mine.isEmpty ? lines.prefix(8).joined(separator: " | ") : mine.joined(separator: " | ")))
+            PerfLog.line("STALL \((now - b) / 1_000_000) ms main at: " + frames.joined(separator: " | "))
           }
         }
       }
@@ -149,13 +149,14 @@ enum MainSampler {
 @MainActor enum MegaScript {
   static let env = ProcessInfo.processInfo.environment
   static let on = env["TROMMI_MEGA"] == "1"
-  static let t0 = Date()
   static var truth: Set<String>?
   static var firstCards: Double?
   static var right: Double?
   static var staleMax = 0
   static var syncs = 0
-  static var ms: Int { Int(Date().timeIntervalSince(t0) * 1000) }
+  /** Since the process started (StartClock.t0). */
+  static var ms: Int { Int((ProcessInfo.processInfo.systemUptime - StartClock.t0) * 1000) }
+  static func note(_ what: String) { if on { PerfLog.line("MEGA \(what) at \(ms) ms") } }
 
   static func runIfAsked(_ model: BoardModel) {
     guard on else { return }

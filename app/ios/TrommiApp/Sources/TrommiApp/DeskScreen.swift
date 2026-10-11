@@ -41,6 +41,10 @@ struct DeskScreen: View {
           let _ = StartClock.desk(cards: v.fresh.count, restored: model.room?.restored ?? false)
           VStack(alignment: .leading, spacing: 12) {
           head(v)
+          // a long catch-up says how far it is (what was settled elsewhere meanwhile is already off the Desk)
+          if let r = model.room, r.behind {
+            Text(r.catchUpShare.map { "Catching up… \(Int($0 * 100))%" } ?? "Catching up…").font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("catching-up")
+          }
           if !v.cut.isEmpty { CutSlip(units: v.cut) }
           let cards = v.deskCards()
           ForEach(runs(cards, d)) { run in

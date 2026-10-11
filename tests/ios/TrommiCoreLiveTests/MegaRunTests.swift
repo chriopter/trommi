@@ -57,7 +57,8 @@ final class MegaRunTests: XCTestCase {
     var ms: Double { Date().timeIntervalSince(t0) * 1000 }
     func see(_ b: Board) {
       emits += 1
-      let open = Set(b.cards.values.filter { $0.onDesk }.map { $0.objectId })
+      // (what the Desk shows: the app's own model of it)
+      let open = Set(DeskModel(board: b).cards.filter { $0.status == "open" && $0.kind != "permission" }.map { $0.id })
       let stale = open.subtracting(truth).count
       if stale > 0 { staleEmits += 1; staleMax = max(staleMax, stale) }
       if firstShown == nil && !open.isEmpty { firstShown = ms }

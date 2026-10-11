@@ -21,6 +21,7 @@ bin=${CARGO_TARGET_DIR:-$root/target}/release
 work=${WORK:-${TMPDIR:-/tmp}/trommi-mega}
 port=${PORT:-18470}
 mkdir -p "$work"
+curl -sf "http://127.0.0.1:$port/healthz" > /dev/null && { echo "a hub answers on port $port already: stop it first"; exit 1; }
 rm -rf "$work/hub-data" "$work/serve" "$work/seed.env"
 mkdir -p "$work/hub-data"
 

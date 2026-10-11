@@ -208,20 +208,12 @@ public struct CardVersion {
   public var content: JV?
 }
 
-extension Card {
-  /** Stands on the Desk: open, and not one the hub closed meanwhile (`catchingUp`). */
-  var onDesk: Bool { objectState == "open" && !catchingUp }
-}
-
 public struct InRevision: Equatable { public var by: String; public var envelopeNumber: Int }
 
 public final class Card {
   public let objectId: String
   public var agentDeviceId: String
   public var objectState = "open"
-  /** The hub closed it after this device's cursor and this device has not taken the closing yet (a start after a
-   *  long time away: Room.deskFirst). It stays off the Desk until the catch-up reaches it. */
-  public var catchingUp = false
   public var urgency = "normal"
   /** The card's content fields (CARD_CONTENT_FIELDS), as the agent sent them: unknown ones are kept too. */
   public var fields: [String: JV] = [:]
@@ -285,8 +277,6 @@ public final class Permission {
   public var envelopeNumber: Int
   public var sentAt: UInt64
   public var permissionState = "pending"
-  /** As a card's: settled at the hub after this device's cursor, not taken yet; off the Desk until then. */
-  public var catchingUp = false
   public var verdict: (allow: Bool, byDeviceId: String, envelopeNumber: Int)?
   public var withdrawReason: String?
   init(objectId: String, agentDeviceId: String, sessionId: String?, toolName: String, description: String, inputPreview: String, expiresAt: UInt64, versionHash: String, envelopeNumber: Int, sentAt: UInt64) {
@@ -469,6 +459,17 @@ public final class Board {
   public var human = HumanRegisters()
   public var alerts: [BoardAlert] = []
   public var stack: [String] = []
+  /**
+   * While a catch-up is behind the hub's Desk (Room.deskFirst): the cards and permission requests the Desk lists as
+   * open. One this device holds as open that is not among them was settled elsewhere meanwhile and is held back
+   * (off the Desk, and not shown as a question) until the catch-up reaches the Desk's cursor. nil: nothing held back.
+   * Not stored: each start reads the Desk again.
+   */
+  public var deskGate: Set<String>?
+  /** Open here, but not on the hub's Desk while a catch-up is behind it (`deskGate`). */
+  public func heldBack(_ id: String, open: Bool) -> Bool { open && deskGate.map { !$0.contains(id) } ?? false }
+  /** Stands on the Desk: open, and not held back. */
+  func onDesk(_ id: String) -> Bool { guard let c = cards[id], c.objectState == "open" else { return false }; return !heldBack(id, open: true) }
   public var openPermissionIds: [String] = []
   /** What a newer client wrote that this version cannot show (model.mjs model.newer): how many, what, the newest. */
   public var newerCount = 0
@@ -1200,20 +1201,20 @@ public final class Board {
     for sid in change.sessions {
       guard let s = sessions[sid] else { continue }
       s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { cards[$0]?.onDesk == true }
+      s.openCardIds = s.cardIds.filter { onDesk($0) }
     }
     if !change.cards.isEmpty || !change.registers.isEmpty || !change.permissions.isEmpty { projectStack(now: now) }
   }
   public func project(now: UInt64 = nowMs()) {
     for s in sessions.values {
       s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { cards[$0]?.onDesk == true }
+      s.openCardIds = s.cardIds.filter { onDesk($0) }
     }
     projectStack(now: now)
   }
   private func projectStack(now: UInt64) {
     let archived = Set(sessions.values.filter { $0.settings["archived"].truthy }.map { $0.sessionId })
-    let open = cards.values.filter { $0.onDesk }.sorted { a, b in
+    let open = cards.values.filter { onDesk($0.objectId) }.sorted { a, b in
       let ra = Board.urgencyRank[a.urgency] ?? 1, rb = Board.urgencyRank[b.urgency] ?? 1
       if ra != rb { return ra > rb }
       if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
@@ -1225,6 +1226,6 @@ public final class Board {
       if let sid = c.sessionId, archived.contains(sid) { return false }
       return true
     }.map { $0.objectId }
-    openPermissionIds = permissions.values.filter { $0.permissionState == "pending" && !$0.catchingUp && now <= $0.expiresAt }.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
+    openPermissionIds = permissions.values.filter { $0.permissionState == "pending" && !heldBack($0.objectId, open: true) && now <= $0.expiresAt }.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
   }
 }

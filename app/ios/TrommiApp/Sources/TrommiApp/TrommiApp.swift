@@ -333,11 +333,14 @@ final class BoardModel: ObservableObject {
   }
   /** A new device is in: it names itself (never asked; Settings → Devices renames it), the board opens. */
   private func entered(_ r: Room) async {
-    try? await r.sendDeviceRegister(name: UIDeviceName.model, platform: "ios")
+    // The board at once: the catch-up fills it page by page. (The device's name waits for the catch-up in the
+    // room's queue; sent first, it held the sign-in's button until the whole catch-up was through.)
     attach(r)
     signing = false
     signInStep = nil
     phase = .board
+    MegaScript.note("board shown")
+    Task { try? await r.sendDeviceRegister(name: UIDeviceName.model, platform: "ios") }
     await refresh()
     checkKit()
   }
