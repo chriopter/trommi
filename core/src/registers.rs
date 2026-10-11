@@ -30,9 +30,9 @@ pub const BOARD_SNAPSHOT: &str = "board_snapshot/";
 /// The name under which human devices hand a Desk's Goals to a main session's agent (section 9.3.4).
 pub const GOALS: &str = "goals";
 /// The prefix under which a main session's agent asks the human devices to let in a new session of its machine and
-/// account (section 9.3.5): `join_ask/<nonce>`.
+/// account (section 12.4): `join_ask/<nonce>`.
 pub const JOIN_ASK: &str = "join_ask/";
-/// The prefix under which a human device answers it with an invite link for that agent alone (section 9.3.5).
+/// The prefix under which a human device answers it with an invite link for that agent alone (section 12.4).
 pub const JOIN_LINK: &str = "join_link/";
 /// The prefix of the name of a Desk, whose value carries the Desk's Goals.
 pub const DESK: &str = "desk/";

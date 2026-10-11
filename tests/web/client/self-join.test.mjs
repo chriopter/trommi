@@ -65,3 +65,15 @@ test('an ask without an account is refused, and nothing is opened for it', async
   assert.deepEqual(answer, { refused: 'bad-ask' })
   assert.equal(a.model.invites.size, before)
 })
+
+test('asks at once count against the cap, and past eight open links an ask is told to wait', async t => {
+  const { a, agent } = await scene(t, { agent: true })
+  for (let i = 0; i < 10; i++) await agent.setRegister(`join_ask/c${i}`, ask())
+  const answers = await until(async () => { const v = Array.from({ length: 10 }, (_, i) => linkOf(a, agent, `c${i}`)); return v.every(Boolean) && v }, 'ten answers', 30000)
+  assert.equal(answers.filter(x => x.link).length, 8, JSON.stringify(answers))
+  assert.equal(answers.filter(x => x.refused === 'cap').length, 2)
+  // another account named each time: still no more open links (and the hub's open invites stay for the person)
+  for (let i = 0; i < 4; i++) await agent.setRegister(`join_ask/d${i}`, ask({ account: i.toString(16).padStart(16, '0') }))
+  const more = await until(async () => { const v = Array.from({ length: 4 }, (_, i) => linkOf(a, agent, `d${i}`)); return v.every(Boolean) && v }, 'four answers', 30000)
+  assert.deepEqual(more, Array(4).fill({ refused: 'busy' }))
+})

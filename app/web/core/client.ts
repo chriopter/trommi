@@ -145,8 +145,12 @@ export interface ClientOptions {
   device_info?: unknown
   now?: () => number
 }
-/** The most live sessions of one account that joined by themselves (12.4). */
+/** The most live sessions of one account that joined by themselves (12.4), links still open counted in; the most
+ *  of all accounts together (the account is the asking agent's word, so this one bounds a lying agent); and the most
+ *  vouched links open at once on this device (the hub keeps 16 open invites a room: the rest stay for the person). */
 const MAX_VOUCHED = 8
+const MAX_VOUCHED_ROOM = 24
+const MAX_VOUCHED_OPEN = 8
 /** An invite as this device keeps it beside what the model shows. */
 interface InviteKept { public: Invite; checked_at?: number; done?: boolean; code?: number[]; request_hash?: string; committed?: boolean }
 
@@ -199,6 +203,7 @@ export class Client {
   /** Self-join (spec/v1.md 12.4): the asks this device answered or is answering, by nonce; invites confirmed on their own. */
   private readonly vouchAnswered = new Set<string>()
   private readonly vouchConfirming = new Set<string>()
+  private readonly vouchRetiring = new Set<string>()
   /** Who waits for an invite that was confirmed to be through. */
   private readonly finishing = new Map<string, { resolve(): void; reject(e: unknown): void }>()
   /** A note's newest version as THIS client sealed it (ahead of the model while versions are in flight). */
@@ -1269,9 +1274,14 @@ export class Client {
     this.vouchTimer = setTimeout(() => { this.vouchTimer = null; void this.answerAsks().catch(() => {}) }, 300)
   }
   /** Each live main session whose agent asks to let a new session in (`join_ask/<nonce>`) gets a link for it in
-   *  `join_link/<nonce>`, or `{ refused: 'cap' }` when that account has MAX_VOUCHED live sessions that joined so. */
+   *  `join_link/<nonce>`, or `{ refused }`: `cap` when that account has MAX_VOUCHED live sessions that joined so or
+   *  the room MAX_VOUCHED_ROOM (open vouched links counted in), `busy` while MAX_VOUCHED_OPEN are open here or no
+   *  invite can be opened. */
   private async answerAsks(): Promise<void> {
     if (!this.started || this.model.room.connection !== 'live') return
+    // an archived session that joined by itself whose device is still in (archived on another device, an older app,
+    // or the removal did not go through): its device goes now
+    for (const x of this.model.sessions.values()) if ((x.settings?.archived || x.group_archived) && x.settings?.['vouched']) void this.retireVouched(x.session_id, x.settings['vouched']).catch(() => {})
     for (const s of this.model.sessions.values()) {
       if (!s.is_active || s.stale || s.parent_session_id || !s.group_id || s.settings?.archived) continue
       for (const [key, reg] of s.registers) {
@@ -1280,28 +1290,38 @@ export class Client {
         if (!ask || typeof ask !== 'object' || this.vouchAnswered.has(nonce) || s.registers.get(`join_link/${nonce}`)?.value != null) continue
         this.vouchAnswered.add(nonce)
         const account = String(ask['account'] ?? '')
-        const live = [...this.model.sessions.values()].filter(x => x.is_active && !x.settings?.archived && (x.settings?.['vouched'] as { account?: unknown } | undefined)?.account === account).length
-        if (!account || live >= MAX_VOUCHED) { await this.setRegisters({ [`join_link/${nonce}`]: { refused: account ? 'cap' : 'bad-ask' } }, { session_id: s.session_id }); continue }
+        // live sessions that joined so, and this device's vouched links not through yet (asks at once count too)
+        const open = [...this.invites.values()].filter(k => !k.done && k.public['vouch']).map(k => (k.public['vouch'] as Vouch).account)
+        const accounts = [...this.model.sessions.values()].filter(x => x.is_active && !x.settings?.archived && x.settings?.['vouched']).map(x => (x.settings!['vouched'] as { account?: unknown }).account).concat(open)
+        const refused = !account ? 'bad-ask' : accounts.filter(x => x === account).length >= MAX_VOUCHED || accounts.length >= MAX_VOUCHED_ROOM ? 'cap' : open.length >= MAX_VOUCHED_OPEN ? 'busy' : null
+        const answer = async (value: unknown) => { await this.setRegisters({ [`join_link/${nonce}`]: value }, { session_id: s.session_id }) }
+        if (refused) { await answer({ refused }); continue }
         const vouch: Vouch = { nonce, session_id: s.session_id, account, account_label: String(ask['account_label'] ?? ''), by_name: String(s.settings?.name ?? ask['vouched_by'] ?? '') }
-        const invite = await this.createInvite({ device_role: 'agent', label: String(ask['name'] ?? '').slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch })
+        let invite: Invite
+        try { invite = await this.createInvite({ device_role: 'agent', label: String(ask['name'] ?? '').slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch }) }
+        catch { await answer({ refused: 'busy' }); continue }
         await this.setRegisters({ [`join_link/${nonce}`]: { link: invite.link, invite_id: invite.invite_id } }, { session_id: s.session_id })
       }
     }
   }
-  /** A vouched invite whose Request came: confirmed on its own when the ask names that Request's hash, burned when
-   *  it names another one. */
+  /** A vouched invite whose Request came: confirmed on its own when the ask names that Request's hash and its
+   *  voucher still stands, burned otherwise. */
   private vouchConfirm(invite_id: string, kept: InviteKept): void {
     const vouch = kept.public['vouch'] as Vouch, hash = this.model.sessions.get(vouch.session_id)?.registers.get(`join_ask/${vouch.nonce}`)?.value as { request_hash?: unknown } | null | undefined
     const named = typeof hash?.request_hash === 'string' ? hash.request_hash : null
     if (!named || this.vouchConfirming.has(invite_id)) return
     this.vouchConfirming.add(invite_id)
-    void this.confirmInvite(invite_id, named === kept.request_hash).catch(() => {}).finally(() => this.vouchConfirming.delete(invite_id))
+    // the voucher must still be a live session with its agent in: a removed or archived one vouches for nobody
+    const voucher = this.model.sessions.get(vouch.session_id), standing = !!voucher?.is_active && !voucher.settings?.archived
+    void this.confirmInvite(invite_id, standing && named === kept.request_hash).catch(() => {}).finally(() => this.vouchConfirming.delete(invite_id))
   }
   /** An archived session that joined by itself takes its device along: it was made for this session alone. */
   private async retireVouched(session_id: string, vouched: unknown): Promise<void> {
     if (!vouched || typeof vouched !== 'object') return
     const device = this.model.sessions.get(session_id)?.agent_device_id
-    if (device && (this.engine.roles?.agents ?? []).some(a => hex(a) === device)) await this.removeDevices([device])
+    if (!device || this.vouchRetiring.has(device) || !(this.engine.roles?.agents ?? []).some(a => hex(a) === device)) return
+    this.vouchRetiring.add(device)
+    try { await this.removeDevices([device]) } finally { this.vouchRetiring.delete(device) }
   }
 
   // ---- removal (5.2.8)

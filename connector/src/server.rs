@@ -1246,7 +1246,9 @@ impl Conn {
                     }
                     if let Some(why) = r["refused"].as_str() {
                         let _ = done().await;
-                        return Err(if why == "cap" {
+                        return Err(if why == "busy" {
+                            "not let in by itself yet: the human's Trommi app has too many self-join links open; the next Trommi tool call asks again".to_string()
+                        } else if why == "cap" {
                             format!("not let in by itself: this account has {} sessions that joined by themselves already. Archive one in the Trommi app, or invite this session (\"invite an agent\")", vouch::MAX_PER_ACCOUNT)
                         } else {
                             format!("not let in by itself ({why}): invite this session in the Trommi app (\"invite an agent\")")
