@@ -28,3 +28,19 @@ test('the phone puts Log out with Settings and Demo', async () => {
   const css = (await import('node:fs')).readFileSync(new URL('../../../app/web/public/sidebar.css', import.meta.url), 'utf8')
   assert.match(css, /:is\(\.menu-demo-row, \.menu-logout-row\) \{ order: 3;/, 'the same place in the phone\'s column as Demo')
 })
+
+// The number keys 1…9 switch desks by clicking the desk's entry in the closed menu (ui.mjs, desk.switch): that must
+// not leave the "open the menu again after the switch" mark, or the menu comes up and blocks the next key.
+test('a desk switched by its number key leaves the menu shut; one picked in the open menu keeps it open', async () => {
+  const { MenuController } = await import('../../../app/web/public/sidebar.mjs')
+  const kept = []
+  globalThis.sessionStorage = { setItem: (k, v) => kept.push([k, v]), getItem: () => null, removeItem() {} }
+  const desk = { closest: sel => (sel === '.menu-desk[data-desk]' ? desk : null) }
+  const pick = hidden => MenuController.prototype.chosen.call({ element: { hidden }, close() {} }, { target: desk })
+  try {
+    pick(true)
+    assert.deepEqual(kept, [], 'the closed menu stays closed after a number key')
+    pick(false)
+    assert.deepEqual(kept, [['trommi-menu-keep', '1']], 'a desk picked in the open menu still opens it again')
+  } finally { delete globalThis.sessionStorage }
+})

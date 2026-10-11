@@ -50,6 +50,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   sessions join after you are in, and a stuck login stops with a message.
 - Opening Trommi after a long time away: questions answered elsewhere no longer show up as open while it catches
   up, and logging in on a new browser is ready in seconds instead of a minute.
+- Web: the number keys 1, 2, 3 … switch the desk without opening the desk menu, which then blocked the next key.
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.
 - Changing your password, Emergency Kit or passkeys now asks for proof that you know a current one:
   being logged in is not enough.
