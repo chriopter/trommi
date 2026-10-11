@@ -341,6 +341,7 @@ public struct Store {
     onChange?(c)
     // (a desk, a session's settings, the sessions or the stream changed: the goals handed to the agents may be behind)
     if c.room || !c.sessions.isEmpty || c.registers.contains(where: { $0.hasPrefix("desk/") || $0.hasPrefix("session/") }) { goalsSoon() }
+    if !c.sessions.isEmpty || !c.registers.isEmpty { vouchSoon() }
   }
 
   /** A hub error that says this app is too old: remembered (the app shows it), and rethrown. */
@@ -356,6 +357,9 @@ public struct Store {
   // ---- desk goals for the agents (spec/v1.md 9.3.4, Goals.swift) -----------------------------------------
 
   var goalsTask: Task<Void, Never>?
+  /** Self-join (spec/v1.md 12.4, SelfJoin.swift): the look at the agents' asks that is due, and the asks answered. */
+  var vouchTask: Task<Void, Never>?
+  var vouchAnswered = Set<String>()
   /** What this device last wrote to `goals` of a session, in this run. */
   private var goalsSaid: [String: JV] = [:]
   private func goalsSoon() {
