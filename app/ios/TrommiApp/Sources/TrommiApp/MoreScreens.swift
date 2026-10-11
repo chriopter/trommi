@@ -81,8 +81,9 @@ struct OffList: View {
   /** On the Desk of an iPhone the list lies under the fold: its heading carries a small arrow (EndDivider). */
   var chevron: String? = nil
   struct Row: Identifiable { var card: DeskCard; var g: String; var id: String { card.id } }
-  var body: some View {
-    let d = model.desk!
+  // (no Desk: the room was just left, a log out; the view is on its way out and draws nothing)
+  var body: some View { if let d = model.desk { content(d) } }
+  @ViewBuilder private func content(_ d: DeskModel) -> some View {
     let rows = OffList.rows(view, d)
     let terms = query.lowercased().split(separator: " ").map(String.init)
     let shown = terms.isEmpty ? rows : rows.filter { r in terms.allSatisfy { "\(r.card.title) \(d.byAgent[r.card.agent]?.name ?? "")".lowercased().contains($0) } }

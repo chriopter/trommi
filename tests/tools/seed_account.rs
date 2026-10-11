@@ -56,6 +56,11 @@ struct Args {
     fixture: PathBuf,
     env_out: PathBuf,
     pace: Duration,
+    /// Extra cards after the fixture (a big account for the iOS mega run), each with a few chat lines.
+    bulk: usize,
+    /// After seeding: stay online in this folder (the human device follows the room and answers key requests, the
+    /// agents stay live) and run the rounds named by files `<name>.cmd` there; `stop` ends it.
+    serve: Option<PathBuf>,
 }
 
 fn args() -> Res<Args> {
@@ -80,6 +85,8 @@ fn args() -> Res<Args> {
                 .map_or(Ok(150), |v| v.parse())
                 .map_err(|e| format!("--pace-ms: {e}"))?,
         ),
+        bulk: take("bulk").map_or(Ok(0), |v| v.parse()).map_err(|e| format!("--bulk: {e}"))?,
+        serve: take("serve").map(PathBuf::from),
     })
 }
 
@@ -167,6 +174,9 @@ struct Seeder {
     /// Fixture object id (hex) -> the real one (hex).
     ids: HashMap<String, String>,
     counts: BTreeMap<&'static str, usize>,
+    /// Bulk cards still open: (card id, seat).
+    bulk_open: Vec<(String, Seat)>,
+    bulk_made: usize,
 }
 
 impl Seeder {
@@ -664,6 +674,140 @@ impl Seeder {
         Ok(())
     }
 
+    /// One bulk card of a session, with `chat` lines of the agent on it; answered and closed unless `keep_open`.
+    async fn bulk_card(&mut self, seat: &Seat, keep_open: bool, chat: usize) -> Res<()> {
+        self.bulk_made += 1;
+        let n = self.bulk_made;
+        let client = self.agents[seat.agent].client.clone();
+        let fields = obj(&json!({
+            "card_type": "decision",
+            "title": format!("Bulk question {n}: ship step {n}?"),
+            "teaser": format!("A made-up question of the mega run, number {n}."),
+            "body": format!("Question {n} of the big account. Nothing depends on it."),
+            "options": [{ "key": "yes", "label": "Yes", "short": "Yes" }, { "key": "no", "label": "No", "short": "No", "final": true }],
+            "allows_multiple": false,
+            "recommended": "yes",
+            "attachments": [],
+            "urgency": if n % 7 == 0 { "high" } else { "normal" },
+        }));
+        let id = client
+            .send_card(fields, seat.session.clone())
+            .await
+            .map_err(|e| format!("bulk card {n}: {e}"))?;
+        for line in 0..chat {
+            client
+                .send_message(obj(&json!({ "text": format!("Working on step {n}, part {line}.") })), Some(id.clone()), None)
+                .await
+                .map_err(|e| format!("bulk chat: {e}"))?;
+        }
+        self.count("bulk cards");
+        if keep_open {
+            self.bulk_open.push((id, seat.clone()));
+            return Ok(());
+        }
+        self.settle_bulk(&id, seat).await
+    }
+
+    /// The human device answers a bulk card "yes", the agent closes it.
+    async fn settle_bulk(&mut self, id: &str, seat: &Seat) -> Res<()> {
+        // (a card the human device has not taken: the agent closes it alone, as it closes one answered elsewhere)
+        self.human.sync().await;
+        if !self.human.object_ids().iter().any(|o| o == id) {
+            let client = self.agents[seat.agent].client.clone();
+            client.close(id, "Done elsewhere.").await.map_err(|e| format!("bulk close: {e}"))?;
+            self.count("bulk closed by the agent alone");
+            return Ok(());
+        }
+        let body = with_schema_map(obj(&json!({ "answer_action": "answer", "choices": ["yes"], "attachments": [] })));
+        self.human
+            .answer(id, Value::Object(body), &["yes"], false)
+            .await
+            .map_err(|e| format!("bulk answer: {e}"))?;
+        let client = self.agents[seat.agent].client.clone();
+        let want = id.to_string();
+        common::eventually("the agent has the bulk answer", || async {
+            client.core.lock().await.model.cards.get(&want).is_some_and(|c| !c.answers.is_empty())
+        })
+        .await;
+        client.close(id, "Done.").await.map_err(|e| format!("bulk close: {e}"))?;
+        self.count("bulk settled");
+        Ok(())
+    }
+
+    fn bulk_seats(&self) -> Vec<Seat> {
+        let mut seats: Vec<Seat> = self.seats.values().cloned().collect();
+        seats.sort_by(|a, b| a.sid.cmp(&b.sid));
+        seats
+    }
+
+    /// `n` bulk cards spread over every session: one in five stays open, the rest is answered and closed.
+    async fn bulk(&mut self, n: usize) -> Res<()> {
+        let seats = self.bulk_seats();
+        for i in 0..n {
+            let seat = seats[i % seats.len()].clone();
+            self.bulk_card(&seat, i % 5 == 0, 2).await?;
+            if i % 50 == 49 {
+                println!("bulk: {} cards", i + 1);
+            }
+        }
+        Ok(())
+    }
+
+    /// A round written while the phone is away: `settle` open cards answered and closed, `new` new cards (half of
+    /// them left open), `chat` chat lines each.
+    async fn away_round(&mut self, settle: usize, new: usize, chat: usize) -> Res<()> {
+        for _ in 0..settle.min(self.bulk_open.len()) {
+            let (id, seat) = self.bulk_open.remove(0);
+            self.settle_bulk(&id, &seat).await?;
+        }
+        let seats = self.bulk_seats();
+        for i in 0..new {
+            let seat = seats[(self.bulk_made + i) % seats.len()].clone();
+            self.bulk_card(&seat, i % 2 == 0, chat).await?;
+        }
+        Ok(())
+    }
+
+    /// Stays online (see `Args::serve`). A file `<name>.cmd` holding "settle new chat" runs one away round and is
+    /// answered by `<name>.done` with the counts; `stop` ends it.
+    async fn serve(&mut self, dir: &Path) -> Res<()> {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join("ready"), b"ready").map_err(|e| e.to_string())?;
+        println!("serving in {}", dir.display());
+        loop {
+            if dir.join("stop").exists() {
+                return Ok(());
+            }
+            let mut cmds: Vec<PathBuf> = std::fs::read_dir(dir)
+                .map_err(|e| e.to_string())?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "cmd") && !p.with_extension("done").exists())
+                .collect();
+            cmds.sort();
+            for cmd in cmds {
+                let text = std::fs::read_to_string(&cmd).unwrap_or_default();
+                let n: Vec<usize> = text.split_whitespace().filter_map(|w| w.parse().ok()).collect();
+                let (settle, new, chat) = (n.first().copied().unwrap_or(0), n.get(1).copied().unwrap_or(0), n.get(2).copied().unwrap_or(0));
+                let started = std::time::Instant::now();
+                self.away_round(settle, new, chat).await?;
+                for agent in &self.agents {
+                    agent.client.settle(120_000).await.map_err(|e| format!("settle: {e}"))?;
+                }
+                self.human.sync().await;
+                let open: Vec<&str> = self.bulk_open.iter().map(|(id, _)| id.as_str()).collect();
+                std::fs::write(
+                    cmd.with_extension("done"),
+                    json!({ "settled": settle, "new": new, "chat": chat, "ms": started.elapsed().as_millis() as u64, "bulk_open": open, "findings": self.human.findings, "counts": format!("{:?}", self.counts) }).to_string(),
+                )
+                .map_err(|e| e.to_string())?;
+                println!("round {} done", cmd.display());
+            }
+            self.human.sync().await;
+            self.human.answer_key_requests().await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
     fn session_of_card(&self, fixture_card: &str) -> Res<SessionId> {
         let card = self.fixture["cards"]
             .as_array()
@@ -946,6 +1090,8 @@ async fn run() -> Res<()> {
         humans,
         ids: HashMap::new(),
         counts: BTreeMap::new(),
+        bulk_open: Vec::new(),
+        bulk_made: 0,
     };
     s.sessions().await?;
     s.human.sync().await;
@@ -962,6 +1108,10 @@ async fn run() -> Res<()> {
         s.pace().await;
     }
     s.finishing().await?;
+    if s.args.bulk > 0 {
+        let n = s.args.bulk;
+        s.bulk(n).await?;
+    }
     for agent in &s.agents {
         agent
             .client
@@ -970,6 +1120,9 @@ async fn run() -> Res<()> {
             .map_err(|e| format!("settle: {e}"))?;
     }
     s.human.sync().await;
+    if let Some(dir) = s.args.serve.clone() {
+        s.serve(&dir).await?;
+    }
     for agent in &s.agents {
         agent.client.stop().await;
     }

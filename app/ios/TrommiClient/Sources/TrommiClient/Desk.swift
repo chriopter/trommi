@@ -382,8 +382,9 @@ public final class DeskModel {
     for (i, x) in numbered.enumerated() { numberOf[x.1] = i + 1 }
     var out = [DeskCard]()
     for x in numbered {
-      if x.2 { if let p = m.permissions[x.1] { out.append(permissionCard(p, numberOf[x.1]!, now: now)) } }
-      else if let c = m.cards[x.1] { out.append(boardCard(c, numberOf[x.1]!, now: now)) }
+      // (held back while a catch-up is behind the hub's Desk: settled elsewhere, not a question any more; Room.deskFirst)
+      if x.2 { if let p = m.permissions[x.1], !m.heldBack(p.objectId, open: p.permissionState == "pending") { out.append(permissionCard(p, numberOf[x.1]!, now: now)) } }
+      else if let c = m.cards[x.1], !m.heldBack(c.objectId, open: c.objectState == "open") { out.append(boardCard(c, numberOf[x.1]!, now: now)) }
     }
     cards = out
     byCard = Dictionary(uniqueKeysWithValues: out.map { ($0.id, $0) })

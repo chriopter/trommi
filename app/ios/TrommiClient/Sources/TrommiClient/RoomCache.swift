@@ -80,7 +80,7 @@ extension Room {
    */
   @discardableResult public func restore() async -> Bool {
     if let t = restoring { return await t.value }
-    let t = Task { @MainActor in await self.restoreOnce() }
+    let t = Task { @MainActor in await Spent.time("restore") { await self.restoreOnce() } }
     restoring = t
     return await t.value
   }

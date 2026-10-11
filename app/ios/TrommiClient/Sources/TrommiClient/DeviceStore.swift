@@ -40,6 +40,15 @@
 // never answered, and may stay or go. The price is one Keychain write per batch; how long a long catch-up takes
 // with it is to be measured on a phone. The files are left out of backups: a restored copy must not become a second
 // owner.
+//
+// A CATCH-UP IS ONE FLUSH (`batched`). Measured with a big account: one flush and one Keychain write per record made
+// every received envelope cost 14 ms, a sign-in into 2,500 items 37 s. Inside `batched` (one page of the hub's
+// changes, handed to the core item by item on the core's queue) a record is appended at once but flushed, and the
+// anchor moved, only when the page is through, before the room reads any outcome of it. A record that touches the
+// outbox is never held back: it and everything before it are flushed and anchored before `apply` returns, so nothing
+// this device signed or will send can be lost or signed twice. A crash inside a page loses at most the end of what
+// the page received (a prefix stays, as after any power cut): the core's cursor is then behind, and the hub's changes
+// are read again from there.
 import Foundation
 import Crypto
 #if canImport(Glibc)
@@ -73,6 +82,10 @@ public final class DeviceStore: CoreStorage {
   private var revision: UInt64?
   /** Set when a write's outcome is unknown: nothing more is written through this object. */
   private var poisoned = false
+  /** Inside `batched`: records are appended and flushed at its end (or by the next one that touches the outbox). */
+  private var deferring = 0
+  /** Records appended since the last flush. */
+  private var unflushed = false
 
   /**
    * Opens the state in `directory` (made if missing) and takes its lock. Throws `StoreError.failed("busy")` when
@@ -150,6 +163,31 @@ public final class DeviceStore: CoreStorage {
     return StoreLoaded(revision: rev, entries: entries.map { StoreEntry(key: $0.key, value: $0.value) })
   }
 
+  /**
+   * Runs `body` (calls into the core on this store's one queue) with the flushes held back to its end: one flush and
+   * one anchor write for all the records it made (see "A catch-up is one flush" above). When the closing flush
+   * fails the store is poisoned and the error thrown, whatever `body` gave.
+   */
+  public func batched<T>(_ body: () throws -> T) throws -> T {
+    deferring += 1
+    let result = Result { try body() }
+    deferring -= 1
+    if deferring == 0 { try flushHeld() }
+    return try result.get()
+  }
+  private func flushHeld() throws {
+    guard unflushed, logFd >= 0, let rev = revision else { return }
+    unflushed = false
+    do { try Spent.time("store sync") { try sync(logFd) } } catch { poisoned = true; throw error }
+    if let anchor = anchor, anchored < rev {
+      do { try Spent.time("store anchor") { try anchor.write(rev) }; anchored = rev } catch { poisoned = true; throw StoreError.failed("the state's anchor could not be written") }
+    }
+  }
+  /** Whether a batch puts into the outbox or takes from it: never held back. */
+  static func touchesOutbox(_ batch: StoreBatch) -> Bool {
+    batch.put.contains { $0.key.first == outboxTable } || batch.delete.contains { $0.first == outboxTable }
+  }
+
   public func apply(expectedRevision: UInt64, batch: StoreBatch) throws {
     guard let stored = revision, logFd >= 0 else { throw StoreError.failed("not loaded") }
     guard !poisoned else { throw StoreError.failed("an earlier write failed: this store writes nothing more until it is opened again") }
@@ -158,9 +196,10 @@ public final class DeviceStore: CoreStorage {
     let sealed = try seal(Self.encode(batch), aad: Self.logAad, revision: next)
     let length = 8 + sealed.count
     let framed = be32(length) + be32(Int(~UInt32(length))) + be64(next) + sealed
+    let hold = deferring > 0 && !Self.touchesOutbox(batch)
     do {
       try writeAll(logFd, framed)
-      try sync(logFd)
+      if !hold { try Spent.time("store sync") { try sync(logFd) } }
     } catch {
       // Whether the record is on the drive is not known. Take it back; whatever comes of that, write nothing more.
       poisoned = true
@@ -169,13 +208,16 @@ public final class DeviceStore: CoreStorage {
     }
     logSize += framed.count
     revision = next
-    if let anchor = anchor {
+    Spent.count("store records")
+    if hold { unflushed = true }
+    else if let anchor = anchor {
       // The batch is durable, but without the anchor a rollback below it would pass: not a success.
-      do { try anchor.write(next); anchored = next } catch { poisoned = true; throw StoreError.failed("the state's anchor could not be written") }
+      unflushed = false
+      do { try Spent.time("store anchor") { try anchor.write(next) }; anchored = next } catch { poisoned = true; throw StoreError.failed("the state's anchor could not be written") }
     }
     // Folding the log is housekeeping: the batch is durable already. A failure before anything was changed is
     // harmless and tried again later; one after that poisons the store (compact says which).
-    if logSize > Self.compactAbove { try? compact() }
+    if logSize > Self.compactAbove { try? Spent.time("store compact") { try compact() } }
   }
 
   // ---- reading -------------------------------------------------------------------------------------------
@@ -211,18 +253,22 @@ public final class DeviceStore: CoreStorage {
       let rest = log.count - at
       // An incomplete end: a header cut short, zeros where a record was to be, a body cut short.
       if rest < 8 || log[at...].allSatisfy({ $0 == 0 }) { break }
+      // Past the anchor, damage is an end too: records appended inside `batched` and not flushed yet may reach the
+      // drive in any order after a crash (a later block written, an earlier one not). None of them was anchored, and
+      // none touched the outbox: what is cut there is read again from the hub.
+      let pastAnchor = anchor != nil && rev >= floor
       let n = Int(readBe32(log, at))
-      guard UInt32(n) == ~readBe32(log, at + 4), n >= 8 + 28 else { throw StoreError.failed("state log is damaged") }
+      guard UInt32(n) == ~readBe32(log, at + 4), n >= 8 + 28 else { if pastAnchor { break }; throw StoreError.failed("state log is damaged") }
       if at + 8 + n > log.count { break }
       let recordRev = readBe64(log, at + 8)
       let isLast = at + 8 + n == log.count
       let plain: Bytes
       do { plain = try unseal(Bytes(log[(at + 16)..<(at + 8 + n)]), aad: Self.logAad, revision: recordRev) } catch {
         // The last record may be half on the drive after a power cut, unless the anchor says it was answered.
-        if isLast && recordRev > floor { break }
+        if (isLast && recordRev > floor) || pastAnchor { break }
         throw error
       }
-      if let l = last, recordRev != l + 1 { throw StoreError.failed("state log has a gap") }
+      if let l = last, recordRev != l + 1 { if pastAnchor { break }; throw StoreError.failed("state log has a gap") }
       last = recordRev
       if recordRev > rev {
         guard recordRev == rev + 1 else { throw StoreError.failed("state log has a gap") }

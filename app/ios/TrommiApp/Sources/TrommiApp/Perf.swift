@@ -125,12 +125,12 @@ enum MainSampler {
                 free(syms)
               }
             }
-            let mine = lines.filter { $0.contains("TrommiApp") || $0.contains("Trommi") }.prefix(14).map { l -> String in
-              // "3 TrommiApp 0x... symbol + 12": keep the symbol
+            // "3 TrommiApp 0x... symbol + 12": the image and the symbol of each frame, the signal's own frames left out
+            let frames = lines.dropFirst(3).prefix(28).map { l -> String in
               let parts = l.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
-              return parts.count > 3 ? String(parts[3]) : l
+              return parts.count > 3 ? "\(parts[1]):\(parts[3].split(separator: " ").first ?? "")" : l
             }
-            PerfLog.line("STALL \((now - b) / 1_000_000) ms main at: " + (mine.isEmpty ? lines.prefix(8).joined(separator: " | ") : mine.joined(separator: " | ")))
+            PerfLog.line("STALL \((now - b) / 1_000_000) ms main at: " + frames.joined(separator: " | "))
           }
         }
       }
@@ -138,3 +138,86 @@ enum MainSampler {
   }
 }
 #endif
+
+/**
+ * The mega run in the simulator (tests/ios/mega/sim.sh): TROMMI_MEGA=1 with TROMMI_HUB_URL, TROMMI_MEGA_EMAIL and
+ * TROMMI_MEGA_PASSWORD logs in when there is no room yet; then every render notes whether the Desk shows a card the
+ * hub has closed (a stale card), the first Desk with cards, the end of the first catch-up, the main thread's stalls
+ * (TROMMI_PERF=1 as well). TROMMI_MEGA_LOGOUT=1 logs out from Settings once the catch-up ended. All of it goes to the
+ * perf log (PerfLog).
+ */
+@MainActor enum MegaScript {
+  static let env = ProcessInfo.processInfo.environment
+  static let on = env["TROMMI_MEGA"] == "1"
+  static var truth: Set<String>?
+  static var firstCards: Double?
+  static var right: Double?
+  static var staleMax = 0
+  static var syncs = 0
+  /** Since the process started (StartClock.t0). */
+  static var ms: Int { Int((ProcessInfo.processInfo.systemUptime - StartClock.t0) * 1000) }
+  static func note(_ what: String) { if on { PerfLog.line("MEGA \(what) at \(ms) ms") } }
+
+  static func runIfAsked(_ model: BoardModel) {
+    guard on else { return }
+    PerfLog.line("MEGA launch (room: \(model.room != nil))")
+    #if canImport(UIKit)
+    MainSampler.start()
+    HitchMeter.shared.begin("mega")
+    #endif
+    if model.room == nil, let email = env["TROMMI_MEGA_EMAIL"], let pw = env["TROMMI_MEGA_PASSWORD"] {
+      Task { @MainActor in
+        model.phase = .email
+        await model.login(account: email, password: pw)
+        PerfLog.line("MEGA login returned at \(ms) ms, phase \(model.phase == .board ? "board" : "not board"), error \(model.error ?? "-")")
+      }
+    }
+  }
+  /** The hub's open cards, read once the room is there. */
+  static func readTruth(_ room: Room) {
+    guard on, truth == nil else { return }
+    truth = []
+    Task { @MainActor in
+      let desk = try? await room.hub.desk()
+      truth = Set((desk?["cards"] as? [JSON] ?? []).compactMap { ($0["object_id"] as? String).flatMap { try? unb64u($0) }.map(hex) })
+      PerfLog.line("MEGA hub desk: \(truth?.count ?? 0) open cards at \(ms) ms")
+    }
+  }
+  /** After a render's projection: what the Desk shows against the hub. */
+  static func rendered(_ model: BoardModel) {
+    guard on, let room = model.room, let d = model.desk else { return }
+    readTruth(room)
+    let shown = Set(d.cards.filter { $0.status == "open" && $0.kind != "permission" }.map { $0.id })
+    if firstCards == nil, !shown.isEmpty { firstCards = Double(ms); PerfLog.line("MEGA first cards on the Desk at \(ms) ms (\(shown.count))") }
+    guard let truth, !truth.isEmpty else { return }
+    let stale = shown.subtracting(truth).count
+    if stale > staleMax { staleMax = stale; PerfLog.line("MEGA stale \(stale) at \(ms) ms") }
+    let held = Set(d.cards.filter { $0.status == "open" || $0.status == "decided" }.map { $0.id })
+    if right == nil, stale == 0, held.isSuperset(of: truth) { right = Double(ms); PerfLog.line("MEGA Desk right at \(ms) ms (\(shown.count) open)") }
+  }
+  /** A catch-up ended. */
+  static func synced(_ model: BoardModel, ms took: Double) {
+    guard on else { return }
+    syncs += 1
+    PerfLog.line("MEGA sync \(syncs) ended at \(ms) ms (took \(Int(took)) ms): \(Spent.take())")
+    if syncs == 1 {
+      #if canImport(UIKit)
+      HitchMeter.shared.end("mega")
+      #endif
+      if env["TROMMI_MEGA_LOGOUT"] == "1" {
+        Task { @MainActor in
+          try? await Task.sleep(nanoseconds: 2_000_000_000)
+          model.deskPath = [.settings("account")]
+          try? await Task.sleep(nanoseconds: 1_500_000_000)
+          let t = Date()
+          PerfLog.line("MEGA logout start")
+          model.logOut()
+          while model.phase != .start && Date().timeIntervalSince(t) < 60 { try? await Task.sleep(nanoseconds: 100_000_000) }
+          PerfLog.line("MEGA logout done in \(Int(Date().timeIntervalSince(t) * 1000)) ms, phase start: \(model.phase == .start)")
+          try? await Task.sleep(nanoseconds: 3_000_000_000)
+          PerfLog.line("MEGA alive after logout")
+        }
+      }
+    }
+  }
+}

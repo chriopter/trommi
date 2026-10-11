@@ -20,6 +20,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
+  catching up is about ten times faster (one write per page instead of one per item).
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
@@ -42,6 +44,9 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 **Fixed**
 - Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
   session is repaired first and the message is sent again.
+- iPhone: decisions answered, read or closed on another device no longer stay on the Desk as open questions, also
+  while the phone catches up.
+- iPhone: logging out no longer crashes the app.
 - Opening a session no longer fails when one of your devices has been away for long: it joins the session when it comes
   back.
 - Web: logging in to a big account shows how far it is ("Catching up … of …"), opens before every session is

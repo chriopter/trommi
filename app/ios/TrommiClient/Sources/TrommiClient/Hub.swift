@@ -202,7 +202,7 @@ public final class HubClient: @unchecked Sendable {
   // ---- catching up and the stream ------------------------------------------------------------------------
 
   /** Everything this device may see with a change number above `after`, in the hub's order: { items, change, more }. */
-  public func changes(after: UInt64, limit: Int = 500) async throws -> JSON {
+  public func changes(after: UInt64, limit: Int = 1000) async throws -> JSON {
     try await request("GET", "/changes", query: ["after": String(after), "limit": String(limit)])
   }
   /** The request of the live stream (server-sent events), resuming after a change number. */

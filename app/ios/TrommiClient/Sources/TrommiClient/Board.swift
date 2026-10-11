@@ -459,6 +459,41 @@ public final class Board {
   public var human = HumanRegisters()
   public var alerts: [BoardAlert] = []
   public var stack: [String] = []
+  /**
+   * While a catch-up is behind the hub's Desk (Room.deskFirst): the cards and permission requests the Desk lists as
+   * open. One this device holds as open that is not among them was settled elsewhere meanwhile and is held back
+   * (off the Desk, and not shown as a question) until the catch-up reaches the Desk's cursor. nil: nothing held back.
+   * Not stored: each start reads the Desk again.
+   */
+  public var deskGate: Set<String>?
+  /**
+   * Open here although the hub's Desk, read at a change this device had passed, did not list them (the hub settled
+   * them: answered, read, closed): by id, that change. Held back as well, as long as nothing newer of them came
+   * (a card answered again, reopened, revised). Set by Room.settleWithDesk at every catch-up; not stored.
+   */
+  public var hubSettled: [String: Int] = [:]
+  /** Open here, but settled at the hub: not on its Desk while a catch-up is behind it (`deskGate`), or not on it
+   *  after this device passed its cursor (`hubSettled`). */
+  public func heldBack(_ id: String, open: Bool) -> Bool {
+    guard open else { return false }
+    if let gate = deskGate, !gate.contains(id) { return true }
+    guard let at = hubSettled[id] else { return false }
+    return newest(id) <= at
+  }
+  /** What is open here and was not on the hub's Desk read at change `at`, with nothing newer than `at`: by id, `at`. */
+  public func settled(byDesk open: Set<String>, at: Int) -> [String: Int] {
+    var out = [String: Int]()
+    for c in cards.values where c.objectState == "open" && !open.contains(c.objectId) && newest(c.objectId) <= at { out[c.objectId] = at }
+    for p in permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) && newest(p.objectId) <= at { out[p.objectId] = at }
+    return out
+  }
+  /** The newest change of a card or permission request this board took: its version's, or an answer's. */
+  func newest(_ id: String) -> Int {
+    if let c = cards[id] { return max(c.envelopeNumber, c.answers.compactMap(\.envelopeNumber).max() ?? 0) }
+    return permissions[id].map { max($0.envelopeNumber, $0.verdict?.envelopeNumber ?? 0) } ?? 0
+  }
+  /** Stands on the Desk: open, and not held back. */
+  func onDesk(_ id: String) -> Bool { guard let c = cards[id], c.objectState == "open" else { return false }; return !heldBack(id, open: true) }
   public var openPermissionIds: [String] = []
   /** What a newer client wrote that this version cannot show (model.mjs model.newer): how many, what, the newest. */
   public var newerCount = 0
@@ -1190,20 +1225,20 @@ public final class Board {
     for sid in change.sessions {
       guard let s = sessions[sid] else { continue }
       s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { cards[$0]?.objectState == "open" }
+      s.openCardIds = s.cardIds.filter { onDesk($0) }
     }
     if !change.cards.isEmpty || !change.registers.isEmpty || !change.permissions.isEmpty { projectStack(now: now) }
   }
   public func project(now: UInt64 = nowMs()) {
     for s in sessions.values {
       s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { cards[$0]?.objectState == "open" }
+      s.openCardIds = s.cardIds.filter { onDesk($0) }
     }
     projectStack(now: now)
   }
   private func projectStack(now: UInt64) {
     let archived = Set(sessions.values.filter { $0.settings["archived"].truthy }.map { $0.sessionId })
-    let open = cards.values.filter { $0.objectState == "open" }.sorted { a, b in
+    let open = cards.values.filter { onDesk($0.objectId) }.sorted { a, b in
       let ra = Board.urgencyRank[a.urgency] ?? 1, rb = Board.urgencyRank[b.urgency] ?? 1
       if ra != rb { return ra > rb }
       if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
@@ -1215,6 +1250,6 @@ public final class Board {
       if let sid = c.sessionId, archived.contains(sid) { return false }
       return true
     }.map { $0.objectId }
-    openPermissionIds = permissions.values.filter { $0.permissionState == "pending" && now <= $0.expiresAt }.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
+    openPermissionIds = permissions.values.filter { $0.permissionState == "pending" && !heldBack($0.objectId, open: true) && now <= $0.expiresAt }.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
   }
 }
