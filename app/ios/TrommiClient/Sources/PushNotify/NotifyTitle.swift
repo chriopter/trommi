@@ -32,9 +32,32 @@ public enum NotifyTitle {
           let body = try? JSONSerialization.jsonObject(with: Data(e.payload)) as? [String: Any],
           ((body["schema_version"] as? NSNumber)?.intValue ?? schemaVersion) <= schemaVersion,
           let raw = body["title"] as? String else { return nil }
-    let one = raw.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    let one = clean(raw)
     guard !one.isEmpty else { return nil }
     return one.count > maxLength ? String(one.prefix(maxLength - 1)) + "…" : one
+  }
+
+  /**
+   * One line of plain text: control characters, line breaks and other spaces become one space; invisible formatting
+   * characters (direction overrides and isolates, zero-width spaces and marks) go, except the joiner that holds an
+   * emoji together. A sender cannot reorder, hide or spread over lines what the title shows.
+   */
+  static func clean(_ raw: String) -> String {
+    var out = String.UnicodeScalarView()
+    var blankBefore = true
+    for s in raw.unicodeScalars {
+      switch s.properties.generalCategory {
+      case .control, .lineSeparator, .paragraphSeparator, .spaceSeparator:
+        if !blankBefore { out.append(" ") }
+        blankBefore = true
+      case .format where s.value != 0x200D:
+        continue
+      default:
+        out.append(s)
+        blankBefore = false
+      }
+    }
+    return String(out).trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   /**

@@ -346,6 +346,15 @@ final class PushNotifyTests: XCTestCase {
     let opened = NotifyEnvelope(group: group, epoch: 3, isCard: true, push: true, payload: Array(cardBody(long).utf8))
     XCTAssertEqual(NotifyTitle.title(opened, room: roomId)?.count, NotifyTitle.maxLength)
     XCTAssertEqual(NotifyTitle.title(opened, room: roomId)?.last, "…")
+    // one line of plain text: no direction overrides, no zero-width or control characters, one space between words
+    func shown(_ t: String) -> String? {
+      NotifyTitle.title(NotifyEnvelope(group: group, epoch: 3, isCard: true, push: true, payload: Array(cardBody(t).utf8)), room: roomId)
+    }
+    XCTAssertEqual(shown("Pay \u{202E}gpj.exe\u{202C} now"), "Pay gpj.exe now")
+    XCTAssertEqual(shown("a\u{2066}b\u{2069}\u{200B}c\u{200F}d\u{FEFF}"), "abcd")
+    XCTAssertEqual(shown(" Line\r\none\u{2028}two\tthree\u{0007}\u{00A0} four "), "Line one two three four")
+    XCTAssertEqual(shown("Family \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} ok"), "Family \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} ok")
+    XCTAssertNil(shown("\u{202E}\u{200B}\n\t"))
   }
 
   /// Not kept (the store full, the app already past it): that one change is read from the hub, the ticket in a header.

@@ -52,16 +52,20 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   URL; while it lasts it reads the room's encrypted changes up to that push as the device itself may, and nothing
   newer. The app checks those pages like any other.
 - What the iPhone's notification extension holds, to show the title of the question that rang: a read-only copy of
-  one content key per session (the key of its current period only, never the room's own key, never an older one),
+  one content key per session (the key of its current period as the app last saw it, never the room's own key),
   which the app writes again whenever a key changes. The copy is one Keychain item in an access group that only the
   app and this extension are entitled to (not the Live Activity widget, not the Share Extension), readable after the
   phone's first unlock and never leaving this device. With it the extension can read everything written in those
-  sessions during the current period, not only the card that rang. It opens the one message of the push, checks
-  that its signature is its sender's, and shows a card's title; it does not check that the sender belongs to the
-  session or where the message stands in its sender's chain, so the title is decrypted but its sender not fully
-  verified (the app checks everything when it opens). It writes and signs nothing and holds no device key. Without
-  the copy, before the first unlock or after a key change the app has not written yet, the notification shows the
-  plain text ("A new question.").
+  sessions during the current period, not only the card that rang. It opens the one message of the push and shows
+  a card's title, cut to 120 characters, one line, without invisible or direction-changing characters. Only someone
+  holding that session's current key can have written it, so the hub cannot make up a title; but the extension does
+  not check which member wrote it or where it stands in its sender's chain (the sender's key is named in the message
+  itself), and the hub picks which message a push points to: it can show the title of another card of the room's
+  sessions from the current period, an earlier one again included. The app checks everything when it opens. The
+  extension writes and signs nothing and holds no device key. The copy goes when you sign out, when the device is
+  removed, when notifications are off on this phone, and when a new copy cannot be written; until the app runs after
+  a key change, the copy still holds the key of the period before. Without the copy, before the first unlock or
+  after a key change the app has not written yet, the notification shows the plain text ("A new question.").
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.

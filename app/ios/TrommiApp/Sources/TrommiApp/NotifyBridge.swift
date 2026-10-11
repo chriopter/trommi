@@ -20,6 +20,8 @@ final class NotifyBridge {
   /** The keys the room handed over last, and what was written of them. */
   private var keys: NotifyKeySet?
   private var lastKeys: NotifyKeySet?
+  /** The keys' item was removed because notifications are off on this phone. */
+  private var keysWiped = false
 
   /** After a change of the board: write within 2 s (a catch-up brings thousands of changes). */
   func boardChanged(_ m: BoardModel) {
@@ -50,10 +52,20 @@ final class NotifyBridge {
       // the error names a Keychain status at most, never a key
       do { try NotifyGroup.writeContext(c); lastContext = c } catch { NSLog("trommi notify: context not written: %@", loggable(error)) }
     }
+    // Notifications off on this phone: no push comes, so the extension holds no key either.
+    if Push.level == "off" {
+      if !keysWiped { NotifyKeyGroup.clear(accessGroup: AppKeychain.notifyKeysGroup); keysWiped = true; lastKeys = nil }
+      return
+    }
     if let k = keys, k.room == room.roomIdHex, k != lastKeys {
       // without the shared group (a development build signed by xtool) the extension shows the neutral title
       guard let group = AppKeychain.notifyKeysGroup else { return }
-      do { try NotifyKeyGroup.write(k, accessGroup: group); lastKeys = k } catch { NSLog("trommi notify: keys not written: %@", loggable(error)) }
+      keysWiped = false
+      do { try NotifyKeyGroup.write(k, accessGroup: group); lastKeys = k } catch {
+        // a set not written must not leave the one before it (an older epoch, a session left) readable
+        NotifyKeyGroup.clear(accessGroup: group)
+        NSLog("trommi notify: keys not written: %@", loggable(error))
+      }
     }
     #endif
   }
