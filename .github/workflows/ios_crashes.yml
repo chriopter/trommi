@@ -1,0 +1,104 @@
+# Reads the crash reports of the iOS app's TestFlight builds through the App Store Connect API: the crash feedback
+# testers send (each crash log, device, OS, build) and the diagnostic signatures (hangs, launches, disk writes) of the
+# three newest builds. Every night for the last day, or by hand (Actions -> ios_crashes -> Run workflow) for the last
+# `days` days. Read only: nothing on App Store Connect is changed. The steps are .github/scripts/ios_crashes.sh and
+# `asc.py crashes` (app/ios/TrommiApp/AppStore/asc.py).
+#
+# What comes out: the artifact ios-crashes (30 days) with each crash log as a file, diagnostics/*.json and summary.md;
+# and, when there are crashes in the window, a comment with issue.md (the same as summary.md) on the ONE open issue
+# labelled ios-crash ("TestFlight crashes", opened and the label created when missing).
+#
+# Privacy: the repository is public, and its artifacts can be downloaded by anyone signed in to GitHub. So no free
+# text of testers is read or written: no tester comment (the field is not even requested), no tester name, no e-mail
+# address. Testers' comments are read in App Store Connect (TestFlight > Feedback > Crashes).
+#
+# Secrets: the environment `ios` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; APPLE_ASC_KEY,
+# APPLE_ASC_KEY_ID and APPLE_ASC_ISSUER_ID come from the 1Password Environment (as for deploy_ios.yml). The issue is
+# written with the run's own token (issues: write); the key never reaches that step.
+name: ios_crashes
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Crash reports of the last N days (1 to 90)
+        required: false
+        type: string
+        default: "3"
+
+permissions: {}
+
+concurrency:
+  group: ios_crashes
+  cancel-in-progress: false
+
+jobs:
+  crashes:
+    name: TestFlight crash reports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the 1Password CLI
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
+      - name: Read the crash reports
+        id: read
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          CRASH_OUT: ${{ runner.temp }}/ios-crashes
+          # the nightly run reads the last day, so a crash is reported once; by hand the input's days
+          CRASH_DAYS: ${{ inputs.days || '1' }}
+        run: |
+          set -eu
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_crashes.sh
+      - name: No key file is left
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ios-crashes
+          path: ${{ runner.temp }}/ios-crashes
+          retention-days: 30
+          if-no-files-found: ignore
+      # one open issue collects the crashes; issue.md holds no tester data (see the head of this file)
+      - name: Report on the issue
+        if: steps.read.outputs.crashes != '' && steps.read.outputs.crashes != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRASHES: ${{ steps.read.outputs.crashes }}
+          CRASH_OUT: ${{ runner.temp }}/ios-crashes
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          label=ios-crash
+          gh label create "$label" --color D93F0B --description "Crash reports of TestFlight builds (ios_crashes.yml)" 2>/dev/null || true
+          {
+            head -c 60000 "$CRASH_OUT/issue.md"
+            printf '\n\n%s crash report(s). Logs: artifact ios-crashes of %s\n' "$CRASHES" "$RUN_URL"
+          } > "$RUNNER_TEMP/comment.md"
+          open=$(gh issue list --state open --label "$label" --limit 1 --json number --jq '.[0].number // empty')
+          if [ -z "$open" ]; then
+            url=$(gh issue create --title "TestFlight crashes" --label "$label" \
+              --body "Crash reports of the iOS app's TestFlight builds, one comment per run of ios_crashes.yml. Close this issue once they are dealt with; the next crash opens a new one.")
+            open=${url##*/}
+          fi
+          gh issue comment "$open" --body-file "$RUNNER_TEMP/comment.md"
+          echo "### iOS: $CRASHES TestFlight crash report(s), issue #$open" >> "$GITHUB_STEP_SUMMARY"

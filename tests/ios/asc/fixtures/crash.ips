@@ -1,0 +1,58 @@
+{"app_name": "Trommi", "app_version": "1.0", "build_version": "62", "os_version": "iPhone OS 27.0 (24A100)", "bug_type": "309", "bundleID": "com.trommi.ios"}
+{
+ "exception": {
+  "type": "EXC_BAD_ACCESS",
+  "signal": "SIGSEGV",
+  "codes": "0x0000000000000001, 0x0000000000000010"
+ },
+ "termination": {
+  "namespace": "SIGNAL",
+  "code": 11,
+  "indicator": "Segmentation fault: 11"
+ },
+ "faultingThread": 1,
+ "usedImages": [
+  {
+   "name": "Trommi"
+  },
+  {
+   "name": "libswiftCore.dylib"
+  }
+ ],
+ "threads": [
+  {
+   "frames": [
+    {
+     "imageIndex": 1,
+     "imageOffset": 10,
+     "symbol": "swift_retain",
+     "symbolLocation": 4
+    }
+   ]
+  },
+  {
+   "triggered": true,
+   "queue": "com.trommi.sync",
+   "frames": [
+    {
+     "imageIndex": 1,
+     "imageOffset": 20,
+     "symbol": "swift_release",
+     "symbolLocation": 8
+    },
+    {
+     "imageIndex": 0,
+     "imageOffset": 4096,
+     "symbol": "Sync.apply(_:)",
+     "symbolLocation": 120,
+     "sourceFile": "Sync.swift",
+     "sourceLine": 42
+    },
+    {
+     "imageIndex": 0,
+     "imageOffset": 8192
+    }
+   ]
+  }
+ ]
+}

@@ -704,7 +704,17 @@ export class Client {
     const local_id = `local-${randomHex(8)}`
     this.tell(ch => M.echoTimelineItem(this.model, { local_id, timeline_key, content, recipient_device_id: recipient, object_id, now: this.now() }, ch))
     const draft: Draft = object_id ? { kind: 'cardChat', session: unhex(sid), card: unhex(object_id), payload } : { kind: 'sessionChat', session: unhex(sid), payload }
-    return this.send(local_id, [{ draft, recipient, files: fileIdsOf('message', content), item: { timeline_key, object_id, content } }])
+    const sent = await this.send(local_id, [{ draft, recipient, files: fileIdsOf('message', content), item: { timeline_key, object_id, content } }])
+    // handed back (the reverse card) or "What??": the card goes to its agent and comes back up awake
+    if (object_id && (fields['hand_back'] || fields['explain'])) this.wakeCard(object_id)
+    return sent
+  }
+  /** A card put off (Later) that he acts on is woken, as the wake action does: its snooze ends now. */
+  private wakeCard(object_id: string): void {
+    if (!this.is_human) return
+    const s = this.model.human.snoozes.get(object_id)
+    if (!s || (s.until != null && s.until <= this.now())) return
+    void this.setRegisters({ [`snooze/${object_id}`]: { until: this.now() } }).catch(() => {})
   }
 
   async answer({ object_id, choices = [], note, option_notes, attachments, marks, trusted, answer_action = 'answer' }: { object_id: string; choices?: string[]; note?: string | null | undefined; option_notes?: Record<string, string> | undefined; attachments?: AttachmentRef[] | undefined; marks?: unknown[] | undefined; trusted?: boolean | undefined; answer_action?: string }): Promise<Sent> {
@@ -728,7 +738,10 @@ export class Client {
     const local_id = `local-${randomHex(8)}`
     this.tell(ch => { M.echoAnswer(this.model, { local_id, object_id, answer: echo, object_state: state }, ch) })
     const draft: Draft = { kind: 'answer', session: unhex(card.session_id!), objectId: unhex(object_id), choices, closes: state === 'closed', payload: encodeBodyBytes('answer', content) }
-    return this.send(local_id, [{ draft, recipient, files: fileIdsOf('answer', content), item: { object_id, content } }])
+    const sent = await this.send(local_id, [{ draft, recipient, files: fileIdsOf('answer', content), item: { object_id, content } }])
+    // answered while put off: awake, so a reworked or reopened card is back on the Desk
+    this.wakeCard(object_id)
+    return sent
   }
   trust({ object_id, note }: { object_id: string; note?: string | null }): Promise<Sent> {
     const card = this.card(object_id)
