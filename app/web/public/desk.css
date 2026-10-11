@@ -1126,14 +1126,14 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 @media (max-width: 860px) { .end-row > :is(.end-said, .end-ago) { display: none !important; } }
 
 /* ---- a Desk row is its title and its answer tiles: no session name, no
-   line under the title, no drawing, no tag; a wide screen shows the line and the tag while the pointer rests ---- */
+   line under the title, no drawing, no tag; a wide screen shows the tag while the pointer rests. The row never grows:
+   the pointer on it shows no more text. ---- */
 #inbox .inbox-row :is(.inbox-byline, .row-meta, .inbox-gutter, .inbox-who) { display: none !important; }
 /* (a Desk row keeps the pictures' fan: the first three, no count beside them) */
 #inbox .inbox-row .inbox-text.has-sender { padding-left: 0 !important; }
 #inbox .inbox-row .inbox-body { display: none !important; }
 #inbox .inbox-row .inbox-when { visibility: hidden; }
 @media (hover: hover) and (min-width: 861px) {
-  #inbox .inbox-row:is(:hover, :focus-within) .inbox-body { display: block !important; }
   #inbox .inbox-row:is(:hover, :focus-within) .inbox-when { visibility: visible; }
 }
 @media (max-width: 860px) { #inbox .inbox-row .inbox-when { display: none !important; } }
