@@ -10,7 +10,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Drag sessions in the sidebar to put them in your order (web; the iPhone shows the same order).
 
 **Better**
-- Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with a page of its own (web).
+- Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with a page of its own.
 - An agent that reports an ongoing matter keeps one card and updates it, newest state in the title.
 - The self-test screen is now called "Security Info".
 

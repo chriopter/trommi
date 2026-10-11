@@ -327,7 +327,7 @@ current GroupInfo names, handed to the core in slices of at most 256 Commits and
 the groups (`codeCheckStart`, `codeCheckSlice`, `joinRoomChecked`; a session: `sessionCheckStart`,
 `sessionCheckSlice`, `joinSessionChecked`). A check lives in the core's memory only: a relaunch starts it again.
 
-**A new recovery code** (8.6, `Room.replaceRecoveryCode`; Settings → Account → "New Recovery Code…", and offered
+**A new recovery code** (8.6, `Room.replaceRecoveryCode`; Settings → Account → Emergency Kit → "New Recovery Code…", and offered
 when a device is removed under Devices). The password opens the code in force; the core makes the new code and the
 room Commit; the request carries a new Emergency Kit and the code sealed again under the password. The hub applies
 all of it or nothing and removes every other way in (passkeys), which are added again. The new kit is shown in the
