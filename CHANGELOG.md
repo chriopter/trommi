@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- A card its session is working on says so above its title: "<session> is working on it", its status line and how
+  long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
 - iPhone: Settings → Data shows what this iPhone downloaded and uploaded (with a reset), and what your account keeps on
   the hub: messages, cards, files and the total size.
 - Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);

@@ -149,6 +149,7 @@ struct CardScreen: View {
         HStack(spacing: 6) { Sketch("knock", color: Ink.surface).frame(width: 15, height: 15); Text(w.uppercased()).font(Face.text(11, .bold)).kerning(1) }
           .foregroundStyle(Ink.surface).padding(.horizontal, 8).padding(.vertical, 4).background(RoundedRectangle(cornerRadius: 6).fill(Ink.urgency(c.urgency)))
       }
+      if let w = CardWork.of(c, d) { CardWorkStrip(work: w) }
       Text(c.title).font(Face.display(30, .heavy)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
       HStack(spacing: 6) {
         if let a = a {
@@ -612,5 +613,58 @@ private struct PenOvalTick: Shape {
     let p = { (x: CGFloat, y: CGFloat) in CGPoint(x: r.minX + x * r.width / 60, y: r.minY + y * r.height / 60) }
     var a = Path(); a.move(to: p(23.6, 5.4)); a.addQuadCurve(to: p(44.2, 6.8), control: p(34.8, 1.2))
     return a
+  }
+}
+
+// ---- the session at work on this card (card.mjs workOf, workStrip) ----
+
+/** Whether the card's session works on it now: a card handed back while its session is connected; an answered one
+ *  only while that session also has a working status line (the one naming the card, else its newest naming none). */
+struct CardWork {
+  let agent: Agent
+  let line: Task1?
+  let at: UInt64
+  static func of(_ c: DeskCard, _ d: DeskModel) -> CardWork? {
+    guard c.kind != "permission", d.stackOf(c) == "works", let a = d.byAgent[c.agent], a.online else { return nil }
+    let line = d.workLine(c, working: d.tasks.filter { $0.state == "working" })
+    if c.withAgent == nil && line == nil { return nil }
+    let at = line?.updated ?? c.withAgent ?? c.decided ?? 0
+    return CardWork(agent: a, line: line, at: at)
+  }
+  var words: String {
+    guard let l = line else { return "Reworking the card" }
+    return [l.label, l.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " · ")
+  }
+}
+/** The strip above the title: the session's drawing in its working ring, "<session> is working on it", its status line
+ *  and how long ago, and under it a pen line along which a short stroke runs (still with Reduce Motion). */
+struct CardWorkStrip: View {
+  let work: CardWork
+  @Environment(\.accessibilityReduceMotion) private var still
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 10) {
+        ZStack {
+          WorkingRing(working: true, color: Tone.color(hue: work.agent.hue, .mid)).frame(width: 32, height: 32)
+          AgentMark(agent: work.agent, size: 20, crown: false)
+        }
+        VStack(alignment: .leading, spacing: 1) {
+          Text("\(work.agent.name) is working on it").font(Face.text(15, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+          Text(work.at > 0 ? "\(work.words) · \(agoText(work.at))" : work.words).font(Face.text(14)).foregroundStyle(Ink.muted).lineLimit(1)
+        }
+      }
+      ZStack {
+        PenUnderline().stroke(Ink.line, style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
+        if !still {
+          TimelineView(.animation) { t in
+            let p = CGFloat(t.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.8) / 2.8)
+            let from = p * 1.18 - 0.18
+            PenUnderline().trim(from: max(0, from), to: min(1, max(0, from + 0.16)))
+              .stroke(Ink.fg.opacity(0.75), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+          }
+        }
+      }.frame(height: 7)
+    }
+    .accessibilityElement(children: .combine)
   }
 }
