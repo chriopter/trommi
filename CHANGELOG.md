@@ -21,6 +21,10 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 
 **Better**
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
+- Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer
+  wait up to a minute behind a connection the sleeping phone left half open.
+- Pairing a device or an agent survives a network blip: a step that did not reach Trommi is tried again, and if it
+  still fails you are told it was the connection, with "Try again" on the same code instead of asking for a new one.
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
