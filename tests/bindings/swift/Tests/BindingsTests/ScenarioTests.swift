@@ -772,7 +772,11 @@ final class ScenarioTests: XCTestCase {
     }
     let end = try encryptor.finish()
     stored.append(end.stored)
-    try check(end.plainLen == UInt64(bytes) && (try fileLayout(storedLen: end.storedLen)).plainLen == UInt64(bytes), "the file has another length")
+    // the content's length; stored, the file is padded (spec/v1.md 11.0): the mark and at most 12 % or 4 KiB more
+    let padded = try fileLayout(storedLen: end.storedLen).plainLen
+    try check(end.plainLen == UInt64(bytes) && padded > UInt64(bytes) && padded <= UInt64(bytes) + UInt64(bytes) / 8 + 4096,
+              "the file has another length")
+    try check(end.storedLen == UInt64(stored.reduce(0) { $0 + $1.count }), "the stored file has another length")
     let decryptor = try FileDecryptor(file: end.file)
     var opened = Data()
     for piece in stored { opened.append(try decryptor.update(stored: piece)) }
