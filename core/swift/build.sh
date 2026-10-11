@@ -4,6 +4,7 @@
 #   build.sh            the host (Linux or macOS: for `swift test`) and iOS (device and simulator)
 #   build.sh host       the host only
 #   build.sh ios        iOS only
+#   build.sh macos      the Mac app's library (aarch64-apple-darwin, lib/macos), on any host
 # TROMMI_SIMULATOR=0 leaves out the simulator's library (CI: the archive is for a device, nothing there runs the
 # simulator; it saves one full build of the core).
 # Everything it writes is build output and not in the repository: lib/<platform>/libtrommi_core_ffi.a,
@@ -46,7 +47,7 @@ cp "$generated/TrommiCoreFFI.h" "$package/Sources/TrommiCoreFFI/include/TrommiCo
 cp "$generated/TrommiCoreRust.swift" "$package/Sources/TrommiCoreRust/TrommiCoreRust.swift"
 
 case "$(uname -s)" in Darwin) host=macos ;; *) host=linux ;; esac
-[ "$what" = ios ] || staticlib "" "$host"
+case "$what" in ios|macos) ;; *) staticlib "" "$host" ;; esac
 # rustc puts its copy of the compiler runtime's C and assembly helpers (compiler_builtins: outlined atomics,
 # fp_mode) into every static library. The app links Apple's libclang_rt, which has the same symbols. A linker
 # that takes archive members on demand never loads Rust's copy; one told to load every member (-all_load, which the
@@ -92,6 +93,13 @@ without_builtins() {   # without_builtins <rust target> <folder under lib/> <App
 # The simulator's library is for a Mac (TROMMI_IOS_SIMULATOR=1 makes the package link it) and stays as rustc
 # writes it: Apple's runtime for the simulator lacks most of these helpers (the check above refuses it), and a
 # Mac's linker loads archive members on demand, where two copies do not meet.
+# The Mac app (app/ios/README.md "On a Mac"), built on any host: the library for an Apple silicon Mac in lib/macos,
+# as rustc writes it (a Mac's linker loads archive members on demand, as for the simulator).
+if [ "$what" = macos ]; then
+  MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-14.0} staticlib aarch64-apple-darwin macos
+  ls -l "$package"/lib/*/libtrommi_core_ffi.a
+  exit 0
+fi
 if [ "$what" != host ]; then
   IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET:-17.0} staticlib aarch64-apple-ios ios
   without_builtins aarch64-apple-ios ios ios

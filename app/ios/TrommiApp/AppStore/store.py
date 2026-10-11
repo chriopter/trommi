@@ -16,7 +16,10 @@ command) the submission for review. Standard library only, like asc.py (whose AP
   store.py status                 read only: the version's state, its build, the open review submission
 
 Environment for every command but check: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (as asc.py); BUNDLE_ID (default
-com.trommi.ios). With a demo account in metadata/review_information/demo_user.txt, its password comes from
+com.trommi.ios). ASC_PLATFORM=MAC_OS (check too): the Mac app's version of the same steps, with the texts of
+metadata/macos/<locale>/ (every locale folder there, e.g. en-US and de-DE), App Review's notes of
+metadata/macos/review_information/notes.txt and the screenshots of screenshots/macos/<locale>/mac (2880x1800); the
+rest of metadata/ (categories, age rating, copyright, App Review's contact) is the iOS app's. With a demo account in metadata/review_information/demo_user.txt, its password comes from
 APPSTORE_DEMO_PASSWORD (never from the repository). Nothing here prints key material, tokens or that password.
 What the API cannot set (App Privacy, metadata/app_privacy.json) is entered once by hand: app/ios/README.md
 "App Store release".
@@ -27,16 +30,32 @@ here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, here)
 import asc  # noqa: E402  (the JWT and the calls)
 
+PLATFORM = asc.PLATFORM
+MAC = PLATFORM == "MAC_OS"
 META = os.path.join(here, "metadata")
-SHOTS = os.path.join(here, "screenshots")
+# where the texts per locale lie: metadata/<locale> for iOS, metadata/macos/<locale> for the Mac
+TEXTS = os.path.join(META, "macos") if MAC else META
+SHOTS = os.path.join(here, "screenshots", "macos") if MAC else os.path.join(here, "screenshots")
+# the primary language: its texts and screenshots are required
 LOCALE = "en-US"
-# screenshot folder -> App Store Connect display type, the pixel sizes it takes (portrait)
+# screenshot folder -> App Store Connect display type, the pixel sizes it takes (portrait; the Mac's landscape)
 DISPLAYS = {
+    "mac": ("APP_DESKTOP", {(2880, 1800), (2560, 1600), (1440, 900), (1280, 800)}),
+} if MAC else {
     "iphone-6.9": ("APP_IPHONE_67", {(1320, 2868), (1290, 2796)}),
     "ipad-13": ("APP_IPAD_PRO_3GEN_129", {(2064, 2752), (2048, 2732)}),
 }
-# the folders App Review requires: the app runs on iPhone and iPad (project.yml TARGETED_DEVICE_FAMILY "1,2")
-REQUIRED_DISPLAYS = ("iphone-6.9", "ipad-13")
+# the folders App Review requires: the app runs on iPhone and iPad (project.yml TARGETED_DEVICE_FAMILY "1,2"), or a Mac
+REQUIRED_DISPLAYS = ("mac",) if MAC else ("iphone-6.9", "ipad-13")
+
+
+def locales():
+    """The locales with texts, the primary first."""
+    found = sorted(d for d in os.listdir(TEXTS) if re.fullmatch(r"[a-z]{2}(-[A-Z][A-Za-z]+)?", d)
+                   and os.path.isdir(os.path.join(TEXTS, d)))
+    if LOCALE not in found:
+        die(f"no texts for {LOCALE} in {os.path.relpath(TEXTS, here)}")
+    return [LOCALE] + [l for l in found if l != LOCALE]
 CATEGORIES = {"BOOKS", "BUSINESS", "DEVELOPER_TOOLS", "EDUCATION", "ENTERTAINMENT", "FINANCE", "FOOD_AND_DRINK", "GAMES",
               "GRAPHICS_AND_DESIGN", "HEALTH_AND_FITNESS", "LIFESTYLE", "MAGAZINES_AND_NEWSPAPERS", "MEDICAL", "MUSIC",
               "NAVIGATION", "NEWS", "PHOTO_AND_VIDEO", "PRODUCTIVITY", "REFERENCE", "SHOPPING", "SOCIAL_NETWORKING",
@@ -49,8 +68,8 @@ def die(msg):
     asc.die(msg)
 
 
-def text(*parts, required=True):
-    path = os.path.join(META, *parts)
+def text(*parts, required=True, base=META):
+    path = os.path.join(base, *parts)
     if not os.path.exists(path):
         if required:
             die(f"missing {os.path.relpath(path, here)}")
@@ -70,16 +89,24 @@ def version_string():
 
 # ---- what is sent ---------------------------------------------------------------------------------------------------
 
+def texts(locale):
+    """The texts of one locale (metadata/<locale>, or metadata/macos/<locale> for the Mac)."""
+    return {
+        "name": text(locale, "name.txt", base=TEXTS),
+        "subtitle": text(locale, "subtitle.txt", base=TEXTS),
+        "promotionalText": text(locale, "promotional_text.txt", base=TEXTS),
+        "description": text(locale, "description.txt", base=TEXTS),
+        "keywords": text(locale, "keywords.txt", base=TEXTS),
+        "supportUrl": text(locale, "support_url.txt", base=TEXTS),
+        "marketingUrl": text(locale, "marketing_url.txt", required=False, base=TEXTS),
+        "privacyPolicyUrl": text(locale, "privacy_url.txt", base=TEXTS),
+    }
+
+
 def metadata():
     m = {
-        "name": text(LOCALE, "name.txt"),
-        "subtitle": text(LOCALE, "subtitle.txt"),
-        "promotionalText": text(LOCALE, "promotional_text.txt"),
-        "description": text(LOCALE, "description.txt"),
-        "keywords": text(LOCALE, "keywords.txt"),
-        "supportUrl": text(LOCALE, "support_url.txt"),
-        "marketingUrl": text(LOCALE, "marketing_url.txt", required=False),
-        "privacyPolicyUrl": text(LOCALE, "privacy_url.txt"),
+        **texts(LOCALE),
+        "locales": {locale: texts(locale) for locale in locales()},
         "copyright": text("copyright.txt"),
         "primaryCategory": text("primary_category.txt"),
         "secondaryCategory": text("secondary_category.txt", required=False),
@@ -94,7 +121,8 @@ def metadata():
         "contactLastName": text("review_information", "last_name.txt"),
         "contactEmail": text("review_information", "email_address.txt"),
         "contactPhone": text("review_information", "phone_number.txt", required=False),
-        "notes": text("review_information", "notes.txt"),
+        "notes": (MAC and text("macos", "review_information", "notes.txt", required=False))
+                 or text("review_information", "notes.txt"),
         "demoAccountRequired": bool(demo_user),
         "demoAccountName": demo_user or None,
     }
@@ -112,9 +140,10 @@ def png_info(path):
     return w, h, alpha
 
 
-def screenshots():
-    """{folder: [paths in order]} of the screenshot folders of LOCALE."""
-    base = os.path.join(SHOTS, LOCALE)
+def screenshots(locale=LOCALE):
+    """{folder: [paths in order]} of the screenshot folders of a locale (App Store Connect shows the primary
+    language's where a locale has none)."""
+    base = os.path.join(SHOTS, locale)
     out = {}
     for folder in sorted(os.listdir(base)) if os.path.isdir(base) else []:
         files = sorted(f for f in os.listdir(os.path.join(base, folder)) if f.lower().endswith(".png"))
@@ -124,20 +153,23 @@ def screenshots():
 
 def check():
     m, problems, notes = metadata(), [], []
-    limits = {"name": 30, "subtitle": 30, "promotionalText": 170, "description": 4000, "copyright": 200}
-    for key, n in limits.items():
-        if not m[key]:
-            problems.append(f"{key} is empty")
-        if len(m[key]) > n:
-            problems.append(f"{key} has {len(m[key])} characters, at most {n}")
-    kw = m["keywords"]
-    if len(kw.encode()) > 100:
-        problems.append(f"keywords have {len(kw.encode())} bytes, at most 100")
-    if any(not k.strip() for k in kw.split(",")) or ", " in kw:
-        problems.append("keywords: comma-separated without spaces or empty items")
-    for key in ("supportUrl", "marketingUrl", "privacyPolicyUrl"):
-        if m[key] and not re.match(r"^https://[^\s]+$", m[key]):
-            problems.append(f"{key} is not an https URL: {m[key]}")
+    limits = {"name": 30, "subtitle": 30, "promotionalText": 170, "description": 4000}
+    for locale, t in m["locales"].items():
+        for key, n in limits.items():
+            if not t[key]:
+                problems.append(f"{locale}: {key} is empty")
+            if len(t[key]) > n:
+                problems.append(f"{locale}: {key} has {len(t[key])} characters, at most {n}")
+        kw = t["keywords"]
+        if len(kw.encode()) > 100:
+            problems.append(f"{locale}: keywords have {len(kw.encode())} bytes, at most 100")
+        if any(not k.strip() for k in kw.split(",")) or ", " in kw:
+            problems.append(f"{locale}: keywords: comma-separated without spaces or empty items")
+        for key in ("supportUrl", "marketingUrl", "privacyPolicyUrl"):
+            if t[key] and not re.match(r"^https://[^\s]+$", t[key]):
+                problems.append(f"{locale}: {key} is not an https URL: {t[key]}")
+    if not m["copyright"] or len(m["copyright"]) > 200:
+        problems.append("copyright is empty or longer than 200 characters")
     for key in ("primaryCategory", "secondaryCategory"):
         if m[key] and m[key] not in CATEGORIES:
             problems.append(f"{key} {m[key]} is not a category")
@@ -154,13 +186,13 @@ def check():
     shots = screenshots()
     for folder in REQUIRED_DISPLAYS:
         if not shots.get(folder):
-            problems.append(f"no screenshots in screenshots/{LOCALE}/{folder}")
+            problems.append(f"no screenshots in {os.path.relpath(SHOTS, here)}/{LOCALE}/{folder}")
     for folder, files in shots.items():
         if folder not in DISPLAYS:
-            problems.append(f"screenshots/{LOCALE}/{folder}: not a known display ({', '.join(DISPLAYS)})")
+            problems.append(f"{os.path.relpath(SHOTS, here)}/{LOCALE}/{folder}: not a known display ({', '.join(DISPLAYS)})")
             continue
         if not 1 <= len(files) <= 10:
-            problems.append(f"screenshots/{LOCALE}/{folder}: {len(files)} files, 1 to 10")
+            problems.append(f"{os.path.relpath(SHOTS, here)}/{LOCALE}/{folder}: {len(files)} files, 1 to 10")
         for f in files:
             info = png_info(f)
             rel = os.path.relpath(f, here)
@@ -170,8 +202,9 @@ def check():
                 problems.append(f"{rel}: {info[0]}x{info[1]}, wants one of {sorted(DISPLAYS[folder][1])}")
             elif info[2]:
                 problems.append(f"{rel}: has an alpha channel (App Store Connect refuses it)")
-    shown = dict(m)
-    print(json.dumps({"version": version_string(), **shown,
+    shown = {k: v for k, v in m.items() if k != "locales"}
+    shown["locales"] = sorted(m["locales"])
+    print(json.dumps({"platform": PLATFORM, "version": version_string(), **shown,
                       "screenshots": {k: [os.path.basename(f) for f in v] for k, v in shots.items()}}, indent=2))
     for n in notes:
         print(f"note: {n}")
@@ -228,20 +261,20 @@ def editable_app_info(aid):
     return infos[0]["id"] if infos else die("the app has no app info")
 
 
-def localization(list_path, kind, parent_kind, parent_id, attributes):
+def localization(list_path, kind, parent_kind, parent_id, attributes, locale=LOCALE):
     rows = call("GET", list_path)["data"]
-    found = [r for r in rows if r["attributes"].get("locale") == LOCALE]
+    found = [r for r in rows if r["attributes"].get("locale") == locale]
     if found:
         patch(kind, found[0]["id"], attributes)
         return found[0]["id"]
-    print(f"creating the {LOCALE} {kind}")
+    print(f"creating the {locale} {kind}")
     parent = {"appInfos": "appInfo", "appStoreVersions": "appStoreVersion"}[parent_kind]
-    return call("POST", f"/v1/{kind}", {"data": {"type": kind, "attributes": {"locale": LOCALE, **attributes},
+    return call("POST", f"/v1/{kind}", {"data": {"type": kind, "attributes": {"locale": locale, **attributes},
                 "relationships": {parent: rel(parent_kind, parent_id)}}})["data"]["id"]
 
 
 def find_version(aid, version):
-    rows = call("GET", f"/v1/apps/{aid}/appStoreVersions?filter[platform]=IOS&filter[versionString]={asc.q(version)}"
+    rows = call("GET", f"/v1/apps/{aid}/appStoreVersions?filter[platform]={PLATFORM}&filter[versionString]={asc.q(version)}"
                        "&limit=5")["data"]
     return rows[0] if rows else None
 
@@ -253,7 +286,7 @@ def version_state(row):
 
 def pick_build(aid, version, number=None):
     path = (f"/v1/builds?filter[app]={aid}&filter[preReleaseVersion.version]={asc.q(version)}"
-            f"&filter[processingState]=VALID&sort=-uploadedDate&limit=20")
+            f"&filter[processingState]=VALID{asc.platform_filter()}&sort=-uploadedDate&limit=20")
     if number:
         path += f"&filter[version]={asc.q(number)}"
     rows = [b for b in call("GET", path)["data"] if not b["attributes"].get("expired")]
@@ -368,8 +401,10 @@ def upload(number=None):
     if m["secondaryCategory"]:
         cats["secondaryCategory"] = rel("appCategories", m["secondaryCategory"])
     patch("appInfos", info, relationships=cats)
-    localization(f"/v1/appInfos/{info}/appInfoLocalizations", "appInfoLocalizations", "appInfos", info,
-                 {"name": m["name"], "subtitle": m["subtitle"], "privacyPolicyUrl": m["privacyPolicyUrl"]})
+    # (the app's name and subtitle: one per locale for the app, shared by its platforms in a universal purchase)
+    for locale, t in m["locales"].items():
+        localization(f"/v1/appInfos/{info}/appInfoLocalizations", "appInfoLocalizations", "appInfos", info,
+                     {"name": t["name"], "subtitle": t["subtitle"], "privacyPolicyUrl": t["privacyPolicyUrl"]}, locale)
     rating = call("GET", f"/v1/appInfos/{info}/ageRatingDeclaration")["data"]
     patch("ageRatingDeclarations", rating["id"], m["ageRating"])
     price_and_territories(aid, m["availability"])
@@ -378,7 +413,7 @@ def upload(number=None):
     row = find_version(aid, version)
     if row is None:
         row = call("POST", "/v1/appStoreVersions", {"data": {"type": "appStoreVersions", "attributes": {
-            "platform": "IOS", "versionString": version, "copyright": m["copyright"], "releaseType": m["releaseType"]},
+            "platform": PLATFORM, "versionString": version, "copyright": m["copyright"], "releaseType": m["releaseType"]},
             "relationships": {"app": rel("apps", aid)}}})["data"]
         print(f"created version {version}")
     elif version_state(row) not in EDITABLE:
@@ -389,9 +424,11 @@ def upload(number=None):
     build_id, build_number = pick_build(aid, version, number)
     call("PATCH", f"/v1/appStoreVersions/{vid}/relationships/build", {"data": {"type": "builds", "id": build_id}})
     print(f"build: {version} ({build_number})")
-    texts = {k: m[k] for k in ("description", "keywords", "promotionalText", "supportUrl", "marketingUrl") if m[k]}
-    loc = localization(f"/v1/appStoreVersions/{vid}/appStoreVersionLocalizations", "appStoreVersionLocalizations",
-                       "appStoreVersions", vid, texts)
+    locs = {}
+    for locale, t in m["locales"].items():
+        wanted = {k: t[k] for k in ("description", "keywords", "promotionalText", "supportUrl", "marketingUrl") if t[k]}
+        locs[locale] = localization(f"/v1/appStoreVersions/{vid}/appStoreVersionLocalizations",
+                                    "appStoreVersionLocalizations", "appStoreVersions", vid, wanted, locale)
     review = {k: v for k, v in r.items() if v is not None}
     detail = call("GET", f"/v1/appStoreVersions/{vid}/appStoreReviewDetail", ok=(404,))
     if detail.get("data"):
@@ -400,13 +437,16 @@ def upload(number=None):
         call("POST", "/v1/appStoreReviewDetails", {"data": {"type": "appStoreReviewDetails", "attributes": review,
              "relationships": {"appStoreVersion": rel("appStoreVersions", vid)}}})
     print("App Review details: set")
-    upload_screenshots(loc, screenshots())
+    for locale, loc in locs.items():
+        shots = screenshots(locale)
+        if shots:
+            upload_screenshots(loc, shots)
     print(f"upload: version {version} ({build_number}) is ready in App Store Connect; nothing was submitted. "
           "Still by hand once: App Privacy (metadata/app_privacy.json). Then: store.py submit --yes")
 
 
 def open_submission(aid):
-    rows = call("GET", f"/v1/reviewSubmissions?filter[app]={aid}&filter[platform]=IOS&limit=20")["data"]
+    rows = call("GET", f"/v1/reviewSubmissions?filter[app]={aid}&filter[platform]={PLATFORM}&limit=20")["data"]
     return [s for s in rows if s["attributes"].get("state") in ("READY_FOR_REVIEW", "WAITING_FOR_REVIEW", "IN_REVIEW",
                                                                   "UNRESOLVED_ISSUES")]
 
@@ -426,7 +466,7 @@ def submit(*flags):
         die(f"a review submission is already {waiting[0]['attributes']['state']}")
     ready = open_submission(aid)
     sid = ready[0]["id"] if ready else call("POST", "/v1/reviewSubmissions", {"data": {"type": "reviewSubmissions",
-                                            "attributes": {"platform": "IOS"}, "relationships": {"app": rel("apps", aid)}}})["data"]["id"]
+                                            "attributes": {"platform": PLATFORM}, "relationships": {"app": rel("apps", aid)}}})["data"]["id"]
     items = call("GET", f"/v1/reviewSubmissions/{sid}/items?limit=20")["data"]
     if not items:
         call("POST", "/v1/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {

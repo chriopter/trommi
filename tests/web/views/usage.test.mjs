@@ -1,13 +1,14 @@
-// usage.test.mjs: an agent's account and usage (ui.mjs usageMeters, usageRings, usageFull; app.mjs BoardState
+// usage.test.mjs: an agent's account and usage (ui.mjs usageMeters, usageMark, usageFull; app.mjs BoardState
 // carries it onto each session of the agent; session.mjs and agents.mjs show it). The connector writes it into its
 // main session's profile as `account` (connector/src/usage.rs).
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { emptyModel } from '../../../app/web/core/model-shape.ts'
 import { sessionOf } from '../../../app/web/core/model.ts'
 import { BoardState } from '../../../app/web/public/app.mjs'
-import { usageRings, usageFull, usageMeters, usagePlan, usageReset, agentsOf } from '../../../app/web/public/ui.mjs'
+import { usageMark, usageFull, usageMeters, usagePlan, usageReset, agentsOf } from '../../../app/web/public/ui.mjs'
 import { agentsMain } from '../../../app/web/public/agents.mjs'
 
 process.env.TZ = 'UTC'
@@ -30,18 +31,26 @@ test('the plan tag names the program\'s company and the plan', () => {
   assert.equal(usagePlan({ kind: 'claude', plan: 'ultra' }), 'Claude Ultra')
 })
 
-test('rings, in the heading: each meter a ring, its percent and its word; from 80 % on hot; a phone: the percent inside', () => {
-  const html = String(usageRings(claude, { now: NOW }))
-  assert.equal((html.match(/class="use-r"/g) ?? []).length, 2)
-  assert.match(html, /<svg class="use-ring" [^>]*>.*<\/svg><b class="">62 %<\/b><span class="use-l">5 h<\/span>/)
-  assert.match(html, /<svg class="use-ring is-hot" [^>]*>.*<\/svg><b class="is-hot">84 %<\/b><span class="use-l">week<\/span>/)
+test('the mark in the heading: two rings one inside the other, the week outside, 5 h inside; hot from 80 %', () => {
+  const html = String(usageMark(claude, { now: NOW }))
+  assert.equal((html.match(/class="use-track"/g) ?? []).length, 2, 'two tracks')
+  const fills = [...html.matchAll(/<path d="M16\.00 (\d+\.\d+) A([\d.]+) [^"]*" class="use-fill( is-hot)?"/g)].map(m => [m[2], Boolean(m[3])])
+  assert.deepEqual(fills, [['13', true], ['7.6', false]], 'the week (84 %, hot) on the outer ring, 5 h (62 %) inside')
+  assert.match(html, /<b class="">62 %<\/b> 5 h<\/span><span><b class="is-hot">84 %<\/b> week/)
   assert.match(html, /title="5-hour window: 62 % used, resets 13:43 · This week: 84 % used, resets Wed 14 Oct"/)
   assert.doesNotMatch(html, /ada@example\.org/, 'no e-mail in the heading')
-  const mini = String(usageRings(claude, { mini: true, now: NOW }))
+  const mini = String(usageMark(claude, { mini: true, now: NOW }))
   assert.match(mini, /class="use-rings is-mini"/)
-  assert.match(mini, /class="use-ring-num">62<\/text>.*class="use-ring-num">84<\/text>/)
-  assert.equal(String(usageRings({ kind: 'claude', plan: 'max' }, { now: NOW })), '', 'no meters, nothing')
-  assert.equal(String(usageRings(null)), '')
+  assert.doesNotMatch(mini, /use-words/, 'a phone: the mark alone')
+  assert.equal(String(usageMark({ kind: 'claude', plan: 'max' }, { now: NOW })), '', 'no meters, nothing')
+  assert.equal(String(usageMark(null)), '')
+})
+
+test('the session heading is one line: name, the connection as a dot, the switch, the usage, More; no second line', () => {
+  const src = fs.readFileSync(new URL('../../../app/web/public/session.mjs', import.meta.url), 'utf8')
+  assert.match(src, /<header class="pane-title">\$\{sessionWho\(s, base\)\}\$\{sessionFilters\(s, base, mode\)\}\$\{sessionUsage\(s\)\}<\/header>\$\{sessionFilters\(s, base, mode, \{ phone: true \}\)\}/)
+  assert.match(src, /\$\{sessionHeadEdit\(a, base, \{ stay: true \}\)\}\$\{sessionDot\(a\)\}/)
+  assert.doesNotMatch(src, /class="pane-now"/, 'the quiet line under the name is gone')
 })
 
 test('full, on the agent\'s card: the plan tag and the e-mail, one row per meter with its reset, Codex\'s credits and resets', () => {

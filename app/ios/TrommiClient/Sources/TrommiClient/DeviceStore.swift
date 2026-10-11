@@ -102,6 +102,9 @@ public final class DeviceStore: CoreStorage {
       #if os(iOS)
       // Readable after the first unlock (a push wakes the app while the phone is locked), never in a backup.
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: directory.path)
+      #endif
+      #if os(iOS) || os(macOS)
+      // (on a Mac: never in a Time Machine backup)
       var values = URLResourceValues(); values.isExcludedFromBackup = true
       var dir = directory; try dir.setResourceValues(values)
       #endif

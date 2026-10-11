@@ -227,8 +227,8 @@ output in the Actions cache under the hash of those paths, and CI leaves out the
   `lib/ios/libtrommi_core_ffi.a` by a search path; a device archive needs no XCFramework), `host` for
   `swift test` in `tests/ios` on the Mac (it links `lib/macos`). The simulator library is chosen with
   `TROMMI_IOS_SIMULATOR=1`; one checkout builds for the device OR the simulator, not both at once.
-- The package's sources build for macOS as well (ActivityKit and the Keychain parts are for iOS only), so the Mac
-  job can run the same tests as Linux.
+- The package's sources build for macOS as well (ActivityKit is for iOS only; the Keychain is used on a Mac only by
+  the app, "On a Mac"), so the Mac job can run the same tests as Linux.
 - Not verified from here: this text was written on Linux. Whether XcodeGen's project, the archive and the upload go
   through is what the first run on the runner shows; that the archive carries `PrivacyInfo.xcprivacy` at the bundle's
   root (`project.yml` lists it) is to be checked on its output.
@@ -293,6 +293,84 @@ Once by hand (the API cannot make the group's public link):
 5. The link into `site/wrangler.jsonc` (`vars.TESTFLIGHT_URL`): trommi.com/beta then leads there.
 
 While "Trommi" is missing, the delivery of main fails saying so.
+
+## On a Mac
+
+The same app runs natively on macOS (SwiftUI, not Catalyst): the target `TrommiMac` in `AppStore/project.yml` links the
+package's `TrommiApp` library for macOS 26, as `Trommi` does for iOS. One source; what is iPhone-only is behind
+`#if os(iOS)` where it is used, and `MacShims.swift` gives the few UIKit names and iPhone-only modifiers the shared
+views use their Mac meaning (an image type, a colour that follows light and dark, a bar title size that means nothing
+on a Mac). `MacApp.swift` holds the Mac's scenes.
+
+- **The window** is the iPad's layout at any width: the sessions as a sidebar beside the stack (the size class is set
+  to regular). Menu items: Settings (Cmd-,), Board → Desk (Cmd-1), Read Again (Cmd-R).
+- **Keys in a message field**, as on the web with a mouse: Return sends, Shift+Return on an open decision or info
+  hands it back with the words (elsewhere a new line), Option+Return is a new line.
+- **The menu bar** holds what the Live Activity holds on the iPhone: a bell with the number waiting and, in its panel,
+  the open questions in the Desk's order; a click opens the card in the window. Closing the window leaves the app in
+  the menu bar.
+- **Signing in with a code:** a Mac has no camera for the phone's QR code, so "Paste a link" takes the link the
+  other device copies (Settings → Invite a Device).
+- **Not on a Mac yet:** haptics, the photo library and camera (Choose File stays), the Scribble Board's canvas
+  (PencilKit), swiping back, the share, notification and Live Activity extensions.
+- **Keychain:** the device's keys (`Keychain.swift`) and the push key are in the data protection Keychain
+  (`kSecUseDataProtectionKeychain`), the iPhone's kind, once the app sets `LocalKey.systemKeychain` at its start. That
+  needs an app signed with an application identifier (a provisioning profile); an unsigned build gets no key and
+  cannot sign in (the demo works). `swift test` on a Mac keeps the files of Linux. The state folder is left out of
+  Time Machine.
+- **Push:** the app registers with APNs through AppKit (`Push.swift`) and hands the hub the token with its bundle id
+  as the topic and the environment its profile names (`Contents/embedded.provisionprofile`). The hub must accept
+  that topic for its APNs key (a token key of the team serves every topic). No Notification Service Extension: a
+  push shows its fixed text.
+
+Build and screenshot on a Mac (unsigned, the demo; the Rust core for the Mac first: `core/swift/build.sh macos`, on any
+host, writes `lib/macos`):
+
+```bash
+cd app/ios/TrommiApp/AppStore && xcodegen generate --spec project.yml
+xcodebuild build -project Trommi.xcodeproj -scheme TrommiMac -destination "platform=macOS,arch=arm64" \
+  CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO TROMMI_MAC_ENTITLEMENTS=../Mac/TrommiMac.dev.entitlements
+TROMMI_SCREEN=desk TROMMI_MAC_SHOT=desk <the app>/Contents/MacOS/Trommi    # desk-window.png, desk-menu.png
+```
+
+`TROMMI_MAC_SHOT=<name>` beside `TROMMI_SCREEN` draws the main window and the menu bar's panel into the app's
+temporary folder (`~/Library/Containers/<bundle id>/Data/tmp`) and quits; it needs no one at the screen (a build
+Mac over ssh). The window is 1440 x 900 points, drawn at 2880 x 1800 pixels: the Mac App Store's size
+(`TROMMI_STORE_SHOTS=1` leaves out the demo's marks). The pictures are drawn, not photographed; the drawing stands in for what the window server composes (`MacShot.composed`): Liquid Glass of the toolbar's items as a
+capsule of the bars' tint, the sidebar's glass as its own paper, the scroll edge under the bars as the page's paper
+fading out over 44 points.
+
+**TestFlight from CI** (`deploy_ios.yml`, jobs `mac` and `mac_processed`, beside the iOS jobs; the steps are
+`.github/scripts/mac_testflight.sh`):
+
+- `asc.py prepare-mac` registers the bundle id of `TrommiMac` (project.yml) with Push Notifications and Associated
+  Domains, and says whether its app record has the macOS platform. While it has not, the job ends green with a
+  notice and builds nothing.
+- The Rust core for the Mac is the `ios` job's host library on the Apple silicon runner (`lib/macos` in the
+  `ios-release` artifact); the app is arm64 only.
+- The archive is signed ad hoc, as the iOS one: Xcode refuses an ad hoc Mac build whose entitlements need a profile,
+  so it is built with `Mac/TrommiMac.dev.entitlements`, then signed ad hoc again with `AppStore/TrommiMac.entitlements`
+  (sandbox, network, files the person picks, push production, associated domains), which `ios_entitlements.py --mac`
+  checks.
+- The export (`method app-store-connect`, signing automatic, the Admin key) signs with the team's cloud-managed
+  "Apple Distribution" certificate, makes the Mac App Store profile and signs the `.pkg` with the cloud-managed "Mac
+  Installer Distribution" certificate; nothing is kept on the runner. The app inside the `.pkg` is checked (bundle id,
+  version, build, profile, entitlements, no `get-task-allow`).
+- Upload of that `.pkg` with the Build Uploads API (`asc.py upload`, `ASC_PLATFORM=MAC_OS`); the repository variable
+  `MAC_UPLOADER=xcode` switches to Xcode's own upload. Build numbers are the highest build of the app record plus one (any platform, so an iOS and a Mac build never share one). Then the group
+  "Intern" and What to Test; the public group and Beta App Review stay with iOS for now.
+
+**Once by hand in App Store Connect** (the API cannot create an app record or add a platform to one). A universal
+purchase (one App Store page, one name, the TestFlight groups of both) needs the iOS bundle id `com.trommi.ios` for
+`TrommiMac`: Apps → Trommi → the **+** beside "iOS App" in the sidebar → macOS. A Mac app of its own
+(`com.trommi.mac`) needs Apps → + → New App (macOS) under another name than "Trommi", `com.trommi.mac` in the hub's
+`APPLE_APNS_TOPIC` (`hub/deploy/install.sh secrets`) and its app id in the web app's association file.
+
+**App Store** (`release_ios.yml` with platform mac, or `ASC_PLATFORM=MAC_OS store.sh …`): the texts per locale in
+`AppStore/metadata/macos/<locale>` (en-US, de-DE), App Review's notes in `metadata/macos/review_information/notes.txt`,
+the rest of `metadata/` shared with iOS; the screenshots in `AppStore/screenshots/macos/en-US/mac` (2880 x 1800, light
+and dark, the demo, drawn by `TROMMI_MAC_SHOT`). The Mac icon is the iPhone's bell on the Mac's rounded square with
+its margin and shadow (`Mac-*.png` in `AppIcon.appiconset`).
 
 ## Export compliance
 
