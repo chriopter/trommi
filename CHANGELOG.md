@@ -32,7 +32,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   passes them on; it gets one line when the helper is done, and the events back if the helper stops reading.
 - Codex as Claude Code: `setup codex` adds Trommi's hooks to Codex, so its terminal, its answers (under the card
   they belong to), its permission prompts and its work trail reach the board too, once you trust the hooks in Codex.
-  `trommi-connector remove codex` takes them out again.
+  `trommi-connector remove codex` takes them out again. A Codex with its own `CODEX_HOME` is woken too.
 - Codex: a session that was woken but did not read the board is woken again by the next message (at most every
   3 minutes); it answers a card's question under that card; restart and "key in use" messages speak Codex's language
   instead of Claude Code's.

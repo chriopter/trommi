@@ -282,6 +282,9 @@ fn remove_claude() -> i32 {
 pub fn codex() -> Result<Vec<String>, String> {
     let program = program()?;
     here("codex")?;
+    // (a CODEX_HOME of its own goes along: Codex passes few variables to its MCP servers, and the connector's
+    // `codex queue` must reach this home)
+    let codex_home_given = std::env::var("CODEX_HOME").ok().filter(|h| !h.is_empty());
     let now = run("codex", &["mcp", "get", "trommi", "--json"])
         .ok()
         .and_then(|said| {
@@ -295,24 +298,20 @@ pub fn codex() -> Result<Vec<String>, String> {
                 .as_array()
                 .is_none_or(|args| args.is_empty())
             && now["transport"]["env"]["TROMMI_CHANNEL_EVENTS"] == "off"
+            && now["transport"]["env"]["CODEX_HOME"].as_str() == codex_home_given.as_deref()
             && now["enabled"] != false
     });
     let mut done = Vec::new();
     if same {
         done.push("MCP server trommi: there already, unchanged".to_string());
     } else {
-        run(
-            "codex",
-            &[
-                "mcp",
-                "add",
-                "trommi",
-                "--env",
-                "TROMMI_CHANNEL_EVENTS=off",
-                "--",
-                &program,
-            ],
-        )?;
+        let home_env = codex_home_given.as_ref().map(|h| format!("CODEX_HOME={h}"));
+        let mut args = vec!["mcp", "add", "trommi", "--env", "TROMMI_CHANNEL_EVENTS=off"];
+        if let Some(e) = &home_env {
+            args.extend(["--env", e.as_str()]);
+        }
+        args.extend(["--", program.as_str()]);
+        run("codex", &args)?;
         done.push(
             if now.is_some() {
                 "MCP server trommi: was set differently, now set again"

@@ -88,7 +88,9 @@ connector; `src/host.rs`) differs from Claude Code in four ways, and the connect
 - It shows no channel events. Every tool call carries the thread's id in `_meta` (`threadId`); the connector keeps
   it in the slot (`codex_thread`) and, when a board event comes, runs `codex queue --thread <id> --message
   "[Trommi] … call the trommi inbox tool …"` (once until the agent reads the board; `TROMMI_CODEX_WAKE=off` turns
-  it off, `TROMMI_CODEX_BIN` names the program). That starts a turn in an idle session, or the next one after a
+  it off, `TROMMI_CODEX_BIN` names the program; the queue goes to the home of the Codex that runs the session:
+  `CODEX_HOME` as `setup codex` registered it, else the Codex process's own, since Codex passes few variables to
+  its MCP servers). That starts a turn in an idle session, or the next one after a
   running turn; the agent reads the event with `inbox`. So a Codex session hears at once (its lease reports
   `hears: true`), also after a restart (`codex resume`) or a swapped-in connector, before its first call. A
   woken turn that never called `inbox` does not leave the session deaf: the next event wakes it again once

@@ -102,6 +102,20 @@ pub fn codex_program() -> std::path::PathBuf {
     "codex".into()
 }
 
+/// The Codex home of the Codex that runs this connector: `CODEX_HOME` as `setup codex` registered it with the
+/// server, else the one in the environment of the Codex process (Linux), else none (Codex's default, ~/.codex).
+pub fn codex_home() -> Option<std::ffi::OsString> {
+    if let Some(h) = std::env::var_os("CODEX_HOME").filter(|h| !h.is_empty()) {
+        return Some(h);
+    }
+    let environ = std::fs::read(format!("/proc/{}/environ", crate::slots::ppid())).ok()?;
+    environ
+        .split(|b| *b == 0)
+        .find_map(|kv| kv.strip_prefix(b"CODEX_HOME="))
+        .filter(|v| !v.is_empty())
+        .map(|v| std::ffi::OsString::from(String::from_utf8_lossy(v).into_owned()))
+}
+
 /// Whether this session can be woken now: Codex, a thread known, waking not turned off.
 pub fn can_wake() -> bool {
     is_codex() && !wake_off() && thread().is_some()
@@ -111,6 +125,11 @@ pub fn can_wake() -> bool {
 pub async fn wake(text: &str) -> bool {
     let Some(thread) = thread() else { return false };
     let mut cmd = tokio::process::Command::new(codex_program());
+    // (Codex starts MCP servers with few of its variables: the queue must go to the home of the Codex that runs
+    // this session, not to ~/.codex)
+    if let Some(home) = codex_home() {
+        cmd.env("CODEX_HOME", home);
+    }
     cmd.args(["queue", "--thread", &thread, "--message", text])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

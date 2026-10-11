@@ -5,11 +5,17 @@
 //! cargo test -p trommi-tests --test connector_codex_real -- --ignored --nocapture
 //! ```
 //!
-//! `CODEX_MODEL` (default `gpt-6-luna`) and `CODEX_EFFORT` (default `low`) pick the model; `TROMMI_CODEX_RUNS`
-//! repeats the whole round (default 1). Codex runs as its app server (one process, many turns: an interactive
-//! session as the TUI has it) with the trommi MCP server given by `-c` overrides, never in the user's config. Its
-//! project folder is `~/.cache/trommi-codex-smoke/project` (Codex notes a folder it ran in as trusted, once); keys,
-//! hub and connector are throwaway. What it checks: connect by the invite link, introduce, a decision card, the
+//! `CODEX_HOME` must name a Codex home of its own for tests (logged in once, `codex login` with that CODEX_HOME):
+//! Codex notes a folder it ran in as trusted, and the hooks round writes hooks and their trust, so the test refuses
+//! to run against `~/.codex`. `CODEX_MODEL` (default `gpt-6-luna`) and `CODEX_EFFORT` (default `low`) pick the
+//! model; `TROMMI_CODEX_RUNS` repeats the whole round (default 1). Codex runs as its app server (one process, many
+//! turns: an interactive session as the TUI has it) with the trommi MCP server given by `-c` overrides. Its project
+//! folder is a temporary one; keys, hub and connector are throwaway.
+//!
+//! `a_real_codex_with_trommi_hooks` runs `trommi-connector setup codex` into that home (MCP server and hooks), trusts
+//! the hooks through the app server as /hooks does (`hooks/list`, `config/value/write`), and checks the terminal
+//! mirror (typed words and the final answer), the work trail, an answer under the card that started the turn, and a
+//! permission prompt answered on the board; at the end `remove codex` takes it all out again. What it checks: connect by the invite link, introduce, a decision card, the
 //! human's answer waking the idle session (`codex queue`), a chat message doing the same, a restart with
 //! `thread/resume`, a swapped-in connector, and that no Trommi call asked for approval.
 mod common;
@@ -75,6 +81,11 @@ impl Codex {
             .args(["-c"])
             .arg(format!("model=\"{model}\""))
             .current_dir(&s.project)
+            // (what Codex's hooks pass on to the connector they run: where its doors and keys are)
+            .env("XDG_RUNTIME_DIR", &s.run)
+            .env("TROMMI_KEYS_DIR", &s.keys)
+            .env("TROMMI_FOLDER", &s.project)
+            .env("TROMMI_HUB", &s.hub_url)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -164,10 +175,14 @@ impl Codex {
     }
 
     async fn start_thread(&mut self, project: &Path) {
+        self.start_thread_with(project, "never").await
+    }
+
+    async fn start_thread_with(&mut self, project: &Path, approval: &str) {
         let started = self
             .request(
                 "thread/start",
-                json!({ "cwd": project, "approvalPolicy": "never", "sandbox": "workspace-write" }),
+                json!({ "cwd": project, "approvalPolicy": approval, "sandbox": "workspace-write" }),
             )
             .await;
         self.thread = started["thread"]["id"]
@@ -326,14 +341,36 @@ async fn agent_said(human: &mut Human, text: &str) -> bool {
     })
 }
 
+/// The Codex home for tests (`CODEX_HOME`), never the user's own `~/.codex`.
+fn test_codex_home() -> PathBuf {
+    let home = PathBuf::from(std::env::var_os("HOME").expect("HOME"));
+    let given = std::env::var_os("CODEX_HOME")
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+        .expect(
+            "set CODEX_HOME to a Codex home of its own for tests (never ~/.codex), logged in once",
+        );
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    assert_ne!(
+        canon(&given),
+        canon(&home.join(".codex")),
+        "CODEX_HOME must not be the user's ~/.codex"
+    );
+    assert!(
+        given.join("auth.json").exists(),
+        "{} is not logged in",
+        given.display()
+    );
+    given
+}
+
 async fn round(n: u32) {
     eprintln!("=== real Codex round {n}");
+    test_codex_home();
     let hub = HubProc::start().await;
     let mut human = Human::found(&hub.url).await;
     let state = TempDir::new("codex-real");
-    let home = PathBuf::from(std::env::var_os("HOME").expect("HOME"));
-    let project = home.join(".cache/trommi-codex-smoke/project");
-    let _ = std::fs::remove_dir_all(project.join(".trommi"));
+    let project = state.path().join("project");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("README.md"), "# A project\n").unwrap();
     let run = std::env::temp_dir().join(format!("rc{}", trommi_connector::util::random_hex(3)));
@@ -498,4 +535,239 @@ async fn a_real_codex_session_round_trip() {
     for n in 1..=runs {
         round(n).await;
     }
+}
+
+/// Runs the built connector's `setup codex` or `remove codex` with `home` as HOME (its installed connector there) and
+/// the test's CODEX_HOME.
+fn connector_cli(home: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new(home.join(".local/share/trommi/bin/trommi-connector"))
+        .args(args)
+        .arg("--verbose")
+        .env("HOME", home)
+        .output()
+        .expect("the connector runs");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.status.success(), "{args:?}: {text}");
+    text
+}
+
+/// Trusts every hook of the connector in Codex, as /hooks "trust all" does; returns how many it trusted.
+async fn trust_hooks(codex: &mut Codex, project: &Path) -> usize {
+    let listed = codex
+        .request("hooks/list", json!({ "cwds": [project] }))
+        .await;
+    let mut n = 0;
+    for entry in listed["data"].as_array().cloned().unwrap_or_default() {
+        for hook in entry["hooks"].as_array().cloned().unwrap_or_default() {
+            let ours = hook["command"]
+                .as_str()
+                .is_some_and(|c| c.contains("trommi-connector"));
+            if ours && hook["trustStatus"] != "trusted" {
+                let key = hook["key"].as_str().expect("a key");
+                codex
+                    .request(
+                        "config/value/write",
+                        json!({ "keyPath": format!("hooks.state.{}.trusted_hash", Value::String(key.into())), "value": hook["currentHash"], "mergeStrategy": "replace" }),
+                    )
+                    .await;
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// Waits (at most two minutes) until `seen` holds on the human's side.
+async fn wait_for(human: &mut Human, what: &str, seen: impl Fn(&Human) -> bool) {
+    for _ in 0..120 {
+        human.sync().await;
+        if seen(human) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    panic!(
+        "never seen: {what}; items {:?}",
+        human.items.iter().map(|x| &x.2).collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "runs a real Codex (model calls) and writes hooks into CODEX_HOME; see the file's head"]
+async fn a_real_codex_with_trommi_hooks() {
+    let codex_home = test_codex_home();
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let state = TempDir::new("codex-hooks");
+    let project = state.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("README.md"), "# A project\n").unwrap();
+    let run = std::env::temp_dir().join(format!("rc{}", trommi_connector::util::random_hex(3)));
+    std::fs::create_dir_all(&run).unwrap();
+    // the connector as install.sh puts it, in a home of the test's
+    let home = state.path().join("home");
+    let bin = home.join(".local/share/trommi/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join("trommi-connector");
+    std::fs::copy(connector_binary(), &program).expect("copied");
+    let setup = Setup {
+        hub_url: hub.url.clone(),
+        program: program.clone(),
+        keys: state.path().join("keys"),
+        run: run.clone(),
+        project: project.clone(),
+    };
+
+    // 1. setup codex: the MCP server and the hooks in CODEX_HOME; the hooks are trusted as /hooks does.
+    let said = connector_cli(&home, &["setup", "codex"]);
+    assert!(said.contains("hooks in"), "{said}");
+    eprintln!("{said}");
+    let hooks_file = codex_home.join("hooks.json");
+    assert!(std::fs::read_to_string(&hooks_file)
+        .unwrap()
+        .contains(&program.display().to_string()));
+    let mut codex = Codex::start(&setup).await;
+    let trusted = trust_hooks(&mut codex, &project).await;
+    eprintln!("trusted {trusted} hooks");
+    codex.close().await;
+    // (a Codex started after the trust runs them, and its connector reads them as trusted)
+    let mut codex = Codex::start(&setup).await;
+    codex.start_thread_with(&project, "on-request").await;
+    let thread = codex.thread.clone();
+
+    let invite = human.invite(None).await;
+    let link = invite.link.clone();
+    *PENDING.lock().unwrap() = Some(invite);
+    let t = codex
+        .turn_with(
+            &format!("Connect to Trommi with this invite link: {link}"),
+            &mut human,
+            |tool| tool == "connect",
+        )
+        .await;
+    assert!(t.called("connect"), "{t:?}");
+    let group = GROUP.lock().unwrap().expect("the session was founded");
+    let me = human.seat(&group).await.expect("the agent");
+
+    // 2. The terminal mirror: the typed words and the final answer reach the board without reply.
+    let t = codex
+        .turn("I tapped \"They match\". Now answer in plain text, without any tool: what is 6 times 7? Only the number.", &mut human)
+        .await;
+    assert!(!t.called("reply"), "{t:?}");
+    wait_for(&mut human, "the typed words mirrored", |h| {
+        h.items.iter().any(|(_, s, p)| {
+            *s == me
+                && p["terminal"] == "input"
+                && p["text"].as_str().is_some_and(|x| x.contains("6 times 7"))
+        })
+    })
+    .await;
+    wait_for(&mut human, "the final answer mirrored", |h| {
+        h.items.iter().any(|(_, s, p)| {
+            *s == me
+                && p["terminal"] == "answer"
+                && p["text"].as_str().is_some_and(|x| x.contains("42"))
+        })
+    })
+    .await;
+
+    // 3. The work trail: a shell step shows as a step of the turn.
+    let before = human.trail.len();
+    codex
+        .turn(
+            "Run `ls` in this folder with the shell and tell me the file names.",
+            &mut human,
+        )
+        .await;
+    wait_for(&mut human, "a step of the work trail", |h| {
+        h.trail.len() > before
+    })
+    .await;
+    eprintln!("trail: {:?}", &human.trail[before..]);
+
+    // 4. A card's answer starts a turn (the wake); its final text goes under that card.
+    let t = codex
+        .turn("File one Trommi decision card: \"Release today?\" with options yes and no. Then end your turn.", &mut human)
+        .await;
+    let card = t
+        .tools
+        .iter()
+        .find(|x| x.0 == "create_decision" && !x.3)
+        .and_then(|x| x.2.split_whitespace().nth(1).map(String::from))
+        .unwrap_or_else(|| panic!("a card: {t:?}"));
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    human
+        .answer(&card, json!({ "answer_action": "answer", "choices": ["no"], "note": "Why not? Answer in plain text (no tool) with one sentence that contains the word FREEZE." }), &["no"], false)
+        .await
+        .expect("taken");
+    codex
+        .woken(240, &mut human)
+        .await
+        .expect("the answer woke Codex");
+    wait_for(&mut human, "the answer under the card", |h| {
+        h.card_chats.iter().any(|(c, p)| {
+            *c == card
+                && p["text"]
+                    .as_str()
+                    .is_some_and(|x| x.to_uppercase().contains("FREEZE"))
+        })
+    })
+    .await;
+    assert!(
+        !human.items.iter().any(|(_, _, p)| p["terminal"] == "input"
+            && p["text"]
+                .as_str()
+                .is_some_and(|x| x.starts_with("[Trommi]"))),
+        "the wake is not mirrored as typed words"
+    );
+
+    // 5. A permission prompt reaches the board; the human allows it there and the command runs.
+    // (the turn needs a Human only for an admission, which does not come here)
+    let mut spare = Human::found(&hub.url).await;
+    let marker = codex_home.join(format!("perm-{}", trommi_connector::util::random_hex(3)));
+    let ask_text = format!("Create the file {} with `touch` in the shell. It is outside the sandbox: request the escalated permission for it, I will approve.", marker.display());
+    let ask = codex.turn_with(
+        &ask_text,
+        &mut spare,
+        |_| false,
+    );
+    let allow = async {
+        for _ in 0..240 {
+            human.sync().await;
+            let ids: Vec<String> = human
+                .object_ids()
+                .into_iter()
+                .filter(|id| human.has_request(id))
+                .collect();
+            if let Some(id) = ids.first() {
+                human.verdict(id, true).await.expect("allowed");
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        false
+    };
+    let (_, asked) = tokio::join!(ask, allow);
+    let made = marker.exists();
+    let _ = std::fs::remove_file(&marker);
+    eprintln!(
+        "permission asked on the board: {asked}; file made: {made}; approvals the client saw: {:?}",
+        codex.approvals
+    );
+    codex.close().await;
+    let said = connector_cli(&home, &["remove", "codex"]);
+    eprintln!("{said}");
+    assert!(!std::fs::read_to_string(&hooks_file)
+        .unwrap_or_default()
+        .contains("trommi-connector"));
+    assert!(asked, "the permission request reached the board");
+    assert!(made, "allowed on the board, the command ran");
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    let _ = std::fs::remove_dir_all(&run);
+    let _ = thread;
 }
