@@ -449,6 +449,9 @@ public final class Board {
   public var myDeviceId: String?
   public var myRole: String? = "human"
   public var keyEpoch = 0
+  /** A preview built from the hub's Desk alone (Room.deskPreview): an object's newest version is taken as its first
+   *  seen here, without the versions before it. Never set on the room's own board. */
+  public var preview = false
   public var lastEntryNumber = -1
   public var lastEnvelopeNumber = 0
   public var connection = "offline"
@@ -851,7 +854,7 @@ public final class Board {
     if let sid = rec.sessionId, !agentAt(sid, rec.senderDeviceId, rec) { return refuse(&change, rec, "not-allowed", "a card in a session this agent is not assigned to") }
     if let card = card, card.sessionId != rec.sessionId { return refuse(&change, rec, "not-allowed", "a card version in another session") }
     if fresh && rec.objectIdOk == false { return refuse(&change, rec, "bad-object-id", "object id is not H(creator, sequence of version 1)") }
-    if let c = c {
+    if let c = c, !(preview && fresh) {
       let expected = (card?.objectVersion ?? 0) + 1
       if c["object_version"].int != expected { return refuse(&change, rec, "bad-version", "card version \(c["object_version"]), expected \(expected)") }
       if expected > 1 && c["previous_version_hash"].string != card?.versionHash { return refuse(&change, rec, "bad-version", "previous_version_hash does not name the current version") }

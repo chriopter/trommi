@@ -253,8 +253,13 @@ final class BoardModel: ObservableObject {
       // a batch that changed nothing visible (a refresh with no news): no render at all
       if let r = room {
         let f = r.board.fingerprint
-        if f == lastFingerprint && r.live == live && r.board.newerCount == newer { PerfLog.line("skip: nothing visible changed"); return }
+        if f == lastFingerprint && r.live == live && r.board.newerCount == newer && desk?.board === (r.preview ?? r.board) { PerfLog.line("skip: nothing visible changed"); return }
         lastFingerprint = f
+      }
+      // (a fresh sign-in shows the hub's Desk until its first catch-up is through: Room.deskPreview)
+      if let r = room, !demo {
+        let shown = r.preview ?? r.board
+        if desk?.board !== shown { desk = DeskModel(board: shown); MegaScript.note(r.preview != nil ? "desk from the hub's list" : "desk from the board") }
       }
       PerfLog.time("desk.update") { desk?.update() }
       if let r = room {
