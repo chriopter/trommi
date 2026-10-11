@@ -1410,3 +1410,146 @@ done
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     mcp.close().await;
 }
+
+/// A status line follows its question: filing a card links the session's line to it (decision), a line that
+/// says in words that it waits on the human is linked too, and the human's answer turns every line on the card
+/// back to working with what he chose. A session without a line gets one of the connector's own for the card,
+/// which goes with close_card.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_status_line_follows_its_question_to_the_answer() {
+    let (_hub, mut human, _seat, mut mcp, group) = seated().await;
+    let id = |made: &str| made.split_whitespace().nth(1).expect("an id").to_string();
+    let ask = |session: Option<&str>, title: &str| {
+        let mut a = json!({ "title": title, "options": [{ "key": "a", "label": "Ring" }, { "key": "b", "label": "Kreis" }] });
+        if let Some(s) = session {
+            a["session"] = json!(s);
+        }
+        a
+    };
+
+    // In a helper's session: its one working line waits on the card it files.
+    mcp.ok(
+        "open_session",
+        json!({ "name": "Design", "task": "UNO tile" }),
+    )
+    .await;
+    mcp.ok(
+        "set_status",
+        json!({ "session": "Design", "id": "uno", "label": "UNO-Kachel", "state": "working", "detail": "baut Vorschläge" }),
+    )
+    .await;
+    let card = id(&mcp
+        .ok("create_decision", ask(Some("Design"), "Ring oder Kreis?"))
+        .await);
+    // The helper then says it waits, as working: the connector links it to the open question all the same.
+    let said = mcp
+        .ok(
+            "set_status",
+            json!({ "session": "Design", "id": "uno", "state": "working", "detail": "2 Vorschläge, wartet auf deine Wahl" }),
+        )
+        .await;
+    assert!(
+        said.contains("is decision") && said.contains(&card),
+        "{said}"
+    );
+    human.sync().await;
+    let helper = human
+        .groups()
+        .await
+        .into_iter()
+        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
+        .expect("the helper's session")
+        .group;
+    let line = human
+        .register(&helper, "status_line/uno")
+        .await
+        .expect("the line");
+    assert_eq!(line["state"], "decision", "{line}");
+    assert_eq!(line["object_id"], card.as_str(), "{line}");
+
+    // The human answers: the line is working again and says what he chose.
+    human
+        .answer(
+            &card,
+            json!({ "answer_action": "answer", "choices": ["b"] }),
+            &["b"],
+            false,
+        )
+        .await
+        .expect("taken");
+    let mut line = Value::Null;
+    for _ in 0..300 {
+        human.sync().await;
+        line = human
+            .register(&helper, "status_line/uno")
+            .await
+            .unwrap_or(Value::Null);
+        if line["state"] == "working" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(line["state"], "working", "{line}");
+    assert_eq!(line["detail"], "Antwort da: Kreis", "{line}");
+    assert_eq!(line["label"], "UNO-Kachel", "{line}");
+
+    // In the main session with no line: the connector makes one for the card; the answer turns it to working,
+    // and close_card takes it away.
+    let card = id(&mcp.ok("create_decision", ask(None, "Ship it?")).await);
+    let own = format!("status_line/q-{}", &card[..8]);
+    human.sync().await;
+    let line = human
+        .register(&group, &own)
+        .await
+        .expect("the connector's line");
+    assert_eq!(line["state"], "decision", "{line}");
+    assert_eq!(line["object_id"], card.as_str(), "{line}");
+    assert_eq!(line["label"], "Ship it?", "{line}");
+    human
+        .answer(
+            &card,
+            json!({ "answer_action": "answer", "choices": ["a"] }),
+            &["a"],
+            false,
+        )
+        .await
+        .expect("taken");
+    let mut line = Value::Null;
+    for _ in 0..300 {
+        human.sync().await;
+        line = human.register(&group, &own).await.unwrap_or(Value::Null);
+        if line["state"] == "working" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(line["detail"], "Antwort da: Ring", "{line}");
+    mcp.event("decision").await;
+    mcp.ok(
+        "close_card",
+        json!({ "card_id": card, "summary": "Live: shipped." }),
+    )
+    .await;
+    human.sync().await;
+    assert_eq!(human.register(&group, &own).await, None);
+
+    // A line the agent sets for the card itself replaces the connector's own one.
+    let card = id(&mcp.ok("create_decision", ask(None, "Merge now?")).await);
+    let own = format!("status_line/q-{}", &card[..8]);
+    mcp.ok(
+        "set_status",
+        json!({ "id": "merge", "label": "Merge", "state": "decision", "card_id": card }),
+    )
+    .await;
+    human.sync().await;
+    assert_eq!(human.register(&group, &own).await, None);
+    assert_eq!(
+        human
+            .register(&group, "status_line/merge")
+            .await
+            .expect("the line")["object_id"],
+        card.as_str()
+    );
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    mcp.close().await;
+}

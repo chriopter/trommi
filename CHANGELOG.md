@@ -26,6 +26,10 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 **Better**
 - The reverse card on a card: its black oval smaller, with air above and below, as on the send button (web and iPhone).
 - Desk: the headings "Off your mind" and "Artifacts" are links themselves, underlined with an arrow; no separate "Show more" (web and iPhone).
+- A helper's status line follows its question: filing a card turns the line to waiting on you with that card, and
+  your answer turns it back to working with what you chose; no more lines that still wait after you answered.
+- Agents answer a request or question you write in chat with a card (an info card for results, a decision card for
+  choices) instead of only a chat reply.
 - iPhone: right after you log in, the Desk shows the open questions from the hub's list, before the history is read.
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer
@@ -74,6 +78,9 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- Web: a card handed back and then put before you again no longer slips back to "with the agent" (off the Desk)
+  when you open it; a card already stuck that way returns to the Desk by itself.
+- After /mcp → Reconnect a connected agent no longer shows as gone: the old connector's goodbye can't override the new one's hello.
 - iPhone: a session renamed on another device no longer shows up twice; the new name lands on the session itself.
 - Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
 - Open cards are the same on every device: the web takes them from the hub's list of open questions, so a card

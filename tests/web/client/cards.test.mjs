@@ -133,3 +133,26 @@ test('the work trail of a turn, and an agent\'s registers: profile, status line,
   await a.settle()
   assert.equal(a.model.sessions.get(agent.session_id).profile.agent_name, 'Ada')
 })
+
+test('a card presented again after a hand back stays on the Desk when its Chat is read from the hub; one an older app put back is healed', async t => {
+  const { R, a, b, agent } = await scene(t, { agent: true, second: true })
+  const card = await agent.askCard({ title: 'Linux client: Rust core first?', options: [{ key: 'yes', label: 'Yes' }] })
+  await agent.settle(); await a.settle(); await b.settle()
+  await a.sendMessage({ object_id: card, text: 'Why not Qt first?', hand_back: true })
+  await a.settle(); await agent.settle(); await b.settle()
+  await agent.say({ text: 'The core is shared with every client.', present_card: true }, card)
+  await agent.settle(); await a.settle(); await b.settle()
+  assert.ok(b.model.stack.includes(card) && b.model.cards.get(card).in_revision === null, 'presented again')
+  // the card opened: its Chat read from the hub, newest first (the present before the hand back it answered)
+  await b.loadTimeline(`chat:card/${card}`, { since_ms: 86_400_000 })
+  assert.equal(b.model.cards.get(card).in_revision, null, 'still before the human')
+  // a device whose cache an older app left with the card handed back: the hub's Desk lists it, its Chat says presented
+  const back = [...b.model.timelines.get(`chat:card/${card}`).items.values()].find(i => i.content?.hand_back).envelope_number
+  b.tell(ch => { b.model.cards.get(card).in_revision = { by: 'hand_back', envelope_number: back }; delete b.model.cards.get(card).presented_envelope_number; ch.cards.add(card) })
+  await b.flush(); await b.stop()
+  const again = await R.openRoom({ storage: b.stored_as })
+  t.after(() => again.stop().catch(() => {}))
+  await again.start()
+  await until(() => again.model.cards.get(card)?.in_revision === null, 'healed by the hub\'s Desk and the card\'s Chat')
+  assert.ok(again.model.stack.includes(card))
+})
