@@ -918,6 +918,11 @@ impl Bridge {
         }
         None
     }
+    /// The child session one of this agent's cards is in, by name (None: the agent's own session or no such card).
+    pub async fn card_session_name(&self, card_id: Option<&Value>) -> Option<String> {
+        let card = self.find_card(card_id).await.ok()?;
+        self.child_name(card.session_id.as_deref()).await
+    }
     async fn child_name(&self, sid: Option<&str>) -> Option<String> {
         let sid = sid?;
         let c = self.client.core.lock().await;

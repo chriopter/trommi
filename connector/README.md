@@ -92,6 +92,16 @@ list, a `codex` script that notes the queued wakes). `tests/connector/codex_real
 one session over many turns) against a local hub, opt-in: `cargo test -p trommi-tests --test connector_codex_real
 -- --ignored --nocapture` (`CODEX_MODEL`, `TROMMI_CODEX_RUNS`).
 
+## Helpers read their own events
+
+A helper (a subagent in a child session from `open_session`) calls `inbox` with `session: "<name>"`: it gets that
+session's events alone, and the call claims the session. While the claim holds, the session's events wait for that
+helper only: plain `inbox`, the monitor line and channel events skip them, so the coordinator forwards nothing. A
+"Done: …" (or Fertig, Erledigt, Resolved, Gelöst) card the helper files there gives the coordinator one short line
+(`kind="helper"`). The claim ends with `close_session`, or after 10 minutes without an `inbox(session)` call
+(`TROMMI_CLAIM_MS`); events still waiting then go to the coordinator with a line "Design: helper gone, N events
+waiting". Claims live in the connector's memory only: after a restart every waiting event is the coordinator's.
+
 ## What is where
 
 | File | What |

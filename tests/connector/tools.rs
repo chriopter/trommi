@@ -862,6 +862,171 @@ async fn without_channel_and_monitor_board_events_wait_for_the_inbox_tool() {
     mcp.close().await;
 }
 
+/// A helper reads its child session's events itself with `inbox(session)`, which claims the session: the
+/// coordinator's inbox and the channel skip them, it hears of a "Done: …" card in one line, and the events come back
+/// to it with a notice when the helper stops reading or the session is closed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_helper_claims_its_session_and_reads_its_own_events() {
+    let (_hub, mut human, seat, _group) = joined().await;
+    let mut mcp = seat.serve_plain_with(&[("TROMMI_CLAIM_MS", "8000")]).await;
+    mcp.ready().await;
+    mcp.ok("open_session", json!({ "name": "Design", "task": "logo" }))
+        .await;
+    let card = |made: String| {
+        made.split_whitespace()
+            .nth(1)
+            .expect("the card's id")
+            .to_string()
+    };
+    let ask = |title: &str| json!({ "session": "Design", "title": title, "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] });
+    let first = card(mcp.ok("create_decision", ask("First?")).await);
+    let second = card(mcp.ok("create_decision", ask("Second?")).await);
+
+    // The helper's first look claims the session.
+    let said = mcp.ok("inbox", json!({ "session": "design" })).await;
+    assert_eq!(said, "No new board events in design.");
+
+    human
+        .answer(
+            &first,
+            json!({ "answer_action": "answer", "choices": ["a"] }),
+            &["a"],
+            false,
+        )
+        .await
+        .expect("taken");
+    let mut helper = String::new();
+    for _ in 0..150 {
+        helper = mcp.ok("inbox", json!({ "session": "Design" })).await;
+        if helper.contains(&first) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(
+        helper.contains(&first) && helper.contains("choice=\"a\""),
+        "the helper reads its answer: {helper}"
+    );
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        !coordinator.contains(&first),
+        "the coordinator does not see it: {coordinator}"
+    );
+    let sent = |mcp: &common::process::Mcp, id: &str| {
+        mcp.notifications
+            .iter()
+            .any(|(_, p)| p["meta"]["card_id"].as_str() == Some(id))
+    };
+    assert!(
+        !sent(&mcp, &first),
+        "no channel event for a claimed session"
+    );
+
+    // A "Done: …" card of the helper: one line for the coordinator.
+    mcp.ok(
+        "create_info",
+        json!({ "session": "Design", "title": "Done: logo drawn", "body": "Three drafts." }),
+    )
+    .await;
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        coordinator.contains("kind=\"helper\"") && coordinator.contains("Design: filed"),
+        "{coordinator}"
+    );
+    let line = trommi_connector::line::monitor_line(
+        &json!({ "meta": { "kind": "helper", "helper": "Design", "note": "filed \"Done: logo drawn\"" } }),
+    )
+    .expect("a line");
+    assert_eq!(
+        line,
+        "Trommi · Design · filed 'Done: logo drawn' · call inbox"
+    );
+
+    // The helper stops reading: the claim lapses, and the waiting answer goes to the coordinator with a notice.
+    human
+        .answer(
+            &second,
+            json!({ "answer_action": "answer", "choices": ["b"] }),
+            &["b"],
+            false,
+        )
+        .await
+        .expect("taken");
+    let decided = |out: &str, id: &str| {
+        serde_json::from_str::<Value>(out)
+            .ok()
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .any(|c| c["id"] == id && c["status"] == "decided")
+    };
+    for _ in 0..150 {
+        if decided(
+            &mcp.ok("list_cards", json!({ "session": "Design" })).await,
+            &second,
+        ) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        !coordinator.contains(&second),
+        "still the helper's: {coordinator}"
+    );
+    let mut coordinator = String::new();
+    for _ in 0..150 {
+        coordinator.push_str(&mcp.ok("inbox", json!({})).await);
+        if coordinator.contains(&second) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(
+        coordinator.contains("Design: helper gone, 1 event waiting")
+            && coordinator.contains(&second),
+        "{coordinator}"
+    );
+
+    // Claimed again, then closed: what waits goes to the coordinator.
+    mcp.ok("inbox", json!({ "session": "Design" })).await;
+    let third = card(mcp.ok("create_decision", ask("Third?")).await);
+    human
+        .answer(
+            &third,
+            json!({ "answer_action": "answer", "choices": ["a"] }),
+            &["a"],
+            false,
+        )
+        .await
+        .expect("taken");
+    for _ in 0..150 {
+        if decided(
+            &mcp.ok("list_cards", json!({ "session": "Design" })).await,
+            &third,
+        ) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(
+        !sent(&mcp, &third),
+        "no channel event for a claimed session"
+    );
+    mcp.ok(
+        "close_session",
+        json!({ "name": "Design", "summary": "Done." }),
+    )
+    .await;
+    let coordinator = mcp.ok("inbox", json!({})).await;
+    assert!(
+        coordinator.contains("Design: session closed, 1 event waiting")
+            && coordinator.contains(&third),
+        "{coordinator}"
+    );
+    mcp.close().await;
+}
+
 /// A link past its deadline is refused by the connector itself, at once and with a plain reason, before a slot
 /// is made or the hub is asked.
 #[tokio::test(flavor = "multi_thread")]

@@ -1338,7 +1338,12 @@
     },
     "inputSchema": {
       "type": "object",
-      "properties": {},
+      "properties": {
+        "session": {
+          "type": "string",
+          "description": "Optional, for a helper: its child session's name (e.g. \"Design\"). Returns only that session's events and claims it for 10 minutes from each call."
+        }
+      },
       "additionalProperties": false
     }
   },

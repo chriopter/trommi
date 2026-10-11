@@ -186,6 +186,16 @@ impl Seat {
         command.env("TROMMI_CHANNEL_EVENTS", "off");
         Mcp::start(command).await
     }
+
+    /// `serve_plain` with more environment.
+    pub async fn serve_plain_with(&self, env: &[(&str, &str)]) -> Mcp {
+        let mut command = self.command(&[]);
+        command.env("TROMMI_CHANNEL_EVENTS", "off");
+        for (key, value) in env {
+            command.env(key, value);
+        }
+        Mcp::start(command).await
+    }
 }
 
 /// A running connector, as its MCP client sees it.

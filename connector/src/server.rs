@@ -147,6 +147,17 @@ pub(crate) fn clean_name(v: &Value) -> String {
         .to_string();
     crate::util::js_trim(&b).chars().take(40).collect()
 }
+/// The child session an event belongs to, lower case ("" for the agent's own session).
+fn event_session(params: &Value) -> String {
+    params
+        .get("meta")
+        .and_then(|m| m.get("session"))
+        .filter(|v| !v.is_null())
+        .map(js_string)
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+}
 /// A channel event as Claude Code gets it: without `echo`, which is the monitor line's alone (line.rs).
 fn wire(mut params: Value) -> Value {
     if let Some(o) = params.as_object_mut() {
@@ -276,6 +287,9 @@ pub struct Conn {
     missed: Mutex<Vec<Missed>>,
     deaf_told: AtomicBool,
     marks: Mutex<HashMap<String, u64>>,
+    /// Child sessions a helper reads itself (`inbox` with session): lower-case name → (name, last read in ms).
+    /// Their events wait for that helper alone; plain `inbox`, the monitor and channel events skip them.
+    claims: Mutex<HashMap<String, (String, u64)>>,
     mark_timer: AtomicBool,
     hint: Mutex<Option<String>>,
     door: Mutex<Option<Door>>,
@@ -368,6 +382,11 @@ impl Conn {
         }
     }
     fn queue(&self, params: Value, about: Option<About>) {
+        self.stash(params, about);
+        self.wake_codex();
+    }
+    /// Keeps an event in the waiting list (and on disk), without waking anyone.
+    fn stash(&self, params: Value, about: Option<About>) {
         {
             let mut m = self.missed.lock().unwrap();
             m.push(Missed {
@@ -380,7 +399,89 @@ impl Conn {
             }
         }
         self.save_missed();
-        self.wake_codex();
+    }
+    /// Whether a helper reads this child session itself (a claim that has not lapsed).
+    fn claimed(&self, name: &str) -> bool {
+        !name.is_empty() && self.claims.lock().unwrap().contains_key(name)
+    }
+    /// A helper reads its child session: claims it, or keeps its claim.
+    fn claim(&self, key: &str, name: &str) {
+        self.claims
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), (name.to_string(), now_ms()));
+    }
+    /// How many events wait for a child session.
+    fn waiting_in(&self, key: &str) -> usize {
+        self.missed
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| event_session(&e.params) == key)
+            .count()
+    }
+    /// Ends a claim; the events it held go to the coordinator again, with a notice when some wait.
+    async fn unclaim(&self, key: &str, why: &str) {
+        let Some((name, _)) = self.claims.lock().unwrap().remove(key) else {
+            return;
+        };
+        let n = self.waiting_in(key);
+        if n > 0 {
+            let s = if n == 1 { "" } else { "s" };
+            self.helper_notice(&name, format!("{why}, {n} event{s} waiting"))
+                .await;
+        }
+    }
+    /// Claims whose helper has not read its session for `TROMMI_CLAIM_MS` (10 minutes) lapse.
+    async fn lapse_claims(&self) {
+        let ttl = env_ms("TROMMI_CLAIM_MS", 600_000);
+        let now = now_ms();
+        let gone: Vec<String> = self
+            .claims
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, (_, at))| now.saturating_sub(*at) >= ttl)
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in gone {
+            self.unclaim(&k, "helper gone").await;
+        }
+    }
+    /// A short line for the coordinator about a claimed child session (README "Helpers read their own events").
+    async fn helper_notice(&self, name: &str, note: String) {
+        let params = json!({ "content": format!("{name}: {note}"), "meta": { "kind": "helper", "helper": name, "note": note } });
+        self.notify("notifications/claude/channel", params, None)
+            .await;
+    }
+    /// After a helper's tool call in its claimed session: a card it marked "Done: …" is told to the coordinator.
+    async fn note_done(&self, name: &str, args: &Value) {
+        let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        let done = regex::Regex::new(r"(?i)^\s*(done|fertig|erledigt|resolved|gelöst)\b").unwrap();
+        if !done.is_match(title) {
+            return;
+        }
+        let key = if name == "revise_card" {
+            let bridge = self.bridge.lock().unwrap().clone();
+            match bridge {
+                Some(b) => b
+                    .card_session_name(args.get("card_id"))
+                    .await
+                    .map(|n| n.trim().to_lowercase())
+                    .unwrap_or_default(),
+                None => String::new(),
+            }
+        } else {
+            args.get("session")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_lowercase())
+                .unwrap_or_default()
+        };
+        let who = self.claims.lock().unwrap().get(&key).map(|c| c.0.clone());
+        if let Some(who) = who {
+            let t: String = title.trim().chars().take(80).collect();
+            self.helper_notice(&who, format!("filed \"{t}\"")).await;
+        }
     }
     fn waits_for(&self, about: &Option<About>) -> bool {
         let Some(sid) = about.as_ref().and_then(|a| a.session_id.clone()) else {
@@ -434,6 +535,11 @@ impl Conn {
             }
         }
         let event = method == "notifications/claude/channel";
+        if event && self.claimed(&event_session(&params)) {
+            // a helper reads this session itself: no monitor line, no channel event, it waits for inbox(session)
+            self.stash(params, about);
+            return;
+        }
         if !self.heard() && event {
             if let Some(a) = &about {
                 if a.envelope_number.is_some_and(|n| n > 0) && !self.waits_for(&about) {
@@ -501,16 +607,10 @@ impl Conn {
             .lock()
             .unwrap()
             .iter()
-            .filter(|e| {
-                child.is_none_or(|c| {
-                    e.params
-                        .get("meta")
-                        .and_then(|m| m.get("session"))
-                        .map(js_string)
-                        .unwrap_or_default()
-                        .to_lowercase()
-                        == c
-                })
+            .filter(|e| match child {
+                Some(c) => event_session(&e.params) == c,
+                // the coordinator: not the events of a session a helper reads itself
+                None => !self.claimed(&event_session(&e.params)),
             })
             .cloned()
             .collect();
@@ -791,6 +891,7 @@ impl Conn {
         }
     }
     async fn tick(&self) {
+        self.lapse_claims().await;
         self.look_around();
         self.sync_link().await;
         self.present();
@@ -1770,6 +1871,26 @@ impl mcp::Server for Conn {
                     };
                 }
                 self.wake().await;
+                if name == "inbox" {
+                    if let Some(c) = &child {
+                        // a helper reads its own child session, and claims it (README "Helpers read their own events")
+                        let shown = args
+                            .get("session")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        self.claim(c, &shown);
+                        let events =
+                            crate::util::js_trim(&self.with_missed("", Some(c))).to_string();
+                        return text(if events.is_empty() {
+                            format!("No new board events in {shown}.")
+                        } else {
+                            events
+                        });
+                    }
+                }
+                self.lapse_claims().await;
                 if name == "inbox"
                     && (!self.missed.lock().unwrap().is_empty()
                         || self.bridge.lock().unwrap().is_some())
@@ -1806,7 +1927,24 @@ impl mcp::Server for Conn {
                                 card.as_deref(),
                             );
                         }
-                        let out = self.with_missed(&out, child.as_deref());
+                        let claimed = child.as_deref().is_some_and(|c| self.claimed(c));
+                        // (a claimed session's events go out with inbox(session) alone)
+                        let out = if claimed {
+                            out
+                        } else {
+                            self.with_missed(&out, child.as_deref())
+                        };
+                        if name == "close_session" {
+                            let key = args
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .trim()
+                                .to_lowercase();
+                            self.unclaim(&key, "session closed").await;
+                        } else if name == "create_info" || name == "revise_card" {
+                            self.note_done(&name, &args).await;
+                        }
                         self.touch();
                         self.sync_link().await;
                         let out = if child.is_none() {
@@ -1908,6 +2046,7 @@ pub async fn main_server() {
         missed: Mutex::new(vec![]),
         deaf_told: AtomicBool::new(false),
         marks: Mutex::new(HashMap::new()),
+        claims: Mutex::new(HashMap::new()),
         mark_timer: AtomicBool::new(false),
         hint: Mutex::new(None),
         door: Mutex::new(None),
