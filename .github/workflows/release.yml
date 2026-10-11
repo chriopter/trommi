@@ -79,7 +79,11 @@ jobs:
           ref: ${{ github.sha }}
           path: repo
           persist-credentials: false
-          sparse-checkout: release
+          # release/ for the scripts and the key, hub/data-epoch for the manifest's "data_epoch"
+          sparse-checkout: |
+            /release/
+            /hub/data-epoch
+          sparse-checkout-cone-mode: false
       # which artifacts this run built: the hub's holds the hub and its updater
       - name: The parts that changed
         id: changed
@@ -294,7 +298,11 @@ jobs:
           ref: ${{ github.sha }}
           path: repo
           persist-credentials: false
-          sparse-checkout: release
+          # release/ for the scripts and the key, release_notes.sh for the notes
+          sparse-checkout: |
+            /release/
+            /.github/scripts/release_notes.sh
+          sparse-checkout-cone-mode: false
       # What is published is what was signed: checked again against the manifest whose hash the signing job passed on.
       - name: Check the signature and the files
         run: |
@@ -337,8 +345,17 @@ jobs:
               [ "$tagged" = "$COMMIT" ] || { echo "::error::the tag $TAG is there already and names $tagged, not $COMMIT"; exit 1; }
             fi
             changed=$(jq -r '[.changed | to_entries[] | select(.value) | .key] | join(", ")' publish/manifest.json)
+            # the notes: the release day's block of CHANGELOG.md; empty notes never stop a release
+            gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$COMMIT" > "$RUNNER_TEMP/changelog.md" 2>/dev/null || : > "$RUNNER_TEMP/changelog.md"
+            {
+              sh repo/.github/scripts/release_notes.sh "$RUNNER_TEMP/changelog.md" || true
+              echo
+              echo "---"
+              echo
+              echo "Every part of Trommi at $COMMIT; built from it (changed since the release before): $changed; the other parts are the files of ${REUSE:-the release before}. Signed: manifest.json and manifest.json.sig (see release/sign.sh). Install the connector: install.sh of this repository."
+            } > "$RUNNER_TEMP/notes.md"
             gh release create "$TAG" --target "$COMMIT" --latest --title "Trommi $TAG" \
-              --notes "Every part of Trommi at $COMMIT; built from it (changed since the release before): $changed; the other parts are the files of ${REUSE:-the release before}. Signed: manifest.json and manifest.json.sig (see release/sign.sh). Install the connector: install.sh of this repository." \
+              --notes-file "$RUNNER_TEMP/notes.md" \
               publish/* 2> "$RUNNER_TEMP/create.err" && code=0 || code=$?
             cat "$RUNNER_TEMP/create.err" >&2
             if [ "$code" != 0 ]; then
