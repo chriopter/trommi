@@ -23,6 +23,7 @@ On the iPhone, the Live Activity no longer shows a bare "0" when everything is a
 many agents are still at work.
 
 **Better**
+- Web: a tab opened again is live in under a second in a big room: the Desk is checked with the hub while it catches up, not before.
 - iPhone Live Activity with nothing waiting: "All answered" with the working ring and how many agents are at work
   (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
 

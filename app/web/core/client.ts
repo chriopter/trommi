@@ -539,9 +539,11 @@ export class Client {
     if (this.started) return
     this.started = true
     mark(`client start (${this.rebuild !== null ? `rebuild from ${this.rebuild}` : 'from the cache'})`)
-    if (this.rebuild !== null) await this.fromDesk().catch(() => {})
-    else if (this.is_human) await this.readDesk().catch(() => {})
-    mark('desk read')
+    // From the cache, the Desk stands already: the hub's Desk is read alongside the catch-up and the stream, not
+    // before them (`judgeDesk` holds back by the Desk's own cursor, whichever comes first; the catch-up's end reads
+    // it again only when this one is through). Without a cache it is what is shown first, and waited for.
+    if (this.rebuild !== null) { await this.fromDesk().catch(() => {}); mark('desk read') }
+    else if (this.is_human) void this.readDesk().catch(() => {}).finally(() => mark('desk read'))
     if (!this.started) return
     await this.restoreRegisters().catch(() => {})
     if (!this.started) return
