@@ -33,6 +33,7 @@ struct CardScreen: View {
               CardGallery(list: loose, all: c.attachments, at: $stageAt, viewport: room.height) { i in picture = gallery(c).firstIndex { $0.key == nil && $0.nth == i } }
             }
             answers(c, a)
+            if c.status == "open" && c.withAgent == nil { optionsSaid(c) }
             if !c.versions.isEmpty { versions(c) }
             CardLink(card: c)
             CardThread(card: c)
@@ -208,18 +209,6 @@ struct CardScreen: View {
             Text("Send the answer").font(Face.text(17, .semibold)).frame(maxWidth: .infinity, minHeight: 54)
           }.buttonStyle(TileStyle(lead: true, hue: hue)).disabled(picked.isEmpty)
         }
-        if let secs = c.sections?.filter({ !$0["key"].isNull }), secs.contains(where: { beyond($0) }) {
-          DisclosureGroup("Options in detail") {
-            VStack(alignment: .leading, spacing: 12) {
-              ForEach(Array(secs.enumerated()), id: \.offset) { _, s in
-                VStack(alignment: .leading, spacing: 4) {
-                  Text("\(Text(s["label"].string ?? "").font(Face.display(17, .bold)))\(Text(s["recommended"].truthy ? "  recommended" : "").font(Face.text(13)).foregroundColor(Ink.urgHigh))")
-                  if beyond(s) { RichText(text: s["text"].string ?? "", size: 15) }
-                }
-              }
-            }.padding(.top, 8)
-          }.font(Face.text(15, .medium)).tint(Ink.fg)
-        }
         if c.kind == "decision" {
           HStack(spacing: 10) { Rectangle().fill(Ink.lineStrong).frame(height: 1); Text("OR").font(Face.text(13, .semibold)).kerning(1.4).foregroundStyle(Ink.muted); Rectangle().fill(Ink.lineStrong).frame(height: 1) }
             .padding(.vertical, 4)
@@ -233,6 +222,23 @@ struct CardScreen: View {
             })
             .accessibilityLabel("\(Words.trust): your call\(c.advisedLabels.isEmpty ? "" : " · agent takes \(c.advisedLabels)")")
           otherWays(c, hue)
+        }
+      }
+    }
+  }
+  /** The options' own paragraphs (a card written as sections), at the end of the card after the answers, as on the
+   *  web: one block per option, in the order of the tiles, open. Only when one says more than its label. */
+  @ViewBuilder private func optionsSaid(_ c: DeskCard) -> some View {
+    if let all = c.sections?.filter({ !$0["key"].isNull }), all.contains(where: { beyond($0) }) {
+      let order = c.options.map(\.key)
+      let secs = all.sorted { (order.firstIndex(of: $0["key"].string ?? "") ?? .max) < (order.firstIndex(of: $1["key"].string ?? "") ?? .max) }
+      VStack(alignment: .leading, spacing: 14) {
+        Rectangle().fill(Ink.line).frame(height: 1)
+        ForEach(Array(secs.enumerated()), id: \.offset) { _, s in
+          VStack(alignment: .leading, spacing: 4) {
+            Text("\(Text(s["label"].string ?? "").font(Face.display(17, .bold)))\(Text(s["recommended"].truthy || c.recommended.contains(s["key"].string ?? "") ? "  recommended" : "").font(Face.text(13)).foregroundColor(Ink.accent))")
+            if beyond(s) { RichText(text: s["text"].string ?? "", size: 15) }
+          }
         }
       }
     }
