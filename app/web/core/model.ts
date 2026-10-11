@@ -286,6 +286,16 @@ export function applyGroups(model: Model, groups: readonly GroupSummary[], roles
   }
   for (const m of model.members.values()) if (!now.has(m.device_id) && m.is_active) { m.is_active = false; m.removed_entry_number = epoch }
   for (const s of model.sessions.values()) { composeProfile(s); syncSessionAgent(model, s) }
+  // settings an older web kept under a session's agent device, read before that session was known: its own now
+  for (const s of [...model.sessions.values()]) {
+    if (s.group_id == null || model.human.raw.get(`session/${s.session_id}`)?.value != null) continue
+    for (const d of [s.agent_device_id, ...s.agent_device_ids]) {
+      const legacy = d ? model.human.raw.get(`session/${d}`)?.value : null
+      if (legacy == null) continue
+      model.human.session_settings.set(s.session_id, legacy as SessionSettings); s.settings = legacy as SessionSettings; change.sessions.add(s.session_id)
+      break
+    }
+  }
   change.members = true
   change.stack = true
 }
@@ -765,8 +775,13 @@ export function setHumanRegister(model: Model, key: string, value: unknown, w: R
     case 'crown': h.crown = value ?? null; break
     case 'desk': put(h.desks, value); break
     case 'session': {
-      put(h.session_settings, value)
-      const s = sessionOf(model, id); s.settings = (value as SessionSettings | null | undefined) ?? null; change.sessions.add(id); change.stack = true; break
+      // A session's settings are kept under its session id. A key that is an agent device of a known session (an
+      // older web wrote them so, for a session it held without its id) is that session's: no session of its own.
+      const real = model.sessions.has(id) ? id : [...model.sessions.values()].find(x => x.session_id !== id && (x.agent_device_id === id || x.agent_device_ids.includes(id)))?.session_id ?? id
+      if (real !== id && (value === null || value === undefined)) { change.registers.add(key); break }
+      if (real !== id && h.raw.get(`session/${real}`)?.value != null) { change.registers.add(key); break }   // (the real key's own value wins)
+      if (value === null || value === undefined) h.session_settings.delete(real); else h.session_settings.set(real, value as SessionSettings)
+      const s = sessionOf(model, real); s.settings = (value as SessionSettings | null | undefined) ?? null; change.sessions.add(real); change.stack = true; break
     }
     case 'scribble_snapshot': put(h.scribble_snapshots, value); change.timelines.add(timelineKey('scribble', id)); break
   }

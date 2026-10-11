@@ -436,7 +436,12 @@ const SESSION_ID_LEN = 12
 // A session's key in the core's model: its session_id (in the demo room that is its agent's device id).
 const sessionKey = s => s.session_id ?? s.agent_device_id
 // The sessions as the board shows them: one per key (a stored copy filed under an older key is not a second session).
-const sessionsOf = m => [...m.sessions].filter(([k, s]) => k === sessionKey(s)).map(([, s]) => s)
+// (a session entry made only by a register keyed by another session's agent device, as an older web wrote them, is
+//  no session: model.ts takes such settings into the session they belong to once it knows it)
+const sessionsOf = m => {
+  const agents = new Set([...m.sessions.values()].filter(s => s.group_id).flatMap(s => [s.agent_device_id, ...(s.agent_device_ids ?? [])]).filter(Boolean))
+  return [...m.sessions].filter(([k, s]) => k === sessionKey(s) && !(s.group_id == null && agents.has(k))).map(([, s]) => s)
+}
 // What belongs to a session (a card, a request, a published object) names it by session_id or by its agent.
 const keyOf = o => o.session_id ?? o.agent_device_id
 // The versions a human reads as the question: the first, and every later one that leaves it open. A version that
@@ -1171,9 +1176,16 @@ function hubFacade(client, board) {
       const agents = board.state.agents
       const a = agents.find(x => x.id === body.agent)
       if (!a) throw fail(404, 'unknown session')
-      const setOf = x => ({ ...(m().human.session_settings.get(x.device_id) ?? {}) })
+      // (under the session's own id: a key of its agent device would be read elsewhere as a session of its own; a
+      //  value an older web left under that key is taken along and removed)
+      const keyOf = x => x.session_id ?? x.device_id
+      const setOf = x => ({ ...(m().human.session_settings.get(keyOf(x)) ?? {}) })
       const writes = {}
-      const put = (x, fields) => { writes[`session/${x.device_id}`] = { ...(writes[`session/${x.device_id}`] ?? setOf(x)), ...fields } }
+      const put = (x, fields) => {
+        const k = `session/${keyOf(x)}`
+        writes[k] = { ...(writes[k] ?? setOf(x)), ...fields }
+        for (const old of [x.agent_device_id].filter(d => d && d !== keyOf(x))) if (m().human.raw.get(`session/${old}`)?.value != null) writes[`session/${old}`] = null
+      }
       if ('label' in body) put(a, { name: String(body.label ?? '').slice(0, 60) })
       if ('icon' in body) put(a, { icon: body.icon || null })
       if ('archived' in body) { if (body.archived && a.online && !body.deleting) throw fail(409, 'this session is connected; it can be archived once it is away'); put(a, { archived: Boolean(body.archived) }) }
