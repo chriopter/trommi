@@ -464,8 +464,13 @@ export interface Invite {
   invite_state: InviteState
   newcomer: { device_id: Hex; device_name: string } | null
   error: string | null
+  /** Self-join (spec/v1.md 12.4): the agent's ask this invite answers; such an invite is confirmed by the client
+   *  itself once the ask names the Request's hash, never by the emoji. */
+  vouch?: Vouch
   [field: string]: unknown
 }
+/** An agent's ask to let in a new session of its machine and account (12.4): `join_ask/<nonce>` in `session_id`. */
+export interface Vouch { nonce: string; session_id: Hex; account: string; account_label: string; by_name: string }
 
 export interface Alert { alert_id: string; code: string; message: string; envelope_number: EnvelopeNumber | null; sender_device_id: Hex | null; at: Ms; source: 'local' | 'agent' }
 

@@ -2221,7 +2221,8 @@ async function start(client, { fresh = false } = {}) {
       const inv = client.model.invites.get(id)
       // (a link whose time is up asks nothing any more: its note goes, and none comes)
       if (inv?.invite_state !== 'confirm_code' || inv.expires_at <= Date.now()) { if (inv && inv.invite_state !== 'open') document.getElementById(`code-ask-${id}`)?.remove(); continue }
-      if (codeAsked.has(id)) continue
+      // (a session of an agent's own machine and account, let in by the client itself once its Request checks out: 12.4)
+      if (codeAsked.has(id) || inv.vouch) continue
       codeAsked.add(id)
       if (location.pathname === `/pair/${id}`) continue
       const host = document.getElementById('says-host')
