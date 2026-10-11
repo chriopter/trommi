@@ -110,6 +110,7 @@ functions! {
     fallible generate_user_handle();
     fallible generate_push_key();
     fallible open_apns_push(key, sealed);
+    fallible open_live_activity(key, sealed);
     fallible read_web_push(payload);
     fallible recovery_anchor(recovery_code, room, rows);
     fallible recovery_sign_in(recovery_code, room, hub, challenge);

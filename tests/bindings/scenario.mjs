@@ -377,7 +377,10 @@ export async function runScenario(scenario, world) {
       for (let at = 0; at < plain.length; at += step.pieces) stored.push(encryptor.update(plain.subarray(at, at + step.pieces)))
       const end = encryptor.finish()
       stored.push(end.stored)
-      check(end.plainLen === plain.length && core.fileLayout(end.storedLen).plainLen === plain.length, 'the file has another length')
+      // the content's length; stored, the file is padded (spec/v1.md 11.0): the mark and at most 12 % or 4 KiB more
+      const padded = core.fileLayout(end.storedLen).plainLen
+      check(end.plainLen === plain.length && padded > plain.length && padded <= plain.length + Math.floor(plain.length / 8) + 4096, 'the file has another length')
+      check(end.storedLen === stored.reduce((n, piece) => n + piece.length, 0), 'the stored file has another length')
       const decryptor = new core.FileDecryptor(end.file)
       const opened = []
       for (const piece of stored) opened.push(decryptor.update(piece))

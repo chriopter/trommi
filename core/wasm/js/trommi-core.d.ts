@@ -294,6 +294,11 @@ export interface AccountName {
 
 export type AccountWay = 'password' | 'kit' | 'passkey'
 
+export interface LiveActivityCounts {
+  working: number
+  waiting: number
+}
+
 export interface PushNote {
   roomId: Uint8Array
   change: number
@@ -1027,6 +1032,7 @@ export function parseKitWords(text: string): string
 export function generateUserHandle(): Uint8Array
 export function generatePushKey(): Uint8Array
 export function openApnsPush(key: Uint8Array, sealed: Uint8Array): PushNote
+export function openLiveActivity(key: Uint8Array, sealed: Uint8Array): LiveActivityCounts
 export function readWebPush(payload: Uint8Array): PushNote
 /** The Scribble Board's merge, without state: the snapshot file's JSON after `items` on `snapshot`. */
 export function boardReduce(snapshot: Uint8Array | null | undefined, snapshotFrontier: WriterHead[], items: BoardItem[], frontier: WriterHead[]): Uint8Array
