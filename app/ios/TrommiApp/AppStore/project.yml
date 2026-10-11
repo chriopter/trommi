@@ -59,7 +59,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
   # The Mac app (app/ios/README.md "On a Mac"): the same package library, built for macOS; the sources that are iPhone-only
   # are behind #if os(iOS). No extensions yet (share, notification service, Live Activity: the menu bar shows the
-  # open questions instead). Its own bundle id, so it is a separate app record (or, later, a universal purchase).
+  # open questions instead). The iOS app's bundle id: the same App Store record, a universal purchase.
   TrommiMac:
     type: application
     platform: macOS
@@ -75,7 +75,8 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Trommi
-        PRODUCT_BUNDLE_IDENTIFIER: com.trommi.mac
+        # the iOS app's bundle id: one App Store record for both (a universal purchase), its push topic and app id
+        PRODUCT_BUNDLE_IDENTIFIER: com.trommi.ios
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         # Apple silicon only: the Rust core is built for aarch64-apple-darwin (lib/macos); an Intel slice would need
