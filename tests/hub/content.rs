@@ -1145,8 +1145,12 @@ fn accepted_content_arrives_live_and_a_stream_resumes_by_change_number() {
     let from = all[all.len() - 4]["change"].as_i64().unwrap();
     let mut resumed = s.bea.events(hub, Some(from));
     let mut got = vec![];
-    for _ in 0..3 {
-        got.push(resumed.next(Duration::from_secs(5)).unwrap().id.unwrap());
+    // (a human device's new stream is first told who is here: presence, without a change number)
+    while got.len() < 3 {
+        let e = resumed.next(Duration::from_secs(5)).unwrap();
+        if e.name != "presence" {
+            got.push(e.id.unwrap());
+        }
     }
     assert_eq!(
         got,

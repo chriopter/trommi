@@ -27,7 +27,7 @@ const sessionOf = s => ({
 const memberOf = ({ agent_session_id: _, ...m }) => ({ platform: null, folder: null, host: null, offline_since: null, link: null, fingerprint: m.device_id.slice(0, 16).match(/.{4}/g).join(' '), ...m })
 const answerOf = a => Object.assign(a, { envelope_hash: a.envelope_hash ?? null, by_device_id: a.by_device_id ?? null, taken_back_at: a.taken_back_at ?? null, taken_back_sent_at: a.taken_back_sent_at ?? null, pending: false })
 const cardOf = c => { for (const a of [c.answer, ...c.answers]) if (a) answerOf(a); return Object.assign(c, { session_id: c.session_id ?? c.agent_device_id, state_envelope_number: c.state_envelope_number ?? c.envelope_number ?? 0, unsupported: c.unsupported ?? null }) }
-const requestOf = p => Object.assign(p, { session_id: p.session_id ?? p.agent_device_id })
+const requestOf = p => Object.assign(p, { session_id: p.session_id ?? p.agent_device_id, content_state: p.content_state ?? 'ok' })
 const publishedOf = p => Object.assign(p, { session_id: p.session_id ?? p.agent_device_id, artifact_type: p.artifact_type ?? null, content_state: p.content_state ?? 'ok' })
 const noteOf = n => Object.assign(n, { version_hashes: n.version_hashes ?? (n.version_hash ? [n.version_hash] : []), causal: n.causal ?? null, pending: false, unsupported: false })
 /** A board's items with every picture's reference in the form the merge takes (see NO_KEY). */
@@ -43,7 +43,7 @@ export class MockClient {
     const { last_entry_number = 0, ...room } = f.room
     this.entries = last_entry_number   // counts the room's member changes (a member's added_entry_number)
     this.model = {
-      room: { outbox_blocked: null, ...room },
+      room: { outbox_blocked: null, reading: false, ...room },
       members: new Map(f.members.map(m => [m.device_id, memberOf(m)])),
       sessions: new Map(f.sessions.map(s => [s.agent_device_id, sessionOf(s)])),
       cards: new Map(f.cards.map(c => [c.object_id, cardOf(c)])),

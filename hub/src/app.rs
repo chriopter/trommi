@@ -853,14 +853,43 @@ impl App {
         }
     }
 
-    /// A stream opened: told under the writer, in order with what the lease watch tells.
-    pub fn stream_opened(self: &Arc<Self>, auth: &Auth) {
-        let _ = self.db.write(|_| {
+    /// A stream opened: told under the writer, in order with what the lease watch tells. A human device's new
+    /// stream is then told, first, who is here now: one `presence` event per other device with a stream open,
+    /// with its agent's link report while its lease runs (`hears`, `working`, `last_call_at`). Without it a page
+    /// loaded fresh showed every agent as gone until its next lease renewal. (Under the writer too: every later
+    /// change of presence is published after it, so the newest word on a device always comes last.)
+    pub fn stream_opened(self: &Arc<Self>, auth: &Auth, stream: &crate::live::Stream) {
+        let _ = self.db.write(|c| {
             self.presence(
                 &auth.room,
                 &auth.device,
                 json!({ "device": b64(&auth.device), "online": true }),
             );
+            if auth.who != Who::Human {
+                return Ok::<_, Refused>(());
+            }
+            use rusqlite::OptionalExtension;
+            let now = util::now() as i64;
+            let mut lease = c.prepare_cached(
+                "SELECT hears, working, last_call_at FROM agent_leases WHERE room_id = ?1 AND device = ?2 AND expires_at > ?3",
+            )?;
+            for device in self.live.online_devices(&auth.room) {
+                if device == auth.device {
+                    continue;
+                }
+                let link: Option<(bool, bool, i64)> = lease
+                    .query_row(params![&auth.room[..], &device[..], now], |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    })
+                    .optional()?;
+                let data = match link {
+                    Some((hears, working, last_call_at)) => json!({
+                        "device": b64(&device), "online": true, "hears": hears, "working": working, "last_call_at": last_call_at,
+                    }),
+                    None => json!({ "device": b64(&device), "online": true }),
+                };
+                stream.send_now(crate::live::sse("presence", None, &data));
+            }
             Ok::<_, Refused>(())
         });
     }

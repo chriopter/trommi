@@ -5,7 +5,7 @@ import type { Change, HumanRegisters, Model, Newer } from './types.ts'
 
 export function emptyModel(): Model {
   return {
-    room: { room_id: null, hub_url: null, my_device_id: null, my_role: null, key_epoch: 0, last_envelope_number: 0, connection: 'offline', outbox_blocked: null },
+    room: { room_id: null, hub_url: null, my_device_id: null, my_role: null, key_epoch: 0, last_envelope_number: 0, connection: 'offline', reading: false, outbox_blocked: null },
     members: new Map(), sessions: new Map(), cards: new Map(), permissions: new Map(), notes: new Map(), published: new Map(),
     timelines: new Map(), human: emptyHuman(), invites: new Map(), alerts: [], outbox: [],
     stack: [], open_permission_ids: [], newer: emptyNewer(),

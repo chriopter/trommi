@@ -102,6 +102,8 @@ What the fields mean under protocol v1:
 - `envelope_number`, everywhere: the hub's **change** number under which the item arrived. `room.last_envelope_number`
   is how far this device has taken the hub's order. `room.key_epoch` is the room group's epoch.
 - `room.connection`: `offline | connecting | catching_up | live`, and `removed` once this device is no member.
+  `room.reading`: the room is still being read (a sign-in joining its session groups, the past read again): the
+  Desk says "catching up" instead of "all quiet", and a session not named yet is "Loading …" instead of its id.
 - **Member**: `device_role` `human` or `agent` (also a helper device); `added_entry_number` / `removed_entry_number`
   are room epochs (only their order is shown); `device_name`, `platform`, `folder`, `host` come from the device's
   own register `device/<id>`; `is_online`, `link` from the hub's presence.
@@ -118,8 +120,13 @@ What the fields mean under protocol v1:
   `ok` means the body is not readable here (pruned, no key, a newer schema). `catching_up`: open here, but the hub's Desk does
   not list it and this device holds nothing of it newer than that Desk (client.ts `readDesk`, at the start, after
   every catch-up and every minute): settled elsewhere, off the stack. A card the Desk lists whose newest version
-  this device lacks is read from the Desk's copy of that version.
+  this device lacks is read from the Desk's copy of that version. The Desk lists only the groups this device is
+  in, so it is read again as soon as a session group was joined; a listed card not read yet stands as a quiet
+  "Loading …" placeholder.
 - **PermissionRequest**: `permission_state` `pending | allowed | denied | expired`; `catching_up` as a card's.
+  `content_state` other than `ok`: its body (tool, words, expiry) is not read here yet; the views show it as
+  loading, never as a question to allow, and past the longest wait a connector gives (62 minutes) it is `expired`
+  (the hub cannot see an expiry, so its Desk lists requests that ran out unanswered as open for ever).
 - **Timeline**: `items` is a window (`Map<envelope_number | local_id, TimelineItem>`), filled by `loadTimeline` (`since_ms`: a first window that reaches back so far, at most `KEEP_PER_CHAT` items); the cache keeps the newest `KEEP_PER_CHAT` (500) items of each Chat, older ones are read again from the hub;
   `item_count`, `newest_envelope_number`, `loaded_down_to`, `has_more`. An item fetched out of the hub's order
   carries `provisional: true` until its chain confirms it. A turn's work trail stands in the session's Chat as

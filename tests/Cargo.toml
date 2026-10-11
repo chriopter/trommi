@@ -228,6 +228,10 @@ name = "hub_jobs"
 path = "hub/jobs.rs"
 
 [[test]]
+name = "hub_presence"
+path = "hub/presence.rs"
+
+[[test]]
 name = "hub_busy"
 path = "hub/busy.rs"
 

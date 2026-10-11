@@ -82,6 +82,8 @@ pub struct SlotPaths {
     pub took_over: bool,
     pub handed_over: bool,
     pub refused: Option<Refused>,
+    /// Keyed slots of this folder that belong to other agent sessions: never taken, never asked for.
+    pub foreign: Vec<u32>,
 }
 #[derive(Clone, Debug, Default)]
 pub struct Refused {
@@ -507,7 +509,7 @@ pub fn owner_of(p: &SlotPaths) -> Option<Value> {
     read_json(&owner_file(p))
 }
 pub fn owner_record(owner: &str, claude_pid: Option<u32>) -> Value {
-    json!({ "owner": owner, "claude_pid": claude_pid, "at": now_ms() })
+    json!({ "owner": owner, "claude_pid": claude_pid, "claude_start": claude_pid.map(start_of), "at": now_ms() })
 }
 pub fn write_owner(p: &SlotPaths, record: &Value) {
     let _ = write_private(&owner_file(p), &record.to_string());
@@ -520,6 +522,29 @@ pub fn owned_by(record: Option<&Value>, owner: &str, claude_pid: u32) -> bool {
     }
     !r.get("owner").is_some_and(crate::util::truthy)
         && r.get("claude_pid").and_then(|v| v.as_u64()) == Some(claude_pid as u64)
+}
+/// Whether a connector of this session may use a keyed slot with this owner record: its own; one nobody owns yet
+/// (no record, or one `join` wrote in a terminal: the first session that uses it adopts it); one of a process
+/// without a session id that has ended. Never one that names another session (`cc:<Claude Code session id>`,
+/// `key:<TROMMI_SESSION_KEY>`), nor one of another process without a session id that still runs: each agent
+/// session is its own member with its own board session, and only a resume of that session continues it.
+pub fn may_take(record: Option<&Value>, owner: &str, claude_pid: u32) -> bool {
+    let Some(r) = record else { return true };
+    if owned_by(Some(r), owner, claude_pid) {
+        return true;
+    }
+    if r.get("owner").is_some_and(crate::util::truthy) {
+        return false;
+    }
+    let Some(pid) = r.get("claude_pid").and_then(|v| v.as_u64()) else {
+        return true;
+    };
+    let pid = pid as u32;
+    if pid == claude_pid {
+        return true;
+    }
+    let start = r.get("claude_start").and_then(|v| v.as_str()).unwrap_or("");
+    !(alive(pid) && (start.is_empty() || start_of(pid) == start))
 }
 /// The slots of a room in the order a connector of this session tries them: its own, its earlier connector's, the rest.
 pub fn slot_order(

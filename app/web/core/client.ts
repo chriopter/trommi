@@ -57,6 +57,8 @@ const TRIM_EVERY = 100
 const FLUSH_MS = 40
 /** How often a running human device reads the hub's Desk again (`readDesk`), besides after every catch-up. */
 const DESK_EVERY_MS = 60_000
+/** How soon the hub's Desk is read again after a session group was joined (`deskSoon`). */
+const DESK_SOON_MS = 250
 /** How many answered cards a reading of the Desk asks the hub about (`readDesk`). */
 const ANSWERED_ASKED = 20
 const CHUNK = 65_536
@@ -213,6 +215,10 @@ export class Client {
   private deskReading: Promise<void> | null = null
   /** The cards `readDesk` read the newest Chat page of, with the hand back it was read for. */
   private revisionRead = new Map<string, number>()
+  /** Work the room's reading waits for (`readingUntil`): the session groups of a sign-in being joined. */
+  private readingHolds = 0
+  /** How many session groups this device was in when it last read the hub's Desk for them. */
+  private sessionGroups = 0
   /** The cursor the cache was last written with. */
   private written = -2
   private goalsTimer: ReturnType<typeof setTimeout> | null = null
@@ -258,6 +264,7 @@ export class Client {
     const ch = M.emptyChange()
     ch.room = true
     M.applyGroups(this.model, e.groups, e.roles, ch)
+    this.sessionGroups = e.groups.filter(g => g.session && !g.archived).length
     for (const [key, value] of await this.cache.range('client/invite/')) { const k = value as InviteKept; this.invites.set(key.slice('client/invite/'.length), k); if (!k.done) this.model.invites.set(k.public.invite_id, k.public) }
     M.project(this.model, ch, this.now())
     this.record(ch)
@@ -285,6 +292,8 @@ export class Client {
     const ch = this.change
     if (this.desk && (ch.cards.size || ch.permissions.size)) this.judgeDesk(ch, { cards: new Set(ch.cards), permissions: new Set(ch.permissions) })
     if (this.model.room.last_envelope_number !== this.engine.position) { this.model.room.last_envelope_number = this.engine.position; ch.room = true }
+    const reading = this.readingHolds > 0 || this.rebuild !== null || this.engine.rescanPending
+    if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true }
     M.project(this.model, ch, this.now())
     // (the engine moves its cursor only after an item's effects were reported: at any publish the model holds
     // everything up to it, and this change carries what the cache lacks of it)
@@ -371,6 +380,10 @@ export class Client {
     on('relay', m => { if (m.kind === 'strokePiece') M.applyStrokePiece(this.model, m, this.change, { now: this.now() }) })
     on('groups', ({ groups, roles }) => {
       M.applyGroups(this.model, groups, roles, this.change)
+      // The hub's Desk lists only what lies in the groups this device is in: a device just signed in joins its
+      // session groups one by one after it is in the room, and each one joined adds its open cards to the Desk.
+      const sessions = groups.filter(g => g.session && !g.archived).length
+      if (sessions > this.sessionGroups) { this.sessionGroups = sessions; if (this.started && this.is_human) this.deskSoon() }
       const role = e.is_human ? 'human' : 'agent'
       if (this.model.room.my_role !== role) { this.model.room.my_role = role; this.change.room = true }
     })
@@ -421,8 +434,10 @@ export class Client {
   private onStream(event: StreamEvent): void {
     switch (event.event) {
       case 'presence':
+        // (an event without `hears` says only that a stream opened or closed: the link report held stands while the
+        //  device is online; the hub tells a new stream the reports of now first, and every change after)
         M.applyPresence(this.model, [{ device_id: hex(event.device), is_online: event.online, offline_since: event.online ? null : this.now(),
-          link: event.hears === null ? null : { hears: event.hears ? 'live' : 'oncall', attached: true, working: event.working === true, last_call_at: event.last_call_at } }], this.change, this.now())
+          ...(event.hears === null ? {} : { link: { hears: event.hears ? 'live' : 'oncall', attached: true, working: event.working === true, last_call_at: event.last_call_at } }) }], this.change, this.now())
         if (event.lost) M.pushAlert(this.model, this.change, { code: 'agent-lost', message: 'An agent lost its connection.', sender_device_id: hex(event.device), at: this.now() })
         this.publish()
         return
@@ -560,12 +575,31 @@ export class Client {
    *  back through the core (it holds their chains already). The rest comes with the rescan. */
   private async fromDesk(): Promise<void> {
     const desk = await this.hub.desk()
+    // (what it lists as open decides the Desk from here on, as `readDesk`: an old question read again by the
+    //  rebuild below never stands on the Desk because its answer comes later in the history)
+    if (!desk.truncated) {
+      const listed = [...desk.cards, ...desk.permission_requests]
+      this.desk = { open: new Set(listed.map(o => hex(o.object_id))), versions: new Map(listed.map(o => [hex(o.object_id), o.version?.change ?? 0])), at: desk.change }
+    }
     const items: EnvelopeItem[] = [...desk.registers]
     for (const list of [desk.cards, desk.notes, desk.permission_requests, desk.artifacts]) for (const o of list) if (o.version) items.push(o.version)
     items.sort((a, b) => a.change - b.change)
     const received = await this.engine.receivePage(items)
-    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }) })
+    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }); this.judgeDesk(ch, null) })
   }
+  /** Reads the hub's Desk again shortly (several groups joined at once ask once). */
+  private deskSoon(): void {
+    if (this.deskTimer !== null) clearTimeout(this.deskTimer)
+    this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, DESK_SOON_MS)
+  }
+  /** The room counts as being read (`room.reading`) until `work` settles: room.ts hands it the session joins of a
+   *  sign-in, which the Desk waits for. */
+  readingUntil(work: Promise<unknown>): void {
+    this.readingHolds++
+    this.publishSoon()
+    void work.catch(() => {}).finally(() => { this.readingHolds--; this.publishSoon() })
+  }
+  private publishSoon(): void { this.change.room = true; queueMicrotask(() => this.publish()) }
   /**
    * The hub's Desk decides what stands on this device's Desk (the person's choice: one list, the same on every
    * device). The hub keeps, per card and permission request, whether it is open, from the envelopes' headers
