@@ -441,12 +441,14 @@ public final class DeskModel {
   private func makeAgents() -> [Agent] {
     let m = board
     let crown = m.human.crown["session_id"].string ?? m.human.crown["agent_device_id"].string
-    let list = m.sessions.values.filter { $0.isActive || !$0.cardIds.isEmpty }.sorted { $0.sessionId < $1.sessionId }
+    // (a session only a register named, with no group and nothing in it, is none: a board cached before the
+    // registers stopped making sessions may still hold one)
+    let list = m.sessions.values.filter { ($0.isActive && ($0.agentDeviceId != nil || $0.withHistory)) || !$0.cardIds.isEmpty }.sorted { $0.sessionId < $1.sessionId }
     var lastOfDevice = [String: UInt64]()
     for s in list { if let a = s.agentDeviceId { lastOfDevice[a] = max(lastOfDevice[a] ?? 0, s.lastActivityAt) } }
     var out: [Agent] = list.enumerated().map { i, s in
       let key = s.sessionId
-      let set = m.human.sessionSettings[key] ?? s.settings
+      let set = m.settingsOf(s)
       let p = s.profile
       let id = devToAgent[key] ?? String(key.prefix(SESSION_ID_LEN))
       let claimed = m.parentSessionOf(s)

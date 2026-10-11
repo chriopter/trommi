@@ -107,4 +107,22 @@ final class SessionNameTests: XCTestCase {
     b.project()
     XCTAssertEqual(DeskModel(board: b).agents.first { $0.sessionId == child }?.name, "socom")
   }
+
+  /** A rename keyed by the agent device's id (as a web client wrote it) names that main session; no second session. */
+  func testARenameByTheAgentDeviceNamesItsMainSession() throws {
+    let b = board()
+    var ch = Change()
+    b.apply(rec(1, from: human, role: "human", session: nil, values: ["session/\(agent)": ["name": "trommi"]]), change: &ch)
+    b.project()
+    let agents = DeskModel(board: b).agents
+    XCTAssertEqual(agents.count, 1, "one session, not a second one under the new name")
+    XCTAssertEqual(agents.first?.name, "trommi")
+    // a rename by the session id wins over it
+    b.apply(rec(2, from: human, role: "human", session: nil, values: ["session/\(sid)": ["name": "hub"]]), change: &ch)
+    XCTAssertEqual(try name(b), "hub")
+    // a register for a session this device does not hold makes none
+    b.apply(rec(3, from: human, role: "human", session: nil, values: ["session/\(String(repeating: "d", count: 32))": ["name": "ghost"]]), change: &ch)
+    b.project()
+    XCTAssertEqual(DeskModel(board: b).agents.count, 1)
+  }
 }

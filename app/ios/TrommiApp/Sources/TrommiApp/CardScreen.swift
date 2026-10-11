@@ -247,7 +247,7 @@ struct CardScreen: View {
         .buttonStyle(SideWay(kind: .what) { on in PenMark("sketch:what", color: on ? .white : Ink.fg, width: 2.2).frame(width: 90, height: 32) })
         .accessibilityLabel("What??")
       Button { model.handBack(c, text: note) } label: { EmptyView() }
-        .buttonStyle(SideWay(kind: .reverse) { on in Sketch("reverse", color: on ? .white : Ink.fg).frame(width: 34, height: 34) })
+        .buttonStyle(SideWay(kind: .reverse) { on in Sketch("reverse", color: on ? .white : Ink.fg).frame(width: 30, height: 30) })
         .accessibilityLabel("Reverse: back to the agent for rework, with the comments")
     }
   }
@@ -571,7 +571,8 @@ private struct SideWayBody<L: View>: View {
                                       .init(color: Color(hex: 0x2f70c4), location: 0.75), .init(color: Color(hex: 0x2f70c4), location: 1)],
                               center: UnitPoint(x: 0.53, y: 0.47), angle: .degrees(-83))
                 .clipShape(shape)
-              UnoOval().frame(width: 56, height: 60)
+              // (as on the send button's reverse card: air above and below the oval)
+              UnoOval().frame(width: 48, height: 52)
             }
           }
         }

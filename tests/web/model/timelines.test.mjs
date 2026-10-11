@@ -112,3 +112,16 @@ test('a turn\'s work trail: its steps stand in the session\'s Chat and fold into
   w.run(c => applyPresence(w.model, [{ device_id: hex(w.agent), is_online: false, offline_since: w.clock }], c, w.clock))
   assert.equal(t.items.get(110).content.work.state, 'done')
 })
+
+test('a hand back read again after the newer version that answered it (a rescan) leaves the card presented again', () => {
+  const w = new World(); w.groups()
+  const id = id16(0xc7), hid = hex(id)
+  const v1 = w.card(id, { title: 'Q', options: [{ key: 'a', label: 'A' }], object_version: 1 })
+  const back = w.message({ text: 'not like this', hand_back: true }, { card: id, sender: w.me })
+  assert.ok(w.model.cards.get(hid).in_revision)
+  w.card(id, { title: 'Q, reworked', options: [{ key: 'a', label: 'A' }], object_version: 2 }, { previous: v1.hash })
+  assert.equal(w.model.cards.get(hid).in_revision, null, 'the new version ends it')
+  // the same hand back handed to the model once more, as a rescan does: it is older than the newest version
+  w.take(back.r)
+  assert.equal(w.model.cards.get(hid).in_revision, null, 'still presented again')
+})

@@ -24,6 +24,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- The reverse card on a card: its black oval smaller, with air above and below, as on the send button (web and iPhone).
 - iPhone: right after you log in, the Desk shows the open questions from the hub's list, before the history is read.
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer
@@ -72,7 +73,11 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- iPhone: a session renamed on another device no longer shows up twice; the new name lands on the session itself.
 - Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
+- Open cards are the same on every device: the web takes them from the hub's list of open questions, so a card
+  settled elsewhere no longer stays on the Desk, and a card put before you again no longer hides under "Off your mind".
+- Renaming a session on the web no longer makes a second session appear on the iPhone.
 - Web: an answer to a form that came only after you had moved to another page (a removed device, say) no longer
   takes you away from that page.
 - Logging in on the web reads a big account several times faster, keeps saying how far it is, and a log in that
