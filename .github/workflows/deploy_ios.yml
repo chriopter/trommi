@@ -1,9 +1,9 @@
-# Delivers the iOS app to TestFlight: every build to the internal group "Intern"; a build of main also to the external
-# group "Trommi", whose public link is the rolling beta for everyone, and to Beta App Review when Apple asks for it
+# Delivers the iOS app to TestFlight, builds of main only: to the internal group "Intern", to the external group
+# "Trommi", whose public link is the rolling beta for everyone, and to Beta App Review when Apple asks for it
 # (the first build of a new version; later builds of a reviewed version usually go without). The App Store gets
 # reviewed versions less often, by hand (release_ios.yml).
 #
-# build.yml calls it on main (with a release) and on staging (without one).
+# build.yml calls it on main, with a release.
 # Interface (build.yml calls it; see the head of build.yml):
 #   version   the release number of the build run (shown in the run only; the build number is App Store Connect's
 #             highest plus one, so it rises whatever was shipped from elsewhere)
@@ -92,13 +92,12 @@ jobs:
       commit: ${{ steps.core.outputs.commit }}
       version: ${{ steps.upload.outputs.version }}
       build: ${{ steps.upload.outputs.build }}
-      channel: ${{ steps.upload.outputs.channel }}
     env:
       # XcodeGen, by the SHA-256 of its release archive
       XCODEGEN_VERSION: 2.46.0
       XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
     steps:
-      # A run named by hand must be a build of the main or staging branch of this repository: a pull request's run also has
+      # A run named by hand must be a build of the main branch of this repository: a pull request's run also has
       # artifacts, and nothing of such a run may be signed, attested or delivered.
       - name: The run that is delivered again
         id: source
@@ -111,12 +110,11 @@ jobs:
           printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
           jq -e --arg r "$GITHUB_REPOSITORY" \
-            '.path == ".github/workflows/build.yml" and (.head_branch == "main" or .head_branch == "staging") and (.event == "push" or .event == "workflow_dispatch") and .repository.full_name == $r and .head_repository.full_name == $r' \
-            "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main or staging branch of this repository"; exit 1; }
+            '.path == ".github/workflows/build.yml" and .head_branch == "main" and (.event == "push" or .event == "workflow_dispatch") and .repository.full_name == $r and .head_repository.full_name == $r' \
+            "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main branch of this repository"; exit 1; }
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
           grep -Fq "iOS (test and build the core)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job iOS (test and build the core) of run $RUN_ID did not succeed"; exit 1; }
           echo "commit=$(jq -r .head_sha "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
-          echo "branch=$(jq -r .head_branch "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.artifact || 'ios-release' }}
@@ -170,8 +168,6 @@ jobs:
           ITS_EXPORT_COMPLIANCE_CODE: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
           TF_GATE: ${{ inputs.gate }}
           TF_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
-          # main (by build.yml with the release gate, or by hand from a run of main): the public beta as well
-          TF_CHANNEL: ${{ (inputs.gate == 'release' || steps.source.outputs.branch == 'main') && 'public' || '' }}
           TF_UPLOADER: ${{ vars.IOS_UPLOADER || 'api' }}
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
@@ -181,13 +177,12 @@ jobs:
           test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
           test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
           op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh upload
-          echo "channel=$TF_CHANNEL" >> "$GITHUB_OUTPUT"
       - name: No key file is left
         if: always()
         run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/ExportOptions.plist"
 
-  # App Store Connect processes the uploaded build (minutes); then the group "Intern" holds it and What to Test is set;
-  # a build of main also goes to the group "Trommi" and, when Apple asks for it, to Beta App Review.
+  # App Store Connect processes the uploaded build (minutes); then the group "Intern" holds it, What to Test is set,
+  # the group "Trommi" gets it and, when Apple asks for it, Beta App Review.
   processed:
     name: TestFlight (processed, groups, What to Test, review)
     needs: testflight
@@ -217,7 +212,6 @@ jobs:
           TF_VERSION: ${{ needs.testflight.outputs.version }}
           TF_BUILD: ${{ needs.testflight.outputs.build }}
           TESTFLIGHT_TESTER: ${{ vars.IOS_TESTFLIGHT_TESTER }}
-          TF_CHANNEL: ${{ needs.testflight.outputs.channel }}
         run: |
           set -eu
           test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }

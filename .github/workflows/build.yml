@@ -1,5 +1,4 @@
-# On every commit on main and staging and on every pull request: find which parts changed, test and build those.
-# On staging also: deliver the iOS app to TestFlight when its part ran and passed (no release, no other delivery).
+# On every commit on main and on every pull request: find which parts changed, test and build those.
 # On main only:
 # when what a part is built from changed since the newest release, make one release v<N> of every part
 # (release.yml) and deliver each part whose inputs changed (web, hub, iOS; the connector is delivered by the release
@@ -34,13 +33,13 @@ name: build
 
 on:
   push:
-    branches: [main, staging]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions: {}
 
-# A pull request: one run at a time, a newer commit cuts the older run off. On main and staging every run is its own group:
+# A pull request: one run at a time, a newer commit cuts the older run off. On main every run is its own group:
 # each compares with the commit before it, so a run dropped while waiting would be a change never built.
 concurrency:
   group: build-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
@@ -53,7 +52,7 @@ env:
   RELEASE_BASE: 0
   # sccache: every crate compiled by the Rust jobs (dependencies and the workspace's own libraries) is kept in the
   # GitHub Actions cache, one entry per compilation, and taken from there when the same crate is compiled again with
-  # the same compiler, flags and sources. Only a run on main or staging writes; every other run (pull requests,
+  # the same compiler, flags and sources. Only a run on main writes; every other run (pull requests,
   # including those from forks) only reads. GitHub scopes cache writes by branch as well, so a pull request could not
   # reach main's entries even if it wrote. Each Rust job installs sccache (mozilla-actions/sccache-action) and sets
   # RUSTC_WRAPPER itself; Swatinem/rust-cache keeps only the downloaded crates (~/.cargo), not target/.
@@ -67,11 +66,11 @@ env:
   #   AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_KEY_ID }}
   #   AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET }}
   #   SCCACHE_GHA_ENABLED: 'false'
-  # Only main and staging get the token (an `environment` or an `if` on the ref); a pull request from a fork gets no
+  # Only main gets the token (an `environment` or an `if` on the ref); a pull request from a fork gets no
   # secrets and builds without sccache there, or reads a public bucket with SCCACHE_S3_NO_CREDENTIALS=true.
   SCCACHE_GHA_ENABLED: 'true'
   SCCACHE_GHA_VERSION: '1'
-  SCCACHE_GHA_RW_MODE: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging') && 'READ_WRITE' || 'READ_ONLY' }}
+  SCCACHE_GHA_RW_MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
   # an unreachable cache (rate limit, outage) compiles without it instead of failing the build
   SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
   # sccache cannot cache incremental compilations (rust-cache sets the same)
@@ -211,13 +210,13 @@ jobs:
         run: |
           rustup toolchain install || rustup show
           rustc --version
-      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
       # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: v1-rust-deps
           cache-targets: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
           version: v0.18.0
@@ -273,13 +272,13 @@ jobs:
           rustup toolchain install || rustup show
           rustc --version
           echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
-      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
       # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: v1-rust-deps
           cache-targets: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
           version: v0.18.0
@@ -389,13 +388,13 @@ jobs:
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components 1
           echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/zig/zig" version
-      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
       # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: v1-rust-deps
           cache-targets: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
           version: v0.18.0
@@ -477,7 +476,7 @@ jobs:
         with:
           persist-credentials: false
       # The core for Swift is what core/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
-      # what the iOS library is checked against). When they are the same as in an earlier run of main or staging, that
+      # what the iOS library is checked against). When they are the same as in an earlier run of main, that
       # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone). A pull request
       # reads that cache and never writes it.
       - name: What the core for Swift is built from
@@ -503,14 +502,14 @@ jobs:
           rustup component add llvm-tools
           rustc --version
           xcodebuild -version
-      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
       # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.core_cache.outputs.cache-hit != 'true'
         with:
           prefix-key: v1-rust-deps
           cache-targets: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         if: steps.core_cache.outputs.cache-hit != 'true'
         with:
@@ -602,7 +601,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # the core for Swift on this machine, taken from an earlier run of main or staging when built from the same paths
+      # the core for Swift on this machine, taken from an earlier run of main when built from the same paths
       # (as in the job ios)
       - name: What the core for Swift is built from
         id: core_inputs
@@ -624,14 +623,14 @@ jobs:
           swift --version
         env:
           HIT: ${{ steps.core_cache.outputs.cache-hit }}
-      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
       # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.core_cache.outputs.cache-hit != 'true'
         with:
           prefix-key: v1-rust-deps
           cache-targets: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         if: steps.core_cache.outputs.cache-hit != 'true'
         with:
@@ -659,17 +658,15 @@ jobs:
 
   # main: when a release is due and the app's inputs changed since the newest release. It starts beside the release
   # (archive and signing take minutes); its upload waits until this run's release is published and verified
-  # (gate: release, .github/scripts/ios_release_gate.sh), so only a released app ships. staging: no release; when the
-  # iOS part ran (its paths changed since the commit before) and its tests and the core's passed.
+  # (gate: release, .github/scripts/ios_release_gate.sh), so only a released app ships.
   deploy_ios:
     name: iOS
     needs: [changes, core, ios, ios_client]
     if: >-
       ${{ !cancelled() && needs.ios.result == 'success' && needs.ios_client.result == 'success'
         && contains(fromJSON('["success","skipped"]'), needs.core.result) && (
-        (github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-          && needs.changes.outputs.release == 'true' && needs.changes.outputs.changed_ios == 'true')
-        || (github.ref == 'refs/heads/staging' && github.event_name == 'push')) }}
+        github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+          && needs.changes.outputs.release == 'true' && needs.changes.outputs.changed_ios == 'true') }}
     permissions:
       contents: read
       actions: read
@@ -705,13 +702,13 @@ jobs:
           rustc --version
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
-      # the downloaded crates (~/.cargo), saved by main and staging, a pull request reads them; the compiled crates are
+      # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
       # sccache's (env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: v1-rust-deps
           cache-targets: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         with:
           version: v0.18.0
@@ -793,7 +790,7 @@ jobs:
           echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # The one release of this run: every part's files and one signed manifest (release.yml): the parts built here, the
-  # unchanged ones taken from the newest release. Only on main (never staging), only when the inputs of a part changed since the
+  # unchanged ones taken from the newest release. Only on main, only when the inputs of a part changed since the
   # newest release, and only when every part that ran passed.
   release:
     name: Release

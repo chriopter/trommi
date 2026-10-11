@@ -321,6 +321,24 @@ The whole list, with everything that is in place: [SECURITY.md](SECURITY.md).
 
 ## Development
 
+```text
+feature branch           one change, or a bundle of changes per topic
+   │
+   ▼
+release/<date>-<n>       frozen; each one is its own pull request
+   │
+   ▼
+pull request ─────────── tests of the changed parts; 7 required checks green,
+   │                     auto-merge, squash merge
+   ▼
+main ─────────────────── signed release v<N>, then only the parts that changed:
+                           web        app.trommi.com
+                           hub        the server pulls and checks v<N>
+                           iOS        TestFlight "Intern" + "Trommi" (public)
+                           site       trommi.com, when site/ changed
+                           connector  updates itself from the release
+```
+
 <details>
 <summary><b>Repository layout</b> · core, hub, apps, connector</summary>
 

@@ -243,8 +243,8 @@ distribution signing refuses App Manager keys: the key needs the Admin role.
 ## Public beta
 
 TestFlight's public link is the rolling channel; the App Store gets reviewed versions less often, by hand ("App Store
-release"). `deploy_ios.yml` sends every build of staging to the internal group "Intern" only. A build of main (a
-release) also goes, once App Store Connect has processed it (VALID), to the external group "Trommi"
+release"). `deploy_ios.yml` delivers builds of main only (a release): to the internal group "Intern" and, once App
+Store Connect has processed it (VALID), to the external group "Trommi"
 (`asc.py external`), with "What to Test" from the newest day of `CHANGELOG.md` (`asc.py whats-new`), and to Beta App
 Review when Apple asks for it (`asc.py beta-review`: the build's external state is `READY_FOR_BETA_SUBMISSION` and it
 has no `betaAppReviewSubmissions` yet; the first build of a new version is reviewed, later builds of it usually go
@@ -264,7 +264,7 @@ Once by hand (the API cannot make the group's public link):
    Connect → TestFlight → Test Information.
 5. The link into `site/wrangler.jsonc` (`vars.TESTFLIGHT_URL`): trommi.com/beta then leads there.
 
-While "Trommi" is missing, the delivery of main fails saying so; staging is not affected.
+While "Trommi" is missing, the delivery of main fails saying so.
 
 ## Export compliance
 
