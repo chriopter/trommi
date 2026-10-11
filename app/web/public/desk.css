@@ -1012,11 +1012,13 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 .end-tick.is-later .sketch { width: 20px; height: 20px; }
 .end-row[data-g="later"] :is(.end-title, .end-said) { color: var(--muted); }
 /* (a closed card: answered, done or read a green tick on the right; shredded or withdrawn its own small drawing in quiet ink;
-   the title as it is, nothing struck through) */
+   the title as it is; only a shredded one is struck through, below) */
 .end-tick.is-done { color: var(--accent); }
 .end-tick.is-done .sketch { width: 20px; height: 20px; stroke-width: 2.2; }
 .end-tick.is-thrown { color: var(--muted); }
 .end-tick.is-thrown .sketch { width: 19px; height: 19px; stroke-width: 1.8; }
+/* (a shredded card, thrown away unanswered: struck through as well) */
+.end-row[data-shredded] > :is(.end-title, .end-said) { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent); }
 .end-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 600 var(--t-sm)/1.3 var(--font); text-decoration: none; }
 .end-title:hover { text-decoration: underline; }
 .end-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }

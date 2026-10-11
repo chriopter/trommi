@@ -20,7 +20,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
-- Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder, a withdrawn one a return arrow; nothing is struck through any more (web and iPhone).
+- Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one

@@ -376,7 +376,7 @@ try {
   const g = await A.js(`return Object.fromEntries(['${pile.snooze}', '${pile.shred}', '${pile.done}'].map(id => [id, document.querySelector('#off-end .end-row[data-id="' + id + '"]')?.dataset.g]))`)
   check(g[pile.snooze] === 'later' && g[pile.shred] === 'trash' && g[pile.done] === 'done', `each card in its place (${Object.values(g).join(', ')})`)
   check(await A.js(`const o = [...document.querySelectorAll('#off-end .end-row')].map(r => r.dataset.g), rank = g => (g === 'works' ? 0 : g === 'later' ? 1 : 2); return o.every((x, i) => !i || rank(o[i - 1]) <= rank(x))`), 'the end list: the work first, then Later, then what is closed')
-  check(await A.js(`const r = ${endRow(pile.shred)}; return !!r.querySelector('.end-tick.is-thrown') && !r.querySelector('.end-tick.is-done') && !getComputedStyle(r.querySelector('.end-title')).textDecorationLine.includes('line-through')`), 'a shredded row has the shredder, not the tick, not struck through')
+  check(await A.js(`const r = ${endRow(pile.shred)}; return !!r.querySelector('.end-tick.is-thrown') && !r.querySelector('.end-tick.is-done') && getComputedStyle(r.querySelector('.end-title')).textDecorationLine.includes('line-through')`), 'a shredded row has the shredder, not the tick, and is struck through')
   await A.js("trommi.router.visit('/')")
   await A.until("document.querySelector('#desk-stacks')", 'the Desk again')
   check(await A.js("return !document.querySelector('#desk-stacks [data-pile=off], #desk-stacks [data-stack=off], .off-head') && !!document.querySelector('#desk-stacks #desk-artifacts')"), 'no pile Off the desk at the foot any more; Artifacts stays')

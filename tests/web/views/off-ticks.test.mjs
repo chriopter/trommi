@@ -1,5 +1,5 @@
 // off-ticks.test.mjs: Off your mind (desk.mjs endList, desk.css): an answered, done or read row carries a green tick on
-// its right, a shredded one the shredder, a withdrawn one the return arrow; nothing in the list is struck through.
+// its right, a shredded one the shredder and is struck through, a withdrawn one the return arrow; nothing else is struck through.
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -14,9 +14,10 @@ test('a closed row: the tick when answered or done, the shredder or the return a
   assert.match(box, /s\.g === 'trash'[\s\S]*end-tick is-thrown[\s\S]*sk\(c\.status === 'shredded' \? 'shred' : 'withdraw'\)/, 'shredded: the shredder; withdrawn: the return arrow')
 })
 
-test('nothing in Off your mind is struck through', () => {
-  const css = read('desk.css')
-  const rules = css.split('}').filter(r => /\.end-row/.test(r))
-  assert.ok(rules.length > 0)
-  assert.ok(rules.every(r => !/line-through/.test(r)), rules.filter(r => /line-through/.test(r)).join('}\n'))
+test('only a shredded row is struck through', () => {
+  const css = read('desk.css'), src = read('desk.mjs')
+  const struck = css.split('}').filter(r => /\.end-row/.test(r) && /line-through/.test(r))
+  assert.equal(struck.length, 1, struck.join('}\n'))
+  assert.match(struck[0], /\.end-row\[data-shredded\]/)
+  assert.match(src, /s\.g === 'trash' && c\.status === 'shredded' \? raw\(' data-shredded'\)/, 'only a shredded row is marked so')
 })
