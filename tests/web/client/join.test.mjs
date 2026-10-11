@@ -76,3 +76,34 @@ test('an Offer served without its MAC, or with another one, is not answered: bad
     assert.equal(fake.requests.slice(since).filter(r => r.method === 'POST' && r.path.endsWith('/request')).length, 0, 'no Request was posted')
   }
 })
+
+test('a join whose Request did not reach the hub asks again with the same bytes; one that never gets through says offline, and the same link works next time', async t => {
+  const { fake, R, a } = await scene(t)
+  const invite = await a.createInvite({ device_role: 'human', app_url: 'https://app.example/join' })
+  // the Request was taken, but its answer never came: posted again, the hub answers it as the first time
+  fake.faults.add({ method: 'POST', path: /\/request$/, drop: 'after', times: 3 })
+  const first = R.joinRoom({ link: invite.link, storage: storage('blip'), poll_ms: 20 })
+  await first.check_code
+  await until(() => a.model.invites.get(invite.invite_id)?.invite_state === 'confirm_code', 'the Request')
+  const posts = fake.requests.filter(r => r.method === 'POST' && r.path.endsWith('/request'))
+  assert.equal(posts.length, 4, 'one more at once (hub.ts), then the join asks again')
+  assert.ok(posts.every(p => JSON.stringify(p.body) === JSON.stringify(posts[0].body)), 'the same bytes')
+  await a.confirmInvite(invite.invite_id, true)
+  const b = await first.client
+  t.after(() => b.stop().catch(() => {}))
+
+  // a hub that does not answer at all while the offer is fetched: `offline`, nothing posted, the invite still open
+  const second = await a.createInvite({ device_role: 'human', app_url: 'https://app.example/join' })
+  fake.faults.add({ method: 'GET', path: /^\/v1\/invites\/[^/]+$/, drop: 'before', times: 99 })
+  const lost = R.joinRoom({ link: second.link, storage: storage('lost'), poll_ms: 20 })
+  await assert.rejects(lost.client, e => e.code === 'offline')
+  fake.faults.clear()
+  assert.equal(a.model.invites.get(second.invite_id).invite_state, 'open')
+  const again = R.joinRoom({ link: second.link, storage: storage('lost'), poll_ms: 20 })
+  await again.check_code
+  await until(() => a.model.invites.get(second.invite_id)?.invite_state === 'confirm_code', 'the second try\'s Request')
+  await a.confirmInvite(second.invite_id, true)
+  const c = await again.client
+  t.after(() => c.stop().catch(() => {}))
+  assert.equal(c.model.room.my_role, 'human')
+})

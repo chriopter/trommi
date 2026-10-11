@@ -1364,8 +1364,17 @@ ${obError()}${obSubmit('Next')}</form></details>
       if (err.code === 'cancelled') return
       console.error(err)
       if (err.code === 'room-exists') return roomExists()
+      // Not reached is not used up: the same code is tried again, no new one needed (the hub kept nothing of this try
+      // that would refuse the next).
+      if (err.code === 'offline' || err.transient === true) return joinUnreached(link)
       joinFailed({ 'invite-used': 'This code was used already.', 'invite-expired': 'This code has run out.', 'invite-burned': 'The emoji did not match there.', 'bad-invite': 'This link is not a valid invite. Ask for a new one.' }[err.code] ?? accountError(err))
     }
+  }
+  function joinUnreached(link) {
+    show(obShell('Not logged in', html`<p class="ob-error is-shown" role="alert">Trommi is not reachable right now. Check your connection.</p><button type="button" class="ob-go" id="join-again">Try again</button>
+<p class="ob-alt"><button type="button" class="ob-link" id="scan-again">Scan a new code</button></p>`, { lead: 'The same code still works until it runs out.' }), '#join-again')
+    on('#join-again', 'click', () => link ? joinFlow(link) : scanFlow())
+    on('#scan-again', 'click', () => scanFlow())
   }
   function joinWait() { show(obShell('Log in', html`<p class="room-wait">Asking the other device…</p>`), null) }
   function joinEmoji(code) {
@@ -1411,7 +1420,7 @@ ${obError()}${obSubmit('Next')}</form></details>
       forgot: () => forgotFlow(), scan: () => scanFlow({ still: 'scanning' }), 'scan-asking': () => scanFlow({ still: 'asking' }), 'scan-denied': () => scanFlow({ still: 'denied' }),
       'scan-none': () => scanFlow({ still: 'none' }), 'scan-tap': () => scanFlow({ still: 'tap' }), 'scan-wrong': () => { scanFlow({ still: 'wrong' }) }, 'scan-paste': () => scanFlow({ still: 'scanning', paste: true }),
       join: () => joinWait(), 'join-emoji': () => joinEmoji('03-17-08-42-25-11'),
-      'join-expired': () => joinFailed('This code has run out.'), 'join-burned': () => joinFailed('The emoji did not match there.'),
+      'join-expired': () => joinFailed('This code has run out.'), 'join-offline': () => joinUnreached(null), 'join-burned': () => joinFailed('The emoji did not match there.'),
       broken: () => brokenFlow(Object.assign(new Error('the device keys are not in this browser'), { code: 'no-device' })),
     }
     ;(flows[state] ?? welcome)()
