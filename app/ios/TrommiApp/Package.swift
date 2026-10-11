@@ -6,7 +6,7 @@ import PackageDescription
 
 let package = Package(
   name: "TrommiApp",
-  platforms: [.iOS(.v27), .macOS(.v15)],
+  platforms: [.iOS(.v27), .macOS(.v26)],
   products: [
     // An xtool project's first library product is the main app; each further one is an app extension (xtool.yml).
     .library(name: "TrommiApp", targets: ["TrommiApp"]),

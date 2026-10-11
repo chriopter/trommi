@@ -14,12 +14,20 @@
 // A key is made only for a NEW state folder. A Keychain that cannot be read is an error, never "no key yet": making
 // a new key over an old one would lose the state for good. Elsewhere (Linux: tests) the items are 0600 files beside
 // the state, which keeps the logic the same and protects nothing.
+//
+// On a Mac the items are in the data protection Keychain (kSecUseDataProtectionKeychain, the iPhone's kind of
+// Keychain) once the app says so (`LocalKey.systemKeychain = true`, the Mac app's start): it needs an app signed
+// with an application identifier, which a test binary of `swift test` on a Mac is not; those keep the files.
 import Foundation
-#if os(iOS)
+#if os(iOS) || os(macOS)
 import Security
 #endif
 
-enum LocalKey {
+public enum LocalKey {
+  #if os(macOS)
+  /** The Mac app switches the system Keychain on at its start; until then (tests) the items are files. */
+  nonisolated(unsafe) public static var systemKeychain = false
+  #endif
   /** The 32-byte key `name` of the state folder `dir`. `create`: the folder is new and may get a new key. */
   static func get(_ name: String, dir: URL, create: Bool) throws -> Bytes {
     let account = "\(name)-\(dir.lastPathComponent)"
@@ -38,7 +46,7 @@ enum LocalKey {
     for name in ["state", "cache", "anchor", "join"] { delete("\(name)-\(dir.lastPathComponent)", dir: dir) }
   }
   static func random(_ n: Int) throws -> Bytes {
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     var k = Bytes(repeating: 0, count: n)
     guard SecRandomCopyBytes(kSecRandomDefault, n, &k) == errSecSuccess else { throw TrommiError("keychain", "no random bytes") }
     return k
@@ -48,15 +56,18 @@ enum LocalKey {
     #endif
   }
 
-  #if os(iOS)
+  #if os(iOS) || os(macOS)
   private static let service = "com.trommi.local-key"
   /**
    * The app's own access group, asked from the system once: the group of an item added without naming one is the
    * first of the app's groups, which for an app is its application identifier.
    */
   private static let privateGroup: String? = {
-    let probe: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "group-probe",
+    var probe: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "group-probe",
                                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly, kSecReturnAttributes as String: true]
+    #if os(macOS)
+    probe[kSecUseDataProtectionKeychain as String] = true
+    #endif
     var out: AnyObject?
     var rc = SecItemCopyMatching(probe.merging([kSecMatchLimit as String: kSecMatchLimitOne]) { a, _ in a } as CFDictionary, &out)
     if rc == errSecItemNotFound { rc = SecItemAdd(probe.merging([kSecValueData as String: Data([0])]) { a, _ in a } as CFDictionary, &out) }
@@ -65,9 +76,13 @@ enum LocalKey {
   }()
   private static func query(_ account: String) throws -> [String: Any] {
     guard let group = privateGroup else { throw TrommiError("keychain", "the app's own Keychain group is not known") }
-    return [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecAttrAccessGroup as String: group]
+    var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecAttrAccessGroup as String: group]
+    #if os(macOS)
+    q[kSecUseDataProtectionKeychain as String] = true
+    #endif
+    return q
   }
-  static func read(_ account: String, dir: URL) throws -> Bytes? {
+  private static func keychainRead(_ account: String) throws -> Bytes? {
     var q = try query(account)
     q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
     var out: AnyObject?
@@ -77,7 +92,7 @@ enum LocalKey {
     return Bytes(d)
   }
   /** Adds the item, or changes its value in place; an existing item is never deleted to make room. */
-  static func write(_ account: String, _ value: Bytes, dir: URL) throws {
+  private static func keychainWrite(_ account: String, _ value: Bytes) throws {
     var add = try query(account)
     add[kSecValueData as String] = Data(value)
     add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
@@ -85,20 +100,35 @@ enum LocalKey {
     if rc == errSecDuplicateItem { rc = SecItemUpdate(try query(account) as CFDictionary, [kSecValueData as String: Data(value)] as CFDictionary) }
     if rc != errSecSuccess { throw TrommiError("keychain", "the Keychain could not be written (\(rc))") }
   }
-  static func delete(_ account: String, dir: URL) { if let q = try? query(account) { SecItemDelete(q as CFDictionary) } }
+  private static func keychainDelete(_ account: String) { if let q = try? query(account) { SecItemDelete(q as CFDictionary) } }
+  #endif
+
+  #if os(iOS)
+  static func read(_ account: String, dir: URL) throws -> Bytes? { try keychainRead(account) }
+  static func write(_ account: String, _ value: Bytes, dir: URL) throws { try keychainWrite(account, value) }
+  static func delete(_ account: String, dir: URL) { keychainDelete(account) }
   #else
+  #if os(macOS)
+  static func read(_ account: String, dir: URL) throws -> Bytes? { try (systemKeychain ? keychainRead(account) : fileRead(account, dir: dir)) }
+  static func write(_ account: String, _ value: Bytes, dir: URL) throws { try (systemKeychain ? keychainWrite(account, value) : fileWrite(account, value, dir: dir)) }
+  static func delete(_ account: String, dir: URL) { if systemKeychain { keychainDelete(account) } else { fileDelete(account, dir: dir) } }
+  #else
+  static func read(_ account: String, dir: URL) throws -> Bytes? { try fileRead(account, dir: dir) }
+  static func write(_ account: String, _ value: Bytes, dir: URL) throws { try fileWrite(account, value, dir: dir) }
+  static func delete(_ account: String, dir: URL) { fileDelete(account, dir: dir) }
+  #endif
   private static func url(_ account: String, _ dir: URL) -> URL { dir.appendingPathComponent(account.replacingOccurrences(of: "-\(dir.lastPathComponent)", with: "") + ".key") }
-  static func read(_ account: String, dir: URL) throws -> Bytes? {
+  private static func fileRead(_ account: String, dir: URL) throws -> Bytes? {
     let u = url(account, dir)
     guard FileManager.default.fileExists(atPath: u.path) else { return nil }
     return Bytes(try Data(contentsOf: u))
   }
-  static func write(_ account: String, _ value: Bytes, dir: URL) throws {
+  private static func fileWrite(_ account: String, _ value: Bytes, dir: URL) throws {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     try Data(value).write(to: url(account, dir), options: .atomic)
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url(account, dir).path)
   }
-  static func delete(_ account: String, dir: URL) { try? FileManager.default.removeItem(at: url(account, dir)) }
+  private static func fileDelete(_ account: String, dir: URL) { try? FileManager.default.removeItem(at: url(account, dir)) }
   #endif
 }
 

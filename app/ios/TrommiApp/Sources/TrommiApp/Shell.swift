@@ -219,6 +219,10 @@ struct BackPill: View {
  * recogniser is switched on and asked by PopGate, which lets it begin only when there is a screen to go back to (at
  * the root it must not begin: the stack would hang).
  */
+#if os(macOS)
+/** A Mac goes back with the window's back button and Cmd-[: nothing to switch on. */
+struct PopGesture: View { var body: some View { EmptyView() } }
+#else
 struct PopGesture: UIViewControllerRepresentable {
   func makeUIViewController(context: Context) -> Holder { Holder() }
   func updateUIViewController(_ c: Holder, context: Context) {}
@@ -239,6 +243,7 @@ final class PopGate: NSObject, UIGestureRecognizerDelegate {
     return false
   }
 }
+#endif
 
 /**
  * The place pill at the top left of the iPhone's pages: the desk's drawing and name with a small chevron. It is the

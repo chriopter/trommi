@@ -40,10 +40,24 @@ struct TrommiApp: App {
   @Environment(\.scenePhase) private var scenePhase
   #if canImport(UIKit)
   @UIApplicationDelegateAdaptor(PushDelegate.self) private var push   // Push.swift
+  #elseif os(macOS)
+  @NSApplicationDelegateAdaptor(PushDelegate.self) private var push   // Push.swift
   #endif
   // The core is installed before anything asks for it: the protocol is trommi-core, reached through Core.tools.
-  init() { _ = StartClock.t0; installCore(); Face.registerFonts(); model = BoardModel.shared }
+  init() {
+    _ = StartClock.t0
+    #if os(macOS)
+    LocalKey.systemKeychain = true   // the device's keys in the data protection Keychain (Keychain.swift)
+    #endif
+    installCore(); Face.registerFonts(); model = BoardModel.shared
+    #if os(macOS)
+    if MacShot.asked != nil { let m = model; DispatchQueue.main.async { MacShot.runIfAsked(m) } }
+    #endif
+  }
   var body: some Scene {
+    #if os(macOS)
+    MacScenes(model: model, push: push)
+    #else
     WindowGroup {
       RootView().environmentObject(model)
         .tint(Ink.accent)
@@ -56,6 +70,7 @@ struct TrommiApp: App {
         // universal links of app.trommi.com (Links.swift)
         .onOpenURL { model.open(url: $0) }
     }
+    #endif
   }
 }
 
@@ -181,8 +196,11 @@ final class BoardModel: ObservableObject {
   func copyCard(_ c: DeskCard) {
     copiedCard = c.id
     let picked = c.options.filter { c.choices.contains($0.key) }.map { $0.label }.joined(separator: ", ")
+    let text = "Nr. \(c.number) · \(c.title)\(picked.isEmpty ? "" : " → \(picked)")"
     #if canImport(UIKit)
-    UIPasteboard.general.string = "Nr. \(c.number) · \(c.title)\(picked.isEmpty ? "" : " → \(picked)")"
+    UIPasteboard.general.string = text
+    #elseif os(macOS)
+    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
     #endif
     say("Copied", "Nr. \(c.number) · \(c.title): attach it in any conversation")
   }
@@ -1023,6 +1041,8 @@ enum UIDeviceName {
   static var model: String {
     #if canImport(UIKit)
     return UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    #elseif os(macOS)
+    return "Mac"
     #else
     return ProcessInfo.processInfo.hostName
     #endif

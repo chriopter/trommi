@@ -18,6 +18,8 @@ while it runs.
 **New**
 - A card its session is working on says so above its title: "<session> is working on it", its status line and how
   long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
+- Trommi for Mac: the iPad's layout in a window, the questions waiting in the menu bar, Return sends and
+  Shift+Return hands a card back; pairing by pasting the link.
 - iPhone: Settings → Data shows what this iPhone downloaded and uploaded (with a reset), and what your account keeps on
   the hub: messages, cards, files and the total size.
 - Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);

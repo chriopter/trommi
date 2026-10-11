@@ -84,7 +84,7 @@ public struct Store {
   }
   public func save(_ r: RoomRecord) throws {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-    #if os(iOS)
+    #if os(iOS) || os(macOS)
     var values = URLResourceValues(); values.isExcludedFromBackup = true
     var d = dir; try d.setResourceValues(values)
     #endif

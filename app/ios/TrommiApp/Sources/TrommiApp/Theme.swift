@@ -4,8 +4,8 @@
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
-import CoreText
 #endif
+import CoreText
 
 // ---- colours ---------------------------------------------------------------------------------------
 
@@ -15,14 +15,14 @@ extension Color {
   }
   /** A colour with one value for light and one for dark. */
   static func dyn(_ light: UInt32, _ dark: UInt32) -> Color {
-    #if canImport(UIKit)
+    #if canImport(UIKit) || os(macOS)
     return Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light) })
     #else
     return Color(hex: light)
     #endif
   }
 }
-#if canImport(UIKit)
+#if canImport(UIKit) || os(macOS)
 extension UIColor {
   convenience init(rgb: UInt32, alpha: CGFloat = 1) {
     self.init(red: CGFloat((rgb >> 16) & 0xff) / 255, green: CGFloat((rgb >> 8) & 0xff) / 255, blue: CGFloat(rgb & 0xff) / 255, alpha: alpha)
@@ -75,7 +75,7 @@ enum Ink {
 enum Tone {
   enum Weight { case wash, edge, mid, pen }
   static func color(hue: Int, _ w: Weight) -> Color {
-    #if canImport(UIKit)
+    #if canImport(UIKit) || os(macOS)
     return Color(UIColor { t in
       let dark = t.userInterfaceStyle == .dark
       let (l, c): (Double, Double)
@@ -94,7 +94,7 @@ enum Tone {
   }
   /** The mark's colour: hsl(hue 62% 30%) on light, hsl(hue 70% 76%) on dark (ui.mjs drawingHue). */
   static func mark(_ hue: Int) -> Color {
-    #if canImport(UIKit)
+    #if canImport(UIKit) || os(macOS)
     return Color(UIColor { t in
       let dark = t.userInterfaceStyle == .dark
       let (r, g, b) = hsl(Double(hue), dark ? 0.70 : 0.62, dark ? 0.76 : 0.30)
@@ -126,7 +126,7 @@ enum Tone {
 
 enum Face {
   static func registerFonts() {
-    #if canImport(UIKit)
+    #if canImport(UIKit) || os(macOS)
     guard let dir = Bundle.module.url(forResource: "Fonts", withExtension: nil),
           let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
     for f in files where f.pathExtension == "ttf" { CTFontManagerRegisterFontsForURL(f as CFURL, .process, nil) }

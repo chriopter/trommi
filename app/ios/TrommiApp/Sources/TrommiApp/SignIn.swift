@@ -333,7 +333,7 @@ struct EmailView: View {
         Button(model.signing ? (model.signInStep ?? "Logging in…") : "Log in") { login() }.buttonStyle(ObGo()).disabled(model.signing)
       }
       ObOr()
-      Button("Scan a code") { model.go(.scan) }.buttonStyle(ObSecond()).disabled(model.signing)
+      Button(ScanView.way) { model.go(.scan) }.buttonStyle(ObSecond()).disabled(model.signing)
       HStack(spacing: 6) {
         Text("New here?").font(Face.text(16)).foregroundStyle(Ink.muted)
         Button("Create account") { model.go(.create) }.buttonStyle(ObLink())
@@ -410,10 +410,23 @@ struct ForgotView: View {
 /** Scan the code a logged-in device shows, or paste its link. Then this device asks at once: no name, no second step. */
 struct ScanView: View {
   @EnvironmentObject var model: BoardModel
+  #if os(iOS)
   @State private var camera = true
+  private let title = "Scan a code", lead = "On a logged-in device: Settings → Invite a Device."
+  #else
+  // a Mac has no camera to point at a phone: the link of the code is pasted (the other device copies it)
+  @State private var camera = false
+  private let title = "Paste a link", lead = "On a logged-in device: Settings → Invite a Device, then copy its link."
+  #endif
+  /** The way in on the log-in page, and the button after a failed pairing. */
+  #if os(iOS)
+  static let way = "Scan a code", again = "Scan again"
+  #else
+  static let way = "Paste a link", again = "Try again"
+  #endif
   @State private var link = ""
   var body: some View {
-    ObShell(title: "Scan a code", lead: "On a logged-in device: Settings → Invite a Device.") {
+    ObShell(title: title, lead: lead) {
       if camera && !model.demo {
         QRScannerView(onLink: { text in if !model.gotLink(text) { model.error = "That is not a Trommi link." } }, onUnavailable: { _ in camera = false })
           .aspectRatio(1, contentMode: .fit)
@@ -467,7 +480,7 @@ struct PairFailedView: View {
   var body: some View {
     ObShell(title: "Not logged in", lead: "Show a new code on the other device.") {
       ObError(text: why)
-      Button("Scan again") { model.go(.scan) }.buttonStyle(ObGo())
+      Button(ScanView.again) { model.go(.scan) }.buttonStyle(ObGo())
     }
   }
 }

@@ -12,6 +12,7 @@ name: Trommi
 options:
   deploymentTarget:
     iOS: "27.0"
+    macOS: "26.0"
 # The store version, for the app and its extension alike (App Store processing wants them equal, ITMS-90473); the build
 # number is the workflow's run number (CURRENT_PROJECT_VERSION on the command line, which reaches both targets).
 settings:
@@ -56,6 +57,37 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+  # The Mac app (app/ios/README.md "On a Mac"): the same package library, built for macOS; the sources that are iPhone-only
+  # are behind #if os(iOS). No extensions yet (share, notification service, Live Activity: the menu bar shows the
+  # open questions instead). Its own bundle id, so it is a separate app record (or, later, a universal purchase).
+  TrommiMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Link.swift
+      - path: Assets.xcassets
+      - path: ../Sources/TrommiApp/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    dependencies:
+      - package: TrommiApp
+        product: TrommiApp
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_NAME: Trommi
+        PRODUCT_BUNDLE_IDENTIFIER: com.trommi.mac
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        # The store's (push, associated domains: need a profile). An unsigned build on a Mac sets
+        # TROMMI_MAC_ENTITLEMENTS=../Mac/TrommiMac.dev.entitlements (sandbox and network only) on the command line.
+        CODE_SIGN_ENTITLEMENTS: $(TROMMI_MAC_ENTITLEMENTS:default=TrommiMac.entitlements)
+        ENABLE_HARDENED_RUNTIME: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_FILE: ../Mac/Info.plist
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
   # The Share Extension (the package's TrommiShare library; Sources/TrommiShare): Trommi in the share sheet. It shares
   # the App Group group.com.trommi.ios with the app (the encrypted inbox, ShareInbox), nothing else.
   TrommiShareExtension:

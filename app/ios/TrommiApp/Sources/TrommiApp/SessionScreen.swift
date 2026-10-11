@@ -923,7 +923,9 @@ struct Composer: View {
       // edge (inside the home indicator's area), 8 pt over the keyboard
       HStack(alignment: .bottom, spacing: 11) {
         Menu {
+          #if os(iOS)
           Button { pickingPhotos = true } label: { Label("Photo Library", systemImage: "photo.on.rectangle") }
+          #endif
           Button { importing = true } label: { Label("Choose File", systemImage: "doc") }
           #if canImport(UIKit)
           if UIImagePickerController.isSourceTypeAvailable(.camera) { Button { camera = true } label: { Label("Take Photo", systemImage: "camera") } }
@@ -950,7 +952,15 @@ struct Composer: View {
                   model.handBack(c, text: text.trimmingCharacters(in: .whitespacesAndNewlines)); text = ""; onSent?()
                   return .handled
                 }
+                #if os(macOS)
+                // a Mac as the web with a fine pointer: Return (and Cmd+Return) sends, Shift+Return where nothing goes
+                // back is a new line
+                if press.modifiers.contains(.shift) { text += "\n"; return .handled }
+                if canSend && !sending { send() }
+                return .handled
+                #else
                 return .ignored
+                #endif
               }
             Button(action: send) {
               Group {
@@ -975,8 +985,10 @@ struct Composer: View {
     .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in withAnimation(.easeOut(duration: 0.25)) { keyboard = false } }
     #endif
     .onAppear { if autofocus { focused = true } }
+    #if os(iOS)
     .sheet(isPresented: $pickingPhotos) { PhotoPicker(limit: MAX_FILES - files.count) { picked in Task { await take(picked) } }.ignoresSafeArea() }
     .sheet(isPresented: $camera) { CameraPicker { data in Task { await take([(data, .jpeg)]) } }.ignoresSafeArea() }
+    #endif
     .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { r in
       if case .success(let urls) = r {
         for u in urls.prefix(MAX_FILES - files.count) {

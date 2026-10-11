@@ -10,13 +10,14 @@
 // left on a wide window); on a desk's board a quiet way back to All desks.
 import SwiftUI
 import TrommiClient
-#if canImport(PencilKit) && canImport(UIKit)
-import PencilKit
-import UIKit
 
 /** Board units -> canvas points: the board is endless, the canvas a big square around its middle. */
 let BOARD_ORIGIN: CGFloat = 20_000
 let BOARD_SIZE: CGFloat = 40_000
+
+#if canImport(PencilKit) && canImport(UIKit)
+import PencilKit
+import UIKit
 
 func paletteColor(_ token: String?, tool: String) -> UIColor {
   UIColor { t in

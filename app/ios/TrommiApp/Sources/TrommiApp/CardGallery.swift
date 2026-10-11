@@ -5,7 +5,9 @@
 // the words its agent gave the picture and the page behind it. Under the stage ONE strip: the pictures and videos small,
 // then the other files as tiles, and at its end which one stands ("2 / 5"). No line with the file's name.
 import SwiftUI
+#if os(iOS)
 import UIKit
+#endif
 import AVFoundation
 import TrommiClient
 
@@ -307,6 +309,24 @@ struct StageVideo: View {
 }
 
 /** A player's picture alone, no controls of its own (the stage's taps are the card's). */
+#if os(macOS)
+struct PlayerLayer: NSViewRepresentable {
+  let player: AVPlayer
+  final class Surface: NSView {
+    let video = AVPlayerLayer()
+    override init(frame: NSRect) { super.init(frame: frame); wantsLayer = true; layer = video }
+    required init?(coder: NSCoder) { nil }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  }
+  func makeNSView(context: Context) -> Surface {
+    let v = Surface()
+    v.video.videoGravity = .resizeAspect
+    v.video.player = player
+    return v
+  }
+  func updateNSView(_ v: Surface, context: Context) { if v.video.player !== player { v.video.player = player } }
+}
+#else
 struct PlayerLayer: UIViewRepresentable {
   let player: AVPlayer
   final class Surface: UIView {
@@ -322,3 +342,4 @@ struct PlayerLayer: UIViewRepresentable {
   }
   func updateUIView(_ v: Surface, context: Context) { if v.video.player !== player { v.video.player = player } }
 }
+#endif

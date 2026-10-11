@@ -8,8 +8,8 @@ import WebKit
 #endif
 #if canImport(UIKit)
 import UIKit
-import ImageIO
 #endif
+import ImageIO
 #if canImport(AVKit)
 import AVKit
 #endif
@@ -91,7 +91,7 @@ enum RichParse {
   }
 }
 enum UIColorBridge {
-  #if canImport(UIKit)
+  #if canImport(UIKit) || os(macOS)
   static var accent: UIColor { UIColor { $0.userInterfaceStyle == .dark ? UIColor(rgb: 0x6fd0b5) : UIColor(rgb: 0x1b6a57) } }
   #endif
 }
@@ -175,6 +175,24 @@ struct SandboxedPage: UIViewRepresentable {
     v.loadHTMLString("<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\(csp)<style>body{font:16px -apple-system,sans-serif;margin:16px;color:#141c18}@media (prefers-color-scheme: dark){body{color:#e9eeea;background:#0e1311}}</style></head><body>\(page)</body></html>", baseURL: nil)
   }
 }
+#elseif canImport(WebKit) && os(macOS)
+struct SandboxedPage: NSViewRepresentable {
+  let html: String
+  var data: Data? = nil
+  func makeNSView(context: Context) -> WKWebView {
+    let cfg = WKWebViewConfiguration()
+    cfg.defaultWebpagePreferences.allowsContentJavaScript = false
+    cfg.websiteDataStore = .nonPersistent()
+    let v = WKWebView(frame: .zero, configuration: cfg)
+    v.setValue(false, forKey: "drawsBackground")
+    return v
+  }
+  func updateNSView(_ v: WKWebView, context: Context) {
+    let csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:\">"
+    let page = data.flatMap { String(data: $0, encoding: .utf8) } ?? html
+    v.loadHTMLString("<!doctype html><html><head>\(csp)<style>body{font:14px -apple-system,sans-serif;margin:16px;color:#141c18}@media (prefers-color-scheme: dark){body{color:#e9eeea;background:#0e1311}}</style></head><body>\(page)</body></html>", baseURL: nil)
+  }
+}
 #else
 struct SandboxedPage: View { let html: String; var data: Data? = nil; var body: some View { Text(html) } }
 #endif
@@ -190,7 +208,7 @@ func sizeWord(_ n: Int) -> String { n >= 1_000_000 ? String(format: "%.1f MB", D
 /** Decrypted pictures, kept while the app runs. */
 @MainActor final class PictureCache {
   static let shared = PictureCache()
-  #if canImport(UIKit)
+  #if canImport(UIKit) || os(macOS)
   private var images: [String: UIImage] = [:]
   func image(_ id: String) -> UIImage? { images[id] }
   func put(_ id: String, _ i: UIImage) { if images.count > 120 { images.removeAll() }; images[id] = i }
@@ -202,7 +220,7 @@ func sizeWord(_ n: Int) -> String { n >= 1_000_000 ? String(format: "%.1f MB", D
   #endif
 }
 
-#if canImport(UIKit)
+#if canImport(UIKit) || os(macOS)
 /** A picture's bytes as a picture of at most `maxPixel`, through ImageIO's thumbnail: any format the system reads
  *  (JPEG, HEIC, PNG, GIF, WebP), turned upright, never decoded at full size. nil when the bytes are no picture. */
 enum Thumb {
@@ -214,8 +232,17 @@ enum Thumb {
     // drawn once into a plain standard-range bitmap: whatever the file was (HDR, 16 bit, a wide colour space) the
     // picture on the screen is an ordinary one (an HDR photo drawn small came out black, 8 October)
     let size = CGSize(width: cg.width, height: cg.height)
+    #if os(macOS)
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let ctx = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    ctx.draw(cg, in: CGRect(origin: .zero, size: size))
+    guard let plain = ctx.makeImage() else { return nil }
+    return NSImage(cgImage: plain, size: size)
+    #else
     let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1; fmt.preferredRange = .standard
     return UIGraphicsImageRenderer(size: size, format: fmt).image { _ in UIImage(cgImage: cg).draw(in: CGRect(origin: .zero, size: size)) }
+    #endif
   }
 }
 #endif
@@ -227,13 +254,13 @@ struct AttachmentImage: View {
   var contentMode: ContentMode = .fill
   /** A small tile (the note's row): while it loads and when it cannot be shown, the file's name stands in it. */
   var named = false
-  #if canImport(UIKit)
+  #if canImport(UIKit) || os(macOS)
   @State private var image: UIImage?
   #endif
   @State private var failed = false
   var body: some View {
     ZStack {
-      #if canImport(UIKit)
+      #if canImport(UIKit) || os(macOS)
       if let i = image { Image(uiImage: i).resizable().aspectRatio(contentMode: contentMode) }
       else if named {
         // never an empty box: the picture's sign and its name until it is there, and if it never comes
@@ -251,7 +278,7 @@ struct AttachmentImage: View {
     .task(id: ref["attachment_id"].string) { await load() }
   }
   private func load() async {
-    #if canImport(UIKit)
+    #if canImport(UIKit) || os(macOS)
     guard let id = ref["attachment_id"].string else { image = nil; failed = true; return }
     if let hit = PictureCache.shared.image(id) { image = hit; failed = false; return }
     // another file than the one this tile showed: its placeholder until the new picture is there, never the old one
@@ -261,7 +288,7 @@ struct AttachmentImage: View {
   }
 }
 
-#if canImport(UIKit)
+#if canImport(UIKit) || os(macOS)
 /** A picture of the room as a picture to show: fetched, decrypted, decoded off the main thread, kept (PictureCache).
  *  It throws with the reason when the file does not come or is no picture. */
 enum Pictures {
@@ -278,7 +305,11 @@ enum Pictures {
     let made = await Task.detached(priority: .userInitiated) { () -> UIImage? in
       if let t = Thumb.image(d, maxPixel: maxPixel) { return t }
       guard let i = UIImage(data: d) else { return nil }
+      #if os(macOS)
+      return i
+      #else
       return i.preparingForDisplay() ?? i
+      #endif
     }.value
     guard let shown = made, shown.size.width > 0, shown.size.height > 0 else { throw TrommiError("not-a-picture", "It is not a picture this phone can show.") }
     PictureCache.shared.put(key, shown)
@@ -441,7 +472,18 @@ enum TempFile {
     return u
   }
 }
-#if canImport(AVKit)
+#if canImport(AVKit) && os(macOS)
+/** The system's player (AVKit's SwiftUI view on a Mac). */
+struct PlayerView: View {
+  let player: AVPlayer
+  var body: some View { VideoPlayer(player: player) }
+}
+struct VideoFile: View {
+  let file: OpenedFile
+  @State private var player: AVPlayer?
+  var body: some View { VideoPlayer(player: player).onAppear { if player == nil { player = AVPlayer(url: TempFile.url(file)) } } }
+}
+#elseif canImport(AVKit)
 /** The system's player for a player already made (inline in the talk). */
 struct PlayerView: UIViewControllerRepresentable {
   let player: AVPlayer
