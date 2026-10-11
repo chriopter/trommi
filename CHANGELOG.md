@@ -155,7 +155,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 3 October 2026
 
 **New**
-- Push notifications, the name Trommi and the bell icon.
+- Push notifications and the bell icon.
 
 ## 2 October 2026
 
