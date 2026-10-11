@@ -11,6 +11,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Log out straight from the desk menu.
 
 **Better**
+- The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
+  instead of a stack of red ones.
 - Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out
   like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with its own page.
 - An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
