@@ -364,12 +364,29 @@ function sessionStatus(s, base, now = Date.now()) {
   const last = s.messages.findLast(m => m.from !== 'event')
   const answering = last?.from === 'user' && now - last.ts < WORKING_WINDOW
   const lines = s.tasks.filter(t => t.state !== 'done' || now - (t.updated ?? 0) < WORKING_WINDOW)
-  return html`<div class="session-status" id="session-status-${s.id}"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
+  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
     const card = lineCard(t, s.model, s.cards, s.tasks)
     const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? agoSpan(t.updated, 'status-ago') : ''}`
-    return card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${questionPath(card, base)}">${inner}</a>` : html`<p class="status-line" data-state="${t.state}">${inner}</p>`
+    // (on a phone only the title and the time; a tap opens the detail and the way to its question below, a second shuts it)
+    const href = card ? questionPath(card, base) : ''
+    return html`<div class="status-row" data-key="${t.agent}:${t.id}">${card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${href}" data-action="click->status-lines#toggle">${inner}</a>` : html`<p class="status-line" data-state="${t.state}" data-action="click->status-lines#toggle">${inner}</p>`}${t.detail || card ? html`<div class="status-more">${t.detail ? html`<p>${t.detail}</p>` : ''}${card ? html`<a class="status-open" data-nav href="${href}">Open the question →</a>` : ''}</div>` : ''}</div>`
   })}</div>`
 }
+// The status lines on a phone: a tap on one opens its detail below it (and shuts it again); the rows that are open stay
+// open when the live piece is drawn anew. On a wide screen a line is what it was: a link to its question.
+const statusOpen = new Set()
+controller('status-lines', class extends Controller {
+  connect() { for (const row of this.element.querySelectorAll('.status-row')) if (statusOpen.has(row.dataset.key)) row.dataset.open = '' }
+  toggle(e) {
+    if (!mq('(max-width: 860px)').matches) return
+    const row = e.target.closest('.status-row')
+    if (!row?.querySelector('.status-more')) return
+    e.preventDefault(); e.stopPropagation()
+    const open = !('open' in row.dataset)
+    if (open) { row.dataset.open = ''; statusOpen.add(row.dataset.key) } else { delete row.dataset.open; statusOpen.delete(row.dataset.key) }
+    row.querySelector('.status-line').setAttribute('aria-expanded', String(open))
+  }
+})
 /** "N open": the questions of this session that wait, and the way to the first of them. */
 function sessionOpen(s, base, shown = null) {
   const n = s.fresh.length

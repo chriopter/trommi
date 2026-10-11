@@ -38,6 +38,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   instead of Claude Code's.
 - iPhone: after another device of yours hands over older keys, the app no longer empties the Desk and reads the whole
   room again: what it has is kept, only what was missing is read (about fifteen times faster).
+- Status lines under a chat on the phone: one line each, the title and the time; a tap shows the detail and the way to its question (iPhone and mobile web).
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
 - iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster
