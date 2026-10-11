@@ -22,7 +22,7 @@
 # (only with YES: the code of the app's export compliance documentation in App Store Connect; when empty, the code of
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
 # TESTFLIGHT_TESTER (an address kept in the group), NOTES, TF_CHANNEL (public: main's builds also go to the external
-# group "Public" and to Beta App Review, What to Test is the newest day of CHANGELOG.md; with APPSTORE_DEMO_PASSWORD,
+# group "Trommi" and to Beta App Review, What to Test is the newest day of CHANGELOG.md; with APPSTORE_DEMO_PASSWORD,
 # the demo account's password for Beta App Review; empty: the internal group only),
 # TF_GATE=release (main: upload only once the release of build run RUN_ID, v$VERSION_RELEASE, is published and
 # verified; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed, checked .ipa; the gate
@@ -103,10 +103,10 @@ after() {   # after <version> <build> <short commit>
   groups="the group Intern"
   if [ "${TF_CHANNEL:-}" = public ]; then
     echo "== 10. External group \"Public\" (the public link) =="
-    asc external "$build_id" Public | tee "$RUNNER_TEMP/external.txt"
+    asc external "$build_id" Trommi | tee "$RUNNER_TEMP/external.txt"
     echo "== 11. Beta App Review =="
     asc beta-review "$build_id" | tee "$RUNNER_TEMP/review.txt"
-    groups="the groups Intern and Public ($(sed -n 's/^external_state: //p' "$RUNNER_TEMP/review.txt"))"
+    groups="the groups Intern and Trommi ($(sed -n 's/^external_state: //p' "$RUNNER_TEMP/review.txt"))"
   fi
 
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
@@ -239,7 +239,7 @@ if [ "${TF_DRY_RUN:-}" = 1 ]; then
   asc upload "$ipa" "$version" "$build" --dry-run
   if [ "${TF_CHANNEL:-}" = public ]; then
     # offline: what the public beta would get; the group and Beta App Review are not touched
-    echo "dry run: would add the build to the groups Intern and Public and ask Beta App Review if Apple asks for it; What to Test:"
+    echo "dry run: would add the build to the groups Intern and Trommi and ask Beta App Review if Apple asks for it; What to Test:"
     asc whats-new "$repo/CHANGELOG.md"
   fi
   echo "dry run: build $version ($build) was NOT uploaded; nothing waits for it"

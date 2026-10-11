@@ -1,5 +1,5 @@
 # Delivers the iOS app to TestFlight: every build to the internal group "Intern"; a build of main also to the external
-# group "Public", whose public link is the rolling beta for everyone, and to Beta App Review when Apple asks for it
+# group "Trommi", whose public link is the rolling beta for everyone, and to Beta App Review when Apple asks for it
 # (the first build of a new version; later builds of a reviewed version usually go without). The App Store gets
 # reviewed versions less often, by hand (release_ios.yml).
 #
@@ -22,7 +22,7 @@
 # of the same run is still being made; only the upload waits for it (ios_release_gate.sh: published, signature,
 # commit, iOS inputs), so only a released app ships. Waiting for App Store Connect
 # to process the build, the groups, What to Test and Beta App Review run on Linux (job processed), so the Mac is free
-# minutes earlier. Main's What to Test is the newest day of CHANGELOG.md. The group "Public" is made once by hand
+# minutes earlier. Main's What to Test is the newest day of CHANGELOG.md. The group "Trommi" is made once by hand
 # (app/ios/README.md "Public beta"); while it is missing, main's delivery fails saying so.
 # The workflow's concurrency holds both jobs: the next delivery reads the highest build number only once this one's
 # build is processed and listed.
@@ -187,7 +187,7 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/ExportOptions.plist"
 
   # App Store Connect processes the uploaded build (minutes); then the group "Intern" holds it and What to Test is set;
-  # a build of main also goes to the group "Public" and, when Apple asks for it, to Beta App Review.
+  # a build of main also goes to the group "Trommi" and, when Apple asks for it, to Beta App Review.
   processed:
     name: TestFlight (processed, groups, What to Test, review)
     needs: testflight
