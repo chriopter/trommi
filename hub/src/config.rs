@@ -34,7 +34,7 @@ pub struct Config {
     /// 127.0.0.1 unless said otherwise. In a container the loopback is the container's own: there it is set to
     /// 0.0.0.0 and the port is published to the host's loopback only (`-p 127.0.0.1:8791:8791`).
     pub admin_host: String,
-    /// `strict-transport-security` on every answer, two years with subdomains and `preload` (`HUB_HSTS=on`).
+    /// `strict-transport-security` on every answer, a year with subdomains, no preload (`HUB_HSTS=on`).
     /// Off unless switched on: it binds the whole domain to HTTPS in every browser that saw it.
     pub hsts: bool,
     /// whether failed logins slow their source down (`throttle.rs`); `off` leaves the per-address limit only

@@ -251,9 +251,6 @@ jobs:
     env:
       # The hub the app speaks to. The build is checked against it: the page's policy must name this hub and no other.
       WEB_HUB_URL: https://hub.trommi.com
-      # Strict-Transport-Security with preload on every answer: `on` once the owner says so. Not to be taken back
-      # quickly: browsers then refuse plain http for app.trommi.com and what lies under it for two years.
-      WEB_HSTS: 'off'
       VERSION: ${{ needs.changes.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -310,7 +307,7 @@ jobs:
           {
             echo "### Web app, build $VERSION"
             echo
-            echo "hub \`$WEB_HUB_URL\`, HSTS \`$WEB_HSTS\`, $(jq '.files | length' out/manifest.json) files, manifest \`$(sha256sum out/manifest.json | cut -d' ' -f1)\`"
+            echo "hub \`$WEB_HUB_URL\`, $(jq '.files | length' out/manifest.json) files, manifest \`$(sha256sum out/manifest.json | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.event_name != 'pull_request' && needs.changes.outputs.changed_web != 'false'

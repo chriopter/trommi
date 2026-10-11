@@ -1,10 +1,10 @@
 // Puts together what the web deploy delivers, from what the build wrote:
 //   node .github/scripts/web_release.mjs PUBLIC_DIR OUT_DIR
 // Environment: VERSION (the build run's number), GITHUB_SHA (the commit), GITHUB_REPOSITORY,
-// WEB_HUB_URL (the hub the app speaks to), WEB_HSTS (on or off).
+// WEB_HUB_URL (the hub the app speaks to).
 // OUT_DIR then holds
-//   public/          the files the worker serves: PUBLIC_DIR as it is; with WEB_HSTS=on the first block of _headers
-//                    also carries Strict-Transport-Security
+//   public/          the files the worker serves: PUBLIC_DIR as it is (its _headers must carry Strict-Transport-Security,
+//                    COOP and CORP for every address, or nothing is put together)
 //   worker.js        app/web/worker.js
 //   entry.js         what the worker runtime loads: worker.js's default export alone. worker.js also exports
 //                    constants for the dev server and the tests, and the runtime refuses a module whose named
@@ -12,7 +12,7 @@
 //   wrangler.jsonc   app/web/wrangler.jsonc without its build step (the deploy delivers these files and builds
 //                    nothing), with entry.js as the script and app.trommi.com as the worker's address
 //   public/gen/release.json   the release's number, commit and time, for the app's menu (not in the build's manifest)
-//   manifest.json    what this release is (product, repository, version, commit, hub, hsts) and every file
+//   manifest.json    what this release is (product, repository, version, commit, hub) and every file
 //                    above with its size and SHA-256
 //   checksums.txt    the same hashes and manifest.json's, in the form of sha256sum: `sha256sum -c checksums.txt`
 // deploy_web.yml checks the files against checksums.txt, attests them and runs `wrangler deploy` in OUT_DIR.
@@ -28,13 +28,12 @@ const env = (name, fallback) => process.env[name] || fallback
 const version = Number(env('VERSION', '0'))
 const commit = env('GITHUB_SHA', 'dev')
 const hub = env('WEB_HUB_URL', 'https://hub.trommi.com')
-const hsts = env('WEB_HSTS', 'off')
 const HOST = 'app.trommi.com'
-const HSTS = 'Strict-Transport-Security: max-age=63072000; includeSubDomains; preload'
+// what the block for every address ("/*") of _headers must say (app/web/dev/check.mjs checks the same)
+const MUST = ['Strict-Transport-Security: max-age=31536000; includeSubDomains', 'Cross-Origin-Opener-Policy: same-origin', 'Cross-Origin-Resource-Policy: same-origin']
 const fail = why => { console.error(`web_release: ${why}`); process.exit(1) }
 if (!Number.isSafeInteger(version) || version < 0) fail('VERSION is not a whole number')
 if (!/^https:\/\/[a-z0-9.-]+(:\d+)?$/.test(hub)) fail(`WEB_HUB_URL is not a plain https origin: ${hub}`)
-if (!['on', 'off'].includes(hsts)) fail('WEB_HSTS is on or off')
 
 /** JSON with comments (outside strings) and trailing commas, as wrangler reads it. */
 function jsonc(text) {
@@ -66,18 +65,14 @@ const hubs = connect.filter(source => source.startsWith('http'))
 if (hubs.length !== 1 || hubs[0] !== hub) fail(`_headers lets the app reach ${hubs.join(', ') || 'no hub'}, the build was asked for ${hub}`)
 const app = fs.readFileSync(path.join(REPO, 'app/web/public/app.mjs'), 'utf8')
 if (!app.includes(`'${hub}'`)) fail(`app/web/public/app.mjs does not name ${hub} as its hub`)
+const lines = headers.split('\n')
+const at = lines.indexOf('/*'), end = lines.findIndex((line, i) => i > at && /^\S/.test(line))
+const all = at < 0 ? [] : lines.slice(at + 1, end < 0 ? undefined : end)
+for (const need of MUST) if (!all.some(line => line.trim() === need)) fail(`_headers: the block /* does not say ${need}`)
 
 fs.rmSync(out, { recursive: true, force: true })
 fs.mkdirSync(out, { recursive: true })
 fs.cpSync(from, path.join(out, 'public'), { recursive: true })
-if (hsts === 'on') {
-  // into the block that holds for every address ("/*"), which is the first of the file
-  const lines = headers.split('\n')
-  const at = lines.indexOf('/*')
-  if (at < 0) fail('_headers has no /* block for Strict-Transport-Security')
-  lines.splice(at + 1, 0, `  ${HSTS}`)
-  fs.writeFileSync(path.join(out, 'public', '_headers'), lines.join('\n'))
-}
 // What runs there, for the line under What's new in the app's menu: the release's number, its commit, when it was made.
 // Not in the build's own manifest (gen/manifest.json): the same source built anywhere stays the same bytes.
 fs.writeFileSync(path.join(out, 'public', 'gen', 'release.json'), `${JSON.stringify({ version, commit, released: new Date().toISOString() })}\n`)
@@ -90,8 +85,8 @@ const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).di
 const names = walk(out).map(file => path.relative(out, file).split(path.sep).join('/')).sort()
 for (const name of names) if (/[\s\\]/.test(name)) fail(`a file name with white space or a backslash: ${name}`)
 const files = names.map(name => ({ name, sha256: sha(path.join(out, name)), size: fs.statSync(path.join(out, name)).size }))
-const manifest = { product: 'trommi-web', repository: env('GITHUB_REPOSITORY', 'trommi/trommi'), version, commit, worker: config.name, host: HOST, hub, hsts, files }
+const manifest = { product: 'trommi-web', repository: env('GITHUB_REPOSITORY', 'trommi/trommi'), version, commit, worker: config.name, host: HOST, hub, files }
 fs.writeFileSync(path.join(out, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 const sums = [...files, { name: 'manifest.json', sha256: sha(path.join(out, 'manifest.json')) }]
 fs.writeFileSync(path.join(out, 'checksums.txt'), sums.map(f => `${f.sha256}  ${f.name}\n`).join(''))
-console.log(`web_release: ${out} holds worker "${config.name}" for ${HOST}, hub ${hub}, HSTS ${hsts}, ${files.length} files`)
+console.log(`web_release: ${out} holds worker "${config.name}" for ${HOST}, hub ${hub}, ${files.length} files`)

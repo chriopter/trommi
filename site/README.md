@@ -22,4 +22,4 @@ of main, checks its site once more, runs the pinned wrangler (`.github/tools/wra
 site/wrangler.jsonc` to the Worker `trommi-com` (custom domains trommi.com and www.trommi.com) with the Cloudflare
 token of the 1Password Environment (GitHub environment `site`), and then compares the front page trommi.com serves
 with `site/public/index.html`. Cloudflare Workers Builds is disconnected from `trommi-com`: nothing else deploys the
-site. `Strict-Transport-Security` is set once for the zone.
+site. `Strict-Transport-Security` (a year, with subdomains, no preload) comes from `public/_headers`.
