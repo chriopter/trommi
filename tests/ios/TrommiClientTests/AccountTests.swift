@@ -177,6 +177,26 @@ final class AccountHub: URLProtocol, @unchecked Sendable {
       let (status, answer) = route(method, path, body)
       return (status, answer, [:])
     }
+    /** The way in of now, proved once more (hub api.rs `proved`): nil when the request carries none (`bad-format`),
+     *  else whether it holds: the password's or the kit's login key, or a passkey of the account (no signature here). */
+    private func proven(_ proof: Any?) -> Bool? {
+      guard let p = proof as? [String: Any] else { return nil }
+      let password = account?["password"] as? [String: Any], kit = account?["kit"] as? [String: Any]
+      if let key = (p["password"] as? [String: Any])?["auth_key"] as? String { return key == password?["auth_key"] as? String }
+      if let key = (p["kit"] as? [String: Any])?["auth_key"] as? String { return key == kit?["auth_key"] as? String }
+      if let a = p["passkey"] as? [String: Any], let id = a["credential_id"] as? String {
+        return ["authenticator_data", "client_data_json", "signature"].allSatisfy { a[$0] is String } && passkeys[id] != nil
+      }
+      return nil
+    }
+    /** A change of a way in: refused without a proof, or with one that does not hold. */
+    private func unproven(_ body: [String: Any]) -> (Int, Any)? {
+      switch proven(body["proof"]) {
+      case nil: return refuse(400, "bad-format")
+      case false?: return refuse(401, "wrong-login")
+      case true?: return nil
+      }
+    }
     private func route(_ method: String, _ path: String, _ body: [String: Any]) -> (Int, Any) {
       let password = account?["password"] as? [String: Any], kit = account?["kit"] as? [String: Any]
       switch (method, path) {
@@ -197,13 +217,15 @@ final class AccountHub: URLProtocol, @unchecked Sendable {
       case ("POST", "/v1/account/recover"):
         return names(body) && body["auth_key"] as? String == kit?["auth_key"] as? String ? login(kit?["sealed_copy"]) : refuse(401, "wrong-recovery")
       case ("PUT", "/v1/account/password"), ("PUT", "/v1/account/kit"):
+        if let refused = unproven(body) { return refused }
         guard (body["revision"] as? NSNumber)?.intValue == revision else { return refuse(409, "account-changed") }
         if path.hasSuffix("password") && !(email is String) { return refuse(400, "bad-email") }
-        var part = body; part["revision"] = nil
+        var part = body; part["revision"] = nil; part["proof"] = nil
         account?[path.hasSuffix("kit") ? "kit" : "password"] = part
         revision += 1
         return (200, ["revision": revision])
       case ("PUT", "/v1/account/email"):
+        if let refused = unproven(body) { return refused }
         guard (body["revision"] as? NSNumber)?.intValue == revision else { return refuse(409, "account-changed") }
         if email is String { return refuse(403, "forbidden") }
         guard let new = body["kit"] as? [String: Any], new["auth_key"] is String, new["sealed_copy"] is String else { return refuse(400, "incomplete") }
@@ -215,6 +237,7 @@ final class AccountHub: URLProtocol, @unchecked Sendable {
       case ("POST", "/v1/account/passkeys/challenge"):
         return (200, ["challenge": b64u(Bytes(repeating: 8, count: 32)), "account": id, "user_handle": b64u(handle), "email": email, "kit_form": email is String ? "email" : "id"])
       case ("POST", "/v1/account/passkeys"):
+        if let refused = unproven(body) { return refused }
         // (the double of the system's step puts the credential id into the "attestation")
         passkeys[body["attestation_object"] as! String] = body["sealed_copy"] as? String
         revision += 1
@@ -225,10 +248,7 @@ final class AccountHub: URLProtocol, @unchecked Sendable {
       case ("DELETE", "/v1/account"):
         if refuseDelete { refuseDelete = false; return refuse(503, "overloaded") }
         guard account != nil else { return refuse(404, "not-found") }
-        let byPassword = (body["password"] as? [String: Any])?["auth_key"] as? String
-        let byPasskey = (body["passkey"] as? [String: Any])?["credential_id"] as? String
-        let proven = byPassword.map { $0 == password?["auth_key"] as? String } ?? byPasskey.map { passkeys[$0] != nil } ?? false
-        guard proven else { return refuse(401, "wrong-login") }
+        guard proven(body) == true else { return refuse(401, "wrong-login") }
         account = nil; passkeys = [:]; roomGone = true
         // (the deletion done, the answer lost on the way)
         if loseDeleteAnswer { return refuse(502, "internal") }
@@ -524,6 +544,9 @@ final class AccountTests: XCTestCase {
     try await room.changePassword(current: password, next: other)
     let body = try XCTUnwrap(hub.body("PUT", "/v1/account/password"))
     XCTAssertEqual((body["revision"] as? NSNumber)?.intValue, 0)
+    // the current password proves the way in to the hub in the same request: its login key, never the password
+    XCTAssertEqual(((body["proof"] as? [String: Any])?["password"] as? [String: Any])?["auth_key"] as? String, try tools.passwordKeys(email: "ada@example.org", password: password, kdf: nil).authKey)
+    XCTAssertFalse(String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self).contains(password), "the password itself is never sent")
     let keys = try tools.passwordKeys(email: "ada@example.org", password: other, kdf: nil)
     XCTAssertEqual(body["auth_key"] as? String, keys.authKey)
     XCTAssertEqual(try tools.openCode(try unb64u(body["sealed_copy"] as! String), room: room.roomId, way: .password(wrapKey: keys.wrapKey)), tools.codes.last)
@@ -548,7 +571,8 @@ final class AccountTests: XCTestCase {
     XCTAssertEqual(kit.accountId, hub.id)
     XCTAssertNotEqual(kit.words, first)
     let put = try XCTUnwrap(hub.body("PUT", "/v1/account/kit"))
-    XCTAssertEqual(Set(put.keys), ["auth_key", "sealed_copy", "revision"])
+    XCTAssertEqual(Set(put.keys), ["auth_key", "sealed_copy", "revision", "proof"])
+    XCTAssertEqual(Set(try XCTUnwrap(put["proof"] as? [String: Any]).keys), ["password"])
     XCTAssertEqual(try tools.openCode(try unb64u(put["sealed_copy"] as! String), room: room.roomId, way: .kit(wrapKey: try tools.kitKeysFor(.email("ada@example.org"), words: kit.words).wrapKey)), tools.codes.last)
     let old = await failure { _ = try await Room.resetPassword(hubURL: self.hubURL, account: self.email, words: first, newPassword: self.other, base: self.device("second")) }
     XCTAssertEqual(try XCTUnwrap(old) as? TrommiError, TrommiError("wrong-recovery", "the account's name or the recovery words are wrong"))
@@ -567,6 +591,8 @@ final class AccountTests: XCTestCase {
     XCTAssertEqual(recover["account"] as? String, "ada@example.org")
     XCTAssertEqual(tools.joinedWith, tools.codes.last)
     XCTAssertEqual((hub.body("PUT", "/v1/account/password")?["revision"] as? NSNumber)?.intValue, 1)
+    // (the kit's words just used prove the way in: a token alone sets no password)
+    XCTAssertEqual(((hub.body("PUT", "/v1/account/password")?["proof"] as? [String: Any])?["kit"] as? [String: Any])?["auth_key"] as? String, try tools.kitKeysFor(.email("ada@example.org"), words: kit.words).authKey)
     tools.joinedWith = nil
     let third = try await Room.loginWithPassword(hubURL: hubURL, account: email, password: other, base: device("third"))
     XCTAssertEqual(tools.joinedWith, tools.codes.last)
@@ -604,7 +630,9 @@ final class AccountTests: XCTestCase {
     let kit = try await room.setEmail(email, words: made.kit.words)
     XCTAssertEqual(kit, EmergencyKit(words: made.kit.words, email: "ada@example.org", accountId: hub.id))
     let put = try XCTUnwrap(hub.body("PUT", "/v1/account/email"))
-    XCTAssertEqual(Set(put.keys), ["email", "kit", "revision"])
+    XCTAssertEqual(Set(put.keys), ["email", "kit", "revision", "proof"])
+    // the words typed once more prove the way in: the kit's login key of before, under the id
+    XCTAssertEqual(((put["proof"] as? [String: Any])?["kit"] as? [String: Any])?["auth_key"] as? String, try tools.kitKeysFor(.id(hub.id), words: made.kit.words).authKey)
     XCTAssertEqual(put["email"] as? String, "ada@example.org")
     XCTAssertEqual((put["revision"] as? NSNumber)?.intValue, 0)
     let new = try XCTUnwrap(put["kit"] as? [String: Any])
@@ -838,21 +866,27 @@ final class AccountTests: XCTestCase {
   func testAnAccountWithoutAPasswordUsesItsPasskeyForTheKitAndAnotherPasskey() async throws {
     let made = try await createdWithPasskey()
     let room = made.room
-    let wrong = await failure { _ = try await room.makeEmergencyKit(way: .passkey(credentialId: self.credential, prf: Bytes(repeating: 7, count: 32))) }
+    func way(_ id: Bytes, _ prf: Bytes) -> WayIn { .passkey(PasskeyAssertion(credentialId: id, authenticatorData: [1], clientDataJSON: [2], signature: [3], userHandle: nil, prf: prf)) }
+    let wrong = await failure { _ = try await room.makeEmergencyKit(way: way(self.credential, Bytes(repeating: 7, count: 32))) }
     XCTAssertNotNil(wrong)
     XCTAssertFalse(hub.paths("PUT").contains("/v1/account/kit"))
-    let unknown = await failure { _ = try await room.makeEmergencyKit(way: .passkey(credentialId: [9, 9], prf: self.prf)) }
+    let unknown = await failure { _ = try await room.makeEmergencyKit(way: way([9, 9], self.prf)) }
     XCTAssertEqual(code(of: try XCTUnwrap(unknown)), "wrong-login")
 
-    let kit = try await room.makeEmergencyKit(way: .passkey(credentialId: credential, prf: prf))
+    let kit = try await room.makeEmergencyKit(way: way(credential, prf))
     XCTAssertEqual(kit.email, "")
     XCTAssertNotEqual(kit.words, made.kit.words)
     let put = try XCTUnwrap(hub.body("PUT", "/v1/account/kit"))
+    // the passkey's assertion is the proof; its prf output stays here
+    let proof = try XCTUnwrap((put["proof"] as? [String: Any])?["passkey"] as? [String: Any])
+    XCTAssertEqual(Set(proof.keys), ["credential_id", "authenticator_data", "client_data_json", "signature"])
+    XCTAssertEqual(proof["credential_id"] as? String, b64u(credential))
     XCTAssertEqual(try tools.openCode(try unb64u(put["sealed_copy"] as! String), room: room.roomId, way: .kit(wrapKey: try tools.kitKeysFor(.id(hub.id), words: kit.words).wrapKey)), tools.codes.last)
 
     let second: Bytes = [4, 4, 4, 4]
-    try await room.addPasskey(way: .passkey(credentialId: credential, prf: prf)) { _ in PasskeyMade(credentialId: second, attestationObject: second, clientDataJSON: [5], prf: Bytes(repeating: 6, count: 32)) }
+    try await room.addPasskey(way: way(credential, prf)) { _ in PasskeyMade(credentialId: second, attestationObject: second, clientDataJSON: [5], prf: Bytes(repeating: 6, count: 32)) }
     let added = try XCTUnwrap(hub.body("POST", "/v1/account/passkeys"))
+    XCTAssertEqual(Set(try XCTUnwrap(added["proof"] as? [String: Any]).keys), ["passkey"])
     XCTAssertEqual(try tools.openCode(try unb64u(added["sealed_copy"] as! String), room: room.roomId, way: .passkey(prf: Bytes(repeating: 6, count: 32), credentialId: second)), tools.codes.last)
     room.close()
   }
@@ -868,5 +902,33 @@ final class AccountTests: XCTestCase {
     XCTAssertEqual(Store.folders(device("second")).count, 1, "no second device")
     let third = try await Room.loginWithPassword(hubURL: hubURL, account: email, password: other, base: device("third"))
     room.close(); again.close(); third.close()
+  }
+
+  /// A token alone changes no way in (spec/hub-api.md): the hub refuses a change without a proof, or with one that
+  /// does not hold, and this client always sends the way in just used as the proof.
+  func testAChangeOfAWayInCarriesItsProofAndTheHubRefusesItWithout() async throws {
+    let (room, words) = try await created()
+    let status = try await room.accountStatus()
+    let st = try XCTUnwrap(status)
+    let attacker = try tools.passwordKeys(email: "ada@example.org", password: "the attacker's own password", kdf: nil)
+    // what a stolen token alone would send: no proof, or a proof of the attacker's own
+    for proof: Any? in [nil, ["password": ["auth_key": attacker.authKey]], ["kit": ["auth_key": attacker.authKey]]] {
+      var body: [String: Any] = ["auth_key": attacker.authKey, "sealed_copy": b64u(Bytes(repeating: 2, count: 61)), "kdf": ["alg": "argon2id", "v": 1, "m": 65536, "t": 3, "p": 1], "revision": st.revision]
+      if let proof = proof { body["proof"] = proof }
+      let refused = await failure { _ = try await room.hub.request("PUT", "/account/password", body: body) }
+      XCTAssertEqual(code(of: try XCTUnwrap(refused)), proof == nil ? "bad-format" : "wrong-login")
+    }
+    let old = await failure { _ = try await Room.signInWithPassword(hubURL: self.hubURL, account: self.email, password: "the attacker's own password", base: self.device("second")) }
+    XCTAssertEqual(code(of: try XCTUnwrap(old)), "wrong-login", "the attacker's password opens nothing")
+    // the kit's words prove it as well
+    try await room.changePassword(current: password, next: other)
+    let kit = try tools.kitKeysFor(.email("ada@example.org"), words: words)
+    var body: [String: Any] = ["auth_key": kit.authKey, "sealed_copy": b64u(Bytes(repeating: 2, count: 61)), "revision": st.revision + 1]
+    body["proof"] = ["kit": ["auth_key": kit.authKey]]
+    _ = try await room.hub.request("PUT", "/account/kit", body: body)
+    // the passkey's way in takes the account's challenge (a passkey's proof is an assertion on it)
+    let challenge = try await room.accountChallenge()
+    XCTAssertEqual(challenge, Bytes(repeating: 8, count: 32))
+    room.close()
   }
 }

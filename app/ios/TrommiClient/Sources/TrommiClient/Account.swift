@@ -226,12 +226,20 @@ private func passkeyPart(_ made: PasskeyMade, room: RoomId, code: Bytes) throws 
 }
 /**
  * The way into the account that a person just used on this device: it opens the recovery code in force, and it is
- * the one way in that keeps working when the code is replaced (spec/v1.md 8.6). Both hold a secret.
+ * the one way in that keeps working when the code is replaced (spec/v1.md 8.6). Both hold a secret. It also proves
+ * the way in to the hub in the request that changes one (a token alone changes no way in: spec/hub-api.md).
  */
 public enum WayIn {
   case password(String)
-  /** A passkey of the account with its prf output over `PASSKEY_PRF_INPUT`. */
-  case passkey(credentialId: Bytes, prf: Bytes)
+  /** A passkey of the account: its assertion on the account's challenge (`Room.accountChallenge`, one use), with
+   *  its prf output over `PASSKEY_PRF_INPUT`. */
+  case passkey(PasskeyAssertion)
+}
+
+/** A passkey's assertion as the hub takes it for a proof (`proof.passkey`, and `DELETE /v1/account`). */
+private func passkeyProof(_ a: PasskeyAssertion) -> JSON {
+  ["passkey": ["credential_id": b64u(a.credentialId), "authenticator_data": b64u(a.authenticatorData),
+               "client_data_json": b64u(a.clientDataJSON), "signature": b64u(a.signature)]]
 }
 
 /**
@@ -273,20 +281,41 @@ extension Room {
   private func codeFrom(_ way: WayIn, _ st: AccountStatus) throws -> Bytes {
     switch way {
     case .password(let password): return try codeFromPassword(password, st)
-    case .passkey(let credentialId, let prf):
-      guard prf.count == 32 else { throw TrommiError("no-prf", "this passkey gives no key") }
-      guard let copy = st.passkeyCopies[credentialId] else { throw TrommiError("wrong-login", "this passkey does not open the account") }
-      return try Core.tools.openCode(copy, room: roomId, way: .passkey(prf: prf, credentialId: credentialId))
+    case .passkey(let a):
+      guard a.prf.count == 32 else { throw TrommiError("no-prf", "this passkey gives no key") }
+      guard let copy = st.passkeyCopies[a.credentialId] else { throw TrommiError("wrong-login", "this passkey does not open the account") }
+      return try Core.tools.openCode(copy, room: roomId, way: .passkey(prf: a.prf, credentialId: a.credentialId))
     }
+  }
+  /**
+   * The code, opened with the way in just used here, and the proof of that way the hub checks in the same request
+   * (`proof`): the password's login key, derived as for a login, or the passkey's assertion. A token alone changes no
+   * way in (spec/hub-api.md "A token alone changes no way in").
+   */
+  private func opened(_ way: WayIn, _ st: AccountStatus) throws -> (code: Bytes, proof: JSON) {
+    let code = try codeFrom(way, st)
+    switch way {
+    case .password(let password):
+      return (code, ["password": ["auth_key": try Core.tools.passwordKeys(email: st.email, password: password, kdf: st.kdfRecord).authKey]])
+    case .passkey(let a): return (code, passkeyProof(a))
+    }
+  }
+  /**
+   * A challenge of the hub for this account at its revision (`POST /v1/account/passkeys/challenge`): what a passkey
+   * signs to prove the way in once more (`WayIn.passkey`, deleting the account). Two minutes, one use.
+   */
+  public func accountChallenge() async throws -> Bytes {
+    try passkeyChallenge(try await hub.request("POST", "/account/passkeys/challenge", body: [:]))
   }
 
   /** A new password: the code is sealed again under it and the hub swaps what it checks a login with; nothing else changes. */
   public func changePassword(current: String, next: String) async throws {
     try Core.tools.checkPassword(next)
     let st = try await status()
-    let code = try codeFromPassword(current, st)
+    let (code, proof) = try opened(.password(current), st)
     var body = try passwordPart(try Core.tools.passwordKeys(email: st.email, password: next, kdf: nil), room: roomId, code: code)
     body["revision"] = st.revision
+    body["proof"] = proof
     try await hub.request("PUT", "/account/password", body: body)
   }
 
@@ -295,10 +324,11 @@ extension Room {
   /** The same with the way in just used here: the password, or a passkey of the account (an account without a password). */
   public func makeEmergencyKit(way: WayIn) async throws -> EmergencyKit {
     let st = try await status()
-    let code = try codeFrom(way, st)
+    let (code, proof) = try opened(way, st)
     let words = try Core.tools.generateKitWords()
     var body = try kitPart(try Core.tools.kitKeysFor(st.kitName, words: words), room: roomId, code: code)
     body["revision"] = st.revision
+    body["proof"] = proof
     try await hub.request("PUT", "/account/kit", body: body)
     return EmergencyKit(words: words, email: st.email, accountId: st.accountId)
   }
@@ -317,8 +347,11 @@ extension Room {
     let st = try await status()
     guard st.email.isEmpty else { throw TrommiError("forbidden", "the e-mail of an account is set once") }
     guard let copy = st.kitCopy else { throw TrommiError("wrong-recovery", "this account has no Emergency Kit") }
-    let code = try tools.openCode(copy, room: roomId, way: .kit(wrapKey: try tools.kitKeysFor(st.kitName, words: kit).wrapKey))
-    try await hub.request("PUT", "/account/email", body: ["email": e, "kit": try kitPart(try tools.kitKeysFor(.email(e), words: kit), room: roomId, code: code), "revision": st.revision])
+    let before = try tools.kitKeysFor(st.kitName, words: kit)
+    let code = try tools.openCode(copy, room: roomId, way: .kit(wrapKey: before.wrapKey))
+    // (the words typed once more are the proof too: the kit's login key of before, under the id)
+    try await hub.request("PUT", "/account/email", body: ["email": e, "kit": try kitPart(try tools.kitKeysFor(.email(e), words: kit), room: roomId, code: code), "revision": st.revision,
+                                                          "proof": ["kit": ["auth_key": before.authKey]]])
     return EmergencyKit(words: kit, email: e, accountId: st.accountId)
   }
 
@@ -331,11 +364,14 @@ extension Room {
   /** The same with the way in just used here: the password, or another passkey of the account. */
   public func addPasskey(way: WayIn, make: (PasskeyRequest) async throws -> PasskeyMade) async throws {
     let st = try await status()
-    let code = try codeFrom(way, st)
-    let challenge = try passkeyChallenge(try await hub.request("POST", "/account/passkeys/challenge", body: [:]))
+    let (code, proof) = try opened(way, st)
+    // (a passkey's proof took a challenge of its own: the new passkey is registered on another)
+    let challenge = try await accountChallenge()
     let made = try await make(PasskeyRequest(challenge: challenge, userHandle: st.userHandle, email: st.email, accountId: st.accountId, existing: st.passkeys))
     guard made.prf.count == 32 else { throw TrommiError("no-prf", "this passkey gives no key") }
-    try await hub.request("POST", "/account/passkeys", body: try passkeyPart(made, room: roomId, code: code))
+    var body = try passkeyPart(made, room: roomId, code: code)
+    body["proof"] = proof
+    try await hub.request("POST", "/account/passkeys", body: body)
   }
 
   /**
@@ -363,7 +399,8 @@ extension Room {
       let keys = try tools.passwordKeys(email: st.email, password: password, kdf: st.kdfRecord)
       current = try tools.openCode(copy, room: room, way: .password(wrapKey: keys.wrapKey))
       sealWay = { ["password": ["sealed_copy": b64u(try tools.sealCode($0, room: room, way: .password(wrapKey: keys.wrapKey)))]] }
-    case .passkey(let credentialId, let prf):
+    case .passkey(let a):
+      let (credentialId, prf) = (a.credentialId, a.prf)
       guard let copy = st.passkeyCopies[credentialId] else { throw TrommiError("wrong-login", "this passkey does not open the account") }
       current = try tools.openCode(copy, room: room, way: .passkey(prf: prf, credentialId: credentialId))
       sealWay = { ["passkey": ["credential_id": b64u(credentialId), "sealed_copy": b64u(try tools.sealCode($0, room: room, way: .passkey(prf: prf, credentialId: credentialId)))]] }
@@ -406,10 +443,8 @@ extension Room {
     if try await deletedMeanwhile() { return }
     let st = try await status()
     guard !st.passkeys.isEmpty else { throw TrommiError("wrong-login", "this account has no passkey") }
-    let challenge = try passkeyChallenge(try await hub.request("POST", "/account/passkeys/challenge", body: [:]))
-    let a = try await assert(challenge, st.passkeys)
-    try await deleteAccount(proof: ["passkey": ["credential_id": b64u(a.credentialId), "authenticator_data": b64u(a.authenticatorData),
-                                                "client_data_json": b64u(a.clientDataJSON), "signature": b64u(a.signature)]])
+    let a = try await assert(try await accountChallenge(), st.passkeys)
+    try await deleteAccount(proof: passkeyProof(a))
   }
   private func deleteAccount(proof: JSON) async throws {
     deletionSent = true
@@ -618,6 +653,8 @@ extension Room {
       let st = try await room.status()
       var body = try passwordPart(try tools.passwordKeys(email: next.email, password: next.password, kdf: nil), room: room.roomId, code: code)
       body["revision"] = st.revision
+      // (the kit's words just used are the proof: a token alone sets no password)
+      body["proof"] = ["kit": ["auth_key": keys.authKey]]
       try await room.hub.request("PUT", "/account/password", body: body)
     } catch {
       // (the device stays in the room; the same words again set the password on it: see above)

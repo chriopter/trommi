@@ -82,14 +82,15 @@ enum Passkeys {
 
   /**
    * The way in for an account without a password, on a device that is in already: one of the account's passkeys
-   * (`existing`) is used once for its prf output, which opens the account's sealed copy here (Account.swift). The
-   * challenge is this device's own and is sent nowhere.
+   * (`existing`) answers the hub's challenge for the account (`Room.accountChallenge`). Its prf output opens the
+   * account's sealed copy here (Account.swift); its assertion proves the way in to the hub in the request that
+   * changes one, since being signed in on this device is not enough.
    */
-  static func unlock(_ existing: [Bytes]) async throws -> WayIn {
+  static func unlock(_ existing: [Bytes], challenge: Bytes) async throws -> WayIn {
     guard !existing.isEmpty else { throw TrommiError("wrong-login", "this account has no passkey") }
-    let a = try await assertion(challenge: systemRandom(32), only: existing)
+    let a = try await assertion(challenge: challenge, only: existing)
     guard a.prf.count == 32 else { throw TrommiError("no-prf", "this passkey gives no key") }
-    return .passkey(credentialId: a.credentialId, prf: a.prf)
+    return .passkey(a)
   }
 
   /**
