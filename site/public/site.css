@@ -23,7 +23,7 @@
   --mono: "IBM Plex Mono", "Trommi Mono Fallback", ui-monospace, "SF Mono", Menlo, monospace;
   --ease-out: cubic-bezier(.16, 1, .3, 1);
   --shadow-head: 0 10px 18px -16px rgb(20 30 25 / .45);
-  --head-h: 76px;
+  --head-h: 68px;
   --cta: #1b6a57; --cta-hover: #155646; --cta-fg: #ffffff; --bezel: #141c18;
   color-scheme: light;
 }
@@ -86,27 +86,29 @@ code, pre { font-family: var(--mono); font-size: .9em; }
 .skip { position: absolute; z-index: 30; left: 12px; top: -60px; padding: 8px 14px; background: var(--surface); color: var(--fg); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
 .skip:focus { top: 12px; }
 
-/* ---- the head: the bell and the name at the left; at the right one group in one height: the code, the theme
-   button, the way in ----
-   It stays at the top as a bar of its own, a sheet lying on the paper, as wide as the text; once the page has moved,
-   its shadow grows (scroll-driven where a browser can). */
-.head { position: sticky; top: 0; z-index: 20; padding-top: 12px; pointer-events: none; }
-/* the paper above the bar and behind its upper half: what passes comes out from under the bar, not over it */
-.head::before { content: ""; position: absolute; inset: 0 0 50% 0; background: var(--bg); }
-.head-in { position: relative; }
-.head-in { pointer-events: auto; display: flex; align-items: center; gap: 12px; height: calc(var(--head-h) - 12px); padding: 0 12px 0 16px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+/* ---- the head: no box. The bell and the name at the left, the three parts of the page in the middle, at the right
+   the code, the theme button and the way in, all 40px high on one line. It lies on the paper; once the page has
+   moved it gets the paper behind it (a little see-through, blurred), a hairline under it and a soft shadow
+   (scroll-driven where a browser can). ---- */
+.head { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid transparent; }
+.head-in { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; height: var(--head-h); }
 @supports (animation-timeline: scroll()) {
-  .head-in { animation: head-rule linear both; animation-timeline: scroll(root block); animation-range: 0 48px; }
+  .head { animation: head-rule linear both; animation-timeline: scroll(root block); animation-range: 0 48px; }
 }
-@keyframes head-rule { to { box-shadow: var(--shadow-md), var(--shadow-head); } }
-.brand { display: inline-flex; align-items: center; gap: 12px; margin-right: auto; color: var(--fg); text-decoration: none; font: 800 1.7rem/1 var(--display); letter-spacing: -.025em; }
+@keyframes head-rule { to { background: color-mix(in srgb, var(--bg) 92%, transparent); border-bottom-color: var(--line); box-shadow: var(--shadow-head); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); } }
+.brand { justify-self: start; display: inline-flex; align-items: center; gap: 10px; color: var(--fg); text-decoration: none; font: 800 1.45rem/1 var(--display); letter-spacing: -.025em; }
 .brand:hover { color: var(--fg); }
-.brand svg { width: 38px; height: 38px; border-radius: 11px; flex: none; }
-/* everything at the right is 40px high and stands on one line */
-.head nav { display: flex; align-items: center; gap: 4px; margin-right: 8px; }
-.head nav a { height: 40px; padding: 0 14px; display: inline-flex; align-items: center; background: none; border: 0; border-radius: 10px; color: var(--muted); font: 500 1rem/1 var(--font); text-decoration: none; cursor: pointer; }
+.brand svg { width: 32px; height: 32px; border-radius: 9px; flex: none; }
+.head nav { display: flex; align-items: center; gap: 2px; }
+.head nav a { height: 40px; padding: 0 14px; display: inline-flex; align-items: center; border-radius: 999px; color: var(--muted); font: 500 .98rem/1 var(--font); text-decoration: none; }
 .head nav a:hover { color: var(--fg); background: var(--sunken); }
-.head .btn { height: 40px; padding: 0 18px; display: inline-flex; align-items: center; border-radius: 10px; font-size: 1rem; line-height: 1; white-space: nowrap; }
+.head-end { justify-self: end; display: flex; align-items: center; gap: 6px; }
+.gh { position: relative; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; color: var(--muted); }
+.gh:hover { color: var(--fg); background: var(--sunken); }
+.gh svg { width: 21px; height: 21px; fill: currentColor; }
+.gh::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 50%; translate: -50% 0; padding: 6px 10px; background: var(--fg); color: var(--bg); border-radius: var(--r-sm); font: 500 .8rem/1 var(--font); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 120ms var(--ease-out); }
+.gh:hover::after, .gh:focus-visible::after { opacity: 1; }
+.head .btn { height: 40px; margin-left: 4px; padding: 0 16px; display: inline-flex; align-items: center; border-radius: 999px; font-size: .95rem; line-height: 1; white-space: nowrap; }
 
 /* The theme: one quiet button of the same height. Its mark is the theme that is set (<html data-theme>, so right
    on the first paint); a press goes on to the next. Without the script (no data-theme) it is not shown. */
@@ -121,56 +123,69 @@ code, pre { font-family: var(--mono); font-size: .9em; }
 .theme-btn:hover::after, .theme-btn:focus-visible::after { opacity: 1; }
 .theme-btn:focus-visible, .head nav a:focus-visible, .head .btn:focus-visible { outline-offset: 2px; border-radius: 10px; }
 
-/* ---- the opening: everything in the middle. The bell, the name, its line, the way in ---- */
-.open { padding-block: clamp(48px, 8vw, 96px) 0; }
+/* ---- Trommi: the line, the way in, and the picture right under it ---- */
+.open { padding-block: clamp(28px, 4.4vw, 56px) 0; }
 .open.centre { text-align: center; }
-.mark { display: flex; justify-content: center; margin-bottom: 26px; }
-.bell { width: clamp(76px, 10vw, 104px); height: auto; border-radius: 24%; box-shadow: var(--shadow-md); }
-.open h1 { font-size: clamp(3.2rem, 8.4vw, 6rem); font-weight: 800; letter-spacing: -.03em; line-height: 1; }
-.tagline { margin-top: 18px; font: 700 clamp(1.5rem, 3.6vw, 2.2rem)/1.15 var(--display); letter-spacing: -.02em; }
+.open h1 { max-width: 16ch; margin-inline: auto; font-size: clamp(2.5rem, 7vw, 5rem); font-weight: 800; letter-spacing: -.035em; line-height: 1.02; }
 /* A word underlined by hand: the app's stroke under a greeting's last word . */
 .under { position: relative; display: inline-block; }
-.under svg { position: absolute; left: -1%; bottom: -.13em; width: 102%; height: .16em; overflow: visible; fill: none; stroke: var(--accent); stroke-width: 2.6; stroke-linecap: round; }
+.under svg { position: absolute; left: -1%; bottom: -.1em; width: 102%; height: .12em; overflow: visible; fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
 .under svg path { vector-effect: non-scaling-stroke; }
-.lede { max-width: 43ch; margin-top: 20px; color: var(--muted); font-size: clamp(1.1rem, 2.1vw, 1.32rem); line-height: 1.5; }
-.centre .lede { max-width: none; }
+.lede { max-width: 54ch; margin: 20px auto 0; color: var(--muted); font-size: clamp(1.08rem, 2vw, 1.28rem); line-height: 1.5; }
 .lede strong { color: var(--fg); font-weight: 500; }
-.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 30px; }
+.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 28px; }
 .centre .acts { justify-content: center; }
-.open-note { margin-top: 16px; color: var(--faint); font-size: .9rem; }
+.open-note { margin-top: 14px; color: var(--faint); font-size: .88rem; }
+.gh-mark { display: inline-block; vertical-align: -3px; width: 18px; height: 18px; margin-right: 8px; fill: currentColor; }
 .btn { display: inline-block; padding: 13px 22px; background: var(--cta); color: var(--cta-fg); border-radius: var(--r-md); font-weight: 600; text-decoration: none; box-shadow: var(--shadow-sm); transition: background 140ms var(--ease-out); }
 .btn:hover { background: var(--cta-hover); color: var(--cta-fg); }
 .btn.quiet { background: var(--surface); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--line-strong); }
 .btn.quiet:hover { background: var(--sunken); color: var(--fg); }
 
 /* ---- sections ---- */
-main > section { padding-block: clamp(56px, 8vw, 96px) 0; }
-.narrow { max-width: 860px; }
-h2 { font-size: clamp(1.7rem, 4vw, 2.4rem); max-width: 20ch; }
-.intro { max-width: 62ch; margin-top: 18px; color: var(--muted); }
+main > section + section { padding-block: clamp(72px, 10vw, 128px) 0; }
+h2 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; }
+.intro { max-width: 58ch; margin-top: 14px; color: var(--muted); font-size: 1.08rem; }
 .intro b { color: var(--fg); font-weight: 600; }
-
-.facts li { position: relative; padding: 13px 0 13px 26px; border-top: 1px solid var(--line-strong); color: var(--muted); }
-.facts li:last-child { border-bottom: 1px solid var(--line-strong); }
-.facts li::before { content: ""; position: absolute; left: 2px; top: 1.45em; width: 11px; height: 2px; background: var(--accent); border-radius: 2px; rotate: -4deg; }
-.facts b { color: var(--fg); font-weight: 600; }
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 28px; }
-.tiles li { display: flex; flex-direction: column; padding: 22px 22px 20px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
-.tiles h3 { font-size: 1.25rem; letter-spacing: -.01em; }
-.tiles p { margin: 8px 0 14px; color: var(--muted); font-size: .97rem; line-height: 1.5; }
-.tiles a { margin-top: auto; font-weight: 500; font-size: .95rem; }
-.cmd { margin-top: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); overflow-x: auto; font-size: .86rem; line-height: 1.5; white-space: pre; color: var(--fg); }
+.cmd { margin-top: 10px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); overflow-x: auto; font-size: .86rem; line-height: 1.5; white-space: pre; color: var(--fg); }
 .cmd i { color: var(--faint); font-style: normal; }
 
-/* ---- the apps: the laptop and the iPhone under the opening, then four phones (pictures with their own transparent
-   margin and shadow; width and height on every <img> keep the page from jumping while they load) ---- */
-.hero-shot { margin-top: clamp(28px, 5vw, 56px); max-width: 1100px; }
+/* the picture under the line: the laptop and the iPhone (its own transparent margin and shadow; width and height on
+   every <img> keep the page from jumping while it loads) */
+.hero-shot { max-width: 1100px; margin: clamp(20px, 3vw, 32px) auto 0; }
 .hero-shot img { width: 100%; }
-.shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(12px, 2.4vw, 28px); }
-.shots figure { display: flex; flex-direction: column; align-items: center; text-align: center; }
-.shots img { width: 100%; max-width: 300px; }
-.shots figcaption { max-width: 26ch; margin-top: 6px; color: var(--muted); font-size: .95rem; line-height: 1.45; }
-.shots figcaption b { display: block; margin-bottom: 2px; color: var(--fg); font: 700 1.2rem/1.2 var(--display); letter-spacing: -.01em; }
+/* three short facts in one row under it */
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; max-width: 980px; margin: clamp(24px, 4vw, 40px) auto 0; text-align: left; color: var(--muted); font-size: .98rem; line-height: 1.5; }
+.facts b { display: block; margin-bottom: 4px; color: var(--fg); font: 700 1.1rem/1.25 var(--display); letter-spacing: -.01em; }
+
+/* ---- Apps: three columns, each a stage with the real screenshot, then its name, a line and its link ---- */
+.apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2.4vw, 28px); margin-top: 36px; }
+.apps li { display: flex; flex-direction: column; }
+.stage { position: relative; aspect-ratio: 4 / 3.3; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; padding: 24px 0 0 24px; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.win { width: 150%; flex: none; align-self: flex-start; margin-top: 8px; overflow: hidden; background: #fff; border: 1px solid var(--line-strong); border-radius: 12px 0 0 0; border-right: 0; border-bottom: 0; box-shadow: var(--shadow-lg); }
+.stage:has(.win) { justify-content: flex-start; align-items: flex-start; }
+.win img { width: 100%; }
+.win .bar { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; background: #f1f2ee; border-bottom: 1px solid #e1e5df; }
+.win .bar i { width: 9px; height: 9px; border-radius: 50%; background: #d4d8d2; }
+.win .bar span { margin-left: 14px; padding: 2px 40px 2px 10px; background: #fff; border-radius: 6px; color: #5c6862; font: 400 .7rem/1.4 var(--font); }
+.phone { width: 62%; flex: none; margin-left: -24px; padding: 7px 7px 0; background: var(--bezel); border-radius: 34px 34px 0 0; box-shadow: var(--shadow-lg); }
+.phone img { width: 100%; border-radius: 28px 28px 0 0; }
+.apps h3 { margin-top: 20px; font-size: 1.4rem; letter-spacing: -.015em; }
+.apps p { margin-top: 6px; color: var(--muted); font-size: .98rem; line-height: 1.5; }
+.go { margin-top: 12px; font-weight: 600; font-size: .97rem; text-decoration: none; }
+.go::after { content: " \2192"; }
+.go.soon { color: var(--faint); font-weight: 500; }
+.go.soon::after { content: none; }
+
+/* ---- Agents: three agents, then the three steps that connect one ---- */
+.agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
+.agents li { padding: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.agents h3 { font-size: 1.25rem; letter-spacing: -.01em; }
+.agents p { margin-top: 6px; color: var(--muted); font-size: .97rem; line-height: 1.5; }
+.steps { counter-reset: step; max-width: 760px; margin-top: 40px; }
+.steps li { position: relative; counter-increment: step; padding: 0 0 26px 48px; color: var(--muted); }
+.steps li::before { content: counter(step); position: absolute; left: 0; top: -2px; width: 30px; height: 30px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); border-radius: 50%; font: 700 .95rem/1 var(--display); }
+.steps b { color: var(--fg); font-weight: 600; }
 
 /* ---- the foot: the name and its line, then one row of links ---- */
 .foot { margin-top: clamp(72px, 11vw, 130px); border-top: 1px solid var(--line-strong); color: var(--muted); font-size: .92rem; }
@@ -197,28 +212,32 @@ h2 { font-size: clamp(1.7rem, 4vw, 2.4rem); max-width: 20ch; }
 .lines dd { color: var(--muted); }
 
 /* ---- narrow windows ---- */
-@media (max-width: 860px) {
-  .tiles { grid-template-columns: 1fr; gap: 12px; }
-  .shots { grid-template-columns: repeat(2, 1fr); row-gap: 28px; }
+@media (max-width: 960px) {
+  .apps { grid-template-columns: 1fr; max-width: 560px; }
+  .agents, .facts { grid-template-columns: 1fr; gap: 12px; }
+  .facts { max-width: 560px; gap: 18px; }
   .lines > div { grid-template-columns: 1fr; }
 }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   body { font-size: 1rem; }
   .wrap { width: calc(100% - 32px); }
-  /* the head on a phone: the bell and the name, the theme button, the way in (GitHub is in the page and the foot) */
-  :root { --head-h: 64px; }
-  .head { padding-top: 8px; }
-  .head .wrap { width: calc(100% - 20px); }
-  .head-in { gap: 6px; height: calc(var(--head-h) - 8px); padding: 0 8px 0 10px; }
-  .head nav { display: none; }
-  .brand { gap: 10px; font-size: 1.45rem; }
-  .brand svg { width: 34px; height: 34px; border-radius: 10px; }
-  .head .btn { padding: 0 14px; font-size: .95rem; }
+  /* the head on a phone: the bell, Apps and Agents, the code, the theme button, the way in */
+  :root { --head-h: 60px; }
+  .head-in { display: flex; gap: 2px; }
+  .brand { margin-right: auto; }
+  .brand span, .head nav .n-top { display: none; }
+  .head nav a { padding: 0 9px; font-size: .92rem; }
+  .head-end { gap: 0; }
+  .head .btn { padding: 0 13px; font-size: .9rem; }
   .foot-brand { flex-basis: 100%; }
   .acts .btn { flex: 1 1 auto; text-align: center; }
   .cmd { font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .steps li { padding-left: 42px; }
+  .open-note { font-size: .82rem; }
+  .hero-shot { margin-inline: -10px; }
 }
 /* the narrowest phones: the way in says "Open" */
-@media (max-width: 350px) {
+@media (max-width: 400px) {
+  .head nav a { padding: 0 7px; }
   .to-app span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
