@@ -654,6 +654,22 @@ public final class DeskModel {
     return nil
   }
 
+  /** The status line a card with its session shows (the Desk's "Off your mind" rows): the working line that names it,
+   *  else the session's newest working line that names no card. */
+  public func workLine(_ c: DeskCard, working: [Task1]) -> Task1? {
+    working.first { $0.cardId == c.id } ?? working.filter { $0.agent == c.agent && $0.cardId == nil }.max { $0.updated < $1.updated }
+  }
+  /** The card a session's status line stands for, by the Desk's own pairing (workLine): the card it names, else the
+   *  newest of the session's cards with it whose line it is; nil for none. A tap on the line in the conversation opens
+   *  the same card a tap on its Desk row opens. */
+  public func lineCard(_ t: Task1) -> DeskCard? {
+    if let cid = t.cardId { return byCard[cid] }
+    guard t.state == "working" else { return nil }
+    let working = tasks.filter { $0.agent == t.agent && $0.state == "working" }
+    return cards.filter { $0.agent == t.agent && stackOf($0) == "works" && workLine($0, working: working)?.id == t.id }
+      .max { (($0.status == "open" ? $0.withAgent : $0.decided) ?? 0) < (($1.status == "open" ? $1.withAgent : $1.decided) ?? 0) }
+  }
+
   // ---- conversations (BoardState.messagesOf, messagesOfCard) ---------------------------------------------
 
   /** One session's conversation: its cards' events, its chat and its cards' chats, in hub order. */

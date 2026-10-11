@@ -619,7 +619,9 @@ struct SessionStatus: View {
           HStack(spacing: 8) { AgentMark(agent: agent, size: 16, crown: false); Text("\(agent.name) is working").font(Face.text(14)).foregroundStyle(Ink.muted); TypingDots() }
         }
         ForEach(lines, id: \.id) { t in
-          Button { if let cid = t.cardId { model.path.append(.card(cid)) } } label: {
+          // (the card the line stands for, paired as on the Desk: a line with no card of its own opens the card its session works on)
+          let card = model.desk?.lineCard(t)
+          Button { if let c = card { model.path.append(.card(c.id)) } } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
               Group {
                 if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
@@ -631,7 +633,7 @@ struct SessionStatus: View {
               Spacer(minLength: 4)
               if t.updated > 0 { Text(agoText(t.updated)).font(Face.text(12)).foregroundStyle(Ink.faint) }
             }
-          }.buttonStyle(.plain).disabled(t.cardId == nil)
+          }.buttonStyle(.plain).disabled(card == nil)
         }
       }.padding(.vertical, 12)
     }

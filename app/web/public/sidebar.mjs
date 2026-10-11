@@ -188,7 +188,7 @@ controller('corner-note', class extends Controller {
         await this.post('/notes', { text })
         const made = deskNotesOf(window.trommi?.model?.() ?? { state: {} })[0]
         if (made) this.idValue = made.id
-      } else await this.post(`/notes/${this.idValue}/keep`, { text })
+      } else await this.post(`/notes/${this.idValue}/keep`, { text, files: String(this.files().length) })   // (the files this page holds: the model may not have them yet)
       // (a note without words but with files stays: pictures alone are a note, and it is still sent by its id)
       if (!text.trim() && !this.files().length) this.idValue = ''
     } finally { this.saving = false; if (this.again) { this.again = false; this.save() } }
@@ -867,7 +867,7 @@ function go(path) {
   a.remove()
 }
 
-controller('menu', class extends Controller {
+export const MenuController = class extends Controller {
   static targets = ['deskForm', 'deskName', 'deskError']
   static values = { desk: String }
 
@@ -984,7 +984,9 @@ controller('menu', class extends Controller {
   chosen(event) {
     const t = event.target
     if (t.closest('#push-toggle, #theme-toggle, #desk-add, .menu-desk-pen, .menu-desk-form')) return
-    if (t.closest('.menu-desk[data-desk]')) { try { sessionStorage.setItem('trommi-menu-keep', '1') } catch {} return }
+    // (only a desk picked in the open menu keeps it open: the number keys 1…9 click the same entry in the closed
+    // menu, and that switch must leave it shut, or the menu comes up and takes the next key)
+    if (t.closest('.menu-desk[data-desk]')) { if (!this.element.hidden) try { sessionStorage.setItem('trommi-menu-keep', '1') } catch {} return }
     if (t.closest('[role="menuitem"]:not([data-menu-body-param]), [role="menuitemradio"], [role="option"]')) this.close()
   }
 
@@ -1049,7 +1051,8 @@ controller('menu', class extends Controller {
     field.focus(); field.select()
   }
   keys() { this.close(); document.dispatchEvent(new CustomEvent('trommi:keys')) }
-})
+}
+controller('menu', MenuController)
 
 // ---- controller "rail" ----
 // The rail: the sidebar folded to the sessions' drawings with their marks (crown, bracket, the drawing

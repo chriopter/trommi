@@ -327,7 +327,7 @@ body[data-scope="all"] #inbox { container: inboxpage / inline-size; display: blo
 
 /* ---- phone: one column; the slim top line (sidebar.css "A phone"), under it the page ---- */
 @media (max-width: 860px) {
-  :where([data-ui]) body { --bar-h: 48px; --gutter: var(--s-4); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  :where([data-ui]) body { --bar-h: 48px; --gutter: max(var(--s-4), env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)); grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
 
   /* (room at the foot, so the last row can be scrolled clear of the two floating buttons) */
   body[data-scope="all"] #inbox { grid-column: 1; grid-row: 2; padding: var(--s-5) var(--gutter) 96px; }
@@ -683,14 +683,14 @@ body[data-t-view="card"] .curl-grab { width: 44px; height: 44px; }
   
   :is(.row-mark, .tc-from, .tc-clip, .tc-draw-pen, .tc-send, .ledger-mark, .ledger-rename, .room-devices summary, .art-kinds a, #settings-logout) { position: relative; }
   :is(.row-mark, .tc-from, .tc-step, .tc-clip, .tc-draw-pen, .tc-send, .ledger-mark, .ledger-rename, .room-devices summary, .art-kinds a, #settings-logout)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); translate: -50% -50%; }
+  /* (the account screens' text links, Show, the chat's back arrow, Settings' back line, the note's clip and bin, a picture's thumb, an artifact's actions) */
+  :is(.ob-link, .ob-foot a, .ob-chip, .ob-paste > summary, #room-home, .phone-back, .set-back, .art-act, .corner-note-clip, .corner-note-bin, .tc-thumb) { position: relative; }
+  :is(.ob-link, .ob-foot a, .ob-eye, .ob-chip, .ob-paste > summary, #room-home, .phone-back, .set-back, .art-act, .corner-note-clip, .corner-note-bin, .tc-thumb)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); translate: -50% -50%; }
+  /* (a field under 16px makes iOS Safari zoom the page when it takes the keyboard, and leave it zoomed) */
+  html body :is(.tc-chat .tc-field, .end-search input, .menu-desk-field, .pm-desk-form input, .corner-note-field, form.composer textarea) { font-size: max(16px, 1rem); }
+  .phone-pill::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: max(100%, 44px); translate: 0 -50%; }
 }
 
-/* ---- A phone names the page once: the top line says it (Agents, Devices, Settings, Media, Links), so the page's own
-   big heading is left out there; the tabs and the line under the heading stay ---- */
-@media (max-width: 860px) {
-  .gal-head > h2 { display: none; }
-  
-}
 
 /* ---- One calm page head: Media, Links, Agents, Devices, Settings, Log out and the invite
    pages: the title large in the display face, one grey line under it (never beside it), on the page's column ---- */

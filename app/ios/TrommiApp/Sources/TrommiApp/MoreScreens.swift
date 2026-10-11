@@ -99,7 +99,7 @@ struct OffList: View {
     let working = d.tasks.filter { $0.state == "working" }
     let decidedHere = d.cards.filter { c in c.status == "decided" && d.stackOf(c) == "works" && v.here.contains { $0.id == c.agent } }
     let busy = (v.revising.filter { d.stackOf($0) == "works" } + decidedHere).map { c -> (DeskCard, UInt64) in
-      let line = working.first { $0.cardId == c.id } ?? working.filter { $0.agent == c.agent && $0.cardId == nil }.max { $0.updated < $1.updated }
+      let line = d.workLine(c, working: working)
       return (c, line?.updated ?? (c.status == "open" ? c.withAgent : c.decided) ?? 0)
     }.sorted { $0.1 > $1.1 }.map { Row(card: $0.0, g: "works") }
     let seen = Set(busy.map { $0.id })

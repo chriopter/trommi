@@ -26,7 +26,10 @@ export function register(t) {
     async create(_, f) { await call({ text: String(f.get('text') ?? '') }) },
     async keep(note, f) {
       const text = f.has('text') ? String(f.get('text')) : note.text
-      await call(holds(text, note.attachments) ? { id: note.id, text } : { id: note.id, remove: true })
+      // (a note of pictures alone is kept: the page that pasted them says how many it holds, for the model may not have
+      //  the new version yet; read from the model alone, a picture-only note folded right after the paste was thrown away)
+      const files = Math.max(note.attachments?.length ?? 0, Number(f.get('files')) || 0)
+      await call(holds(text, files ? [files] : []) ? { id: note.id, text } : { id: note.id, remove: true })
     },
     async bin(note, f) {
       const text = f.has('text') ? String(f.get('text')) : note.text, files = note.attachments?.length ?? 0

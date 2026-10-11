@@ -6,16 +6,20 @@ import assert from 'node:assert/strict'
 import { hubReaders } from '../stand-in/core.ts'
 import { memoryCache, modelsAgree, scene, shared, sleep, until } from './helpers.mjs'
 
-test('520 changes across groups, taken in pages, strictly in the hub\'s order', async t => {
+// Every settle waits up to a minute: a long history posted one envelope after another takes seconds on a fast
+// machine and more on a CI runner (settle's own 10 s was too short there).
+const LONG = { timeout_ms: 60_000 }
+
+test('1040 changes across groups, taken in pages, strictly in the hub\'s order', async t => {
   const { fake, R, a, b, agent } = await scene(t, { agent: true, second: true })
   await b.stop()
-  for (let i = 0; i < 130; i++) {
+  for (let i = 0; i < 260; i++) {
     await a.setDesk('aa'.repeat(16), { name: `Desk ${i}`, created_at: 1, order: 1 })
     await agent.say({ text: `agent ${i}` })
     await a.sendMessage({ session_id: agent.session_id, text: `human ${i}` })
     await agent.setRegister('status_line/run', { label: 'Run', state: 'working', detail: String(i) })
   }
-  await a.settle(20_000); await agent.settle()
+  await a.settle(LONG); await agent.client.settle(LONG)
   const head = [...fake.state.rooms.values()][0].change
   const again = await R.openRoom({ storage: b.stored_as })
   t.after(() => again.stop().catch(() => {}))
@@ -24,26 +28,26 @@ test('520 changes across groups, taken in pages, strictly in the hub\'s order', 
   again.engine.on('log', ({ item }) => taken.push(item.change))
   const requests = fake.requests.length
   await again.start({ stream: false })
-  await again.settle()
+  await again.settle(LONG)
   const pages = fake.requests.slice(requests).filter(r => r.method === 'GET' && r.path === '/v1/changes' && Number(r.query.after) >= from && Number(r.query.after) < head)
   assert.ok(pages.length >= 2, 'more than one page')
-  assert.ok(taken.length >= 520, `${taken.length} items taken`)
+  assert.ok(taken.length >= 1040, `${taken.length} items taken`)
   assert.deepEqual(taken, [...new Set(taken)].sort((x, y) => x - y), 'each change once, ascending')
   assert.ok(again.engine.position >= head)
-  assert.equal(again.model.human.desks.get('aa'.repeat(16)).name, 'Desk 129')
+  assert.equal(again.model.human.desks.get('aa'.repeat(16)).name, 'Desk 259')
   const key = `chat:session/${agent.session_id}`
   assert.equal(again.model.timelines.get(key).item_count, a.model.timelines.get(key).item_count)
-  assert.equal(again.model.sessions.get(agent.session_id).status_lines[0].detail, '129')
+  assert.equal(again.model.sessions.get(agent.session_id).status_lines[0].detail, '259')
   modelsAgree(a.model, again.model)
 })
 
 test('a hub that serves a page out of order, or an old envelope again: nothing of it is taken', async t => {
   const { fake, a, b } = await scene(t, { second: true })
   const first = await a.saveNote({ text: 'the first' })
-  await a.settle(); await b.settle()
+  await a.settle(LONG); await b.settle(LONG)
   await b.stop()
   await a.saveNote({ text: 'the second' }); await a.saveNote({ text: 'the third' })
-  await a.settle()
+  await a.settle(LONG)
   const again = await (await import('./helpers.mjs')).rooms().then(R => R.openRoom({ storage: b.stored_as }))
   t.after(() => again.stop().catch(() => {}))
   const before = shared(again.model), position = again.engine.position
@@ -80,9 +84,9 @@ test('the stream drops and resumes: nothing is lost and nothing comes twice; an 
     }
     await sleep(20)
   }
-  await b.settle()
+  await b.settle(LONG)
   await until(() => [...a.model.notes.values()].filter(n => /^note \d$/.test(n.text)).length === 6, 'every note on the other device')
-  await a.settle()
+  await a.settle(LONG)
   assert.equal(new Set(seen).size, seen.length, 'no change was taken twice')
   assert.deepEqual(seen, [...seen].sort((x, y) => x - y))
   assert.equal(a.model.room.connection, 'live')
@@ -93,7 +97,7 @@ test('the cache: a warm start shows the Desk before the hub answers; a cache ahe
   const { fake, R, a, agent, name } = await scene(t, { agent: true })
   const card = await agent.askCard({ title: 'Still here after a restart?', options: [{ key: 'yes', label: 'Yes' }] })
   const note = await a.saveNote({ text: 'kept in the cache' })
-  await agent.settle(); await a.settle()
+  await agent.client.settle(LONG); await a.settle(LONG)
   await a.loadTimeline(`chat:session/${agent.session_id}`)
   const before = shared(a.model)
   await a.stop()
@@ -109,7 +113,7 @@ test('the cache: a warm start shows the Desk before the hub answers; a cache ahe
   const offline = await warm.saveNote({ text: 'written offline' })
   assert.equal(warm.model.notes.get(offline).pending, true)
   await fake.start()
-  await warm.settle()
+  await warm.settle(LONG)
   assert.equal(warm.model.notes.get(offline).pending, false)
   await warm.stop()
 
@@ -124,9 +128,49 @@ test('the cache: a warm start shows the Desk before the hub answers; a cache ahe
   assert.equal(cold.model.notes.size, 0, 'nothing of the stale cache is shown')
   assert.equal(cold.model.sessions.size, 1, 'the sessions come from the device itself')
   await cold.start()
-  await cold.settle()
+  await cold.settle(LONG)
   await until(() => cold.model.notes.get(note)?.text === 'kept in the cache', 'the model built again from the Desk and a rescan')
   assert.deepEqual(cold.model.stack, [card])
   assert.equal(cold.model.cards.get(card).title, 'Still here after a restart?')
   assert.equal(cold.model.notes.get(offline).text, 'written offline')
+})
+
+test('a device back after a while: cards settled elsewhere leave its Desk before the history is read, and come back closed', async t => {
+  const { fake, R, a, b, agent } = await scene(t, { agent: true, second: true })
+  const ask = title => agent.askCard({ title, options: [{ key: 'x', label: 'X' }, { key: 'y', label: 'Y' }] })
+  const settled = [await ask('settled 1'), await ask('settled 2')], kept = await ask('kept')
+  await agent.client.settle(LONG)
+  await until(() => [...settled, kept].every(id => b.model.stack.includes(id)), 'b shows the three questions')
+  await b.flush()
+  await b.stop()
+  // while b is away: two are answered on a and closed by the agent, and the history grows
+  for (const id of settled) { await a.answer({ object_id: id, choices: ['x'] }); await agent.closeCard(id) }
+  // and one asked and settled while it was away: never on its Desk while it reads the history
+  const passing = await ask('asked and settled meanwhile')
+  await agent.client.settle(LONG)
+  await until(() => a.model.stack.includes(passing), 'a shows it')
+  // (a page and more between its asking and its settling: the device publishes in between)
+  for (let i = 0; i < 1100; i++) await agent.say({ text: `in between ${i}` })
+  await agent.client.settle(LONG)
+  await a.answer({ object_id: passing, choices: ['y'] }); await agent.closeCard(passing)
+  for (let i = 0; i < 30; i++) await agent.say({ text: `meanwhile ${i}` })
+  await a.settle(LONG); await agent.client.settle(LONG)
+  const again = await R.openRoom({ storage: b.stored_as })
+  t.after(() => again.stop().catch(() => {}))
+  assert.ok(settled.every(id => again.model.stack.includes(id)), 'the cache shows them as open before the start')
+  // the history does not come for a while: the Desk read first says what is open now
+  fake.faults.add({ method: 'GET', path: '/v1/changes', refuse: { error: 'overloaded', status: 503, retry_after: 1 }, times: 1000 })
+  const starting = again.start({ stream: false })
+  await until(() => settled.every(id => again.model.cards.get(id)?.catching_up), 'the settled ones marked')
+  assert.ok(settled.every(id => !again.model.stack.includes(id)), 'and off the Desk')
+  assert.ok(again.model.stack.includes(kept), 'the open one stays')
+  fake.faults.clear()
+  const shown = new Set()
+  again.on('change', () => { for (const id of again.model.stack) shown.add(id) })
+  await starting
+  await again.catchUp()
+  assert.ok(![...settled, passing].some(id => shown.has(id)), 'nothing settled elsewhere stood on the Desk during the catch-up')
+  await until(() => settled.every(id => again.model.cards.get(id)?.object_state !== 'open' && !again.model.cards.get(id)?.catching_up), 'taken: closed, no mark left')
+  assert.ok(again.model.stack.includes(kept) && settled.every(id => !again.model.stack.includes(id)))
+  modelsAgree(a.model, again.model)
 })

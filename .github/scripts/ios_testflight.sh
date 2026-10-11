@@ -6,8 +6,8 @@
 # App Store Connect, signed with the team's cloud-managed distribution certificate through the API key, to a file whose
 # entitlements are checked -> (main: the release of this run is published and verified, ios_release_gate.sh) ->
 # upload of that very file through the App Store Connect Build Uploads API (asc.py upload) -> wait until the build is
-# processed -> the group "Intern" holds it -> "What to Test" -> (TF_CHANNEL=public, a build of main: the external group
-# "Public", whose public link is the rolling beta, holds it, and Beta App Review gets it when Apple asks for it).
+# processed -> the group "Intern" holds it -> "What to Test" -> the external group "Trommi", whose public link is the
+# rolling beta, holds it, and Beta App Review gets it when Apple asks for it. Every build delivered is a build of main.
 #   ios_testflight.sh              every step, one after another
 #   ios_testflight.sh upload       up to the upload; writes version and build to GITHUB_OUTPUT
 #   ios_testflight.sh after        the rest (processed, groups, What to Test, review) for TF_VERSION and TF_BUILD, on any
@@ -21,9 +21,8 @@
 # ITS_NON_EXEMPT_ENCRYPTION (YES or NO, default NO: standard algorithms only, exempt), ITS_EXPORT_COMPLIANCE_CODE
 # (only with YES: the code of the app's export compliance documentation in App Store Connect; when empty, the code of
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
-# TESTFLIGHT_TESTER (an address kept in the group), NOTES, TF_CHANNEL (public: main's builds also go to the external
-# group "Trommi" and to Beta App Review, What to Test is the newest day of CHANGELOG.md; with APPSTORE_DEMO_PASSWORD,
-# the demo account's password for Beta App Review; empty: the internal group only),
+# TESTFLIGHT_TESTER (an address kept in the group), NOTES (What to Test; default: the newest day of CHANGELOG.md),
+# APPSTORE_DEMO_PASSWORD (the demo account's password for Beta App Review),
 # TF_GATE=release (main: upload only once the release of build run RUN_ID, v$VERSION_RELEASE, is published and
 # verified; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed, checked .ipa; the gate
 # only verifies an existing release, if any is named; the upload is checked offline and NOT sent; no wait, no group),
@@ -40,7 +39,6 @@ case "$mode" in
 esac
 [ "${TF_GATE:-}" != release ] || required="$required GH_TOKEN GITHUB_REPOSITORY RUN_ID VERSION_RELEASE"
 case "${TF_GATE:-}" in ''|release) ;; *) echo "::error::TF_GATE is release or empty, not ${TF_GATE}"; exit 1 ;; esac
-case "${TF_CHANNEL:-}" in ''|public) ;; *) echo "::error::TF_CHANNEL is public or empty, not ${TF_CHANNEL}"; exit 1 ;; esac
 for name in $required; do
   [ -n "${!name:-}" ] || { echo "::error::$name is not set for this run"; exit 1; }
 done
@@ -84,30 +82,20 @@ after() {   # after <version> <build> <short commit>
   asc internal "$build_id" Intern "${TESTFLIGHT_TESTER:-}"
 
   echo "== 9. What to Test =="
-  # the text the app's folder carries (AppStore/WhatToTest.txt, at most 4000 characters), else the commit's subject
-  notes=${NOTES:-}
   # the public beta: what changed for people, the newest day of the changelog
-  if [ -z "$notes" ] && [ "${TF_CHANNEL:-}" = public ]; then
+  notes=${NOTES:-}
+  if [ -z "$notes" ]; then
     changes=$(asc whats-new "$repo/CHANGELOG.md")
     notes="Build $2 ($3). $changes"
   fi
-  [ -n "$notes" ] || [ ! -s "$appstore/WhatToTest.txt" ] || notes="Build $2 ($3). $(head -c 3900 "$appstore/WhatToTest.txt")"
-  [ -n "$notes" ] || notes="Neu in Build $2 ($3): $(git -C "$repo" log -1 --format=%s "$COMMIT" | cut -c1-300)"
-  if [ "${TF_CHANNEL:-}" = public ]; then
-    # external testers see What to Test, and Beta App Review asks for it: here it must be set
-    asc notes "$build_id" "$notes" en-US
-  else
-    asc notes "$build_id" "$notes" || echo "::warning::What to Test was not set"
-  fi
+  # external testers see What to Test, and Beta App Review asks for it: here it must be set
+  asc notes "$build_id" "$notes" en-US
 
-  groups="the group Intern"
-  if [ "${TF_CHANNEL:-}" = public ]; then
-    echo "== 10. External group \"Public\" (the public link) =="
-    asc external "$build_id" Trommi | tee "$RUNNER_TEMP/external.txt"
-    echo "== 11. Beta App Review =="
-    asc beta-review "$build_id" | tee "$RUNNER_TEMP/review.txt"
-    groups="the groups Intern and Trommi ($(sed -n 's/^external_state: //p' "$RUNNER_TEMP/review.txt"))"
-  fi
+  echo "== 10. External group \"Trommi\" (the public link) =="
+  asc external "$build_id" Trommi | tee "$RUNNER_TEMP/external.txt"
+  echo "== 11. Beta App Review =="
+  asc beta-review "$build_id" | tee "$RUNNER_TEMP/review.txt"
+  groups="the groups Intern and Trommi ($(sed -n 's/^external_state: //p' "$RUNNER_TEMP/review.txt"))"
 
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     {
@@ -237,11 +225,9 @@ fi
 echo "== 6c. Upload =="
 if [ "${TF_DRY_RUN:-}" = 1 ]; then
   asc upload "$ipa" "$version" "$build" --dry-run
-  if [ "${TF_CHANNEL:-}" = public ]; then
-    # offline: what the public beta would get; the group and Beta App Review are not touched
-    echo "dry run: would add the build to the groups Intern and Trommi and ask Beta App Review if Apple asks for it; What to Test:"
-    asc whats-new "$repo/CHANGELOG.md"
-  fi
+  # offline: what the public beta would get; the groups and Beta App Review are not touched
+  echo "dry run: would add the build to the groups Intern and Trommi and ask Beta App Review if Apple asks for it; What to Test:"
+  asc whats-new "$repo/CHANGELOG.md"
   echo "dry run: build $version ($build) was NOT uploaded; nothing waits for it"
   [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "### iOS: dry run, build $version ($build) signed and checked, not uploaded" >> "$GITHUB_STEP_SUMMARY"
   exit 0

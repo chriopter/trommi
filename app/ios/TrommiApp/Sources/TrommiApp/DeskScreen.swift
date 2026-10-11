@@ -523,7 +523,7 @@ struct WithAgents: View {
     let decidedHere = d.cards.filter { c in c.status == "decided" && d.stackOf(c) == "works" && view.here.contains { $0.id == c.agent } }
     let items = (view.revising.filter { d.stackOf($0) == "works" } + decidedHere.sorted { ($0.decided ?? 0) > ($1.decided ?? 0) }).compactMap { c -> (DeskCard, Agent, Task1?, UInt64)? in
       guard let a = d.byAgent[c.agent] else { return nil }
-      let line = working.first { $0.cardId == c.id } ?? working.filter { $0.agent == c.agent && $0.cardId == nil }.max { $0.updated < $1.updated }
+      let line = d.workLine(c, working: working)
       return (c, a, line, (c.status == "open" ? c.withAgent : c.decided) ?? 0)
     }.sorted { ($0.2?.updated ?? $0.3) > ($1.2?.updated ?? $1.3) }
     if !items.isEmpty {

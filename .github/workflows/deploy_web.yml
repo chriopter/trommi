@@ -75,7 +75,7 @@ jobs:
             '.path == ".github/workflows/build.yml" and .head_branch == "main" and (.event == "push" or .event == "workflow_dispatch") and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main branch of this repository"; exit 1; }
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
-          grep -Fq "Web app (test and build)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job Web app (test and build) of run $RUN_ID did not succeed"; exit 1; }
+          grep -Fq "Web app (check)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job Web app (check) of run $RUN_ID did not succeed"; exit 1; }
           echo "commit=$(jq -r .head_sha "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
