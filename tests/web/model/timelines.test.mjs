@@ -125,3 +125,26 @@ test('a hand back read again after the newer version that answered it (a rescan)
   w.take(back.r)
   assert.equal(w.model.cards.get(hid).in_revision, null, 'still presented again')
 })
+
+test('presented again after a hand back: read newest first (a page of its Chat) or again, the hand back stays over', () => {
+  const w = new World(); w.groups()
+  const id = id16(0xc8), hid = hex(id)
+  const v1 = w.card(id, { title: 'Q', options: [{ key: 'a', label: 'A' }], object_version: 1 })
+  const back = w.message({ text: 'not like this', hand_back: true }, { card: id, sender: w.me })
+  const present = w.message({ text: 'here is why', present_card: true }, { card: id })
+  assert.equal(w.model.cards.get(hid).in_revision, null, 'presented again')
+  // the page of the card's Chat, newest first: the present, then the hand back it answered
+  w.take(present.r); w.take(back.r)
+  assert.equal(w.model.cards.get(hid).in_revision, null, 'still presented again')
+  // a second hand back after a new version, presented again, read once more newest first
+  w.card(id, { title: 'Q, reworked', options: [{ key: 'a', label: 'A' }], object_version: 2 }, { previous: v1.hash })
+  const back2 = w.message({ text: 'still not', hand_back: true }, { card: id, sender: w.me })
+  assert.equal(w.model.cards.get(hid).in_revision?.envelope_number, back2.change)
+  const present2 = w.message({ text: 'better now?', present_card: true }, { card: id })
+  w.take(present2.r); w.take(back2.r); w.take(present.r); w.take(back.r)
+  assert.equal(w.model.cards.get(hid).in_revision, null, 'the newest deed decides')
+  // a hand back after the newest present is in force, read in any order
+  const back3 = w.message({ text: 'no', explain: true }, { card: id, sender: w.me })
+  w.take(present2.r); w.take(back3.r); w.take(back2.r)
+  assert.equal(w.model.cards.get(hid).in_revision?.envelope_number, back3.change)
+})

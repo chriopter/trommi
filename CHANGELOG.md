@@ -74,6 +74,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- Web: a card handed back and then put before you again no longer slips back to "with the agent" (off the Desk)
+  when you open it; a card already stuck that way returns to the Desk by itself.
 - iPhone: a session renamed on another device no longer shows up twice; the new name lands on the session itself.
 - Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
 - Open cards are the same on every device: the web takes them from the hub's list of open questions, so a card
