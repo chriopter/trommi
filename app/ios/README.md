@@ -247,9 +247,9 @@ distribution signing refuses App Manager keys: the key needs the Admin role.
 (`.github/scripts/ios_crashes.sh`, `asc.py crashes`): the crash feedback testers send, each with its crash log, and
 the diagnostic signatures (hangs, launches, disk writes) of the three newest builds. The artifact `ios-crashes` (30
 days) holds the logs and `summary.md`; when there were crashes, the open issue labelled `ios-crash` ("TestFlight
-crashes") gets a comment with build, device, OS, exception and the first frames of the crashed thread. Tester comments
-stay out of the issue (the repository is public) and are in the artifact only; no tester name or e-mail address is
-read. Test offline: `python3 -B -m unittest discover -s tests/ios/asc`.
+crashes") gets a comment with build, device, OS, exception and the first frames of the crashed thread. The
+repository and its artifacts are public, so no tester comment, name or e-mail address is read or written; comments are
+read in App Store Connect (TestFlight → Feedback). Test offline: `python3 -B -m unittest discover -s tests/ios/asc`.
 
 ## Public beta
 

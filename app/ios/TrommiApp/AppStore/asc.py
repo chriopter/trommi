@@ -28,8 +28,8 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
   asc.py last-sha                   the commit of the newest build whose What to Test names one ("(abc1234)")
   asc.py crashes OUT_DIR [SINCE]    read only: TestFlight crash feedback newer than SINCE (ISO 8601, default 3 days
                                     ago) with each crash log as a file, the diagnostic signatures (hangs, launches,
-                                    disk writes) of the three newest builds, summary.md (tester comments included) and
-                                    issue.md (without them); no tester e-mail or name is asked for or written
+                                    disk writes) of the three newest builds, summary.md and issue.md (the same);
+                                    no tester comment, name or e-mail is asked for or written
   asc.py export-code                the code of the app's APPROVED export compliance documentation (the newest if
                                     several), read only; fails listing every declaration's state and date if none is
 
@@ -517,12 +517,12 @@ def whats_new(changelog):
 
 
 # ---- TestFlight crash reports (asc.py crashes; .github/workflows/ios_crashes.yml) ----
-# Read only. The tester is never asked for (no `tester` field or include), and the submission's `email` is not
-# requested; KEEP lists what is kept of a submission all the same, should the API send more. The tester's comment is
-# kept for summary.md (the artifact) but never written to issue.md, which goes to a public issue.
+# Read only. The repository is public and the artifact can be downloaded by anyone signed in to GitHub, so nothing a
+# tester typed or is known by is asked for: no `tester`, `email` or `comment` field and no include; KEEP lists what
+# is kept of a submission all the same, should the API send more. summary.md and issue.md say the same.
 
-CRASH_FIELDS = "createdDate,comment,deviceModel,osVersion,architecture,appPlatform,deviceFamily,buildBundleId,build,crashLog"
-KEEP = ("createdDate", "comment", "deviceModel", "osVersion", "architecture", "appPlatform", "deviceFamily", "buildBundleId")
+CRASH_FIELDS = "createdDate,deviceModel,osVersion,architecture,appPlatform,deviceFamily,buildBundleId,build,crashLog"
+KEEP = ("createdDate", "deviceModel", "osVersion", "architecture", "appPlatform", "deviceFamily", "buildBundleId")
 DIAGNOSTIC_TYPES = ("HANGS", "LAUNCHES", "DISK_WRITES")   # the API's diagnosticType values (no crashes among them)
 FRAMES = 8
 
@@ -655,8 +655,8 @@ def _slug(text):
 
 def crashes(out_dir, since=None):
     """TestFlight crash feedback since SINCE (default: 3 days ago) and the diagnostic signatures of the newest builds,
-    written to OUT_DIR: one file per crash log, diagnostics/*.json, summary.md (with tester comments, for the artifact)
-    and issue.md (without them, for a public issue). GITHUB_OUTPUT: crashes=N."""
+    written to OUT_DIR: one file per crash log, diagnostics/*.json, summary.md (for the artifact) and issue.md (the
+    same, for the issue); no tester comment, name or e-mail. GITHUB_OUTPUT: crashes=N."""
     start = when(since) if since else datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=3)
     if start is None:
         die(f"not an ISO 8601 date: {since}")
@@ -718,9 +718,10 @@ def crashes(out_dir, since=None):
                 diags.append({"build": names.get(b["id"], b["id"]), "type": a.get("diagnosticType") or kind,
                               "signature": a.get("signature") or "", "weight": a.get("weight"), "frames": frames})
 
-    for name, private in (("summary.md", True), ("issue.md", False)):
+    report = crash_report(found, diags, names, start)
+    for name in ("summary.md", "issue.md"):
         with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
-            f.write(crash_report(found, diags, names, start, private))
+            f.write(report)
     print(f"{len(found)} crash report(s) since {start.isoformat()}, {len(diags)} diagnostic signature(s) of "
           f"{min(len(recent), 3)} build(s); written to {out_dir}")
     gh_out("crashes", len(found))
@@ -743,10 +744,8 @@ def blame_frames(logs):
     return out
 
 
-def crash_report(found, diags, names, start, private):
+def crash_report(found, diags, names, start):
     lines = [f"# TestFlight crashes since {start.strftime('%Y-%m-%d %H:%M UTC')}", ""]
-    if not private:
-        lines += ["Tester comments are left out here (the repository is public); they are in the run's artifact.", ""]
     if not found:
         lines += ["No crash feedback in this time.", ""]
     for c in found:
@@ -756,8 +755,6 @@ def crash_report(found, diags, names, start, private):
         lines += [f"## {c.get('createdDate') or '?'}: build {build}", "",
                   f"- Device: {c.get('deviceModel') or '?'}, {c.get('osVersion') or '?'}"
                   + (f", {c['architecture']}" if c.get("architecture") else "")]
-        if private and c.get("comment"):
-            lines.append("- Tester comment: " + " ".join(c["comment"].split())[:1000])
         if c.get("file"):
             lines.append(f"- Log: `{c['file']}`")
         lines += ["", "```", *(c.get("digest") or ["(nothing recognised in the log)"]), "```", ""]

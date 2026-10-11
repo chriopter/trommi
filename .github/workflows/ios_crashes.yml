@@ -5,13 +5,12 @@
 # `asc.py crashes` (app/ios/TrommiApp/AppStore/asc.py).
 #
 # What comes out: the artifact ios-crashes (30 days) with each crash log as a file, diagnostics/*.json and summary.md;
-# and, when there are crashes in the window, a comment with issue.md on the ONE open issue labelled ios-crash
-# ("TestFlight crashes", opened and the label created when missing).
+# and, when there are crashes in the window, a comment with issue.md (the same as summary.md) on the ONE open issue
+# labelled ios-crash ("TestFlight crashes", opened and the label created when missing).
 #
-# Privacy: the repository is public. The tester is never asked for and no e-mail address is requested or written.
-# Tester comments are free text a tester may not want public: they are in summary.md of the artifact only, never in
-# the issue (issue.md leaves them out). Note that artifacts of a public repository can be downloaded by anyone signed
-# in to GitHub, for as long as they are kept.
+# Privacy: the repository is public, and its artifacts can be downloaded by anyone signed in to GitHub. So no free
+# text of testers is read or written: no tester comment (the field is not even requested), no tester name, no e-mail
+# address. Testers' comments are read in App Store Connect (TestFlight > Feedback > Crashes).
 #
 # Secrets: the environment `ios` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; APPLE_ASC_KEY,
 # APPLE_ASC_KEY_ID and APPLE_ASC_ISSUER_ID come from the 1Password Environment (as for deploy_ios.yml). The issue is
@@ -78,7 +77,7 @@ jobs:
           path: ${{ runner.temp }}/ios-crashes
           retention-days: 30
           if-no-files-found: ignore
-      # one open issue collects the crashes; issue.md has no tester comments (see the head of this file)
+      # one open issue collects the crashes; issue.md holds no tester data (see the head of this file)
       - name: Report on the issue
         if: steps.read.outputs.crashes != '' && steps.read.outputs.crashes != '0'
         env:
@@ -93,7 +92,7 @@ jobs:
           gh label create "$label" --color D93F0B --description "Crash reports of TestFlight builds (ios_crashes.yml)" 2>/dev/null || true
           {
             head -c 60000 "$CRASH_OUT/issue.md"
-            printf '\n\n%s crash report(s). Logs and tester comments: artifact ios-crashes of %s\n' "$CRASHES" "$RUN_URL"
+            printf '\n\n%s crash report(s). Logs: artifact ios-crashes of %s\n' "$CRASHES" "$RUN_URL"
           } > "$RUNNER_TEMP/comment.md"
           open=$(gh issue list --state open --label "$label" --limit 1 --json number --jq '.[0].number // empty')
           if [ -z "$open" ]; then

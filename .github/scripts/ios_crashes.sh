@@ -3,7 +3,7 @@
 # `op run`, which is where the App Store Connect key comes from. Read only: nothing on App Store Connect is changed.
 #
 #   ios_crashes.sh      asc.py crashes into CRASH_OUT for the last CRASH_DAYS days: each crash log as a file, the
-#                       diagnostics of the newest builds, summary.md (with tester comments) and issue.md (without);
+#                       diagnostics of the newest builds, summary.md and issue.md (the same, no tester data);
 #                       writes crashes=N to GITHUB_OUTPUT
 #
 # Environment, from the 1Password Environment: APPLE_ASC_KEY (the .p8; it may arrive with its line breaks turned into

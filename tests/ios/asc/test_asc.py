@@ -206,7 +206,7 @@ class Crashes(Base):
                  "subFrames": [{"binaryName": "Trommi", "symbolName": "Sync.apply(_:)", "isBlameFrame": True}]}]}]}]}]}]},
         }
 
-    def test_writes_logs_and_a_summary_without_e_mail(self):
+    def test_writes_logs_and_a_summary_without_tester_data(self):
         import tempfile
         fake = Fake(**self.answers())
         with tempfile.TemporaryDirectory() as out:
@@ -234,13 +234,15 @@ class Crashes(Base):
             self.assertIn("(no crash log: HTTP 404)", text)
             self.assertIn("1.0 (62) HANGS, weight 0.25: `Sync.apply(_:)`", text)
             self.assertIn("Trommi Sync.apply(_:) (blamed)", text)
-        self.assertIn("Tester comment: it crashed when I opened the board", summary)
-        self.assertNotIn("it crashed", issue)
-        self.assertNotIn("- Tester comment", issue)
-        # never asks for the tester or the e-mail, writes nothing, does not page past SINCE
+        # no free text of testers anywhere, and both files say the same
+        self.assertEqual(summary, issue)
+        self.assertNotIn("it crashed", summary)
+        self.assertNotIn("comment", summary.lower())
+        # never asks for the tester, the e-mail or the comment, writes nothing, does not page past SINCE
         for _, path, _ in fake.sent:
             self.assertNotIn("tester", path)
             self.assertNotIn("email", path)
+            self.assertNotIn("comment", path)
         self.assertEqual(fake.writes(), [])
         self.assertNotIn("/v1/never-asked", [p for _, p, _ in fake.sent])
 
