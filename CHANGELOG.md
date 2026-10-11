@@ -2,29 +2,164 @@
 
 What changed in Trommi, newest first. One section per day; the release numbers it covers are in brackets.
 
-## 11 October 2026 (v109 – v115)
+## 11 October 2026 (v109 – v120)
 
 **New**
-- Log out right from the desk menu.
-- The connector updates itself while it runs: no more reconnect after an update.
-- Drag sessions in the sidebar to put them in your order (web; the iPhone shows the same order).
+- The connector updates itself while it runs: no reconnect after an update.
+- Drag sessions in the sidebar into your own order; the iPhone shows the same order.
+- Delete your account right from the iPhone app (Settings → Account).
+- Log out straight from the desk menu.
 
 **Better**
-- An agent that reports an ongoing matter keeps one card and updates it, newest state in the title.
+- An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
 - The self-test screen is now called "Security Info".
 
 **Fixed**
-- Changing your password, Emergency Kit or passkeys now asks for a current one: being logged in is not enough.
+- Changing your password, Emergency Kit or passkeys now asks for proof that you know a current one:
+  being logged in is not enough.
 - A phone added to a running session could show the agent's raw id instead of its name.
-- The iPhone app could crash while sending (a data race).
+- The iPhone app could crash while sending.
 - After logging out, the browser kept the key that had protected its local data.
 
-## 10 October 2026 (v93 – v108)
+## 10 October 2026 (v49 – v108)
 
 **New**
-- History graphs on the hub's admin page.
+- Trommi now runs on one Rust core built on OpenMLS, the same code in the web app, the iPhone app
+  and the connector. Everything on your board stays end-to-end encrypted.
+- One line installs the connector for Claude Code and Codex: a single signed program, no Node needed.
+- Inviting an agent takes three short steps, each line ready to copy.
+- Sign in with your e-mail or your account id; "All my devices are lost" restores your account
+  from the Emergency Kit.
+- Every release is signed, and every account starts with a desk of its own.
+- A new demo room with two desks to look around in before you sign up.
+- Readable addresses: `/chat/<id>` and `/artifact/<id>`.
+
+**Better**
 - "New Agent…" makes a fresh link each time; the previous unused link stops working.
+- Logging out never hangs, even on a slow connection.
 
 **Fixed**
+- The invite page showed the same short link for every agent.
 - A corner note with only pictures could not be sent.
 - Deleting a session failed with "ids is not defined".
+- The demo's Desk and Scribble Board no longer spin forever.
+
+## 9 October 2026
+
+**New**
+- Live Activities on the iPhone keep what waits for you in view; pushes carry the card's title.
+- Links to Trommi open in the iPhone app.
+- The connector runs on macOS too and keeps its key in the Keychain.
+- Write goals for a desk; they stand under the greeting.
+- Duck it and Blitz work on info cards too.
+
+**Better**
+- "Off your mind" is a plain feed of what is done; "Archive" replaces the tick box.
+- Copying an artifact's link shares it for 30 days, without a dialog.
+- A calmer iPhone app: a chat list like Messages, floating glass buttons, attachments inside the composer.
+- Dark mode keeps dark ink on the paper and quiet frames.
+
+**Fixed**
+- Long strokes on the Scribble Board no longer slow down the pen.
+
+## 8 October 2026
+
+**New**
+- The iPhone app: the Desk, chats, notes and the Scribble Board (with Apple Pencil),
+  signed in by QR code or with e-mail and password.
+- Push notifications on the iPhone, and a choice per device: all, only knocking, or none.
+- Share from any iPhone app into Trommi; it arrives as a note.
+- Artifacts: media and pages together in one place.
+- Light, Dark or System theme.
+- Each option on a card can carry its own picture.
+
+**Better**
+- The app starts faster and stays smooth in big rooms; the heavy work runs in the background.
+- On a phone the web app has a menu pill and a tab bar instead of the sidebar.
+- "Off your mind" gathers finished and handed-out cards in one list.
+- Content from a newer Trommi shows a calm placeholder in an older app instead of breaking it.
+
+**Fixed**
+- Keys no longer stop working on the Desk after a visit to the Scribble Board.
+- Nothing scrolls sideways on a phone.
+
+## 7 October 2026
+
+**New**
+- On a phone the sidebar is a drawer.
+- Compare six emoji when you connect an agent, instead of picking a number.
+- Delete a session from its menu.
+- A third pile on the Desk for links and pages.
+- Full screen for a card, and a tracing sheet to draw over the whole card.
+- Read earlier versions of a card right in its thread.
+
+**Better**
+- Rapid fire is now Blitz, with a lightning bolt.
+- "Got it" instead of "Acknowledge" everywhere.
+- Tap targets on a phone are a finger's size.
+- The advised option leads a row; every answer tile has the same size.
+
+## 6 October 2026
+
+**New**
+- Continue a session: hand it to a new agent, with or without its history.
+- Duck it: answer every open decision on the Desk at once with "whatever you think".
+- A greeting at the top of the Desk.
+- Drag the corner note onto the Scribble Board and leave it there as a sticky.
+- Later is a tag under the card: pull it down to put the card off.
+
+**Better**
+- Inviting an agent is a small clipboard with the command to copy.
+- Cards are as long as their content, and the page scrolls.
+- Arrow keys walk a card's answers.
+- The demo speaks English.
+
+**Fixed**
+- Two connectors in one folder no longer fight over the key: it follows the session in use.
+
+## 5 October 2026
+
+**New**
+- Permission prompts from Claude Code reach the board, and leave it once answered in the terminal.
+- When auto mode blocks a tool, the session says so in one quiet line.
+- Move a session to another desk from its own page.
+- The page turns from its top-right corner between the Desk and the Scribble Board.
+
+**Better**
+- A desk shows only what its own sessions hold.
+- The note is back as a yellow sticky in the bottom-right corner.
+
+## 4 October 2026
+
+**New**
+- End-to-end encryption: the hub stores only sealed messages, and only your devices can read them.
+- Accounts with e-mail and password, an Emergency Kit, and login on a new device.
+- Pair a device by QR code.
+- The connector as a Claude Code plugin, set up on any machine with one command.
+- Share a file with someone outside your room through a private link.
+- Videos on cards.
+- The Scribble Board, notes with attachments and a media gallery.
+- Agents can open helper sessions of their own.
+
+**Better**
+- The Desk redesigned: drawing, urgency, teaser, pictures and square answer tiles in one row;
+  finished items move to a single pile.
+- Infos sit apart from the questions as a short checklist.
+- Switch desks with the keys 1 to 9.
+- Several tabs of the app work side by side.
+
+**Fixed**
+- The phone no longer loses its login.
+- Agents keep working through a hub restart.
+
+## 3 October 2026
+
+**New**
+- Push notifications, the name Trommi and the bell icon.
+
+## 2 October 2026
+
+**New**
+- The first board: an inbox of questions from your agents, with sessions, a canvas and dictation.
+- Answer tiles, the agent's advice circled by hand, and questions agents can revise or merge.
+- Agents can publish pages and files to the board.
