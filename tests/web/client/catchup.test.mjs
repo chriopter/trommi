@@ -6,6 +6,10 @@ import assert from 'node:assert/strict'
 import { hubReaders } from '../stand-in/core.ts'
 import { memoryCache, modelsAgree, scene, shared, sleep, until } from './helpers.mjs'
 
+// Every settle waits up to a minute: a long history posted one envelope after another takes seconds on a fast
+// machine and more on a CI runner (settle's own 10 s was too short there).
+const LONG = { timeout_ms: 60_000 }
+
 test('1040 changes across groups, taken in pages, strictly in the hub\'s order', async t => {
   const { fake, R, a, b, agent } = await scene(t, { agent: true, second: true })
   await b.stop()
@@ -15,7 +19,7 @@ test('1040 changes across groups, taken in pages, strictly in the hub\'s order',
     await a.sendMessage({ session_id: agent.session_id, text: `human ${i}` })
     await agent.setRegister('status_line/run', { label: 'Run', state: 'working', detail: String(i) })
   }
-  await a.settle(20_000); await agent.settle()
+  await a.settle(LONG); await agent.client.settle(LONG)
   const head = [...fake.state.rooms.values()][0].change
   const again = await R.openRoom({ storage: b.stored_as })
   t.after(() => again.stop().catch(() => {}))
@@ -24,7 +28,7 @@ test('1040 changes across groups, taken in pages, strictly in the hub\'s order',
   again.engine.on('log', ({ item }) => taken.push(item.change))
   const requests = fake.requests.length
   await again.start({ stream: false })
-  await again.settle()
+  await again.settle(LONG)
   const pages = fake.requests.slice(requests).filter(r => r.method === 'GET' && r.path === '/v1/changes' && Number(r.query.after) >= from && Number(r.query.after) < head)
   assert.ok(pages.length >= 2, 'more than one page')
   assert.ok(taken.length >= 1040, `${taken.length} items taken`)
@@ -40,10 +44,10 @@ test('1040 changes across groups, taken in pages, strictly in the hub\'s order',
 test('a hub that serves a page out of order, or an old envelope again: nothing of it is taken', async t => {
   const { fake, a, b } = await scene(t, { second: true })
   const first = await a.saveNote({ text: 'the first' })
-  await a.settle(); await b.settle()
+  await a.settle(LONG); await b.settle(LONG)
   await b.stop()
   await a.saveNote({ text: 'the second' }); await a.saveNote({ text: 'the third' })
-  await a.settle()
+  await a.settle(LONG)
   const again = await (await import('./helpers.mjs')).rooms().then(R => R.openRoom({ storage: b.stored_as }))
   t.after(() => again.stop().catch(() => {}))
   const before = shared(again.model), position = again.engine.position
@@ -80,9 +84,9 @@ test('the stream drops and resumes: nothing is lost and nothing comes twice; an 
     }
     await sleep(20)
   }
-  await b.settle()
+  await b.settle(LONG)
   await until(() => [...a.model.notes.values()].filter(n => /^note \d$/.test(n.text)).length === 6, 'every note on the other device')
-  await a.settle()
+  await a.settle(LONG)
   assert.equal(new Set(seen).size, seen.length, 'no change was taken twice')
   assert.deepEqual(seen, [...seen].sort((x, y) => x - y))
   assert.equal(a.model.room.connection, 'live')
@@ -93,7 +97,7 @@ test('the cache: a warm start shows the Desk before the hub answers; a cache ahe
   const { fake, R, a, agent, name } = await scene(t, { agent: true })
   const card = await agent.askCard({ title: 'Still here after a restart?', options: [{ key: 'yes', label: 'Yes' }] })
   const note = await a.saveNote({ text: 'kept in the cache' })
-  await agent.settle(); await a.settle()
+  await agent.client.settle(LONG); await a.settle(LONG)
   await a.loadTimeline(`chat:session/${agent.session_id}`)
   const before = shared(a.model)
   await a.stop()
@@ -109,7 +113,7 @@ test('the cache: a warm start shows the Desk before the hub answers; a cache ahe
   const offline = await warm.saveNote({ text: 'written offline' })
   assert.equal(warm.model.notes.get(offline).pending, true)
   await fake.start()
-  await warm.settle()
+  await warm.settle(LONG)
   assert.equal(warm.model.notes.get(offline).pending, false)
   await warm.stop()
 
@@ -124,7 +128,7 @@ test('the cache: a warm start shows the Desk before the hub answers; a cache ahe
   assert.equal(cold.model.notes.size, 0, 'nothing of the stale cache is shown')
   assert.equal(cold.model.sessions.size, 1, 'the sessions come from the device itself')
   await cold.start()
-  await cold.settle()
+  await cold.settle(LONG)
   await until(() => cold.model.notes.get(note)?.text === 'kept in the cache', 'the model built again from the Desk and a rescan')
   assert.deepEqual(cold.model.stack, [card])
   assert.equal(cold.model.cards.get(card).title, 'Still here after a restart?')
@@ -135,7 +139,7 @@ test('a device back after a while: cards settled elsewhere leave its Desk before
   const { fake, R, a, b, agent } = await scene(t, { agent: true, second: true })
   const ask = title => agent.askCard({ title, options: [{ key: 'x', label: 'X' }, { key: 'y', label: 'Y' }] })
   const settled = [await ask('settled 1'), await ask('settled 2')], kept = await ask('kept')
-  await agent.settle()
+  await agent.client.settle(LONG)
   await until(() => [...settled, kept].every(id => b.model.stack.includes(id)), 'b shows the three questions')
   await b.flush()
   await b.stop()
@@ -143,15 +147,14 @@ test('a device back after a while: cards settled elsewhere leave its Desk before
   for (const id of settled) { await a.answer({ object_id: id, choices: ['x'] }); await agent.closeCard(id) }
   // and one asked and settled while it was away: never on its Desk while it reads the history
   const passing = await ask('asked and settled meanwhile')
-  await agent.settle()
+  await agent.client.settle(LONG)
   await until(() => a.model.stack.includes(passing), 'a shows it')
   // (a page and more between its asking and its settling: the device publishes in between)
   for (let i = 0; i < 1100; i++) await agent.say({ text: `in between ${i}` })
-  // (1100 posts one after another: about 8 s on a fast machine, more on a CI runner; settle's 10 s is too short)
-  await agent.client.settle({ timeout_ms: 60_000 })
+  await agent.client.settle(LONG)
   await a.answer({ object_id: passing, choices: ['y'] }); await agent.closeCard(passing)
   for (let i = 0; i < 30; i++) await agent.say({ text: `meanwhile ${i}` })
-  await a.settle(); await agent.settle()
+  await a.settle(LONG); await agent.client.settle(LONG)
   const again = await R.openRoom({ storage: b.stored_as })
   t.after(() => again.stop().catch(() => {}))
   assert.ok(settled.every(id => again.model.stack.includes(id)), 'the cache shows them as open before the start')
