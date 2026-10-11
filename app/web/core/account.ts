@@ -555,8 +555,10 @@ export async function addPasskey(client: AccountClient, { unlock: given, passkey
     // the hub read the id out of the attestation; the copy is sealed for the id the page named (taken back with the
     // same proof: a login key proves again, a passkey's assertion was used up and the passkey stays)
     if (!equal(added.credential_id, passkey.credential_id)) {
-      await hub.removePasskey(added.credential_id, proof).catch(() => {})
-      throw new AccountError('bad-passkey', 'the passkey\'s id is not the one in its registration')
+      const gone = await hub.removePasskey(added.credential_id, proof).then(() => true, () => false)
+      const e = new AccountError('bad-passkey', 'the passkey\'s id is not the one in its registration')
+      // (a passkey's assertion was used up by the addition: then the passkey stays, and the error says so)
+      throw gone ? e : kept(e)
     }
     if (!('words' in given)) return { credential_id: b64u(added.credential_id), kit: null }
     // If the code cannot be replaced, the passkey is taken back and the account is as it was (the kit's words
@@ -613,6 +615,8 @@ async function replaceCode(client: AccountClient, view: AccountView, way: Way, c
       const copy = sealed(core, way, room_id, new_code)
       const account: AccountCopies = {
         kit: kitPart(core, kit, room_id, new_code),
+        // (the hub applies the copies only at this revision, in the transaction of the Commit)
+        revision,
         ...(way.name === 'passkey' && way.credential_id ? { passkey: { credential_id: way.credential_id, sealed_copy: copy } } : { password: { sealed_copy: copy } }),
       }
       made.push(kitOf(kit, view))

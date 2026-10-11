@@ -819,6 +819,11 @@ impl Accounts {
     /// by the person. After a recovery with the Emergency Kit words or the bare code there was no way in used
     /// just now: then the password or passkey is set anew in the same request (`auth_key` and `kdf`, or a
     /// passkey's registration). A room without an account brings none.
+    ///
+    /// `at_revision`: a human device's replacement (`…/recovery-code`) carries the account's `revision` its copies
+    /// were made at, and is refused if the account changed since (a password changed on another device in between
+    /// would otherwise keep its login key over a copy sealed under the password of before). A recovery (8.7) knows
+    /// no revision: its device was not in the room before.
     pub fn replace_copies(
         &self,
         c: &Connection,
@@ -826,6 +831,7 @@ impl Accounts {
         v: &Value,
         now: u64,
         pre: &Prehashed,
+        at_revision: bool,
     ) -> Res<()> {
         let account: Option<i64> = c
             .prepare_cached("SELECT account_id FROM account_rooms WHERE room_id = ?1")?
@@ -843,6 +849,9 @@ impl Accounts {
                 "incomplete",
                 "new recovery keys come with the account's new sealed copies",
             ));
+        }
+        if at_revision {
+            check_revision(c, account, v)?;
         }
         set_kit(c, account, &v["kit"], pre)
             .map_err(|_| refuse("incomplete", "the account's new Emergency Kit copy"))?;

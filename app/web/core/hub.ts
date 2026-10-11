@@ -227,6 +227,9 @@ export interface NewAccount {
  *  challenge is the account's, or one of `passkeyChallenge()`, which needs no token). */
 export interface AccountCopies {
   kit: KitPart
+  /** The account's revision the copies were made at: a human device's replacement (`…/recovery-code`) carries it,
+   *  and the hub refuses it if the account changed since (`account-changed`); a recovery (8.7) has none. */
+  revision?: number
   password?: { sealed_copy: Uint8Array } | { auth_key: Uint8Array; sealed_copy: Uint8Array; kdf: Kdf }
   passkey?: { credential_id: Uint8Array; sealed_copy: Uint8Array } | PasskeyRegistration
 }
@@ -515,6 +518,7 @@ function copiesBody(a: AccountCopies | null): Record<string, unknown> | null {
     kit: kitBody(a.kit),
     ...(a.password ? { password: 'auth_key' in a.password ? { auth_key: enc(a.password.auth_key), sealed_copy: enc(a.password.sealed_copy), kdf: a.password.kdf } : { sealed_copy: enc(a.password.sealed_copy) } } : {}),
     ...(a.passkey ? { passkey: 'attestation_object' in a.passkey ? passkeyBody(a.passkey) : { credential_id: enc(a.passkey.credential_id), sealed_copy: enc(a.passkey.sealed_copy) } } : {}),
+    ...(a.revision !== undefined ? { revision: ownInt(a.revision, 'revision') } : {}),
   }
 }
 
@@ -541,8 +545,12 @@ function accountCopiesOf(account: Uint8Array): AccountCopies | null {
   }
   let parsed: unknown
   try { parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(account)) } catch { wrong('the account\'s copies: not what accountCopiesBytes writes') }
-  const o = members(parsed, 'kit', 'password', 'passkey'), kit = members(o.kit, 'auth_key', 'sealed_copy')
+  const o = members(parsed, 'kit', 'password', 'passkey', 'revision'), kit = members(o.kit, 'auth_key', 'sealed_copy')
   const copies: AccountCopies = { kit: { auth_key: part(kit.auth_key, 'kit.auth_key', 32), sealed_copy: part(kit.sealed_copy, 'kit.sealed_copy', 61) } }
+  if (o.revision !== undefined) {
+    if (!Number.isSafeInteger(o.revision) || (o.revision as number) < 0) wrong('the account\'s copies: revision')
+    copies.revision = o.revision as number
+  }
   const has = (v: unknown, name: string): boolean => typeof v === 'object' && v !== null && Object.hasOwn(v, name)
   if (o.password !== undefined && o.passkey !== undefined) wrong('the account\'s copies: one way in')
   if (has(o.password, 'auth_key')) {

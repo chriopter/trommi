@@ -394,7 +394,7 @@ test('the kit, then a new passkey: the device signs in, the passkey is added, th
   const replaced = s.last('replaceRecoveryCode')
   secretBytes(unhex(replaced.new_code))
   assert.equal(added.credential_id, b64u(passkey.credential_id))
-  assert.deepEqual(Object.keys(replaced.account).sort(), ['kit', 'passkey'])
+  assert.deepEqual(Object.keys(replaced.account).sort(), ['kit', 'passkey', 'revision'])
   assert.deepEqual(replaced.account.passkey.credential_id, passkey.credential_id)
   assert.equal(await opensWith(s, { passkey }), replaced.new_code)
   assert.equal(await opensWith(s, { words: added.kit.words }), replaced.new_code)

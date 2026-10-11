@@ -843,7 +843,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             app.write_recovery(Default::default(), Some(&recovery), &auth, |x, fx| {
                 let (answer, published_now) = delivery::recovery_finish(x, &auth, &recovery, &link, &hash, fx)?;
                 if published_now {
-                    app.accounts.replace_copies(x.c, &auth.room, &rq.body["account"], x.now, &pre)?;
+                    app.accounts.replace_copies(x.c, &auth.room, &rq.body["account"], x.now, &pre, false)?;
                 }
                 Ok(answer)
             })
@@ -877,7 +877,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                     }
                     return Ok(json!({ "epoch": a.epoch, "change": a.change }));
                 }
-                app.accounts.replace_copies(x.c, &auth.room, &rq.body["account"], x.now, &pre)?;
+                app.accounts.replace_copies(x.c, &auth.room, &rq.body["account"], x.now, &pre, true)?;
                 Ok(json!({ "epoch": a.epoch, "change": a.change }))
             })
         }

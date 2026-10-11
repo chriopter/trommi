@@ -686,7 +686,11 @@ fn replacing_the_code_replaces_the_accounts_copies_in_the_same_request() {
         0
     );
     let new_kit: [u8; 32] = random();
-    body["account"] = json!({ "kit": { "auth_key": b64(&new_kit), "sealed_copy": copy(4) }, "password": { "sealed_copy": copy(8) } });
+    // the copies name the account's revision they were made at: one of before is refused, with the Commit
+    body["account"] = json!({ "kit": { "auth_key": b64(&new_kit), "sealed_copy": copy(4) }, "password": { "sealed_copy": copy(8) }, "revision": 0 });
+    w.ada.post(&w.hub, &path, &code_body(&body)).refused(409, "account-changed");
+    assert_eq!(w.ada.get(&w.hub, &format!("/v1/groups/{}/info", b64(&room))).ok()["epoch"], 0);
+    body["account"]["revision"] = w.ada.get(&w.hub, "/v1/account").ok()["revision"].clone();
     w.ada.post(&w.hub, &path, &code_body(&body)).ok();
     w.ada.merge(&room);
     // the password opens the new copy; the old kit is gone, the new one opens its copy
@@ -721,6 +725,8 @@ fn replacing_the_code_replaces_the_accounts_copies_in_the_same_request() {
             &new.hpke_public,
             true,
         );
+        let mut account = account;
+        account["revision"] = w.ada.get(&w.hub, "/v1/account").ok()["revision"].clone();
         // (the Commit's fields under `commit`, as hub-api.md writes the body)
         let body = json!({
             "commit": commit_json(&out, &key, None),
@@ -1038,7 +1044,7 @@ fn an_account_with_a_passkey_needs_no_e_mail() {
     w.ada.post(&w.hub, &format!("/v1/rooms/{}/recovery-code", b64(&room)), &json!({
         "commit": commit_json(&out, &key_row, None),
         "recovery_link": b64(&wire::RecoveryLink { room_id: room, new_recovery_hpke_key: new.hpke_public.to_vec(), kem_output: vec![1; 32], ciphertext: vec![2; 80], mac: vec![3; 32] }.bytes()),
-        "account": { "kit": { "auth_key": b64(&next_kit), "sealed_copy": copy(5) }, "passkey": { "credential_id": b64(&second.credential_id), "sealed_copy": copy(6) } },
+        "account": { "kit": { "auth_key": b64(&next_kit), "sealed_copy": copy(5) }, "passkey": { "credential_id": b64(&second.credential_id), "sealed_copy": copy(6) }, "revision": w.ada.get(&w.hub, "/v1/account").ok()["revision"] },
     })).ok();
     w.ada.merge(&room);
     let hub = &w.hub;

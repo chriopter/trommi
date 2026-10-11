@@ -463,10 +463,12 @@ export async function startFakeHub(opts = {}) {
     account.revision += 1
     return { revision: account.revision }
   }
-  function replaceCopies(r, v) {
+  function replaceCopies(r, v, at_revision = false) {
     const account = accountOf(r, false)
     if (!account) { if (v === null || v === undefined) return; throw refuse('not-found', 'this room has no account') }
     if (v === null || v === undefined) throw refuse('incomplete', 'new recovery keys come with the account\'s new sealed copies')
+    // a human device's replacement names the revision its copies were made at (hub accounts.rs replace_copies)
+    if (at_revision && v.revision !== account.revision) throw refuse('account-changed', 'the account changed meanwhile: read it again')
     try { Object.assign(account, { kit_auth: authKey(v.kit), kit_copy: sealedCopy(v.kit, 'sealed_copy'), kit_form: kitForm(v.kit, account.email !== null) }) } catch { throw refuse('incomplete', 'the account\'s new Emergency Kit copy') }
     // one way in, every other removed: the one used just now with a new copy, or one set anew (hub accounts.rs replace_copies)
     if (v.password?.auth_key != null && !v.passkey) needsEmail(account)
@@ -863,7 +865,7 @@ export async function startFakeHub(opts = {}) {
       if (again) return commit(a.room, g, a, c)
       // all or nothing (8.6): a Commit that would be refused for its epoch leaves the account as it was
       if (c.epoch !== g.epoch) return commit(a.room, g, a, c)
-      replaceCopies(a.room, body.account)
+      replaceCopies(a.room, body.account, true)
       const answer = commit(a.room, g, a, c)
       a.room.links.push({ room_epoch: answer.epoch, change: ++a.room.change, recovery_link: link })
       return answer
