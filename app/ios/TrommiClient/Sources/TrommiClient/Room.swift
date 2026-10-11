@@ -320,6 +320,7 @@ public struct Store {
 
   func emit(_ c: Change) {
     if c.isEmpty { return }
+    Spent.count("emits")
     onChange?(c)
     // (a desk, a session's settings, the sessions or the stream changed: the goals handed to the agents may be behind)
     if c.room || !c.sessions.isEmpty || c.registers.contains(where: { $0.hasPrefix("desk/") || $0.hasPrefix("session/") }) { goalsSoon() }
@@ -436,24 +437,29 @@ public struct Store {
       throw TrommiError("removed", "this device was removed from the room")
     }
     var change = Change()
-    try await takeWelcomes(&change)
-    if let work = codeJoinWork { await work.value; codeJoinWork = nil }
-    await finishCodeJoin()
+    // (a device back after a while: what was settled elsewhere leaves the Desk before the long history is read)
+    let until = cursor > 0 ? await Spent.time("desk first") { await deskFirst() } : nil
+    try await Spent.time("welcomes") { try await takeWelcomes(&change) }
+    if let work = codeJoinWork { await Spent.time("wait session joins") { await work.value }; codeJoinWork = nil }
+    await Spent.time("finish code join") { await finishCodeJoin() }
     // KeyPackages before the catch-up: a device back after long, or just signed in, may hold none at the hub, and
     // every session founded meanwhile leaves it out until it has (5.2.5); a long catch-up must not keep them back.
     // (upkeep: a failure here does not keep the board from showing; the end of this sync tries again)
     if (try? await publishKeyPackages()) != nil { pumpOutbox() }
-    try await readChanges(&report, &change)
+    try await Spent.time("read changes") { try await readChanges(&report, &change) }
+    if let until, cursor >= until { caughtUp(&change) }
     // (the log said that this device was removed: nothing more is written or read)
     if removedAt != nil { emit(change); throw TrommiError("removed", "this device was removed from the room") }
     // (what was written before this device came is upkeep too: what is left of it is noted and goes on next time)
-    try? await tendPast(&report, &change)
+    try? await Spent.time("past") { try await tendPast(&report, &change) }
     // (stocking KeyPackages and writing `heads` are upkeep: a failure there does not keep the board from showing;
     // the next sync tries again. The KeyPackages again: what the catch-up's Welcomes used up)
+    let upkeep = Spent.now
     try? await publishKeyPackages()
     await writeHeads()
     await tendKeys()
     await healSessions()
+    Spent.add("upkeep", since: upkeep)
     synced = true
     Task { await self.refreshPresence() }
     board.project()
@@ -461,6 +467,40 @@ public struct Store {
     emit(change)
     pumpOutbox()
     return report
+  }
+
+  /**
+   * A start from a cursor behind the hub: before the history since then is read, which can be long, the hub's Desk
+   * says what is open now. A card or permission request the board holds as open that the Desk no longer lists was
+   * settled elsewhere meanwhile: it is marked `catchingUp` and stays off the Desk until the catch-up reached the
+   * Desk's cursor (the web client's `deskFirst`). Returns that cursor; nil when nothing is marked or the Desk was
+   * not had (a failure here only leaves the old view a moment longer).
+   */
+  func deskFirst() async -> UInt64? {
+    guard let desk = try? await noted({ try await hub.desk() }), desk["truncated"] as? Bool != true,
+          let at = Wire.uint(desk["change"]), at > cursor else { return nil }
+    var open = Set<String>()
+    for kind in ["cards", "permission_requests"] {
+      for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
+    }
+    var change = Change()
+    for c in board.cards.values where c.objectState == "open" && !open.contains(c.objectId) {
+      c.catchingUp = true; change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) }
+    }
+    for p in board.permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) {
+      p.catchingUp = true; change.permissions.insert(p.objectId); if let sid = p.sessionId { change.sessions.insert(sid) }
+    }
+    if change.cards.isEmpty && change.permissions.isEmpty { return nil }
+    change.stack = true
+    board.project(change)
+    emit(change)
+    return at
+  }
+  /** The catch-up reached the Desk's cursor of `deskFirst`: every mark is taken by now. */
+  func caughtUp(_ change: inout Change) {
+    for c in board.cards.values where c.catchingUp { c.catchingUp = false; change.cards.insert(c.objectId) }
+    for p in board.permissions.values where p.catchingUp { p.catchingUp = false; change.permissions.insert(p.objectId) }
+    change.stack = true
   }
 
   /** The Welcomes waiting for this device (a session group it was added to): joined, if the room's inviter made them. */
@@ -675,11 +715,20 @@ public struct Store {
    * something numbers can show: that is the chains' and the `heads` registers' work in the core, 9.0.7.)
    */
   func readChanges(_ report: inout SyncReport, _ change: inout Change) async throws {
+    // The next page is asked for while the core takes this one (the hub's cursor after a page is where the next
+    // starts); a page that does not process throws, and the one fetched ahead is dropped.
+    var ahead: Task<JSON, Error>? = nil
+    defer { ahead?.cancel() }
     for _ in 0..<10_000 {
       let before = cursor
-      let page = try await noted { try await hub.changes(after: cursor) }
+      let page: JSON
+      let waited = Spent.now
+      if let fetching = ahead { ahead = nil; page = try await noted { try await fetching.value } } else { page = try await noted { try await hub.changes(after: cursor) } }
+      Spent.add("hub page wait", since: waited)
+      if page["more"] as? Bool == true, let next = Wire.uint(page["change"]), next > cursor { let hub = self.hub; ahead = Task { try await hub.changes(after: next) } }
       let raw = page["items"] as? [JSON] ?? []
       let items = try Self.ordered(raw, after: cursor)
+      Spent.count(readingBack ? "items read back" : "items", items.count)
       try await process(items, report: &report, change: &change)
       // The hub moves the cursor over what this device may not see: forwards only, and only when the whole page
       // was taken (process throws otherwise).
@@ -755,7 +804,10 @@ public struct Store {
     guard !parsed.isEmpty else { return }
     let readingBack = self.readingBack
     let cutDropped = Flag()
-    let (outcomes, coreAt, findings): ([Outcome], UInt64, [ChainFinding]) = try await onCore { device in
+    let coreStart = Spent.now
+    // (one flush of the store for the whole run, at its end: DeviceStore.batched)
+    let store = deviceStore
+    let (outcomes, coreAt, findings): ([Outcome], UInt64, [ChainFinding]) = try await onCore { device in try store.batched { () -> ([Outcome], UInt64, [ChainFinding]) in
       var out = [Outcome]()
       var commits = false
       /// Per leaf of a group, the last envelope the core accepted of it: asked before and after a Commit, a number
@@ -769,6 +821,8 @@ public struct Store {
       /// The findings the core made while it processed Commits (a Cut that names another envelope than the one
       /// accepted): taken once, then cleared there.
       func done() -> ([Outcome], UInt64, [ChainFinding]) {
+        let tf = Spent.now
+        defer { Spent.add("core findings", since: tf) }
         let found = commits ? ((try? device.findings()) ?? []) : []
         if !found.isEmpty { try? device.findingsRead() }
         return (out, device.cursor, found)
@@ -782,15 +836,23 @@ public struct Store {
           case .log(_, let entry):
             if entry.change <= before { out.append(.processed(.skipped)); continue }
             let isCommit: Bool = { if case .commit = entry.kind { return true }; return false }()
+            let th = Spent.now
             let had = isCommit ? heads(entry.group) : [:]
+            Spent.add("core heads", since: th)
+            let tp = Spent.now
             let p = try device.processLogEntry(entry)
+            Spent.add(isCommit ? "core commit" : "core message", since: tp)
+            let tc = Spent.now
             for (leaf, seq) in had where seq > 0 {
               if let now = try? device.cutOf(group: entry.group, device: leaf), now.seq < seq { cutDropped.on = true }
             }
+            Spent.add("core cuts", since: tc)
             if case .message = p {} else { commits = true }
             out.append(.processed(p))
           case .envelope(let c, let bytes, let void):
+            let te = Spent.now
             var e = try device.receiveEnvelope(bytes, change: c, ordered: c > before || readingBack, voidCode: void, nowMs: nowMs())
+            Spent.add("core envelope", since: te)
             // Reading back: `replay` says the chain holds this one already, so it is read again for display.
             if readingBack, c <= before, e.outcome == .refused, e.code == "replay" { e = try device.receiveEnvelope(bytes, change: c, ordered: false, voidCode: void, nowMs: nowMs()) }
             // Refused with `group-behind` and the cursor left where it was: the group's next Commits are still to
@@ -822,7 +884,10 @@ public struct Store {
         }
       }
       return done()
-    }
+    } }
+    Spent.add("core (process)", since: coreStart)
+    let boardStart = Spent.now
+    defer { Spent.add("board (apply)", since: boardStart) }
     coreCursor = coreAt
     // (the core dropped what a removed device had signed beyond its Cut: what was shown of it goes, the board and
     // its cache are built again from the hub's changes, which the core now judges without it: RoomPast.swift)

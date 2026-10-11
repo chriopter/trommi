@@ -45,7 +45,7 @@ struct TrommiApp: App {
         .onChange(of: model.phase) { _, p in if p == .board { push.ask() } }
       #endif
         .onChange(of: scenePhase) { _, p in model.scene(active: p == .active) }
-        .onAppear { PerfScript.runIfAsked(model) }
+        .onAppear { PerfScript.runIfAsked(model); MegaScript.runIfAsked(model) }
         // universal links of app.trommi.com (Links.swift)
         .onOpenURL { model.open(url: $0) }
     }
@@ -82,7 +82,7 @@ final class BoardModel: ObservableObject {
   /** The screens before the board, as the web app's sign-in (app/web/public/auth.mjs: welcome, scan, join, log in). */
   enum Phase: Equatable { case start, create, email, forgot, scan, asking, checkCode(String), pairFailed(String), board }
   /** The hub of app.trommi.com (app.mjs): accounts are made and logged in to there. A pairing link names its own hub. */
-  static let hubURL = "https://hub.trommi.com"
+  static let hubURL = ProcessInfo.processInfo.environment["TROMMI_HUB_URL"] ?? "https://hub.trommi.com"
 
   @Published var phase: Phase = .start
   @Published var error: String?
@@ -277,6 +277,7 @@ final class BoardModel: ObservableObject {
       openPendingLink()
       let t0 = DispatchTime.now().uptimeNanoseconds
       version &+= 1
+      MegaScript.rendered(self)
       if PerfLog.on { DispatchQueue.main.async { PerfLog.line(String(format: "render after version bump ≈ %.1f ms", Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e6)); RenderCount.flush("render") } }
     }
   }
@@ -293,7 +294,9 @@ final class BoardModel: ObservableObject {
       verdict = info.verdict(kind: "ios", version: HubClient.appVersion)
     }
     do {
+      let syncStart = Date()
       let report = try await PerfLog.time("refresh sync") { try await room.sync() }
+      MegaScript.synced(self, ms: Date().timeIntervalSince(syncStart) * 1000)
       if let w = report.warnings.first { error = w }
       // (after a catch-up the board is the hub's: an account without a desk gets its first one)
       ensureDesk()
@@ -849,12 +852,15 @@ final class BoardModel: ObservableObject {
       #if canImport(ActivityKit) && os(iOS)
       LiveActivities.endAll()
       #endif
-      self.room = nil; self.desk = nil; self.path = []
+      // (the start screen first, then the room goes: a view of the board still drawn meanwhile finds its desk)
+      self.error = nil; self.loggedOut = true; self.accountDeleted = false
+      self.phase = .start
+      self.deskPath = []; self.chatPath = []
+      self.room = nil; self.desk = nil
       ShareImport.shared.signedOut()
       self.kit = nil
       UserDefaults.standard.removeObject(forKey: Self.kitMark)
-      self.error = nil; self.loggedOut = true; self.accountDeleted = false
-      self.phase = .start
+      self.version &+= 1
     }
   }
   /**

@@ -2,14 +2,15 @@ import XCTest
 @testable import TrommiClient
 
 final class BoardCodecTests: XCTestCase {
-  /** Every stored field of the board's parts is in BoardCodec: a new field makes this count differ (then add it there). */
+  /** Every stored field of the board's parts is in BoardCodec: a new field makes this count differ (then add it there).
+   *  (Card and Permission count `catchingUp` too, which is not stored: each start sets it again, Room.deskFirst.) */
   func testFieldsCovered() {
     let rec = Rec(envelopeNumber: 1, envelopeHash: "aa", senderDeviceId: "bb", senderRole: "agent", recipientDeviceId: nil, sentAt: 1, kind: 2, isHead: true, object: nil,
                   timelineKind: nil, timelineId: nil, sessionId: nil, content: nil, contentState: "ok", bind: nil, causal: Causal(senderDeviceId: "bb", senderSequence: 1, sentAt: 1, lamport: 1),
                   senderSequence: 1, epoch: 1)
     let counts: [(Any, Int)] = [
-      (RoomMember(deviceId: "aa", role: "human"), 15), (Session("s"), 27), (Card("c", agent: "a", rec: rec), 21),
-      (Permission(objectId: "p", agentDeviceId: "a", sessionId: nil, toolName: "t", description: "d", inputPreview: "i", expiresAt: 1, versionHash: "v", envelopeNumber: 1, sentAt: 1), 13),
+      (RoomMember(deviceId: "aa", role: "human"), 15), (Session("s"), 27), (Card("c", agent: "a", rec: rec), 22),
+      (Permission(objectId: "p", agentDeviceId: "a", sessionId: nil, toolName: "t", description: "d", inputPreview: "i", expiresAt: 1, versionHash: "v", envelopeNumber: 1, sentAt: 1), 14),
       (Timeline("chat:session/x"), 14), (Board(), 25), (HumanRegisters(), 8),
     ]
     for (x, n) in counts { XCTAssertEqual(Mirror(reflecting: x).children.count, n, "fields of \(type(of: x)): update BoardCodec and this count") }
