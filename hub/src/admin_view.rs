@@ -14,51 +14,51 @@ use crate::error::Refused;
 use crate::metrics::{self, Sample, Series};
 use crate::util::{now, short};
 
-/// What each table holds, as spec/hub-api.md "Tables" has it: its group on the page, what the hub reads, and what
+/// What each table holds, as spec/hub-api.md "Tables" has it: its group on the page (by what it serves in the app), what the hub reads, and what
 /// lies in it sealed.
 pub const TABLES: &[(&str, &str, &str, &str)] = &[
     ("Accounts and sign-in", "accounts", "e-mail, login hashes, KDF record", "sealed copies of the code"),
     ("Accounts and sign-in", "passkeys", "passkey public keys", "sealed copies of the code"),
     ("Accounts and sign-in", "account_rooms", "account → room", ""),
     ("Accounts and sign-in", "account_sources", "keyed hashes of the addresses an account was signed in to from", ""),
-    ("Accounts and sign-in", "login_sources", "login throttle: hashes of e-mail and source, failures", ""),
-    ("Accounts and sign-in", "login_accounts", "login throttle: an e-mail's hour and line", ""),
-    ("Accounts and sign-in", "login_turns", "login throttle: places in line", ""),
     ("Rooms and devices", "rooms", "room id, founding time, change counter, counts, recovery public keys", ""),
     ("Rooms and devices", "devices", "device public key, role, epochs", ""),
+    ("Rooms and devices", "invites", "the signed Offer with its MAC, expiry, use", ""),
+    ("Rooms and devices", "invite_requests", "Requests and Reveal of an invite", ""),
     ("Rooms and devices", "requests", "device, kind, group, time", ""),
     ("Rooms and devices", "agent_leases", "device, process, generation, expiry", ""),
-    ("Groups", "groups", "group id, kind, session, epoch, the public group state", ""),
-    ("Groups", "group_members", "the leaves of each group", ""),
-    ("Groups", "group_log", "Commits (public), sender, times", "application messages"),
-    ("Groups", "group_infos", "GroupInfos (public)", ""),
-    ("Groups", "key_packages", "KeyPackages (public)", ""),
-    ("Groups", "spent_key_packages", "references of KeyPackages handed out", ""),
-    ("Groups", "welcomes", "device, group, time, epoch", "the Welcome (rows written before its own table)"),
-    ("Groups", "welcome_bytes", "group, epoch", "the Welcome, once for every device it adds"),
-    ("Groups", "welcome_ids", "the counter of Welcome ids (one number)", ""),
+    ("Groups (MLS)", "groups", "group id, kind, session, epoch, the public group state", ""),
+    ("Groups (MLS)", "group_members", "the leaves of each group", ""),
+    ("Groups (MLS)", "group_log", "Commits (public), sender, times", "application messages"),
+    ("Groups (MLS)", "group_infos", "GroupInfos (public)", ""),
+    ("Groups (MLS)", "key_packages", "KeyPackages (public)", ""),
+    ("Groups (MLS)", "welcomes", "device, group, time, epoch", "the Welcome (rows written before its own table)"),
+    ("Groups (MLS)", "welcome_bytes", "group, epoch", "the Welcome, once for every device it adds"),
     ("Keys and recovery", "sealed_keys", "group, epoch, writer, recovery public key", "the sealed content keys"),
     ("Keys and recovery", "recovery_links", "room epoch, recovery public key", "the sealed older recovery key"),
     ("Keys and recovery", "recovery_keys_held", "every recovery public key a room had", ""),
     ("Keys and recovery", "recoveries", "open recoveries: key, times", ""),
     ("Keys and recovery", "recovery_parts", "the Commits of an open recovery (public)", ""),
     ("Keys and recovery", "recovery_memo", "public group state of an open recovery", ""),
-    ("Content index", "envelopes", "signed header: group, sender, numbers, kind, times, timeline, object id, type and state, file ids", "the body"),
-    ("Content index", "epoch_counts", "envelopes per group and epoch", ""),
-    ("Content index", "cards", "object id, state, urgency, owner (index over envelopes)", ""),
-    ("Content index", "permission_requests", "as cards", ""),
-    ("Content index", "artifacts", "as cards", ""),
-    ("Content index", "notes", "as cards", ""),
-    ("Content index", "chats", "timeline, item count (index)", ""),
-    ("Content index", "boards", "timeline, item count (index)", ""),
-    ("Content index", "registers", "group, writer, register id (index)", ""),
-    ("Content index", "board_frontiers", "board, device, declared or bound to a snapshot value, numbers per writer, kept file ids, time (10.9)", ""),
-    ("Files and invites", "files", "file id, uploader, group, object, size, times", "the bytes, beside the database"),
-    ("Files and invites", "shares", "share id, file, hash of the secret, expiry", ""),
-    ("Files and invites", "invites", "the signed Offer with its MAC, expiry, use", ""),
-    ("Files and invites", "invite_requests", "Requests and Reveal of an invite", ""),
+    ("Content", "envelopes", "signed header: group, sender, numbers, kind, times, timeline, object id, type and state, file ids", "the body"),
+    ("Content", "cards", "object id, state, urgency, owner (index over envelopes)", ""),
+    ("Content", "permission_requests", "as cards", ""),
+    ("Content", "artifacts", "as cards", ""),
+    ("Content", "notes", "as cards", ""),
+    ("Content", "chats", "timeline, item count (index)", ""),
+    ("Content", "boards", "timeline, item count (index)", ""),
+    ("Content", "registers", "group, writer, register id (index)", ""),
+    ("Content", "board_frontiers", "board, device, declared or bound to a snapshot value, numbers per writer, kept file ids, time (10.9)", ""),
+    ("Files and shares", "files", "file id, uploader, group, object, size, times", "the bytes, beside the database"),
+    ("Files and shares", "shares", "share id, file, hash of the secret, expiry", ""),
     ("Push", "push_subscriptions", "push endpoints and tokens, level", ""),
     ("Push", "live_activities", "Live Activity tokens, the counts last sent", ""),
+    ("Hub upkeep", "login_sources", "login throttle: hashes of e-mail and source, failures", ""),
+    ("Hub upkeep", "login_accounts", "login throttle: an e-mail's hour and line", ""),
+    ("Hub upkeep", "login_turns", "login throttle: places in line", ""),
+    ("Hub upkeep", "spent_key_packages", "references of KeyPackages handed out", ""),
+    ("Hub upkeep", "welcome_ids", "the counter of Welcome ids (one number)", ""),
+    ("Hub upkeep", "epoch_counts", "envelopes per group and epoch", ""),
 ];
 
 /// The columns that hold what the hub cannot read (shown on the rows pages by their length and first bytes only).
@@ -621,8 +621,7 @@ pub(crate) fn columns(c: &Connection, table: &str) -> rusqlite::Result<Vec<(Stri
     rows.collect()
 }
 
-/// The side list of every table with its number of rows, each a link to its rows; the chosen one with its
-/// columns under it.
+/// The side list of every table with its number of rows, each a link to its rows.
 pub(crate) fn side(c: &Connection, chosen: Option<&str>) -> rusqlite::Result<(String, Vec<i64>)> {
     let mut counts = Vec::with_capacity(TABLES.len());
     for (_, table, _, _) in TABLES {
@@ -648,23 +647,6 @@ pub(crate) fn side(c: &Connection, chosen: Option<&str>) -> rusqlite::Result<(St
             if open { " aria-current=\"page\"" } else { "" },
             if sealed.is_empty() { String::new() } else { format!("<span class=\"cm cm-e2e\" title=\"holds sealed content\">{LOCK}</span>") },
         ));
-        if open {
-            side.push_str("<ul class=\"cols-list\">");
-            for (name, kind, key) in columns(c, table)? {
-                let show = crate::admin_rows::show(table, &name);
-                side.push_str(&format!(
-                    "<li><span>{}{}</span><span class=\"faint\">{}</span></li>",
-                    match show {
-                        crate::admin_rows::Show::Sealed => format!("<span class=\"cm cm-e2e\">{LOCK}</span>"),
-                        crate::admin_rows::Show::Secret => "<span class=\"faint\" title=\"secret\">••</span>".into(),
-                        _ => String::new(),
-                    },
-                    if key > 0 { format!("<b>{}</b>", esc(&name)) } else { esc(&name) },
-                    esc(&kind.to_lowercase())
-                ));
-            }
-            side.push_str("</ul>");
-        }
     }
     side.push_str("</nav>");
     Ok((side, counts))
