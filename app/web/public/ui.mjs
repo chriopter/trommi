@@ -2221,7 +2221,7 @@ const crownControl = (agent, base, { stay = false, back = '' } = {}) => html`<fo
  *  '1…9' (any of them; the action gets the number), 'Mod+k'. repeat: may fire while held. typing: also in a field.
  *  needs: listed and taken only where the page has it ('sidebar': the sessions' list; 'desks': the menu's desks,
  *  and not on the Agents page, where D is a line's drawing). native: listed, handled where it lives (the key is left alone). verb: the longer wording for the sheet. */
-const LAYOUT = [
+export const LAYOUT = [
   { scope: 'desk', title: 'On the Desk', keys: [
     { id: 'list.next', keys: ['j', 'ArrowDown'], does: 'next question; after the last, an opened stack below', repeat: true },
     { id: 'list.prev', keys: ['k', 'ArrowUp'], does: 'previous question', repeat: true },
@@ -2243,10 +2243,11 @@ const LAYOUT = [
     { id: 'card.send', keys: ['Enter'], does: 'take the marked answer; tick it where several are allowed, or send when none is marked' },
     // (no letters here: on a question's own page a letter is writing, it goes into the field; see typeToField)
     { id: 'card.back', keys: ['Backspace'], does: 'undo: the newest toast\'s Undo, else this answer or the hand-back' },
-    { id: 'card.next', keys: ['ArrowRight'], does: 'next question, without answering', repeat: true },
-    { id: 'card.prev', keys: ['ArrowLeft'], does: 'previous question', repeat: true },
-    { id: 'card.pic.next', keys: ['Shift+ArrowRight'], does: 'next picture', repeat: true },
-    { id: 'card.pic.prev', keys: ['Shift+ArrowLeft'], does: 'previous picture', repeat: true },
+    // (← → are the pictures' and never the questions': the questions are Shift ↑ ↓, as ↑ ↓ are the answers)
+    { id: 'card.pic.next', keys: ['ArrowRight'], does: 'next picture', repeat: true },
+    { id: 'card.pic.prev', keys: ['ArrowLeft'], does: 'previous picture', repeat: true },
+    { id: 'card.next', keys: ['Shift+ArrowDown'], does: 'next question, without answering', repeat: true },
+    { id: 'card.prev', keys: ['Shift+ArrowUp'], does: 'previous question', repeat: true },
     { id: 'card.leave', keys: ['Escape'], does: 'leave a field, focus or the large picture, then back to the Desk', typing: true },
   ] },
   { scope: 'picture', title: 'A picture', keys: [
@@ -2281,7 +2282,7 @@ const LAYOUT = [
 /** The short list: the keys the "?" sheet and the help page show. Everything else in LAYOUT still
  *  works, but is not listed. */
 export const SHORT = [
-  { id: 'move', keys: ['ArrowUp', 'ArrowDown'], does: 'move: the next or the previous question; on a card its answers (← → there: the questions)' },
+  { id: 'move', keys: ['ArrowUp', 'ArrowDown'], does: 'move: the next or the previous question; on a card its answers (Shift ↑ ↓ there: the questions, ← →: the pictures)' },
   { id: 'open', keys: ['Enter'], does: 'open; on a card: take the marked answer' },
   { id: 'back', keys: ['Escape'], does: 'back: leave a field, close, back to the Desk' },
   { id: 'note.new', keys: ['n'], does: 'a new note' },

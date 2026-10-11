@@ -205,17 +205,24 @@ function vendorFiles(repo, { sourcemap = false } = {}) {
   out['core-version.mjs'] = `// Written by app/web/dev/build.mjs from app/web/core/. Do not edit: edit the core.\nexport const CORE_COMMIT = ${JSON.stringify(commitOf(repo))}\n`
   return out
 }
-/** CHANGELOG.md as data: [{ day, releases, groups: [{ kind, items: [text] }] }], newest first. A day is a "## " heading
- *  ("11 October 2026 (v109 – v115)": the releases in brackets), a group a line "**New**" (Better, Fixed), an item a
- *  line "- …" (a line indented under it goes on with it). The words before the first day are the file's own. */
+/** CHANGELOG.md as data: [{ day, releases, summary, picture, groups: [{ kind, items: [text] }] }], newest first. A day
+ *  is a "## " heading ("11 October 2026 (v109 – v115)": the releases in brackets); the plain lines before its first
+ *  part are its summary, a line "![words](app/web/public/changelog/<name>.webp)" there its one picture ({ alt, src },
+ *  src as the app serves it: "/changelog/<name>.webp"); a part is a line "**New**" (Better, Fixed), an item a line
+ *  "- …" (a line indented under it goes on with it). The words before the first day are the file's own. */
 export function parseChangelog(text) {
   const days = []
   let group = null
   for (const line of String(text).split(/\r?\n/)) {
     const head = /^## +(.+?)(?: +\(([^)]*)\))? *$/.exec(line)
-    if (head) { days.push({ day: head[1], releases: head[2] ?? '', groups: [] }); group = null; continue }
+    if (head) { days.push({ day: head[1], releases: head[2] ?? '', summary: '', picture: null, groups: [] }); group = null; continue }
     const day = days.at(-1)
     if (!day) continue
+    if (!day.groups.length) {
+      const pic = /^!\[([^\]]*)\]\((?:app\/web\/public\/)?(changelog\/[\w.-]+\.webp)\) *$/.exec(line)
+      if (pic) { day.picture ??= { alt: pic[1], src: `/${pic[2]}` }; continue }
+      if (line.trim() && !/^\s*([-*]|\*\*)/.test(line)) { day.summary = `${day.summary} ${line.trim()}`.trim(); continue }
+    }
     const kind = /^\*\*([^*]+)\*\* *$/.exec(line)
     if (kind) { group = { kind: kind[1].trim(), items: [] }; day.groups.push(group); continue }
     const item = /^[-*] +(.+)$/.exec(line)

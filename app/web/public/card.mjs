@@ -192,6 +192,7 @@ function cardLeft(card, model, base, { version = null, pic = 1, query = '' } = {
   const shown = old ? { ...card, attachments: old.attachments ?? card.attachments } : card
   return html`<div class="tc-left">${cardLead(card, model, base, { version })}
 ${cardMedia(shown, base, pic, query)}
+${optionsSaid(card, model.state.assets, version)}
 </div>`
 }
 /** The words of the left column (#card-lead-<id>): what the live stream replaces (the picture keeps its place). */
@@ -248,10 +249,17 @@ function askWords(card, model, asker) {
 /** The options' own paragraphs (a card written as sections), folded under the options. Only when one says more than its
  *  label: an option with nothing beyond its label (a card of body and options) brings no fold. */
 const beyond = s => s.html || String(s.text ?? '').replace(/[\s*_.:,;!?\-–—]+/g, ' ').trim().toLowerCase().replace(String(s.label ?? '').replace(/[\s*_.:,;!?\-–—]+/g, ' ').trim().toLowerCase(), '').trim()
-function optionsSaid(card, assets) {
-  const secs = (card.sections ?? []).filter(s => s.key != null)
-  if (!secs.some(beyond)) return ''
-  return html`<details class="tc-fold tc-options-said"><summary>Options in detail</summary>${secs.map(s => html`<section class="tc-sec"><h3>${s.label}${s.recommended ? html` <span class="tc-advised-word">recommended</span>` : ''}</h3>${beyond(s) ? rich(s.text ?? '', { assets, extra: s.html ?? '', hand: false }) : ''}</section>`)}</details>`
+/** The options' own paragraphs (a card written as sections), at the end of the left column after the pictures
+ *  (#card-say-<id>), one block per option in the order of the tiles. The pointer on a tile (or the keyboard) marks
+ *  its block and draws the pen's arrow from the tile to it (controller "card", say). Only when one says more than
+ *  its label: an option with nothing beyond its label (a card of body and options) brings none. */
+export function optionsSaid(card, assets, version = null) {
+  const old = versionOf(card, version)
+  const secs = ((old ? old.sections : card.sections) ?? []).filter(s => s.key != null)
+  if (!secs.some(beyond)) return html`<div id="card-say-${card.id}" hidden></div>`
+  const advised = advisedKeys(card)
+  secs.sort((a, b) => Number(advised.includes(a.key)) - Number(advised.includes(b.key)))   // (the tiles' order)
+  return html`<section class="tc-say" id="card-say-${card.id}" aria-label="The options explained">${secs.map(s => html`<div class="tc-say-one" data-key="${s.key}"><h3 class="tc-say-head"><span class="tc-say-label">${s.label}</span>${s.recommended || advised.includes(s.key) ? html` <span class="tc-advised-word">recommended</span>` : ''}</h3>${beyond(s) ? html`<div class="tc-say-text">${rich(s.text ?? '', { assets, extra: s.html ?? '', hand: false })}</div>` : ''}</div>`)}</section>`
 }
 /** The right column's answers (#card-answer-<id>): every option a button of the card's form, with its line for a note;
  *  then "or" Whatever. Or, once answered or handed back, what was said and the way back. */
@@ -293,7 +301,7 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1 } =
     return card.kind === 'decision' ? html`${tile}<label class="tc-opt-note" data-note="${o.key}"${noted ? '' : raw(' hidden')}>${sk('pen')}<input type="text" name="note-${o.key}" form="${form}" value="${noted}" maxlength="2000" placeholder="A note on ${o.label}" aria-label="A note on ${o.label}" autocomplete="off" data-action="input->card#keep blur->card#noteLeft keydown->card#noteKey"></label>` : tile
   }
   const trustTip = `I don’t give a duck: your call (R)${advisedLabels(card) ? ` · agent takes ${advisedLabels(card)}` : ''}`
-  return box(html`<div class="tc-opts" data-action="pointerover->card#preview focusin->card#preview pointerleave->card#unpreview focusout->card#unpreview" role="group" aria-label="${card.multiple ? 'Your answer. Tick what applies, then send.' : 'Your answer. One tap answers.'}">${[...card.options].sort((a, b) => Number(advised.includes(a.key)) - Number(advised.includes(b.key))).map(option)}${card.multiple ? html`<button class="tc-opt tc-send-many" type="submit" form="${form}" formaction="${act(card, base, 'decide')}"><span class="tc-opt-words"><span class="tc-opt-label">Send the answer</span></span></button>` : ''}</div>${optionsSaid(card, model.state.assets)}
+  return box(html`<div class="tc-opts" data-action="pointerover->card#preview focusin->card#preview pointerleave->card#unpreview focusout->card#unpreview" role="group" aria-label="${card.multiple ? 'Your answer. Tick what applies, then send.' : 'Your answer. One tap answers.'}">${[...card.options].sort((a, b) => Number(advised.includes(a.key)) - Number(advised.includes(b.key))).map(option)}${card.multiple ? html`<button class="tc-opt tc-send-many" type="submit" form="${form}" formaction="${act(card, base, 'decide')}"><span class="tc-opt-words"><span class="tc-opt-label">Send the answer</span></span></button>` : ''}</div>
 ${card.kind === 'decision' ? html`<div class="tc-or"><i>or</i><button class="tc-opt tc-whatever" type="submit" form="${form}" formaction="${act(card, base, 'trust')}" title="${trustTip}" aria-label="${trustTip}">${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">I don’t give a duck</span></span></button><div class="tc-or-pair"><button class="tc-tile tc-wtf" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="What?? — explain this to me (E)" aria-label="What?? Explain this to me: the session explains it, and it comes back explained">${sk('what')}</button>${reviseTile(card, model, base)}</div></div>` : ''}`)
 }
 
@@ -1217,6 +1225,8 @@ controller('card', class extends Controller {
       this.element.querySelector(`.tc-rails a.${t.clientX < from.x ? 'is-next' : 'is-prev'}`)?.click()
     }, { passive: true })
     this.element.addEventListener('scroll', this.link, { capture: true, passive: true })
+    this.sayLink = this.sayLink.bind(this)
+    this.element.addEventListener('scroll', this.sayLink, { capture: true, passive: true })
     this.element.addEventListener('scroll', e => { if (e.target instanceof Element && e.target.classList.contains('tc-roll')) this.rolled() }, { capture: true, passive: true })
     // (in focus, every way to a card's page from here keeps the mode: the question before and the next, another
     //  picture, a picture opened large and the way back from it)
@@ -1241,6 +1251,7 @@ controller('card', class extends Controller {
     removeEventListener('resize', this.link)
     removeEventListener('resize', this.placed)
     this.element.removeEventListener('scroll', this.link, { capture: true })
+    this.element.removeEventListener('scroll', this.sayLink, { capture: true })
     clearTimeout(this.timer)
     this.sheet?.close()
   }
@@ -1338,6 +1349,7 @@ controller('card', class extends Controller {
   preview(event) {
     if (event.pointerType === 'touch') return
     const key = event.target.closest?.('.tc-opt[data-key]')?.dataset.key
+    this.say(key)
     const pic = key != null && this.picturesValue.find(p => (p.keys ?? [p.key]).includes(key))
     if (pic) this.stage(pic, key)
   }
@@ -1348,6 +1360,7 @@ controller('card', class extends Controller {
   }
   unpreview(event) {
     if (event.relatedTarget instanceof Element && event.currentTarget.contains(event.relatedTarget)) return
+    if (event.currentTarget.classList?.contains('tc-opts')) this.say(null)
     if (this.stood) { const back = this.stood; this.stood = null; this.stage(back.pic, back.key, true) }
   }
   // key: the option the picture stands for now (a picture several options share points at the one under the pointer).
@@ -1610,6 +1623,51 @@ controller('card', class extends Controller {
   over(event) { if (event.dataTransfer?.types.includes('Files')) event.preventDefault() }
   drop(event) { const got = [...(event.dataTransfer?.files ?? [])]; if (got.length) { event.preventDefault(); this.add(got) } }
 
+  // ---- the options explained: the pointer on a tile marks its block at the end of the left column ----
+  // and draws the pen's arrow from the tile to the block's heading, where both stand side by side and in sight.
+  // A block out of sight is brought into view after a moment (a pointer passing over does not scroll).
+  say(key) {
+    const host = this.element.querySelector('.tc-card'), box = host?.querySelector('.tc-say')
+    if (!box) return
+    clearTimeout(this.sayWait)
+    const block = key != null ? box.querySelector(`.tc-say-one[data-key="${CSS.escape(key)}"]`) : null
+    box.toggleAttribute('data-hover', Boolean(block))
+    for (const b of box.querySelectorAll('.tc-say-one')) {
+      b.toggleAttribute('data-match', b === block)
+    }
+    this.sayKey = block ? key : null
+    this.sayLink()
+    if (block) this.sayWait = setTimeout(() => {
+      const left = host.querySelector('.tc-left'), r = block.getBoundingClientRect(), f = left?.getBoundingClientRect()
+      if (!left || !f || (r.top >= f.top && r.top + 40 <= f.bottom)) return
+      left.scrollTo({ top: left.scrollTop + r.top - f.top - 24, behavior: 'smooth' })
+    }, 450)
+  }
+  sayLink() {
+    const host = this.element.querySelector('.tc-card')
+    host?.querySelector(':scope > .focus-arrow.is-say')?.remove()
+    const key = this.sayKey, box = host?.querySelector('.tc-say')
+    const block = key != null ? box?.querySelector(`.tc-say-one[data-key="${CSS.escape(key)}"] > .tc-say-head`) : null
+    const tile = key != null ? host.querySelector(`.tc-opts .tc-opt[data-key="${CSS.escape(key)}"]`) : null
+    const left = host?.querySelector('.tc-left')
+    if (!block || !tile || !left) return
+    const base = host.getBoundingClientRect()
+    const at = n => { const r = n.getBoundingClientRect(); return { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height } }
+    const T = at(tile), S = at(block), F = at(left)
+    if (T.x < S.x + S.w - 1) return   // a narrow window: the answers stand above the words
+    const y = S.y + S.h / 2
+    if (y < F.y + 8 || y > F.y + F.h - 8) return
+    const mid = T.y + T.h / 2, gx = Math.min(T.x - 14, F.x + F.w + 10)
+    const end = [...block.children].reduce((r, c) => Math.max(r, c.getBoundingClientRect().right), 0) - base.left
+    const to = [Math.min(end + 12, gx - 30), y]
+    const points = [[T.x - 4, mid], [gx + 2, mid + (y > mid ? 6 : -6)], [gx - 4, mid + (y - mid) * .5], [gx - 6, y - (y > mid ? 12 : -12)], [gx - 16, y], to]
+    const svg = document.createElementNS(NS, 'svg')
+    svg.setAttribute('class', 'focus-arrow is-say')
+    svg.setAttribute('aria-hidden', 'true')
+    for (const d of arrowStrokes(points, `say:${key}:${turn++}`)) { const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); svg.append(path) }
+    host.append(svg)
+  }
+
   // ---- the arrow: one line of the pen from the picture shown to the option it belongs to ----
   // The picture names its option (data-key); the option is marked (data-match) and, where the answers stand beside
   // the picture and both ends are in sight, the arrow is drawn into the option's left edge.
@@ -1834,13 +1892,13 @@ export function register(t) {
     t.live('card', {
       take: (m, clients) => new Map([...new Set(clients.filter(c => c.params.get('card')).map(c => `${c.params.get('card')}|${c.params.get('from') ?? ''}`))].map(k => {
         const [id, from] = k.split('|'), card = m.byCard.get(id), self = from ? `${BASE}/chat/${encodeURIComponent(from)}` : BASE
-        return [k, card ? { face: cardLead(card, m, self), answer: cardAnswer(card, m, BASE), answerSig: cardAnswer({ ...card, draft: undefined }, m, BASE), thread: cardThread(card, m, self, { more: moreOf(card) }) } : null]
+        return [k, card ? { face: cardLead(card, m, self), say: String(optionsSaid(card, m.state.assets)), answer: cardAnswer(card, m, BASE), answerSig: cardAnswer({ ...card, draft: undefined }, m, BASE), thread: cardThread(card, m, self, { more: moreOf(card) }) } : null]
       })),
       diff(was, now, client) {
         const id = client.params.get('card'), k = `${id}|${client.params.get('from') ?? ''}`, a = was.get(k), b = now.get(k)
         if (!b) return a ? String(stream('refresh')) : ''
         if (!a) return ''
-        const face = t.differs(a.face, b.face) ? String(stream('replace', `card-lead-${id}`, b.face)) : ''
+        const face = (t.differs(a.face, b.face) ? String(stream('replace', `card-lead-${id}`, b.face)) : '') + (a.say !== b.say ? String(stream('replace', `card-say-${id}`, b.say)) : '')
         if (client.params.has('old')) return t.differs(a.thread, b.thread) ? String(stream('replace', `card-thread-${id}`, b.thread)) : ''
         return face + (t.differs(a.answerSig, b.answerSig) ? stream('replace', `card-answer-${id}`, b.answer) : '') + (t.differs(a.thread, b.thread) ? stream('replace', `card-thread-${id}`, b.thread) : '')
       },
