@@ -1341,7 +1341,7 @@
       "properties": {
         "session": {
           "type": "string",
-          "description": "Optional, for a helper: its child session's name (e.g. \"Design\"). Returns only that session's events and claims it for 10 minutes from each call."
+          "description": "As a helper: your child session (e.g. \"Design\"); only its events, and it is yours for 10 minutes per call."
         }
       },
       "additionalProperties": false

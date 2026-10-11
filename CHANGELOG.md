@@ -27,7 +27,6 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   wait up to a minute behind a connection the sleeping phone left half open.
 - Pairing a device or an agent survives a network blip: a step that did not reach Trommi is tried again, and if it
   still fails you are told it was the connection, with "Try again" on the same code instead of asking for a new one.
-- The desk menu says what runs: under What's new the release, its build and when it was updated (web; on the iPhone the app's version and build).
 - What's new says what runs: at its top the release, its build and when it was updated (web; on the iPhone the app's version and build).
 - Helpers read their own board events: a subagent's child session goes to it directly, so the main agent no longer
   passes them on; it gets one line when the helper is done, and the events back if the helper stops reading.

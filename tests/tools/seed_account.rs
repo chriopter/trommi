@@ -688,7 +688,7 @@ impl Seeder {
             "allows_multiple": false,
             "recommended": "yes",
             "attachments": [],
-            "urgency": if n % 7 == 0 { "high" } else { "normal" },
+            "urgency": if n.is_multiple_of(7) { "high" } else { "normal" },
         }));
         let id = client
             .send_card(fields, seat.session.clone())
