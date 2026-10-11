@@ -591,16 +591,15 @@ turbo-frame.log-earlier[busy] > .log-earlier-link { opacity: .5; pointer-events:
 /* a status row: its line, and on a phone what a tap opens below it (session.mjs status-lines) */
 .status-row { display: grid; max-width: 100%; min-width: 0; }
 .status-more { display: none; }
-.status-when { display: none; }
+/* the time short, beside a small clock ("4m"); the words stay for a screen reader */
+.status-when { display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--faint); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.status-when .ico { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; }
 @media (max-width: 860px) {
   .session-status { justify-items: stretch; }
   .status-line { cursor: pointer; }
   .status-line b { flex: 1 1 auto; max-width: none; text-align: left; }
   .status-line .status-detail { display: none; }
-  /* the time short, beside a small clock ("4m"); the words stay for a screen reader */
-  .status-line .status-ago { display: none; }
-  .status-line .status-when { display: inline-flex; align-items: center; gap: 3px; flex: none; margin-left: auto; color: var(--faint); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
-  .status-when .ico { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; }
+  .status-line .status-when { margin-left: auto; }
   .status-row[data-open] .status-more { display: grid; gap: 6px; padding: 4px 0 6px calc(18px + var(--s-2)); }
   .status-more p { margin: 0; color: var(--muted); font-size: var(--t-sm); line-height: 1.45; }
   .status-open { justify-self: start; color: var(--accent); font-weight: 600; font-size: var(--t-sm); text-decoration: none; }
