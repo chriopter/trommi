@@ -1817,6 +1817,9 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {}, flush 
     const chosenRows = form.id === 'sel-bar' && data.get('way') !== 'later' ? String(data.get('ids') ?? '').split(',').filter(Boolean).map(id => document.getElementById(`row-${id}`)).filter(Boolean) : []
     const gone = leaves ? flipOut([row]) : chosenRows.length ? flipOut(chosenRows) : null
     if (gone?.length) await new Promise(r => setTimeout(r, calm() ? 0 : 260 + (chosenRows.length > 1 ? (chosenRows.length - 1) * 45 : 0)))
+    // (a page visited while the form was on its way is where he is now: a late answer that leads elsewhere, as a
+    // removal that is done only when the room's next change came, does not take him away from it)
+    const seen = visiting
     let res, error = null
     try { res = await board.request({ method: 'POST', path: action.pathname + action.search, form: data, headers: { accept: STREAM_ACCEPT, referer: location.href } }) }
     catch (err) { error = err; console.error('form', err) }
@@ -1824,6 +1827,7 @@ function createRouter({ board, onPage = () => {}, beforeVisit = () => {}, flush 
     flush()
     if (gone?.length && (!success || (res?.kind === 'stream' && [row, ...chosenRows].some(r => r?.id && res.body.includes(`action="replace" target="${r.id}"`))))) putBack(gone)
     if (res?.kind === 'stream') { forget(res.body); renderStreamMessage(res.body) }
+    else if (visiting !== seen) {}
     else if (res?.kind === 'redirect') await visit(res.to)
     else if (res?.kind === 'page') { history.replaceState({ trommi: true }, '', location.href); paint(location.pathname + location.search, res.opts, { scroll: window.scrollY }) }
     fire(form.isConnected ? form : document, 'turbo:submit-end', { formSubmission, success, fetchResponse: res ? { response: { status: res.code } } : null, error })
