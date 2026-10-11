@@ -12,7 +12,10 @@
 #
 # What is carried over from the build is the Rust core. The app itself is archived here: Apple's signing happens
 # in the archive and export steps and needs the App Store Connect key, which only this workflow sees. The steps are
-# .github/scripts/ios_testflight.sh.
+# .github/scripts/ios_testflight.sh: the Mac (job testflight) runs them up to the upload; waiting for App Store Connect
+# to process the build, the group and What to Test run on Linux (job processed), so the Mac is free minutes earlier.
+# The workflow's concurrency holds both jobs: the next delivery reads the highest build number only once this one's
+# build is processed and listed.
 #
 # Secrets: the environment `ios` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; APPLE_ASC_KEY,
 # APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID and APPLE_TEAM_ID come from the 1Password Environment. Optional repository
@@ -63,6 +66,10 @@ jobs:
     permissions:
       contents: read
       actions: read
+    outputs:
+      commit: ${{ steps.core.outputs.commit }}
+      version: ${{ steps.upload.outputs.version }}
+      build: ${{ steps.upload.outputs.build }}
     env:
       # XcodeGen, by the SHA-256 of its release archive
       XCODEGEN_VERSION: 2.46.0
@@ -129,7 +136,8 @@ jobs:
         uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
         with:
           version: latest-beta
-      - name: Build, sign, upload, hand to the group
+      - name: Build, sign, upload
+        id: upload
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
@@ -141,7 +149,44 @@ jobs:
           set -eu
           test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
           test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
-          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh upload
       - name: No key file is left
         if: always()
         run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/ExportOptions.plist"
+
+  # App Store Connect processes the uploaded build (minutes); then the group "Intern" holds it and What to Test is set.
+  processed:
+    name: TestFlight (processed, group, What to Test)
+    needs: testflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.testflight.outputs.commit }}
+          persist-credentials: false
+      - name: Install the 1Password CLI
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          version: latest-beta
+      - name: Wait until processed, hand to the group
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          COMMIT: ${{ needs.testflight.outputs.commit }}
+          TF_VERSION: ${{ needs.testflight.outputs.version }}
+          TF_BUILD: ${{ needs.testflight.outputs.build }}
+          TESTFLIGHT_TESTER: ${{ vars.IOS_TESTFLIGHT_TESTER }}
+        run: |
+          set -eu
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh after
+      - name: No key file is left
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"

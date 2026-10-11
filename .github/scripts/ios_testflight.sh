@@ -6,10 +6,16 @@
 # App Store Connect, signed with the team's cloud-managed distribution certificate through the API key, first to a
 # file whose entitlements are checked, then with destination upload (internal testing only) -> wait until the build is processed -> the group "Intern" holds
 # it -> "What to Test".
+#   ios_testflight.sh              every step, one after another
+#   ios_testflight.sh upload       up to the upload; writes version and build to GITHUB_OUTPUT
+#   ios_testflight.sh after        the rest (processed, group, What to Test) for TF_VERSION and TF_BUILD, on any
+#                                  machine with python3 and openssl: deploy_ios.yml runs it on Linux, so the Mac is
+#                                  not held while App Store Connect processes the build
 #
 # Environment, from the 1Password Environment: APPLE_ASC_KEY (the .p8 of a team key with the Admin role; it may
 # arrive with its line breaks turned into spaces), APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_TEAM_ID.
-# From the workflow: RUNNER_TEMP, COMMIT (the commit that is built), XCODEGEN (the command), and optionally
+# From the workflow: RUNNER_TEMP, COMMIT (the commit that is built), XCODEGEN (the command; not for `after`),
+# TF_VERSION and TF_BUILD (`after` only), and optionally
 # ITS_NON_EXEMPT_ENCRYPTION (YES or NO, default NO: standard algorithms only, exempt), ITS_EXPORT_COMPLIANCE_CODE
 # (only with YES: the code of the app's export compliance documentation in App Store Connect; when empty, the code of
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
@@ -18,7 +24,13 @@
 # the script ends (and once more by the workflow, whatever happened).
 set -euo pipefail
 
-for name in APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID APPLE_TEAM_ID RUNNER_TEMP COMMIT XCODEGEN; do
+mode=${1:-all}
+case "$mode" in
+  all|upload) required="APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID APPLE_TEAM_ID RUNNER_TEMP COMMIT XCODEGEN" ;;
+  after) required="APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID RUNNER_TEMP COMMIT TF_VERSION TF_BUILD" ;;
+  *) echo "usage: ios_testflight.sh [upload|after]" >&2; exit 2 ;;
+esac
+for name in $required; do
   [ -n "${!name:-}" ] || { echo "::error::$name is not set for this run"; exit 1; }
 done
 
@@ -49,6 +61,39 @@ umask 022
 export ASC_KEY_ID=$APPLE_ASC_KEY_ID ASC_ISSUER_ID=$APPLE_ASC_ISSUER_ID ASC_KEY_PATH=$key
 asc() { python3 "$appstore/asc.py" "$@"; }
 auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$APPLE_ASC_KEY_ID" -authenticationKeyIssuerID "$APPLE_ASC_ISSUER_ID")
+
+# 7. to 9.: the uploaded build is processed, the group holds it, What to Test
+after() {   # after <version> <build> <short commit>
+  echo "== 7. App Store Connect processes the build =="
+  asc wait "$1" "$2" | tee "$RUNNER_TEMP/wait.txt"
+  build_id=$(sed -n 's/^build_id: //p' "$RUNNER_TEMP/wait.txt" | tail -n 1)
+  [ -n "$build_id" ] || { echo "::error::App Store Connect named no build"; exit 1; }
+
+  echo "== 8. Internal group \"Intern\" =="
+  asc internal "$build_id" Intern "${TESTFLIGHT_TESTER:-}"
+
+  echo "== 9. What to Test =="
+  # the text the app's folder carries (AppStore/WhatToTest.txt, at most 4000 characters), else the commit's subject
+  notes=${NOTES:-}
+  [ -n "$notes" ] || [ ! -s "$appstore/WhatToTest.txt" ] || notes="Build $2 ($3). $(head -c 3900 "$appstore/WhatToTest.txt")"
+  [ -n "$notes" ] || notes="Neu in Build $2 ($3): $(git -C "$repo" log -1 --format=%s "$COMMIT" | cut -c1-300)"
+  asc notes "$build_id" "$notes" || echo "::warning::What to Test was not set"
+
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+      echo "### iOS: TestFlight build $2"
+      echo
+      echo "Version $1, build $2, commit \`$COMMIT\`, in the group Intern."
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+}
+
+if [ "$mode" = after ]; then
+  printf '%s' "$TF_BUILD" | grep -Eq '^[1-9][0-9]*$' || { echo "::error::not a build number: $TF_BUILD"; exit 1; }
+  printf '%s' "$TF_VERSION" | grep -Eq '^[0-9]+(\.[0-9]+)*$' || { echo "::error::not a version: $TF_VERSION"; exit 1; }
+  after "$TF_VERSION" "$TF_BUILD" "$(printf '%s' "$COMMIT" | cut -c1-7)"
+  exit 0
+fi
 
 echo "== 1. Bundle ids and app record =="
 asc prepare "$BUNDLE_ID"
@@ -155,25 +200,12 @@ xcodebuild -exportArchive \
   "${auth[@]}"
 rm -f "$RUNNER_TEMP/ExportOptions.plist"
 
-echo "== 7. App Store Connect processes the build =="
-asc wait "$version" "$build" | tee "$RUNNER_TEMP/wait.txt"
-build_id=$(sed -n 's/^build_id: //p' "$RUNNER_TEMP/wait.txt" | tail -n 1)
-[ -n "$build_id" ] || { echo "::error::App Store Connect named no build"; exit 1; }
-
-echo "== 8. Internal group \"Intern\" =="
-asc internal "$build_id" Intern "${TESTFLIGHT_TESTER:-}"
-
-echo "== 9. What to Test =="
-# the text the app's folder carries (AppStore/WhatToTest.txt, at most 4000 characters), else the commit's subject
-notes=${NOTES:-}
-[ -n "$notes" ] || [ ! -s "$appstore/WhatToTest.txt" ] || notes="Build $build ($short). $(head -c 3900 "$appstore/WhatToTest.txt")"
-[ -n "$notes" ] || notes="Neu in Build $build ($short): $(git -C "$repo" log -1 --format=%s "$COMMIT" | cut -c1-300)"
-asc notes "$build_id" "$notes" || echo "::warning::What to Test was not set"
-
-if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  {
-    echo "### iOS: TestFlight build $build"
-    echo
-    echo "Version $version, build $build, commit \`$COMMIT\`, in the group Intern."
-  } >> "$GITHUB_STEP_SUMMARY"
+if [ "$mode" = upload ]; then
+  # the rest runs elsewhere (ios_testflight.sh after) with these
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    { echo "version=$version"; echo "build=$build"; } >> "$GITHUB_OUTPUT"
+  fi
+  echo "uploaded: $BUNDLE_ID $version ($build) from $short"
+  exit 0
 fi
+after "$version" "$build" "$short"

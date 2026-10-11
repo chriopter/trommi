@@ -402,8 +402,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The core for Swift is what core/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
+      # what the iOS library is checked against). When they are the same as in an earlier run of main or staging, that
+      # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone). A pull request
+      # reads that cache and never writes it.
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       # llvm-tools: core/swift/build.sh takes the compiler runtime's helpers out of the iOS library with llvm-ar
       - name: Compiler (rust-toolchain.toml)
+        if: steps.core_cache.outputs.cache-hit != 'true'
         run: |
           set -eu
           rustup toolchain install || rustup show
@@ -412,16 +431,28 @@ jobs:
           xcodebuild -version
       # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
-      # The Rust core for this Mac (for the tests) and for iOS; the helpers it removes from the iOS library are
-      # checked against Apple's runtime of this Xcode.
+      # The Rust core for this Mac (for the tests) and for an iOS device (the archive); the helpers it removes from the
+      # iOS library are checked against Apple's runtime of this Xcode. No simulator library: nothing here runs one.
       - name: The Rust core for Swift
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        env:
+          TROMMI_SIMULATOR: "0"
         run: |
           set -eu
           DARWIN_CLANG_RT="$(xcrun --sdk iphoneos clang -print-resource-dir)/lib/darwin"
           export DARWIN_CLANG_RT
           sh core/swift/build.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.core_cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       # The core's Swift binding on this Mac. The app's own package (app/ios/TrommiClient) is tested on Linux only: it
       # does not compile for macOS (ActivityKit), and the archive in deploy_ios.yml is its build for iOS.
       - name: Test
@@ -476,17 +507,44 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # the core for Swift on this machine, taken from an earlier run of main or staging when built from the same paths
+      # (as in the job ios)
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+          echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Compiler (rust-toolchain.toml), Swift
         run: |
-          rustup toolchain install || rustup show
-          rustc --version
+          if [ "$HIT" != true ]; then rustup toolchain install || rustup show; rustc --version; fi
           swift --version
+        env:
+          HIT: ${{ steps.core_cache.outputs.cache-hit }}
       # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
       - name: The Rust core for Swift on this machine
+        if: steps.core_cache.outputs.cache-hit != 'true'
         run: sh core/swift/build.sh host
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.core_cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Test
         run: swift test --package-path tests/ios
 

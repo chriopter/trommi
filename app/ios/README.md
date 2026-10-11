@@ -212,7 +212,11 @@ Info.plist keys xtool adds; one extension target each. Linux builds do not use i
 Mac runner, uploaded to TestFlight). The archive is signed ad hoc (`.github/scripts/ios_archive.sh`: identity "-", no
 profile, no key, so no certificate is made per run); only the export signs, with the cloud-managed Apple
 Distribution certificate through the App Store Connect key. The IPA's entitlements are then checked against the four
-`.entitlements` files (`ios_entitlements.py`). What it needs from this folder:
+`.entitlements` files (`ios_entitlements.py`). The Mac job ends with the upload; waiting for App Store Connect to
+process the build, the group and "What to Test" run in a Linux job after it (`ios_testflight.sh after`). The core for
+Swift is built once per change of `core/`, `Cargo.*` or `rust-toolchain.toml` (and Xcode): `build.yml` keeps its
+output in the Actions cache under the hash of those paths, and CI leaves out the simulator library
+(`TROMMI_SIMULATOR=0`). What it needs from this folder:
 
 - `core/swift/build.sh` on the runner before anything is built: `ios` for the archive (the package links
   `lib/ios/libtrommi_core_ffi.a` by a search path; a device archive needs no XCFramework), `host` for
