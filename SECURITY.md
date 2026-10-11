@@ -26,15 +26,16 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - An invite link holds a secret the hub never sees, so the hub cannot slip in an invite of its own.
 - Invite links work once and expire: 10 minutes for a device, 15 for an agent.
 - A new device gets in only after you compare six emoji on both screens; this stops the hub adding its own.
-- Exception, self-join: a new Claude Code or Codex session on a machine and account that already has a connected
-  agent gets in without the emoji. That running agent vouches for it (same OS user, same client and config folder),
-  your app opens the invite itself and confirms only the Request whose hash the agent passed on end-to-end, and
-  only while that agent's session is still live. The hub can neither make nor swap that Request. The new device is
-  an agent of its own new session: it reads that session (and helpers it opens), never another session's history.
-  At most 8 such live sessions per account and 24 per room, open links counted in; archiving one removes its device,
-  also when an app finds it archived elsewhere. The account is the agent's own word: an agent you no longer trust,
-  or any program running as that OS user, can add sessions up to that limit, and removing an agent leaves the
-  sessions it vouched for; archive those too.
+- One exception, self-join: for a new Claude Code or Codex session vouched for by a session that is already on the
+  board, runs on the same machine as the same OS user and the same client and config folder, one tap ("Allow")
+  takes the place of the six emoji. Nothing is opened before that tap. Your app then confirms only the Request whose
+  hash the vouching agent passed on end-to-end, and only while that agent's session is still live; the hub can
+  neither make nor swap that Request. "Deny" refuses it. The new device is an agent of its own new session: it reads
+  that session (and helpers it opens), never another session's history. At most 8 such live sessions per account
+  and 24 per room, open links counted in; archiving one removes its device, also when an app finds it archived
+  elsewhere. Account, name and host in the prompt are the vouching agent's word: an agent you no longer trust, or a
+  program running as that OS user, can ask, and removing an agent leaves the sessions it vouched for; archive those
+  too.
 - A removed device loses access at once.
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A room holds at most 1000 devices.

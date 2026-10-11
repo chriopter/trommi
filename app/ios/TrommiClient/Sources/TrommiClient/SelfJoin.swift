@@ -1,8 +1,9 @@
 // SelfJoin.swift: self-join (spec/v1.md 12.4) on the human's side, as the web's client.ts answerAsks/vouchConfirm.
 // An agent asks in its main session to let in a new session of its machine and account (`join_ask/<nonce>`). This
-// device answers with an agent invite link in `join_link/<nonce>` (or `{ refused }` past the cap), confirms the
-// Request on its own only when the ask names that Request's hash (no emoji: the agent's own machine vouches),
-// names the new session after the ask with who vouched, and removes its device when the session is archived.
+// device asks the person once (`vouchAsks`, one tap instead of the six emoji): Allow (`answerVouch`) answers with an
+// agent invite link in `join_link/<nonce>`, Deny with `{ refused: denied }`; past the bounds it refuses without
+// asking. The Request is confirmed only when the ask names its hash and the voucher still stands; the new session is
+// named after the ask with who vouched, and its device goes when the session is archived.
 
 import Foundation
 
@@ -70,7 +71,10 @@ extension Room {
     }
   }
 
-  /** Answers every ask of a live main session's agent that has no answer yet. */
+  /**
+   * The asks of the agents: those past the bounds are refused without asking; the others wait for the person's tap
+   * and stand in `vouchAsks` (the app shows each as "Allow new Claude session …?").
+   */
   func answerAsks() async {
     guard live, upgrade == nil, board.myRole == "human" else { return }
     // archived on another device, by an older app, or the removal did not go through: the device goes now
@@ -79,28 +83,41 @@ extension Room {
       try? await removeDevices([d])
       vouchRetiring.remove(d)
     }
+    var waiting = [SelfJoinPlan.Ask]()
     for a in SelfJoinPlan.asks(board, answered: vouchAnswered, holds: holdsSession, pending: Array(vouchPending.values)) {
+      guard let why = a.refused else { waiting.append(a); continue }
       vouchAnswered.insert(a.nonce)
-      if let why = a.refused {
-        try? await setRegisters(["join_link/\(a.nonce)": .obj(["refused": .str(why)])], sessionId: a.sessionId)
-        continue
-      }
-      let s = board.sessions[a.sessionId]
-      let name = String((a.ask["name"].string ?? "").prefix(120))
-      guard let inv = try? await createAgentInvite(label: name.isEmpty ? nil : name, desk: s?.settings["desk"].string) else {
-        try? await setRegisters(["join_link/\(a.nonce)": .obj(["refused": .str("busy")])], sessionId: a.sessionId)
-        continue
-      }
-      let vouched: JV = .obj(["by": .str(a.sessionId), "by_name": .str(s?.settings["name"].string ?? a.ask["vouched_by"].string ?? ""),
-                              "account": .str(a.ask["account"].string ?? ""), "account_label": .str(a.ask["account_label"].string ?? "")])
-      do { try await setRegisters(["join_link/\(a.nonce)": .obj(["link": .str(inv.pairing.link), "invite_id": .str(inv.pairing.inviteId)])], sessionId: a.sessionId) }
-      catch { vouchAnswered.remove(a.nonce); continue }
-      let voucher = a.sessionId, nonce = a.nonce
-      vouchPending[nonce] = a.ask["account"].string ?? ""
-      Task { @MainActor [weak self] in
-        await self?.finishVouched(inv, voucher: voucher, nonce: nonce, vouched: vouched)
-        self?.vouchPending.removeValue(forKey: nonce)
-      }
+      try? await setRegisters(["join_link/\(a.nonce)": .obj(["refused": .str(why)])], sessionId: a.sessionId)
+    }
+    if waiting != vouchAsks { vouchAsks = waiting; var ch = Change(); ch.room = true; emit(ch) }
+  }
+
+  /**
+   * The person's tap on an ask (12.4): `allow` answers it with an invite link for that session, whose Request is
+   * confirmed when the ask names its hash (the tap stands for the emoji); otherwise it is refused (`denied`). An ask
+   * answered meanwhile, here or on another device, is left.
+   */
+  public func answerVouch(_ nonce: String, allow: Bool) async throws {
+    guard let a = SelfJoinPlan.asks(board, answered: vouchAnswered, holds: holdsSession, pending: Array(vouchPending.values)).first(where: { $0.nonce == nonce }) else { return }
+    vouchAnswered.insert(nonce)
+    vouchAsks.removeAll { $0.nonce == nonce }
+    var ch = Change(); ch.room = true; emit(ch)
+    let answer = { (v: JV) in try await self.setRegisters(["join_link/\(nonce)": v], sessionId: a.sessionId) }
+    guard allow else { try await answer(.obj(["refused": "denied"])); return }
+    if let why = a.refused { try await answer(.obj(["refused": .str(why)])); return }
+    let s = board.sessions[a.sessionId]
+    let name = String((a.ask["name"].string ?? "").prefix(120))
+    guard let inv = try? await createAgentInvite(label: name.isEmpty ? nil : name, desk: s?.settings["desk"].string) else {
+      try await answer(.obj(["refused": "busy"])); return
+    }
+    let vouched: JV = .obj(["by": .str(a.sessionId), "by_name": .str(s?.settings["name"].string ?? a.ask["vouched_by"].string ?? ""),
+                            "account": .str(a.ask["account"].string ?? ""), "account_label": .str(a.ask["account_label"].string ?? "")])
+    try await answer(.obj(["link": .str(inv.pairing.link), "invite_id": .str(inv.pairing.inviteId)]))
+    let voucher = a.sessionId
+    vouchPending[nonce] = a.ask["account"].string ?? ""
+    Task { @MainActor [weak self] in
+      await self?.finishVouched(inv, voucher: voucher, nonce: nonce, vouched: vouched)
+      self?.vouchPending.removeValue(forKey: nonce)
     }
   }
 

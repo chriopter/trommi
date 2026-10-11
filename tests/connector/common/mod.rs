@@ -635,6 +635,38 @@ impl Human {
         (admitted, group, ask)
     }
 
+    /// The person taps Deny on the next ask of the agent of `voucher` (12.4): `join_link/<nonce>` = `{ refused: denied }`.
+    pub async fn deny_self_join(&mut self, voucher: &GroupId) {
+        let session = hex(voucher.session_id().expect("a session group").as_bytes());
+        let mut nonce = None;
+        for _ in 0..600 {
+            self.sync().await;
+            nonce = self
+                .items
+                .iter()
+                .filter(|(s, _, payload)| *s == session && !payload["value"].is_null())
+                .filter_map(|(_, _, payload)| {
+                    payload["name"]
+                        .as_str()?
+                        .strip_prefix("join_ask/")
+                        .map(String::from)
+                })
+                .last();
+            if nonce.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let nonce = nonce.expect("an ask to let a session in");
+        self.set_register(
+            voucher,
+            &format!("join_link/{nonce}"),
+            Some(json!({ "refused": "denied" })),
+        )
+        .await
+        .expect("the answer is written");
+    }
+
     /// Whether the agent of `voucher` asked to let a session in (`join_ask/…`), up to now.
     pub fn asked_in(&self, voucher: &GroupId) -> bool {
         let session = hex(voucher.session_id().expect("a session group").as_bytes());

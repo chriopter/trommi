@@ -16,9 +16,10 @@ while it runs.
 ![Settings → Agents in the demo room](app/web/public/changelog/2026-10-11.webp)
 
 **New**
-- A new Claude Code or Codex session on a computer and account that already has a connected agent joins the board
-  by itself, as its own session: no invite link. Its first message says which session vouched for it; at most 8 such
-  sessions per account, and archiving one removes its device.
+- A new Claude Code or Codex session on a computer and account that already has a connected agent gets onto the
+  board with one tap ("Allow new Claude session …?") instead of an invite link and the six emoji, as its own
+  session. Its first message says which session vouched for it; at most 8 such sessions per account, and archiving
+  one removes its device.
 - A card its session is working on says so above its title: "<session> is working on it", its status line and how
   long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
 - Trommi for Mac: the iPad's layout in a window, the questions waiting in the menu bar, Return sends and

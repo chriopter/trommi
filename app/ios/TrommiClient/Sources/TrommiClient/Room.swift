@@ -360,6 +360,8 @@ public struct Store {
   /** Self-join (spec/v1.md 12.4, SelfJoin.swift): the look at the agents' asks that is due, and the asks answered. */
   var vouchTask: Task<Void, Never>?
   var vouchAnswered = Set<String>()
+  /** The asks waiting for the person's tap, as the app shows them ("Allow new Claude session …?"). */
+  public internal(set) var vouchAsks: [SelfJoinPlan.Ask] = []
   /** This device's vouched links not through yet (nonce → account), counted against the cap; devices being removed. */
   var vouchPending: [String: String] = [:]
   var vouchRetiring = Set<String>()

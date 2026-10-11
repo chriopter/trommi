@@ -6,7 +6,7 @@ import * as desk from './desk.mjs'
 import * as sidebar from './sidebar.mjs'
 import * as notes from './notes.mjs'
 import { DRAWER_VEIL, SIDE_FOOT, cornerNote, markCurrent, phoneBar, sidebarRows, tabBar, topbar } from './sidebar.mjs'
-import { Controller, WORDS, attGone, calm, readAttachmentsWith, controller, copyLater, curlHTML, html, hueFor, isKnock, keySheet, raw, showToast, sk, startUi, toast, sayError } from './ui.mjs'
+import { Controller, WORDS, attGone, calm, readAttachmentsWith, controller, copyLater, curlHTML, html, hueFor, isKnock, keySheet, raw, showToast, askToast, sk, startUi, toast, sayError } from './ui.mjs'
 import { boardNotes, noteStore } from './notes.mjs'
 import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
@@ -2233,9 +2233,35 @@ async function start(client, { fresh = false } = {}) {
       host.firstElementChild.id = `code-ask-${id}`
     }
   }
+  // Self-join (spec/v1.md 12.4): an agent asks to let in a new session of its own machine and account. One tap
+  // stands for the emoji: Allow answers with a link (the client confirms the Request the agent names), Deny refuses.
+  const vouchShown = new Set()
+  const askVouches = () => {
+    const open = new Set()
+    for (const s of client.model.sessions.values()) {
+      if (!s.is_active || s.parent_session_id || s.settings?.archived) continue
+      for (const [key, reg] of s.registers ?? []) {
+        if (!key.startsWith('join_ask/')) continue
+        const nonce = key.slice('join_ask/'.length), ask = reg?.value
+        if (!/^[0-9a-f]{1,64}$/.test(nonce) || !ask || typeof ask !== 'object' || s.registers.get(`join_link/${nonce}`)?.value != null) continue
+        open.add(nonce)
+        if (vouchShown.has(nonce)) continue
+        const host = document.getElementById('says-host')
+        if (!host) continue
+        vouchShown.add(nonce)
+        const kind = String(ask.account_label ?? '').startsWith('codex') ? 'Codex' : 'Claude'
+        const by = s.settings?.name || ask.vouched_by || 'a session'
+        const on = ask.host ? ` on ${ask.host}` : ''
+        host.insertAdjacentHTML('afterbegin', String(askToast({ id: `vouch-ask-${nonce}`, head: `Allow new ${kind} session “${ask.name || 'unnamed'}”${on}?`, line: `vouched for by ${by}${ask.folder ? ` · ${ask.folder}` : ''}`, action: `/vouch/${nonce}`, field: 'allow', yes: 'Allow', no: 'Deny' })))
+      }
+    }
+    for (const nonce of vouchShown) if (!open.has(nonce)) { document.getElementById(`vouch-ask-${nonce}`)?.remove(); vouchShown.delete(nonce) }
+  }
+  document.addEventListener('turbo:load', () => askVouches(), { once: true })
   document.addEventListener('turbo:load', () => askCodes(client.model.invites.keys()), { once: true })
   client.on('change', change => {
     askCodes(change.invites)
+    if (change.sessions?.size || change.registers?.size) askVouches()
     if (change.room) newerNotice()
     if (!pending) pending = merge({ cards: new Set(), sessions: new Set(), permissions: new Set(), notes: new Set(), published: new Set(), timelines: new Set(), registers: new Set(), invites: new Set() }, change)
     else merge(pending, change)

@@ -9,7 +9,7 @@
 // password (Emergency Kit, ending in a new password or a new passkey). A device is never asked for its name (deviceLabel). The UI says "account", never "room".
 // Calm and sober: this is about keys; pen drawings only on the choice buttons.
 // Core features that may not be there yet (usage, session handover) are shown only when the core has them.
-import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError } from './ui.mjs'
+import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError, toast } from './ui.mjs'
 import { CLIENT, account, checkEmoji, core, openInWorker, qrReader, ses } from './app.mjs'
 const read = (k, f = null) => { try { return localStorage.getItem(k) ?? f } catch { return f } }
 const write = (k, v) => { try { localStorage.setItem(k, v) } catch {} }
@@ -384,6 +384,13 @@ ${errorLine(error)}<p class="room-meta">"They don't match" burns the invite: nob
         return page(req, res, 'Pair a device', inviteMain(m().invites.get(match[1]), err.code === 'code-mismatch' ? '' : sayError(err)), { view: 'invite', stream: `&invite=${match[1]}` }, 422)
       }
       t.redirect(res, list ? `/settings?pair=${match[1]}` : `/pair/${match[1]}`)
+    })
+    // Self-join (12.4): the person's Allow or Deny for an agent's ask; the prompt goes, from this page and the others.
+    t.post(/^\/vouch\/([0-9a-f]{1,64})$/, async ({ req, res, match, form }) => {
+      try { await client.answerVouch(match[1], form.get('allow') === 'yes') } catch (err) {
+        return t.sendStream(req, res, t.stream('prepend', 'says-host', toast({ head: 'Not answered', line: sayError(err), role: 'alert' })), 422)
+      }
+      t.sendStream(req, res, t.stream('remove', `vouch-ask-${match[1]}`, ''))
     })
     t.live('invite', {
       take: (mm, clients) => new Map(clients.map(c => c.params.get('invite')).filter(Boolean).map(id => { const inv = m().invites.get(id); return [id, String(inviteMain(inv)).replace(/\d+ more min\.|less than a minute\.|no time left\./g, '').replace(/data-invite-clip-until-value="\d+"/, '')] })),

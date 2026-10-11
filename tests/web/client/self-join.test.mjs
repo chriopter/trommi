@@ -1,8 +1,8 @@
 // Self-join (spec/v1.md 12.4) on the human's side: an agent asks in its main session to let in a new session of its
-// machine and account (`join_ask/<nonce>`); the client answers with an agent invite link (`join_link/<nonce>`),
-// confirms the Request on its own only when the ask names that Request's hash, names the new session after the ask
-// with who vouched, and removes the new device when its session is archived. A Request the ask does not name is
-// refused. The invite handshake and its Commits are the REAL core's; content is the stand-in's; the hub is FAKE.
+// machine and account (`join_ask/<nonce>`); it waits for the person's one tap (`answerVouch`): Allow answers with an
+// agent invite link (`join_link/<nonce>`) whose Request is confirmed when the ask names its hash, Deny refuses. The
+// new session is named after the ask with who vouched, and its device goes when it is archived. A Request the ask
+// does not name is refused; asks past the bounds are refused without asking. The invite handshake and its Commits are the REAL core's; content is the stand-in's; the hub is FAKE.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { hubReaders } from '../stand-in/core.ts'
@@ -11,9 +11,16 @@ import { rooms, scene, storage, until } from './helpers.mjs'
 const ask = (more = {}) => ({ name: 'second', folder: '~/project', host: 'desk', account: 'a1b2c3d4e5f60718', account_label: 'claude .claude', vouched_by: 'project', at: Date.now(), request_hash: null, ...more })
 const linkOf = (a, agent, nonce) => a.model.sessions.get(agent.session_id)?.registers.get(`join_link/${nonce}`)?.value
 
-test('an ask of an agent is answered with a link, and the Request it names is let in without the emoji', async t => {
+const sees = (a, agent, nonce) => until(() => a.model.sessions.get(agent.session_id)?.registers.get(`join_ask/${nonce}`), 'the ask')
+
+test('an ask waits for the tap; Allow answers with a link, and the Request it names is let in without the emoji', async t => {
   const { a, agent } = await scene(t, { agent: true })
   await agent.setRegister('join_ask/n1', ask())
+  await sees(a, agent, 'n1')
+  await new Promise(r => setTimeout(r, 500))
+  assert.equal(linkOf(a, agent, 'n1'), undefined, 'nothing is answered before the person taps')
+  assert.equal([...a.model.invites.values()].filter(i => i.vouch).length, 0, 'nor any link opened')
+  await a.answerVouch('n1', true)
   const answer = await until(() => linkOf(a, agent, 'n1'), 'the link for the ask')
   assert.ok(answer.link && answer.invite_id, JSON.stringify(answer))
   const invite = a.model.invites.get(answer.invite_id)
@@ -46,6 +53,8 @@ test('an ask of an agent is answered with a link, and the Request it names is le
 test('a Request the ask does not name is refused, and the invite is spent', async t => {
   const { a, agent } = await scene(t, { agent: true })
   await agent.setRegister('join_ask/n2', ask())
+  await sees(a, agent, 'n2')
+  await a.answerVouch('n2', true)
   const answer = await until(() => linkOf(a, agent, 'n2'), 'the link for the ask')
   const R = await rooms({ agent: true })
   const joining = R.joinRoom({ link: answer.link, storage: storage('other'), poll_ms: 20 })
@@ -66,14 +75,30 @@ test('an ask without an account is refused, and nothing is opened for it', async
   assert.equal(a.model.invites.size, before)
 })
 
-test('asks at once count against the cap, and past eight open links an ask is told to wait', async t => {
+test('Deny refuses the ask, and nothing is opened for it', async t => {
+  const { a, agent } = await scene(t, { agent: true })
+  const before = a.model.invites.size
+  await agent.setRegister('join_ask/n4', ask())
+  await sees(a, agent, 'n4')
+  await a.answerVouch('n4', false)
+  assert.deepEqual(await until(() => linkOf(a, agent, 'n4'), 'the answer'), { refused: 'denied' })
+  assert.equal(a.model.invites.size, before)
+  await a.answerVouch('n4', true)
+  assert.deepEqual(linkOf(a, agent, 'n4'), { refused: 'denied' }, 'answered once')
+})
+
+test('taps at once count against the cap, and past eight open links an ask is told to wait', async t => {
   const { a, agent } = await scene(t, { agent: true })
   for (let i = 0; i < 10; i++) await agent.setRegister(`join_ask/c${i}`, ask())
+  await sees(a, agent, 'c9')
+  for (let i = 0; i < 10; i++) await a.answerVouch(`c${i}`, true)
   const answers = await until(async () => { const v = Array.from({ length: 10 }, (_, i) => linkOf(a, agent, `c${i}`)); return v.every(Boolean) && v }, 'ten answers', 30000)
   assert.equal(answers.filter(x => x.link).length, 8, JSON.stringify(answers))
   assert.equal(answers.filter(x => x.refused === 'cap').length, 2)
   // another account named each time: still no more open links (and the hub's open invites stay for the person)
   for (let i = 0; i < 4; i++) await agent.setRegister(`join_ask/d${i}`, ask({ account: i.toString(16).padStart(16, '0') }))
+  await sees(a, agent, 'd3')
+  for (let i = 0; i < 4; i++) await a.answerVouch(`d${i}`, true)
   const more = await until(async () => { const v = Array.from({ length: 4 }, (_, i) => linkOf(a, agent, `d${i}`)); return v.every(Boolean) && v }, 'four answers', 30000)
   assert.deepEqual(more, Array(4).fill({ refused: 'busy' }))
 })

@@ -241,6 +241,8 @@ export class MockClient {
     if (matches !== true) { this.changed(c => { invite.invite_state = 'failed'; invite.error = 'code-mismatch'; c.invites.add(invite_id) }); throw Object.assign(new Error('the check codes do not match: nobody was added, the invite is spent'), { code: 'code-mismatch' }) }
     this.addMember(invite)
   }
+  /** Self-join (12.4): the demo room has no agent that asks; an answer changes nothing. */
+  async answerVouch() {}
   addMember(invite) {
     this.changed(c => {
       invite.invite_state = 'joined'; c.invites.add(invite.invite_id)

@@ -34,7 +34,7 @@ import { b64u, hex, unb64u, unhex } from './ids.ts'
 import * as M from './model.ts'
 import { mark, timed } from './spent.ts'
 import type { Cache } from './store-idb.ts'
-import type { Answer, AttachmentRef, Card, Change, Invite, Model, Note, OutboxItem, TimelineItem, Vouch } from './types.ts'
+import type { Answer, AttachmentRef, Card, Change, Invite, Model, Note, OutboxItem, Session, TimelineItem, Vouch } from './types.ts'
 
 /** The first desk of every account: its id and its register as account creation writes it (spec/v1.md). */
 export const DEFAULT_DESK = 'main'
@@ -1282,27 +1282,58 @@ export class Client {
     // an archived session that joined by itself whose device is still in (archived on another device, an older app,
     // or the removal did not go through): its device goes now
     for (const x of this.model.sessions.values()) if ((x.settings?.archived || x.group_archived) && x.settings?.['vouched']) void this.retireVouched(x.session_id, x.settings['vouched']).catch(() => {})
+    // an ask past the bounds is refused at once; one within them waits for the person's tap (answerVouch)
+    for (const { s, nonce, ask } of this.pendingAsks()) {
+      if (this.vouchAnswered.has(nonce)) continue
+      const refused = this.vouchRefusal(ask)
+      if (!refused) continue
+      this.vouchAnswered.add(nonce)
+      await this.setRegisters({ [`join_link/${nonce}`]: { refused } }, { session_id: s.session_id })
+    }
+  }
+  /** The asks of live main sessions' agents nobody answered yet. */
+  private pendingAsks(): { s: Session; nonce: string; ask: Record<string, unknown> }[] {
+    const out: { s: Session; nonce: string; ask: Record<string, unknown> }[] = []
     for (const s of this.model.sessions.values()) {
       if (!s.is_active || s.stale || s.parent_session_id || !s.group_id || s.settings?.archived) continue
       for (const [key, reg] of s.registers) {
         if (!key.startsWith('join_ask/')) continue
         const nonce = key.slice('join_ask/'.length), ask = reg.value as Record<string, unknown> | null
-        if (!ask || typeof ask !== 'object' || this.vouchAnswered.has(nonce) || s.registers.get(`join_link/${nonce}`)?.value != null) continue
-        this.vouchAnswered.add(nonce)
-        const account = String(ask['account'] ?? '')
-        // live sessions that joined so, and this device's vouched links not through yet (asks at once count too)
-        const open = [...this.invites.values()].filter(k => !k.done && k.public['vouch']).map(k => (k.public['vouch'] as Vouch).account)
-        const accounts = [...this.model.sessions.values()].filter(x => x.is_active && !x.settings?.archived && x.settings?.['vouched']).map(x => (x.settings!['vouched'] as { account?: unknown }).account).concat(open)
-        const refused = !account ? 'bad-ask' : accounts.filter(x => x === account).length >= MAX_VOUCHED || accounts.length >= MAX_VOUCHED_ROOM ? 'cap' : open.length >= MAX_VOUCHED_OPEN ? 'busy' : null
-        const answer = async (value: unknown) => { await this.setRegisters({ [`join_link/${nonce}`]: value }, { session_id: s.session_id }) }
-        if (refused) { await answer({ refused }); continue }
-        const vouch: Vouch = { nonce, session_id: s.session_id, account, account_label: String(ask['account_label'] ?? ''), by_name: String(s.settings?.name ?? ask['vouched_by'] ?? '') }
-        let invite: Invite
-        try { invite = await this.createInvite({ device_role: 'agent', label: String(ask['name'] ?? '').slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch }) }
-        catch { await answer({ refused: 'busy' }); continue }
-        await this.setRegisters({ [`join_link/${nonce}`]: { link: invite.link, invite_id: invite.invite_id } }, { session_id: s.session_id })
+        if (!ask || typeof ask !== 'object' || s.registers.get(`join_link/${nonce}`)?.value != null) continue
+        out.push({ s, nonce, ask })
       }
     }
+    return out
+  }
+  /** Why an ask is refused without asking the person: `bad-ask` (no account), `cap` (8 live self-joined sessions of
+   *  that account or 24 in the room, this device's open links counted in), `busy` (8 links open here); else null. */
+  private vouchRefusal(ask: Record<string, unknown>): string | null {
+    const account = String(ask['account'] ?? '')
+    const open = [...this.invites.values()].filter(k => !k.done && k.public['vouch']).map(k => (k.public['vouch'] as Vouch).account)
+    const accounts = [...this.model.sessions.values()].filter(x => x.is_active && !x.settings?.archived && x.settings?.['vouched']).map(x => (x.settings!['vouched'] as { account?: unknown }).account).concat(open)
+    return !account ? 'bad-ask' : accounts.filter(x => x === account).length >= MAX_VOUCHED || accounts.length >= MAX_VOUCHED_ROOM ? 'cap' : open.length >= MAX_VOUCHED_OPEN ? 'busy' : null
+  }
+  /**
+   * The person's tap on an agent's ask to let in a new session of its machine (12.4): `true` (Allow) answers it with
+   * an invite link for that session, whose Request is then confirmed when the ask names its hash (the tap stands for
+   * the emoji); `false` (Deny) refuses it (`denied`). An ask answered meanwhile (here or on another device) is left.
+   */
+  async answerVouch(nonce: string, allow: unknown): Promise<void> {
+    this.needHuman()
+    if (typeof allow !== 'boolean') fail('bad-argument', 'answerVouch takes true (allow) or false (deny)')
+    const found = this.pendingAsks().find(x => x.nonce === nonce)
+    if (!found || this.vouchAnswered.has(nonce)) return
+    const { s, ask } = found
+    this.vouchAnswered.add(nonce)
+    const answer = async (value: unknown) => { await this.setRegisters({ [`join_link/${nonce}`]: value }, { session_id: s.session_id }) }
+    if (!allow) return answer({ refused: 'denied' })
+    const refused = this.vouchRefusal(ask)
+    if (refused) return answer({ refused })
+    const vouch: Vouch = { nonce, session_id: s.session_id, account: String(ask['account']), account_label: String(ask['account_label'] ?? ''), by_name: String(s.settings?.name ?? ask['vouched_by'] ?? '') }
+    let invite: Invite
+    try { invite = await this.createInvite({ device_role: 'agent', label: String(ask['name'] ?? '').slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch }) }
+    catch { return answer({ refused: 'busy' }) }
+    await answer({ link: invite.link, invite_id: invite.invite_id })
   }
   /** A vouched invite whose Request came: confirmed on its own when the ask names that Request's hash and its
    *  voucher still stands, burned otherwise. */

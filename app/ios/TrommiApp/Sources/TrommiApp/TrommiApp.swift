@@ -181,6 +181,8 @@ final class BoardModel: ObservableObject {
 
   /** The duck for all is asking (the Desk's one confirmation; the demo's state "duck" opens it). */
   @Published var duckAsk = false
+  /** Self-join (spec/v1.md 12.4): agents' asks to let in a new session of their machine, waiting for one tap. */
+  @Published var vouchAsks: [SelfJoinPlan.Ask] = []
   @Published var live = false
   @Published var upgrade: UpgradeNotice?
   /** The hub's word on this version: nothing, an update available (a quiet line), or required (the calm full screen). */
@@ -284,6 +286,7 @@ final class BoardModel: ObservableObject {
       pendingUpdate = false
       // (the room group's own Commit said that this device was removed: what is stored here goes, and the start says so)
       if let r = room, r.removedAt != nil { removedHere(r); return }
+      if let r = room, !demo, r.vouchAsks != vouchAsks { vouchAsks = r.vouchAsks }
       // a batch that changed nothing visible (a refresh with no news): no render at all
       if let r = room {
         let f = r.board.fingerprint
@@ -864,6 +867,12 @@ final class BoardModel: ObservableObject {
     guard let room = acting() else { return }
     act { try await room.editSession(a.deviceId, fields) }
   }
+  /** The person's answer to an agent's ask to let in a new session of its machine (12.4): one tap instead of the emoji. */
+  func answerVouch(_ nonce: String, allow: Bool) {
+    guard let room = acting() else { return }
+    vouchAsks.removeAll { $0.nonce == nonce }
+    act { try await room.answerVouch(nonce, allow: allow) }
+  }
   /** The crown of the session's desk (one per desk; the room's single crown without desks). */
   func star(_ a: Agent, _ on: Bool) {
     guard let room = acting(), let d = desk else { return }
@@ -1079,6 +1088,25 @@ struct RootView: View {
     // (an iPad: floating at the foot, right; above it sat over the sidebar's desk box and the centred title)
     .overlay(alignment: .bottomTrailing) { if model.demo && !DemoData.storeShots && model.phase == .board && model.demoKit == nil { DemoTag().padding(.trailing, 24).padding(.bottom, 24) } }
     .sheet(isPresented: $model.demoScreens) { AllScreensSheet() }
+    .alert(vouchTitle, isPresented: Binding(get: { model.phase == .board && !model.vouchAsks.isEmpty }, set: { _ in })) {
+      if let a = model.vouchAsks.first {
+        Button("Allow") { model.answerVouch(a.nonce, allow: true) }
+        Button("Deny", role: .cancel) { model.answerVouch(a.nonce, allow: false) }
+      }
+    } message: { Text(vouchLine) }
+  }
+  /** Self-join (12.4): "Allow new Claude session "x"?" and where it runs, who vouches. */
+  private var vouchTitle: String {
+    guard let a = model.vouchAsks.first else { return "" }
+    let kind = (a.ask["account_label"].string ?? "").hasPrefix("codex") ? "Codex" : "Claude"
+    let on = (a.ask["host"].string).map { $0.isEmpty ? "" : " on \($0)" } ?? ""
+    return "Allow new \(kind) session “\(a.ask["name"].string ?? "unnamed")”\(on)?"
+  }
+  private var vouchLine: String {
+    guard let a = model.vouchAsks.first else { return "" }
+    let by = model.room?.board.sessions[a.sessionId]?.settings["name"].string ?? a.ask["vouched_by"].string ?? "a session"
+    let folder = a.ask["folder"].string.map { $0.isEmpty ? "" : " · \($0)" } ?? ""
+    return "vouched for by \(by)\(folder)"
   }
 }
 

@@ -333,6 +333,8 @@ pub struct Conn {
     /// Self-join as the new session: whether one runs, and what the tools say about it meanwhile or after it failed.
     self_joining: AtomicBool,
     self_join_note: Mutex<Option<String>>,
+    /// No new self-join before this time (ms): after one that failed; never again after a denial.
+    self_join_after: std::sync::atomic::AtomicU64,
     self_ref: Mutex<Weak<Conn>>,
 }
 
@@ -990,7 +992,12 @@ impl Conn {
                     return note;
                 }
                 if self.member.phase() == "needs-invite" {
-                    return format!("This session is not on the Trommi board: {note}. The next Trommi tool call tries again.");
+                    let again = if self.self_join_after.load(Ordering::SeqCst) == u64::MAX {
+                        ""
+                    } else {
+                        " A Trommi tool call a minute from now tries again."
+                    };
+                    return format!("This session is not on the Trommi board: {note}.{again}");
                 }
             }
         }
@@ -1191,12 +1198,26 @@ impl Conn {
     /// A session without a key of its own asks a running session of the same machine and account to vouch for
     /// it, once at a time; meanwhile and afterwards the tools say where it stands (`self_join_note`).
     fn self_join_soon(&self) {
-        if !vouch::enabled() || self.spare || self.self_joining.swap(true, Ordering::SeqCst) {
+        if !vouch::enabled()
+            || self.spare
+            || now_ms() < self.self_join_after.load(Ordering::SeqCst)
+            || self.self_joining.swap(true, Ordering::SeqCst)
+        {
             return;
         }
+        *self.self_join_note.lock().unwrap() = Some("Not on the Trommi board yet: joining by itself, asking a running session of this account on this machine to vouch for it. Try again in a moment.".into());
         let c = self.arc();
         tokio::spawn(async move {
             let outcome = c.self_join().await;
+            if let Err(why) = &outcome {
+                // a denial holds for this process; anything else is asked again a minute later at the earliest
+                let after = if why.contains("denied") {
+                    u64::MAX
+                } else {
+                    now_ms() + env_ms("TROMMI_SELF_JOIN_RETRY_MS", 60_000)
+                };
+                c.self_join_after.store(after, Ordering::SeqCst);
+            }
             *c.self_join_note.lock().unwrap() = outcome.err();
             if let Some(why) = c.self_join_note.lock().unwrap().as_ref() {
                 eprintln!("[trommi] self-join: {why}");
@@ -1223,7 +1244,7 @@ impl Conn {
         let Some((voucher, nonce, by)) = found else {
             return Err(format!("no running {} session of this account on this machine can vouch for this one, so it needs an invite of its own: in the Trommi app \"invite an agent\" (once per account; later sessions of it join by themselves)", crate::host::name()));
         };
-        *self.self_join_note.lock().unwrap() = Some(format!("Not on the Trommi board yet: joining by itself, vouched by the session \"{by}\"; waiting for the human's Trommi app (open on a phone or computer) to let it in. Try again in a moment."));
+        *self.self_join_note.lock().unwrap() = Some(format!("Not on the Trommi board yet: joining by itself, vouched by the session \"{by}\"; waiting for the human to allow it with one tap in the Trommi app (open on a phone or computer). Try again in a moment."));
         eprintln!("[trommi] self-join: asked the session \"{by}\" to vouch for this one");
         let done_req = json!({ "op": "vouch-done", "nonce": nonce, "owner": self.cfg.owner });
         let done = || door::knock(&voucher, &done_req, 5000);
@@ -1246,7 +1267,9 @@ impl Conn {
                     }
                     if let Some(why) = r["refused"].as_str() {
                         let _ = done().await;
-                        return Err(if why == "busy" {
+                        return Err(if why == "denied" {
+                            "the human denied this session in the Trommi app: it stays off the board. To use Trommi here, the human invites it (\"invite an agent\")".to_string()
+                        } else if why == "busy" {
                             "not let in by itself yet: the human's Trommi app has too many self-join links open; the next Trommi tool call asks again".to_string()
                         } else if why == "cap" {
                             format!("not let in by itself: this account has {} sessions that joined by themselves already. Archive one in the Trommi app, or invite this session (\"invite an agent\")", vouch::MAX_PER_ACCOUNT)
@@ -2365,6 +2388,7 @@ pub async fn main_server() {
         vouches: Mutex::new(HashMap::new()),
         self_joining: AtomicBool::new(false),
         self_join_note: Mutex::new(None),
+        self_join_after: std::sync::atomic::AtomicU64::new(0),
         offered_connect: AtomicBool::new(false),
         self_ref: Mutex::new(Weak::new()),
     });
