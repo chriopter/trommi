@@ -285,6 +285,31 @@ export const steps = [
     await ui.openDesk(A)
   }],
 
+  ['Settings as one list: the two invites side by side; Devices → a device\'s own page; Account → Password and Kit ask "Confirm it is you"', async ctx => {
+    const { check } = ctx.run
+    const A = await ctx.profile('A')
+    await ui.openSettings(A)
+    const tiles = await A.js("const t = [...document.querySelectorAll('.set-invite-tiles .set-tile')].map(e => e.getBoundingClientRect()); return { n: t.length, w: t.map(r => Math.round(r.width)), top: t.map(r => Math.round(r.top)), device: !!document.querySelector('.set-tile #settings-pair'), agent: !!document.querySelector('.set-tile #settings-invite-agent') }")
+    check(tiles.n === 2 && tiles.device && tiles.agent && Math.abs(tiles.w[0] - tiles.w[1]) <= 1 && tiles.top[0] === tiles.top[1], 'Invite a Device and Invite an Agent: two tiles of one size, side by side', tiles)
+    await A.shot('standin-09b-settings-invites')
+    await ui.openSettingsPage(A, 'devices')
+    await A.until("document.querySelectorAll('#room-people .room-device').length === 2", 'the two devices of the person')
+    const other = await A.js("const r = [...document.querySelectorAll('#room-people a.room-device')].find(a => !/this device/.test(a.innerText)); return { id: r.id, fp: r.querySelector('.room-fp').textContent }")
+    await A.click(`[id="${other.id}"]`)
+    await A.until("document.getElementById('device-fp')", 'the device\'s own page')
+    check(await A.js(`return document.getElementById('device-fp').textContent === ${JSON.stringify(other.fp)} && !!document.querySelector('#device-remove button.set-danger') && document.querySelector('.set-back').getAttribute('href') === '/settings/devices'`), 'its page: the same fingerprint, Remove, the way back to Devices')
+    await A.shot('standin-09c-device-page')
+    await A.click('.set-back')
+    await A.until("location.pathname === '/settings/devices' && document.getElementById('room-people')", 'Devices again')
+    await ui.openAccountPage(A, 'password')
+    check(await A.js("return /Confirm it is you/.test(document.querySelector('#pw-form #proof')?.innerText ?? '') && !!document.querySelector('#pw-form #proof input[name=current]') && !!document.querySelector('#pw-form input[name=password]')"), 'Password: "Confirm it is you" with the current password, then the new one')
+    await A.shot('standin-09d-account-password')
+    await A.click('.set-back')
+    await ui.openAccountPage(A, 'kit')
+    check(await A.js("return !!document.querySelector('#kit-form #proof input[name=password]')"), 'Emergency Kit: a new kit asks for the password')
+    await ui.openDesk(A)
+  }],
+
   ['a decision card with options, urgency high: on both Desks; A opens it and answers; the agent hears it once; it leaves both', async ctx => {
     const { check } = ctx.run
     const A = await ctx.profile('A'), B = await ctx.profile('B')

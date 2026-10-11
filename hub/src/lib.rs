@@ -8,7 +8,6 @@
 
 pub mod accounts;
 pub mod admin;
-pub mod admin_rows;
 pub mod admin_view;
 pub mod api;
 pub mod app;

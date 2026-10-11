@@ -168,8 +168,10 @@ export const steps = [
     await ui.openSettingsPage(page, 'account')
     await page.until("document.querySelector('#account-id')", 'the account page')
     ctx.run.check(await text(page, '#account-id') === ctx.mail.account && await text(page, '#account-email') === ctx.email, 'e-mail and account ID')
-    ctx.run.check(await page.js("return !document.querySelector('#email-add') && !!document.querySelector('#pw-add')"), 'an account with an e-mail is offered a password, and no second e-mail')
+    ctx.run.check(await page.js("return !document.querySelector('#settings-way-email') && !!document.querySelector('#settings-way-password')"), 'an account with an e-mail has its ways in, and no second e-mail')
     await pictures(ctx, page, 'settings-account-email')
+    await ui.openAccountPage(page, 'password')
+    ctx.run.check(await page.js("return !!document.querySelector('#pw-add-form')"), 'its password page offers a password')
   }],
 
   ['Log out ends the token at the hub (DELETE /v1/token)', async ctx => {
@@ -243,10 +245,14 @@ export const steps = [
     await page.until("/Passkey/.test(document.querySelector('#settings-account')?.innerText ?? '')", 'the account row with its neutral label')
     await pictures(ctx, page, 'settings-list-no-email')
     await ui.openSettingsPage(page, 'account')
-    await page.until("document.querySelector('#email-add')", 'the account page')
-    ctx.run.check(await text(page, '#account-id') === ctx.bare.account && await text(page, '#account-email') === 'No email.' && await page.js("return !!document.querySelector('#pw-needs-email') && !document.querySelector('#pw-add')"), 'no e-mail is said; a password waits for one')
-    await page.click('#email-add summary')
+    await page.until("document.querySelector('#settings-way-email')", 'the account page with the row Email')
+    ctx.run.check(await text(page, '#account-id') === ctx.bare.account && await text(page, '#account-email') === 'No email.', 'no e-mail is said')
     await pictures(ctx, page, 'settings-account-no-email')
+    await ui.openAccountPage(page, 'password')
+    ctx.run.check(await page.js("return !!document.querySelector('#pw-needs-email') && !document.querySelector('#pw-add')"), 'a password waits for an e-mail')
+    await page.js("trommi.router.visit('/settings/account'); return 1")
+    await ui.openAccountPage(page, 'email')
+    await pictures(ctx, page, 'settings-account-add-email')
   }],
 
   ['The kit\'s code on a new device: the recovery screen opens with the ID filled in and the fragment gone; another hub is named', async ctx => {
@@ -302,9 +308,8 @@ export const steps = [
   ['Add an email later: the same twelve words, typed once more; the kit\'s sheet opens with the e-mail from then on', async ctx => {
     const page = await ctx.profile('new'), email = `later+${Date.now().toString(36)}@example.org`, since = ctx.mark()
     await ui.openSettings(page)
-    await ui.openSettingsPage(page, 'account')
-    await page.until("document.querySelector('#email-add')", 'the account page')
-    await page.click('#email-add summary')
+    await ui.openAccountPage(page, 'email')
+    await page.until("document.querySelector('#email-form')", 'the e-mail page')
     await page.type('#email-form input[name=email]', email)
     await page.type('#email-form textarea[name=words]', ctx.bare.words)
     await page.click('#email-form button[type=submit]')
@@ -331,10 +336,9 @@ export const steps = [
       return { ok: await text(page, '.room-ok'), error: await text(page, '.room-error') }
     }
     await ui.openSettings(page)
-    await ui.openSettingsPage(page, 'account')
-    await page.until("document.querySelector('#pw-add')", 'the account page with "Add a password"')
+    await ui.openAccountPage(page, 'password')
+    await page.until("document.querySelector('#pw-add')", 'the password page with "Add a password"')
     // a password, confirmed with the passkey: its assertion on the account's challenge goes along as the proof
-    await page.click('#pw-add summary')
     ctx.run.check(/Being logged in here is not enough/.test(await text(page, '#pw-add')), 'the form says why the passkey is asked for', await text(page, '#pw-add'))
     await page.type('#pw-add-form input[name=password]', password)
     await submit('#pw-add-form button[type=submit]')
@@ -343,8 +347,9 @@ export const steps = [
     const pw = since().find(r => r.path === '/v1/account/password' && r.method === 'PUT')
     ctx.run.check(pw?.status === 200 && Object.keys(pw.body.proof ?? {}).join() === 'passkey' && Object.keys(pw.body.proof.passkey).sort().join() === 'authenticator_data,client_data_json,credential_id,signature', 'PUT /v1/account/password carries the passkey\'s assertion as its proof', pw && [pw.status, pw.body.proof && Object.keys(pw.body.proof)])
     // the passkey removed (the password opens the account now): the remove form asks for the password too; a wrong one removes nothing
+    await ui.openAccountPage(page, 'passkeys')
     await page.until("document.querySelectorAll('#passkeys .room-passkey').length === 1", 'the passkey listed')
-    await page.click('#passkeys .room-passkey:first-child .room-remove summary')
+    await page.click('#passkeys .room-passkey:first-child > summary')
     ctx.run.check(await page.js("return !!document.querySelector('#passkeys .room-passkey:first-child .room-remove input[name=password]')"), 'removing a passkey asks for the password')
     await pictures(ctx, page, 'settings-passkey-remove')
     await page.type('#passkeys .room-passkey:first-child .room-remove input[name=password]', 'not the password at all')
@@ -352,7 +357,7 @@ export const steps = [
     out = await said('the page\'s error for a wrong password')
     ctx.run.check(!out.ok && out.error && account().passkeys.length === 1, 'a wrong password removes nothing and says so', out)
     await page.until("document.querySelectorAll('#passkeys .room-passkey').length === 1", 'the passkey listed again')
-    await page.click('#passkeys .room-passkey:first-child .room-remove summary')
+    await page.click('#passkeys .room-passkey:first-child > summary')
     await page.type('#passkeys .room-passkey:first-child .room-remove input[name=password]', password)
     await submit('#passkeys .room-passkey:first-child .room-remove button[type=submit]')
     out = await said('the passkey removed, or the page\'s error')

@@ -1,8 +1,8 @@
 // ---- room ----
 // The room's own screens. Inside a room (pages of the board): /settings (one list, as iOS Settings: Invite a Device with
-// its code and the emoji check in place, Invite Agent…, then a row per page: Sessions (agents.mjs), Devices, Account,
-// Theme, Keyboard Shortcuts), /settings/devices (who is in the room, Push, inviting an agent,
-// removing), /pair/:id (an agent's clipboard; a device's code), /settings/account (email, password, Emergency Kit; storage). Before a room (a screen of its own): Create
+// its code and the emoji check in place, beside it Invite an Agent, then a row per page: Sessions (agents.mjs), Devices,
+// Account, Theme, Keyboard Shortcuts), /settings/devices (who is in the room, Push, inviting an agent; each device a page
+// of its own: rename, remove), /pair/:id (an agent's clipboard; a device's code), /settings/account (email, password, passkeys, Emergency Kit: each a page of its own; storage). Before a room (a screen of its own): Create
 // account (email + a passkey where the device can, else or by choice a password; this device founds the room and its
 // Emergency Kit is made at once), Log in (a passkey, email + password, or scan a signed-in device's code), Forgot
 // password (Emergency Kit, ending in a new password or a new passkey), and the old recovery code. A device is
@@ -160,7 +160,6 @@ const emojiRow = (code, id = '') => html`<ol class="check-emoji"${id ? raw(` id=
 const matchButtons = (inv, yesLabel = 'They match', here = '') => { const back = here ? html`<input type="hidden" name="in" value="${here}">` : ''; return html`<div class="check-answer"><form method="post" action="/pair/${inv.invite_id}/confirm">${back}<input type="hidden" name="match" value="yes"><button type="submit" class="room-primary check-yes">${yesLabel}</button></form><form method="post" action="/pair/${inv.invite_id}/confirm">${back}<input type="hidden" name="match" value="no"><button type="submit" class="check-no">They don't match</button></form></div>` }
 // A read-only field with its value and a Copy button (controller "room").
 const copyBox = (value, label, cls = '') => html`<div class="room-link${cls ? ` ${cls}` : ''}" data-controller="room"><input readonly value="${value}" aria-label="${label}" data-room-target="field" data-action="focus->room#select"><button type="button" data-action="room#copy" data-room-text-param="${value}"><span data-room-target="label">Copy</span></button></div>`
-const sessionName = s => s.settings?.name || s.profile?.agent_name || s.agent_session_id || s.device_name || 'Session'
 
 // ---- inside a room: devices, pairing, settings (pages of the board, rendered like any other) ----
 export function register(t) {
@@ -175,21 +174,17 @@ export function register(t) {
     const isHuman = () => m().room.my_role === 'human'
     const fp = d => d.fingerprint || d.device_id.slice(0, 16).replace(/(.{4})(?!$)/g, '$1 ')
 
-    // ---- /devices ----
-    const member = d => {
-      const me = d.is_me, human = d.device_role === 'human', name = d.device_name || (human ? 'Device' : 'Agent')
-      const canRemove = d.is_active && !me && isHuman()
-      return html`<li class="room-device${d.is_active ? '' : ' is-removed'}" id="device-${d.device_id}">
-<span class="room-device-dot" data-online="${d.is_online ? 'yes' : 'no'}" title="${d.is_online ? 'online' : 'away'}"></span>
-<span class="room-device-name"><b>${name}</b>${me ? html` <em>this device</em>` : ''}<small>${human ? 'Person' : 'Agent'} · <span class="room-fp" title="Key fingerprint from the signed member list">${fp(d)}</span>${d.is_active ? '' : ' · removed'}</small></span>
-${me && d.is_active && has(client, 'setRegisters') ? html`<form method="post" action="/devices/rename" class="room-remove room-rename"><details><summary>Rename</summary><input name="device_name" value="${d.device_name ?? ''}" maxlength="40" required autocomplete="off" aria-label="Name of this device"><button type="submit" class="room-primary">Save</button></details></form>` : ''}
-${canRemove ? html`<form method="post" action="/devices/remove" class="room-remove"><input type="hidden" name="device_id" value="${d.device_id}"><details><summary>Remove</summary><p>${human
-        ? html`${name} can open nothing new after this. Everyone else gets a new key; that takes a moment.`
-        : html`${name} can read nothing new after this. The others get a new key; the session's history stays.`}</p><button type="submit" class="room-danger">Remove ${name}</button></details></form>` : ''}</li>`
-    }
-    // The earlier conversation stays closed unless the human opens it: an agent invite comes without history.
-    const historyAsk = () => html`<fieldset class="room-history"><legend>May it read the earlier conversation?</legend><label><input type="radio" name="with_history" value="no" checked> No</label><label><input type="radio" name="with_history" value="yes"> Yes</label></fieldset>`
-    const sessionOptions = (except = null) => [...m().sessions.values()].filter(s => s.agent_device_id !== except).map(s => html`<option value="${s.session_id ?? s.agent_session_id ?? s.agent_device_id}">${sessionName(s)}</option>`)
+    // ---- /settings/devices: the Settings list's parts (groups of rows); each device opens a page of its own ----
+    const devName = d => d.device_name || (d.device_role === 'human' ? 'Device' : 'Agent')
+    const devIcon = d => (d.device_role !== 'human' ? sk('terminal') : /phone|ipad|ios|android/i.test(`${d.device_name ?? ''} ${d.platform ?? ''}`) ? art('phone') : sk('laptop'))
+    const devState = d => (!d.is_active ? 'removed' : d.is_me ? 'this device' : d.is_online ? 'online' : 'away')
+    const onlineDot = on => html`<i class="set-dot" data-online="${on ? 'yes' : 'no'}"></i>`
+    const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${devName(d)}</b><small class="room-fp" title="Key fingerprint from the signed member list">${fp(d)}</small></span><span class="set-detail">${d.is_active ? onlineDot(d.is_online || d.is_me) : ''}${devState(d)}</span>`
+    // (.room-device: one per device listed, as the end-to-end runs count them)
+    const member = d => (d.is_active
+      ? html`<a class="set-row set-row-two room-device" id="device-${d.device_id}" href="/settings/devices/${d.device_id}" data-nav>${devLine(d)}${SET_CHEVRON}</a>`
+      : html`<div class="set-row set-row-two set-fact room-device is-removed" id="device-${d.device_id}">${devLine(d)}<span></span></div>`)
+    const agentInviteRow = () => html`<form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="agent-invite"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form>`
     // The three lists, each one element with an id, so a change replaces only the list it touched.
     const lists = () => {
       const all = [...m().members.values()]
@@ -198,30 +193,49 @@ ${canRemove ? html`<form method="post" action="/devices/remove" class="room-remo
       const agents = all.filter(d => d.is_active && d.device_role !== 'human').sort(order)
       const gone = all.filter(d => !d.is_active).sort(order)
       return {
-        people: String(html`<ul class="room-devices" id="room-people">${people.map(member)}</ul>`),
-        agents: String(agents.length ? html`<ul class="room-devices" id="room-agents">${agents.map(member)}</ul>` : html`<p class="room-meta" id="room-agents">No agent yet.</p>`),
-        gone: String(gone.length ? html`<details class="room-section room-gone" id="room-gone"><summary>Removed (${gone.length})</summary><ul class="room-devices">${gone.map(member)}</ul></details>` : html`<div id="room-gone" hidden></div>`),
+        people: String(html`<div class="set-group" id="room-people">${people.map(member)}</div>`),
+        agents: String(html`<div class="set-group" id="room-agents">${agents.map(member)}${isHuman() ? agentInviteRow() : agents.length ? '' : html`<p class="set-empty">No agent yet.</p>`}</div>`),
+        gone: String(gone.length ? html`<div class="set-group" id="room-gone">${setRow({ href: '/settings/devices/removed', icon: sk('archive'), word: 'Removed', detail: String(gone.length), id: 'devices-removed' })}</div>` : html`<div id="room-gone" hidden></div>`),
       }
     }
+    const PUSH_LEVELS = [['all', 'bell', 'Yes', 'every card'], ['knocking', 'knock', 'Only knocking', 'high, critical, a lost session'], ['off', 'snooze', 'No', '']]
     const devicesMain = (error = '') => {
       const L = lists()
       return roomPage('Devices', html`${errorLine(error)}
-<section class="room-section" aria-labelledby="people-head"><h3 id="people-head">Your devices</h3>${raw(L.people)}</section>
-${isHuman() ? html`<section class="room-section push-section" aria-labelledby="push-head"><h3 id="push-head">Push</h3>
-<fieldset class="push-level" id="push-level"><legend>Push on this device</legend>
-<label><input type="radio" name="push-level" value="all"><span>Yes</span></label><label><input type="radio" name="push-level" value="knocking"><span>Only knocking</span></label><label><input type="radio" name="push-level" value="off" checked><span>No</span></label>
-</fieldset>
-<p class="room-meta">Only knocking: a card marked high or critical (the ones that knock on the Desk), and a session that lost its connection.</p>
+<h3 class="set-label" id="people-head">Your devices</h3>${raw(L.people)}
+${isHuman() ? html`<h3 class="set-label" id="push-head">Push on this device</h3><fieldset class="set-group set-choice set-push" id="push-level" aria-labelledby="push-head">${PUSH_LEVELS.map(([v, icon, word, d]) => html`<label class="set-row"><input type="radio" name="push-level" value="${v}"${v === 'off' ? raw(' checked') : ''}><span class="set-ico">${sk(icon)}</span><b>${word}</b><span class="set-detail">${d}</span>${sk('tick')}</label>`)}</fieldset>
 <p class="push-level-note" id="push-level-note" role="status"></p>
-<ul class="push-others" id="push-others" aria-label="Push on your other devices"></ul></section>` : ''}
-<section class="room-section" aria-labelledby="agents-head"><h3 id="agents-head">Agents</h3>${raw(L.agents)}
-${isHuman() ? html`<form method="post" action="/pair" class="room-agent-form"><input type="hidden" name="role" value="agent"><label>Name of the session<input name="label" maxlength="40" placeholder="e.g. Website" autocomplete="off"></label>${has(client, 'createInvite') && m().sessions.size ? html`<label>Takes over<select name="session_id"><option value="">a new session</option>${sessionOptions()}</select></label>${historyAsk()}` : ''}<button type="submit" id="agent-invite">Invite an agent</button></form>` : ''}</section>
+<ul class="push-others set-note" id="push-others" aria-label="Push on your other devices"></ul>` : ''}
+<h3 class="set-label" id="agents-head">Agents</h3>${raw(L.agents)}
 ${raw(L.gone)}
-<p class="room-meta">A new device: <a href="/settings" data-nav>Invite a Device</a> in Settings, or open app.trommi.com on it and log in. A device names itself; rename this one above. Every device holds its own keys; the hub sees sealed envelopes only. The fingerprint comes from the signed member list: it must look the same on every device.</p>`, 'The people and agents with keys to this account.')
+<p class="set-note">A new device: Invite a Device in <a href="/settings" data-nav>Settings</a>, or open app.trommi.com on it and log in. Every device holds its own keys; the hub sees sealed envelopes only.</p>`, 'The people and agents with keys to this account.')
+    }
+    const removeWords = d => (d.device_role === 'human' ? `${devName(d)} can open nothing new after this. Everyone else gets a new key; that takes a moment.` : `${devName(d)} can read nothing new after this. The others get a new key; the session's history stays.`)
+    const deviceMain = (d, error = '') => {
+      const me = d.is_me, human = d.device_role === 'human', canRemove = d.is_active && !me && isHuman()
+      return settingsPage(devName(d), html`${errorLine(error)}<div class="set-group">
+<div class="set-row set-fact"><span class="set-ico">${devIcon(d)}</span><b>Kind</b><span class="set-detail">${human ? 'Person' : 'Agent'}</span><span></span></div>
+<div class="set-row set-fact"><span class="set-ico">${onlineDot(d.is_active && (d.is_online || me))}</span><b>Status</b><span class="set-detail" id="device-state">${devState(d)}</span><span></span></div>
+<div class="set-row set-fact"><span class="set-ico">${sk('key')}</span><b>Key fingerprint</b><span class="set-detail room-mono" id="device-fp">${fp(d)}</span><span></span></div></div>
+<p class="set-note">The fingerprint comes from the signed member list: it must look the same on every device.</p>
+${me && d.is_active && has(client, 'setRegisters') ? html`<h3 class="set-label">Name</h3><form method="post" action="/devices/rename" class="set-group set-form" id="device-rename"><label class="set-field"><span>Name of this device</span><input name="device_name" value="${d.device_name ?? ''}" maxlength="40" required autocomplete="off"></label><button type="submit" class="room-primary">Rename</button></form><p class="set-note">A device names itself; this name is what your other devices see.</p>` : ''}
+${canRemove ? html`<form method="post" action="/devices/remove" class="set-group" id="device-remove"><input type="hidden" name="device_id" value="${d.device_id}"><button type="submit" class="set-row set-danger"><span class="set-ico">${sk('logout')}</span><b>Remove ${devName(d)}</b><span class="set-detail"></span><span></span></button></form><p class="set-note">${removeWords(d)}</p>` : ''}`,
+      { lead: me ? 'This device' : !d.is_active ? 'Removed' : human ? 'One of your devices' : 'An agent', back: '/settings/devices', backWord: 'Devices' })
+    }
+    const removedMain = () => {
+      const gone = [...m().members.values()].filter(d => !d.is_active).sort((a, b) => a.added_entry_number - b.added_entry_number)
+      return settingsPage('Removed', html`<div class="set-group">${gone.map(member)}</div><p class="set-note">They open nothing new; what they had before stays with them.</p>`, { back: '/settings/devices', backWord: 'Devices' })
     }
     t.get(/^\/settings\/devices$/, ({ req, res }) => page(req, res, 'Devices · Settings', devicesMain(), { stream: '&room=devices' }))
+    t.get(/^\/settings\/devices\/removed$/, ({ req, res }) => page(req, res, 'Removed · Devices', removedMain(), { view: 'settings' }))
+    t.get(/^\/settings\/devices\/([^/]+)$/, ({ req, res, match }) => {
+      const d = m().members.get(decodeURIComponent(match[1]))
+      if (!d) return t.redirect(res, '/settings/devices')
+      page(req, res, `${devName(d)} · Devices`, deviceMain(d), { view: 'settings' })
+    })
     t.post(/^\/devices\/remove$/, async ({ req, res, form }) => {
-      try { await client.removeDevices([String(form.get('device_id'))]) } catch (err) { return page(req, res, 'Devices', devicesMain(`Not removed: ${sayError(err)}`), {}, 422) }
+      const id = String(form.get('device_id'))
+      try { await client.removeDevices([id]) } catch (err) { const d = m().members.get(id); return page(req, res, 'Devices', d ? deviceMain(d, `Not removed: ${sayError(err)}`) : devicesMain(`Not removed: ${sayError(err)}`), {}, 422) }
       t.redirect(res, '/settings/devices')
     })
     // This device's own name (asked nowhere: deviceLabel made it): its register device/<id>, which only it may write.
@@ -230,7 +244,7 @@ ${raw(L.gone)}
       try {
         if (!me || !device_name) throw new Error('a name is missing')
         await client.setRegisters({ [`device/${me.device_id}`]: { device_name, ...Object.fromEntries(['platform', 'folder', 'host'].filter(k => me[k] != null).map(k => [k, me[k]])) } }, { own_device: true })
-      } catch (err) { return page(req, res, 'Devices', devicesMain(`Not renamed: ${sayError(err)}`), {}, 422) }
+      } catch (err) { const me = m().members.get(m().room.my_device_id); return page(req, res, 'Devices', me ? deviceMain(me, `Not renamed: ${sayError(err)}`) : devicesMain(`Not renamed: ${sayError(err)}`), {}, 422) }
       t.redirect(res, '/settings/devices')
     })
     // The desk a new agent's session goes on: the desk in view; on "All desks" the desk of the session open there (the
@@ -387,11 +401,19 @@ ${errorLine(error)}<p class="room-meta">"They don't match" burns the invite: nob
       return html`<div class="set-device" id="set-device" data-state="${state}">${inner}</div>`
     }
     const SHOWN = { light: 'Light', dark: 'Dark', system: 'System' }
+    // The two invites as equals, side by side (one above the other on a phone): a device's code and an agent's
+    // command, each drawn blurred until asked for; only then is the invite made. A device's code then takes the
+    // whole width (deviceInvite: the code, the six emoji, They Match).
+    const TERMINAL = html`<span class="set-term-bar" aria-hidden="true"><i></i><i></i><i></i></span><span class="set-term-code" aria-hidden="true"><span>$ claude</span><span>&gt; join trommi ab3f…9c2e</span><span>&gt; check the six emoji</span></span>`
+    const inviteTiles = (error = '') => html`${errorLine(error)}<section class="set-invite-tiles" aria-label="Invite">
+<form method="post" action="/pair" class="set-tile"><input type="hidden" name="role" value="human"><input type="hidden" name="in" value="settings"><button type="submit" class="set-tile-art set-qr" id="settings-pair" aria-label="Show Code: the code to invite a device"><span class="set-qr-code">${FAKE_QR}</span><span class="set-qr-show">Show Code</span></button><span class="set-text"><b>Invite a Device</b><small>A phone or another computer scans the code. Made when you ask, works once.</small></span></form>
+<form method="post" action="/pair" class="set-tile set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-tile-art set-term" id="settings-invite-agent" aria-label="Show Command: the command to invite an agent"><span class="set-term-in">${TERMINAL}</span><span class="set-qr-show">Show Command</span></button><span class="set-text"><b>Invite an Agent</b><small>Claude Code or Codex runs one command in your project and joins.</small></span></form>
+</section>`
     const homeMain = (inv, error = '') => {
       const bm = t.model(), members = [...(m().members?.values() ?? [])].filter(d => d.is_active)
       const people = members.filter(d => d.device_role === 'human').length
       return settingsPage('Settings', html`${inv === undefined ? errorLine(error) : ''}
-${isHuman() ? html`<section class="set-group set-invites" aria-label="Invite">${deviceInvite(inv ?? null, error)}
+${isHuman() && !inv ? inviteTiles() : isHuman() ? html`<section class="set-group set-invites" aria-label="Invite">${deviceInvite(inv ?? null, error)}
 <form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>` : ''}
 <nav class="set-group" aria-label="Settings">
 ${setRow({ href: '/settings/sessions', icon: sk('heads'), word: 'Sessions', detail: `${bm.agents.filter(a => a.online).length} of ${bm.agents.length} connected`, id: 'settings-sessions' })}
@@ -423,44 +445,67 @@ ${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Security Info', det
       client._setRoom({ account_loading: true })
       account().then(A => A.accountStatus(client)).then(st => client._setRoom({ account: st, account_loading: false }), err => client._setRoom({ account_error: accountError(err), account_loading: false }))
     }
-    const settingsMain = (error = '', said = '', kit = null, first = false) => {
+    // The overview (sub ''): who, the ways in (each a page: password, passkeys, kit; email where there is none),
+    // storage, Log Out. Each way in is changed on its own page; a change asks for the way in of now once more
+    // (proofField). The demo shows a made-up account and changes nothing.
+    const DEMO_ACCOUNT = { email: 'ada@example.org', account: 'A7Q2-K9XD-4MWP-T3RC', has_password: true, has_recovery: true, passkeys: [{ credential_id: 'demo-passkey-one', created_at: Date.parse('2026-09-12'), last_used_at: Date.parse('2026-10-10') }] }
+    const SUBS = { password: 'Password', passkeys: 'Passkeys', kit: 'Emergency Kit', email: 'Email' }
+    const accountMain = (sub = '', { error = '', said = '', kit = null, first = false } = {}) => {
       const room = m().room
-      const st = room.account
+      const st = client.hub ? room.account : DEMO_ACCOUNT
       const link = client.hub && has(k, 'roomLink') && room.hub_url ? k.roomLink(room.hub_url, room.room_id) : null
-      const form = (action, inner, word, id) => html`<form method="post" action="${action}" class="room-form" data-controller="room" id="${id}">${inner}<button type="submit" class="room-primary">${word}</button></form>`
-      // The way in a change asks for again: the password where the account has one, else one of its passkeys.
-      const unlockField = a => (a.has_password === false ? html`<p class="room-meta">${CONFIRM_PASSKEY}</p>` : html`<p class="room-meta">${CONFIRM_PASSWORD}</p>${pwField({ label: 'Your password', gen: false, autocomplete: 'current-password' })}`)
+      const form = (action, inner, word, id) => html`<form method="post" action="${action}" class="set-stack" data-controller="room" id="${id}">${inner}<button type="submit" class="room-primary">${word}</button></form>`
       const day = ts => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-      const accountPart = !client.hub ? html`<p class="room-meta">No account in the demo.</p>`
-        : st === undefined ? html`<p class="room-wait">${room.account_error ? `Not reachable: ${room.account_error}` : 'Loading…'}</p>`
-          : st === null ? html`<p class="room-lead">This account was made before email and password. Add a login, so a new device gets in with email and password. You need the recovery code shown when you started.</p>
-${form('/settings/account', html`<label>Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label>${pwField()}<label>Recovery code<input name="recovery_code" required autocomplete="off" spellcheck="false" class="room-mono" placeholder="XXXX-XXXX-…"></label>`, 'Add login', 'account-add')}`
-            : html`<p class="room-lead">${st.email ? html`Logged in as <b id="account-email">${st.email}</b>` : html`Logged in with a passkey. <span id="account-email">No email.</span>`}</p>
-<p class="room-meta">Account ID <span class="room-mono" id="account-id">${st.account}</span></p>
-${st.email ? '' : html`<details class="room-more" id="email-add"><summary>Add an email</summary><p class="room-meta">A second name for your account. It cannot be changed later. Your Emergency Kit keeps its twelve words and opens with the email from then on: type them once more. They also confirm it is you.</p>${form('/settings/email', html`<label>Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label><label>Twelve words<textarea name="words" rows="3" required autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label>`, 'Add email', 'email-form')}</details>`}
-<h4 class="room-sub">Emergency Kit</h4>
-${kit ? html`<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now.${first ? '' : ' The old kit no longer works.'}</p>${kitBox({ ...kit, account: kit.account ?? st.account }, kitLink(kit.account ?? st.account), true)}`
-  : html`<p class="room-lead">${st.has_recovery ? 'Made.' : 'Not made yet.'} ${st.has_password === false ? 'It opens your account if you lose your passkey.' : 'With it you can set a new password if you forget yours.'}</p>
-<details class="room-more" id="kit-new"><summary>${st.has_recovery ? 'Make a new kit' : 'Make my Emergency Kit'}</summary>${form('/settings/kit', unlockField(st), 'Make the kit', 'kit-form')}</details>`}
-${passkeysOff && !(st.passkeys ?? []).length ? '' : html`<h4 class="room-sub">Passkeys</h4>
-${(st.passkeys ?? []).length ? html`<ul class="room-devices room-passkeys" id="passkeys">${st.passkeys.map(p => html`<li class="room-device room-passkey" id="passkey-${p.credential_id.slice(0, 12)}">
-<span class="room-device-name"><b>Passkey</b><small>added ${day(p.created_at)} · ${p.last_used_at ? `used ${day(p.last_used_at)}` : 'not used yet'}</small></span>
-<form method="post" action="/settings/passkeys/remove" class="room-remove"><input type="hidden" name="id" value="${p.credential_id}"><details><summary>Remove</summary><p>Passkey no longer opens your account after this.</p>${unlockField(st)}<button type="submit" class="room-danger">Remove passkey</button></details></form></li>`)}</ul>`
-  : html`<p class="room-lead" id="passkeys-none">None yet. A passkey logs you in without a password.</p>`}
-${st.has_password !== false && (st.passkeys ?? []).length ? html`<p class="room-meta" id="password-still">Your password still opens this account.</p>` : ''}
-${canPasskey ? html`<details class="room-more" id="passkey-new"><summary>Add passkey</summary>${form('/settings/passkeys', unlockField(st), 'Add passkey', 'passkey-form')}</details>` : passkeysOff ? '' : html`<p class="room-meta" id="passkey-cannot">This browser makes no passkeys.</p>`}`}
-<h4 class="room-sub">Password</h4>
-${st.has_password === false
-  ? html`<p class="room-lead" id="password-none">None. Your passkey opens this account.</p>
-${st.email ? html`<details class="room-more" id="pw-add"><summary>Add a password</summary>${form('/settings/password/add', html`${pwField({ label: 'New password' })}<p class="room-meta">${CONFIRM_PASSKEY}</p>`, 'Add password', 'pw-add-form')}</details>` : html`<p class="room-meta" id="pw-needs-email">A password needs an email. Add one first.</p>`}`
-  : html`<details class="room-more" id="pw-change"><summary>Change password</summary>${form('/settings/password', html`${pwField({ name: 'current', label: 'Current password', gen: false, autocomplete: 'current-password' })}${pwField({ label: 'New password' })}`, 'Change password', 'pw-form')}</details>`}
-<p class="room-meta">${st.has_password === false ? NO_RECOVERY_PASSKEY : NO_RECOVERY}</p>`
-      return roomPage('Account', html`${errorLine(error)}${said ? html`<p class="room-lead room-ok" role="status">${said}</p>` : ''}
-${isHuman() ? html`<section class="room-section" id="account" aria-labelledby="acct-head"><h3 id="acct-head">Your login</h3>${accountPart}<p class="room-logout-line"><a href="/logout" data-nav id="settings-logout">Log Out</a></p></section>` : ''}
-<section class="room-section" aria-labelledby="store-head"><h3 id="store-head">Storage</h3><dl class="room-usage" data-controller="room" data-room-usage-value="${has(client, 'usage') ? 'hub' : 'local'}"><div><dt>On this device</dt><dd data-room-target="local">…</dd></div>${has(client, 'usage') ? html`<div><dt>On the hub (encrypted)</dt><dd data-room-target="hub">…</dd></div>` : ''}</dl><p class="room-meta">The hub deletes envelopes after 30 days; your devices keep what they decrypted.</p></section>
-${link ? html`<details class="room-section room-more" id="advanced"><summary>Advanced</summary><p class="room-lead">The address of this account, for the old recovery code (app.trommi.com/recover). On its own it opens nothing.</p>${copyBox(link, 'Address')}
-<p class="room-meta">${room.room_id.slice(0, 16)}… · key epoch ${room.key_epoch} · hub ${room.hub_url}</p></details>` : ''}`, 'Your login, and what this device keeps.')
+      const top = html`${errorLine(error)}${said ? html`<p class="room-lead room-ok" role="status">${said}</p>` : ''}`
+      const sublead = { password: 'Opens your account with your email.', passkeys: 'Each opens your account without a password.', kit: 'Twelve words for the day you lose your way in.', email: 'A second name for your account.' }
+      const subPage = inner => settingsPage(SUBS[sub], html`${top}${inner}`, { back: '/settings/account', backWord: 'Account', lead: sublead[sub] })
+      if (!isHuman()) return roomPage('Account', html`${top}${storagePart()}`, 'What this device keeps.')
+      if (st === undefined) return roomPage('Account', html`${top}<div class="set-group"><p class="set-empty room-wait">${room.account_error ? `Not reachable: ${room.account_error}` : 'Loading…'}</p></div>${storagePart()}`, 'Your login, and what this device keeps.')
+      if (st === null) return roomPage('Account', html`${top}<h3 class="set-label">Add a login</h3><div class="set-group set-form"><p class="set-small">This account was made before email and password. Add a login, so a new device gets in with email and password. You need the recovery code shown when you started.</p>
+${form('/settings/account', html`<label class="set-field">Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label>${pwField()}<label class="set-field">Recovery code<input name="recovery_code" required autocomplete="off" spellcheck="false" class="room-mono" placeholder="XXXX-XXXX-…"></label>`, 'Add login', 'account-add')}</div>
+${storagePart()}${logoutPart()}`, 'Your login, and what this device keeps.')
+      const pk = st.passkeys ?? [], noPassword = st.has_password === false
+      if (sub === 'password') {
+        return subPage(noPassword
+          ? html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('lock')}</span><b>Password</b><span class="set-detail" id="password-none">none: your passkey opens this account</span><span></span></div></div>
+${st.email ? html`<section id="pw-add"><h3 class="set-label">Add a password</h3>${form('/settings/password/add', html`<div class="set-group set-proof-g">${proofField(st)}</div><div class="set-group set-form">${pwField({ label: 'New password' })}</div>`, 'Add Password', 'pw-add-form')}</section>` : html`<p class="set-note" id="pw-needs-email">A password needs an email. <a href="/settings/account/email" data-nav>Add one first.</a></p>`}
+<p class="set-note set-note-after">${NO_RECOVERY_PASSKEY}</p>`
+          : html`<section id="pw-change">${form('/settings/password', html`<div class="set-group set-proof-g">${proofField(st, 'current')}</div><div class="set-group set-form">${pwField({ label: 'New password' })}</div>`, 'Change Password', 'pw-form')}</section>
+<p class="set-note set-note-after">${NO_RECOVERY}</p>`)
+      }
+      if (sub === 'passkeys') {
+        return subPage(html`${pk.length ? html`<div class="set-group" id="passkeys">${pk.map((p, i) => html`<details class="set-exp room-passkey" id="passkey-${p.credential_id.slice(0, 12)}"><summary class="set-row set-row-two"><span class="set-ico">${sk('key')}</span><span class="set-two"><b>Passkey${pk.length > 1 ? ` ${i + 1}` : ''}</b><small>added ${day(p.created_at)} · ${p.last_used_at ? `used ${day(p.last_used_at)}` : 'not used yet'}</small></span><span class="set-detail">Remove</span>${SET_CHEVRON}</summary>
+<form method="post" action="/settings/passkeys/remove" class="set-exp-body set-stack room-remove"><input type="hidden" name="id" value="${p.credential_id}"><p class="set-small">This passkey no longer opens your account after this.</p><div class="set-group set-proof-g">${proofField(st)}</div><button type="submit" class="room-danger">Remove Passkey</button></form></details>`)}</div>`
+          : html`<div class="set-group"><p class="set-empty" id="passkeys-none">None yet. A passkey logs you in without a password.</p></div>`}
+${!noPassword && pk.length ? html`<p class="set-note" id="password-still">Your password still opens this account.</p>` : ''}
+${canPasskey ? html`<section id="passkey-new"><h3 class="set-label">Add a passkey</h3>${form('/settings/passkeys', html`<div class="set-group set-proof-g">${proofField(st)}</div>`, 'Add Passkey', 'passkey-form')}</section>` : passkeysOff ? '' : html`<p class="set-note" id="passkey-cannot">This browser makes no passkeys.</p>`}`)
+      }
+      if (sub === 'kit') {
+        return subPage(kit ? html`<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now.${first ? '' : ' The old kit no longer works.'}</p>${kitBox({ ...kit, account: kit.account ?? st.account }, kitLink(kit.account ?? st.account), true)}`
+          : html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('page')}</span><b>Your kit</b><span class="set-detail" id="kit-state">${st.has_recovery ? 'made' : 'not made yet'}</span><span></span></div></div>
+<p class="set-note">${noPassword ? 'It opens your account if you lose your passkey.' : 'With it you can set a new password if you forget yours.'}${st.has_recovery ? ' A new kit makes the old one stop working.' : ''}</p>
+<section id="kit-new"><h3 class="set-label">${st.has_recovery ? 'Make a new kit' : 'Make my Emergency Kit'}</h3>${form('/settings/kit', html`<div class="set-group set-proof-g">${proofField(st)}</div>`, 'Make the Kit', 'kit-form')}</section>`)
+      }
+      if (sub === 'email') {
+        return subPage(kit ? html`<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now.</p>${kitBox({ ...kit, account: kit.account ?? st.account }, kitLink(kit.account ?? st.account), true)}`
+          : st.email ? html`<div class="set-group"><div class="set-row set-fact"><span class="set-ico">${sk('letter')}</span><b>Email</b><span class="set-detail">${st.email}</span><span></span></div></div>`
+            : html`<section id="email-add"><p class="set-note set-note-after">It cannot be changed later. Your Emergency Kit keeps its twelve words and opens with the email from then on: type them once more. They also confirm it is you.</p>${form('/settings/email', html`<div class="set-group set-form"><label class="set-field">Email<input type="email" name="email" required autocomplete="username" autocapitalize="off" spellcheck="false"></label><label class="set-field">Twelve words<textarea name="words" rows="3" required autocomplete="off" autocapitalize="off" spellcheck="false"></textarea></label></div>`, 'Add Email', 'email-form')}</section>`)
+      }
+      const ways = [
+        ...(st.email ? [] : [{ key: 'email', icon: sk('letter'), word: 'Email', detail: 'none yet' }]),
+        { key: 'password', icon: sk('lock'), word: 'Password', detail: noPassword ? 'none' : 'set' },
+        ...(passkeysOff && !pk.length ? [] : [{ key: 'passkeys', icon: sk('key'), word: 'Passkeys', detail: pk.length ? String(pk.length) : 'none' }]),
+        { key: 'kit', icon: sk('page'), word: 'Emergency Kit', detail: st.has_recovery ? 'made' : 'not made yet' },
+      ]
+      return roomPage('Account', html`${top}<div class="set-group set-who"><div class="set-row set-row-two set-fact"><span class="set-ico">${sk(st.email ? 'letter' : 'key')}</span><span class="set-two">${st.email ? html`<b id="account-email">${st.email}</b>` : html`<b>Logged in with a passkey</b>`}<small>${st.email ? '' : html`<span id="account-email">No email.</span> · `}Account ID <span class="room-mono" id="account-id">${st.account}</span></small></span><span></span><span></span></div></div>
+<h3 class="set-label">Ways in</h3><nav class="set-group" aria-label="Ways in">${ways.map(w => setRow({ href: `/settings/account/${w.key}`, icon: w.icon, word: w.word, detail: w.detail, id: `settings-way-${w.key}` }))}</nav>
+<p class="set-note">Each opens your account on a new device. Changing one asks for one of them again: being logged in here is not enough.</p>
+${storagePart()}${logoutPart()}
+${link ? html`<details class="set-group set-exp" id="advanced"><summary class="set-row"><span class="set-ico">${sk('more')}</span><b>Advanced</b><span class="set-detail"></span>${SET_CHEVRON}</summary><div class="set-exp-body set-stack"><p class="set-small">The address of this account, for the old recovery code (app.trommi.com/recover). On its own it opens nothing.</p>${copyBox(link, 'Address')}
+<p class="set-small">${room.room_id.slice(0, 16)}… · key epoch ${room.key_epoch} · hub ${room.hub_url}</p></div></details>` : ''}`, 'Your login, and what this device keeps.')
     }
+    const storagePart = () => html`<h3 class="set-label" id="store-head">Storage</h3><dl class="set-group set-facts" data-controller="room" data-room-usage-value="${has(client, 'usage') ? 'hub' : 'local'}"><div class="set-row set-fact"><span class="set-ico">${sk('laptop')}</span><dt>On this device</dt><dd class="set-detail" data-room-target="local">…</dd><span></span></div>${has(client, 'usage') ? html`<div class="set-row set-fact"><span class="set-ico">${sk('db')}</span><dt>On the hub, encrypted</dt><dd class="set-detail" data-room-target="hub">…</dd><span></span></div>` : ''}</dl><p class="set-note">The hub deletes envelopes after 30 days; your devices keep what they decrypted.</p>`
+    const logoutPart = () => html`<div class="set-group"><a class="set-row set-danger" href="/logout" data-nav id="settings-logout"><span class="set-ico">${sk('logout')}</span><b>Log Out</b><span class="set-detail">of this device</span>${SET_CHEVRON}</a></div>`
     // The address the kit's QR code holds (hub and account ID, no words): made once the page's helpers are loaded.
     let kitLink = () => null
     account().then(A => { kitLink = id => { try { return A.kitAddress(location.origin, m().room.hub_url, id) } catch { return null } } }).catch(() => {})
@@ -476,53 +521,59 @@ ${link ? html`<details class="room-section room-more" id="advanced"><summary>Adv
     const holding = () => (held && Date.now() - held.at < 600_000 ? held : (held = null))
     const accountSnap = () => JSON.stringify([m().room.account ?? null, m().room.account_error ?? null, canPasskey])
     t.live('settings', { take: () => holding()?.snap ?? accountSnap(), diff: (was, now) => (was !== now ? String(t.stream('refresh')) : '') })
-    t.get(/^\/settings\/account$/, ({ req, res, url }) => {
+    const accountGet = sub => ({ req, res, url }) => {
       if (m().room.account === undefined) loadAccount()
       const h = holding()
-      page(req, res, 'Account · Settings', h ? settingsMain('', h.said, h.kit, h.first) : settingsMain('', DONE[url.searchParams.get('done')] ?? ''), { view: 'settings' })
-    })
-    const accountPost = (path, fn, done) => t.post(path, async ({ req, res, form }) => {
+      page(req, res, `${SUBS[sub] ?? 'Account'} · Settings`, accountMain(sub, h && h.sub === sub ? h : { said: DONE[url.searchParams.get('done')] ?? '' }), { view: 'settings' })
+    }
+    t.get(/^\/settings\/account$/, accountGet(''))
+    for (const sub of Object.keys(SUBS)) t.get(new RegExp(`^/settings/account/${sub}$`), accountGet(sub))
+    // (sub: the page the form is on, where an error or a new kit is shown; after a change, the page to go back to)
+    const accountPost = (path, sub, fn, done, back = '') => t.post(path, async ({ req, res, form }) => {
       let out
-      try { out = await fn(form, await account()) } catch (err) {
+      try {
+        if (!client.hub) throw Object.assign(new Error('The demo changes nothing here.'), { code: 'demo' })
+        out = await fn(form, await account())
+      } catch (err) {
         console.error(err)
-        return page(req, res, 'Settings', settingsMain(accountError(err)), { view: 'settings' }, 422)
+        return page(req, res, 'Settings', accountMain(sub, { error: err.code === 'demo' ? err.message : accountError(err) }), { view: 'settings' }, 422)
       }
       if (out?.kit) {
-        held = { at: Date.now(), snap: held?.snap ?? out.snap ?? accountSnap(), kit: out.kit, said: out.said ?? 'Your new Emergency Kit:', first: out.first }
+        held = { at: Date.now(), sub, snap: held?.snap ?? out.snap ?? accountSnap(), kit: out.kit, said: out.said ?? 'Your new Emergency Kit:', first: out.first }
         if (out.account) client._setRoom(out.account)
-        return page(req, res, 'Settings', settingsMain('', held.said, held.kit, held.first), { view: 'settings' })
+        return page(req, res, 'Settings', accountMain(sub, held), { view: 'settings' })
       }
       held = null
       client._setRoom({ account: undefined }); loadAccount()
-      t.redirect(res, `/settings/account?done=${done}`)
+      t.redirect(res, `/settings/account${back ? `/${back}` : ''}?done=${done}`)
     })
     // (the login comes with its Emergency Kit, in the same request: shown here once, like a new kit)
-    accountPost(/^\/settings\/account$/, async (f, A) => {
+    accountPost(/^\/settings\/account$/, '', async (f, A) => {
       const { kit } = await A.addAccount(client, { email: String(f.get('email')), password: String(f.get('password')), recovery_code: String(f.get('recovery_code')).trim() })
       return { kit, said: 'Login added. Your Emergency Kit:', first: true, account: { account: await A.accountStatus(client), account_error: undefined } }
     }, 'added')
-    accountPost(/^\/settings\/password$/, (f, A) => A.changePassword(client, { current: String(f.get('current')), next: String(f.get('password')) }), 'changed')
+    accountPost(/^\/settings\/password$/, 'password', (f, A) => A.changePassword(client, { current: String(f.get('current')), next: String(f.get('password')) }), 'changed')
     // A new passkey: the way in is checked first (a wrong password leaves no stray passkey), then the passkey is made
     // here, then the core seals the code under it.
-    accountPost(/^\/settings\/passkeys$/, async (f, A) => {
+    accountPost(/^\/settings\/passkeys$/, 'passkeys', async (f, A) => {
       const st = await A.accountStatus(client), unlock = await unlockOf(f, st)
       await A.checkUnlock(client, unlock)
       const passkey = await passkeyMake({ challenge: await A.passkeyChallengeFor(client), user_handle: unb64u(st.user_handle), name: st.email ?? st.account, exclude: (st.passkeys ?? []).map(p => unb64u(p.credential_id)) })
       try { await A.addPasskey(client, { unlock, passkey }) } catch (err) { if (cameToNothing(err)) passkeyForget(passkey.credential_id); throw err }
-    }, 'passkey-added')
-    accountPost(/^\/settings\/passkeys\/remove$/, async (f, A) => {
+    }, 'passkey-added', 'passkeys')
+    accountPost(/^\/settings\/passkeys\/remove$/, 'passkeys', async (f, A) => {
       const id = String(f.get('id'))
       await A.removePasskey(client, { credential_id: id, unlock: await unlockOf(f, await A.accountStatus(client)) })
       passkeyForget(unb64u(id))
-    }, 'passkey-removed')
-    accountPost(/^\/settings\/password\/add$/, async (f, A) => A.setPassword(client, { unlock: { passkey: await passkeyUnlock(await A.accountStatus(client), client) }, next: String(f.get('password')) }), 'password-added')
-    accountPost(/^\/settings\/kit$/, async (f, A) => {
+    }, 'passkey-removed', 'passkeys')
+    accountPost(/^\/settings\/password\/add$/, 'password', async (f, A) => A.setPassword(client, { unlock: { passkey: await passkeyUnlock(await A.accountStatus(client), client) }, next: String(f.get('password')) }), 'password-added')
+    accountPost(/^\/settings\/kit$/, 'kit', async (f, A) => {
       const kit = await A.makeEmergencyKit(client, await unlockOf(f, await A.accountStatus(client)))
       return { kit, account: { account: { ...m().room.account, has_recovery: true, kit_form: kit.form } } }
     })
     // An account without email gets one, once (a second name for it, and what a password needs). Its kit is sealed
     // anew under the email in the same request, with the same words: its sheet is shown again, to print once more.
-    accountPost(/^\/settings\/email$/, async (f, A) => {
+    accountPost(/^\/settings\/email$/, 'email', async (f, A) => {
       try {
         const kit = await A.setEmail(client, { email: String(f.get('email')), words: String(f.get('words')) })
         return { kit, said: 'Email added. Your Emergency Kit opens with your email now:', first: true, account: { account: await A.accountStatus(client), account_error: undefined } }
@@ -615,6 +666,9 @@ const EMAIL_HELD = 'This email has an account already.'
 /** Said where an account ID meets a password: a password's keys are derived from the email. */
 const ID_NO_PASSWORD = 'Enter your email to log in with a password.'
 const NOT_A_NAME = 'That is not an email address or an account ID.'
+/** The way in a change asks for again (Settings · Account's pages): the password where the account has one (its field
+ *  named `name`), else one of its passkeys (asked when the form is sent). The one place that draws it. */
+const proofField = (a, name = 'password') => html`<div class="set-proof" id="proof"><p class="set-proof-why"><span class="set-ico">${sk('lock')}</span><span><b>Confirm it is you</b><small>${a.has_password === false ? CONFIRM_PASSKEY : CONFIRM_PASSWORD}</small></span></p>${a.has_password === false ? '' : pwField({ name, label: name === 'current' ? 'Current password' : 'Your password', gen: false, autocomplete: 'current-password' })}</div>`
 const NO_RECOVERY = 'If you lose your password and your Emergency Kit, nobody (not even Trommi) can recover your data.'
 const NO_RECOVERY_PASSKEY = 'If you lose your passkeys and your Emergency Kit, nobody (not even Trommi) can recover your data.'
 /** What an Emergency Kit opens with, in words: the email it was made under, or the account's ID. */

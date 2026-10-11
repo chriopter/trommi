@@ -70,6 +70,13 @@ export async function openSettingsPage(page, row) {
   await page.click(`#settings-${row}`)
   await page.until(`location.pathname === '/settings/${row}'`, `Settings · ${row}`)
 }
+/** Settings → Account → one of its ways in (password, passkeys, kit, email): its own page. */
+export async function openAccountPage(page, way) {
+  if (!await page.js("return location.pathname === '/settings/account'")) await openSettingsPage(page, 'account')
+  await page.until(`document.getElementById('settings-way-${way}')`, `the row ${way} on the account page`)
+  await page.click(`#settings-way-${way}`)
+  await page.until(`location.pathname === '/settings/account/${way}'`, `Settings · Account · ${way}`)
+}
 /** The Desk, by the Desk's name in the sidebar. */
 export async function openDesk(page) {
   // (a large picture or the note may lie over the sidebar: Escape puts it away, as a person would)

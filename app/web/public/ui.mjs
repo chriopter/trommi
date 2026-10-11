@@ -267,6 +267,11 @@ const SKETCH = {
   frame: [[[4, 9], [4.2, 4.2], [9, 4]], [[15, 4], [19.8, 4.2], [20, 9]], [[20, 15], [19.8, 19.8], [15, 20]], [[9, 20], [4.2, 19.8], [4, 15]]],
   // Log out: a door frame open to the right, and an arrow walking out of it
   logout: [[[13.4, 7.6], [13.7, 4], [8.8, 3.9], [4.6, 4.2], [4.4, 12], [4.7, 19.9], [9, 20.1], [13.6, 19.8], [13.5, 16.4]], [[8.6, 12.2], [14.4, 11.9], [20.4, 12.1]], [[16.8, 8.6], [20.5, 12], [16.9, 15.5]]],
+  // a laptop (a device of yours), a terminal (an agent), a padlock (confirm it is you), a database (the hub's storage)
+  laptop: [[[4.8, 5.8], [12, 5.5], [19.2, 5.8], [19.4, 15.4], [12, 15.6], [4.6, 15.4], [4.9, 5.6]], [[2.2, 18.6], [12, 18.2], [21.8, 18.6]]],
+  terminal: [[[3.4, 4.8], [12, 4.5], [20.6, 4.8], [20.8, 19.2], [12, 19.5], [3.2, 19.2], [3.5, 4.6]], [[7.2, 9.4], [10.4, 12], [7.4, 14.6]], [[12.4, 15], [16.8, 15.1]]],
+  lock: [[[5.4, 11], [12, 10.7], [18.6, 11], [18.8, 20], [12, 20.3], [5.2, 20], [5.5, 10.8]], [[8.2, 10.6], [8, 6.6], [10, 4.2], [12, 3.9], [14.2, 4.3], [16, 6.6], [15.8, 10.6]], [[12, 14.4], [12.1, 16.6]]],
+  db: [[[5, 6.4], [12, 4.4], [19, 6.4], [12, 8.4], [5, 6.4]], [[5, 6.6], [5.2, 17.6], [12, 19.8], [18.8, 17.6], [19, 6.6]], [[5.1, 12.2], [12, 14.2], [18.9, 12.2]]],
   // help: a plain question mark
   question: [[[7.8, 9.4], [8, 6.2], [10.6, 4], [13.8, 4.2], [15.8, 6.8], [15, 9.6], [12.6, 11.6], [11.8, 13.4], [11.9, 15.6]], [[11.8, 19.2], [12.1, 19.7]]],
   // the keys: one key cap with its mark
@@ -2928,8 +2933,8 @@ export const SET_CHEVRON = raw('<svg class="set-chev" viewBox="0 0 24 24" aria-h
 const BACK_CHEVRON = raw('<svg class="set-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.8 5.4Q11.4 8.8 8.6 12.1Q11.6 15.3 14.6 18.7"/></svg>')
 /** One row of a Settings list: a link with its drawing, its word, what it says now (detail) and the chevron. */
 export const setRow = ({ href, icon = '', word, detail = '', id = '' }) => html`<a class="set-row" href="${href}" data-nav${id ? raw(` id="${id}"`) : ''}><span class="set-ico">${icon}</span><b>${word}</b><span class="set-detail">${detail}</span>${SET_CHEVRON}</a>`
-/** A page under Settings: the way back, its title (and a line under it), then its parts. id/cls: of the main element. */
-export const settingsPage = (title, inner, { id = 'room', cls = 'room', lead = '', back = true } = {}) => html`<main id="${id}" class="${cls} set-page" aria-label="${title}"><div class="set-col">${back ? html`<a class="set-back" href="/settings" data-nav>${BACK_CHEVRON}<span>Settings</span></a>` : ''}<header class="set-head"><h2>${title}</h2>${lead ? html`<p>${lead}</p>` : ''}</header>${inner}</div></main>`
+/** A page under Settings: the way back (back: true for Settings, or the address of the page above, named backWord), its title (and a line under it), then its parts. id/cls: of the main element. */
+export const settingsPage = (title, inner, { id = 'room', cls = 'room', lead = '', back = true, backWord = 'Settings' } = {}) => html`<main id="${id}" class="${cls} set-page" aria-label="${title}"><div class="set-col">${back ? html`<a class="set-back" href="${back === true ? '/settings' : back}" data-nav>${BACK_CHEVRON}<span>${backWord}</span></a>` : ''}<header class="set-head"><h2>${title}</h2>${lead ? html`<p>${lead}</p>` : ''}</header>${inner}</div></main>`
 /** Devices and Account (auth.mjs): a page under Settings in the account screens' own main (#room). */
 export const roomPage = (title, inner, lead = '') => settingsPage(title, inner, { lead })
 /** The short list of keys (the "?" sheet's), for Settings · Keyboard Shortcuts. */
