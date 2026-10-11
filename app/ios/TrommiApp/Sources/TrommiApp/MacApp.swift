@@ -141,7 +141,7 @@ struct MenuBarCards: View {
 
 /**
  * The screenshot hook beside TROMMI_SCREEN (the demo, nothing sent): TROMMI_MAC_SHOT=<name> draws the main window
- * (the same views in a window of its own, 1180 x 780) and the menu bar's panel into <name>-window.png and
+ * (the same views in a window of its own, 1440 x 900, drawn at 2x) and the menu bar's panel into <name>-window.png and
  * <name>-menu.png in the app's temporary folder, then quits. It draws the views itself, so it runs where no one is
  * logged in at the screen (a build Mac over ssh) and needs no screen recording right. TROMMI_THEME=dark: dark.
  */
@@ -158,13 +158,13 @@ enum MacShot {
     let dark = env["TROMMI_THEME"] == "dark"
     NSApplication.shared.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     let dir = FileManager.default.temporaryDirectory
-    let main = FreeWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 780), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+    let main = FreeWindow(contentRect: NSRect(x: 0, y: 0, width: MacShot.w, height: MacShot.h), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                         backing: .buffered, defer: false)
     main.title = "Trommi"
     let host = NSHostingController(rootView: RootView().environmentObject(model).tint(Ink.accent).environment(\.horizontalSizeClass, .regular))
     host.sizingOptions = []
     main.contentViewController = host
-    main.setContentSize(NSSize(width: 1180, height: 780))
+    main.setContentSize(NSSize(width: MacShot.w, height: MacShot.h))
     main.orderFront(nil)
     let panel = NSHostingView(rootView: MenuBarCards().environmentObject(model))
     let holder = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 480), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -172,7 +172,7 @@ enum MacShot {
     holder.orderFront(nil)
     DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
       holder.setContentSize(NSSize(width: 340, height: max(120, panel.fittingSize.height)))
-      main.setFrame(main.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 1180, height: 780)), display: true)
+      main.setFrame(main.frameRect(forContentRect: NSRect(x: 0, y: 0, width: MacShot.w, height: MacShot.h)), display: true)
       main.layoutIfNeeded(); main.displayIfNeeded()
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
         if let frame = main.contentView?.superview, let img = composed(frame) { save(img, to: dir.appendingPathComponent("\(name)-window.png")) }
@@ -187,6 +187,8 @@ enum MacShot {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
   }
   static let scale: CGFloat = 2
+  /** The window in points: 1440 x 900 at 2x is 2880 x 1800, the Mac App Store's largest screenshot size. */
+  static let w: CGFloat = 1440, h: CGFloat = 900
   /** One view drawn alone, through its layers (SwiftUI draws into layers, which cacheDisplay misses). */
   @MainActor static func image(_ v: NSView) -> CGImage? {
     let size = v.bounds.size
@@ -199,41 +201,64 @@ enum MacShot {
     return ctx.makeImage()
   }
   /**
-   * The window as one picture. Drawn whole, the scrolled content behind the glass of macOS 26 (portal and backdrop
-   * layers, composed by the window server) stays empty, and the glass comes out as black or white; so the page's
-   * paper, the scrolled content and the sidebar are drawn each on its own where they lie, the title bar on top.
-   * A drawing, not a photograph: the glass of the bars is missing.
+   * The window as one picture, drawn through its layers. What the window server composes is left out or stood in
+   * for, since a layer drawn by itself shows none of it: the scroll edge's blur and the backdrops are hidden for the
+   * picture; Liquid Glass (a white shape whose filter takes what lies behind it) is the sidebar's own paper where it
+   * holds the sidebar, and a capsule of the bars' tint behind the toolbar's items. Put back as it was afterwards.
    */
   @MainActor static func composed(_ frame: NSView) -> CGImage? {
     let size = frame.bounds.size
-    guard let base = image(frame), let space = CGColorSpace(name: CGColorSpace.sRGB),
-          let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
-                              space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-    ctx.scaleBy(x: scale, y: scale)
-    // the page's paper under everything (Theme.swift Ink.bg); the window's own layers leave it clear
     let dark = frame.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-    ctx.setFillColor(dark ? CGColor(srgbRed: 0x0e / 255, green: 0x13 / 255, blue: 0x11 / 255, alpha: 1) : CGColor(gray: 1, alpha: 1))
-    ctx.fill(frame.bounds)
-    var docs: [NSView] = [], sidebars: [NSView] = []
+    var hiddenViews: [NSView] = [], hiddenLayers: [CALayer] = [], tinted: [(CALayer, CGColor?)] = [], added: [CALayer] = []
+    let effects: Set<String> = ["BackdropView", "PocketBlur", "NSHardPocketView", "LuminanceAdjustment", "PortalView"]
+    let paper = dark ? CGColor(srgbRed: 0x0e / 255, green: 0x13 / 255, blue: 0x11 / 255, alpha: 1) : CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
     func walk(_ v: NSView) {
       let t = String(describing: type(of: v))
-      if t.hasPrefix("DocumentView") { docs.append(v) }
-      if t.contains("ColumnView") && t.contains("Sidebar") { sidebars.append(v) }
+      if effects.contains(t), !v.isHidden { v.isHidden = true; hiddenViews.append(v) }
+      // the scroll edge under the bars: what scrolls under them fades out there; drawn as the page's paper
+      if t == "NSScrollPocket", let l = v.layer {
+        tinted.append((l, l.backgroundColor)); l.backgroundColor = paper
+        for sub in v.subviews where !sub.isHidden { sub.isHidden = true; hiddenViews.append(sub) }
+        // and fades out beyond it, as the soft edge does (into the page: down from a bar at the top, up from one below)
+        let fade = CAGradientLayer(), reach: CGFloat = 44
+        let atTop = v.convert(v.bounds, to: nil).midY > size.height / 2
+        let clear = paper.copy(alpha: 0) ?? paper
+        fade.colors = [paper, clear]
+        // (a layer's y grows upwards in an unflipped view, downwards in a flipped one)
+        let below = atTop != v.isFlipped
+        fade.frame = CGRect(x: 0, y: below ? -reach : l.bounds.height, width: l.bounds.width, height: reach)
+        fade.startPoint = CGPoint(x: 0.5, y: below ? 1 : 0); fade.endPoint = CGPoint(x: 0.5, y: below ? 0 : 1)
+        l.masksToBounds = false
+        l.addSublayer(fade); added.append(fade)
+        return
+      }
       v.subviews.forEach(walk)
     }
     walk(frame)
-    func put(_ v: NSView, clip: NSRect) {
-      guard let img = image(v) else { return }
-      let r = v.convert(v.bounds, to: nil)
-      ctx.saveGState(); ctx.clip(to: clip); ctx.draw(img, in: r); ctx.restoreGState()
+    // the glass shapes: a layer with a filter, white, with round corners
+    let capsule = dark ? CGColor(srgbRed: 0.20, green: 0.23, blue: 0.22, alpha: 1) : CGColor(srgbRed: 0.97, green: 0.97, blue: 0.96, alpha: 1)
+    func glass(_ l: CALayer) {
+      if (l.filters?.isEmpty == false), l.cornerRadius > 0, let bg = l.backgroundColor, bg.alpha > 0.9, (bg.components?.first ?? 0) > 0.9 {
+        if l.bounds.width > 200 && l.bounds.height > 200 { if !l.isHidden { l.isHidden = true; hiddenLayers.append(l) } }
+        else { tinted.append((l, l.backgroundColor)); l.backgroundColor = capsule }
+      }
+      l.sublayers?.forEach(glass)
     }
-    for d in docs { put(d, clip: d.convert(d.visibleRect, to: nil)) }
-    for s in sidebars { put(s, clip: s.convert(s.bounds, to: nil)) }
-    // the title bar's strip (the window's buttons, the toolbar's items) over the scrolled content and the sidebar
-    let bar: CGFloat = 52
-    if let strip = base.cropping(to: CGRect(x: 0, y: 0, width: size.width * scale, height: bar * scale)) {
-      ctx.draw(strip, in: CGRect(x: 0, y: size.height - bar, width: size.width, height: bar))
+    if let root = frame.layer { glass(root) }
+    defer {
+      hiddenViews.forEach { $0.isHidden = false }
+      hiddenLayers.forEach { $0.isHidden = false }
+      tinted.forEach { $0.0.backgroundColor = $0.1 }
+      added.forEach { $0.removeFromSuperlayer() }
     }
+    frame.layoutSubtreeIfNeeded(); frame.displayIfNeeded()
+    guard let drawn = image(frame), let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8, bytesPerRow: 0,
+                              space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+    // the page's paper under everything (Theme.swift Ink.bg); no alpha in the picture (App Store Connect refuses it)
+    ctx.setFillColor(paper)
+    ctx.fill(CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale))
+    ctx.draw(drawn, in: CGRect(x: 0, y: 0, width: size.width * scale, height: size.height * scale))
     return ctx.makeImage()
   }
   @MainActor private static func write(_ v: NSView, to url: URL) { if let i = image(v) { save(i, to: url) } }

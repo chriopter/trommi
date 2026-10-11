@@ -58,7 +58,9 @@ extension NSColor {
 enum MacNoBar { case navigationBar }
 
 extension View {
-  func toolbar(_ visibility: Visibility, for bar: MacNoBar) -> some View { self }
+  /** Hidden where the iPhone hides its bar: the screen draws its own row (the back circle), so the window's toolbar
+   *  shows no second back button. */
+  func toolbar(_ visibility: Visibility, for bar: MacNoBar) -> some View { self.navigationBarBackButtonHidden(visibility == .hidden) }
   func toolbarBackground(_ visibility: Visibility, for bar: MacNoBar) -> some View { self }
   /** A cover over the whole screen on the iPhone: a sheet of a good size on a Mac. */
   func fullScreenCover<Item: Identifiable, Content: View>(item: Binding<Item?>, onDismiss: (() -> Void)? = nil,

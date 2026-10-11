@@ -78,6 +78,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.trommi.mac
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
+        # Apple silicon only: the Rust core is built for aarch64-apple-darwin (lib/macos); an Intel slice would need
+        # x86_64-apple-darwin and lipo
+        ARCHS: arm64
         CODE_SIGN_STYLE: Automatic
         # The store's (push, associated domains: need a profile). An unsigned build on a Mac sets
         # TROMMI_MAC_ENTITLEMENTS=../Mac/TrommiMac.dev.entitlements (sandbox and network only) on the command line.
@@ -86,7 +89,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: ../Mac/Info.plist
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
   # The Share Extension (the package's TrommiShare library; Sources/TrommiShare): Trommi in the share sheet. It shares
   # the App Group group.com.trommi.ios with the app (the encrypted inbox, ShareInbox), nothing else.

@@ -192,7 +192,7 @@ jobs:
           part core 'tests/core/|tests/src/|tests/bindings/|tests/Cargo\.toml$|spec/vectors/|spec/account-vectors\.json$|THIRD-PARTY\.md$|\.github/scripts/third_party\.mjs$'
           part web 'app/web/|tests/web/|connector/tools\.json$|connector/prompt\.md$|demo/|\.node-version$|\.github/scripts/web_release\.mjs$|\.github/scripts/release_notes\.sh$|\.github/tools/wrangler/|\.github/workflows/deploy_web\.yml$' web
           part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connector/|tests/Cargo\.toml$|\.github/workflows/release\.yml$' connector
-          part ios 'app/ios/|tests/ios/|\.github/scripts/ios_(testflight\.sh|archive\.sh|entitlements\.py|release_gate\.sh)$|\.github/workflows/deploy_ios\.yml$' ios
+          part ios 'app/ios/|tests/ios/|\.github/scripts/(ios_(testflight\.sh|archive\.sh|entitlements\.py|release_gate\.sh)|mac_testflight\.sh)$|\.github/workflows/deploy_ios\.yml$' ios
           part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/deploy_hub\.yml$|\.github/scripts/hub_compat\.sh$' 'hub|updater'
 
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
@@ -580,13 +580,15 @@ jobs:
       # nothing goes to the network, no key is needed.
       - name: App Store Connect steps (fixtures)
         run: python3 -B -m unittest discover -s tests/ios/asc -v
-      # What deploy_ios.yml takes: the iOS library and UniFFI's two files, with their hashes and the commit.
+      # What deploy_ios.yml takes: the iOS library, the Mac's (this runner's host build, Apple silicon) and UniFFI's two
+      # files, with their hashes and the commit.
       - name: Put the release together
         run: |
           set -eu
           package=core/swift/TrommiCoreRust
-          mkdir -p out/lib/ios out/Sources/TrommiCoreFFI/include out/Sources/TrommiCoreRust
+          mkdir -p out/lib/ios out/lib/macos out/Sources/TrommiCoreFFI/include out/Sources/TrommiCoreRust
           cp "$package/lib/ios/libtrommi_core_ffi.a" out/lib/ios/
+          cp "$package/lib/macos/libtrommi_core_ffi.a" out/lib/macos/
           cp "$package/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" out/Sources/TrommiCoreFFI/include/
           cp "$package/Sources/TrommiCoreRust/TrommiCoreRust.swift" out/Sources/TrommiCoreRust/
           printf 'commit: %s\n' "$GITHUB_SHA" > out/build.txt

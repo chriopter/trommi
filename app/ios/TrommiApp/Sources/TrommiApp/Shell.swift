@@ -194,6 +194,10 @@ extension View {
       }
       .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
       .background { PopGesture().frame(width: 0, height: 0).accessibilityHidden(true) }
+      #if os(macOS)
+      // the row names the screen: no window title beside it
+      .toolbar(removing: .title)
+      #endif
   }
   /** A round glass button of the top row (44 pt, as the place pill is tall). */
   func pillCircle() -> some View {
