@@ -2094,6 +2094,11 @@ impl Conn {
     /// answers with the six emoji of the check code as soon as the inviter's app revealed them. The join goes on
     /// in this process: once the human confirmed the emoji, the session is online and its tools are announced.
     async fn connect(self: Arc<Self>, args: &Value) -> std::result::Result<String, String> {
+        // Online already: the board tools are listed before the join task has stored its outcome, so this is
+        // checked first, not only once no join is running.
+        if self.member.phase() == "ready" {
+            return Err("This session is connected to Trommi already; no link is needed. If the board tools are not listed, list the tools again.".to_string());
+        }
         let running = self
             .connecting
             .lock()
@@ -2104,11 +2109,7 @@ impl Conn {
             Some(run) => run,
             None => {
                 if !self.unconnected() {
-                    return Err(if self.member.phase() == "ready" {
-                        "This session is connected to Trommi already; no link is needed. If the board tools are not listed, list the tools again.".to_string()
-                    } else {
-                        self.not_ready()
-                    });
+                    return Err(self.not_ready());
                 }
                 let link = args
                     .get("link")
