@@ -162,6 +162,16 @@ h2 { font-size: clamp(1.7rem, 4vw, 2.4rem); max-width: 20ch; }
 .cmd { margin-top: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); overflow-x: auto; font-size: .86rem; line-height: 1.5; white-space: pre; color: var(--fg); }
 .cmd i { color: var(--faint); font-style: normal; }
 
+/* ---- the apps: the laptop and the iPhone under the opening, then four phones (pictures with their own transparent
+   margin and shadow; width and height on every <img> keep the page from jumping while they load) ---- */
+.hero-shot { margin-top: clamp(28px, 5vw, 56px); max-width: 1100px; }
+.hero-shot img { width: 100%; }
+.shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(12px, 2.4vw, 28px); }
+.shots figure { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.shots img { width: 100%; max-width: 300px; }
+.shots figcaption { max-width: 26ch; margin-top: 6px; color: var(--muted); font-size: .95rem; line-height: 1.45; }
+.shots figcaption b { display: block; margin-bottom: 2px; color: var(--fg); font: 700 1.2rem/1.2 var(--display); letter-spacing: -.01em; }
+
 /* ---- the foot: the name and its line, then one row of links ---- */
 .foot { margin-top: clamp(72px, 11vw, 130px); border-top: 1px solid var(--line-strong); color: var(--muted); font-size: .92rem; }
 .foot-in { display: flex; flex-wrap: wrap; align-items: center; gap: 22px clamp(40px, 8vw, 96px); padding-block: 34px 48px; }
@@ -189,6 +199,7 @@ h2 { font-size: clamp(1.7rem, 4vw, 2.4rem); max-width: 20ch; }
 /* ---- narrow windows ---- */
 @media (max-width: 860px) {
   .tiles { grid-template-columns: 1fr; gap: 12px; }
+  .shots { grid-template-columns: repeat(2, 1fr); row-gap: 28px; }
   .lines > div { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
