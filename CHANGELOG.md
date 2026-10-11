@@ -44,6 +44,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Status lines under a chat: the time short with a small clock after it ("4m"); on the phone one line each, the title and the time, and a tap shows the detail and the way to its question (iPhone and web).
 - Logging in on the web checks only your account's own history before it opens; each conversation is checked
   right after, in the background.
+- Long chats open on the last day and load further back as you scroll up; this browser keeps only the newest
+  500 messages of each chat and reads older ones again when needed.
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
 - iPhone: big boards stay smooth while news comes in: a change of the board costs a fraction of before, a long chat
