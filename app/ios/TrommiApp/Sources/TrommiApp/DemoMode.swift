@@ -96,6 +96,7 @@ extension BoardModel {
     case "stacks": path = [.off]
     case "scribble-board": path = [.scribble]
     case "logout": path = [.settings("account")]
+    case "whats-new": path = [.settings("whats-new")]
     default: break
     }
     // the moment demo.mjs clicks once the page is ready (demoState), where the app has the same

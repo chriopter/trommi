@@ -4,7 +4,8 @@
 //                          worker (proof-worker-<hash>.mjs, for the "MLS proof" screen), all named by
 //                          their content; and the Rust core's trommi-core-<hash>.wasm beside them ("the Rust core"
 //                          below; its scripts are in the worker's bundle)
-//   gen/vendor/            tools-reference.mjs: the connector's tools and events as data, for the help page (the dev
+//   gen/vendor/            tools-reference.mjs: the connector's tools and events as data, for the help page; changelog.mjs
+//                          and changelog-latest.mjs: CHANGELOG.md as data, for What's new (the dev
 //                          server, bundle: false, also serves the core here, copied flat from core/,
 //                          with the Rust core's scripts and its trommi_core_wasm_bg.wasm)
 //   gen/bundle.<hash>.css  the stylesheets of index.html as one file (their <link>s become one)
@@ -196,8 +197,32 @@ function vendorFiles(repo, { sourcemap = false } = {}) {
   }
   out['tools-reference.mjs'] = toolsReference(repo)
   out['demo-screens.mjs'] = `// Written by app/web/dev/build.mjs from demo/data/screens.json. Do not edit: edit that file.\nexport const STATES = ${JSON.stringify(demoData(repo).states)}\n`
+  // What's new (the menu's row and its page, news.mjs): CHANGELOG.md at the repository's root, read here, never fetched.
+  // The row's dot needs only the newest day (changelog-latest.mjs, in the first bundle); the page takes the rest.
+  const days = parseChangelog(fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8'))
+  out['changelog.mjs'] = `// Written by app/web/dev/build.mjs from CHANGELOG.md. Do not edit: edit that file.\nexport const DAYS = ${JSON.stringify(days)}\n`
+  out['changelog-latest.mjs'] = `// Written by app/web/dev/build.mjs from CHANGELOG.md. Do not edit: edit that file.\nexport const LATEST = ${JSON.stringify(days[0]?.day ?? '')}\n`
   out['core-version.mjs'] = `// Written by app/web/dev/build.mjs from app/web/core/. Do not edit: edit the core.\nexport const CORE_COMMIT = ${JSON.stringify(commitOf(repo))}\n`
   return out
+}
+/** CHANGELOG.md as data: [{ day, releases, groups: [{ kind, items: [text] }] }], newest first. A day is a "## " heading
+ *  ("11 October 2026 (v109 – v115)": the releases in brackets), a group a line "**New**" (Better, Fixed), an item a
+ *  line "- …" (a line indented under it goes on with it). The words before the first day are the file's own. */
+export function parseChangelog(text) {
+  const days = []
+  let group = null
+  for (const line of String(text).split(/\r?\n/)) {
+    const head = /^## +(.+?)(?: +\(([^)]*)\))? *$/.exec(line)
+    if (head) { days.push({ day: head[1], releases: head[2] ?? '', groups: [] }); group = null; continue }
+    const day = days.at(-1)
+    if (!day) continue
+    const kind = /^\*\*([^*]+)\*\* *$/.exec(line)
+    if (kind) { group = { kind: kind[1].trim(), items: [] }; day.groups.push(group); continue }
+    const item = /^[-*] +(.+)$/.exec(line)
+    if (item) { if (!group) { group = { kind: '', items: [] }; day.groups.push(group) } group.items.push(item[1].trim()); continue }
+    if (/^\s+\S/.test(line) && group?.items.length) group.items[group.items.length - 1] += ` ${line.trim()}`
+  }
+  return days
 }
 function commitOf(repo) {
   const env = process.env.WORKERS_CI_COMMIT_SHA || process.env.GITHUB_SHA

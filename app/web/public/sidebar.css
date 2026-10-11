@@ -1148,3 +1148,9 @@ html body .topbar #brand-doors .menu-desks:not(:has(.is-all)) .menu-desk-row:fir
 #agents .order-ghost { position: fixed; z-index: 60; margin: 0; pointer-events: none; rotate: -1.4deg; opacity: .93; border-radius: var(--r-md); background: var(--surface); box-shadow: 0 0 0 1px var(--line-strong), 0 14px 24px -14px rgb(20 30 25 / .45); }
 #agents .order-ghost[hidden] { display: flex; }
 @media (prefers-reduced-motion: reduce) { #agents .order-ghost { rotate: 0deg; } }
+/* What's new: its row, with a dot while the newest day is unseen on this device */
+html body .topbar #brand-doors .menu-news-row { display: flex; align-items: center; gap: 10px; width: 100%; color: var(--fg); text-decoration: none; }
+.menu-news-dot { width: 8px; height: 8px; margin-left: auto; border-radius: 50%; background: var(--urg-critical); }
+.menu-news-dot[hidden] { display: none; }
+@media (max-width: 860px) { html body .topbar #brand-doors .menu-news-row { order: 3; min-height: 44px; } }
+html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width: 8px; height: 8px; min-height: 0; padding: 0; margin: 0 4px 0 auto; }
