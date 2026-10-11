@@ -1048,7 +1048,8 @@ public struct Store {
         keyTendedAt = nowMs()
         _ = try? await serial { [self] in
           await self.tendKeys()
-          guard self.pastDue else { return }
+          // (the stored flag, not only `pastDue`: a pass that failed half way left it set)
+          guard self.pastDue || self.record.past?.readBack == true else { return }
           var report = SyncReport(), ch = Change()
           defer { self.board.project(ch); self.emit(ch) }
           try await self.tendPast(&report, &ch)
