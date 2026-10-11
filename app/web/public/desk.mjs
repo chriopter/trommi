@@ -1,7 +1,7 @@
 // The Desk: every open question as a row, in the hub's fixed order, and at its foot the end list
 // (Off your mind) and the Artifacts. The markup is the one app.css and desk.css style. A row never unfolds: its text is a link to
 // the card's own page, its tiles are forms that answer with one tap.
-import { BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, linkOf, stream, flipOut, walkOf } from './app.mjs'
+import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
 import { lastUndo, undoLast } from './ui.mjs'
 import { Controller, PLUS, SETTLED, WORDS, advisedLabels, agoSpan, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
 // ---- the infos: reports, notes, nothing to decide ----
@@ -175,19 +175,6 @@ ${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}
 //           of his (its session withdrew it; the hub takes nothing back there, so the line has no way back)
 // A permission card is never listed (the hub closes it by itself). The newest lies on top of each.
 const cardPath = (card, base) => `${base}/card/${encodeURIComponent(card.number ?? card.id)}`
-const answeredBy = c => (c.kind === 'decision' && (c.choice != null || c.trusted)) || (c.kind === 'info' && Boolean(c.read))
-
-/** The place a card lies at the foot of the Desk: 'later' | 'works' | 'done' | 'trash', or null (it is an open row, or never listed). */
-const ACTING_MS = 6 * 60 * 60 * 1000   // an answered card counts as worked on by its session for so long
-/** ctx: { now, online(agentId) }: the time, and whether a session is online (both only for a "decided" card). */
-function stackOf(card, { now = Date.now(), online = () => true } = {}) {
-  if (card.kind === 'permission') return card.status === 'open' && card.snoozed_until ? 'later' : null
-  if (card.status === 'open') return card.snoozed_until ? 'later' : card.with_agent ? 'works' : null
-  if (card.status === 'shredded') return 'trash'
-  if (card.status === 'decided') return !answeredBy(card) ? null : now - (card.decided ?? 0) < ACTING_MS && (online(card.agent) || card.heard === false) ? 'works' : 'done'
-  if (card.status === 'done') return answeredBy(card) ? 'done' : 'trash'
-  return null
-}
 
 /** The four places with their cards, the newest first: { later, revising, acting, done, trash }. Once per model;
  *  the closed cards' places are kept while no card changed, the sessions are as online as they were and no answered
@@ -199,8 +186,7 @@ function stackCards(model) {
   // (A card lies where its session stands now: the model's rule, app.mjs boardModel.)
   const mine = c => model.onDesk(byAgent.get(c.agent))
   const newest = (cards, at) => [...cards].sort((a, b) => (at(b) ?? 0) - (at(a) ?? 0))
-  // (A session that is cut off still runs: what it was given, or was to be given, stays with it.)
-  const online = id => Boolean(byAgent.get(id)?.online) || linkOf(byAgent.get(id))?.state === 'cut'
+  const online = runsOf(model)
   const now = Date.now()
   const ctx = { now, online }
   const key = `stacks ${model.desk} ${model.everyone.map(a => `${a.id}:${model.onDesk(a) ? 1 : 0}${online(a.id) ? 1 : 0}`)}`
@@ -234,10 +220,10 @@ function workItems(model) {
   const working = (model.state.tasks ?? []).filter(t => t.state === 'working')
   return [...cards.revising, ...cards.acting].map(card => {
     const sender = model.byAgent.get(card.agent)
-    const line = working.find(t => t.card_id === card.id) ?? working.filter(t => t.agent === card.agent && !t.card_id).sort((a, b) => b.updated - a.updated)[0] ?? null
-    return { card, sender, line, at: (card.status === 'open' ? card.with_agent : card.decided) ?? 0 }
+    return { card, sender, line: workLine(card, working), at: workAt(card) }
   }).filter(i => i.sender).sort((a, b) => (b.line?.updated ?? b.at) - (a.line?.updated ?? a.at))
 }
+
 function withAgents() {
   // (one list: the work stands at the top of Off your mind, endList; this keeps the stream's place)
   return html`<section id="desk-ip" class="tail" hidden></section>`

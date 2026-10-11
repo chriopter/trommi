@@ -36,6 +36,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Settings → Account no longer has the "Advanced" block with the old account address; the old recovery-code screen (/recover) is gone. Room, key epoch and hub are shown under Security Info.
 - Codex: the board tools are there from the start, Trommi tool calls no longer ask for approval one by one, and the texts say to restart Codex (not /mcp) when needed.
 - A Codex session between turns shows as "on its next turn", never as gone or not listening.
+- In a conversation, a running status line opens the card it works on, the same card its row on the Desk opens
+  (web and iPhone).
 
 **Fixed**
 - Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the

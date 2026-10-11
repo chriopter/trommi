@@ -492,6 +492,36 @@ export function cardsMemo(cards, key, fn) {
   return m.get(key)
 }
 
+// ---- what lies with the agents: the Desk's stacks (desk.mjs) and a session's status lines (session.mjs) ----
+const answeredBy = c => (c.kind === 'decision' && (c.choice != null || c.trusted)) || (c.kind === 'info' && Boolean(c.read))
+
+/** The place a card lies at the foot of the Desk: 'later' | 'works' | 'done' | 'trash', or null (it is an open row, or never listed). */
+export const ACTING_MS = 6 * 60 * 60 * 1000   // an answered card counts as worked on by its session for so long
+/** ctx: { now, online(agentId) }: the time, and whether a session is online (both only for a "decided" card). */
+export function stackOf(card, { now = Date.now(), online = () => true } = {}) {
+  if (card.kind === 'permission') return card.status === 'open' && card.snoozed_until ? 'later' : null
+  if (card.status === 'open') return card.snoozed_until ? 'later' : card.with_agent ? 'works' : null
+  if (card.status === 'shredded') return 'trash'
+  if (card.status === 'decided') return !answeredBy(card) ? null : now - (card.decided ?? 0) < ACTING_MS && (online(card.agent) || card.heard === false) ? 'works' : 'done'
+  if (card.status === 'done') return answeredBy(card) ? 'done' : 'trash'
+  return null
+}
+// (A session that is cut off still runs: what it was given, or was to be given, stays with it.)
+export const runsOf = model => id => Boolean(model.byAgent.get(id)?.online) || linkOf(model.byAgent.get(id))?.state === 'cut'
+/** The status line a card with its session shows: the working line that names it, else the session's newest working
+ *  line that names no card. */
+export const workLine = (card, working) => working.find(t => t.card_id === card.id) ?? working.filter(t => t.agent === card.agent && !t.card_id).sort((a, b) => b.updated - a.updated)[0] ?? null
+export const workAt = card => (card.status === 'open' ? card.with_agent : card.decided) ?? 0
+/** The card a status line of a session stands for, by the Desk's own pairing (workItems): the card it names, else the
+ *  newest of the session's cards with it ("Off your mind") whose line it is; null for none. Clicking the line in the
+ *  conversation then opens the same card a click on its Desk row opens. cards: the session's cards; tasks: its lines. */
+export function lineCard(t, model, cards, tasks) {
+  if (t.card_id) return model.byCard.get(t.card_id) ?? null
+  if (t.state !== 'working') return null
+  const ctx = { now: Date.now(), online: runsOf(model) }, working = tasks.filter(x => x.state === 'working')
+  return cards.filter(c => stackOf(c, ctx) === 'works' && workLine(c, working) === t).sort((a, b) => workAt(b) - workAt(a))[0] ?? null
+}
+
 /** The same for what depends only on the closed cards (answered, done, shredded): kept while no closed card changed,
  *  so a new open card or an answer to one does not sort the thousands of closed ones again (state.closedGen). */
 let closedKept = { gen: -1, m: new Map() }

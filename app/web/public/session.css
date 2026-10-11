@@ -759,3 +759,4 @@ a.files-where:hover span { text-decoration: underline; }
 #session .composer > .send { order: 3; width: 38px; height: 38px; border-radius: var(--r-md); background: var(--accent); color: var(--accent-fg); }
 #session .composer > .send:disabled { background: var(--accent); color: var(--accent-fg); opacity: .45; }
 @media (max-width: 860px) { #session .composer > :is(.composer-clip, .send) { width: 44px; height: 44px; } #session .composer { border-radius: 14px; } }
+a.status-line:hover b, a.status-line:focus-visible b { text-decoration: underline; text-underline-offset: 3px; }
