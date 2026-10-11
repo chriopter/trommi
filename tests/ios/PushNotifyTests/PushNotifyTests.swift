@@ -1,6 +1,6 @@
 // The Notification Service Extension's logic with a fake core and a fake Keychain: the context's round trip, a push
-// that opens, and every push that must leave the hub's fixed text (nil here). The extension shows no content: the
-// context holds no content key, and nothing is fetched.
+// that opens, every push that must leave the hub's fixed text (nil here), the read-only keys and the card's title
+// they open, and every case that must leave the title out.
 import XCTest
 @testable import PushNotify
 
@@ -26,6 +26,17 @@ struct FakeCore: NotifyCore {
     return ApnsPush(roomId: bytes(o["room"]), change: (o["change"] as! NSNumber).uint64Value, urgency: (o["urgency"] as! NSNumber).uint8Value, ticket: bytes(o["ticket"]))
   }
   private func bytes(_ v: Any?) -> [UInt8] { ((v as? [NSNumber]) ?? []).map(\.uint8Value) }
+
+  /** A "sealed" envelope: JSON naming its group, epoch, key, kind and payload. It opens only under that key of that group and epoch. */
+  static func sealEnvelope(group: [UInt8], epoch: UInt64, key: [UInt8], card: Bool = true, push: Bool = true, payload: String) -> [UInt8] {
+    Array(try! JSONSerialization.data(withJSONObject: ["group": NotifyText.hex(group), "epoch": epoch, "key": NotifyText.b64u(key), "card": card, "push": push, "payload": payload]))
+  }
+  func openEnvelope(keys: [NotifyKey], envelope: [UInt8]) throws -> NotifyEnvelope {
+    guard !broken, let o = try JSONSerialization.jsonObject(with: Data(envelope)) as? [String: Any],
+          let g = o["group"] as? String, let epoch = (o["epoch"] as? NSNumber)?.uint64Value,
+          let k = keys.first(where: { $0.group == g && $0.epoch == epoch }), k.key == o["key"] as? String else { throw Refused() }
+    return NotifyEnvelope(group: NotifyText.unhex(g)!, epoch: epoch, isCard: o["card"] as! Bool, push: o["push"] as! Bool, payload: Array((o["payload"] as! String).utf8))
+  }
 
   /** A "sealed" Live Activity block: the key, then the two counts as text. */
   static func sealLive(key: [UInt8], _ working: UInt64, _ waiting: UInt64) -> [UInt8] { key + Array("\(working),\(waiting)".utf8) }
@@ -261,5 +272,133 @@ final class PushNotifyTests: XCTestCase {
     try s.write(NotifyContext(pushKey: pushKey, rooms: ["ab"], hub: "https://hub.trommi.com", client: "ios/1", cursor: 7))
     XCTAssertEqual(s.read()?.cursor, 7)
     XCTAssertEqual(s.read()?.hub, "https://hub.trommi.com")
+  }
+
+  // ---- the read-only keys and the card's title ----
+
+  lazy var session = random(16)
+  lazy var group = roomId + session
+  lazy var contentKey = random(32)
+  func keySet(epoch: UInt64 = 3, room: [UInt8]? = nil) -> NotifyKeySet {
+    NotifyKeySet(room: NotifyText.hex(room ?? roomId), keys: [NotifyKey(group: group, epoch: epoch, key: contentKey)])
+  }
+  func cardBody(_ title: String, schema: Int = 2) -> String {
+    String(decoding: try! JSONSerialization.data(withJSONObject: ["schema_version": schema, "card_type": "decision", "title": title]), as: UTF8.self)
+  }
+  /** A page of the hub with the envelope of `change` among others. */
+  func page(after: UInt64, change: UInt64, envelope: [UInt8], at: UInt64) -> Data {
+    let items = (after + 1...change).map { n -> [String: Any] in
+      ["kind": "envelope", "change": n, "envelope": NotifyText.b64u(n == at ? envelope : Array("other \(n)".utf8))]
+    }
+    return try! JSONSerialization.data(withJSONObject: ["items": items, "change": change, "more": false])
+  }
+  func aheadContext() -> NotifyContext {
+    var c = context(); c.hub = "https://hub.example"; c.client = "ios/1"; c.cursor = 10; return c
+  }
+
+  /// The keys round-trip through their own item; one of another version is not read; they never print.
+  func testTheKeySetRoundTripsAndNeverPrints() throws {
+    let storage = MemoryStorage()
+    let store = NotifyKeyStore(storage: storage)
+    XCTAssertNil(store.read())
+    try store.write(keySet())
+    XCTAssertEqual(store.read(), keySet())
+    XCTAssertEqual(store.read()?.keys.first?.keyBytes, contentKey)
+    XCTAssertEqual(store.read()?.keys.first?.groupBytes, group)
+    XCTAssertFalse("\(keySet())".contains(keySet().keys[0].key))
+    storage.bytes = Array(#"{"version":2,"room":"00","keys":[]}"#.utf8)
+    XCTAssertNil(store.read())
+    store.clear()
+    XCTAssertNil(storage.bytes)
+    // the context never carries a key
+    let ctx = MemoryStorage()
+    try NotifyStore(storage: ctx).write(aheadContext())
+    XCTAssertFalse(String(decoding: ctx.bytes!, as: UTF8.self).contains(NotifyText.b64u(contentKey)))
+  }
+
+  /// The keys' access group is the team's own, never an App Group, and only that one is read.
+  func testTheKeysAccessGroup() {
+    XCTAssertEqual(NotifyKeyGroup.of(appGroup: "NL9YA3V25N.com.trommi.ios"), "NL9YA3V25N.com.trommi.ios.notify-keys")
+    XCTAssertEqual(NotifyKeyGroup.of(appGroup: "NL9YA3V25N.XTL-70CB783D.com.trommi.ios"), "NL9YA3V25N.com.trommi.ios.notify-keys")
+    XCTAssertNil(NotifyKeyGroup.of(appGroup: "group.com.trommi.ios"))
+    XCTAssertTrue(NotifyKeyGroup.isOurs("NL9YA3V25N.com.trommi.ios.notify-keys"))
+    XCTAssertFalse(NotifyKeyGroup.isOurs("group.com.trommi.ios.notify-keys"))
+    XCTAssertFalse(NotifyKeyGroup.isOurs("NL9YA3V25N.com.trommi.ios"))
+    XCTAssertFalse(NotifyKeyGroup.isOurs("NL9YA3V25N.evil.com.trommi.ios.notify-keys"))
+  }
+
+  /// The card that rang, read ahead into the store: its title is shown, one line, cut when long.
+  func testTheTitleOfTheCardThatRangFromAPageKept() async {
+    let store = tempStore()
+    defer { store.clear() }
+    let push = ApnsPush(roomId: roomId, change: 15, urgency: 1, ticket: ticket)
+    let env = FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, payload: cardBody("  Ship\nit?  "))
+    XCTAssertTrue(store.put(after: 10, change: 20, page: page(after: 10, change: 20, envelope: env, at: 15)))
+    var asked = 0
+    let title = await NotifyTitle.find(push, context: aheadContext(), keys: keySet(), store: store, core: FakeCore(), get: { _, _ in asked += 1; return nil })
+    XCTAssertEqual(title, "Ship it?")
+    XCTAssertEqual(asked, 0, "the page kept holds it: nothing is asked of the hub")
+    XCTAssertNotNil(store.page(holding: 15))
+    XCTAssertNil(store.page(holding: 10))
+    XCTAssertNil(store.page(holding: 21))
+    // cut at the bound
+    let long = String(repeating: "x", count: 300)
+    let opened = NotifyEnvelope(group: group, epoch: 3, isCard: true, push: true, payload: Array(cardBody(long).utf8))
+    XCTAssertEqual(NotifyTitle.title(opened, room: roomId)?.count, NotifyTitle.maxLength)
+    XCTAssertEqual(NotifyTitle.title(opened, room: roomId)?.last, "…")
+  }
+
+  /// Not kept (the store full, the app already past it): that one change is read from the hub, the ticket in a header.
+  func testTheChangeThatRangIsReadAloneWhenNoPageHoldsIt() async throws {
+    let push = ApnsPush(roomId: roomId, change: 42, urgency: 2, ticket: ticket)
+    let env = FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, payload: cardBody("Deploy now?"))
+    var asked = [(URL, [String: String])]()
+    let title = await NotifyTitle.find(push, context: aheadContext(), keys: keySet(), store: nil, core: FakeCore(), get: { url, headers in
+      asked.append((url, headers)); return self.page(after: 41, change: 42, envelope: env, at: 42)
+    })
+    XCTAssertEqual(title, "Deploy now?")
+    XCTAssertEqual(asked.count, 1)
+    let url = try XCTUnwrap(asked.first?.0)
+    XCTAssertEqual(url.path, "/v1/push-changes")
+    XCTAssertTrue(url.query!.contains("after=41") && url.query!.contains("limit=1"))
+    XCTAssertFalse(url.query!.contains("ticket"))
+    XCTAssertEqual(asked.first?.1["trommi-ticket"], NotifyText.b64u(ticket))
+  }
+
+  /// Every case that keeps the neutral title: no keys, keys of another room, the group moved to an epoch the app has
+  /// not written yet, a page without the change, no ticket, a core that refuses, not a card, no push, another room's
+  /// group, a newer schema, an empty title.
+  func testEverythingElseKeepsTheNeutralTitle() async {
+    let push = ApnsPush(roomId: roomId, change: 42, urgency: 1, ticket: ticket)
+    let good = FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, payload: cardBody("Ship it?"))
+    func find(_ env: [UInt8], keys: NotifyKeySet? = nil, push p: ApnsPush? = nil, core: FakeCore = FakeCore(), at: UInt64 = 42) async -> String? {
+      await NotifyTitle.find(p ?? push, context: aheadContext(), keys: keys ?? keySet(), store: nil, core: core,
+                             get: { _, _ in self.page(after: 41, change: 42, envelope: env, at: at) })
+    }
+    let sanity = await find(good)
+    XCTAssertEqual(sanity, "Ship it?")
+    let noKeys = await NotifyTitle.find(push, context: aheadContext(), keys: nil, store: nil, core: FakeCore(), get: { _, _ in self.page(after: 41, change: 42, envelope: good, at: 42) })
+    let emptyKeys = await find(good, keys: NotifyKeySet(room: NotifyText.hex(roomId), keys: []))
+    let otherRoom = await find(good, keys: keySet(room: random(32)))
+    let newEpoch = await find(FakeCore.sealEnvelope(group: group, epoch: 4, key: random(32), payload: cardBody("Ship it?")))
+    let notInPage = await find(good, at: 41)
+    let noTicket = await find(good, push: ApnsPush(roomId: roomId, change: 42, urgency: 1, ticket: []))
+    let refused = await find(good, core: FakeCore(broken: true))
+    let notCard = await find(FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, card: false, payload: cardBody("Ship it?")))
+    let noPush = await find(FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, push: false, payload: cardBody("Ship it?")))
+    let newer = await find(FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, payload: cardBody("Ship it?", schema: 3)))
+    let blank = await find(FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, payload: cardBody(" \n ")))
+    let notJSON = await find(FakeCore.sealEnvelope(group: group, epoch: 3, key: contentKey, payload: "not json"))
+    for (name, title) in [("no keys", noKeys), ("empty keys", emptyKeys), ("other room", otherRoom), ("new epoch", newEpoch),
+                          ("not in page", notInPage), ("no ticket", noTicket), ("refused", refused), ("not a card", notCard),
+                          ("no push", noPush), ("newer schema", newer), ("blank", blank), ("not JSON", notJSON)] {
+      XCTAssertNil(title, name)
+    }
+    // a group of another room, even under a key handed over for it
+    let elsewhere = random(32) + session
+    let opened = NotifyEnvelope(group: elsewhere, epoch: 3, isCard: true, push: true, payload: Array(cardBody("Ship it?").utf8))
+    XCTAssertNil(NotifyTitle.title(opened, room: roomId))
+    // a page that is not the hub's
+    XCTAssertNil(NotifyTitle.envelope(change: 1, page: Data("[]".utf8)))
   }
 }

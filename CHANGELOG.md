@@ -35,6 +35,8 @@ while it runs.
 ![Settings → Agents in the demo room](app/web/public/changelog/2026-10-11.webp)
 
 **New**
+- iPhone: a notification shows the question's title, decrypted on your phone. Until the phone was first unlocked,
+  or right after a session's key changed, it says "A new question." as before.
 - A new Claude Code or Codex session on a computer and account that already has a connected agent gets onto the
   board with one tap ("Allow new Claude session …?") instead of an invite link and the six emoji, as its own
   session. Its first message says which session vouched for it; at most 8 such sessions per account, and archiving

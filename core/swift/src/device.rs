@@ -24,6 +24,7 @@ use crate::invite::{
     check_code, CheckCode, InviteAccepted, InviteConfirmed, InviteOpened, InviteRole, InviteStep,
     JoinLink, JoinRequest, SignedOffer, SignedRequest, SignedReveal,
 };
+use crate::push::NotifyKey;
 use crate::records::ReceivedMessage;
 use crate::records::{
     board_id, device_id, group_id, hash32, room_id, session_id, turn_id, Cut, GroupSummary,
@@ -238,6 +239,31 @@ impl CoreDevice {
                 Err(error) => Err(error.into()),
             },
         )
+    }
+
+    /// What the phone's notification extension may hold (section 15.2): of every session group this device is a
+    /// leaf of, the content key of its current epoch, and nothing else: no room group's key, no older epoch, no key
+    /// of a group that failed its first contact. The app writes them where only it and the extension read, and
+    /// again after every change of an epoch.
+    pub fn notify_keys(&self) -> Result<Vec<NotifyKey>, CoreError> {
+        self.read(|device| {
+            let mut keys = Vec::new();
+            for summary in device.groups()? {
+                if summary.session.is_none() {
+                    continue;
+                }
+                match device.content_key(&summary.group, summary.epoch) {
+                    Ok(key) => keys.push(NotifyKey {
+                        group: summary.group.as_bytes().to_vec(),
+                        epoch: summary.epoch,
+                        key: key.expose().to_vec(),
+                    }),
+                    Err(trommi_core::Error::NoKey) => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+            Ok(keys)
+        })
     }
 
     /// Everything waiting to be sent, in the order to send it. An entry stays until the hub's answer was

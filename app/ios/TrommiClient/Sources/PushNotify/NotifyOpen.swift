@@ -1,10 +1,10 @@
 // NotifyOpen: the Notification Service Extension's work without UIKit, so it is tested on Linux. A notification
 // carries the one neutral text of every push ("Something new.", which is all Apple sees) and `e`, a sealed blob
 // (spec/v1.md 15.2). `e` is opened with the push key (NotifyCore.openPush): the room, the change number and the
-// urgency. That is all the extension learns; from it, on the phone, it picks the text shown ([`text`]): a
-// question, an urgent one, a lost agent. The envelope the push names is not fetched, because nothing here could
-// open it (a content key never leaves the core, NotifyCore.swift). A push that does not open, or names a room this
-// phone is not in, gives nil, and the notification keeps the neutral text. No error is shown.
+// urgency. From it, on the phone, it picks the text shown ([`text`]): a question, an urgent one, a lost agent. The
+// card's title comes on top only when the envelope that rang opens with the keys the app handed over
+// (NotifyTitle.swift). A push that does not open, or names a room this phone is not in, gives nil, and the
+// notification keeps the neutral text. No error is shown.
 import Foundation
 
 /** The push key of a context as bytes, for the widget. */

@@ -5,6 +5,8 @@ import Foundation
 import XCTest
 import TrommiClient
 @testable import TrommiCoreLive
+import PushNotify
+import NotifyCoreLive
 
 /// A folder of its own under the temp directory, removed when the test ends.
 func scratchFolder(_ test: XCTestCase) throws -> URL {
@@ -564,6 +566,44 @@ final class LiveCoreTests: XCTestCase {
     let later = utf8(#"{"schema_version":1,"text":"y","previous_version_hash":"\#(b64u(systemRandom(32)))"}"#)
     XCTAssertEqual(refusedCode { _ = try a.seal(.noteVersion(object: systemRandom(16), closed: false, payload: later), files: [], nowMs: nowMs()) }, "forbidden")
     XCTAssertTrue(a.outbox().isEmpty)
+  }
+
+  /// The notification extension's read-only keys (spec/v1.md 6.4, 15.2), app to extension on the real core: the app's
+  /// device hands out the session group's current key and no room key; with it the extension's core
+  /// (NotifyCoreLive) opens an envelope of that group, refuses one of the room group (no key) and one whose signature
+  /// is not its sender's. A Chat message is no card: it gives no title.
+  func testTheNotificationExtensionOpensWithTheCurrentKeyOnly() throws {
+    let hub = PocketHub()
+    let (a, b, _, room, session) = try roomWithSession(hub)
+    let sessionGroup = room + session
+    let keys = try b.notifyKeys()
+    XCTAssertEqual(keys.map(\.group), [sessionGroup])
+    XCTAssertEqual(keys.first?.epoch, try XCTUnwrap(b.groups().first { $0.group == sessionGroup }).epoch)
+    XCTAssertEqual(keys.first?.key.count, 32)
+    XCTAssertEqual("\(keys[0])", "CoreNotifyKey(<redacted>)")
+    let handed = keys.map { PushNotify.NotifyKey(group: $0.group, epoch: $0.epoch, key: $0.key) }
+    let ext = NotifyCoreLive()
+
+    let body = utf8(#"{"schema_version":1,"content_type":"message","text":"hello"}"#)
+    _ = try a.seal(.sessionChat(session: session, payload: body), files: [], nowMs: nowMs())
+    try hub.post(a)
+    let chat = try XCTUnwrap(hub.envelopes.last)
+    let opened = try ext.openEnvelope(keys: handed, envelope: chat.bytes)
+    XCTAssertEqual(opened.group, sessionGroup)
+    XCTAssertEqual(opened.epoch, keys[0].epoch)
+    XCTAssertFalse(opened.isCard)
+    XCTAssertEqual(opened.payload, body)
+    XCTAssertNil(NotifyTitle.title(opened, room: room))
+
+    var forged = chat.bytes
+    forged[forged.count - 1] ^= 1
+    XCTAssertThrowsError(try ext.openEnvelope(keys: handed, envelope: forged)) { XCTAssertEqual(($0 as? NotifyCoreError)?.code, "bad-signature") }
+    XCTAssertThrowsError(try ext.openEnvelope(keys: [], envelope: chat.bytes)) { XCTAssertEqual(($0 as? NotifyCoreError)?.code, "no-key") }
+
+    _ = try a.seal(.register(group: room, name: "desk/\(hex(systemRandom(16)))", value: utf8(#"{"name":"Ops","schema_version":1}"#)), files: [], nowMs: nowMs())
+    try hub.post(a)
+    let inRoom = try XCTUnwrap(hub.envelopes.last)
+    XCTAssertThrowsError(try ext.openEnvelope(keys: handed, envelope: inRoom.bytes)) { XCTAssertEqual(($0 as? NotifyCoreError)?.code, "no-key") }
   }
 
   /// An item written before a device came into its group is `group-behind` for it, also with that epoch's key from

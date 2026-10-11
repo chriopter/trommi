@@ -9,9 +9,9 @@
 //   - the hub's address, the app's client name and how far the app has read the room (its cursor): with the
 //     push's ticket the extension reads ahead from there what the app would catch up on (NotifyPrefetch), as
 //     ciphertext, which only the app opens.
-// It gets no content key of any group and no name of a session: a content key never leaves the core, so there is
-// none to hand over, and the extension opens no envelope. It never gets the device key either (it cannot sign,
-// cannot sign in to the hub, cannot send) and no MLS state. What a notification shows is the hub's fixed text.
+// The content keys it may hold are not in here: they lie in an item of their own that the widget cannot read
+// (NotifyKeys.swift). It never gets the device key (it cannot sign, cannot sign in to the hub, cannot send) and no
+// MLS state.
 import Foundation
 
 public struct NotifyContext: Codable, Equatable {
@@ -43,6 +43,21 @@ enum NotifyText {
     out.reserveCapacity(b.count * 2)
     for x in b { out.append(hexDigits[Int(x >> 4)]); out.append(hexDigits[Int(x & 15)]) }
     return String(decoding: out, as: UTF8.self)
+  }
+  /** nil for anything that is not lower-case hex of whole bytes. */
+  static func unhex(_ s: String) -> [UInt8]? {
+    let u = Array(s.utf8)
+    guard u.count % 2 == 0 else { return nil }
+    func nibble(_ c: UInt8) -> UInt8? { c >= 0x30 && c <= 0x39 ? c - 0x30 : c >= 0x61 && c <= 0x66 ? c - 0x61 + 10 : nil }
+    var out = [UInt8]()
+    out.reserveCapacity(u.count / 2)
+    var i = 0
+    while i < u.count {
+      guard let h = nibble(u[i]), let l = nibble(u[i + 1]) else { return nil }
+      out.append(h << 4 | l)
+      i += 2
+    }
+    return out
   }
 
   /** base64url without padding (RFC 4648 section 5). */

@@ -306,6 +306,17 @@ export interface PushNote {
   ticket: Uint8Array
 }
 
+export interface NotifyKey {
+  group: Uint8Array
+  epoch: number
+  key: Uint8Array
+}
+
+export interface NotifyOpened {
+  header: EnvelopeHeader
+  payload: Uint8Array
+}
+
 export interface Versions {
   core: string
   openmls: string
@@ -811,6 +822,8 @@ export class Device {
   group(group: Uint8Array): Promise<GroupSummary>
   /** Whether the content key of a group and epoch is held. The key itself never leaves the device. */
   holdsKey(group: Uint8Array, epoch: number): Promise<boolean>
+  /** Of each session group, the content key of its current epoch: for the phone's notification extension only. */
+  notifyKeys(): Promise<NotifyKey[]>
   outbox(): Promise<OutboxEntry[]>
   outboxAccepted(id: number, change?: number | null): Promise<void>
   outboxRefused(id: number, code: ErrorCode): Promise<void>
@@ -1034,6 +1047,9 @@ export function generatePushKey(): Uint8Array
 export function openApnsPush(key: Uint8Array, sealed: Uint8Array): PushNote
 export function openLiveActivity(key: Uint8Array, sealed: Uint8Array): LiveActivityCounts
 export function readWebPush(payload: Uint8Array): PushNote
+/** The envelope that rang, opened without a device with the key of its group and epoch among `keys`; the sender's
+ *  signature is checked, its membership and chain are not. */
+export function openNotifyEnvelope(keys: NotifyKey[], envelope: Uint8Array): NotifyOpened
 /** The Scribble Board's merge, without state: the snapshot file's JSON after `items` on `snapshot`. */
 export function boardReduce(snapshot: Uint8Array | null | undefined, snapshotFrontier: WriterHead[], items: BoardItem[], frontier: WriterHead[]): Uint8Array
 /** The header of an envelope (full or pruned form), with the sender's signature verified and nothing else:

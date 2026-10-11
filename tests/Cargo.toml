@@ -176,6 +176,10 @@ name = "bindings_facade"
 path = "bindings/facade.rs"
 
 [[test]]
+name = "bindings_notify"
+path = "bindings/notify.rs"
+
+[[test]]
 name = "hub_delivery"
 path = "hub/delivery.rs"
 
