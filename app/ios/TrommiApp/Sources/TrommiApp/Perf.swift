@@ -47,7 +47,7 @@ enum PerfScript {
   /** TROMMI_PERF=1: three refreshes and a scroll of the Desk, measured. */
   @MainActor static func runIfAsked(_ model: BoardModel) {
     #if canImport(UIKit)
-    guard ProcessInfo.processInfo.environment["TROMMI_PERF"] == "1" else { return }
+    guard ProcessInfo.processInfo.environment["TROMMI_PERF"] == "1", ProcessInfo.processInfo.environment["TROMMI_SPEED"] != "1" else { return }
     MainSampler.start()
     Task { @MainActor in
       try? await Task.sleep(nanoseconds: 3_000_000_000)
@@ -62,6 +62,84 @@ enum PerfScript {
       model.perfScroll &+= 1
       try? await Task.sleep(nanoseconds: 3_000_000_000)
       HitchMeter.shared.end("scroll")
+    }
+    #endif
+  }
+}
+
+/**
+ * The speed run: TROMMI_SPEED=1 TROMMI_PERF=1 TROMMI_SPEED_FIXTURE=<tests/tools/mega-fixture.mjs output>. On that
+ * made-up room (the demo's way: no room, no network) it scrolls the Desk, lets news arrive in bursts, opens the
+ * longest chat, scrolls it, lets news arrive there and elsewhere, and types into its composer; each step a HitchMeter
+ * window, the memory after each (perf log "SPEED"). tests/ios/speed/sim.sh runs it in the simulator.
+ */
+@MainActor enum SpeedScript {
+  static let typeKey = Notification.Name("trommi-speed-type")
+  static func memoryMB() -> Int {
+    #if canImport(Darwin)
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    let r = withUnsafeMutablePointer(to: &info) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) } }
+    return r == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : -1
+    #else
+    return -1
+    #endif
+  }
+  static func runIfAsked(_ model: BoardModel) {
+    #if canImport(UIKit)
+    guard ProcessInfo.processInfo.environment["TROMMI_SPEED"] == "1", model.demo, let d = model.desk else { return }
+    MainSampler.start()
+    let b = d.board
+    let big = b.timelines.values.filter { $0.timelineId.hasPrefix("session/") }.max { $0.items.count < $1.items.count }?.objectId ?? ""
+    let others = b.sessions.keys.sorted().filter { $0 != big && b.sessions[$0]?.agentDeviceId != nil }
+    var n = 2_000_000_000
+    func say(_ s: String) { PerfLog.line("SPEED \(s)") }
+    func message(_ session: String) {
+      n += 1
+      guard let rec = PerfLog.chatLine(b, session: session, number: n, text: "Speed run line \(n): done with the build, all green.") else { return }
+      var ch = Change()
+      b.apply(rec, change: &ch)
+      model.perfChanged()
+    }
+    func window(_ name: String, seconds: Double, _ op: @escaping @MainActor () async -> Void) async {
+      HitchMeter.shared.begin(name)
+      let t0 = DispatchTime.now().uptimeNanoseconds
+      await op()
+      let left = seconds - Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e9
+      if left > 0 { try? await Task.sleep(nanoseconds: UInt64(left * 1e9)) }
+      HitchMeter.shared.end(name)
+      say("memory after \(name): \(memoryMB()) MB")
+    }
+    func burst(_ into: @escaping @MainActor (Int) -> String) async {
+      for i in 0..<30 { message(into(i)); try? await Task.sleep(nanoseconds: 100_000_000) }
+    }
+    Task { @MainActor in
+      say("start: \(b.sessions.count) sessions, \(b.cards.count) cards, memory \(memoryMB()) MB")
+      try? await Task.sleep(nanoseconds: 2_500_000_000)
+      await window("desk scroll", seconds: 3.2) { model.perfScroll &+= 1 }
+      await window("desk: 30 messages in 3 s", seconds: 3.5) { await burst { others[$0 % others.count] } }
+      await window("desk: 30 bare re-renders", seconds: 3.5) { for _ in 0..<30 { model.perfBump(); try? await Task.sleep(nanoseconds: 100_000_000) } }
+      model.tab = .chat
+      try? await Task.sleep(nanoseconds: 1_500_000_000)
+      await window("chat list: 30 messages in 3 s", seconds: 3.5) { await burst { others[$0 % others.count] } }
+      model.tab = .desk
+      try? await Task.sleep(nanoseconds: 1_000_000_000)
+      let agent = d.agents.first { $0.sessionId == big }?.id ?? ""
+      let t0 = DispatchTime.now().uptimeNanoseconds
+      await window("open the 5,000-item chat", seconds: 2) {
+        model.openChat(agent)
+        // (the first frame after the chat's body ran: the open as he sees it)
+        await Task.yield()
+        DispatchQueue.main.async { say(String(format: "open chat: first frame after %.0f ms", Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e6)) }
+      }
+      await window("chat scroll", seconds: 3.8) { model.perfScroll &+= 1 }
+      await window("chat open: 30 messages elsewhere", seconds: 3.5) { await burst { others[$0 % others.count] } }
+      await window("chat open: 30 messages into it", seconds: 3.5) { await burst { _ in big } }
+      await window("typing 40 keys", seconds: 2.5) {
+        for _ in 0..<40 { NotificationCenter.default.post(name: typeKey, object: nil); try? await Task.sleep(nanoseconds: 50_000_000) }
+      }
+      RenderCount.flush("speed run")
+      say("done")
     }
     #endif
   }

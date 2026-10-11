@@ -45,7 +45,7 @@ struct TrommiApp: App {
         .onChange(of: model.phase) { _, p in if p == .board { push.ask() } }
       #endif
         .onChange(of: scenePhase) { _, p in model.scene(active: p == .active) }
-        .onAppear { PerfScript.runIfAsked(model); MegaScript.runIfAsked(model) }
+        .onAppear { PerfScript.runIfAsked(model); MegaScript.runIfAsked(model); SpeedScript.runIfAsked(model) }
         // universal links of app.trommi.com (Links.swift)
         .onOpenURL { model.open(url: $0) }
     }
@@ -197,6 +197,7 @@ final class BoardModel: ObservableObject {
 
   /** Passkeys are switched on (Passkeys.swift): the screens read this, so that they change when the probe says so. */
   @Published var passkeysOn = Passkeys.available
+
   init() {
     // (whether the domain names this app for its passkeys: read once per start, the screens follow; not for the
     // screenshot hooks below, which use no network)
@@ -211,6 +212,11 @@ final class BoardModel: ObservableObject {
       if let t = env["TROMMI_THEME"].flatMap(ThemeMode.init(rawValue:)) { _theme = Published(initialValue: t) }
       startDemo(keep: false)
       deskId = ALL_DESKS; tab = .chat; chatPath = []
+      return
+    }
+    // TROMMI_SPEED_FIXTURE=<path>: the speed run (Perf.swift SpeedScript) on that made-up room, no network
+    if let f = env["TROMMI_SPEED_FIXTURE"], !f.isEmpty {
+      startDemo(keep: false)
       return
     }
     if let screen = env["TROMMI_SCREEN"], !screen.isEmpty {
@@ -641,7 +647,9 @@ final class BoardModel: ObservableObject {
   /** The web demo's room (Resources/Demo/fixture.json, its times moved to now): his own room rests meanwhile. */
   func startDemo(keep: Bool = true) {
     let chatList = !(ProcessInfo.processInfo.environment["TROMMI_CHATLIST"] ?? "").isEmpty
-    guard let raw = try? Data(contentsOf: DemoData.url("fixture.json")), let b = try? DemoFixture.board(chatList ? ChatListDemo.fixture(raw) : raw) else { error = "The demo is missing in this build."; return }
+    // (TROMMI_SPEED_FIXTURE: a big made-up room of tests/tools/mega-fixture.mjs instead, for the speed run, Perf.swift)
+    let file = ProcessInfo.processInfo.environment["TROMMI_SPEED_FIXTURE"].map { URL(fileURLWithPath: $0) } ?? DemoData.url("fixture.json")
+    guard let raw = try? Data(contentsOf: file), let b = try? DemoFixture.board(chatList ? ChatListDemo.fixture(raw) : raw) else { error = "The demo is missing in this build."; return }
     if keep && !demo { beforeDemo = (room, deskId) }
     liveTask?.cancel(); liveTask = nil
     room?.saveCache()
@@ -654,6 +662,13 @@ final class BoardModel: ObservableObject {
     phase = .board
     version &+= 1
   }
+  /** The speed run (Perf.swift SpeedScript): one batch of the demo's board seen, as changed() does for a room. */
+  func perfChanged() {
+    PerfLog.time("desk.update") { desk?.update() }
+    version &+= 1
+  }
+  /** The speed run: a render with nothing changed (what every view that reads `version` costs). */
+  func perfBump() { version &+= 1 }
   /** Back to his own room (or to the sign-in when there is none). */
   func leaveDemo() {
     guard demo else { return }

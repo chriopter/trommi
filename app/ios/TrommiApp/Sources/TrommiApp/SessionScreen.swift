@@ -119,6 +119,16 @@ struct SessionScreen: View {
         .pushedPills { header(a, d) } trailing: { more(a, d, freshCount: fresh.count) }
         .overlay(alignment: .top) { if let acc = usageOf(model, a) { UsageStrip(acc: acc).padding(.top, 58) } }
         .onAppear { lastCount = all.count; atBottom = true; proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
+        // the speed run (Perf.swift SpeedScript): up through the drawn messages (300 at most) and back
+        .onChange(of: model.perfScroll) { _, _ in
+          guard msgs.count > 100 else { return }
+          let up = msgs[max(0, msgs.count - 300)].id
+          Task { @MainActor in
+            withAnimation(.easeInOut(duration: 1.5)) { proxy.scrollTo(up, anchor: .top) }
+            try? await Task.sleep(nanoseconds: 1_700_000_000)
+            withAnimation(.easeInOut(duration: 1.5)) { proxy.scrollTo("bottom", anchor: .bottom) }
+          }
+        }
         .onChange(of: model.version) { _, _ in model.markRead(a) }
         // what a catch-up brought as headers only (the app was away, the hub restarted): filled while the chat is open
         .task(id: model.version) { try? await Task.sleep(nanoseconds: 150_000_000); await model.loadNewer(agent: a.id) }
@@ -869,6 +879,7 @@ struct Composer: View {
           if !files.isEmpty { PendingFiles(files: $files) }
           HStack(alignment: .bottom, spacing: 4) {
             TextField(placeholder, text: $text, axis: .vertical)
+              .onReceive(NotificationCenter.default.publisher(for: SpeedScript.typeKey)) { _ in text += "a" }
               .font(Face.text(17))
               .lineLimit(1...7)
               .focused($focused)
