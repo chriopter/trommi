@@ -369,7 +369,8 @@ as the second way, and Log in shows "Log in with passkey" first, with no field (
   (`kitKeysFor(.id)`).
 - Such an account uses a passkey where another asks for the password: the kit's page after a relaunch, Settings →
   Account → "Make with Passkey", "New Recovery Code…" and "Add Passkey" (`Passkeys.unlock`: one of the account's
-  passkeys, used once here for its prf output).
+  passkeys answers the hub's challenge for the account; its prf output opens the code here, its assertion is the
+  change's proof).
 - The entitlement `com.apple.developer.associated-domains` holds `webcredentials:app.trommi.com` in both
   `TrommiApp.entitlements` and `AppStore/TrommiApp.entitlements`.
 - The hub takes `https://app.trommi.com` as a passkey origin (its default when `HUB_ORIGINS` is not set).
