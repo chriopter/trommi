@@ -386,7 +386,12 @@ public final class DeskModel {
     let m = board
     devToAgent = [:]; agentToDev = [:]
     let sessions = m.sessions.values.sorted { $0.sessionId < $1.sessionId }
-    for s in sessions { let id = agentIdOf(s); devToAgent[s.sessionId] = id; agentToDev[id] = s.sessionId }
+    // (two sessions may name the same agent id, e.g. one agent_session_id twice: the newest session holds the id)
+    for s in sessions {
+      let id = agentIdOf(s); devToAgent[s.sessionId] = id
+      if let had = agentToDev[id], let h = m.sessions[had], h.lastActivityAt > s.lastActivityAt { continue }
+      agentToDev[id] = s.sessionId
+    }
     humans = Set(m.members.values.filter { $0.deviceRole == "human" }.map { $0.deviceId })
     // Card numbers: the order cards and permission requests were first filed in, from 1.
     var numbered = m.cards.values.map { ($0.firstEnvelopeNumber, $0.objectId, false) } + m.permissions.values.map { ($0.envelopeNumber, $0.objectId, true) }
@@ -400,9 +405,9 @@ public final class DeskModel {
       else if let c = m.cards[x.1], !m.heldBack(c.objectId, open: c.objectState == "open") { out.append(boardCard(c, numberOf[x.1]!, now: now)) }
     }
     cards = out
-    byCard = Dictionary(uniqueKeysWithValues: out.map { ($0.id, $0) })
+    byCard = Dictionary(out.map { ($0.id, $0) }, uniquingKeysWith: { a, b in b.created >= a.created ? b : a })
     agents = makeAgents()
-    byAgent = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
+    byAgent = DeskModel.newestById(agents)
     tasks = []
     for s in sessions { for t in s.statusLines { tasks.append(Task1(agent: devToAgent[s.sessionId] ?? "", id: t.id, label: t.label, state: t.state, detail: t.detail, cardId: t.objectId, updated: t.updatedAt)) } }
     workingOf = Dictionary(grouping: tasks.filter { $0.state == "working" }, by: { $0.agent })
@@ -422,6 +427,10 @@ public final class DeskModel {
     desks = d
   }
 
+  /** Agents by id; for an id twice (no input may crash the app), the one active last. */
+  static func newestById(_ list: [Agent]) -> [String: Agent] {
+    Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, b in b.active >= a.active ? b : a })
+  }
   func agentIdOf(_ s: Session) -> String {
     if let a = s.agentSessionId, !(a.count >= 12 && a.allSatisfy { $0.isHexDigit && !$0.isUppercase }) { return a }
     return String(s.sessionId.prefix(SESSION_ID_LEN))
@@ -460,7 +469,7 @@ public final class DeskModel {
       a.placed = set["position"].int != nil
       return a
     }
-    let ids = Dictionary(uniqueKeysWithValues: out.map { ($0.id, $0) })
+    let ids = DeskModel.newestById(out)
     for i in out.indices where out[i].parent == nil || ids[out[i].parent!] == nil { if out[i].desk == nil { out[i].desk = "main" } }
     for i in out.indices { if let p = out[i].parent, let pa = ids[p] { out[i].desk = pa.desk ?? "main" } }
     return out.sorted { ($0.position, $0.id) < ($1.position, $1.id) }
@@ -581,7 +590,7 @@ public final class DeskModel {
     }
     let onDesk: (Agent?) -> Bool = { a in !hasDesks || all || self.deskOf(a) == deskId }
     let here = everyone.filter { !$0.archived && onDesk($0) }
-    let byA = Dictionary(uniqueKeysWithValues: everyone.map { ($0.id, $0) })
+    let byA = DeskModel.newestById(everyone)
     let shelved = Set(everyone.filter { $0.archived }.map { $0.id })
     let mine: (DeskCard) -> Bool = { onDesk(byA[$0.agent]) }
     let allOpen = cards.filter { $0.status == "open" && !shelved.contains($0.agent) && $0.snoozedUntil == nil }.sorted { ($0.created, $0.number) < ($1.created, $1.number) }
@@ -608,7 +617,7 @@ public final class DeskModel {
       let s = summary(a)
       return DeskUnit(id: a.id, agent: a, open: s.open, online: s.online, running: s.running, stuck: s.stuck, blocked: s.blocked.map { (why: $0.0, text: $0.1) })
     }
-    let ix = Dictionary(uniqueKeysWithValues: units.enumerated().map { ($1.id, $0) })
+    let ix = Dictionary(units.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, b in units[b].agent.active >= units[a].agent.active ? b : a })
     for i in units.indices {
       if let p = units[i].agent.parent, let j = ix[p], j != i, units[j].agent.parent == nil { units[i].parent = p; units[j].subs.append(units[i].id) }
     }

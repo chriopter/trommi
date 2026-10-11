@@ -186,4 +186,25 @@ final class SpeedTests: XCTestCase {
       }
     }
   }
+
+  /** Two sessions naming one agent_session_id (a connector bug, a forged register): no crash, the newest holds the id. */
+  func testADuplicateAgentSessionIdDoesNotCrash() throws {
+    let b = try demo()
+    let two = b.sessions.values.filter { $0.agentDeviceId != nil }.sorted { $0.sessionId < $1.sessionId }.prefix(2)
+    XCTAssertEqual(two.count, 2)
+    let older = two.first!, newer = two.last!
+    for s in two { s.agentSessionId = "same-agent" }
+    older.lastActivityAt = 1_000; newer.lastActivityAt = 2_000
+    let d = DeskModel(board: b)
+    XCTAssertEqual(d.byAgent["same-agent"]?.sessionId, newer.sessionId, "the newest session holds the id")
+    XCTAssertEqual(d.sessionKey(of: "same-agent"), newer.sessionId)
+    for desk in [nil, ALL_DESKS] + d.desks.map({ Optional($0.id) }) { _ = d.view(desk: desk, now: 1_800_000_000_000) }
+    _ = d.messagesOf(agent: "same-agent")
+    // the other way round
+    older.lastActivityAt = 3_000
+    d.update()
+    XCTAssertEqual(d.byAgent["same-agent"]?.sessionId, older.sessionId)
+    XCTAssertEqual(d.sessionKey(of: "same-agent"), older.sessionId)
+    _ = d.view(desk: ALL_DESKS, now: 1_800_000_000_000)
+  }
 }
