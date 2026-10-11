@@ -112,6 +112,8 @@ extension Room {
     // (keys that came during this read, after it had passed what they open: read back once more)
     let again = readBackAgain
     notePast { $0.readBack = again }
-    if again { pastDue = true }
+    readingBack = false
+    // (each further pass needs keys that came during the one before: it ends)
+    if again { try await tendPast(&report, &change) }
   }
 }
