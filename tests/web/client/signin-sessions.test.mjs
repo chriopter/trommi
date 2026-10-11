@@ -77,6 +77,7 @@ test('a session join the core answers busy (a join of the group on its way, or t
   const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
   t.after(() => c.stop().catch(() => {}))
   const done = await joining
-  assert.equal(busy, 0, 'the core said busy twice')
+  // (another human device may add it meanwhile, 5.2.7: then it is a member before the second busy is asked for)
+  assert.ok(busy < 2, 'the core said busy, and the join was tried again')
   assert.deepEqual([done.joined, done.not_joined.map(n => n.code)], [1, []])
 })

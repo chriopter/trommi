@@ -63,10 +63,16 @@ export type SignInStep = { step: 'reading'; done?: number; total?: number } | { 
 export interface SessionJoins { joined: number; not_joined: { group: Uint8Array; code: string }[] }
 /** How many session groups' Commits are read from the hub at a time while they are joined behind a sign-in. */
 const SESSION_READS = 6
-/** Refusals of a session join that mean the group moved on: its GroupInfos and Commits are read again. */
-const MOVED_ON: readonly string[] = ['epoch-taken', 'wrong-epoch', 'group-behind', 'wrong-recovery']
+/** Refusals of a session join that mean the group moved on: its GroupInfos and Commits are read again. A
+ *  `bad-commit` is among them: the hub (and the stand-in) answers it for a Commit built on an epoch the group has
+ *  not reached, which a join built from a reading the group has moved past since can come to (the hub's epoch
+ *  and the device's view of it cross while another human device adds this one, 5.2.7). Read again and built
+ *  anew, a join that breaks a rule is refused again, and given up after BUSY_TRIES. */
+const MOVED_ON: readonly string[] = ['epoch-taken', 'wrong-epoch', 'group-behind', 'wrong-recovery', 'bad-commit']
 /** How often a session join that met `busy` is tried again (about half a minute in all). */
 const BUSY_TRIES = 20
+/** How often a session join is read again after the group moved on under it. */
+const MOVES = 4
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
 /** A joining device's sign-in while it is no leaf yet: asked again after these waits, then every LEAF_WAIT_EVERY_MS, LEAF_WAIT_MS in all. */
@@ -408,12 +414,13 @@ export function roomsOn(env: RoomEnv): Rooms {
         // the log), or another human device added this one meanwhile (5.2.7: its Welcome waits). The log and the
         // Welcomes are taken, and the join is tried again while the device is not in the group, a while.
         const member = async (): Promise<boolean> => (await engine.do(d => d.groups())).some(g => sameBytes(g.group, session.group))
-        for (let tries = 0; ; tries++) {
+        for (let tries = 0, moves = 0; ; tries++) {
           try { await join(); break } catch (e) {
             const code = engine.core.errorCode(e) ?? (e instanceof HubError || e instanceof EngineError ? e.code : null)
-            // the group moved on under the join (another Commit took its epoch): read it again, then build again
+            // the group moved on under the join (another Commit took its epoch): read it again, then build again,
+            // unless the device is a member by then (another human device's Add, whose Welcome it takes below)
             const moved = code !== null && MOVED_ON.includes(code)
-            if ((code !== 'busy' && !moved) || tries >= BUSY_TRIES) throw e
+            if ((code !== 'busy' && !moved) || tries >= BUSY_TRIES || (moved && ++moves > MOVES)) throw e
             if (moved) input = await read(at)
             await engine.catchUp().catch(() => {})
             await engine.joinNow(null).catch(() => false)
