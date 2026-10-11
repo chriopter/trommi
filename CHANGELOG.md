@@ -72,6 +72,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
 - Web: an answer to a form that came only after you had moved to another page (a removed device, say) no longer
   takes you away from that page.
 - Logging in on the web reads a big account several times faster, keeps saying how far it is, and a log in that

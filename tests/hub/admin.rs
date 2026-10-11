@@ -108,6 +108,8 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
     assert_eq!(js.header("x-content-type-options"), Some("nosniff"));
     let js = text(&js);
     assert!(js.contains("'dblclick'") && js.contains("closest('.email')") && js.contains("toggle('shown')"));
+    // "Show all" shows every address on the page at once, and blurs them all again
+    assert!(js.contains("closest('.showall')") && js.contains("querySelectorAll('.email')") && js.contains("toggle('shown', on)"));
     assert!(!js.contains("fetch") && !js.contains("http"));
     // a cookie the hub did not give, or one of no use, is no session
     for value in [b64(&[5u8; 32]), "x".into(), String::new()] {
@@ -239,6 +241,9 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
     );
     // the e-mail address in full but blurred, shown by a double-click
     assert!(accounts.contains("<code class=\"email\" title=\"Double-click to show\">ada@example.org</code>"));
+    // and a "Show all" at the top, not pressed: each address stays blurred until asked for
+    assert_eq!(accounts.matches(trommi_hub::admin_view::SHOW_ALL).count(), 1);
+    assert!(trommi_hub::admin_view::SHOW_ALL.contains("aria-pressed=\"false\">Show all<"));
     assert_eq!(
         trommi_hub::admin_view::blurred_email("a<b@example.com"),
         "<code class=\"email\" title=\"Double-click to show\">a&lt;b@example.com</code>"
@@ -530,6 +535,8 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     assert!(first.contains("<li><span class=\"secret\" title=\"credential: not shown\">••</span><code>endpoint</code>"));
     // the side list: names and counts only, each a link to its rows
     assert!(!first.contains("<ul class=\"cols-list") && !first.contains("Open push_subscriptions"));
+    // no e-mail address on the page, no "Show all"
+    assert!(!first.contains("class=\"showall\""));
     assert!(first.contains("<a class=\"tbl on\" href=\"/tables/push_subscriptions\" aria-current=\"page\">"));
     for group in ["Accounts and sign-in", "Rooms and devices", "Groups (MLS)", "Keys and recovery", "Content", "Files and shares", "Push", "Hub upkeep"] {
         assert!(first.contains(&format!("<div class=\"grp\">{group}</div>")), "{group}");
@@ -591,6 +598,7 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     for path in ["/tables/accounts", "/tables/accounts/7"] {
         let page = text(&get(path));
         assert!(page.contains("<code class=\"email\" title=\"Double-click to show\">grace@example.net</code>"), "{path}");
+        assert_eq!(page.matches(trommi_hub::admin_view::SHOW_ALL).count(), 1, "{path}");
         assert_eq!(page.matches("grace").count(), 1, "{path}");
         assert!(!page.contains("eeeeeeee") && !page.contains("5a5a5a5a") && !page.contains("argon2id"), "{path}");
         assert!(page.contains("80 bytes · <code>77777777"), "{path}");
