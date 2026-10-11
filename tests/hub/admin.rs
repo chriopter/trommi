@@ -99,6 +99,16 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
     assert_eq!(asked.header("referrer-policy"), Some("same-origin"));
     let csp = asked.header("content-security-policy").unwrap();
     assert!(csp.contains("default-src 'none'") && csp.contains("form-action 'self'"));
+    // scripts only from the hub's own files: no inline script, no handler, nothing from elsewhere
+    assert!(csp.contains("script-src 'self';"));
+    assert!(!csp.contains("unsafe-eval") && csp.matches("unsafe-inline").count() == 1 && csp.contains("style-src 'unsafe-inline'"));
+    let js = request(admin, "GET", "/admin.js", &[], b"");
+    assert_eq!(js.status, 200);
+    assert_eq!(js.header("content-type"), Some("text/javascript; charset=utf-8"));
+    assert_eq!(js.header("x-content-type-options"), Some("nosniff"));
+    let js = text(&js);
+    assert!(js.contains("'dblclick'") && js.contains("closest('.email')") && js.contains("toggle('shown')"));
+    assert!(!js.contains("fetch") && !js.contains("http"));
     // a cookie the hub did not give, or one of no use, is no session
     for value in [b64(&[5u8; 32]), "x".into(), String::new()] {
         let forged = [("cookie", format!("{}={value}", trommi_hub::admin::COOKIE))];
@@ -227,13 +237,12 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
         accounts.contains("<h1>Accounts</h1>")
             && accounts.contains("href=\"/accounts\" class=\"on\"")
     );
-    // the e-mail address masked to its first character and its ending, never in full
-    assert!(accounts.contains("a•••@•••.org"));
+    // the e-mail address in full but blurred, shown by a double-click
+    assert!(accounts.contains("<code class=\"email\" title=\"Double-click to show\">ada@example.org</code>"));
     assert_eq!(
-        trommi_hub::admin_view::mask_email("someone@example.com"),
-        "s•••@•••.com"
+        trommi_hub::admin_view::blurred_email("a<b@example.com"),
+        "<code class=\"email\" title=\"Double-click to show\">a&lt;b@example.com</code>"
     );
-    assert_eq!(trommi_hub::admin_view::mask_email("no-at-sign"), "•••");
     // two human devices, one agent device, one live session, one envelope
     assert!(accounts.contains(&short(&w.room)));
     let row = accounts
@@ -316,7 +325,15 @@ fn the_admin_page_is_behind_its_password_and_shows_only_what_the_hub_sees() {
     }
     for page in &pages {
         assert!(!page.contains("nobody but the room"));
-        assert!(!page.contains("ada@example.org") && !page.contains("example.org"));
+        // an address only ever blurred
+        assert_eq!(
+            page.matches("example.org").count(),
+            page.matches("<code class=\"email\" title=\"Double-click to show\">ada@example.org</code>").count()
+        );
+        // the one script is the hub's own file
+        assert_eq!(page.matches("<script").count(), 1);
+        assert!(page.contains("<script src=\"/admin.js\" defer></script>"));
+        assert!(!page.contains(" ondblclick") && !page.contains(" onclick"));
         assert!(!page.contains(&b64(&w.ada.id())) && !page.contains("argon2id$"));
         // the one form that sends something is the sign-out (a table's filter is a GET)
         assert_eq!(page.matches("<form method=\"post\"").count(), 1);
@@ -550,11 +567,11 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
         assert_eq!(get(missing).status, 404, "{missing}");
     }
 
-    // the account: the e-mail masked, the login hashes and the KDF record never shown, the sealed copy by its length
+    // the account: the e-mail blurred, the login hashes and the KDF record never shown, the sealed copy by its length
     for path in ["/tables/accounts", "/tables/accounts/7"] {
         let page = text(&get(path));
-        assert!(page.contains("g•••@•••.net"), "{path}");
-        assert!(!page.contains("grace") && !page.contains("example.net"), "{path}");
+        assert!(page.contains("<code class=\"email\" title=\"Double-click to show\">grace@example.net</code>"), "{path}");
+        assert_eq!(page.matches("grace").count(), 1, "{path}");
         assert!(!page.contains("eeeeeeee") && !page.contains("5a5a5a5a") && !page.contains("argon2id"), "{path}");
         assert!(page.contains("80 bytes · <code>77777777"), "{path}");
     }

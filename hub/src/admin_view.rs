@@ -1,6 +1,6 @@
 //! The pages of the admin page (`admin.rs` signs in and frames them): the overview (the server's health and the
 //! hub's counts), the accounts (with their rooms), and the list of tables (each with what it holds and its number
-//! of rows; `admin_rows.rs` shows a table's rows). Nothing sealed is ever shown, and no e-mail address in full.
+//! of rows; `admin_rows.rs` shows a table's rows). Nothing sealed is ever shown; e-mail addresses are blurred until double-clicked.
 
 use std::path::Path;
 use std::sync::atomic::Ordering;
@@ -79,18 +79,11 @@ pub(crate) fn is_time(column: &str) -> bool {
     column.ends_with("_at") || column == "at" || column == "time"
 }
 
-/// An e-mail address as the page shows it: its first character and its ending (`a•••@•••.org`).
-pub fn mask_email(email: &str) -> String {
-    match email.rsplit_once('@') {
-        Some((local, domain)) => {
-            let first = local.chars().next().map(String::from).unwrap_or_default();
-            match domain.rsplit_once('.') {
-                Some((_, tld)) => format!("{first}•••@•••.{tld}"),
-                None => format!("{first}•••@•••"),
-            }
-        }
-        None => "•••".into(),
-    }
+/// An e-mail address as the page shows it: in full, but blurred and not selectable until a double-click shows it
+/// (`admin.js`; a second double-click blurs it again). A page seen over a shoulder or in a screenshot does not
+/// give it away.
+pub fn blurred_email(email: &str) -> String {
+    format!("<code class=\"email\" title=\"Double-click to show\">{}</code>", crate::admin::esc(email))
 }
 
 pub fn when(ms: i64) -> String {
@@ -504,7 +497,7 @@ pub fn accounts(app: &App) -> Result<String, Refused> {
         let one = |sql: &str| -> rusqlite::Result<i64> { c.query_row(sql, [], |r| r.get(0)) };
         let (accounts, rooms) = (one("SELECT count(*) FROM accounts")?, one("SELECT count(*) FROM rooms")?);
         let mut out = format!(
-            "<main class=\"page\"><div class=\"head\"><h1>Accounts</h1><span class=\"muted\">{accounts} account{} · {rooms} room{} · e-mail addresses masked</span></div>",
+            "<main class=\"page\"><div class=\"head\"><h1>Accounts</h1><span class=\"muted\">{accounts} account{} · {rooms} room{} · e-mail addresses blurred: double-click one to show it</span></div>",
             if accounts == 1 { "" } else { "s" },
             if rooms == 1 { "" } else { "s" },
         );
@@ -532,11 +525,11 @@ pub fn accounts(app: &App) -> Result<String, Refused> {
                 .collect();
             let used: Option<i64> = r.get(7)?;
             out.push_str(&format!(
-                "<tr><td><code>#{}</code></td><td><code>{}</code></td><td>{}</td><td class=\"n\">{passkeys}</td><td class=\"n\">{}</td>\
+                "<tr><td><code>#{}</code></td><td>{}</td><td>{}</td><td class=\"n\">{passkeys}</td><td class=\"n\">{}</td>\
 <td class=\"when\">{}</td><td class=\"when\">{}</td><td class=\"when\">{}</td></tr>",
                 r.get::<_, i64>(0)?,
                 match email.as_deref() {
-                    Some(e) => esc(&mask_email(e)),
+                    Some(e) => blurred_email(e),
                     None => "<span class=\"faint\">none</span>".into(),
                 },
                 if ways.is_empty() { "<span class=\"faint\">nothing yet</span>".into() } else { ways.join(", ") },
