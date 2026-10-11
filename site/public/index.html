@@ -27,71 +27,85 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" fill="#1b6a57"/><g transform="translate(12.3 11.5) scale(.8) translate(-13 -12.2)" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3.1 19Q12.3 18.6 16.7 19L21 19.3"/><path d="M4.8 18.9Q5.2 15.1 5.7 13.7Q6.2 12.3 7.5 11.3Q8.7 10.3 10.3 9.5Q12 8.8 13.7 9.3Q15.3 9.8 16.4 11Q17.5 12.2 18.1 13.7Q18.6 15.2 18.8 17L18.9 18.8"/><path d="M11.8 8.6L12.2 6.9"/><path d="M10 6.6Q11.8 6 12.8 6.4L13.8 6.8"/><path d="M18.5 7.3Q19.5 5.8 19.8 5.2L20 4.5"/><path d="M20.6 10.3Q21.5 9.4 22.3 8.9L23.1 8.5"/></g></svg>
     <span>Trommi</span>
   </a>
+  <!-- The three parts of the front page. The head is no box: it lies on the paper, and once the page has moved it
+       gets the paper behind it, a hairline and a soft shadow. -->
   <nav aria-label="Site">
-    <a href="https://github.com/trommi/trommi">GitHub</a>
+    <a class="n-top" href="#trommi">Trommi</a>
+    <a href="#apps">Apps</a>
+    <a href="#agents">Agents</a>
   </nav>
+  <div class="head-end">
+  <a class="gh" href="https://github.com/trommi/trommi" aria-label="GitHub" data-tip="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a>
   <!-- The theme: one button that goes System, Light, Dark and round again. Shown once theme.js has set data-theme;
        which mark it shows comes from that attribute. The marks are drawn with the app's pen. -->
   <button type="button" class="theme-btn" aria-label="Theme" data-tip="Theme"><svg class="t-system" viewBox="0 0 24 24" aria-hidden="true"><path class="ink" d="M12.1 4.2Q15.8 4.2 18 6.5Q20.1 9 19.9 12.3Q19.6 15.7 17.2 17.9Q14.9 19.9 12 19.9Z"/><path d="M12.2 3.9Q15.8 4 18.1 6.4Q20.3 8.9 20.1 12.3Q19.8 15.8 17.3 18Q14.9 20.2 11.6 20Q8.1 19.7 5.9 17.2Q3.8 14.8 4 11.5Q4.3 8.1 6.7 5.9Q8.9 3.9 12.5 4"/></svg><svg class="t-light" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.1 7.7Q14.2 7.8 15.4 9.1Q16.5 10.5 16.3 12.3Q16 14.3 14.6 15.4Q13.2 16.4 11.5 16.2Q9.6 15.9 8.5 14.5Q7.6 13.1 7.9 11.3Q8.3 9.4 9.7 8.4Q10.8 7.7 12.4 7.8"/><path d="M12.1 2.6L12 4.5"/><path d="M12 19.5L12.2 21.4"/><path d="M2.7 12.2L4.6 12"/><path d="M19.4 11.9L21.4 12.1"/><path d="M5.3 5.5L6.7 6.8"/><path d="M17.4 17.3L18.8 18.6"/><path d="M18.7 5.3L17.3 6.8"/><path d="M6.6 17.4L5.3 18.8"/></svg><svg class="t-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.6 14.3Q18 15.2 15.9 15.1Q12.8 14.8 10.8 12.6Q8.9 10.3 9.1 7.4Q9.3 5.6 10.1 4.3Q7 5.2 5.3 7.9Q3.7 10.7 4.5 13.9Q5.4 17.1 8.2 18.8Q11 20.4 14.2 19.6Q17.9 18.5 19.7 14.4"/></svg></button>
   <a class="btn to-app" href="https://app.trommi.com/">Open<span>&nbsp;Trommi</span></a>
+  </div>
 </div>
 </header>
 
 <main id="main">
 
-<!-- The opening: the bell, the name, its line, the way in. -->
-<div class="wrap open centre">
-  <div class="mark"><svg class="bell" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" fill="#1b6a57"/><g transform="translate(12.3 11.5) scale(.8) translate(-13 -12.2)" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3.1 19Q12.3 18.6 16.7 19L21 19.3"/><path d="M4.8 18.9Q5.2 15.1 5.7 13.7Q6.2 12.3 7.5 11.3Q8.7 10.3 10.3 9.5Q12 8.8 13.7 9.3Q15.3 9.8 16.4 11Q17.5 12.2 18.1 13.7Q18.6 15.2 18.8 17L18.9 18.8"/><path d="M11.8 8.6L12.2 6.9"/><path d="M10 6.6Q11.8 6 12.8 6.4L13.8 6.8"/><path d="M18.5 7.3Q19.5 5.8 19.8 5.2L20 4.5"/><path d="M20.6 10.3Q21.5 9.4 22.3 8.9L23.1 8.5"/></g></svg></div>
-  <h1>Trommi</h1>
-  <p class="tagline">Your agents ring. You <span class="under">decide.<svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path d="M1.0 5.0 Q18.0 3.4 26.0 4.3 Q34.0 5.2 43.0 4.4 Q52.0 3.6 61.0 4.3 Q70.0 5.0 78.0 4.4 Q86.0 3.8 92.5 4.2 L99.0 4.6"/></svg></span></p>
-  <p class="lede"><strong>Claude Code and Codex ask as cards on your phone.</strong> One tap, and they keep working. End-to-end encrypted.</p>
-  <p class="acts"><a class="btn" href="https://app.trommi.com/">Start with your agents now</a> <a class="btn quiet" href="/beta">Beta for iPhone</a> <a class="btn quiet" href="https://github.com/trommi/trommi">View on GitHub</a></p>
+<!-- Trommi: the line, the way in, and at once the picture. -->
+<section id="trommi" class="wrap open centre" aria-labelledby="trommi-h">
+  <h1 id="trommi-h">Your agents ring. You <span class="under">decide.<svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path d="M1.0 5.0 Q18.0 3.4 26.0 4.3 Q34.0 5.2 43.0 4.4 Q52.0 3.6 61.0 4.3 Q70.0 5.0 78.0 4.4 Q86.0 3.8 92.5 4.2 L99.0 4.6"/></svg></span></h1>
+  <p class="lede"><strong>Claude Code and Codex ask as cards on your phone.</strong> One tap, and they keep working. End-to-end encrypted, open source.</p>
+  <p class="acts"><a class="btn" href="https://app.trommi.com/">Start with your agents now</a> <a class="btn quiet" href="https://github.com/trommi/trommi"><svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>View on GitHub</a></p>
   <p class="open-note">Free for now. Register with an email address and a password or a passkey.</p>
-</div>
-
-<!-- The apps: real screenshots of the demo room (the made-up Fernly) in drawn frames, light and dark
-     (site/dev/showcase.mjs). theme.js points the dark sources at the picked theme. -->
-<figure class="wrap hero-shot">
-  <picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/hero-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/hero-dark.png"><source type="image/webp" srcset="/images/hero-light.webp"><img src="/images/hero-light.png" width="1100" height="700" alt="Trommi on a laptop and an iPhone: the Desk in the web app lists the questions agents are waiting on, each with its answers as buttons; the iPhone shows one card, a design question with two pictures to choose from." decoding="async"></picture>
-</figure>
-
-<section id="what" class="wrap narrow" aria-labelledby="what-h">
-  <h2 id="what-h" class="hid">What it does</h2>
+  <!-- The apps: real screenshots of the demo room (the made-up Fernly) in drawn frames, light and dark.
+       theme.js points the dark sources at the picked theme. -->
+  <figure class="hero-shot">
+    <picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/hero-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/hero-dark.png"><source type="image/webp" srcset="/images/hero-light.webp"><img src="/images/hero-light.png" width="1100" height="700" alt="Trommi on a laptop and an iPhone: the Desk in the web app lists the questions agents are waiting on, each with its answers as buttons; the iPhone shows one card, a design question with two pictures to choose from." decoding="async"></picture>
+  </figure>
   <ul class="facts">
-    <li><b>Mobile control.</b> Your agents keep working at the desk; you answer, chat and approve from wherever you are.</li>
     <li><b>Agents ask, you decide.</b> A session files a card with its question and a few options; one tap answers.</li>
     <li><b>A push when one needs you.</b> The blocking questions come first; the rest waits.</li>
     <li><b>End-to-end encrypted.</b> The server delivers sealed envelopes and holds no key that opens them.</li>
-    <li><b>Open source.</b> App, connector and server are on GitHub.</li>
   </ul>
 </section>
 
-<section id="see" class="wrap" aria-labelledby="see-h">
-  <h2 id="see-h" class="hid">The apps</h2>
-  <ul class="shots">
-    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-desk-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-desk-dark.png"><source type="image/webp" srcset="/images/phone-desk-light.webp"><img src="/images/phone-desk-light.png" width="300" height="640" alt="The Desk on an iPhone: the desk goals at the top, then questions with two answer buttons each." loading="lazy" decoding="async"></picture><figcaption><b>Desk</b>Every open question, the one that blocks first. One tap answers.</figcaption></figure></li>
-    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-card-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-card-dark.png"><source type="image/webp" srcset="/images/phone-card-light.webp"><img src="/images/phone-card-light.png" width="300" height="640" alt="A decision card on an iPhone: should the checkout be a sheet over the app or its own page, with a picture of each." loading="lazy" decoding="async"></picture><figcaption><b>Card</b>A question with its reasons and pictures, and a chat with the agent under it.</figcaption></figure></li>
-    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-chat-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-chat-dark.png"><source type="image/webp" srcset="/images/phone-chat-light.webp"><img src="/images/phone-chat-light.png" width="300" height="640" alt="A chat with an agent session on an iPhone: its messages, a reply, and the steps it is working on." loading="lazy" decoding="async"></picture><figcaption><b>Chat</b>Talk to a session, see what it is working on right now.</figcaption></figure></li>
-    <li><figure><picture><source media="(prefers-color-scheme: dark)" type="image/webp" srcset="/images/phone-scribble-dark.webp"><source media="(prefers-color-scheme: dark)" srcset="/images/phone-scribble-dark.png"><source type="image/webp" srcset="/images/phone-scribble-light.webp"><img src="/images/phone-scribble-light.png" width="300" height="640" alt="The Scribble Board on an iPhone: a handwritten heading, a sticky note with a checklist and ticks." loading="lazy" decoding="async"></picture><figcaption><b>Scribble</b>A board per desk for notes, sketches and plans.</figcaption></figure></li>
+<!-- Apps: the same board in three places, each a real screenshot of the demo room. -->
+<section id="apps" class="wrap" aria-labelledby="apps-h">
+  <h2 id="apps-h">Apps</h2>
+  <p class="intro">One board, wherever you are. Your desks, cards and chats stay in step on every device.</p>
+  <ul class="apps">
+    <li>
+      <div class="stage"><div class="win web"><span class="bar" aria-hidden="true"><i></i><i></i><i></i><span>app.trommi.com</span></span><img src="/images/app-web.webp" width="1440" height="900" alt="The Trommi web app: all desks in the sidebar, the open questions on the right, each with its answers as buttons." loading="lazy" decoding="async"></div></div>
+      <h3>Web</h3>
+      <p>In any browser, on any computer or phone. Nothing to install.</p>
+      <a class="go" href="https://app.trommi.com/">Open app.trommi.com</a>
+    </li>
+    <li>
+      <div class="stage"><div class="phone"><img src="/images/app-iphone.webp" width="600" height="880" alt="Trommi on an iPhone: the Desk with its goals and the questions waiting, two answer buttons each." loading="lazy" decoding="async"></div></div>
+      <h3>iPhone</h3>
+      <p>Pushes when an agent needs you, answers with one tap. Public beta on TestFlight.</p>
+      <a class="go" href="/beta">Join the iPhone beta</a>
+    </li>
+    <li>
+      <div class="stage"><div class="win mac"><img src="/images/app-mac.webp" width="1440" height="900" alt="Trommi for Mac: the desk Fernly with its agents in the sidebar and the questions waiting on the right." loading="lazy" decoding="async"></div></div>
+      <h3>Mac</h3>
+      <p>A native app for the desk next to your terminal. Coming soon on TestFlight.</p>
+      <span class="go soon">Soon on TestFlight</span>
+    </li>
   </ul>
 </section>
 
-<section id="apps" class="wrap narrow" aria-labelledby="apps-h">
-  <h2 id="apps-h">Where Trommi runs</h2>
-  <ul class="tiles">
-    <li><h3>Agents</h3><p>Claude Code and Codex, through the connector on Linux and macOS.</p><a href="#connect">Connect an agent</a></li>
-    <li><h3>Desktop</h3><p>The web app in any browser.</p><a href="https://app.trommi.com/">app.trommi.com</a></li>
-    <li><h3>Mobile</h3><p>The web app on any phone, added to the Home Screen; the iPhone app as a public beta on TestFlight (<a href="/beta">Beta for iPhone</a>).</p><a href="https://app.trommi.com/">Open on your phone</a></li>
+<!-- Agents: who rings, and how one is connected. -->
+<section id="agents" class="wrap" aria-labelledby="agents-h">
+  <h2 id="agents-h">Agents</h2>
+  <p class="intro">The connector is one small program on the machine where your agents work, on Linux or macOS. It carries their questions to your board, encrypted, and your answers back.</p>
+  <ul class="agents">
+    <li><h3>Claude Code</h3><p>A plugin: cards, chat, pictures, and a status line that shows the board.</p></li>
+    <li><h3>Codex</h3><p>An MCP server with hooks: Codex asks and reads your answers the same way.</p></li>
+    <li><h3>More to come</h3><p>The connector speaks MCP, the open protocol agents share. Others follow.</p></li>
   </ul>
-</section>
-
-<section id="connect" class="wrap narrow" aria-labelledby="connect-h">
-  <h2 id="connect-h">Connect an agent</h2>
-  <p class="intro">On a machine with Claude Code or Codex, on Linux or macOS. Once per machine, install the connector:</p>
-  <pre class="cmd" tabindex="0" aria-label="The install command">curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh</pre>
-  <p class="intro">Then in Claude Code, in a project folder, with the invite link from <b>Invite Agent…</b> in the app (in Codex, ask the agent to connect with the link):</p>
-  <pre class="cmd" tabindex="0" aria-label="The connect command">/trommi:connect '<i>the invite link</i>'</pre>
-  <p class="intro">Compare the six emoji in the terminal and in the app, confirm, and the session's next question lands on your Desk.</p>
+  <ol id="connect" class="steps" aria-label="Connect an agent">
+    <li><b>Install the connector</b>, once per machine:
+      <pre class="cmd" tabindex="0" aria-label="The install command">curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh</pre></li>
+    <li><b>Connect a session.</b> In Claude Code, in a project folder, with the invite link from <b>Invite Agent…</b> in the app (in Codex, ask the agent to connect with the link):
+      <pre class="cmd" tabindex="0" aria-label="The connect command">/trommi:connect '<i>the invite link</i>'</pre></li>
+    <li><b>Compare six emoji</b> in the terminal and in the app, confirm, and the session's next question lands on your Desk.</li>
+  </ol>
 </section>
 
 </main>

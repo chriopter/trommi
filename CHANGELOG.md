@@ -93,6 +93,8 @@ while it runs.
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
+- trommi.com reworked: a light head with Trommi, Apps, Agents and the GitHub mark, the picture right under the
+  headline, Web, iPhone and Mac side by side, and a section on the agents and how to connect one.
 - The reverse card's middle is now an oval drawn by the pen, a little uneven and tilted (web and iPhone).
 - The writing field under a card is calmer: one "+" on the left for attaching and drawing, Send on the right. Shift+Enter hands the card back with your words, Alt+Enter (⌥+Enter) starts a new line (web; on the iPad with a keyboard too).
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
