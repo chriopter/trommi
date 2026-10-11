@@ -34,13 +34,14 @@ public enum DemoFixture {
     b.roomId = room["room_id"].string; b.hubURL = room["hub_url"].string ?? "mock:"; b.myDeviceId = room["my_device_id"].string; b.myRole = room["my_role"].string ?? "human"
     b.keyEpoch = room["key_epoch"].int ?? 1; b.lastEntryNumber = room["last_entry_number"].int ?? 0; b.lastEnvelopeNumber = room["last_envelope_number"].int ?? 0
     b.connection = "live"
+    if let fp = room["recovery_key"]["fingerprint"].string { b.recoveryKey = RecoveryKey(fingerprint: fp, since: stampOf(room["recovery_key"]["since"])) }
 
     for m in f["members"].array ?? [] {
       guard let id = m["device_id"].string else { continue }
       let x = RoomMember(deviceId: id, role: m["device_role"].string ?? "human")
       x.deviceName = m["device_name"].string ?? ""; x.isActive = m["is_active"] != .bool(false); x.addedEntryNumber = m["added_entry_number"].int ?? 0
       x.removedEntryNumber = m["removed_entry_number"].int; x.isMe = m["is_me"].truthy || id == b.myDeviceId; x.isOnline = m["is_online"].truthy
-      x.offlineSince = stampOf(m["offline_since"]); x.link = cleanLink(m["link"]); x.agentSessionId = m["agent_session_id"].string; x.platform = m["platform"].string; x.host = m["host"].string; x.folder = m["folder"].string
+      x.offlineSince = stampOf(m["offline_since"]); x.link = cleanLink(m["link"]); x.agentSessionId = m["agent_session_id"].string; x.addedAt = stampOf(m["added_at"]); x.platform = m["platform"].string; x.host = m["host"].string; x.folder = m["folder"].string
       b.members[id] = x
     }
 
