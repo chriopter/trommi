@@ -20,10 +20,12 @@
 //!   human's), work trails, Artifacts; the human device answers, reads and shreds where the fixture did, and the
 //!   agents close, withdraw and merge;
 //! - at the end the status lines, the Desks with their Goals and crowns, which session sits on which Desk, drafts,
-//!   the corner note, and the archived sessions.
+//!   the corner note.
 //!
 //! Not seeded: the times (everything is written now, in the fixture's order), permission requests (they expire
-//! within minutes), the Scribble Boards, and the human devices the fixture lists beside the one that looks.
+//! within minutes), the Scribble Boards, the human devices the fixture lists beside the one that looks, and the
+//! archived sessions with all they hold: a device that signs in later joins only the live session groups (8.4),
+//! so on the reviewer's device an archived session would stand without its name and content.
 //! The agents stay offline afterwards. The fixture is read as it stands, so a new demo is seeded by running this
 //! again with another e-mail.
 #[path = "../connector/common/mod.rs"]
@@ -795,39 +797,56 @@ impl Seeder {
                 .map_err(|e| format!("note: {e}"))?;
             self.count("notes");
         }
-        // Archived sessions last: the hub takes nothing more for them.
-        for s in self.fixture["sessions"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-        {
-            if s["settings"]["archived"] != true {
-                continue;
-            }
-            let seat = self.seat_of(s["agent_device_id"].as_str().unwrap_or(""))?;
-            let mut v = obj(&s["settings"]);
-            v.insert("archived".into(), json!(true));
-            self.human
-                .set_register(
-                    &room,
-                    &format!("session/{}", wire(&seat.sid)),
-                    Some(Value::Object(v)),
-                )
-                .await
-                .map_err(|e| format!("archive register: {e}"))?;
-            let group = GroupId::session(self.human.room, session_id(&seat.sid));
-            self.human
-                .hub
-                .post(
-                    &format!("/v1/groups/{}/archive", b64(group.as_bytes())),
-                    &json!({}),
-                )
-                .await
-                .map_err(|e| format!("archive: {e}"))?;
-            self.count("archived sessions");
-        }
         Ok(())
     }
+}
+
+/// The fixture without its archived sessions (and their helpers' sessions): their cards, Chats and Artifacts go
+/// with them. Returns how many sessions were left out.
+fn without_archived(fixture: &mut Value) -> usize {
+    let sessions = fixture["sessions"].as_array().cloned().unwrap_or_default();
+    let archived: Vec<&Value> = sessions
+        .iter()
+        .filter(|s| s["settings"]["archived"] == true)
+        .collect();
+    let names: std::collections::HashSet<&str> = archived
+        .iter()
+        .filter_map(|s| s["agent_session_id"].as_str())
+        .collect();
+    let gone: std::collections::HashSet<String> = sessions
+        .iter()
+        .filter(|s| {
+            s["settings"]["archived"] == true
+                || s["profile"]["parent_session"]
+                    .as_str()
+                    .is_some_and(|p| names.contains(p))
+        })
+        .filter_map(|s| s["agent_device_id"].as_str().map(str::to_owned))
+        .collect();
+    let by = |v: &Value, key: &str| gone.contains(v[key].as_str().unwrap_or(""));
+    let cards: std::collections::HashSet<String> = fixture["cards"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|c| by(c, "agent_device_id"))
+        .filter_map(|c| c["object_id"].as_str().map(str::to_owned))
+        .collect();
+    for (list, key) in [
+        ("sessions", "agent_device_id"),
+        ("cards", "agent_device_id"),
+        ("published", "agent_device_id"),
+    ] {
+        if let Some(items) = fixture[list].as_array_mut() {
+            items.retain(|v| !by(v, key));
+        }
+    }
+    if let Some(timelines) = fixture["timelines"].as_object_mut() {
+        timelines.retain(|key, _| {
+            let target = key.rsplit('/').next().unwrap_or("");
+            !gone.contains(target) && !cards.contains(target)
+        });
+    }
+    gone.len()
 }
 
 fn with_schema_map(mut body: Map<String, Value>) -> Map<String, Value> {
@@ -868,6 +887,11 @@ async fn run() -> Res<()> {
         &std::fs::read(&args.fixture).map_err(|e| format!("{}: {e}", args.fixture.display()))?,
     )
     .map_err(|e| e.to_string())?;
+    let mut fixture = fixture;
+    let left_out = without_archived(&mut fixture);
+    if left_out > 0 {
+        println!("{left_out} session(s) of archived sessions left out");
+    }
     let files = args
         .fixture
         .parent()
