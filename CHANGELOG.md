@@ -24,6 +24,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- The reverse card on a card: its black oval smaller, with air above and below, as on the send button (web and iPhone).
 - iPhone: right after you log in, the Desk shows the open questions from the hub's list, before the history is read.
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer
