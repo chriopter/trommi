@@ -1,4 +1,6 @@
-# On every commit on main and on every pull request: find which parts changed, test and build those. On main only:
+# On every commit on main and staging and on every pull request: find which parts changed, test and build those.
+# On staging also: deliver the iOS app to TestFlight when its part ran and passed (no release, no other delivery).
+# On main only:
 # when what a part is built from changed since the newest release, make one release v<N> of every part
 # (release.yml) and deliver each part whose inputs changed (web, hub, iOS; the connector is delivered by the release
 # itself: installers and `trommi-connector update` take the newest).
@@ -32,13 +34,13 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
   workflow_dispatch:
 
 permissions: {}
 
-# A pull request: one run at a time, a newer commit cuts the older run off. On main every run is its own group:
+# A pull request: one run at a time, a newer commit cuts the older run off. On main and staging every run is its own group:
 # each compares with the commit before it, so a run dropped while waiting would be a change never built.
 concurrency:
   group: build-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
@@ -181,10 +183,10 @@ jobs:
         run: |
           rustup toolchain install || rustup show
           rustc --version
-      # the crates the build depends on, compiled; saved by main only, a pull request reads them
+      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
       # the licence tables are what cargo reports for this Cargo.lock (.github/scripts/third_party.mjs)
       - name: THIRD-PARTY.md is current
         run: node .github/scripts/third_party.mjs --check
@@ -228,10 +230,10 @@ jobs:
           rustup toolchain install || rustup show
           rustc --version
           echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
-      # the crates the build depends on, compiled; saved by main only, a pull request reads them
+      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: bindgen
         with:
@@ -280,7 +282,7 @@ jobs:
   deploy_web:
     name: Web app
     needs: [changes, web, release]
-    if: ${{ !cancelled() && needs.release.outputs.published == 'true' && needs.changes.outputs.changed_web == 'true' }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.release.outputs.published == 'true' && needs.changes.outputs.changed_web == 'true' }}
     permissions:
       contents: read
       actions: read
@@ -327,10 +329,10 @@ jobs:
           tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components 1
           echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/zig/zig" version
-      # the crates the build depends on, compiled; saved by main only, a pull request reads them
+      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: zigbuild
         with:
@@ -406,10 +408,10 @@ jobs:
           rustup component add llvm-tools
           rustc --version
           xcodebuild -version
-      # the crates the build depends on, compiled; saved by main only, a pull request reads them
+      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
       # The Rust core for this Mac (for the tests) and for iOS; the helpers it removes from the iOS library are
       # checked against Apple's runtime of this Xcode.
       - name: The Rust core for Swift
@@ -477,19 +479,26 @@ jobs:
           rustup toolchain install || rustup show
           rustc --version
           swift --version
-      # the crates the build depends on, compiled; saved by main only, a pull request reads them
+      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
       - name: The Rust core for Swift on this machine
         run: sh core/swift/build.sh host
       - name: Test
         run: swift test --package-path tests/ios
 
+  # main: with the release, when the app's inputs changed since the newest release. staging: no release; when the iOS
+  # part ran (its paths changed since the commit before) and its tests and the core's passed.
   deploy_ios:
     name: iOS
-    needs: [changes, ios, release]
-    if: ${{ !cancelled() && needs.release.outputs.published == 'true' && needs.changes.outputs.changed_ios == 'true' && needs.ios.result == 'success' }}
+    needs: [changes, core, ios, ios_client, release]
+    if: >-
+      ${{ !cancelled() && needs.ios.result == 'success' && (
+        (needs.release.outputs.published == 'true' && needs.changes.outputs.changed_ios == 'true')
+        || (github.ref == 'refs/heads/staging' && github.event_name == 'push'
+          && needs.ios_client.result == 'success'
+          && contains(fromJSON('["success","skipped"]'), needs.core.result))) }}
     permissions:
       contents: read
       actions: read
@@ -522,10 +531,10 @@ jobs:
           rustc --version
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
-      # the crates the build depends on, compiled; saved by main only, a pull request reads them
+      # the crates the build depends on, compiled; saved by main and staging, a pull request reads them
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging' }}
       # the hub's tests and the deploy path's (updater, release form, settings)
       - name: Test
         run: |
@@ -588,7 +597,7 @@ jobs:
           retention-days: 30
 
   # The one release of this run: every part's files and one signed manifest (release.yml): the parts built here, the
-  # unchanged ones taken from the newest release. Only on main, only when the inputs of a part changed since the
+  # unchanged ones taken from the newest release. Only on main (never staging), only when the inputs of a part changed since the
   # newest release, and only when every part that ran passed.
   release:
     name: Release
@@ -620,7 +629,7 @@ jobs:
   deploy_hub:
     name: Hub
     needs: [changes, release]
-    if: ${{ !cancelled() && needs.release.outputs.published == 'true' && needs.changes.outputs.changed_hub == 'true' }}
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.release.outputs.published == 'true' && needs.changes.outputs.changed_hub == 'true' }}
     permissions:
       id-token: write
     uses: ./.github/workflows/deploy_hub.yml
