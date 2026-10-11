@@ -281,10 +281,9 @@ fn the_hub_refuses_what_a_helper_session_may_not_hold() {
         Err(Error::RoomBehind)
     );
     assert!(other.groups().unwrap().is_empty() && other.outbox().is_empty());
-    // A founding that leaves a human device out is not built.
-    let one = hub.claim(&[a.id()]).unwrap();
+    // A founding with no human device is not built (one that leaves out a device without a KeyPackage is: 5.2.5).
     assert_eq!(
-        agent.found_helper(&parent, &one, now()),
+        agent.found_helper(&parent, &[], now()),
         Err(Error::Incomplete)
     );
     // A helper session hangs under a live main session of the room.

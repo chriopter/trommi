@@ -200,6 +200,10 @@ name = "hub_time"
 path = "hub/time.rs"
 
 [[test]]
+name = "hub_key_packages"
+path = "hub/key_packages.rs"
+
+[[test]]
 name = "hub_load"
 path = "hub/load.rs"
 

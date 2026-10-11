@@ -242,11 +242,10 @@ pub fn check_session_commit(
         if kind == SessionKind::Main && agents != 1 {
             return Err(bad("a main session is founded with its agent device"));
         }
-        if let Some(missing) = room.humans.iter().find(|h| !leaves.contains(h)) {
-            return Err(bad(format!(
-                "the founding Commit leaves out human device {}",
-                crate::util::short(missing)
-            )));
+        // 5.2.5: at least one human device; one left out must be one the hub holds no KeyPackage of, which the
+        // caller checks (`left_out`)
+        if !room.humans.iter().any(|h| leaves.contains(h)) {
+            return Err(bad("the founding Commit adds no human device"));
         }
     }
     check_session_leaves(kind, room, leaves)

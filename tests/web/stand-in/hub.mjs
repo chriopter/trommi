@@ -785,7 +785,8 @@ export async function startFakeHub(opts = {}) {
       for (const k of single) if (!held.single.includes(k) && !held.handed.has(k)) held.single.push(k)
       if (last) held.last = b64(last)
       a.room.key_packages.set(a.device, held)
-      if (held.single.length > 100) throw refuse('too-many', 'a device keeps at most 100 single-use KeyPackages')
+      // a device keeps at most 100 single-use ones: with more, the oldest go (hub delivery.rs put_key_packages)
+      if (held.single.length > 100) held.single.splice(0, held.single.length - 100)
       return { unused: held.single.length }
     }
     if (is('POST', 'key-packages', 'claim')) {
@@ -793,15 +794,18 @@ export async function startFakeHub(opts = {}) {
       if (!Array.isArray(devices) || devices.length < 1 || devices.length > 64) throw refuse('bad-format', 'devices: 1 to 64 device ids')
       if (a.who !== 'human' && a.who !== 'agent') throw refuse('forbidden', 'only a human or agent device claims KeyPackages')
       if (new Set(devices).size !== devices.length) throw refuse('bad-format', 'a device is named once')
-      const missing = devices.find(d => { const k = a.room.key_packages.get(pathId(String(d), 32)); return !k || (!k.single.length && !k.last) })
-      if (missing) throw refuse('not-found', 'no KeyPackage for a device', { device: missing })
+      const none = d => { const k = a.room.key_packages.get(pathId(String(d), 32)); return !k || (!k.single.length && !k.last) }
+      // (`partial`: the devices without one are named in `missing`, hub delivery.rs claim_key_packages)
+      const partial = body.partial === true, missing = devices.filter(none)
+      if (missing.length && !partial) throw refuse('not-found', 'no KeyPackage for a device', { device: missing[0] })
       const key_packages = {}
       for (const d of devices) {
+        if (none(d)) continue
         const held = a.room.key_packages.get(d), taken = held.single.shift()
         if (taken) held.handed.add(taken)
         key_packages[d] = taken ?? held.last
       }
-      return { key_packages }
+      return partial ? { key_packages, missing } : { key_packages }
     }
     if (is('PUT', 'sealed-keys')) {
       const a = human(writer(rq)), key = b64(field(body, 'sealed_key'))

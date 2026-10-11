@@ -772,7 +772,12 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             };
             let auth = read_auth()?;
             limited(app.limits.claims.take(&[&auth.room[..], &auth.device[..]].concat(), devices.len() as f64, t))?;
-            app.write_as(&auth, rq.lease, |x, _| delivery::claim_key_packages(x, &auth, &devices))
+            let partial = match &rq.body["partial"] {
+                Value::Null => false,
+                Value::Bool(b) => *b,
+                _ => return Err(refuse("bad-format", "partial: true or false")),
+            };
+            app.write_as(&auth, rq.lease, |x, _| delivery::claim_key_packages(x, &auth, &devices, partial))
         }
         ("PUT", ["sealed-keys"]) => {
             let key = rq.bytes("sealed_key")?;

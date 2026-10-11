@@ -439,16 +439,21 @@ public struct Store {
     try await takeWelcomes(&change)
     if let work = codeJoinWork { await work.value; codeJoinWork = nil }
     await finishCodeJoin()
+    // KeyPackages before the catch-up: a device back after long, or just signed in, may hold none at the hub, and
+    // every session founded meanwhile leaves it out until it has (5.2.5); a long catch-up must not keep them back.
+    // (upkeep: a failure here does not keep the board from showing; the end of this sync tries again)
+    if (try? await publishKeyPackages()) != nil { pumpOutbox() }
     try await readChanges(&report, &change)
     // (the log said that this device was removed: nothing more is written or read)
     if removedAt != nil { emit(change); throw TrommiError("removed", "this device was removed from the room") }
     // (what was written before this device came is upkeep too: what is left of it is noted and goes on next time)
     try? await tendPast(&report, &change)
     // (stocking KeyPackages and writing `heads` are upkeep: a failure there does not keep the board from showing;
-    // the next sync tries again)
+    // the next sync tries again. The KeyPackages again: what the catch-up's Welcomes used up)
     try? await publishKeyPackages()
     await writeHeads()
     await tendKeys()
+    await healSessions()
     synced = true
     Task { await self.refreshPresence() }
     board.project()

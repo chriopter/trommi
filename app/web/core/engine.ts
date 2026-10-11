@@ -465,7 +465,7 @@ export class Engine {
     // it and dropped the entry then)
     try { await this.call(d => d.outboxAccepted(entry.id, answer.change ?? null)) } catch (e) { if (this.core.errorCode(e) !== 'not-found') throw e }
     await this.opts.meta.delete(`outbox-extra/${entry.id}`).catch(() => {})
-    if (entry.kind === 'keyPackages' && answer.unused !== undefined) await this.opts.meta.set('key-packages', { unused: answer.unused }).catch(() => {})
+    if (entry.kind === 'keyPackages' && answer.unused !== undefined) { this.uploadsAnswered++; await this.opts.meta.set('key-packages', { unused: answer.unused }).catch(() => {}) }
     const commit = entry.kind !== 'message' && entry.kind !== 'relayMessage' && entry.kind !== 'envelope' && entry.kind !== 'keyPackages' && entry.kind !== 'sealedKey'
     if (commit) await this.refresh()
     // An accepted Commit is not merged by the hub's answer: the group stands in its old epoch until the Commit
@@ -928,6 +928,8 @@ export class Engine {
     })
   }
   private async keep(): Promise<void> {
+    // (not waited for: the hub may hold the answer back while this device is not in yet)
+    if (!this.stockAsked && !this.stocking && this.now() - this.timedAt < this.timing.upkeep_every) void this.stockKeyPackages().catch(() => {})
     await this.serial(async () => { await this.joinWelcomes(null); await this.tellFindings(); this.emit('batch', null) })
     if (this.is_human) await this.heal(await this.invited())
     if (this.is_human) await this.askForKeys()
@@ -1050,7 +1052,8 @@ export class Engine {
           }
           case 'foundSession': {
             const others = (this.roles?.humans ?? []).filter(h => !same(h, this.device_id))
-            const claimed = others.length ? await this.hub.claimKeyPackages(others) : []
+            // (a partial claim: a human device without a KeyPackage at the hub is left out and added later, 5.2.7)
+            const claimed = others.length ? await this.hub.claimKeyPackages(others, { partial: true }) : []
             await this.do(d => d.foundSession(device!, [...claimed.map(c => c.key_package), step.keyPackage!], this.now()))
             break
           }
@@ -1117,14 +1120,44 @@ export class Engine {
     const made = await this.do(d => d.answerKeyRequest(group, device, this.now())).catch(() => [] as number[])
     if (made.length) await this.opts.meta.set(key, [...answered, id].slice(-256)).catch(() => {})
   }
+  /**
+   * Keeps the hub stocked with this device's KeyPackages (14.2). How many it holds unused is asked once per run, with
+   * an upload of nothing: the count kept from an earlier run says nothing of what was handed out or ran out while
+   * the device was away, and a device that trusted it would upload none while the hub holds none. Then each
+   * upload's answer keeps it.
+   */
+  private stockKeyPackages(): Promise<void> {
+    // (one at a time: two at once would both make a batch for the same count)
+    const run = this.stocking ??= this.stock().finally(() => { if (this.stocking === run) this.stocking = null })
+    return run
+  }
+  private stocking: Promise<void> | null = null
+  private async stock(): Promise<void> {
+    if (!this.room_id) return
+    if (!this.stockAsked) {
+      // (not answered, say `rate-limited` right after a sign-in: the kept count serves, and the next upkeep asks again)
+      try {
+        const seen = this.uploadsAnswered
+        const { unused } = await this.hub.putKeyPackages({ single_use: [] })
+        // (an upload answered meanwhile told a newer count; one still in the outbox the core counts as held)
+        await this.serial(async () => { if (this.uploadsAnswered === seen) await this.opts.meta.set('key-packages', { unused }).catch(() => {}) })
+        this.stockAsked = true
+      } catch (e) { if (this.isLocal(e)) throw e }
+    }
+    await this.do(async d => {
+      const held = (await this.opts.meta.get('key-packages').catch(() => null)) as { unused: number } | null
+      return d.keyPackagesToUpload(held?.unused ?? 0, this.now())
+    })
+  }
+  private stockAsked = false
+  private uploadsAnswered = 0
   /** The timed part: KeyPackages (14.2), the own-leaf update (5.2.9; the core says whether it is due), `heads` (9.0.7),
    *  and the wishes for keys that came while this device was away (7.1.1: the hub keeps them seven days). */
   private async timed(): Promise<void> {
     if (!this.room_id) return
     // (a wish older than a day is passed over: a device that still lacks the keys has asked again since)
     if (this.is_human) for (const row of await this.hub.requests().catch(() => [])) if (row.kind === 'handover' && row.at + 86_400_000 >= this.now()) await this.answerKeys(row.id, row.group, row.device)
-    const held = (await this.opts.meta.get('key-packages').catch(() => null)) as { unused: number } | null
-    await this.do(d => d.keyPackagesToUpload(held?.unused ?? 0, this.now())).catch(() => {})
+    void this.stockKeyPackages().catch(() => {})
     if (!(await this.do(d => d.isOwner()).catch(() => true))) await this.serial(() => this.reopen()).catch(() => {})
     for (const g of this.groups) {
       if (g.archived || g.disallowed.length) continue
@@ -1155,6 +1188,9 @@ export class Engine {
     this.halted = false
     this.kick()
     this.setConnection('connecting')
+    // KeyPackages first: a device back after long, or just signed in, may hold none at the hub, and every session
+    // founded or joined meanwhile leaves it out until it has; a long catch-up must not keep them back
+    void this.stockKeyPackages().catch(() => {})
     await this.catchUp().catch(() => {})
     if (!this.running) return
     if (stream) this.openStream()

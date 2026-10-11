@@ -1418,7 +1418,7 @@ impl World {
         helpers: &[&Dev],
     ) -> (Vec<u8>, Reply, Out) {
         let now = self.ada.room_now();
-        let mut adds = self.claim(opener, humans);
+        let mut adds = if humans.is_empty() { vec![] } else { self.claim(opener, humans) };
         adds.extend(helpers.iter().map(|h| h.key_package(false)));
         let (group, info0) = opener.create_session(&random(), session);
         let key0 = opener.sealed_key(&group, 0, &info0, now.0, &self.recovery.hpke_public, false);
@@ -1631,6 +1631,43 @@ impl World {
             }
         }
         (session, group)
+    }
+
+    /// Posts the founding of a main session by `ada` that adds exactly the devices of `adds` (KeyPackages); `ada`
+    /// merges it when the hub takes it. Returns the group id, the reply and the Commit.
+    pub fn found_main_adding(&mut self, adds: Vec<Vec<u8>>) -> (Vec<u8>, Reply, Out) {
+        let (group, info0) = self.ada.create_session(&random(), &ZERO16);
+        let now = self.ada.room_now();
+        let key0 = self
+            .ada
+            .sealed_key(&group, 0, &info0, now.0, &self.recovery.hpke_public, true);
+        let out = self.ada.commit(
+            &group,
+            &Change {
+                adds,
+                ..Default::default()
+            },
+            now,
+        );
+        let key1 = self.ada.sealed_key(
+            &group,
+            1,
+            &out.group_info,
+            now.0,
+            &self.recovery.hpke_public,
+            true,
+        );
+        let reply = self.ada.post(
+            &self.hub,
+            "/v1/groups",
+            &founding_json(&info0, &key0, &out, &key1),
+        );
+        if reply.status == 200 {
+            self.ada.merge(&group);
+        } else {
+            self.ada.forget(&group);
+        }
+        (group, reply, out)
     }
 
     /// Lets a device follow a group's log from where it stands: every Commit after its own epoch.

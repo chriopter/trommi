@@ -467,7 +467,7 @@ public protocol CoreDevice: CoreSigner {
 
   /** Founds the room with the recovery code (32 bytes), whose public halves the room group names (8.1, 8.2). */
   func foundRoom(recoveryCode: Bytes, nowMs: UInt64) throws -> RoomId
-  /** `keyPackages`: exactly one of the agent device and of every other human device (`incomplete` otherwise). */
+  /** `keyPackages`: one of the agent device (`incomplete` without) and of each other human device the hub had one of (5.2.5). */
   func foundSession(agent: DeviceId, keyPackages: [Bytes], nowMs: UInt64) throws -> SessionId
   func addToSession(group: GroupId, device: DeviceId, keyPackage: Bytes, nowMs: UInt64) throws -> UInt64
   /** Takes agent devices out of the room's enrolled ones; their sessions are stale from then on. (One is enrolled by invite alone.) */
