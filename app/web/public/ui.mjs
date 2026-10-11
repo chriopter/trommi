@@ -2938,6 +2938,42 @@ export function agentsOf(everyone, members, { me = null } = {}) {
   }).sort((x, y) => y.sessions.length - x.sessions.length || x.program.localeCompare(y.program) || x.host.localeCompare(y.host))
 }
 
+// ---- an agent's account and usage (the connector's `account` in the session profile, connector/src/usage.rs) ----
+const PLANS = { pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise', free: 'Free', plus: 'Plus', prolite: 'Pro Lite', business: 'Business', edu: 'Edu' }
+/** The plan tag: "Claude Max", "ChatGPT Pro Lite". */
+export const usagePlan = acc => `${acc?.kind === 'codex' ? 'ChatGPT' : 'Claude'} ${PLANS[String(acc?.plan ?? '').toLowerCase()] ?? String(acc?.plan ?? '').replace(/^./, c => c.toUpperCase())}`.trim()
+/** When a window starts again: "13:43" today or within a day, else "Wed 14 Oct". */
+export function usageReset(at, now = Date.now()) {
+  const d = new Date(at)
+  return at - now < 86_400_000 ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+/** The meters of an account, [{ key, label, long, used, reset }]: the 5-hour window and the week, those it has.
+ *  A window that started again since the agent's last word is left out: what it said of it is old. */
+export function usageMeters(acc, now = Date.now()) {
+  if (!acc || typeof acc !== 'object') return []
+  return [['five_hour', '5 h', '5-hour window'], ['weekly', 'week', 'This week']].flatMap(([key, label, long]) => {
+    const w = acc[key], used = Number(w?.used), at = Number(w?.resets_at)
+    if (!Number.isFinite(used) || (Number.isFinite(at) && at > 0 && at <= now)) return []
+    return [{ key, label, long, used: Math.round(Math.min(100, Math.max(0, used))), reset: Number.isFinite(at) && at > 0 ? usageReset(at, now) : '' }]
+  })
+}
+const hot = used => (used >= 80 ? ' is-hot' : '')
+const meterTitle = m => `${m.long}: ${m.used} % used${m.reset ? `, resets ${m.reset}` : ''}`
+const bar = (m, wide = false) => html`<span class="use-bar${hot(m.used)}${wide ? ' is-wide' : ''}" title="${meterTitle(m)}"><i style="--used:${m.used}%"></i></span>`
+const credits = n => `${Number(n).toLocaleString('en-GB', { maximumFractionDigits: 0 })} ${Math.round(n) === 1 ? 'credit' : 'credits'}`
+/** Compact, for a session's heading: each meter its word, a thin bar and its percent. */
+export function usageCompact(acc, now = Date.now()) {
+  const ms = usageMeters(acc, now)
+  if (!ms.length) return ''
+  return html`<span class="use-compact" aria-label="Usage of ${usagePlan(acc)}">${ms.map(m => html`<span class="use-m" title="${meterTitle(m)}"><span class="use-l">${m.label}</span>${bar(m)}<b class="${hot(m.used).trim()}">${m.used} %</b></span>`)}</span>`
+}
+/** Fuller, for an agent's card on Settings · Agents: plan and e-mail, one row per meter, Codex's credits and resets. */
+export function usageFull(acc, now = Date.now()) {
+  if (!acc || typeof acc !== 'object' || !(acc.plan || acc.email)) return ''
+  const ms = usageMeters(acc, now)
+  const facts = [Number.isFinite(acc.credits) ? html`<span class="use-fact">${credits(acc.credits)}</span>` : '', Number.isInteger(acc.full_resets) ? html`<span class="use-fact">${acc.full_resets} full ${acc.full_resets === 1 ? 'reset' : 'resets'}</span>` : ''].filter(Boolean)
+  return html`<div class="use-full">${html`<p class="use-who">${acc.plan ? html`<span class="use-plan">${usagePlan(acc)}</span>` : ''}${acc.email ? html`<span class="use-mail">${acc.email}</span>` : ''}</p>`}${ms.map(m => html`<div class="use-row"><span class="use-l">${m.long}</span>${bar(m, true)}<b class="${hot(m.used).trim()}">${m.used} %</b><small>${m.reset ? `resets ${m.reset}` : ''}</small></div>`)}${facts.length ? html`<p class="use-facts">${facts}</p>` : ''}</div>`
+}
 /** One row of a Settings list: a link with its drawing, its word, what it says now (detail) and the chevron. */
 export const setRow = ({ href, icon = '', word, detail = '', id = '' }) => html`<a class="set-row" href="${href}" data-nav${id ? raw(` id="${id}"`) : ''}><span class="set-ico">${icon}</span><b>${word}</b><span class="set-detail">${detail}</span>${SET_CHEVRON}</a>`
 /** A page under Settings: the way back (back: true for Settings, or the address of the page above, named backWord), its title (and a line under it), then its parts. id/cls: of the main element. */

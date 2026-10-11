@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);
+  a session's heading shows the two bars, end-to-end encrypted like the rest.
 - Public iPhone beta via TestFlight: join from [trommi.com/beta](https://trommi.com/beta); every release arrives there
   first.
 - Settings → Devices names a device of yours that never finished signing in, and removes it with one tap

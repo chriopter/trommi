@@ -135,6 +135,8 @@ impl Seat {
             )
             // `say` gives up after half a minute by default; a busy test machine may need longer to go online
             .env("TROMMI_SAY_MS", "120000")
+            // the account and usage of the program (usage.rs) only where a test asks for them
+            .env("TROMMI_USAGE", "off")
             .current_dir(&self.folder)
             .kill_on_drop(true);
         command

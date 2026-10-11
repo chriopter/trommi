@@ -680,6 +680,12 @@ export class BoardState {
     // When the agent process behind a session last said anything, in any of its sessions (main or child).
     const lastOfDevice = new Map()
     for (const s of list) if (s.agent_device_id) lastOfDevice.set(s.agent_device_id, Math.max(lastOfDevice.get(s.agent_device_id) ?? 0, s.last_activity_at ?? 0))
+    // The account and usage an agent process names (its main session's profile `account`): shown on each of its sessions.
+    const accountOf = new Map()
+    for (const s of list) {
+      const acc = s.profile?.account
+      if (s.agent_device_id && acc && typeof acc === 'object' && (!accountOf.has(s.agent_device_id) || !s.parent_session_id)) accountOf.set(s.agent_device_id, acc)
+    }
     const out = list.map((s, i) => {
       const key = sessionKey(s), set = m.human.session_settings.get(key) ?? s.settings ?? {}
       const p = s.profile ?? {}
@@ -696,7 +702,7 @@ export class BoardState {
       const dev = m.members.get(s.agent_device_id)
       return {
         id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: p.agent_name || s.device_name || id, label: set.name || '', icon: set.icon || p.icon || '', icon_by: set.icon ? 'human' : 'agent',
-        online: Boolean(s.is_online), offline_since: s.offline_since ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: crown === key || crown === s.agent_device_id, parent, main: Boolean(p.is_main),
+        online: Boolean(s.is_online), offline_since: s.offline_since ?? null, account: accountOf.get(s.agent_device_id) ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: crown === key || crown === s.agent_device_id, parent, main: Boolean(p.is_main),
         desk: set.desk ?? null, archived: chosen && !back, replaced: false, group: set.group ?? null, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position), seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: lastOfDevice.get(s.agent_device_id) ?? 0,
         removed: s.is_active === false,
         // (a session on a person's own device, not an agent's: it is never deleted from the board: session.mjs Delete)
@@ -712,6 +718,8 @@ export class BoardState {
     const byId = new Map(out.map(a => [a.id, a]))
     for (const a of out) if (!a.parent || !byId.has(a.parent)) a.desk ??= 'main'
     for (const a of out) if (a.parent && byId.has(a.parent)) a.desk = byId.get(a.parent).desk
+    // (a helper that is a device of its own runs on its main's account)
+    for (const a of out) if (!a.account && a.parent && byId.has(a.parent)) a.account = byId.get(a.parent).account
     return out.sort((a, b) => a.position - b.position)
   }
 

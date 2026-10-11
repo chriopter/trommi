@@ -2045,6 +2045,45 @@ pub async fn main_server() {
             }
         });
     }
+    // the account and usage of the program this runs in (usage.rs): looked at about once a minute, sent into the
+    // main session's profile when it changed. The installed connector under Claude Code puts its status line in once
+    // (as `setup claude` does), unless `remove claude` took it out.
+    if crate::usage::on() {
+        let c = conn.clone();
+        let every = env_ms("TROMMI_USAGE_POLL_MS", 60_000).max(1000);
+        tokio::spawn(async move {
+            let mut poller = crate::usage::Poller::default();
+            let mut looked_at_line = false;
+            tokio::time::sleep(std::time::Duration::from_millis(every.min(15_000))).await;
+            loop {
+                let codex = crate::host::is_codex();
+                if !looked_at_line && !codex {
+                    looked_at_line = true;
+                    if crate::setup::is_installed(&self_path()) && !crate::usage::declined() {
+                        if let Some(f) = crate::usage::settings_file() {
+                            match crate::usage::ensure_statusline(&f) {
+                                Ok(said) => eprintln!("[trommi] {said}"),
+                                Err(why) => eprintln!("[trommi] status line not set: {why}"),
+                            }
+                        }
+                    }
+                }
+                let bridge = c.bridge.lock().unwrap().clone();
+                if let Some(bridge) = bridge {
+                    if let Some(account) = poller.changed(codex, crate::util::now_ms()).await {
+                        match bridge.put_account(account.clone()).await {
+                            Ok(_) => poller.sent(account),
+                            Err(e) => eprintln!(
+                                "[trommi] usage not sent: {}",
+                                if e.code.is_empty() { "failed" } else { &e.code }
+                            ),
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(every)).await;
+            }
+        });
+    }
     // the stdio is this process's life line: its end, a signal, or the parent going away ends it
     {
         let c = conn.clone();

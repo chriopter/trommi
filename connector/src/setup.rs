@@ -5,11 +5,14 @@
 //! **Claude Code** gets the Trommi plugin from the repository's marketplace (`.claude-plugin/marketplace.json`,
 //! plugin folder `connector/plugin`). The plugin holds no program: its MCP server, hooks and monitor name the
 //! installed connector, `~/.local/share/trommi/bin/trommi-connector`, so an update of the connector needs no
-//! new plugin.
+//! new plugin. The one thing a plugin cannot bring is the status line, and Claude Code has no command for it: that
+//! one is written into its user settings (`settings.json`, only the `statusLine` member, every other byte as it was),
+//! around a status line that is there already (`usage.rs`). `remove claude` puts the one before back.
 //!
 //! **Codex** gets the connector as a plain MCP server `trommi`. Codex shows no channel events, so the server is
 //! registered with `TROMMI_CHANNEL_EVENTS=off`: board events wait for the `inbox` tool, and the connector wakes the
 //! session with a queued message (`host.rs`). A Codex that is already running loads it only after a restart.
+use crate::usage;
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
@@ -207,7 +210,45 @@ pub fn claude() -> Result<Vec<String>, String> {
         done.push("plugin trommi@trommi: installed for your user".to_string());
     }
     done.push(format!("the plugin starts {program}"));
+    usage::mark_declined(false);
+    match usage::settings_file().map(|f| usage::ensure_statusline(&f)) {
+        Some(Ok(said)) => done.push(said),
+        Some(Err(why)) => done.push(format!(
+            "status line: not set ({why}); the board gets the plan without its usage"
+        )),
+        None => done.push("status line: not set (HOME is not set to a folder)".to_string()),
+    }
     Ok(done)
+}
+
+/// `remove claude`: takes out what `setup claude` put in, through Claude Code's own commands, and the status line
+/// (the one before stands there again). Returns the exit code.
+pub fn remove_cli(which: Option<&str>) -> i32 {
+    if which != Some("claude") {
+        eprintln!("[trommi] use `remove claude`");
+        return 1;
+    }
+    let mut failed = false;
+    usage::mark_declined(true);
+    match usage::settings_file().map(|f| usage::remove_statusline(&f)) {
+        Some(Ok(said)) => println!("{said}"),
+        Some(Err(why)) => {
+            eprintln!("[trommi] status line: {why}");
+            failed = true;
+        }
+        None => {}
+    }
+    let steps: [&[&str]; 2] = [
+        &["plugin", "uninstall", "trommi@trommi"],
+        &["plugin", "marketplace", "remove", "trommi"],
+    ];
+    for args in steps {
+        match run("claude", args) {
+            Ok(_) => println!("claude {}: done", args.join(" ")),
+            Err(why) => println!("claude {}: {why}", args.join(" ")),
+        }
+    }
+    i32::from(failed)
 }
 
 /// `setup codex`. The lines say what was done.

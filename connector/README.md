@@ -14,6 +14,7 @@ trommi-connector prompt|stop         the terminal mirror's hooks (UserPromptSubm
 trommi-connector trail               the work trail's hooks (PreToolUse, PostToolUse, …)
 trommi-connector monitor             the plugin's monitor: one line per board event
 trommi-connector setup claude|codex  make the installed connector known to Claude Code (plugin) or Codex (MCP server)
+trommi-connector remove claude       take out what setup claude put in; the old status line stands there again
 trommi-connector update [--check]    install the newest signed release in place of the installed one
 trommi-connector whoami | allow-tools | --version
 ```
@@ -62,6 +63,12 @@ Codex shows no channel events, board events wait for the `inbox` tool). Both can
 changed. A Codex that was running loads the server only when it is started again; setup, install.sh and the
 invite page say so.
 
+`setup claude` also puts `trommi-connector statusline` in as Claude Code's status line (the user settings'
+`statusLine`, every other byte as it was), around one already there, which keeps showing as before. It hands the
+plan's 5-hour and weekly usage to the board ([`src/usage.rs`](src/usage.rs); the main README, "Account and usage per
+agent"). The installed connector does the same once at its start. `trommi-connector remove claude` puts the old
+status line back and removes the plugin and the marketplace.
+
 ## Codex
 
 Codex (known by its `initialize`, `clientInfo.name` "codex-mcp-client", or by the program that started the
@@ -100,6 +107,7 @@ one session over many turns) against a local hub, opt-in: `cargo test -p trommi-
 | `src/server.rs`, `src/mcp.rs`, `src/member.rs`, `src/slots.rs`, `src/slotstore.rs`, `src/door.rs` | the MCP server, this process as a member, key slots per folder, the sockets hooks reach it through |
 | `src/line.rs`, `src/mirror.rs`, `src/trail.rs`, `src/hooks.rs` | the monitor's line, the terminal mirror, the work trail, the permission hooks |
 | `src/update.rs` | the check a new binary must pass, and `update` |
+| `src/usage.rs` | the account and usage of Claude Code or Codex for the board, the status line, `remove claude` |
 | `src/launch.rs` | the launcher: passes the MCP session through to the connector and swaps in a new one |
 | `prompt.md`, `tools.json` | every text the agent reads and every tool's schema: the one source, compiled in and checked by `build.rs` |
 

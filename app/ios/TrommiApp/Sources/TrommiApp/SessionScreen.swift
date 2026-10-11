@@ -117,6 +117,7 @@ struct SessionScreen: View {
         }
         // the top row: back, the session's name as a glass pill (its menu), "⋯"; no bar, a soft edge above and below
         .pushedPills { header(a, d) } trailing: { more(a, d, freshCount: fresh.count) }
+        .overlay(alignment: .top) { if let acc = usageOf(model, a) { UsageStrip(acc: acc).padding(.top, 58) } }
         .onAppear { lastCount = all.count; atBottom = true; proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
         .onChange(of: model.version) { _, _ in model.markRead(a) }
         // what a catch-up brought as headers only (the app was away, the hub restarted): filled while the chat is open

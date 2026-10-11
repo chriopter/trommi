@@ -19,6 +19,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A room holds at most 1000 devices.
 - Files are encrypted on the device. Push notifications carry no content.
+- An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
+  are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
+  Claude Code's status line (put around one already there), never from their credential files.
 - No forward secrecy for history, on purpose: a new device of yours reads everything, and so does anyone who
   holds one of your devices or the recovery code.
 

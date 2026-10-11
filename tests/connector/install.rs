@@ -802,6 +802,8 @@ case "$*" in
     [ -f "$state/markets" ] || { echo "no such marketplace" >&2; exit 1; }
     echo '[{"id":"trommi@trommi","version":"2.0.0","scope":"user","enabled":true}]' > "$state/plugins" ;;
   "plugin update trommi@trommi") [ -f "$state/plugins" ] || exit 1 ;;
+  "plugin uninstall trommi@trommi") rm -f "$state/plugins" ;;
+  "plugin marketplace remove trommi") rm -f "$state/markets" ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
 esac
 "#;
@@ -869,6 +871,35 @@ impl Desk {
             .current_dir(self.dir.path())
             .output()
             .expect("the connector runs")
+    }
+    /// The built connector with these arguments, in this home, with the stand-ins first on the PATH.
+    fn run(&self, args: &[&str], input: &[u8], env: &[(&str, &str)]) -> Output {
+        use std::io::Write;
+        let mut child = Command::new(common::process::connector_binary())
+            .args(args)
+            .env_clear()
+            .env("HOME", self.dir.path())
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", self.dir.path().join("tools").display()),
+            )
+            .envs(env.iter().copied())
+            .current_dir(self.dir.path())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("the connector runs");
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input)
+            .expect("written");
+        child.wait_with_output().expect("it ends")
+    }
+    fn settings(&self) -> PathBuf {
+        self.dir.path().join(".claude/settings.json")
     }
     fn calls(&self) -> Vec<String> {
         std::fs::read_to_string(self.dir.path().join("calls"))
@@ -1010,4 +1041,142 @@ fn setup_says_what_is_missing() {
     let output = desk.setup("emacs", true);
     assert!(!output.status.success());
     assert!(said(&output).contains("setup claude"), "{}", said(&output));
+}
+
+// ---- the status line: the plan's usage for the board (connector/src/usage.rs) -------------------------------------
+
+/// What Claude Code hands its status line, with the windows of the plan.
+const STATUS_INPUT: &str = r#"{"session_id":"s","model":{"id":"opus"},"rate_limits":{"five_hour":{"used_percentage":12,"resets_at":4102444800},"seven_day":{"used_percentage":53,"resets_at":4102444800}}}"#;
+
+#[test]
+fn setup_claude_puts_the_status_line_around_the_users_own_and_remove_gives_it_back() {
+    let desk = Desk::new(true);
+    std::fs::create_dir_all(desk.settings().parent().unwrap()).expect("a folder");
+    let own = "{\n  \"model\": \"opus\",\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"cat >/dev/null; printf 'mine %s' \\\"$X\\\"\",\n    \"padding\": 1\n  },\n  \"hooks\": {}\n}\n";
+    std::fs::write(desk.settings(), own).expect("written");
+    let output = desk.setup("claude", true);
+    assert!(output.status.success(), "{}", said(&output));
+    assert!(
+        said(&output).contains("status line: Trommi's put around yours"),
+        "{}",
+        said(&output)
+    );
+    let now: Value = serde_json::from_str(&read(&desk.settings())).expect("JSON");
+    assert_eq!(now["model"], "opus");
+    assert_eq!(now["hooks"], serde_json::json!({}));
+    assert_eq!(
+        now["statusLine"]["padding"], 1,
+        "the rest of the user's status line stays"
+    );
+    let command = now["statusLine"]["command"].as_str().unwrap().to_string();
+    // again: it is there already, nothing is wrapped twice
+    let again = desk.setup("claude", true);
+    assert!(
+        said(&again).contains("status line: Trommi's there already"),
+        "{}",
+        said(&again)
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&read(&desk.settings())).unwrap()["statusLine"]["command"],
+        command.as_str()
+    );
+
+    // Claude Code runs it: the user's status line prints as before, with the same input; the windows are kept
+    let bin = desk
+        .dir
+        .path()
+        .join(".local/share/trommi/bin/trommi-connector");
+    std::fs::copy(common::process::connector_binary(), &bin).expect("the connector in place");
+    let mut shown = Command::new("sh")
+        .args(["-c", &command])
+        .env_clear()
+        .env("HOME", desk.dir.path())
+        .env("PATH", "/usr/bin:/bin")
+        .env("X", "line")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("runs");
+    {
+        use std::io::Write;
+        shown
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(STATUS_INPUT.as_bytes())
+            .unwrap();
+    }
+    let shown = shown.wait_with_output().unwrap();
+    assert_eq!(String::from_utf8_lossy(&shown.stdout), "mine line");
+    let kept: Vec<PathBuf> = std::fs::read_dir(desk.dir.path().join(".local/share/trommi/usage"))
+        .expect("the usage folder")
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("claude-")
+        })
+        .collect();
+    assert_eq!(kept.len(), 1);
+    let file: Value = serde_json::from_str(&read(&kept[0])).expect("JSON");
+    assert_eq!(file["rate_limits"]["seven_day"]["used_percentage"], 53);
+    assert!(!read(&kept[0]).contains('@'), "no e-mail in the file");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&kept[0]).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    // remove claude: the user's own status line stands there again, byte for byte as far as JSON goes
+    let removed = desk.run(&["remove", "claude"], b"", &[]);
+    assert!(removed.status.success(), "{}", said(&removed));
+    assert!(
+        said(&removed).contains("yours stands there again"),
+        "{}",
+        said(&removed)
+    );
+    let back: Value = serde_json::from_str(&read(&desk.settings())).expect("JSON");
+    assert_eq!(back, serde_json::from_str::<Value>(own).unwrap());
+    assert!(desk
+        .calls()
+        .contains(&"claude plugin uninstall trommi@trommi".to_string()));
+}
+
+#[test]
+fn setup_claude_with_no_status_line_puts_one_in_that_prints_nothing_and_remove_takes_it_out() {
+    let desk = Desk::new(true);
+    let output = desk.setup("claude", true);
+    assert!(output.status.success(), "{}", said(&output));
+    let now: Value = serde_json::from_str(&read(&desk.settings())).expect("a settings file now");
+    assert_eq!(now.as_object().unwrap().len(), 1, "{now}");
+    let shown = desk.run(
+        &["statusline"],
+        STATUS_INPUT.as_bytes(),
+        &[("CLAUDE_CONFIG_DIR", "/elsewhere/claude")],
+    );
+    assert!(shown.status.success());
+    assert!(shown.stdout.is_empty(), "prints nothing of its own");
+    let removed = desk.run(&["remove", "claude"], b"", &[]);
+    assert!(
+        said(&removed).contains("Trommi's taken out"),
+        "{}",
+        said(&removed)
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&read(&desk.settings())).unwrap(),
+        serde_json::json!({})
+    );
+    // a settings file that is no JSON object is left alone
+    std::fs::write(desk.settings(), "not json").unwrap();
+    let output = desk.setup("claude", true);
+    assert!(output.status.success(), "{}", said(&output));
+    assert!(
+        said(&output).contains("status line: not set"),
+        "{}",
+        said(&output)
+    );
+    assert_eq!(read(&desk.settings()), "not json");
 }
