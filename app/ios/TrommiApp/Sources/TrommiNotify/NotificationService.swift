@@ -1,9 +1,11 @@
-// TrommiNotify: the Notification Service Extension. Apple delivers a push with a fixed text ("A new question.") and
+// TrommiNotify: the Notification Service Extension. Apple delivers a push with the one neutral text ("Something new.") and
 // `e`, a blob the hub sealed under this phone's push key (spec/v1.md 15.2). Here, on the phone and nowhere else:
 //   1. the context is read from its Keychain item (PushNotify: NotifyGroup; the app writes it): the push key and
 //      the room's id;
 //   2. `e` is opened by trommi-core (NotifyCore.openPush): the room, the change number, the urgency;
-//   3. the notification goes out with the fixed text, threaded by its room.
+//   3. with the push's ticket it reads ahead what the app will catch up on (NotifyPrefetch: the hub's pages,
+//      ciphertext, into the App Group's container), a few seconds at most;
+//   4. the notification goes out with the text that urgency calls for (NotifyOpen.text), threaded by its room.
 // No title of a card is shown: a content key never leaves the core, so the extension has none and opens no
 // envelope (PushNotify's NotifyContext.swift and NotifyCore.swift). A push that does not open leaves the fixed text
 // exactly as it came. No error is ever shown.
@@ -27,7 +29,7 @@ public final class TrommiNotificationService: UNNotificationServiceExtension {
 
   public override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
     let original = request.content
-    // What goes out when nothing was verified is made HERE: one of the three fixed texts, no path to open. Whatever
+    // What goes out when nothing was verified is made HERE: the neutral text, no path to open. Whatever
     // else the push carried (the sender of a push is the hub, which is not believed) is not shown.
     let plain = NotifyWork.fixed(original)
     lock.lock(); handler = contentHandler; fallback = plain; lock.unlock()
@@ -53,23 +55,35 @@ public final class TrommiNotificationService: UNNotificationServiceExtension {
 }
 
 enum NotifyWork {
-  /** The three texts a push may show without anything verified (spec/v1.md 15.2); any other becomes the first. */
-  static let fixedTexts = ["A new question.", "Urgent: a new question.", "An agent lost its connection."]
+  /** Without anything verified a push shows the neutral text (spec/v1.md 15.2), whatever it carried. */
   static func fixed(_ original: UNNotificationContent) -> UNNotificationContent {
     let c = UNMutableNotificationContent()
     c.title = "Trommi"
-    c.body = fixedTexts.contains(original.body) ? original.body : fixedTexts[0]
+    c.body = NotifyOpen.neutral
     c.sound = original.sound
     return c
   }
 
-  /** The notification to show: the fixed text, threaded by its room when the push opened under this phone's key. */
+  /** The notification to show: when the push opened under this phone's key, its text and its room's thread. */
   static func content(for original: UNNotificationContent, fallback: UNNotificationContent) async -> UNNotificationContent {
     guard let e = original.userInfo["e"] as? String, let context = NotifyGroup.readContext(),
           let push = NotifyOpen.push(e, context: context, core: NotifyCoreLive()),
           let c = fallback.mutableCopy() as? UNMutableNotificationContent else { return fallback }
     c.threadIdentifier = NotifyOpen.thread(push)
+    c.body = NotifyOpen.text(push)
+    if let store = NotifyGroup.prefetch(room: NotifyOpen.roomHex(push)) {
+      _ = await NotifyPrefetch.run(push, context: context, store: store, get: fetch)
+    }
     return c
+  }
+
+  /** One GET, bounded in time; nil on anything but 200. The ticket in the URL is never logged. */
+  static func fetch(_ url: URL, _ headers: [String: String]) async -> Data? {
+    var req = URLRequest(url: url, timeoutInterval: 6)
+    for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+    guard let (data, response) = try? await URLSession.shared.data(for: req),
+          (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+    return data
   }
 }
 #endif

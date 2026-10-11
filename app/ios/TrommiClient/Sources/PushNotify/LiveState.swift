@@ -66,11 +66,11 @@ public enum LiveState {
   }
 
   /**
-   * The content of the activity: the hub's count of agents working, the waiting cards counted, and the most urgent
+   * The content of the activity: the hub's mark of agents working, the waiting cards counted, and the most urgent
    * one when the phone could read them (`readable`). Not readable: the counts alone, nothing of a card.
    */
   public static func state(working: Int, waiting list: [LiveCandidate], readable: Bool) -> LiveCounts {
     guard readable else { return LiveCounts(working: working, waiting: list.count) }
-    return LiveCounts(working: working, waiting: list.count, card: pick(list).map(card))
+    return LiveCounts(working: working, waiting: list.count, card: pick(list).map(card), exact: true)
   }
 }

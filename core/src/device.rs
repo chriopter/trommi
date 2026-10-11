@@ -38,7 +38,7 @@ use crate::error::Error;
 use crate::ids::{BoardId, DeviceId, GroupId, Hash32, RoomId, SessionId, TurnId};
 use crate::mls::group::{self, Built, Change};
 use crate::mls::key_package::{self, KeyPackageInfo};
-use crate::mls::message::{EpochKey, TrommiMessage, MAX_HANDOVER_KEYS, MAX_MESSAGE_LEN};
+use crate::mls::message::{self, EpochKey, TrommiMessage, MAX_HANDOVER_KEYS, MAX_MESSAGE_LEN};
 use crate::mls::observer::{self, Context, Observer};
 use crate::mls::profile::{
     self, CommitNote, Cut, GroupKind, TrommiRoom, TrommiSession, MAX_AGENT_DEVICES,
@@ -5744,9 +5744,11 @@ impl<S: Storage> Device<S> {
         }
         // A message may carry keys: its plaintext is wiped.
         let plaintext = Zeroizing::new(codec::encode(message)?);
-        if plaintext.len() > MAX_MESSAGE_LEN {
-            return Err(Error::TooLarge);
-        }
+        // 7.0: the encrypted content is padded to its bucket, so its size tells little of what it carries
+        let padding = message::bucket(plaintext.len()).ok_or(Error::TooLarge)?;
+        group
+            .set_configuration(self.provider.storage(), &profile::padded_config(padding))
+            .map_err(|_| Error::Storage("mls config".into()))?;
         let sealed = group
             .create_message(&self.provider, &DeviceSigner(&self.key), &plaintext)
             .map_err(|_| Error::Busy)?

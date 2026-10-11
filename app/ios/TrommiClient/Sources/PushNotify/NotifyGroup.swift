@@ -5,8 +5,8 @@
 // nothing is sealed in Swift here.
 //
 // The item's access group is the App Group that the app and the extension share (on iOS an App Group is also a
-// Keychain access group; `accessGroup` below is the one place that names it). The App Group's file container is not
-// used. Everything else of the app (the device's store, its device key, the push key's own copy) stays in the app's
+// Keychain access group; `accessGroup` below is the one place that names it). The App Group's file container holds
+// only the pages read ahead (NotifyPrefetch): the hub's ciphertext, which only the app opens. Everything else of the app (the device's store, its device key, the push key's own copy) stays in the app's
 // private container and its private Keychain group, which no extension can open.
 import Foundation
 #if canImport(Security)
@@ -88,6 +88,11 @@ public enum NotifyGroup {
 
   // ---- the extension reads ----
   public static func readContext() -> NotifyContext? { store()?.read() }
+
+  /** The pages read ahead for a room (NotifyPrefetch), in the App Group's file container; nil without one. */
+  public static func prefetch(room hex: String) -> PrefetchStore? {
+    PrefetchStore.of(room: hex, container: accessGroup().flatMap { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) })
+  }
   #endif
 }
 

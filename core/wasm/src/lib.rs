@@ -89,7 +89,7 @@ functions! {
     fallible base64url_decode(text);
     fallible file_layout(stored_len);
     fallible file_chunk(stored_len, index);
-    fallible open_file_chunk(file_key, file_id, index, last, sealed);
+    fallible open_file_chunk(file_key, head, index, last, sealed);
     fallible share_link_create(app, file);
     fallible share_link_parse(text);
     fallible check_share_expiry(expires_at, now_ms);

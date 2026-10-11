@@ -72,7 +72,7 @@ fn refused(small: &(Vec<u8>, FileRef), two: &(Vec<u8>, FileRef)) -> Result<Vec<R
     }
     let mut newer = stored.clone();
     if let Some(version) = newer.first_mut() {
-        *version = 3;
+        *version = 4;
     }
     Ok(vec![
         Refused {
@@ -125,7 +125,7 @@ fn refused(small: &(Vec<u8>, FileRef), two: &(Vec<u8>, FileRef)) -> Result<Vec<R
             code: Error::DecryptFailed,
         },
         Refused {
-            why: "a head of version 3, under the hash of the changed file",
+            why: "a head of version 4, under the hash of the changed file",
             reference: own(&newer, file)?,
             stored: newer,
             cut_to: None,
@@ -177,6 +177,7 @@ pub fn generate() -> Result<Value, Error> {
                 "plaintext_sha256".into(),
                 hex(crypto::sha256(&plaintext(len))?.as_bytes()).into(),
             );
+            entry.insert("padded_len".into(), layout.plain_len().into());
             entry.insert("stored_len".into(), stored.len().into());
             entry.insert("chunks".into(), layout.chunks().into());
             entry.insert("stored".into(), hex(&stored).into());
@@ -191,7 +192,7 @@ pub fn generate() -> Result<Value, Error> {
     let link = String::from_utf8(share.to_text().expose().to_vec())
         .map_err(|_| Error::Internal("vector text"))?;
     Ok(json!({
-        "about": "Files and Share links (spec/v1.md section 11). files: three files as stored, FileHead and chunks (hex), each with the three fields of its attachment reference (file_id, file_key, sha256 of the stored file), its length and the SHA-256 of its plaintext; the plaintext of a file is byte i = (i mod 251) xor (i >> 16). refused: a reference and stored bytes that a whole download does not decrypt to a file, with the code; where the stored bytes are the file of two chunks cut short, their number stands instead of the bytes. share_link: a link to the small file, its parts, and the SHA-256 of the secret, which is what the hub is given.",
+        "about": "Files and Share links (spec/v1.md section 11). files: three files as stored, FileHead (version 3) and chunks of the padded plaintext (hex, 11.0), each with the three fields of its attachment reference (file_id, file_key, sha256 of the stored file), its length, its padded length and the SHA-256 of its plaintext; the plaintext of a file is byte i = (i mod 251) xor (i >> 16). refused: a reference and stored bytes that a whole download does not decrypt to a file, with the code; where the stored bytes are the file of two chunks cut short, their number stands instead of the bytes. share_link: a link to the small file, its parts, and the SHA-256 of the secret, which is what the hub is given.",
         "files": files,
         "refused": refused(small, two)?.iter().map(|case| {
             debug_assert_eq!(decrypt_file_of(&case.reference, &case.stored).err(), Some(case.code.clone()));

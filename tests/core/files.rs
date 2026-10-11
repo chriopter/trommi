@@ -7,6 +7,41 @@ use trommi_core::ids::{FileId, Hash32, ShareId};
 use trommi_core::Error;
 
 const FILE: FileId = FileId::new([0xF1; 16]);
+/// The head of the test file as this core writes it (version 3, padded), and as files of before had it (version 2).
+const V3: FileHead = FileHead {
+    file_id: FILE,
+    padded: true,
+};
+const V2: FileHead = FileHead {
+    file_id: FILE,
+    padded: false,
+};
+
+/// `content` as a padded file holds it: the mark and the zeros up to its bucket (11.0).
+fn padded(content: &[u8]) -> Vec<u8> {
+    let mut out = content.to_vec();
+    out.push(0x80);
+    out.resize(padded_len(content.len() as u64).expect("fits") as usize, 0);
+    out
+}
+
+/// The chunks of a plaintext sealed by hand under `head`, as an encryptor would.
+fn seal_all(head: &FileHead, plaintext: &[u8]) -> Vec<u8> {
+    let encoded = head.encode();
+    let mut out = encoded.to_vec();
+    let chunks: Vec<&[u8]> = if plaintext.is_empty() {
+        vec![&[]]
+    } else {
+        plaintext.chunks(CHUNK_SIZE).collect()
+    };
+    for (index, chunk) in chunks.iter().enumerate() {
+        let last = index + 1 == chunks.len();
+        out.extend(
+            crypto::aead_seal(&key(1), &nonce(index as u64, last), &encoded, chunk).expect("seals"),
+        );
+    }
+    out
+}
 
 /// The nonce of chunk `index`, as the format gives it: three zeros, the number, the final mark.
 fn nonce(index: u64, last: bool) -> [u8; 12] {
@@ -16,7 +51,7 @@ fn nonce(index: u64, last: bool) -> [u8; 12] {
     nonce
 }
 
-/// A chunk sealed by hand, of whatever shape.
+/// A chunk sealed by hand under the padded head, of whatever shape.
 fn seal_chunk(
     key: &Secret<32>,
     file_id: &FileId,
@@ -24,7 +59,11 @@ fn seal_chunk(
     last: bool,
     plaintext: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    let head = FileHead { file_id: *file_id }.encode();
+    let head = FileHead {
+        file_id: *file_id,
+        padded: true,
+    }
+    .encode();
     crypto::aead_seal(key, &nonce(index, last), &head, plaintext)
 }
 
@@ -99,23 +138,27 @@ const SIZES: [usize; 9] = [
 
 #[test]
 fn the_head_is_version_file_id_and_chunk_size() {
-    let head = FileHead { file_id: FILE }.encode();
-    let mut expected = vec![2u8];
+    let head = V3.encode();
+    let mut expected = vec![3u8];
     expected.extend_from_slice(&[0xF1; 16]);
     expected.extend_from_slice(&[0, 1, 0, 0]);
     assert_eq!(head.as_slice(), expected);
-    assert_eq!(FileHead::decode(&head), Ok(FileHead { file_id: FILE }));
+    assert_eq!(FileHead::decode(&head), Ok(V3));
+    // the unpadded files of before: version 2, still read
+    expected[0] = 2;
+    assert_eq!(V2.encode().as_slice(), expected);
+    assert_eq!(FileHead::decode(&expected), Ok(V2));
 }
 
 #[test]
 fn a_head_of_another_version_chunk_size_or_length_is_refused() {
-    let head = FileHead { file_id: FILE }.encode();
+    let head = V3.encode();
     let with = |at: usize, byte: u8| {
         let mut changed = head;
         changed[at] = byte;
         changed
     };
-    assert_eq!(FileHead::decode(&with(0, 3)), Err(Error::NewerVersion));
+    assert_eq!(FileHead::decode(&with(0, 4)), Err(Error::NewerVersion));
     assert_eq!(FileHead::decode(&with(0, 255)), Err(Error::NewerVersion));
     assert_eq!(FileHead::decode(&with(0, 1)), Err(Error::BadFormat));
     assert_eq!(FileHead::decode(&with(0, 0)), Err(Error::BadFormat));
@@ -132,8 +175,9 @@ fn a_head_of_another_version_chunk_size_or_length_is_refused() {
 #[test]
 fn a_file_is_its_head_and_its_chunks_under_the_suites_aead() {
     let (stored, sealed, plain) = sealed_file(CHUNK_SIZE + 5);
-    let head = FileHead { file_id: FILE }.encode();
-    let (first, second) = plain.split_at(CHUNK_SIZE);
+    let head = V3.encode();
+    let whole = padded(&plain);
+    let (first, second) = whole.split_at(CHUNK_SIZE);
     let expected = [
         head.to_vec(),
         crypto::aead_seal(&key(1), &nonce(0, false), &head, first).expect("seals"),
@@ -141,32 +185,88 @@ fn a_file_is_its_head_and_its_chunks_under_the_suites_aead() {
     ]
     .concat();
     assert_eq!(stored, expected);
+    assert_eq!(seal_all(&V3, &whole), stored);
     assert_eq!(sealed.file.sha256, crypto::sha256(&stored).expect("hashes"));
     assert_eq!(sealed.plain_len, plain.len() as u64);
     assert_eq!(sealed.stored_len, stored.len() as u64);
 }
 
 #[test]
-fn an_empty_file_is_one_empty_chunk() {
+fn an_empty_file_is_one_chunk_of_padding() {
     let (stored, sealed, _) = sealed_file(0);
-    assert_eq!(stored.len(), HEAD_LEN + TAG_LEN);
+    assert_eq!(stored.len(), HEAD_LEN + 4096 + TAG_LEN);
     assert_eq!(sealed.plain_len, 0);
-    let head = FileHead { file_id: FILE }.encode();
+    let head = V3.encode();
     assert_eq!(
         stored[HEAD_LEN..],
-        crypto::aead_seal(&key(1), &nonce(0, true), &head, &[]).expect("seals")
+        crypto::aead_seal(&key(1), &nonce(0, true), &head, &padded(&[])).expect("seals")
     );
     assert_eq!(
         decrypt_with(&key(1), FILE, &sealed.file.sha256, &stored),
         Ok(vec![])
     );
+    // an empty file of before: one empty chunk under version 2
+    let old = seal_all(&V2, &[]);
+    assert_eq!(old.len(), HEAD_LEN + TAG_LEN);
+    assert_eq!(decrypt_file(&naming(&old), &old), Ok(vec![]));
+}
+
+#[test]
+fn files_of_before_are_read_unpadded() {
+    for len in SIZES {
+        let plain = content(len);
+        let old = seal_all(&V2, &plain);
+        assert_eq!(
+            decrypt_file(&naming(&old), &old),
+            Ok(plain.clone()),
+            "{len}"
+        );
+        let mut decryptor = Decryptor::new(&naming(&old));
+        let mut back = Vec::new();
+        for part in old.chunks(5000) {
+            back.extend(decryptor.update(part).expect("opens"));
+        }
+        back.extend(decryptor.finish().expect("finishes"));
+        assert_eq!(back, plain, "{len}");
+    }
+}
+
+#[test]
+fn files_of_near_sizes_are_stored_alike() {
+    let stored_len = |len: usize| sealed_file(len).1.stored_len;
+    assert_eq!(stored_len(0), stored_len(4095));
+    assert_eq!(stored_len(5000), stored_len(5100));
+    assert_eq!(stored_len(1_000_000), stored_len(1_010_000));
+    assert_ne!(stored_len(4095), stored_len(4096));
+}
+
+#[test]
+fn padding_that_is_not_exact_is_refused() {
+    let plain = content(1000);
+    let mut short = plain.clone();
+    short.push(0x80);
+    short.resize(2048, 0);
+    let mut unmarked = plain.clone();
+    unmarked.resize(4096, 0);
+    let mut long = padded(&plain);
+    long.extend(vec![0; 4096]);
+    for bad in [short, unmarked, long, plain] {
+        let stored = seal_all(&V3, &bad);
+        assert_eq!(
+            decrypt_file(&naming(&stored), &stored),
+            Err(Error::BadFormat)
+        );
+        let mut decryptor = Decryptor::new(&naming(&stored));
+        let _ = decryptor.update(&stored);
+        assert_eq!(decryptor.finish(), Err(Error::BadFormat));
+    }
 }
 
 #[test]
 fn files_of_every_shape_round_trip() {
     for len in SIZES {
         let (stored, sealed, plain) = sealed_file(len);
-        let layout = Layout::of_plain(len as u64).expect("layout");
+        let layout = Layout::of_plain(padded_len(len as u64).expect("fits")).expect("layout");
         assert_eq!(stored.len() as u64, layout.stored_len(), "{len}");
         assert_eq!(Layout::of_stored(stored.len() as u64), Ok(layout), "{len}");
         assert_eq!(
@@ -212,30 +312,32 @@ fn streaming_gives_the_same_bytes_whatever_the_pieces() {
 
 #[test]
 fn an_encryptor_holds_back_a_full_chunk_until_it_knows_what_follows() {
+    // a content one byte short of a chunk: with its mark, exactly one chunk
     let mut encryptor = Encryptor::new(&mut OfTheTestFile).expect("entropy");
-    let first = encryptor.update(&content(CHUNK_SIZE)).expect("takes");
+    let first = encryptor.update(&content(CHUNK_SIZE - 1)).expect("takes");
     assert_eq!(first.len(), HEAD_LEN);
     let (rest, sealed) = encryptor.finish().expect("finishes");
     assert_eq!(rest.len(), SEALED_CHUNK_LEN);
-    assert_eq!(sealed.plain_len, CHUNK_SIZE as u64);
+    assert_eq!(sealed.plain_len, CHUNK_SIZE as u64 - 1);
 
     // Exactly one chunk is one chunk with the final mark, not a full chunk and an empty one.
     let stored = [first, rest].concat();
     assert_eq!(stored.len(), HEAD_LEN + SEALED_CHUNK_LEN);
-    assert!(open_chunk(&key(1), &FILE, 0, true, &stored[HEAD_LEN..]).is_ok());
+    assert!(open_chunk(&key(1), &V3, 0, true, &stored[HEAD_LEN..]).is_ok());
 }
 
 #[test]
 fn single_chunks_open_at_their_place() {
-    let (stored, _, plain) = sealed_file(2 * CHUNK_SIZE + 7);
+    let (stored, _, content) = sealed_file(2 * CHUNK_SIZE + 7);
+    // a Range read sees the padded plaintext; the content's length is the reference's
+    let plain = padded(&content);
     let layout = Layout::of_stored(stored.len() as u64).expect("layout");
     assert_eq!(layout.chunks(), 3);
     assert_eq!(layout.plain_len(), plain.len() as u64);
     for index in 0..layout.chunks() {
         let (offset, len) = layout.stored_range(index).expect("a chunk");
         let sealed = &stored[offset as usize..(offset + len) as usize];
-        let opened =
-            open_chunk(&key(1), &FILE, index, layout.is_last(index), sealed).expect("opens");
+        let opened = open_chunk(&key(1), &V3, index, layout.is_last(index), sealed).expect("opens");
         let from = index as usize * CHUNK_SIZE;
         assert_eq!(opened, plain[from..(from + CHUNK_SIZE).min(plain.len())]);
     }
@@ -257,43 +359,51 @@ fn a_chunk_does_not_open_at_another_place_mark_file_or_key() {
     };
     // Another place.
     assert_eq!(
-        open_chunk(&key(1), &FILE, 1, false, chunk(0)),
+        open_chunk(&key(1), &V3, 1, false, chunk(0)),
         Err(Error::DecryptFailed)
     );
     // The final mark on a chunk that is not final, and none on the final one.
     assert_eq!(
-        open_chunk(&key(1), &FILE, 0, true, chunk(0)),
+        open_chunk(&key(1), &V3, 0, true, chunk(0)),
         Err(Error::DecryptFailed)
     );
-    let last_as_inner = open_chunk(&key(1), &FILE, 2, false, chunk(2));
+    let last_as_inner = open_chunk(&key(1), &V3, 2, false, chunk(2));
     assert_eq!(last_as_inner, Err(Error::BadFormat));
     // Another file, another key.
-    let other = FileId::new([0xF2; 16]);
+    let other = FileHead {
+        file_id: FileId::new([0xF2; 16]),
+        padded: true,
+    };
     assert_eq!(
         open_chunk(&key(1), &other, 0, false, chunk(0)),
         Err(Error::DecryptFailed)
     );
+    // Another version: the head is the associated data.
     assert_eq!(
-        open_chunk(&key(2), &FILE, 0, false, chunk(0)),
+        open_chunk(&key(1), &V2, 0, false, chunk(0)),
+        Err(Error::DecryptFailed)
+    );
+    assert_eq!(
+        open_chunk(&key(2), &V3, 0, false, chunk(0)),
         Err(Error::DecryptFailed)
     );
     // A changed bit.
     let mut changed = chunk(2).to_vec();
     changed[0] ^= 1;
     assert_eq!(
-        open_chunk(&key(1), &FILE, 2, true, &changed),
+        open_chunk(&key(1), &V3, 2, true, &changed),
         Err(Error::DecryptFailed)
     );
 }
 
 #[test]
 fn a_full_final_chunk_does_not_open_as_an_inner_one() {
-    let (stored, _, _) = sealed_file(2 * CHUNK_SIZE);
+    let (stored, _, _) = sealed_file(2 * CHUNK_SIZE - 1);
     let last = &stored[HEAD_LEN + SEALED_CHUNK_LEN..];
     assert_eq!(last.len(), SEALED_CHUNK_LEN);
-    assert!(open_chunk(&key(1), &FILE, 1, true, last).is_ok());
+    assert!(open_chunk(&key(1), &V3, 1, true, last).is_ok());
     assert_eq!(
-        open_chunk(&key(1), &FILE, 1, false, last),
+        open_chunk(&key(1), &V3, 1, false, last),
         Err(Error::DecryptFailed)
     );
 }
@@ -303,20 +413,20 @@ fn chunks_of_a_shape_no_file_has_do_not_open() {
     let full = vec![0u8; CHUNK_SIZE];
     for len in 0..TAG_LEN {
         assert_eq!(
-            open_chunk(&key(1), &FILE, 0, true, &full[..len]),
+            open_chunk(&key(1), &V3, 0, true, &full[..len]),
             Err(Error::BadFormat)
         );
     }
     assert_eq!(
-        open_chunk(&key(1), &FILE, 1, true, &full[..TAG_LEN]),
+        open_chunk(&key(1), &V3, 1, true, &full[..TAG_LEN]),
         Err(Error::BadFormat)
     );
     assert_eq!(
-        open_chunk(&key(1), &FILE, 0, true, &vec![0; SEALED_CHUNK_LEN + 1]),
+        open_chunk(&key(1), &V3, 0, true, &vec![0; SEALED_CHUNK_LEN + 1]),
         Err(Error::BadFormat)
     );
     assert_eq!(
-        open_chunk(&key(1), &FILE, u64::MAX, true, &full[..TAG_LEN + 1]),
+        open_chunk(&key(1), &V3, u64::MAX, true, &full[..TAG_LEN + 1]),
         Err(Error::TooLarge)
     );
 }
@@ -389,7 +499,7 @@ fn trailing_bytes_fail() {
 fn an_empty_chunk_behind_others_is_refused() {
     // A writer that sealed a full final chunk without the mark and an empty final chunk behind it.
     let plain = content(CHUNK_SIZE);
-    let head = FileHead { file_id: FILE }.encode();
+    let head = V2.encode();
     let stored = [
         head.to_vec(),
         crypto::aead_seal(&key(1), &nonce(0, false), &head, &plain).expect("seals"),
@@ -412,7 +522,7 @@ fn an_empty_chunk_behind_others_is_refused() {
 
 #[test]
 fn reordered_chunks_fail() {
-    let (stored, _, _) = sealed_file(3 * CHUNK_SIZE);
+    let (stored, _, _) = sealed_file(3 * CHUNK_SIZE - 1);
     let (head, body) = stored.split_at(HEAD_LEN);
     let chunks: Vec<&[u8]> = body.chunks(SEALED_CHUNK_LEN).collect();
     for order in [[1, 0, 2], [0, 2, 1], [2, 1, 0], [0, 0, 2], [0, 1, 1]] {
@@ -431,7 +541,7 @@ fn a_swapped_final_mark_fails() {
     // Two files of one key and id, which no honest writer makes: the final chunk of the short one stands at
     // place 0 with the mark, and does not open where the long one's first chunk belongs.
     let plain = content(CHUNK_SIZE + 9);
-    let head = FileHead { file_id: FILE }.encode();
+    let head = V2.encode();
     let (first, second) = plain.split_at(CHUNK_SIZE);
     let marked_early = [
         head.to_vec(),
@@ -505,8 +615,10 @@ fn a_wrong_head_fails() {
         let hash = crypto::sha256(&changed).expect("hashes");
         decrypt_with(&key(1), FILE, &hash, &changed)
     };
-    assert_eq!(with(0, 3), Err(Error::NewerVersion));
+    assert_eq!(with(0, 4), Err(Error::NewerVersion));
     assert_eq!(with(0, 1), Err(Error::BadFormat));
+    // a padded file under the head of before does not open: the head is the associated data
+    assert_eq!(with(0, 2), Err(Error::DecryptFailed));
     assert_eq!(with(19, 1), Err(Error::BadFormat));
     // The head of another file: the reference names this one.
     assert_eq!(with(1, 0xF2), Err(Error::DecryptFailed));
@@ -519,7 +631,7 @@ fn a_wrong_head_fails() {
 
 #[test]
 fn a_decryptor_that_failed_stays_failed() {
-    let (mut stored, _, plain) = sealed_file(2 * CHUNK_SIZE);
+    let (mut stored, _, plain) = sealed_file(2 * CHUNK_SIZE - 1);
     stored[HEAD_LEN + SEALED_CHUNK_LEN - 1] ^= 1;
     let mut decryptor = Decryptor::new(&naming(&stored));
     assert_eq!(decryptor.update(&stored), Err(Error::DecryptFailed));
@@ -541,7 +653,7 @@ fn a_decryptor_that_failed_stays_failed() {
 #[test]
 fn a_decryptor_without_a_whole_head_or_chunk_fails() {
     assert_eq!(Decryptor::new(&naming(&[])).finish(), Err(Error::BadFormat));
-    let head = FileHead { file_id: FILE }.encode();
+    let head = V3.encode();
     let mut decryptor = Decryptor::new(&naming(&head[..HEAD_LEN - 1]));
     assert_eq!(decryptor.update(&head[..HEAD_LEN - 1]), Ok(vec![]));
     assert_eq!(decryptor.finish(), Err(Error::BadFormat));
@@ -602,17 +714,19 @@ fn layouts_cover_exactly_the_lengths_files_have() {
 
 #[test]
 fn the_largest_file_is_64_mib() {
+    // padded: its content is one byte less, for the mark
     let mut encryptor = Encryptor::new(&mut OfTheTestFile).expect("entropy");
     let piece = vec![0u8; 1 << 20];
     let mut stored_len = 0u64;
-    for _ in 0..64 {
+    for _ in 0..63 {
         stored_len += encryptor.update(&piece).expect("takes").len() as u64;
     }
+    stored_len += encryptor.update(&piece[1..]).expect("takes").len() as u64;
     assert_eq!(encryptor.update(&[0]), Err(Error::TooLarge));
     // The refused byte was not taken: the file still ends as the largest one.
     let (rest, sealed) = encryptor.finish().expect("finishes");
     stored_len += rest.len() as u64;
-    assert_eq!(sealed.plain_len, MAX_FILE_LEN);
+    assert_eq!(sealed.plain_len, MAX_CONTENT_LEN);
     assert_eq!(sealed.stored_len, MAX_STORED_LEN);
     assert_eq!(stored_len, MAX_STORED_LEN);
 
@@ -647,12 +761,13 @@ fn every_file_gets_a_key_and_an_id_of_its_own() {
 fn a_streamed_download_that_is_not_the_named_file_fails_at_its_end() {
     // Whoever holds the file key can seal another file under the same id; the reference's hash tells.
     let (stored, sealed, _) = sealed_file(CHUNK_SIZE + 9);
-    let head = FileHead { file_id: FILE }.encode();
+    let head = V3.encode();
     let other = content(CHUNK_SIZE + 9)
         .iter()
         .map(|byte| byte ^ 0x5a)
         .collect::<Vec<u8>>();
-    let (first, second) = other.split_at(CHUNK_SIZE);
+    let other_padded = padded(&other);
+    let (first, second) = other_padded.split_at(CHUNK_SIZE);
     let replaced = [
         head.to_vec(),
         seal_chunk(&key(1), &FILE, 0, false, first).expect("seals"),
@@ -902,7 +1017,7 @@ fn links_and_references_do_not_print_their_secrets() {
 
 #[test]
 fn more_than_the_largest_file_is_refused_without_room_being_made_for_it() {
-    let head = FileHead { file_id: FILE }.encode();
+    let head = V3.encode();
     let mut decryptor = Decryptor::new(&naming(&head));
     assert_eq!(decryptor.update(&head), Ok(vec![]));
     let beyond = vec![0u8; MAX_STORED_LEN as usize];
@@ -947,7 +1062,8 @@ fn the_vectors_read_back() {
         streamed.extend(decryptor.finish().unwrap());
         assert_eq!(streamed, plain);
         let layout = Layout::of_stored(stored.len() as u64).unwrap();
-        assert_eq!(layout.plain_len(), plain_len);
+        assert_eq!(Some(layout.plain_len()), padded_len(plain_len));
+        assert_eq!(layout.plain_len(), case["padded_len"].as_u64().unwrap());
         assert_eq!(layout.chunks(), case["chunks"].as_u64().unwrap());
         assert_eq!(layout.stored_len(), case["stored_len"].as_u64().unwrap());
         let mut by_chunk = Vec::new();
@@ -957,7 +1073,7 @@ fn the_vectors_read_back() {
             by_chunk.extend(
                 open_chunk(
                     &named.file_key,
-                    &named.file_id,
+                    &FileHead::decode(&stored[..HEAD_LEN]).unwrap(),
                     index,
                     layout.is_last(index),
                     sealed,
@@ -965,7 +1081,7 @@ fn the_vectors_read_back() {
                 .unwrap(),
             );
         }
-        assert_eq!(by_chunk, plain);
+        assert_eq!(by_chunk, padded(&plain));
         assert_eq!(
             FileHead::decode(&stored[..HEAD_LEN]).unwrap().file_id,
             named.file_id

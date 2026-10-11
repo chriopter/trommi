@@ -120,6 +120,33 @@ byte_enum!(
     }
 );
 
+impl Urgency {
+    /// What a header written now says of this level (9): one knock bit, `Low` for quiet (low, normal) and `High`
+    /// for knocking (high, critical). The level itself stands in the body.
+    pub fn knock(self) -> Self {
+        if self.knocks() {
+            Self::High
+        } else {
+            Self::Low
+        }
+    }
+
+    /// Whether this level knocks: high or critical.
+    pub fn knocks(self) -> bool {
+        matches!(self, Self::High | Self::Critical)
+    }
+
+    /// The level's name in a body: `low`, `normal`, `high`, `critical`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Normal => "normal",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
+}
+
 byte_enum!(
     /// A human's verdict on a permission request.
     Verdict {
@@ -1167,15 +1194,16 @@ impl Draft {
 
     /// The header and the bind this draft has at `slot`.
     fn place(&self, slot: &Slot) -> Result<(Header, Bind), Error> {
-        let fields =
-            |object_id, object_type, state, urgency, answered_at, object_ref| ObjectFields {
-                object_id,
-                object_type,
-                state,
-                urgency,
-                answered_at,
-                object_ref,
-            };
+        // 9: a header written now carries the knock bit of the urgency and no answer time; the level and the
+        // time stand in the body (headers of before 11 October 2026 may carry an answer time).
+        let fields = |object_id, object_type, state, urgency: Urgency, object_ref| ObjectFields {
+            object_id,
+            object_type,
+            state,
+            urgency: urgency.knock(),
+            answered_at: 0,
+            object_ref,
+        };
         let (subject, bind) = match &self.what {
             What::Item(timeline) => (Subject::Item(*timeline), Bind::None),
             What::Register(register) => (Subject::Register(*register), Bind::None),
@@ -1189,7 +1217,6 @@ impl Draft {
                     *object_type,
                     ObjectState::Open,
                     *urgency,
-                    0,
                     Hash32::ZERO,
                 );
                 (Subject::Version(block), Bind::None)
@@ -1201,19 +1228,12 @@ impl Draft {
                 urgency,
                 previous,
             } => {
-                let (state, answered_at) = if *closed {
-                    (ObjectState::Closed, slot.time)
+                let state = if *closed {
+                    ObjectState::Closed
                 } else {
-                    (ObjectState::Open, 0)
+                    ObjectState::Open
                 };
-                let block = fields(
-                    *object_id,
-                    *object_type,
-                    state,
-                    *urgency,
-                    answered_at,
-                    *previous,
-                );
+                let block = fields(*object_id, *object_type, state, *urgency, *previous);
                 (Subject::Version(block), Bind::None)
             }
             What::Request {
@@ -1226,7 +1246,6 @@ impl Draft {
                     ObjectType::Request,
                     ObjectState::Open,
                     *urgency,
-                    0,
                     Hash32::ZERO,
                 );
                 let bind = RequestBind {
@@ -1250,7 +1269,6 @@ impl Draft {
                     ObjectType::Card,
                     state,
                     *urgency,
-                    slot.time,
                     bind.version_hash,
                 );
                 (Subject::Answer(block), Bind::Answer(bind.clone()))
@@ -1261,7 +1279,6 @@ impl Draft {
                     ObjectType::Request,
                     ObjectState::Closed,
                     *urgency,
-                    slot.time,
                     bind.request_hash,
                 );
                 (Subject::Verdict(block), Bind::Verdict(*bind))
@@ -1272,7 +1289,6 @@ impl Draft {
                     ObjectType::Card,
                     ObjectState::Open,
                     *urgency,
-                    0,
                     bind.version_hash,
                 );
                 (Subject::TakeBack(block), Bind::TakeBack(*bind))
@@ -1387,5 +1403,53 @@ mod tests {
             Err(Error::WrongSender)
         );
         assert!(seal(&draft, &slot, &key, &signer, &mut SystemEntropy).is_ok());
+    }
+
+    #[test]
+    fn a_header_carries_the_knock_bit_and_no_answer_time() {
+        let slot = Slot {
+            group: GroupId::room(RoomId::new([1; 32])),
+            epoch: 0,
+            sender: DeviceId::new([7; 32]),
+            seq: 1,
+            prev: Hash32::ZERO,
+            time: 1_700_000_000_000,
+        };
+        for (level, knock) in [
+            (Urgency::Low, Urgency::Low),
+            (Urgency::Normal, Urgency::Low),
+            (Urgency::High, Urgency::High),
+            (Urgency::Critical, Urgency::High),
+        ] {
+            let draft = Draft::first_version(ObjectType::Card, level, b"{}").unwrap();
+            let fields = *draft.header(&slot).unwrap().subject.object().unwrap();
+            assert_eq!(fields.urgency, knock);
+            let closing = Draft::later_version(
+                fields.object_id,
+                ObjectType::Card,
+                true,
+                level,
+                Hash32::new([9; 32]),
+                b"{}",
+            )
+            .unwrap();
+            let closed = *closing.header(&slot).unwrap().subject.object().unwrap();
+            assert_eq!((closed.urgency, closed.answered_at), (knock, 0));
+        }
+        // a header of before, with the level and an answer time, still reads
+        let mut writer = Writer::new();
+        let old = ObjectFields {
+            object_id: ObjectId::new([1; 16]),
+            object_type: ObjectType::Card,
+            state: ObjectState::Answered,
+            urgency: Urgency::Normal,
+            answered_at: 1_700_000_000_000,
+            object_ref: Hash32::new([2; 32]),
+        };
+        old.write(&mut writer);
+        let bytes = writer.into_bytes();
+        assert_eq!(ObjectFields::read(&mut Reader::new(&bytes)).unwrap(), old);
+        assert_eq!(Urgency::Critical.name(), "critical");
+        assert!(Urgency::High.knocks() && !Urgency::Normal.knocks());
     }
 }

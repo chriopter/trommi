@@ -188,14 +188,15 @@ pub fn file_chunk(stored_len: u64, index: u64) -> Result<FileChunk, CoreError> {
     })
 }
 
-/// Opens chunk `index` of the file `file_id` as read from the stored file (a `Range` read). `last` says whether
-/// it is the file's final chunk, as [`file_chunk`] tells. `decrypt-failed` unless it is that chunk of that file
+/// Opens chunk `index` of the file whose stored head (its first 21 bytes) is `head`, as read from the stored file
+/// (a `Range` read). `last` says whether it is the file's final chunk, as [`file_chunk`] tells. A padded file's
+/// last chunks hold its padding: the content's length is the reference's `total_size`. `decrypt-failed` unless it is that chunk of that file
 /// under that key, with that mark. A chunk opened this way is authenticated under the file key; that the whole
 /// stored file is the one a reference names, only a whole download can tell.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn open_file_chunk(
     file_key: Vec<u8>,
-    file_id: Vec<u8>,
+    head: Vec<u8>,
     index: u64,
     last: bool,
     sealed: Vec<u8>,
@@ -203,7 +204,7 @@ pub fn open_file_chunk(
     let key = Secret::<32>::from_slice(&file_key)?;
     Ok(files::open_chunk(
         &key,
-        &FileId::from_slice(&file_id)?,
+        &files::FileHead::decode(&head)?,
         index,
         last,
         &sealed,

@@ -4,22 +4,33 @@
 //
 // The extension gets:
 //   - the push key: 32 bytes this phone registered with the hub, which open the sealed part of a notification
-//     (the room, the change number, the urgency; no content);
-//   - the ids of the rooms this phone is in.
+//     (the room, the change number, the urgency; no content) and the Live Activity's sealed counts;
+//   - the ids of the rooms this phone is in;
+//   - the hub's address, the app's client name and how far the app has read the room (its cursor): with the
+//     push's ticket the extension reads ahead from there what the app would catch up on (NotifyPrefetch), as
+//     ciphertext, which only the app opens.
 // It gets no content key of any group and no name of a session: a content key never leaves the core, so there is
 // none to hand over, and the extension opens no envelope. It never gets the device key either (it cannot sign,
 // cannot sign in to the hub, cannot send) and no MLS state. What a notification shows is the hub's fixed text.
 import Foundation
 
 public struct NotifyContext: Codable, Equatable {
-  /** 3: without content keys and sessions. A stored context of another version is not read. */
-  public static let currentVersion = 3
+  /** 4: with the hub, the client name and the cursor for reading ahead. A stored context of another version is not read. */
+  public static let currentVersion = 4
   public var version = NotifyContext.currentVersion
   /** The push key (base64url, 32 bytes). */
   public var pushKey: String
   /** The rooms this phone is in (hex ids). */
   public var rooms: [String]
-  public init(pushKey: [UInt8], rooms: [String]) { self.pushKey = NotifyText.b64u(pushKey); self.rooms = rooms }
+  /** The hub's address (https://…, no trailing slash); nil: no reading ahead. */
+  public var hub: String?
+  /** The app's `Trommi-Client` header. */
+  public var client: String?
+  /** How far the app has read the room, by the hub's change number. */
+  public var cursor: UInt64?
+  public init(pushKey: [UInt8], rooms: [String], hub: String? = nil, client: String? = nil, cursor: UInt64? = nil) {
+    self.pushKey = NotifyText.b64u(pushKey); self.rooms = rooms; self.hub = hub; self.client = client; self.cursor = cursor
+  }
   /** Whether this phone is in that room. */
   public func holds(room id: [UInt8]) -> Bool { rooms.contains(NotifyText.hex(id)) }
 }

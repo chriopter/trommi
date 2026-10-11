@@ -1462,8 +1462,21 @@ pub const CHANGES_WINDOW: i64 = 20_000;
 /// visible are read (two integers a row, filtered and limited in SQL), then only the items that fit the limit
 /// and the answer's byte budget are loaded. The cursor never skips an item the asker may see.
 pub fn changes(c: &Connection, auth: &Auth, after: i64, limit: Option<i64>) -> Res<Value> {
+    changes_upto(c, auth, after, limit, None)
+}
+
+/// `GET /v1/changes` as far as `ceiling` at most: what a push ticket reads (15.2), the changes up to the one that
+/// rang. Without a ceiling, up to the room's head.
+pub fn changes_upto(
+    c: &Connection,
+    auth: &Auth,
+    after: i64,
+    limit: Option<i64>,
+    ceiling: Option<i64>,
+) -> Res<Value> {
     let limit = clamp(limit, 200, 1000);
-    let head = store::room_row(c, &auth.room)?.change;
+    let room_head = store::room_row(c, &auth.room)?.change;
+    let head = ceiling.map_or(room_head, |top| top.min(room_head));
     let upto = after.saturating_add(CHANGES_WINDOW).min(head);
     let (human, recovery) = (auth.who == Who::Human, auth.who == Who::Recovery);
     // an agent or helper device: the groups it is a leaf of, and those whose Commits it follows
@@ -1560,7 +1573,10 @@ pub fn changes(c: &Connection, auth: &Auth, after: i64, limit: Option<i64>) -> R
     if !cut_short {
         cursor = upto;
     }
-    Ok(json!({ "items": items, "change": cursor.max(after), "more": cursor < head }))
+    // "more" by the room's head, also under a ceiling: a page read ahead up to a push's change does not tell the
+    // app that it caught up
+    let end = cursor.max(after);
+    Ok(json!({ "items": items, "change": end, "more": end < room_head }))
 }
 
 // ---- retention (9.4)

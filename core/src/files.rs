@@ -1,11 +1,16 @@
 //! Files and Share links (section 11): chunked sealing under a file key, the link's parts.
 //!
 //! ```text
-//! struct { uint8 version = 2;  opaque file_id[16];  uint32 chunk_size; } FileHead;       chunk_size = 65536
+//! struct { uint8 version = 3;  opaque file_id[16];  uint32 chunk_size; } FileHead;       chunk_size = 65536
 //! file    = FileHead ‖ chunk_0 ‖ chunk_1 ‖ …
-//! chunk_i = AEAD.Seal(file_key, nonce_i, aad = FileHead, plaintext[i × 65536 …])
+//! padded  = content ‖ 0x80 ‖ zero bytes up to padded_len(len(content))                    version 3 only
+//! chunk_i = AEAD.Seal(file_key, nonce_i, aad = FileHead, padded[i × 65536 …])
 //! nonce_i = 0x00 0x00 0x00 ‖ uint64 i ‖ uint8 last                                        last = 1 on the final chunk
 //! ```
+//!
+//! A file of version 3 is padded, so that its stored size tells little of its content: [`padded_len`] rounds to
+//! 4 KiB at least, and above that keeps the top bits of the length (Padmé), at most 12 % more. Version 2, the
+//! files written before 11 October 2026, is unpadded and still read; nothing writes it any more.
 //!
 //! A file has one stored form: every chunk but the last holds exactly 65536 bytes, the last holds what is left,
 //! and it is empty only when the whole file is. The chunk number and the final mark stand in the nonce, the head
@@ -32,16 +37,24 @@ use crate::ids::{self, FileId, Hash32, ShareId};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
 
-/// The version byte of a file head.
-const VERSION: u8 = 2;
+/// The version byte of a file head that this core writes: the content is padded.
+const VERSION: u8 = 3;
+/// The version of the files of before, unpadded: still read.
+const VERSION_UNPADDED: u8 = 2;
+/// The smallest padded file, in plaintext bytes.
+const MIN_PADDED: u64 = 4096;
+/// The mark that ends the content in a padded file.
+const PAD_MARK: u8 = 0x80;
 /// The plaintext bytes of every chunk but the last.
 pub const CHUNK_SIZE: usize = 65536;
 /// The length of an encoded [`FileHead`].
 pub const HEAD_LEN: usize = 21;
 /// The stored length of a full chunk.
 pub const SEALED_CHUNK_LEN: usize = CHUNK_SIZE + TAG_LEN;
-/// The largest file, in plaintext bytes: 64 MiB.
+/// The largest file, in plaintext bytes as stored (with its padding): 64 MiB.
 pub const MAX_FILE_LEN: u64 = 64 << 20;
+/// The largest content of a padded file: one byte less, for the mark.
+pub const MAX_CONTENT_LEN: u64 = MAX_FILE_LEN - 1;
 /// The chunks of the largest file.
 pub const MAX_CHUNKS: u64 = MAX_FILE_LEN / CHUNK_SIZE as u64;
 /// The stored length of the largest file: its head, its bytes and one tag per chunk.
@@ -54,11 +67,28 @@ const SEALED_CHUNK_LEN_U64: u64 = SEALED_CHUNK_LEN as u64;
 const HEAD_LEN_U64: u64 = HEAD_LEN as u64;
 const TAG_LEN_U64: u64 = TAG_LEN as u64;
 
-/// The head of a stored file. Version and chunk size have one value each, so the file's id says it all.
+/// The plaintext length a content of `content_len` bytes is padded to, mark included: `content_len + 1` rounded
+/// up to at least 4 KiB, and beyond that to a multiple of 2^(E − S), E the place of the length's top bit and S
+/// the bits E has (Padmé). `None` above [`MAX_CONTENT_LEN`].
+pub fn padded_len(content_len: u64) -> Option<u64> {
+    if content_len > MAX_CONTENT_LEN {
+        return None;
+    }
+    let len = (content_len + 1).max(MIN_PADDED);
+    let e = u64::from(63 - len.leading_zeros());
+    let s = u64::from(64 - e.leading_zeros());
+    let mask = (1u64 << (e - s)) - 1;
+    Some((len + mask) & !mask)
+}
+
+/// The head of a stored file. The chunk size has one value, the version two: 3 for a padded file (all this core
+/// writes), 2 for an unpadded one of before.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileHead {
     /// The file.
     pub file_id: FileId,
+    /// Whether its content is padded (version 3).
+    pub padded: bool,
 }
 
 impl FileHead {
@@ -67,14 +97,18 @@ impl FileHead {
         let mut head = [0u8; HEAD_LEN];
         let (version, rest) = head.split_at_mut(1);
         let (file_id, chunk_size) = rest.split_at_mut(FileId::LEN);
-        version.fill(VERSION);
+        version.fill(if self.padded {
+            VERSION
+        } else {
+            VERSION_UNPADDED
+        });
         file_id.copy_from_slice(self.file_id.as_bytes());
         chunk_size.copy_from_slice(&(CHUNK_SIZE as u32).to_be_bytes());
         head
     }
 
-    /// The head these bytes are: `newer-version` for a version above 2, `bad-format` for another length, an
-    /// older version or another chunk size.
+    /// The head these bytes are: `newer-version` for a version above 3, `bad-format` for another length, a
+    /// version below 2 or another chunk size.
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         let (version, rest) = bytes.split_first().ok_or(Error::BadFormat)?;
         let (file_id, chunk_size) = rest
@@ -86,11 +120,12 @@ impl FileHead {
         if *version > VERSION {
             return Err(Error::NewerVersion);
         }
-        if *version != VERSION || chunk_size != (CHUNK_SIZE as u32).to_be_bytes() {
+        if *version < VERSION_UNPADDED || chunk_size != (CHUNK_SIZE as u32).to_be_bytes() {
             return Err(Error::BadFormat);
         }
         Ok(Self {
             file_id: FileId::new(*file_id),
+            padded: *version == VERSION,
         })
     }
 }
@@ -134,25 +169,30 @@ fn seal_chunk(
     plaintext: &[u8],
 ) -> Result<Vec<u8>, Error> {
     check_shape(index, last, plaintext.len())?;
-    let head = FileHead { file_id: *file_id }.encode();
+    let head = FileHead {
+        file_id: *file_id,
+        padded: true,
+    }
+    .encode();
     crypto::aead_seal(key, &nonce(index, last), &head, plaintext)
 }
 
-/// Opens chunk `index` of file `file_id` as read from the stored file (a `Range` read). `last` says whether it is
-/// the file's final chunk, which [`Layout`] knows from the stored length. `decrypt-failed` unless it is that
+/// Opens chunk `index` of the file `head` names as read from the stored file (a `Range` read); the head is the
+/// stored file's first [`HEAD_LEN`] bytes. `last` says whether it is the file's final chunk, which [`Layout`]
+/// knows from the stored length. Of a padded file the final chunks hold the padding: a reader takes the
+/// content's length from the reference (`total_size`). `decrypt-failed` unless it is that
 /// chunk of that file under that key, with that mark; `bad-format` for a length no such chunk has; `too-large`
 /// for a chunk beyond the largest file.
 pub fn open_chunk(
     key: &Secret<32>,
-    file_id: &FileId,
+    head: &FileHead,
     index: u64,
     last: bool,
     sealed: &[u8],
 ) -> Result<Vec<u8>, Error> {
     let plain_len = sealed.len().checked_sub(TAG_LEN).ok_or(Error::BadFormat)?;
     check_shape(index, last, plain_len)?;
-    let head = FileHead { file_id: *file_id }.encode();
-    crypto::aead_open(key, &nonce(index, last), &head, sealed)
+    crypto::aead_open(key, &nonce(index, last), &head.encode(), sealed)
 }
 
 /// Where the chunks of one file lie in its stored form.
@@ -282,7 +322,7 @@ impl FileHasher {
 pub struct Sealed {
     /// The file's id, its key and the SHA-256 of the stored file: for the body that names the file.
     pub file: FileRef,
-    /// The file's length in plaintext bytes.
+    /// The content's length in bytes, without the padding: the reference's `total_size`.
     pub plain_len: u64,
     /// The file's length as stored.
     pub stored_len: u64,
@@ -330,6 +370,7 @@ impl Encryptor {
             self.head_written = true;
             let head = FileHead {
                 file_id: self.file_id,
+                padded: true,
             }
             .encode();
             self.write(out, &head);
@@ -345,17 +386,22 @@ impl Encryptor {
     }
 
     /// Takes the next plaintext bytes and returns the stored bytes that are ready. `too-large` once the file
-    /// would pass [`MAX_FILE_LEN`]; nothing was taken then.
+    /// would pass [`MAX_CONTENT_LEN`]; nothing was taken then.
     pub fn update(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, Error> {
         let plain_len = u64::try_from(plaintext.len())
             .ok()
             .and_then(|more| self.plain_len.checked_add(more))
-            .filter(|total| *total <= MAX_FILE_LEN)
+            .filter(|total| *total <= MAX_CONTENT_LEN)
             .ok_or(Error::TooLarge)?;
         self.plain_len = plain_len;
-
         let mut out = Vec::new();
         self.write_head(&mut out);
+        self.push(&mut out, plaintext)?;
+        Ok(out)
+    }
+
+    /// Puts bytes into the chunks, sealing each full one once a byte follows it.
+    fn push(&mut self, out: &mut Vec<u8>, plaintext: &[u8]) -> Result<(), Error> {
         let mut input = plaintext;
         loop {
             // A full chunk is sealed only once a byte follows it: the final chunk carries another mark.
@@ -363,30 +409,35 @@ impl Encryptor {
             match input.split_at_checked(room) {
                 Some((fill, rest)) if !rest.is_empty() => {
                     self.pending.extend_from_slice(fill);
-                    self.seal_pending(&mut out, false)?;
+                    self.seal_pending(out, false)?;
                     input = rest;
                 }
                 _ => {
                     self.pending.extend_from_slice(input);
-                    return Ok(out);
+                    return Ok(());
                 }
             }
         }
     }
 
-    /// Ends the file: the last stored bytes, and the reference with the file's key.
+    /// Ends the file: the padding, the last stored bytes, and the reference with the file's key.
     pub fn finish(mut self) -> Result<(Vec<u8>, Sealed), Error> {
         let mut out = Vec::new();
         self.write_head(&mut out);
+        let padded = padded_len(self.plain_len).ok_or(Error::TooLarge)?;
+        let zeros = usize::try_from(padded - self.plain_len - 1).map_err(|_| Error::TooLarge)?;
+        self.push(&mut out, &[PAD_MARK])?;
+        // (at most 2 MiB of zeros, at the largest file)
+        self.push(&mut out, &vec![0u8; zeros])?;
         self.seal_pending(&mut out, true)?;
-        let layout = Layout::of_plain(self.plain_len)?;
+        let layout = Layout::of_plain(padded)?;
         let sealed = Sealed {
             file: FileRef {
                 file_id: self.file_id,
                 file_key: self.key.duplicate(),
                 sha256: self.hasher.finish()?,
             },
-            plain_len: layout.plain_len(),
+            plain_len: self.plain_len,
             stored_len: layout.stored_len(),
         };
         Ok((out, sealed))
@@ -411,9 +462,56 @@ pub struct Decryptor {
     taken: u64,
     index: u64,
     head: Vec<u8>,
-    head_checked: bool,
+    /// The head, once it is whole and checked.
+    checked: Option<FileHead>,
     pending: Vec<u8>,
+    /// Of a padded file: the end of what opened that may be padding, held back until more content follows.
+    held: Held,
+    /// How many plaintext bytes opened, padding included.
+    opened: u64,
     failed: Option<Error>,
+}
+
+/// The end of a padded file's plaintext that may be padding: a mark and the zeros after it, or zeros alone (which
+/// may still be content).
+#[derive(Debug, Default, Clone, Copy)]
+struct Held {
+    mark: bool,
+    zeros: u64,
+}
+
+impl Held {
+    fn len(&self) -> u64 {
+        u64::from(self.mark) + self.zeros
+    }
+
+    /// Hands out what is surely content of `plain` (and of what was held before), holding back its end.
+    fn take(&mut self, plain: &[u8], out: &mut Vec<u8>) {
+        match plain.iter().rposition(|b| *b != 0) {
+            None => self.zeros = self.zeros.saturating_add(plain.len() as u64),
+            Some(at) => {
+                self.release(out);
+                let (content, tail) = plain.split_at(at);
+                out.extend_from_slice(content);
+                let last = tail.first().copied().unwrap_or(0);
+                if last == PAD_MARK {
+                    self.mark = true;
+                } else {
+                    out.push(last);
+                }
+                self.zeros = (tail.len() - 1) as u64;
+            }
+        }
+    }
+
+    /// What was held turned out to be content.
+    fn release(&mut self, out: &mut Vec<u8>) {
+        if self.mark {
+            out.push(PAD_MARK);
+        }
+        out.resize(out.len() + self.zeros as usize, 0);
+        *self = Self::default();
+    }
 }
 
 impl Decryptor {
@@ -431,39 +529,59 @@ impl Decryptor {
             taken: 0,
             index: 0,
             head: Vec::with_capacity(HEAD_LEN),
-            head_checked: false,
+            checked: None,
             pending: Vec::with_capacity(SEALED_CHUNK_LEN),
+            held: Held::default(),
+            opened: 0,
             failed: None,
         }
     }
 
     fn open_pending(&mut self, out: &mut Vec<u8>, last: bool) -> Result<(), Error> {
+        let head = self.checked.ok_or(Error::BadFormat)?;
         let plain = Zeroizing::new(open_chunk(
             &self.key,
-            &self.file_id,
+            &head,
             self.index,
             last,
             &self.pending,
         )?);
         self.pending.clear();
         self.index = self.index.saturating_add(1);
-        out.extend_from_slice(&plain);
+        self.opened = self.opened.saturating_add(plain.len() as u64);
+        if !head.padded {
+            out.extend_from_slice(&plain);
+            return Ok(());
+        }
+        self.held.take(&plain, out);
+        if last {
+            // the padding is exactly what the content's length calls for, a mark and zeros
+            let content = self
+                .opened
+                .checked_sub(self.held.len())
+                .ok_or(Error::BadFormat)?;
+            if !self.held.mark || padded_len(content) != Some(self.opened) {
+                return Err(Error::BadFormat);
+            }
+            self.held = Held::default();
+        }
         Ok(())
     }
 
     /// Takes the head from the front of `input` and checks it once it is whole; returns what follows it.
     fn take_head<'a>(&mut self, input: &'a [u8]) -> Result<&'a [u8], Error> {
-        if self.head_checked {
+        if self.checked.is_some() {
             return Ok(input);
         }
         let missing = HEAD_LEN.saturating_sub(self.head.len());
         let (head, rest) = input.split_at_checked(missing).unwrap_or((input, &[]));
         self.head.extend_from_slice(head);
         if self.head.len() == HEAD_LEN {
-            if FileHead::decode(&self.head)?.file_id != self.file_id {
+            let head = FileHead::decode(&self.head)?;
+            if head.file_id != self.file_id {
                 return Err(Error::DecryptFailed);
             }
-            self.head_checked = true;
+            self.checked = Some(head);
         }
         Ok(rest)
     }
@@ -497,7 +615,7 @@ impl Decryptor {
     }
 
     fn end(&mut self, out: &mut Vec<u8>) -> Result<(), Error> {
-        if !self.head_checked || self.pending.len() < TAG_LEN {
+        if self.checked.is_none() || self.pending.len() < TAG_LEN {
             return Err(Error::BadFormat);
         }
         if let Some(hasher) = self.hasher.take() {
@@ -518,7 +636,13 @@ impl Decryptor {
         }
         // No more than the largest file still has to give, whatever the caller hands in.
         let left = usize::try_from(MAX_STORED_LEN.saturating_sub(self.taken)).unwrap_or(usize::MAX);
-        let room = self.pending.len().saturating_add(most.min(left));
+        // (zeros held back may come out with the next content)
+        let held = usize::try_from(self.held.len()).unwrap_or(usize::MAX);
+        let room = self
+            .pending
+            .len()
+            .saturating_add(most.min(left))
+            .saturating_add(held);
         let mut out = Zeroizing::new(Vec::with_capacity(room));
         match step(self, &mut out) {
             Ok(()) => Ok(std::mem::take(&mut *out)),
@@ -802,10 +926,137 @@ mod tests {
             sha256: Hash32::ZERO,
         };
         let mut decryptor = Decryptor::new(&file);
-        let head = FileHead { file_id: FILE }.encode();
+        let head = FileHead {
+            file_id: FILE,
+            padded: true,
+        }
+        .encode();
         assert_eq!(decryptor.update(&head), Ok(vec![]));
         decryptor.taken = MAX_STORED_LEN;
         assert_eq!(decryptor.update(&[0]), Err(Error::TooLarge));
         assert_eq!(decryptor.update(&[]), Err(Error::TooLarge));
+    }
+
+    struct Counter(u8);
+    impl Entropy for Counter {
+        fn fill(&mut self, out: &mut [u8]) -> Result<(), Error> {
+            for b in out.iter_mut() {
+                self.0 = self.0.wrapping_add(1);
+                *b = self.0;
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn padded_lengths_are_buckets() {
+        assert_eq!(padded_len(0), Some(4096));
+        assert_eq!(padded_len(4095), Some(4096));
+        assert_eq!(padded_len(4096), Some(4352));
+        // a megabyte rounds to 16 KiB at most
+        assert_eq!(padded_len(1_000_000), Some(1_015_808));
+        assert_eq!(padded_len(MAX_CONTENT_LEN), Some(MAX_FILE_LEN));
+        assert_eq!(padded_len(MAX_CONTENT_LEN + 1), None);
+        for n in [1u64, 5000, 70_000, 3_333_333, 40 << 20] {
+            let p = padded_len(n).unwrap();
+            assert!(p > n && p - n <= n / 8 + 4096, "{n} -> {p}");
+        }
+    }
+
+    #[test]
+    fn files_of_near_sizes_are_stored_alike_and_open_to_their_content() {
+        let sizes = [0usize, 1, 100, 4000, 65_535, 65_536, 65_537, 200_000];
+        for size in sizes {
+            let plain: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+            let (stored, sealed) = encrypt_file(&plain, &mut Counter(size as u8)).unwrap();
+            assert_eq!(sealed.plain_len, size as u64);
+            assert_eq!(stored.len() as u64, sealed.stored_len);
+            assert_eq!(stored[0], 3);
+            assert_eq!(decrypt_file(&sealed.file, &stored).unwrap(), plain);
+            // streamed in odd pieces
+            let mut decryptor = Decryptor::new(&sealed.file);
+            let mut out = Vec::new();
+            for piece in stored.chunks(7_777) {
+                out.extend(decryptor.update(piece).unwrap());
+            }
+            out.extend(decryptor.finish().unwrap());
+            assert_eq!(out, plain);
+        }
+        let len = |n: usize| {
+            encrypt_file(&vec![1u8; n], &mut Counter(1))
+                .unwrap()
+                .0
+                .len()
+        };
+        assert_eq!(len(10), len(3000));
+        assert_eq!(len(70_000), len(70_100));
+    }
+
+    #[test]
+    fn content_that_ends_like_padding_survives() {
+        for tail in [&[0x80u8][..], &[0x80, 0, 0], &[0, 0, 0], &[5, 0x80]] {
+            let mut plain = vec![7u8; 65_530];
+            plain.extend_from_slice(tail);
+            plain.extend(std::iter::repeat_n(0u8, 10));
+            let (stored, sealed) = encrypt_file(&plain, &mut Counter(9)).unwrap();
+            let mut decryptor = Decryptor::new(&sealed.file);
+            let mut out = Vec::new();
+            for piece in stored.chunks(1000) {
+                out.extend(decryptor.update(piece).unwrap());
+            }
+            out.extend(decryptor.finish().unwrap());
+            assert_eq!(out, plain);
+        }
+    }
+
+    #[test]
+    fn unpadded_files_of_before_still_open() {
+        let head = FileHead {
+            file_id: FILE,
+            padded: false,
+        };
+        let plain = b"written before the padding".to_vec();
+        let encoded = head.encode();
+        assert_eq!(encoded[0], 2);
+        let chunk = crypto::aead_seal(&key(), &nonce(0, true), &encoded, &plain).unwrap();
+        let mut stored = encoded.to_vec();
+        stored.extend_from_slice(&chunk);
+        let mut hasher = FileHasher::new();
+        hasher.update(&stored);
+        let file = FileRef {
+            file_id: FILE,
+            file_key: key(),
+            sha256: hasher.finish().unwrap(),
+        };
+        assert_eq!(decrypt_file(&file, &stored).unwrap(), plain);
+        assert_eq!(open_chunk(&key(), &head, 0, true, &chunk).unwrap(), plain);
+    }
+
+    #[test]
+    fn padding_that_is_not_exact_is_refused() {
+        // a padded head over content without the mark, or with too few zeros
+        let head = FileHead {
+            file_id: FILE,
+            padded: true,
+        }
+        .encode();
+        for plain in [vec![1u8; 4096], {
+            let mut p = vec![1u8; 100];
+            p.push(0x80);
+            p.extend(vec![0u8; 100]);
+            p
+        }] {
+            let chunk = crypto::aead_seal(&key(), &nonce(0, true), &head, &plain).unwrap();
+            let mut stored = head.to_vec();
+            stored.extend_from_slice(&chunk);
+            let mut hasher = FileHasher::new();
+            hasher.update(&stored);
+            let file = FileRef {
+                file_id: FILE,
+                file_key: key(),
+                sha256: hasher.finish().unwrap(),
+            };
+            assert_eq!(decrypt_file(&file, &stored), Err(Error::BadFormat));
+        }
     }
 }

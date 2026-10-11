@@ -259,7 +259,17 @@ pub fn web_push_encrypt(sub: &WebSubscription, plain: &[u8]) -> Option<Vec<u8>> 
     Some(out)
 }
 
-/// 15.2: a Web Push carries `{ room_id, change, urgency }` and nothing else.
+/// 15.2: the Web Push `Topic` of a subscription: 12 bytes of HMAC-SHA-256 under its `auth` secret, which only
+/// the browser and the hub know. Stable per subscription (a newer push replaces one still waiting at the push
+/// service) and random to the push service: it names no room and links no two subscriptions.
+pub fn web_topic(sub: &WebSubscription) -> String {
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&sub.auth).expect("any key length");
+    mac.update(b"trommi web push topic");
+    b64(&mac.finalize().into_bytes()[..12])
+}
+
+/// 15.2: a Web Push carries `{ room_id, change, urgency }`, encrypted for the browser, and nothing else. Its
+/// clear headers are the same for every push: urgency `normal`, the subscription's random topic.
 pub fn web_push_request(
     vapid: &Vapid,
     sub: &WebSubscription,
@@ -286,12 +296,9 @@ pub fn web_push_request(
             ("content-encoding".into(), "aes128gcm".into()),
             ("content-type".into(), "application/octet-stream".into()),
             ("ttl".into(), "86400".into()),
-            (
-                "urgency".into(),
-                if urgency >= 2 { "high" } else { "normal" }.into(),
-            ),
-            // one notification per room waits at the push service; a newer one replaces it
-            ("topic".into(), b64(&room[..12])),
+            ("urgency".into(), "normal".into()),
+            // one notification per subscription waits at the push service; a newer one replaces it
+            ("topic".into(), web_topic(sub)),
         ],
         body,
     })
@@ -316,22 +323,10 @@ pub struct ApnsRegistration {
     pub topic: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Text {
-    Question,
-    Urgent,
-    AgentLost,
-}
-
-impl Text {
-    pub fn text(self) -> &'static str {
-        match self {
-            Text::Question => "A new question.",
-            Text::Urgent => "Urgent: a new question.",
-            Text::AgentLost => "An agent lost its connection.",
-        }
-    }
-}
+/// 15.2: the one text every APNs alert carries, whatever it is about. The phone's notification extension opens
+/// the sealed part and shows what it is (a question, an urgent one, a lost agent).
+pub const ALERT_TITLE: &str = "Trommi";
+pub const ALERT_BODY: &str = "Something new.";
 
 impl Apns {
     pub fn new(
@@ -427,12 +422,12 @@ impl Apns {
         })
     }
 
-    /// 15.2: a fixed text, and `nonce(12) ‖ AEAD.Seal(key, nonce, "trommi apns v1", { room_id, change, urgency,
-    /// ticket })` under the 32 random bytes the app registered.
+    /// 15.2: the one fixed text, and `nonce(12) ‖ AEAD.Seal(key, nonce, "trommi apns v1", { room_id, change,
+    /// urgency, ticket })` under the 32 random bytes the app registered.
+    #[allow(clippy::too_many_arguments)]
     pub fn alert(
         &self,
         reg: &ApnsRegistration,
-        text: Text,
         room: &Room,
         change: i64,
         urgency: u8,
@@ -443,7 +438,7 @@ impl Apns {
         let message = payload_text(room, change, urgency, Some(ticket.unwrap_or("")));
         let sealed = seal_for_phone(&reg.key, message.as_bytes())?;
         let payload = json!({
-            "aps": { "alert": { "title": "Trommi", "body": text.text() }, "sound": "default", "mutable-content": 1 },
+            "aps": { "alert": { "title": ALERT_TITLE, "body": ALERT_BODY }, "sound": "default", "mutable-content": 1 },
             "e": b64(&sealed),
         });
         self.request(
@@ -458,8 +453,10 @@ impl Apns {
         )
     }
 
-    /// 15.3: `{ aps: { timestamp, event, content-state: { working, waiting }, stale-date, relevance-score } }`.
-    /// Apple sees two counts and a random tag.
+    /// 15.3: `{ aps: { timestamp, event, content-state: { working, waiting, s? }, stale-date, relevance-score } }`.
+    /// Apple sees two marks, each 0 or 1 (anyone working, anything waiting), a random tag, and with `key` (the
+    /// device's push key) the exact counts sealed for the phone in `s`, of one length. Priority and relevance are
+    /// the same for every push.
     #[allow(clippy::too_many_arguments)]
     pub fn live_activity(
         &self,
@@ -470,38 +467,41 @@ impl Apns {
         event: &str,
         working: u64,
         waiting: u64,
+        key: Option<&[u8; 32]>,
         beat_ms: u64,
         now: u64,
     ) -> Option<PushRequest> {
         let t = now / 1000;
-        let mut aps = json!({ "timestamp": t, "event": event, "content-state": { "working": working, "waiting": waiting } });
+        let mut state = json!({ "working": u64::from(working > 0), "waiting": u64::from(waiting > 0) });
+        if let Some(key) = key {
+            let mut counts = [0u8; 16];
+            counts[..8].copy_from_slice(&working.to_be_bytes());
+            counts[8..].copy_from_slice(&waiting.to_be_bytes());
+            state["s"] = json!(b64(&seal_for_phone_with(key, LIVE_AAD, &counts)?));
+        }
+        let mut aps = json!({ "timestamp": t, "event": event, "content-state": state });
         match event {
             "end" => aps["dismissal-date"] = json!(t + 900),
             _ => {
                 aps["stale-date"] = json!(t + (3 * beat_ms / 1000).max(60));
-                aps["relevance-score"] = json!(if waiting > 0 { 100 } else { 50 });
+                aps["relevance-score"] = json!(100);
             }
         }
         if event == "start" {
             aps["attributes-type"] = json!("TrommiActivityAttributes");
             aps["attributes"] = json!({ "tag": tag });
             aps["input-push-token"] = json!(1);
-            aps["alert"] = json!({ "title": "Trommi", "body": "Agents are working." });
+            aps["alert"] = json!({ "title": ALERT_TITLE, "body": ALERT_BODY });
         }
         let base = topic
             .strip_suffix(".push-type.liveactivity")
             .unwrap_or(topic);
-        let priority = if event == "update" && waiting == 0 {
-            "5"
-        } else {
-            "10"
-        };
         self.request(
             environment,
             token,
             &format!("{base}.push-type.liveactivity"),
             "liveactivity",
-            priority,
+            "10",
             None,
             &json!({ "aps": aps }),
             now,
@@ -510,34 +510,49 @@ impl Apns {
 }
 
 const APNS_AAD: &[u8] = b"trommi apns v1";
+const LIVE_AAD: &[u8] = b"trommi live v1";
+/// 15.2: every sealed APNs plaintext is the JSON padded with zero bytes to this length (512 bytes sealed).
+pub const APNS_PLAIN_LEN: usize = 512 - 12 - 16;
 
+/// The JSON of a push, padded to [`APNS_PLAIN_LEN`] and sealed for the phone; `None` for a longer one.
 pub fn seal_for_phone(key: &[u8; 32], plain: &[u8]) -> Option<Vec<u8>> {
+    if plain.len() > APNS_PLAIN_LEN {
+        return None;
+    }
+    let mut padded = plain.to_vec();
+    padded.resize(APNS_PLAIN_LEN, 0);
+    seal_for_phone_with(key, APNS_AAD, &padded)
+}
+
+fn seal_for_phone_with(key: &[u8; 32], aad: &[u8], plain: &[u8]) -> Option<Vec<u8>> {
     let nonce = random::<12>();
     let sealed = ChaCha20Poly1305::new(key.into())
-        .encrypt(
-            (&nonce).into(),
-            Payload {
-                msg: plain,
-                aad: APNS_AAD,
-            },
-        )
+        .encrypt((&nonce).into(), Payload { msg: plain, aad })
         .ok()?;
     Some([&nonce[..], &sealed].concat())
 }
 
-/// What the phone does with it; here for the tests.
+/// What the phone does with it, the padding taken off; here for the tests.
 pub fn open_on_phone(key: &[u8; 32], sealed: &[u8]) -> Option<Vec<u8>> {
+    let mut plain = open_with(key, APNS_AAD, sealed)?;
+    let end = plain.iter().rposition(|b| *b != 0).map_or(0, |at| at + 1);
+    plain.truncate(end);
+    Some(plain)
+}
+
+/// A Live Activity's sealed counts as the phone opens them; here for the tests.
+pub fn open_live_on_phone(key: &[u8; 32], sealed: &[u8]) -> Option<(u64, u64)> {
+    let plain = open_with(key, LIVE_AAD, sealed)?;
+    let (working, waiting) = plain.split_first_chunk::<8>()?;
+    Some((u64::from_be_bytes(*working), u64::from_be_bytes(waiting.try_into().ok()?)))
+}
+
+fn open_with(key: &[u8; 32], aad: &[u8], sealed: &[u8]) -> Option<Vec<u8>> {
     if sealed.len() < 12 {
         return None;
     }
     ChaCha20Poly1305::new(key.into())
-        .decrypt(
-            sealed[..12].into(),
-            Payload {
-                msg: &sealed[12..],
-                aad: APNS_AAD,
-            },
-        )
+        .decrypt(sealed[..12].into(), Payload { msg: &sealed[12..], aad })
         .ok()
 }
 
