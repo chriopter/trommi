@@ -783,7 +783,7 @@ html[data-rail="folded"] .desk-switch-open { display: none; }
 
 /* ---- The crown sits centred over its drawing: every crown
    that rests on a session's drawing moves a few px to the left (it leans, so its box centre is right of its look). ---- */
-:is(#agents, #ledger, .pane-who, .inbox-row) .crown-mark { translate: -2.5px 0; }
+:is(#agents, .pane-who, .inbox-row) .crown-mark { translate: -2.5px 0; }
 
 /* ---- The demo is a switch in the Trommi menu, never a desk; while it is on a small band at the top says so, with the
    way out ---- */

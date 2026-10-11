@@ -1,6 +1,6 @@
 // ---- room ----
 // The room's own screens. Inside a room (pages of the board): /settings (one list, as iOS Settings: Invite a Device with
-// its code and the emoji check in place, beside it Invite an Agent, then a row per page: Sessions (agents.mjs), Devices,
+// its code and the emoji check in place, beside it Invite an Agent, then a row per page: Agents (agents.mjs), Devices,
 // Account, Theme, Keyboard Shortcuts), /settings/devices (who is in the room, Push, inviting an agent; each device a page
 // of its own: rename, remove), /pair/:id (an agent's clipboard; a device's code), /settings/account (email, password, passkeys, Emergency Kit: each a page of its own; storage). Before a room (a screen of its own): Create
 // account (email + a passkey where the device can, else or by choice a password; this device founds the room and its
@@ -8,7 +8,7 @@
 // password (Emergency Kit, ending in a new password or a new passkey). A device is never asked for its name (deviceLabel). The UI says "account", never "room".
 // Calm and sober: this is about keys; pen drawings only on the choice buttons.
 // Core features that may not be there yet (usage, session handover) are shown only when the core has them.
-import { BELL, Controller, PLUS, SET_CHEVRON, avatar, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError } from './ui.mjs'
+import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError } from './ui.mjs'
 import { CLIENT, account, checkEmoji, core, openInWorker, qrReader, ses } from './app.mjs'
 const read = (k, f = null) => { try { return localStorage.getItem(k) ?? f } catch { return f } }
 const write = (k, v) => { try { localStorage.setItem(k, v) } catch {} }
@@ -171,7 +171,8 @@ export function register(t) {
     const isHuman = () => m().room.my_role === 'human'
     const fp = d => d.fingerprint || d.device_id.slice(0, 16).replace(/(.{4})(?!$)/g, '$1 ')
 
-    // ---- /settings/devices: the Settings list's parts (groups of rows); each device opens a page of its own ----
+    // ---- /settings/devices: your devices only (phones, tablets, browsers: where you read and answer), each with a page of
+    // its own, and Push. The agents are Settings · Agents (agents.mjs). ----
     const devName = d => d.device_name || (d.device_role === 'human' ? 'Device' : 'Agent')
     const devIcon = d => (d.device_role !== 'human' ? sk('terminal') : /phone|ipad|ios|android/i.test(`${d.device_name ?? ''} ${d.platform ?? ''}`) ? art('phone') : sk('laptop'))
     const devState = d => (!d.is_active ? 'removed' : d.is_me ? 'this device' : d.is_online ? 'online' : 'away')
@@ -181,17 +182,14 @@ export function register(t) {
     const member = d => (d.is_active
       ? html`<a class="set-row set-row-two room-device" id="device-${d.device_id}" href="/settings/devices/${d.device_id}" data-nav>${devLine(d)}${SET_CHEVRON}</a>`
       : html`<div class="set-row set-row-two set-fact room-device is-removed" id="device-${d.device_id}">${devLine(d)}<span></span></div>`)
-    const agentInviteRow = () => html`<form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="agent-invite"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form>`
-    // The three lists, each one element with an id, so a change replaces only the list it touched.
+    // The two lists, each one element with an id, so a change replaces only the list it touched.
     const lists = () => {
-      const all = [...m().members.values()]
+      const all = [...m().members.values()].filter(d => d.device_role === 'human')
       const order = (a, b) => a.added_entry_number - b.added_entry_number
       const people = all.filter(d => d.is_active && d.device_role === 'human').sort(order)
-      const agents = all.filter(d => d.is_active && d.device_role !== 'human').sort(order)
       const gone = all.filter(d => !d.is_active).sort(order)
       return {
         people: String(html`<div class="set-group" id="room-people">${people.map(member)}</div>`),
-        agents: String(html`<div class="set-group" id="room-agents">${agents.map(member)}${isHuman() ? agentInviteRow() : agents.length ? '' : html`<p class="set-empty">No agent yet.</p>`}</div>`),
         gone: String(gone.length ? html`<div class="set-group" id="room-gone">${setRow({ href: '/settings/devices/removed', icon: sk('archive'), word: 'Removed', detail: String(gone.length), id: 'devices-removed' })}</div>` : html`<div id="room-gone" hidden></div>`),
       }
     }
@@ -203,9 +201,8 @@ export function register(t) {
 ${isHuman() ? html`<h3 class="set-label" id="push-head">Push on this device</h3><fieldset class="set-group set-choice set-push" id="push-level" aria-labelledby="push-head">${PUSH_LEVELS.map(([v, icon, word, d]) => html`<label class="set-row"><input type="radio" name="push-level" value="${v}"${v === 'off' ? raw(' checked') : ''}><span class="set-ico">${sk(icon)}</span><b>${word}</b><span class="set-detail">${d}</span>${sk('tick')}</label>`)}</fieldset>
 <p class="push-level-note" id="push-level-note" role="status"></p>
 <ul class="push-others set-note" id="push-others" aria-label="Push on your other devices"></ul>` : ''}
-<h3 class="set-label" id="agents-head">Agents</h3>${raw(L.agents)}
 ${raw(L.gone)}
-<p class="set-note">A new device: Invite a Device in <a href="/settings" data-nav>Settings</a>, or open app.trommi.com on it and log in. Every device holds its own keys; the hub sees sealed envelopes only.</p>`, 'The people and agents with keys to this account.')
+<p class="set-note">A new device: Invite a Device in <a href="/settings" data-nav>Settings</a>, or open app.trommi.com on it and log in. Every device holds its own keys; the hub sees sealed envelopes only. Your agents are under <a href="/settings/agents" data-nav>Agents</a>.</p>`, 'The phones, tablets and browsers where you read and answer.')
     }
     const removeWords = d => (d.device_role === 'human' ? `${devName(d)} can open nothing new after this. Everyone else gets a new key; that takes a moment.` : `${devName(d)} can read nothing new after this. The others get a new key; the session's history stays.`)
     const deviceMain = (d, error = '') => {
@@ -269,7 +266,7 @@ ${canRemove ? html`<form method="post" action="/devices/remove" class="set-group
     })
     t.live('room', {
       take: () => lists(),
-      diff: (was, now) => ['people', 'agents', 'gone'].map(k => (was[k] !== now[k] ? String(t.stream('replace', `room-${k}`, raw(now[k]))) : '')).join(''),
+      diff: (was, now) => ['people', 'gone'].map(k => (was[k] !== now[k] ? String(t.stream('replace', `room-${k}`, raw(now[k]))) : '')).join(''),
     })
 
     // ---- /pair/:id ----
@@ -398,6 +395,11 @@ ${errorLine(error)}<p class="room-meta">"They don't match" burns the invite: nob
       return html`<div class="set-device" id="set-device" data-state="${state}">${inner}</div>`
     }
     const SHOWN = { light: 'Light', dark: 'Dark', system: 'System' }
+    /** The Agents row: how many agents, how many sessions they run. */
+    const agentsDetail = () => {
+      const groups = agentsOf(t.model().everyone ?? t.model().agents ?? [], m().members ?? new Map()), all = groups.flatMap(g => g.sessions)
+      return groups.length ? `${groups.length} ${groups.length === 1 ? 'agent' : 'agents'} · ${all.length} ${all.length === 1 ? 'session' : 'sessions'}` : ''
+    }
     // The two invites as equals, side by side (one above the other on a phone): a device's code and an agent's
     // command, each drawn blurred until asked for; only then is the invite made. A device's code then takes the
     // whole width (deviceInvite: the code, the six emoji, They Match).
@@ -413,7 +415,7 @@ ${errorLine(error)}<p class="room-meta">"They don't match" burns the invite: nob
 ${isHuman() && !inv ? inviteTiles() : isHuman() ? html`<section class="set-group set-invites" aria-label="Invite">${deviceInvite(inv ?? null, error)}
 <form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>` : ''}
 <nav class="set-group" aria-label="Settings">
-${setRow({ href: '/settings/sessions', icon: sk('heads'), word: 'Sessions', detail: `${bm.agents.filter(a => a.online).length} of ${bm.agents.length} connected`, id: 'settings-sessions' })}
+${setRow({ href: '/settings/agents', icon: sk('terminal'), word: 'Agents', detail: agentsDetail(), id: 'settings-agents' })}
 ${setRow({ href: '/settings/devices', icon: art('phone'), word: 'Devices', detail: people ? `${people} ${people === 1 ? 'device' : 'devices'}` : '', id: 'settings-devices' })}
 ${isHuman() ? setRow({ href: '/settings/account', icon: sk('key'), word: 'Account', detail: m().room.account ? m().room.account.email ?? 'Passkey' : '', id: 'settings-account' }) : ''}
 </nav>

@@ -253,7 +253,7 @@ export const steps = [
     const stored = await ui.storedCount(B)
     check(stored.records === 0, 'the refused device stored nothing', stored)
     await ui.openSettingsPage(A, 'devices')
-    check(await A.js("return document.querySelectorAll('.room-device').length") === 2, 'Devices lists this device and the agent, no third', await A.js("return [...document.querySelectorAll('.room-device')].map(d => d.innerText.split('\\n')[0])"))
+    check(await A.js("return document.querySelectorAll('.room-device').length") === 1, 'Devices lists this device alone (the agent is under Agents), no second', await A.js("return [...document.querySelectorAll('.room-device')].map(d => d.innerText.split('\\n')[0])"))
   }],
 
   ['the second profile joins by a new link: both show six equal emoji, "They match", it lands on the Desk with history', async ctx => {
@@ -281,7 +281,25 @@ export const steps = [
     await B.until("[...document.querySelectorAll('#agents a.agent-entry')].some(a => a.textContent.includes('night-agent'))", 'the session in its sidebar')
     await B.shot('standin-09-second-device-desk')
     await ui.openSettingsPage(A, 'devices')
-    await A.until("document.querySelectorAll('.room-device').length === 3", 'three devices listed on A')
+    await A.until("document.querySelectorAll('.room-device').length === 2", 'two devices of the person listed on A')
+    await ui.openDesk(A)
+  }],
+
+  ['Settings · Agents: the agent as "Claude Code on <computer>" (its device register), its session a branch that opens it; Devices without agents', async ctx => {
+    const { check } = ctx.run
+    const A = await ctx.profile('A')
+    await ctx.agent.reportDevice({ device_name: 'night', platform: 'claude-code', folder: '~/code/night', host: 'build-box' })
+    await ui.openSettings(A)
+    await A.until("/1 agent · 1 session/.test(document.querySelector('#settings-agents')?.innerText ?? '')", 'the Agents row with one agent')
+    await A.click('#settings-agents')
+    await A.until("location.pathname === '/settings/agents' && /on build-box/.test(document.querySelector('#agent-0')?.innerText ?? '')", 'the Agents page with the agent on its computer', 20000)
+    const card = await A.js("const c = document.getElementById('agent-0'); return { head: c.querySelector('.ag-head-words b').textContent, branches: [...c.querySelectorAll('.ag-tree a.ag-sess')].map(a => [a.querySelector('b').textContent, a.querySelector('small').textContent]), cards: document.querySelectorAll('.ag-card').length }")
+    check(card.cards === 1 && card.head === 'Claude Code on build-box' && card.branches.length === 1 && /desk · ~\/code\/night$/.test(card.branches[0][1]), 'one agent, "Claude Code on build-box", its session a branch with desk and folder', card)
+    await A.shot('standin-09g-agents')
+    await A.click('#agent-0 a.ag-sess')
+    await A.until("location.pathname.startsWith('/chat/') && document.querySelector('#session form.composer')", 'the branch opens the session')
+    await A.js("trommi.router.visit('/settings/sessions'); return 1")
+    await A.until("location.pathname === '/settings/agents'", 'the old Sessions address leads to Agents')
     await ui.openDesk(A)
   }],
 

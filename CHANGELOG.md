@@ -12,6 +12,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Delete your account right from the iPhone app (Settings → Account).
 - Log out straight from the desk menu.
 - What's new in the desk menu (web and iPhone): this list, with a dot until you have read the newest day.
+- Settings → Agents (web and iPhone): each agent as Claude Code or Codex on its computer, its sessions under it; remove an agent from there. Devices lists only your phones, tablets and browsers.
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
