@@ -30,6 +30,10 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   your answer turns it back to working with what you chose; no more lines that still wait after you answered.
 - Agents answer a request or question you write in chat with a card (an info card for results, a decision card for
   choices) instead of only a chat reply.
+- Less for anyone between you and your devices: every push says the same ("Something new.", your iPhone shows what it
+  is); the Live Activity's updates from the hub say only whether agents work and whether something waits (the app
+  shows the numbers); the hub sees only whether a card knocks, not its urgency, and no longer when you answered;
+  messages and new files are padded to fixed sizes.
 - iPhone: right after you log in, the Desk shows the open questions from the hub's list, before the history is read.
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer

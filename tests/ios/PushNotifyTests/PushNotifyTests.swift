@@ -100,6 +100,17 @@ final class PushNotifyTests: XCTestCase {
     XCTAssertEqual(NotifyOpen.push(e(ticket: []), context: context(), core: FakeCore())?.change, 42)
   }
 
+  /// Apple sees one neutral text; the phone picks the real one from what was sealed.
+  func testTheTextComesFromTheSealedPart() {
+    XCTAssertEqual(NotifyOpen.neutral, "Something new.")
+    let open = { (u: UInt8, t: [UInt8]) in NotifyOpen.push(self.e(ticket: t, urgency: u), context: self.context(), core: FakeCore()).map(NotifyOpen.text) }
+    XCTAssertEqual(open(1, ticket), "A new question.")
+    XCTAssertEqual(open(0, ticket), "A new question.")
+    XCTAssertEqual(open(2, ticket), "Urgent: a new question.")
+    XCTAssertEqual(open(3, ticket), "Urgent: a new question.")
+    XCTAssertEqual(open(2, []), "An agent lost its connection.")
+  }
+
   /// Everything else leaves the notification as it came (nil): another key, a room this phone is not in, bytes that
   /// are no sealed push, one that is too long, a core that refuses, a context without a usable key.
   func testAPushThatDoesNotOpenGivesNothing() {
@@ -117,7 +128,15 @@ final class PushNotifyTests: XCTestCase {
   }
 
   func testCountsLine() {
-    XCTAssertEqual(LiveCounts(working: 1, waiting: 3).line, "1 agent working · 3 questions waiting")
-    XCTAssertEqual(LiveCounts(working: 2, waiting: 1).line, "2 agents working · 1 question waiting")
+    // the hub's marks: whether, never how many
+    XCTAssertEqual(LiveCounts(working: 1, waiting: 1).line, "Agents at work · Questions waiting")
+    XCTAssertEqual(LiveCounts(working: 0, waiting: 0).line, "No agent at work · Nothing waiting")
+    XCTAssertEqual(LiveCounts(working: 1, waiting: 1).badge, "•")
+    XCTAssertEqual(LiveCounts(working: 1, waiting: 1).others, 0)
+    // the app's own count
+    XCTAssertEqual(LiveCounts(working: 1, waiting: 3, exact: true).line, "Agents at work · 3 questions waiting")
+    XCTAssertEqual(LiveCounts(working: 0, waiting: 1, exact: true).line, "No agent at work · 1 question waiting")
+    XCTAssertEqual(LiveCounts(working: 0, waiting: 3, exact: true).badge, "3")
+    XCTAssertEqual(LiveCounts(working: 0, waiting: 3, exact: true).others, 2)
   }
 }

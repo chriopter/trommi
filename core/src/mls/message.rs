@@ -14,6 +14,31 @@ pub const MAX_HANDOVER_KEYS: usize = 400;
 /// The version every message names.
 pub const MESSAGE_VERSION: u8 = 2;
 
+/// What MLS adds to a message's plaintext inside the encrypted content (the length, the signature, the AEAD
+/// tag), counted generously, so that the padded content holds it (7.0).
+const CONTENT_OVERHEAD: usize = 128;
+/// The largest bucket: what is left of [`MAX_MESSAGE_LEN`] for the encrypted content beside the clear framing.
+pub const TOP_BUCKET: usize = MAX_MESSAGE_LEN - 256;
+/// The largest plaintext a message can have padded.
+pub const MAX_PLAINTEXT_LEN: usize = TOP_BUCKET - CONTENT_OVERHEAD;
+
+/// 7.0: the size a message's encrypted MLS content is padded to: the first of 512, 1024 … 32768 bytes it fits
+/// in, and above that [`TOP_BUCKET`]. `None` for a plaintext above [`MAX_PLAINTEXT_LEN`].
+pub fn bucket(plaintext_len: usize) -> Option<usize> {
+    let need = plaintext_len.checked_add(CONTENT_OVERHEAD)?;
+    let mut size = 512;
+    while size < need && size < 32768 {
+        size *= 2;
+    }
+    if need <= size {
+        Some(size)
+    } else if need <= TOP_BUCKET {
+        Some(TOP_BUCKET)
+    } else {
+        None
+    }
+}
+
 const TYPE_KEY_HANDOVER: u8 = 1;
 const TYPE_STROKE_PIECE: u8 = 2;
 const TYPE_WORK_TRAIL: u8 = 3;

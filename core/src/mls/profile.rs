@@ -384,8 +384,15 @@ pub(crate) fn create_config(kind: &GroupKind, now_ms: u64) -> Result<MlsGroupCre
 
 /// The configuration a group is joined with, by Welcome or from outside.
 pub(crate) fn join_config() -> MlsGroupJoinConfig {
+    padded_config(0)
+}
+
+/// The join configuration with MLS padding of `padding` bytes: the encrypted content of the next application
+/// message is a multiple of it (7.0). Padding is stripped by every receiver alike, whatever it was configured with.
+pub(crate) fn padded_config(padding: usize) -> MlsGroupJoinConfig {
     MlsGroupJoinConfig::builder()
         .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+        .padding_size(padding)
         .use_ratchet_tree_extension(true)
         .sender_ratchet_configuration(sender_ratchet())
         .max_past_epochs(0)

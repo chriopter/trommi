@@ -1579,7 +1579,32 @@ mod push_tests {
                 header("ttl").as_str(),
                 header("content-encoding").as_str()
             ),
-            ("high", "86400", "aes128gcm")
+            ("normal", "86400", "aes128gcm")
+        );
+        // the topic is random to the push service: no room in it, one per subscription, stable for it
+        let topic = header("topic");
+        assert_ne!(topic, b64(&[3u8; 32][..12]));
+        assert!(!topic.is_empty() && topic.len() <= 32);
+        let again =
+            web_push_request(&vapid, &sub, &[], &[4; 32], 43, 0, 1_700_000_000_000).unwrap();
+        let topic_of = |r: &PushRequest| {
+            r.headers
+                .iter()
+                .find(|(k, _)| k == "topic")
+                .unwrap()
+                .1
+                .clone()
+        };
+        assert_eq!(topic_of(&again), topic);
+        let other = WebSubscription {
+            auth: vec![8; 16],
+            ..sub.clone()
+        };
+        assert_ne!(
+            topic_of(
+                &web_push_request(&vapid, &other, &[], &[3; 32], 42, 2, 1_700_000_000_000).unwrap()
+            ),
+            topic
         );
         let auth = header("authorization");
         let token = auth
@@ -1657,22 +1682,16 @@ mod push_tests {
                 && !a.accepts(&reg.token, "production", "com.other")
         );
         let r = a
-            .alert(
-                &reg,
-                Text::Urgent,
-                &[3; 32],
-                77,
-                3,
-                Some("TICKET"),
-                1_700_000_000_000,
-            )
+            .alert(&reg, &[3; 32], 77, 3, Some("TICKET"), 1_700_000_000_000)
             .unwrap();
         assert_eq!(
             r.url,
             format!("https://api.push.apple.com/3/device/{}", reg.token)
         );
         let payload: Value = serde_json::from_slice(&r.body).unwrap();
-        assert_eq!(payload["aps"]["alert"]["body"], "Urgent: a new question.");
+        // one text for every kind: what it is about stands only in the sealed part
+        assert_eq!(payload["aps"]["alert"]["body"], "Something new.");
+        assert_eq!(payload["aps"]["alert"]["title"], "Trommi");
         assert_eq!(payload["aps"]["mutable-content"], 1);
         assert_eq!(
             String::from_utf8(
@@ -1704,27 +1723,11 @@ mod push_tests {
         );
         // the provider token is reused within 40 minutes
         let again = a
-            .alert(
-                &reg,
-                Text::Question,
-                &[3; 32],
-                78,
-                1,
-                None,
-                1_700_000_060_000,
-            )
+            .alert(&reg, &[3; 32], 78, 1, None, 1_700_000_060_000)
             .unwrap();
         assert_eq!(again.headers[1], r.headers[1]);
         let later = a
-            .alert(
-                &reg,
-                Text::Question,
-                &[3; 32],
-                79,
-                1,
-                None,
-                1_700_003_000_000,
-            )
+            .alert(&reg, &[3; 32], 79, 1, None, 1_700_003_000_000)
             .unwrap();
         assert_ne!(later.headers[1], r.headers[1]);
     }

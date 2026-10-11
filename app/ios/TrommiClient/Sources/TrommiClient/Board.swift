@@ -851,6 +851,17 @@ public final class Board {
     (OBJECT_STATE_NAME[rec.object?.objectState ?? 1] ?? "open", URGENCY_NAME[rec.object?.urgency ?? 1] ?? "normal")
   }
   private func isZeroHash(_ h: String?) -> Bool { (h ?? "").allSatisfy { $0 == "0" } }
+  /** A card's level (spec/v1.md 9): the body's `urgency`; a header written since 11 October 2026 carries only the
+   *  knock bit (low or high), one of before the level itself, so the header stands in where no body says it. */
+  private func levelOf(_ c: JV?, header: String) -> String {
+    if let u = c?["urgency"].string, Board.urgencyRank[u] != nil { return u }
+    return header
+  }
+  /** When an answer was given: the body's `answered_at`, else the header's of before 11 October 2026, else its time. */
+  private func answeredAtOf(_ c: JV, _ rec: Rec) -> UInt64 {
+    if let a = c["answered_at"].int, a > 0 { return UInt64(a) }
+    return (rec.object?.answeredAt).flatMap { $0 > 0 ? $0 : nil } ?? rec.sentAt
+  }
 
   private func applyObjectVersion(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
     guard let objectId = rec.object?.objectId else { return refuse(&change, rec, "bad-object", "object version without object id") }
@@ -886,9 +897,10 @@ public final class Board {
     }
     let card2 = card!
     let st = stateOf(rec)
+    let level = levelOf(c, header: st.urgency)
     let wasOpen = card2.objectState == "open"
     card2.objectState = st.objectState
-    card2.urgency = st.urgency
+    card2.urgency = level
     card2.envelopeNumber = rec.envelopeNumber
     card2.updatedAt = rec.sentAt
     card2.versionHash = rec.envelopeHash
@@ -910,7 +922,7 @@ public final class Board {
       if rec.contentState == "newer_schema" { card2.unsupported = true }
     }
     card2.versions.append(CardVersion(objectVersion: card2.objectVersion, versionHash: rec.envelopeHash, previousVersionHash: c?["previous_version_hash"].string,
-                                      envelopeNumber: rec.envelopeNumber, sentAt: rec.sentAt, objectState: st.objectState, urgency: st.urgency, content: c))
+                                      envelopeNumber: rec.envelopeNumber, sentAt: rec.sentAt, objectState: st.objectState, urgency: level, content: c))
     card2.inRevision = nil
     if card2.objectState == "open" { card2.closedHow = nil; if !wasOpen && card2.answer != nil { card2.answer = nil } }
     else if card2.objectState == "closed" {
@@ -1031,7 +1043,7 @@ public final class Board {
     let a = Answer(answerAction: c["answer_action"].string ?? "answer", choices: (c["choices"].array ?? []).compactMap { $0.string }, note: c["note"].string, optionNotes: notesOf,
                    attachments: c["attachments"].array ?? [], marks: c["marks"].array ?? [], trusted: c["trusted"].truthy, boundObjectVersion: card.objectVersion,
                    envelopeNumber: rec.envelopeNumber, envelopeHash: rec.envelopeHash, byDeviceId: rec.senderDeviceId,
-                   answeredAt: (rec.object?.answeredAt).flatMap { $0 > 0 ? $0 : nil } ?? rec.sentAt)
+                   answeredAt: answeredAtOf(c, rec))
     card.answer = a
     card.answers.append(a)
     let st = stateOf(rec)

@@ -92,7 +92,9 @@ extension Room {
     if action == "answer" && !trusted {
       for ch in choices where !card.options.contains(where: { $0.key == ch }) { throw TrommiError("bad-choice", "the card has no option \(ch)") }
     }
-    var content: [String: JV] = ["answer_action": .str(action), "choices": .arr(choices.map { .str($0) })]
+    // when it was answered stands in the body (spec/v1.md 9), not in the header the hub reads
+    let answeredAt = nowMs()
+    var content: [String: JV] = ["answer_action": .str(action), "choices": .arr(choices.map { .str($0) }), "answered_at": .num(Double(answeredAt))]
     if let n = note { content["note"] = .str(n) }
     if !optionNotes.isEmpty { content["option_notes"] = .obj(optionNotes.mapValues { .str($0) }) }
     if !attachments.isEmpty { content["attachments"] = .arr(attachments) }
@@ -104,7 +106,7 @@ extension Room {
     // The echo: the card is answered at once (the hub's copy replaces it).
     let lid = newLocalId()
     var a = Answer(answerAction: action, choices: choices, note: note, optionNotes: optionNotes, attachments: attachments, marks: marks, trusted: trusted,
-                   boundObjectVersion: card.objectVersion, envelopeNumber: nil, envelopeHash: lid, byDeviceId: deviceIdHex, answeredAt: nowMs())
+                   boundObjectVersion: card.objectVersion, envelopeNumber: nil, envelopeHash: lid, byDeviceId: deviceIdHex, answeredAt: answeredAt)
     a.pending = true
     let was = (card.objectState, card.closedHow, card.answer)
     board.answerEchoes[lid] = (was.0, was.1, was.2)

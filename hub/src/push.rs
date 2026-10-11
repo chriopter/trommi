@@ -259,7 +259,17 @@ pub fn web_push_encrypt(sub: &WebSubscription, plain: &[u8]) -> Option<Vec<u8>> 
     Some(out)
 }
 
-/// 15.2: a Web Push carries `{ room_id, change, urgency }` and nothing else.
+/// 15.2: the Web Push `Topic` of a subscription: 12 bytes of HMAC-SHA-256 under its `auth` secret, which only
+/// the browser and the hub know. Stable per subscription (a newer push replaces one still waiting at the push
+/// service) and random to the push service: it names no room and links no two subscriptions.
+pub fn web_topic(sub: &WebSubscription) -> String {
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&sub.auth).expect("any key length");
+    mac.update(b"trommi web push topic");
+    b64(&mac.finalize().into_bytes()[..12])
+}
+
+/// 15.2: a Web Push carries `{ room_id, change, urgency }`, encrypted for the browser, and nothing else. Its
+/// clear headers are the same for every push: urgency `normal`, the subscription's random topic.
 pub fn web_push_request(
     vapid: &Vapid,
     sub: &WebSubscription,
@@ -286,12 +296,9 @@ pub fn web_push_request(
             ("content-encoding".into(), "aes128gcm".into()),
             ("content-type".into(), "application/octet-stream".into()),
             ("ttl".into(), "86400".into()),
-            (
-                "urgency".into(),
-                if urgency >= 2 { "high" } else { "normal" }.into(),
-            ),
-            // one notification per room waits at the push service; a newer one replaces it
-            ("topic".into(), b64(&room[..12])),
+            ("urgency".into(), "normal".into()),
+            // one notification per subscription waits at the push service; a newer one replaces it
+            ("topic".into(), web_topic(sub)),
         ],
         body,
     })
@@ -316,22 +323,10 @@ pub struct ApnsRegistration {
     pub topic: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Text {
-    Question,
-    Urgent,
-    AgentLost,
-}
-
-impl Text {
-    pub fn text(self) -> &'static str {
-        match self {
-            Text::Question => "A new question.",
-            Text::Urgent => "Urgent: a new question.",
-            Text::AgentLost => "An agent lost its connection.",
-        }
-    }
-}
+/// 15.2: the one text every APNs alert carries, whatever it is about. The phone's notification extension opens
+/// the sealed part and shows what it is (a question, an urgent one, a lost agent).
+pub const ALERT_TITLE: &str = "Trommi";
+pub const ALERT_BODY: &str = "Something new.";
 
 impl Apns {
     pub fn new(
@@ -427,12 +422,12 @@ impl Apns {
         })
     }
 
-    /// 15.2: a fixed text, and `nonce(12) ‖ AEAD.Seal(key, nonce, "trommi apns v1", { room_id, change, urgency,
-    /// ticket })` under the 32 random bytes the app registered.
+    /// 15.2: the one fixed text, and `nonce(12) ‖ AEAD.Seal(key, nonce, "trommi apns v1", { room_id, change,
+    /// urgency, ticket })` under the 32 random bytes the app registered.
+    #[allow(clippy::too_many_arguments)]
     pub fn alert(
         &self,
         reg: &ApnsRegistration,
-        text: Text,
         room: &Room,
         change: i64,
         urgency: u8,
@@ -443,7 +438,7 @@ impl Apns {
         let message = payload_text(room, change, urgency, Some(ticket.unwrap_or("")));
         let sealed = seal_for_phone(&reg.key, message.as_bytes())?;
         let payload = json!({
-            "aps": { "alert": { "title": "Trommi", "body": text.text() }, "sound": "default", "mutable-content": 1 },
+            "aps": { "alert": { "title": ALERT_TITLE, "body": ALERT_BODY }, "sound": "default", "mutable-content": 1 },
             "e": b64(&sealed),
         });
         self.request(
@@ -459,7 +454,7 @@ impl Apns {
     }
 
     /// 15.3: `{ aps: { timestamp, event, content-state: { working, waiting }, stale-date, relevance-score } }`.
-    /// Apple sees two counts and a random tag.
+    /// Apple sees two marks, each 0 or 1 (anyone working, anything waiting), and a random tag.
     #[allow(clippy::too_many_arguments)]
     pub fn live_activity(
         &self,
@@ -486,7 +481,7 @@ impl Apns {
             aps["attributes-type"] = json!("TrommiActivityAttributes");
             aps["attributes"] = json!({ "tag": tag });
             aps["input-push-token"] = json!(1);
-            aps["alert"] = json!({ "title": "Trommi", "body": "Agents are working." });
+            aps["alert"] = json!({ "title": ALERT_TITLE, "body": ALERT_BODY });
         }
         let base = topic
             .strip_suffix(".push-type.liveactivity")

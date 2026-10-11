@@ -18,7 +18,7 @@ use crate::limits::{Buckets, Window};
 use crate::live::Live;
 use crate::memo::{Entry, Gate, Memo};
 use crate::observer::MlsObserver;
-use crate::push::{self, Apns, ApnsRegistration, Text, Transport, Vapid, WebSubscription};
+use crate::push::{self, Apns, ApnsRegistration, Transport, Vapid, WebSubscription};
 use crate::session::Sessions;
 use crate::store::{self, Auth, Effects, Event, PushJob, Room, Who};
 use crate::util::{self, b64, short};
@@ -489,11 +489,6 @@ impl App {
                     now,
                 )
             } else {
-                let text = match (lost, job.urgency >= 2) {
-                    (true, _) => Text::AgentLost,
-                    (false, true) => Text::Urgent,
-                    (false, false) => Text::Question,
-                };
                 let ticket = (!lost)
                     .then(|| push::ticket(&self.ticket_key, &job.room, &device, job.change, now));
                 match (
@@ -509,7 +504,6 @@ impl App {
                             environment,
                             topic,
                         },
-                        text,
                         &job.room,
                         job.change,
                         job.urgency,
@@ -569,8 +563,8 @@ impl App {
         });
     }
 
-    /// The two counts Apple sees: agent devices whose link report says working, and open cards and permission
-    /// requests.
+    /// The two marks Apple sees, 0 or 1 each (15.3): whether an agent device's link report says working, and
+    /// whether a card or a permission request is open. Never how many.
     pub fn live_counts(&self, room: &Room) -> Res<(u64, u64)> {
         let now = util::now();
         self.db.read(|c| {
@@ -582,7 +576,7 @@ impl App {
                     "SELECT (SELECT count(*) FROM cards WHERE room_id = ?1 AND state = 1) + (SELECT count(*) FROM permission_requests WHERE room_id = ?1 AND state = 1)",
                 )?
                 .query_row([&room[..]], |r| r.get(0))?;
-            Ok((working as u64, waiting as u64))
+            Ok((u64::from(working > 0), u64::from(waiting > 0)))
         })
     }
 

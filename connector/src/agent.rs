@@ -43,14 +43,13 @@ pub(crate) fn draft(core: &Core, group: &GroupId, spec: &Spec) -> Result<Draft> 
         .session_id()
         .ok_or_else(|| Fault::new("forbidden", "an agent writes into session groups only"))?;
     let urgency = |byte: u8| Urgency::from_byte(byte).unwrap_or(Urgency::Normal);
-    let first = |payload: &str| {
-        with_schema(
-            payload,
-            &[
-                ("object_version", json!(1)),
-                ("previous_version_hash", json!(Hash32::ZERO.to_base64url())),
-            ],
-        )
+    let first = |payload: &str, more: &[(&str, Value)]| {
+        let mut fields = vec![
+            ("object_version", json!(1)),
+            ("previous_version_hash", json!(Hash32::ZERO.to_base64url())),
+        ];
+        fields.extend(more.iter().cloned());
+        with_schema(payload, &fields)
     };
     Ok(match spec {
         Spec::SessionChat { payload } => Draft::SessionChat {
@@ -78,14 +77,16 @@ pub(crate) fn draft(core: &Core, group: &GroupId, spec: &Spec) -> Result<Draft> 
             if *object_type == ObjectType::Artifact.byte() {
                 Draft::ArtifactFirst {
                     session,
-                    payload: first(payload)?,
+                    payload: first(payload, &[])?,
                 }
             } else {
+                // 9: the level stands in the body; the header carries only whether it knocks
+                let level = urgency(*level);
                 Draft::CardFirst {
                     session,
-                    urgency: urgency(*level),
+                    urgency: level,
                     push: *push,
-                    payload: first(payload)?,
+                    payload: first(payload, &[("urgency", json!(level.name()))])?,
                 }
             }
         }
@@ -114,13 +115,14 @@ pub(crate) fn draft(core: &Core, group: &GroupId, spec: &Spec) -> Result<Draft> 
                     "{object} is not on the board yet: the hub has not confirmed it"
                 ))
             })?;
-            let payload = with_schema(
-                payload,
-                &[
-                    ("object_version", json!(version + 1)),
-                    ("previous_version_hash", json!(hash)),
-                ],
-            )?;
+            let mut fields = vec![
+                ("object_version", json!(version + 1)),
+                ("previous_version_hash", json!(hash)),
+            ];
+            if !artifact {
+                fields.push(("urgency", json!(urgency(*level).name())));
+            }
+            let payload = with_schema(payload, &fields)?;
             let object_id = object_id_of(object)?;
             if artifact {
                 Draft::ArtifactVersion {

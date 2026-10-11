@@ -71,8 +71,8 @@ written. Catch-up is "everything above N".
 | `welcomes` | `device`, `group_id`, `at`, `epoch` | `bytes` (rows written before `welcome_bytes`) | by device |
 | `welcome_bytes` | `group_id`, `epoch` | `bytes`: a Welcome once for all the devices it adds | by group and epoch; gone when no `welcomes` row points to it |
 | `sealed_keys`, `recovery_links` | `group_id`, `epoch`, `writer`, `recovery_hpke_key` | `sealed` | (`room_id`, `change`) |
-| `envelopes` | `change`, `group_id`, `epoch`, `sender`, `seq`, `prev`, `hash`, `recipient`, `kind`, `flags`, `time`, `received_at`, `timeline` (kind, scope, ref), `object_id`, `object_type`, `object_state`, `urgency`, `answered_at`, `object_ref`, `register_id`, `file_ids`, `padded_size`, `header`, `nonce`, `body_hash`, `signature`, `void_code` | `body` (null once pruned) | truth for all stored content. **Chain**: unique (`group_id`, `sender`, `seq`). **Catch-up**: (`room_id`, `change`). **Page a chat, load a board**: (`timeline`, `change`) |
-| `cards`, `notes`, `permission_requests`, `artifacts` | `object_id`, `group_id`, `state`, `urgency`, `answered_at`, `owner`, `first_change`, `head_change`, `closed_at` | | **the Desk**: partial index on `state = open` by (`urgency` desc, `first_change`). Derived from `envelopes`, rebuildable |
+| `envelopes` | `change`, `group_id`, `epoch`, `sender`, `seq`, `prev`, `hash`, `recipient`, `kind`, `flags`, `time`, `received_at`, `timeline` (kind, scope, ref), `object_id`, `object_type`, `object_state`, `urgency` (the knock bit; the level in headers of before 11 October 2026), `answered_at` (0; set only in headers of before), `object_ref`, `register_id`, `file_ids`, `padded_size`, `header`, `nonce`, `body_hash`, `signature`, `void_code` | `body` (null once pruned) | truth for all stored content. **Chain**: unique (`group_id`, `sender`, `seq`). **Catch-up**: (`room_id`, `change`). **Page a chat, load a board**: (`timeline`, `change`) |
+| `cards`, `notes`, `permission_requests`, `artifacts` | `object_id`, `group_id`, `state`, `urgency`, `answered_at`, `owner`, `first_change`, `head_change`, `closed_at` | | **the Desk**: partial index on `state = open` by (`urgency` desc, `first_change`): knocking first, which is all the hub orders by (clients order by the level in the body). Derived from `envelopes`, rebuildable |
 | `chats`, `boards` | `timeline`, `group_id`, `item_count`, `last_change` | | derived |
 | `registers` | `group_id`, `writer`, `register_id`, `head_change` | | **all current values**: (`group_id`); derived |
 | `board_frontiers` | `room_id`, `board`, `device`, `bound`, `frontier` (writer → `seq`), `files`, `at`, `snapshot_seq`, `register_id`, `counts` | | per human device and board its declarations and its bound post (v1.md 10.9) |
@@ -80,7 +80,7 @@ written. Catch-up is "everything above N".
 | `shares` | `share_id`, `file_id`, `secret_hash`, `expires_at`, `created_by` | | by id |
 | `invites`, `invite_requests` | signed Offer with its `offer_mac` (added to schema 5 in place), Requests, Reveal, `expires_at`, `used_at`, `burned_at` | | by `invite_id` |
 | `requests` | `room_id`, `device`, `kind`, `group_id`, `at` | | by room |
-| `push_subscriptions`, `live_activities` | endpoints, tokens, `level`, the counts last sent | | by device |
+| `push_subscriptions`, `live_activities` | endpoints, tokens, `level`, the marks last sent (0 or 1 each) | | by device |
 | `agent_leases` | `device`, `process`, `generation`, `expires_at` | | |
 
 - The four object tables, `chats`, `boards` and `registers` are indexes over `envelopes`, written in the same
@@ -371,7 +371,9 @@ encrypted.
     founds none.
 25. A Share link expires within 180 days (owner, 9 October 2026; v1.md 11.5 and section 16 follow on the core's
     branch). A room has at most 1 000 Share links, a device ten push registrations.
-26. A Web Push carries a `Topic` (one waiting notification per room). The ticket of 15.2 is the hub's own
+26. A Web Push carries `Urgency: normal` and a `Topic` random to the push service, one per subscription (v1.md 15.2:
+    HMAC under the subscription's `auth` secret; one waiting notification per subscription, nothing names the
+    room). An APNs alert carries one text for every push ("Trommi", "Something new."). The ticket of 15.2 is the hub's own
     `room ‖ device ‖ change ‖ expiry ‖ HMAC`; only the hub reads it. One device's envelopes cause at most ten
     pushes a minute (owner, 9 October 2026); a push service is called on port 443 and no redirect is followed.
 27. Uploads in progress count against the room's quota; a room has at most 16 at a time.
@@ -406,9 +408,10 @@ encrypted.
     are forgotten first; if all are in use, a key without a record is let through unrecorded rather than
     everyone refused. (The login throttle does not rest on these: its state is in the database, see "The
     account".)
-38. A Live Activity's counts are taken for sent only when Apple took them; without a token nothing counts as
-    sent, so an end stays due until the activity's token is registered. A token Apple refuses is forgotten; a
-    token registered anew is sent the counts in a round after it is stored. "Lost" is never told after the `online` of a
+38. A Live Activity's two marks (whether an agent works, whether something waits; never how many, v1.md 15.3) are
+    taken for sent only when Apple took them; without a token nothing counts as sent, so an end stays due until
+    the activity's token is registered. A token Apple refuses is forgotten; a token registered anew is sent the
+    marks in a round after it is stored. "Lost" is never told after the `online` of a
     stream the agent opened first.
 28. Every code the hub answers is one of v1.md section 16, with its status there (`account-changed` 409, `bad-email`
     and `bad-passkey` 400 and `range` 416 among them); the hub has none of its own.
@@ -519,4 +522,4 @@ encrypted.
   services for one envelope, minutes of sending, while the next envelopes wait. Proposed: a bounded pool of
   senders (for example 32 at a time) per hub, the pushes of one room coalesced per device (the newest change
   wins, as the Web Push `Topic` already does at the service), and a per-room budget a minute above which only
-  the urgent ones go out.
+  the knocking ones go out.

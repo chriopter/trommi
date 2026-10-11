@@ -209,10 +209,10 @@ flowchart LR
 |---|---|
 | your e-mail, a slow hash of your login key | password, Emergency Kit words, recovery code |
 | who is in which group, their public keys, every group change | any private key or content key |
-| per stored item: sender, group, time, kind, a card's state and urgency, the padded size | every body: texts, titles, options, choices, strokes |
-| files: id, exact size, uploader | file bytes, names, types, keys |
+| per stored item: sender, group, time, kind, a card's state and whether it knocks, the padded size | every body: texts, titles, options, choices, a card's urgency, when it was answered, strokes |
+| files: id, padded size, uploader | file bytes, names, types, keys |
 | per Scribble Board: when a snapshot was written, up to which item it reaches, which files are still on it | the shapes, what was erased |
-| push endpoints and tokens | nothing: a push carries no content |
+| push endpoints and tokens | nothing: every push looks the same ("Something new."), its room and urgency are sealed for the device |
 
 - The hub checks every MLS change it can check in public and refuses a device that was not invited.
 - The hub keeps only what is still needed: a writer's older register values and Note versions, board items behind every device's snapshot, and objects settled 30 days ago lose their bodies; strokes being drawn are passed on and never stored.

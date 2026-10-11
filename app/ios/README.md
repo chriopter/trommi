@@ -525,25 +525,26 @@ As Messages, Mail and Notes do on iOS 26: no control of our own for the keyboard
 ## Push (APNs)
 
 `Sources/TrommiApp/Push.swift`: on the first start with a room the app asks for notifications, registers with Apple
-and hands its device token and a push key of its own to the hub. Apple sees a fixed text ("A new question."); the
-hub's message rides along sealed under that key. A push in the foreground shows as a banner; arriving, it refreshes
+and hands its device token and a push key of its own to the hub. Apple sees one fixed text for every push ("Something
+new."); the hub's message rides along sealed under that key. A push in the foreground shows as a banner; arriving, it refreshes
 the board; a tap refreshes the board and follows nothing the push carries (a path in it would be the hub's word,
 and could come from a push the extension never saw).
 
 **The notification** (`Sources/TrommiNotify`, the Notification Service Extension; the pushes carry
-`mutable-content: 1`). The extension opens the hub's sealed message with the push key and shows the fixed text,
-threaded by room. It shows no title of a card: it holds no content key ("Who owns the state", "Not there yet").
-Anything that does not open leaves the fixed text as it came. An extension has 24 MB of memory: it never opens the
+`mutable-content: 1`). The extension opens the hub's sealed message with the push key and shows the text its urgency
+calls for ("A new question.", "Urgent: a new question.", "An agent lost its connection." for a push without a
+ticket; `NotifyOpen.text`), threaded by room. It shows no title of a card: it holds no content key ("Who owns the
+state", "Not there yet"). Anything that does not open keeps the neutral text. An extension has 24 MB of memory: it never opens the
 device and never follows a group.
 
 **Live Activity** (`Sources/TrommiLive`, a WidgetKit extension; `LiveActivities.swift`): the bell and the count of
 questions waiting in the Dynamic Island and on the lock screen; with the most urgent waiting card (blocking or a
 permission request first, then a knock, then the one waiting longest), its session, its title and, for a decision
 with two options, its two answers as buttons. The hub starts it with a push-to-start push when agents begin to work,
-updates it with the two counts (`working`, `waiting`), and ends it when none works. The card is the app's: after a
+updates it with two marks (`working`, `waiting`: 0 or 1 each, never how many), and ends it when none works. The card is the app's: after a
 change of the board and after each push of the hub, the app puts it into the running activity from what it opened on
-the phone (PushNotify `LiveState`); no title leaves the phone. Without the app running, a hub's push shows the count
-alone until the app runs again. The buttons are `AnswerCardIntent` (a `LiveActivityIntent`, unlock required): iOS
+the phone (PushNotify `LiveState`); no title leaves the phone. Without the app running, a hub's push shows "Questions
+waiting" and "Agents at work" without numbers until the app runs again and writes its own count (`exact`). The buttons are `AnswerCardIntent` (a `LiveActivityIntent`, unlock required): iOS
 runs it in the app's process, which answers the card through the room as a tap on the card would, shows "Answered"
 for a moment, then the next card; an answer that cannot go out offers to open the card. A permission request and
 any other card open in the app. The app hands over tokens: its push-to-start token to every room's hub with a random

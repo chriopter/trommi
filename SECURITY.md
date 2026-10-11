@@ -7,7 +7,11 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Encryption is MLS (RFC 9420, with OpenMLS `=0.9.1`), in one Rust core shared by web, iOS, connector and hub.
 - One fixed set of algorithms, never negotiated: `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`.
 - Everything is encrypted on your device. The hub stores only encrypted data and never has the keys to read it.
-- The hub does see: your e-mail, which devices are in which group, when something is written, sizes, push tokens.
+- The hub does see: your e-mail, which devices are in which group, when something is written, padded sizes, push
+  tokens, and of every card, Note, permission request and Artifact its kind, its state (open, answered, closed) and
+  one knock bit (urgent or not). The urgency level and when you answered stay in the encrypted body.
+- Sizes are padded: stored messages, MLS messages and new files are rounded up to fixed buckets (files at most
+  about 12 % larger), so a size tells little of the content. Files from before 11 October 2026 keep their exact size.
 - Settings → Data shows you what the hub keeps of your account: counts and sizes only, to your own devices only.
 - Your password never leaves your device; the hub keeps only a slow hash of a key derived from it.
 - Each wrong password makes that guesser wait longer (up to 15 minutes); no account is ever locked.
@@ -23,6 +27,11 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A room holds at most 1000 devices.
 - Files are encrypted on the device. Push notifications carry no content.
+- What push reveals: Apple and the browser's push service learn that something happened for a device, when, and how
+  often. Every push looks the same to them: one text ("Something new."), the same clear headers (Web Push: urgency
+  normal and a topic that is random per subscription and names no room). Room, change number and urgency travel
+  encrypted to the device, which picks the text it shows. The Live Activity tells Apple two marks, whether an
+  agent works and whether something waits (0 or 1 each), never how many and never a title.
 - An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
   are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
   Claude Code's status line (put around one already there), never from their credential files.
@@ -54,7 +63,10 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Root runs only a tiny helper (`hub-ctl`) that starts or stops the hub, or its dry run or data restore (two fixed
   units that run as the hub's user), when the updater asks; nothing else.
 - The hub runs in a systemd sandbox and listens only on its own machine (`127.0.0.1`).
-- Public traffic reaches the hub only through a Cloudflare tunnel.
+- Public traffic reaches the hub only through a Cloudflare tunnel. Cloudflare ends TLS for the hub, the web app and
+  the website: in transit it sees what the hub sees, including sign-in data (your e-mail and the login key derived
+  from your password, which signs in but opens no content), tokens and the metadata above. Content stays
+  end-to-end encrypted.
 - CI deploys the web app (app.trommi.com) and the website (trommi.com) to Cloudflare with a token from 1Password.
 - The web app and the website tell browsers to use only HTTPS, for a year, for their name and every name under it
   (HSTS, no preload); the website's covers hub.trommi.com too. The hub sends the same on every answer once
@@ -81,6 +93,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Rust dependencies are checked daily against RustSec, the list of known vulnerabilities.
 
 ## Known limits and planned
+- Cloudflare terminates TLS (see Deployment): whoever controls our Cloudflare account could read sign-in data and
+  tokens in transit and sign in as you, but not read content. Signing in hands out the sealed recovery code, which
+  then rests only on your password's slow key derivation.
 - The connector checks signatures when it installs or updates, not each time it starts: whoever can write to
   your home folder could replace it.
 - In the browser, the app's code is loaded from Cloudflare (app.trommi.com) each time; whoever controls that
@@ -93,5 +108,11 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Passkeys: built, but off, because they need the PRF extension, which some password managers lack.
 - Planned: post-quantum encryption once OpenMLS supports it.
 - Planned: deleted content really gone, also on devices and in backups.
+
+## Possible future hardening
+Ideas, not promises:
+- Discarding the recovery code: you could choose to have no recovery code at all. Whoever later gets hold of it (or
+  of its encrypted copy and your password) could then no longer load your history. The price: lose all your devices
+  and the history is gone for good.
 
 Report a vulnerability: trommi@mail101.de

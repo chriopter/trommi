@@ -706,12 +706,17 @@ final class LiveCoreTests: XCTestCase {
     }
     let plain = systemRandom(100_000)
     let sealed = try tools.encryptFile(plain)
-    // (the first byte is the format's version: changed, it reads as a newer one)
+    // (the first byte is the format's version, 3: flipped to 2 it is the unpadded format of before, under which
+    // these chunks do not open; 4 reads as a newer one)
+    XCTAssertEqual(sealed.stored[0], 3)
     for at in [0, 30, sealed.stored.count / 2, sealed.stored.count - 1] {
       var changed = sealed.stored
       changed[at] ^= 1
-      XCTAssertEqual(refusedCode { _ = try self.tools.decryptFile(fileId: sealed.fileId, fileKey: sealed.fileKey, sha256: sealed.sha256, stored: changed) }, at == 0 ? "newer-version" : "decrypt-failed", "byte \(at)")
+      XCTAssertEqual(refusedCode { _ = try self.tools.decryptFile(fileId: sealed.fileId, fileKey: sealed.fileKey, sha256: sealed.sha256, stored: changed) }, "decrypt-failed", "byte \(at)")
     }
+    var newer = sealed.stored
+    newer[0] = 4
+    XCTAssertEqual(refusedCode { _ = try self.tools.decryptFile(fileId: sealed.fileId, fileKey: sealed.fileKey, sha256: sealed.sha256, stored: newer) }, "newer-version")
     XCTAssertEqual(refusedCode { _ = try self.tools.decryptFile(fileId: sealed.fileId, fileKey: sealed.fileKey, sha256: sealed.sha256, stored: Bytes(sealed.stored.dropLast(1))) }, "decrypt-failed")
     XCTAssertEqual(refusedCode { _ = try self.tools.decryptFile(fileId: sealed.fileId, fileKey: systemRandom(32), sha256: sealed.sha256, stored: sealed.stored) }, "decrypt-failed")
 

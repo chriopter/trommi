@@ -1,7 +1,7 @@
 // TrommiLive: the Live Activity's widget. The bell of the logo and the count of questions waiting; with the most
 // urgent card, its title and its two answers, which answer in place (LiveAnswer: the intent runs in the app). The
-// card comes from the app on this phone (LiveState); the hub's pushes carry the two counts only, and then the widget
-// shows the count alone. The widget reads nothing else: no Keychain item, no file, no key. A tap opens the card (or
+// card comes from the app on this phone (LiveState); the hub's pushes carry two marks only (anyone working, anything
+// waiting), and then the widget says that something waits, without a number. The widget reads nothing else: no Keychain item, no file, no key. A tap opens the card (or
 // the Desk). Past the push's stale date the widget dims and says so. The island is always black: its colours are
 // the board's dark tones; the lock screen follows the system's light or dark.
 import Foundation
@@ -35,7 +35,7 @@ struct TrommiLiveActivity: Widget {
         Bell(size: 24, ink: .white, rings: ring).padding(.leading, 2).transaction { $0.animation = nil }
       } compactTrailing: {
         // (a fixed width and no transition: the island keeps its shape when the count or the card changes)
-        Text(s.done != nil ? "✓" : "\(s.waiting)").font(.system(size: 17, weight: .bold, design: .rounded)).monospacedDigit()
+        Text(s.done != nil ? "✓" : s.badge).font(.system(size: 17, weight: .bold, design: .rounded)).monospacedDigit()
           .foregroundStyle(s.done != nil ? Isle.green : ring)
           .frame(minWidth: 22).contentTransition(.identity)
       } minimal: {
@@ -80,7 +80,7 @@ struct IslandBody: View {
     let ring = Isle.ring(s.card)
     VStack(alignment: .leading, spacing: 6) {
       if let d = s.done {
-        DoneLine(done: d, ink: .white, muted: Isle.dim, tick: Isle.green, more: s.waiting).padding(.vertical, 6)
+        DoneLine(done: d, ink: .white, muted: Isle.dim, tick: Isle.green, more: s.counted ? s.waiting : 0).padding(.vertical, 6)
       } else if let top = s.card {
         // one row for the bell, who asks, and where in the queue (no leading or trailing region: the bottom starts
         // right under the island's top, so the title and both answers fit)
@@ -90,7 +90,7 @@ struct IslandBody: View {
             + Text(verb(top)).font(.subheadline).foregroundStyle(ring))
             .lineLimit(1)
           Spacer(minLength: 4)
-          if s.waiting > 1 {
+          if s.others > 0 {
             Text("1 of \(s.waiting)").font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(Isle.dim)
               .padding(.horizontal, 8).padding(.vertical, 3)
               .background(Color.white.opacity(0.12), in: Capsule())
@@ -104,8 +104,8 @@ struct IslandBody: View {
         HStack(spacing: 10) {
           Bell(size: 28, ink: .white, rings: ring)
           VStack(alignment: .leading, spacing: 2) {
-            Text(stale ? "Not up to date" : waitingLine(s.waiting)).font(.headline).foregroundStyle(.white)
-            Text(workingLine(s.working)).font(.subheadline).foregroundStyle(Isle.dim)
+            Text(stale ? "Not up to date" : s.waitingText).font(.headline).foregroundStyle(.white)
+            Text(s.workingText).font(.subheadline).foregroundStyle(Isle.dim)
           }
         }
         .padding(.vertical, 4)
@@ -115,8 +115,6 @@ struct IslandBody: View {
   }
 }
 
-func waitingLine(_ n: Int) -> String { n == 0 ? "Nothing waiting" : n == 1 ? "1 question waiting" : "\(n) questions waiting" }
-func workingLine(_ n: Int) -> String { n == 1 ? "1 agent working" : "\(n) agents working" }
 
 /** "✓ Answered · Ship it", the title under it, and how many still wait. */
 struct DoneLine: View {
@@ -184,7 +182,7 @@ struct MinimalLive: View {
       BellBody().stroke(.white, style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
         .frame(width: 19, height: 15).frame(width: 24, height: 24).offset(x: -2, y: 2)
       if s.waiting > 0 || s.done != nil {
-        Text(s.done != nil ? "✓" : "\(s.waiting)").font(.system(size: 9, weight: .heavy, design: .rounded)).monospacedDigit().foregroundStyle(.black)
+        Text(s.done != nil ? "✓" : s.badge).font(.system(size: 9, weight: .heavy, design: .rounded)).monospacedDigit().foregroundStyle(.black)
           .frame(minWidth: 12, minHeight: 12).background(ring, in: Circle()).offset(x: 2, y: -1)
       }
     }
@@ -206,21 +204,21 @@ struct LockLive: View {
           Text(top.agent).font(.subheadline.weight(.semibold)).foregroundStyle(p.ink).lineLimit(1)
           Text("\(verb(top).trimmingCharacters(in: .whitespaces)) · \(age(top.since))").font(.subheadline).foregroundStyle(ring).lineLimit(1)
           Spacer(minLength: 0)
-          if s.waiting > 1 { Text("+\(s.waiting - 1) waiting").font(.caption.weight(.medium)).foregroundStyle(p.muted) }
+          if s.others > 0 { Text("+\(s.others) waiting").font(.caption.weight(.medium)).foregroundStyle(p.muted) }
         } else {
-          Text(stale ? "Not up to date" : waitingLine(s.waiting)).font(.subheadline.weight(.semibold)).foregroundStyle(p.ink)
+          Text(stale ? "Not up to date" : s.waitingText).font(.subheadline.weight(.semibold)).foregroundStyle(p.ink)
           Spacer(minLength: 0)
           Text("Trommi").font(.caption.weight(.semibold)).foregroundStyle(p.muted)
         }
       }
       if let d = s.done {
-        DoneLine(done: d, ink: p.ink, muted: p.muted, tick: p.green, more: s.waiting)
+        DoneLine(done: d, ink: p.ink, muted: p.muted, tick: p.green, more: s.counted ? s.waiting : 0)
       } else if let top {
         Text(top.title).font(.headline).foregroundStyle(p.ink).lineLimit(2)
           .frame(maxWidth: .infinity, alignment: .leading)
         Answers(card: top, needsApp: s.needsApp == true, primary: ring, primaryFg: p.dark ? .black : .white, secondaryBg: p.soft, secondaryFg: p.ink)
       } else {
-        Text(workingLine(s.working)).font(.subheadline).foregroundStyle(p.muted)
+        Text(s.workingText).font(.subheadline).foregroundStyle(p.muted)
       }
     }
     .opacity(stale ? 0.6 : 1)
