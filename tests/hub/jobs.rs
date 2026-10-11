@@ -68,22 +68,42 @@ fn the_timers_do_their_work() {
         w.ada.post(hub, "/v1/live-activity", &json!({ "kind": kind, "token": token, "tag": "tag-1", "environment": "production", "topic": "com.trommi.app" })).ok();
     }
 
-    // ---- the lease: the agent works; the Live Activity starts
+    // ---- a question waits (the Live Activity runs only then) and the agent works under a lease
+    let asked = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
+    agent
+        .send(
+            hub,
+            &group,
+            &object(
+                wire::KIND_VERSION,
+                asked,
+                wire::TYPE_CARD,
+                wire::STATE_OPEN,
+                1,
+                ZERO32,
+                ZERO32,
+            ),
+        )
+        .ok();
     agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "hears": true, "working": true, "last_call_at": 1 })).ok();
-    hub.eventually("the Live Activity starts", || {
-        live(&start)
-            .iter()
-            .any(|a| a["event"] == "start" && a["content-state"]["working"] == 1)
+    hub.eventually("the Live Activity starts and counts the work", || {
+        live(&start).iter().any(|a| a["event"] == "start")
+            && live(&start)
+                .iter()
+                .chain(live(&activity).iter())
+                .any(|a| a["content-state"]["working"] == 1 && a["content-state"]["waiting"] == 1)
     });
     // an open stream of the human device: it will see the agent's loss
     let mut events = w.ada.events(hub, None);
     // the agent's process dies: no renewal, no closed stream to tell. A minute later the lease has run out and
-    // the timer ends the Live Activity
+    // the timer tells the Live Activity that nobody works any more (it goes on: the question still waits)
     hub.clock(MINUTE + 1000);
-    hub.eventually("the Live Activity ends when the lease ran out", || {
-        live(&activity)
-            .iter()
-            .any(|a| a["event"] == "end" && a["content-state"]["working"] == 0)
+    hub.eventually("the Live Activity counts no work when the lease ran out", || {
+        live(&activity).iter().any(|a| {
+            a["event"] == "update"
+                && a["content-state"]["working"] == 0
+                && a["content-state"]["waiting"] == 1
+        })
     });
     assert!(
         alerts().is_empty(),
