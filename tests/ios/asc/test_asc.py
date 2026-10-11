@@ -168,6 +168,98 @@ class BetaReview(Base):
         self.assertEqual(code, 1)
         self.assertIn("SOMETHING_ELSE", err)
 
+
+class Crashes(Base):
+    """asc.py crashes: the crash feedback of TestFlight and the diagnostics of the newest builds, read only."""
+    LIST = ("GET /v1/apps/app1/betaFeedbackCrashSubmissions?sort=-createdDate&limit=50"
+            f"&fields[betaFeedbackCrashSubmissions]={asc.CRASH_FIELDS}")
+    BUILDS = ("GET /v1/builds?filter[app]=app1&sort=-uploadedDate&limit=200&fields[builds]=version,uploadedDate,"
+              "preReleaseVersion&include=preReleaseVersion&fields[preReleaseVersions]=version")
+
+    def answers(self):
+        sub = lambda i, date, build, comment: {"id": i, "type": "betaFeedbackCrashSubmissions", "attributes": {
+            "createdDate": date, "comment": comment, "email": "tester@example.com", "deviceModel": "iPhone17,1",
+            "osVersion": "27.0"}, "relationships": {"build": {"data": {"type": "builds", "id": build}}}}
+        log = lambda name: {"data": {"id": "l", "type": "betaCrashLogs",
+                                     "attributes": {"logText": (HERE / "fixtures" / name).read_text()}}}
+        nodiag = {f"GET /v1/builds/{b}/diagnosticSignatures?filter[diagnosticType]={k}&limit=50": {"data": []}
+                  for b in ("b2", "b1") for k in asc.DIAGNOSTIC_TYPES}
+        return {
+            **nodiag,
+            self.BUILDS: {"data": [
+                {"id": "b2", "attributes": {"version": "62"}, "relationships": {"preReleaseVersion": {"data": {"id": "p1"}}}},
+                {"id": "b1", "attributes": {"version": "61"}, "relationships": {"preReleaseVersion": {"data": {"id": "p1"}}}}],
+                "included": [{"type": "preReleaseVersions", "id": "p1", "attributes": {"version": "1.0"}}]},
+            self.LIST: {"data": [sub("c3", "2026-10-11T08:00:00Z", "b2", "it crashed when I opened\nthe board"),
+                                 sub("c2", "2026-10-10T08:00:00.123Z", "b1", ""),
+                                 sub("c1", "2026-10-09T08:00:00Z", "b9", ""),
+                                 sub("c0", "2026-10-01T08:00:00Z", "b1", "too old")],
+                        "links": {"next": asc.API + "/v1/never-asked"}},
+            "GET /v1/betaFeedbackCrashSubmissions/c3/crashLog?fields[betaCrashLogs]=logText": log("crash.ips"),
+            "GET /v1/betaFeedbackCrashSubmissions/c2/crashLog?fields[betaCrashLogs]=logText": log("crash.txt"),
+            "GET /v1/betaFeedbackCrashSubmissions/c1/crashLog?fields[betaCrashLogs]=logText": {"error": 404, "codes": ["NOT_FOUND"], "detail": ""},
+            "GET /v1/builds/b2/diagnosticSignatures?filter[diagnosticType]=HANGS&limit=50": {"data": [
+                {"id": "s1", "attributes": {"diagnosticType": "HANGS", "signature": "Sync.apply(_:)", "weight": 0.25}}]},
+            "GET /v1/builds/b1/diagnosticSignatures?filter[diagnosticType]=DISK_WRITES&limit=50": {"error": 403, "codes": ["FORBIDDEN"], "detail": ""},
+            "GET /v1/diagnosticSignatures/s1/logs?limit=5": {"productData": [{"signatureId": "s1", "diagnosticLogs": [
+                {"callStackTree": [{"callStacks": [{"callStackRootFrames": [{"binaryName": "Trommi", "symbolName": "main",
+                 "subFrames": [{"binaryName": "Trommi", "symbolName": "Sync.apply(_:)", "isBlameFrame": True}]}]}]}]}]}]},
+        }
+
+    def test_writes_logs_and_a_summary_without_e_mail(self):
+        import tempfile
+        fake = Fake(**self.answers())
+        with tempfile.TemporaryDirectory() as out:
+            code, stdout, err = self.run_with(fake, asc.crashes, out, "2026-10-08")
+            self.assertEqual(code, 0, err)
+            self.assertIn("crashes: 3", stdout)
+            files = sorted(os.listdir(out))
+            self.assertEqual(len([f for f in files if f.endswith(".ips")]), 1)
+            self.assertEqual(len([f for f in files if f.endswith(".crash")]), 1)
+            self.assertEqual(len(os.listdir(os.path.join(out, "diagnostics"))), 1)
+            summary = pathlib.Path(out, "summary.md").read_text()
+            issue = pathlib.Path(out, "issue.md").read_text()
+        for text in (summary, issue):
+            self.assertNotIn("tester@example.com", text)
+            self.assertNotIn("too old", text)
+            self.assertIn("## 2026-10-11T08:00:00Z: build 1.0 (62)", text)
+            self.assertIn("Exception Type: EXC_BAD_ACCESS (SIGSEGV)", text)
+            self.assertIn("Termination Reason: SIGNAL 11 Segmentation fault: 11", text)
+            self.assertIn("Thread 1 Crashed: com.trommi.sync", text)
+            self.assertIn("Sync.apply(_:) + 120 (Sync.swift:42)", text)
+            self.assertIn("Exception Type:  EXC_CRASH (SIGABRT)", text)
+            self.assertIn("3 Trommi 0x0000000100a2b3c7 BoardView.body.getter + 412 (BoardView.swift:88)", text)
+            self.assertNotIn("Thread 1:", text)
+            self.assertIn("build ?", text)  # c1: build unknown, no log
+            self.assertIn("(no crash log: HTTP 404)", text)
+            self.assertIn("1.0 (62) HANGS, weight 0.25: `Sync.apply(_:)`", text)
+            self.assertIn("Trommi Sync.apply(_:) (blamed)", text)
+        self.assertIn("Tester comment: it crashed when I opened the board", summary)
+        self.assertNotIn("it crashed", issue)
+        self.assertNotIn("- Tester comment", issue)
+        # never asks for the tester or the e-mail, writes nothing, does not page past SINCE
+        for _, path, _ in fake.sent:
+            self.assertNotIn("tester", path)
+            self.assertNotIn("email", path)
+        self.assertEqual(fake.writes(), [])
+        self.assertNotIn("/v1/never-asked", [p for _, p, _ in fake.sent])
+
+    def test_the_text_digest_keeps_eight_frames(self):
+        lines, meta = asc.crash_digest((HERE / "fixtures/crash.txt").read_text())
+        self.assertEqual(meta.get("version"), "1.0 (61)")
+        self.assertEqual(len([l for l in lines if l[:1].isdigit()]), asc.FRAMES)
+
+    def test_no_crashes_still_writes_a_summary(self):
+        import tempfile
+        over = self.answers()
+        over[self.LIST] = {"data": [], "links": {}}
+        with tempfile.TemporaryDirectory() as out:
+            code, stdout, err = self.run_with(Fake(**over), asc.crashes, out)
+            self.assertEqual(code, 0, err)
+            self.assertIn("crashes: 0", stdout)
+            self.assertIn("No crash feedback", pathlib.Path(out, "summary.md").read_text())
+
+
 class WhatsNew(Base):
     def test_the_newest_day_as_plain_text(self):
         code, out, _ = self.run_with(None, asc.whats_new, str(HERE / "fixtures/CHANGELOG.md"))

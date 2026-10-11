@@ -26,12 +26,16 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     --dry-run: the same checks, offline, and prints what would be sent; nothing is sent
   asc.py next-build                 the highest build number App Store Connect has for the app, plus one
   asc.py last-sha                   the commit of the newest build whose What to Test names one ("(abc1234)")
+  asc.py crashes OUT_DIR [SINCE]    read only: TestFlight crash feedback newer than SINCE (ISO 8601, default 3 days
+                                    ago) with each crash log as a file, the diagnostic signatures (hangs, launches,
+                                    disk writes) of the three newest builds, summary.md (tester comments included) and
+                                    issue.md (without them); no tester e-mail or name is asked for or written
   asc.py export-code                the code of the app's APPROVED export compliance documentation (the newest if
                                     several), read only; fails listing every declaration's state and date if none is
 
 Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). Nothing here prints key material or tokens.
 """
-import base64, hashlib, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
+import base64, datetime, hashlib, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
 
 API = "https://api.appstoreconnect.apple.com"
 
@@ -512,6 +516,262 @@ def whats_new(changelog):
     print(text)
 
 
+# ---- TestFlight crash reports (asc.py crashes; .github/workflows/ios_crashes.yml) ----
+# Read only. The tester is never asked for (no `tester` field or include), and the submission's `email` is not
+# requested; KEEP lists what is kept of a submission all the same, should the API send more. The tester's comment is
+# kept for summary.md (the artifact) but never written to issue.md, which goes to a public issue.
+
+CRASH_FIELDS = "createdDate,comment,deviceModel,osVersion,architecture,appPlatform,deviceFamily,buildBundleId,build,crashLog"
+KEEP = ("createdDate", "comment", "deviceModel", "osVersion", "architecture", "appPlatform", "deviceFamily", "buildBundleId")
+DIAGNOSTIC_TYPES = ("HANGS", "LAUNCHES", "DISK_WRITES")   # the API's diagnosticType values (no crashes among them)
+FRAMES = 8
+
+
+def when(text):
+    """An ISO 8601 date or date-time (Z or an offset; a plain date is midnight UTC) as an aware datetime, or None."""
+    if not text:
+        return None
+    try:
+        d = datetime.datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=datetime.timezone.utc)
+
+
+def pages(path, limit_pages=20):
+    """Every row of a paged GET, following links.next; stops quietly on 400/403/404 (an API the key may not reach)."""
+    rows, included = [], []
+    for _ in range(limit_pages):
+        page = call("GET", path, ok=(400, 403, 404))
+        if "error" in page:
+            print(f"::warning::GET {path.split('?')[0]}: HTTP {page['error']} {', '.join(page['codes'])}", file=sys.stderr)
+            break
+        rows += page.get("data") or []
+        included += page.get("included") or []
+        nxt = (page.get("links") or {}).get("next")
+        if not nxt or not nxt.startswith(API):
+            break
+        path = nxt[len(API):]
+    return rows, included
+
+
+def build_names(aid):
+    """build id -> "1.2 (34)", for the app's newest builds (version of the prerelease, build number)."""
+    rows, included = pages(f"/v1/builds?filter[app]={q(aid)}&sort=-uploadedDate&limit=200"
+                           "&fields[builds]=version,uploadedDate,preReleaseVersion&include=preReleaseVersion"
+                           "&fields[preReleaseVersions]=version", limit_pages=1)
+    versions = {i["id"]: (i.get("attributes") or {}).get("version") for i in included if i.get("type") == "preReleaseVersions"}
+    names = {}
+    for b in rows:
+        pre = (((b.get("relationships") or {}).get("preReleaseVersion") or {}).get("data") or {}).get("id")
+        number = (b.get("attributes") or {}).get("version") or "?"
+        names[b["id"]] = f"{versions.get(pre) or '?'} ({number})"
+    return names, rows
+
+
+def _ips(text):
+    """An .ips crash report (one JSON header line, then one JSON body) as (header, body), or None if it is not one."""
+    text = text.strip()
+    if not text.startswith("{"):
+        return None
+    head, _, rest = text.partition("\n")
+    try:
+        header = json.loads(head)
+        body = json.loads(rest) if rest.strip() else {}
+    except ValueError:
+        try:
+            return {}, json.loads(text)
+        except ValueError:
+            return None
+    if not rest.strip():
+        # one JSON object only: the body itself
+        return {}, header
+    return header, body
+
+
+def crash_digest(text):
+    """The lines that say what crashed: exception, termination reason, the crashed thread and its first frames.
+    Reads the text form (Exception Type:, Termination Reason:, Thread N Crashed:) and the .ips JSON form."""
+    ips = _ips(text)
+    if ips is not None:
+        header, body = ips
+        out = []
+        exc = body.get("exception") or {}
+        if exc:
+            out.append("Exception Type: " + " ".join(str(x) for x in (exc.get("type"), f"({exc['signal']})" if exc.get("signal") else None) if x))
+            if exc.get("codes"):
+                out.append(f"Exception Codes: {exc['codes']}")
+        term = body.get("termination") or {}
+        if term:
+            reason = " ".join(str(term[k]) for k in ("namespace", "code") if term.get(k) is not None)
+            if term.get("indicator"):
+                reason += f" {term['indicator']}"
+            out.append(f"Termination Reason: {reason.strip()}")
+        asi = body.get("asi") or {}
+        for lines in asi.values() if isinstance(asi, dict) else ():
+            for line in (lines if isinstance(lines, list) else [lines])[:2]:
+                out.append(f"Application Specific Information: {str(line)[:300]}")
+        threads = body.get("threads") or []
+        idx = body.get("faultingThread")
+        if not isinstance(idx, int) or not 0 <= idx < len(threads):
+            idx = next((i for i, t in enumerate(threads) if t.get("triggered")), None)
+        if idx is not None:
+            images = body.get("usedImages") or []
+            out.append(f"Thread {idx} Crashed:" + (f" {threads[idx]['queue']}" if threads[idx].get("queue") else ""))
+            for n, f in enumerate((threads[idx].get("frames") or [])[:FRAMES]):
+                img = f.get("imageIndex")
+                name = images[img].get("name", "?") if isinstance(img, int) and 0 <= img < len(images) else "?"
+                sym = f.get("symbol") or f"+{f.get('imageOffset', '?')}"
+                loc = f" + {f['symbolLocation']}" if f.get("symbolLocation") is not None and f.get("symbol") else ""
+                src = f" ({f['sourceFile']}:{f.get('sourceLine', '?')})" if f.get("sourceFile") else ""
+                out.append(f"{n:<3} {name:<24} {sym}{loc}{src}")
+        meta = {"app_version": header.get("app_version"), "build_version": header.get("build_version"),
+                "os_version": header.get("os_version")}
+        return out, meta
+    lines = text.splitlines()
+    out, meta = [], {}
+    for i, line in enumerate(lines):
+        key = line.split(":", 1)[0].strip()
+        if key in ("Exception Type", "Exception Codes", "Termination Reason", "Termination Description",
+                   "Triggered by Thread", "Exception Reason"):
+            out.append(line.strip()[:300])
+        elif key == "Version" and "version" not in meta:
+            meta["version"] = line.split(":", 1)[1].strip()
+        elif re.match(r"^Thread \d+ Crashed\b", line):
+            out.append(line.strip())
+            taken = 0
+            for frame in lines[i + 1:]:
+                if not frame.strip() or taken >= FRAMES:
+                    break
+                if re.match(r"^\d+\s", frame):
+                    out.append(re.sub(r"\s+", " ", frame.strip()))
+                    taken += 1
+    return out, meta
+
+
+def _slug(text):
+    return re.sub(r"[^0-9A-Za-z.-]+", "-", text).strip("-")[:40] or "x"
+
+
+def crashes(out_dir, since=None):
+    """TestFlight crash feedback since SINCE (default: 3 days ago) and the diagnostic signatures of the newest builds,
+    written to OUT_DIR: one file per crash log, diagnostics/*.json, summary.md (with tester comments, for the artifact)
+    and issue.md (without them, for a public issue). GITHUB_OUTPUT: crashes=N."""
+    start = when(since) if since else datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=3)
+    if start is None:
+        die(f"not an ISO 8601 date: {since}")
+    os.makedirs(os.path.join(out_dir, "diagnostics"), exist_ok=True)
+    aid = app_id(os.environ["BUNDLE_ID"]) or die("no app record")
+    names, recent = build_names(aid)
+
+    # 1. Crash feedback, newest first, until one is older than SINCE
+    found, path = [], (f"/v1/apps/{aid}/betaFeedbackCrashSubmissions?sort=-createdDate&limit=50"
+                       f"&fields[betaFeedbackCrashSubmissions]={CRASH_FIELDS}")
+    for _ in range(20):
+        page = call("GET", path, ok=(400, 403, 404))
+        if "error" in page:
+            print(f"::warning::the crash feedback could not be read: HTTP {page['error']} {', '.join(page['codes'])} "
+                  f"{page['detail']}", file=sys.stderr)
+            break
+        rows = page.get("data") or []
+        older = False
+        for row in rows:
+            attrs = {k: v for k, v in (row.get("attributes") or {}).items() if k in KEEP}
+            created = when(attrs.get("createdDate"))
+            if created and created < start:
+                older = True
+                break
+            build = (((row.get("relationships") or {}).get("build") or {}).get("data") or {}).get("id")
+            found.append({"id": row["id"], "build": build, **attrs})
+        nxt = (page.get("links") or {}).get("next")
+        if older or not nxt or not nxt.startswith(API):
+            break
+        path = nxt[len(API):]
+
+    for c in found:
+        log = call("GET", f"/v1/betaFeedbackCrashSubmissions/{c['id']}/crashLog?fields[betaCrashLogs]=logText",
+                   ok=(400, 403, 404))
+        text = ((log.get("data") or {}).get("attributes") or {}).get("logText") or ""
+        if "error" in log or not text:
+            c["digest"], c["meta"], c["file"] = ["(no crash log: " + (f"HTTP {log['error']}" if "error" in log else "empty") + ")"], {}, None
+            continue
+        ext = "ips" if _ips(text) is not None else "crash"
+        c["file"] = f"crash-{_slug(c.get('createdDate') or '')}-{_slug(c['id'])[:12]}.{ext}"
+        with open(os.path.join(out_dir, c["file"]), "w", encoding="utf-8") as f:
+            f.write(text)
+        c["digest"], c["meta"] = crash_digest(text)
+
+    # 2. Diagnostic signatures (hangs, launches, disk writes) of the newest builds
+    diags = []
+    for b in recent[:3]:
+        for kind in DIAGNOSTIC_TYPES:
+            sigs, _ = pages(f"/v1/builds/{b['id']}/diagnosticSignatures?filter[diagnosticType]={kind}&limit=50", limit_pages=2)
+            for sig in sigs:
+                a = sig.get("attributes") or {}
+                logs = call("GET", f"/v1/diagnosticSignatures/{sig['id']}/logs?limit=5", ok=(400, 403, 404))
+                frames = []
+                if "error" not in logs:
+                    name = f"{_slug(names.get(b['id'], b['id']))}-{kind.lower()}-{_slug(sig['id'])[:12]}.json"
+                    with open(os.path.join(out_dir, "diagnostics", name), "w", encoding="utf-8") as f:
+                        json.dump(logs, f, indent=1)
+                    frames = blame_frames(logs)
+                diags.append({"build": names.get(b["id"], b["id"]), "type": a.get("diagnosticType") or kind,
+                              "signature": a.get("signature") or "", "weight": a.get("weight"), "frames": frames})
+
+    for name, private in (("summary.md", True), ("issue.md", False)):
+        with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
+            f.write(crash_report(found, diags, names, start, private))
+    print(f"{len(found)} crash report(s) since {start.isoformat()}, {len(diags)} diagnostic signature(s) of "
+          f"{min(len(recent), 3)} build(s); written to {out_dir}")
+    gh_out("crashes", len(found))
+
+
+def blame_frames(logs):
+    """The first frames of the first call stack of a diagnostic log, the blamed one marked."""
+    out = []
+    for product in logs.get("productData") or []:
+        for log in product.get("diagnosticLogs") or []:
+            for tree in log.get("callStackTree") or []:
+                for stack in tree.get("callStacks") or []:
+                    node = (stack.get("callStackRootFrames") or [None])[0]
+                    while node and len(out) < FRAMES:
+                        mark = " (blamed)" if node.get("isBlameFrame") else ""
+                        out.append(f"{node.get('binaryName') or '?'} {node.get('symbolName') or node.get('rawFrame') or '?'}{mark}")
+                        node = (node.get("subFrames") or [None])[0]
+                    if out:
+                        return out
+    return out
+
+
+def crash_report(found, diags, names, start, private):
+    lines = [f"# TestFlight crashes since {start.strftime('%Y-%m-%d %H:%M UTC')}", ""]
+    if not private:
+        lines += ["Tester comments are left out here (the repository is public); they are in the run's artifact.", ""]
+    if not found:
+        lines += ["No crash feedback in this time.", ""]
+    for c in found:
+        meta = c.get("meta") or {}
+        build = names.get(c.get("build")) or (f"{meta['app_version']} ({meta['build_version']})"
+                                               if meta.get("app_version") else meta.get("version")) or "?"
+        lines += [f"## {c.get('createdDate') or '?'}: build {build}", "",
+                  f"- Device: {c.get('deviceModel') or '?'}, {c.get('osVersion') or '?'}"
+                  + (f", {c['architecture']}" if c.get("architecture") else "")]
+        if private and c.get("comment"):
+            lines.append("- Tester comment: " + " ".join(c["comment"].split())[:1000])
+        if c.get("file"):
+            lines.append(f"- Log: `{c['file']}`")
+        lines += ["", "```", *(c.get("digest") or ["(nothing recognised in the log)"]), "```", ""]
+    if diags:
+        lines += ["## Diagnostics of the newest builds", ""]
+        for d in diags:
+            weight = f", weight {d['weight']}" if isinstance(d.get("weight"), (int, float)) else ""
+            lines.append(f"- {d['build']} {d['type']}{weight}: `{d['signature'][:200]}`")
+            for fr in d["frames"]:
+                lines.append(f"  - `{fr[:200]}`")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def gh_out(name, value):
     print(f"{name}: {value}")
     if os.environ.get("GITHUB_OUTPUT"):
@@ -522,7 +782,7 @@ def gh_out(name, value):
 if __name__ == "__main__":
     cmds = {"prepare": prepare, "wait": wait, "upload": upload, "internal": internal, "notes": notes, "next-build": next_build,
             "last-sha": last_sha, "export-code": export_code, "external": external, "beta-review": beta_review,
-            "whats-new": whats_new}
+            "whats-new": whats_new, "crashes": crashes}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)
     cmds[sys.argv[1]](*sys.argv[2:])

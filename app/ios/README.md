@@ -240,6 +240,17 @@ Internal testers must be users of the team under the address they sign in with; 
 "Tester(s) cannot be assigned"), add them once in App Store Connect → TestFlight → Intern → Testers → +. Cloud-managed
 distribution signing refuses App Manager keys: the key needs the Admin role.
 
+### Crash reports
+
+`.github/workflows/ios_crashes.yml` reads the TestFlight crash reports every night (the last day) and by hand
+(Actions → ios_crashes → Run workflow, the last `days` days) with the same App Store Connect key, read only
+(`.github/scripts/ios_crashes.sh`, `asc.py crashes`): the crash feedback testers send, each with its crash log, and
+the diagnostic signatures (hangs, launches, disk writes) of the three newest builds. The artifact `ios-crashes` (30
+days) holds the logs and `summary.md`; when there were crashes, the open issue labelled `ios-crash` ("TestFlight
+crashes") gets a comment with build, device, OS, exception and the first frames of the crashed thread. Tester comments
+stay out of the issue (the repository is public) and are in the artifact only; no tester name or e-mail address is
+read. Test offline: `python3 -B -m unittest discover -s tests/ios/asc`.
+
 ## Public beta
 
 TestFlight's public link is the rolling channel; the App Store gets reviewed versions less often, by hand ("App Store
