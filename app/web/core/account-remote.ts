@@ -30,10 +30,10 @@ async function opening<T extends Opened>(fn: Opens, args: Args, onEvent?: (event
   return await accountInWorker(fn, args, options) as unknown as T
 }
 /** How far a sign-in with the code is (room.ts `SignInStep`), as the worker tells it. */
-export type SignInStep = { step: 'reading' } | { step: 'checking'; done: number; total: number } | { step: 'joining' }
+export type SignInStep = { step: 'reading'; done?: number; total?: number } | { step: 'checking'; done: number; total: number } | { step: 'joining' }
 /** The words a step says on the sign-in's button: "Catching up 1,234 of 5,000…". */
 export function signInWords(p: SignInStep): string {
-  if (p.step === 'reading') return 'Reading your account…'
+  if (p.step === 'reading') return p.total ? `Reading your account ${Math.min(p.done ?? 0, p.total)} of ${p.total}…` : 'Reading your account…'
   if (p.step === 'joining') return 'Joining…'
   const n = (v: number): string => v.toLocaleString('en-US')
   return `Catching up ${n(Math.min(p.done, p.total))} of ${n(p.total)}…`

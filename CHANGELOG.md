@@ -64,6 +64,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 **Fixed**
 - Web: an answer to a form that came only after you had moved to another page (a removed device, say) no longer
   takes you away from that page.
+- Logging in on the web reads a big account several times faster, keeps saying how far it is, and a log in that
+  was given up no longer leaves this browser stuck on "Not opened": logging in again works.
 - Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
   session is repaired first and the message is sent again.
 - iPhone: decisions answered, read or closed on another device no longer stay on the Desk as open questions, also

@@ -58,7 +58,7 @@ export interface Rooms {
   joinWithCode(o: DeviceOptions & { hub_url: string; room_id: string; code: Uint8Array; recover?: boolean; account?: ((new_code: Uint8Array) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>) | null; progress?: ((step: SignInStep) => void) | null }): Promise<{ client: Client; sessions: Promise<SessionJoins> }>
 }
 /** How far a sign-in with the code is, for the screen that waits on it (a big account's check takes a while). */
-export type SignInStep = { step: 'reading' } | { step: 'checking'; done: number; total: number } | { step: 'joining' }
+export type SignInStep = { step: 'reading'; done?: number; total?: number } | { step: 'checking'; done: number; total: number } | { step: 'joining' }
 /** The session groups a sign-in with the code joined behind it (`joinWithCode`'s `sessions`). */
 export interface SessionJoins { joined: number; not_joined: { group: Uint8Array; code: string }[] }
 /** How many session groups' Commits are read from the hub at a time while they are joined behind a sign-in. */
@@ -282,7 +282,7 @@ export function roomsOn(env: RoomEnv): Rooms {
       // The room in steps: everything but the Commits at once, the Commits read from the hub's logs while the core
       // takes them in slices (a room's whole history may be more than one call carries).
       tell({ step: 'reading' })
-      const steps = await hub.roomInSteps({ anchorOf: rows => core.recoveryAnchor(code, room, rows) })
+      const steps = await hub.roomInSteps({ anchorOf: rows => core.recoveryAnchor(code, room, rows), read: (done, total) => tell({ step: 'reading', done, total }) })
       if (o.recover) {
         // The new code is made, and the account's copies of it (or the person's own copy: the caller's `account`
         // resolves once the code is on their screen), BEFORE the recovery is opened: the hub locks the room for
@@ -323,7 +323,12 @@ export function roomsOn(env: RoomEnv): Rooms {
         let done = 0
         tell({ step: 'checking', done, total })
         await held.codeCheckStart(code, steps.start)
-        await inSlices(steps.placed().next, size, halving(async slice => { await held.codeCheckSlice(slice); done += slice.length; tell({ step: 'checking', done, total }); return false }, tooLarge))
+        // (progress is told as the Commits are read, every few, not only once a slice of up to 256 was checked: a
+        //  phone that reads slowly says it moves, and the sign-in's watch for silence is not tripped)
+        const placed = steps.placed()
+        let read = 0
+        const next = async (): Promise<PlacedCommit | null> => { const c = await placed.next(); if (c && ++read % 16 === 0) tell({ step: 'checking', done: Math.max(done, read), total }); return c }
+        await inSlices(next, size, halving(async slice => { await held.codeCheckSlice(slice); done += slice.length; tell({ step: 'checking', done: Math.max(done, read), total }); return false }, tooLarge))
         tell({ step: 'joining' })
         await held.joinRoomChecked(code, steps.end, Date.now())
         await postAll(engine)
