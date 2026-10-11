@@ -106,18 +106,18 @@ async function header(site, dir) {
 
       // the rest once per size, on a light system with nothing picked
       await system(false); await pick('system'); errors.length = 0
-      await go('/#connect')
+      await go('/#agents')
       await sleep(900)
-      const a = await js(`return { head: document.querySelector('.head').getBoundingClientRect().bottom, title: document.querySelector('#connect h2').getBoundingClientRect().top, y: scrollY }`)
+      const a = await js(`return { head: document.querySelector('.head').getBoundingClientRect().bottom, title: document.querySelector('#agents h2').getBoundingClientRect().top, y: scrollY }`)
       check(a.y > 0 && a.title >= a.head, `${size}: an anchored section starts under the head`, a)
       // the keyboard: Tab walks the head in its order, Enter on the theme button goes on to the next theme, the choice survives a reload
       await go('/')
       const order = []
       for (let i = 0; i < 6; i++) { await key('Tab', 'Tab', 9); order.push(await js(`const e = document.activeElement; return e.matches('.theme-btn') ? 'theme' : (e.getAttribute('aria-label') || e.textContent.replace(/\\s+/g, ' ').trim())`)) }
-      const want = size === 'phone' ? ['Skip to the content', 'Trommi, home', 'theme', 'Open Trommi', 'Start with your agents now', 'View on GitHub'] : ['Skip to the content', 'Trommi, home', 'GitHub', 'theme', 'Open Trommi', 'Start with your agents now']
+      const want = size === 'phone' ? ['Skip to the content', 'Trommi, home', 'Apps', 'Agents', 'GitHub', 'theme'] : ['Skip to the content', 'Trommi, home', 'Trommi', 'Apps', 'Agents', 'GitHub']
       check(JSON.stringify(order) === JSON.stringify(want), `${size}: Tab order of the head`, order)
       await js(`document.querySelector('.brand').focus()`)
-      for (let i = 0; i < 4; i++) { await key('Tab', 'Tab', 9); if (await js(`return document.activeElement.matches('.theme-btn')`)) break }
+      for (let i = 0; i < 6; i++) { await key('Tab', 'Tab', 9); if (await js(`return document.activeElement.matches('.theme-btn')`)) break }
       const ring = await js(`const s = getComputedStyle(document.querySelector('.theme-btn')); return s.outlineStyle + ' ' + s.outlineWidth + ' ' + getComputedStyle(document.querySelector('.theme-btn'), '::after').content`)
       check(ring === 'solid 2px "Theme: System"', `${size}: the focused theme button has its ring and says what is set`, ring)
       await key('Enter', 'Enter', 13)
