@@ -822,7 +822,9 @@ public final class Board {
       if let card = cards[p.scopeId] {
         let c = rec.content
         if c?["present_card"].truthy == true { card.inRevision = nil }
-        else if rec.senderRole == "human", let c = c, c["hand_back"].truthy || c["explain"].truthy, card.objectState == "open" || card.answer?.pending == true {
+        // (a hand back older than the card's newest version is over: read again, it does not put a card presented
+        //  again back into revision; the web's model.ts does the same)
+        else if rec.senderRole == "human", let c = c, c["hand_back"].truthy || c["explain"].truthy, rec.envelopeNumber > card.envelopeNumber, card.objectState == "open" || card.answer?.pending == true {
           card.inRevision = InRevision(by: c["hand_back"].truthy ? "hand_back" : "explain", envelopeNumber: rec.envelopeNumber)
         }
         change.cards.insert(card.objectId)

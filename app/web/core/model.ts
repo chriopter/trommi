@@ -483,7 +483,9 @@ function applyItem(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
       // In revision until the agent's next version or a message with present_card. Only an open card goes back to its
       // agent; an own answer still in flight (echo) does not count yet: the hub may order it after this message.
       if (content?.['present_card']) card.in_revision = null
-      else if (human && content && (content['hand_back'] || content['explain']) && (card.object_state === 'open' || card.answer?.pending)) card.in_revision = { by: content['hand_back'] ? 'hand_back' : 'explain', envelope_number: r.change }
+      // (a hand back older than the card's newest version is over: the agent answered it with that version; read
+      //  again later, as a rescan does, it must not put a card that was presented again back into revision)
+      else if (human && content && (content['hand_back'] || content['explain']) && r.change > card.envelope_number && (card.object_state === 'open' || card.answer?.pending)) card.in_revision = { by: content['hand_back'] ? 'hand_back' : 'explain', envelope_number: r.change }
       change.cards.add(card.object_id)
       if (card.session_id) change.sessions.add(card.session_id)
     }

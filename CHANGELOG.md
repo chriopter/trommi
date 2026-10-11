@@ -73,6 +73,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 
 **Fixed**
 - Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
+- Open cards are the same on every device: the web takes them from the hub's list of open questions, so a card
+  settled elsewhere no longer stays on the Desk, and a card put before you again no longer hides under "Off your mind".
 - Web: an answer to a form that came only after you had moved to another page (a removed device, say) no longer
   takes you away from that page.
 - Logging in on the web reads a big account several times faster, keeps saying how far it is, and a log in that
