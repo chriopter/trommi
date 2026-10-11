@@ -570,12 +570,16 @@ async function wipeLocal(client) {
   try { for (const name of await caches.keys()) await caches.delete(name) } catch {}
   try { localStorage.clear() } catch {}
   try { sessionStorage.clear() } catch {}
-  let names = ['trommi']
+  let names = ['trommi', 'trommi:cache', 'trommi:wrap']   // (where indexedDB.databases() is missing)
   try { if (indexedDB.databases) names = [...new Set([...names, ...(await indexedDB.databases()).map(d => d.name).filter(Boolean)])] } catch {}
   // A connection still open elsewhere (another tab) blocks the delete: it finishes when that closes; this page goes on.
-  await Promise.all(names.map(name => new Promise(done => {
+  const drop = name => new Promise(done => {
     try { const r = indexedDB.deleteDatabase(name); r.onsuccess = r.onerror = () => done(); r.onblocked = () => setTimeout(done, 2000) } catch { done() }
-  })))
+  })
+  // The wrapping keys (store-idb.ts `<name>:wrap`) go last, after the entries they wrap.
+  const wraps = names.filter(n => n.endsWith(':wrap'))
+  await Promise.all(names.filter(n => !wraps.includes(n)).map(drop))
+  await Promise.all(wraps.map(drop))
 }
 
 // ---- the account: shared pieces (screens before the board and the Settings page) ----

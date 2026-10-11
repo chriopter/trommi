@@ -5,7 +5,7 @@
 // Real here: IndexedDB, Web Locks, BroadcastChannel and WebCrypto of the browser; the binding's IdbStore; and, in the
 // tests named "core:", the Rust core's Device from the WASM build run.mjs serves under /pkg/. NOT real: the client.
 // The tabs run the fakes of fake-client.ts; there is no engine and no hub.
-import { deleteStores, openCache, openDeviceStore } from '../../../app/web/core/store-idb.ts'
+import { deleteStores, dropIfEmpty, openCache, openDeviceStore } from '../../../app/web/core/store-idb.ts'
 import type { Cache, DeviceStore, IdbStoreClass } from '../../../app/web/core/store-idb.ts'
 import { adoptInTabs, callKey, forgetCalls, openRoomInTabs } from '../../../app/web/core/tabs.ts'
 import type { CallReceipt, ClientLike, TabClient } from '../../../app/web/core/tabs.ts'
@@ -94,13 +94,14 @@ function fakeTab(name: string, more: { cache?: Cache; Channel?: typeof Broadcast
 // One page
 
 const tests: [string, () => Promise<void>][] = [
-  ['store: an empty store loads as revision 0 with no entries; load() twice gives the same state; the lock is held from load() to close()', async () => {
+  ['store: an empty store loads as revision 0 with no entries and makes no wrapping key; load() twice gives the same state; the lock is held from load() to close()', async () => {
     const name = fresh('empty')
     const store = deviceStore(name)
     same(await lockHeld(name), false, 'the lock before load()')
     const state = await store.load()
     same([state.revision, state.entries.length, await lockHeld(name)], [0, 0, true], 'empty store')
     check(await store.load() === state, 'a second load() read again')
+    same(await databases(name), [name], 'a look into an empty store leaves no key behind')
     const other = deviceStore(name)
     same((await refused(() => other.load(), 'a second owner')).name, 'StoreConflict', 'the second owner')
     await store.close()
@@ -225,7 +226,7 @@ const tests: [string, () => Promise<void>][] = [
     same([b.revision, shown(b.entries)], [1, '01=mine'], 'what is stored')
     await b.store.close()
   }],
-  ['store: deleteStores is refused while a device has the state open; then it removes the state and the cache; the wrapping key stays and serves the next device', async () => {
+  ['store: deleteStores is refused while a device has the state open; then it removes the state, the cache and the wrapping key; the next device gets a new key', async () => {
     const name = fresh('deleted')
     const a = await opened(name)
     await a.store.apply(write(0, [put(bytes(1), 'gone soon')]))
@@ -236,15 +237,53 @@ const tests: [string, () => Promise<void>][] = [
     same([await databases(name), await cache.get('x')], [[name, `${name}:cache`, `${name}:wrap`], 1], 'nothing was deleted')
     await a.store.close()
     await deleteStores({ name, IdbStore })
-    same(await databases(name), [`${name}:wrap`], 'after')
+    same(await databases(name), [], 'after')
     same((await refused(() => cache.get('x'), 'the cache after the delete')).code, 'storage-failed', 'cache')
     const b = await opened(name)
     same([b.revision, b.entries.length], [0, 0], 'a new store on the name')
     await b.store.apply(write(0, [put(bytes(1), 'the next device')]))
     await b.store.close()
     const c = await opened(name)
-    same([shown(c.entries), (await raw(`${name}:wrap`, 'wrap')).values.length], ['01=the next device', 1], 'the next device, under the one key')
+    same([shown(c.entries), (await raw(`${name}:wrap`, 'wrap')).values.length], ['01=the next device', 1], 'the next device, under its new key')
     await c.store.close()
+  }],
+  ['store: dropIfEmpty: an empty look leaves no database behind; a stored state, or a state whose lock is taken, is kept', async () => {
+    const name = fresh('look')
+    const a = await opened(name)
+    const cache = await openCache(name)
+    await a.store.close(); cache.close()
+    same(await databases(name), [name, `${name}:cache`], 'what the look made')
+    await dropIfEmpty(name)
+    same(await databases(name), [], 'after dropIfEmpty')
+    await dropIfEmpty(name)
+    same(await databases(name), [], 'nothing there: nothing made')
+    const b = await opened(name)
+    await b.store.apply(write(0, [put(bytes(1), 'kept')]))
+    await dropIfEmpty(name)   // (while it is open: the lock is taken)
+    same(await databases(name), [name, `${name}:wrap`], 'an owner\'s state')
+    await b.store.close()
+    await dropIfEmpty(name)
+    same(await databases(name), [name, `${name}:wrap`], 'a stored state')
+    const c = await opened(name)
+    same(shown(c.entries), '01=kept', 'still there')
+    await c.store.close()
+  }],
+  ['store: deleteStores leaves the wrapping key while another tab took the lock in between (it may be creating a device under it)', async () => {
+    const name = fresh('raced')
+    const a = await opened(name)
+    await a.store.apply(write(0, [put(bytes(1), 'old')]))
+    await a.store.close()
+    // another context takes the state's lock as soon as the binding's destroy gives it back
+    const IdbRacing = { destroy: async (n: string) => {
+      await IdbStore.destroy(n)
+      let taken = () => {}
+      const got = new Promise<void>(r => { taken = r })
+      void navigator.locks.request(`trommi-core:${n}`, () => { taken(); return sleep(300) })
+      await got
+    } } as unknown as typeof IdbStore
+    await deleteStores({ name, IdbStore: IdbRacing })
+    same(await databases(name), [`${name}:wrap`], 'the key stays while the lock is someone else\'s')
+    await until(async () => !await lockHeld(name), 'the other context let go')
   }],
   ['cache: get, set, delete, setMany in one transaction, range by prefix with bounds, limit and reverse; no lock, two handles', async () => {
     const name = fresh('cache')

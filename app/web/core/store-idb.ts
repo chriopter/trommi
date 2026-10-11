@@ -4,7 +4,8 @@
 //                   which gives what the core asks of a store (core/src/store.rs, spec/v1.md 13.2): one strict
 //                   transaction per write, the revision compared inside it, and a Web Lock on the name held from
 //                   `load()` until `close()`, so one tab or worker owns a stored state at a time.
-//   <name>:wrap     one record: the key the device's entries are wrapped under (below). Never deleted.
+//   <name>:wrap     one record: the key the device's entries are wrapped under (below). Made with the first write,
+//                   deleted by `deleteStores` after the state it wraps.
 //   <name>:cache    the app's own records under string keys (model cache, timeline pages, settings, the receipts
 //                   of forwarded calls): not the device's state, safe to lose, no lock.
 //
@@ -12,9 +13,10 @@
 //
 // 1. Wrapping at rest. The core's state holds private keys as plain bytes, so every entry's value is stored as
 //    AES-256-GCM ciphertext: a fresh random 12-byte nonce per value, the entry's key as additional data (a value
-//    cannot be moved under another key), under a NON-extractable WebCrypto key that is generated once, when the
-//    state is still empty, and kept in <name>:wrap. Values are encrypted in `apply` before the binding's
-//    transaction starts and decrypted in `load`.
+//    cannot be moved under another key), under a NON-extractable WebCrypto key that is generated once, with the
+//    first write into an empty state, and kept in <name>:wrap. Values are encrypted in `apply` before the binding's
+//    transaction starts and decrypted in `load`. A `load()` of an empty state does not touch <name>:wrap: the start
+//    page looks whether anything is stored, and a look must leave nothing behind (after a log out, nothing at all).
 //    Honestly, what that is worth: little. It keeps the private keys out of anything that reads the database's
 //    values as data without this origin's WebCrypto (a storage inspector, an export, a bug that leaks a stored
 //    value), and no script can read the wrapping key's bytes. It does NOT protect against a copy of the browser
@@ -22,9 +24,9 @@
 //    running in the origin (XSS, a hostile extension): such a script cannot export the key, but it can open both
 //    databases and ask the key to decrypt every entry. It is no rollback protection: an old copy of both databases
 //    opens as well as the newest. And it adds one way to lose a device: entries without their key do not open.
-//    So a key is only ever made while the state is empty, a key that is there is never replaced, and
-//    `deleteStores` leaves the key where it is (it wraps nothing then, and the next device of this name uses it):
-//    deleting it could take the key from under a device another tab creates in the same moment.
+//    So a key is only ever made while the state is empty and its lock held, a key that is there is never replaced,
+//    and `deleteStores` deletes the key only after the state, and only while it holds the state's lock itself: a
+//    device another tab creates in the same moment keeps the key it wraps under.
 // 2. `load()` may be called twice and gives the same state: once by the app, which has to look before it decides
 //    (is anything stored? does another tab own it: StoreConflict), and once by `Device.open(store)`.
 //
@@ -134,6 +136,8 @@ async function unwrap(wrapKey: CryptoKey, key: Uint8Array, stored: unknown): Pro
 export function openDeviceStore({ name, wait = false, IdbStore }: { name: string; wait?: boolean; IdbStore: IdbStoreClass }): DeviceStore {
   const inner = new IdbStore(name, { wait })
   let wrapKey: CryptoKey | null = null
+  let making: Promise<CryptoKey> | null = null   // (an empty state: the key, made or read with the first write)
+  let empty = false
   let state: Promise<StoredState> | null = null
   let closed = false
 
@@ -141,7 +145,12 @@ export function openDeviceStore({ name, wait = false, IdbStore }: { name: string
   const read = async (): Promise<StoredState> => {
     const stored = await inner.load()   // the lock is held from here on (a load that fails has given it back)
     try {
-      const key = await wrapKeyOf(name, stored.revision === 0 && stored.entries.length === 0, () => !closed)
+      if (stored.revision === 0 && stored.entries.length === 0) {
+        if (closed) throw shut
+        empty = true
+        return { revision: 0, entries: [] }
+      }
+      const key = await wrapKeyOf(name, false, () => !closed)
       const entries = await Promise.all(stored.entries.map(async (e): Promise<StoreEntry> => ({ key: e.key, value: await unwrap(key, e.key, e.value) })))
       if (closed) throw shut
       wrapKey = key
@@ -155,8 +164,11 @@ export function openDeviceStore({ name, wait = false, IdbStore }: { name: string
     /** The writes of one call of the device (a batch of a catch-up has hundreds), each value wrapped, in the
      *  binding's ONE strict transaction: all of them or none. */
     async applyAll(writes: StoreWrite[]): Promise<void> {
-      const key = wrapKey
-      if (closed || !key) throw fail('the device store is not open')
+      if (closed || (!wrapKey && !empty)) throw fail('the device store is not open')
+      // (the first write into an empty state: the key is made now, under the lock that load() took)
+      const key = wrapKey ?? await (making ??= wrapKeyOf(name, true, () => !closed).catch(e => { making = null; throw e }))
+      if (closed) throw fail('the device store is not open')
+      wrapKey = key
       const t = performance.now()
       const wrapped = await Promise.all(writes.map(async (write): Promise<StoreWrite> => ({
         expectedRevision: write.expectedRevision, delete: write.delete,
@@ -218,11 +230,52 @@ export async function openCache(name: string): Promise<Cache> {
 }
 
 /**
- * Deletes what is stored under `name`: the device's state and the cache. Refused with the binding's StoreConflict
- * while a device has the state open, in any tab: close it first. Caches open on it close themselves. The wrapping
- * key stays (see the header): it wraps nothing any more and cannot be read.
+ * Deletes what is stored under `name`: the device's state, the cache, then the wrapping key. Refused with the
+ * binding's StoreConflict while a device has the state open, in any tab: close it first. Caches open on it close
+ * themselves. The key goes only while this call holds the state's lock (the binding's lock name, idb-store.js): if
+ * another tab took the lock in the meantime, it may be creating a device under that key, and the key stays.
  */
 export async function deleteStores({ name, IdbStore }: { name: string; IdbStore: IdbStoreClass }): Promise<void> {
   await IdbStore.destroy(name)
   await deleteDatabase(cacheName(name))
+  await underLock(name, () => deleteDatabase(wrapName(name)))
+}
+
+/**
+ * After a look that found nothing stored (the start page): the databases the look made, empty, go again, so a browser
+ * without an account holds nothing of the app. Only while the state's lock is free, and only if the state is still
+ * empty once this call holds it (a device another tab made in the meantime stays). Not while this context still
+ * uses a cache on `name`: an open cache closes itself when its database goes.
+ */
+export async function dropIfEmpty(name: string): Promise<void> {
+  await underLock(name, async () => {
+    if (!await isEmpty(name)) return
+    await deleteDatabase(name)
+    await deleteDatabase(cacheName(name))
+    await deleteDatabase(wrapName(name))
+  })
+}
+
+/** `fn` while this call holds the state's Web Lock (the binding's lock name, idb-store.js); not at all if it is taken. */
+async function underLock(name: string, fn: () => Promise<void>): Promise<void> {
+  await navigator.locks.request(`trommi-core:${name}`, { ifAvailable: true }, async held => { if (held) await fn() })
+}
+
+/** The binding's database `name` holds no entry and no revision (or is not there): read without creating it. */
+function isEmpty(name: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(name)
+    req.onupgradeneeded = () => req.transaction?.abort()   // (not there: nothing is created)
+    req.onerror = () => { if (req.error?.name === 'AbortError') resolve(true); else reject(failed('a database of the app did not open', req.error)) }
+    req.onsuccess = () => {
+      const db = req.result
+      const close = (empty: boolean) => { db.close(); resolve(empty) }
+      try {
+        const tx = db.transaction(['entries', 'meta'])
+        const count = tx.objectStore('entries').count(), revision = tx.objectStore('meta').get('revision')
+        tx.oncomplete = () => close(count.result === 0 && revision.result === undefined)
+        tx.onabort = () => { db.close(); reject(failed('a database of the app could not be read', tx.error)) }
+      } catch { close(false) }   // (another layout: not the binding's, not touched)
+    }
+  })
 }

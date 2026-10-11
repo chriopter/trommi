@@ -253,7 +253,9 @@ Three IndexedDB databases per `name` (`store-idb.ts`):
   once its write is stored.
 - `<name>:wrap`: one non-extractable AES-GCM key under which every stored value is wrapped at rest. What that is
   worth: it keeps private keys out of anything that reads the database as data without this origin's WebCrypto. It
-  does not protect against a copy of the browser profile or against script running in the origin.
+  does not protect against a copy of the browser profile or against script running in the origin. Made with the
+  first write into an empty state, deleted after the state (`deleteStores`, Log out). A look that finds nothing
+  stored (the start page) leaves no database behind (`dropIfEmpty`).
 - `<name>:cache`: the app's own records, safe to lose: the model's records (one per card, session, note, timeline
   item, …, written after each batch in one transaction together with the device's cursor, `client/at`), the hub's
   address, invites in progress, kept share links, the engine's small records, the receipts of forwarded calls.
