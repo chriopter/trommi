@@ -1,9 +1,11 @@
-//! The hub's admin page: three read-only pages for whoever runs the hub (`admin_view.rs`: the overview, the
-//! accounts, the tables). It listens on 127.0.0.1 (`HUB_ADMIN_HOST` for a container, whose port is then published
-//! to the host's loopback only), on a port of its own, and only when a password hash is configured
+//! The hub's admin page: read-only pages for whoever runs the hub (`admin_view.rs`: the overview, the accounts,
+//! the tables; `admin_rows.rs`: one table's rows, one row). It listens on 127.0.0.1 (`HUB_ADMIN_HOST` for a
+//! container, whose port is then published to the host's loopback only), on a port of its own, and only when a password hash is configured
 //! (`HUB_ADMIN_PASSWORD_HASH`); it is never part of the public port. It shows what the hub can see and nothing
 //! else: the server's health, rooms and accounts with their counts, the hub's tables with what kind of data each
-//! holds, the running version. No content: the hub has none.
+//! holds and their rows (credentials masked, sealed bytes by their length), the running version. No content: the
+//! hub has none. Each look at a table's rows is logged (`admin_table_viewed`, `admin_row_viewed`: the table, not
+//! the data).
 //!
 //! Sign-in is a plain HTML form (user name "admin", the one password), so a password manager fills it. A right
 //! password gives a session cookie: 32 random bytes, `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`, twelve
@@ -254,6 +256,28 @@ code.big{font-size:1.3rem;font-weight:600}
 .cols-list li{display:flex;justify-content:space-between;gap:8px;padding:1px 4px;font-family:var(--mono)}
 .cols-list li span:first-child{display:inline-flex;align-items:center;gap:3px;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .cols-list li.open{font-family:var(--font);padding-top:4px}
+.tree a.tbl{display:flex;align-items:center;gap:8px;padding:4px 8px 4px 12px;border-radius:8px;color:var(--fg);white-space:nowrap}
+.tree a.tbl:hover{background:var(--sunken);text-decoration:none}
+.tree a.tbl.on{background:var(--accent-soft)}
+.tree a.tbl .name{display:inline-flex;align-items:center;gap:4px;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono);font-size:.8rem}
+.tree a.tbl .count{margin-left:auto}
+.secret{color:var(--faint);white-space:nowrap}
+.filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;font-size:.84rem;color:var(--muted)}
+.filter label{display:flex;align-items:center;gap:6px}
+.filter input{width:22em;max-width:60vw}
+select{font:inherit;font-family:var(--mono);font-size:.8rem;color:var(--fg);background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:7px 9px}
+.grid.rows th a{color:var(--fg)}.grid.rows th.muted{font-weight:500}
+.grid.rows td{white-space:nowrap;font-family:var(--mono);font-size:.78rem}
+.grid.rows td .t{font-family:var(--font)}
+.pager{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;margin-top:12px;font-size:.84rem}
+.pager span:last-child{margin-left:auto;font-size:.78rem}
+details.card>summary{list-style:none;cursor:pointer}details.card>summary::-webkit-details-marker{display:none}
+details.card>summary h3{margin:0}details.card[open]>summary h3{margin-bottom:10px}
+.kv.row dt{display:flex;flex-direction:column;gap:0}.kv.row dt span{font-size:.72rem}
+.kv.row dd{font-size:.8rem}
+code.hex{display:block;margin-top:2px;font-size:.74rem;overflow-wrap:anywhere;word-break:break-all}
+.text{white-space:pre-wrap;overflow-wrap:anywhere}
+a.same{font-size:.74rem;margin-left:8px}
 .treetoggle{display:none}
 #tt{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
 @media (max-width:820px){
@@ -370,7 +394,7 @@ async fn form(req: Request<Incoming>) -> Option<HashMap<String, Vec<u8>>> {
 }
 
 /// `application/x-www-form-urlencoded`: `+` is a space, `%XX` a byte.
-fn unescape(text: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn unescape(text: &[u8]) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(text.len());
     let mut i = 0;
     while i < text.len() {
@@ -484,20 +508,25 @@ pub async fn handle(app: Arc<App>, req: Request<Incoming>) -> Response<Full<Byte
             None => login(StatusCode::OK, ""),
         },
         (Method::GET, "/accounts") if session.is_some() => shown(app, Page::Accounts).await,
-        (Method::GET, "/tables") if session.is_some() => {
-            let named = req
-                .uri()
-                .query()
-                .unwrap_or("")
-                .split('&')
-                .find_map(|pair| pair.strip_prefix("t="));
-            match named.map(crate::admin_view::table_named) {
-                None => shown(app, Page::Tables(None)).await,
-                Some(Some(table)) => shown(app, Page::Tables(Some(table))).await,
-                Some(None) => notice(StatusCode::NOT_FOUND, "No such table."),
+        (Method::GET, "/tables") if session.is_some() => shown(app, Page::Tables).await,
+        (Method::GET, path) if path.starts_with("/tables/") && session.is_some() => {
+            let query = req.uri().query().unwrap_or("").to_string();
+            match crate::admin_rows::path(&path["/tables/".len()..]) {
+                None => notice(StatusCode::NOT_FOUND, "No such table."),
+                Some((table, key)) => {
+                    // who looked at which table: never what was in it
+                    crate::log::info(
+                        if key.is_some() { "admin_row_viewed" } else { "admin_table_viewed" },
+                        serde_json::json!({ "user": "admin", "table": table }),
+                    );
+                    match key {
+                        None => shown(app, Page::Rows(table, crate::admin_rows::Query::parse(&query))).await,
+                        Some(key) => shown(app, Page::Row(table, key.to_string())).await,
+                    }
+                }
             }
         }
-        (Method::GET, "/accounts" | "/tables") => to_start(String::new()),
+        (Method::GET, path) if path == "/accounts" || path == "/tables" || path.starts_with("/tables/") => to_start(String::new()),
         (Method::POST, "/login") => {
             if !same_origin(&req) {
                 return notice(StatusCode::FORBIDDEN, "Sign in from the admin page itself.");
@@ -556,28 +585,33 @@ pub async fn handle(app: Arc<App>, req: Request<Incoming>) -> Response<Full<Byte
     }
 }
 
-/// The three pages behind the sign-in.
-#[derive(Clone, Copy, PartialEq)]
+/// The pages behind the sign-in.
+#[derive(Clone, PartialEq)]
 enum Page {
     /// with the range of its graphs, in ms
     Overview(u64),
     Accounts,
-    Tables(Option<&'static str>),
+    Tables,
+    /// one table's rows, as asked
+    Rows(&'static str, crate::admin_rows::Query),
+    /// one row, by its key
+    Row(&'static str, String),
 }
 
 impl Page {
-    fn key(self) -> String {
+    fn key(&self) -> String {
         match self {
             Page::Overview(range) => format!("/?range={range}"),
             Page::Accounts => "/accounts".into(),
-            Page::Tables(None) => "/tables".into(),
-            Page::Tables(Some(t)) => format!("/tables?t={t}"),
+            Page::Tables => "/tables".into(),
+            Page::Rows(t, q) => format!("/tables/{t}?{q:?}"),
+            Page::Row(t, key) => format!("/tables/{t}/{key}"),
         }
     }
 }
 
 /// A page inside the top bar with its navigation.
-fn signed_in_page(status: StatusCode, on: Page, main: &str) -> Response<Full<Bytes>> {
+fn signed_in_page(status: StatusCode, on: &Page, main: &str) -> Response<Full<Bytes>> {
     let tab = |href: &str, label: &str, here: bool| {
         format!(
             "<a href=\"{href}\"{}>{label}</a>",
@@ -595,8 +629,8 @@ fn signed_in_page(status: StatusCode, on: Page, main: &str) -> Response<Full<Byt
 <button>Sign out</button></form></div></header>{}",
             brand(),
             tab("/", "Overview", matches!(on, Page::Overview(_))),
-            tab("/accounts", "Accounts", on == Page::Accounts),
-            tab("/tables", "Tables", matches!(on, Page::Tables(_))),
+            tab("/accounts", "Accounts", *on == Page::Accounts),
+            tab("/tables", "Tables", matches!(on, Page::Tables | Page::Rows(..) | Page::Row(..))),
             if main.starts_with('<') { main.to_string() } else { format!("<main class=\"page\"><p class=\"muted\">{}</p></main>", esc(main)) }
         ),
         // the overview reloads itself every 10 s for its graphs (no script: the CSP allows none)
@@ -614,16 +648,17 @@ async fn shown(app: Arc<App>, on: Page) -> Response<Full<Bytes>> {
         pages.get(&key).map(|(_, html)| html.clone())
     };
     if let Some(html) = cached {
-        return signed_in_page(StatusCode::OK, on, &html);
+        return signed_in_page(StatusCode::OK, &on, &html);
     }
     if app.admin.computing.swap(true, Ordering::SeqCst) {
         // (an older page is not shown as the hub's state of now)
         return signed_in_page(
             StatusCode::SERVICE_UNAVAILABLE,
-            on,
+            &on,
             "The page is being put together. Try again in a moment.",
         );
     }
+    let asked = on.clone();
     let computed = tokio::task::spawn_blocking(move || {
         struct Done(Arc<App>);
         impl Drop for Done {
@@ -632,12 +667,14 @@ async fn shown(app: Arc<App>, on: Page) -> Response<Full<Bytes>> {
             }
         }
         let done = Done(app);
-        let html = match on {
-            Page::Overview(range) => crate::admin_view::overview(&done.0, range),
-            Page::Accounts => crate::admin_view::accounts(&done.0),
-            Page::Tables(t) => crate::admin_view::tables(&done.0, t),
+        let html = match asked {
+            Page::Overview(range) => crate::admin_view::overview(&done.0, range).map(Some),
+            Page::Accounts => crate::admin_view::accounts(&done.0).map(Some),
+            Page::Tables => crate::admin_view::tables(&done.0).map(Some),
+            Page::Rows(t, q) => crate::admin_rows::rows(&done.0, t, &q).map(Some),
+            Page::Row(t, key) => crate::admin_rows::row(&done.0, t, &key),
         };
-        if let Ok(html) = &html {
+        if let Ok(Some(html)) = &html {
             done.0
                 .admin
                 .pages
@@ -649,10 +686,11 @@ async fn shown(app: Arc<App>, on: Page) -> Response<Full<Bytes>> {
     })
     .await;
     match computed {
-        Ok(Ok(html)) => signed_in_page(StatusCode::OK, on, &html),
+        Ok(Ok(Some(html))) => signed_in_page(StatusCode::OK, &on, &html),
+        Ok(Ok(None)) => signed_in_page(StatusCode::NOT_FOUND, &on, "No such row."),
         _ => signed_in_page(
             StatusCode::INTERNAL_SERVER_ERROR,
-            on,
+            &on,
             "The database did not answer.",
         ),
     }
