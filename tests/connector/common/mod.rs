@@ -204,6 +204,8 @@ pub struct Human {
     id: DeviceId,
     pub room: RoomId,
     address: HubAddress,
+    /// The account made with the room's founding, if any.
+    founding_account: Option<Value>,
     _dir: TempDir,
     /// The group of every card, Artifact and request seen, by object id as hex.
     objects: BTreeMap<String, GroupId>,
@@ -232,13 +234,24 @@ impl Human {
 
     /// A new device that founds a room at the hub and publishes its KeyPackages.
     pub async fn found(url: &str) -> Human {
+        Self::found_with(url, |_, _| None).await
+    }
+
+    /// The same, with an account made in the founding's request (`POST /v1/rooms` with `account`, as the apps
+    /// sign up): `account` is handed the room id and the recovery code and gives the account's body.
+    pub async fn found_with(
+        url: &str,
+        account: impl FnOnce(&RoomId, &trommi_core::crypto::Secret<32>) -> Option<Value>
+            + Send
+            + 'static,
+    ) -> Human {
         let dir = TempDir::new("human");
         let journal = Journal::open(dir.path()).expect("a journal");
         let vault = Arc::new(Keeper::spawn(move || Vault::create(journal)).expect("a device"));
-        let (id, room) = vault
-            .call(|v: &mut Vault| {
+        let (id, room, founding_account) = vault
+            .call(move |v: &mut Vault| {
                 // The recovery code a human's app shows once; the stand-in forgets it.
-                let (_code, keys) =
+                let (code, keys) =
                     trommi_core::recovery::RecoveryKeys::generate(&mut SystemEntropy)
                         .expect("a code");
                 let room = v
@@ -246,7 +259,8 @@ impl Human {
                     .found_room(&keys, now_ms())
                     .expect("the room is founded");
                 v.commit().expect("stored");
-                (v.me(), room)
+                let body = account(&room, &code);
+                (v.me(), room, body)
             })
             .await
             .expect("the device's thread");
@@ -257,6 +271,7 @@ impl Human {
             id,
             room,
             address: HubAddress::parse(url).expect("the hub's address"),
+            founding_account,
             _dir: dir,
             objects: BTreeMap::new(),
             requests: BTreeSet::new(),
@@ -302,7 +317,13 @@ impl Human {
                 open.open_call(
                     reqwest::Method::POST,
                     "/v1/rooms",
-                    Some(&json!({ "group_info": part(0), "sealed_key": part(1) })),
+                    Some(&{
+                        let mut body = json!({ "group_info": part(0), "sealed_key": part(1) });
+                        if let Some(account) = &self.founding_account {
+                            body["account"] = account.clone();
+                        }
+                        body
+                    }),
                 )
                 .await
             }
@@ -1054,7 +1075,7 @@ impl Human {
     }
 
     /// Seals an item, posts it, and follows the hub's order.
-    async fn write(&mut self, draft: Draft) -> Result<()> {
+    pub async fn write(&mut self, draft: Draft) -> Result<()> {
         self.sync().await;
         self.v(move |v| -> Result<()> {
             v.device

@@ -10,7 +10,9 @@
 # Environment as for ship-local.sh: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH [~/.appstoreconnect/private_keys/
 # AuthKey_<id>.p8], read first from ~/.config/trommi/ios.env (TROMMI_IOS_ENV names another file). Or run it under
 # `op run` with APPLE_ASC_KEY, APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID from the 1Password Environment: the key is then
-# written to a file of mode 600 that is removed when the script ends. APPSTORE_DEMO_PASSWORD only with a demo account.
+# written to a file of mode 600 that is removed when the script ends. APPSTORE_DEMO_PASSWORD only with a demo account:
+# read from ~/.config/trommi/app-review.env (TROMMI_REVIEW_ENV names another file) where it is not set already, the
+# file tests/tools/seed_account.rs writes (APPSTORE_DEMO_USER, APPSTORE_DEMO_PASSWORD).
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 [ "${1:-}" = check ] && exec python3 "$here/store.py" check
@@ -18,6 +20,11 @@ here=$(dirname "$(readlink -f "$0")")
 ios_env=${TROMMI_IOS_ENV:-$HOME/.config/trommi/ios.env}
 # shellcheck disable=SC1090 # the local config file
 [ -f "$ios_env" ] && { set -a; . "$ios_env"; set +a; }
+review_env=${TROMMI_REVIEW_ENV:-$HOME/.config/trommi/app-review.env}
+if [ -z "${APPSTORE_DEMO_PASSWORD:-}" ] && [ -f "$review_env" ]; then
+  # shellcheck disable=SC1090 # the local config file
+  set -a; . "$review_env"; set +a
+fi
 if [ -n "${APPLE_ASC_KEY:-}" ]; then
   keys=$(mktemp -d "${TMPDIR:-/tmp}/trommi-asc.XXXXXX")
   trap 'rm -rf "$keys"' EXIT
