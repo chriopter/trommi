@@ -845,6 +845,17 @@ struct Composer: View {
               .lineLimit(1...7)
               .focused($focused)
               .padding(.leading, 16).padding(.vertical, 9)
+              // a hardware keyboard, as the web's card field: on a card that can go back (an open decision or info)
+              // Shift+Return hands it back with the words; Option+Return is a new line
+              .onKeyPress(.return, phases: .down) { press in
+                if press.modifiers.contains(.option) { text += "\n"; return .handled }
+                if press.modifiers.contains(.shift), let id = cardId, let c = model.card(id), c.status == "open", c.kind == "decision" || c.kind == "info",
+                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                  model.handBack(c, text: text.trimmingCharacters(in: .whitespacesAndNewlines)); text = ""; onSent?()
+                  return .handled
+                }
+                return .ignored
+              }
             Button(action: send) {
               Group {
                 if sending { ProgressView().tint(Ink.accentFg) }
