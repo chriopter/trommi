@@ -22,6 +22,9 @@ struct DeskScreen: View {
   @State private var revealed = false
   /** What of the first screen is left under the stack on an iPhone: the heading of Off your mind, above the tab pill. */
   static let foldHint: CGFloat = 116
+  static let space = "desk-stack"
+  /** The stack's height (the Desk's questions and what stands above them), read off where Off your mind begins. */
+  @State private var stackHeight: CGFloat = 0
   var body: some View {
     let _ = RenderCount.body("DeskScreen")
     let _ = model.version
@@ -39,7 +42,9 @@ struct DeskScreen: View {
         // (the demo has no hub and no catch-up to wait for: its room is all there from the start)
         if let v = v, let d = model.desk, model.demo || !v.units.isEmpty || model.room?.cursor ?? 0 > 0 || model.room?.restored == true {
           let _ = StartClock.desk(cards: v.fresh.count, restored: model.room?.restored ?? false)
-          VStack(alignment: .leading, spacing: 12) {
+          // The stack's parts are rows of this lazy stack (a desk of a thousand questions drew and laid out every row
+          // on every change). Its height, for the fold, is read where Off your mind begins: that row stands after the
+          // stack, one spacing below it, pushed down by `fill` so that a short stack still reaches the fold.
           head(v)
           // a long catch-up says how far it is (what was settled elsewhere meanwhile is already off the Desk)
           if let r = model.room, r.behind {
@@ -56,14 +61,23 @@ struct DeskScreen: View {
               Text("Questions land here.").font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
             }.frame(maxWidth: .infinity).padding(.vertical, 28)
           }
-          }
-          .frame(minHeight: tucked ? max(0, geo.size.height - DeskScreen.foldHint) : nil, alignment: .top)
-          .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
-          OffList(view: v, full: false, chevron: tucked ? (revealed ? "chevron.down" : "chevron.up") : nil)
+          let minStack = tucked ? max(0, geo.size.height - DeskScreen.foldHint) : 0
+          let fill = max(0, minStack - stackHeight)
+          VStack(spacing: 0) { OffList(view: v, full: false, chevron: tucked ? (revealed ? "chevron.down" : "chevron.up") : nil) }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, fill)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(DeskScreen.space)).minY } action: { y in
+              // (the stack starts one spacing below the top marker and ends one spacing above this row, whose frame
+              // here begins above its fill)
+              let h = max(0, y - 12 - 12)
+              if abs(h - stackHeight) > 0.5 { stackHeight = h }
+              pageHeight = max(h, minStack)
+            }
         } else {
           DeskWaiting().frame(maxWidth: .infinity).padding(.top, 80)
         }
       }
+      .coordinateSpace(.named(DeskScreen.space))
       // the last row scrolls clear of the floating tab bar
       .padding(.horizontal, 16).padding(.bottom, 120)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
