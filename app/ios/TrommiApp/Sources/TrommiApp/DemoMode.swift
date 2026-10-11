@@ -89,7 +89,7 @@ extension BoardModel {
     case "chat", "s": if segs.count > 1 { path = [.session(segs[1])] }
     case "blitz": path = [.blitz]
     // (/settings is the page of Settings itself; /settings/<page> one of its pages)
-    case "settings": path = [.settings(segs.count > 1 && segs[1] != "agents" ? segs[1] : "")]
+    case "settings": path = [.settings(segs.count > 1 && segs[1] != "agents" ? segs[1...].joined(separator: "/") : "")]
     case "assets": path = [.media]
     case "artifacts": path = [query == "kind=pages" ? .pages : .media]
     case "pages": path = [.pages]

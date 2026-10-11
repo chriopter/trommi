@@ -1,8 +1,8 @@
 // SettingsScreen.swift: Settings as one list, the way iOS Settings reads, on Trommi's paper (agents.mjs, auth.mjs): on
-// top the two invitations (Invite a Device: its QR code blurred until Show Code, the invite made only then, six emoji and
-// They Match; Invite Agent…: the command for a terminal), then a row for each page: Sessions (grouped by desk, folded,
-// the main session first, a search), Devices (and Push on this phone: Yes, Only Knocking, No), Account (the login, the
-// Emergency Kit, the password, Log Out), Theme (the Demo is a row of the pill menu, under Settings). Route .settings(<page>): "" or "agents" is the list itself.
+// top the two invitations as equal tiles (Invite a Device: its QR code blurred until Show Code, the invite made only
+// then, six emoji and They Match; Invite an Agent: the command for a terminal), then a row for each page: Sessions
+// (grouped by desk, folded, the main session first, a search), Devices (each device a page of its own; Push on this
+// phone: Yes, Only Knocking, No), Account (who, the ways in, each a page of its own that asks "Confirm It Is You"; Log Out), Theme (the Demo is a row of the pill menu, under Settings). Route .settings(<page>): "" or "agents" is the list itself.
 import SwiftUI
 import TrommiClient
 #if canImport(CoreImage)
@@ -21,7 +21,9 @@ struct SettingsScreen: View {
     switch tab {
     case "sessions": SessionsPage()
     case "devices": DevicesPage()
+    case let t where t.hasPrefix("devices/"): DevicePage(deviceId: String(t.dropFirst("devices/".count)))
     case "account": AccountPage()
+    case "account/password", "account/passkeys", "account/kit": AccountWayPage(way: String(tab.dropFirst("account/".count)))
     case "theme": ThemePage()
     case "mls-proof": CoreProofPage()   // CoreProofScreen.swift: an info screen, not a setting
     default: SettingsHome()
@@ -105,11 +107,7 @@ struct SettingsHome: View {
     let connected = agents.filter { $0.online }.count
     let devices = (model.board?.members.values.filter { $0.isActive && $0.deviceRole == "human" }.count) ?? 0
     SettingsPage(title: "Settings") {
-      SettingsGroup(footer: "A device scans a code and shows six emoji; an agent gets one command for its terminal. Nobody is added before you confirm.") {
-        Button { inviteDevice = true } label: { SettingsRow(title: "Invite a Device", tint: Ink.accent) { Sketch("heads", color: Ink.accent) } }.buttonStyle(.plain)
-        RowRule()
-        Button { agentName = ""; askAgentName = true } label: { SettingsRow(title: "Invite Agent…", tint: Ink.accent) { PenMark("ui:PLUS", color: Ink.accent) } }.buttonStyle(.plain)
-      }
+      InviteTiles(device: { inviteDevice = true }, agent: { agentName = ""; askAgentName = true })
       SettingsGroup {
         link("sessions") { SettingsRow(title: "Sessions", detail: agents.isEmpty ? nil : "\(connected) of \(agents.count) connected", chevron: true) { Sketch("bubble") } }
         RowRule()
@@ -147,6 +145,59 @@ struct SettingsHome: View {
   }
   private func link<L: View>(_ page: String, @ViewBuilder _ label: () -> L) -> some View {
     Button { model.path.append(.settings(page)) } label: { label() }.buttonStyle(.plain)
+  }
+}
+
+/** The two invites as equals: a device's code and an agent's command, each drawn blurred until asked for (only then
+ *  is the invite made). Side by side where there is room (iPad), one above the other on a phone, as on the web. */
+struct InviteTiles: View {
+  let device: () -> Void
+  let agent: () -> Void
+  @Environment(\.horizontalSizeClass) private var size
+  var body: some View {
+    let wide = size == .regular
+    let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 14)) : AnyLayout(VStackLayout(spacing: 12))
+    VStack(alignment: .leading, spacing: 7) {
+      layout {
+        tile(wide, "Invite a Device", "A phone or another computer scans the code. Made when you ask, works once.", "Show Code", device) {
+          ZStack { Color.white; QRCode(text: "https://app.trommi.com/join#v1.invite.drawn.blurred").padding(10).blur(radius: 4).opacity(0.75) }
+        }
+        tile(wide, "Invite an Agent", "Claude Code or Codex runs one command in your project and joins.", "Show Command", agent) {
+          ZStack(alignment: .topLeading) {
+            Color(hex: 0x1d211f)
+            VStack(alignment: .leading, spacing: 7) {
+              HStack(spacing: 5) { ForEach(0..<3, id: \.self) { _ in Circle().fill(Color(hex: 0x5a625e)).frame(width: 7, height: 7) } }
+              Text("$ claude").font(Face.mono(12)); Text("> join trommi ab3f…9c2e").font(Face.mono(12)); Text("> check the six emoji").font(Face.mono(12))
+            }.foregroundStyle(Color(hex: 0xd8e4dc)).padding(10).blur(radius: 2.2).opacity(0.85)
+          }
+        }
+      }
+      Text("Nobody is added before you confirm.").font(Face.text(13)).foregroundStyle(Ink.muted).padding(.horizontal, 16)
+    }
+  }
+  private func tile<Art: View>(_ wide: Bool, _ title: String, _ line: String, _ word: String, _ go: @escaping () -> Void, @ViewBuilder art: () -> Art) -> some View {
+    let picture = ZStack {
+      art()
+      Text(word).font(Face.text(12, .bold)).lineLimit(1).fixedSize().foregroundStyle(Ink.bg).padding(.horizontal, 8).padding(.vertical, 6).background(Capsule().fill(Ink.fg))
+    }
+    .frame(width: wide ? nil : 104, height: wide ? 150 : 104).frame(maxWidth: wide ? .infinity : nil)
+    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.fg, lineWidth: 1.5))
+    let words = VStack(alignment: .leading, spacing: 4) {
+      Text(title).font(Face.text(17, .semibold)).foregroundStyle(Ink.fg)
+      Text(line).font(Face.text(14)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+    }
+    return Button(action: go) {
+      Group {
+        if wide { VStack(alignment: .leading, spacing: 12) { picture; words } } else { HStack(spacing: 14) { picture; words; Spacer(minLength: 0) } }
+      }
+      .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+      .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+      .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(title): \(word)")
   }
 }
 
@@ -273,16 +324,41 @@ struct SessionActions: View {
 }
 
 // ---- Devices ----------------------------------------------------------------------------------------------------
+// The devices and agents as rows of the list (each opens a page of its own: DevicePage), Push on this phone as a
+// tick list (as Theme), Invite Agent… under the agents; the removed ones on a page of their own.
+
+/** What a row says of a device: its drawing, its name, its fingerprint, whether it is here. */
+private func deviceName(_ d: RoomMember) -> String { d.deviceName.isEmpty ? (d.deviceRole == "human" ? "Device" : "Agent") : d.deviceName }
+private func deviceState(_ d: RoomMember) -> String { !d.isActive ? "removed" : d.isMe ? "this device" : d.isOnline ? "online" : "away" }
+private func deviceIcon(_ d: RoomMember) -> String {
+  d.deviceRole != "human" ? "terminal" : (d.deviceName + " " + (d.platform ?? "")).range(of: "phone|ipad|ios|android", options: [.regularExpression, .caseInsensitive]) != nil ? "phone" : "laptop"
+}
+struct DeviceRow: View {
+  let d: RoomMember
+  var chevron = true
+  var body: some View {
+    HStack(spacing: 14) {
+      Group { if deviceIcon(d) == "phone" { PenMark("draw:phone", color: Ink.fg) } else { Sketch(deviceIcon(d)) } }.frame(width: 26, height: 26)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(deviceName(d)).font(Face.text(17, .medium)).foregroundStyle(d.isActive ? Ink.fg : Ink.muted).lineLimit(1)
+        Text(d.fingerprint).font(Face.mono(12)).foregroundStyle(Ink.muted).lineLimit(1)
+      }
+      Spacer(minLength: 8)
+      if d.isActive { Circle().fill(d.isOnline || d.isMe ? Ink.stDone : Ink.lineStrong).frame(width: 8, height: 8) }
+      Text(deviceState(d)).font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(1)
+      if chevron { Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint) }
+    }
+    .padding(.horizontal, 16).frame(minHeight: 60)
+    .contentShape(Rectangle())
+  }
+}
 
 struct DevicesPage: View {
   @EnvironmentObject var model: BoardModel
-  @State private var removing: RoomMember?
   @State private var pushLevel = Push.level
-  @State private var pushes: [String: (web: Int, apns: Int, level: String)] = [:]
-  @State private var inviteDevice = false
-  @State private var showRemoved = false
-  @State private var renaming = false
-  @State private var newName = ""
+  @State private var askAgentName = false
+  @State private var agentName = ""
+  @State private var inviteAgent = false
   var body: some View {
     let _ = model.version
     let members = (model.board?.members.values.map { $0 } ?? []).sorted { $0.addedEntryNumber < $1.addedEntryNumber }
@@ -290,229 +366,239 @@ struct DevicesPage: View {
     let agents = members.filter { $0.isActive && $0.deviceRole != "human" }
     let gone = members.filter { !$0.isActive }
     SettingsPage(title: "Devices") {
-      SettingsGroup(header: "Push on This \(UIDeviceName.model)", footer: pushLevel == "knocking" ? "Only urgent questions and a session that lost its link ring here." : pushLevel == "off" ? "Nothing rings here; the board still shows everything." : "Every new question rings here.") {
-        Picker("Push", selection: Binding(get: { pushLevel }, set: { l in pushLevel = l; Task { await Push.setLevel(l); await loadPush() } })) {
-          Text("Yes").tag("all"); Text("Only Knocking").tag("knocking"); Text("No").tag("off")
-        }
-        .pickerStyle(.segmented).padding(12)
-        .disabled(model.demo)
-      }
       SettingsGroup(header: "Your Devices") {
         ForEach(Array(people.enumerated()), id: \.element.deviceId) { i, d in
           if i > 0 { RowRule() }
-          deviceRow(d)
+          Button { model.path.append(.settings("devices/\(d.deviceId)")) } label: { DeviceRow(d: d) }.buttonStyle(.plain)
         }
-        RowRule()
-        Button { inviteDevice = true } label: { SettingsRow(title: "Invite a Device", tint: Ink.accent) { PenMark("ui:PLUS", color: Ink.accent) } }.buttonStyle(.plain)
       }
-      SettingsGroup(header: "Agents", footer: "Every device holds its own keys; the hub sees sealed envelopes only. The fingerprint comes from the device's own key, as the room's group names it: it must look the same on every device.") {
-        if agents.isEmpty { Text("No agent yet.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(16).frame(maxWidth: .infinity, alignment: .leading) }
+      SettingsGroup(header: "Push on This \(UIDeviceName.model)", footer: pushLevel == "knocking" ? "Only urgent questions and a session that lost its link ring here." : pushLevel == "off" ? "Nothing rings here; the board still shows everything." : "Every new question rings here.") {
+        ForEach(Array([("all", "bell", "Yes"), ("knocking", "knock", "Only Knocking"), ("off", "snooze", "No")].enumerated()), id: \.offset) { i, l in
+          if i > 0 { RowRule() }
+          Button { pushLevel = l.0; Task { await Push.setLevel(l.0) } } label: {
+            SettingsRow(title: l.2) { Sketch(l.1) }
+              .overlay(alignment: .trailing) { if pushLevel == l.0 { Sketch("tick", color: Ink.accent).frame(width: 20, height: 20).padding(.trailing, 16) } }
+          }.buttonStyle(.plain).disabled(model.demo)
+          .accessibilityAddTraits(pushLevel == l.0 ? .isSelected : [])
+        }
+      }
+      SettingsGroup(header: "Agents", footer: "Every device holds its own keys; the hub sees sealed envelopes only.") {
         ForEach(Array(agents.enumerated()), id: \.element.deviceId) { i, d in
           if i > 0 { RowRule() }
-          deviceRow(d)
+          Button { model.path.append(.settings("devices/\(d.deviceId)")) } label: { DeviceRow(d: d) }.buttonStyle(.plain)
         }
+        if !agents.isEmpty { RowRule() }
+        Button { agentName = ""; askAgentName = true } label: { SettingsRow(title: "Invite Agent…", detail: "a command", tint: Ink.accent) { PenMark("ui:PLUS", color: Ink.accent) } }.buttonStyle(.plain)
       }
       if !gone.isEmpty {
         SettingsGroup {
-          Button { withAnimation(.snappy) { showRemoved.toggle() } } label: {
-            SettingsRow(title: "Removed", detail: "\(gone.count)") {
-              Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint).rotationEffect(.degrees(showRemoved ? 90 : 0))
-            }
-          }.buttonStyle(.plain)
-          if showRemoved { ForEach(gone, id: \.deviceId) { d in RowRule(); deviceRow(d) } }
+          Button { model.path.append(.settings("devices/removed")) } label: { SettingsRow(title: "Removed", detail: "\(gone.count)", chevron: true) { Sketch("archive") } }.buttonStyle(.plain)
         }
       }
     }
-    .sheet(isPresented: $inviteDevice) { InviteDeviceSheet() }
-    .confirmationDialog("Remove \(removing?.deviceName.isEmpty == false ? removing!.deviceName : "This Device")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
-      Button("Remove", role: .destructive) { if let d = removing { model.removeDevice(d.deviceId, name: d.deviceName) } }
-      // (spec/v1.md 8.6: a device that is not in his hands any more may have learned the recovery code; Account makes a new one)
-      if removing?.deviceRole == "human" {
-        Button("Remove and Make New Recovery Code…", role: .destructive) {
-          if let d = removing { model.removeDevice(d.deviceId, name: d.deviceName); model.path.append(.settings("account")) }
-        }
-      }
-    } message: {
-      Text(removing?.deviceRole == "human" ? "It can open nothing new after this. Everyone else gets a new key; that takes a moment. If it is lost or no longer yours, also make a new recovery code." : "It can read nothing new after this. The others get a new key; the session’s history stays.")
-    }
-    .alert("Rename This Device", isPresented: $renaming) {
-      TextField("Name", text: $newName)
+    .sheet(isPresented: $inviteAgent) { AgentInviteSheet(label: agentName.trimmingCharacters(in: .whitespaces)) }
+    .alert("Invite Agent", isPresented: $askAgentName) {
+      TextField("Name of the Session (e.g. Website)", text: $agentName)
       Button("Cancel", role: .cancel) {}
-      Button("Save") {
-        let n = String(newName.trimmingCharacters(in: .whitespaces).prefix(40))
-        if !n.isEmpty, let room = model.acting() { model.act("Not renamed") { try await room.renameDevice(name: n, platform: "ios") } }
-      }
-    }
-    .task { await loadPush() }
+      Button("Continue") { inviteAgent = true }
+    } message: { Text("The session gets this name on the board. You can leave it empty and rename it later.") }
   }
-  private func loadPush() async { if let p = try? await model.room?.hub.pushStates() { pushes = p } }
-  private func deviceRow(_ d: RoomMember) -> some View {
-    HStack(spacing: 14) {
-      Circle().fill(d.isOnline || d.isMe ? Ink.accent : Ink.lineStrong).frame(width: 9, height: 9).frame(width: 26)
-      VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 6) {
-          Text(d.deviceName.isEmpty ? (d.deviceRole == "human" ? "Device" : "Agent") : d.deviceName).font(Face.text(17, .medium)).foregroundStyle(d.isActive ? Ink.fg : Ink.muted).lineLimit(1)
-          if d.isMe { Text("This Device").font(Face.text(12, .semibold)).foregroundStyle(Ink.accent) }
+}
+
+/** One device: what it is, whether it is here, its fingerprint, its Push; this phone's name; Remove for another one. */
+struct DevicePage: View {
+  @EnvironmentObject var model: BoardModel
+  let deviceId: String
+  @State private var removing = false
+  @State private var renaming = false
+  @State private var newName = ""
+  @State private var push: String?
+  var body: some View {
+    let _ = model.version
+    let members = (model.board?.members.values.map { $0 } ?? [])
+    if deviceId == "removed" {
+      SettingsPage(title: "Removed") {
+        SettingsGroup(footer: "They open nothing new; what they had before stays with them.") {
+          ForEach(Array(members.filter { !$0.isActive }.enumerated()), id: \.element.deviceId) { i, d in
+            if i > 0 { RowRule() }
+            DeviceRow(d: d, chevron: false)
+          }
         }
-        Text(d.fingerprint).font(Face.mono(12)).foregroundStyle(Ink.muted)
-        if d.deviceRole == "human" && d.isActive {
-          let p = pushes[d.deviceId]
-          Text(p == nil ? "Push: No" : p!.level == "knocking" ? "Push: Only Knocking" : "Push: Yes").font(Face.text(12)).foregroundStyle(Ink.faint)
+      }
+    } else if let d = members.first(where: { $0.deviceId == deviceId }) {
+      SettingsPage(title: deviceName(d)) {
+        SettingsGroup(footer: "The fingerprint comes from the device's own key, as the room's group names it: it must look the same on every device.") {
+          SettingsRow(title: "Kind", detail: d.deviceRole == "human" ? "Person" : "Agent") { Group { if deviceIcon(d) == "phone" { PenMark("draw:phone", color: Ink.fg) } else { Sketch(deviceIcon(d)) } } }
+          RowRule()
+          SettingsRow(title: "Status", detail: deviceState(d)) { Circle().fill(d.isActive && (d.isOnline || d.isMe) ? Ink.stDone : Ink.lineStrong).frame(width: 10, height: 10) }
+          RowRule()
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 14) { Sketch("key").frame(width: 26, height: 26); Text("Key Fingerprint").font(Face.text(17, .medium)) }
+            Text(d.fingerprint).font(Face.mono(14)).foregroundStyle(Ink.muted).textSelection(.enabled).padding(.leading, 40)
+          }.padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+          if d.deviceRole == "human" && d.isActive && !d.isMe {
+            RowRule()
+            SettingsRow(title: "Push", detail: push == nil ? "No" : push == "knocking" ? "Only Knocking" : "Yes") { Sketch("bell") }
+          }
+        }
+        if d.isActive && d.isMe && !model.demo {
+          SettingsGroup(footer: "This name is what your other devices see.") {
+            Button { newName = d.deviceName; renaming = true } label: { SettingsRow(title: "Name", detail: d.deviceName, chevron: true) { Sketch("pen") } }.buttonStyle(.plain)
+          }
+        }
+        if d.isActive && !d.isMe {
+          SettingsGroup(footer: d.deviceRole == "human" ? "\(deviceName(d)) can open nothing new after this. Everyone else gets a new key; that takes a moment." : "\(deviceName(d)) can read nothing new after this. The others get a new key; the session’s history stays.") {
+            Button { removing = true } label: { SettingsRow(title: "Remove \(deviceName(d))…", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
+          }
         }
       }
-      Spacer(minLength: 4)
-      // this device named itself ("iPhone"); here it gets the name he wants (its own register device/<id>)
-      if d.isActive && d.isMe && !model.demo {
-        Button("Rename") { newName = d.deviceName; renaming = true }.font(Face.text(15, .semibold)).foregroundStyle(Ink.accent).frame(minHeight: 40)
+      .confirmationDialog("Remove \(deviceName(d))?", isPresented: $removing, titleVisibility: .visible) {
+        Button("Remove", role: .destructive) { model.removeDevice(d.deviceId, name: d.deviceName); model.path.removeLast() }
+        // (spec/v1.md 8.6: a device that is not in his hands any more may have learned the recovery code; the kit's page makes a new one)
+        if d.deviceRole == "human" {
+          Button("Remove and Make New Recovery Code…", role: .destructive) { model.removeDevice(d.deviceId, name: d.deviceName); model.path.removeLast(); model.path.append(.settings("account/kit")) }
+        }
+      } message: {
+        Text(d.deviceRole == "human" ? "It can open nothing new after this. Everyone else gets a new key; that takes a moment. If it is lost or no longer yours, also make a new recovery code." : "It can read nothing new after this. The others get a new key; the session’s history stays.")
       }
-      if d.isActive && !d.isMe {
-        Menu {
-          Button(role: .destructive) { removing = d } label: { Label("Remove…", systemImage: "trash") }
-        } label: { Image(systemName: "ellipsis.circle").font(.system(size: 20)).foregroundStyle(Ink.muted).frame(width: 40, height: 40) }
-        .accessibilityLabel("More for \(d.deviceName)")
+      .alert("Rename This Device", isPresented: $renaming) {
+        TextField("Name", text: $newName)
+        Button("Cancel", role: .cancel) {}
+        Button("Save") {
+          let n = String(newName.trimmingCharacters(in: .whitespaces).prefix(40))
+          if !n.isEmpty, let room = model.acting() { model.act("Not renamed") { try await room.renameDevice(name: n, platform: "ios") } }
+        }
       }
+      .task { if let p = try? await model.room?.hub.pushStates() { push = p[deviceId]?.level } }
+    } else {
+      SettingsPage(title: "Device") { Text("This device is not in the account.").font(Face.text(15)).foregroundStyle(Ink.muted) }
     }
-    .padding(.horizontal, 16).padding(.vertical, 10)
   }
 }
 
 // ---- Account ----------------------------------------------------------------------------------------------------
+// An overview: who, the ways in (Password, Passkeys, Emergency Kit: each a page of its own, AccountWayPage), this
+// device, Log Out, Delete Account. A change of a way in asks "Confirm it is you" (ProofBox): the way in of now, which
+// the hub checks with the change. The demo shows a made-up account and changes nothing.
+
+/** What the account pages show of the account: the hub's status, or the demo's made-up one. */
+struct AccountFacts {
+  var email: String
+  var accountId: String
+  var hasPassword: Bool
+  var hasRecovery: Bool
+  var passkeys: Int
+  var confirmsEmail = false
+  var emailVerified = true
+  static let demo = AccountFacts(email: "ada@example.org", accountId: "a7q2k9xd-4mwp-t3rc", hasPassword: true, hasRecovery: true, passkeys: 1)
+  init(email: String, accountId: String, hasPassword: Bool, hasRecovery: Bool, passkeys: Int) { self.email = email; self.accountId = accountId; self.hasPassword = hasPassword; self.hasRecovery = hasRecovery; self.passkeys = passkeys }
+  init(_ st: AccountStatus) {
+    email = st.email; accountId = st.accountId; hasPassword = st.hasPassword; hasRecovery = st.hasRecovery; passkeys = st.passkeys.count
+    confirmsEmail = st.confirmsEmail; emailVerified = st.emailVerifiedAt != nil
+  }
+}
+
+/** "Confirm it is you": the way in of now, asked again for a change of how the account opens. With a password its
+ *  field; without one, the passkey is asked for when the change is sent. */
+struct ProofBox: View {
+  let hasPassword: Bool
+  @Binding var password: String
+  var label = "Current Password"
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(alignment: .top, spacing: 12) {
+        Sketch("lock").frame(width: 26, height: 26)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Confirm It Is You").font(Face.text(16, .semibold))
+          Text(hasPassword ? confirmPassword : confirmPasskey).font(Face.text(14)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      if hasPassword {
+        SecureField(label, text: $password).textContentType(.password).font(Face.text(16)).padding(10)
+          .background(RoundedRectangle(cornerRadius: 10).fill(Ink.surface)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
+      }
+    }
+    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+    .background(Ink.yellow.opacity(0.2))
+  }
+}
+
+/** The account's status, loaded once per page; what a change said or what went wrong. */
+@MainActor final class AccountState: ObservableObject {
+  @Published var status: AccountStatus?
+  @Published var loaded = false
+  @Published var said = ""
+  @Published var error = ""
+  func load(_ model: BoardModel) async { if !model.demo { status = try? await model.room?.accountStatus() }; loaded = true }
+  func facts(_ model: BoardModel) -> AccountFacts? { model.demo ? .demo : status.map(AccountFacts.init) }
+  /** `passkey`: what went wrong is said in the passkey's words, which the sign-in screen shares. */
+  func run(_ model: BoardModel, passkey: Bool = false, _ op: @escaping () async throws -> Void) {
+    error = ""; said = ""
+    if model.demo { error = "The demo changes nothing here."; return }
+    Task {
+      do { try await op() }
+      catch {
+        let code = (error as? TrommiError)?.code ?? (error as? HubError)?.code ?? ""
+        if passkey && code != "wrong-login" { self.error = model.accountError(error); return }
+        // (a wait the hub names is said as it is)
+        if code == "rate-limited", let wait = retryWait(of: error) { self.error = "Too many tries. Please wait \(waitText(seconds: wait))."; return }
+        self.error = ["wrong-login": "That password is not right.", "weak-password": "The password needs at least 12 characters.", "wrong-code": "Wrong or expired code.",
+                      "account-changed": "Changed on another device meanwhile. Please try again.",
+                      "pending": "Trommi has not answered yet. Check again later; if no new kit shows then, make a new Emergency Kit.", "rate-limited": "Too many tries. Please wait a few minutes."][code] ?? model.describe(error)
+      }
+    }
+  }
+}
+
+private struct SaidLines: View {
+  @ObservedObject var state: AccountState
+  var body: some View {
+    if !state.said.isEmpty { Text(state.said).font(Face.text(15, .medium)).foregroundStyle(Ink.accent) }
+    if !state.error.isEmpty { Text(state.error).font(Face.text(15)).foregroundStyle(Ink.urgCritical) }
+  }
+}
 
 struct AccountPage: View {
   @EnvironmentObject var model: BoardModel
+  @StateObject private var state = AccountState()
   @State private var leave = false
-  @State private var status: AccountStatus?
-  @State private var loaded = false
   @State private var code = ""
-  @State private var kitPassword = ""
-  @State private var kit: String?
-  @State private var current = ""
-  @State private var next = ""
-  @State private var said = ""
-  @State private var error = ""
-  @State private var passkeyAsk = false
-  @State private var passkeyPassword = ""
-  @State private var codeAsk = false
-  @State private var codePassword = ""
   @State private var deleteAsk = false
   @State private var deletePasswordAsk = false
   @State private var deletePassword = ""
   var body: some View {
     SettingsPage(title: "Account") {
-      if !said.isEmpty { Text(said).font(Face.text(15, .medium)).foregroundStyle(Ink.accent) }
-      if !error.isEmpty { Text(error).font(Face.text(15)).foregroundStyle(Ink.urgCritical) }
-      if model.demo {
-        SettingsGroup(footer: "The demo is a made-up room on this phone: no account, nothing is sent.") {
-          SettingsRow(title: "Demo Room") { PenMark("sidebar:DEMO_MARK", color: Ink.fg) }
-        }
-      } else if !loaded {
+      SaidLines(state: state)
+      if !state.loaded {
         ProgressView().frame(maxWidth: .infinity)
-      } else if let st = status {
-        SettingsGroup(header: "Email") {
-          // (a hub that does not confirm addresses: the address alone, nothing to confirm)
-          SettingsRow(title: st.email.isEmpty ? "No Email" : st.email, detail: !st.confirmsEmail ? nil : st.emailVerifiedAt != nil ? "Confirmed" : "Not Confirmed") { Sketch("letter") }
-          if st.confirmsEmail && st.emailVerifiedAt == nil {
+      } else if let f = state.facts(model) {
+        SettingsGroup {
+          HStack(spacing: 14) {
+            Sketch(f.email.isEmpty ? "key" : "letter").frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(f.email.isEmpty ? "Logged In with a Passkey" : f.email).font(Face.text(17, .semibold)).lineLimit(1)
+              Text("Account ID \(f.accountId)").font(Face.mono(12)).foregroundStyle(Ink.muted).lineLimit(1).textSelection(.enabled)
+            }
+            Spacer(minLength: 0)
+          }.padding(.horizontal, 16).frame(minHeight: 62)
+          // (a hub that confirms addresses: the code for it; the hub does not yet)
+          if f.confirmsEmail && !f.emailVerified {
             RowRule()
             VStack(alignment: .leading, spacing: 10) {
-              Text("We send a six-digit code to \(st.email).").font(Face.text(14)).foregroundStyle(Ink.muted)
+              Text("We send a six-digit code to \(f.email).").font(Face.text(14)).foregroundStyle(Ink.muted)
               HStack {
                 TextField("Code", text: $code).keyboardType(.numberPad).textContentType(.oneTimeCode).font(Face.mono(18)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
-                Button("Confirm") { run { try await model.room?.verifyEmail(code: code); said = "Email confirmed."; await load() } }.buttonStyle(QuietWay())
+                Button("Confirm") { state.run(model) { try await model.room?.verifyEmail(code: code); state.said = "Email confirmed."; await state.load(model) } }.buttonStyle(QuietWay())
               }
-              Button("Send Code") { run { try await model.room?.resendEmailCode(); said = "Code sent." } }.font(Face.text(15, .semibold)).foregroundStyle(Ink.accent)
+              Button("Send Code") { state.run(model) { try await model.room?.resendEmailCode(); state.said = "Code sent." } }.font(Face.text(15, .semibold)).foregroundStyle(Ink.accent)
             }.padding(16)
           }
         }
-        SettingsGroup(header: "Emergency Kit", footer: st.hasRecovery ? "Made. With it you can set a new password if you forget yours." : "Not made yet. With it you can set a new password if you forget yours.") {
-          if let k = kit {
-            VStack(alignment: .leading, spacing: 10) {
-              Text("Save or print it. It is shown only now; the old kit no longer works.").font(Face.text(14)).foregroundStyle(Ink.muted)
-              // (the same sheet and the same file as the kit's page: KitScreen.swift)
-              KitSheet(email: st.email, words: k, accountId: st.accountId, qr: model.kitQR(st.accountId))
-              HStack(spacing: 12) {
-                ShareLink(item: KitFile(text: emergencyKitText(EmergencyKit(words: k, email: st.email, accountId: st.accountId))), preview: SharePreview(KIT_FILE_NAME)) { Text("Save") }.buttonStyle(QuietWay())
-                Button("Print") { printKit(EmergencyKit(words: k, email: st.email, accountId: st.accountId), qr: model.kitQR(st.accountId)) }.buttonStyle(QuietWay())
-              }
-            }.padding(16)
-          } else {
-            VStack(alignment: .leading, spacing: 10) {
-              Text(st.hasRecovery ? "Make a New Kit" : "Make the Emergency Kit").font(Face.text(17, .medium))
-              Text(st.hasPassword ? confirmPassword : confirmPasskey).font(Face.text(14)).foregroundStyle(Ink.muted)
-              if st.hasPassword {
-                HStack {
-                  SecureField("Your Password", text: $kitPassword).textContentType(.password).font(Face.text(16)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
-                  Button("Make") { run { let r = try await model.room?.makeEmergencyKit(password: kitPassword); kit = r?.words; kitPassword = ""; await load() } }.buttonStyle(QuietWay()).disabled(kitPassword.isEmpty)
-                }
-              } else {
-                // (an account without a password: one of its passkeys opens it)
-                Button("Make with Passkey") { run(passkey: true) { guard let r = model.room else { return }; kit = try await r.makeEmergencyKit(way: try await model.wayIn(r, password: nil)).words; await load() } }.buttonStyle(QuietWay())
-              }
-            }.padding(16)
-          }
-        }
-        if !st.hasPassword {
-          SettingsGroup(header: "Passkeys", footer: "This account opens with a passkey; it has no password. If you lose your passkeys and your Emergency Kit, nobody (not even Trommi) can recover your data.") {
-            SettingsRow(title: st.passkeys.count == 1 ? "1 Passkey" : "\(st.passkeys.count) Passkeys") { Sketch("key") }
-          }
-          // (an account that opens only with passkeys keeps its passkey controls whatever the switch says)
-          if model.passkeysOn || !st.passkeys.isEmpty {
-            SettingsGroup(footer: "For after you removed a device that is lost or no longer yours. You get a new Emergency Kit; the old kit stops working, and your other passkeys have to be added again.") {
-              Button { codeAsk = true } label: { SettingsRow(title: "New Recovery Code…") { Sketch("key") } }.buttonStyle(.plain)
-            }
-            .alert("New Recovery Code", isPresented: $codeAsk) {
-              Button("Use Passkey") { run(passkey: true) { guard let r = model.room else { return }; kit = try await r.replaceRecoveryCode(way: try await model.wayIn(r, password: nil)).words; said = "New recovery code made. Save your new Emergency Kit."; await load() } }
-              Button("Cancel", role: .cancel) {}
-            } message: { Text("Your passkey opens the account. Then save or print the new Emergency Kit.") }
-            SettingsGroup {
-              // (a passkey of the account opens its key, which the new passkey then holds too)
-              Button { run(passkey: true) { guard let r = model.room else { return }; let way = try await model.wayIn(r, password: nil); try await r.addPasskey(way: way) { try await Passkeys.make($0) }; said = "Passkey added."; await load() } } label: { SettingsRow(title: "Add Passkey") { Sketch("key") } }.buttonStyle(.plain)
-            }
-          }
-        } else {
-        SettingsGroup(header: "Password", footer: "If you lose your password and your Emergency Kit, nobody (not even Trommi) can recover your data.") {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(confirmPassword).font(Face.text(14)).foregroundStyle(Ink.muted)
-            SecureField("Current Password", text: $current).textContentType(.password).font(Face.text(16)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
-            HStack {
-              SecureField("New Password (at least 12 characters)", text: $next).textContentType(.password).font(Face.text(16)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
-              Button { next = generatePassword() } label: { Image(systemName: "dice") }.accessibilityLabel("Suggest a Password")
-            }
-            if !next.isEmpty && next.count >= 12 { Text(next).font(Face.mono(13)).foregroundStyle(Ink.muted).textSelection(.enabled) }
-            Button("Change Password") { run { try await model.room?.changePassword(current: current, next: next); current = ""; next = ""; said = "Password changed." } }
-              .buttonStyle(QuietWay()).disabled(passwordProblem(next) != nil || current.isEmpty)
-          }.padding(16)
-        }
-        if st.hasPassword {
-          // (spec/v1.md 8.6: the room gets a new recovery code; the new kit shows in the Emergency Kit group above)
-          SettingsGroup(footer: "For after you removed a device that is lost or no longer yours. You get a new Emergency Kit; the old kit stops working, and passkeys have to be added again.") {
-            Button { codeAsk = true } label: { SettingsRow(title: "New Recovery Code…") { Sketch("key") } }.buttonStyle(.plain)
-          }
-          .alert("New Recovery Code", isPresented: $codeAsk) {
-            SecureField("Your Password", text: $codePassword)
-            Button("Make New Code") {
-              let p = codePassword
-              codePassword = ""
-              run { let r = try await model.room?.replaceRecoveryCode(way: .password(p)); kit = r?.words; said = "New recovery code made. Save your new Emergency Kit."; await load() }
-            }
-            Button("Cancel", role: .cancel) { codePassword = "" }
-          } message: { Text("Your password opens the account. Then save or print the new Emergency Kit.") }
-        }
-        // ("Add Passkey" only where passkeys are offered, or for an account that has one already)
-        if (model.passkeysOn || !st.passkeys.isEmpty) && st.hasPassword {
-          SettingsGroup {
-            Button { passkeyAsk = true } label: { SettingsRow(title: "Add Passkey") { Sketch("key") } }.buttonStyle(.plain)
-          }
-          // (the password opens the account's key, which the new passkey then holds too)
-          .alert("Add Passkey", isPresented: $passkeyAsk) {
-            SecureField("Your Password", text: $passkeyPassword)
-            Button("Add Passkey") {
-              let p = passkeyPassword
-              passkeyPassword = ""
-              run(passkey: true) { try await model.room?.addPasskey(password: p) { try await Passkeys.make($0) }; said = "Passkey added."; await load() }
-            }
-            Button("Cancel", role: .cancel) { passkeyPassword = "" }
-          } message: { Text(confirmPassword) }
-        }
+        SettingsGroup(header: "Ways In", footer: "Each opens your account on a new device. Changing one asks for one of them again: being logged in here is not enough.") {
+          way("password", "Password", f.hasPassword ? "Set" : "None", "lock")
+          if model.passkeysOn || f.passkeys > 0 { RowRule(); way("passkeys", "Passkeys", f.passkeys == 0 ? "None" : "\(f.passkeys)", "key") }
+          RowRule()
+          way("kit", "Emergency Kit", f.hasRecovery ? "Made" : "Not Made Yet", "page")
         }
       } else {
         SettingsGroup(footer: "This account was made before email and password: add a login at app.trommi.com → Settings → Account (it needs the recovery code shown when you started).") {
@@ -527,24 +613,26 @@ struct AccountPage: View {
           RowRule()
           SettingsRow(title: "Version", detail: "Trommi \(HubClient.appVersion) · key epoch \(r.state.epoch)") { PenMark("ui:BELL", color: Ink.fg) }
         }
-        SettingsGroup(footer: "This device forgets the room and its keys. To take it out of the room, remove it under Devices on another device. Your other devices and your agents carry on.") {
-          Button { leave = true } label: { SettingsRow(title: "Log Out…", tint: Ink.urgCritical) { PenMark("sidebar:LEAVE", color: Ink.urgCritical) } }.buttonStyle(.plain)
+      }
+      if model.room != nil || model.demo {
+        SettingsGroup(footer: "This device forgets the room and its keys. Your other devices and your agents carry on.") {
+          Button { leave = true } label: { SettingsRow(title: "Log Out…", detail: "of this \(UIDeviceName.model)", tint: Ink.urgCritical) { Sketch("logout", color: Ink.urgCritical) } }.buttonStyle(.plain)
         }
         .confirmationDialog("Log Out of This Device?", isPresented: $leave, titleVisibility: .visible) {
           Button("Log Out", role: .destructive) { model.logOut() }
         } message: { Text("This phone logs in again with email and password or by scanning the code of a signed-in device.") }
       }
       // (App Store 5.1.1(v): an account made in the app is deleted in the app; the demo only says it is the demo)
-      if model.demo || (model.room != nil && status != nil) {
+      if model.demo || (model.room != nil && state.status != nil) {
         SettingsGroup(footer: "Deletes your account and everything Trommi keeps for it. This cannot be undone.") {
           Button { deleteAsk = true } label: { SettingsRow(title: "Delete Account…", tint: Ink.urgCritical) { Sketch("bin", color: Ink.urgCritical) } }.buttonStyle(.plain)
         }
         .confirmationDialog("Delete Your Account?", isPresented: $deleteAsk, titleVisibility: .visible) {
           Button("Delete Account", role: .destructive) {
-            if model.demo { run { try await model.deleteAccount(password: nil) } }
-            else if status?.hasPassword == true { deletePasswordAsk = true }
+            if model.demo { Task { try? await model.deleteAccount(password: nil) } }
+            else if state.status?.hasPassword == true { deletePasswordAsk = true }
             // (an account without a password: one of its passkeys confirms it)
-            else { run(passkey: true) { try await model.deleteAccount(password: nil) } }
+            else { state.run(model, passkey: true) { try await model.deleteAccount(password: nil) } }
           }
         } message: { Text("Your account and everything Trommi keeps for it on the hub are deleted: every desk, card, note, file and agent link. Your agents lose their connection. This cannot be undone.") }
         .alert("Delete Account", isPresented: $deletePasswordAsk) {
@@ -552,29 +640,131 @@ struct AccountPage: View {
           Button("Delete", role: .destructive) {
             let p = deletePassword
             deletePassword = ""
-            run { try await model.deleteAccount(password: p) }
+            state.run(model) { try await model.deleteAccount(password: p) }
           }
           Button("Cancel", role: .cancel) { deletePassword = "" }
         } message: { Text("Your password confirms that it is you. Then the account is deleted.") }
       }
     }
-    .task { await load() }
+    .task { await state.load(model) }
   }
-  private func load() async { if !model.demo { status = try? await model.room?.accountStatus() }; loaded = true }
-  /** `passkey`: what went wrong is said in the passkey's words, which the sign-in screen shares. */
-  private func run(passkey: Bool = false, _ op: @escaping () async throws -> Void) {
-    error = ""; said = ""
-    Task {
-      do { try await op() }
-      catch {
-        let code = (error as? TrommiError)?.code ?? (error as? HubError)?.code ?? ""
-        if passkey && code != "wrong-login" { self.error = model.accountError(error); return }
-        // (a wait the hub names is said as it is)
-        if code == "rate-limited", let wait = retryWait(of: error) { self.error = "Too many tries. Please wait \(waitText(seconds: wait))."; return }
-        self.error = ["wrong-login": "That password is not right.", "weak-password": "The password needs at least 12 characters.", "wrong-code": "Wrong or expired code.",
-                      "account-changed": "Changed on another device meanwhile. Please try again.",
-                      "pending": "Trommi has not answered yet. Check again later; if no new kit shows then, make a new Emergency Kit.", "rate-limited": "Too many tries. Please wait a few minutes."][code] ?? model.describe(error)
+  private func way(_ key: String, _ title: String, _ detail: String, _ icon: String) -> some View {
+    Button { model.path.append(.settings("account/\(key)")) } label: { SettingsRow(title: title, detail: detail, chevron: true) { Sketch(icon) } }.buttonStyle(.plain)
+  }
+}
+
+/** One way in of the account, on a page of its own: the password, the passkeys, the Emergency Kit. */
+struct AccountWayPage: View {
+  @EnvironmentObject var model: BoardModel
+  let way: String
+  @StateObject private var state = AccountState()
+  @State private var proof = ""
+  @State private var next = ""
+  @State private var kit: String?
+  @State private var codeAsk = false
+  var body: some View {
+    SettingsPage(title: way == "password" ? "Password" : way == "passkeys" ? "Passkeys" : "Emergency Kit") {
+      SaidLines(state: state)
+      if !state.loaded { ProgressView().frame(maxWidth: .infinity) }
+      else if let f = state.facts(model) {
+        switch way {
+        case "password": password(f)
+        case "passkeys": passkeys(f)
+        default: kitPart(f)
+        }
       }
+    }
+    .task { await state.load(model) }
+  }
+
+  @ViewBuilder private func password(_ f: AccountFacts) -> some View {
+    if f.hasPassword {
+      SettingsGroup { ProofBox(hasPassword: true, password: $proof) }
+      SettingsGroup(header: "New Password", footer: "If you lose your password and your Emergency Kit, nobody (not even Trommi) can recover your data.") {
+        VStack(alignment: .leading, spacing: 8) {
+          HStack {
+            SecureField("New Password (at least 12 characters)", text: $next).textContentType(.newPassword).font(Face.text(16)).padding(10).background(RoundedRectangle(cornerRadius: 10).strokeBorder(Ink.lineStrong))
+            Button { next = generatePassword() } label: { Image(systemName: "dice") }.accessibilityLabel("Suggest a Password")
+          }
+          if !next.isEmpty && next.count >= 12 { Text(next).font(Face.mono(13)).foregroundStyle(Ink.muted).textSelection(.enabled) }
+        }.padding(16)
+      }
+      Button("Change Password") { let c = proof, n = next; state.run(model) { try await model.room?.changePassword(current: c, next: n); proof = ""; next = ""; state.said = "Password changed." } }
+        .buttonStyle(QuietWay()).disabled(passwordProblem(next) != nil || proof.isEmpty)
+    } else {
+      SettingsGroup(footer: "If you lose your passkeys and your Emergency Kit, nobody (not even Trommi) can recover your data.") {
+        SettingsRow(title: "None", detail: "a passkey opens it") { Sketch("lock") }
+      }
+    }
+  }
+
+  @ViewBuilder private func passkeys(_ f: AccountFacts) -> some View {
+    SettingsGroup(footer: f.hasPassword && f.passkeys > 0 ? "Your password still opens this account." : nil) {
+      if f.passkeys == 0 { Text("None yet. A passkey logs you in without a password.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(16).frame(maxWidth: .infinity, alignment: .leading) }
+      ForEach(0..<f.passkeys, id: \.self) { i in
+        if i > 0 { RowRule() }
+        SettingsRow(title: f.passkeys > 1 ? "Passkey \(i + 1)" : "Passkey") { Sketch("key") }
+      }
+    }
+    if model.passkeysOn || f.passkeys > 0 {
+      SettingsGroup(header: "Add a Passkey") { ProofBox(hasPassword: f.hasPassword, password: $proof, label: "Your Password") }
+      Button("Add Passkey") {
+        let p = proof
+        proof = ""
+        state.run(model, passkey: true) {
+          guard let r = model.room else { return }
+          if f.hasPassword { try await r.addPasskey(password: p) { try await Passkeys.make($0) } }
+          // (a passkey of the account opens its key, which the new passkey then holds too)
+          else { try await r.addPasskey(way: try await model.wayIn(r, password: nil)) { try await Passkeys.make($0) } }
+          state.said = "Passkey added."; await state.load(model)
+        }
+      }.buttonStyle(QuietWay()).disabled(f.hasPassword && proof.isEmpty)
+    }
+  }
+
+  @ViewBuilder private func kitPart(_ f: AccountFacts) -> some View {
+    if let k = kit, let st = state.status {
+      SettingsGroup(footer: "Save or print it. It is shown only now; the old kit no longer works.") {
+        VStack(alignment: .leading, spacing: 10) {
+          // (the same sheet and the same file as the kit's page: KitScreen.swift)
+          KitSheet(email: st.email, words: k, accountId: st.accountId, qr: model.kitQR(st.accountId))
+          HStack(spacing: 12) {
+            ShareLink(item: KitFile(text: emergencyKitText(EmergencyKit(words: k, email: st.email, accountId: st.accountId))), preview: SharePreview(KIT_FILE_NAME)) { Text("Save") }.buttonStyle(QuietWay())
+            Button("Print") { printKit(EmergencyKit(words: k, email: st.email, accountId: st.accountId), qr: model.kitQR(st.accountId)) }.buttonStyle(QuietWay())
+          }
+        }.padding(16)
+      }
+    } else {
+      SettingsGroup(footer: (f.hasPassword ? "With it you can set a new password if you forget yours." : "It opens your account if you lose your passkey.") + (f.hasRecovery ? " A new kit makes the old one stop working." : "")) {
+        SettingsRow(title: "Your Kit", detail: f.hasRecovery ? "Made" : "Not Made Yet") { Sketch("page") }
+      }
+      SettingsGroup(header: f.hasRecovery ? "Make a New Kit" : "Make the Emergency Kit") { ProofBox(hasPassword: f.hasPassword, password: $proof, label: "Your Password") }
+      Button(f.hasPassword ? "Make the Kit" : "Make with Passkey") {
+        let p = proof
+        proof = ""
+        state.run(model, passkey: !f.hasPassword) {
+          guard let r = model.room else { return }
+          kit = f.hasPassword ? try await r.makeEmergencyKit(password: p).words : try await r.makeEmergencyKit(way: try await model.wayIn(r, password: nil)).words
+          await state.load(model)
+        }
+      }.buttonStyle(QuietWay()).disabled(f.hasPassword && proof.isEmpty)
+      // (spec/v1.md 8.6: the room gets a new recovery code; the new kit shows here)
+      SettingsGroup(footer: "For after you removed a device that is lost or no longer yours. You get a new Emergency Kit; the old kit stops working, and passkeys have to be added again.") {
+        Button { codeAsk = true } label: { SettingsRow(title: "New Recovery Code…") { Sketch("key") } }.buttonStyle(.plain)
+      }
+      .alert("New Recovery Code", isPresented: $codeAsk) {
+        if f.hasPassword { SecureField("Your Password", text: $proof) }
+        Button(f.hasPassword ? "Make New Code" : "Use Passkey") {
+          let p = proof
+          proof = ""
+          state.run(model, passkey: !f.hasPassword) {
+            guard let r = model.room else { return }
+            kit = f.hasPassword ? try await r.replaceRecoveryCode(way: .password(p)).words : try await r.replaceRecoveryCode(way: try await model.wayIn(r, password: nil)).words
+            state.said = "New recovery code made. Save your new Emergency Kit."; await state.load(model)
+          }
+        }
+        Button("Cancel", role: .cancel) { proof = "" }
+      } message: { Text(f.hasPassword ? "Your password opens the account. Then save or print the new Emergency Kit." : "Your passkey opens the account. Then save or print the new Emergency Kit.") }
     }
   }
 }
