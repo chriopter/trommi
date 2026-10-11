@@ -19,7 +19,7 @@ const VIEWS = [desk, sidebar, notes]
 /** "MLS proof" (proof.mjs): a page of Settings, and a screen of its own on a device without a room (boot). */
 const PROOF_PATH = /^\/settings\/proof$/
 const LAZY = {
-  auth: { load: () => import('./auth.mjs'), paths: /^\/(?:settings(?:\/(?:devices|account|theme|keys|kit|password))?|devices\/|pair|logout|join|login)(?:\/|$)/ },
+  auth: { load: () => import('./auth.mjs'), paths: /^\/(?:settings(?:\/(?:devices|account|theme|keys|kit|password|security))?|devices\/|pair|logout|join|login)(?:\/|$)/ },
   agents: { load: () => import('./agents.mjs'), paths: /^\/(?:settings\/(?:sessions|agents)$|sessions\/)/ },
   card: { load: () => import('./card.mjs'), paths: /^(?:\/chat\/[^/]+)?\/card\/|^\/cards\/[0-9a-f]+\// },
   session: { load: () => import('./session.mjs'), paths: /^\/chat\// },

@@ -57,15 +57,15 @@ export class World {
       { group: this.session_group, session: { session_id: this.session, parent: null }, epoch: 2, leaves: [...humans, ...agents.slice(0, 1)] },
       ...extra,
     ].map(g => this.group(g))
-    return this.run(c => applyGroups(this.model, list, { epoch: roles.epoch ?? 3, state: new Uint8Array(32), humans: humans.map(raw), agents: agents.map(raw), recoverySignatureKey: new Uint8Array(32), recoveryHpkeKey: new Uint8Array(32) }, c))
+    return this.run(c => applyGroups(this.model, list, { epoch: roles.epoch ?? 3, state: new Uint8Array(32), humans: humans.map(raw), agents: agents.map(raw), recoverySignatureKey: new Uint8Array(32), recoveryHpkeKey: roles.recovery ?? new Uint8Array(32) }, c))
   }
   /** A GroupSummary; a main session's parent is zeros. */
   group({ group, session, epoch, leaves, disallowed = [], archived = false, pending = false }) {
     return { group: raw(group), session: session && { roomId: new Uint8Array(32), sessionId: raw(session.session_id), parent: session.parent ? raw(session.parent) : new Uint8Array(16) }, epoch, leaves: leaves.map(raw), disallowed: disallowed.map(raw), archived, pending }
   }
   /** A CommitSummary (`epoch`: the one it builds on), handed to the model. */
-  commit({ group = this.room_group, epoch, committer = this.me, adds = [], removes = [], external = false }, opts = {}) {
-    return this.run(c => applyCommit(this.model, { group: raw(group), epoch, committer: raw(committer), external, adds: adds.map(raw), removes: removes.map(raw), cuts: [], agents: null, roomEpoch: null, time: this.clock }, c, { now: this.clock, ...opts }))
+  commit({ group = this.room_group, epoch, committer = this.me, adds = [], removes = [], external = false, agents = null, time = this.clock }, opts = {}) {
+    return this.run(c => applyCommit(this.model, { group: raw(group), epoch, committer: raw(committer), external, adds: adds.map(raw), removes: removes.map(raw), cuts: [], agents: agents && agents.map(raw), roomEpoch: null, time }, c, { now: this.clock, ...opts }))
   }
   /** One step of a turn's work trail (a ReceivedMessage of kind 'workTrail') under the hub's change number `n`. */
   trail(session, { from = this.agent, turn, number, step }, n) {

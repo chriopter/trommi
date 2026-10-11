@@ -86,7 +86,7 @@ joinWithCode(o & { hub_url, room_id /* hex */, code: Uint8Array, recover?, accou
 `client.model` (`types.ts` is the truth; `Map`s keyed by id). Mutated in place; read it, never write it.
 
 ```
-room         { room_id, hub_url, my_device_id, my_role, key_epoch, last_envelope_number, connection, outbox_blocked }
+room         { room_id, hub_url, my_device_id, my_role, recovery_key, key_epoch, last_envelope_number, connection, outbox_blocked }
 members      Map<device_id, Member>          human devices, agent devices, helper devices (shown as agents)
 sessions     Map<session_id, Session>
 cards        Map<object_id, Card>            permissions  Map<object_id, PermissionRequest>
@@ -101,12 +101,17 @@ What the fields mean under protocol v1:
 
 - `envelope_number`, everywhere: the hub's **change** number under which the item arrived. `room.last_envelope_number`
   is how far this device has taken the hub's order. `room.key_epoch` is the room group's epoch.
+- `room.recovery_key`: `{ fingerprint, since }` of the room's recovery key (its HPKE public key, 8.1), which every
+  epoch's content key is sealed to; `since` is the time of the one room Commit that put it in force, `null` when this
+  device did not see that Commit alone (the founding, a key older than this device, a catch-up of several Commits).
 - `room.connection`: `offline | connecting | catching_up | live`, and `removed` once this device is no member.
   `room.reading`: the room is still being read (a sign-in joining its session groups, the past read again): the
   Desk says "catching up" instead of "all quiet", and a session not named yet is "Loading …" instead of its id.
 - **Member**: `device_role` `human` or `agent` (also a helper device); `added_entry_number` / `removed_entry_number`
   are room epochs (only their order is shown); `device_name`, `platform`, `folder`, `host` come from the device's
-  own register `device/<id>`; `is_online`, `link` from the hub's presence.
+  own register `device/<id>`; `is_online`, `link` from the hub's presence; `added_at` is the time of the Commit that
+  added it (a room Add, a join with the recovery code, an agent named in `agents`, a helper's session Add), `null`
+  when this device did not process that Commit.
 - **Session**: one session group. `group_id`; `agent_device_ids` are its leaves that are no human device;
   `agent_device_id` its agent (a helper session: its helper device, else its opener); `parent_session_id` and
   `creator_device_id` (the opener) for a helper session; `session_key_epoch` the group's epoch; `stale` (a leaf the

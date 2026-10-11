@@ -20,6 +20,9 @@ while it runs.
   long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
 - Trommi for Mac: the iPad's layout in a window, the questions waiting in the menu bar, Return sends and
   Shift+Return hands a card back; pairing by pasting the link.
+- Settings → Security lists every key that opens your data: the account key (your recovery key) with its
+  fingerprint, your devices with theirs and the day each came, your agents, and what each of them can read. The self
+  test is a row there now.
 - iPhone: Settings → Data shows what this iPhone downloaded and uploaded (with a reset), and what your account keeps on
   the hub: messages, cards, files and the total size.
 - Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);

@@ -65,7 +65,7 @@ public/
                        rich text, agent layouts, keys, a card's row, a session's mark, the room's frame
   auth.mjs/.css        account screens, passkeys, password, Emergency Kit, recovery, pairing, devices, settings, log out
   desk  card  session  sidebar  notes  media  agents  whiteboard   (.mjs + .css each)
-  proof.mjs            Security Info (the core's self test)
+  proof.mjs            Self Test (the core's self test), a row of Settings → Security
   news.mjs             What's new: the repository's CHANGELOG.md (read by the build, never fetched), from the menu
   paths.mjs            the addresses of before (/s/…, /a/…) and their new form; shared by app.mjs and worker.js
   demo/                the demo room's code (demo.mjs, screens.css); its data is the repository's demo/data/, which

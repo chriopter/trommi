@@ -175,6 +175,10 @@ export interface Room {
   hub_url: string | null
   my_device_id: Hex | null
   my_role: Role | null
+  /** The room's recovery key (8.1), which every epoch's content key is sealed to: the fingerprint of its HPKE public
+   *  key, and the time of the room Commit that put it in force (its committer's clock), null when this device did
+   *  not see that Commit (the founding, a key older than this device). Null until the room state is known. */
+  recovery_key: { fingerprint: string; since: Ms | null } | null
   /** The room group's epoch. */
   key_epoch: number
   /** THE cursor: the hub's change number up to which this device has processed. */
@@ -200,6 +204,9 @@ export interface Member extends Linked {
   /** The room group's epoch in which this device first saw the member, and the one in which it was gone. */
   added_entry_number: number
   removed_entry_number: number | null
+  /** When it was added: the time of the Commit that added it (its committer's clock), as this device processed it.
+   *  Null when this device did not see that Commit (a device added before this one, or a cache from before). */
+  added_at: Ms | null
   is_me: boolean
   is_online: boolean
   offline_since: Ms | null
