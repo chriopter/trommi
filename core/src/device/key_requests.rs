@@ -4,15 +4,15 @@
 //! still lacks that key a while later, asks the human devices for the keys of that group
 //! (`POST /v1/requests`, kind `handover`). A human device that holds keys of that group answers with a key
 //! handover in the room group: the message of 7.1, addressed to the requester, carrying that group's keys
-//! (every group's when the request names none). Nothing here is state: what was wanted, asked and answered is
-//! kept in memory only, and a device that starts again finds what it lacks by reading again.
+//! (every group's when the request names none). What is wanted is stored (a device that starts again still
+//! asks); when it was asked, and what was answered, is kept in memory only.
 
-use super::Device;
+use super::{wanted_key, Device};
 use crate::error::Error;
 use crate::ids::{DeviceId, GroupId};
 use crate::mls::group;
-use crate::store::Storage;
-use std::collections::{BTreeMap, BTreeSet};
+use crate::store::{Batch, Storage};
+use std::collections::BTreeMap;
 
 /// How long a missing key is waited for before it is asked for: the handover that follows an Add normally
 /// arrives within seconds of it.
@@ -26,6 +26,8 @@ pub const MAX_KEY_REQUESTS: usize = 4;
 /// One answer per requester and group within this time, however often the request is seen (the stream and
 /// the hub's list both show it).
 pub const KEY_ANSWER_PAUSE_MS: u64 = 60 * 60_000;
+/// At most so many epochs of one group are kept as wanted; the request names the group anyway.
+const MAX_WANTED_EPOCHS: usize = 4096;
 
 /// A request this device is to post now: `group` is the group whose keys it lacks, `epochs` those epochs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,10 +36,9 @@ pub struct KeyRequest {
     pub epochs: Vec<u64>,
 }
 
-/// What one group lacks, and when it was asked for.
+/// When a group's missing keys were first seen in this run, and asked for.
 #[derive(Debug, Default)]
-struct Want {
-    epochs: BTreeSet<u64>,
+struct Asked {
     since_ms: u64,
     asked_ms: Option<u64>,
     tries: u32,
@@ -46,85 +47,106 @@ struct Want {
 /// The memory of this module: no state, nothing of it is stored.
 #[derive(Debug, Default)]
 pub(super) struct KeyWants {
-    wants: BTreeMap<GroupId, Want>,
+    asked: BTreeMap<GroupId, Asked>,
     answered: BTreeMap<(DeviceId, Option<GroupId>), u64>,
 }
 
 impl<S: Storage> Device<S> {
-    /// An envelope of `group` written in `epoch` did not open for lack of its content key.
-    pub(super) fn key_missing(&mut self, group: &GroupId, epoch: u64, now_ms: u64) {
-        let want = self.key_wants.wants.entry(*group).or_insert_with(|| Want {
-            since_ms: now_ms,
-            ..Want::default()
-        });
-        // A bound: a group lists at most so many epochs; the request names the group anyway.
-        if want.epochs.len() < 4096 {
-            want.epochs.insert(epoch);
+    /// An envelope of `group` written in `epoch` did not open for lack of its content key: a human device
+    /// keeps that it wants it.
+    pub(super) fn key_missing(
+        &mut self,
+        batch: &mut Batch,
+        group: &GroupId,
+        epoch: u64,
+        now_ms: u64,
+    ) {
+        if !self.is_human() || self.memory.wanted.contains(&(*group, epoch)) {
+            return;
         }
+        let held = self
+            .memory
+            .wanted
+            .range((*group, 0)..=(*group, u64::MAX))
+            .count();
+        if held >= MAX_WANTED_EPOCHS {
+            return;
+        }
+        self.memory.wanted.insert((*group, epoch));
+        batch.put(wanted_key(group, epoch), Vec::new());
+        self.key_wants.asked.entry(*group).or_insert(Asked {
+            since_ms: now_ms,
+            ..Asked::default()
+        });
     }
 
-    /// The epochs of `group` this device still lacks of those it wanted: the group is held, it reached the
-    /// epoch, and the key is not there.
-    fn still_missing(&self, group: &GroupId, epochs: &BTreeSet<u64>) -> Vec<u64> {
+    /// Whether this device still wants the key of `group` at `epoch`: it holds the group, the key is not
+    /// there, and the group did not fail its first contact. `None`: not yet (the group has not reached the
+    /// epoch for this device).
+    fn still_wanted(&self, group: &GroupId, epoch: u64) -> Option<bool> {
         let Some(meta) = self.memory.groups.get(group) else {
-            return Vec::new();
+            return Some(false);
         };
         if meta.distrusted || meta.removed {
-            return Vec::new();
+            return Some(false);
         }
-        let Ok(loaded) = group::load(&self.provider, group) else {
-            return Vec::new();
-        };
-        let current = loaded.epoch().as_u64();
-        epochs
-            .iter()
-            .copied()
-            .filter(|epoch| *epoch <= current && !self.memory.keys.contains_key(&(*group, *epoch)))
-            .collect()
+        if self.memory.keys.contains_key(&(*group, epoch)) {
+            return Some(false);
+        }
+        let current = group::load(&self.provider, group).ok()?.epoch().as_u64();
+        (epoch <= current).then_some(true)
     }
 
     /// The key requests (7.1.1) to post now, at most [`MAX_KEY_REQUESTS`]: for each group of which an envelope
     /// did not open for lack of its key, once that key is still missing [`KEY_REQUEST_GRACE_MS`] later, and
     /// again after a pause that doubles up to a day while it stays missing. Only a human device asks. A
-    /// returned request counts as asked: the client posts it as `{ kind: "handover", group }`.
-    pub fn key_requests(&mut self, now_ms: u64) -> Vec<KeyRequest> {
-        if self.owner().is_err() || !self.is_human() {
-            return Vec::new();
+    /// returned request counts as asked: the client posts it as `{ kind: "handover", group }`. What is no
+    /// longer wanted is forgotten.
+    pub fn key_requests(&mut self, now_ms: u64) -> Result<Vec<KeyRequest>, Error> {
+        self.owner()?;
+        if !self.is_human() {
+            return Ok(Vec::new());
         }
-        let groups: Vec<GroupId> = self.key_wants.wants.keys().copied().collect();
-        let mut due = Vec::new();
-        for group in groups {
-            let Some(wanted) = self.key_wants.wants.get(&group) else {
-                continue;
-            };
-            let missing = self.still_missing(&group, &wanted.epochs);
-            if missing.is_empty() {
-                self.key_wants.wants.remove(&group);
-                continue;
-            }
-            let Some(want) = self.key_wants.wants.get_mut(&group) else {
-                continue;
-            };
-            want.epochs = missing.iter().copied().collect();
-            let ready = match want.asked_ms {
-                None => now_ms.saturating_sub(want.since_ms) >= KEY_REQUEST_GRACE_MS,
-                Some(asked) => {
-                    let pause = KEY_REQUEST_FIRST_PAUSE_MS
-                        .saturating_mul(1u64 << want.tries.saturating_sub(1).min(16))
-                        .min(KEY_REQUEST_MAX_PAUSE_MS);
-                    now_ms.saturating_sub(asked) >= pause
+        self.transact(|this, batch| {
+            let mut missing: BTreeMap<GroupId, Vec<u64>> = BTreeMap::new();
+            let wanted: Vec<(GroupId, u64)> = this.memory.wanted.iter().copied().collect();
+            for (group, epoch) in wanted {
+                match this.still_wanted(&group, epoch) {
+                    Some(true) => missing.entry(group).or_default().push(epoch),
+                    Some(false) => {
+                        this.memory.wanted.remove(&(group, epoch));
+                        batch.delete(wanted_key(&group, epoch));
+                    }
+                    None => {}
                 }
-            };
-            if ready && due.len() < MAX_KEY_REQUESTS {
-                want.asked_ms = Some(now_ms);
-                want.tries = want.tries.saturating_add(1);
-                due.push(KeyRequest {
-                    group,
-                    epochs: missing,
-                });
             }
-        }
-        due
+            this.key_wants
+                .asked
+                .retain(|group, _| missing.contains_key(group));
+            let mut due = Vec::new();
+            for (group, epochs) in missing {
+                // (a want stored by an earlier run is first seen now: its grace begins now)
+                let asked = this.key_wants.asked.entry(group).or_insert(Asked {
+                    since_ms: now_ms,
+                    ..Asked::default()
+                });
+                let ready = match asked.asked_ms {
+                    None => now_ms.saturating_sub(asked.since_ms) >= KEY_REQUEST_GRACE_MS,
+                    Some(at) => {
+                        let pause = KEY_REQUEST_FIRST_PAUSE_MS
+                            .saturating_mul(1u64 << asked.tries.saturating_sub(1).min(16))
+                            .min(KEY_REQUEST_MAX_PAUSE_MS);
+                        now_ms.saturating_sub(at) >= pause
+                    }
+                };
+                if ready && due.len() < MAX_KEY_REQUESTS {
+                    asked.asked_ms = Some(now_ms);
+                    asked.tries = asked.tries.saturating_add(1);
+                    due.push(KeyRequest { group, epochs });
+                }
+            }
+            Ok(due)
+        })
     }
 
     /// Answers a human device's key request (7.1.1): a key handover in the room group to `recipient`,

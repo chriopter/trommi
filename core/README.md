@@ -227,6 +227,13 @@ assumptions have to take in.
   refused with `wrong-epoch` is made again in the group's epoch then (process the log first, as for any message),
   and one waiting behind a pending Commit goes out once that Commit was merged or dropped. The device's store has
   one more kind of record for them.
+- Key requests (7.1.1): a human device keeps every (group, epoch) an envelope did not open for (`no-key` in
+  `receive_envelope`) as a store record, and `key_requests(now_ms)` returns the groups to ask for now
+  (`POST /v1/requests`, kind `handover`, naming the group): five minutes after the key was first found missing in
+  this run, again after an hour, doubling up to a day, at most four at a time; what the device holds by then is
+  forgotten. `answer_key_request(group, recipient, now_ms)` answers a human device's request with a key handover in
+  the room group (that group's keys, every group's for none), once per recipient and group an hour; `forbidden`
+  unless both are human devices.
 - The Offer is bound to the link (12.1, D4 change of 2026-10-10): `SignedOffer` has a third field `mac` (32
   bytes), which `invite_open` returns in `InviteOpened::signed_offer` and the hub stores and serves with the Offer;
   `join_request` refuses an Offer whose `mac` is missing, short or wrong (`bad-invite`) and stores nothing then.

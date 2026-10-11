@@ -175,6 +175,8 @@ public struct Store {
   /** 7.1.1: when the hub's list of wishes was last read, and the wishes for keys answered in this run. */
   var keyWishesReadAt: UInt64 = 0
   var keyWishesAnswered = Set<Int>()
+  /** When `tendKeys` last ran from the stream's pings. */
+  var keyTendedAt: UInt64 = 0
   /** Which session a message of a group belongs to: group id (hex) to session id (hex). */
   var sessionIdOfGroup: [String: String] = [:]
   /** Findings about a sender's chain that were shown in this run ("<group>/<sender>/<code>"): each is said once. */
@@ -631,9 +633,12 @@ public struct Store {
     guard row["kind"] as? String == "handover", let id = Wire.int(row["id"]), !keyWishesAnswered.contains(id),
           let device = (row["device"] as? String).flatMap({ try? unb64u($0) }), hex(device) != deviceIdHex else { return }
     if let at = Wire.uint(row["at"]), at + 86_400_000 < nowMs() { return }
-    keyWishesAnswered.insert(id)
     let group = (row["group_id"] as? String).flatMap { try? unb64u($0) }
-    if (try? await onCore { try $0.answerKeyRequest(group: group, recipient: device, nowMs: nowMs()) })?.isEmpty == false { pumpOutbox() }
+    // (counted as answered once the handover is made: a wish this device could not answer yet, or not now, is
+    // tried again at the next reading of the hub's list)
+    guard let made = try? await onCore({ try $0.answerKeyRequest(group: group, recipient: device, nowMs: nowMs()) }), !made.isEmpty else { return }
+    keyWishesAnswered.insert(id)
+    pumpOutbox()
   }
 
   /** Keeps the hub stocked with this device's KeyPackages (spec 14.2). */
@@ -1031,7 +1036,11 @@ public struct Store {
       if data["kind"].string == "handover", let row = data.any as? JSON { await answerKeys(row) }
       var ch = Change(); ch.invites.insert(data["invite_id"].string ?? ""); emit(ch)
     case "file_evicted": break
-    default: break   // ping, and events a newer hub adds
+    case "ping":
+      // the upkeep of key requests (7.1.1) while the app stays open: a wish's grace and pauses run out without
+      // any change arriving
+      if nowMs() >= keyTendedAt + 60_000 { keyTendedAt = nowMs(); _ = try? await serial { [self] in await self.tendKeys() } }
+    default: break   // events a newer hub adds
     }
   }
 

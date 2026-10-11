@@ -137,7 +137,7 @@ final class FakeDevice: CoreDevice {
   var keysWanted: [GroupId] = []
   var keysAnswered: [(GroupId?, DeviceId)] = []
   func keyRequests(nowMs: UInt64) throws -> [GroupId] { defer { keysWanted = [] }; return keysWanted }
-  func answerKeyRequest(group: GroupId?, recipient: DeviceId, nowMs: UInt64) throws -> [UInt64] { keysAnswered.append((group, recipient)); return [] }
+  func answerKeyRequest(group: GroupId?, recipient: DeviceId, nowMs: UInt64) throws -> [UInt64] { keysAnswered.append((group, recipient)); return [1] }
   func sendStrokePiece(board: BoardId, piece: Bytes) throws -> UInt64 { try queue(.relayMessage, group: room, parts: [piece]) }
   func outbox() -> [OutboxEntry] { isOwner ? box.keys.sorted().map { box[$0]! } : [] }
   /** The entry goes; a Commit stays pending until the log hands it back. `not-found` for an entry that is gone. */

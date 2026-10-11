@@ -1255,15 +1255,15 @@ impl<S: Storage> Device<S> {
         void_code: Option<&Error>,
         now_ms: u64,
     ) -> Result<ReceivedEnvelope, Error> {
-        let received = self.transact(|this, batch| {
+        self.transact(|this, batch| {
             this.begin(now_ms);
-            this.receive_in(batch, bytes, change, ordered, void_code, now_ms)
-        })?;
-        // 7.1.1: a key this device lacks is asked for, if it is still missing a while later.
-        if received.code == Some(Error::NoKey) {
-            self.key_missing(&received.header.group, received.header.epoch, now_ms);
-        }
-        Ok(received)
+            let received = this.receive_in(batch, bytes, change, ordered, void_code, now_ms)?;
+            // 7.1.1: a key this device lacks is asked for, if it is still missing a while later.
+            if received.code == Some(Error::NoKey) {
+                this.key_missing(batch, &received.header.group, received.header.epoch, now_ms);
+            }
+            Ok(received)
+        })
     }
 
     /// [`Device::receive_envelope`] inside a running operation, which wrote what it holds so far into

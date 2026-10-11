@@ -483,10 +483,13 @@ fn sweep_messages(hub: &mut Hub) {
 /// The phone was added by link to the room and to the session, and the agent had written its name and profile
 /// before; the phone stayed away until the hub had swept both handovers.
 fn phone_that_missed_its_handovers(r: &mut Room) -> TestDevice {
+    phone_that_missed_its_handovers_as(r, new_device())
+}
+
+fn phone_that_missed_its_handovers_as(r: &mut Room, mut phone: TestDevice) -> TestDevice {
     let main = r.main;
     profile(&mut r.hub, &mut r.agent, &main, "Builder");
     sync_all(&r.hub, &mut r.a);
-    let mut phone = new_device();
     add_human(&mut r.hub, &mut r.a, &mut phone);
     r.a.send_handover(&r.room, &phone.id()).unwrap();
     post_ok(&mut r.hub, &mut r.a);
@@ -505,6 +508,7 @@ fn phone_that_missed_its_handovers(r: &mut Room) -> TestDevice {
 fn asks(device: &mut TestDevice, at: u64) -> Vec<GroupId> {
     device
         .key_requests(at)
+        .unwrap()
         .into_iter()
         .map(|request| request.group)
         .collect()
@@ -526,7 +530,7 @@ fn a_device_that_missed_its_handover_asks_and_another_human_device_answers() {
 
     // Not at once: the handover behind an Add normally comes within seconds.
     assert!(asks(&mut phone, t).is_empty());
-    let request = phone.key_requests(t + KEY_REQUEST_GRACE_MS);
+    let request = phone.key_requests(t + KEY_REQUEST_GRACE_MS).unwrap();
     assert_eq!(request.len(), 1);
     assert_eq!(request[0].group, main);
     assert!(request[0].epochs.contains(&1), "{:?}", request[0].epochs);
@@ -634,5 +638,34 @@ fn only_human_devices_ask_and_only_human_devices_are_answered() {
     assert!(r
         .agent
         .key_requests(now() + KEY_REQUEST_GRACE_MS * 10)
+        .unwrap()
         .is_empty());
+}
+
+/// What is wanted outlives a restart: the device that could not open the envelope and stopped before it asked
+/// asks when it is opened again, without reading anything again.
+#[test]
+fn a_wanted_key_is_asked_for_after_a_restart() {
+    use trommi_core::device::KEY_REQUEST_GRACE_MS;
+    use trommi_tests::{new_device_on, reopen, MemoryStorage};
+    let mut r = room();
+    let main = r.main;
+    let store = MemoryStorage::new();
+    let handle = store.handle();
+    let mut phone = phone_that_missed_its_handovers_as(&mut r, new_device_on(store));
+    assert!(no_key_left(&read_group(&r.hub, &mut phone, &main)) > 0);
+    drop(phone);
+    let mut phone = reopen(handle.reopened()).unwrap();
+    // (the grace begins again with the new run)
+    let t = now();
+    assert!(asks(&mut phone, t).is_empty());
+    assert_eq!(asks(&mut phone, t + KEY_REQUEST_GRACE_MS), vec![main]);
+    // Answered, the keys come; what is wanted is forgotten, also across the next restart.
+    sync_all(&r.hub, &mut r.a);
+    r.a.answer_key_request(Some(&main), &phone.id(), now())
+        .unwrap();
+    post_ok(&mut r.hub, &mut r.a);
+    settle(&r.hub, &mut phone);
+    assert!(asks(&mut phone, t + 100 * KEY_REQUEST_GRACE_MS).is_empty());
+    assert_eq!(no_key_left(&read_group(&r.hub, &mut phone, &main)), 0);
 }

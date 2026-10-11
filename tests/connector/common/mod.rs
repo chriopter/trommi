@@ -826,7 +826,13 @@ impl Human {
 
     /// Posts the key requests (7.1.1) the device says are due at `at`; returns the groups named.
     pub async fn ask_for_keys(&mut self, at: u64) -> Vec<GroupId> {
-        let due = self.v(move |v| v.device.key_requests(at)).await;
+        let due = self
+            .v(move |v| {
+                let due = v.device.key_requests(at).expect("the key requests");
+                v.commit().expect("stored");
+                due
+            })
+            .await;
         for request in &due {
             self.hub
                 .post(
