@@ -16,7 +16,8 @@
 // device its groups" (no public sight of Commits for agents, no pruned form, no Cut marks on a chain, `stale` is
 // always false), the 8 MiB budget of an answer and `truncated`, the limits and lifetimes of KeyPackages, requests,
 // invites and passkeys (a passkey challenge of an account is bound to the account's revision, as the real one), transactions (a refused request may leave a part of its writes), the checks of a recovery's
-// parts and that its finish replaces the recovery key, push endpoints, `/v1/link`, `/v1/live-activity`,
+// parts and that its finish replaces the recovery key, push endpoints, `/v1/link` (presence carries no link report),
+// `/v1/live-activity`,
 // `/v1/push-envelope`, `Trommi-Lease`, the stream's bounded queue and pings. Cross-origin requests are answered for
 // any origin. tests/web/hub/real-hub.test.mjs runs the client against the real hub for what must not rest on this.
 //
@@ -187,7 +188,10 @@ export async function startFakeHub(opts = {}) {
     res.write(': trommi hub\n\n')
     const s = { room: a.room, device: a.device, who: a.who, res, catching_up: true }
     streams.add(s)
-    res.on('close', () => { streams.delete(s); clearTimeout(s.end) })
+    res.on('close', () => {
+      streams.delete(s); clearTimeout(s.end)
+      if (![...streams].some(x => x.room === s.room && x.device === s.device && open(x))) emit(s.room, 'presence', null, { device: s.device, online: false })
+    })
     if (after !== null && /^\d+$/.test(after)) {
       for (const item of a.room.changes) {
         if (item.change <= Number(after) || !visible(a, item)) continue
@@ -195,6 +199,10 @@ export async function startFakeHub(opts = {}) {
       }
     }
     s.catching_up = false
+    // presence as the real hub tells it: the device is here (to the human devices), and a human device's new stream
+    // first hears who else is here now (without link reports: this hub keeps no lease)
+    if (a.who !== 'recovery') emit(a.room, 'presence', null, { device: a.device, online: true }, null, a.device)
+    if (a.who === 'human') for (const d of new Set([...streams].filter(x => x.room === a.room && x.device !== a.device && open(x)).map(x => x.device))) res.write(`event: presence\ndata: ${JSON.stringify({ device: d, online: true })}\n\n`)
     // a stream lives as long as the token it was opened with
     s.end = setTimeout(() => endStream(s), Math.max(0, a.expires_at - now()))
     s.end.unref()

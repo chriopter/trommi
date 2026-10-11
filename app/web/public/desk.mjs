@@ -41,9 +41,10 @@ const greeting = calm => { const set = calm ? CALM : GREETINGS; return set[Math.
 const unquiet = model => (model.cut?.length ? (model.cut.length === 1 ? 'One can’t hear you.' : 'Some can’t hear you.') : model.unheard ? (model.unheard === 1 ? 'An answer waits.' : 'Answers wait.') : '')
 function deskHead(model, base) {
   const n = model.fresh.length
-  if (!model.units.length) return deskInvite()
+  if (!model.units.length) return model.reading ? html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="0"><h2 class="desk-hello">Catching <em>up…</em></h2></header>` : deskInvite()
   const waits = walkOf(model).length   // (the tools stand for what is only to read too: Blitz reads card by card, the duck closes all)
-  const words = ((!n && unquiet(model)) || greeting(!waits)).split(' '), last = words.pop()
+  // (still reading the room, a sign-in: no "all quiet" while questions may yet come in)
+  const words = ((!n && model.reading && 'Catching up…') || (!n && unquiet(model)) || greeting(!waits)).split(' '), last = words.pop()
   return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${n}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${deskGoals(model)}${waits ? html`<div class="desk-tools">${duckAll(model, base)}${nextPlease(model, base)}</div>` : ''}</header>`
 }
 
@@ -92,7 +93,7 @@ function runs(model) {
 function deskList(model, base, { rowOf = card => deskRow(card, model, base, { slim: true }) } = {}) {
   // (The slip for the sessions that are cut off stands above the questions: #link-slip, hidden while there is none.)
   return html`${linkSlip(model.cut ?? [], base)}${runs(model).map(({ sender, cards }) => runSection(sender, cards.map(rowOf), cards.length))}
-${model.open.length || (model.reads ?? []).length ? '' : html`<div class="inbox-empty">${sk('desk')}<p>Questions land here.</p></div>`}
+${model.open.length || (model.reads ?? []).length ? '' : model.reading ? html`<div class="inbox-empty is-reading" role="status">${sk('desk')}<p>Catching up: reading your sessions on this device. Their open questions show here as they are read.</p></div>` : html`<div class="inbox-empty">${sk('desk')}<p>Questions land here.</p></div>`}
 ${withAgents(model, base)}${endList(model, base)}${deskStacks(model, base)}`
 }
 

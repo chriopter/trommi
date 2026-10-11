@@ -280,6 +280,8 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1 } =
     const did = card.status === 'shredded' ? 'You shredded it' : card.kind === 'info' ? 'You read it' : card.trusted ? 'You left it to the agent' : can ? 'You chose' : ''
     return box(html`<div class="tc-opts">${stood(said, card.note ? `Your note: ${card.note}` : '')}${did ? saidFoot(did, card.decided, can ? back(card, base, 'reopen') : '') : ''}${card.options.filter(o => card.option_notes?.[o.key]).map(o => still(o.label, `Your note: ${card.option_notes[o.key]}`))}${card.settled ? still(html`${sk('tick')}${SETTLED}`, `${model.byAgent.get(card.agent)?.name ?? 'The agent'} marked this answer as final: nothing follows from it.`, 'is-settled') : ''}${card.summary ? still('Done by the agent', card.summary) : ''}</div>${card.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}: ask the session about what it did">${sk('what')}</button>` : ''}`)
   }
+  // Open, but not read on this device yet: what it asks follows once its keys are here.
+  if (card.loading) return box(html`<p class="tc-quiet">Loading … this question is still being decrypted on this device.</p>`)
   // A card of a newer Trommi: nothing to answer from here; the room's notice offers the reload.
   if (card.unsupported) return box(html`<p class="tc-quiet">${NEEDS_NEWER}</p>`)
   if (card.with_agent) return box(html`<div class="tc-opts">${still(WORDS.revising, 'It is with its session and comes back reworked.')}${saidFoot('You handed it back', card.with_agent, back(card, base, 'takeback'))}</div>`)

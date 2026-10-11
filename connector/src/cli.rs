@@ -114,7 +114,9 @@ pub async fn say(argv: &[String]) -> Result<String> {
         )));
     };
     let until = now_ms() + env_ms("TROMMI_SAY_MS", 30_000).max(1);
-    let request = json!({ "op": "say", "text": text, "session": session, "urgent": urgent });
+    // (the owner: a running connector of another agent session in this folder refuses, so that these words never
+    // go into that session's chat)
+    let request = json!({ "op": "say", "text": text, "session": session, "urgent": urgent, "owner": cfg.owner });
     let mut last: Option<Fault>;
     loop {
         let mut silent = vec![];
@@ -167,6 +169,9 @@ pub async fn say(argv: &[String]) -> Result<String> {
                 let list = silent.iter().map(|x| format!("pid {x}")).collect::<Vec<_>>().join(", ");
                 let kill = silent.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
                 return Err(Fault::plain(format!("the key is held by connector process {list}, which does not answer (an older connector without the side channel, or a hung one). It is never overridden (two writers on one key break its chain): run `kill {kill}`, then say again")));
+            }
+            if p.as_ref().is_some_and(|p| !p.has_key && !p.foreign.is_empty()) {
+                return Err(Fault::plain("this folder's Trommi key belongs to another agent session: this session is a member of its own and needs an invite of its own (Trommi app: \"invite an agent\")"));
             }
             let e = m.me.lock().unwrap().error.clone();
             Err(Fault::plain(e.unwrap_or_else(|| not_in_room(&m.phase()))))
@@ -396,12 +401,66 @@ pub fn allow_tools() -> std::io::Result<()> {
     std::fs::write(f, serde_json::to_string_pretty(&j).unwrap() + "\n")
 }
 
+/// `claim-key`: the key that the running connector of this agent session holds becomes this session's
+/// (`cc:<CLAUDE_CODE_SESSION_ID>` or `key:<TROMMI_SESSION_KEY>`), so that no other session takes it while this
+/// one's connector restarts. Only a key nobody owns yet; never one of another session, never a takeover.
+pub async fn claim_key() -> Result<String> {
+    let mut cfg = connector_config(None, false);
+    cfg.invite = String::new();
+    if cfg.owner.is_empty() {
+        return Err(Fault::plain(
+            "no agent session here: run it from the Claude Code session whose key it is (CLAUDE_CODE_SESSION_ID) or with TROMMI_SESSION_KEY",
+        ));
+    }
+    let Some(room_id) = resolve_room(&cfg)? else {
+        return Err(Fault::plain(format!(
+            "this folder ({}) has no Trommi key",
+            cfg.shown
+        )));
+    };
+    let Some(p) = member::own_held_slot(&cfg, &room_id).await else {
+        return Err(Fault::plain(
+            "no connector of this session holds a key of this folder: call a Trommi tool first, then run this again",
+        ));
+    };
+    let record = owner_of(&p);
+    if owned_by(record.as_ref(), &cfg.owner, 0) {
+        return Ok(format!("slot {} is this session's already", p.slot));
+    }
+    let unowned = record.as_ref().is_none_or(|r| {
+        !r.get("owner").is_some_and(crate::util::truthy)
+            && r.get("claude_pid").is_none_or(|v| v.is_null())
+    });
+    if !unowned {
+        return Err(Fault::plain(format!(
+            "slot {} has an owner already; it stays as it is",
+            p.slot
+        )));
+    }
+    write_owner(&p, &owner_record(&cfg.owner, None));
+    Ok(format!(
+        "slot {} belongs to this session now ({})",
+        p.slot,
+        p.key_file.display()
+    ))
+}
+
 /// Dispatch a command line; Some(exit code) when it was one of the commands.
 pub async fn run(argv: &[String]) -> i32 {
     let cmd = argv.first().map(|s| s.as_str()).unwrap_or("");
     let given = argv.get(1).cloned();
     match cmd {
         "join" | "connect" => match join(given).await {
+            Ok(s) => {
+                println!("{s}");
+                0
+            }
+            Err(e) => {
+                eprintln!("[trommi] {}", e.text());
+                1
+            }
+        },
+        "claim-key" => match claim_key().await {
             Ok(s) => {
                 println!("{s}");
                 0

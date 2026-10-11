@@ -1544,9 +1544,9 @@ async fn stream(
         tokio::time::sleep(Duration::from_millis(left)).await;
         deadline.expire();
     });
-    let opened = app.clone();
+    let (opened, told) = (app.clone(), s.clone());
     blocking(move || {
-        opened.stream_opened(&auth);
+        opened.stream_opened(&auth, &told);
         Ok(())
     })
     .await?;

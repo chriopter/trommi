@@ -351,7 +351,9 @@ encrypted.
 20. `GET /v1/stream` events: `envelope` and `log` carry the item of `/v1/changes` and its change number as the
     event id; `relay` `{ group_id, epoch, sender, message }`; `welcome` `{ group_id }`; `request`; `presence`
     `{ device, online, hears?, working?, last_call_at? }`; `file_evicted` `{ file_id }`. Events without a change
-    number are not replayed.
+    number are not replayed. A human device's new stream is first told who is here now: one `presence` per other
+    device with a stream open, with `hears`, `working` and `last_call_at` while its agent lease runs. A `presence`
+    without `hears` says nothing of the link: the report a client holds stands while the device is online.
 21. A void record and an envelope beyond a Cut are served in pruned form; the latter only on the chain route,
     marked `cut` (not by a push ticket either). What a Cut cannot bring back stays as it is: the files of an
     Artifact whose closing version was cut are deleted.

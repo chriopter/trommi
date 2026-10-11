@@ -370,10 +370,14 @@ fn clear_leftovers(p: &SlotPaths) {
 }
 
 /// Ask the holder of a slot for its key: Ok when it gave it up, else its answer (used, quiet_ms, after_ms) or silent.
-pub async fn ask_yield(p: &SlotPaths, session: &str) -> std::result::Result<(), Refused> {
+pub async fn ask_yield(
+    p: &SlotPaths,
+    session: &str,
+    owner: &str,
+) -> std::result::Result<(), Refused> {
     match knock(
         p,
-        &json!({ "op": "yield", "pid": pid(), "session": session }),
+        &json!({ "op": "yield", "pid": pid(), "session": session, "owner": owner }),
         10_000,
     )
     .await
@@ -407,8 +411,17 @@ pub async fn ask_yield(p: &SlotPaths, session: &str) -> std::result::Result<(), 
 pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
     let dir = cfg.keys_dir.join(room_id);
     let keyed_raw = slots_in(cfg, &dir);
+    // Only this session's own slots and those nobody owns are tried: another session's key is never taken, also
+    // not while it is free (its session may be resumed), and its holder is never asked for it.
+    let (usable, foreign): (Vec<u32>, Vec<u32>) = keyed_raw.iter().partition(|n| {
+        may_take(
+            owner_of(&paths_of(cfg, room_id, **n)).as_ref(),
+            &cfg.owner,
+            ppid(),
+        )
+    });
     let keyed = slot_order(
-        &keyed_raw,
+        &usable,
         |n| {
             owned_by(
                 owner_of(&paths_of(cfg, room_id, n)).as_ref(),
@@ -442,7 +455,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
         let mut handed = false;
         if !r.ok && ask {
             let was = r.holders.clone();
-            match ask_yield(&p, &cfg.session).await {
+            match ask_yield(&p, &cfg.session, &cfg.owner).await {
                 Ok(()) => {
                     r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
                     if r.ok {
@@ -468,7 +481,8 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
             }
         }
         if r.ok {
-            if owner_of(&p).is_none() && !cfg.owner.is_empty() {
+            // A slot nobody owned yet becomes this session's.
+            if !owned_by(owner_of(&p).as_ref(), &cfg.owner, ppid()) {
                 write_owner(&p, &owner_record(&cfg.owner, Some(ppid())));
             }
             return SlotPaths {
@@ -477,6 +491,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
                 holders,
                 took_over: !r.took_over.is_empty(),
                 handed_over: handed,
+                foreign,
                 ..p
             };
         }
@@ -485,7 +500,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
     }
     let mut n = 1;
     loop {
-        if !keyed.contains(&n) {
+        if !keyed_raw.contains(&n) {
             let p = paths_of(cfg, room_id, n);
             if claim_slot(&p, &cfg.session, cfg.takeover_ms).await.ok {
                 clear_leftovers(&p);
@@ -494,6 +509,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
                     busy,
                     holders,
                     refused,
+                    foreign,
                     ..p
                 };
             }
@@ -522,7 +538,7 @@ pub async fn free_slot(cfg: &Cfg, room_id: &str) -> SlotPaths {
     }
 }
 /// The keyed slot of this folder that a running connector of this same Claude Code session holds, if any.
-async fn own_held_slot(cfg: &Cfg, room_id: &str) -> Option<SlotPaths> {
+pub async fn own_held_slot(cfg: &Cfg, room_id: &str) -> Option<SlotPaths> {
     let up = ancestors(8);
     for n in slots_in(cfg, &cfg.keys_dir.join(room_id)) {
         let p = paths_of(cfg, room_id, n);
@@ -925,6 +941,11 @@ impl Member {
                         .out
                         .clone()
                         .or_else(|| last_out(&self.cfg, &room_id))
+                        // (with keys of other sessions here, only this session's own mark speaks for it)
+                        .filter(|m| {
+                            p.foreign.is_empty()
+                                || owned_by(m.get("owner"), &self.cfg.owner, ppid())
+                        })
                 } else {
                     None
                 };

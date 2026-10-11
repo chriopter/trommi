@@ -335,6 +335,19 @@ impl Live {
             .is_some_and(|l| l.iter().any(|s| &s.auth.device == device && !s.is_closed()))
     }
 
+    /// The devices of a room with a stream open now (each once).
+    pub fn online_devices(&self, room: &Room) -> Vec<Device> {
+        let mut out: Vec<Device> = Vec::new();
+        if let Some(list) = self.lock().get(room) {
+            for s in list.iter().filter(|s| !s.is_closed()) {
+                if !out.contains(&s.auth.device) {
+                    out.push(s.auth.device);
+                }
+            }
+        }
+        out
+    }
+
     pub fn count(&self) -> usize {
         self.lock().values().map(|l| l.len()).sum()
     }
