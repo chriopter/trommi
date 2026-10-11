@@ -1814,8 +1814,9 @@ pub struct RoomCheck {
     anchored: bool,
     /// The change number of the last Commit taken.
     place: Option<u64>,
-    /// Live session groups the device checks after it joined the room (8.5): their rows are left for then.
-    deferred: BTreeSet<GroupId>,
+    /// A room-only check (8.5, [`RoomCheck::defer`]): no session group's row is selected here, the deferred
+    /// ones nor any other the hub did not name; each is selected when its group is verified and joined.
+    room_only: bool,
 }
 
 impl RoomCheck {
@@ -1866,15 +1867,19 @@ impl RoomCheck {
             last_committer: None,
             anchored: false,
             place: None,
-            deferred: BTreeSet::new(),
+            room_only: false,
         })
     }
 
-    /// Names live session groups whose check comes after the join of the room (8.5): none of their
-    /// `SealedKey`s is selected here, whether or not the group was named at the start; each group's keys
-    /// are selected when it is checked and joined ([`session_keys`]).
+    /// Makes this a room-only check (8.5): the live session groups `groups` are checked after the join of
+    /// the room. No session group's `SealedKey` is selected at the finish then, not one of a group named here,
+    /// nor one of a group walked, nor one of a group the hub left out of its list (it could leave a live
+    /// session out to have its rows taken unverified); each live group's keys are selected when it is checked
+    /// and joined ([`session_keys`]), and older keys of others come as to any device, by the handover (7.1).
+    /// `groups` is the caller's list; the check does not need it beyond that.
     pub fn defer(&mut self, groups: &[GroupId]) {
-        self.deferred.extend(groups.iter().copied());
+        let _ = groups;
+        self.room_only = true;
     }
 
     /// The room being checked.
@@ -2018,7 +2023,7 @@ impl RoomCheck {
         keys.check_room(&history.newest().room)?;
 
         let opened = open_links(keys, &self.room, served.links, &key_changes(history))?;
-        let deferred = std::mem::take(&mut self.deferred);
+        let room_only = self.room_only;
         let sessions: Vec<Result<CheckedSession, Error>> = self
             .walks
             .into_iter()
@@ -2026,7 +2031,7 @@ impl RoomCheck {
             .map(|(walk, current)| walk.finish(current))
             .collect();
         let begun = |group: &GroupId, epoch: u64| {
-            if deferred.contains(group) {
+            if room_only {
                 return Began::Never;
             }
             let verified = sessions

@@ -63,6 +63,8 @@ export type SignInStep = { step: 'reading'; done?: number; total?: number } | { 
 export interface SessionJoins { joined: number; not_joined: { group: Uint8Array; code: string }[] }
 /** How many session groups' Commits are read from the hub at a time while they are joined behind a sign-in. */
 const SESSION_READS = 6
+/** Refusals of a session join that mean the group moved on: its GroupInfos and Commits are read again. */
+const MOVED_ON: readonly string[] = ['epoch-taken', 'wrong-epoch', 'group-behind', 'wrong-recovery']
 /** How often a session join that met `busy` is tried again (about half a minute in all). */
 const BUSY_TRIES = 20
 
@@ -328,6 +330,7 @@ export function roomsOn(env: RoomEnv): Rooms {
         let done = 0
         tell({ step: 'checking', done, total })
         await held.codeCheckStart(code, steps.start)
+        // (room-only, also with no session listed: no session's row is taken with the room, 8.5)
         await held.codeCheckDefer(steps.later)
         // (progress is told as the Commits are read, every few, not only once a slice of up to 256 was checked: a
         //  phone that reads slowly says it moves, and the sign-in's watch for silence is not tripped)
@@ -386,9 +389,10 @@ export function roomsOn(env: RoomEnv): Rooms {
       const session = { group }
       fetch(at + SESSION_READS)
       try {
-        const { founding, current, commits } = await ahead[at]!
+        let input = await ahead[at]!
         delete ahead[at]
         const join = (): Promise<void> => engine.land(async d => {
+          const { founding, current, commits } = input
           // (already a member: an earlier try went through)
           if ((await d.groups()).some(g => sameBytes(g.group, session.group))) return null
           const checked = await d.sessionCheckStart(founding)
@@ -406,7 +410,11 @@ export function roomsOn(env: RoomEnv): Rooms {
         const member = async (): Promise<boolean> => (await engine.do(d => d.groups())).some(g => sameBytes(g.group, session.group))
         for (let tries = 0; ; tries++) {
           try { await join(); break } catch (e) {
-            if (engine.core.errorCode(e) !== 'busy' || tries >= BUSY_TRIES) throw e
+            const code = engine.core.errorCode(e) ?? (e instanceof HubError ? e.code : null)
+            // the group moved on under the join (another Commit took its epoch): read it again, then build again
+            const moved = code !== null && MOVED_ON.includes(code)
+            if ((code !== 'busy' && !moved) || tries >= BUSY_TRIES) throw e
+            if (moved) input = await read(at)
             await engine.catchUp().catch(() => {})
             await engine.joinNow(null).catch(() => false)
             if (await member()) break

@@ -2237,9 +2237,10 @@ fn the_one_call_room_check_places_the_commits_of_a_session_it_cannot_name() {
 }
 
 /// A room with sessions and epochs, and a new device's room-only check of it (8.5): the room group's
-/// Commits alone, no session named, `defer` naming the live sessions or not. Returns the world, the device
+/// Commits alone, no session named; `defer`: `None` no room-only mode, `Some(all)` room-only, naming every live
+/// session (`true`) or none (`false`: a hub that leaves them out of its list). Returns the world, the device
 /// after its posted join, and what the hub served.
-fn room_only_sign_in(defer: bool) -> (World, TestDevice, trommi_tests::Fetched, Vec<GroupId>) {
+fn room_only_sign_in(defer: Option<bool>) -> (World, TestDevice, trommi_tests::Fetched, Vec<GroupId>) {
     use trommi_tests::placed_commits;
     let mut w = world(true);
     w.write_epochs(3);
@@ -2267,8 +2268,10 @@ fn room_only_sign_in(defer: bool) -> (World, TestDevice, trommi_tests::Fetched, 
         },
     )
     .unwrap();
-    if defer {
-        c.code_check_defer(&sessions).unwrap();
+    match defer {
+        Some(true) => c.code_check_defer(&sessions).unwrap(),
+        Some(false) => c.code_check_defer(&[]).unwrap(),
+        None => {}
     }
     for slice in room_only.chunks(4) {
         placed_commits(slice, |slice| c.code_check_slice(slice)).unwrap();
@@ -2321,7 +2324,7 @@ fn join_checked_session(
 
 #[test]
 fn a_device_signs_in_checking_the_room_group_alone_and_each_session_after() {
-    let (mut w, mut c, fetched, sessions) = room_only_sign_in(true);
+    let (mut w, mut c, fetched, sessions) = room_only_sign_in(Some(true));
     let room_group = fetched.room.group;
     for (epoch, key) in keys_of(&w.hub, &w.a, &room_group) {
         assert_eq!(c.content_key(&room_group, epoch).unwrap(), key);
@@ -2349,11 +2352,14 @@ fn a_device_signs_in_checking_the_room_group_alone_and_each_session_after() {
 fn a_room_only_check_takes_no_key_of_a_deferred_session() {
     // Not deferred, a session's rows count as of a group nobody verified (any room epoch): its earlier keys come
     // with the room's join.
-    let (mut w, mut loose, _, sessions) = room_only_sign_in(false);
+    let (mut w, mut loose, _, sessions) = room_only_sign_in(None);
     join_checked_session(&mut w, &mut loose, &sessions[0], None);
     assert!(loose.content_key(&sessions[0], 1).is_ok());
-    // Deferred, none of them is taken with the room: only the session's own check selects them.
-    let (mut w, mut c, _, sessions) = room_only_sign_in(true);
-    join_checked_session(&mut w, &mut c, &sessions[0], None);
-    assert!(c.content_key(&sessions[0], 1).is_err());
+    // Room-only, none of them is taken with the room: only the session's own check selects them. Also when
+    // the hub left the session out of the list the device deferred.
+    for named in [true, false] {
+        let (mut w, mut c, _, sessions) = room_only_sign_in(Some(named));
+        join_checked_session(&mut w, &mut c, &sessions[0], None);
+        assert!(c.content_key(&sessions[0], 1).is_err());
+    }
 }
