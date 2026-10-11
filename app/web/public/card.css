@@ -289,9 +289,6 @@ label.tc-opt:has(> input:checked) .tc-tick { background: var(--accent); color: v
 .tc-ask:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
 .tc-field { width: 100%; min-height: 44px; max-height: 160px; field-sizing: content; resize: none; border: 0; background: none; color: var(--fg); font: 400 var(--t-sm)/1.45 var(--font); outline: none; padding: 2px var(--s-1); }
 .tc-ask-row { display: flex; align-items: center; gap: 6px; }
-.tc-clip { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--muted); cursor: pointer; }
-.tc-clip:hover { background: var(--sunken); color: var(--fg); }
-.tc-clip .sketch { width: 19px; height: 19px; }
 .tc-saved { color: var(--muted); font: 500 var(--t-xs)/1 var(--font); }
 .tc-saved[data-state="saved"] { color: var(--accent); }
 .tc-saved[data-state="failed"] { color: var(--urg-high); }
@@ -444,13 +441,9 @@ label.tc-opt:has(> input:checked) .tc-tick { background: var(--accent); color: v
 
 /* ---- the tracing sheet (card.mjs traceSheet): a sheet of tracing paper taped over the
    whole card, the card showing through; the Scribble Board's tools in a pill at the window's foot ---- */
-.tc-draw-pen { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
-.tc-draw-pen:hover { background: var(--sunken); color: var(--fg); }
-.tc-draw-pen .sketch { width: 19px; height: 19px; }
 .tc-draw { position: relative; }
 .tc-draw[aria-pressed="true"] { border-color: var(--urg-high); background: var(--urg-high-soft); color: var(--urg-high); box-shadow: 0 0 0 1px var(--urg-high); }
 .tc-draw[data-inked]::after { content: ""; position: absolute; right: 3px; top: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--urg-high); box-shadow: 0 0 0 2px var(--surface); }
-.tc-draw-pen[data-inked]::after { right: 4px; top: 4px; width: 7px; height: 7px; }
 .tc-rails > .tc-draw { right: var(--step); }
 .tc-rails:has(> .tc-full) > .tc-draw { right: calc(2 * var(--step)); }
 .tc-rails:has(> .tc-draw) > .is-next { right: calc(2 * var(--step) + 12px); }
@@ -777,28 +770,6 @@ a.focus-stage-step { display: grid; place-items: center; }
 :root[data-shift] .tc-send:has(> .tc-send-uno) > .sketch { visibility: hidden; }
 :root[data-shift] .tc-send:has(> .tc-send-uno) > .tc-send-uno { visibility: visible; }
 .tc-send .tc-send-uno .sketch { width: 22px; height: 22px; stroke-width: 2.2; }
-/* the split: Send and, glued to its right, a slim chevron; its small menu opens above with "Send and Reverse" (the reverse
-   card's colours on a small tile, the words beside it) */
-/* the chevron beside Send, for who does not know Shift: small, quiet, no part of the green button; its target
-   is 32px wide and as tall as Send */
-.tc-send-split { position: relative; margin-left: auto; flex: none; display: inline-flex; align-items: stretch; gap: 1px; }
-.tc-send-split > .tc-send { margin-left: 0; }
-.tc-send-menu { position: static; display: flex; margin-right: -8px; }
-.tc-send-more { display: grid; place-items: center; width: 32px; height: 38px; margin-left: -6px; box-sizing: border-box; padding-left: 6px; border-radius: var(--r-sm); background: none; color: var(--muted); opacity: .7; cursor: pointer; list-style: none; }
-.tc-send-more::-webkit-details-marker { display: none; }
-.tc-send-more:hover, .tc-send-menu[open] > .tc-send-more { color: var(--fg); opacity: 1; }
-.tc-send-more .sketch { width: 13px; height: 13px; stroke-width: 2; transition: rotate 120ms; }
-.tc-send-menu[open] > .tc-send-more .sketch { rotate: 180deg; }
-.tc-send-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -3px; opacity: 1; }
-.tc-send-pop { position: absolute; z-index: var(--z-pop); right: 0; bottom: calc(100% + 6px); width: max-content; padding: 4px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--shadow-md); }
-.tc-send-rev { display: grid; grid-template-columns: 30px auto; grid-template-rows: auto auto auto; align-items: center; column-gap: 10px; min-height: 44px; padding: 5px 12px 5px 6px; border: 0; border-radius: 9px; background: none; color: var(--fg); font: 600 var(--t-sm)/1.2 var(--font); text-align: left; cursor: pointer; }
-.tc-send-rev:hover, .tc-send-rev:focus-visible { background: var(--sunken); outline: none; }
-.tc-send-rev-uno { grid-row: 1 / 3; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--uno-oval) 50% 50% / 24px 28px no-repeat, conic-gradient(from 7deg at 53% 47%, var(--uno-red) 0 25%, var(--uno-yellow) 0 50%, var(--uno-green) 0 75%, var(--uno-blue) 0); color: #fff; rotate: -6deg; }
-.tc-send-rev-uno .sketch { width: 18px; height: 18px; stroke-width: 2.2; }
-.tc-send-rev small { grid-column: 2; color: var(--muted); font: 500 var(--t-xs)/1.2 var(--font); }
-.tc-send-hint { margin-top: 3px; opacity: .85; }
-.tc-send-hint kbd { padding: 0 4px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--line-strong); font: 600 .68rem/1.5 var(--font); }
-@media (pointer: coarse) { .tc-send-more { width: 36px; } .tc-send-hint { display: none; } }
 
 /* ---- What?? and the reverse card at the column's foot: the right column is as tall as the card,
    its foot the same inset as its top and right, the pair flush in its bottom-right corner, as high as an option (the
@@ -920,7 +891,7 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
 .tc-vids { display: grid; gap: var(--s-2); width: 100%; }
 .tc-vid { margin: 0; }
 .tc-vid video { display: block; width: auto; max-width: min(100%, 520px); max-height: min(70vh, 640px); border-radius: 10px; background: #000; box-shadow: 0 0 0 1.5px var(--fg); }
-.tc-notes:has(.tc-send-menu[open]), .tc-page .tc-notes > .tc-chat:has(.tc-send-menu[open]) { z-index: var(--z-menu); }   /* (the menu above Send lies over the card) */
+.tc-notes:has(.tc-plus[open]), .tc-page .tc-notes > .tc-chat:has(.tc-plus[open]) { z-index: var(--z-menu); }   /* (the "+" menu lies over the card) */
 /* (a phone, a sheet on the card: the same one bar, held at the window's foot; its tools in one row that scrolls sideways) */
 @media (max-width: 860px) {
   .tc-trace-tools.is-docked { flex-wrap: nowrap; justify-content: flex-start; row-gap: 0; padding: 0 0 6px; border-radius: 0; }
@@ -928,8 +899,26 @@ body:has(.tc-page.is-full) :is(.corner-note-box, .curl, #phone-bar, #agents, .to
   .tc-page.is-tracing.is-docked .tc-notes { position: relative; z-index: var(--z-tools); }
   .tc-page.is-tracing.is-docked .tc-notes > .tc-chat { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
 }
-/* (touch: the pen's wider tap area, app.css, is its ::after too; the dot of a drawing that waits is drawn as a ::before there) */
-@media (pointer: coarse), (max-width: 860px) {
-  .tc-draw-pen[data-inked]::after { background: none; box-shadow: none; border-radius: 0; }
-  .tc-draw-pen[data-inked]::before { content: ""; position: absolute; right: 4px; top: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--urg-high); box-shadow: 0 0 0 2px var(--surface); }
-}
+
+/* ---- the "+" at the field's left (card.mjs plusMenu): Attach, Draw on the card; a dot while a drawing waits ---- */
+.tc-plus { position: relative; flex: none; }
+/* (in the field: the "+" left of the words, Send right of them; the chips of what is attached above all three) */
+.tc-chat > .tc-ask { grid-template-columns: auto minmax(0, 1fr) auto; padding-left: 6px; }
+.tc-chat > .tc-ask > .tc-chips { grid-column: 1 / -1; }
+.tc-chat > .tc-ask > :is(.tc-plus, .tc-field, .tc-ask-row) { grid-row: 2; }
+.tc-chat > .tc-ask:has(> .tc-chips[hidden]) > :is(.tc-plus, .tc-field, .tc-ask-row) { grid-row: 1; }
+.tc-chat > .tc-ask > .tc-plus { grid-column: 1; align-self: end; margin-bottom: 2px; }
+.tc-chat > .tc-ask > .tc-field { grid-column: 2; }
+.tc-chat > .tc-ask > .tc-ask-row { grid-column: 3; }
+.tc-plus-open { list-style: none; display: grid; place-items: center; width: 34px; height: 34px; border: 1.4px solid var(--line-strong); border-radius: 50%; color: var(--fg); cursor: pointer; }
+.tc-plus-open::-webkit-details-marker { display: none; }
+.tc-plus-open:hover, .tc-plus[open] > .tc-plus-open { background: var(--sunken); }
+.tc-plus-open:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.tc-plus-open .sketch { width: 18px; height: 18px; stroke-width: 2; transition: rotate 120ms; }
+.tc-plus[open] > .tc-plus-open .sketch { rotate: 45deg; }
+.tc-plus:has(.tc-draw[data-inked]) > .tc-plus-open::after { content: ""; position: absolute; right: 0; top: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--urg-high); box-shadow: 0 0 0 2px var(--surface); }
+.tc-plus-pop { position: absolute; z-index: var(--z-pop); left: 0; bottom: calc(100% + 6px); display: grid; gap: 2px; width: max-content; padding: 6px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--fg), 0 12px 28px -12px rgb(20 30 25 / .4); }
+.tc-plus-item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px 0 8px; border: 0; border-radius: 9px; background: none; color: var(--fg); font: 500 var(--t-sm)/1 var(--font); text-align: left; cursor: pointer; }
+.tc-plus-item:hover, .tc-plus-item:focus-visible { background: var(--sunken); outline: none; }
+.tc-plus-item .sketch { width: 19px; height: 19px; color: var(--muted); }
+@media (pointer: coarse) { .tc-plus-item { min-height: 46px; } }
