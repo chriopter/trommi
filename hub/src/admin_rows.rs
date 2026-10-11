@@ -391,30 +391,59 @@ fn cell(col: &Col, value: &Value, whole: bool) -> String {
     }
 }
 
-/// What a column's values show, for the columns' list.
-fn shown_label(show: Show) -> String {
-    match show {
-        Show::Full => format!("<span class=\"cm cm-plain\">{EYE}<span>in full</span></span>"),
-        Show::Email => format!("<span class=\"cm cm-plain\">{EYE}<span>e-mail, blurred until double-clicked</span></span>"),
-        Show::Sealed => format!("<span class=\"cm cm-e2e\">{LOCK}<span>sealed: length and first bytes</span></span>"),
-        Show::Secret => "<span class=\"secret\">•••• secret: length only</span>".into(),
-    }
-}
-
-/// The head of a table's pages: its name, group and what it holds.
-fn head(table: &str, n: i64, extra: &str) -> String {
+/// The head of a table's pages: its name, group and number of rows; its columns (a card, folded); what the hub
+/// reads in it and what lies sealed; and in one line which columns are not shown in full.
+fn head(table: &str, n: i64, extra: &str, shape: &Shape) -> String {
     let (group, reads, sealed) = TABLES
         .iter()
         .find(|t| t.1 == table)
         .map(|t| (t.0, t.2, t.3))
         .unwrap_or_default();
-    format!(
-        "<div class=\"head\"><h1><code class=\"big\">{table}</code></h1><span class=\"muted\">{group} · {n} row{}{extra}</span></div>\
-<p class=\"legend\"><span class=\"cm cm-plain\">{EYE}<span>{}</span></span>{}</p>",
+    let mut out = format!(
+        "<div class=\"head\"><h1><code class=\"big\">{table}</code></h1><span class=\"muted\">{group} · {n} row{}{extra}</span></div>",
         if n == 1 { "" } else { "s" },
+    );
+    // the columns: name, type, a lock for sealed, dots for a credential; the key's in bold
+    out.push_str(&format!(
+        "<details class=\"card cols-card\"><summary><h3>Columns <span class=\"count\">{}</span></h3></summary><ul class=\"colchips\">",
+        shape.cols.len()
+    ));
+    for col in &shape.cols {
+        let name = if shape.key.contains(&quote(&col.name)) { format!("<b>{}</b>", esc(&col.name)) } else { esc(&col.name) };
+        out.push_str(&format!(
+            "<li>{}<code>{name}</code><span class=\"faint\">{}</span></li>",
+            match col.show {
+                Show::Sealed => format!("<span class=\"cm cm-e2e\" title=\"sealed\">{LOCK}</span>"),
+                Show::Secret => "<span class=\"secret\" title=\"credential: not shown\">••</span>".into(),
+                _ => String::new(),
+            },
+            esc(&col.kind.to_lowercase())
+        ));
+    }
+    out.push_str("</ul></details>");
+    out.push_str(&format!(
+        "<p class=\"legend\"><span class=\"cm cm-plain\">{EYE}<span>The hub reads: {}</span></span><span class=\"cm cm-e2e\">{LOCK}<span>Sealed: {}</span></span></p>",
         esc(reads),
-        if sealed.is_empty() { String::new() } else { format!("<span class=\"cm cm-e2e\">{LOCK}<span>sealed: {}</span></span>", esc(sealed)) }
-    )
+        if sealed.is_empty() { "nothing".into() } else { esc(sealed) }
+    ));
+    // which columns are not shown in full, in one line
+    let named = |show: Show| shape.cols.iter().filter(|c| c.show == show).map(|c| esc(&c.name)).collect::<Vec<_>>().join(", ");
+    let mut masked = Vec::new();
+    for (show, why) in [
+        (Show::Secret, "credentials, shown by their length only"),
+        (Show::Sealed, "sealed, shown by their length and first bytes"),
+        (Show::Email, "blurred until double-clicked"),
+    ] {
+        let cols = named(show);
+        if !cols.is_empty() {
+            masked.push(format!("<code>{cols}</code> ({why})"));
+        }
+    }
+    out.push_str(&format!(
+        "<p class=\"masked muted\">{}</p>",
+        if masked.is_empty() { "Every column is shown in full.".to_string() } else { format!("Not in full: {}.", masked.join(" · ")) }
+    ));
+    out
 }
 
 // ---- the pages --------------------------------------------------------------------------------------------------
@@ -577,7 +606,7 @@ pub fn rows(app: &App, table: &'static str, q: &Query) -> Result<String, Refused
         };
 
         // ---- the page
-        let mut main = head(table, n, if q.filter.is_some() { " where the filter holds" } else { "" });
+        let mut main = head(table, n, if q.filter.is_some() { " where the filter holds" } else { "" }, &shape);
         for note in &notes {
             main.push_str(&format!("<p class=\"err\">{note}</p>"));
         }
@@ -656,22 +685,6 @@ pub fn rows(app: &App, table: &'static str, q: &Query) -> Result<String, Refused
             if page.len() == 1 { "" } else { "s" }
         ));
 
-        // the columns and how each is shown
-        main.push_str(&format!(
-            "<details class=\"card\"><summary><h3>Columns <span class=\"count\">{}</span></h3></summary><div class=\"scroll\"><table class=\"grid\"><thead><tr><th>Column</th><th>Type</th><th>Key</th><th>Shown</th></tr></thead><tbody>",
-            shape.cols.len()
-        ));
-        for col in &shape.cols {
-            let in_key = shape.key.contains(&quote(&col.name));
-            main.push_str(&format!(
-                "<tr><td><code>{}</code></td><td class=\"muted\">{}</td><td>{}</td><td>{}</td></tr>",
-                esc(&col.name),
-                esc(&col.kind.to_lowercase()),
-                if in_key { "primary" } else { "" },
-                shown_label(col.show)
-            ));
-        }
-        main.push_str("</tbody></table></div></details>");
         Ok::<_, Refused>(framed(Some(table), &side, &main))
     })
 }
@@ -689,7 +702,7 @@ pub fn row(app: &App, table: &'static str, token: &str) -> Result<Option<String>
         let (side, counts) = side(c, Some(table))?;
         let n = TABLES.iter().position(|t| t.1 == table).map_or(0, |i| counts[i]);
 
-        let mut main = head(table, n, "");
+        let mut main = head(table, n, "", &shape);
         main.push_str(&format!(
             "<section class=\"card\"><h3><span>Row <code>{}</code></span><a class=\"count\" href=\"/tables/{table}\">← all rows</a></h3><dl class=\"kv row\">",
             esc(&if shape.rowid { token.to_string() } else { format!("{}…", &token[..token.len().min(24)]) })

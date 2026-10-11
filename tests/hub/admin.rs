@@ -484,6 +484,11 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
                  VALUES (7, 'grace@example.net', ?1, ?1, ?2, ?3, '{\"alg\":\"argon2id\"}', ?2, ?3, ?4, 'email', ?5)",
                 rusqlite::params![t0, vec![0x5au8; 16], vec![0xeeu8; 32], vec![0x77u8; 80], vec![1u8; 16]],
             )?;
+            // a login throttle row: nothing in it is a credential, all of it shown
+            c.execute(
+                "INSERT INTO login_accounts (account, budget_start, budget_used, next_turn) VALUES (?1, ?2, 3, 4)",
+                rusqlite::params![vec![0x42u8; 32], t0],
+            )?;
             // 60 files (a table without rowid, keyed by room and file): equal times and missing ones, to page over
             for i in 0..60u8 {
                 c.execute(
@@ -517,6 +522,21 @@ fn a_table_shows_its_rows_in_pages_with_its_credentials_masked() {
     assert!(first.contains("•••• (secret, 65 bytes)") && first.contains("•••• (secret, 16 bytes)"));
     assert!(first.contains("2026-10-") && first.contains(" UTC</span>"));
     assert!(first.contains("<td>knocking</td>"));
+    // the columns folded at the top, then what the hub reads, then which columns are not in full, then the rows
+    let at = |what: &str| first.find(what).unwrap_or_else(|| panic!("{what}"));
+    assert!(at("<details class=\"card cols-card\">") < at("The hub reads:"));
+    assert!(at("The hub reads:") < at("Not in full:") && at("Not in full:") < at("<table class=\"grid rows\">"));
+    assert!(first.contains("Not in full: <code>endpoint, p256dh, auth, apns_key</code> (credentials, shown by their length only)."));
+    assert!(first.contains("<li><span class=\"secret\" title=\"credential: not shown\">••</span><code>endpoint</code>"));
+    // the side list: names and counts only, each a link to its rows
+    assert!(!first.contains("<ul class=\"cols-list") && !first.contains("Open push_subscriptions"));
+    assert!(first.contains("<a class=\"tbl on\" href=\"/tables/push_subscriptions\" aria-current=\"page\">"));
+    for group in ["Accounts and sign-in", "Rooms and devices", "Groups (MLS)", "Keys and recovery", "Content", "Files and shares", "Push", "Hub upkeep"] {
+        assert!(first.contains(&format!("<div class=\"grp\">{group}</div>")), "{group}");
+    }
+    let throttle = text(&get("/tables/login_accounts"));
+    assert_eq!(row_keys(&throttle, "login_accounts").len(), 1);
+    assert!(throttle.contains("Every column is shown in full.") && throttle.contains(&trommi_hub::util::hex(&[0x42u8; 16])));
     // a byte string by its length and first 16 bytes
     assert!(first.contains(&format!("32 bytes</span> <code>{}</code>", trommi_hub::util::hex(&[9u8; 16]))));
     assert_eq!(link(&first, "← Previous"), None);
