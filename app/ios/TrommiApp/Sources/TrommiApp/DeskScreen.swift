@@ -48,7 +48,7 @@ struct DeskScreen: View {
           if !v.cut.isEmpty { CutSlip(units: v.cut) }
           let cards = v.deskCards()
           ForEach(runs(cards, d)) { run in
-            VStack(spacing: 10) { ForEach(run.cards) { c in DeskRow(card: c, agent: d.byAgent[c.agent]) } }
+            VStack(spacing: 10) { ForEach(run.cards) { c in DeskRow(card: c, agent: d.byAgent[c.agent]).equatable() } }
           }
           if v.fresh.isEmpty && v.reads.isEmpty && !v.units.isEmpty {
             VStack(spacing: 10) {
@@ -262,11 +262,30 @@ func plainText(_ s: String) -> String {
 }
 let BARE: Set<String> = ["yes", "no", "ok", "okay", "allow", "deny", "ja", "nein"]
 
-struct DeskRow: View {
-  @EnvironmentObject var model: BoardModel
+/**
+ * A question on the Desk. Like MessageView it does not observe the model (every change of the board would build all
+ * rows again, with their drawings); it is Equatable over what it shows and what its tiles act on (`look`).
+ */
+struct DeskRow: View, Equatable {
+  private var model: BoardModel { BoardModel.shared }
   let card: DeskCard
   let agent: Agent?
   var inSession = false
+  private let look: Int
+  init(card: DeskCard, agent: Agent?, inSession: Bool = false) {
+    self.card = card; self.agent = agent; self.inSession = inSession
+    look = DeskRow.look(card, agent)
+  }
+  static func == (a: DeskRow, b: DeskRow) -> Bool { a.card.id == b.card.id && a.inSession == b.inSession && a.look == b.look }
+  static func look(_ c: DeskCard, _ a: Agent?) -> Int {
+    var h = Hasher()
+    h.combine(c.id); h.combine(c.number); h.combine(c.kind); h.combine(c.status); h.combine(c.urgency); h.combine(c.title); h.combine(c.version); h.combine(c.versionHash)
+    for o in c.options { h.combine(o.key); h.combine(o.label); h.combine(o.detail); h.combine(o.final); h.combine(o.raw) }
+    h.combine(c.multiple); h.combine(c.recommended); h.combine(c.choices); h.combine(c.unsupported); h.combine(c.withAgent); h.combine(c.pending); h.combine(c.snoozedUntil)
+    h.combine(c.read); h.combine(c.trusted); h.combine(c.settled); h.combine(c.contentState); h.combine(c.answeredVersion); h.combine(c.revised); h.combine(c.decided); h.combine(c.agent)
+    if let a = a { h.combine(a.id); h.combine(a.name); h.combine(a.mark); h.combine(a.icon); h.combine(a.hue) }
+    return h.finalize()
+  }
   var body: some View {
     let _ = RenderCount.body("DeskRow")
     let hue = agent?.hue ?? 162
@@ -387,7 +406,7 @@ struct DeskFold: ViewModifier {
 
 /** The ways out of a row, held (desk.mjs rowSheet): Later, Reverse, Duck it, What??, Shred, Copy, Open. */
 struct RowMenu: View {
-  @EnvironmentObject var model: BoardModel
+  private var model: BoardModel { BoardModel.shared }   // (actions only: DeskRow)
   let card: DeskCard
   var body: some View {
     Button { model.path.append(.card(card.id)) } label: { Label("Open", systemImage: "doc.text") }
@@ -415,7 +434,7 @@ struct UnsupportedLine: View {
 
 /** The answers of a row (ui.mjs tiles). */
 struct Tiles: View {
-  @EnvironmentObject var model: BoardModel
+  private var model: BoardModel { BoardModel.shared }   // (actions only: DeskRow)
   let card: DeskCard
   let hue: Int
   var body: some View {

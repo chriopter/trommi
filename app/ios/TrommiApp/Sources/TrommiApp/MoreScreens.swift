@@ -98,7 +98,8 @@ struct OffList: View {
   /** Being worked on first (the newest move first), then the end list's order (EndList.endItems: Later, the rest). */
   static func rows(_ v: DeskModel.View, _ d: DeskModel) -> [Row] {
     let working = d.tasks.filter { $0.state == "working" }
-    let decidedHere = d.cards.filter { c in c.status == "decided" && d.stackOf(c) == "works" && v.here.contains { $0.id == c.agent } }
+    let here = Set(v.here.map { $0.id })
+    let decidedHere = d.cards.filter { c in c.status == "decided" && here.contains(c.agent) && d.stackOf(c) == "works" }
     let busy = (v.revising.filter { d.stackOf($0) == "works" } + decidedHere).map { c -> (DeskCard, UInt64) in
       let line = d.workLine(c, working: working)
       return (c, line?.updated ?? (c.status == "open" ? c.withAgent : c.decided) ?? 0)

@@ -33,6 +33,11 @@ struct SessionScreen: View {
   @State private var lastCount = 0
   @State private var loadingOlder = false
   @State private var topId: String?
+  /** How many of the newest messages are drawn: a long chat opens with a page of them, "Earlier messages" shows the
+   *  next page before it asks the hub for older ones (a chat of 5,000 drew all 5,000 rows on every change). It grows
+   *  with what comes in, so what he is reading never slides away. */
+  @State private var window = SessionScreen.page
+  static let page = 150
   @State private var renaming = false
   @State private var name = ""
   @State private var drawings = false
@@ -46,7 +51,9 @@ struct SessionScreen: View {
       let v = model.view
       let fresh = v?.fresh.filter { $0.agent == agentId } ?? []
       let freshIds = Set(fresh.map { $0.id } + (v?.reads.filter { $0.agent == agentId }.map { $0.id } ?? []))
-      let msgs = onlyQuestions ? all.filter { $0.from == "event" && $0.kind == "asked" && freshIds.contains($0.cardId ?? "") } : all
+      let every = onlyQuestions ? all.filter { $0.from == "event" && $0.kind == "asked" && freshIds.contains($0.cardId ?? "") } : all
+      let cut = max(0, every.count - window)
+      let msgs = cut > 0 ? Array(every[cut...]) : every
       let askAt = d.askAt(agent: agentId)
       let older = d.hasOlder(agent: agentId)
       let tasks = d.tasks.filter { $0.agent == agentId }
@@ -54,16 +61,16 @@ struct SessionScreen: View {
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 0) {
-            if older && !onlyQuestions {
-              Button { loadOlder(proxy, first: msgs.first?.id) } label: {
+            if (older || cut > 0) && !onlyQuestions {
+              Button { earlier(proxy, first: msgs.first?.id, here: cut > 0) } label: {
                 HStack(spacing: 8) { if loadingOlder { ProgressView().controlSize(.small) }; Text("Earlier messages").font(Face.text(14, .semibold)) }
                   .foregroundStyle(Ink.accent).frame(maxWidth: .infinity).padding(.vertical, 14)
               }
-              .onAppear { if touched { loadOlder(proxy, first: msgs.first?.id) } }
+              .onAppear { if touched { earlier(proxy, first: msgs.first?.id, here: cut > 0) } }
             }
             if msgs.isEmpty && !older { EmptyChat(agent: a) }
             ForEach(Array(msgs.enumerated()), id: \.element.id) { i, m in
-              let prev = i > 0 ? msgs[i - 1] : nil
+              let prev = i > 0 ? msgs[i - 1] : cut > 0 ? every[cut - 1] : nil
               if prev == nil ? !older : !sameDay(prev!.ts, m.ts) { DayLine(ts: m.ts) }
               row(m, prev: prev, askAt: askAt, freshIds: freshIds, agent: a)
                 .id(m.id)
@@ -96,6 +103,7 @@ struct SessionScreen: View {
         .refreshable { await model.refresh() }
         .onChange(of: all.count) { old, new in
           if new > old {
+            if window < old { window += new - old }
             if atBottom || all.last?.from == "user" { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             else { unseen += new - old }
           }
@@ -152,6 +160,19 @@ struct SessionScreen: View {
   private func sameDay(_ a: UInt64, _ b: UInt64) -> Bool {
     Calendar.current.isDate(Date(timeIntervalSince1970: Double(a) / 1000), inSameDayAs: Date(timeIntervalSince1970: Double(b) / 1000))
   }
+  /** The next page: the drawn window grows while there is more in memory, then the hub is asked. */
+  private func earlier(_ proxy: ScrollViewProxy, first: String?, here: Bool) {
+    guard here else { loadOlder(proxy, first: first); return }
+    guard !loadingOlder else { return }
+    loadingOlder = true
+    atBottom = false   // (the view stays with the message that was at the top, not with the newest)
+    window += SessionScreen.page
+    Task { @MainActor in
+      await Task.yield()
+      if let f = first { proxy.scrollTo(f, anchor: .top) }
+      loadingOlder = false
+    }
+  }
   private func loadOlder(_ proxy: ScrollViewProxy, first: String?) {
     guard !loadingOlder else { return }
     loadingOlder = true
@@ -177,7 +198,7 @@ struct SessionScreen: View {
       if m.from == "event", ["decided", "done", "shredded"].contains(m.kind ?? ""), let cid = m.cardId, askAt[cid] != nil {
         EmptyView()   // (what became of a question is said by its line where it was asked)
       } else {
-        MessageView(message: m, cont: cont).padding(.top, cont ? 2 : 10)
+        MessageView(message: m, cont: cont).equatable().padding(.top, cont ? 2 : 10)
       }
     }
   }
@@ -334,12 +355,38 @@ struct EventRow: View {
   private func tint(_ k: String) -> Color { k == "asked" ? Ink.urgHigh : k == "decided" || k == "done" || k == "read" ? Ink.accent : Ink.muted }
 }
 
-struct MessageView: View {
-  @EnvironmentObject var model: BoardModel
+/**
+ * One message of a conversation. It does not observe the model: a chat of 5,000 messages would otherwise build all its
+ * rows again on every change of the board (seen in the speed run, tests/ios/speed/sim.sh). It is Equatable over what
+ * it shows instead (`look`, read from the model when the conversation makes it), so a row is built again only when
+ * that changed; actions reach the model as before.
+ */
+struct MessageView: View, Equatable {
+  private var model: BoardModel { BoardModel.shared }
   let message: Message
   var cont = false
   var inCard = false
+  private let look: Int
   @State private var picture: Int? = nil
+  init(message: Message, cont: Bool = false, inCard: Bool = false) {
+    self.message = message; self.cont = cont; self.inCard = inCard
+    look = MessageView.look(message, BoardModel.shared)
+  }
+  static func == (a: MessageView, b: MessageView) -> Bool { a.message.id == b.message.id && a.cont == b.cont && a.inCard == b.inCard && a.look == b.look }
+  /** Everything a message's row shows: the message, and what of the board it names (its card, artifact, agent). */
+  private static func look(_ m: Message, _ model: BoardModel) -> Int {
+    var h = Hasher()
+    h.combine(m.id); h.combine(m.seq); h.combine(m.agent); h.combine(m.from); h.combine(m.kind); h.combine(m.text); h.combine(m.attachments); h.combine(m.ts)
+    h.combine(m.cardId); h.combine(m.details); h.combine(m.html); h.combine(m.published); h.combine(m.noteWritten.map { $0 ?? 0 }); h.combine(m.noteWritten == nil)
+    h.combine(m.handback); h.combine(m.explain); h.combine(m.present); h.combine(m.marks); h.combine(m.copiedCards); h.combine(m.pending); h.combine(m.itemState)
+    h.combine(m.labels); for (k, v) in m.optionNotes { h.combine(k); h.combine(v) }; h.combine(m.trusted); h.combine(m.settled); h.combine(m.version)
+    h.combine(m.contentType); h.combine(m.terminal); h.combine(m.work == nil); if let w = m.work { h.combine(String(describing: w)) }
+    if let id = m.cardId, let c = model.card(id) { h.combine(c.title); h.combine(c.number); h.combine(c.status) }
+    if let p = m.published, let pub = model.board?.published[p] { h.combine(pub.title); h.combine(pub.objectState); h.combine(pub.note); h.combine(pub.attachments); h.combine(pub.objectVersion) }
+    for id in m.copiedCards { if let c = model.card(id) { h.combine(c.title); h.combine(c.number); h.combine(c.status) } }
+    if let a = model.desk?.byAgent[m.agent] { h.combine(a.name); h.combine(a.mark); h.combine(a.icon); h.combine(a.hue) }
+    return h.finalize()
+  }
   var body: some View {
     let _ = RenderCount.body("MessageView")
     let m = message
@@ -423,7 +470,7 @@ struct MessageView: View {
       VStack(alignment: .trailing, spacing: 4) {
         about(m)
         if !m.attachments.isEmpty && m.noteWritten == nil { Attachments(list: m.attachments, onPicture: { picture = $0 }) }
-        CopiedCards(ids: m.copiedCards)
+        if !m.copiedCards.isEmpty { CopiedCards(ids: m.copiedCards) }
         MarksLine(marks: m.marks)
         if m.noteWritten != nil {
           VStack(alignment: .leading, spacing: 6) {
@@ -477,7 +524,7 @@ struct MessageView: View {
         RichText(text: m.text + (m.html.map { "\n\n```html\n\($0)\n```" } ?? ""))
       }
       if !m.attachments.isEmpty { Attachments(list: m.attachments, onPicture: { picture = $0 }) }
-      CopiedCards(ids: m.copiedCards)
+      if !m.copiedCards.isEmpty { CopiedCards(ids: m.copiedCards) }
       MarksLine(marks: m.marks)
       if let det = m.details, !det.isEmpty {
         DisclosureGroup { RichText(text: det, size: 15, color: Ink.muted).padding(.top, 4) } label: { Text("Details").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted) }.tint(Ink.muted)
