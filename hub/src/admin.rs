@@ -141,9 +141,22 @@ fn page_with(status: StatusCode, body: &str, head: &str) -> Response<Full<Bytes>
 /// The pages' policy: no script but the hub's own `admin.js`, no inline script or handler, nothing fetched.
 pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
-/// The one script of the page: a double-click on a blurred e-mail address shows it, a second blurs it again.
-/// Served as a file of its own (`GET /admin.js`), so that the policy needs no inline script.
-pub const SCRIPT: &str = "document.addEventListener('dblclick', function (e) {\n\
+/// The one script of the page: a double-click on a blurred e-mail address shows it, a second blurs it again;
+/// "Show all" at the top shows every one on the page, "Blur all" blurs them again. Nothing is fetched: the page
+/// holds the addresses already. Served as a file of its own (`GET /admin.js`), so that the policy needs no inline script.
+pub const SCRIPT: &str = "document.addEventListener('click', function (e) {\n\
+  var b = e.target instanceof Element ? e.target.closest('.showall') : null;\n\
+  if (!b) return;\n\
+  var on = b.getAttribute('aria-pressed') !== 'true';\n\
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');\n\
+  b.textContent = on ? 'Blur all' : 'Show all';\n\
+  document.querySelectorAll('.email').forEach(function (t) {\n\
+    t.classList.toggle('shown', on);\n\
+    t.title = on ? 'Double-click to blur' : 'Double-click to show';\n\
+  });\n\
+  if (!on) { var s = window.getSelection(); if (s) s.removeAllRanges(); }\n\
+});\n\
+document.addEventListener('dblclick', function (e) {\n\
   var t = e.target instanceof Element ? e.target.closest('.email') : null;\n\
   if (!t) return;\n\
   e.preventDefault();\n\
@@ -211,6 +224,7 @@ p.err{padding:9px 14px;border-radius:12px;background:var(--bad-soft);font-size:.
 .page{max-width:1280px;margin:0 auto;padding:28px 24px 56px}
 .head{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap;margin-bottom:20px}
 .head .muted{font-size:.84rem}
+.head .showall{margin-left:auto;align-self:center;min-height:30px;padding:0 13px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:12px}
 .tile,.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;min-width:0}
 .tile{padding:14px 16px 12px}

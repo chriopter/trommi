@@ -17,7 +17,7 @@ use rusqlite::types::Value;
 use rusqlite::Connection;
 
 use crate::admin::{esc, EYE, LOCK};
-use crate::admin_view::{columns, framed, is_time, blurred_email, side, table_named, when_exactly, SEALED, TABLES};
+use crate::admin_view::{columns, framed, is_time, blurred_email, side, table_named, when_exactly, SEALED, SHOW_ALL, TABLES};
 use crate::app::App;
 use crate::error::Refused;
 use crate::util::{hex, unhex};
@@ -400,8 +400,9 @@ fn head(table: &str, n: i64, extra: &str, shape: &Shape) -> String {
         .map(|t| (t.0, t.2, t.3))
         .unwrap_or_default();
     let mut out = format!(
-        "<div class=\"head\"><h1><code class=\"big\">{table}</code></h1><span class=\"muted\">{group} · {n} row{}{extra}</span></div>",
+        "<div class=\"head\"><h1><code class=\"big\">{table}</code></h1><span class=\"muted\">{group} · {n} row{}{extra}</span>{}</div>",
         if n == 1 { "" } else { "s" },
+        if shape.cols.iter().any(|c| c.show == Show::Email) { SHOW_ALL } else { "" },
     );
     // the columns: name, type, a lock for sealed, dots for a credential; the key's in bold
     out.push_str(&format!(
