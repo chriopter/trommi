@@ -49,6 +49,7 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - The hub runs in a systemd sandbox and listens only on its own machine (`127.0.0.1`).
 - Public traffic reaches the hub only through a Cloudflare tunnel.
 - CI deploys the web app (app.trommi.com) and the website (trommi.com) to Cloudflare with a token from 1Password.
+- Server logs are kept 30 days and contain no personal data (no e-mail or IP addresses, no tokens).
 
 ## Repository
 - How a change reaches `main`:

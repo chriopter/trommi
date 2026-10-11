@@ -12,7 +12,9 @@
 # What is installed here and only here (root's; no release can change it): the users `trommi` and `trommi-updater`,
 # the pinned release key and the settings in /etc/trommi, the units trommi-hub.service, trommi-hub-updater.service,
 # trommi-hub-ctl.socket, trommi-hub-ctl@.service, trommi-hub-dryrun.service and trommi-hub-restore.service, and the
-# scripts hub-prestart.sh, updater-prestart.sh, hub-ctl.sh, hub-dryrun.sh and hub-restore.sh in /usr/local/lib/trommi. What arrives by release afterwards: the hub and the updater, as programs
+# scripts hub-prestart.sh, updater-prestart.sh, hub-ctl.sh, hub-dryrun.sh and hub-restore.sh in /usr/local/lib/trommi,
+# and the journald drop-in /etc/systemd/journald.conf.d/trommi.conf (logs kept 30 days, at most 500 MB). What arrives
+# by release afterwards: the hub and the updater, as programs
 # under /srv/trommi/deploy, which belongs to trommi-updater. Nothing of Trommi runs as root except hub-ctl.sh, which
 # starts or stops the hub's unit (or its dry run, or its data restore) when the updater asks. A change to one of the fixed parts: run `install` again.
 #
@@ -166,6 +168,7 @@ export LC_ALL=C
 umask 022
 ROOT=/srv/trommi DEPLOY=/srv/trommi/deploy ETC=/etc/trommi LIB=/usr/local/lib/trommi UNITS=/etc/systemd/system
 SAVE=/etc/trommi/before-noroot
+JOURNALD=/etc/systemd/journald.conf.d/trommi.conf
 MOVED="releases current previous updater updater-previous state.json deploy.lock updater-reverted"
 step() { printf '\n--> %s\n' "$*"; }
 ok() { printf '    ok: %s\n' "$*"; }
@@ -423,6 +426,21 @@ printf '%s\n' "# Settings of the updater (hub/updater/src/main.rs lists them). W
   "UPDATER_CALLER_USERS=$OWNER" > "$ETC/updater.env"
 chmod 0644 "$ETC/updater.env"
 ok "the endpoint will listen on $TSIP:9443 only; callers: tag:trommi-ci${OWNER:+ and $OWNER}"
+
+step "Server logs: kept 30 days, at most 500 MB ($JOURNALD)"
+install -d -m 0755 "$(dirname "$JOURNALD")"
+printf '%s\n' "# Written by hub/deploy/install.sh: the server's logs are kept 30 days and hold no personal data." \
+  "[Journal]" "MaxRetentionSec=30day" "SystemMaxUse=500M" > "$JOURNALD.tmp"
+if cmp -s "$JOURNALD.tmp" "$JOURNALD"; then
+  rm -f "$JOURNALD.tmp"
+  ok "already so"
+else
+  chmod 0644 "$JOURNALD.tmp" && mv -f "$JOURNALD.tmp" "$JOURNALD"
+  systemctl restart systemd-journald
+  ok "set; journald restarted"
+fi
+[ "$(systemd-analyze cat-config systemd/journald.conf 2>/dev/null | sed -n 's/^MaxRetentionSec=//p' | tail -1)" = 30day ] \
+  || stop "journald does not read $JOURNALD"
 
 step "The release $TAG, as it was checked on the laptop, into $DEPLOY/releases/$TAG (written as trommi-updater)"
 if as_updater test -d "$DEPLOY/releases/$TAG"; then

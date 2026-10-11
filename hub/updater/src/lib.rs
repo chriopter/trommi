@@ -547,11 +547,18 @@ struct Journal {
     breaking: bool,
 }
 
+/// One log line on stderr (the journal). It never names a person: no e-mail address, no caller's address, no
+/// token; the server's logs are kept 30 days and hold no personal data.
 pub fn log(event: &str, fields: Value) {
+    eprintln!("{}", log_line(event, fields));
+}
+
+/// The text of one log line.
+pub fn log_line(event: &str, fields: Value) -> String {
     let at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    eprintln!("{}", json!({ "at": at, "event": event, "fields": fields }));
+    json!({ "at": at, "event": event, "fields": fields }).to_string()
 }
 
 fn sync_dir(dir: &Path) -> std::io::Result<()> {
@@ -1692,6 +1699,13 @@ pub struct Tailnet {
     pub users: Vec<String>,
 }
 
+impl Tailnet {
+    /// Who may call, as it is logged: the tags, and of the users (login e-mail addresses) only how many.
+    pub fn log_fields(&self) -> Value {
+        json!({ "caller_tags": self.tags, "caller_users": self.users.len() })
+    }
+}
+
 /// The decision, from what `tailscale whois --json` printed.
 pub fn tailnet_allows(whois: &[u8], tags: &[String], users: &[String]) -> Result<(), String> {
     let who: Value =
@@ -1761,10 +1775,7 @@ async fn handle(
         .await
         .unwrap_or_else(|e| Err(e.to_string()));
     if let Err(why) = allowed {
-        log(
-            "caller-refused",
-            json!({ "peer": peer.to_string(), "why": why }),
-        );
+        log("caller-refused", json!({ "why": why }));
         return answer(
             403,
             &json!({ "ok": false, "result": "forbidden", "message": why }),
@@ -1785,7 +1796,7 @@ async fn handle(
         let outcome = Outcome::new("bad-request", "", "the body must be {\"tag\":\"v123\"}");
         return answer(400, &serde_json::to_value(&outcome).expect("an outcome"));
     };
-    log("call", json!({ "peer": peer.to_string(), "tag": tag }));
+    log("call", json!({ "tag": tag }));
     // a task of its own: a caller that hangs up must not stop a deploy halfway
     let work = tokio::spawn(async move { updater.deploy(&tag).await });
     match work.await {

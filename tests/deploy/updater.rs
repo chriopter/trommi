@@ -12,8 +12,8 @@ use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use trommi_hub_updater::{
-    public_key, serve, tailnet_allows, verify_manifest, Asset, Callers, Check, Config, Manifest,
-    Outcome, Service, Updater, MANIFEST, SIGNATURE,
+    log_line, public_key, serve, tailnet_allows, verify_manifest, Asset, Callers, Check, Config,
+    Manifest, Outcome, Service, Tailnet, Updater, MANIFEST, SIGNATURE,
 };
 
 const TARGET: &str = "x86_64-unknown-linux-musl";
@@ -1483,6 +1483,37 @@ fn the_tailnet_decides_who_a_caller_is() {
     assert!(tailnet_allows(owner, &tags, &[]).is_err());
     assert!(tailnet_allows(b"not json", &tags, &users).is_err());
     assert!(tailnet_allows(b"{}", &tags, &users).is_err());
+}
+
+#[test]
+fn the_log_names_no_person() {
+    let callers = Tailnet {
+        tags: vec!["tag:trommi-ci".to_string()],
+        users: vec![
+            "owner@example.com".to_string(),
+            "second@example.com".to_string(),
+        ],
+    };
+    let fields = callers.log_fields();
+    assert_eq!(fields["caller_users"], 2);
+    assert_eq!(fields["caller_tags"][0], "tag:trommi-ci");
+    let line = log_line("listening", fields);
+    assert!(!line.contains('@'), "an e-mail address in the log: {line}");
+    // no line of the updater names the caller's address
+    let src = include_str!("../../hub/updater/src/lib.rs");
+    assert!(
+        !src.contains("\"peer\""),
+        "a log line names the caller's address"
+    );
+}
+
+#[test]
+fn the_installation_keeps_server_logs_30_days() {
+    let install = include_str!("../../hub/deploy/install.sh");
+    assert!(install.contains("JOURNALD=/etc/systemd/journald.conf.d/trommi.conf"));
+    assert!(install.contains("\"MaxRetentionSec=30day\""));
+    assert!(install.contains("\"SystemMaxUse=500M\""));
+    assert!(install.contains("systemctl restart systemd-journald"));
 }
 
 // ---- the release form: what the scripts write is what the updater reads ----

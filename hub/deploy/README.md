@@ -261,7 +261,14 @@ pre-start scripts are installed once and are the fixed point; a change to one of
 /etc/systemd/system/             trommi-hub.service, trommi-hub-updater.service, trommi-hub-ctl.socket, trommi-hub-ctl@.service,
                                  trommi-hub-dryrun.service, trommi-hub-restore.service
 /usr/local/lib/trommi/           hub-ctl.sh, hub-prestart.sh, updater-prestart.sh, hub-dryrun.sh, hub-restore.sh
+/etc/systemd/journald.conf.d/    trommi.conf: the journal keeps 30 days (MaxRetentionSec=30day), at most 500 MB
 ```
+
+**Logs.** Hub and updater write one JSON line per event to the journal (`journalctl -u trommi-hub`,
+`-u trommi-hub-updater`). No line names a person: no e-mail address, no IP address of a caller or a client, no
+token, no user agent; ids are cut short, the rest are counts. The updater logs the tags allowed to deploy and only
+how many owner logins are (`caller_users` is a number). `install.sh` sets the journal to keep 30 days and at most
+500 MB (the drop-in above, then `systemctl restart systemd-journald`), so nothing older is on the server.
 
 Which hub and which updater run: `ssh root@<server> trommi-hub-updater status`, and the summary of every
 `deploy_hub` run. A backup of the server must hold `/srv/trommi/data` whole (the two key files with the database:
@@ -273,7 +280,8 @@ it usable for that one, because that is what a rollback starts (expand, then con
 `RELEASE_BASE` is raised then; HSTS is off until `HUB_HSTS=on` is set in `/etc/trommi/hub.env`.
 
 **The installation** is `hub/deploy/install.sh` on the owner's laptop: `inventory` reads the server and changes
-nothing; `install` puts the users, the fixed units and scripts, the pinned key and a first release in place (run
+nothing; `install` puts the users, the fixed units and scripts, the pinned key, the journal's 30 days and a first
+release in place (run
 again, it renews the fixed parts; on a server whose updater still runs as root it converts the installation in
 place and moves everything back if a step fails); `secrets` sends the push credentials from the 1Password
 Environment. Until the server is installed, `deploy_hub` publishes each release and then fails saying that nothing
