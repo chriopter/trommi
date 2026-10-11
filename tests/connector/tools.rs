@@ -1650,6 +1650,24 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
         )
         .await;
 
+    // `claim-key`: the session's own key is its already; another session claims nothing
+    let claim = |key: String| {
+        let mut command = seat.command(&["claim-key"]);
+        command
+            .env("TROMMI_SESSION_KEY", key)
+            .stdin(std::process::Stdio::null());
+        async move { command.output().await.expect("claim-key runs") }
+    };
+    let mine = claim(seat.session_key.clone()).await;
+    assert!(
+        mine.status.success() && String::from_utf8_lossy(&mine.stdout).contains("already"),
+        "{}{}",
+        String::from_utf8_lossy(&mine.stdout),
+        String::from_utf8_lossy(&mine.stderr)
+    );
+    let theirs = claim("test-other".into()).await;
+    assert!(!theirs.status.success());
+
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     let texts: Vec<String> = human

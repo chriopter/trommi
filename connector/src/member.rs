@@ -538,7 +538,7 @@ pub async fn free_slot(cfg: &Cfg, room_id: &str) -> SlotPaths {
     }
 }
 /// The keyed slot of this folder that a running connector of this same Claude Code session holds, if any.
-async fn own_held_slot(cfg: &Cfg, room_id: &str) -> Option<SlotPaths> {
+pub async fn own_held_slot(cfg: &Cfg, room_id: &str) -> Option<SlotPaths> {
     let up = ancestors(8);
     for n in slots_in(cfg, &cfg.keys_dir.join(room_id)) {
         let p = paths_of(cfg, room_id, n);

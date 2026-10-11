@@ -17,7 +17,7 @@ trommi-connector setup claude|codex  make the installed connector known to Claud
 trommi-connector remove claude       take out what setup claude put in; the old status line stands there again
 trommi-connector remove codex        take the connector's hooks and MCP server out of Codex again
 trommi-connector update [--check]    install the newest signed release in place of the installed one
-trommi-connector whoami | allow-tools | --version
+trommi-connector whoami | claim-key | allow-tools | --version
 ```
 
 ## Install
@@ -181,7 +181,8 @@ connector only takes its own session's key or one nobody owns; another session's
 while it is free, an idle holder hands its key over only to a connector of its own session, and `say` goes through
 a running connector only for its own session. So a second session in the same folder never writes into the
 first one's board session: it needs an invite of its own. `claude --resume` keeps the session id and with it the
-key; a new `claude` in the folder is a new session.
+key; a new `claude` in the folder is a new session. `trommi-connector claim-key`, run inside a session, makes
+the key its running connector holds that session's when nobody owns it yet (a key from a terminal `join`).
 
 When the human reconnects the session on another machine, the
 connector here learns it from the Commit, wipes the slot and says that it is retired.
