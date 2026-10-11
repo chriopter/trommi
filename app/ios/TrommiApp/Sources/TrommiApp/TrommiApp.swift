@@ -27,16 +27,22 @@ enum StartClock {
   }
 }
 
+/** The core this process uses (Core.tools), installed once, before anything opens a room: the App's init and the
+ *  model's first use both call it, whichever comes first. */
+@MainActor func installCore() { if !Core.isInstalled { Core.tools = LiveCore() } }
+
 @main
 struct TrommiApp: App {
   // (held, not observed: the scene's body ran again on every change of the board; RootView observes the model)
-  private let model = BoardModel.shared
+  // (set in init, after the core: a stored property's initial value runs BEFORE init's body, and the model opens the
+  //  stored room at once, which needs the core; on a start with a signed-in room that was a crash at launch)
+  private let model: BoardModel
   @Environment(\.scenePhase) private var scenePhase
   #if canImport(UIKit)
   @UIApplicationDelegateAdaptor(PushDelegate.self) private var push   // Push.swift
   #endif
   // The core is installed before anything asks for it: the protocol is trommi-core, reached through Core.tools.
-  init() { _ = StartClock.t0; Core.tools = LiveCore(); Face.registerFonts() }
+  init() { _ = StartClock.t0; installCore(); Face.registerFonts(); model = BoardModel.shared }
   var body: some Scene {
     WindowGroup {
       RootView().environmentObject(model)
@@ -79,7 +85,7 @@ enum Route: Hashable {
 @MainActor
 final class BoardModel: ObservableObject {
   /** The one model of the app: the App's, and the one an answer from the Live Activity reaches in the background. */
-  static let shared = BoardModel()
+  static let shared: BoardModel = { installCore(); return BoardModel() }()
   /** The screens before the board, as the web app's sign-in (app/web/public/auth.mjs: welcome, scan, join, log in). */
   enum Phase: Equatable { case start, create, email, forgot, scan, asking, checkCode(String), pairFailed(String), board }
   /** The hub of app.trommi.com (app.mjs): accounts are made and logged in to there. A pairing link names its own hub. */
