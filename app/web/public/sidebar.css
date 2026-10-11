@@ -1100,7 +1100,8 @@ html body .topbar #brand-doors .menu-icons .menu-ico { justify-content: center; 
 }
 html body .topbar #brand-doors .menu-demo-row { display: flex; align-items: center; gap: 10px; width: 100%; }
 html body .topbar #brand-doors .menu-demo-row .demo-switch { margin-left: auto; }
-@media (max-width: 860px) { html body .topbar #brand-doors .menu-demo-row { order: 3; min-height: 44px; } }
+html body .topbar #brand-doors .menu-logout-row { display: flex; align-items: center; gap: 10px; width: 100%; color: var(--fg); text-decoration: none; }
+@media (max-width: 860px) { html body .topbar #brand-doors :is(.menu-demo-row, .menu-logout-row) { order: 3; min-height: 44px; } }
 
 /* the menu's bell, three clear states (as on iOS): crossed out (off), with "!" (only knocking), full (all) */
 #push-toggle { position: relative; }
