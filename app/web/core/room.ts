@@ -63,6 +63,8 @@ export type SignInStep = { step: 'reading' } | { step: 'checking'; done: number;
 export interface SessionJoins { joined: number; not_joined: { group: Uint8Array; code: string }[] }
 /** How many session groups' Commits are read from the hub at a time while they are joined behind a sign-in. */
 const SESSION_READS = 6
+/** How often a session join that met `busy` is tried again (about half a minute in all). */
+const BUSY_TRIES = 20
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
 /** A joining device's sign-in while it is no leaf yet: asked again after these waits, then every LEAF_WAIT_EVERY_MS, LEAF_WAIT_MS in all. */
@@ -347,7 +349,7 @@ export function roomsOn(env: RoomEnv): Rooms {
       try {
         const commits = await ahead[at]!
         delete ahead[at]
-        await engine.land(async d => {
+        const join = (): Promise<void> => engine.land(async d => {
           // (already a member: an earlier try went through)
           if ((await d.groups()).some(g => sameBytes(g.group, session.group))) return null
           const group = await d.sessionCheckStart(steps.start.sessions[at]!)
@@ -356,6 +358,19 @@ export function roomsOn(env: RoomEnv): Rooms {
           }
           return await d.joinSessionChecked(code, group, steps.end.sessions[at]!, Date.now())
         })
+        // `busy`: a join of this group is on its way already (an earlier try, posted and waiting for its place in
+        // the log), or another human device added this one meanwhile (5.2.7: its Welcome waits). The log and the
+        // Welcomes are taken, and the join is tried again while the device is not in the group, a while.
+        const member = async (): Promise<boolean> => (await engine.do(d => d.groups())).some(g => sameBytes(g.group, session.group))
+        for (let tries = 0; ; tries++) {
+          try { await join(); break } catch (e) {
+            if (engine.core.errorCode(e) !== 'busy' || tries >= BUSY_TRIES) throw e
+            await engine.catchUp().catch(() => {})
+            await engine.joinNow(null).catch(() => false)
+            if (await member()) break
+            await sleep(Math.min(50 * 2 ** tries, 1000))
+          }
+        }
         out.joined++
       } catch (e) {
         const why = engine.core.errorCode(e) ?? (e instanceof HubError ? e.code : 'failed')
