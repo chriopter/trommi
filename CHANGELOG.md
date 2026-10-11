@@ -94,6 +94,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- Desk: a row no longer grows when the pointer rests on it; the text under the title stays hidden (web).
 - Web: a picture that could not be loaded keeps its place as a small tile (the reason on hover); a Desk row keeps its
   title and answers in view. An open tab looks for a new version every 10 minutes, and at once on a file of a newer Trommi.
 - Web: a card handed back and then put before you again no longer slips back to "with the agent" (off the Desk)
