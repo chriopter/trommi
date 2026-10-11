@@ -5,6 +5,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 ## 11 October 2026 (v109 – v120)
 
 **New**
+- Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);
+  a session's heading shows the two bars, end-to-end encrypted like the rest.
 - Public iPhone beta via TestFlight: join from [trommi.com/beta](https://trommi.com/beta); every release arrives there
   first.
 - Settings → Devices names a device of yours that never finished signing in, and removes it with one tap
@@ -20,8 +22,27 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Codex hears the board: a new answer or message wakes an idle Codex session, which then reads it.
 
 **Better**
+- Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
+- Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer
+  wait up to a minute behind a connection the sleeping phone left half open.
+- Pairing a device or an agent survives a network blip: a step that did not reach Trommi is tried again, and if it
+  still fails you are told it was the connection, with "Try again" on the same code instead of asking for a new one.
+- What's new says what runs: at its top the release, its build and when it was updated (web; on the iPhone the app's version and build).
+- Helpers read their own board events: a subagent's child session goes to it directly, so the main agent no longer
+  passes them on; it gets one line when the helper is done, and the events back if the helper stops reading.
+- Codex as Claude Code: `setup codex` adds Trommi's hooks to Codex, so its terminal, its answers (under the card
+  they belong to), its permission prompts and its work trail reach the board too, once you trust the hooks in Codex.
+  `trommi-connector remove codex` takes them out again.
+- Codex: a session that was woken but did not read the board is woken again by the next message (at most every
+  3 minutes); it answers a card's question under that card; restart and "key in use" messages speak Codex's language
+  instead of Claude Code's.
+- iPhone: after another device of yours hands over older keys, the app no longer empties the Desk and reads the whole
+  room again: what it has is kept, only what was missing is read (about fifteen times faster).
+- Status lines under a chat on the phone: one line each, the title and the time; a tap shows the detail and the way to its question (iPhone and mobile web).
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
+- iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster
+  per change, and an open long chat is no longer rebuilt when a message arrives elsewhere.
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.
@@ -43,6 +64,12 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   (web and iPhone).
 
 **Fixed**
+- Web: an answer to a form that came only after you had moved to another page (a removed device, say) no longer
+  takes you away from that page.
+- Logging in on the web reads a big account several times faster, keeps saying how far it is, and a log in that
+  was given up no longer leaves this browser stuck on "Not opened": logging in again works.
+- iPhone: the Dynamic Island shows only while a question waits (no more "0"), and its bell no longer jumps on every
+  update.
 - Web: a message to a session that still held a removed device ("Not sent: stale-session") now goes out: the
   session is repaired first and the message is sent again.
 - iPhone: decisions answered, read or closed on another device no longer stay on the Desk as open questions, also

@@ -5,6 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { topbar } from '../../../app/web/public/sidebar.mjs'
+import { readFileSync } from 'node:fs'
 
 const model = { fresh: [], byAgent: new Map(), state: { desks: [] }, deskName: 'Personal', desk: null, all: false }
 const menu = () => String(topbar(model, '', null)).match(/<nav class="sidedoors" id="brand-doors"[\s\S]*?<\/nav>/)[0]
@@ -43,4 +44,17 @@ test('a desk switched by its number key leaves the menu shut; one picked in the 
     pick(false)
     assert.deepEqual(kept, [['trommi-menu-keep', '1']], 'a desk picked in the open menu still opens it again')
   } finally { delete globalThis.sessionStorage }
+})
+
+test('the menu stays as it was: what runs here is on the What\'s new page, not under its row', () => {
+  assert.doesNotMatch(menu(), /menu-build/)
+  const news = ((readFileSync(new URL('../../../app/web/public/news.mjs', import.meta.url), 'utf8')))
+  assert.match(news, /<p class="news-build" id="news-build">\$\{runningLine\(\)\}<\/p>/, 'a small line at the top of What\'s new')
+})
+
+test('the release script writes what runs there beside the build, outside the build\'s manifest', async () => {
+  const src = readFileSync(new URL('../../../.github/scripts/web_release.mjs', import.meta.url), 'utf8')
+  assert.match(src, /'public', 'gen', 'release\.json'\)[\s\S]*version, commit, released/, 'gen/release.json: number, commit, time')
+  const app = readFileSync(new URL('../../../app/web/public/app.mjs', import.meta.url), 'utf8')
+  assert.match(app, /fetch\('\/gen\/release\.json'[\s\S]*fetch\('\/gen\/build\.txt'/, 'the app asks for it, else for the build\'s commit')
 })

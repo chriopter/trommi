@@ -640,17 +640,17 @@ impl App {
             sent_at,
         ) in rows
         {
-            // start when work begins and none runs (again only after it ended or 8 hours); update when a count
-            // changed or the beat is due; end when no agent works
+            // start when a question waits and none runs (again only after it ended or 8 hours); update when a
+            // count changed or the beat is due; end when nothing waits (an island that says "0" says nothing)
             let running = started_at.is_some_and(|t| now.saturating_sub(t as u64) < 8 * 3_600_000);
             let changed =
                 sent_working != Some(working as i64) || sent_waiting != Some(waiting as i64);
             let beat_due = beat
                 && sent_at
                     .is_none_or(|t| now.saturating_sub(t as u64) * 10 >= self.cfg.live_beat_ms * 9);
-            let (event, token) = if working > 0 && !running {
+            let (event, token) = if waiting > 0 && !running {
                 ("start", start_token)
-            } else if running && working == 0 {
+            } else if running && waiting == 0 {
                 ("end", activity_token)
             } else if running && (changed || beat_due) {
                 ("update", activity_token)

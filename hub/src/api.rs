@@ -203,7 +203,7 @@ pub async fn handle(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer
     if hsts {
         answer.headers_mut().insert(
             "strict-transport-security",
-            "max-age=63072000; includeSubDomains; preload"
+            "max-age=31536000; includeSubDomains"
                 .parse()
                 .expect("static"),
         );

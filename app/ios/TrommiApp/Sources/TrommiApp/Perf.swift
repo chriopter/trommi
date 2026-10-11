@@ -110,7 +110,8 @@ enum MainSampler {
         usleep(5000)
         let now = DispatchTime.now().uptimeNanoseconds
         let b = MainSampler.beat
-        if b > 0 && now - b > 30_000_000 && now - lastSampled > 15_000_000, let m = MainSampler.mainThread {
+        // (the beat can come after `now` was read: never a negative wait)
+        if b > 0 && now > b && now - b > 30_000_000 && now &- lastSampled > 15_000_000, let m = MainSampler.mainThread {
           lastSampled = now
           sampleReady = 0
           pthread_kill(m, SIGUSR2)
@@ -130,7 +131,7 @@ enum MainSampler {
               let parts = l.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
               return parts.count > 3 ? "\(parts[1]):\(parts[3].split(separator: " ").first ?? "")" : l
             }
-            PerfLog.line("STALL \((now - b) / 1_000_000) ms main at: " + frames.joined(separator: " | "))
+            PerfLog.line("STALL \((now &- b) / 1_000_000) ms main at: " + frames.joined(separator: " | "))
           }
         }
       }

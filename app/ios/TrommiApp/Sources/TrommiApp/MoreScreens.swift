@@ -109,19 +109,23 @@ struct OffList: View {
   }
   @ViewBuilder private func row(_ r: Row) -> some View {
     let c = r.card
-    // the title from the left edge; the dot of work or Later's Z on the right, nothing on a closed row
+    // the title from the left edge; on the right the dot of work, Later's Z, or how a closed row closed
     HStack(spacing: 8) {
       Button { model.path.append(.card(c.id)) } label: {
         Text(c.title.isEmpty ? "(no title)" : c.title).font(Face.text(16, .medium))
-          .foregroundStyle(r.g == "later" || r.g == "trash" ? Ink.muted : Ink.fg)
-          .strikethrough(r.g == "trash", color: Ink.faint)
+          .foregroundStyle(r.g == "later" ? Ink.muted : Ink.fg)
+          .strikethrough(r.g == "trash" && c.status == "shredded", color: Ink.faint)
           .lineLimit(1).truncationMode(.tail)
           .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .accessibilityLabel(r.g == "works" ? "\(c.title), being worked on" : r.g == "later" ? "\(c.title), later" : r.g == "trash" ? "\(c.title), thrown away" : c.title)
+      .accessibilityLabel(r.g == "works" ? "\(c.title), being worked on" : r.g == "later" ? "\(c.title), later" : r.g == "trash" ? (c.status == "shredded" ? "\(c.title), shredded" : "\(c.title), withdrawn") : c.title)
       if r.g == "works" { PulseDot().frame(width: 44, height: 44) }
       else if r.g == "later" { Sketch("snooze", color: Ink.stampLater).frame(width: 20, height: 20).frame(width: 44, height: 44).accessibilityHidden(true) }
+      // (a closed card: answered, done or read a green tick; shredded the shredder, withdrawn the return arrow, in quiet ink;
+      //  the title as it is; a shredded one struck through as well)
+      else if r.g == "trash" { Sketch(c.status == "shredded" ? "shred" : "withdraw", color: Ink.muted).frame(width: 19, height: 19).frame(width: 44, height: 44).accessibilityHidden(true) }
+      else { Sketch("tick", color: Ink.accent).frame(width: 20, height: 20).frame(width: 44, height: 44).accessibilityHidden(true) }
     }
     .overlay(alignment: .bottom) { Rectangle().fill(Ink.line).frame(height: 1) }
   }

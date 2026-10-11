@@ -47,7 +47,7 @@ struct SessionScreen: View {
       let fresh = v?.fresh.filter { $0.agent == agentId } ?? []
       let freshIds = Set(fresh.map { $0.id } + (v?.reads.filter { $0.agent == agentId }.map { $0.id } ?? []))
       let msgs = onlyQuestions ? all.filter { $0.from == "event" && $0.kind == "asked" && freshIds.contains($0.cardId ?? "") } : all
-      let askAt = Dictionary(all.filter { $0.from == "event" && $0.kind == "asked" && $0.cardId != nil }.map { ($0.cardId!, $0.id) }, uniquingKeysWith: { $1 })
+      let askAt = d.askAt(agent: agentId)
       let older = d.hasOlder(agent: agentId)
       let tasks = d.tasks.filter { $0.agent == agentId }
       let permissions = v?.fresh.filter { $0.agent == agentId && $0.kind == "permission" } ?? []
@@ -117,6 +117,7 @@ struct SessionScreen: View {
         }
         // the top row: back, the session's name as a glass pill (its menu), "⋯"; no bar, a soft edge above and below
         .pushedPills { header(a, d) } trailing: { more(a, d, freshCount: fresh.count) }
+        .overlay(alignment: .top) { if let acc = usageOf(model, a) { UsageStrip(acc: acc).padding(.top, 58) } }
         .onAppear { lastCount = all.count; atBottom = true; proxy.scrollTo("bottom", anchor: .bottom); model.markRead(a) }
         .onChange(of: model.version) { _, _ in model.markRead(a) }
         // what a catch-up brought as headers only (the app was away, the hub restarted): filled while the chat is open
@@ -604,6 +605,7 @@ struct CopyLinkButton: View {
 /** The session's running work at the end of the conversation, and that it is answering. */
 struct SessionStatus: View {
   @EnvironmentObject var model: BoardModel
+  @State private var open: Set<String> = []   // (the lines opened by a tap, by session and id)
   let agent: Agent
   let tasks: [Task1]
   let messages: [Message]
@@ -621,19 +623,32 @@ struct SessionStatus: View {
         ForEach(lines, id: \.id) { t in
           // (the card the line stands for, paired as on the Desk: a line with no card of its own opens the card its session works on)
           let card = model.desk?.lineCard(t)
-          Button { if let c = card { model.path.append(.card(c.id)) } } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-              Group {
-                if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
-                else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
-                else { Sketch("tick", color: Ink.accent) }
-              }.frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
-              Text(t.label).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg)
-              if let d = t.detail, !d.isEmpty { Text(d).font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(2) }
-              Spacer(minLength: 4)
-              if t.updated > 0 { Text(agoText(t.updated)).font(Face.text(12)).foregroundStyle(Ink.faint) }
-            }
-          }.buttonStyle(.plain).disabled(card == nil)
+          let detail = t.detail.flatMap { $0.isEmpty ? nil : $0 }
+          let key = "\(t.agent):\(t.id)", isOpen = open.contains(key)
+          // (one line: the title and the time; a tap opens the detail and the way to its question below it, a second shuts it)
+          Button {
+            withAnimation(.easeOut(duration: 0.18)) { if isOpen { open.remove(key) } else { open.insert(key) } }
+          } label: {
+            VStack(alignment: .leading, spacing: 6) {
+              HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Group {
+                  if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
+                  else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
+                  else { Sketch("tick", color: Ink.accent) }
+                }.frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                Text(t.label).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+                Spacer(minLength: 4)
+                if t.updated > 0 { Text(agoText(t.updated)).font(Face.text(12)).foregroundStyle(Ink.faint) }
+              }
+              if isOpen {
+                VStack(alignment: .leading, spacing: 8) {
+                  if let d = detail { Text(d).font(Face.text(15)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true) }
+                  if let c = card { Button { model.path.append(.card(c.id)) } label: { Text("Open the question →").font(Face.text(14, .semibold)).foregroundStyle(Ink.accent) }.buttonStyle(.plain) }
+                }.padding(.leading, 26)
+              }
+            }.contentShape(Rectangle())
+          }.buttonStyle(.plain).disabled(detail == nil && card == nil)
+          .accessibilityHint(detail == nil && card == nil ? "" : isOpen ? "Hides the details" : "Shows the details")
         }
       }.padding(.vertical, 12)
     }

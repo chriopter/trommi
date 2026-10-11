@@ -118,7 +118,9 @@ A monitor that does this for every file the site serves, on a schedule and after
 built: it would read the file list from `sw.js`, verify each file's attestation, check that all of them name the
 commit of `gen/build.txt`, and raise an alarm on the first file that no build of this repository made.
 
-`Strict-Transport-Security` with preload is prepared and off: `WEB_HSTS` in `build.yml`.
+Every file the app serves carries `Strict-Transport-Security: max-age=31536000; includeSubDomains` (no preload),
+`Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy: same-origin` (`app/web/public/_headers`; the
+release refuses an `_headers` without them).
 
 ## How the hub is deployed
 

@@ -1030,12 +1030,18 @@ export async function roomScreen({ start, hub, openError = null, demo = '' }) {
   }
   // A login, kit or pairing on a browser that holds an account: open that one (it is the account, or the person logs
   // out first); if it does not open, the broken screen.
-  async function roomExists() {
+  // Also after a sign-in that was given up (`stalled`): if it got as far as the room, the device is in and opens
+  // here; if not, what it stored is a half-made device of no room, which is cleared so that logging in again works.
+  // `again`: the same log in once more, at once, after a leftover of an unfinished one was cleared (once per page).
+  let clearedOnce = false
+  async function roomExists(err = null, again = null) {
     try {
       const client = await openInWorker()
       if (client) return done(client)
-    } catch (err) { return brokenFlow(err, { fromLogin: true }) }
-    return brokenFlow(new Error('the stored account vanished meanwhile'), { fromLogin: true })
+    } catch (e) { return brokenFlow(e, { fromLogin: true }) }
+    await wipeLocal(null)
+    if (again && err?.code === 'room-exists' && !clearedOnce) { clearedOnce = true; return again() }
+    return loginFlow(err?.code === 'stalled' ? accountError(err) : 'The last log in did not finish on this browser. Please log in again.')
   }
 
   function welcome(error = '') {
@@ -1080,7 +1086,7 @@ ${offer.get ? html`<p class="ob-alt ob-way"><button type="button" class="ob-link
         await opened(client)
       } catch (err) {
         console.warn(err)
-        if (err.code === 'room-exists') return roomExists()
+        if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
         try { localStorage.removeItem(KIT_MARK) } catch {}
         idle(form); say(err.code === 'account-exists' ? EMAIL_TAKEN : accountError(err))
       }
@@ -1107,7 +1113,7 @@ ${offer.get ? html`<p class="ob-alt ob-way"><button type="button" class="ob-link
       console.warn(err)
       try { localStorage.removeItem(KIT_MARK) } catch {}
       if (made && cameToNothing(err)) passkeyForget(made.credential_id)   // made, and no account came of it
-      if (err.code === 'room-exists') return roomExists()
+      if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
       if (err.code === 'no-prf') return createFlow({ way: 'password', note: NO_PRF })
       idle(form); say(err.code === 'passkey-cancelled' ? 'No passkey made.' : err.code === 'account-exists' ? EMAIL_TAKEN : accountError(err))
     }
@@ -1157,7 +1163,7 @@ ${pk || offer.off ? '' : NO_PASSKEYS}
         if (standing) { offerEnded = true; return }
         if (err.code === 'passkey-cancelled') { keyIdle(); standingOffer(); return }
         console.warn(err)
-        if (err.code === 'room-exists') return roomExists()
+        if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
         loginFlow(err.code === 'wrong-login' ? 'This passkey opens no account here.' : accountError(err), 'passkey')
       }
     }
@@ -1194,7 +1200,7 @@ ${pk || offer.off ? '' : NO_PASSKEYS}
       try {
         const { client } = await f.A.loginWithPassword({ hub_url: hub, account: f.text, password: pw.value, device_name, client: CLIENT }, step => busyWord(form, f.A.signInWords(step)))
         await done(client)
-      } catch (err) { console.warn(err); if (err.code === 'room-exists') return roomExists(); idle(form); say(accountError(err), form.elements.password) }
+      } catch (err) { console.warn(err); if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err, () => { idle(form); form.requestSubmit() }); idle(form); say(accountError(err), form.elements.password) }
     })
     if (pk && !demo) standingOffer()
   }
@@ -1229,7 +1235,7 @@ ${offer.get ? html`<p class="ob-alt ob-way"><button type="button" class="ob-link
         try {
           const { client } = await f.A.recoverWithKit({ hub_url: at, account: f.text, words: words.value, device_name, client: CLIENT }, step => busyWord(form, f.A.signInWords(step)))
           newWayFlow(client, words.value)
-        } catch (err) { console.warn(err); if (err.code === 'room-exists') return roomExists(); idle(form); say(missed(err, f.named)) }
+        } catch (err) { console.warn(err); if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err); idle(form); say(missed(err, f.named)) }
         return
       }
       const pw = form.elements.password
@@ -1241,7 +1247,7 @@ ${offer.get ? html`<p class="ob-alt ob-way"><button type="button" class="ob-link
         const { client, kit: fresh } = await f.A.resetPassword({ hub_url: at, account: f.text, words: words.value, new_password: pw.value, device_name, client: CLIENT })
         freshKit = { ...fresh, has_password: true }
         await opened(client)
-      } catch (err) { console.warn(err); if (err.code === 'room-exists') return roomExists(); try { localStorage.removeItem(KIT_MARK) } catch {} idle(form); say(missed(err, f.named)) }
+      } catch (err) { console.warn(err); if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err); try { localStorage.removeItem(KIT_MARK) } catch {} idle(form); say(missed(err, f.named)) }
     })
   }
   // The words opened the account and this device is in. Now the way in for next time: a new passkey, or a password.
@@ -1363,9 +1369,18 @@ ${obError()}${obSubmit('Next')}</form></details>
     } catch (err) {
       if (err.code === 'cancelled') return
       console.error(err)
-      if (err.code === 'room-exists') return roomExists()
+      if (err.code === 'room-exists' || err.code === 'stalled') return roomExists(err)
+      // Not reached is not used up: the same code is tried again, no new one needed (the hub kept nothing of this try
+      // that would refuse the next).
+      if (err.code === 'offline' || err.transient === true) return joinUnreached(link)
       joinFailed({ 'invite-used': 'This code was used already.', 'invite-expired': 'This code has run out.', 'invite-burned': 'The emoji did not match there.', 'bad-invite': 'This link is not a valid invite. Ask for a new one.' }[err.code] ?? accountError(err))
     }
+  }
+  function joinUnreached(link) {
+    show(obShell('Not logged in', html`<p class="ob-error is-shown" role="alert">Trommi is not reachable right now. Check your connection.</p><button type="button" class="ob-go" id="join-again">Try again</button>
+<p class="ob-alt"><button type="button" class="ob-link" id="scan-again">Scan a new code</button></p>`, { lead: 'The same code still works until it runs out.' }), '#join-again')
+    on('#join-again', 'click', () => link ? joinFlow(link) : scanFlow())
+    on('#scan-again', 'click', () => scanFlow())
   }
   function joinWait() { show(obShell('Log in', html`<p class="room-wait">Asking the other device…</p>`), null) }
   function joinEmoji(code) {
@@ -1411,7 +1426,7 @@ ${obError()}${obSubmit('Next')}</form></details>
       forgot: () => forgotFlow(), scan: () => scanFlow({ still: 'scanning' }), 'scan-asking': () => scanFlow({ still: 'asking' }), 'scan-denied': () => scanFlow({ still: 'denied' }),
       'scan-none': () => scanFlow({ still: 'none' }), 'scan-tap': () => scanFlow({ still: 'tap' }), 'scan-wrong': () => { scanFlow({ still: 'wrong' }) }, 'scan-paste': () => scanFlow({ still: 'scanning', paste: true }),
       join: () => joinWait(), 'join-emoji': () => joinEmoji('03-17-08-42-25-11'),
-      'join-expired': () => joinFailed('This code has run out.'), 'join-burned': () => joinFailed('The emoji did not match there.'),
+      'join-expired': () => joinFailed('This code has run out.'), 'join-offline': () => joinUnreached(null), 'join-burned': () => joinFailed('The emoji did not match there.'),
       broken: () => brokenFlow(Object.assign(new Error('the device keys are not in this browser'), { code: 'no-device' })),
     }
     ;(flows[state] ?? welcome)()

@@ -43,14 +43,22 @@ pub fn description(tool: &str) -> String {
         .unwrap_or_default()
 }
 /// Whether this session's terminal is mirrored to the board: the plugin's hooks do it (README "The terminal mirror").
+/// Under Codex: its hooks.json holds the connector's hooks and they are trusted (`setup codex`).
 pub fn terminal_mirrored() -> bool {
-    std::env::var_os("CLAUDE_PLUGIN_ROOT").is_some() && crate::mirror::enabled()
+    if !crate::mirror::enabled() {
+        return false;
+    }
+    if crate::host::is_codex() {
+        static CODEX: OnceLock<bool> = OnceLock::new();
+        return *CODEX.get_or_init(crate::setup::codex_mirror_hooks);
+    }
+    std::env::var_os("CLAUDE_PLUGIN_ROOT").is_some()
 }
 /// The server's instructions; `<connector>` stands for the connector's path. `<mirror>` is filled in here: how the
 /// agent's words reach the human, with the terminal mirror or without it.
 pub fn instructions() -> String {
-    // (the terminal mirror is the Claude Code plugin's: Codex never has it)
-    let how = if terminal_mirrored() && !crate::host::is_codex() {
+    // (Claude Code: the plugin's hooks; Codex: the hooks `setup codex` put into its hooks.json, once trusted)
+    let how = if terminal_mirrored() {
         "# With the terminal mirror"
     } else {
         "# Without the terminal mirror"

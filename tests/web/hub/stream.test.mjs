@@ -2,7 +2,7 @@
 // duplicate, backoff, a new sign-in after a 401, and a hub that sends what it must not.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { HubError } from '../../../app/web/core/hub.ts'
+import { HubError, freshenStreams } from '../../../app/web/core/hub.ts'
 import { scene, client, received, envelope, id, utf8, until, txt } from './helpers.mjs'
 
 /** Opens a stream and records what it hands over. */
@@ -169,6 +169,38 @@ test('a hub that is not there: tries with growing waits, capped; back at once wh
   hub.wake()
   await until(() => heard.changes().length === 1)
   assert.equal(heard.states.at(-1)[0], 'live')
+})
+
+test('the page is back: a connection silent for longer than asked is replaced at once, a fresh one is kept', async t => {
+  const { fake, hub, room_id, device } = await scene(t)
+  // a normal reconnect would wait at least 2.5 s: the replacement must not
+  Object.assign(hub.timing, { backoff_first: 5000, backoff_max: 5000 })
+  const heard = listen(t, hub)
+  await until(() => live(heard))
+  await hub.postEnvelope(envelope(room_id, device, 1))
+  await until(() => heard.changes().length === 1)
+  freshenStreams(60_000)                                   // it heard something just now: kept
+  await new Promise(r => setTimeout(r, 120))
+  assert.equal(received(fake, '/v1/stream').length, 1)
+  freshenStreams(100)                                      // silent for longer than 100 ms: replaced
+  await until(() => received(fake, '/v1/stream').length === 2 && live(heard), 1000)
+  assert.equal(received(fake, '/v1/stream')[1].query.after, '1', 'resumed after the last change it handed over')
+  assert.ok(heard.states.every(s => s[0] !== 'offline'), 'a replacement is no outage')
+  assert.equal(heard.errors.length, 0)
+  await hub.postEnvelope(envelope(room_id, device, 2))
+  await until(() => heard.changes().length === 2)
+  assert.deepEqual(heard.changes(), [1, 2])
+})
+
+test('the page is back: a stream that waits to reconnect tries now', async t => {
+  const { fake, hub } = await scene(t)
+  Object.assign(hub.timing, { backoff_first: 20_000, backoff_max: 20_000 })
+  fake.faults.add({ path: '/v1/stream', drop: 'before' })
+  const heard = listen(t, hub)
+  await until(() => heard.states.some(s => s[0] === 'offline'))
+  freshenStreams(30_000)
+  await until(() => live(heard), 1000)
+  assert.equal(received(fake, '/v1/stream').length, 2)
 })
 
 test('a hub that forgot the token: the stream signs in again and goes on', async t => {

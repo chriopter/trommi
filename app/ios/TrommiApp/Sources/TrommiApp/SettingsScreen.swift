@@ -226,6 +226,7 @@ struct AgentsPage: View {
       ForEach(agents) { g in
         SettingsGroup {
           head(g)
+          if let acc = g.sessions.lazy.compactMap({ usageOf(model, $0) }).first { UsageCard(acc: acc); RowRule(inset: 16) }
           ForEach(Array(g.tops.enumerated()), id: \.element.agent.deviceId) { i, b in
             Button { model.path.append(.session(b.agent.id)) } label: { branch(b, last: i == g.tops.count - 1, desk: desks.first { $0.id == (b.agent.desk ?? desks.first?.id) }?.name ?? "Personal") }.buttonStyle(.plain)
           }

@@ -423,7 +423,12 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
             .cloned()
             .unwrap_or(Value::Null),
     );
-    put("prompt", json!(one_line(str_of(input, "prompt_id"), 64)));
+    // (Codex names the turn instead of the prompt)
+    let prompt = match str_of(input, "prompt_id") {
+        "" if crate::mirror::codex_input(input) => str_of(input, "turn_id"),
+        p => p,
+    };
+    put("prompt", json!(one_line(prompt, 64)));
     put("agent", json!(one_line(str_of(input, "agent_id"), 64)));
     put(
         "agent_type",
@@ -436,6 +441,17 @@ pub fn hook_request(input: &Value, ancestors: &[u32], level: Level) -> Option<Va
     r.insert("kind".into(), json!("trail"));
     r.insert("ev".into(), json!(ev));
     r.insert("ancestors".into(), json!(ancestors));
+    // (Codex, which names the turn: its thread, so that a connector serves only its own thread's hooks)
+    if let Some(t) = input
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|_| crate::mirror::codex_input(input))
+    {
+        r.insert(
+            "thread".into(),
+            json!(t.chars().take(64).collect::<String>()),
+        );
+    }
     Some(Value::Object(r))
 }
 

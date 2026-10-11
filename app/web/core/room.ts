@@ -58,7 +58,7 @@ export interface Rooms {
   joinWithCode(o: DeviceOptions & { hub_url: string; room_id: string; code: Uint8Array; recover?: boolean; account?: ((new_code: Uint8Array) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>) | null; progress?: ((step: SignInStep) => void) | null }): Promise<{ client: Client; sessions: Promise<SessionJoins> }>
 }
 /** How far a sign-in with the code is, for the screen that waits on it (a big account's check takes a while). */
-export type SignInStep = { step: 'reading' } | { step: 'checking'; done: number; total: number } | { step: 'joining' }
+export type SignInStep = { step: 'reading'; done?: number; total?: number } | { step: 'checking'; done: number; total: number } | { step: 'joining' }
 /** The session groups a sign-in with the code joined behind it (`joinWithCode`'s `sessions`). */
 export interface SessionJoins { joined: number; not_joined: { group: Uint8Array; code: string }[] }
 /** How many session groups' Commits are read from the hub at a time while they are joined behind a sign-in. */
@@ -69,6 +69,8 @@ const BUSY_TRIES = 20
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
 /** A joining device's sign-in while it is no leaf yet: asked again after these waits, then every LEAF_WAIT_EVERY_MS, LEAF_WAIT_MS in all. */
 const LEAF_WAITS_MS = [1000, 2000, 4000], LEAF_WAIT_EVERY_MS = 5000, LEAF_WAIT_MS = 5 * 60_000
+/** A step of a join that did not reach the hub is asked again after these waits, then the join gives up (`offline`). */
+const JOIN_RETRY_MS = [1000, 2000, 4000]
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 const codeText = (numbers: readonly number[]): string => numbers.map(n => String(n).padStart(2, '0')).join('-')
 
@@ -182,6 +184,20 @@ export function roomsOn(env: RoomEnv): Rooms {
       if (Date.now() > leafUntil) throw new ClientError('invite-expired', 'nobody confirmed this device in time')
       await sleep(LEAF_WAITS_MS[asked++] ?? LEAF_WAIT_EVERY_MS)
     }
+    // A step that did not reach the hub (or met a busy one) is asked again, the same bytes, a few times before the
+    // join gives up: a network blip never burns the invite. Posting the same Request twice is safe (the hub answers it
+    // as the first time). What is still `offline` after that says so: the same link may be tried again.
+    const steady = async <T>(step: () => Promise<T>): Promise<T> => {
+      for (let tried = 0; ; tried++) {
+        try { return await step() } catch (e) {
+          const wait = paced ? poll : JOIN_RETRY_MS[tried]
+          if (!(e instanceof HubError) || !e.transient || wait === undefined || tried >= JOIN_RETRY_MS.length) throw e
+          if (cancelled) throw new ClientError('cancelled', 'joining was given up')
+          if (Date.now() > until) throw e
+          await sleep(e.retry_after !== null ? Math.min(e.retry_after * 1000, 10_000) : wait)
+        }
+      }
+    }
     const client = (async (): Promise<Client> => {
       const core = await env.core()
       // the link held against this clock before anything is fetched: an expired one is refused here
@@ -191,9 +207,18 @@ export function roomsOn(env: RoomEnv): Rooms {
       let engine: Engine | null = null
       try {
         const link = await device.joinLink(o.link, Date.now())
-        const invite = await hub.getInvite(link.inviteId)
+        const invite = await steady(() => hub.getInvite(link.inviteId))
         const request = await device.joinRequest(o.link, { offer: invite.offer, signature: invite.signature, mac: invite.mac }, Date.now())
-        await hub.postInviteRequest(link.inviteId, { request: request.request, mac: request.mac, signature: request.signature })
+        // (an earlier post whose answer was lost may have got through, and the inviter revealed it meanwhile: then the
+        // hub calls the invite used. The Reveal below says whose Request it took; the core takes only its own.)
+        let maybeIn = false
+        await steady(async () => {
+          try { return await hub.postInviteRequest(link.inviteId, { request: request.request, mac: request.mac, signature: request.signature }) } catch (e) {
+            if (maybeIn && e instanceof HubError && e.code === 'invite-used') return null
+            if (e instanceof HubError && e.transient) maybeIn = true
+            throw e
+          }
+        })
         // the inviter's Reveal: with it both sides hold the same six numbers
         let reveal = null
         while (!reveal) {
@@ -212,7 +237,7 @@ export function roomsOn(env: RoomEnv): Rooms {
         }
         if (request.role === 'agent') {
           // an agent device follows the room group from the epoch the Offer names (12.1.6)
-          const info = await hub.groupInfo(core.roomGroupId(link.roomId), request.roomEpoch)
+          const info = await steady(() => hub.groupInfo(core.roomGroupId(link.roomId), request.roomEpoch))
           await device.joinObserve(info.group_info)
         }
         const cache = await env.cache(o.storage.name)
@@ -221,7 +246,7 @@ export function roomsOn(env: RoomEnv): Rooms {
         await engine.load(link.roomId)
         // The Welcome: into the room group for a human device, into its session for an agent; committed by the inviter.
         const inside = (): boolean => (request.role === 'human' ? engine!.is_human : engine!.groups.some(g => g.session !== null))
-        while (!inside()) { if (!(await engine.joinNow(request.inviter)) || !inside()) await wait() }
+        while (!inside()) { if (!(await steady(() => engine!.joinNow(request.inviter))) || !inside()) await wait() }
         return await clientOf(o, core, hub, engine, cache)
       } catch (e) {
         failCode(e)
@@ -257,7 +282,7 @@ export function roomsOn(env: RoomEnv): Rooms {
       // The room in steps: everything but the Commits at once, the Commits read from the hub's logs while the core
       // takes them in slices (a room's whole history may be more than one call carries).
       tell({ step: 'reading' })
-      const steps = await hub.roomInSteps({ anchorOf: rows => core.recoveryAnchor(code, room, rows) })
+      const steps = await hub.roomInSteps({ anchorOf: rows => core.recoveryAnchor(code, room, rows), read: (done, total) => tell({ step: 'reading', done, total }) })
       if (o.recover) {
         // The new code is made, and the account's copies of it (or the person's own copy: the caller's `account`
         // resolves once the code is on their screen), BEFORE the recovery is opened: the hub locks the room for
@@ -298,7 +323,12 @@ export function roomsOn(env: RoomEnv): Rooms {
         let done = 0
         tell({ step: 'checking', done, total })
         await held.codeCheckStart(code, steps.start)
-        await inSlices(steps.placed().next, size, halving(async slice => { await held.codeCheckSlice(slice); done += slice.length; tell({ step: 'checking', done, total }); return false }, tooLarge))
+        // (progress is told as the Commits are read, every few, not only once a slice of up to 256 was checked: a
+        //  phone that reads slowly says it moves, and the sign-in's watch for silence is not tripped)
+        const placed = steps.placed()
+        let read = 0
+        const next = async (): Promise<PlacedCommit | null> => { const c = await placed.next(); if (c && ++read % 16 === 0) tell({ step: 'checking', done: Math.max(done, read), total }); return c }
+        await inSlices(next, size, halving(async slice => { await held.codeCheckSlice(slice); done += slice.length; tell({ step: 'checking', done: Math.max(done, read), total }); return false }, tooLarge))
         tell({ step: 'joining' })
         await held.joinRoomChecked(code, steps.end, Date.now())
         await postAll(engine)

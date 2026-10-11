@@ -11,7 +11,7 @@ use crate::keeper::Keeper;
 use crate::store::Journal;
 use crate::util::{hex, now_ms};
 use crate::vault::Vault;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use trommi_core::invite::{CheckCode, InviteLink, Offer, Role, SignedOffer, SignedReveal};
 
@@ -41,6 +41,56 @@ pub fn check_link(link: &str, now_ms: u64) -> Result<()> {
         };
         Fault::new(fault.code, message)
     })
+}
+
+/// The longest waits before a join step that did not reach the hub is asked again; after them the join gives up.
+const JOIN_RETRY_MS: [u64; 3] = [1000, 2000, 4000];
+
+/// Runs a join step, asking again with the same bytes while the hub is not reached or busy, a few times
+/// and never past `until`: a network blip never burns the invite. `posted`: the step writes, so an
+/// `invite-used` after a lost answer may be this device's own Request (the Reveal decides). What is still
+/// `offline` after the last try says so, and that the same link may be tried again.
+async fn steady<F, Fut>(until: u64, poll_ms: u64, posted: bool, step: F) -> Result<Value>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<Value>>,
+{
+    let mut maybe_in = false;
+    for tried in 0.. {
+        match step().await {
+            Ok(v) => return Ok(v),
+            Err(fault) if posted && maybe_in && fault.code == "invite-used" => {
+                return Ok(Value::Null)
+            }
+            Err(fault) if crate::hub::is_transient(&fault) => {
+                maybe_in = true;
+                let Some(wait) = JOIN_RETRY_MS.get(tried) else {
+                    return Err(unreached(fault));
+                };
+                if now_ms() > until {
+                    return Err(unreached(fault));
+                }
+                // (the pace of the join's own polls, doubling: a test's short one keeps it short)
+                sleep((*wait).min(poll_ms.max(1) << tried)).await;
+            }
+            Err(fault) => return Err(fault),
+        }
+    }
+    unreachable!()
+}
+
+/// A join step that never got through: the link is not used up.
+fn unreached(fault: Fault) -> Fault {
+    if fault.code != "offline" {
+        return fault;
+    }
+    Fault::new(
+        "offline",
+        format!(
+            "{}; the invite link is not used up, try the same link again",
+            fault.message
+        ),
+    )
 }
 
 fn ago(ms: u64) -> String {
@@ -94,13 +144,11 @@ async fn answer_invite(
             .call(move |v: &mut Vault| v.device.join_link(&for_link, now_ms()))
             .await??;
         let invite_id = joining.invite_id.to_base64url();
-        let offer = open
-            .open_call(
-                reqwest::Method::GET,
-                &format!("/v1/invites/{invite_id}"),
-                None,
-            )
-            .await?;
+        let offer_path = format!("/v1/invites/{invite_id}");
+        let offer = steady(until, poll_ms, false, || {
+            open.open_call(reqwest::Method::GET, &offer_path, None)
+        })
+        .await?;
         // The MAC binds the Offer to this link; a hub that serves none leaves it empty and the device
         // refuses the Offer (bad-invite).
         let offer = SignedOffer {
@@ -139,14 +187,16 @@ async fn answer_invite(
         journal.commit()?;
 
         let signed = &request.signed_request;
-        open.open_call(
-            reqwest::Method::POST,
-            &format!("/v1/invites/{invite_id}/request"),
-            Some(&json!({
-                "request": b64(&signed.request), "mac": b64(&signed.mac),
-                "signature": b64(&signed.signature),
-            })),
-        )
+        let body = json!({
+            "request": b64(&signed.request), "mac": b64(&signed.mac),
+            "signature": b64(&signed.signature),
+        });
+        // The same bytes again after a lost answer: the hub answers a repeated Request as the first one, or
+        // calls the invite used once the app revealed it (then the Reveal below says whose it took).
+        let request_path = format!("/v1/invites/{invite_id}/request");
+        steady(until, poll_ms, true, || {
+            open.open_call(reqwest::Method::POST, &request_path, Some(&body))
+        })
         .await?;
 
         // The inviter's Reveal: the code both sides show.
@@ -210,4 +260,97 @@ async fn answer_invite(
         Err(_) => return Err(Fault::new("internal", "the joining device is still in use")),
     }
     outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn offline() -> Fault {
+        Fault::new("offline", "the hub could not be reached")
+    }
+
+    #[tokio::test]
+    async fn a_step_that_did_not_reach_the_hub_is_asked_again() {
+        let calls = AtomicUsize::new(0);
+        let got = steady(now_ms() + 60_000, 5, false, || {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if n < 2 {
+                    Err(offline())
+                } else {
+                    Ok(json!({"offer": "x"}))
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(got["offer"], "x");
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn a_request_whose_answer_was_lost_may_find_the_invite_used() {
+        let calls = AtomicUsize::new(0);
+        let step = || {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if n == 0 {
+                    Err(offline())
+                } else {
+                    Err(Fault::new("invite-used", "revealed"))
+                }
+            }
+        };
+        assert_eq!(
+            steady(now_ms() + 60_000, 5, true, step).await.unwrap(),
+            Value::Null
+        );
+        // a first answer that says used is a refusal, and a read is never taken for a post
+        let first = steady(now_ms() + 60_000, 5, true, || async {
+            Err::<Value, _>(Fault::new("invite-used", "used"))
+        })
+        .await;
+        assert_eq!(first.unwrap_err().code, "invite-used");
+        let calls = AtomicUsize::new(0);
+        let read = steady(now_ms() + 60_000, 5, false, || {
+            let n = calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if n == 0 {
+                    Err(offline())
+                } else {
+                    Err(Fault::new("invite-used", "used"))
+                }
+            }
+        })
+        .await;
+        assert_eq!(read.unwrap_err().code, "invite-used");
+    }
+
+    #[tokio::test]
+    async fn a_hub_never_reached_says_so_and_that_the_link_is_not_used_up() {
+        let calls = AtomicUsize::new(0);
+        let err = steady(now_ms() + 60_000, 5, true, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { Err::<Value, _>(offline()) }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(calls.load(Ordering::SeqCst), 1 + JOIN_RETRY_MS.len());
+        assert_eq!(err.code, "offline");
+        assert!(err.message.contains("not used up"), "{}", err.message);
+        // a refusal is never asked again
+        let calls = AtomicUsize::new(0);
+        let err = steady(now_ms() + 60_000, 5, false, || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async { Err::<Value, _>(Fault::new("invite-expired", "ran out")) }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(
+            (err.code.as_str(), calls.load(Ordering::SeqCst)),
+            ("invite-expired", 1)
+        );
+    }
 }

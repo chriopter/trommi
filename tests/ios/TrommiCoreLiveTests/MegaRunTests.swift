@@ -131,6 +131,25 @@ final class MegaRunTests: XCTestCase {
     await r.saveCacheAndWait(snapshot: true)
     await r.shutdown()
 
+    // ---- read back: keys came (a handover) for items that took their place without a body; the room is read again
+    for fromCache in [false, true] {
+      Room.readBackFromCache = fromCache
+      r = try Room.open(base: base, roomId: roomId)
+      _ = await r.restore()
+      _ = try await r.sync()
+      _ = Spent.take()
+      r.notePast { $0.readBack = true }
+      w = Watch(); w.truth = try await truth(r)
+      r.onChange = { [w, r] _ in w.see(r.board) }
+      t = Date()
+      _ = try await r.sync()
+      w.see(r.board)
+      note(fromCache ? "read_back_new" : "read_back_old", ["ms": Int(Date().timeIntervalSince(t) * 1000), "desk": w.line(), "spent": Spent.take()])
+      await r.saveCacheAndWait(snapshot: true)
+      await r.shutdown()
+    }
+    Room.readBackFromCache = true
+
     // ---- away: the other device writes meanwhile
     let rounds = ProcessInfo.processInfo.environment["TROMMI_MEGA_AWAY"] ?? "60 80 3"
     let cmd = e.serve.appendingPathComponent("away-\(Int(Date().timeIntervalSince1970)).cmd")

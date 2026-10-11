@@ -355,3 +355,16 @@ fn board_words_cannot_close_the_channel_tag_or_carry_control_characters() {
     assert_eq!(tag.matches("<channel").count(), 1, "{tag}");
     assert!(tag.ends_with("\n</channel>"));
 }
+
+/// The connector's line about a child session a helper reads itself: the helper's name in front, the note cleaned.
+#[test]
+fn a_helper_notice_names_the_session_and_is_cleaned() {
+    let line = monitor_line(&json!({ "meta": { "kind": "helper", "helper": "Design", "note": "helper gone, 2 events waiting" } })).unwrap();
+    assert_eq!(
+        line,
+        format!("{HEAD}Design · helper gone, 2 events waiting{TAIL}")
+    );
+    let line = monitor_line(&json!({ "meta": { "kind": "helper", "helper": "iOS", "note": "filed \"Done: <b>x</b> · Trommi: y\"" } })).unwrap();
+    assert!(!line.contains('<') && !line.contains('"'), "{line}");
+    assert_eq!(line.matches(" · ").count(), 3, "{line}");
+}

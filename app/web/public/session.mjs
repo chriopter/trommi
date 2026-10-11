@@ -17,7 +17,7 @@
 // A question never unfolds here: an open one stands in the conversation as its Desk row, whose text links to the
 // card's page; every other one is a quiet line that links there too.
 import { UNHEARD_MS, blockedOf, lineCard, linkOf, quietOf, shareControl, sharesLoaded } from './app.mjs'
-import { Controller, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
+import { Controller, usageCompact, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
 const LIVE = 80               // so many of the newest messages are kept up to date by the live stream
 const PAGE = 40               // messages of one render: the page shows the latest, "Earlier" (or scrolling up) brings as many again
 const IN_VIEW = 14            // of them, rendered with the page (a phone shows fewer); the rest of the window right after its first paint
@@ -347,8 +347,12 @@ function sessionNow(s, base = '') {
   const link = linkOf(a)
   const words = link && link.state !== 'live' ? link.word : a.online ? a.task || 'connected' : 'disconnected'
   const facts = [a.model, a.host].filter(Boolean).join(' · ')
-  return html`<p class="pane-now" id="session-now-${a.id}"${link && link.state !== 'live' ? html` data-link="${link.state}" title="${link.line}"` : ''}><span>${words}</span>${facts ? html`<span class="caps">${facts}</span>` : ''}${filesChip(s, base)}</p>`
+  const usage = usageCompact(a.account)
+  return html`<p class="pane-now" id="session-now-${a.id}"${link && link.state !== 'live' ? html` data-link="${link.state}" title="${link.line}"` : ''}><span>${words}</span>${facts ? html`<span class="caps">${facts}</span>` : ''}${usage}${filesChip(s, base)}</p>`
 }
+/** Under 1200 px the usage stands on a line of its own under the heading, centred (app.css .use-narrow). */
+// (always there, empty without an account: the live stream replaces it when the agent's numbers come or change)
+const sessionUsage = s => html`<p class="use-narrow" id="session-use-${s.agent.id}">${usageCompact(s.agent.account)}</p>`
 /** The filter beside the composer: one round button that switches straight to the questions only and back; filled
  *  while it is on. A real link (the choice lives in the address, ?only=questions), so it works without scripts. */
 function sessionFilters(s, base, mode = '') {
@@ -360,12 +364,29 @@ function sessionStatus(s, base, now = Date.now()) {
   const last = s.messages.findLast(m => m.from !== 'event')
   const answering = last?.from === 'user' && now - last.ts < WORKING_WINDOW
   const lines = s.tasks.filter(t => t.state !== 'done' || now - (t.updated ?? 0) < WORKING_WINDOW)
-  return html`<div class="session-status" id="session-status-${s.id}"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
+  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
     const card = lineCard(t, s.model, s.cards, s.tasks)
     const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? agoSpan(t.updated, 'status-ago') : ''}`
-    return card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${questionPath(card, base)}">${inner}</a>` : html`<p class="status-line" data-state="${t.state}">${inner}</p>`
+    // (on a phone only the title and the time; a tap opens the detail and the way to its question below, a second shuts it)
+    const href = card ? questionPath(card, base) : ''
+    return html`<div class="status-row" data-key="${t.agent}:${t.id}">${card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${href}" data-action="click->status-lines#toggle">${inner}</a>` : html`<p class="status-line" data-state="${t.state}" data-action="click->status-lines#toggle">${inner}</p>`}${t.detail || card ? html`<div class="status-more">${t.detail ? html`<p>${t.detail}</p>` : ''}${card ? html`<a class="status-open" data-nav href="${href}">Open the question →</a>` : ''}</div>` : ''}</div>`
   })}</div>`
 }
+// The status lines on a phone: a tap on one opens its detail below it (and shuts it again); the rows that are open stay
+// open when the live piece is drawn anew. On a wide screen a line is what it was: a link to its question.
+const statusOpen = new Set()
+controller('status-lines', class extends Controller {
+  connect() { for (const row of this.element.querySelectorAll('.status-row')) if (statusOpen.has(row.dataset.key)) row.dataset.open = '' }
+  toggle(e) {
+    if (!mq('(max-width: 860px)').matches) return
+    const row = e.target.closest('.status-row')
+    if (!row?.querySelector('.status-more')) return
+    e.preventDefault(); e.stopPropagation()
+    const open = !('open' in row.dataset)
+    if (open) { row.dataset.open = ''; statusOpen.add(row.dataset.key) } else { delete row.dataset.open; statusOpen.delete(row.dataset.key) }
+    row.querySelector('.status-line').setAttribute('aria-expanded', String(open))
+  }
+})
 /** "N open": the questions of this session that wait, and the way to the first of them. */
 function sessionOpen(s, base, shown = null) {
   const n = s.fresh.length
@@ -535,7 +556,7 @@ function sessionMain(s, base, { mode = '', before = null, error = '', text = '',
     body = html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${w.total ? part : empty(s, base)}${latest ? html`<div id="log-end-${s.id}" hidden></div>${sessionStatus(s, base)}` : html`<a class="log-earlier-link is-later" data-nav href="${sessionPath(s.id, base)}">To the latest messages</a>`}</div></div>`
   }
   return html`<main id="session" aria-label="Session: ${s.agent.name}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}>
-<header class="pane-title">${sessionWho(s, base)}${sessionNow(s, base)}</header>
+<header class="pane-title">${sessionWho(s, base)}${sessionNow(s, base)}</header>${sessionUsage(s)}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
 <div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${open}<div class="column session-compose">${sendError(s, error)}${sessionLink(s)}${composer(s, base, { text, focus })}${sessionFilters(s, base, mode)}</div></div>
@@ -695,7 +716,7 @@ export function register(t) {
         if (!p) {
           const s = current(id, m)
           if (!s) { out.set(id, null); continue }
-          p = { s, who: sessionWho(s, BASE), now: sessionNow(s, BASE), link: sessionLink(s), count: `${s.fresh.length} ${fileCount(s)}`, modes: {} }
+          p = { s, who: sessionWho(s, BASE), now: sessionNow(s, BASE), use: sessionUsage(s), link: sessionLink(s), count: `${s.fresh.length} ${fileCount(s)}`, modes: {} }
           out.set(id, p)
         }
         if (p && !(mode in p.modes)) {
@@ -725,6 +746,7 @@ export function register(t) {
       const out = []
       if (t.differs(a.who, b.who)) out.push(t.stream('replace', `session-who-${id}`, b.who))
       if (t.differs(a.now, b.now)) out.push(t.stream('replace', `session-now-${id}`, b.now))
+      if (t.differs(a.use, b.use)) out.push(t.stream('replace', `session-use-${id}`, b.use))
       if (t.differs(a.link, b.link)) out.push(t.stream('replace', `session-link-${id}`, b.link))
       if (a.count !== b.count) out.push(t.stream('replace', `session-filters-${id}`, sessionFilters(b.s, BASE, mode)))
       if (mode === 'questions') { if (a.questions != null && t.differs(a.questions, b.questions)) out.push(t.stream('replace', `session-questions-${id}`, b.questions)) }

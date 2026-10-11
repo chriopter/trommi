@@ -21,7 +21,7 @@ users**: the model the views read and the calls they make. Names are snake_case,
 | `core-api.ts` | THE ONE FILE that names the core: the binding's typings, and Part 2, the calls the binding lacks (below) |
 | `core-wasm.ts` | Loads the binding and its `.wasm` (fetched with its SHA-256); provisional calls refuse with `core-missing` |
 | `ids.ts` | hex ↔ base64url ↔ bytes |
-| `hub.ts` | The hub client: sign-in by signed challenge, every route of a human device, outbox entries to their routes, catch-up, the event stream, files. Checks every answer's shape |
+| `hub.ts` | The hub client: sign-in by signed challenge, every route of a human device, outbox entries to their routes, catch-up, the event stream, files. Checks every answer's shape. The stream is dead after 70 s without a byte (the hub pings every 25 s); when the page is shown again a stream silent for 30 s is replaced at once, and going online replaces it whatever it heard (`freshenStreams`, sent by remote.ts) |
 | `engine.ts` | Owns the `Device`: outbox pump, catch-up in the hub's order, live stream, upkeep ("Engine invariants") |
 | `client.ts` | The `Client`: the model, the human actions, timelines, files, invites, sessions, push, the local cache |
 | `room.ts` | How a device comes to hold a room: `foundRoom`, `openRoom`, `joinRoom`, `joinWithCode` |
@@ -216,7 +216,10 @@ await client.leaveRoom()                                  // → { key_epoch, hu
   epoch, the key handover (7.1) and the recovery key's tag (7.4), the Adds into the live session groups (5.2.7),
   an agent's new main session (named `label`, on `desk`) or its takeover. `joined` for a human device means it is
   in and was handed the keys; the session Adds follow as its KeyPackages reach the hub. `false` burns the invite
-  and throws `code-mismatch`.
+  and throws `code-mismatch`. On the joining side (`joinRoom`), a step that did not reach the hub (the Offer, the
+  Request, the room's GroupInfo, the Welcome) is asked again with the same bytes after 1, 2 and 4 s; still not
+  reached, the join fails `offline`, and the same link may be tried again (the invite is not used up; the app says
+  so and offers "Try again"). Expired, used and burned stay their own codes.
 - **Takeover** (5.3, 13.5): `createInvite({ device_role: 'agent', takeover: true, session_id })`, the only way a
   session changes hands. The Commit that enrols the new agent device takes the old one out of `agents`; the new
   one then takes its leaf in the main session and is handed its keys unless `with_history: false`.

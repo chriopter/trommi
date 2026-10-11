@@ -4,7 +4,7 @@
 //   - the pages keep to their Content-Security-Policy: no inline script or style, nothing from another origin;
 //   - no link opens a new tab; the one mail address is the contact;
 //   - head and foot are the same on every page;
-//   - public/_headers carries the policy and leaves Strict-Transport-Security to the zone;
+//   - public/_headers carries the policy, HTTPS only for a year with every name under it (no preload);
 //   - the worker sends http to https and www to the apex, /beta to the TestFlight link (or the install steps), and
 //     nothing else anywhere.
 //
@@ -145,7 +145,8 @@ check(JSON.stringify(csp) === JSON.stringify(want), '_headers: the Content-Secur
 check(all['x-content-type-options'] === 'nosniff' && all['referrer-policy'] === 'no-referrer', '_headers: nosniff, no referrer', all)
 check(all['x-frame-options'] === 'DENY' && all['permissions-policy'] === 'camera=(), geolocation=(), microphone=()', '_headers: no framing, no camera, place or microphone', all)
 check(/^same-origin$/.test(all['cross-origin-opener-policy'] ?? '') && /^same-origin$/.test(all['cross-origin-resource-policy'] ?? ''), '_headers: the pages and their files are for this origin only', all)
-check(Object.values(rules).every(r => !('strict-transport-security' in r)), '_headers: Strict-Transport-Security is left to the zone')
+check(all['strict-transport-security'] === 'max-age=31536000; includeSubDomains', '_headers: HTTPS only, a year, with every name under trommi.com, no preload', all['strict-transport-security'])
+check(Object.entries(rules).every(([k, r]) => k === '/*' || !('strict-transport-security' in r)), '_headers: Strict-Transport-Security once, for every address')
 check(Object.keys(rules).filter(k => k !== '/*').every(k => fileOf(k.replace(/\*$/, '')) === null && fs.existsSync(path.join(pub, k.replace(/\/\*$/, '')))), '_headers: every other rule is for a folder that is there', Object.keys(rules))
 
 // ---- the worker ----

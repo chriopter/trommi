@@ -116,6 +116,10 @@ pub fn terminal_input(prompt: &str) -> Option<String> {
     {
         return None;
     }
+    // the message that wakes a Codex session for board events (host.rs)
+    if is_codex_wake(t) {
+        return None;
+    }
     // the monitor's line (line.rs), however it arrives
     if Regex::new(r"(?m)^\s*Trommi · .* · call inbox\s*$")
         .unwrap()
@@ -345,13 +349,26 @@ pub fn prompt_origin(prompt: &str, typed: bool) -> (&'static str, Vec<String>) {
     let monitor = Regex::new(r"(?m)^\s*(<event>)?Trommi · .* · call inbox\s*(</event>)?\s*$")
         .unwrap()
         .is_match(prompt);
-    if !cards.is_empty() || monitor {
+    if !cards.is_empty() || monitor || is_codex_wake(prompt.trim()) {
         ("board", cards)
     } else {
         ("other", vec![])
     }
 }
 const CARDS_MAX: usize = 8;
+
+/// Whether a hook's input is Codex's: every Codex hook names its turn and its model (Claude Code's do not both).
+pub fn codex_input(input: &Value) -> bool {
+    input.get("turn_id").is_some_and(|v| v.is_string())
+        && input.get("model").is_some_and(|v| v.is_string())
+}
+
+/// The message the connector queues to wake a Codex session ("[Trommi] 2 new board events for you: …").
+pub fn is_codex_wake(prompt: &str) -> bool {
+    Regex::new(r"^\[Trommi\] \d+ new board events? for you")
+        .unwrap()
+        .is_match(prompt)
+}
 
 /// The line a hook hands its connector, or None when this hook has nothing to say. `kind`: "prompt" or "stop".
 /// A prompt that is not mirrored still goes as a line without text: it starts a turn (the replies of the turn before
@@ -361,8 +378,10 @@ pub fn hook_request(kind: &str, input: &Value, ancestors: &[u32]) -> Option<Valu
     if !input.is_object() || !enabled() || input.get("agent_id").is_some_and(|v| !v.is_null()) {
         return None;
     }
+    // (Codex names the turn instead of the prompt)
     let prompt_id = input
         .get("prompt_id")
+        .or_else(|| input.get("turn_id").filter(|_| codex_input(input)))
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let (what, mut text) = match kind {
@@ -386,6 +405,14 @@ pub fn hook_request(kind: &str, input: &Value, ancestors: &[u32]) -> Option<Valu
     let pictures = pictures.filter(|dir| dir.len() <= 4096);
     loop {
         let mut r = json!({ "op": "terminal", "kind": what, "text": text, "prompt_id": prompt_id, "ancestors": ancestors });
+        if let Some(t) = input
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .filter(|_| codex_input(input))
+        {
+            // (Codex, which names the turn: the thread's id, so that a connector serves only its own thread's hooks)
+            r["thread"] = json!(t.chars().take(64).collect::<String>());
+        }
         if kind == "prompt" {
             let (from, cards) = prompt_origin(
                 input.get("prompt").and_then(|v| v.as_str()).unwrap_or(""),

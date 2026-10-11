@@ -1010,14 +1010,20 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 .end-tick { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--fg); }
 .end-tick.is-later { color: var(--stamp-ink-later); }
 .end-tick.is-later .sketch { width: 20px; height: 20px; }
+.end-row[data-g="later"] :is(.end-title, .end-said) { color: var(--muted); }
+/* (a closed card: answered, done or read a green tick on the right; shredded or withdrawn its own small drawing in quiet ink;
+   the title as it is; only a shredded one is struck through, below) */
+.end-tick.is-done { color: var(--accent); }
+.end-tick.is-done .sketch { width: 20px; height: 20px; stroke-width: 2.2; }
+.end-tick.is-thrown { color: var(--muted); }
+.end-tick.is-thrown .sketch { width: 19px; height: 19px; stroke-width: 1.8; }
+/* (a shredded card, thrown away unanswered: struck through as well) */
+.end-row[data-shredded] > :is(.end-title, .end-said) { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent); }
 .end-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 600 var(--t-sm)/1.3 var(--font); text-decoration: none; }
 .end-title:hover { text-decoration: underline; }
 .end-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
 .end-ago { color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
 /* (put off: grey; thrown away: struck through; what is done reads plain) */
-.end-row:is([data-g="later"], [data-g="trash"]) :is(.end-title, .end-said) { color: var(--muted); }
-.end-row[data-g="trash"] :is(.end-title, .end-said) { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent); }
-.end-row[data-g="trash"] :is(.end-title, .end-said) { opacity: .7; }
 
 /* a phone: the title and its line one above the other */
 @media (max-width: 860px) {

@@ -139,6 +139,35 @@ class BetaReview(Base):
         self.assertEqual(fake.writes(), [])
 
 
+    def test_another_build_in_review_leaves_this_one_waiting_without_failing(self):
+        def fake_with_422(method, path, body=None, ok=()):
+            if (method, path) == ("POST", "/v1/betaAppReviewSubmissions"):
+                fake.sent.append((method, path, body))
+                self.assertIn(422, ok)
+                return {"error": 422, "codes": ["ENTITY_UNPROCESSABLE.ANOTHER_BUILD_IN_REVIEW"],
+                        "detail": "Another build in the same train is already in beta review."}
+            return fake(method, path, body, ok)
+        fake = Fake(**{
+            "GET /v1/builds/b1?fields[builds]=version": {"data": {"id": "b1", "attributes": {"version": "60"}}},
+            "GET /v1/builds?filter[app]=app1&filter[betaAppReviewSubmission.betaReviewState]=WAITING_FOR_REVIEW,IN_REVIEW&fields[builds]=version&limit=5":
+                {"data": [{"id": "b0", "attributes": {"version": "59"}}]}})
+        code, out, err = self.run_with(fake_with_422, asc.beta_review, "b1")
+        self.assertEqual(code, 0, err)
+        self.assertIn("build 60 waits; build 59 is in review", out)
+        self.assertIn("external_state: WAITING_FOR_ANOTHER_REVIEW", out)
+        # the build is not taken out of a group
+        self.assertFalse([w for w in fake.writes() if w[0] == "DELETE"])
+
+    def test_another_422_still_fails(self):
+        def fake_with_422(method, path, body=None, ok=()):
+            if (method, path) == ("POST", "/v1/betaAppReviewSubmissions"):
+                return {"error": 422, "codes": ["ENTITY_UNPROCESSABLE.SOMETHING_ELSE"], "detail": "no"}
+            return fake(method, path, body, ok)
+        fake = Fake()
+        code, _, err = self.run_with(fake_with_422, asc.beta_review, "b1")
+        self.assertEqual(code, 1)
+        self.assertIn("SOMETHING_ELSE", err)
+
 class WhatsNew(Base):
     def test_the_newest_day_as_plain_text(self):
         code, out, _ = self.run_with(None, asc.whats_new, str(HERE / "fixtures/CHANGELOG.md"))

@@ -19,6 +19,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A room holds at most 1000 devices.
 - Files are encrypted on the device. Push notifications carry no content.
+- An agent's plan, account e-mail and usage reach the board end-to-end encrypted, in its session's profile; they
+  are never in the hub's metadata or in a log. The connector reads them through the programs' own commands and
+  Claude Code's status line (put around one already there), never from their credential files.
 - No forward secrecy for history, on purpose: a new device of yours reads everything, and so does anyone who
   holds one of your devices or the recovery code.
 
@@ -49,6 +52,11 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - The hub runs in a systemd sandbox and listens only on its own machine (`127.0.0.1`).
 - Public traffic reaches the hub only through a Cloudflare tunnel.
 - CI deploys the web app (app.trommi.com) and the website (trommi.com) to Cloudflare with a token from 1Password.
+- The web app and the website tell browsers to use only HTTPS, for a year, for their name and every name under it
+  (HSTS, no preload); the website's covers hub.trommi.com too. The hub sends the same on every answer once
+  `HUB_HSTS=on` is set on its server.
+- The web app and the website keep their windows and files to themselves: no other site's window keeps a handle on
+  them (COOP), and no other site may embed their files (CORP). Both have a strict Content-Security-Policy.
 - Server logs are kept 30 days and contain no personal data (no e-mail or IP addresses, no tokens).
 
 ## Repository
@@ -63,7 +71,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.
 - Only `main` and `v*` tags can deploy the web app, the website and the hub.
-- Workflows start with no permissions, and outside actions are pinned to exact commits.
+- Workflows start with no permissions, outside actions are pinned to exact commits, and the 1Password CLI they
+  install to an exact version.
 - Toolchain and dependency versions are pinned (lockfiles).
 - Rust dependencies are checked daily against RustSec, the list of known vulnerabilities.
 

@@ -49,6 +49,7 @@
     {"id":"onboarding--join-asking-the-other-device","screen":"Onboarding","state":"Join: asking the other device","web":{"path":"/?onboard=join","state":null,"mock":"1"}},
     {"id":"onboarding--join-the-six-emoji","screen":"Onboarding","state":"Join: the six emoji","web":{"path":"/?onboard=join-emoji","state":null,"mock":"1"}},
     {"id":"onboarding--join-code-run-out","screen":"Onboarding","state":"Join: code run out","web":{"path":"/?onboard=join-expired","state":null,"mock":"1"}},
+    {"id":"onboarding--join-not-reachable","screen":"Onboarding","state":"Join: not reachable","web":{"path":"/?onboard=join-offline","state":null,"mock":"1"}},
     {"id":"onboarding--join-the-emoji-did-not-match","screen":"Onboarding","state":"Join: the emoji did not match","web":{"path":"/?onboard=join-burned","state":null,"mock":"1"}},
     {"id":"onboarding--the-account-did-not-open","screen":"Onboarding","state":"The account did not open","web":{"path":"/?onboard=broken","state":null,"mock":"1"}},
     {"id":"desk","screen":"Desk","state":"As it is","web":{"path":"/","state":null,"mock":"1"}},

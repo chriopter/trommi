@@ -345,9 +345,12 @@ public final class Timeline {
   public var newestHumanEnvelopeNumber = 0
   public var newestAgentEnvelopeNumber = 0
   /** The window: the items in memory, by envelope number (or a negative number for an own echo still in flight). */
-  public var items: [Int: TimelineItem] = [:]
+  public var items: [Int: TimelineItem] = [:] { didSet { revision &+= 1 } }
   /** Own echoes still on their way, by local id. */
-  public var echoes: [String: TimelineItem] = [:]
+  public var echoes: [String: TimelineItem] = [:] { didSet { revision &+= 1 } }
+  /** Bumped by every change of the items or the echoes, wherever it is made (a didSet changes them in place): what a
+   *  conversation built from them is cached by (DeskModel.itemsOf). */
+  public private(set) var revision = 0
   /** The envelope numbers of the items the hub holds (header-only items included), oldest first. */
   public var numbers: [Int] = []
   public var loadedDownTo = Int.max

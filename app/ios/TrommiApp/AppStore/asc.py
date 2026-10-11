@@ -86,7 +86,9 @@ def call(method, path, body=None, ok=()):
     except urllib.error.HTTPError as e:
         text = e.read().decode(errors="replace")
         if e.code in ok:
-            return {"error": e.code, "detail": "; ".join(x.get("detail", "") for x in _errors(text))}
+            errs = _errors(text)
+            return {"error": e.code, "codes": [x.get("code", "") for x in errs],
+                    "detail": "; ".join(x.get("detail", "") for x in errs)}
         die(f"{method} {path}: HTTP {e.code} {text}")
     return json.loads(raw) if raw else {}
 
@@ -450,15 +452,37 @@ def beta_review(build_id):
     if subs:
         print(f"already submitted ({(subs[0].get('attributes') or {}).get('betaReviewState')}): nothing to send")
     elif state == "READY_FOR_BETA_SUBMISSION":
-        sub = call("POST", "/v1/betaAppReviewSubmissions", {"data": {"type": "betaAppReviewSubmissions",
-                   "relationships": {"build": rel("builds", build_id)}}})["data"]
-        print(f"submitted for Beta App Review: {sub['id']} ({(sub.get('attributes') or {}).get('betaReviewState')})")
+        sent = call("POST", "/v1/betaAppReviewSubmissions", {"data": {"type": "betaAppReviewSubmissions",
+                    "relationships": {"build": rel("builds", build_id)}}}, ok=(422,))
+        if "ENTITY_UNPROCESSABLE.ANOTHER_BUILD_IN_REVIEW" in sent.get("codes", []):
+            # Apple reviews one build of a train at a time: this one stays in its groups and is sent by the next
+            # main build once that review is through (a build still READY_FOR_BETA_SUBMISSION then)
+            print(f"build {build_number(build_id)} waits; build {builds_in_review(aid)} is in review")
+            state = "WAITING_FOR_ANOTHER_REVIEW"
+        elif "error" in sent:
+            die(f"POST /v1/betaAppReviewSubmissions: HTTP {sent['error']} {', '.join(sent['codes'])}: {sent['detail']}")
+        else:
+            sub = sent["data"]
+            print(f"submitted for Beta App Review: {sub['id']} ({(sub.get('attributes') or {}).get('betaReviewState')})")
     elif state == "MISSING_EXPORT_COMPLIANCE":
         die("export compliance of the build is not answered: Beta App Review cannot be asked (app/ios/README.md "
             "\"Export compliance\")")
     else:
         print(f"no Beta App Review needed now ({state})")
     gh_out("external_state", state)
+
+
+def build_number(build_id):
+    """The build's number (CFBundleVersion), for a log line; the id when App Store Connect does not say."""
+    got = call("GET", f"/v1/builds/{build_id}?fields[builds]=version", ok=(400, 403, 404))
+    return ((got.get("data") or {}).get("attributes") or {}).get("version") or build_id
+
+
+def builds_in_review(aid):
+    """The numbers of the app's builds waiting for or in Beta App Review, for a log line ("another" if unknown)."""
+    got = call("GET", f"/v1/builds?filter[app]={q(aid)}&filter[betaAppReviewSubmission.betaReviewState]=WAITING_FOR_REVIEW,IN_REVIEW"
+                      "&fields[builds]=version&limit=5", ok=(400, 403, 404))
+    return ", ".join(str((b.get("attributes") or {}).get("version")) for b in got.get("data") or []) or "another"
 
 
 def whats_new(changelog):
