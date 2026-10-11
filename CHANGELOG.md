@@ -27,6 +27,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
   still fails you are told it was the connection, with "Try again" on the same code instead of asking for a new one.
 - iPhone: logging in to a big account opens the Desk at once and fills it page by page, with "Catching up… N%";
   catching up is about ten times faster (one write per page instead of one per item).
+- iPhone: big boards stay smooth while news comes in: the Desk and the chat list are worked out about 35 times faster
+  per change, and an open long chat is no longer rebuilt when a message arrives elsewhere.
 - When an agent answers something you asked on a card, its answer stands in that card's thread; the chat shows one
   line pointing to the card.
 - The website shows the apps: the web app and the iPhone app in real screenshots, light and dark.

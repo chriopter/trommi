@@ -47,7 +47,7 @@ struct SessionScreen: View {
       let fresh = v?.fresh.filter { $0.agent == agentId } ?? []
       let freshIds = Set(fresh.map { $0.id } + (v?.reads.filter { $0.agent == agentId }.map { $0.id } ?? []))
       let msgs = onlyQuestions ? all.filter { $0.from == "event" && $0.kind == "asked" && freshIds.contains($0.cardId ?? "") } : all
-      let askAt = Dictionary(all.filter { $0.from == "event" && $0.kind == "asked" && $0.cardId != nil }.map { ($0.cardId!, $0.id) }, uniquingKeysWith: { $1 })
+      let askAt = d.askAt(agent: agentId)
       let older = d.hasOlder(agent: agentId)
       let tasks = d.tasks.filter { $0.agent == agentId }
       let permissions = v?.fresh.filter { $0.agent == agentId && $0.kind == "permission" } ?? []
