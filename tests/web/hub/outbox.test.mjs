@@ -151,23 +151,27 @@ test('recoveryCode: POST /v1/rooms/{room}/recovery-code; the account\'s new copi
 
   const kit = { auth_key: new Uint8Array(randomBytes(32)), sealed_copy: copy() }
   await hub.createAccount({ email: 'a@example.com', kit, password: { auth_key: kit.auth_key, sealed_copy: kit.sealed_copy, kdf: { alg: 'argon2id', v: 1, m: 65536, t: 3, p: 1 } } })
-  const copies = { kit, password: { sealed_copy: copy() } }
+  // the copies name the account's revision they were made at: one of before is refused
+  const revision = async () => (await hub.account()).revision
+  const stale = await hub.postOutbox(entry('recoveryCode', room_id, 1, [part('commit-2'), part('info-2'), part('sealed-2'), part('link-2'), accountCopiesBytes({ kit, password: { sealed_copy: copy() }, revision: 0 })])).catch(e => e)
+  assert.equal(stale.code, 'account-changed')
+  const copies = { kit, password: { sealed_copy: copy() }, revision: await revision() }
   await hub.postOutbox(entry('recoveryCode', room_id, 1, [part('commit-2'), part('info-2'), part('sealed-2'), part('link-2'), accountCopiesBytes(copies)]))
-  assert.deepEqual(last(fake, `/v1/rooms/${txt(room_id)}/recovery-code`).body.account, { kit: { auth_key: b64u(kit.auth_key), sealed_copy: b64u(kit.sealed_copy)}, password: { sealed_copy: b64u(copies.password.sealed_copy) } })
-  const passkey = { kit, passkey: { credential_id: new Uint8Array(20), sealed_copy: copy() } }
+  assert.deepEqual(last(fake, `/v1/rooms/${txt(room_id)}/recovery-code`).body.account, { kit: { auth_key: b64u(kit.auth_key), sealed_copy: b64u(kit.sealed_copy)}, password: { sealed_copy: b64u(copies.password.sealed_copy) }, revision: copies.revision })
+  const passkey = { kit, passkey: { credential_id: new Uint8Array(20), sealed_copy: copy() }, revision: await revision() }
   const refused = await hub.postOutbox(entry('recoveryCode', room_id, 2, [part('c3x'), part('i3'), part('s3'), part('l3'), accountCopiesBytes(passkey)])).catch(e => e)
   assert.equal(refused.code, 'incomplete', 'the hub read the passkey copy and has no such passkey')
   assert.deepEqual(Object.keys(last(fake, `/v1/rooms/${txt(room_id)}/recovery-code`).body.account.passkey).sort(), ['credential_id', 'sealed_copy'])
 
   // a way in set anew: a password with its login key and derivation record; a passkey registered on a tokenless challenge
-  const anew = { kit, password: { auth_key: new Uint8Array(randomBytes(32)), sealed_copy: copy(), kdf: { alg: 'argon2id', v: 1, m: 65536, t: 3, p: 1 } } }
+  const anew = { kit, password: { auth_key: new Uint8Array(randomBytes(32)), sealed_copy: copy(), kdf: { alg: 'argon2id', v: 1, m: 65536, t: 3, p: 1 } }, revision: await revision() }
   await hub.postOutbox(entry('recoveryCode', room_id, 2, [part('c3'), part('i3'), part('s3'), part('l3'), accountCopiesBytes(anew)]))
   assert.deepEqual(last(fake, `/v1/rooms/${txt(room_id)}/recovery-code`).body.account.password, { auth_key: b64u(anew.password.auth_key), sealed_copy: b64u(anew.password.sealed_copy), kdf: anew.password.kdf })
   const outside = client(fake, null)
   assert.equal((await outside.login('a@example.com', anew.password.auth_key)).rooms.length, 1, 'the new password is the way in')
   await assert.rejects(outside.login('a@example.com', kit.auth_key), e => e.code === 'wrong-login')
   const registration = { attestation_object: new Uint8Array(randomBytes(90)), client_data_json: utf8({ type: 'webauthn.create', challenge: b64u((await hub.accountPasskeyChallenge()).challenge), origin: 'https://app.trommi.com' }), sealed_copy: copy(), transports: ['internal', 'hybrid'] }
-  await hub.postOutbox(entry('recoveryCode', room_id, 3, [part('c4'), part('i4'), part('s4'), part('l4'), accountCopiesBytes({ kit, passkey: registration })]))
+  await hub.postOutbox(entry('recoveryCode', room_id, 3, [part('c4'), part('i4'), part('s4'), part('l4'), accountCopiesBytes({ kit, passkey: registration, revision: await revision() })]))
   assert.deepEqual(Object.keys(last(fake, `/v1/rooms/${txt(room_id)}/recovery-code`).body.account.passkey).sort(), ['attestation_object', 'client_data_json', 'sealed_copy', 'transports'])
   const view = await hub.account()
   assert.deepEqual([view.has_password, view.passkeys.length, view.passkeys[0].sealed_copy], [false, 1, registration.sealed_copy], 'the passkey is the one way in')

@@ -246,9 +246,11 @@ private func passkeyProof(_ a: PasskeyAssertion) -> JSON {
  * The account's new sealed copies of a new recovery code, as the hub takes them with new recovery keys (spec/hub-api.md
  * "The account": a new kit and one way in; every other way in is removed in the same request). The JSON of `account`.
  */
-private func newCopies(kit: PasswordKeys, way: JSON, room: RoomId, code: Bytes) throws -> Bytes {
+private func newCopies(kit: PasswordKeys, way: JSON, room: RoomId, code: Bytes, revision: Int? = nil) throws -> Bytes {
   var account = way
   account["kit"] = try kitPart(kit, room: room, code: code)
+  // (a human device's replacement: the hub applies the copies only at the account's revision they were made at)
+  if let revision = revision { account["revision"] = revision }
   return Bytes(try JSONSerialization.data(withJSONObject: account, options: [.sortedKeys]))
 }
 
@@ -411,7 +413,7 @@ extension Room {
       if !self.synced { _ = try await self.catchUp() }
       let id = try await self.onCore { device in
         let next = try device.newRecoveryCode(current: current)
-        return try device.replaceCode(current: current, account: try newCopies(kit: kitKeys, way: try sealWay(next), room: room, code: next), nowMs: nowMs())
+        return try device.replaceCode(current: current, account: try newCopies(kit: kitKeys, way: try sealWay(next), room: room, code: next, revision: st.revision), nowMs: nowMs())
       }
       self.pumpOutbox()
       return id

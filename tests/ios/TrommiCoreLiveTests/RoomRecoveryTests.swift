@@ -78,7 +78,8 @@ final class RoomRecoveryTests: XCTestCase {
     // The account's new copies: a kit and the password's copy, nothing else. Both open to the one new code, whose
     // keys the room names now.
     let sent = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(try XCTUnwrap(hub.account))) as? JSON)
-    XCTAssertEqual(Set(sent.keys), ["kit", "password"])
+    XCTAssertEqual(Set(sent.keys), ["kit", "password", "revision"])
+    XCTAssertNotNil(sent["revision"] as? NSNumber, "the account's revision the copies were made at")
     let sentKit = try XCTUnwrap(sent["kit"] as? JSON), sentPassword = try XCTUnwrap(sent["password"] as? JSON)
     XCTAssertEqual(Set(sentKit.keys), ["auth_key", "sealed_copy"])
     XCTAssertEqual(Set(sentPassword.keys), ["sealed_copy"], "the login hash stays: only the copy is new")

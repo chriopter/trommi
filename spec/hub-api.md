@@ -151,7 +151,10 @@ beginning with 0x02; `auth_key` is 32 bytes; `kdf` is the pinned record of v1 §
   answers with sealed copies and sign-in challenges, and the device signs in to the room with the recovery key
   (8.4).
 - With new recovery keys (8.6, 8.7) `account` is a new kit `{ auth_key, sealed_copy }` and one way in; every
-  other way in is removed in the same transaction. The way in used just now: `password: { sealed_copy }` (the
+  other way in is removed in the same transaction. On `…/recovery-code` it also names the account's `revision`
+  its copies were made at, and the Commit and the copies are refused together if the account changed since
+  (`account-changed`: a password changed on another device in between would keep its login key over a copy sealed
+  under the password of before); a recovery (8.7) names none. The way in used just now: `password: { sealed_copy }` (the
   login hash stays) or `passkey: { credential_id, sealed_copy }`. Or one set anew (after a recovery with the
   Emergency Kit words or the bare code): `password: { auth_key, sealed_copy, kdf }`, or `passkey` as in
   `POST /v1/account` (a registration on a challenge of `POST /v1/account/passkeys/challenge`, which a human
