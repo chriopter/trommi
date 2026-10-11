@@ -21,7 +21,7 @@ import type { Store } from './core-api.ts'
 import { b64u } from './ids.ts'
 import { patchOf, snapshotOf } from './mirror.ts'
 import { joinRoom, openRoomOver } from './room.ts'
-import { openCache, openDeviceStore } from './store-idb.ts'
+import { dropIfEmpty, openCache, openDeviceStore } from './store-idb.ts'
 import type { Cache } from './store-idb.ts'
 import { adoptInTabs, openRoomInTabs } from './tabs.ts'
 import type { ClientLike, TabClient } from './tabs.ts'
@@ -133,7 +133,8 @@ port.onmessage = async ({ data: m }) => {
       let value: unknown
       if (m.t === 'open') {
         const opened = await openRoomInTabs({ name: m.storage.name, store: store(m.storage), cache, calls, open: async held => { const c = await openRoomOver({ storage: m.storage, client: m.client }, held); return c ? host(c) : null } })
-        if (opened) attach(opened); else cache.close()
+        // (nothing stored: what the look made, empty, goes again; dropIfEmpty)
+        if (opened) attach(opened); else { cache.close(); await dropIfEmpty(m.storage.name).catch(() => {}) }
       } else value = await make(m, cache)
       post({ t: 'opened', id: m.id, model: tab ? snapshotOf(tab.model) : null, extra: extra(), ...(value !== undefined ? { value } : {}) })
     } catch (e) { post({ t: 'opened', id: m.id, model: null, error: wireError(e), extra: extra() }) }

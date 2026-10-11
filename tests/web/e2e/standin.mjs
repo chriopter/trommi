@@ -251,8 +251,7 @@ export const steps = [
     check(!writes(log).some(r => /\/commits$/.test(r.path)), 'no Commit reached the hub: nobody was added', writes(log).map(r => `${r.method} ${r.path}`))
     check(log.some(r => r.method === 'DELETE' && /^\/v1\/invites\//.test(r.path) && r.status === 200), 'the invite was deleted at the hub')
     const stored = await ui.storedCount(B)
-    // (the key that wraps a device's entries at rest is made before the first device and is never deleted: store-idb.ts)
-    check(stored.records <= 1, 'the refused device stored nothing but its wrapping key', stored)
+    check(stored.records === 0, 'the refused device stored nothing', stored)
     await ui.openSettingsPage(A, 'devices')
     check(await A.js("return document.querySelectorAll('.room-device').length") === 2, 'Devices lists this device and the agent, no third', await A.js("return [...document.querySelectorAll('.room-device')].map(d => d.innerText.split('\\n')[0])"))
   }],
@@ -658,14 +657,16 @@ export const steps = [
       await L.shot('standin-23b-menu-logout')
       await ui.logOutFromMenu(L)
       check(await L.js("return !!document.querySelector('#way-create') && !!document.querySelector('#way-login')"), 'the start screen after Log out')
-      const where = await L.js(`const out = {}
-        for (const d of await indexedDB.databases()) {
-          const db = await new Promise((ok, no) => { const r = indexedDB.open(d.name); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error) })
-          for (const n of db.objectStoreNames) { const c = await new Promise(ok => { const r = db.transaction(n).objectStore(n).count(); r.onsuccess = () => ok(r.result) }); if (c) out[d.name + '/' + n] = c }
-          db.close()
-        }
-        return out`).catch(() => null)
-      ctx.run.note(`after the menu's Log out (the same /logout as Settings) the profile keeps: ${JSON.stringify(where)}`)
+      // nothing of the account is left in the browser: no IndexedDB database of the app (not even the wrapping key of
+      // store-idb.ts), no cache but the service worker's app shell (no user data), nothing in localStorage
+      const left = await L.js(`return {
+        databases: (await indexedDB.databases()).map(d => d.name).filter(n => n?.startsWith('trommi')).sort(),
+        caches: (await caches.keys()).filter(n => !n.startsWith('shell-')),
+        local: Object.keys(localStorage),
+      }`)
+      check(left.databases.length === 0, 'no IndexedDB database of the app after Log out', left)
+      check(left.caches.length === 0, 'no cache with user data after Log out', left)
+      check(left.local.length === 0, 'nothing in localStorage after Log out', left)
     })
   }],
 
