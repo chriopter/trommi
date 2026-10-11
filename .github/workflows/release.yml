@@ -79,7 +79,11 @@ jobs:
           ref: ${{ github.sha }}
           path: repo
           persist-credentials: false
-          sparse-checkout: release
+          # release/ for the scripts and the key, hub/data-epoch for the manifest's "data_epoch"
+          sparse-checkout: |
+            /release/
+            /hub/data-epoch
+          sparse-checkout-cone-mode: false
       # which artifacts this run built: the hub's holds the hub and its updater
       - name: The parts that changed
         id: changed
