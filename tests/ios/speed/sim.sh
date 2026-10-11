@@ -8,7 +8,8 @@
 #   tests/ios/speed/sim.sh                 # build, run, print the SPEED/WINDOW lines
 #   BEFORE=<ref> HARNESS="<commit>…" tests/ios/speed/sim.sh   # <ref>'s app with the harness commits put in
 #
-# Environment: MAC [trommidev@mac], MAC_KEY (optional), SIM [speed iPhone], RUNS [3], SLOW [0], KEEP_BUILD [0]
+# Environment: MAC [trommidev@mac], MAC_KEY (optional), SIM [speed iPhone], RUNS [3], SLOW [0], KEEP_BUILD [0],
+# EXTRA_ENV ("KEY=VALUE …" for the app)
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 mac=${MAC:-trommidev@mac}
@@ -45,7 +46,7 @@ fi
 on_mac "xcrun simctl boot $udid 2>/dev/null; xcrun simctl bootstatus $udid -b > /dev/null; xcrun simctl terminate $udid com.trommi.ios 2>/dev/null; xcrun simctl uninstall $udid com.trommi.ios 2>/dev/null; xcrun simctl install $udid $app"
 for run in $(seq 1 "${RUNS:-3}"); do
   on_mac "data=\$(xcrun simctl get_app_container $udid com.trommi.ios data); rm -f \"\$data/Documents/perf.log\"; xcrun simctl terminate $udid com.trommi.ios 2>/dev/null; sleep 1
-    pid=\$(env SIMCTL_CHILD_TROMMI_PERF=1 SIMCTL_CHILD_TROMMI_SPEED=1 SIMCTL_CHILD_TROMMI_SPEED_FIXTURE=\$HOME/$dir/mega.json xcrun simctl launch $udid com.trommi.ios | sed -E 's/.*: //')
+    pid=\$(env $(for kv in ${EXTRA_ENV:-}; do printf 'SIMCTL_CHILD_%s ' "$kv"; done) SIMCTL_CHILD_TROMMI_PERF=1 SIMCTL_CHILD_TROMMI_SPEED=1 SIMCTL_CHILD_TROMMI_SPEED_FIXTURE=\$HOME/$dir/mega.json xcrun simctl launch $udid com.trommi.ios | sed -E 's/.*: //')
     [ '${SLOW:-0}' = 1 ] && taskpolicy -b -p \$pid; true"
   log=""
   for _ in $(seq 1 180); do

@@ -103,11 +103,13 @@ enum PerfScript {
     }
     func window(_ name: String, seconds: Double, _ op: @escaping @MainActor () async -> Void) async {
       HitchMeter.shared.begin(name)
+      if let w = ProcessInfo.processInfo.environment["TROMMI_SPEED_PROFILE_WINDOW"], !w.isEmpty, name.hasPrefix(w.replacingOccurrences(of: "_", with: " ")) { MainProfiler.begin() }   // ("_" for a space)
       let t0 = DispatchTime.now().uptimeNanoseconds
       await op()
       let left = seconds - Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e9
       if left > 0 { try? await Task.sleep(nanoseconds: UInt64(left * 1e9)) }
       HitchMeter.shared.end(name)
+      MainProfiler.end(name)
       say("memory after \(name): \(memoryMB()) MB")
     }
     func burst(_ into: @escaping @MainActor (Int) -> String) async {
@@ -174,11 +176,13 @@ import Darwin
  * A sampler for TROMMI_PERF: when the main thread has not come back for 30 ms, it is interrupted (SIGUSR2) and its
  * stack written to the perf log, so a hitch says where the time went (no Instruments on this machine).
  */
-nonisolated(unsafe) private var sampleFrames = [UnsafeMutableRawPointer?](repeating: nil, count: 64)
+// (raw memory, not a Swift array: the handler writes it while the sampling thread may still read it after a late
+// answer, and an array's exclusive access then trapped the app, SIGTRAP in the speed run)
+nonisolated(unsafe) private let sampleFrames = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 64)
 nonisolated(unsafe) private var sampleCount: Int32 = 0
 nonisolated(unsafe) private var sampleReady: Int32 = 0
 private func onSample(_ sig: Int32) {
-  sampleCount = backtrace(&sampleFrames, 64)
+  sampleCount = backtrace(sampleFrames, 64)
   sampleReady = 1
 }
 enum MainSampler {
@@ -197,7 +201,7 @@ enum MainSampler {
         usleep(5000)
         let now = DispatchTime.now().uptimeNanoseconds
         let b = MainSampler.beat
-        // (the beat can come after `now` was read: never a negative wait)
+        // (the beat is written on the main thread and may be a moment newer than `now`: no subtraction below zero, it trapped)
         if b > 0 && now > b && now - b > 30_000_000 && now &- lastSampled > 15_000_000, let m = MainSampler.mainThread {
           lastSampled = now
           sampleReady = 0
@@ -207,11 +211,9 @@ enum MainSampler {
           if sampleReady == 1 {
             let n = Int(sampleCount)
             var lines = [String]()
-            sampleFrames.withUnsafeMutableBufferPointer { buf in
-              if let syms = backtrace_symbols(buf.baseAddress, Int32(n)) {
-                for i in 0..<n { if let c = syms[i] { lines.append(String(cString: c)) } }
-                free(syms)
-              }
+            if let syms = backtrace_symbols(sampleFrames, Int32(n)) {
+              for i in 0..<n { if let c = syms[i] { lines.append(String(cString: c)) } }
+              free(syms)
             }
             // "3 TrommiApp 0x... symbol + 12": the image and the symbol of each frame, the signal's own frames left out
             let frames = lines.dropFirst(3).prefix(28).map { l -> String in
@@ -225,6 +227,52 @@ enum MainSampler {
     }
   }
 }
+/**
+ * The speed run's profiler (TROMMI_SPEED_PROFILE=1): while a window is open, the main thread's stack every 2 ms,
+ * counted per symbol (each symbol once per sample: inclusive); the top lines go to the perf log at its end.
+ */
+enum MainProfiler {
+  nonisolated(unsafe) static var on = false
+  nonisolated(unsafe) static var counts: [UnsafeMutableRawPointer: Int] = [:]
+  nonisolated(unsafe) static var samples = 0
+  static let lock = NSLock()
+  @MainActor static func begin() {
+    guard ProcessInfo.processInfo.environment["TROMMI_SPEED_PROFILE"] == "1" else { return }
+    if MainSampler.mainThread == nil { MainSampler.mainThread = pthread_self(); signal(SIGUSR2, onSample) }
+    lock.lock(); counts = [:]; samples = 0; lock.unlock()
+    on = true
+    Thread.detachNewThread {
+      while MainProfiler.on {
+        usleep(2000)
+        guard let m = MainSampler.mainThread else { continue }
+        sampleReady = 0
+        pthread_kill(m, SIGUSR2)
+        var waited = 0
+        while sampleReady == 0 && waited < 40 { usleep(250); waited += 1 }
+        guard sampleReady == 1 else { continue }
+        var seen = Set<UnsafeMutableRawPointer>()
+        lock.lock()
+        samples += 1
+        for i in 0..<Int(sampleCount) { if let f = sampleFrames[i] { var info = Dl_info(); if dladdr(f, &info) != 0, let a = info.dli_saddr, seen.insert(a).inserted { counts[a, default: 0] += 1 } } }
+        lock.unlock()
+      }
+    }
+  }
+  @MainActor static func end(_ name: String) {
+    guard on else { return }
+    on = false
+    usleep(5000)
+    lock.lock(); let c = counts, n = samples; lock.unlock()
+    PerfLog.line("PROFILE \(name): \(n) samples")
+    for (a, k) in c.sorted(by: { $0.value > $1.value }).prefix(70) {
+      var info = Dl_info(); dladdr(a, &info)
+      let sym = info.dli_sname.map { String(cString: $0) } ?? "?"
+      let lib = info.dli_fname.map { String(cString: $0).split(separator: "/").last.map(String.init) ?? "" } ?? ""
+      PerfLog.line(String(format: "PROFILE %5.1f%% %@ %@", 100 * Double(k) / Double(max(1, n)), lib, String(sym.prefix(160))))
+    }
+  }
+}
+
 #endif
 
 /**
