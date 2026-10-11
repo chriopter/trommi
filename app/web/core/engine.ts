@@ -1105,14 +1105,17 @@ export class Engine {
     const due = await this.do(d => d.keyRequests(this.now())).catch(() => [])
     for (const request of due) await this.hub.postRequest({ kind: 'handover', group: request.group }).catch(() => {})
   }
-  /** Answers a human device's wish for content keys once (7.1.1); the core refuses one that is not a human device's. */
+  /** Answers a human device's wish for content keys once (7.1.1); the core refuses one that is not a human device's,
+   *  and makes nothing for a requester and group it answered within the hour. */
   private async answerKeys(id: number, group: Uint8Array | null, device: Uint8Array): Promise<void> {
     if (!this.is_human || !this.room_id || same(device, this.device_id)) return
     const key = 'key-requests-answered'
     const answered = await this.opts.meta.get(key).then(v => (Array.isArray(v) ? v as number[] : []), () => [] as number[])
     if (answered.includes(id)) return
-    await this.opts.meta.set(key, [...answered, id].slice(-256)).catch(() => {})
-    await this.land(d => d.answerKeyRequest(group, device, this.now())).catch(() => {})
+    // (counted as answered once the handover is made; a wish this device could not answer yet, or not now, is
+    // tried again at the next reading of the hub's list; the pump posts what was made)
+    const made = await this.do(d => d.answerKeyRequest(group, device, this.now())).catch(() => [] as number[])
+    if (made.length) await this.opts.meta.set(key, [...answered, id].slice(-256)).catch(() => {})
   }
   /** The timed part: KeyPackages (14.2), the own-leaf update (5.2.9; the core says whether it is due), `heads` (9.0.7),
    *  and the wishes for keys that came while this device was away (7.1.1: the hub keeps them seven days). */

@@ -74,6 +74,10 @@ final class RoomTests: XCTestCase {
     // asked once: the core says when again
     _ = try await room.sync()
     XCTAssertEqual(FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/requests" && $0.body["kind"] != nil }.count }, 1)
+    // while the app stays open the stream's pings run the upkeep: what the core says is due goes out
+    device.keysWanted = [room.roomId]
+    await room.handleStreamEvent("ping", JV.parse(utf8("{}"))!)
+    XCTAssertEqual(FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/requests" && $0.body["kind"] != nil }.count }, 2)
     room.close()
   }
 

@@ -588,7 +588,7 @@ impl CoreDevice {
     pub fn key_requests(&self, now_ms: u64) -> Result<Vec<KeyRequest>, CoreError> {
         self.write(|device| {
             Ok(device
-                .key_requests(now_ms)
+                .key_requests(now_ms)?
                 .into_iter()
                 .map(|request| KeyRequest {
                     group: request.group.as_bytes().to_vec(),

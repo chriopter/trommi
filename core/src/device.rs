@@ -82,6 +82,7 @@ const SUB_STAGED: u8 = 4;
 const SUB_SENT: u8 = 5;
 const SUB_OWED: u8 = 7;
 const SUB_HANDOVER: u8 = 8;
+const SUB_WANTED: u8 = 9;
 const SUB_MAC: u8 = 0;
 const SUB_UNCONFIRMED: u8 = 1;
 const SUB_UNBOUND: u8 = 6;
@@ -844,6 +845,8 @@ struct Memory {
     /// Content keys that were handed over for a session group this device was no leaf of yet, so that it
     /// could not tell whether the group had reached their epoch: group and epoch.
     unbound: BTreeSet<(GroupId, u64)>,
+    /// The content keys an envelope did not open for, to be asked for (7.1.1): group and epoch.
+    wanted: BTreeSet<(GroupId, u64)>,
 }
 
 /// What the device knows of the room's sessions, as the rules ask it.
@@ -1011,6 +1014,14 @@ fn unbound_key(group: &GroupId, epoch: u64) -> Vec<u8> {
     let group = group.as_bytes();
     device_key(
         SUB_UNBOUND,
+        &[&[group.len() as u8], group, &epoch.to_be_bytes()].concat(),
+    )
+}
+
+fn wanted_key(group: &GroupId, epoch: u64) -> Vec<u8> {
+    let group = group.as_bytes();
+    device_key(
+        SUB_WANTED,
         &[&[group.len() as u8], group, &epoch.to_be_bytes()].concat(),
     )
 }
@@ -1189,6 +1200,16 @@ fn rebuild(mirror: &BTreeMap<Vec<u8>, Vec<u8>>) -> Result<(Memory, MlsEntries, S
                     })()
                     .map_err(|_| damaged("an owed handover"))?;
                     memory.handovers.insert(parsed.0, parsed.1);
+                }
+                SUB_WANTED => {
+                    let parsed = (|| {
+                        let group = group_after(&mut rest)?;
+                        let epoch = rest.u64()?;
+                        rest.finish()?;
+                        Ok::<_, Error>((group, epoch))
+                    })()
+                    .map_err(|_| damaged("a wanted key's record"))?;
+                    memory.wanted.insert(parsed);
                 }
                 _ => return Err(damaged("a key")),
             },
