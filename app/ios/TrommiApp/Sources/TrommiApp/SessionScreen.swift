@@ -638,9 +638,9 @@ struct SessionStatus: View {
                 }.frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
                 Text(t.label).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
                 Spacer(minLength: 4)
-                // (the time short beside a small clock: "4m"; VoiceOver hears "4 min ago")
+                // (the time short, a small clock after it: "4m"; VoiceOver hears "4 min ago")
                 if t.updated > 0 {
-                  HStack(spacing: 3) { Image(systemName: "clock").font(.system(size: 10, weight: .medium)); Text(agoShort(t.updated)).font(Face.text(12)).monospacedDigit() }
+                  HStack(spacing: 3) { Text(agoShort(t.updated)).font(Face.text(12)).monospacedDigit(); Image(systemName: "clock").font(.system(size: 10, weight: .medium)) }
                     .foregroundStyle(Ink.faint).accessibilityElement(children: .ignore).accessibilityLabel(agoText(t.updated))
                 }
               }

@@ -28,7 +28,7 @@ test('the time is short beside a small clock, the words kept for a screen reader
   assert.equal(agoShort(now - 3 * 3600000, now), '3h')
   assert.equal(agoShort(now, now), 'now')
   const src = read('session.mjs'), css = read('session.css')
-  assert.match(src, /<span class="status-when">\$\{ico\('clock'\)\}<span data-short aria-hidden="true" data-ts="\$\{t\.updated\}">[\s\S]*agoSpan\(t\.updated, 'offscreen'\)/)
+  assert.match(src, /<span class="status-when"><span data-short aria-hidden="true" data-ts="\$\{t\.updated\}">\$\{agoShort\(t\.updated\)\}<\/span>\$\{ico\('clock'\)\}[\s\S]*agoSpan\(t\.updated, 'offscreen'\)/)
   assert.match(css, /^\.status-when \{ display: inline-flex;/m, 'on every screen, not only a phone')
   assert.doesNotMatch(src, /'status-ago'/, 'no long time beside it')
 })
