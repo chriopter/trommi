@@ -217,6 +217,8 @@ public struct Store {
   var pumping = false
   /** The changes are being read again from the start (RoomPast.swift): an envelope below the core's cursor is handed in as the next of its chain. */
   var readingBack = false
+  /** While reading back: what this device holds whole already, by change number; put back without the core. */
+  var readBackWhole: [UInt64: Rec] = [:]
   /** Something came that the past waits for (a Welcome, keys): `tendPast` is due after what is being processed. */
   var pastDue = false
   /** Keys came while the past was being read back (7.1.1): read back once more when that read ends. */
@@ -836,6 +838,8 @@ public struct Store {
     case refused(change: UInt64, code: String)
     /** The run ends before this item; the cursor stays in front of it. */
     case stopped(code: String)
+    /** Reading back: this device holds it whole already (`readBackWhole`); put back as it was. */
+    case kept(Rec)
   }
 
   /**
@@ -850,6 +854,8 @@ public struct Store {
     let coreStart = Spent.now
     // (one flush of the store for the whole run, at its end: DeviceStore.batched)
     let store = deviceStore
+    var keep = [UInt64: Rec]()
+    if readingBack && !readBackWhole.isEmpty { for item in parsed { if case .envelope(let c, _, _) = item, let r = readBackWhole[c] { keep[c] = r } } }
     let (outcomes, coreAt, findings): ([Outcome], UInt64, [ChainFinding]) = try await onCore { device in try store.batched { () -> ([Outcome], UInt64, [ChainFinding]) in
       var out = [Outcome]()
       var commits = false
@@ -893,6 +899,7 @@ public struct Store {
             if case .message = p {} else { commits = true }
             out.append(.processed(p))
           case .envelope(let c, let bytes, let void):
+            if readingBack, c <= before, let r = keep[c] { out.append(.kept(r)); continue }
             let te = Spent.now
             var e = try device.receiveEnvelope(bytes, change: c, ordered: c > before || readingBack, voidCode: void, nowMs: nowMs())
             Spent.add("core envelope", since: te)
@@ -934,7 +941,7 @@ public struct Store {
     coreCursor = coreAt
     // (the core dropped what a removed device had signed beyond its Cut: what was shown of it goes, the board and
     // its cache are built again from the hub's changes, which the core now judges without it: RoomPast.swift)
-    if cutDropped.on && !readingBack { notePast { $0.readBack = true }; pastDue = true }
+    if cutDropped.on && !readingBack { notePast { $0.readBack = true; $0.afterCut = true }; pastDue = true }
     for f in findings { board.pushAlert(&change, code: f.code, message: "a removal names another last item of a device than the one this device holds", sender: hex(f.sender)) }
     // The groups are read again from the core after a Commit and before the next item is shown: an envelope right
     // behind the Commit that founded its session must find that session on the board.
@@ -972,6 +979,20 @@ public struct Store {
         // Never swallowed (section 16): shown on the board; a Commit that cannot be merged is reported (14.7).
         board.pushAlert(&change, code: code == "internal" ? "bad-group" : code, message: "an item from the hub was refused (change \(c))", envelopeNumber: Int(c))
         if case .log(let n?, let entry) = parsed[i], case .commit = entry.kind { reportBadCommit(entry.group, n) }
+      case .kept(let rec):
+        try await freshGroups()
+        report.envelopes += 1; report.opened += 1
+        Spent.count("read back from the cache")
+        lamport = max(lamport, rec.causal.lamport)
+        // (as `apply` does for an envelope the core applied: the board learns who writes in the session)
+        if let sid = rec.sessionId {
+          if rec.senderRole == "agent" { board.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
+          else if let to = rec.recipientDeviceId { board.sawAgent(sid, to, epoch: rec.epoch) }
+        }
+        board.apply(rec, change: &change)
+        log[UInt64(rec.envelopeNumber)] = rec
+        sinceSnapshot += 1
+        cacheSoon(UInt64(rec.envelopeNumber))
       case .stopped: break
       }
     }

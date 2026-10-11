@@ -71,9 +71,10 @@ enum LiveActivities {
         await register(token: hex(data), kind: "activity", tag: a.attributes.tag)
       }
     }
-    // a push of the hub replaces the content with its two counts: the card again, from this phone
+    // a push of the hub replaces the content with its two counts: the card again from this phone, at once (a
+    // second of the count alone between made the island change its look on every push of the hub)
     Task { @MainActor in
-      for await c in a.contentUpdates where c.state.card == nil && c.state.done == nil { cardsChanged() }
+      for await c in a.contentUpdates where c.state.card == nil && c.state.done == nil { await applyCards() }
     }
     cardsChanged()
   }
@@ -124,12 +125,14 @@ enum LiveActivities {
   /** Answered from the island: not shown again, whatever the board says meanwhile (in the demo it never changes). */
   private static var answered = Set<String>()
 
-  /** After a change of the board: the running activities' card within a second. */
+  /** After a change of the board: the running activities' card within a second; while the room catches up (page
+   *  after page), once it is through. Only a change of what the island shows is sent (`applyCards`). */
   static func cardsChanged() {
     guard !cardsDue else { return }
     cardsDue = true
     Task { @MainActor in
       try? await Task.sleep(nanoseconds: 1_000_000_000)
+      while BoardModel.shared.room?.behind == true { try? await Task.sleep(nanoseconds: 1_000_000_000) }
       cardsDue = false
       await applyCards()
     }
