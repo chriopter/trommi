@@ -85,6 +85,23 @@ enum PerfScript {
     return -1
     #endif
   }
+  /** The most memory the process ever held (MB). */
+  static func peakMB() -> Int {
+    #if canImport(Darwin)
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    let r = withUnsafeMutablePointer(to: &info) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) } }
+    return r == KERN_SUCCESS ? Int(info.ledger_phys_footprint_peak / 1_048_576) : -1
+    #else
+    return -1
+    #endif
+  }
+  /** CPU time the process used so far (user and system, all threads), in seconds. */
+  static func cpuSeconds() -> Double {
+    var u = rusage()
+    getrusage(RUSAGE_SELF, &u)
+    return Double(u.ru_utime.tv_sec + u.ru_stime.tv_sec) + Double(u.ru_utime.tv_usec + u.ru_stime.tv_usec) / 1e6
+  }
   static func runIfAsked(_ model: BoardModel) {
     #if canImport(UIKit)
     guard ProcessInfo.processInfo.environment["TROMMI_SPEED"] == "1", model.demo, let d = model.desk else { return }
@@ -94,23 +111,25 @@ enum PerfScript {
     let others = b.sessions.keys.sorted().filter { $0 != big && b.sessions[$0]?.agentDeviceId != nil }
     var n = 2_000_000_000
     func say(_ s: String) { PerfLog.line("SPEED \(s)") }
-    func message(_ session: String) {
+    func message(_ session: String, batched: Bool = false) {
       n += 1
       guard let rec = PerfLog.chatLine(b, session: session, number: n, text: "Speed run line \(n): done with the build, all green.") else { return }
       var ch = Change()
       b.apply(rec, change: &ch)
-      model.perfChanged()
+      if batched { model.perfNews() } else { model.perfChanged() }
     }
     func window(_ name: String, seconds: Double, _ op: @escaping @MainActor () async -> Void) async {
       HitchMeter.shared.begin(name)
       if let w = ProcessInfo.processInfo.environment["TROMMI_SPEED_PROFILE_WINDOW"], !w.isEmpty, name.hasPrefix(w.replacingOccurrences(of: "_", with: " ")) { MainProfiler.begin() }   // ("_" for a space)
-      let t0 = DispatchTime.now().uptimeNanoseconds
+      let t0 = DispatchTime.now().uptimeNanoseconds, c0 = cpuSeconds()
       await op()
       let left = seconds - Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e9
       if left > 0 { try? await Task.sleep(nanoseconds: UInt64(left * 1e9)) }
       HitchMeter.shared.end(name)
       MainProfiler.end(name)
-      say("memory after \(name): \(memoryMB()) MB")
+      let wall = Double(DispatchTime.now().uptimeNanoseconds - t0) / 1e9
+      say(String(format: "cpu in %@: %.0f%% of one core", name, 100 * (cpuSeconds() - c0) / max(0.001, wall)))
+      say("memory after \(name): \(memoryMB()) MB (peak \(peakMB()) MB)")
     }
     func burst(_ into: @escaping @MainActor (Int) -> String) async {
       for i in 0..<30 { message(into(i)); try? await Task.sleep(nanoseconds: 100_000_000) }
@@ -118,8 +137,15 @@ enum PerfScript {
     Task { @MainActor in
       say("start: \(b.sessions.count) sessions, \(b.cards.count) cards, memory \(memoryMB()) MB")
       try? await Task.sleep(nanoseconds: 2_500_000_000)
+      // nothing happens: what the app does on its own (should be nothing)
+      await window("idle 6 s", seconds: 6) {}
       await window("desk scroll", seconds: 3.2) { model.perfScroll &+= 1 }
       await window("desk: 30 messages in 3 s", seconds: 3.5) { await burst { others[$0 % others.count] } }
+      // a flood: 50 events a second for 8 s, through the same 80 ms gathering as a room's changes (BoardModel.changed)
+      await window("desk: 50 events/s for 8 s", seconds: 8.5) {
+        for i in 0..<400 { message(others[(i * 7) % others.count], batched: true); try? await Task.sleep(nanoseconds: 20_000_000) }
+      }
+      await window("idle 4 s after the flood", seconds: 4) {}
       await window("desk: 30 bare re-renders", seconds: 3.5) { for _ in 0..<30 { model.perfBump(); try? await Task.sleep(nanoseconds: 100_000_000) } }
       model.tab = .chat
       try? await Task.sleep(nanoseconds: 1_500_000_000)

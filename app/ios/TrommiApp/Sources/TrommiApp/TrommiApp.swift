@@ -668,6 +668,17 @@ final class BoardModel: ObservableObject {
     PerfLog.time("desk.update") { desk?.update() }
     version &+= 1
   }
+  /** The speed run: news gathered as changed() gathers a room's, at most one render every 80 ms. */
+  private var perfPending = false
+  func perfNews() {
+    if perfPending { return }
+    perfPending = true
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 80_000_000)
+      perfPending = false
+      perfChanged()
+    }
+  }
   /** The speed run: a render with nothing changed (what every view that reads `version` costs). */
   func perfBump() { version &+= 1 }
   /** Back to his own room (or to the sign-in when there is none). */

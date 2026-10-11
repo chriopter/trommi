@@ -9,7 +9,7 @@
 #   BEFORE=<ref> HARNESS="<commit>…" tests/ios/speed/sim.sh   # <ref>'s app with the harness commits put in
 #
 # Environment: MAC [trommidev@mac], MAC_KEY (optional), SIM [speed iPhone], RUNS [3], SLOW [0], KEEP_BUILD [0],
-# EXTRA_ENV ("KEY=VALUE …" for the app)
+# EXTRA_ENV ("KEY=VALUE …" for the app), FIXTURE_ARGS (the room's size: mega-fixture.mjs), WAIT [180 s]
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 mac=${MAC:-trommidev@mac}
@@ -29,7 +29,7 @@ if [ -n "${BEFORE:-}" ]; then
 else
   git -C "$repo" ls-files -z app/ios core/swift demo CHANGELOG.md | (cd "$repo" && xargs -0 tar cf -) | tar xf - -C "$tmp/src"
 fi
-node "$repo/tests/tools/mega-fixture.mjs" "$tmp/mega.json" > /dev/null
+node "$repo/tests/tools/mega-fixture.mjs" "$tmp/mega.json" ${FIXTURE_ARGS:-} > /dev/null   # (FIXTURE_ARGS: "COPIES CHAT CARD_X PICTURE_EVERY")
 on_mac "rm -rf ~/$dir && mkdir -p ~/$dir"
 tar cf - -C "$tmp" src mega.json | on_mac "tar xf - -C ~/$dir"
 lib=${MAC_CORE_LIB:-'~/ios-mega/core/swift/TrommiCoreRust'}
@@ -49,7 +49,7 @@ for run in $(seq 1 "${RUNS:-3}"); do
     pid=\$(env $(for kv in ${EXTRA_ENV:-}; do printf 'SIMCTL_CHILD_%s ' "$kv"; done) SIMCTL_CHILD_TROMMI_PERF=1 SIMCTL_CHILD_TROMMI_SPEED=1 SIMCTL_CHILD_TROMMI_SPEED_FIXTURE=\$HOME/$dir/mega.json xcrun simctl launch $udid com.trommi.ios | sed -E 's/.*: //')
     [ '${SLOW:-0}' = 1 ] && taskpolicy -b -p \$pid; true"
   log=""
-  for _ in $(seq 1 180); do
+  for _ in $(seq 1 "${WAIT:-180}"); do
     log=$(on_mac "cat \"\$(xcrun simctl get_app_container $udid com.trommi.ios data)/Documents/perf.log\" 2>/dev/null" || true)
     grep -q 'SPEED done' <<< "$log" && break
     sleep 1
