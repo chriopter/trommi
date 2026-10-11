@@ -4,7 +4,7 @@
 //
 // Routes: signing in (any signature gets a token that names its signer), the proof of a removal, the changes, a group's GroupInfos and log,
 // the Welcomes, the sealed keys, the chains, the group list, every outbox kind but a session's founding, the
-// recovery transaction, and the account's routes a test fills (`account`, `login`).
+// devices' wishes (requests), the recovery transaction, and the account's routes a test fills (`account`, `login`).
 import Foundation
 import XCTest
 #if canImport(FoundationNetworking)
@@ -44,11 +44,13 @@ final class PocketRoutes: URLProtocol, @unchecked Sendable {
   /// Devices the hub calls removed (hex of the key): their token names `role: "removed"`, and the removal route
   /// serves them the room group's Commits up to the change number given here (spec/hub-api.md point 42).
   nonisolated(unsafe) static var removed: [String: UInt64] = [:]
+  /// The wishes of the devices (POST /v1/requests), as GET /v1/requests lists them.
+  nonisolated(unsafe) static var wishes: [JSON] = []
   static let url = "http://127.0.0.1:9"
 
   /// Routes every hub client of the process here, over a fresh PocketHub.
   static func install(_ hub: PocketHub) {
-    self.hub = hub; account = nil; logins = [:]; asked = []; refuseOnce = [:]; refused = []; removed = [:]; loseAnswers = [:]; takeLost = true; lostTaken = []; boards = [:]; files = [:]; invites = [:]; dropMac = false
+    self.hub = hub; account = nil; logins = [:]; asked = []; refuseOnce = [:]; refused = []; removed = [:]; loseAnswers = [:]; takeLost = true; lostTaken = []; boards = [:]; files = [:]; invites = [:]; dropMac = false; wishes = []
     HubClient.transportForTests = [PocketRoutes.self]
   }
 
@@ -144,6 +146,11 @@ final class PocketRoutes: URLProtocol, @unchecked Sendable {
       if body["relay"] as? Bool == true { return (200, ["n": NSNull()]) }
       _ = hub.take(kind: 5, group: id(path[1]), epoch: epoch, parts: [bytes("message")])
       return (200, ["n": 1])
+    case ("POST", 1, "requests"):
+      let row: JSON = ["id": wishes.count + 1, "kind": body["kind"] as? String ?? "", "device": b64u(sender), "group_id": body["group"] ?? NSNull(), "at": nowMs()]
+      wishes.append(row)
+      return (200, ["id": wishes.count])
+    case ("GET", 1, "requests"): return (200, wishes)
     case ("POST", 1, "envelopes"): return (200, ["change": hub.take(kind: 7, group: [], epoch: 0, parts: [bytes("envelope")], sender: sender) ?? 0])
     case ("POST", 1, "invites"):
       guard let offer = body["offer"] as? String, let raw = try? unb64u(offer), raw.count >= 16 else { return refuse(400, "bad-format") }

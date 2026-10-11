@@ -219,6 +219,12 @@ export interface Processed {
 /** What a refusal of `processLogEntry` means for the caller. */
 export type LogFinding = 'early' | 'duplicate' | 'badGroup' | 'local'
 
+/** A key request (7.1.1) to post now, as `{ kind: 'handover', group }`. */
+export interface KeyRequest {
+  group: Uint8Array
+  epochs: number[]
+}
+
 export interface HandoverSent {
   recipient: Uint8Array
   group: Uint8Array
@@ -835,6 +841,12 @@ export class Device {
   sendHandover(group: Uint8Array, recipient: Uint8Array): Promise<number[]>
   handoversSent(): Promise<HandoverSent[]>
   handoverRead(group: Uint8Array, recipient: Uint8Array): Promise<void>
+  /** The key requests (7.1.1) to post now; a human device asks for a group whose key it still lacks five minutes
+   *  after an envelope did not open for it, again after a pause that doubles up to a day. Returned counts as asked. */
+  keyRequests(nowMs: number): Promise<KeyRequest[]>
+  /** Answers a human device's key request with a key handover in the room group (of `group`'s keys, or every
+   *  key when null). `forbidden` unless both are human devices; [] when nothing is held or it was answered within the hour. */
+  answerKeyRequest(group: Uint8Array | null, recipient: Uint8Array, nowMs: number): Promise<number[]>
   sendStrokePiece(board: Uint8Array, piece: Uint8Array): Promise<number>
   sendWorkTrail(group: Uint8Array, turn: Uint8Array, number: number, step: Uint8Array, nowMs: number): Promise<number>
   /** Signs the hub's challenge with this device's key, for the room it belongs to; while joining by link, after

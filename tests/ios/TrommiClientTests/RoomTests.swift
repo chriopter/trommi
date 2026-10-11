@@ -42,6 +42,41 @@ final class RoomTests: XCTestCase {
     room.close()
   }
 
+  /** 7.1.1: the keys the core says this device lacks are asked for; another human device's wish is answered once,
+   *  from the hub's list or the stream, and a wish older than a day is passed over. */
+  func testKeysTheCoreLacksAreAskedForAndAWishForKeysIsAnsweredOnce() async throws {
+    let room = try await founded()
+    let device = try XCTUnwrap(room.device as? FakeDevice)
+    device.keysWanted = [room.roomId]
+    let other = Bytes(repeating: 7, count: 32), me = try unhex(room.deviceIdHex)
+    FakeHub.shared.lock.withLock {
+      FakeHub.shared.wishes = [
+        ["id": 5, "kind": "handover", "device": b64u(other), "group_id": NSNull(), "at": nowMs()],
+        ["id": 6, "kind": "handover", "device": b64u(other), "group_id": b64u(room.roomId), "at": nowMs() - 2 * 86_400_000],
+        ["id": 7, "kind": "readmit", "device": b64u(other), "group_id": b64u(room.roomId), "at": nowMs()],
+        ["id": 8, "kind": "handover", "device": b64u(me), "group_id": NSNull(), "at": nowMs()],
+      ]
+    }
+    _ = try await room.sync()
+    let asked = FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/requests" && $0.body["kind"] != nil } }
+    XCTAssertEqual(asked.count, 1)
+    XCTAssertEqual(asked.first?.body["kind"] as? String, "handover")
+    XCTAssertEqual(asked.first?.body["group"] as? String, b64u(room.roomId))
+    XCTAssertEqual(device.keysAnswered.count, 1, "the one fresh wish of another device")
+    XCTAssertNil(device.keysAnswered.first?.0)
+    XCTAssertEqual(device.keysAnswered.first?.1, other)
+    // the same wish on the stream: not again; a new one: answered
+    await room.handleStreamEvent("request", JV.parse(utf8(#"{"id":5,"kind":"handover","device":"\#(b64u(other))","group_id":null}"#))!)
+    XCTAssertEqual(device.keysAnswered.count, 1)
+    await room.handleStreamEvent("request", JV.parse(utf8(#"{"id":9,"kind":"handover","device":"\#(b64u(other))","group_id":"\#(b64u(room.roomId))"}"#))!)
+    XCTAssertEqual(device.keysAnswered.count, 2)
+    XCTAssertEqual(device.keysAnswered.last?.0, room.roomId)
+    // asked once: the core says when again
+    _ = try await room.sync()
+    XCTAssertEqual(FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/requests" && $0.body["kind"] != nil }.count }, 1)
+    room.close()
+  }
+
   func testOneOwner() async throws {
     let room = try await founded()
     XCTAssertThrowsError(try Room.open(base: base, roomId: room.roomIdHex)) { XCTAssertEqual($0 as? StoreError, .failed("busy")) }

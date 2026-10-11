@@ -172,7 +172,7 @@ const DEVICE_CALLS = [
   'found_room', 'found_session', 'found_helper', 'add_to_session', 'remove_agents',
   'remove_human_devices', 'clean_session', 'readmit_helper', 'readmit_human', 'update', 'archive',
   'join_welcome', 'observe_room', 'observe_session', 'process_log_entry', 'feed',
-  'send_handover', 'handovers_sent', 'handover_read', 'send_stroke_piece', 'send_work_trail', 'hub_sign_in',
+  'send_handover', 'handovers_sent', 'handover_read', 'key_requests', 'answer_key_request', 'send_stroke_piece', 'send_work_trail', 'hub_sign_in',
   'holds_recovery_mac', 'key_is_confirmed', 'send_recovery_auth', 'post_sealed_key', 'verify_founding',
   'join_room_with_code', 'join_session_with_code', 'new_recovery_code', 'replace_code', 'prepare_recovery', 'recover',
   'learn_history', 'group_past', 'learn_start', 'learn_slice', 'learn_finish', 'learn_abandon',

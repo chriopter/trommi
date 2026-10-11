@@ -27,8 +27,8 @@ use crate::invite::{
 use crate::records::ReceivedMessage;
 use crate::records::{
     board_id, device_id, group_id, hash32, room_id, session_id, turn_id, Cut, GroupSummary,
-    HandoverSent, Joined, LogEntry, LogEntryKind, LogFinding, OutboxEntry, Processed, Replacement,
-    RoomRoles, SignedHubAuth,
+    HandoverSent, Joined, KeyRequest, LogEntry, LogEntryKind, LogFinding, OutboxEntry, Processed,
+    Replacement, RoomRoles, SignedHubAuth,
 };
 use crate::recovery::{
     self, with_chains, with_commits, with_end, with_group, with_placed, with_room, with_start,
@@ -580,6 +580,38 @@ impl CoreDevice {
     /// entries' ids.
     pub fn send_handover(&self, group: Vec<u8>, recipient: Vec<u8>) -> Result<Vec<u64>, CoreError> {
         self.write(|device| Ok(device.send_handover(&group_id(&group)?, &device_id(&recipient)?)?))
+    }
+
+    /// The key requests (7.1.1) to post now: groups of which an envelope did not open for lack of its key and
+    /// whose key is still missing after a grace of five minutes, again after a pause that doubles up to a day.
+    /// Only a human device asks. What is returned counts as asked.
+    pub fn key_requests(&self, now_ms: u64) -> Result<Vec<KeyRequest>, CoreError> {
+        self.write(|device| {
+            Ok(device
+                .key_requests(now_ms)
+                .into_iter()
+                .map(|request| KeyRequest {
+                    group: request.group.as_bytes().to_vec(),
+                    epochs: request.epochs,
+                })
+                .collect())
+        })
+    }
+
+    /// Answers a human device's key request (7.1.1): a key handover in the room group to `recipient` with
+    /// this device's keys of `group` (of every group when none). `forbidden` unless both are human devices;
+    /// nothing when this device holds none of them or answered the same within the hour. Returns the outbox
+    /// entries' ids.
+    pub fn answer_key_request(
+        &self,
+        group: Option<Vec<u8>>,
+        recipient: Vec<u8>,
+        now_ms: u64,
+    ) -> Result<Vec<u64>, CoreError> {
+        self.write(|device| {
+            let group = group.as_deref().map(group_id).transpose()?;
+            Ok(device.answer_key_request(group.as_ref(), &device_id(&recipient)?, now_ms)?)
+        })
     }
 
     /// The handovers this device sent and whose recipient is not yet known to read.

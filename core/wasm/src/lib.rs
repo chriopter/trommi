@@ -212,6 +212,8 @@ methods!(RawDevice {
     send_handover(group, recipient);
     handovers_sent();
     handover_read(group, recipient);
+    key_requests(now_ms);
+    answer_key_request(group, recipient, now_ms);
     send_stroke_piece(board, piece);
     send_work_trail(group, turn, number, step, now_ms);
     holds_recovery_mac();

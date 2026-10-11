@@ -20,7 +20,7 @@ import type * as Binding from '../../../core/wasm/js/trommi-core.js'
 export type {
   ErrorCode, TrommiError, StoreConflict, StoreEntry, StoredState, StoreWrite, Store, SessionInfo, GroupSummary, RoomRoles,
   OutboxKind, OutboxEntry, Cut, Replacement, Joined, LogEntry, CommitSummary, ReceivedMessage, Processed, LogFinding,
-  HandoverSent, KeyPackageInfo, SignedHubAuth, FileRef, FileEnd, FileLayout, FileChunk, ShareLink, AccountKeys, AccountWay,
+  HandoverSent, KeyRequest, KeyPackageInfo, SignedHubAuth, FileRef, FileEnd, FileLayout, FileChunk, ShareLink, AccountKeys, AccountWay,
   PushNote, Versions, SelfTestStep, SelfTestReport, FileEncryptor, FileDecryptor,
   ServedCommit, ServedGroup, ServedRoom, ServedStart, ServedEnd, PlacedCommit, LearnProgress, ServedEnvelope, FeedItem, FeedOutcome, Fed, Learned, UnverifiedSession, CodeJoin, Removals, RecoveryPlan, Anchor,
   InviteRole, InviteOpened, SignedOffer, SignedRequest, SignedReveal, InviteLinkParts, EmojiWord, CheckCode, InviteAccepted,

@@ -133,6 +133,11 @@ final class FakeDevice: CoreDevice {
     switch (error as? TrommiError)?.code { case "storage": return .local; case "wrong-epoch": return .duplicate; case "group-behind": return .early; default: return .badGroup }
   }
   func sendHandover(group: GroupId, recipient: DeviceId) throws -> [UInt64] { [] }
+  /** What `keyRequests` hands out next, and the key requests answered (group, recipient). */
+  var keysWanted: [GroupId] = []
+  var keysAnswered: [(GroupId?, DeviceId)] = []
+  func keyRequests(nowMs: UInt64) throws -> [GroupId] { defer { keysWanted = [] }; return keysWanted }
+  func answerKeyRequest(group: GroupId?, recipient: DeviceId, nowMs: UInt64) throws -> [UInt64] { keysAnswered.append((group, recipient)); return [] }
   func sendStrokePiece(board: BoardId, piece: Bytes) throws -> UInt64 { try queue(.relayMessage, group: room, parts: [piece]) }
   func outbox() -> [OutboxEntry] { isOwner ? box.keys.sorted().map { box[$0]! } : [] }
   /** The entry goes; a Commit stays pending until the log hands it back. `not-found` for an entry that is gone. */
@@ -308,6 +313,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var refuse: [String: (status: Int, code: String, voided: Bool)] = [:]   // path -> refusal; `voided`: the hub kept the envelope's number as a void record
     var offline = false
     var rooms = 0
+    /** The wishes GET /v1/requests lists (POST /v1/requests adds none: a test names them). */
+    var wishes: [[String: Any]] = []
     /** Set: the answer to a posted Commit waits for a signal, while the Commit is in the changes already. */
     var holdCommitAnswer: DispatchSemaphore?
     func add(_ item: [String: Any]) -> UInt64 { change += 1; var i = item; i["change"] = change; items.append(i); return change }
@@ -347,6 +354,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
         let epoch = (body["epoch"] as? NSNumber)?.uint64Value ?? 0
         return (200, ["epoch": epoch + 1, "change": add(["kind": "commit", "group_id": group, "bytes": body["commit"] as! String])])
       case ("POST", _) where path.hasSuffix("/messages"): return (200, ["n": 1])
+      case ("POST", "/v1/requests"): return (200, ["id": 1])
+      case ("GET", "/v1/requests"): return (200, wishes)
       case ("PUT", _) where path.hasPrefix("/v1/files/"), ("GET", _) where path.hasPrefix("/v1/files/"): return (200, [:] as [String: Any])
       default: return (404, ["error": "not-found", "message": path])
       }

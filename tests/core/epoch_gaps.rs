@@ -3,16 +3,16 @@
 //! (`device/<id>`) and `profile` in its session, which the apps show the session by. Each test plays one path
 //! by which a device joins or comes back, and asks whether it reads the agent's registers.
 
+use trommi_core::device::Draft;
 use trommi_core::device::{EnvelopeOutcome, Processed, Received, ReceivedEnvelope};
 use trommi_core::ids::GroupId;
 use trommi_core::Error;
 use trommi_tests::hub::Hub;
 use trommi_tests::{
     add_human, add_to_session, enrol, found_main, found_room, join_room, join_session, json, learn,
-    new_device, now, post_ok, publish_some, settle, settle_joining, sync_all, test_keys,
-    write, TestDevice,
+    new_device, now, post_ok, publish_some, settle, settle_joining, sync_all, test_keys, write,
+    TestDevice,
 };
-use trommi_core::device::Draft;
 
 /// A room with one human device `a` and an agent `agent` in the main session `main`; the agent has
 /// introduced itself (`device/<id>`) in the session's first epoch.
@@ -33,7 +33,9 @@ fn introduce(hub: &mut Hub, agent: &mut TestDevice, main: &GroupId, name: &str) 
     let draft = Draft::Register {
         group: *main,
         name: device_name(agent),
-        value: Some(json(&format!(r#"{{"device_name":"{name}","platform":"linux"}}"#))),
+        value: Some(json(&format!(
+            r#"{{"device_name":"{name}","platform":"linux"}}"#
+        ))),
     };
     write(hub, agent, &draft);
 }
@@ -43,7 +45,9 @@ fn profile(hub: &mut Hub, agent: &mut TestDevice, main: &GroupId, name: &str) {
     let draft = Draft::Register {
         group: *main,
         name: "profile".into(),
-        value: Some(json(&format!(r#"{{"agent_name":"{name}","model":"m","task":"t"}}"#))),
+        value: Some(json(&format!(
+            r#"{{"agent_name":"{name}","model":"m","task":"t"}}"#
+        ))),
     };
     write(hub, agent, &draft);
 }
@@ -101,7 +105,11 @@ fn read_group(hub: &Hub, device: &mut TestDevice, group: &GroupId) -> Vec<Receiv
 }
 
 /// The agent's name and profile as `device` reads them in `main`; none where the body never opened.
-fn reads(device: &TestDevice, agent: &TestDevice, main: &GroupId) -> (Option<String>, Option<String>) {
+fn reads(
+    device: &TestDevice,
+    agent: &TestDevice,
+    main: &GroupId,
+) -> (Option<String>, Option<String>) {
     let text = |name: &str| {
         device
             .register(main, name)
@@ -228,7 +236,10 @@ fn a_handover_refused_with_wrong_epoch_is_sent_again() {
     let room_group = r.room;
     let first = phone.group(&room_group).unwrap().own_from;
     for epoch in 0..first {
-        assert!(phone.content_key(&room_group, epoch).is_ok(), "room epoch {epoch}");
+        assert!(
+            phone.content_key(&room_group, epoch).is_ok(),
+            "room epoch {epoch}"
+        );
     }
 }
 
@@ -281,7 +292,9 @@ fn a_reinstalled_device_that_signs_in_reads_the_agents_name() {
     sync_all(&r.hub, &mut phone);
     let got = read_group(&r.hub, &mut phone, &main);
     assert_eq!(no_key_left(&got), 0);
-    assert!(got.iter().all(|got| got.outcome == EnvelopeOutcome::Applied));
+    assert!(got
+        .iter()
+        .all(|got| got.outcome == EnvelopeOutcome::Applied));
     let (name, profile) = reads(&phone, &r.agent, &main);
     assert!(name.unwrap().contains("build-bot"));
     assert!(profile.unwrap().contains("Builder"));
@@ -316,7 +329,8 @@ fn an_owed_session_handover_survives_a_restart() {
     add_human(&mut hub, &mut a, &mut phone);
     sync_all(&hub, &mut a);
     let package = phone.key_package(now()).unwrap();
-    a.add_to_session(&main, &phone.id(), &package, now()).unwrap();
+    a.add_to_session(&main, &phone.id(), &package, now())
+        .unwrap();
     let entry = a.outbox().remove(0);
     let accepted = hub.post(&a.id(), &entry).unwrap();
     a.outbox_accepted(entry.id, accepted).unwrap();
@@ -342,7 +356,10 @@ fn an_owed_session_handover_survives_a_restart() {
     sync_all(&hub, &mut phone);
     let got = read_group(&hub, &mut phone, &main);
     assert_eq!(no_key_left(&got), 0);
-    assert!(reads(&phone, &agent, &main).0.unwrap().contains("build-bot"));
+    assert!(reads(&phone, &agent, &main)
+        .0
+        .unwrap()
+        .contains("build-bot"));
 }
 
 /// The handover owed by an Add cannot go while its session is stale (5.2.8: the room revoked the agent before
@@ -357,7 +374,8 @@ fn a_handover_owed_to_a_stale_session_goes_out_after_it_is_cleaned() {
     publish_some(&mut r.hub, &mut phone, 4);
     let main = r.main;
     let package = phone.key_package(now()).unwrap();
-    r.a.add_to_session(&main, &phone.id(), &package, now()).unwrap();
+    r.a.add_to_session(&main, &phone.id(), &package, now())
+        .unwrap();
     let add = r.a.outbox().remove(0);
     let accepted = r.hub.post(&r.a.id(), &add).unwrap();
     r.a.outbox_accepted(add.id, accepted).unwrap();
@@ -365,12 +383,19 @@ fn a_handover_owed_to_a_stale_session_goes_out_after_it_is_cleaned() {
     let owed = r.a.outbox().remove(0);
     // The room revokes the agent: the session is stale from that Commit on.
     r.a.remove_agents(&[r.agent.id()], now()).unwrap();
-    let revoke = r.a.outbox().into_iter().find(|entry| entry.id != owed.id).unwrap();
+    let revoke =
+        r.a.outbox()
+            .into_iter()
+            .find(|entry| entry.id != owed.id)
+            .unwrap();
     let accepted = r.hub.post(&r.a.id(), &revoke).unwrap();
     r.a.outbox_accepted(revoke.id, accepted).unwrap();
     trommi_tests::process_up_to(&r.hub, &mut r.a, accepted.change.unwrap());
     let refused = r.hub.post(&r.a.id(), &owed).unwrap_err();
-    assert!(matches!(refused, Error::StaleSession | Error::WrongEpoch), "{refused:?}");
+    assert!(
+        matches!(refused, Error::StaleSession | Error::WrongEpoch),
+        "{refused:?}"
+    );
     r.a.outbox_refused(owed.id, &refused).unwrap();
     assert!(r.a.outbox().is_empty(), "nothing goes into a stale session");
     // The session is cleaned: the agent's leaf goes, with its Cut. The handover follows that Commit.
@@ -385,7 +410,10 @@ fn a_handover_owed_to_a_stale_session_goes_out_after_it_is_cleaned() {
     sync_all(&r.hub, &mut phone);
     let got = read_group(&r.hub, &mut phone, &main);
     assert_eq!(no_key_left(&got), 0);
-    assert!(reads(&phone, &r.agent, &main).0.unwrap().contains("build-bot"));
+    assert!(reads(&phone, &r.agent, &main)
+        .0
+        .unwrap()
+        .contains("build-bot"));
 }
 
 /// The same, when another human device cleans the session and this one processed that Commit before it
@@ -403,7 +431,8 @@ fn a_handover_refused_as_stale_after_the_cleanup_was_seen_goes_out_at_once() {
     add_human(&mut r.hub, &mut r.a, &mut phone);
     sync_all(&r.hub, &mut r.a);
     let package = phone.key_package(now()).unwrap();
-    r.a.add_to_session(&main, &phone.id(), &package, now()).unwrap();
+    r.a.add_to_session(&main, &phone.id(), &package, now())
+        .unwrap();
     let add = r.a.outbox().remove(0);
     let accepted = r.hub.post(&r.a.id(), &add).unwrap();
     r.a.outbox_accepted(add.id, accepted).unwrap();
@@ -424,7 +453,11 @@ fn a_handover_refused_as_stale_after_the_cleanup_was_seen_goes_out_at_once() {
     // a processes the revocation and the cleanup, then reports the refusal.
     settle(&r.hub, &mut r.a);
     r.a.outbox_refused(owed.id, &refused).unwrap();
-    assert_eq!(r.a.outbox().len(), 1, "made again in the cleaned session's epoch");
+    assert_eq!(
+        r.a.outbox().len(),
+        1,
+        "made again in the cleaned session's epoch"
+    );
     post_ok(&mut r.hub, &mut r.a);
 
     settle_joining(&r.hub, &mut phone);
@@ -433,5 +466,173 @@ fn a_handover_refused_as_stale_after_the_cleanup_was_seen_goes_out_at_once() {
     sync_all(&r.hub, &mut phone);
     let got = read_group(&r.hub, &mut phone, &main);
     assert_eq!(no_key_left(&got), 0);
-    assert!(reads(&phone, &r.agent, &main).0.unwrap().contains("build-bot"));
+    assert!(reads(&phone, &r.agent, &main)
+        .0
+        .unwrap()
+        .contains("build-bot"));
+}
+
+// ---- 7.1.1: a device that missed its handover asks for the keys, and another human device answers
+
+/// The hub sweeps application messages after 30 days (`hub-api.md` point 10): every key handover in the log
+/// goes, Commits stay.
+fn sweep_messages(hub: &mut Hub) {
+    hub.log.retain(|item| item.commit);
+}
+
+/// The phone was added by link to the room and to the session, and the agent had written its name and profile
+/// before; the phone stayed away until the hub had swept both handovers.
+fn phone_that_missed_its_handovers(r: &mut Room) -> TestDevice {
+    let main = r.main;
+    profile(&mut r.hub, &mut r.agent, &main, "Builder");
+    sync_all(&r.hub, &mut r.a);
+    let mut phone = new_device();
+    add_human(&mut r.hub, &mut r.a, &mut phone);
+    r.a.send_handover(&r.room, &phone.id()).unwrap();
+    post_ok(&mut r.hub, &mut r.a);
+    publish_some(&mut r.hub, &mut phone, 4);
+    add_to_session(&mut r.hub, &mut r.a, &mut phone, &main);
+    sync_all(&r.hub, &mut r.a);
+    sweep_messages(&mut r.hub);
+    settle_joining(&r.hub, &mut phone);
+    learn(&r.hub, &mut phone, &r.room).unwrap();
+    learn(&r.hub, &mut phone, &main).unwrap();
+    sync_all(&r.hub, &mut phone);
+    phone
+}
+
+/// What `device` posts as its key requests at `at`: the groups named.
+fn asks(device: &mut TestDevice, at: u64) -> Vec<GroupId> {
+    device
+        .key_requests(at)
+        .into_iter()
+        .map(|request| request.group)
+        .collect()
+}
+
+#[test]
+fn a_device_that_missed_its_handover_asks_and_another_human_device_answers() {
+    use trommi_core::device::{KEY_REQUEST_FIRST_PAUSE_MS, KEY_REQUEST_GRACE_MS};
+    let mut r = room();
+    let main = r.main;
+    let mut phone = phone_that_missed_its_handovers(&mut r);
+    let t = now();
+    let got = read_group(&r.hub, &mut phone, &main);
+    assert!(
+        no_key_left(&got) > 0,
+        "the agent's name does not open without its key"
+    );
+    assert_eq!(reads(&phone, &r.agent, &main), (None, None));
+
+    // Not at once: the handover behind an Add normally comes within seconds.
+    assert!(asks(&mut phone, t).is_empty());
+    let request = phone.key_requests(t + KEY_REQUEST_GRACE_MS);
+    assert_eq!(request.len(), 1);
+    assert_eq!(request[0].group, main);
+    assert!(request[0].epochs.contains(&1), "{:?}", request[0].epochs);
+    // Asked: not again before the pause.
+    assert!(asks(&mut phone, t + KEY_REQUEST_GRACE_MS + 1000).is_empty());
+    // Not answered (the other devices were away): asked again after the pause.
+    let again = t + KEY_REQUEST_GRACE_MS + KEY_REQUEST_FIRST_PAUSE_MS;
+    assert_eq!(asks(&mut phone, again), vec![main]);
+
+    // `a` answers in the room group, with the session's keys.
+    sync_all(&r.hub, &mut r.a);
+    let sent =
+        r.a.answer_key_request(Some(&main), &phone.id(), now())
+            .unwrap();
+    assert!(!sent.is_empty());
+    // The same request seen again (the stream, then the hub's list) is answered once.
+    assert!(r
+        .a
+        .answer_key_request(Some(&main), &phone.id(), now())
+        .unwrap()
+        .is_empty());
+    post_ok(&mut r.hub, &mut r.a);
+
+    let processed = settle(&r.hub, &mut phone);
+    let taken: usize = processed
+        .iter()
+        .map(|done| match done {
+            Processed::Message(Received::Keys { taken, .. }) => *taken,
+            _ => 0,
+        })
+        .sum();
+    assert!(taken > 0, "the keys reached the phone");
+    // The client reads back what it could not open.
+    let got = read_group(&r.hub, &mut phone, &main);
+    assert_eq!(no_key_left(&got), 0);
+    let (name, profile) = reads(&phone, &r.agent, &main);
+    assert!(name.unwrap().contains("build-bot"));
+    assert!(profile.unwrap().contains("Builder"));
+    // Nothing is missing any more: nothing is asked.
+    assert!(asks(&mut phone, again + 10 * KEY_REQUEST_FIRST_PAUSE_MS).is_empty());
+}
+
+/// A request without a group is answered with every key of the room; the requester takes the session's keys
+/// from the room group as from the handover of an invite.
+#[test]
+fn a_request_without_a_group_is_answered_with_every_key() {
+    let mut r = room();
+    let main = r.main;
+    let mut phone = phone_that_missed_its_handovers(&mut r);
+    sync_all(&r.hub, &mut r.a);
+    assert!(!r
+        .a
+        .answer_key_request(None, &phone.id(), now())
+        .unwrap()
+        .is_empty());
+    post_ok(&mut r.hub, &mut r.a);
+    settle(&r.hub, &mut phone);
+    let got = read_group(&r.hub, &mut phone, &main);
+    assert_eq!(no_key_left(&got), 0);
+    assert!(reads(&phone, &r.agent, &main)
+        .0
+        .unwrap()
+        .contains("build-bot"));
+    for epoch in 0..r.hub.epoch(&r.room).unwrap() {
+        assert!(
+            phone.content_key(&r.room, epoch).is_ok(),
+            "room epoch {epoch}"
+        );
+    }
+}
+
+/// Who asks and who answers: human devices only. An agent device lacks the keys before its takeover when the
+/// human chose "without history" (5.3.2): it is not answered, and it does not ask.
+#[test]
+fn only_human_devices_ask_and_only_human_devices_are_answered() {
+    use trommi_core::device::KEY_REQUEST_GRACE_MS;
+    let mut r = room();
+    let main = r.main;
+    let mut phone = phone_that_missed_its_handovers(&mut r);
+    sync_all(&r.hub, &mut r.a);
+    sync_all(&r.hub, &mut r.agent);
+    // An agent device is not answered, and answers nobody.
+    assert_eq!(
+        r.a.answer_key_request(Some(&main), &r.agent.id(), now()),
+        Err(Error::Forbidden)
+    );
+    assert_eq!(
+        r.agent.answer_key_request(Some(&main), &phone.id(), now()),
+        Err(Error::Forbidden)
+    );
+    // Its own request is no request.
+    assert!(r
+        .a
+        .answer_key_request(None, &r.a.id(), now())
+        .unwrap()
+        .is_empty());
+    // A device that holds none of the keys sends nothing.
+    read_group(&r.hub, &mut phone, &main);
+    let other = GroupId::room(trommi_core::ids::RoomId::new([7; 32]));
+    assert_eq!(
+        phone.answer_key_request(Some(&other), &r.a.id(), now()),
+        Err(Error::NotFound)
+    );
+    // An agent device never asks.
+    assert!(r
+        .agent
+        .key_requests(now() + KEY_REQUEST_GRACE_MS * 10)
+        .is_empty());
 }

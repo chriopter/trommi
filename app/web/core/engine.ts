@@ -849,7 +849,8 @@ export class Engine {
       case 'welcome': this.keepSoon(0); return
       case 'request':
         // a human device that holds the keys sends them again on a newcomer's wish (7.1)
-        if (event.kind === 'handover' && this.is_human && this.room_id) void this.land(d => d.sendHandover(event.group ?? this.core.roomGroupId(this.room_id!), event.device)).catch(() => {})
+        // a human device that holds the keys hands them to a human device that asks (7.1.1)
+        if (event.kind === 'handover') void this.answerKeys(event.id, event.group, event.device)
         this.emit('stream', event)
         return
       default: this.emit('stream', event)
@@ -929,6 +930,7 @@ export class Engine {
   private async keep(): Promise<void> {
     await this.serial(async () => { await this.joinWelcomes(null); await this.tellFindings(); this.emit('batch', null) })
     if (this.is_human) await this.heal(await this.invited())
+    if (this.is_human) await this.askForKeys()
     if (this.now() - this.timedAt >= this.timing.upkeep_every) { this.timedAt = this.now(); await this.timed() }
     if (this.learnDue) await this.learn()
     if (this.rescanDue && !this.catching) await this.rescan()
@@ -1094,9 +1096,30 @@ export class Engine {
     while (this.keeping) await this.keeping
     await this.keep()
   }
-  /** The timed part: KeyPackages (14.2), the own-leaf update (5.2.9; the core says whether it is due), `heads` (9.0.7). */
+  /**
+   * 7.1.1: the content keys this device still lacks a while after an envelope did not open for them are asked for
+   * (the core says which, and when again); the human devices answer with a key handover, and the rescan that the
+   * keys start reads what was skipped.
+   */
+  private async askForKeys(): Promise<void> {
+    const due = await this.do(d => d.keyRequests(this.now())).catch(() => [])
+    for (const request of due) await this.hub.postRequest({ kind: 'handover', group: request.group }).catch(() => {})
+  }
+  /** Answers a human device's wish for content keys once (7.1.1); the core refuses one that is not a human device's. */
+  private async answerKeys(id: number, group: Uint8Array | null, device: Uint8Array): Promise<void> {
+    if (!this.is_human || !this.room_id || same(device, this.device_id)) return
+    const key = 'key-requests-answered'
+    const answered = await this.opts.meta.get(key).then(v => (Array.isArray(v) ? v as number[] : []), () => [] as number[])
+    if (answered.includes(id)) return
+    await this.opts.meta.set(key, [...answered, id].slice(-256)).catch(() => {})
+    await this.land(d => d.answerKeyRequest(group, device, this.now())).catch(() => {})
+  }
+  /** The timed part: KeyPackages (14.2), the own-leaf update (5.2.9; the core says whether it is due), `heads` (9.0.7),
+   *  and the wishes for keys that came while this device was away (7.1.1: the hub keeps them seven days). */
   private async timed(): Promise<void> {
     if (!this.room_id) return
+    // (a wish older than a day is passed over: a device that still lacks the keys has asked again since)
+    if (this.is_human) for (const row of await this.hub.requests().catch(() => [])) if (row.kind === 'handover' && row.at + 86_400_000 >= this.now()) await this.answerKeys(row.id, row.group, row.device)
     const held = (await this.opts.meta.get('key-packages').catch(() => null)) as { unused: number } | null
     await this.do(d => d.keyPackagesToUpload(held?.unused ?? 0, this.now())).catch(() => {})
     if (!(await this.do(d => d.isOwner()).catch(() => true))) await this.serial(() => this.reopen()).catch(() => {})

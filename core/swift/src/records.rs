@@ -580,6 +580,16 @@ choice! {
 }
 
 record! {
+    /// A key request (7.1.1) the device is to post now, as `{ kind: "handover", group }`.
+    pub struct KeyRequest {
+        /// The group whose content keys the device lacks.
+        pub group: Vec<u8>,
+        /// The epochs of that group it lacks.
+        pub epochs: Vec<u64>,
+    }
+}
+
+record! {
     /// A handover this device sent whose recipient is not yet known to read.
     pub struct HandoverSent {
         /// The recipient, 32 bytes.

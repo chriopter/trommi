@@ -398,6 +398,11 @@ impl Human {
 
     /// Makes an agent invite (for a new session, or to take `session` over) and publishes its Offer.
     pub async fn invite(&mut self, session: Option<SessionId>) -> Invite {
+        self.invite_as(Role::Agent, session).await
+    }
+
+    /// Makes an invite for a device of `role` and publishes its Offer.
+    pub async fn invite_as(&mut self, role: Role, session: Option<SessionId>) -> Invite {
         self.sync().await;
         let address = self.address.clone();
         let opened = self
@@ -405,7 +410,7 @@ impl Human {
                 let opened = v
                     .device
                     .invite_open(
-                        Role::Agent,
+                        role,
                         session.as_ref(),
                         "https://app.trommi.example",
                         &address,
@@ -614,6 +619,251 @@ impl Human {
             }
         }
         panic!("the invite never finished");
+    }
+
+    /// A second human device of this room, let in by link (12.1): this device makes the invite and confirms the
+    /// code; the newcomer joins the room group from its Welcome. The handover the invite owes is NOT sent here
+    /// (`follow_invites` sends it).
+    pub async fn add_human(&mut self) -> Human {
+        let mut invite = self.invite_as(Role::Human, None).await;
+        let url = self.address.as_str().to_string();
+        let link = invite.link.clone();
+        let room = self.room;
+        let joining = async move {
+            let dir = TempDir::new("human");
+            let journal = Journal::open(dir.path()).expect("a journal");
+            let vault = Arc::new(Keeper::spawn(move || Vault::create(journal)).expect("a device"));
+            let open = Hub::new(&url, None, None).expect("a client");
+            let for_link = link.clone();
+            let joining = vault
+                .call(move |v: &mut Vault| v.device.join_link(&for_link, now_ms()))
+                .await
+                .unwrap()
+                .expect("the link reads");
+            let invite_id = joining.invite_id.to_base64url();
+            let offer = open
+                .open_call(
+                    reqwest::Method::GET,
+                    &format!("/v1/invites/{invite_id}"),
+                    None,
+                )
+                .await
+                .expect("the Offer");
+            let offer = trommi_core::invite::SignedOffer {
+                offer: unb64(&offer, "offer").unwrap(),
+                signature: unb64(&offer, "signature").unwrap(),
+                mac: unb64(&offer, "mac").unwrap(),
+            };
+            let request = vault
+                .call(move |v: &mut Vault| {
+                    let request = v.device.join_request(&link, &offer, now_ms());
+                    v.commit().expect("stored");
+                    request
+                })
+                .await
+                .unwrap()
+                .expect("the Request");
+            let signed = &request.signed_request;
+            open.open_call(
+                reqwest::Method::POST,
+                &format!("/v1/invites/{invite_id}/request"),
+                Some(&json!({
+                    "request": b64(&signed.request), "mac": b64(&signed.mac),
+                    "signature": b64(&signed.signature),
+                })),
+            )
+            .await
+            .expect("the Request is posted");
+            let reveal = loop {
+                if let Ok(reveal) = open
+                    .open_call(
+                        reqwest::Method::GET,
+                        &format!("/v1/invites/{invite_id}/reveal"),
+                        None,
+                    )
+                    .await
+                {
+                    break reveal;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            };
+            let reveal = trommi_core::invite::SignedReveal {
+                reveal: unb64(&reveal, "reveal").unwrap(),
+                signature: unb64(&reveal, "signature").unwrap(),
+            };
+            vault
+                .call(move |v: &mut Vault| {
+                    v.device.join_reveal(&reveal).expect("the Reveal");
+                    v.commit().expect("stored");
+                })
+                .await
+                .unwrap();
+            let hub = hub_for(&vault, &url, room).expect("a client");
+            let welcome = loop {
+                if let Ok(list) = hub.get("/v1/welcomes").await {
+                    if let Some(row) = list.as_array().and_then(|rows| rows.first()) {
+                        break unb64(row, "welcome").expect("its bytes");
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            };
+            let id = vault
+                .call(move |v: &mut Vault| {
+                    v.device
+                        .join_invited(&welcome, now_ms())
+                        .expect("the room group is joined");
+                    v.commit().expect("stored");
+                    v.me()
+                })
+                .await
+                .unwrap();
+            Human {
+                vault,
+                hub,
+                id,
+                room,
+                address: HubAddress::parse(&url).expect("the hub's address"),
+                _dir: dir,
+                objects: BTreeMap::new(),
+                requests: BTreeSet::new(),
+                findings: Vec::new(),
+                trail: Vec::new(),
+                items: Vec::new(),
+            }
+        };
+        let (newcomer, _) = tokio::join!(joining, self.admit(&mut invite));
+        newcomer
+    }
+
+    /// Learns the past of `group` from the hub (4.6), as the apps do for a group joined by link.
+    pub async fn learn(&mut self, group: &GroupId) {
+        let of = *group;
+        let founding = self
+            .hub
+            .get(&format!("/v1/groups/{}/info?epoch=0", b64(of.as_bytes())))
+            .await
+            .expect("the founding GroupInfo");
+        let founding = unb64(&founding, "group_info").expect("its bytes");
+        let log = self
+            .hub
+            .get(&format!(
+                "/v1/groups/{}/log?after=0&limit=1000&kind=commit",
+                b64(of.as_bytes())
+            ))
+            .await
+            .expect("the Commits");
+        let commits: Vec<(Vec<u8>, u64)> = log["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|item| item["kind"] == "commit")
+            .map(|item| {
+                (
+                    unb64(item, "bytes").unwrap(),
+                    item["change"].as_u64().unwrap_or(0),
+                )
+            })
+            .collect();
+        self.v(move |v| {
+            let served: Vec<trommi_core::recovery::ServedCommit<'_>> = commits
+                .iter()
+                .map(|(bytes, change)| trommi_core::recovery::ServedCommit {
+                    change: *change,
+                    commit: bytes,
+                    recovery_auth: None,
+                })
+                .collect();
+            v.device
+                .learn_history(&of, &founding, &served)
+                .expect("the past is learned");
+            v.commit().expect("stored");
+        })
+        .await;
+    }
+
+    /// Reads every envelope the hub serves again, out of order, for its body (9.0.6), as the apps do once keys
+    /// came. Returns how many did not open for lack of a key.
+    pub async fn read_again(&mut self) -> usize {
+        let answer = self
+            .hub
+            .get("/v1/changes?after=0&limit=2000")
+            .await
+            .expect("changes");
+        let mut no_key = 0;
+        let items = answer["items"].as_array().cloned().unwrap_or_default();
+        // In the hub's order first (an envelope taken late), then each again for its body.
+        for ordered in [true, false] {
+            for item in &items {
+                if item["kind"] != "envelope" {
+                    continue;
+                }
+                let change = item["change"].as_u64().unwrap_or(0);
+                let bytes = unb64(item, "envelope").expect("envelope");
+                let got = self
+                    .v(move |v| {
+                        let got =
+                            v.device
+                                .receive_envelope(&bytes, change, ordered, None, now_ms());
+                        v.commit().expect("stored");
+                        got
+                    })
+                    .await;
+                if !ordered && got.is_ok_and(|got| got.code == Some(Error::NoKey)) {
+                    no_key += 1;
+                }
+            }
+        }
+        no_key
+    }
+
+    /// A register's current value in `group`, as this device reads it.
+    pub async fn register(&self, group: &GroupId, name: &str) -> Option<Value> {
+        let (group, name) = (*group, name.to_string());
+        self.v(move |v| v.device.register(&group, &name).expect("the register"))
+            .await
+            .map(|value| serde_json::from_slice(value.expose()).expect("JSON"))
+    }
+
+    /// Posts the key requests (7.1.1) the device says are due at `at`; returns the groups named.
+    pub async fn ask_for_keys(&mut self, at: u64) -> Vec<GroupId> {
+        let due = self.v(move |v| v.device.key_requests(at)).await;
+        for request in &due {
+            self.hub
+                .post(
+                    "/v1/requests",
+                    &json!({ "kind": "handover", "group": b64(request.group.as_bytes()) }),
+                )
+                .await
+                .expect("the hub takes the request");
+        }
+        due.into_iter().map(|request| request.group).collect()
+    }
+
+    /// Answers every key request of the hub's list (7.1.1) and posts the handovers. Returns how many messages.
+    pub async fn answer_key_requests(&mut self) -> usize {
+        let rows = self.hub.get("/v1/requests").await.expect("the requests");
+        let mut sent = 0;
+        for row in rows.as_array().cloned().unwrap_or_default() {
+            if row["kind"] != "handover" {
+                continue;
+            }
+            let device = DeviceId::from_slice(&unb64(&row, "device").unwrap()).expect("a device");
+            let group = row["group_id"]
+                .as_str()
+                .map(|_| GroupId::from_bytes(&unb64(&row, "group_id").unwrap()).expect("a group"));
+            let ids = self
+                .v(move |v| {
+                    let ids = v
+                        .device
+                        .answer_key_request(group.as_ref(), &device, now_ms());
+                    v.commit().expect("stored");
+                    ids
+                })
+                .await;
+            sent += ids.map_or(0, |ids| ids.len());
+        }
+        self.post_all().await.expect("the handover is taken");
+        sent
     }
 
     /// Founds the main session of an agent device that was admitted without one. Returns its group.
