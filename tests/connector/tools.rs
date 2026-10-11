@@ -1613,6 +1613,13 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
         .call("reply", json!({ "text": "from the second session" }))
         .await;
     assert!(failed, "the second session is not in the room: {said}");
+    // it started cleanly and keeps running: Claude Code shows the plugin as connected, not as failed
+    assert!(
+        second.child.try_wait().expect("the process").is_none(),
+        "the second session's connector is still running"
+    );
+    let listed = second.request("tools/list", json!({})).await;
+    assert!(listed["tools"].is_array(), "it still answers: {listed}");
     assert!(
         said.contains("belongs to other") && said.contains("invite"),
         "it says the key is another session's and that it needs an invite: {said}"
@@ -1638,6 +1645,7 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
         .call("reply", json!({ "text": "from the second session, later" }))
         .await;
     assert!(failed && said.contains("belongs to other"), "{said}");
+    assert!(second.child.try_wait().expect("the process").is_none());
     second.close().await;
 
     // The first session resumed is the same member.
