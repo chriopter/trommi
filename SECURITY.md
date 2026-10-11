@@ -29,8 +29,7 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - The connector's `install.sh` and `trommi-connector update` check the same signature, with the key built in.
 - Release files and web app files carry GitHub build attestations: a public record of which build made them.
 - The iOS app is signed by Apple and ships through TestFlight.
-- iOS uses only standard algorithms and is declared exempt from export paperwork; it is not offered in France,
-  which would need an extra filing.
+- iOS uses only standard algorithms and is declared exempt from export paperwork.
 
 ## Deployment
 - Secrets live in 1Password and are read only by the step that needs them.
@@ -46,8 +45,14 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - CI deploys the web app (app.trommi.com) and the website (trommi.com) to Cloudflare with a token from 1Password.
 
 ## Repository
+- How a change reaches `main`:
+  1. Any feature branch: no rules, anything goes.
+  2. `staging` (optional): protected against deletion and force-push; CI tests every push, and TestFlight builds come from here.
+  3. A pull request into `main`, merged by the owner with "Squash and merge". A change may go straight from its branch to `main` without passing `staging`.
+- `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
+  The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.
-- Only `main` and `v*` tags can deploy.
+- Only `main` and `v*` tags can deploy the web app, the website and the hub.
 - Workflows start with no permissions, and outside actions are pinned to exact commits.
 - Toolchain and dependency versions are pinned (lockfiles).
 - Rust dependencies are checked daily against RustSec, the list of known vulnerabilities.
