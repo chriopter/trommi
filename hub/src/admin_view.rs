@@ -86,6 +86,10 @@ pub fn blurred_email(email: &str) -> String {
     format!("<code class=\"email\" title=\"Double-click to show\">{}</code>", crate::admin::esc(email))
 }
 
+/// The button at the top of a page with blurred e-mail addresses: it shows all of them at once (`admin.js`, in the
+/// browser only; the page holds them already), and blurs them all again. Each still blurs by default.
+pub const SHOW_ALL: &str = "<button type=\"button\" class=\"showall\" aria-pressed=\"false\">Show all</button>";
+
 pub fn when(ms: i64) -> String {
     when_exactly(ms)[..16].to_string()
 }
@@ -497,7 +501,7 @@ pub fn accounts(app: &App) -> Result<String, Refused> {
         let one = |sql: &str| -> rusqlite::Result<i64> { c.query_row(sql, [], |r| r.get(0)) };
         let (accounts, rooms) = (one("SELECT count(*) FROM accounts")?, one("SELECT count(*) FROM rooms")?);
         let mut out = format!(
-            "<main class=\"page\"><div class=\"head\"><h1>Accounts</h1><span class=\"muted\">{accounts} account{} · {rooms} room{} · e-mail addresses blurred: double-click one to show it</span></div>",
+            "<main class=\"page\"><div class=\"head\"><h1>Accounts</h1><span class=\"muted\">{accounts} account{} · {rooms} room{} · e-mail addresses blurred: double-click one to show it, or show all</span>{SHOW_ALL}</div>",
             if accounts == 1 { "" } else { "s" },
             if rooms == 1 { "" } else { "s" },
         );
