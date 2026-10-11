@@ -82,7 +82,7 @@ html { scroll-padding-top: var(--head-h); }
 .hid { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 code, pre { font-family: var(--mono); font-size: .9em; }
 
-.wrap { width: min(1080px, 100% - 40px); margin-inline: auto; }
+.wrap { width: min(1200px, 100% - 48px); margin-inline: auto; }
 .skip { position: absolute; z-index: 30; left: 12px; top: -60px; padding: 8px 14px; background: var(--surface); color: var(--fg); border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
 .skip:focus { top: 12px; }
 
@@ -123,69 +123,77 @@ code, pre { font-family: var(--mono); font-size: .9em; }
 .theme-btn:hover::after, .theme-btn:focus-visible::after { opacity: 1; }
 .theme-btn:focus-visible, .head nav a:focus-visible, .head .btn:focus-visible { outline-offset: 2px; border-radius: 10px; }
 
-/* ---- Trommi: the line, the way in, and the picture right under it ---- */
-.open { padding-block: clamp(28px, 4.4vw, 56px) 0; }
-.open.centre { text-align: center; }
-.open h1 { max-width: 16ch; margin-inline: auto; font-size: clamp(2.5rem, 7vw, 5rem); font-weight: 800; letter-spacing: -.035em; line-height: 1.02; }
+/* ---- Trommi: the words at the left, the picture at the right, both in the first view of a desktop; on a phone the
+   picture comes under the way in ---- */
+.hero { padding-top: clamp(20px, 3.5vw, 48px); }
+.hero h1 { font-size: clamp(2.6rem, 6.2vw, 4.6rem); font-weight: 800; letter-spacing: -.04em; line-height: 1; text-wrap: balance; }
 /* A word underlined by hand: the app's stroke under a greeting's last word . */
 .under { position: relative; display: inline-block; }
 .under svg { position: absolute; left: -1%; bottom: -.1em; width: 102%; height: .12em; overflow: visible; fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
 .under svg path { vector-effect: non-scaling-stroke; }
-.lede { max-width: 54ch; margin: 20px auto 0; color: var(--muted); font-size: clamp(1.08rem, 2vw, 1.28rem); line-height: 1.5; }
+.lede { max-width: 44ch; margin-top: 20px; color: var(--muted); font-size: clamp(1.08rem, 1.7vw, 1.25rem); line-height: 1.5; text-wrap: pretty; }
 .lede strong { color: var(--fg); font-weight: 500; }
 .acts { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 28px; }
-.centre .acts { justify-content: center; }
-.open-note { margin-top: 14px; color: var(--faint); font-size: .88rem; }
+.open-note { margin-top: 14px; color: var(--faint); font-size: .86rem; }
+.hero-shot img { width: 100%; }
+
+.hero-a .hero-in { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: center; gap: clamp(24px, 4vw, 56px); padding-top: clamp(8px, 3vw, 40px); }
+.hero-a h1 { font-size: clamp(2.6rem, 4.9vw, 4.3rem); }
+.hero-a .hero-shot { width: 118%; margin-right: -18%; }
+
+
+
+/* three short facts in one row under it, set off by one hairline */
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; margin-top: clamp(32px, 4.6vw, 56px); padding-top: 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: .97rem; line-height: 1.5; }
+.facts b { display: block; margin-bottom: 4px; color: var(--fg); font: 700 1.08rem/1.25 var(--display); letter-spacing: -.01em; }
 .gh-mark { display: inline-block; vertical-align: -3px; width: 18px; height: 18px; margin-right: 8px; fill: currentColor; }
 .btn { display: inline-block; padding: 13px 22px; background: var(--cta); color: var(--cta-fg); border-radius: var(--r-md); font-weight: 600; text-decoration: none; box-shadow: var(--shadow-sm); transition: background 140ms var(--ease-out); }
 .btn:hover { background: var(--cta-hover); color: var(--cta-fg); }
 .btn.quiet { background: var(--surface); color: var(--fg); box-shadow: inset 0 0 0 1.5px var(--line-strong); }
 .btn.quiet:hover { background: var(--sunken); color: var(--fg); }
 
-/* ---- sections ---- */
-main > section + section { padding-block: clamp(72px, 10vw, 128px) 0; }
-h2 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; }
-.intro { max-width: 58ch; margin-top: 14px; color: var(--muted); font-size: 1.08rem; }
+/* ---- sections: a big heading at the left, its line at the right, then the content; the same rhythm each time ---- */
+main > section + section { padding-top: clamp(80px, 11vw, 144px); }
+h2 { font-size: clamp(2.2rem, 5vw, 3.4rem); letter-spacing: -.04em; line-height: 1; }
+.sec-head { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: end; gap: 16px clamp(24px, 4vw, 56px); }
+.intro { max-width: 52ch; color: var(--muted); font-size: 1.1rem; line-height: 1.5; text-wrap: pretty; }
 .intro b { color: var(--fg); font-weight: 600; }
-.cmd { margin-top: 10px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-md); overflow-x: auto; font-size: .86rem; line-height: 1.5; white-space: pre; color: var(--fg); }
-.cmd i { color: var(--faint); font-style: normal; }
 
-/* the picture under the line: the laptop and the iPhone (its own transparent margin and shadow; width and height on
-   every <img> keep the page from jumping while it loads) */
-.hero-shot { max-width: 1100px; margin: clamp(20px, 3vw, 32px) auto 0; }
-.hero-shot img { width: 100%; }
-/* three short facts in one row under it */
-.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; max-width: 980px; margin: clamp(24px, 4vw, 40px) auto 0; text-align: left; color: var(--muted); font-size: .98rem; line-height: 1.5; }
-.facts b { display: block; margin-bottom: 4px; color: var(--fg); font: 700 1.1rem/1.25 var(--display); letter-spacing: -.01em; }
-
-/* ---- Apps: three columns, each a stage with the real screenshot, then its name, a line and its link ---- */
-.apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 2.4vw, 28px); margin-top: 36px; }
-.apps li { display: flex; flex-direction: column; }
-.stage { position: relative; aspect-ratio: 4 / 3.3; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; padding: 24px 0 0 24px; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--r-lg); }
-.win { width: 150%; flex: none; align-self: flex-start; margin-top: 8px; overflow: hidden; background: #fff; border: 1px solid var(--line-strong); border-radius: 12px 0 0 0; border-right: 0; border-bottom: 0; box-shadow: var(--shadow-lg); }
-.stage:has(.win) { justify-content: flex-start; align-items: flex-start; }
+/* ---- Apps: three cards, each a stage with the real screenshot, then its name, a line and its link ---- */
+.apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(14px, 2vw, 24px); margin-top: 40px; }
+.apps li { display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.stage { position: relative; aspect-ratio: 4 / 3; overflow: hidden; display: flex; align-items: flex-start; padding: 28px 0 0 28px; background: var(--sunken); border-bottom: 1px solid var(--line); }
+.win { width: 165%; flex: none; overflow: hidden; background: #fff; border: 1px solid var(--line-strong); border-right: 0; border-bottom: 0; border-radius: 12px 0 0 0; box-shadow: var(--shadow-lg); }
 .win img { width: 100%; }
 .win .bar { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; background: #f1f2ee; border-bottom: 1px solid #e1e5df; }
 .win .bar i { width: 9px; height: 9px; border-radius: 50%; background: #d4d8d2; }
 .win .bar span { margin-left: 14px; padding: 2px 40px 2px 10px; background: #fff; border-radius: 6px; color: #5c6862; font: 400 .7rem/1.4 var(--font); }
-.phone { width: 62%; flex: none; margin-left: -24px; padding: 7px 7px 0; background: var(--bezel); border-radius: 34px 34px 0 0; box-shadow: var(--shadow-lg); }
+.stage:has(.phone) { justify-content: center; align-items: flex-end; padding: 28px 0 0; }
+.phone { width: 44%; flex: none; padding: 7px 7px 0; background: var(--bezel); border-radius: 34px 34px 0 0; box-shadow: var(--shadow-lg); }
 .phone img { width: 100%; border-radius: 28px 28px 0 0; }
-.apps h3 { margin-top: 20px; font-size: 1.4rem; letter-spacing: -.015em; }
-.apps p { margin-top: 6px; color: var(--muted); font-size: .98rem; line-height: 1.5; }
-.go { margin-top: 12px; font-weight: 600; font-size: .97rem; text-decoration: none; }
+.apps h3 { display: flex; align-items: center; gap: 10px; margin: 22px 22px 0; font-size: 1.45rem; letter-spacing: -.02em; }
+.apps p { margin: 6px 22px 0; color: var(--muted); font-size: .97rem; line-height: 1.5; }
+.go { margin: auto 22px 22px; padding-top: 14px; font-weight: 600; font-size: .97rem; text-decoration: none; }
 .go::after { content: " \2192"; }
-.go.soon { color: var(--faint); font-weight: 500; }
-.go.soon::after { content: none; }
+.tag { padding: 3px 9px; background: var(--accent-soft); color: var(--accent); border-radius: 999px; font: 600 .72rem/1.3 var(--font); letter-spacing: .02em; }
 
-/* ---- Agents: three agents, then the three steps that connect one ---- */
-.agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
-.agents li { padding: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
-.agents h3 { font-size: 1.25rem; letter-spacing: -.01em; }
-.agents p { margin-top: 6px; color: var(--muted); font-size: .97rem; line-height: 1.5; }
-.steps { counter-reset: step; max-width: 760px; margin-top: 40px; }
-.steps li { position: relative; counter-increment: step; padding: 0 0 26px 48px; color: var(--muted); }
-.steps li::before { content: counter(step); position: absolute; left: 0; top: -2px; width: 30px; height: 30px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); border-radius: 50%; font: 700 .95rem/1 var(--display); }
-.steps b { color: var(--fg); font-weight: 600; }
+/* ---- Agents: the three agents at the left, a terminal with the three steps at the right ---- */
+.agents-in { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(24px, 4vw, 56px); align-items: start; margin-top: 40px; }
+.agents li { padding: 18px 0; border-top: 1px solid var(--line); }
+.agents li:last-child { border-bottom: 1px solid var(--line); }
+.agents h3 { font-size: 1.3rem; letter-spacing: -.015em; }
+.agents p { margin-top: 4px; color: var(--muted); font-size: .97rem; line-height: 1.5; }
+.term { overflow: hidden; background: #121a16; color: #dfe7e2; border: 1px solid #26312b; border-radius: var(--r-lg); box-shadow: var(--shadow-lg); }
+.term-bar { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; background: #19221e; border-bottom: 1px solid #26312b; }
+.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: #34413a; }
+.term-bar span { margin-left: auto; margin-right: auto; padding-right: 48px; color: #8b9a92; font: 500 .78rem/1 var(--font); }
+.term-body { padding: 18px 20px 4px; font: 400 .8rem/1.6 var(--mono); }
+.term-body li + li { margin-top: 16px; }
+.term .c { color: #7f9188; }
+.term pre { margin: 4px 0 0; overflow-x: auto; color: #f2f6f3; font: inherit; white-space: pre; }
+.term .p { color: #6fd0b5; user-select: none; }
+.term pre i { color: #8b9a92; font-style: normal; }
+.term-note { padding: 6px 20px 18px; color: #8b9a92; font-size: .86rem; }
 
 /* ---- the foot: the name and its line, then one row of links ---- */
 .foot { margin-top: clamp(72px, 11vw, 130px); border-top: 1px solid var(--line-strong); color: var(--muted); font-size: .92rem; }
@@ -213,9 +221,11 @@ h2 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; }
 
 /* ---- narrow windows ---- */
 @media (max-width: 960px) {
+  .hero-a .hero-in { grid-template-columns: 1fr; min-height: 0; }
+  .hero-a .hero-shot { width: 100%; margin-right: 0; }
   .apps { grid-template-columns: 1fr; max-width: 560px; }
-  .agents, .facts { grid-template-columns: 1fr; gap: 12px; }
-  .facts { max-width: 560px; gap: 18px; }
+  .sec-head, .agents-in { grid-template-columns: 1fr; }
+  .facts { grid-template-columns: 1fr; gap: 18px; }
   .lines > div { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
@@ -231,10 +241,11 @@ h2 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; }
   .head .btn { padding: 0 13px; font-size: .9rem; }
   .foot-brand { flex-basis: 100%; }
   .acts .btn { flex: 1 1 auto; text-align: center; }
-  .cmd { font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .steps li { padding-left: 42px; }
   .open-note { font-size: .82rem; }
   .hero-shot { margin-inline: -10px; }
+  .hero-a .hero-shot { width: auto; margin-right: -10px; }
+  .term-body { font-size: .8rem; padding-inline: 16px; }
+  .term pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 }
 /* the narrowest phones: the way in says "Open" */
 @media (max-width: 400px) {
