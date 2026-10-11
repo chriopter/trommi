@@ -1,5 +1,5 @@
-# One request to trommi-hub-ctl.socket: hub-ctl.sh reads one word from the connection, `start` or `stop`, does that
-# to trommi-hub.service and answers `ok` or `failed: ...`. This is the only Trommi code that runs as root.
+# One request to trommi-hub-ctl.socket: hub-ctl.sh reads one word from the connection (start, stop, dryrun, restore),
+# does that to the hub's fixed units and answers on one line. This is the only Trommi code that runs as root.
 [Unit]
 Description=Trommi hub start/stop helper (one request)
 CollectMode=inactive-or-failed
@@ -9,8 +9,8 @@ ExecStart=/bin/sh /usr/local/lib/trommi/hub-ctl.sh
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal
-# a caller that says nothing does not keep it for long
-RuntimeMaxSec=170
+# a caller that says nothing does not keep it for long; a dry run takes at most 420 s (its unit)
+RuntimeMaxSec=600
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

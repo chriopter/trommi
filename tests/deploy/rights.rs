@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use trommi_hub_updater::{HubCtl, Service};
+use trommi_hub_updater::{Check, HubCtl, Service};
 
 fn deploy_file(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -102,6 +102,8 @@ fn the_helper_starts_and_stops_the_hub_and_does_nothing_else() {
         b"daemon-reload\n",
         b"enable\n",
         b"start; touch /tmp/x\n",
+        b"dryrun trommi-hub.service\n",
+        b"restore now\n",
         b" start\n",
         b"START\n",
         b"$(reboot)\n",
@@ -110,7 +112,7 @@ fn the_helper_starts_and_stops_the_hub_and_does_nothing_else() {
     ] {
         let answer = helper(&path, request);
         assert!(
-            answer.starts_with("failed: only start and stop"),
+            answer.starts_with("failed: only start, stop, dryrun and restore"),
             "{request:?}: {answer}"
         );
     }
@@ -244,6 +246,36 @@ impl Hub {
             .success()
     }
 
+    fn note(&self, name: &str) -> String {
+        std::fs::read_to_string(self.dir.join("backups").join(name))
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    }
+
+    /// hub-restore.sh, as trommi-hub-restore.service runs it; its one line
+    fn restore(&self) -> String {
+        let status = Command::new("sh")
+            .arg(deploy_file("hub-restore.sh"))
+            .args([
+                self.dir.join("deploy"),
+                self.dir.join("data"),
+                self.dir.join("backups"),
+                self.dir.join("run/restore-result"),
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        let said = std::fs::read_to_string(self.dir.join("run/restore-result")).unwrap_or_default();
+        assert_eq!(status.success(), !said.starts_with("failed: "), "{said}");
+        said.trim().to_string()
+    }
+
+    fn data(&self, file: &str) -> String {
+        std::fs::read_to_string(self.dir.join("data").join(file)).unwrap_or_default()
+    }
+
     fn copies(&self) -> Vec<String> {
         let mut names: Vec<String> = std::fs::read_dir(self.dir.join("backups"))
             .unwrap()
@@ -291,10 +323,17 @@ fn the_database_is_copied_before_another_release_starts() {
             "{file} is the hub's alone"
         );
     }
-    assert!(
-        !copy.join("files").exists() && !copy.join("upload").exists(),
-        "not the files people uploaded"
+    // the files people uploaded: hard links, the very files, no second copy of their bytes
+    use std::os::unix::fs::MetadataExt;
+    assert_eq!(
+        std::fs::metadata(copy.join("files/upload")).unwrap().ino(),
+        std::fs::metadata(hub.dir.join("data/files/upload"))
+            .unwrap()
+            .ino()
     );
+    assert!(!copy.join("upload").exists());
+    // the copy hub-restore.sh may put back: this one, made right before hub-v5 first started
+    assert_eq!(hub.note("last-copy"), copies[0]);
 
     // the same release again (a restart, a reboot, a crash): no further copy
     assert!(hub.prestart());
@@ -461,4 +500,316 @@ fn neither_the_updater_nor_the_hub_is_root_and_each_writes_only_its_own() {
     )
     .unwrap();
     assert!(!build.contains("out/trommi-hub.service"));
+}
+
+// ---- the dry run and the restore, as the helper starts them ----
+
+/// A stand-in for `systemctl` for the two oneshot units: it writes the result file a unit would, and fails the
+/// start as a unit whose program ended with an error.
+fn fake_units(dir: &Path, dry_run: &str, dry_ok: bool, restore: &str, hub_active: bool) -> String {
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for unit in ["trommi-hub-dryrun", "trommi-hub-restore"] {
+        std::fs::create_dir_all(dir.join("run").join(unit)).unwrap();
+    }
+    let script = format!(
+        r#"#!/bin/sh
+echo "$*" >> '{asked}'
+case "$*" in
+  "is-active --quiet trommi-hub.service") exit {active} ;;
+  "start trommi-hub-dryrun.service") printf '%s\n' '{dry_run}' > '{run}/trommi-hub-dryrun/result'; exit {dry_code} ;;
+  "start trommi-hub-restore.service") printf '%s\n' '{restore}' > '{run}/trommi-hub-restore/result'
+    case '{restore}' in "failed: "*) exit 1 ;; esac ;;
+esac
+exit 0
+"#,
+        asked = dir.join("asked").display(),
+        run = dir.join("run").display(),
+        active = if hub_active { 0 } else { 3 },
+        dry_code = if dry_ok { 0 } else { 1 },
+    );
+    std::fs::write(bin.join("systemctl"), script).unwrap();
+    std::fs::set_permissions(
+        bin.join("systemctl"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    format!("{}:{}", bin.display(), std::env::var("PATH").unwrap())
+}
+
+fn helper_in(dir: &Path, path: &str, request: &[u8]) -> String {
+    let mut child = Command::new("sh")
+        .arg(deploy_file("hub-ctl.sh"))
+        .env("PATH", path)
+        .env("TROMMI_CTL_RUN", dir.join("run"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(request).unwrap();
+    let mut answer = String::new();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut answer)
+        .unwrap();
+    child.wait().unwrap();
+    answer.trim().to_string()
+}
+
+#[test]
+fn the_helper_runs_the_dry_run_and_the_restore_units_and_reports_what_they_found() {
+    let dir = scratch("ctl-units");
+    let held = r#"{"commit":"abc","ok":true,"rows":3}"#;
+    let path = fake_units(&dir, held, true, "restored before-v6-000000000001", false);
+    assert_eq!(helper_in(&dir, &path, b"dryrun\n"), format!("ok {held}"));
+    assert_eq!(
+        helper_in(&dir, &path, b"restore\n"),
+        "ok restored before-v6-000000000001"
+    );
+    let asked = std::fs::read_to_string(dir.join("asked")).unwrap();
+    assert!(asked.contains("start trommi-hub-dryrun.service"));
+    assert!(asked.contains("start trommi-hub-restore.service"));
+
+    // a dry run that did not hold: its verdict is the reason
+    let dir = scratch("ctl-units-fail");
+    let failed = r#"{"detail":"database: the database has schema 4","ok":false}"#;
+    let path = fake_units(
+        &dir,
+        failed,
+        false,
+        "kept: hub-v6 has served requests: its data stays",
+        false,
+    );
+    assert_eq!(
+        helper_in(&dir, &path, b"dryrun\n"),
+        format!("failed: {failed}")
+    );
+    // a restore that declines is no failure: nothing changed
+    assert_eq!(
+        helper_in(&dir, &path, b"restore\n"),
+        "kept: hub-v6 has served requests: its data stays"
+    );
+
+    // never while the hub runs
+    let dir = scratch("ctl-units-running");
+    let path = fake_units(&dir, held, true, "restored x", true);
+    assert!(helper_in(&dir, &path, b"restore\n").starts_with("failed: the hub runs"));
+    assert!(!std::fs::read_to_string(dir.join("asked"))
+        .unwrap()
+        .contains("trommi-hub-restore"));
+
+    // the updater's client reads the four answers
+    let dir = scratch("ctl-units-client");
+    let socket = {
+        let socket = dir.join("ctl.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let path = fake_units(
+            &dir,
+            held,
+            true,
+            "kept: no copy was made right before v6 started",
+            false,
+        );
+        let run = dir.join("run");
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let out = stream.try_clone().unwrap();
+                let _ = Command::new("sh")
+                    .arg(deploy_file("hub-ctl.sh"))
+                    .env("PATH", &path)
+                    .env("TROMMI_CTL_RUN", &run)
+                    .stdin(Stdio::from(std::os::fd::OwnedFd::from(stream)))
+                    .stdout(Stdio::from(std::os::fd::OwnedFd::from(out)))
+                    .status();
+            }
+        });
+        socket
+    };
+    let ctl = HubCtl { socket };
+    assert_eq!(ctl.dry_run(), Check::Done(held.to_string()));
+    assert_eq!(
+        ctl.restore(),
+        Check::Declined("no copy was made right before v6 started".into())
+    );
+    // a helper installed before these words: the step is declined, not failed
+    let old = scratch("ctl-old");
+    let socket = old.join("ctl.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut word = String::new();
+            let _ = std::io::BufRead::read_line(&mut std::io::BufReader::new(&stream), &mut word);
+            let _ = stream.write_all(b"failed: only start and stop are taken\n");
+        }
+    });
+    assert!(matches!(HubCtl { socket }.dry_run(), Check::Declined(_)));
+}
+
+#[test]
+fn the_data_goes_back_to_the_copy_only_before_the_release_served() {
+    let hub = Hub::new("restore");
+    hub.current("releases/v5");
+    assert!(hub.prestart());
+    // v6 starts: copy before it; then it migrates the database, makes a key, adds an upload
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    hub.current("releases/v6");
+    assert!(hub.prestart());
+    let copy = hub.note("last-copy");
+    assert!(copy.starts_with("before-v6-"), "{copy}");
+    std::fs::write(hub.dir.join("data/hub.db"), "migrated by v6").unwrap();
+    std::fs::write(hub.dir.join("data/new.key"), "v6 key").unwrap();
+    std::fs::write(hub.dir.join("data/files/second"), "a file of v6").unwrap();
+
+    let said = hub.restore();
+    assert!(
+        said.starts_with(&format!("restored {copy} with the uploaded files")),
+        "{said}"
+    );
+    assert_eq!(hub.data("hub.db"), "database");
+    assert_eq!(hub.data("hub.db-wal"), "wal");
+    assert_eq!(hub.data("vapid.key"), "key");
+    assert!(!hub.dir.join("data/new.key").exists());
+    assert_eq!(hub.data("files/upload"), "a file");
+    assert!(!hub.dir.join("data/files/second").exists());
+    assert!(!hub.dir.join("data/.restore.part").exists());
+    // what v6 left is aside, not gone
+    let aside: Vec<String> = std::fs::read_dir(hub.dir.join("backups"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .filter(|n| n.starts_with("after-v6-"))
+        .collect();
+    assert_eq!(aside.len(), 1);
+    let aside = hub.dir.join("backups").join(&aside[0]);
+    assert_eq!(
+        std::fs::read_to_string(aside.join("hub.db")).unwrap(),
+        "migrated by v6"
+    );
+    assert_eq!(
+        std::fs::read_to_string(aside.join("files/second")).unwrap(),
+        "a file of v6"
+    );
+    // the copy is kept as it was (its files are its own links), and it is used once only
+    assert_eq!(
+        std::fs::read_to_string(hub.dir.join("backups").join(&copy).join("hub.db")).unwrap(),
+        "database"
+    );
+    assert!(hub
+        .dir
+        .join("backups")
+        .join(&copy)
+        .join("files/upload")
+        .exists());
+    assert_eq!(hub.note("last-copy"), "");
+    assert!(hub.restore().starts_with("kept: no copy"));
+    // v5 comes back (a rollback): it starts, no copy
+    hub.current("releases/v5");
+    assert!(hub.prestart());
+
+    // a release that served: its data stays
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    hub.current("releases/v7");
+    assert!(hub.prestart());
+    assert!(
+        !hub.dir.join("data/hub.served").exists(),
+        "a newer release begins unmarked"
+    );
+    std::fs::write(hub.dir.join("data/hub.db"), "written by v7").unwrap();
+    std::fs::write(hub.dir.join("data/hub.served"), "").unwrap();
+    let said = hub.restore();
+    assert!(
+        said.starts_with("kept: ") && said.contains("has served requests"),
+        "{said}"
+    );
+    assert_eq!(hub.data("hub.db"), "written by v7");
+
+    // the copy of another release, or a link that names none: kept
+    hub.current("releases/v8");
+    assert!(hub.restore().starts_with("kept: "));
+    hub.current("../../etc");
+    assert!(hub.restore().starts_with("kept: "));
+    assert_eq!(hub.data("hub.db"), "written by v7");
+}
+
+#[test]
+fn a_rollback_or_a_failed_copy_leaves_no_copy_to_put_back() {
+    let hub = Hub::new("nocopy");
+    hub.current("releases/v5");
+    assert!(hub.prestart());
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    hub.current("releases/v6");
+    assert!(hub.prestart());
+    assert!(hub.note("last-copy").starts_with("before-v6-"));
+    // back to v5: the copy before v6 is not one to put back under v5
+    hub.current("releases/v5");
+    assert!(hub.prestart());
+    assert_eq!(hub.note("last-copy"), "");
+    assert!(hub.restore().starts_with("kept: "));
+    // v6 again, but no copy can be made: the second start goes without one, and nothing older is put back
+    std::fs::set_permissions(
+        hub.dir.join("backups"),
+        std::fs::Permissions::from_mode(0o500),
+    )
+    .unwrap();
+    if std::fs::write(hub.dir.join("backups/probe"), b"").is_ok() {
+        return; // run as root
+    }
+    hub.current("releases/v6");
+    assert!(!hub.prestart());
+    assert!(hub.prestart());
+    std::fs::set_permissions(
+        hub.dir.join("backups"),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    std::fs::write(hub.dir.join("data/hub.db"), "migrated by v6").unwrap();
+    std::fs::create_dir_all(hub.dir.join("run")).unwrap();
+    assert!(hub.restore().starts_with("kept: "));
+    assert_eq!(hub.data("hub.db"), "migrated by v6");
+}
+
+#[test]
+fn the_dry_run_and_the_restore_run_as_the_hub_and_the_dry_run_has_no_network_and_no_write() {
+    let dry = unit("trommi-hub-dryrun.service");
+    assert_eq!(values(&dry, "User"), ["trommi"]);
+    assert_eq!(values(&dry, "PrivateNetwork"), ["yes"]);
+    assert!(
+        values(&dry, "ReadWritePaths").is_empty(),
+        "the live data only to read"
+    );
+    assert_eq!(values(&dry, "ProtectSystem"), ["strict"]);
+    assert!(values(&dry, "EnvironmentFile")
+        .iter()
+        .all(|f| !f.contains("secrets")));
+    assert!(values(&dry, "ExecStart")[0].contains("/srv/trommi/deploy/candidate"));
+    let restore = unit("trommi-hub-restore.service");
+    assert_eq!(values(&restore, "User"), ["trommi"]);
+    assert_eq!(
+        values(&restore, "ReadWritePaths"),
+        ["/srv/trommi/data /srv/trommi/backups"]
+    );
+    for lines in [&dry, &restore] {
+        assert_eq!(values(lines, "NoNewPrivileges"), ["yes"]);
+        assert_eq!(values(lines, "CapabilityBoundingSet"), [""]);
+        assert_eq!(values(lines, "Type"), ["oneshot"]);
+        for key in ["ExecStart", "ExecStartPre"] {
+            for value in values(lines, key) {
+                assert!(
+                    !value.trim_start_matches('-').starts_with(['+', '!']),
+                    "{key}={value}"
+                );
+            }
+        }
+    }
+    // install.sh puts both in place with their scripts
+    let install = std::fs::read_to_string(deploy_file("install.sh")).unwrap();
+    for name in [
+        "trommi-hub-dryrun.service",
+        "trommi-hub-restore.service",
+        "hub-dryrun.sh",
+        "hub-restore.sh",
+    ] {
+        assert!(install.matches(name).count() >= 2, "{name}");
+    }
 }

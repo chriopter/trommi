@@ -22,7 +22,8 @@
 //! the hub only by asking a small helper for exactly that (`HubCtl`). The hub's unit is fixed on the server and
 //! runs `current/trommi-hub` as the hub's own user, so what a release can do is what the hub can do. The hub's
 //! data is not the updater's to read: the copy of the database before another release starts is made by the hub's
-//! unit (`hub/deploy/hub-prestart.sh`).
+//! unit (`hub/deploy/hub-prestart.sh`), and the dry run on a copy of it and the restore of that copy are fixed units
+//! that run as the hub's user, which the updater asks for through the same helper (`Service::dry_run`, `restore`).
 //!
 //! The pinned public key and the configuration live in `/etc/trommi` (root's) and never come from a release.
 
@@ -80,6 +81,15 @@ pub struct Manifest {
     /// what each program was built from; releases without it are decided by the programs' bytes (see `changes`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inputs: Option<Inputs>,
+    /// The hub's data epoch (`hub/data-epoch`, 0 when not named): raised by one with a migration that an earlier
+    /// hub cannot run on. From a release to one with a higher epoch the program is never put back over data the
+    /// new hub has served (see `put_back`); before its first request the data goes back with it.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub data_epoch: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// `"inputs": {"hub": "<sha256>", "updater": "<sha256>"}`: per program, a SHA-256 over everything its build reads
@@ -261,10 +271,32 @@ pub struct Config {
     pub lock_wait: Duration,
 }
 
-/// Starting and stopping the hub: all the updater may ask of the machine.
+/// What a step the updater asks of the machine came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Check {
+    /// done; what it found
+    Done(String),
+    /// not done and nothing changed; why
+    Declined(String),
+    /// it went wrong; why
+    Failed(String),
+}
+
+/// Starting and stopping the hub, trying a release on a copy of the data, putting the data back: all the updater
+/// may ask of the machine.
 pub trait Service: Send + Sync {
     fn stop(&self) -> Result<(), String>;
     fn start(&self) -> Result<(), String>;
+    /// The hub of the release behind the link `candidate`, started on a copy of the live data without network and
+    /// checked (hub/deploy/hub-dryrun.sh). Declined where the server's helper does not offer it.
+    fn dry_run(&self) -> Check {
+        Check::Declined("this server offers no dry run".into())
+    }
+    /// While the hub stands: its data put back to the copy made right before the release in place first started,
+    /// only if that release has served no request (hub/deploy/hub-restore.sh decides). Declined otherwise.
+    fn restore(&self) -> Check {
+        Check::Declined("this server offers no restore".into())
+    }
 }
 
 /// Runs a command and waits no longer than `limit` for it.
@@ -313,14 +345,12 @@ pub struct HubCtl {
 }
 
 impl HubCtl {
-    fn ask(&self, verb: &str) -> Result<(), String> {
+    /// One word to the helper, its one line back.
+    fn said(&self, verb: &str, limit: Duration) -> Result<String, String> {
         use std::io::Read;
         let fail = |e: std::io::Error| format!("hub helper ({verb}): {e}");
         let mut stream = std::os::unix::net::UnixStream::connect(&self.socket).map_err(fail)?;
-        // systemd gives a unit 90 s to start and the hub 30 s to stop; the helper answers within that
-        stream
-            .set_read_timeout(Some(Duration::from_secs(150)))
-            .map_err(fail)?;
+        stream.set_read_timeout(Some(limit)).map_err(fail)?;
         stream
             .write_all(format!("{verb}\n").as_bytes())
             .map_err(fail)?;
@@ -331,9 +361,37 @@ impl HubCtl {
             .read_to_string(&mut answer)
             .map_err(fail)?;
         match answer.trim() {
-            "ok" => Ok(()),
             "" => Err(format!("hub helper ({verb}): no answer")),
+            said => Ok(said.to_string()),
+        }
+    }
+
+    fn ask(&self, verb: &str) -> Result<(), String> {
+        // systemd gives a unit 90 s to start and the hub 30 s to stop; the helper answers within that
+        match self.said(verb, Duration::from_secs(150))?.as_str() {
+            "ok" => Ok(()),
             other => Err(format!("hub helper ({verb}): {other}")),
+        }
+    }
+
+    /// `ok <what>`, `kept: <why>` or `failed: <why>`. A helper installed before these words answers
+    /// `failed: only start and stop are taken`: nothing was done, the server's fixed parts are older.
+    fn check(&self, verb: &str, limit: Duration) -> Check {
+        let said = match self.said(verb, limit) {
+            Ok(said) => said,
+            Err(e) => return Check::Failed(e),
+        };
+        if let Some(what) = said.strip_prefix("ok") {
+            Check::Done(what.trim().to_string())
+        } else if let Some(why) = said.strip_prefix("kept: ") {
+            Check::Declined(why.to_string())
+        } else if said.starts_with("failed: only start and stop") {
+            Check::Declined(
+                "the helper on this server is older and offers no such step (run hub/deploy/install.sh again)"
+                    .into(),
+            )
+        } else {
+            Check::Failed(said.strip_prefix("failed: ").unwrap_or(&said).to_string())
         }
     }
 }
@@ -345,6 +403,13 @@ impl Service for HubCtl {
     fn start(&self) -> Result<(), String> {
         self.ask("start")
     }
+    fn dry_run(&self) -> Check {
+        // the dry run's unit has 420 s (a large copy, 60 s for the hub to become well)
+        self.check("dryrun", Duration::from_secs(480))
+    }
+    fn restore(&self) -> Check {
+        self.check("restore", Duration::from_secs(330))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -353,6 +418,8 @@ pub struct Health {
     pub commit: Option<String>,
     pub seconds: u64,
     pub detail: String,
+    /// whether the hub said it had served a request (`/healthz` "served") at any answer of this wait
+    pub served: bool,
 }
 
 impl Health {
@@ -362,6 +429,24 @@ impl Health {
             commit: None,
             seconds: 0,
             detail,
+            served: false,
+        }
+    }
+}
+
+/// A step around the swap: the dry run before it (`passed` · `failed` · `skipped`), what became of the data after
+/// a new hub failed (`restored` · `kept` · `failed`).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Step {
+    pub result: &'static str,
+    pub detail: String,
+}
+
+impl Step {
+    fn new(result: &'static str, detail: impl Into<String>) -> Self {
+        Step {
+            result,
+            detail: detail.into(),
         }
     }
 }
@@ -381,8 +466,8 @@ pub struct UpdaterState {
 #[derive(Debug, Clone, Serialize)]
 pub struct Outcome {
     pub ok: bool,
-    /// deployed · unchanged · restarted · refused · bad-request · not-verified · fetch-failed · rolled-back ·
-    /// failed · busy
+    /// deployed · unchanged · restarted · refused · bad-request · not-verified · fetch-failed · dry-run-failed ·
+    /// rolled-back · failed · busy
     pub result: &'static str,
     pub tag: String,
     pub version: Option<u64>,
@@ -394,6 +479,10 @@ pub struct Outcome {
     pub health: Option<Health>,
     /// after a rollback: whether the release put back is well
     pub rollback_health: Option<Health>,
+    /// the new hub tried on a copy of the data before the swap
+    pub dry_run: Option<Step>,
+    /// after a new hub that did not become well: whether the data went back to the copy made before it started
+    pub data: Option<Step>,
     pub updater: UpdaterState,
     pub message: String,
 }
@@ -410,6 +499,8 @@ impl Outcome {
             running: None,
             health: None,
             rollback_health: None,
+            dry_run: None,
+            data: None,
             updater: UpdaterState::default(),
             message: message.into(),
         }
@@ -421,6 +512,7 @@ impl Outcome {
             "bad-request" => 400,
             "refused" => 409,
             "not-verified" => 422,
+            "dry-run-failed" => 424,
             "fetch-failed" => 502,
             "busy" => 503,
             _ => 500,
@@ -449,6 +541,10 @@ struct Journal {
     /// set once the new release was found not well: it is never taken after that, whatever it answers later
     #[serde(default)]
     rejected: bool,
+    /// the new release's data epoch is higher than the old one's: once it has served, the old program cannot run
+    /// on the data and is not put back
+    #[serde(default)]
+    breaking: bool,
 }
 
 pub fn log(event: &str, fields: Value) {
@@ -509,6 +605,15 @@ pub struct Updater {
     own_release: Option<String>,
     /// set once a deploy has put another updater in place: the process ends after it has answered
     replaced: std::sync::atomic::AtomicBool,
+}
+
+/// What `put_back` came to.
+struct Back {
+    /// of what runs afterwards
+    health: Health,
+    data: Step,
+    /// the new release stays in place (see `put_back`)
+    stayed: bool,
 }
 
 struct Running {
@@ -649,8 +754,12 @@ impl Updater {
         self.service(|s| s.start()).await
     }
 
-    /// One question to the hub: is it well, and which commit is it.
+    /// One question to the hub: is it well, which commit is it, and has it served a request.
     async fn ask(&self) -> Result<(bool, Option<String>), String> {
+        self.ask_served().await.map(|(ok, commit, _)| (ok, commit))
+    }
+
+    async fn ask_served(&self) -> Result<(bool, Option<String>, bool), String> {
         let answer = self
             .client
             .get(&self.cfg.health_url)
@@ -665,20 +774,30 @@ impl Updater {
         let value: Value =
             serde_json::from_slice(&body).map_err(|_| format!("status {status}, not JSON"))?;
         let commit = value["commit"].as_str().map(str::to_string);
-        Ok((status == 200 && value["ok"] == json!(true), commit))
+        Ok((
+            status == 200 && value["ok"] == json!(true),
+            commit,
+            value["served"] == json!(true),
+        ))
     }
 
     /// Asks until the hub is well and is the commit expected, or the time is up.
     async fn wait_healthy(&self, commit: Option<&str>) -> Health {
         let began = Instant::now();
+        let mut served = false;
         loop {
-            let last = match self.ask().await {
+            let answer = self.ask_served().await;
+            if let Ok((_, _, true)) = answer {
+                served = true;
+            }
+            let last = match answer.map(|(ok, got, _)| (ok, got)) {
                 Ok((true, got)) if commit.is_none() || got.as_deref() == commit => {
                     return Health {
                         ok: true,
                         commit: got,
                         seconds: began.elapsed().as_secs(),
                         detail: "well".into(),
+                        served,
                     };
                 }
                 Ok((true, got)) => {
@@ -698,6 +817,7 @@ impl Updater {
                     commit: last.0,
                     seconds: began.elapsed().as_secs(),
                     detail: last.1,
+                    served,
                 };
             }
             tokio::time::sleep(self.cfg.health_every).await;
@@ -1044,13 +1164,36 @@ impl Updater {
             }
         }
 
-        // from here on nothing older is taken, also when this release turns out not to be well
         let old = running.as_ref().map(|r| r.tag.clone());
+        // The new hub on a copy of the data first (no network, the live data only to read): a release whose
+        // migration or start fails there never touches what serves.
+        let dry = self.dry_run(tag).await;
+        outcome.dry_run = Some(dry.clone());
+        if dry.result == "failed" {
+            outcome.result = "dry-run-failed";
+            outcome.message = format!(
+                "dry run failed: {}; {}, nothing was changed",
+                dry.detail,
+                old.as_deref()
+                    .map_or("nothing ran before".to_string(), |o| format!(
+                        "{o} keeps running"
+                    ))
+            );
+            self.prune();
+            return outcome;
+        }
+
+        // from here on nothing older is taken, also when this release turns out not to be well
+        let old_epoch = running
+            .as_ref()
+            .and_then(|r| r.manifest.as_ref())
+            .map_or(0, |m| m.data_epoch);
         let mut journal = Journal {
             tag: tag.to_string(),
             old: old.clone(),
             old_previous: self.linked("previous"),
             rejected: false,
+            breaking: manifest.data_epoch > old_epoch,
         };
         let noted = (|| -> std::io::Result<()> {
             if version > state.high_water {
@@ -1101,25 +1244,51 @@ impl Updater {
             &serde_json::to_vec(&journal).expect("a journal"),
         );
         let why = health.detail.clone();
+        let served = health.served;
         outcome.health = Some(health);
         let old_commit = running
             .as_ref()
             .and_then(|r| r.manifest.as_ref())
             .map(|m| m.commit.clone());
-        let again = self.put_back(&journal, old_commit.as_deref()).await;
-        match (&old, again) {
-            (None, _) => {
+        let back = self.put_back(&journal, old_commit.as_deref(), served).await;
+        let data = match back.data.result {
+            "restored" => format!(
+                "data put back to the copy made before {tag} started ({})",
+                back.data.detail
+            ),
+            "failed" => format!("the data could NOT be put back ({})", back.data.detail),
+            _ => format!("data kept as it is ({})", back.data.detail),
+        };
+        outcome.data = Some(back.data.clone());
+        let again = back.health;
+        match (&old, back.stayed) {
+            (_, true) if back.data.result == "failed" => {
                 outcome.message = format!(
-                    "{tag} did not become well ({why}); nothing ran before it, the hub is stopped"
+                    "{tag} did not become well ({why}); {data}; the hub is left stopped, the updater tries again at its next start (trommi-hub-updater status)"
                 );
             }
-            (Some(old), again) => {
+            (_, true) => {
+                outcome.message = format!(
+                    "{tag} did not become well ({why}); {data}; its data epoch is newer than that of {}, which cannot run on this data and was NOT put back; {tag} was started again and is {}",
+                    old.as_deref().unwrap_or("the release before"),
+                    if again.ok { "well now".to_string() } else { format!("NOT well ({})", again.detail) }
+                );
+                outcome.rollback_health = Some(again);
+            }
+            (None, _) => {
+                outcome.message = format!(
+                    "{tag} did not become well ({why}); nothing ran before it, the hub is stopped; {data}"
+                );
+            }
+            (Some(old), false) => {
                 outcome.result = "rolled-back";
                 outcome.message = if again.ok {
-                    format!("{tag} did not become well ({why}); {old} was put back and is well")
+                    format!(
+                        "{tag} did not become well ({why}); {old} was put back and is well; {data}"
+                    )
                 } else {
                     format!(
-                        "{tag} did not become well ({why}); {old} was put back and is NOT well either ({})",
+                        "{tag} did not become well ({why}); {old} was put back and is NOT well ({}); {data}",
                         again.detail
                     )
                 };
@@ -1133,23 +1302,104 @@ impl Updater {
         outcome
     }
 
-    /// Puts the hub back to what the journal says ran before and starts it. The journal goes only when `current`
-    /// is back where it was; otherwise it stays, and the next start of the updater tries again.
-    async fn put_back(&self, journal: &Journal, commit: Option<&str>) -> Health {
+    /// The new hub on a copy of the data, before the swap (`Service::dry_run`, behind the link `candidate`).
+    async fn dry_run(&self, tag: &str) -> Step {
+        if let Err(e) = self.point("candidate", Some(tag)) {
+            return Step::new("failed", e);
+        }
+        let service = self.service.clone();
+        let found = tokio::task::spawn_blocking(move || service.dry_run())
+            .await
+            .unwrap_or_else(|e| Check::Failed(format!("dry run: {e}")));
+        let _ = self.point("candidate", None);
+        let step = match found {
+            Check::Done(d) => Step::new("passed", d),
+            Check::Declined(d) => Step::new("skipped", d),
+            Check::Failed(d) => Step::new("failed", d),
+        };
+        log(
+            "dry-run",
+            json!({ "tag": tag, "result": step.result, "detail": step.detail }),
+        );
+        step
+    }
+
+    /// While the hub stands: the data back to the copy made before the release in place started, when it has not
+    /// served (the helper decides from the hub's own mark; `served` is what the hub said, which spares the asking).
+    async fn restore(&self, served: bool) -> Step {
+        if served {
+            return Step::new(
+                "kept",
+                "the new hub had served requests: only the program goes back",
+            );
+        }
+        let service = self.service.clone();
+        let found = tokio::task::spawn_blocking(move || service.restore())
+            .await
+            .unwrap_or_else(|e| Check::Failed(format!("restore: {e}")));
+        let step = match found {
+            Check::Done(d) => Step::new("restored", d),
+            Check::Declined(d) => Step::new("kept", d),
+            Check::Failed(d) => Step::new("failed", d),
+        };
+        log(
+            "restore",
+            json!({ "result": step.result, "detail": step.detail }),
+        );
+        step
+    }
+
+    /// Puts the hub back to what the journal says ran before and starts it, with its data as it was before the new
+    /// release started when that release served no request. The journal goes only when this is settled; otherwise
+    /// it stays, and the next start of the updater tries again.
+    ///
+    /// Two cases leave the new release in place: the data could not be put back halfway (nothing is started on it,
+    /// the hub stands), and a release with a newer data epoch whose data stays (the old program cannot run on it:
+    /// the new one is started again, and the answer says so).
+    async fn put_back(&self, journal: &Journal, commit: Option<&str>, served: bool) -> Back {
         let _ = self.stop().await;
+        let data = self.restore(served).await;
+        if data.result == "failed" {
+            return Back {
+                health: Health::failed(format!(
+                    "the data could not be put back ({}); the hub is left stopped until the updater's next start",
+                    data.detail
+                )),
+                data,
+                stayed: true,
+            };
+        }
+        if journal.breaking && journal.old.is_some() && data.result != "restored" {
+            let _ = remove_whole(&self.cfg.root.join("deploy-journal.json"));
+            let commit = self.stored_manifest(&journal.tag).map(|m| m.commit);
+            log(
+                "rollback-refused",
+                json!({ "tag": journal.tag, "old": journal.old, "why": "newer data epoch, data kept" }),
+            );
+            return Back {
+                health: self.started_healthy(commit.as_deref()).await,
+                data,
+                stayed: true,
+            };
+        }
         let back = self.point("current", journal.old.as_deref());
         if back.is_ok() {
             // the link to the release before that is only a convenience: failing to restore it stops nothing
             let _ = self.point("previous", journal.old_previous.as_deref());
             let _ = remove_whole(&self.cfg.root.join("deploy-journal.json"));
         }
-        match (back, &journal.old) {
+        let health = match (back, &journal.old) {
             (Ok(()), None) => Health::failed("nothing ran before".into()),
             (Ok(()), Some(_)) => self.started_healthy(commit).await,
             // the link could not be put back (a full disk): `current` still names the release that was not taken,
             // whose start the hub's unit may have refused once for want of a copy; it is not started a second time.
             // The hub stands until the next start of the updater or the next deploy settles the note.
             (Err(e), _) => Health::failed(format!("{e}; the hub is left stopped")),
+        };
+        Back {
+            health,
+            data,
+            stayed: false,
         }
     }
 
@@ -1187,12 +1437,14 @@ impl Updater {
                 }
             }
         }
-        let health = self
-            .put_back(&journal, commit_of(&journal.old).as_deref())
+        // whether the cut-off release served is not known here: the helper reads the hub's own mark
+        let back = self
+            .put_back(&journal, commit_of(&journal.old).as_deref(), false)
             .await;
         log(
             "deploy-undone",
-            json!({ "cut_off": journal.tag, "back_to": journal.old, "health": health }),
+            json!({ "cut_off": journal.tag, "back_to": if back.stayed { None } else { journal.old.clone() },
+                    "health": back.health, "data": back.data }),
         );
         let settled = !path.exists();
         if settled {

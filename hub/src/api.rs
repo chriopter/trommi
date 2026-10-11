@@ -251,9 +251,12 @@ async fn respond(app: Arc<App>, req: Request<Incoming>, conn: Conn) -> Answer {
             .is_ok();
         return http::json(
             if ok { 200 } else { 503 },
-            &json!({ "ok": ok, "commit": app.cfg.commit, "protocol_version": 1 }),
+            &json!({ "ok": ok, "commit": app.cfg.commit, "protocol_version": 1, "served": app.served() }),
         );
     }
+    // from here on a request may change the data: the updater no longer puts it back to the copy made before this
+    // release started (hub/deploy/README.md, "When a new hub fails")
+    app.mark_served();
     if segs.first() != Some(&"v1") {
         return http::refusal(&refuse("not-found", "every route is under /v1/"));
     }

@@ -284,6 +284,10 @@ name = "deploy_hub_settings"
 path = "deploy/hub_settings.rs"
 
 [[test]]
+name = "deploy_dry_run"
+path = "deploy/dry_run.rs"
+
+[[test]]
 name = "core_device_content"
 path = "core/device_content.rs"
 

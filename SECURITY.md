@@ -37,9 +37,15 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - CI never logs into the hub server and sends it no code, only "take release `v<N>`".
 - CI reaches the hub server over a private network (Tailscale) with a short-lived GitHub login, no stored key.
 - The hub server downloads and checks the release itself.
-- If the new hub is not healthy within 60 seconds, the previous release runs again.
+- Before the switch, the new hub is tried on a copy of the live data, without network; if that fails, nothing changes.
+- If the new hub is not healthy within 60 seconds, the previous release runs again. Its data (database, keys,
+  uploaded files) goes back to the copy made just before only if the new hub had not yet served a single request.
+- Every hub build checks that the release before still runs on data the new one migrated; a change that cannot
+  keep that is marked in the signed release, and then the program is never put back over data the new hub served.
+- A failed hub or web delivery opens a GitHub issue; the next good one closes it.
 - Hub and updater run as their own users (`trommi`, `trommi-updater`), neither with root rights.
-- Root runs only a tiny helper (`hub-ctl`) that starts or stops the hub when the updater asks; nothing else.
+- Root runs only a tiny helper (`hub-ctl`) that starts or stops the hub, or its dry run or data restore (two fixed
+  units that run as the hub's user), when the updater asks; nothing else.
 - The hub runs in a systemd sandbox and listens only on its own machine (`127.0.0.1`).
 - Public traffic reaches the hub only through a Cloudflare tunnel.
 - CI deploys the web app (app.trommi.com) and the website (trommi.com) to Cloudflare with a token from 1Password.
@@ -63,7 +69,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - In the browser, the app's code is loaded from Cloudflare (app.trommi.com) each time; whoever controls that
   delivery (our Cloudflare account or the deploy pipeline) could ship code that reads your keys. The hub cannot.
   The iOS app and the connector do not have this risk: they are installed signed releases.
-- Going back to the previous hub keeps the current database; the copy made before the update is not restored.
+- Going back to the previous hub after the new one served keeps the current data (by design: nothing anyone sent is
+  lost); the copy made before the update is only put back when the new hub served nothing.
 - Rulesets (signed commits, no force push, protected tags): being turned on.
 - iOS: account recovery and replacing the recovery code are tested only against a stand-in hub, not a real one.
 - Passkeys: built, but off, because they need the PRF extension, which some password managers lack.

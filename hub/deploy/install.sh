@@ -11,10 +11,10 @@
 #
 # What is installed here and only here (root's; no release can change it): the users `trommi` and `trommi-updater`,
 # the pinned release key and the settings in /etc/trommi, the units trommi-hub.service, trommi-hub-updater.service,
-# trommi-hub-ctl.socket and trommi-hub-ctl@.service, and the scripts hub-prestart.sh, updater-prestart.sh and
-# hub-ctl.sh in /usr/local/lib/trommi. What arrives by release afterwards: the hub and the updater, as programs
+# trommi-hub-ctl.socket, trommi-hub-ctl@.service, trommi-hub-dryrun.service and trommi-hub-restore.service, and the
+# scripts hub-prestart.sh, updater-prestart.sh, hub-ctl.sh, hub-dryrun.sh and hub-restore.sh in /usr/local/lib/trommi. What arrives by release afterwards: the hub and the updater, as programs
 # under /srv/trommi/deploy, which belongs to trommi-updater. Nothing of Trommi runs as root except hub-ctl.sh, which
-# starts or stops the hub's unit when the updater asks. A change to one of the fixed parts: run `install` again.
+# starts or stops the hub's unit (or its dry run, or its data restore) when the updater asks. A change to one of the fixed parts: run `install` again.
 #
 # `install` prints each step before it takes it and checks it after; it deletes nothing and can be run again at any
 # time. On a server whose updater still runs as root (installed before this) it converts in place: about a minute
@@ -388,12 +388,13 @@ as_updater mkdir -p "$DEPLOY/releases"
 [ "$(stat -c '%U' "$ROOT")" = root ] && [ "$(stat -c '%U' "$DEPLOY")" = trommi-updater ] && [ "$(stat -c '%U %a' "$ROOT/data")" = "trommi 700" ]
 ok "in place"
 
-step "What is installed once and belongs to root: the pinned release key, four units, three scripts, the command"
+step "What is installed once and belongs to root: the pinned release key, six units, five scripts, the command"
 install -m 0644 "$STAGE/public-key.pem" "$ETC/release-public-key.pem"
-install -m 0755 "$STAGE/updater-prestart.sh" "$STAGE/hub-prestart.sh" "$STAGE/hub-ctl.sh" "$LIB/"
+install -m 0755 "$STAGE/updater-prestart.sh" "$STAGE/hub-prestart.sh" "$STAGE/hub-ctl.sh" "$STAGE/hub-dryrun.sh" "$STAGE/hub-restore.sh" "$LIB/"
 # until now a link into the release
 rm -f "${UNITS:?}/trommi-hub.service"
-install -m 0644 "$STAGE/trommi-hub.service" "$STAGE/trommi-hub-updater.service" "$STAGE/trommi-hub-ctl.socket" "$STAGE/trommi-hub-ctl@.service" "$UNITS/"
+install -m 0644 "$STAGE/trommi-hub.service" "$STAGE/trommi-hub-updater.service" "$STAGE/trommi-hub-ctl.socket" "$STAGE/trommi-hub-ctl@.service" \
+  "$STAGE/trommi-hub-dryrun.service" "$STAGE/trommi-hub-restore.service" "$UNITS/"
 install -m 0755 "$STAGE/command" /usr/local/bin/trommi-hub-updater
 cmp -s "$STAGE/public-key.pem" "$ETC/release-public-key.pem"
 ok "installed"
@@ -622,7 +623,8 @@ print(max(tags, key=lambda t: int(t[1:])) if tags else "")') || die "GitHub coul
   fetch_release "$stage" "$tag"
   cp "$REPO/release/public-key.pem" "$HERE"/trommi-hub.service "$HERE"/trommi-hub-updater.service \
     "$HERE"/trommi-hub-ctl.socket "$HERE/trommi-hub-ctl@.service" "$HERE"/updater-prestart.sh "$HERE"/hub-prestart.sh \
-    "$HERE"/hub-ctl.sh "$stage/"
+    "$HERE"/hub-ctl.sh "$HERE"/hub-dryrun.sh "$HERE"/hub-restore.sh "$HERE"/trommi-hub-dryrun.service \
+    "$HERE"/trommi-hub-restore.service "$stage/"
   remote_command > "$stage/command"
   { printf 'TARGET=%q\nREPOSITORY=%q\n' "$TARGET" "$REPOSITORY"; remote_install; } > "$stage/install-remote.sh"
   (cd "$stage" && sha256sum -- * > SHA256SUMS)

@@ -49,6 +49,9 @@ pub struct Config {
     pub admitted: usize,
     pub admitted_per_address: usize,
     pub quiet: bool,
+    /// `HUB_DRY_RUN=1`: a trial of a new release on a copy of the data (`trommi-hub dry-run`): no push leaves,
+    /// no periodic job runs, no admin page
+    pub dry_run: bool,
 
     pub json_limit: usize,
     pub commit_limit: usize,
@@ -218,6 +221,7 @@ impl Config {
                 ])
             });
         let port = number(env, "HUB_PORT", 8790u16);
+        let dry_run = env.get("HUB_DRY_RUN").is_some_and(|v| v == "1");
         Config {
             host: text("HUB_HOST", "0.0.0.0"),
             port,
@@ -246,6 +250,7 @@ impl Config {
             admin_host: text("HUB_ADMIN_HOST", "127.0.0.1"),
             test_control: env.get("HUB_TEST_CONTROL").is_some_and(|v| v == "1"),
             quiet: env.get("HUB_QUIET").is_some_and(|v| v == "1"),
+            dry_run,
             test_heavy_ms: number(env, "HUB_TEST_HEAVY_MS", 0),
             heavy_workers: number(
                 env,
@@ -316,7 +321,7 @@ impl Config {
 
             push_subject: text("HUB_WEB_PUSH_SUBJECT", "https://trommi.com"),
             push_hosts: list(env, "HUB_PUSH_HOSTS"),
-            apns_key_pem,
+            apns_key_pem: apns_key_pem.filter(|_| !dry_run),
             apns_key_id: optional("APPLE_APNS_KEY_ID"),
             apns_team_id: optional("APPLE_TEAM_ID"),
             apns_topics: list(env, "APPLE_APNS_TOPIC"),

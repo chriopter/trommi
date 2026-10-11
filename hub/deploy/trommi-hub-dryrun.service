@@ -1,0 +1,47 @@
+# A dry run of a new release before the updater swaps the hub: hub-dryrun.sh runs the release's hub (the link
+# /srv/trommi/deploy/candidate, set by the updater) on a copy of the data and checks it. Started only by
+# hub-ctl.sh (`dryrun`), never at boot. Installed once by hub/deploy/install.sh and NOT part of a release.
+#
+# It runs as the hub's user with less than the hub has: the live data only to read (ProtectSystem=strict, no
+# ReadWritePaths), its copy in its own cache folder, no network at all but its own loopback (PrivateNetwork), and
+# no push credentials (hub-secrets.env is not read; HUB_DRY_RUN=1 sends nothing either).
+[Unit]
+Description=Trommi hub dry run of a new release (on a copy of the data)
+
+[Service]
+Type=oneshot
+User=trommi
+Group=trommi
+EnvironmentFile=/etc/trommi/hub.env
+RuntimeDirectory=trommi-hub-dryrun
+RuntimeDirectoryPreserve=yes
+CacheDirectory=trommi-hub-dryrun
+# what an earlier run found never passes for this one's
+ExecStartPre=/bin/rm -f /run/trommi-hub-dryrun/result
+ExecStart=/bin/sh /usr/local/lib/trommi/hub-dryrun.sh /srv/trommi/deploy/candidate /srv/trommi/data /var/cache/trommi-hub-dryrun /run/trommi-hub-dryrun/result 60
+# copying a large database and 60 s for the hub to become well; hub-ctl.sh and the updater wait longer than this
+TimeoutStartSec=420
+LimitNOFILE=65536
+UMask=0077
+
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=

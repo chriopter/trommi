@@ -12,8 +12,8 @@ use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use trommi_hub_updater::{
-    public_key, serve, tailnet_allows, verify_manifest, Asset, Callers, Config, Manifest, Outcome,
-    Service, Updater, MANIFEST, SIGNATURE,
+    public_key, serve, tailnet_allows, verify_manifest, Asset, Callers, Check, Config, Manifest,
+    Outcome, Service, Updater, MANIFEST, SIGNATURE,
 };
 
 const TARGET: &str = "x86_64-unknown-linux-musl";
@@ -121,6 +121,7 @@ impl Make {
                 })
                 .collect(),
             inputs: None,
+            data_epoch: 0,
         };
         let mut manifest = serde_json::to_value(&manifest).unwrap();
         manifest.as_object_mut().unwrap().extend(self.extra.clone());
@@ -151,6 +152,16 @@ struct World {
     hub: Mutex<Option<(String, bool)>>,
     starts: AtomicUsize,
     stops: AtomicUsize,
+    /// what the hub's data holds, as a word: the stand-ins for its database and uploaded files
+    data: Mutex<String>,
+    /// the copy hub-prestart.sh made right before the release in place first started (its `last-copy`)
+    copy: Mutex<Option<String>>,
+    /// the version that started last (hub-prestart.sh's `last-release`)
+    last_started: Mutex<u64>,
+    /// the hub's mark that this data has served a request (`hub.served`)
+    served: Mutex<bool>,
+    dry_runs: AtomicUsize,
+    restores: AtomicUsize,
 }
 
 struct FakeSystemd {
@@ -158,7 +169,48 @@ struct FakeSystemd {
     root: PathBuf,
 }
 
+impl FakeSystemd {
+    fn release_file(&self, link: &str) -> Option<(u64, String)> {
+        let target = std::fs::read_link(self.root.join(link)).ok()?;
+        let version = parse_version(&target.file_name()?.to_string_lossy());
+        Some((
+            version,
+            std::fs::read_to_string(self.root.join(link).join("trommi-hub")).ok()?,
+        ))
+    }
+}
+
 impl Service for FakeSystemd {
+    /// hub-dryrun.sh: the release behind `candidate` on a copy; a hub file with `dryrun=fail` fails its migration.
+    /// The live data is never touched.
+    fn dry_run(&self) -> Check {
+        self.world.dry_runs.fetch_add(1, Ordering::SeqCst);
+        let Some((version, text)) = self.release_file("candidate") else {
+            return Check::Failed("no candidate release to try".into());
+        };
+        if text.contains("dryrun=fail") {
+            return Check::Failed(format!(
+                "{{\"ok\":false,\"detail\":\"database: migration of v{version} failed\"}}"
+            ));
+        }
+        Check::Done(format!("{{\"ok\":true,\"rows\":3}} of v{version}"))
+    }
+    /// hub-restore.sh: only while the hub stands, only over data that has not served, only with a copy of the start
+    /// of the release in place
+    fn restore(&self) -> Check {
+        self.world.restores.fetch_add(1, Ordering::SeqCst);
+        if self.world.hub.lock().unwrap().is_some() {
+            return Check::Failed("the hub runs; it is stopped first".into());
+        }
+        if *self.world.served.lock().unwrap() {
+            return Check::Declined("the release has served requests: its data stays".into());
+        }
+        let Some(copy) = self.world.copy.lock().unwrap().take() else {
+            return Check::Declined("no copy was made right before this release started".into());
+        };
+        *self.world.data.lock().unwrap() = copy.clone();
+        Check::Done(format!("restored {copy} with the uploaded files"))
+    }
     fn stop(&self) -> Result<(), String> {
         self.world.stops.fetch_add(1, Ordering::SeqCst);
         *self.world.hub.lock().unwrap() = None;
@@ -179,6 +231,23 @@ impl Service for FakeSystemd {
             .find_map(|w| w.strip_prefix("commit="))
             .unwrap_or("")
             .to_string();
+        // hub-prestart.sh: a newer release gets a copy (database, keys, files) and a fresh mark; a rollback none
+        let version = self.release_file("current").map_or(0, |r| r.0);
+        let mut last = self.world.last_started.lock().unwrap();
+        if version > *last {
+            *self.world.copy.lock().unwrap() = Some(self.world.data.lock().unwrap().clone());
+            *self.world.served.lock().unwrap() = false;
+            // its start migrates the data
+            *self.world.data.lock().unwrap() = format!("migrated by v{version}");
+        } else if version < *last {
+            *self.world.copy.lock().unwrap() = None;
+        }
+        *last = version;
+        // a hub with `serves=true` is reached by clients at once: it marks its data and writes to it
+        if text.contains("serves=true") {
+            *self.world.served.lock().unwrap() = true;
+            *self.world.data.lock().unwrap() = format!("written by v{version}");
+        }
         *self.world.hub.lock().unwrap() = Some((commit, text.contains("well=true")));
         Ok(())
     }
@@ -287,9 +356,10 @@ impl Bench {
         let health = tiny_server(move |_| match hub.hub.lock().unwrap().clone() {
             Some((commit, well)) => (
                 if well { 200 } else { 503 },
-                serde_json::json!({ "ok": well, "commit": commit, "protocol_version": 1 })
-                    .to_string()
-                    .into_bytes(),
+                serde_json::json!({ "ok": well, "commit": commit, "protocol_version": 1,
+                                    "served": *hub.served.lock().unwrap() })
+                .to_string()
+                .into_bytes(),
             ),
             None => (502, b"down".to_vec()),
         })
@@ -1526,4 +1596,296 @@ fn a_manifest_written_and_signed_by_the_scripts_is_accepted() {
         .unwrap();
     assert!(!verify.status.success());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---- the dry run before the swap, and the data after a new hub that failed ----
+
+/// A stand-in hub binary: whether it becomes well, whether clients reach it at once (it then marks and writes its
+/// data), and whether its migration fails on a copy of the data.
+fn hub_doing(version: u64, well: bool, serves: bool, dry_run_fails: bool) -> Vec<u8> {
+    format!(
+        "commit={} well={well} serves={serves}{}\n",
+        commit_of(version),
+        if dry_run_fails { " dryrun=fail" } else { "" }
+    )
+    .into_bytes()
+}
+
+/// v5 runs; its data is "v5 data" (it writes nothing of its own here, so what a test finds is what v6 and the
+/// helper left).
+async fn five_runs(name: &str) -> (Bench, Arc<Updater>) {
+    let b = bench(name).await;
+    let mut five = make(5);
+    five.hub = hub_doing(5, true, false, false);
+    b.publish(five.release());
+    let updater = b.updater();
+    assert!(deploy(&updater, 5).await.ok);
+    *b.world.data.lock().unwrap() = "v5 data".into();
+    (b, updater)
+}
+
+fn data(b: &Bench) -> String {
+    b.world.data.lock().unwrap().clone()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_good_release_passes_its_dry_run_before_the_swap() {
+    let (b, updater) = five_runs("dry-good").await;
+    let mut six = make(6);
+    six.hub = hub_doing(6, true, true, false);
+    b.publish(six.release());
+    let outcome = deploy(&updater, 6).await;
+    assert!(outcome.ok, "{}", outcome.message);
+    let dry = outcome.dry_run.expect("a dry run");
+    assert_eq!(dry.result, "passed");
+    assert!(dry.detail.contains("of v6"), "{}", dry.detail);
+    assert_eq!(b.link("current").as_deref(), Some("hub-v6"));
+    // the link the dry run used is gone again
+    assert!(std::fs::symlink_metadata(b.root.join("candidate")).is_err());
+    assert!(outcome.health.unwrap().served);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_release_whose_migration_fails_in_the_dry_run_leaves_the_old_hub_untouched() {
+    let (b, updater) = five_runs("dry-fails").await;
+    let (starts, stops) = (
+        b.world.starts.load(Ordering::SeqCst),
+        b.world.stops.load(Ordering::SeqCst),
+    );
+    let mut six = make(6);
+    six.hub = hub_doing(6, true, true, true);
+    b.publish(six.release());
+    let outcome = deploy(&updater, 6).await;
+    assert!(!outcome.ok);
+    assert_eq!(outcome.result, "dry-run-failed", "{}", outcome.message);
+    assert_eq!(outcome.http_status(), 424);
+    assert!(
+        outcome.message.starts_with("dry run failed: ")
+            && outcome.message.contains("migration of v6 failed")
+            && outcome.message.contains("hub-v5 keeps running"),
+        "{}",
+        outcome.message
+    );
+    // nothing that serves was touched: not stopped, not started, same link, same data, nothing noted
+    assert_eq!(b.world.starts.load(Ordering::SeqCst), starts);
+    assert_eq!(b.world.stops.load(Ordering::SeqCst), stops);
+    assert_eq!(b.link("current").as_deref(), Some("hub-v5"));
+    assert_eq!(b.hub_commit(), Some(commit_of(5)));
+    assert_eq!(data(&b), "v5 data");
+    assert_eq!(updater.status().await["high_water"], 5);
+    assert!(!b.root.join("deploy-journal.json").exists());
+    assert!(std::fs::symlink_metadata(b.root.join("candidate")).is_err());
+    assert!(
+        !b.root.join("releases/hub-v6").exists(),
+        "the failed release is not kept"
+    );
+
+    // a later release that holds a fixed migration goes through
+    let mut seven = make(7);
+    seven.hub = hub_doing(7, true, true, false);
+    b.publish(seven.release());
+    assert!(deploy(&updater, 7).await.ok);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_whose_helper_offers_no_dry_run_still_deploys_and_says_so() {
+    let b = bench("dry-none").await;
+    for v in [5, 6] {
+        b.publish(make(v).release());
+    }
+    // a helper installed before the dry run: start and stop only (the trait's own answers)
+    let service = NoStart(FakeSystemd {
+        world: b.world.clone(),
+        root: b.root.clone(),
+    });
+    struct Old(NoStart);
+    impl Service for Old {
+        fn stop(&self) -> Result<(), String> {
+            self.0 .0.stop()
+        }
+        fn start(&self) -> Result<(), String> {
+            self.0 .0.start()
+        }
+    }
+    let updater = Updater::new(b.cfg.clone(), Arc::new(Old(service))).unwrap();
+    assert!(deploy(&updater, 5).await.ok);
+    let outcome = deploy(&updater, 6).await;
+    assert!(outcome.ok, "{}", outcome.message);
+    assert_eq!(outcome.dry_run.unwrap().result, "skipped");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_release_that_fails_before_it_served_gets_its_data_back_with_the_old_hub() {
+    let (b, updater) = five_runs("restore").await;
+    let mut six = make(6);
+    // passes the dry run, then does not become well on the real data, and no client reached it
+    six.hub = hub_doing(6, false, false, false);
+    b.publish(six.release());
+    let outcome = deploy(&updater, 6).await;
+    assert_eq!(outcome.result, "rolled-back", "{}", outcome.message);
+    assert!(!outcome.health.as_ref().unwrap().served);
+    let step = outcome.data.clone().expect("a word on the data");
+    assert_eq!(step.result, "restored", "{}", step.detail);
+    assert!(
+        outcome
+            .message
+            .contains("data put back to the copy made before hub-v6 started"),
+        "{}",
+        outcome.message
+    );
+    assert_eq!(data(&b), "v5 data");
+    assert_eq!(b.link("current").as_deref(), Some("hub-v5"));
+    assert_eq!(b.hub_commit(), Some(commit_of(5)));
+    assert!(outcome.rollback_health.unwrap().ok);
+    assert_eq!(b.world.restores.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_release_that_fails_after_it_served_has_only_its_program_put_back() {
+    let (b, updater) = five_runs("program-only").await;
+    let mut six = make(6);
+    six.hub = hub_doing(6, false, true, false);
+    b.publish(six.release());
+    let outcome = deploy(&updater, 6).await;
+    assert_eq!(outcome.result, "rolled-back", "{}", outcome.message);
+    assert!(outcome.health.as_ref().unwrap().served);
+    let step = outcome.data.clone().unwrap();
+    assert_eq!(step.result, "kept");
+    assert!(
+        outcome.message.contains("data kept as it is")
+            && outcome.message.contains("had served requests"),
+        "{}",
+        outcome.message
+    );
+    // what v6 wrote stays; v5 runs on it
+    assert_eq!(data(&b), "written by v6");
+    assert_eq!(b.link("current").as_deref(), Some("hub-v5"));
+    assert_eq!(b.hub_commit(), Some(commit_of(5)));
+    // the hub said it served: the helper was not even asked
+    assert_eq!(b.world.restores.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_helper_decides_from_the_hubs_own_mark_when_the_updater_did_not_see_it() {
+    let (b, updater) = five_runs("mark").await;
+    let mut six = make(6);
+    six.hub = hub_doing(6, false, false, false);
+    b.publish(six.release());
+    // a request reached v6 between two health questions and the hub fell over: only its mark knows
+    let world = b.world.clone();
+    let watch = tokio::spawn(async move {
+        for _ in 0..200 {
+            if world.hub.lock().unwrap().as_ref().map(|h| h.0.clone()) == Some(commit_of(6)) {
+                *world.served.lock().unwrap() = true;
+                *world.data.lock().unwrap() = "written by v6".into();
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    });
+    let outcome = deploy(&updater, 6).await;
+    watch.await.unwrap();
+    assert_eq!(outcome.result, "rolled-back", "{}", outcome.message);
+    assert_eq!(outcome.data.unwrap().result, "kept");
+    assert_eq!(data(&b), "written by v6");
+    assert_eq!(b.hub_commit(), Some(commit_of(5)));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn past_a_newer_data_epoch_the_program_is_not_put_back_once_it_served() {
+    let (b, updater) = five_runs("epoch").await;
+    let mut six = make(6);
+    six.hub = hub_doing(6, false, true, false);
+    six.extra.insert("data_epoch".into(), serde_json::json!(1));
+    b.publish(six.release());
+    let outcome = deploy(&updater, 6).await;
+    assert!(!outcome.ok);
+    assert_eq!(outcome.result, "failed", "{}", outcome.message);
+    assert!(
+        outcome.message.contains("data epoch is newer") && outcome.message.contains("NOT put back"),
+        "{}",
+        outcome.message
+    );
+    // v6 stays in place and was started again; nothing is left to settle
+    assert_eq!(b.link("current").as_deref(), Some("hub-v6"));
+    assert_eq!(b.hub_commit(), Some(commit_of(6)));
+    assert_eq!(data(&b), "written by v6");
+    assert!(!b.root.join("deploy-journal.json").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn past_a_newer_data_epoch_a_release_that_never_served_goes_back_with_its_data() {
+    let (b, updater) = five_runs("epoch-restore").await;
+    let mut six = make(6);
+    six.hub = hub_doing(6, false, false, false);
+    six.extra.insert("data_epoch".into(), serde_json::json!(1));
+    b.publish(six.release());
+    let outcome = deploy(&updater, 6).await;
+    assert_eq!(outcome.result, "rolled-back", "{}", outcome.message);
+    assert_eq!(outcome.data.unwrap().result, "restored");
+    assert_eq!(data(&b), "v5 data");
+    assert_eq!(b.link("current").as_deref(), Some("hub-v5"));
+}
+
+/// The helper fails halfway through putting the data back: nothing is started on it, and the next start of the
+/// updater tries again.
+struct HalfRestore(FakeSystemd, Arc<AtomicUsize>);
+impl Service for HalfRestore {
+    fn stop(&self) -> Result<(), String> {
+        self.0.stop()
+    }
+    fn start(&self) -> Result<(), String> {
+        self.0.start()
+    }
+    fn dry_run(&self) -> Check {
+        self.0.dry_run()
+    }
+    fn restore(&self) -> Check {
+        if self.1.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Check::Failed("the copy is only partly in place".into());
+        }
+        self.0.restore()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restore_that_fails_halfway_leaves_the_hub_stopped_until_the_next_start_settles_it() {
+    let b = bench("half").await;
+    let mut five = make(5);
+    five.hub = hub_doing(5, true, false, false);
+    b.publish(five.release());
+    let mut six = make(6);
+    six.hub = hub_doing(6, false, false, false);
+    b.publish(six.release());
+    let tries = Arc::new(AtomicUsize::new(0));
+    let service = || {
+        Arc::new(HalfRestore(
+            FakeSystemd {
+                world: b.world.clone(),
+                root: b.root.clone(),
+            },
+            tries.clone(),
+        ))
+    };
+    let updater = Updater::new(b.cfg.clone(), service()).unwrap();
+    assert!(deploy(&updater, 5).await.ok);
+    *b.world.data.lock().unwrap() = "v5 data".into();
+    let outcome = deploy(&updater, 6).await;
+    assert!(!outcome.ok);
+    assert_eq!(outcome.data.as_ref().unwrap().result, "failed");
+    assert!(
+        outcome.message.contains("could NOT be put back")
+            && outcome.message.contains("left stopped"),
+        "{}",
+        outcome.message
+    );
+    assert_eq!(b.hub_commit(), None, "nothing runs on half-restored data");
+    assert!(b.root.join("deploy-journal.json").exists());
+    // the next start of the updater: the restore goes through, v5 runs on its data
+    let again = Updater::new(b.cfg.clone(), service()).unwrap();
+    again.started().await;
+    assert!(!b.root.join("deploy-journal.json").exists());
+    assert_eq!(b.link("current").as_deref(), Some("hub-v5"));
+    assert_eq!(b.hub_commit(), Some(commit_of(5)));
+    assert_eq!(data(&b), "v5 data");
 }

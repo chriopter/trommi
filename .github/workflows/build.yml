@@ -163,7 +163,7 @@ jobs:
           part web 'app/web/|tests/web/|connector/tools\.json$|connector/prompt\.md$|demo/|\.node-version$|\.github/scripts/web_release\.mjs$|\.github/tools/wrangler/|\.github/workflows/deploy_web\.yml$' web
           part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connector/|tests/Cargo\.toml$|\.github/workflows/release\.yml$' connector
           part ios 'app/ios/|tests/ios/|\.github/scripts/ios_(testflight\.sh|archive\.sh|entitlements\.py)$|\.github/workflows/deploy_ios\.yml$' ios
-          part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/deploy_hub\.yml$' 'hub|updater'
+          part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/deploy_hub\.yml$|\.github/scripts/hub_compat\.sh$' 'hub|updater'
 
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
   # Every other part builds on the core, and none of their jobs runs these. It builds and delivers nothing.
@@ -288,6 +288,8 @@ jobs:
       actions: read
       id-token: write
       attestations: write
+      # deploy_web.yml's job report opens or closes the issue of a failed delivery
+      issues: write
     uses: ./.github/workflows/deploy_web.yml
     with:
       version: ${{ needs.changes.outputs.version }}
@@ -567,7 +569,7 @@ jobs:
           for f in "out/trommi-hub-$TARGET" "out/trommi-hub-updater-$TARGET"; do
             file "$f" | grep -Eq 'static(ally|-pie) linked' || { echo "::error::$f is not a static binary"; exit 1; }
           done
-          release/manifest.sh trommi-hub "$VERSION" "$GITHUB_SHA" out/* > "$RUNNER_TEMP/manifest.json"
+          DATA_EPOCH=$(tr -d ' \n' < hub/data-epoch) release/manifest.sh trommi-hub "$VERSION" "$GITHUB_SHA" out/* > "$RUNNER_TEMP/manifest.json"
           mv "$RUNNER_TEMP/manifest.json" out/manifest.json
           release/sign.sh files out/manifest.json
           cat out/manifest.json
@@ -588,6 +590,15 @@ jobs:
           [ -n "$got" ] || { echo "::error::the built hub did not answer"; exit 1; }
           echo "$got"
           [ "$(printf '%s' "$got" | jq -r .commit)" = "$GITHUB_SHA" ] || { echo "::error::the built hub does not report this commit"; exit 1; }
+      # Expand, then contract (hub/deploy/README.md, "Migrations"): the hub of the newest release must still start
+      # and answer on a database this build's hub has migrated, so that putting the program back after a failed
+      # deploy is always safe. A build that raises hub/data-epoch declares that it is not; the check is then skipped
+      # and the updater never puts the program back past it once the new hub has served.
+      - name: The hub before runs on data this one migrated
+        if: needs.changes.outputs.changed_hub != 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh .github/scripts/hub_compat.sh "out/trommi-hub-$TARGET" "$TARGET"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: needs.changes.outputs.changed_hub != 'false'
         with:
@@ -632,6 +643,9 @@ jobs:
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.release.outputs.published == 'true' && needs.changes.outputs.changed_hub == 'true' }}
     permissions:
       id-token: write
+      # deploy_hub.yml's job report opens or closes the issue of a failed delivery
+      contents: read
+      issues: write
     uses: ./.github/workflows/deploy_hub.yml
     with:
       tag: v${{ needs.changes.outputs.version }}

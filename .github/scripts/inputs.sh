@@ -17,7 +17,7 @@ paths() {
     connector) echo "connector/ install.sh .claude-plugin/ .node-version" ;;
     ios) echo "app/ios/ demo/ .github/scripts/ios_testflight.sh .github/scripts/ios_archive.sh .github/scripts/ios_entitlements.py .github/workflows/deploy_ios.yml" ;;
     # the hub program: the hub's crate (hub/updater and hub/deploy belong to the updater)
-    hub) echo "hub/Cargo.toml hub/src/ hub/build.rs hub/static/ .github/workflows/deploy_hub.yml" ;;
+    hub) echo "hub/Cargo.toml hub/src/ hub/build.rs hub/static/ hub/data-epoch .github/workflows/deploy_hub.yml" ;;
     updater) echo "hub/updater/ hub/deploy/ .github/workflows/deploy_hub.yml" ;;
   esac
 }
