@@ -28,6 +28,8 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - Desk: the headings "Off your mind" and "Artifacts" are links themselves, underlined with an arrow; no separate "Show more" (web and iPhone).
 - A helper's status line follows its question: filing a card turns the line to waiting on you with that card, and
   your answer turns it back to working with what you chose; no more lines that still wait after you answered.
+- Agents answer a request or question you write in chat with a card (an info card for results, a decision card for
+  choices) instead of only a chat reply.
 - iPhone: right after you log in, the Desk shows the open questions from the hub's list, before the history is read.
 - Off your mind: an answered or done card has a green tick on the right, a shredded one a shredder (and stays struck through), a withdrawn one a return arrow (web and iPhone).
 - Web: coming back to the tab after a while, or getting the network back, reconnects at once; new cards no longer
