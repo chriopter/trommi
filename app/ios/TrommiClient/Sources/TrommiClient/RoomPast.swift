@@ -104,10 +104,14 @@ extension Room {
     try applyGroups(Array(groups.values), &change)
     notePast { $0.passedOver = false; $0.closed = false }
     readingBack = true
+    readBackAgain = false
     defer { readingBack = false }
     // (a board shown is loaded anew from its snapshot by the core: what it holds now may lack what it showed)
     boardsReset &+= 1
     try await readChanges(&report, &change)
-    notePast { $0.readBack = false }
+    // (keys that came during this read, after it had passed what they open: read back once more)
+    let again = readBackAgain
+    notePast { $0.readBack = again }
+    if again { pastDue = true }
   }
 }

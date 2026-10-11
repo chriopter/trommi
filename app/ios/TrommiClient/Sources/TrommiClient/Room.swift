@@ -205,6 +205,8 @@ public struct Store {
   var readingBack = false
   /** Something came that the past waits for (a Welcome, keys): `tendPast` is due after what is being processed. */
   var pastDue = false
+  /** Keys came while the past was being read back (7.1.1): read back once more when that read ends. */
+  var readBackAgain = false
   /** Counts the times the board was built anew from the hub's changes (a read-back, after a Cut): a Scribble Board
    *  on screen loads itself again when it changed. */
   public internal(set) var boardsReset = 0
@@ -895,7 +897,7 @@ public struct Store {
       board.pushAlert(&change, code: "newer-version", message: Compat.UPDATE_MESSAGE, sender: hex(from))
     case .keys(_, let taken, _):
       // Keys of older epochs came (a handover): items that took their place without a body can be opened now.
-      if taken > 0, record.past?.closed == true { notePast { $0.readBack = true }; pastDue = true }
+      if taken > 0, record.past?.closed == true { notePast { $0.readBack = true }; pastDue = true; if readingBack { readBackAgain = true } }
     case .recoveryAuth, .recoveryAuthConflict, .dropped: break
     }
   }

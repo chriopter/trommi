@@ -37,7 +37,7 @@ pub struct KeyRequest {
 }
 
 /// When a group's missing keys were first seen in this run, and asked for.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Asked {
     since_ms: u64,
     asked_ms: Option<u64>,
@@ -107,7 +107,9 @@ impl<S: Storage> Device<S> {
         if !self.is_human() {
             return Ok(Vec::new());
         }
-        self.transact(|this, batch| {
+        // (a request that is not returned was not asked: the timers go back if nothing could be written)
+        let before = self.key_wants.asked.clone();
+        let due = self.transact(|this, batch| {
             let mut missing: BTreeMap<GroupId, Vec<u64>> = BTreeMap::new();
             let wanted: Vec<(GroupId, u64)> = this.memory.wanted.iter().copied().collect();
             for (group, epoch) in wanted {
@@ -146,7 +148,11 @@ impl<S: Storage> Device<S> {
                 }
             }
             Ok(due)
-        })
+        });
+        if due.is_err() {
+            self.key_wants.asked = before;
+        }
+        due
     }
 
     /// Answers a human device's key request (7.1.1): a key handover in the room group to `recipient`,
