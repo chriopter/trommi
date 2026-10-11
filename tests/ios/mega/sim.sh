@@ -47,7 +47,7 @@ launch() {   # launch <label> <until regex> [KEY=VALUE…]
   for _ in $(seq 1 600); do
     log=$(on_mac "cat \"\$(xcrun simctl get_app_container $udid com.trommi.ios data)/Documents/perf.log\" 2>/dev/null" || true)
     grep -Eq "$until" <<< "$log" && break
-    on_mac "xcrun simctl spawn $udid launchctl list 2>/dev/null | grep -q com.trommi.ios" || { echo "$label: THE APP IS NOT RUNNING (crashed?)"; break; }
+    on_mac "pgrep -f $udid.*Trommi.app/Trommi > /dev/null" || { echo "$label: THE APP IS NOT RUNNING (crashed?)"; break; }
     sleep 1
   done
   sleep 2
@@ -66,4 +66,4 @@ echo "${AWAY:-60 80 3}" > "$cmd"
 until [ -e "${cmd%.cmd}.done" ]; do sleep 2; done
 launch away 'MEGA sync 1 ended'
 launch logout 'MEGA alive after logout|THE APP' TROMMI_MEGA_LOGOUT=1
-on_mac "xcrun simctl spawn $udid launchctl list 2>/dev/null | grep -q com.trommi.ios" && echo "after logout: the app runs" || echo "after logout: THE APP IS GONE"
+on_mac "pgrep -f $udid.*Trommi.app/Trommi > /dev/null" && echo "after logout: the app runs" || echo "after logout: THE APP IS GONE"

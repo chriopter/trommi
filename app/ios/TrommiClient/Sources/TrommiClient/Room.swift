@@ -487,30 +487,60 @@ public struct Store {
    * view a moment longer).
    */
   func deskFirst() async -> UInt64? {
-    guard let desk = try? await noted({ try await hub.desk() }), desk["truncated"] as? Bool != true,
-          let at = Wire.uint(desk["change"]), at > cursor else { return nil }
+    guard let desk = try? await noted({ try await hub.desk() }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { return nil }
     var open = Set<String>()
     for kind in ["cards", "permission_requests"] {
       for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
     }
-    board.deskGate = open
-    catchingUp = (cursor, at)
+    deskSeen = (open, at)
     var change = Change()
-    for c in board.cards.values where c.objectState == "open" && !open.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
-    for p in board.permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) { change.permissions.insert(p.objectId); if let sid = p.sessionId { change.sessions.insert(sid) } }
+    if at > cursor {
+      board.deskGate = open
+      catchingUp = (cursor, at)
+      for c in board.cards.values where c.objectState == "open" && !open.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
+      for p in board.permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) { change.permissions.insert(p.objectId); if let sid = p.sessionId { change.sessions.insert(sid) } }
+    } else {
+      // (nothing to read: what is open here and not there is compared at once)
+      settleWithDesk(&change)
+    }
     change.stack = true
     board.project(change)
     emit(change)
-    return at
+    return at > cursor ? at : nil
   }
-  /** The catch-up reached the Desk's cursor of `deskFirst`: nothing is held back any more. */
+  /** The hub's Desk of the last `deskFirst`: its open cards and requests, and its cursor. */
+  var deskSeen: (open: Set<String>, at: UInt64)?
+  /** The catch-up reached the Desk's cursor of `deskFirst`: nothing is held back for being behind any more. */
   func caughtUp(_ change: inout Change) {
     catchingUp = nil
-    guard let gate = board.deskGate else { return }
-    board.deskGate = nil
-    for c in board.cards.values where c.objectState == "open" && !gate.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
-    for p in board.permissions.values where p.permissionState == "pending" && !gate.contains(p.objectId) { change.permissions.insert(p.objectId) }
+    if let gate = board.deskGate {
+      board.deskGate = nil
+      for c in board.cards.values where c.objectState == "open" && !gate.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
+      for p in board.permissions.values where p.permissionState == "pending" && !gate.contains(p.objectId) { change.permissions.insert(p.objectId) }
+    }
+    settleWithDesk(&change)
     change.stack = true
+  }
+  /**
+   * This device has passed the cursor of the hub's Desk: whatever it holds as open that the Desk did not list, and
+   * that has nothing newer than that cursor, the hub settled (answered, read, closed) and this device did not take
+   * (an envelope it could not open, a step it refused). It is held back (`Board.hubSettled`) instead of standing on
+   * the Desk as a question that waits, and said in the log.
+   */
+  func settleWithDesk(_ change: inout Change) {
+    guard let seen = deskSeen, cursor >= seen.at else { return }
+    let settled = board.settled(byDesk: seen.open, at: Int(seen.at))
+    if settled.keys.sorted() != board.hubSettled.keys.sorted() {
+      for id in Set(settled.keys).symmetricDifference(board.hubSettled.keys) {
+        if board.cards[id] != nil { change.cards.insert(id) } else { change.permissions.insert(id) }
+        if let sid = board.cards[id]?.sessionId ?? board.permissions[id]?.sessionId { change.sessions.insert(sid) }
+      }
+    }
+    board.hubSettled = settled
+    if !settled.isEmpty {
+      Spent.count("held back: settled at the hub", settled.count)
+      PerfLog.line("held back: \(settled.count) open here, settled at the hub: \(settled.keys.sorted().prefix(20).joined(separator: " "))")
+    }
   }
 
   /** The Welcomes waiting for this device (a session group it was added to): joined, if the room's inviter made them. */

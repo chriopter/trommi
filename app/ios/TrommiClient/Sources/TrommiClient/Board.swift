@@ -466,8 +466,32 @@ public final class Board {
    * Not stored: each start reads the Desk again.
    */
   public var deskGate: Set<String>?
-  /** Open here, but not on the hub's Desk while a catch-up is behind it (`deskGate`). */
-  public func heldBack(_ id: String, open: Bool) -> Bool { open && deskGate.map { !$0.contains(id) } ?? false }
+  /**
+   * Open here although the hub's Desk, read at a change this device had passed, did not list them (the hub settled
+   * them: answered, read, closed): by id, that change. Held back as well, as long as nothing newer of them came
+   * (a card answered again, reopened, revised). Set by Room.settleWithDesk at every catch-up; not stored.
+   */
+  public var hubSettled: [String: Int] = [:]
+  /** Open here, but settled at the hub: not on its Desk while a catch-up is behind it (`deskGate`), or not on it
+   *  after this device passed its cursor (`hubSettled`). */
+  public func heldBack(_ id: String, open: Bool) -> Bool {
+    guard open else { return false }
+    if let gate = deskGate, !gate.contains(id) { return true }
+    guard let at = hubSettled[id] else { return false }
+    return newest(id) <= at
+  }
+  /** What is open here and was not on the hub's Desk read at change `at`, with nothing newer than `at`: by id, `at`. */
+  public func settled(byDesk open: Set<String>, at: Int) -> [String: Int] {
+    var out = [String: Int]()
+    for c in cards.values where c.objectState == "open" && !open.contains(c.objectId) && newest(c.objectId) <= at { out[c.objectId] = at }
+    for p in permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) && newest(p.objectId) <= at { out[p.objectId] = at }
+    return out
+  }
+  /** The newest change of a card or permission request this board took: its version's, or an answer's. */
+  func newest(_ id: String) -> Int {
+    if let c = cards[id] { return max(c.envelopeNumber, c.answers.compactMap(\.envelopeNumber).max() ?? 0) }
+    return permissions[id].map { max($0.envelopeNumber, $0.verdict?.envelopeNumber ?? 0) } ?? 0
+  }
   /** Stands on the Desk: open, and not held back. */
   func onDesk(_ id: String) -> Bool { guard let c = cards[id], c.objectState == "open" else { return false }; return !heldBack(id, open: true) }
   public var openPermissionIds: [String] = []
