@@ -531,6 +531,121 @@ impl Human {
         }
     }
 
+    /// Self-join (spec/v1.md 12.4) as a human device does it: waits for an ask `join_ask/<nonce>` of the agent of
+    /// `voucher` (a main session group), answers it with an agent invite link in `join_link/<nonce>`, accepts the
+    /// Request that comes, and confirms it on its own once the ask names that Request's hash; then founds the new
+    /// session. Returns the device and its main session group, and the ask as it was answered.
+    pub async fn admit_self_join(&mut self, voucher: &GroupId) -> (Admitted, GroupId, Value) {
+        let session = hex(voucher.session_id().expect("a session group").as_bytes());
+        let mut nonce = None;
+        for _ in 0..600 {
+            self.sync().await;
+            nonce = self
+                .items
+                .iter()
+                .filter(|(s, _, payload)| *s == session && !payload["value"].is_null())
+                .filter_map(|(_, _, payload)| {
+                    payload["name"]
+                        .as_str()?
+                        .strip_prefix("join_ask/")
+                        .map(String::from)
+                })
+                .last();
+            if nonce.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let nonce = nonce.expect("an ask to let a session in");
+        let invite = self.invite(None).await;
+        self.set_register(
+            voucher,
+            &format!("join_link/{nonce}"),
+            Some(json!({ "link": invite.link, "invite_id": invite.id.to_base64url() })),
+        )
+        .await
+        .expect("the link is written");
+        let path = format!("/v1/invites/{}", invite.id.to_base64url());
+        let request = loop {
+            let served = self.hub.get(&path).await.expect("the invite");
+            if let Some(first) = served["requests"].as_array().and_then(|list| list.first()) {
+                break SignedRequest {
+                    request: unb64(first, "request").expect("request"),
+                    mac: unb64(first, "mac").expect("mac"),
+                    signature: unb64(first, "signature").expect("signature"),
+                };
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        };
+        let id = invite.id;
+        let accepted = self
+            .v(move |v| {
+                let accepted = v
+                    .device
+                    .invite_accept(&id, &request, now_ms())
+                    .expect("the Request is accepted");
+                v.commit().expect("stored");
+                accepted
+            })
+            .await;
+        self.hub
+            .put(
+                &format!("{path}/reveal"),
+                &json!({
+                    "reveal": b64(&accepted.signed_reveal.reveal),
+                    "signature": b64(&accepted.signed_reveal.signature),
+                }),
+            )
+            .await
+            .expect("the Reveal is published");
+        // No emoji: the ask must name this very Request.
+        let wanted = accepted.request_hash.to_base64url();
+        let mut ask = Value::Null;
+        for _ in 0..600 {
+            self.sync().await;
+            ask = self
+                .register(voucher, &format!("join_ask/{nonce}"))
+                .await
+                .unwrap_or(Value::Null);
+            if ask["request_hash"].as_str() == Some(wanted.as_str()) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert_eq!(
+            ask["request_hash"].as_str(),
+            Some(wanted.as_str()),
+            "the ask names the Request"
+        );
+        let (code, request_hash) = (accepted.code, accepted.request_hash);
+        self.v(move |v| {
+            v.device
+                .invite_confirm(&id, &code, &request_hash, true, now_ms())
+                .expect("confirmed")
+                .expect("the device is committed");
+            v.commit().expect("stored");
+        })
+        .await;
+        self.post_all().await.expect("the enrolment is taken");
+        let admitted = Admitted {
+            device: accepted.new_device,
+            code: accepted.code.numbers(),
+        };
+        let group = self.found_session(&admitted).await;
+        (admitted, group, ask)
+    }
+
+    /// Whether the agent of `voucher` asked to let a session in (`join_ask/…`), up to now.
+    pub fn asked_in(&self, voucher: &GroupId) -> bool {
+        let session = hex(voucher.session_id().expect("a session group").as_bytes());
+        self.items.iter().any(|(s, _, payload)| {
+            *s == session
+                && payload["name"]
+                    .as_str()
+                    .is_some_and(|n| n.starts_with("join_ask/"))
+        })
+    }
+
     /// Does what the device says is left for the devices it committed by link (`invite_steps`), until
     /// nothing is: founding a session, taking one over, handing the history over.
     pub async fn follow_invites(&mut self) {
