@@ -10,6 +10,10 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     the internal TestFlight group GROUP exists (every build), holds BUILD_ID, and
                                     EMAIL (a user of the team) is one of its testers
   asc.py notes BUILD_ID TEXT        TestFlight "What to Test" of that build (every localization; de-DE if none)
+  asc.py upload IPA VERSION BUILD [--dry-run]
+                                    uploads the signed .ipa through the Build Uploads API (no second Xcode export),
+                                    after checking it is BUNDLE_ID VERSION (BUILD); waits until the upload is COMPLETE.
+                                    --dry-run: the same checks, offline, and prints what would be sent; nothing is sent
   asc.py next-build                 the highest build number App Store Connect has for the app, plus one
   asc.py last-sha                   the commit of the newest build whose What to Test names one ("(abc1234)")
   asc.py export-code                the code of the app's APPROVED export compliance documentation (the newest if
@@ -17,7 +21,7 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
 
 Environment: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH (the .p8 file). Nothing here prints key material or tokens.
 """
-import base64, json, os, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import base64, hashlib, json, os, plistlib, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request, zipfile
 
 API = "https://api.appstoreconnect.apple.com"
 
@@ -215,6 +219,75 @@ def notes(build_id, text):
         print(f"What to Test (de-DE): {text}")
 
 
+def upload(ipa, version, build, *flags):
+    dry = "--dry-run" in flags
+    unknown = [f for f in flags if f != "--dry-run"]
+    if unknown:
+        die(f"upload: unknown option {unknown[0]}")
+    bundle = os.environ["BUNDLE_ID"]
+    with zipfile.ZipFile(ipa) as z:
+        names = z.namelist()
+        infos = [n for n in names if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", n)]
+        if len(infos) != 1:
+            die(f"{ipa}: not one app under Payload/ ({len(infos)})")
+        info = plistlib.loads(z.read(infos[0]))
+        symbols = sum(1 for n in names if n.startswith("Symbols/") and not n.endswith("/"))
+    have = (info.get("CFBundleIdentifier"), info.get("CFBundleShortVersionString"), info.get("CFBundleVersion"))
+    if have != (bundle, version, build):
+        die(f"{ipa} is {have[0]} {have[1]} ({have[2]}), not {bundle} {version} ({build})")
+    size = os.path.getsize(ipa)
+    md5 = hashlib.md5()
+    with open(ipa, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            md5.update(chunk)
+    print(f"ipa: {bundle} {version} ({build}), {size} bytes, md5 {md5.hexdigest()}, {symbols} symbol file(s)")
+    if symbols == 0:
+        print("::warning::the .ipa carries no Symbols/: crash reports in TestFlight will not be symbolicated")
+    if dry:
+        print("dry run: would POST /v1/buildUploads (platform IOS), POST /v1/buildUploadFiles (com.apple.ipa), "
+              "PUT the parts, PATCH uploaded=true with the MD5, then poll until COMPLETE; nothing was sent")
+        return
+    aid = app_id(bundle) or die("no app record")
+    upload_id = call("POST", "/v1/buildUploads", {"data": {"type": "buildUploads", "attributes": {
+        "cfBundleShortVersionString": version, "cfBundleVersion": build, "platform": "IOS"},
+        "relationships": {"app": rel("apps", aid)}}})["data"]["id"]
+    file = call("POST", "/v1/buildUploadFiles", {"data": {"type": "buildUploadFiles", "attributes": {
+        "assetType": "ASSET", "fileName": os.path.basename(ipa), "fileSize": size, "uti": "com.apple.ipa"},
+        "relationships": {"buildUpload": rel("buildUploads", upload_id)}}})["data"]
+    ops = file["attributes"]["uploadOperations"]
+    with open(ipa, "rb") as f:
+        for op in ops:
+            f.seek(op["offset"])
+            part = f.read(op["length"])
+            headers = {h["name"]: h["value"] for h in op.get("requestHeaders") or []}
+            for attempt in range(3):
+                try:
+                    req = urllib.request.Request(op["url"], data=part, method=op["method"], headers=headers)
+                    with urllib.request.urlopen(req, timeout=600) as resp:
+                        resp.read()
+                    break
+                except (urllib.error.URLError, TimeoutError) as e:
+                    if attempt == 2:
+                        die(f"upload of the part at {op['offset']} failed: {e}")
+                    time.sleep(5)
+    print(f"uploaded {size} bytes in {len(ops)} part(s)", flush=True)
+    call("PATCH", f"/v1/buildUploadFiles/{file['id']}", {"data": {"type": "buildUploadFiles", "id": file["id"],
+         "attributes": {"uploaded": True, "sourceFileChecksums": {
+             "file": {"hash": md5.hexdigest(), "algorithm": "MD5"}}}}})
+    state = {}
+    for _ in range(120):
+        state = call("GET", f"/v1/buildUploads/{upload_id}")["data"]["attributes"].get("state") or {}
+        if state.get("state") in ("COMPLETE", "FAILED"):
+            break
+        time.sleep(15)
+    print(f"buildUpload {upload_id}: {state.get('state')}")
+    for kind in ("errors", "warnings", "infos"):
+        for item in state.get(kind) or []:
+            print(f"  {kind[:-1]} {item.get('code')}: {item.get('description')}")
+    if state.get("state") != "COMPLETE":
+        die(f"App Store Connect did not take the upload ({state.get('state') or 'no answer'})")
+
+
 def builds(aid):
     rows, path = [], f"/v1/builds?filter[app]={aid}&limit=200&fields[builds]=version,uploadedDate"
     while path:
@@ -292,7 +365,7 @@ def gh_out(name, value):
 
 
 if __name__ == "__main__":
-    cmds = {"prepare": prepare, "wait": wait, "internal": internal, "notes": notes, "next-build": next_build,
+    cmds = {"prepare": prepare, "wait": wait, "upload": upload, "internal": internal, "notes": notes, "next-build": next_build,
             "last-sha": last_sha, "export-code": export_code}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)

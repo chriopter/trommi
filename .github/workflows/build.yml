@@ -162,7 +162,7 @@ jobs:
           part core 'tests/core/|tests/src/|tests/bindings/|tests/Cargo\.toml$|spec/vectors/|spec/account-vectors\.json$|THIRD-PARTY\.md$|\.github/scripts/third_party\.mjs$'
           part web 'app/web/|tests/web/|connector/tools\.json$|connector/prompt\.md$|demo/|\.node-version$|\.github/scripts/web_release\.mjs$|\.github/tools/wrangler/|\.github/workflows/deploy_web\.yml$' web
           part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connector/|tests/Cargo\.toml$|\.github/workflows/release\.yml$' connector
-          part ios 'app/ios/|tests/ios/|\.github/scripts/ios_(testflight\.sh|archive\.sh|entitlements\.py)$|\.github/workflows/deploy_ios\.yml$' ios
+          part ios 'app/ios/|tests/ios/|\.github/scripts/ios_(testflight\.sh|archive\.sh|entitlements\.py|release_gate\.sh)$|\.github/workflows/deploy_ios\.yml$' ios
           part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/deploy_hub\.yml$|\.github/scripts/hub_compat\.sh$' 'hub|updater'
 
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
@@ -548,17 +548,19 @@ jobs:
       - name: Test
         run: swift test --package-path tests/ios
 
-  # main: with the release, when the app's inputs changed since the newest release. staging: no release; when the iOS
-  # part ran (its paths changed since the commit before) and its tests and the core's passed.
+  # main: when a release is due and the app's inputs changed since the newest release. It starts beside the release
+  # (archive and signing take minutes); its upload waits until this run's release is published and verified
+  # (gate: release, .github/scripts/ios_release_gate.sh), so only a released app ships. staging: no release; when the
+  # iOS part ran (its paths changed since the commit before) and its tests and the core's passed.
   deploy_ios:
     name: iOS
-    needs: [changes, core, ios, ios_client, release]
+    needs: [changes, core, ios, ios_client]
     if: >-
-      ${{ !cancelled() && needs.ios.result == 'success' && (
-        (needs.release.outputs.published == 'true' && needs.changes.outputs.changed_ios == 'true')
-        || (github.ref == 'refs/heads/staging' && github.event_name == 'push'
-          && needs.ios_client.result == 'success'
-          && contains(fromJSON('["success","skipped"]'), needs.core.result))) }}
+      ${{ !cancelled() && needs.ios.result == 'success' && needs.ios_client.result == 'success'
+        && contains(fromJSON('["success","skipped"]'), needs.core.result) && (
+        (github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+          && needs.changes.outputs.release == 'true' && needs.changes.outputs.changed_ios == 'true')
+        || (github.ref == 'refs/heads/staging' && github.event_name == 'push')) }}
     permissions:
       contents: read
       actions: read
@@ -567,6 +569,7 @@ jobs:
       version: ${{ needs.changes.outputs.version }}
       commit: ${{ github.sha }}
       artifact: ios-release
+      gate: ${{ github.ref == 'refs/heads/main' && 'release' || '' }}
     secrets: inherit
 
   hub:

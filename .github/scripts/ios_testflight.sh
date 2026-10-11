@@ -3,9 +3,10 @@
 # the App Store Connect key comes from. Steps: the bundle ids and the app record (asc.py prepare) -> the build
 # number (the highest App Store Connect has, plus one) -> Trommi.xcodeproj from AppStore/project.yml (XcodeGen) ->
 # archive (ios_archive.sh: signed ad hoc, nothing created on the Apple account) -> check the archive -> export for
-# App Store Connect, signed with the team's cloud-managed distribution certificate through the API key, first to a
-# file whose entitlements are checked, then with destination upload (internal testing only) -> wait until the build is processed -> the group "Intern" holds
-# it -> "What to Test".
+# App Store Connect, signed with the team's cloud-managed distribution certificate through the API key, to a file whose
+# entitlements are checked -> (main: the release of this run is published and verified, ios_release_gate.sh) ->
+# upload of that very file through the App Store Connect Build Uploads API (asc.py upload) -> wait until the build is
+# processed -> the group "Intern" holds it -> "What to Test".
 #   ios_testflight.sh              every step, one after another
 #   ios_testflight.sh upload       up to the upload; writes version and build to GITHUB_OUTPUT
 #   ios_testflight.sh after        the rest (processed, group, What to Test) for TF_VERSION and TF_BUILD, on any
@@ -19,7 +20,11 @@
 # ITS_NON_EXEMPT_ENCRYPTION (YES or NO, default NO: standard algorithms only, exempt), ITS_EXPORT_COMPLIANCE_CODE
 # (only with YES: the code of the app's export compliance documentation in App Store Connect; when empty, the code of
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
-# TESTFLIGHT_TESTER (an address kept in the group), NOTES.
+# TESTFLIGHT_TESTER (an address kept in the group), NOTES,
+# TF_GATE=release (main: upload only once the release of build run RUN_ID, v$VERSION_RELEASE, is published and
+# verified; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed, checked .ipa; the gate
+# only verifies an existing release, if any is named; the upload is checked offline and NOT sent; no wait, no group),
+# TF_UPLOADER=xcode (the fallback: a second Xcode export with destination upload instead of the API).
 # Nothing here prints a value of the first four. The key lies in one file under RUNNER_TEMP, mode 600, removed when
 # the script ends (and once more by the workflow, whatever happened).
 set -euo pipefail
@@ -30,6 +35,8 @@ case "$mode" in
   after) required="APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID RUNNER_TEMP COMMIT TF_VERSION TF_BUILD" ;;
   *) echo "usage: ios_testflight.sh [upload|after]" >&2; exit 2 ;;
 esac
+[ "${TF_GATE:-}" != release ] || required="$required GH_TOKEN GITHUB_REPOSITORY RUN_ID VERSION_RELEASE"
+case "${TF_GATE:-}" in ''|release) ;; *) echo "::error::TF_GATE is release or empty, not ${TF_GATE}"; exit 1 ;; esac
 for name in $required; do
   [ -n "${!name:-}" ] || { echo "::error::$name is not set for this run"; exit 1; }
 done
@@ -161,11 +168,11 @@ for extension in TrommiShare TrommiNotify TrommiLive; do
 done
 # (the archive is signed ad hoc and ios_archive.sh has checked its entitlements; the export signs for distribution)
 
-echo "== 6. Export and upload =="
+echo "== 6. Export =="
 # Signing style automatic with the Admin key: Xcode signs with the team's cloud-managed Apple Distribution
 # certificate (Apple keeps its private key) and makes or renews the App Store profiles of the four bundle ids.
-# No certificate is created on the account. The first export writes the signed app to a file, whose entitlements
-# are checked against the files (nothing goes to Apple); the second, the same signing, uploads.
+# No certificate is created on the account. The export writes the signed app to a file, whose entitlements are
+# checked against the files (nothing goes to Apple); that file is uploaded.
 export_options() {
   cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -193,11 +200,32 @@ mkdir -p "$RUNNER_TEMP/ipa"
 unzip -q "$ipa" -d "$RUNNER_TEMP/ipa"
 python3 "$here/ios_entitlements.py" "$appstore" "$RUNNER_TEMP/ipa/Payload/Trommi.app" --distribution
 codesign -dvv "$RUNNER_TEMP/ipa/Payload/Trommi.app" 2>&1 | grep '^Authority=' | head -n 1 || true
-export_options upload
-xcodebuild -exportArchive \
-  -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-  -exportPath "$RUNNER_TEMP/export" \
-  "${auth[@]}"
+
+if [ "${TF_GATE:-}" = release ]; then
+  echo "== 6b. The release of this run =="
+  # COMMIT and VERSION are the gate's names; here VERSION is the release number, not the app's
+  gate='wait'
+  [ "${TF_DRY_RUN:-}" = 1 ] && gate=verify
+  VERSION=$VERSION_RELEASE bash "$here/ios_release_gate.sh" "$gate"
+fi
+
+echo "== 6c. Upload =="
+if [ "${TF_DRY_RUN:-}" = 1 ]; then
+  asc upload "$ipa" "$version" "$build" --dry-run
+  echo "dry run: build $version ($build) was NOT uploaded; nothing waits for it"
+  [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "### iOS: dry run, build $version ($build) signed and checked, not uploaded" >> "$GITHUB_STEP_SUMMARY"
+  exit 0
+fi
+if [ "${TF_UPLOADER:-api}" = xcode ]; then
+  export_options upload
+  xcodebuild -exportArchive \
+    -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+    -exportPath "$RUNNER_TEMP/export" \
+    "${auth[@]}"
+else
+  # the file whose entitlements were just checked is the one that goes; no second signing
+  asc upload "$ipa" "$version" "$build"
+fi
 rm -f "$RUNNER_TEMP/ExportOptions.plist"
 
 if [ "$mode" = upload ]; then
