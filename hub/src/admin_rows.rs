@@ -143,6 +143,21 @@ pub fn show(table: &str, column: &str) -> Show {
     }
 }
 
+/// The small tag a column carries on the rows pages: what the hub can read of it. Metadata the hub reads (shown in
+/// full, the e-mail address too: it is only blurred), what lies sealed, and a credential that is never shown.
+pub fn tag(show: Show) -> &'static str {
+    match show {
+        Show::Full | Show::Email => "<span class=\"ctag ctag-read\" title=\"metadata in clear: the hub reads it\">Hub liest mit</span>",
+        Show::Sealed => "<span class=\"ctag ctag-sealed\" title=\"sealed: the hub cannot read it\">verschlüsselt</span>",
+        Show::Secret => "<span class=\"ctag ctag-secret\" title=\"credential: never shown\">geheim</span>",
+    }
+}
+
+/// The legend of the three tags, at the top of a table's page.
+const TAGS_LEGEND: &str = "<p class=\"tags-legend muted\"><span class=\"ctag ctag-read\">Hub liest mit</span> metadata in clear, \
+shown in full <span class=\"ctag ctag-sealed\">verschlüsselt</span> sealed, shown by its length <span class=\"ctag ctag-secret\">geheim</span> \
+a credential, never shown</p>";
+
 /// `table.column` of every column of the listed tables that no list names (shown masked meanwhile).
 pub fn unclassified(c: &Connection) -> rusqlite::Result<Vec<String>> {
     let mut out = Vec::new();
@@ -404,6 +419,7 @@ fn head(table: &str, n: i64, extra: &str, shape: &Shape) -> String {
         if n == 1 { "" } else { "s" },
         if shape.cols.iter().any(|c| c.show == Show::Email) { SHOW_ALL } else { "" },
     );
+    out.push_str(TAGS_LEGEND);
     // the columns: name, type, a lock for sealed, dots for a credential; the key's in bold
     out.push_str(&format!(
         "<details class=\"card cols-card\"><summary><h3>Columns <span class=\"count\">{}</span></h3></summary><ul class=\"colchips\">",
@@ -412,13 +428,14 @@ fn head(table: &str, n: i64, extra: &str, shape: &Shape) -> String {
     for col in &shape.cols {
         let name = if shape.key.contains(&quote(&col.name)) { format!("<b>{}</b>", esc(&col.name)) } else { esc(&col.name) };
         out.push_str(&format!(
-            "<li>{}<code>{name}</code><span class=\"faint\">{}</span></li>",
+            "<li>{}<code>{name}</code><span class=\"faint\">{}</span>{}</li>",
             match col.show {
                 Show::Sealed => format!("<span class=\"cm cm-e2e\" title=\"sealed\">{LOCK}</span>"),
                 Show::Secret => "<span class=\"secret\" title=\"credential: not shown\">••</span>".into(),
                 _ => String::new(),
             },
-            esc(&col.kind.to_lowercase())
+            esc(&col.kind.to_lowercase()),
+            tag(col.show)
         ));
     }
     out.push_str("</ul></details>");
@@ -642,13 +659,14 @@ pub fn rows(app: &App, table: &'static str, q: &Query) -> Result<String, Refused
                 let on = sort_col.as_deref() == Some(col.name.as_str());
                 if matches!(col.show, Show::Full | Show::Email) {
                     main.push_str(&format!(
-                        "<th><a href=\"{}\">{}{}</a></th>",
+                        "<th><a href=\"{}\">{}{}</a>{}</th>",
                         q.href(table, Some(&col.name), on && !asc, None, None),
                         esc(&col.name),
-                        arrow(on)
+                        arrow(on),
+                        tag(col.show)
                     ));
                 } else {
-                    main.push_str(&format!("<th class=\"muted\">{}</th>", esc(&col.name)));
+                    main.push_str(&format!("<th class=\"muted\">{}{}</th>", esc(&col.name), tag(col.show)));
                 }
             }
             main.push_str("</tr></thead><tbody>");
@@ -717,9 +735,10 @@ pub fn row(app: &App, table: &'static str, token: &str) -> Result<Option<String>
                 _ => None,
             };
             main.push_str(&format!(
-                "<dt><code>{}</code><span class=\"faint\">{}</span></dt><dd>{}{}</dd>",
+                "<dt><code>{}</code><span class=\"faint\">{}</span>{}</dt><dd>{}{}</dd>",
                 esc(&col.name),
                 esc(&col.kind.to_lowercase()),
+                tag(col.show),
                 cell(col, value, true),
                 filter.map_or(String::new(), |v| format!(
                     " <a class=\"same\" href=\"/tables/{table}?f={}&amp;v={}\">rows with this value</a>",
