@@ -1562,3 +1562,110 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     mcp.close().await;
 }
+
+/// Two agent sessions in one folder are two members: the key a terminal's `join` made is adopted by the first
+/// session that uses it, and a second session started in the same folder never takes it, also not once it is
+/// free, never gets it handed over, and cannot `say` through it. Only the first session again (a resume) is
+/// that member.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_sessions_in_one_folder_never_share_a_key() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    // joined in a terminal, outside any agent session: the key belongs to no session yet
+    let mut command = seat.command(&["join", &link]);
+    command.env_remove("TROMMI_SESSION_KEY");
+    let join = async move {
+        command
+            .stdin(std::process::Stdio::null())
+            .output()
+            .await
+            .expect("the join runs")
+    };
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let (joined, group) = tokio::join!(join, admit);
+    assert!(
+        joined.status.success(),
+        "{}",
+        String::from_utf8_lossy(&joined.stderr)
+    );
+    let me = human.seat(&group).await.expect("the agent");
+
+    // (idle after a millisecond: an idle holder hands its key over, but only to its own session)
+    let mut first = seat
+        .serve_with(&[("TROMMI_UNUSED_MS", "1"), ("TROMMI_IDLE_MS", "1")])
+        .await;
+    first.ready().await;
+    first
+        .ok("reply", json!({ "text": "from the first session" }))
+        .await;
+
+    // A second Claude Code session in the same folder, while the first one runs, idle.
+    let mut second = seat
+        .serve_with(&[("TROMMI_SESSION_KEY", "test-other")])
+        .await;
+    let (said, failed) = second
+        .call("reply", json!({ "text": "from the second session" }))
+        .await;
+    assert!(failed, "the second session is not in the room: {said}");
+    assert!(
+        said.contains("belongs to other") && said.contains("invite"),
+        "it says the key is another session's and that it needs an invite: {said}"
+    );
+    // its `say` does not go through the first session's connector either
+    let said = seat
+        .command(&["say", "said by the second session"])
+        .env("TROMMI_SESSION_KEY", "test-other")
+        .env("TROMMI_SAY_MS", "3000")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .expect("say runs");
+    assert!(
+        !said.status.success(),
+        "{}",
+        String::from_utf8_lossy(&said.stdout)
+    );
+
+    // The first session ends: its key is free, and still not the second session's.
+    first.close().await;
+    let (said, failed) = second
+        .call("reply", json!({ "text": "from the second session, later" }))
+        .await;
+    assert!(failed && said.contains("belongs to other"), "{said}");
+    second.close().await;
+
+    // The first session resumed is the same member.
+    let mut resumed = seat.serve().await;
+    resumed.ready().await;
+    resumed
+        .ok(
+            "reply",
+            json!({ "text": "from the first session, resumed" }),
+        )
+        .await;
+
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    let texts: Vec<String> = human
+        .items
+        .iter()
+        .filter(|(_, sender, _)| *sender == me)
+        .filter_map(|(_, _, payload)| payload["text"].as_str().map(String::from))
+        .collect();
+    assert!(
+        texts.contains(&"from the first session".to_string())
+            && texts.contains(&"from the first session, resumed".to_string()),
+        "{texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.contains("second session")),
+        "nothing of the second session reached the first one's chat: {texts:?}"
+    );
+    resumed.close().await;
+}

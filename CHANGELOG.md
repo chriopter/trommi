@@ -112,6 +112,8 @@ while it runs.
   still being read. It says "Catching up…", open questions show as quiet "Loading …" placeholders until they are
   decrypted, sessions are "Loading …" instead of an id, and agents show as connected right away instead of "gone".
 - Web: a permission request that was answered or ran out on another device no longer stands on the Desk as open.
+- A second Claude Code or Codex session started in the same folder no longer writes into the first one's board
+  session: each session is its own agent and needs its own invite; only resuming a session continues it.
 - Web: a picture that could not be loaded keeps its place as a small tile (the reason on hover); a Desk row keeps its
   title and answers in view. An open tab looks for a new version every 10 minutes, and at once on a file of a newer Trommi.
 - Web: a card handed back and then put before you again no longer slips back to "with the agent" (off the Desk)

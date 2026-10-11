@@ -172,7 +172,18 @@ device's key, its MLS groups, its content keys, its chains, the cursor in the hu
 of Claude Code on the same machine opens it, signs in and catches up: it is the same member. Two processes never
 own one state (an OS lock on the directory, the core's revision behind it, the hub's lease behind that). A state
 that does not read, or that is older than what the device already sent, is said so and never replaced by a new key:
-the human reconnects the session in the app. When the human reconnects the session on another machine, the
+the human reconnects the session in the app.
+
+A key belongs to one agent session: its `.owner` file names it (`cc:<Claude Code session id>` from
+`CLAUDE_CODE_SESSION_ID`, `key:<TROMMI_SESSION_KEY>`, or, for a client without a session id such as Codex, its
+process). A key `join` made in a terminal belongs to nobody until the first session that uses it adopts it. A
+connector only takes its own session's key or one nobody owns; another session's key it never takes, also not
+while it is free, an idle holder hands its key over only to a connector of its own session, and `say` goes through
+a running connector only for its own session. So a second session in the same folder never writes into the
+first one's board session: it needs an invite of its own. `claude --resume` keeps the session id and with it the
+key; a new `claude` in the folder is a new session.
+
+When the human reconnects the session on another machine, the
 connector here learns it from the Commit, wipes the slot and says that it is retired.
 
 ## Updates and releases

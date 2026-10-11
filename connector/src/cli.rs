@@ -114,7 +114,9 @@ pub async fn say(argv: &[String]) -> Result<String> {
         )));
     };
     let until = now_ms() + env_ms("TROMMI_SAY_MS", 30_000).max(1);
-    let request = json!({ "op": "say", "text": text, "session": session, "urgent": urgent });
+    // (the owner: a running connector of another agent session in this folder refuses, so that these words never
+    // go into that session's chat)
+    let request = json!({ "op": "say", "text": text, "session": session, "urgent": urgent, "owner": cfg.owner });
     let mut last: Option<Fault>;
     loop {
         let mut silent = vec![];
@@ -167,6 +169,9 @@ pub async fn say(argv: &[String]) -> Result<String> {
                 let list = silent.iter().map(|x| format!("pid {x}")).collect::<Vec<_>>().join(", ");
                 let kill = silent.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
                 return Err(Fault::plain(format!("the key is held by connector process {list}, which does not answer (an older connector without the side channel, or a hung one). It is never overridden (two writers on one key break its chain): run `kill {kill}`, then say again")));
+            }
+            if p.as_ref().is_some_and(|p| !p.has_key && !p.foreign.is_empty()) {
+                return Err(Fault::plain("this folder's Trommi key belongs to another agent session: this session is a member of its own and needs an invite of its own (Trommi app: \"invite an agent\")"));
             }
             let e = m.me.lock().unwrap().error.clone();
             Err(Fault::plain(e.unwrap_or_else(|| not_in_room(&m.phase()))))
