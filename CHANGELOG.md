@@ -15,6 +15,7 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - The self-test screen is now called "Security Info".
 
 **Fixed**
+- A device that missed the keys for older content now asks your other devices for them, even weeks later.
 - Changing your password, Emergency Kit or passkeys now asks for a current one: being logged in is not enough.
 - A phone added to a running session could show the agent's raw id instead of its name.
 - The iPhone app could crash while sending (a data race).
