@@ -41,6 +41,10 @@ struct DeskScreen: View {
           let _ = StartClock.desk(cards: v.fresh.count, restored: model.room?.restored ?? false)
           VStack(alignment: .leading, spacing: 12) {
           head(v)
+          // a long catch-up says how far it is (what was settled elsewhere meanwhile is already off the Desk)
+          if let r = model.room, r.behind {
+            Text(r.catchUpShare.map { "Catching up… \(Int($0 * 100))%" } ?? "Catching up…").font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("catching-up")
+          }
           if !v.cut.isEmpty { CutSlip(units: v.cut) }
           let cards = v.deskCards()
           ForEach(runs(cards, d)) { run in
@@ -517,8 +521,9 @@ private struct TileBody: View {
 struct WithAgents: View {
   @EnvironmentObject var model: BoardModel
   let view: DeskModel.View
-  var body: some View {
-    let d = model.desk!
+  // (no Desk: the room was just left, a log out; the view is on its way out and draws nothing)
+  var body: some View { if let d = model.desk { content(d) } }
+  @ViewBuilder private func content(_ d: DeskModel) -> some View {
     let working = d.tasks.filter { $0.state == "working" }
     let decidedHere = d.cards.filter { c in c.status == "decided" && d.stackOf(c) == "works" && view.here.contains { $0.id == c.agent } }
     let items = (view.revising.filter { d.stackOf($0) == "works" } + decidedHere.sorted { ($0.decided ?? 0) > ($1.decided ?? 0) }).compactMap { c -> (DeskCard, Agent, Task1?, UInt64)? in

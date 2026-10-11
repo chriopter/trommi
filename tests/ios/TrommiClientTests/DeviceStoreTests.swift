@@ -237,4 +237,56 @@ final class DeviceStoreTests: XCTestCase {
     XCTAssertThrowsError(try s.apply(expectedRevision: 0, batch: StoreBatch(put: [entry(1, "a")])))
     s.close()
   }
+
+  /** A page of a catch-up is one flush (DeviceStore.batched): the anchor moves at its end, or at once for the outbox. */
+  func testABatchedPageMovesTheAnchorOnceAndNeverHoldsTheOutbox() throws {
+    let anchor = MemoryAnchor()
+    let s = try DeviceStore(directory: dir, key: key, anchor: anchor)
+    _ = try s.load()
+    try s.batched {
+      try s.apply(expectedRevision: 0, batch: StoreBatch(put: [entry(1, "a")]))
+      try s.apply(expectedRevision: 1, batch: StoreBatch(put: [entry(2, "b")]))
+      XCTAssertNil(anchor.value, "held back inside the page")
+      try s.apply(expectedRevision: 2, batch: StoreBatch(put: [outbox(1)]))
+      XCTAssertEqual(anchor.value, 3, "the outbox is flushed and anchored at once, with all before it")
+      try s.apply(expectedRevision: 3, batch: StoreBatch(put: [entry(3, "c")]))
+      XCTAssertEqual(anchor.value, 3)
+    }
+    XCTAssertEqual(anchor.value, 4, "the page's end flushes and anchors the rest")
+    s.close()
+    let again = try DeviceStore(directory: dir, key: key, anchor: anchor)
+    XCTAssertEqual(try again.load().revision, 4)
+    again.close()
+  }
+
+  /** After a crash inside a page, unflushed records may reach the drive out of order: past the anchor that is an end. */
+  func testDamagePastTheAnchorIsTheEndOfAPage() throws {
+    let anchor = MemoryAnchor()
+    var s = try DeviceStore(directory: dir, key: key, anchor: anchor)
+    _ = try s.load()
+    try s.apply(expectedRevision: 0, batch: StoreBatch(put: [entry(1, "a")]))     // flushed, anchored: 1
+    let anchoredLength = try Data(contentsOf: dir.appendingPathComponent("state.log")).count
+    // (the page's records, then the anchor put back as a crash before the page's end would have left it)
+    XCTAssertThrowsError(try s.batched {
+      for i in 1..<4 { try s.apply(expectedRevision: UInt64(i), batch: StoreBatch(put: [entry(UInt8(i + 1), "v")])) }
+      throw TrommiError("crash", "the app ends inside the page")
+    } as Void)
+    s.close()
+    // the page's first record never reached the drive, the later ones did
+    let log = dir.appendingPathComponent("state.log")
+    var b = Bytes(try Data(contentsOf: log))
+    for i in anchoredLength..<(anchoredLength + 40) { b[i] = 0 }
+    try Data(b).write(to: log)
+    anchor.value = 1
+    s = try DeviceStore(directory: dir, key: key, anchor: anchor)
+    let loaded = try s.load()
+    XCTAssertEqual(loaded.revision, 1, "the anchored state, the page cut off")
+    XCTAssertEqual(sorted(loaded), ["1=a"])
+    s.close()
+    // the same damage below the anchor stops the load
+    anchor.value = 3
+    s = try DeviceStore(directory: dir, key: key, anchor: anchor)
+    XCTAssertThrowsError(try s.load())
+    s.close()
+  }
 }
