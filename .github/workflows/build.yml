@@ -1,5 +1,11 @@
-# On every commit on main and on every pull request: find which parts changed, test and build those.
-# On main only:
+# On every pull request: find which parts changed and check those, fast: their tests, clippy, the web app's build; no
+# release binaries, no cross builds, no Mac. The jobs' names are the checks the ruleset of main requires (they do not
+# change): Which parts changed, Core (check), Web app (check), Connector (check), Hub (check), iOS client (check).
+# A part that did not change skips its job, which counts as passed.
+# On every commit on main: the same checks, and the full builds of the changed parts (release binaries, the core for
+# iOS devices on the Mac). When one of them fails, the job `report` opens the issue "Main build v<N> failed" (label
+# build-failed) and nothing is released or delivered; the next run on main that passes closes it.
+# On main also:
 # when what a part is built from changed since the newest release, make one release v<N> of every part
 # (release.yml) and deliver each part whose inputs changed (web, hub, iOS; the connector is delivered by the release
 # itself: installers and `trommi-connector update` take the newest).
@@ -192,7 +198,7 @@ jobs:
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
   # Every other part builds on the core, and none of their jobs runs these. It builds and delivers nothing.
   core:
-    name: Core (test)
+    name: Core (check)
     needs: changes
     if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-24.04
@@ -206,9 +212,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compiler (rust-toolchain.toml)
+      - name: Compiler (rust-toolchain.toml), clippy
         run: |
           rustup toolchain install || rustup show
+          rustup component add clippy
           rustc --version
       # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
       # sccache's (env above)
@@ -221,6 +228,8 @@ jobs:
         with:
           version: v0.18.0
           disable_annotations: true
+      - name: Clippy
+        run: cargo clippy --locked -p trommi-core -p trommi-core-wasm -p trommi-core-swift --all-targets -- -D warnings
       # the licence tables are what cargo reports for this Cargo.lock (.github/scripts/third_party.mjs)
       - name: THIRD-PARTY.md is current
         run: node .github/scripts/third_party.mjs --check
@@ -242,7 +251,7 @@ jobs:
           echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   web:
-    name: Web app (test and build)
+    name: Web app (check)
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-24.04
@@ -300,14 +309,14 @@ jobs:
       - name: Test
         working-directory: app/web
         run: npm test
-      # The build of the release: only when the web's inputs differ from the newest release's (always on a pull
-      # request); otherwise release.yml takes web.tar.gz from that release.
+      # The build: on a pull request as a check; on main the build of the release, only when the web's inputs differ
+      # from the newest release's (otherwise release.yml takes web.tar.gz from that release).
       - name: Build
         if: needs.changes.outputs.changed_web != 'false'
         run: node app/web/dev/build.mjs --write
-      # What is delivered: the files, the worker, its settings, and the manifest that names every file.
+      # What is delivered (main only): the files, the worker, its settings, and the manifest that names every file.
       - name: Put the release together
-        if: needs.changes.outputs.changed_web != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_web != 'false'
         run: |
           set -eu
           node .github/scripts/web_release.mjs app/web/public out
@@ -321,7 +330,7 @@ jobs:
             echo "hub \`$WEB_HUB_URL\`, HSTS \`$WEB_HSTS\`, $(jq '.files | length' out/manifest.json) files, manifest \`$(sha256sum out/manifest.json | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: needs.changes.outputs.changed_web != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_web != 'false'
         with:
           name: web-release
           path: out/
@@ -353,7 +362,7 @@ jobs:
     secrets: inherit
 
   connector:
-    name: Connector (test and build)
+    name: Connector (check)
     needs: changes
     if: needs.changes.outputs.connector == 'true'
     runs-on: ubuntu-24.04
@@ -376,11 +385,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-      - name: Compiler (rust-toolchain.toml), clang, zig
+      - name: Compiler (rust-toolchain.toml), clippy
         run: |
           set -eu
           rustup toolchain install || rustup show
+          rustup component add clippy
           rustc --version
+      # the cross builds of the release (main only): clang and zig
+      - name: clang, zig
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
+        run: |
+          set -eu
           clang --version | head -n 1
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
           echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
@@ -401,12 +416,15 @@ jobs:
           disable_annotations: true
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: zigbuild
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
         with:
           path: ~/.cargo/bin/cargo-zigbuild
           key: cargo-zigbuild-${{ runner.os }}-${{ env.ZIGBUILD_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
       - name: cargo-zigbuild
-        if: steps.zigbuild.outputs.cache-hit != 'true' && needs.changes.outputs.changed_connector != 'false'
+        if: github.event_name != 'pull_request' && steps.zigbuild.outputs.cache-hit != 'true' && needs.changes.outputs.changed_connector != 'false'
         run: cargo install cargo-zigbuild --version "$ZIGBUILD_VERSION" --locked
+      - name: Clippy
+        run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
       # The scenario tests start the hub of this repository and the built connector (tests/connector/common/mod.rs).
       - name: Test
         run: |
@@ -420,10 +438,10 @@ jobs:
           TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo test --locked -p trommi-tests $tests
       # The four binaries, as connector/build-plugin.mjs makes them; then the manifest that names them. (The plugin
       # for Claude Code is no release file: it is the folder connector/plugin, which names the installed connector.)
-      # A target that did not build is an error here, not a smaller release. Only when the connector's inputs differ
-      # from the newest release's (always on a pull request); otherwise release.yml takes the binaries from it.
+      # A target that did not build is an error here, not a smaller release. Main only, and only when the connector's
+      # inputs differ from the newest release's; otherwise release.yml takes the binaries from it.
       - name: Build the release
-        if: needs.changes.outputs.changed_connector != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
         run: |
           set -eu
           # the release number is compiled in: a connector refuses a release older than itself (update.rs)
@@ -443,10 +461,10 @@ jobs:
           cat out/manifest.json
       # The very file that will be released is started once.
       - name: Try the built connector
-        if: needs.changes.outputs.changed_connector != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
         run: out/trommi-connector-x86_64-unknown-linux-musl --version
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: needs.changes.outputs.changed_connector != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_connector != 'false'
         with:
           name: connector-release
           path: out/
@@ -459,10 +477,11 @@ jobs:
           "$SCCACHE_PATH" --show-stats || true
           echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
+  # Main only: a pull request checks the iOS client on Linux (job ios_client) and uses no Mac.
   ios:
-    name: iOS (test and build the core)
+    name: iOS core for devices (main)
     needs: changes
-    if: needs.changes.outputs.ios == 'true'
+    if: github.event_name != 'pull_request' && needs.changes.outputs.ios == 'true'
     # macOS with Xcode 27 (the app's deployment target is iOS 27)
     runs-on: xcode-27
     timeout-minutes: 60
@@ -477,8 +496,7 @@ jobs:
           persist-credentials: false
       # The core for Swift is what core/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
       # what the iOS library is checked against). When they are the same as in an earlier run of main, that
-      # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone). A pull request
-      # reads that cache and never writes it.
+      # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone).
       - name: What the core for Swift is built from
         id: core_inputs
         run: |
@@ -527,7 +545,7 @@ jobs:
           export DARWIN_CLANG_RT
           sh core/swift/build.sh
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.core_cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        if: steps.core_cache.outputs.cache-hit != 'true'
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
@@ -542,22 +560,6 @@ jobs:
       # nothing goes to the network, no key is needed.
       - name: App Store Connect steps (fixtures)
         run: python3 -B -m unittest discover -s tests/ios/asc -v
-      # A pull request delivers nothing, so the app itself would first be compiled when its commit is on main
-      # (deploy_ios.yml archives it). Here it is archived for a device once, as the delivery does (signed ad hoc, without
-      # any secret, entitlements checked), so what does not compile or sign shows before the merge.
-      - name: The app archives for a device (pull requests only, signed ad hoc)
-        if: github.event_name == 'pull_request'
-        env:
-          XCODEGEN_VERSION: 2.46.0
-          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
-        run: |
-          set -eu
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
-          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
-          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
-          appstore=app/ios/TrommiApp/AppStore
-          "$RUNNER_TEMP/xcodegen/bin/xcodegen" generate --spec "$appstore/project.yml"
-          bash .github/scripts/ios_archive.sh "$RUNNER_TEMP/Trommi.xcarchive" "$RUNNER_TEMP/DerivedData"
       # What deploy_ios.yml takes: the iOS library and UniFFI's two files, with their hashes and the commit.
       - name: Put the release together
         run: |
@@ -585,9 +587,9 @@ jobs:
           echo "### sccache ($GITHUB_JOB): $("$SCCACHE_PATH" --show-stats 2>/dev/null | grep -E '^(Cache hits rate|Compile requests)  ' | tr -s ' ' | paste -sd ',' -)" >> "$GITHUB_STEP_SUMMARY" || true
 
   # The app's client package (app/ios/TrommiClient) with its tests (tests/ios), on Linux: the package does not compile for
-  # macOS (ActivityKit), and the Mac job builds the app for a device without running tests.
+  # macOS (ActivityKit). This is the iOS check of a pull request; the Mac (job ios) runs on main only.
   ios_client:
-    name: iOS client (test on Linux)
+    name: iOS client (check)
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: ubuntu-24.04
@@ -661,10 +663,13 @@ jobs:
   # (gate: release, .github/scripts/ios_release_gate.sh), so only a released app ships.
   deploy_ios:
     name: iOS
-    needs: [changes, core, ios, ios_client]
+    needs: [changes, core, web, connector, ios, ios_client, hub]
     if: >-
       ${{ !cancelled() && needs.ios.result == 'success' && needs.ios_client.result == 'success'
-        && contains(fromJSON('["success","skipped"]'), needs.core.result) && (
+        && contains(fromJSON('["success","skipped"]'), needs.core.result)
+        && contains(fromJSON('["success","skipped"]'), needs.web.result)
+        && contains(fromJSON('["success","skipped"]'), needs.connector.result)
+        && contains(fromJSON('["success","skipped"]'), needs.hub.result) && (
         github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
           && needs.changes.outputs.release == 'true' && needs.changes.outputs.changed_ios == 'true') }}
     permissions:
@@ -679,7 +684,7 @@ jobs:
     secrets: inherit
 
   hub:
-    name: Hub (test and build)
+    name: Hub (check)
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-24.04
@@ -695,11 +700,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compiler (rust-toolchain.toml) and the C compiler for static builds
+      - name: Compiler (rust-toolchain.toml), clippy
         run: |
           set -eu
           rustup toolchain install || rustup show
+          rustup component add clippy
           rustc --version
+      - name: The C compiler for static builds
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
+        run: |
+          set -eu
           sudo apt-get update -q
           sudo apt-get install -y -q musl-tools
       # the downloaded crates (~/.cargo), saved by main, a pull request reads them; the compiled crates are
@@ -713,6 +723,8 @@ jobs:
         with:
           version: v0.18.0
           disable_annotations: true
+      - name: Clippy
+        run: cargo clippy --locked -p trommi-hub -p trommi-hub-updater --all-targets -- -D warnings
       # the hub's tests and the deploy path's (updater, release form, settings)
       - name: Test
         run: |
@@ -728,11 +740,11 @@ jobs:
           shellcheck -S warning release/*.sh hub/deploy/*.sh
           bash hub/deploy/install.sh check
       # The files of the release: both programs as static binaries and the manifest that
-      # names them. The commit is compiled in; paths of the build machine are not. Only when the inputs of the hub or
-      # its updater differ from the newest release's (always on a pull request); release.yml takes the program whose
-      # inputs did not change from that release.
+      # names them. The commit is compiled in; paths of the build machine are not. Main only, and only when the inputs
+      # of the hub or its updater differ from the newest release's; release.yml takes the program whose inputs did not
+      # change from that release.
       - name: Build the release
-        if: needs.changes.outputs.changed_hub != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
         env:
           TROMMI_COMMIT: ${{ github.sha }}
         run: |
@@ -751,7 +763,7 @@ jobs:
           cat out/manifest.json
       # The very file that will be released is started once and asked whether it is well and which commit it is.
       - name: Try the built hub
-        if: needs.changes.outputs.changed_hub != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
         run: |
           set -eu
           data=$(mktemp -d)
@@ -771,12 +783,12 @@ jobs:
       # deploy is always safe. A build that raises hub/data-epoch declares that it is not; the check is then skipped
       # and the updater never puts the program back past it once the new hub has served.
       - name: The hub before runs on data this one migrated
-        if: needs.changes.outputs.changed_hub != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh .github/scripts/hub_compat.sh "out/trommi-hub-$TARGET" "$TARGET"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: needs.changes.outputs.changed_hub != 'false'
+        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
         with:
           name: hub-release
           path: out/
@@ -832,3 +844,37 @@ jobs:
     with:
       tag: v${{ needs.changes.outputs.version }}
     secrets: inherit
+
+  # A run on main: when a part's job or the release failed, open the issue "Main build v<N> failed" (label build-failed)
+  # or comment on the open one; when all passed, close it. A failed delivery has its own issue (deploy_*.yml).
+  report:
+    name: Report
+    needs: [changes, core, web, connector, ios, ios_client, hub, release]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ needs.changes.outputs.version }}
+      WHAT: build
+      RUNNING: the commit built, ${{ github.sha }}
+      LABEL: build-failed
+      RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      NEEDS: ${{ toJSON(needs) }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Open, comment on or close the issue
+        run: |
+          set -eu
+          # the jobs that failed, by their names in this file
+          REASON="failed: $(printf '%s' "$NEEDS" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')"
+          export REASON
+          sh .github/scripts/deploy_issue.sh Main

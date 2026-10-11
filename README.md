@@ -328,10 +328,11 @@ feature branch           one change, or a bundle of changes per topic
 release/<date>-<n>       frozen; each one is its own pull request
    │
    ▼
-pull request ─────────── tests of the changed parts; 7 required checks green,
-   │                     auto-merge, squash merge
+pull request ─────────── fast checks of the changed parts (tests, clippy, web
+   │                     build), 6 required checks green, auto-merge, squash
    ▼
-main ─────────────────── signed release v<N>, then only the parts that changed:
+main ─────────────────── full builds; one fails: an issue, nothing delivered.
+                         All pass: signed release v<N>, then the changed parts:
                            web        app.trommi.com
                            hub        the server pulls and checks v<N>
                            iOS        TestFlight "Intern" + "Trommi" (public)
