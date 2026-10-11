@@ -593,7 +593,7 @@ export const EXPLAIN_TEXT ='Explain this question in more detail and in plain wo
 export const isKnock = card => card.kind === 'permission' || card.urgency === 'high' || card.urgency === 'critical'
 export const knockWord = card => (card.kind === 'permission' ? 'Knock! Permission' : card.urgency === 'critical' ? 'Knock! Blocking' : card.urgency === 'high' ? 'Knock' : null)
 export const cardNr = card => `Nr. ${card.number}`
-export const cardNote = card => [card.merged_from?.length ? `replaces ${card.merged_from.length} questions` : '', card.revised ? 'revised' : ''].filter(Boolean).join(' · ')
+export const cardNote = card => [card.merged_from?.length ? `replaces ${card.merged_from.length} question${card.merged_from.length === 1 ? '' : 's'}` : '', card.revised ? 'revised' : ''].filter(Boolean).join(' · ')
 export const kindOf = a => a.kind ?? (a.image ? 'image' : 'file')
 export const advisedKeys = card => [].concat(card.recommended ?? [])
 // A final option (the agent marked it: choosing it leaves nothing to do) ends the card with the answer. Its tile says

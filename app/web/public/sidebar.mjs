@@ -188,7 +188,7 @@ controller('corner-note', class extends Controller {
         await this.post('/notes', { text })
         const made = deskNotesOf(window.trommi?.model?.() ?? { state: {} })[0]
         if (made) this.idValue = made.id
-      } else await this.post(`/notes/${this.idValue}/keep`, { text })
+      } else await this.post(`/notes/${this.idValue}/keep`, { text, files: String(this.files().length) })   // (the files this page holds: the model may not have them yet)
       // (a note without words but with files stays: pictures alone are a note, and it is still sent by its id)
       if (!text.trim() && !this.files().length) this.idValue = ''
     } finally { this.saving = false; if (this.again) { this.again = false; this.save() } }

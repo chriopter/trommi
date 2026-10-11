@@ -925,15 +925,16 @@ html[data-rail="folded"] .topbar .desk-switch-open { display: none; }
   
   
   /* the capsule */
-  .tabbar { position: fixed; z-index: 50; left: 50%; translate: -50% 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); display: flex; gap: 2px; height: 56px; padding: 4px; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); border-radius: 28px; background: color-mix(in srgb, var(--surface) 78%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); box-shadow: 0 10px 30px -16px rgb(20 30 25 / .5), inset 0 1px 0 rgb(255 255 255 / .5); }
+  .tabbar { position: fixed; z-index: 50; left: 50%; translate: -50% 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); display: flex; gap: 2px; height: 56px; padding: 4px; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); border-radius: 28px; background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); box-shadow: 0 10px 30px -16px rgb(20 30 25 / .5), inset 0 1px 0 rgb(255 255 255 / .5); }
   .tabbar[hidden], [data-keyboard] .tabbar { display: none; }
   .tab { position: relative; display: grid; place-items: center; align-content: center; gap: 1px; width: 76px; padding: 0; border: 0; border-radius: 24px; background: none; color: var(--muted); text-decoration: none; font: 600 10.5px/1 var(--font); -webkit-tap-highlight-color: transparent; }
   .tab .sketch { width: 24px; height: 24px; stroke-width: 1.8; color: currentColor; }
   .tab:is([aria-current], [aria-expanded="true"]) { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
   .tab-badge { position: absolute; top: 2px; left: calc(50% + 7px); min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: var(--fg); color: var(--surface); font: 800 11px/18px var(--font); text-align: center; }
   .tab-badge.is-knock { background: var(--urg-critical, #c8372b); color: #fff; }
+  :root[data-theme="dark"] .tab-badge.is-knock { color: #2a0b09; }   /* (white on the dark theme's light red read 2.3:1) */
   body:has(#tabbar:not([hidden])) .inbox-edge.is-down { bottom: calc(env(safe-area-inset-bottom, 0px) + 72px) !important; }
-  body:has(#tabbar:not([hidden])) > main { padding-bottom: 76px; }
+  body:has(#tabbar:not([hidden])) > main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); }
   /* the sticky stands back where the capsule is: Note opens it */
   body:has(#tabbar:not([hidden])) #corner-note-box:not(:has(.corner-note-head[aria-expanded="true"])) { display: none; }
 }
@@ -947,7 +948,7 @@ html[data-rail="folded"] .topbar .desk-switch-open { display: none; }
   body:has(#tabbar:not([hidden])) #corner-note-box.is-open .corner-note-field { height: 100%; min-height: 0; resize: none; font-size: 1.1rem; }
   body:has(#tabbar:not([hidden])) #corner-note-box.is-open .corner-note-to { display: inline-flex; justify-self: start; align-items: center; gap: 6px; padding: 4px 12px 4px 5px; border-radius: 16px; background: rgb(255 255 255 / .55); box-shadow: inset 0 0 0 1px rgb(120 95 20 / .3); color: #2a2208; font: 700 var(--t-sm)/1 var(--font); }
   body:has(#tabbar:not([hidden])) #corner-note-box.is-open .corner-note-to .agent-avatar { width: 24px; height: 24px; }
-  [data-keyboard] body:has(#tabbar) #corner-note-box.is-open .corner-note-body { padding-bottom: 12px; }
+  [data-keyboard] body:has(#tabbar) #corner-note-box.is-open .corner-note-body { padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
   /* a session's ⋯: a round glass button at the top right, its menu a glass sheet under it */
   body[data-t-view="session"] #session .t-pick-desk > summary.t-head-more { position: fixed; z-index: 60; top: calc(env(safe-area-inset-top, 0px) + 4px); right: max(12px, env(safe-area-inset-right, 0px)); width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 1px solid color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 50%; background: color-mix(in srgb, var(--surface) 72%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.7); backdrop-filter: blur(18px) saturate(1.7); color: var(--fg); box-shadow: 0 8px 20px -12px rgb(20 30 25 / .5), inset 0 1px 0 rgb(255 255 255 / .5); }
   :root.is-demo body[data-t-view="session"] #session .t-pick-desk > summary.t-head-more { top: calc(env(safe-area-inset-top, 0px) + 26px); }
@@ -1040,7 +1041,7 @@ html body .topbar #brand-doors .menu-icons .menu-ico { justify-content: center; 
   body[data-t-view="session"] #session .pane-who :is(.t-head-mark, .t-head-name, .t-blocked > .hand-mark, .t-blocked > svg) { display: none !important; }
   body[data-t-view="session"] #session .pane-who { background: transparent !important; border: 0 !important; box-shadow: none !important; pointer-events: none; }
   body[data-t-view="session"] #session .pane-who > * { pointer-events: auto; }
-  body[data-t-view="session"]:not([data-pair]) #session .pane-who .t-blocked > span { top: calc(env(safe-area-inset-top, 0px) + 52px) !important; left: 12px !important; right: auto !important; max-width: calc(100vw - 24px); padding: 6px 12px !important; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--urg-critical) 30%, transparent); background: color-mix(in srgb, var(--surface) 55%, transparent) !important; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: none !important; }
+  body[data-t-view="session"]:not([data-pair]) #session .pane-who .t-blocked > span { top: calc(env(safe-area-inset-top, 0px) + 52px) !important; left: 12px !important; right: auto !important; max-width: calc(100vw - 24px); padding: 6px 12px !important; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--urg-critical) 30%, transparent); background: color-mix(in srgb, var(--surface) 96%, transparent) !important; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: none !important; }
   :root.is-demo body[data-t-view="session"]:not([data-pair]) #session .pane-who .t-blocked > span { top: calc(env(safe-area-inset-top, 0px) + 74px) !important; }
 }
 @media (max-width: 860px) {
@@ -1154,3 +1155,23 @@ html body .topbar #brand-doors .menu-news-row { display: flex; align-items: cent
 .menu-news-dot[hidden] { display: none; }
 @media (max-width: 860px) { html body .topbar #brand-doors .menu-news-row { order: 3; min-height: 44px; } }
 html body .topbar #brand-doors .menu-news-row .menu-news-dot { flex: none; width: 8px; height: 8px; min-height: 0; padding: 0; margin: 0 4px 0 auto; }
+@media (max-width: 860px) {
+  /* a phone's chat: its ⋯ sits in the top right corner, where the page curl would lie over it; the Desk keeps the curl */
+  body[data-t-view="session"] .curl { display: none; }
+}
+@media (max-width: 860px) {
+  /* a phone's card page: the closed sticky lay on the card's words and pictures; the card is read whole, the note waits on the Desk */
+  body[data-t-view="card"] #corner-note-box:not(.is-open) { display: none; }
+}
+@media (max-width: 860px) and (orientation: landscape) and (max-height: 520px) {
+  /* a phone on its side: the capsule stands upright at the right edge, beside the page, not over its middle */
+  .tabbar { left: auto; right: max(8px, env(safe-area-inset-right, 0px)); top: 50%; bottom: auto; translate: 0 -50%; flex-direction: column; width: 56px; height: auto; }
+  .tabbar .tab { width: 46px; height: 54px; }
+  body[data-t-view="session"] .tabbar { left: auto; }
+  body:has(#tabbar:not([hidden])) > main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s-6)); padding-right: calc(max(8px, env(safe-area-inset-right, 0px)) + 64px); }
+  body:has(#tabbar:not([hidden])) { --gutter-right: calc(max(8px, env(safe-area-inset-right, 0px)) + 64px); }
+}
+@media (max-width: 860px) {
+  /* a card with the keyboard up: the screen is short, and the desk pill lay over the card's strip of pictures */
+  [data-keyboard] body[data-t-view="card"] .phone-bar { visibility: hidden; }
+}

@@ -51,6 +51,11 @@ What changed in Trommi, newest first. One section per day; the release numbers i
 - After logging out, the browser kept the key that had protected its local data.
 - Every agent session showed "hears you on its next step" (and later "not listening") even when it heard the board at once.
 - Codex no longer tries to start Trommi through a script when its tools are missing; it tells you to restart Codex.
+- The web app on phones: Settings pages fit a small screen (password, passkeys, the device fingerprint shown whole),
+  the ••• of a chat is no longer under the page corner, the tab bar is solid and stands beside the page in landscape,
+  nothing sits in the home-indicator strip, fields no longer make iPhone zoom in, long answers stay inside their
+  buttons, the invite commands break at sensible places, and Artifacts has its heading again.
+- A note of only a pasted picture, folded right after the paste, is no longer thrown away.
 
 ## 10 October 2026 (v49 – v108)
 
