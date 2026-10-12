@@ -640,8 +640,11 @@ device and never follows a group.
 **Live Activity** (`Sources/TrommiLive`, a WidgetKit extension; `LiveActivities.swift`): the bell and the count of
 questions waiting in the Dynamic Island and on the lock screen; with the most urgent waiting card (blocking or a
 permission request first, then a knock, then the one waiting longest), its session, its title and, for a decision
-with two options, its two answers as buttons. The hub starts it with a push-to-start push when agents begin to work,
-updates it with two marks (`working`, `waiting`: 0 or 1 each, never how many), and ends it when none works. The card is the app's: after a
+with two options, its two answers as buttons. The hub starts it with a push-to-start push when a question waits,
+updates it with two marks (`working`, `waiting`: 0 or 1 each, never how many), and ends it when nothing waits and no
+agent works. With nothing waiting it shows no "0" but "All answered": the bell, and the working ring with how many
+agents are at work (the sealed count, or the sessions with a working status line that the app counted, `busy`), or
+a tick in the island when none works. The ring stands still: a Live Activity runs no animation of its own. The card is the app's: after a
 change of the board and after each push of the hub, the app puts it into the running activity from what it opened on
 the phone (PushNotify `LiveState`); no title leaves the phone. The hub's pushes also carry the exact counts sealed under
 this phone's push key (`s`); the widget opens them with the core (NotifyCoreLive, the key from the context's Keychain
@@ -653,7 +656,8 @@ any other card open in the app. The app hands over tokens: its push-to-start tok
 tag per room, and each running activity's token to the hub whose tag its attributes carry; iOS wakes the app in the
 background for that. Push off (Settings · Devices) removes them and ends what runs; signing out ends it too. Past the
 push's stale date the widget dims and says "Not up to date". `NSSupportsLiveActivities` is in `Info.plist`. The
-screenshot hook `TROMMI_SCREEN=desk TROMMI_LIVE=1` starts one with the demo's cards in the simulator.
+screenshot hook `TROMMI_SCREEN=desk TROMMI_LIVE=1` starts one with the demo's cards in the simulator;
+`TROMMI_LIVE=clear` with nothing waiting and the demo's sessions at work, `clear-quiet` with nobody at work.
 
 **Universal links** (`Links.swift`): `https://app.trommi.com/card/<Nr. or id>`, `/chat/<session>`,
 `/chat/<session>/card/<ref>` (and `/s/…`, the form of before), `/settings` and `/settings/<sessions|devices|account|theme>` open in the app when it is

@@ -19,6 +19,12 @@ look the same on the web and the iPhone.
 **Fixed**
 - A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
   writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).
+On the iPhone, the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
+many agents are still at work.
+
+**Better**
+- iPhone Live Activity with nothing waiting: "All answered" with the working ring and how many agents are at work
+  (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
 
 ## 11 October 2026
 

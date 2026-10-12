@@ -163,7 +163,9 @@ final class PushNotifyTests: XCTestCase {
     hub.s = NotifyText.b64u(FakeCore.sealLive(key: pushKey, 2, 5))
     let shown = hub.opened(key: pushKey, core: FakeCore())
     XCTAssertEqual(shown.working, 2); XCTAssertEqual(shown.waiting, 5); XCTAssertEqual(shown.exact, true)
-    XCTAssertEqual(shown.line, "Agents at work · 5 questions waiting")
+    // the agents at work are counted too (the island's "All answered · 2 agents at work")
+    XCTAssertEqual(shown.busy, 2)
+    XCTAssertEqual(shown.line, "2 agents at work · 5 questions waiting")
     // another key, a broken core, no key: the marks stay
     for (k, core) in [(random(32), FakeCore()), (pushKey, FakeCore(broken: true))] {
       XCTAssertEqual(hub.opened(key: k, core: core), hub)
