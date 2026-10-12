@@ -26,6 +26,11 @@ public enum SelfJoinPlan {
     return list.map { Ask(sessionId: $0["session_id"].string ?? "", nonce: $0["nonce"].string ?? "", ask: $0["ask"], refused: $0["refused"].string) }
   }
 
+  /** As `asks`, of the sessions `holds` names only (the core already leaves out the groups this device does not hold). */
+  public static func asks(_ board: Board, answered: Set<String>, holds: (String) -> Bool, pending: [String] = []) -> [Ask] {
+    asks(board, answered: answered, pending: pending).filter { holds($0.sessionId) }
+  }
+
   /** Archived sessions that joined by themselves whose agent device is still in: their devices go (12.4.5). */
   public static func toRetire(_ board: Board) -> [String] {
     guard let text = try? board.engine.selfJoinRetire() else { return [] }
