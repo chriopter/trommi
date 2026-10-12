@@ -779,6 +779,59 @@ fn the_desk_lists_open_objects_by_urgency_and_every_writers_newest_register_valu
 }
 
 #[test]
+fn the_brief_desk_lists_ids_and_versions_and_since_a_change_only_what_changed() {
+    let mut s = scene();
+    let (low, _) = card(&mut s, 0, 0);
+    let (high, _) = card(&mut s, 2, 0);
+    let (answered, v) = card(&mut s, 1, 0);
+    let hub = &s.w.hub;
+    let ids = |list: &Value| -> Vec<String> {
+        list.as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["object_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let whole = s.bea.get(hub, "/v1/desk?brief=1").ok();
+    // the full Desk's open cards, in its order, with no envelope
+    assert_eq!(ids(&whole["cards"]), vec![b64(&high), b64(&answered), b64(&low)]);
+    assert!(whole["cards"].as_array().unwrap().iter().all(|c| c.get("version").is_none()
+        && c["version_change"].as_i64().unwrap() > 0
+        && c["head_change"].as_i64().unwrap() >= c["version_change"].as_i64().unwrap()));
+    assert!(whole.get("registers").is_none() && whole.get("settled").is_none());
+    let at = whole["change"].as_i64().unwrap();
+    // nothing changed since: an empty delta
+    let none = s.bea.get(hub, &format!("/v1/desk?brief=1&since={at}")).ok();
+    assert_eq!((none["cards"].clone(), none["settled"].clone()), (json!([]), json!([])));
+    // one answered, one new: the answered one is settled, the new one listed, the rest not repeated
+    s.bea
+        .send(
+            hub,
+            &s.group,
+            &object(
+                wire::KIND_ANSWER,
+                answered,
+                wire::TYPE_CARD,
+                wire::STATE_ANSWERED,
+                1,
+                v,
+                s.agent.id(),
+            ),
+        )
+        .ok();
+    let (new, _) = card(&mut s, 3, 0);
+    let hub = &s.w.hub;
+    let delta = s.bea.get(hub, &format!("/v1/desk?brief=1&since={at}")).ok();
+    assert_eq!(ids(&delta["cards"]), vec![b64(&new)]);
+    assert_eq!(delta["settled"], json!([b64(&answered)]));
+    assert!(delta["change"].as_i64().unwrap() > at);
+    // the full Desk is unchanged by the new form; a wrong form is refused
+    assert_eq!(s.bea.get(hub, "/v1/desk").ok()["cards"].as_array().unwrap().len(), 3);
+    s.bea.get(hub, "/v1/desk?brief=2").refused(400, "bad-format");
+    s.bea.get(hub, "/v1/desk?since=1").refused(400, "bad-format");
+}
+
+#[test]
 fn a_chat_is_paged_newest_first_and_a_board_loads_from_a_change_number() {
     let mut s = scene();
     let hub = &s.w.hub;

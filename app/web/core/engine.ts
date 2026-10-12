@@ -139,6 +139,10 @@ const MOVED: readonly string[] = ['epoch-taken', 'room-behind', 'wrong-epoch', '
 const PAGE = 1000
 /** How many items of a page the core is handed in one call (`feed`): one write of the store for all of them. */
 const FEED = 200
+/** At most this many bytes of envelopes are kept in memory for a rescan (`held`). */
+const HELD_BYTES = 48 << 20
+/** How long after a rescan the envelopes are still kept for the next one (`held`). */
+const HELD_KEEP_MS = 120_000
 /** After a read of the hub's Welcomes that brought nothing, how many items that wait for a group pass before the
  *  next (`repairByWelcome`): a Welcome that comes meanwhile is found that many items later at most. */
 const WELCOMES_AGAIN = 64
@@ -189,6 +193,12 @@ export class Engine {
   private readonly waiters = new Map<number, (outcome: string) => void>()
   private readonly outcomes = new Map<number, string>()
   private readonly badWelcomes = new Set<string>()
+  /** The envelopes of the hub's order this run took since `from` (`remember`): a rescan soon after reads them from
+   *  here, not from the hub again. A fresh sign-in rescans the whole history once or twice (for the groups it joined
+   *  and learned meanwhile), which was the whole history over the network each time. Dropped once no rescan or
+   *  learning is due, and when it would grow past HELD_BYTES (a rescan then reads from the hub, as before). */
+  private held: { from: number; items: Map<number, Extract<ChangeItem, { kind: 'envelope' }>>; bytes: number } | null = null
+  private heldDone = false
   /** How many repairs passed since the hub's list of Welcomes was read with nothing joined from it
    *  (`repairByWelcome`); null: read it at the next repair. */
   private welcomesRead: number | null = null
@@ -540,6 +550,7 @@ export class Engine {
     }
     try {
       const due = items.filter(item => item.change > this.position)
+      this.remember(due)
       if (due.length === 1) step(due[0]!, await this.take(due[0]!))
       else for (let at = 0; at < due.length;) {
         const batch = due.slice(at, at + FEED)
@@ -577,6 +588,19 @@ export class Engine {
       this.emit('batch', null)
     }
     if (changed) this.keepSoon(this.timing.heal_delay)
+  }
+  /** Keeps a batch's envelopes for a rescan (`held`). The record starts at the position before the batch, so it
+   *  holds every envelope of the hub's order after its `from`. */
+  private remember(due: readonly ChangeItem[]): void {
+    // (only a device that takes the room from its start: its rescans read from there; another one's from 0 do not)
+    if (!due.length || (!this.held && (this.position !== 0 || this.heldDone))) return
+    const held = this.held ??= { from: this.position, items: new Map(), bytes: 0 }
+    for (const item of due) {
+      if (item.kind !== 'envelope' || held.items.has(item.change)) continue
+      held.items.set(item.change, item)
+      held.bytes += item.envelope.length + 64
+    }
+    if (held.bytes > HELD_BYTES) { this.held = null; this.heldDone = true }
   }
   /** The accepted Commits whose group no longer waits: they were merged (or dropped for the one that took their epoch,
    *  which `processed` told already). */
@@ -830,8 +854,11 @@ export class Engine {
   private async rescanNow(): Promise<void> {
     const asked = this.rescanAsked
     const upTo = this.position
+    // the envelopes this run took already, when they reach back to where the rescan starts: no page from the hub
+    const held = this.held && this.held.from <= this.rescanFrom ? [...this.held.items.values()].filter(item => item.change > this.rescanFrom).sort((x, y) => x.change - y.change) : null
+    if (held) mark(`rescan from memory: ${held.length} envelopes`)
     for (let after = this.rescanFrom; after < upTo;) {
-      const page = await this.hub.changes(after, PAGE)
+      const page = held ? { items: held, change: upTo, more: false } : await this.hub.changes(after, PAGE)
       await this.serial(async () => {
         // (what the chain could not take before is written now: in batches, like a page of a catch-up)
         // (an envelope this engine told whole in the hub's order is not read again: the chain holds it and the
@@ -864,6 +891,9 @@ export class Engine {
     if (this.rescanAsked !== asked) { this.keepSoon(0); return }
     this.rescanDue = false
     this.rescanFrom = 0
+    // (kept a while: the session groups of a sign-in are joined and learned after its first rescan, and each asks
+    //  for one more)
+    if (this.held) this.later(HELD_KEEP_MS, () => { if (!this.rescanDue && !this.learnDue) { this.held = null; this.heldDone = true } })
     await this.opts.meta.delete('rescan').catch(() => {})
     this.emit('rescanned', null)
     this.emit('batch', null)

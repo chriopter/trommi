@@ -924,7 +924,11 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                 Posted::Voided(refusal) => Err(refusal),
             }
         }
-        ("GET", ["desk"]) => app.read(|x| content::desk(x.c, &rq.auth(app, x.c)?)),
+        ("GET", ["desk"]) => match (rq.q("brief"), rq.q_int("since")?) {
+            (None, None) => app.read(|x| content::desk(x.c, &rq.auth(app, x.c)?)),
+            (Some("1"), since) => app.read(|x| content::desk_brief(x.c, &rq.auth(app, x.c)?, since)),
+            _ => Err(refuse("bad-format", "the Desk is read whole, or with brief=1 (and since=)")),
+        },
         ("GET", ["chats", scope, timeline, "items"]) => {
             let key = content::chat_key(scope, timeline)?;
             let (before, limit) = (rq.q_int("before")?, rq.q_int("limit")?);

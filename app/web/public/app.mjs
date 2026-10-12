@@ -2047,9 +2047,9 @@ if (sw) {
     box.append('A new version is ready.', go)
     document.body.append(box)
   }
-  // A new version took over: the page reloads at once, unless a field holds unsent words (then a quiet line offers
-  // it, and it reloads by itself once the app is in the background with nothing unsent).
-  sw.addEventListener('controllerchange', () => { if (!hadController) return; stale = true; if (unsent()) offer(); else location.reload() })
+  // A new version took over: a page in view is never reloaded under the person; a quiet line offers it, and it
+  // reloads by itself once the app is in the background with nothing unsent. A page in the background reloads now.
+  sw.addEventListener('controllerchange', () => { if (!hadController) return; stale = true; if (document.visibilityState === 'hidden' && !unsent()) location.reload(); else offer() })
   const check = async () => {
     if (Date.now() - checked < CHECK_MS) return
     checked = Date.now()

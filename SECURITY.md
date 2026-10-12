@@ -40,6 +40,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
 - A room holds at most 1000 devices.
 - Files are encrypted on the device. Push notifications carry no content.
+- The web app keeps pictures it showed in the browser still encrypted, as the hub stores them (at most 96 MB);
+  signing out deletes them with the rest of the browser's data.
 - What push reveals: Apple and the browser's push service learn that something happened for a device, when, and how
   often. Every push looks the same to them: one text ("Something new."), the same clear headers (Web Push: urgency
   normal and a topic that is random per subscription and names no room; on the iPhone a sealed part of one length).

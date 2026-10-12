@@ -1287,6 +1287,65 @@ pub fn desk(c: &Connection, auth: &Auth) -> Res<Value> {
     Ok(out)
 }
 
+/// `GET /v1/desk?brief=1&since=`: the Desk's open cards and permission requests as ids and version numbers only,
+/// no envelopes, no registers (the same rows as the full Desk, in its order; a client reads the versions it lacks
+/// by their object route). With `since`, only the rows whose `head_change` is above it: the open ones listed, the
+/// ones no longer open named in `settled`. Nothing in it that the full Desk does not show.
+pub fn desk_brief(c: &Connection, auth: &Auth, since: Option<i64>) -> Res<Value> {
+    auth.member()?;
+    let readable = store::readable_groups(c, auth)?;
+    let sees = |group: &[u8]| {
+        readable
+            .as_ref()
+            .is_none_or(|g| g.iter().any(|x| x == group))
+    };
+    let mut out = json!({});
+    let mut truncated = false;
+    let mut settled = Vec::new();
+    for table in ["cards", "permission_requests"] {
+        let mut items = Vec::new();
+        let sql = match since {
+            None => format!(
+                "SELECT object_id, group_id, state, version_change, head_change FROM {table}
+                 WHERE room_id = ?1 AND state = 1 AND ?2 = 0 ORDER BY urgency DESC, first_change"
+            ),
+            Some(_) => format!(
+                "SELECT object_id, group_id, state, version_change, head_change FROM {table}
+                 WHERE room_id = ?1 AND head_change > ?2 ORDER BY urgency DESC, first_change"
+            ),
+        };
+        let mut s = c.prepare_cached(&sql)?;
+        let mut rows = s.query(params![&auth.room[..], since.unwrap_or(0)])?;
+        while let Some(r) = rows.next()? {
+            if items.len() + settled.len() >= 10_000 {
+                truncated = true;
+                break;
+            }
+            let group: Vec<u8> = r.get(1)?;
+            if !sees(&group) {
+                continue;
+            }
+            let id = b64(&r.get::<_, Vec<u8>>(0)?);
+            if r.get::<_, i64>(2)? != i64::from(wire::STATE_OPEN) {
+                settled.push(json!(id));
+                continue;
+            }
+            items.push(json!({
+                "object_id": id,
+                "version_change": r.get::<_, i64>(3)?,
+                "head_change": r.get::<_, i64>(4)?,
+            }));
+        }
+        out[table] = Value::Array(items);
+    }
+    if since.is_some() {
+        out["settled"] = Value::Array(settled);
+    }
+    out["truncated"] = json!(truncated);
+    out["change"] = json!(store::room_row(c, &auth.room)?.change);
+    Ok(out)
+}
+
 /// A timeline named in a route: `session/<hex>`, `card/<hex>` for Chats; a board's hex id.
 pub fn chat_key(scope: &str, id_hex: &str) -> Res<Vec<u8>> {
     let id = crate::util::unhex(id_hex)
