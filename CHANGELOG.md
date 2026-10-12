@@ -33,6 +33,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   stays below it as the other way (web and iPhone).
 
 **Fixed**
+- **New agent online at once**: an agent that joins with `trommi-connector connect` goes online right away under its folder's name, not "gone" under a raw id until its first step.
 - **No more "Unknown command: /trommi:connect"**: `trommi-connector setup claude` now replaces a Trommi plugin copy
   older than the slash command (Claude Code kept it because the version number stayed the same) and turns the plugin
   on when it was off, in the Claude Code account `CLAUDE_CONFIG_DIR` names.
