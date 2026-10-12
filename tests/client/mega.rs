@@ -28,7 +28,9 @@
 //! ```
 //! `MEGA_TREES="branch=<repo>,main=<worktree>"` runs the devices of several checkouts in one room (default: this
 //! one); `MEGA_TWINS=0` leaves the second device of each app out; `MEGA_IOS=0`, `MEGA_WEB=0`; `MEGA_OUT` is
-//! where the snapshots and the report go. `speed_of_every_client` measures the same clients with a big Desk.
+//! where the snapshots and the report go. `speed_of_every_client` measures the same clients with a big Desk, and
+//! how fast a reopened connector holds the human's answers (`connector_answers_lag_ms`: per answer, from the hub's
+//! taking it to the agent's holding it).
 #[path = "../connector/common/mod.rs"]
 mod common;
 
@@ -1407,10 +1409,46 @@ async fn speed_of_every_client() {
     human.sync().await;
     let known = human.object_ids();
     let ids: Vec<String> = ids.into_iter().filter(|id| known.contains(id)).collect();
-    // the answers go out first (each a write of the stand-in); then the time until the agent holds them all
+    // The human answers them one by one (each a catch-up and a write of the stand-in); meanwhile a watcher notes
+    // when the agent first holds each one answered. The lag of an answer: from the hub's taking it to the agent's
+    // holding it. (Before: the time after the last answer was posted, when the agent held most of them already.)
+    let taken_at: Arc<Mutex<BTreeMap<String, std::time::Instant>>> = Arc::default();
+    let watch = {
+        let (agent, ids, taken_at) = (agent.clone(), ids.clone(), taken_at.clone());
+        tokio::spawn(async move {
+            loop {
+                let open: Vec<String> = {
+                    let core = agent.core.lock().await;
+                    let now = std::time::Instant::now();
+                    let mut taken = taken_at.lock().unwrap();
+                    for id in &ids {
+                        if !taken.contains_key(id)
+                            && core
+                                .model
+                                .cards
+                                .get(id)
+                                .is_some_and(|c| c.object_state != "open")
+                        {
+                            taken.insert(id.clone(), now);
+                        }
+                    }
+                    ids.iter()
+                        .filter(|id| !taken.contains_key(*id))
+                        .cloned()
+                        .collect()
+                };
+                if open.is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+    };
+    let t = std::time::Instant::now();
+    let mut sent_at = BTreeMap::new();
     let mut refused = 0;
     for id in &ids {
-        if human
+        match human
             .answer(
                 id,
                 json!({ "schema_version": 2, "answer_action": "answer", "choices": ["a"] }),
@@ -1418,35 +1456,68 @@ async fn speed_of_every_client() {
                 false,
             )
             .await
-            .is_err()
         {
-            refused += 1;
+            Ok(()) => {
+                sent_at.insert(id.clone(), std::time::Instant::now());
+            }
+            Err(e) => {
+                if refused == 0 {
+                    eprintln!("SPEED the stand-in's answer was refused: {e:?}");
+                }
+                refused += 1;
+            }
         }
     }
-    let t = std::time::Instant::now();
-    let mut got = 0;
-    while t.elapsed() < Duration::from_secs(120) {
-        let core = agent.core.lock().await;
-        got = ids
-            .iter()
-            .filter(|id| {
-                core.model
-                    .cards
-                    .get(*id)
-                    .is_some_and(|c| c.object_state != "open")
-            })
-            .count();
-        drop(core);
-        if got == ids.len() {
-            break;
-        }
+    // (until the agent holds every answer that was posted, at most two minutes)
+    let wait = std::time::Instant::now();
+    while wait.elapsed() < Duration::from_secs(120)
+        && !sent_at
+            .keys()
+            .all(|id| taken_at.lock().unwrap().contains_key(id))
+    {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+    watch.abort();
     while let Ok(Some(_)) = tokio::time::timeout(Duration::from_millis(1), events.recv()).await {}
-    results.insert("connector_answers_sent".into(), json!(ids.len() - refused));
-    results.insert("connector_answers_taken".into(), json!(got));
-    // (the stand-in posts each answer after a catch-up of its own: the agent, on its stream, has most of them by then)
-    results.insert("connector_answers_lag_ms".into(), json!(ms(t)));
+    let taken_at = taken_at.lock().unwrap().clone();
+    // (an answer the agent held before the stand-in had its write back counts as 0 ms)
+    let mut lags: Vec<u64> = sent_at
+        .iter()
+        .filter_map(|(id, sent)| {
+            taken_at
+                .get(id)
+                .map(|taken| taken.saturating_duration_since(*sent).as_millis() as u64)
+        })
+        .collect();
+    lags.sort();
+    let pct = |p: usize| {
+        lags.get((lags.len() * p / 100).min(lags.len().max(1) - 1))
+            .copied()
+    };
+    results.insert("connector_answers_sent".into(), json!(sent_at.len()));
+    results.insert(
+        "connector_answers_taken".into(),
+        json!(sent_at
+            .keys()
+            .filter(|id| taken_at.contains_key(*id))
+            .count()),
+    );
+    results.insert(
+        "connector_answers_lag_ms".into(),
+        json!({ "median": pct(50), "p90": pct(90), "max": lags.last() }),
+    );
+    // from the first answer to the agent holding the last one
+    results.insert(
+        "connector_answers_all_ms".into(),
+        json!(taken_at
+            .values()
+            .max()
+            .map(|last| last.saturating_duration_since(t).as_millis() as u64)),
+    );
+    if !human.findings.is_empty() {
+        // the stand-in could not follow the room: its answers measure nothing
+        results.insert("stand_in_findings".into(), json!(human.findings));
+    }
     for o in observers.iter_mut() {
         let _ = o.call(json!({ "op": "quit" })).await;
     }

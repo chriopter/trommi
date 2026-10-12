@@ -1132,11 +1132,16 @@ impl Human {
     async fn take_log(&mut self, item: &Value, change: u64, commit: bool) {
         let group = GroupId::from_bytes(&unb64(item, "group_id").expect("group")).expect("id");
         let bytes = unb64(item, "bytes").expect("bytes");
+        // a device that joined by the recovery code (a fresh login) proves it with its Commit (spec 7.4)
+        let recovery_auth = item
+            .get("recovery_auth")
+            .filter(|a| !a.is_null())
+            .map(|_| unb64(item, "recovery_auth").expect("recovery_auth"));
         let hand = move |v: &mut Vault| {
             let kind = if commit {
                 LogKind::Commit {
                     bytes: &bytes,
-                    recovery_auth: None,
+                    recovery_auth: recovery_auth.as_deref(),
                 }
             } else {
                 LogKind::Message { bytes: &bytes }
