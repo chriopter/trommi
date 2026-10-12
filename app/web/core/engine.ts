@@ -139,6 +139,9 @@ const MOVED: readonly string[] = ['epoch-taken', 'room-behind', 'wrong-epoch', '
 const PAGE = 1000
 /** How many items of a page the core is handed in one call (`feed`): one write of the store for all of them. */
 const FEED = 200
+/** After a read of the hub's Welcomes that brought nothing, how many items that wait for a group pass before the
+ *  next (`repairByWelcome`): a Welcome that comes meanwhile is found that many items later at most. */
+const WELCOMES_AGAIN = 64
 const same = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 
 /** JSON with its keys in order: two values are the same value exactly when these texts are equal. */
@@ -186,8 +189,9 @@ export class Engine {
   private readonly waiters = new Map<number, (outcome: string) => void>()
   private readonly outcomes = new Map<number, string>()
   private readonly badWelcomes = new Set<string>()
-  /** The hub's list of Welcomes was read in this batch and nothing new was joined from it (`repairByWelcome`). */
-  private welcomesRead = false
+  /** How many repairs passed since the hub's list of Welcomes was read with nothing joined from it
+   *  (`repairByWelcome`); null: read it at the next repair. */
+  private welcomesRead: number | null = null
   /** Per group, the log number up to which `handLog` handed the log to the device. */
   private readonly logRead = new Map<string, number>()
   private rescanDue = false
@@ -526,7 +530,7 @@ export class Engine {
    */
   private async ingest(items: readonly ChangeItem[], upTo: number): Promise<void> {
     let changed = false, told = this.now()
-    this.welcomesRead = false
+    this.welcomesRead = null
     const step = (item: ChangeItem, moved: boolean): void => {
       if (moved) changed = true
       this.position = this.cursor = item.change
@@ -883,7 +887,7 @@ export class Engine {
         if (message) { this.emit('relay', message); this.emit('batch', null) }
         return
       }
-      case 'welcome': this.welcomesRead = false; this.keepSoon(0); return
+      case 'welcome': this.welcomesRead = null; this.keepSoon(0); return
       case 'request':
         // a human device that holds the keys sends them again on a newcomer's wish (7.1)
         // a human device that holds the keys hands them to a human device that asks (7.1.1)
@@ -906,11 +910,12 @@ export class Engine {
    *  null where any device the group's rules allow may have. True when a group was joined. Inside a job. */
   private joinWelcomes(committer: Uint8Array | null): Promise<boolean> { return timed('welcome', () => this.joinWelcomesNow(committer)) }
   /** For a repair inside a batch (an envelope or entry that waits for a group this device may not be in yet): the
-   *  hub's list is read once per batch, not once per item. A history full of groups this device was never welcomed
-   *  to otherwise asked the hub once per envelope of them (a fresh sign-in: a minute of requests). A Welcome that
-   *  comes meanwhile is said on the stream, and the next batch reads the list again. */
+   *  hub's list is read once per WELCOMES_AGAIN items that wait, not once per item. A history full of groups this device was
+   *  never welcomed to otherwise asked the hub once per envelope of them (a fresh sign-in: a minute of requests).
+   *  A Welcome that comes meanwhile (the session joins of a sign-in run alongside its catch-up) is found by the next
+   *  read, said on the stream, or taken by the rescan that follows. */
   private repairByWelcome(): Promise<boolean> {
-    if (this.welcomesRead) return Promise.resolve(false)
+    if (this.welcomesRead !== null && ++this.welcomesRead < WELCOMES_AGAIN) return Promise.resolve(false)
     return this.joinWelcomes(null)
   }
   private async joinWelcomesNow(committer: Uint8Array | null): Promise<boolean> {
@@ -951,7 +956,7 @@ export class Engine {
       }
     }
     // (a Welcome that came too early for this device is tried again at the next repair, as before)
-    this.welcomesRead = !joined && !later
+    this.welcomesRead = !joined && !later ? 0 : null
     if (joined) {
       await this.refresh()
       // a device that came in by link knows nothing of the time before: its groups' past is learned, then read
