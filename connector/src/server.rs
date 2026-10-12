@@ -1186,8 +1186,10 @@ impl Conn {
         if self.member.phase() == "ready" {
             self.touch();
         } else if self.member.phase() == "needs-invite"
-            && self.member.paths().is_some_and(|p| !p.has_key)
+            && self.member.paths().is_none_or(|p| !p.has_key)
+            && self.may_self_join()
         {
+            // (no paths at all: this folder holds no key of any room yet, the usual new session)
             self.self_join_soon();
         }
     }
@@ -1208,6 +1210,10 @@ impl Conn {
         let c = self.arc();
         tokio::spawn(async move {
             let outcome = c.self_join().await;
+            if outcome.is_err() {
+                // the client was told "joining": it lists again and sees the connect tool with the reason
+                c.relist().await;
+            }
             if let Err(why) = &outcome {
                 // a denial holds for this process; anything else is asked again a minute later at the earliest
                 let after = if why.contains("denied") {
@@ -1223,6 +1229,24 @@ impl Conn {
             }
             c.self_joining.store(false, Ordering::SeqCst);
         });
+    }
+    /// Whether a session without a key could join by itself now: self-join on, no spare, not denied, not
+    /// waiting for its next try, and a room on this machine with a running connector that could vouch.
+    fn may_self_join(&self) -> bool {
+        vouch::enabled()
+            && !self.spare
+            && now_ms() >= self.self_join_after.load(Ordering::SeqCst)
+            && vouch::room_for(&self.cfg)
+                .is_some_and(|room| !vouch::held_slots(&self.cfg.keys_dir.join(room)).is_empty())
+    }
+    /// A client that was offered the tools of a session off the board lists them again (their notes changed).
+    async fn relist(&self) {
+        if self.offered_connect.load(Ordering::SeqCst) {
+            let _ = self
+                .out
+                .notification("notifications/tools/list_changed", Value::Null)
+                .await;
+        }
     }
     async fn self_join(&self) -> std::result::Result<(), String> {
         let room = vouch::room_for(&self.cfg).ok_or("this machine is in no Trommi room yet")?;
@@ -1245,6 +1269,7 @@ impl Conn {
         };
         *self.self_join_note.lock().unwrap() = Some(format!("Not on the Trommi board yet: joining by itself, vouched by the session \"{by}\"; waiting for the human to allow it with one tap in the Trommi app (open on a phone or computer). Try again in a moment."));
         eprintln!("[trommi] self-join: asked the session \"{by}\" to vouch for this one");
+        self.relist().await;
         let done_req = json!({ "op": "vouch-done", "nonce": nonce, "owner": self.cfg.owner });
         let done = || door::knock(&voucher, &done_req, 5000);
         let until = now_ms() + env_ms("TROMMI_SELF_JOIN_WAIT_MS", vouch::LINK_WAIT_MS);
@@ -2135,6 +2160,10 @@ impl mcp::Server for Conn {
                 self.touch();
             }
             if self.member.phase() == "needs-invite" {
+                // a new session of this machine and account joins by itself at once, not only on a tool call
+                if self.member.paths().is_none_or(|p| !p.has_key) && self.may_self_join() {
+                    self.self_join_soon();
+                }
                 eprintln!("[trommi] {}", self.not_ready());
             }
         });
@@ -2143,11 +2172,21 @@ impl mcp::Server for Conn {
         Box::pin(async move {
             if self.unconnected() {
                 self.offered_connect.store(true, Ordering::SeqCst);
+                // a new session of this machine and account starts joining by itself now (spec/v1.md 12.4)
+                if self.may_self_join() {
+                    self.self_join_soon();
+                }
+                let note = self.self_join_note.lock().unwrap().clone();
                 // Codex never asks for the list again: it gets every tool now, connect among them
                 if crate::host::is_codex() {
-                    return prompt::tools_list_json_with_connect(true);
+                    return prompt::tools_list_json_with_connect(true, note.as_deref());
                 }
-                return prompt::connect_list_json();
+                // while it joins by itself: every tool (each call says where the join stands), and connect
+                // saying that no link is needed
+                if self.self_joining.load(Ordering::SeqCst) {
+                    return prompt::tools_list_json_with_connect(!self.heard(), note.as_deref());
+                }
+                return prompt::connect_list_json(note.as_deref());
             }
             prompt::tools_list_json(!self.heard())
         })

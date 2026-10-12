@@ -1069,7 +1069,10 @@ async fn closed_helper_sessions_are_archived_and_free_their_place() {
         sids.insert(name, opened_sid(&opened));
     }
     let (refused, failed) = mcp.call("open_session", json!({ "name": "D" })).await;
-    assert!(failed && refused.contains("live helper sessions"), "{refused}");
+    assert!(
+        failed && refused.contains("live helper sessions"),
+        "{refused}"
+    );
 
     // closed without an open question: archived, its place free
     let closed = mcp.ok("close_session", json!({ "name": "A" })).await;
@@ -1085,14 +1088,26 @@ async fn closed_helper_sessions_are_archived_and_free_their_place() {
             json!({ "session": "B", "title": "Which?", "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] }),
         )
         .await;
-    let card = made.split_whitespace().nth(1).expect("the card's id").to_string();
+    let card = made
+        .split_whitespace()
+        .nth(1)
+        .expect("the card's id")
+        .to_string();
     let closed = mcp.ok("close_session", json!({ "name": "B" })).await;
     assert!(closed.contains("1 open question of it stays"), "{closed}");
     let (refused, failed) = mcp.call("open_session", json!({ "name": "E" })).await;
-    assert!(failed && refused.contains("live helper sessions"), "{refused}");
+    assert!(
+        failed && refused.contains("live helper sessions"),
+        "{refused}"
+    );
     human.sync().await;
     human
-        .answer(&card, json!({ "answer_action": "answer", "choices": ["b"] }), &["b"], false)
+        .answer(
+            &card,
+            json!({ "answer_action": "answer", "choices": ["b"] }),
+            &["b"],
+            false,
+        )
         .await
         .expect("taken");
     mcp.event("decision").await;
@@ -1105,7 +1120,10 @@ async fn closed_helper_sessions_are_archived_and_free_their_place() {
         .groups()
         .await
         .into_iter()
-        .find(|g| g.session.is_some_and(|s| hex(s.session_id.as_bytes()) == sids["C"]))
+        .find(|g| {
+            g.session
+                .is_some_and(|s| hex(s.session_id.as_bytes()) == sids["C"])
+        })
         .expect("the human device is a leaf of C")
         .group;
     human.archive(&c).await;
@@ -1128,7 +1146,10 @@ async fn closed_helper_sessions_are_archived_and_free_their_place() {
     assert!(opened.starts_with("child session opened"), "{opened}");
     assert_ne!(opened_sid(&opened), sids["A"]);
     let (refused, failed) = mcp.call("open_session", json!({ "name": "F" })).await;
-    assert!(failed && refused.contains("live helper sessions"), "{refused}");
+    assert!(
+        failed && refused.contains("live helper sessions"),
+        "{refused}"
+    );
     mcp.close().await;
 }
 
@@ -2064,6 +2085,117 @@ async fn a_second_session_joins_by_itself_vouched_by_the_first() {
         .count();
     assert_eq!(asks_before, asks_after, "no ask for another account");
     third.close().await;
+    first.close().await;
+}
+
+/// Self-join in another folder, on by default (spec/v1.md 12.4): a new Claude Code session in a folder that holds no
+/// key of any room starts joining by itself as soon as its client lists the tools, without a tool call. It lists
+/// every board tool and connect, which says that no link is needed; the human's app gets the ask, and once in, the
+/// client is told to list again and gets the board tools without connect.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_session_in_another_folder_joins_by_itself_without_a_tool_call() {
+    let (_hub, mut human, seat, group) = joined().await;
+    let mut first = seat.serve().await;
+    first.ready().await;
+
+    let elsewhere = seat.home.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).expect("a second folder");
+    let mut second = seat
+        .serve_with(&[
+            ("TROMMI_FOLDER", elsewhere.to_str().unwrap()),
+            ("TROMMI_SESSION_KEY", "test-elsewhere"),
+            ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+        ])
+        .await;
+    let listed = second.request("tools/list", json!({})).await;
+    let names = tool_names(&listed);
+    assert!(
+        names.contains(&"connect".to_string()) && names.contains(&"reply".to_string()),
+        "not connect alone while it joins by itself: {names:?}"
+    );
+    let connect = listed["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "connect")
+        .unwrap();
+    assert!(
+        connect["description"]
+            .as_str()
+            .is_some_and(|d| d.contains("joining by itself") && d.contains("No invite link")),
+        "{connect}"
+    );
+
+    // the ask reaches the human's app with no tool call of the new session
+    let (admitted, new_group, ask) = human.admit_self_join(&group).await;
+    assert_eq!(ask["name"], "elsewhere", "{ask}");
+    assert_eq!(ask["vouched_by"], "project", "{ask}");
+    second.ready().await;
+    // once when it was vouched for (the connect tool's note changed), once when it is in
+    for _ in 0..2 {
+        second
+            .notification("notifications/tools/list_changed")
+            .await;
+    }
+    let listed = second.request("tools/list", json!({})).await;
+    let names = tool_names(&listed);
+    assert!(
+        names.contains(&"reply".to_string()) && !names.contains(&"connect".to_string()),
+        "{names:?}"
+    );
+    second
+        .ok("reply", json!({ "text": "from the other folder" }))
+        .await;
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    let session = hex(new_group.session_id().unwrap().as_bytes());
+    assert!(human.items.iter().any(|(s, sender, p)| *s == session
+        && *sender == admitted.device
+        && p["text"] == "from the other folder"));
+    second.close().await;
+    first.close().await;
+}
+
+/// Self-join off (`TROMMI_SELF_JOIN=0`), or with nobody to vouch: a new session in a folder without a key offers
+/// connect alone and asks nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_session_with_self_join_off_or_nobody_to_vouch_offers_connect_alone() {
+    let (_hub, mut human, seat, group) = joined().await;
+    let elsewhere = seat.home.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).expect("a second folder");
+    // nobody runs: nobody can vouch
+    let mut alone = seat
+        .serve_with(&[
+            ("TROMMI_FOLDER", elsewhere.to_str().unwrap()),
+            ("TROMMI_SESSION_KEY", "test-alone"),
+        ])
+        .await;
+    let listed = alone.request("tools/list", json!({})).await;
+    assert_eq!(tool_names(&listed), ["connect"], "{listed}");
+    alone.close().await;
+
+    let mut first = seat.serve().await;
+    first.ready().await;
+    let mut off = seat
+        .serve_with(&[
+            ("TROMMI_FOLDER", elsewhere.to_str().unwrap()),
+            ("TROMMI_SESSION_KEY", "test-off"),
+            ("TROMMI_SELF_JOIN", "0"),
+        ])
+        .await;
+    let listed = off.request("tools/list", json!({})).await;
+    assert_eq!(tool_names(&listed), ["connect"], "{listed}");
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    human.sync().await;
+    let session = hex(group.session_id().unwrap().as_bytes());
+    assert!(
+        !human.items.iter().any(|(s, _, p)| *s == session
+            && p["name"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("join_ask/"))),
+        "no ask with self-join off"
+    );
+    off.close().await;
     first.close().await;
 }
 
