@@ -27,7 +27,7 @@ No info card per push: put the commit link in your reply.
 
 # In Claude Code
 
-kind="update": file the card the event names; reload_connector only after the human chose jetzt.
+kind="update": file the card the event names; reload_connector only after the human chose "now".
 
 If the trommi tools fail or say "not in a room": <connector> say '…' --urgent via Bash.
 
@@ -128,7 +128,7 @@ Release an asset for someone outside the board, or take the release back; return
 
 ## reload_connector
 
-Check for a new connector version. Call it only after the human chose "jetzt" on the update card. It answers with how to restart or that it is current.
+Check for a new connector version. Call it only after the human chose "now" on the update card. It answers with how to restart or that it is current.
 
 ## inbox
 

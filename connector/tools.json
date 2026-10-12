@@ -1579,7 +1579,7 @@
       "method": "notifications/claude/channel",
       "kind": "update",
       "when": "A new version of the connector is on disk (or the hub recommends one).",
-      "content": "a sentence naming the version and what to do: file the update card (jetzt / später)",
+      "content": "a sentence naming the version and what to do: file the update card (now / later)",
       "meta": {
         "kind": "update",
         "update_available": "1",

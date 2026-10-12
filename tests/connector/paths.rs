@@ -96,3 +96,15 @@ async fn the_update_and_usage_hints_name_commands_that_exist() {
     assert!(!output.status.success(), "{told}");
     assert!(told.contains("trommi-connector connect '<invite link>'"), "{told}");
 }
+
+/// The update card is filed in the human's language: no German words are put into the agent's mouth.
+#[test]
+fn the_update_card_and_its_tool_are_not_in_german() {
+    let mut texts = vec![trommi_connector::prompt::instructions()];
+    texts.push(trommi_connector::prompt::tools_list_json(true));
+    for text in texts {
+        for word in ["jetzt", "später", "Neue Connector"] {
+            assert!(!text.contains(word), "{word} in: {text}");
+        }
+    }
+}

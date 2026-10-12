@@ -2822,13 +2822,13 @@ impl Conn {
                 crate::host::restart_line()
             )
         } else {
-            "It can be loaded without a restart: on \"jetzt\" call reload_connector.".into()
+            "It can be loaded without a restart: on \"now\" call reload_connector.".into()
         };
         *self.hint.lock().unwrap() = Some(format!(
             "[Trommi: a new connector version {version} is available. {how}]"
         ));
         self.notify("notifications/claude/channel", json!({
-            "content": format!("A new version of the Trommi connector is available ({version}). File a decision card for the human: \"Neue Connector-Version {version} – jetzt neu laden?\" with the options jetzt and später. {how}"),
+            "content": format!("A new version of the Trommi connector is available ({version}). File a decision card for the human, in the human's language: the new Trommi connector {version}, load it now? Two options, keys now and later. {how}"),
             "meta": { "kind": "update", "update_available": "1", "version": version, "restart_required": if restart { "1" } else { "0" } },
         }), None).await;
     }
