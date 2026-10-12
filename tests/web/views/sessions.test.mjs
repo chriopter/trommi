@@ -126,7 +126,7 @@ test('the Delete route shreds the session\'s open questions, archives it with it
 })
 
 // The same list on every device: the order is the order of the session keys (a place he gave one goes first), not
-// the order the sessions reached this device; the iPhone reads the same order (Desk.swift).
+// the order the sessions reached this device; the iPhone reads the same list (client/src/sessions.rs).
 test('sessions without a place stand in the order of their ids, whatever order they came in', () => {
   const m = emptyModel()
   m.room.my_device_id = 'ee'.repeat(16)
@@ -137,20 +137,12 @@ test('sessions without a place stand in the order of their ids, whatever order t
   assert.deepEqual(shown(m), [idOf(S0), idOf(S2), idOf(S1)], 'a place given: before the one it ties with in the list after it')
 })
 
-// A connector that names no device_name in its register shows under its folder, as on the iPhone (Board.deviceNameOf).
-test('a session whose device names only its folder shows under the folder\'s name', async () => {
-  const { applyGroups, emptyChange } = await import('../../../app/web/core/model.ts')
-  const bytes = h => Uint8Array.from(h.match(/../g).map(x => parseInt(x, 16)))
-  const me = 'ee'.repeat(16)
+// A connector that names no device_name in its register shows under its folder, as on the iPhone.
+test('a session whose device names only its folder shows under the folder\'s name', () => {
   const m = emptyModel()
-  m.room.my_device_id = me
-  const groups = [
-    { group: bytes('aa'.repeat(16)), session: null, epoch: 1, leaves: [bytes(me)], disallowed: [], archived: false, pending: false },
-    { group: bytes('bb'.repeat(16)), session: { sessionId: bytes(S0), parent: new Uint8Array(16) }, epoch: 1, leaves: [bytes(me), bytes(D0)], disallowed: [], archived: false, pending: false },
-  ]
-  const roles = { humans: [bytes(me)], agents: [bytes(D0)] }
-  applyGroups(m, groups, roles, emptyChange())
-  m.members.get(D0).folder = '/home/x/git/socom'
-  applyGroups(m, groups, roles, emptyChange())
+  m.room.my_device_id = 'ee'.repeat(16)
+  member(m, D0, { epoch: 1, folder: '/home/x/git/socom' })
+  m.members.get(D0).device_name = ''
+  session(m, S0, D0)
   assert.equal(agentsOf(m).find(a => a.id === idOf(S0))?.name, 'socom')
 })

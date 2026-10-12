@@ -53,7 +53,7 @@ public struct Agent: Identifiable, Equatable {
   public var hue: Int = 162
   /** Whether the human gave it a place in the order (its register's position; the sidebar's drag on the web). */
   public var placed: Bool = false
-  /** Archived because a newer pairing in the same folder took its place (replaceInSlots). */
+  /** Archived because a newer pairing in the same folder took its place (the client core's session list). */
   public var replaced: Bool = false
 }
 
@@ -468,6 +468,7 @@ public final class DeskModel {
                     deviceActive: s.agentDeviceId.flatMap { lastOfDevice[$0] } ?? 0, removed: r["removed"].truthy, own: r["own"].truthy, link: s.link, heardUpTo: s.heardUpTo)
       a.hue = Pen.hueFor(id: a.id, mark: a.mark)
       a.placed = r["placed"].truthy
+      a.replaced = r["replaced"].truthy
       return a
     }
   }
