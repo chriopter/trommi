@@ -687,7 +687,8 @@ export class BoardState {
     const state = {
       cards, byId: this.byId, queue, closedGen: this.closedGen, agents, tasks, desks, notes, assets,
       // (the room is still being read: a sign-in joining its sessions, the past read again; the Desk says so)
-      get reading() { return Boolean(self.model.room.reading) },
+      // (or a start from this device's cache waits for the hub's Desk past a moment: client.deskFirst)
+      get reading() { return Boolean(self.model.room.reading || self.model.room.desk_waiting) },
       get messages() { return (self.allMsgs ??= self.messages()) },
       messagesOf: agent => self.messagesOf(agent),
       messagesOfCard: id => self.messagesOfCard(id),
@@ -2206,7 +2207,7 @@ async function start(client, { fresh = false } = {}) {
   // it is rendered whole every CATCH_UP_MS and once more when the room is live. Patching per batch would make a big room's
   // first load quadratic (every batch diffs the Desk and measures its rows again).
   const CATCH_UP_MS = 2500
-  let catchUpTimer = 0, wasCatchingUp = false
+  let catchUpTimer = 0, wasCatchingUp = false, wasDeskWaiting = false
   const catchingUp = () => client.model.room.connection === 'catching_up'
   const renderWhole = () => {
     catchUpTimer = 0
@@ -2271,6 +2272,9 @@ async function start(client, { fresh = false } = {}) {
     else merge(pending, change)
     // (questions settled elsewhere while this device was away leave the Desk at once, not with the next whole render)
     const settledAway = [...(change.cards ?? [])].some(id => client.model.cards.get(id)?.catching_up)
+    // (the hub's Desk answered after the first paint waited for it: what it lists stands at once)
+    const deskWaiting = Boolean(client.model.room.desk_waiting)
+    if (deskWaiting !== wasDeskWaiting) { wasDeskWaiting = deskWaiting; if (catchingUp()) { clearTimeout(catchUpTimer); renderWhole(); return } }
     if (catchingUp() && !settledAway) { if (!wasCatchingUp) { wasCatchingUp = true; conn() } catchUpTimer ||= setTimeout(renderWhole, CATCH_UP_MS); return }
     if (catchingUp()) { wasCatchingUp = true; clearTimeout(catchUpTimer); catchUpTimer = 0; renderWhole(); return }
     if (wasCatchingUp) { wasCatchingUp = false; clearTimeout(catchUpTimer); renderWhole(); return }
@@ -2291,6 +2295,11 @@ async function start(client, { fresh = false } = {}) {
   }
   document.addEventListener('turbo:load', loadOpen)
 
+  // A start from this device's cache: its Desk is from the last visit, and a card closed elsewhere since would stand
+  // until the hub says otherwise. The first paint waits for the hub's Desk (one small reading), at most a moment;
+  // past it the open cards wait off the Desk under a quiet "Catching up" (client.deskFirst).
+  await client.deskFirst?.()?.catch?.(err => console.warn('desk', err))
+  window.trommi.deskFirstMs = performance.now() - T0
   await router.visit(location.pathname + location.search + location.hash, { action: 'replace' })
   window.trommi.firstPaintMs = performance.now() - T0
   window.trommi.openMs = OPEN_MS

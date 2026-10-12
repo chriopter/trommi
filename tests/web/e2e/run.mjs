@@ -1,8 +1,9 @@
 // run.mjs: the end-to-end runs of the web app, one line per step.
-//   node tests/web/e2e/run.mjs [standin|real|all]        (default: all)
+//   node tests/web/e2e/run.mjs [standin|real|warm-desk|all]   (default: all)
 //     standin   standin.mjs: the built app with the real core against the FAKE hub (it checks no cryptography), with an agent in Node
 //     real      real.mjs: the built app with the real core against the REAL hub's binary (TROMMI_HUB_BIN)
-//     all       both; `real` is skipped, loudly, when TROMMI_HUB_BIN is not set
+//     warm-desk warm-desk.browser.mjs: a warm open never shows a card closed elsewhere, sampled every frame (TROMMI_HUB_BIN)
+//     all       all of them; the runs on the real hub are skipped, loudly, when TROMMI_HUB_BIN is not set
 //   node tests/web/e2e/run.mjs real --app <app URL> --hub <hub URL> [--shots <folder>]
 //     remote.mjs: the real run's core steps against an app and a hub that are already deployed. Nothing is built
 //     or started; it makes TWO accounts `e2e-<random>@example.invalid` there (the second for "forgot password"
@@ -17,6 +18,7 @@ import { runScenario } from './harness.mjs'
 const RUNS = {
   standin: { file: './standin.mjs', needs: {} },
   real: { file: './real.mjs', needs: { hub: true } },
+  'warm-desk': { file: './warm-desk.browser.mjs', needs: { hub: true } },
 }
 const which = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : 'all'
 const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? null : process.argv[i + 1] ?? null }
@@ -25,12 +27,12 @@ if (arg('--app') || arg('--hub')) {
   const { runRemote } = await import('./remote.mjs')
   process.exit(await runRemote({ app: arg('--app'), hub: arg('--hub'), shots: arg('--shots') }))
 }
-if (which !== 'all' && !RUNS[which]) { console.error('usage: node tests/web/e2e/run.mjs [standin|real|all]'); process.exit(2) }
+if (which !== 'all' && !RUNS[which]) { console.error('usage: node tests/web/e2e/run.mjs [standin|real|warm-desk|all]'); process.exit(2) }
 
 let failed = 0, cannot = false
 for (const name of which === 'all' ? Object.keys(RUNS) : [which]) {
-  if (which === 'all' && name === 'real' && !process.env.TROMMI_HUB_BIN) {
-    console.log('SKIPPED: the run against the REAL hub (TROMMI_HUB_BIN is not set). Nothing above is evidence about the real hub.')
+  if (which === 'all' && RUNS[name].needs.hub && !process.env.TROMMI_HUB_BIN) {
+    console.log(`SKIPPED: ${name} against the REAL hub (TROMMI_HUB_BIN is not set). Nothing above is evidence about the real hub.`)
     continue
   }
   console.log(`---- ${name} ----`)

@@ -67,6 +67,12 @@ const DESK_PARALLEL = 6
 const DESK_ONE_BY_ONE = 40
 /** How soon the hub's Desk is read again after a session group was joined (`deskSoon`). */
 const DESK_SOON_MS = 250
+/** A start from the cache waits this long for the hub's Desk before its first paint (`deskFirst`); past it, the open
+ *  cards wait off the Desk until the list answers, and past DESK_HOLD_MAX_MS the last list kept here decides. */
+const DESK_FIRST_MS = 300
+const DESK_HOLD_MAX_MS = 5000
+/** Where the hub's Desk as last read is kept between runs. */
+const DESK_KEY = 'client/desk'
 /** How many answered cards a reading of the Desk asks the hub about (`readDesk`). */
 const ANSWERED_ASKED = 20
 const CHUNK = 65_536
@@ -250,6 +256,14 @@ export class Client {
   /** The next reading is of the whole list (`readDesk`); when the last whole one was. */
   private deskWholeDue = true
   private deskWholeAt = 0
+  /** The hub's Desk of THIS run decided what stands open (`knowDesk`); until then the model is the cache's, and a card
+   *  closed elsewhere since the last run would still stand. False only on a start from the cache. */
+  private deskKnown = true
+  /** Past DESK_FIRST_MS without the hub's answer: every open card waits off the Desk (`judgeDesk`). */
+  private deskHeld = false
+  private deskWait: Promise<void> | null = null
+  private deskWaitDone: (() => void) | null = null
+  private deskHoldTimer: ReturnType<typeof setTimeout> | null = null
   /** The cards `readDesk` read the newest Chat page of, with the hand back it was read for. */
   private revisionRead = new Map<string, number>()
   /** Work the room's reading waits for (`readingUntil`): the session groups of a sign-in being joined. */
@@ -290,6 +304,14 @@ export class Client {
       // (a mark of an earlier run is the past: `readDesk` sets it again from the hub's Desk of now)
       for (const c of this.model.cards.values()) delete c.catching_up
       for (const r of this.model.permissions.values()) delete r.catching_up
+      // What stands open is what the hub's Desk listed when this device last read it (kept beside the cache): a card
+      // it had settled stays off the Desk although this device never read its closing. The Desk of now follows
+      // (`deskFirst`, `readDesk`), and only it lets anything else stand.
+      if (e.is_human) {
+        const last = (await this.cache.get(DESK_KEY).catch(() => null)) as { open?: string[]; versions?: [string, number][]; at?: number } | null
+        if (last && Array.isArray(last.open)) this.desk = { open: new Set(last.open), versions: new Map(last.versions ?? []), at: Number(last.at) || 0 }
+        this.deskKnown = false
+      }
       if (kept.cursor === e.cursor) this.stamped = this.written = kept.cursor
       else this.rebuild = Math.max(0, kept.cursor)
     } else {
@@ -301,6 +323,7 @@ export class Client {
     const ch = M.emptyChange()
     ch.room = true
     M.applyGroups(this.model, e.groups, e.roles, ch)
+    if (this.desk) this.judgeDesk(ch, null)
     this.sessionGroups = e.groups.filter(g => g.session && !g.archived).length
     for (const [key, value] of await this.cache.range('client/invite/')) { const k = value as InviteKept; this.invites.set(key.slice('client/invite/'.length), k); if (!k.done) this.model.invites.set(k.public.invite_id, k.public) }
     M.project(this.model, ch, this.now())
@@ -310,6 +333,7 @@ export class Client {
   private async dropCache(): Promise<void> {
     const gone: [string, undefined][] = []
     for (const prefix of MODEL_KEYS) for (const [key] of await this.cache.range(prefix)) gone.push([key, undefined])
+    gone.push([DESK_KEY, undefined])
     if (gone.length) await this.cache.setMany(gone)
   }
 
@@ -572,7 +596,7 @@ export class Client {
     // before them (`judgeDesk` holds back by the Desk's own cursor, whichever comes first; the catch-up's end reads
     // it again only when this one is through). Without a cache it is what is shown first, and waited for.
     if (this.rebuild !== null) { await this.fromDesk().catch(() => {}); mark('desk read') }
-    else if (this.is_human) void this.readDesk().catch(() => {}).finally(() => mark('desk read'))
+    else if (this.is_human && !this.deskReading) void this.readDesk().catch(() => {}).finally(() => mark('desk read'))
     if (!this.started) return
     await this.restoreRegisters().catch(() => {})
     if (!this.started) return
@@ -605,6 +629,8 @@ export class Client {
     if (this.inviteTimer !== null) { clearInterval(this.inviteTimer); this.inviteTimer = null }
     if (this.goalsTimer !== null) { clearTimeout(this.goalsTimer); this.goalsTimer = null }
     if (this.deskTimer !== null) { clearTimeout(this.deskTimer); this.deskTimer = null }
+    if (this.deskHoldTimer !== null) { clearTimeout(this.deskHoldTimer); this.deskHoldTimer = null }
+    this.deskWaitDone?.()
     await this.engine.stop()
     for (const off of this.offs.splice(0)) off()
     await this.flush().catch(() => {})
@@ -622,12 +648,50 @@ export class Client {
     if (!desk.truncated) {
       const listed = [...desk.cards, ...desk.permission_requests]
       this.desk = { open: new Set(listed.map(o => hex(o.object_id))), versions: new Map(listed.map(o => [hex(o.object_id), o.version?.change ?? 0])), at: desk.change }
+      this.keepDesk()
     }
     const items: EnvelopeItem[] = [...desk.registers]
     for (const list of [desk.cards, desk.notes, desk.permission_requests, desk.artifacts]) for (const o of list) if (o.version) items.push(o.version)
     items.sort((a, b) => a.change - b.change)
     const received = await this.engine.receivePage(items)
     this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }); this.judgeDesk(ch, null) })
+    if (!desk.truncated) this.knowDesk()
+  }
+  /**
+   * The first paint of a start from the cache waits for the hub's Desk (the person's rule: the Desk is the hub's open
+   * list, and nothing it does not list stands as open, not even for a moment). Starts the reading at once (before
+   * `start`) and resolves when its list decided what stands, or after `wait_ms`: then every open card waits off the
+   * Desk (`room.desk_waiting`, a quiet "Catching up") until the list answers, at most DESK_HOLD_MAX_MS, after which
+   * the list last read on this device decides (no hub: the device is offline). Nothing to wait for: at once.
+   */
+  async deskFirst(wait_ms: number = DESK_FIRST_MS): Promise<void> {
+    if (!this.is_human || this.deskKnown) return
+    if (!this.deskWait) {
+      this.deskWait = new Promise(resolve => { this.deskWaitDone = resolve })
+      void this.readDesk().catch(() => this.knowDesk())
+    }
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const late = await Promise.race([this.deskWait.then(() => false), new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(true), Math.max(0, wait_ms)) })])
+    if (timer !== null) clearTimeout(timer)
+    if (!late || this.deskKnown || this.deskHeld) return
+    this.deskHeld = true
+    this.deskHoldTimer = setTimeout(() => { this.deskHoldTimer = null; this.knowDesk() }, DESK_HOLD_MAX_MS)
+    this.tell(ch => { this.model.room.desk_waiting = true; ch.room = true; this.judgeDesk(ch, null) })
+  }
+  /** The hub's Desk of this run decided (or none comes: the last list kept here does). */
+  private knowDesk(): void {
+    if (this.deskKnown) return
+    this.deskKnown = true
+    if (this.deskHoldTimer !== null) { clearTimeout(this.deskHoldTimer); this.deskHoldTimer = null }
+    const held = this.deskHeld
+    this.deskHeld = false
+    this.tell(ch => { if (held) { this.model.room.desk_waiting = false; ch.room = true } this.judgeDesk(ch, null) })
+    this.deskWaitDone?.()
+  }
+  /** Keeps the hub's Desk as read, for the next start (`open`). */
+  private keepDesk(): void {
+    const d = this.desk
+    if (d) void this.cache.set(DESK_KEY, { open: [...d.open], versions: [...d.versions], at: d.at }).catch(() => {})
   }
   /** Reads the hub's Desk again shortly (several groups joined at once, several cards that came, ask once). */
   private deskSoon(delay = DESK_SOON_MS): void {
@@ -674,14 +738,17 @@ export class Client {
     const whole = this.deskWholeDue || !this.desk || this.now() - this.deskWholeAt >= DESK_WHOLE_MS
     this.deskWholeDue = false
     let brief
-    try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at)) } catch (e) { if (whole) this.deskWholeDue = true; throw e }
-    if (brief.truncated) { if (!whole) this.deskWholeDue = true; return }
+    try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at)) } catch (e) { if (whole) this.deskWholeDue = true; this.knowDesk(); throw e }
+    if (brief.truncated) { if (!whole) { this.deskWholeDue = true; this.deskAgain = true } else this.knowDesk(); return }
     const listed = [...brief.cards.map(o => ({ ...o, route: 'cards' as const })), ...brief.permission_requests.map(o => ({ ...o, route: 'permission-requests' as const }))]
     if (whole || !this.desk) { this.desk = { open: new Set(), versions: new Map(), at: 0 }; this.deskWholeAt = this.now() }
     const d = this.desk
     for (const gone of brief.settled ?? []) { d.open.delete(hex(gone)); d.versions.delete(hex(gone)) }
     for (const o of listed) { d.open.add(hex(o.object_id)); d.versions.set(hex(o.object_id), o.version_change) }
     d.at = brief.change
+    this.keepDesk()
+    // (the list decides what stands at once; the versions this device lacks follow below)
+    this.knowDesk()
     // what this reading is about: everything, or what changed since the last
     const touched = whole ? null : new Set([...listed.map(o => hex(o.object_id)), ...(brief.settled ?? []).map(hex)])
     // the newest versions this device lacks, read through the core
@@ -728,19 +795,21 @@ export class Client {
   /** Holds back, or lets stand, what the hub's Desk says (`readDesk`); `only`: the objects a change named. */
   private judgeDesk(ch: Change, only: { cards: Set<string>; permissions: Set<string> } | null): void {
     const d = this.desk
-    if (!d) return
+    // (waiting for the hub's first answer past DESK_FIRST_MS: no open card stands, `deskFirst`)
+    const held = this.deskHeld
+    if (!d && !held) return
     const cards = only ? [...only.cards].map(id => this.model.cards.get(id)).filter((c): c is Card => !!c) : [...this.model.cards.values()]
     for (const c of cards) {
-      const listed = d.open.has(c.object_id)
+      const listed = !held && !!d?.open.has(c.object_id)
       // settled at the hub: open here, not listed, and nothing of it here newer than the Desk
-      const hold = !listed && c.object_state === 'open' && c.state_envelope_number <= d.at
+      const hold = !listed && c.object_state === 'open' && (held || c.state_envelope_number <= d!.at)
       // a hand back older than the version the hub lists is over: the agent answered it with that version
-      if (listed && c.in_revision && c.in_revision.envelope_number < (d.versions.get(c.object_id) ?? 0)) { c.in_revision = null; ch.cards.add(c.object_id) }
+      if (listed && c.in_revision && c.in_revision.envelope_number < (d!.versions.get(c.object_id) ?? 0)) { c.in_revision = null; ch.cards.add(c.object_id) }
       if (hold !== !!c.catching_up) { if (hold) c.catching_up = true; else delete c.catching_up; ch.cards.add(c.object_id); if (c.session_id) ch.sessions.add(c.session_id) }
     }
     const perms = only ? [...only.permissions].map(id => this.model.permissions.get(id)).filter((r): r is NonNullable<typeof r> => !!r) : [...this.model.permissions.values()]
     for (const r of perms) {
-      const hold = !d.open.has(r.object_id) && r.permission_state === 'pending' && r.envelope_number <= d.at
+      const hold = (held || !d!.open.has(r.object_id)) && r.permission_state === 'pending' && (held || r.envelope_number <= d!.at)
       if (hold !== !!r.catching_up) { if (hold) r.catching_up = true; else delete r.catching_up; ch.permissions.add(r.object_id); if (r.session_id) ch.sessions.add(r.session_id) }
     }
   }
