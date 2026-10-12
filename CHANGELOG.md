@@ -53,6 +53,8 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 **Fixed**
 - **Helper sessions keep their names on every device**: a helper session whose start one device caught only late on
   a rough network (web and iPhone) now shows its name there too, and one closed meanwhile no longer shows as open (web).
+- **New sessions join faster**: when founding a new session's group fails, your device tries again within a second
+  instead of after half a minute, and never sends a second founding while the first one waits (web and iPhone).
 - **iPhone: a session's link as on the web**: a stream event that says nothing of the link no longer turns a live
   session into "hears you on its next step"; an agent that lost its connection is told on the iPhone too.
 - **The red hand matches the Desk**: a session raises the red hand for a question only while that question stands
