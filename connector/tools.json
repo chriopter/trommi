@@ -1059,7 +1059,7 @@
           },
           "card_id": {
             "type": "string",
-            "description": "For decision: the card; the line turns working (yellow) with the choice when it is answered."
+            "description": "The card: for decision the question, the line turns working (yellow) with the choice when it is answered; for working the task's \"Working on\" card, the line turns done when that card is revised to \"Done: …\"."
           },
           "session": {
             "type": "string",
@@ -1069,6 +1069,41 @@
         "required": [
           "id",
           "state"
+        ]
+      }
+    },
+    {
+      "_meta": {
+        "anthropic/alwaysLoad": true
+      },
+      "name": "start_task",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "The card's title in the human's language, e.g. \"Arbeite an: Login-Seite\"; without \"Working on:\" or \"Arbeite an:\" at its start, \"Working on: \" is put in front"
+          },
+          "session": {
+            "type": "string",
+            "description": "A helper's child session (e.g. \"Design\"), opened on first use; cards on its topic go there. Left out: yours."
+          },
+          "detail": {
+            "type": "string",
+            "description": "The status line's text: one line on where it stands"
+          },
+          "id": {
+            "type": "string",
+            "description": "The status line's id. Default: made from the title"
+          }
+        },
+        "required": [
+          "title"
         ]
       }
     },
@@ -1341,7 +1376,7 @@
       "properties": {
         "session": {
           "type": "string",
-          "description": "As a helper: your child session (e.g. \"Design\"); only its events, and it is yours for 10 minutes per call."
+          "description": "Optional, without a coordinator: a child session (e.g. \"Design\"); only its events, held for you 10 minutes per call."
         }
       }
     }
@@ -1373,6 +1408,7 @@
     "create_info",
     "merge_cards",
     "set_status",
+    "start_task",
     "clear_status",
     "introduce",
     "list_cards",
@@ -1499,6 +1535,11 @@
       "state": "decision",
       "detail": "waiting for the go-ahead",
       "card_id": "a1b2c3d4"
+    },
+    "start_task": {
+      "title": "Migration of the orders table",
+      "session": "Release",
+      "detail": "testing on staging"
     },
     "clear_status": {
       "id": "migration"

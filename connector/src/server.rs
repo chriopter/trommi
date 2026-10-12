@@ -494,7 +494,7 @@ impl Conn {
             self.unclaim(&k, "helper gone").await;
         }
     }
-    /// A short line for the coordinator about a claimed child session (README "Helpers read their own events").
+    /// A short line for the coordinator about a claimed child session (README "Helpers and their events").
     async fn helper_notice(&self, name: &str, note: String) {
         let params = json!({ "content": format!("{name}: {note}"), "meta": { "kind": "helper", "helper": name, "note": note } });
         self.notify("notifications/claude/channel", params, None)
@@ -503,8 +503,7 @@ impl Conn {
     /// After a helper's tool call in its claimed session: a card it marked "Done: …" is told to the coordinator.
     async fn note_done(&self, name: &str, args: &Value) {
         let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
-        let done = regex::Regex::new(r"(?i)^\s*(done|fertig|erledigt|resolved|gelöst)\b").unwrap();
-        if !done.is_match(title) {
+        if !crate::bridge::done_title(title) {
             return;
         }
         let key = if name == "revise_card" {
@@ -2186,7 +2185,7 @@ impl mcp::Server for Conn {
                 self.wake().await;
                 if name == "inbox" {
                     if let Some(c) = &child {
-                        // a helper reads its own child session, and claims it (README "Helpers read their own events")
+                        // a helper reads its own child session, and claims it (README "Helpers and their events")
                         let shown = args
                             .get("session")
                             .and_then(|v| v.as_str())
