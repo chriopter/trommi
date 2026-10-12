@@ -323,3 +323,54 @@ async fn reload_never_claims_a_refused_binary_was_swapped_in() {
     assert!(said.contains("trommi-connector update"), "{failed} {said}");
     mcp.close().await;
 }
+
+/// Self-join refused for the cap (8 sessions of the account joined so), then the human invites the session by
+/// link: it connects with the connect tool and is on the board, no restart.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_self_join_refused_for_the_cap_then_an_invite_gets_the_session_in() {
+    let hub = HubProc::start().await;
+    let (mut human, seat, group) = joined_with_group(&hub).await;
+    let mut first = seat.serve().await;
+    first.ready().await;
+    let mut second = seat
+        .serve_with(&[
+            ("TROMMI_SESSION_KEY", "test-capped"),
+            ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+            ("TROMMI_SELF_JOIN", "1"),
+        ])
+        .await;
+    for _ in 0..100 {
+        let (text, _) = second.call("reply", json!({ "text": "early" })).await;
+        if text.contains("one tap") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    human.refuse_self_join(&group, "cap").await;
+    let mut said = String::new();
+    for _ in 0..100 {
+        let (text, failed) = second.call("reply", json!({ "text": "capped?" })).await;
+        assert!(failed, "{text}");
+        if text.contains("8 sessions") {
+            said = text;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(said.contains("invite"), "{said}");
+    let listed = second.request("tools/list", json!({})).await;
+    assert!(tool_names(&listed).contains(&"connect".to_string()), "{listed}");
+
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = second.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), _group) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    second.ready().await;
+    second.close().await;
+    first.close().await;
+}

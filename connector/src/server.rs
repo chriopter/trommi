@@ -2678,6 +2678,17 @@ impl Conn {
         if self.member.phase() == "retired" {
             return true;
         }
+        // A second session in a folder whose keys all belong to other sessions (none free, none held for a
+        // hand-over): it is a member of its own, and its invite link is the way in.
+        if self.member.phase() == "needs-invite"
+            && !member::key_waiting(&self.cfg)
+            && self
+                .member
+                .paths()
+                .is_some_and(|p| !p.has_key && p.busy.is_empty() && !p.foreign.is_empty())
+        {
+            return true;
+        }
         match member::resolve_room(&self.cfg) {
             Ok(None) => true,
             Ok(Some(room)) => member::slots_in(&self.cfg, &self.cfg.keys_dir.join(room)).is_empty(),
