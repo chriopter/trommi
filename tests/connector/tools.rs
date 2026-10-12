@@ -749,6 +749,11 @@ async fn after_a_takeover_the_first_connector_says_that_it_stopped() {
         said.contains("reconnect") || said.contains("invite"),
         "the first connector says what happened and what to do: {said}"
     );
+    // ... and the way it names is there: its client is told to list the tools again, and connect is offered
+    assert!(said.contains("/trommi:connect"), "{said}");
+    first.notification("notifications/tools/list_changed").await;
+    let listed = first.request("tools/list", json!({})).await;
+    assert_eq!(tool_names(&listed), ["connect"], "{listed}");
     human.sync().await;
     assert!(human.findings.is_empty(), "{:?}", human.findings);
     assert!(!human
