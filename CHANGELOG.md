@@ -2,20 +2,20 @@
 
 What changed in Trommi, newest first. One section per day; each GitHub release adds the day's release numbers to its heading.
 
-A day starts with a short summary (one to three plain sentences) and at most one picture, a line
-`![what it shows](app/web/public/changelog/<YYYY-MM-DD>.webp)`: a screenshot of the demo room only (`?mock=1`, never
-real data), webp, at most 150 KB. Then its lines under **New**, **Better** and **Fixed**. What's new (web and iPhone)
-shows the summary and the picture, the lines folded under "All changes".
+A day starts with one short summary line in headline style ("Star the cards you want to keep. …"), then its lines
+under **New**, **Better** and **Fixed**, the most important first. What's new (web and iPhone) shows each line by its
+start: up to its first colon, comma or full stop, with a leading "Web:" or "iPhone:" as a tag. When that start says
+too little, a line begins with its own short form in bold: `- **Readable addresses**: …`. The newest three days are
+open with the first three lines of each part; the rest and older days open with a tap.
 
 ## 12 October 2026
 
-Star a card to keep it at the top of Off your mind. A card you snooze, a draft, a duck or a session's settings now
-look the same on the web and the iPhone.
+Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and settings.
 
 **New**
 - Star a card (the star beside its close button) to find it again: starred cards stand at the top of Off your
   mind, private and end-to-end encrypted, the same on all your devices (web and iPhone).
-- Connector: a new tool `start_task` files a "Working on" card and the status line linked to it in one step. The
+- **Connector: one step to a Working on card**: a new tool `start_task` files a "Working on" card and the status line linked to it in one step. The
   card starts under Off your mind as being worked on, not on your Desk and without a notification (web and iPhone);
   when it is revised to "Done: …", it comes to your Desk and the line turns done by itself. Helpers no longer read board events
   themselves: the coordinator forwards them.
@@ -45,19 +45,34 @@ many agents are still at work.
 - Web: a tab opened again is live in under a second in a big room: the Desk is checked with the hub while it catches up, not before.
 - iPhone Live Activity with nothing waiting: "All answered" with the working ring and how many agents are at work
   (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
+- **What's new at a glance**: the newest three days open with a one-line summary and the first lines of New, Better
+  and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
+
+**Fixed**
+- A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
+  writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).
+- iPhone: a permission request whose time ran out says "expired", as on the web, and one signed in with the code
+  no longer misses a helper session that another device added it to first.
+- **Web: no flash of closed cards on opening**: opening the app again no longer shows old cards for a moment that were closed on another device; the Desk
+  shows only what is open now.
+- iPhone: the cards of a session another device let it into no longer stay missing: what an agent wrote there before
+  is read from the hub, as on the web.
+- iPhone: a short hiccup of the server no longer fails a sign-in with the code: a reading is asked again, as on the web.
+- **iPhone: no flash of closed cards on opening**: opening the app no longer shows old cards for a moment that were closed on another device, and a card the
+  hub had already closed no longer comes back on every launch; the Desk shows only what is open now.
+- iPhone: signed in with the code, a helper session no longer stays without its name: what was written there before the
+  iPhone came opens once another device hands over the keys, as on the web.
+- iPhone: the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
+  many agents are still at work.
 
 ## 11 October 2026
 
-Each agent now has its own page in Settings, with its plan, its usage and its sessions. On the iPhone you answer
-the most urgent question straight from the Lock Screen, pushes give nothing away, and the connector updates itself
-while it runs.
-
-![Settings → Agents in the demo room](app/web/public/changelog/2026-10-11.webp)
+Agents get their own page. Answer from the Lock Screen. Pushes give nothing away.
 
 **New**
 - iPhone: a notification shows the question's title, decrypted on your phone. Until the phone was first unlocked,
   or right after a session's key changed, it says "A new question." as before.
-- A new Claude Code or Codex session on a computer and account that already has a connected agent gets onto the
+- **A new session on a known computer joins by itself**: a new Claude Code or Codex session on a computer and account that already has a connected agent gets onto the
   board with one tap ("Allow new Claude session …?") instead of an invite link and the six emoji, as its own
   session. Its first message says which session vouched for it; at most 8 such sessions per account, and archiving
   one removes its device. The web and iPhone apps answer it now; the connector turns it on in a later release.
@@ -150,7 +165,7 @@ while it runs.
 - The writing field under a card is calmer: one "+" on the left for attaching and drawing, Send on the right. Shift+Enter hands the card back with your words, Alt+Enter (⌥+Enter) starts a new line (web; on the iPad with a keyboard too).
 - The demo looks calmer and friendlier: sessions with plain names, design choices with pictures first, one urgent card
   instead of a stack of red ones.
-- Settings: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out
+- **Settings: Invite a Device and Invite an Agent side by side**: Invite a Device and Invite an Agent stand side by side as equals; Devices and Account are laid out
   like the rest of Settings, each device and each way in (password, passkeys, Emergency Kit) with its own page.
 - An agent reporting on an ongoing matter keeps one card and updates it, with the newest state in the title.
 - An agent you ask for something keeps one card for it, from Working on to Done.
@@ -160,13 +175,13 @@ while it runs.
 - Settings → Account no longer has the "Advanced" block with the old account address; the old recovery-code screen (/recover) is gone. Room, key epoch and hub are shown under Security Info.
 - Codex: the board tools are there from the start, Trommi tool calls no longer ask for approval one by one, and the texts say to restart Codex (not /mcp) when needed.
 - A Codex session between turns shows as "on its next turn", never as gone or not listening.
-- In a conversation, a running status line opens the card it works on, the same card its row on the Desk opens
+- **A running status line opens its card**: in a conversation, a running status line opens the card it works on, the same card its row on the Desk opens
   (web and iPhone).
 
 **Fixed**
-- Web: signing in on a new browser in a room with a long history is live in seconds again, not after a minute.
+- **Web: a new browser in a long room is live in seconds**: signing in on a new browser in a room with a long history is live in seconds again, not after a minute.
 - Desk: a row no longer grows when the pointer rests on it; the text under the title stays hidden (web).
-- Web, signing in on a new browser: the Desk no longer shows old, empty approvals or "Go outside." while your room is
+- **Web: no old approvals while signing in**: signing in on a new browser: the Desk no longer shows old, empty approvals or "Go outside." while your room is
   still being read. It says "Catching up…", open questions show as quiet "Loading …" placeholders until they are
   decrypted, sessions are "Loading …" instead of an id, and agents show as connected right away instead of "gone".
 - Web: a permission request that was answered or ran out on another device no longer stands on the Desk as open.
@@ -180,7 +195,7 @@ while it runs.
 - iPhone: the app no longer crashes when it starts with an account already signed in.
 - A card you put off (Later) wakes up when you answer it or hand it back with the reverse card: reworked, it is back on the Desk (web and iPhone).
 - iPhone: a session renamed on another device no longer shows up twice; the new name lands on the session itself.
-- Web: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
+- **Web: no more "Connecting" after catching up**: after catching up, the app could keep saying "Connecting" although it was connected and up to date.
 - Open cards are the same on every device: the web takes them from the hub's list of open questions, so a card
   settled elsewhere no longer stays on the Desk, and a card put before you again no longer hides under "Off your mind".
 - Renaming a session on the web no longer makes a second session appear on the iPhone.
@@ -206,11 +221,11 @@ while it runs.
   up, and logging in on a new browser is ready in seconds instead of a minute.
 - Web: the number keys 1, 2, 3 … switch the desk without opening the desk menu, which then blocked the next key.
 - A device that missed the keys for older content now asks your other devices for them, even weeks later.
-- Changing your password, Emergency Kit or passkeys now asks for proof that you know a current one:
+- **Changing a password or key asks for proof**: changing your password, Emergency Kit or passkeys now asks for proof that you know a current one:
   being logged in is not enough.
 - A phone added to a running session could show the agent's raw id instead of its name.
 - The iPhone app could crash while sending.
-- After logging out, the browser kept the key that had protected its local data.
+- **Logging out forgets the local key**: after logging out, the browser kept the key that had protected its local data.
 - Every agent session showed "hears you on its next step" (and later "not listening") even when it heard the board at once.
 - Codex no longer tries to start Trommi through a script when its tools are missing; it tells you to restart Codex.
 - The web app on phones: Settings pages fit a small screen (password, passkeys, the device fingerprint shown whole),
@@ -221,10 +236,7 @@ while it runs.
 
 ## 10 October 2026
 
-Trommi now runs on one encryption core built on OpenMLS, the same code on the web, the iPhone and the connector.
-Installing the connector is one line, and a new demo room lets you look around before signing up.
-
-![The Desk of the demo room](app/web/public/changelog/2026-10-10.webp)
+One encryption core everywhere. The connector installs with one line. A new demo room.
 
 **New**
 - Trommi now runs on one Rust core built on OpenMLS, the same code in the web app, the iPhone app
@@ -249,10 +261,7 @@ Installing the connector is one line, and a new demo room lets you look around b
 
 ## 9 October 2026
 
-Desks get goals of their own, the connector runs on macOS, and the iPhone keeps what waits for you on the Lock
-Screen with Live Activities.
-
-![A desk's goals under the greeting, in the demo room](app/web/public/changelog/2026-10-09.webp)
+Goals for each desk. The connector on macOS. Live Activities on the iPhone.
 
 **New**
 - Live Activities on the iPhone keep what waits for you in view; pushes carry the card's title.
@@ -272,8 +281,7 @@ Screen with Live Activities.
 
 ## 8 October 2026
 
-The iPhone app arrives: the Desk, chats, notes and the Scribble Board, with push notifications and sharing from
-other apps.
+The iPhone app is here: Desk, chats, notes and the Scribble Board, with push.
 
 **New**
 - The iPhone app: the Desk, chats, notes and the Scribble Board (with Apple Pencil),
@@ -296,8 +304,7 @@ other apps.
 
 ## 7 October 2026
 
-Calmer on a phone and quicker to answer: a drawer for the sidebar, six emoji to connect an agent, and Blitz for
-rapid answers.
+Calmer on a phone. Six emoji to connect an agent. Blitz for rapid answers.
 
 **New**
 - On a phone the sidebar is a drawer.
@@ -315,7 +322,7 @@ rapid answers.
 
 ## 6 October 2026
 
-Hand a session to a new agent, answer everything at once with Duck it, and put a card off with Later.
+Hand a session on. Duck it answers everything at once. Later puts a card off.
 
 **New**
 - Continue a session: hand it to a new agent, with or without its history.
@@ -335,7 +342,7 @@ Hand a session to a new agent, answer everything at once with Duck it, and put a
 
 ## 5 October 2026
 
-Permission prompts from Claude Code reach the board, and each desk shows only its own sessions.
+Permission prompts reach the board. Each desk shows only its own sessions.
 
 **New**
 - Permission prompts from Claude Code reach the board, and leave it once answered in the terminal.
@@ -349,8 +356,7 @@ Permission prompts from Claude Code reach the board, and each desk shows only it
 
 ## 4 October 2026
 
-End-to-end encryption: the hub keeps only sealed messages. Accounts, pairing by QR code, the Scribble Board and
-a redesigned Desk.
+End-to-end encryption. Accounts, QR pairing, the Scribble Board and a new Desk.
 
 **New**
 - End-to-end encryption: the hub stores only sealed messages, and only your devices can read them.

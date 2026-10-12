@@ -351,7 +351,7 @@ jobs:
             gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$COMMIT" > "$RUNNER_TEMP/changelog.md" 2>/dev/null || : > "$RUNNER_TEMP/changelog.md"
             gh release list --exclude-drafts --limit 400 --json tagName,createdAt --jq '.[] | "\(.tagName) \(.createdAt)"' > "$RUNNER_TEMP/releases.txt" 2>/dev/null || : > "$RUNNER_TEMP/releases.txt"
             {
-              NOTES_BASE="https://raw.githubusercontent.com/$GH_REPO/$COMMIT/" sh repo/.github/scripts/release_notes.sh "$RUNNER_TEMP/changelog.md" "$TAG" "$RUNNER_TEMP/releases.txt" || true
+              sh repo/.github/scripts/release_notes.sh "$RUNNER_TEMP/changelog.md" "$TAG" "$RUNNER_TEMP/releases.txt" || true
               echo
               echo "---"
               echo

@@ -14,7 +14,7 @@ import { SITE_ASSOCIATION, isFilePath, FAVICON } from '../worker.js'
 import { movedPath } from '../public/paths.mjs'
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const port = Number(process.argv.slice(2).find(a => /^\d+$/.test(a)) || 8900)
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.sh': 'text/plain; charset=utf-8', '.webm': 'video/webm', '.wasm': 'application/wasm' }
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.sh': 'text/plain; charset=utf-8', '.webm': 'video/webm', '.wasm': 'application/wasm' }
 // Read on every request: a dev server left running must not serve an old CSP.
 // (the build's _headers when it made one: the bundle's CSP names its import map)
 const readHeaders = () => { const headers = {}
