@@ -1092,6 +1092,12 @@ export class ClientModel {
   applyGroups(groups: GroupSummary[], roles: RoomRoles | null): void
   applyCommit(facts: CommitSummary, byRecovery: boolean, removedMe: boolean, nowMs: number): void
   applyPresence(reports: string, nowMs: number): void
+  /** The live stream opened (again): the hub's list of who is here comes first, ended by its `here`. */
+  streamOpened(): void
+  /** One `presence` stream event, JSON as the hub sends it: whether an agent device came online. */
+  applyPresenceEvent(event: string, nowMs: number): boolean
+  /** The `here` that ends a new stream's list of who is here: every other device shown online is offline now. */
+  applyHere(nowMs: number): void
   applyWorkTrail(sessionId: string, from: Uint8Array, turn: Uint8Array, number: number, time: number, payload: Uint8Array, changeNumber: number): boolean
   applyStrokePiece(from: Uint8Array, board: Uint8Array, payload: Uint8Array, nowMs: number): boolean
   echoItem(localId: string, timelineKey: string, content: string, recipient: string | null, objectId: string | null, nowMs: number): string

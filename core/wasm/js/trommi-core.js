@@ -407,6 +407,9 @@ export class ClientModel extends FileObject {
   applyGroups(groups, roles) { return this[CALL]('apply_groups', [groups, roles]) }
   applyCommit(facts, byRecovery, removedMe, nowMs) { return this[CALL]('apply_commit', [facts, byRecovery, removedMe, nowMs]) }
   applyPresence(reports, nowMs) { return this[CALL]('apply_presence', [reports, nowMs]) }
+  streamOpened() { return this[CALL]('stream_opened', []) }
+  applyPresenceEvent(event, nowMs) { return this[CALL]('apply_presence_event', [event, nowMs]) }
+  applyHere(nowMs) { return this[CALL]('apply_here', [nowMs]) }
   applyWorkTrail(sessionId, from, turn, number, time, payload, changeNumber) { return this[CALL]('apply_work_trail', [sessionId, from, turn, number, time, payload, changeNumber]) }
   applyStrokePiece(from, board, payload, nowMs) { return this[CALL]('apply_stroke_piece', [from, board, payload, nowMs]) }
   echoItem(localId, timelineKey, content, recipient, objectId, nowMs) { return this[CALL]('echo_item', [localId, timelineKey, content, recipient, objectId, nowMs]) }

@@ -323,6 +323,14 @@ extension Board {
                       "agents": .arr((f.agents ?? []).map { .str(hex($0)) }), "time": f.time.map { .num(Double($0)) } ?? .null])
     try? engine.applyCommitJson(facts: String(decoding: j.encoded(), as: UTF8.self), byRecovery: byRecovery, removedMe: removedMe, nowMs: nowMs())
   }
+  /** A `presence` event of the live stream, as the hub sent it (client/src/presence.rs). */
+  func applyPresenceEvent(_ data: JV, now: UInt64 = nowMs()) {
+    _ = try? engine.applyPresenceEvent(event: String(decoding: data.encoded(), as: UTF8.self), nowMs: now)
+  }
+  /** The live stream opened (again): the hub's list of who is here comes first, ended by its `here`. */
+  func streamOpened() { try? engine.streamOpened() }
+  /** The `here` that ends a new stream's list of who is here: every other device shown online is offline now. */
+  func applyHere(now: UInt64 = nowMs()) { try? engine.applyHere(nowMs: now) }
   /** What the hub says of a device (the stream's `presence`, already in the model's names). */
   func applyPresence(_ d: JV) {
     guard d.object != nil else { return }

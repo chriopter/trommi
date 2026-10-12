@@ -483,6 +483,7 @@ export class Client {
     })
     on('alert', a => { this.board.pushAlert(a.code, a.message ?? '', a.change ?? null, null, this.now()) })
     on('stream', event => this.onStream(event))
+    on('opened', () => this.board.streamOpened())
     on('invites', ({ open }) => this.invitesDone(open))
     on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() }; void this.reloadArchived().catch(() => {}) })
     on('batch', () => this.publish())
@@ -512,13 +513,15 @@ export class Client {
   private onStream(event: StreamEvent): void {
     switch (event.event) {
       case 'presence':
-        // (an event without `hears` says only that a stream opened or closed: the link report held stands while the
-        //  device is online; the hub tells a new stream the reports of now first, and every change after)
-        this.board.applyPresence(JSON.stringify([{ device_id: hex(event.device), is_online: event.online, offline_since: event.online ? null : this.now(),
-          ...(event.hears === null ? {} : { link: { hears: event.hears ? 'live' : 'oncall', attached: true, working: event.working === true, last_call_at: event.last_call_at } }) }]), this.now())
+        // (the client core reads it: client/src/presence.rs, the same on every app)
+        this.board.applyPresenceEvent(JSON.stringify({ device: hex(event.device), online: event.online, lost: event.lost, hears: event.hears, working: event.working, last_call_at: event.last_call_at }), this.now())
         // (an agent that came online without a main session gets one: engine.ts seatAgents)
         if (event.online && this.is_human && this.engine.roles?.agents.some(d => hex(d) === hex(event.device))) this.engine.keepSoon(0)
-        if (event.lost) this.board.pushAlert('agent-lost', 'An agent lost its connection.', null, hex(event.device), this.now())
+        this.publish()
+        return
+      case 'here':
+        // (the end of a new stream's list of who is here: a device shown online that it did not name left meanwhile)
+        this.board.applyHere(this.now())
         this.publish()
         return
       case 'invite_request': void this.checkInvite(hex(event.invite_id)).catch(() => {}); return

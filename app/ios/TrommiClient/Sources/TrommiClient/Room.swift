@@ -1324,16 +1324,6 @@ public struct Store {
     sinceSnapshot += 1
     cacheSoon(n)
   }
-  /** The stream's `presence` event in the model's names. */
-  static func presence(_ d: JV) -> JV {
-    guard let id = d["device"].string.flatMap({ try? unb64u($0) }) else { return .null }
-    let online = d["online"].truthy
-    var link: [String: JV] = ["hears": .str(d["hears"].truthy ? "live" : "oncall"), "working": .bool(d["working"].truthy)]
-    if let t = d["last_call_at"].int, t > 0 { link["last_call_at"] = .num(Double(t)) }
-    var out: [String: JV] = ["device_id": .str(hex(id)), "is_online": .bool(online), "link": .obj(link)]
-    if !online, let t = d["offline_since"].int { out["offline_since"] = .num(Double(t)) }
-    return .obj(out)
-  }
   /** A record of the warm-start log into the board again: an envelope as the core read it, or a step of a work trail. */
   @discardableResult func replay(_ rec: Rec) -> Bool {
     if rec.json["received"].object != nil { return board.apply(received: [rec.json["received"]]).first?.applied ?? false }
@@ -1399,9 +1389,13 @@ public struct Store {
         if self.pastDue { try await self.tendPast(&report, &ch) }
       }
     case "presence":
-      var ch = Change()
-      board.applyPresence(Room.presence(data)); ch.members = true
-      emit(ch)
+      // (the client core reads it: client/src/presence.rs, the same on every app)
+      board.applyPresenceEvent(data)
+      emit(Change())
+    case "here":
+      // (the end of a new stream's list of who is here: a device shown online that it did not name left meanwhile)
+      board.applyHere()
+      emit(Change())
     case "request":
       // a wish of a signed-in device (readmit, handover, session) or a join request of an invite; a wish for keys
       // is answered (7.1.1)
@@ -1447,6 +1441,7 @@ public struct Store {
             if status == 401 { unauthorised = true; reader.stop(); break }
             if status != 200 { refused = true; reader.stop(); break }
             live = true; board.connection = "live"
+            board.streamOpened()
             var ch = Change(); ch.room = true; emit(ch)
           case .event(let name, let data):
             pause = 300_000_000   // (a stream that brought something was a real one: the next pause is short again)

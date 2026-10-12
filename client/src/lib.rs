@@ -25,6 +25,7 @@ pub mod codec;
 pub mod desk;
 pub mod model;
 pub mod plan;
+pub mod presence;
 pub mod registers;
 pub mod sessions;
 pub mod status;

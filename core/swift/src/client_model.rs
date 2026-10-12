@@ -265,6 +265,29 @@ impl ClientModel {
         })
     }
 
+    /// The live stream opened (again): the hub's list of who is here comes first, ended by its `here`.
+    pub fn stream_opened(&self) -> Result<(), CoreError> {
+        self.with(|m, _| {
+            m.stream_opened();
+            Ok(())
+        })
+    }
+
+    /// One `presence` event of the live stream, JSON as the hub sends it (`{device, online, lost?, hears?, working?,
+    /// last_call_at?, offline_since?}`, the device as base64url or hex). Returns whether an agent device came online.
+    pub fn apply_presence_event(&self, event: String, now_ms: u64) -> Result<bool, CoreError> {
+        let e: trommi_client_core::presence::PresenceEvent = serde_json::from_str(&event).map_err(json_err)?;
+        self.with(|m, c| Ok(m.apply_presence_event(&e, c, now_ms)))
+    }
+
+    /// The `here` that ends a new stream's list of who is here: every other device shown online is offline now.
+    pub fn apply_here(&self, now_ms: u64) -> Result<(), CoreError> {
+        self.with(|m, c| {
+            m.apply_here(c, now_ms);
+            Ok(())
+        })
+    }
+
     /// What the hub says of devices: JSON `[{device_id, is_online, offline_since, link?}]`.
     pub fn apply_presence(&self, reports: String, now_ms: u64) -> Result<(), CoreError> {
         let reports: Vec<DeviceReport> = serde_json::from_str(&reports).map_err(json_err)?;

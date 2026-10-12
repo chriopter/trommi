@@ -372,6 +372,9 @@ methods!(RawClientModel {
     apply_groups(groups, roles);
     apply_commit(facts, by_recovery, removed_me, now_ms);
     apply_presence(reports, now_ms);
+    stream_opened();
+    apply_presence_event(event, now_ms);
+    apply_here(now_ms);
     apply_work_trail(session_id, from, turn, number, time, payload, change_number);
     apply_stroke_piece(from, board, payload, now_ms);
     echo_item(local_id, timeline_key, content, recipient, object_id, now_ms);

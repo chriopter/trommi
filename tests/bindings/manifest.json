@@ -941,6 +941,32 @@
         ],
         "returns": "void"
       },
+      "streamOpened": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "applyPresenceEvent": {
+        "arguments": [
+          {
+            "name": "event",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "bool"
+      },
+      "applyHere": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
       "applyWorkTrail": {
         "arguments": [
           {

@@ -118,6 +118,8 @@ pub struct Model {
     /// When the session list's status may change by the clock alone (0: never); the projection past it sends the
     /// list again.
     pub status_wake: u64,
+    /// The devices the hub named online since the live stream opened, until its `here` ends that list (presence.rs).
+    pub named_here: Option<std::collections::BTreeSet<String>>,
 }
 
 /// `<kind>:<id>`: a timeline's key.
