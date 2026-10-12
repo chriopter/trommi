@@ -521,8 +521,9 @@ encrypted.
     the list of groups gives the archived ones alone, and `group=<id>` on `GET /v1/changes` that group's
     envelopes alone (nothing of the log), in the hub's order: how a client loads an archived session when it is
     opened. One of the three at most (`bad-format`); `group=` only on a catch-up, and the asker sees only what it
-    may see without them. Web and the connector read with `active=1` from 12 October 2026; a client that does not
-    ask gets everything, as before. Measured on a room of 40 helper sessions with 10 envelopes each, 36 archived
+    may see without them. Web, iPhone and the connector read with `active=1` from 12 October 2026; a client that
+    does not ask gets everything, as before. A client keeps the archived sessions it opened (the newest 20, with
+    the device's state) and loads them again after reading the room from the start. Measured on a room of 40 helper sessions with 10 envelopes each, 36 archived
     (`tests/hub/active.rs`): a catch-up from the start 3 requests and 497 kB → 1 request and 86 kB; the Desk
     190 kB → 20 kB; the list of groups 10 kB → 2 kB; one archived session opened, 1 request of 11 kB.
 

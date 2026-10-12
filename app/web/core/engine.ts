@@ -1199,6 +1199,17 @@ export class Engine {
       return d.cleanSession(group, cuts, replacement, this.now())
     })
   }
+  /** The archived sessions this device opened (hex session ids, newest last, at most 20): kept with the device's
+   *  state, not the app's cache, so that a model built again from nothing loads them again (Client.loadArchived). */
+  async openedArchived(): Promise<string[]> {
+    const v = await this.opts.meta.get('archived-opened').catch(() => null)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  }
+  async noteArchivedOpened(session_id: string): Promise<void> {
+    const list = (await this.openedArchived()).filter(x => x !== session_id)
+    list.push(session_id)
+    await this.opts.meta.set('archived-opened', list.slice(-20)).catch(() => {})
+  }
   /** Archives a session group on this device (5.2.10): the hub was told, or told this device. */
   async archive(group: Uint8Array): Promise<void> {
     await this.serial(async () => { await this.call(d => d.archive(group)); await this.refresh(); this.emit('batch', null) })

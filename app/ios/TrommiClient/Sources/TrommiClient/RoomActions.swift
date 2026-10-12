@@ -544,6 +544,8 @@ extension Room {
     t.windowOpen = true
     let p = parseTimelineKey(key)
     guard p.kind == "chat" else { return (0, false) }
+    // an archived session's page opened: the session itself first (its cards, its name), which no catch-up brought
+    if p.scope == "session" { _ = try? await loadArchived(p.scopeId) }
     let loadedNumbers = t.items.values.filter { $0.itemState != "header" }.compactMap { $0.envelopeNumber }
     let before = min(t.loadedDownTo, loadedNumbers.min() ?? Int(cursor) + 1)
     let r = try await noted { try await hub.chatItems(timeline: p.timelineId, before: UInt64(max(0, before)), limit: limit) }

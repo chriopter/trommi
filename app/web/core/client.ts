@@ -473,7 +473,7 @@ export class Client {
     on('alert', a => { M.pushAlert(this.model, this.change, { code: a.code, message: a.message, envelope_number: a.change, at: this.now() }) })
     on('stream', event => this.onStream(event))
     on('invites', ({ open }) => this.invitesDone(open))
-    on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() } })
+    on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() }; void this.reloadArchived().catch(() => {}) })
     on('batch', () => this.publish())
     on('reopened', () => { void this.reconcile().catch(() => {}) })
     on('closed', ({ code }) => {
@@ -642,7 +642,16 @@ export class Client {
     } catch (e) { this.archivedLoaded.delete(session_id); throw e }
     const received = await this.engine.receiveGroup(items)
     this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }) })
+    await this.engine.noteArchivedOpened(session_id)
     return received.length
+  }
+  /** After a rescan (it reads the live sessions alone, and a model built again from nothing lost what an opened
+   *  archived session brought): the archived sessions this device opened are loaded again. */
+  private async reloadArchived(): Promise<void> {
+    for (const sid of await this.engine.openedArchived()) {
+      this.archivedLoaded.delete(sid)
+      await this.loadArchived(sid).catch(() => {})
+    }
   }
   /**
    * Every account has at least one desk, from its creation on: the first is `desk/main`, "Personal". A human device

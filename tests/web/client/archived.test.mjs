@@ -3,7 +3,7 @@
 // it from the hub's list on start. STAND-IN core and FAKE hub.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { scene, until } from './helpers.mjs'
+import { memoryCache, scene, until } from './helpers.mjs'
 
 test('an archived session is not loaded at the start, only when it is opened; a device away at the archiving learns it', async t => {
   const { fake, R, a, b, agent } = await scene(t, { agent: true, second: true })
@@ -43,4 +43,17 @@ test('an archived session is not loaded at the start, only when it is opened; a 
   const twice = fake.requests.length
   await again.loadArchived(sid)
   assert.equal(fake.requests.slice(twice).filter(r => r.path === '/v1/changes').length, 0)
+
+  // a model built again from nothing (a cache that is not this device's): the rescan reads the live sessions alone,
+  // and the archived session this device opened is loaded again with it, not lost until it is opened once more
+  await again.settle()
+  await again.stop()
+  const cache = memoryCache(b.stored_as.name)
+  const at = await cache.get('client/at')
+  await cache.set('client/at', { ...at, cursor: at.cursor + 3 })
+  const cold = await R.openRoom({ storage: b.stored_as })
+  t.after(() => cold.stop().catch(() => {}))
+  assert.equal(cold.model.cards.size, 0, 'nothing of the dropped cache is shown')
+  await cold.start()
+  await until(() => cold.model.cards.get(card)?.title === 'An old question' && cold.model.sessions.get(sid)?.profile?.agent_name === 'old helper', 'the opened archived session, back after the rebuild')
 })
