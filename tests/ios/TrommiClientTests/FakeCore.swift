@@ -239,7 +239,14 @@ final class FakeDevice: CoreDevice {
     let key = "\(hex(group))/\(sender)"
     let have = state.seqs[key] ?? 0
     guard ordered else { return made(voidCode != nil ? .void : have >= seq ? .applied : .provisional, code: voidCode) }
-    guard change > state.cursor else { return made(.refused, code: "replay") }
+    // (at or below the cursor an envelope is taken along its sender's chain: the next of it, 9.0.6)
+    if change <= state.cursor {
+      let key = "\(hex(group))/\(sender)", have = state.seqs[key] ?? 0
+      guard seq == have + 1 else { return made(.refused, code: seq <= have ? "replay" : "gap") }
+      state.seqs[key] = seq
+      try write([])
+      return made(voidCode != nil ? .void : .applied, code: voidCode)
+    }
     state.cursor = change
     let own = sender == state.id
     if !own && seq != have + 1 { try write([]); return made(.refused, code: seq <= have ? "replay" : "gap") }
@@ -338,6 +345,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var wishes: [[String: Any]] = []
     /** Set: the answer to a posted Commit waits for a signal, while the Commit is in the changes already. */
     var holdCommitAnswer: DispatchSemaphore?
+    /** What GET /v1/groups/{group}/chains/{sender} serves, by "group hex/sender hex": the chain's items with `seq`. */
+    var chains: [String: [[String: Any]]] = [:]
     /** What GET /v1/welcomes lists, and how often it was read. */
     var welcomes: [[String: Any]] = []
     var welcomesRead = 0
@@ -363,6 +372,12 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
       case ("GET", _) where path.hasSuffix("/challenge"): return (200, ["challenge": b64u(Bytes(repeating: 9, count: 32))])
       case ("POST", _) where path.hasSuffix("/tokens"): return (200, ["token": "t", "expires_at": nowMs() + 600_000, "role": "human"])
       case ("GET", "/v1/welcomes"): welcomesRead += 1; return (200, welcomes)
+      case ("GET", _) where path.contains("/chains/"):
+        let parts = path.split(separator: "/").map(String.init)
+        let key = "\(hex((try? unb64u(parts[2])) ?? []))/\(hex((try? unb64u(parts[4])) ?? []))"
+        let after = UInt64(query["after"] ?? "0") ?? 0
+        let items = (chains[key] ?? []).filter { (($0["seq"] as? NSNumber)?.uint64Value ?? 0) > after }
+        return (200, ["items": items, "more": false])
       case ("GET", "/v1/desk"):
         guard let cards = deskCards else { return (404, ["error": "not-found", "message": path]) }
         deskReads += 1

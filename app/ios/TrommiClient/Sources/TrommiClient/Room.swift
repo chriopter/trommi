@@ -231,6 +231,8 @@ public struct Store {
   var pastDue = false
   /** Keys came while the past was being read back (7.1.1): read back once more when that read ends. */
   var readBackAgain = false
+  /** The chains (group/sender, hex) whose gap this run filled once already (`fillGap`). */
+  var gapsFilled = Set<String>()
   /** Counts the times the board was built anew from the hub's changes (a read-back, after a Cut): a Scribble Board
    *  on screen loads itself again when it changed. */
   public internal(set) var boardsReset = 0
@@ -958,6 +960,9 @@ public struct Store {
     case refused(change: UInt64, code: String)
     /** The run ends before this item; the cursor stays in front of it. */
     case stopped(code: String)
+    /** Refused with `gap`: the sender's chain misses what stands before this envelope (9.0.6). The run ends before
+     *  it; the chain is fetched from where this device holds it, and the run goes on from this item. */
+    case gap(group: GroupId, sender: DeviceId, seq: UInt64)
     /** Reading back: this device holds it whole already (`readBackWhole`); put back as it was. */
     case kept(Rec)
   }
@@ -970,6 +975,7 @@ public struct Store {
   func process(_ parsed: [Item], report: inout SyncReport, change: inout Change) async throws {
     guard !parsed.isEmpty else { return }
     let readingBack = self.readingBack
+    let filledBefore = self.gapsFilled
     let cutDropped = Flag()
     let coreStart = Spent.now
     // (one flush of the store for the whole run, at its end: DeviceStore.batched)
@@ -1026,6 +1032,12 @@ public struct Store {
             Spent.add("core envelope", since: te)
             // Reading back: `replay` says the chain holds this one already, so it is read again for display.
             if readingBack, c <= before, e.outcome == .refused, e.code == "replay" { e = try device.receiveEnvelope(bytes, change: c, ordered: false, voidCode: void, nowMs: nowMs()) }
+            // Refused with `gap` in the hub's order: the sender's chain misses what stands before this one (it was
+            // written before this device came into the group, or passed over). Stop before it: the chain is filled
+            // and the run goes on from here (the web engine's `fillGap`). Once per sender and run.
+            if e.outcome == .refused, e.code == "gap", c > before, !readingBack, !filledBefore.contains("\(hex(e.header.group))/\(hex(e.header.sender))") {
+              out.append(.gap(group: e.header.group, sender: e.header.sender, seq: e.header.seq)); return done()
+            }
             // Refused with `group-behind` and the cursor left where it was: the group's next Commits are still to
             // come. Stop before it, so that it is read again with what it needs, instead of being passed over.
             if e.outcome == .refused, c > before, device.cursor < c { out.append(.stopped(code: e.code ?? "group-behind")); return done() }
@@ -1069,8 +1081,10 @@ public struct Store {
     var groupsStale = false
     func freshGroups() async throws { if groupsStale { groupsStale = false; try await refreshGroups(&change) } }
     var stopped: String? = nil
+    var gapAt: (index: Int, group: GroupId, sender: DeviceId, seq: UInt64)? = nil
     for (i, o) in outcomes.enumerated() {
       if case .stopped(let code) = o { stopped = code; break }
+      if case let .gap(group, sender, seq) = o { gapAt = (i, group, sender, seq); break }
       cursor = max(cursor, parsed[i].change)
       board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
       switch o {
@@ -1115,11 +1129,44 @@ public struct Store {
         log[UInt64(rec.envelopeNumber)] = rec
         sinceSnapshot += 1
         cacheSoon(UInt64(rec.envelopeNumber))
-      case .stopped: break
+      case .stopped, .gap: break
       }
     }
     try await freshGroups()
     if let code = stopped { throw TrommiError(code, "the catch-up stopped before a change it could not take yet") }
+    if let g = gapAt, case let .envelope(c, bytes, void) = parsed[g.index] {
+      self.gapsFilled.insert("\(hex(g.group))/\(hex(g.sender))")
+      try await fillGap(group: g.group, sender: g.sender, before: g.seq, &report, &change)
+      // the envelope itself again, along its sender's chain; still a gap: the hub withholds a part of the chain
+      if let e = try? await onCore({ try $0.receiveEnvelope(bytes, change: c, ordered: true, voidCode: void, nowMs: nowMs()) }) {
+        apply(e, report: &report, &change)
+      }
+      cursor = max(cursor, c)
+      board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
+      if g.index + 1 < parsed.count { try await process(Array(parsed[(g.index + 1)...]), report: &report, change: &change) }
+    }
+  }
+  /**
+   * The links of a sender's chain this device misses before `before` (9.0.6), fetched from where it holds the chain
+   * and taken in order (each as read again, `ordered`: the chain's own order), so that the envelope behind them is
+   * taken too. What the hub does not serve stays a gap, said once (the web engine's `fillGap`).
+   */
+  func fillGap(group: GroupId, sender: DeviceId, before: UInt64, _ report: inout SyncReport, _ change: inout Change) async throws {
+    var after = (try? await onCore { try $0.cutOf(group: group, device: sender).seq }) ?? 0
+    pages: for _ in 0..<1_000 {
+      guard let page = try? await noted({ try await hub.chain(group: group, sender: sender, after: after) }) else { break }
+      let items = page["items"] as? [JSON] ?? []
+      for j in items {
+        guard let seq = Wire.uint(j["seq"]), seq > after, let n = Wire.uint(j["change"]), let bytes = (j["envelope"] as? String).flatMap({ try? unb64u($0) }) else { break pages }
+        if seq >= before { break pages }
+        let void = j["void_code"] as? String
+        if let e = try? await onCore({ try $0.receiveEnvelope(bytes, change: n, ordered: true, voidCode: void, nowMs: nowMs()) }), e.outcome != .refused {
+          apply(e, report: &report, &change)
+        }
+        after = seq
+      }
+      if page["more"] as? Bool != true || items.isEmpty { break }
+    }
   }
   /**
    * What another device's `heads` say of one sender's chain, against this device's own (9.0.7). Another envelope
