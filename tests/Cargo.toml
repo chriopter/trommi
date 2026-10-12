@@ -20,7 +20,7 @@ tls_codec = "=0.5.0"
 # The facade both bindings share, for the tests of the bindings (`bindings/`).
 trommi-core-swift = { path = "../core/swift" }
 # the hub and what its test clients need (tests/hub/…)
-trommi-hub = { path = "../hub" }
+trommi-hub = { path = "../hub", features = ["fuzz"] }
 # the hub's updater and what its tests sign with (tests/deploy/…); ed25519-dalek also makes the throwaway release
 # key of tests/connector/update.rs
 trommi-hub-updater = { path = "../hub/updater" }
@@ -34,6 +34,14 @@ p256 = { version = "=0.13.2", features = ["ecdsa", "ecdh", "pkcs8", "pem"] }
 # The connector's tests (tests/connector/…): the crate itself, and what its end-to-end tests drive it with.
 trommi-connector = { path = "../connector" }
 reqwest = { version = "=0.12.28", default-features = false }
+
+[dev-dependencies]
+# the property tests of the fuzz harnesses (fuzz_props.rs)
+proptest = { version = "1", default-features = false, features = ["std"] }
+
+[[test]]
+name = "core_fuzz_props"
+path = "fuzz_props.rs"
 
 [[test]]
 name = "core_groups_founding"
@@ -180,6 +188,10 @@ name = "bindings_notify"
 path = "bindings/notify.rs"
 
 [[test]]
+name = "hub_fuzz_http"
+path = "hub/fuzz_http.rs"
+
+[[test]]
 name = "hub_delivery"
 path = "hub/delivery.rs"
 
@@ -255,6 +267,10 @@ path = "client/mega.rs"
 [[test]]
 name = "connector_keys"
 path = "connector/keys.rs"
+
+[[test]]
+name = "connector_fuzz_mcp"
+path = "connector/fuzz_mcp.rs"
 
 [[test]]
 name = "connector_tools"

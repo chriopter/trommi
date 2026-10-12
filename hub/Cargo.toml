@@ -13,6 +13,10 @@ path = "src/lib.rs"
 name = "trommi-hub"
 path = "src/main.rs"
 
+[features]
+# `api::fuzz_route`: the routes without HTTP, for the fuzz harness of tests/src/fuzz/hub.rs. Never in a release.
+fuzz = []
+
 [dependencies]
 openmls = { workspace = true }
 openmls_rust_crypto = { workspace = true }

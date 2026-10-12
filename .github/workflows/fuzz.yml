@@ -1,0 +1,108 @@
+# Fuzzing every night (README "Fuzzing"): each libFuzzer target of tests/fuzz for FUZZ_MINUTES, on the corpus of the
+# nights before (kept in the cache, never in git); the property tests with many cases; the built connector over MCP
+# with random calls. A crash fails the run and its input is an artifact: minimize it, keep it under
+# tests/fuzz/regress/<target>/, fix it. It deploys nothing and reads no secret.
+name: fuzz
+
+on:
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes per target
+        default: '15'
+
+permissions: {}
+
+concurrency:
+  group: fuzz
+  cancel-in-progress: true
+
+jobs:
+  libfuzzer:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [core_decode, board_merge, content_flow, mls_devices, hub_api, connector_text]
+    env:
+      FUZZ_VERSION: 0.13.2
+      FUZZ_MINUTES: ${{ inputs.minutes || '15' }}
+      RUSTC_BOOTSTRAP: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler (rust-toolchain.toml)
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: tool
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-${{ runner.os }}-${{ env.FUZZ_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: cargo-fuzz
+        if: steps.tool.outputs.cache-hit != 'true'
+        run: cargo install cargo-fuzz --version "$FUZZ_VERSION" --locked
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tests/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: Build
+        working-directory: tests/fuzz
+        run: cargo fuzz build -O -s none ${{ matrix.target }}
+      - name: Fuzz
+        run: |
+          dev/fuzz/campaign.sh "$((FUZZ_MINUTES * 60))" 3 ${{ matrix.target }} || true
+          cat tests/fuzz/artifacts/execs.txt
+          if ls tests/fuzz/artifacts/${{ matrix.target }}/ | grep -q -E '^(crash|oom|leak)'; then
+            tail -n 80 tests/fuzz/artifacts/${{ matrix.target }}.*.log
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: tests/fuzz/artifacts/
+          retention-days: 14
+
+  properties:
+    name: property tests, hub over HTTP, connector over MCP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler (rust-toolchain.toml)
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+      - name: Property tests
+        env:
+          FUZZ_CASES: '3000'
+        run: cargo test --locked -p trommi-tests --test core_fuzz_props
+      - name: Hub over HTTP
+        env:
+          FUZZ_HTTP_CASES: '5000'
+        run: cargo test --locked -p trommi-tests --test hub_fuzz_http -- --nocapture
+      - name: Connector over MCP
+        env:
+          FUZZ_MCP_CASES: '5000'
+          FUZZ_ARTIFACTS: ${{ runner.temp }}/fuzz-mcp
+        run: cargo test --locked -p trommi-tests --test connector_fuzz_mcp -- --nocapture
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fuzz-mcp
+          path: ${{ runner.temp }}/fuzz-mcp
+          retention-days: 14

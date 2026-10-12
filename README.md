@@ -414,6 +414,42 @@ More: [`app/web/README.md`](app/web/README.md), [`app/ios/README.md`](app/ios/RE
 
 </details>
 
+<details>
+<summary><b>Fuzzing</b> · libFuzzer targets, property tests, nightly</summary>
+
+The harnesses are in `tests/src/fuzz/`, one `run(bytes)` each; the libFuzzer targets in `tests/fuzz/` (a cargo-fuzz
+crate of its own) are one line each. Every run checks properties, not only "no panic":
+
+| Target | What | Properties |
+|---|---|---|
+| `core_decode` | every decoder of the core | `decode(encode(x)) == x`; canonical where the format says so |
+| `board_merge` | Scribble Board items of up to four writers | any order and replays give one board; a snapshot reads back |
+| `content_flow` | stored content through the hub's and devices' checks, with forgeries | flipped bytes, foreign signatures, non-members and replays are never taken; hub and devices agree |
+| `mls_devices` | real OpenMLS devices against the hub in memory | replayed and flipped log entries change nothing; devices converge; an outsider opens nothing |
+| `hub_api` | every non-streaming route (`api::fuzz_route`, feature `fuzz`) | no `internal` on bad input; nothing of one room served outside it |
+| web model (`tests/web/model/fuzz.test.mjs`) | random stories of core results into `model.ts` | the page's copy and the cache give the model back |
+| `connector_text` | board text in channel tags, received file names, invite links | no tag can be closed or opened; no hidden characters; files stay in the cache |
+
+```sh
+# in CI and locally: every kept reproducer and seed, then random inputs (FUZZ_CASES, default 64)
+cargo test --locked -p trommi-tests --test core_fuzz_props
+FUZZ_TARGET=devices FUZZ_FILE=crash-… FUZZ_DEBUG=1 cargo test -p trommi-tests --test core_fuzz_props one_input -- --ignored --nocapture
+
+# libFuzzer (cargo install cargo-fuzz; RUSTC_BOOTSTRAP=1 lets the pinned stable compiler build it)
+cd tests/fuzz && RUSTC_BOOTSTRAP=1 cargo fuzz build -O -s none
+dev/fuzz/campaign.sh 3600 4 core_decode hub_api   # seconds, workers per target, targets; corpus and crashes in tests/fuzz/
+
+# black box: the hub over real HTTP (raw requests), the built connector over MCP (tool calls and lines)
+FUZZ_HTTP_CASES=5000 cargo test -p trommi-tests --test hub_fuzz_http -- --nocapture
+FUZZ_MCP_CASES=5000 cargo test -p trommi-tests --test connector_fuzz_mcp -- --nocapture
+```
+
+A crash is minimized (`cargo fuzz tmin`), kept under `tests/fuzz/regress/<target>/` (replayed by `fuzz_props`), and
+fixed. Seeds: `tests/fuzz/seeds/` (`cargo test -p trommi-tests --test core_fuzz_props write_seeds -- --ignored`); the
+growing corpus stays out of git. Nightly in CI: `.github/workflows/fuzz.yml`, every target for a few minutes.
+
+</details>
+
 ## License
 
 [O'Saasy](LICENSE.md). Third-party licences: [THIRD-PARTY.md](THIRD-PARTY.md) (the web app's own:

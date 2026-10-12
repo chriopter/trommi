@@ -82,6 +82,8 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **A new agent's session no longer stays nameless on one device**: a device that took the session before the agent's arrival in the room showed it without a name and its cards without titles, for good; it now waits for the room and then opens it.
 - Hidden Unicode characters can no longer slip into an agent's messages: board text reaching an agent drops
   invisible and direction-changing characters, also the tag characters that spell text no one sees.
+- Numbers in settings and card fields keep their exact value when a device writes them again (the last digits
+  of a large or long decimal could change).
 
 **Better**
 - **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.

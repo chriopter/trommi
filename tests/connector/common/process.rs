@@ -317,6 +317,15 @@ impl Mcp {
         self.stdin.flush().await.expect("flushed");
     }
 
+    /// Sends one line as it is, JSON or not.
+    pub async fn send_raw(&mut self, line: &str) {
+        self.stdin
+            .write_all(format!("{line}\n").as_bytes())
+            .await
+            .expect("the connector reads");
+        self.stdin.flush().await.expect("flushed");
+    }
+
     /// One line from the server, or none within `ms`.
     pub async fn read(&mut self, ms: u64) -> Option<Value> {
         let line =
