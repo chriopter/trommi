@@ -6,7 +6,7 @@ import * as desk from './desk.mjs'
 import * as sidebar from './sidebar.mjs'
 import * as notes from './notes.mjs'
 import { DRAWER_VEIL, SIDE_FOOT, cornerNote, markCurrent, phoneBar, sidebarRows, tabBar, topbar } from './sidebar.mjs'
-import { Controller, WORDS, attGone, calm, readAttachmentsWith, controller, copyLater, curlHTML, html, hueFor, isKnock, keySheet, raw, showToast, askToast, sk, startUi, toast, sayError } from './ui.mjs'
+import { Controller, WORDS, attGone, calm, readAttachmentsWith, controller, copyLater, curlHTML, html, hueFor, isKnock, keySheet, raw, showToast, sk, startUi, toast, sayError } from './ui.mjs'
 import { boardNotes, noteStore } from './notes.mjs'
 import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
@@ -221,6 +221,36 @@ const ALL_DESKS = 'all'
 /** The walk (Blitz, a card's before and next): every open card that waits for him, the questions first, then what
  *  is only to read, card by card. Not what is with an agent. */
 export const walkOf = m => (m.walk ??= [...m.fresh, ...(m.reads ?? [])])
+/** The last part of a folder's path: "~/git/game" is "game". */
+export const folderName = f => String(f ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || ''
+/**
+ * Self-join (spec/v1.md 12.4): the new sessions of an agent's own machine and account that ask to join, as rows of
+ * the sidebar (sidebar.mjs joinRow). One tap stands for the emoji: Allow answers with a link (the client confirms
+ * the Request the agent names), Deny refuses. 'ask': nobody answered; 'joining': allowed here, and its session is
+ * not in yet. Denied, refused or in: no row (the session's own row stands then).
+ */
+export function joinsOf(cm) {
+  const out = []
+  for (const s of cm?.sessions?.values() ?? []) {
+    if (!s.is_active || s.stale || s.parent_session_id || !s.group_id || s.settings?.archived) continue
+    for (const [key, reg] of s.registers ?? []) {
+      if (!key.startsWith('join_ask/')) continue
+      const nonce = key.slice('join_ask/'.length), ask = reg?.value
+      if (!/^[0-9a-f]{1,64}$/.test(nonce) || !ask || typeof ask !== 'object') continue
+      const link = s.registers.get(`join_link/${nonce}`)?.value
+      let state = 'ask'
+      if (link != null) {
+        const inv = typeof link === 'object' && typeof link.invite_id === 'string' ? cm.invites?.get(link.invite_id) : null
+        if (!inv || ['joined', 'failed', 'expired'].includes(inv.invite_state)) continue
+        state = 'joining'
+      }
+      const folder = typeof ask.folder === 'string' ? ask.folder : ''
+      out.push({ nonce, state, folder, name: folderName(folder) || String(ask.name || 'New session'), host: typeof ask.host === 'string' ? ask.host : '',
+        kind: String(ask.account_label ?? '').startsWith('codex') ? 'Codex' : 'Claude', by: s.settings?.name || ask.vouched_by || '' })
+    }
+  }
+  return out
+}
 function boardModel(state, agents = state.agents, desk = null) {
   const desks = state.desks?.length ? state.desks : null
   const all = Boolean(desks && desks.length > 1 && desk === ALL_DESKS)
@@ -2134,9 +2164,10 @@ async function start(client, { fresh = false } = {}) {
   let cached = null
   const model = (d = desk) => {
     if (pending && !wasCatchingUp) { update(); frame ||= requestAnimationFrame(() => apply()) }
-    if (cached?.version === board.version && cached.desk === d) return cached.m
+    if (cached?.version === board.version && cached.desk === d) { cached.m.joins = joinsOf(client.model); return cached.m }
     const m = boardModel(board.state, hub.agents(), d ?? (board.state.desks?.length > 1 ? ALL_DESKS : null))
     board.desk = m.desk
+    m.joins = joinsOf(client.model)
     cached = { version: board.version, desk: d, m }
     return m
   }
@@ -2241,35 +2272,9 @@ async function start(client, { fresh = false } = {}) {
       host.firstElementChild.id = `code-ask-${id}`
     }
   }
-  // Self-join (spec/v1.md 12.4): an agent asks to let in a new session of its own machine and account. One tap
-  // stands for the emoji: Allow answers with a link (the client confirms the Request the agent names), Deny refuses.
-  const vouchShown = new Set()
-  const askVouches = () => {
-    const open = new Set()
-    for (const s of client.model.sessions.values()) {
-      if (!s.is_active || s.parent_session_id || s.settings?.archived) continue
-      for (const [key, reg] of s.registers ?? []) {
-        if (!key.startsWith('join_ask/')) continue
-        const nonce = key.slice('join_ask/'.length), ask = reg?.value
-        if (!/^[0-9a-f]{1,64}$/.test(nonce) || !ask || typeof ask !== 'object' || s.registers.get(`join_link/${nonce}`)?.value != null) continue
-        open.add(nonce)
-        if (vouchShown.has(nonce)) continue
-        const host = document.getElementById('says-host')
-        if (!host) continue
-        vouchShown.add(nonce)
-        const kind = String(ask.account_label ?? '').startsWith('codex') ? 'Codex' : 'Claude'
-        const by = s.settings?.name || ask.vouched_by || 'a session'
-        const on = ask.host ? ` on ${ask.host}` : ''
-        host.insertAdjacentHTML('afterbegin', String(askToast({ id: `vouch-ask-${nonce}`, head: `Allow new ${kind} session “${ask.name || 'unnamed'}”${on}?`, line: `vouched for by ${by}${ask.folder ? ` · ${ask.folder}` : ''}`, action: `/vouch/${nonce}`, field: 'allow', yes: 'Allow', no: 'Deny' })))
-      }
-    }
-    for (const nonce of vouchShown) if (!open.has(nonce)) { document.getElementById(`vouch-ask-${nonce}`)?.remove(); vouchShown.delete(nonce) }
-  }
-  document.addEventListener('turbo:load', () => askVouches(), { once: true })
   document.addEventListener('turbo:load', () => askCodes(client.model.invites.keys()), { once: true })
   client.on('change', change => {
     askCodes(change.invites)
-    if (change.sessions?.size || change.registers?.size) askVouches()
     if (change.room) newerNotice()
     if (!pending) pending = merge({ cards: new Set(), sessions: new Set(), permissions: new Set(), notes: new Set(), published: new Set(), timelines: new Set(), registers: new Set(), invites: new Set() }, change)
     else merge(pending, change)
