@@ -22,10 +22,9 @@ extension Room {
     var at: UInt64
   }
   static let deskAAD = "trommi ios desk"
-  /** How long the first paint of a launch from the cache waits for the hub's Desk; then "Catching up…" without cards. */
+  /** How long the first paint of a launch from the cache waits for the hub's Desk; then the cached Desk stands as
+   *  the list kept from the last launch filters it, and "Catching up…" says the rest is on its way. */
   static let deskFirstNs: UInt64 = 300_000_000
-  /** How long no open card stands without the hub's Desk; then the list kept from the last launch decides (offline). */
-  static let deskHoldMaxNs: UInt64 = 5_000_000_000
 
   /** Keeps the hub's Desk as read, for the next launch. */
   func keepDesk(_ open: Set<String>, at: UInt64) {
@@ -35,23 +34,21 @@ extension Room {
   }
   /**
    * The first paint of a launch from the cache: until the hub's Desk of this run answered, or `deskFirstNs` passed,
-   * the app draws nothing of the Desk (`deskHolding`); past it, no open card stands (`Board.deskWaiting`) until the
-   * Desk answers, at most `deskHoldMaxNs`, after which the list kept from the last launch decides.
+   * the app draws nothing of the Desk (`deskHolding`). Past it the cached Desk stands, filtered by the list kept from
+   * the last launch (`restore`), never an empty one (the owner's rule: only a first sign-in may show an empty Desk);
+   * the hub's Desk corrects it when it answers.
    */
   func holdDesk() {
     deskHolding = true
-    board.deskWaiting = true
     deskHoldTask?.cancel()
     deskHoldTask = Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: Room.deskFirstNs)
       guard let self, !Task.isCancelled, self.deskHolding else { return }
       self.deskHolding = false
+      self.deskHoldTask = nil
       self.wakeDeskWaiters()
       var ch = Change(); ch.room = true; ch.stack = true
       self.emit(ch)
-      try? await Task.sleep(nanoseconds: Room.deskHoldMaxNs - Room.deskFirstNs)
-      guard !Task.isCancelled else { return }
-      self.deskAnswered()
     }
   }
   /** The hub's Desk of this run answered (or none comes): what it lists, or the kept list, decides from here. */
@@ -103,7 +100,7 @@ extension Room {
    */
   public func saveCacheAndWait(snapshot: Bool = false) async {
     let wantSnap = ((synced && sinceSnapshot >= Room.snapshotEvery) || (snapshot && sinceSnapshot >= Room.snapshotEvery / 10)) && ownEchoes.isEmpty && board.settled
-    guard !closed, cacheDirty || wantSnap, let rs = try? recordStore() else { return }
+    guard !closed, !cacheHeld, cacheDirty || wantSnap, let rs = try? recordStore() else { return }
     cacheDirty = false
     let numbers = dirtyRecs
     let recs = numbers.sorted().compactMap { log[$0] }
@@ -205,6 +202,21 @@ extension Room {
     ch.stack = true; ch.room = true
     emit(ch)
     return true
+  }
+  /**
+   * A read back is through (RoomPast.swift tendPast): the cache of before gives way to what it read, as a whole, and
+   * the hub's Desk last read is kept again beside it.
+   */
+  func replaceCache() async {
+    await saveTail?.value
+    cacheHeld = false
+    guard let rs = try? recordStore() else { return }
+    await Task.detached(priority: .utility) { rs.wipe() }.value
+    if let seen = deskSeen { keepDesk(seen.open, at: seen.at) }
+    dirtyRecs = Set(log.keys)
+    cacheDirty = true
+    sinceSnapshot = Room.snapshotEvery
+    await saveCacheAndWait()
   }
   /** Throw the cache away (the board is read again from the hub). */
   public func dropCache() { (try? recordStore())?.wipe(); log = [:]; restoredCount = 0; dirtyRecs = []; cursor = 0 }

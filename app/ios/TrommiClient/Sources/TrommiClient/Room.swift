@@ -233,6 +233,16 @@ public struct Store {
   var readBackWhole: [UInt64: Rec] = [:]
   /** Something came that the past waits for (a Welcome, keys): `tendPast` is due after what is being processed. */
   var pastDue = false
+  /**
+   * While the changes are read back (RoomPast.swift tendPast): the board as it stood before, which the views show
+   * until the read is through, so that the Desk never stands empty meanwhile. nil: the views show the board.
+   */
+  public internal(set) var readBackView: Board?
+  /** What the views show: the board as it stood while a read back builds it anew, a fresh sign-in's preview, or the board. */
+  public var shownBoard: Board { readBackView ?? preview ?? board }
+  /** The cache on disk is left as it is: a read back builds the board anew, and the cache of before stays until it
+   *  is through (a launch meanwhile starts warm from it and reads back again). */
+  var cacheHeld = false
   /** Keys came while the past was being read back (7.1.1): read back once more when that read ends. */
   var readBackAgain = false
   /** The chains (group/sender, hex) whose gap this run filled once already (`fillGap`). */

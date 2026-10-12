@@ -512,8 +512,9 @@ public final class Board {
    */
   public var hubSettled: [String: Int] = [:]
   /**
-   * A launch from the cache waits for the hub's Desk of this run (Room.deskFirst): meanwhile no open card or request
-   * stands (the Desk says "Catching up…"), as the cache may hold ones settled elsewhere since. Not stored.
+   * No open card or request stands at all (the Desk says "Catching up…"). Not set by the room: a launch from the
+   * cache shows the cached Desk as the list kept from the last launch filters it (`hubSettled`), never an empty one.
+   * Not stored.
    */
   public var deskWaiting = false
   /** Open here, but settled at the hub: not on its Desk while a catch-up is behind it (`deskGate`), or not on it
@@ -567,6 +568,18 @@ public final class Board {
     members = o.members; sessions = o.sessions; cards = o.cards; permissions = o.permissions; notes = o.notes; published = o.published; timelines = o.timelines
     human = o.human; alerts = o.alerts; stack = o.stack; openPermissionIds = o.openPermissionIds
     newerCount = o.newerCount; newerWhat = o.newerWhat; newerEnvelope = o.newerEnvelope; deviceRegisters = o.deviceRegisters; alertSeq = o.alertSeq; answerEchoes = [:]
+  }
+  /**
+   * A copy of what this board shows, for the views while the room builds its board anew (Room.readBackView): every
+   * field `adopt` takes, the recovery key, and what holds cards back, with the stack as it stands.
+   */
+  public func heldCopy() -> Board {
+    let b = Board()
+    b.adopt(self)
+    b.recoveryKey = recoveryKey; b.roomCommits = roomCommits
+    b.deskGate = deskGate; b.hubSettled = hubSettled; b.deskWaiting = deskWaiting
+    b.stack = stack; b.openPermissionIds = openPermissionIds
+    return b
   }
   /** Nothing of this device in flight on the board: no own echo, no pending answer, note or register (a snapshot may be taken). */
   public var settled: Bool {

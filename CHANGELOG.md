@@ -36,6 +36,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **No more "Unknown command: /trommi:connect"**: `trommi-connector setup claude` now replaces a Trommi plugin copy
   older than the slash command (Claude Code kept it because the version number stayed the same) and turns the plugin
   on when it was off, in the Claude Code account `CLAUDE_CONFIG_DIR` names.
+- **iPhone: cards never vanish while it catches up**: when keys of earlier messages arrived, the iPhone rebuilt its Desk from scratch, showed "Catching up… 0%" with no cards and threw its saved copy away. Now the Desk keeps every card on screen while it rereads, and the saved copy stays until the reread is through, so the next open is instant again.
 - **Closed helper sessions free their place**: `close_session` now really ends a helper session (once its open
   questions are answered), so an agent is no longer refused a new one while only a few show on the board. An agent
   may keep up to 100 helper sessions open at once (was 32).
