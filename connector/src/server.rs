@@ -129,10 +129,7 @@ pub fn channel_text(text: &str) -> String {
     let tags = regex::Regex::new(r"<([A-Za-z/!?])").unwrap();
     let cleaned: String = text
         .chars()
-        .filter(|c| {
-            (*c == '\n' || *c == '\t' || !c.is_control())
-                && !matches!(*c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}')
-        })
+        .filter(|c| (*c == '\n' || *c == '\t' || !c.is_control()) && !crate::line::invisible(*c))
         .collect();
     tags.replace_all(&cleaned, "&lt;$1").into_owned()
 }

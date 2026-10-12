@@ -17,6 +17,24 @@ pub const TITLE_MAX: usize = 80;
 /// `<system-reminder>`, `<channel …>`, `</task-notification>`), no double quote (the quote cannot be closed from
 /// inside), no middle dot (the line's own separator), no control, invisible or direction-changing characters, white
 /// space folded, and no "Trommi:" (nothing inside reads as the start of a line of ours).
+/// Invisible and direction-changing characters: soft hyphen, Arabic letter mark, zero width and bidi marks,
+/// embeddings, overrides and isolates, word joiner and its block, BOM, interlinear annotation, tag characters (which
+/// spell text no one sees). Board text loses them wherever a model reads it.
+pub fn invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{ad}'
+            | '\u{61c}'
+            | '\u{180e}'
+            | '\u{200b}'..='\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{206f}'
+            | '\u{feff}'
+            | '\u{fff9}'..='\u{fffb}'
+            | '\u{e0000}'..='\u{e007f}'
+    )
+}
+
 pub fn clean(text: &str) -> String {
     let mut out = String::with_capacity(text.len().min(4096));
     for c in text.chars() {
@@ -28,17 +46,7 @@ pub fn clean(text: &str) -> String {
             '\u{b7}' | '\u{2022}' | '\u{2219}' | '\u{22c5}' | '\u{30fb}' | '\u{387}'
             | '\u{2027}' => out.push('-'),
             '\u{2028}' | '\u{2029}' => out.push(' '),
-            // invisible and direction-changing: soft hyphen, Arabic letter mark, zero width and bidi marks, embeddings,
-            // overrides and isolates, word joiner and its block, BOM, interlinear annotation, tag characters
-            '\u{ad}'
-            | '\u{61c}'
-            | '\u{180e}'
-            | '\u{200b}'..='\u{200f}'
-            | '\u{202a}'..='\u{202e}'
-            | '\u{2060}'..='\u{206f}'
-            | '\u{feff}'
-            | '\u{fff9}'..='\u{fffb}'
-            | '\u{e0000}'..='\u{e007f}' => {}
+            c if invisible(c) => {}
             c if c.is_control() => out.push(' '),
             c => out.push(c),
         }

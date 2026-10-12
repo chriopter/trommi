@@ -80,6 +80,8 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **A 64 MB attachment no longer fails with "too-large"**: the connector took files of exactly 64 MiB, which the hub refuses once padded; it now takes up to 64 MiB less one byte and says the limit in bytes before anything is sent.
 - **A second window in the same folder can be invited**: when a new Claude Code or Codex session in a folder whose agent belongs to another session was not let in by itself (denied, too many, or self-join off), `/trommi:connect` with an invite link now works; before, the connect tool was missing and refused.
 - **A new agent's session no longer stays nameless on one device**: a device that took the session before the agent's arrival in the room showed it without a name and its cards without titles, for good; it now waits for the room and then opens it.
+- Hidden Unicode characters can no longer slip into an agent's messages: board text reaching an agent drops
+  invisible and direction-changing characters, also the tag characters that spell text no one sees.
 
 **Better**
 - **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
