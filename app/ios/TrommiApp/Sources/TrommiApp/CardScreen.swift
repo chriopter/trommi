@@ -200,6 +200,8 @@ struct CardScreen: View {
         done(c, a)
       } else if c.unsupported {
         UnsupportedLine(what: "card")
+      } else if c.working {
+        still("Being worked on", "\(a?.name ?? "Its session") is on it; it comes to your Desk when it is done.")
       } else if c.withAgent != nil {
         still(Words.revising, "It is with its session and comes back reworked.")
         saidFoot("You handed it back", c.withAgent, back: "Take back the card") { model.takeBack(c) }

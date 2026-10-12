@@ -147,11 +147,13 @@ session is open, turns `working` with "Antwort da: <labels>" (a card he put away
 weggelegt"). The connector's own line goes with `close_card` or `withdraw_card`, or when the agent sets a line of
 its own for the card; a final option makes it `done`.
 
-A task's line names its "Working on" info card. `start_task` files that card (low urgency) and sets the line
+A task's line names its "Working on" info card. `start_task` files that card (low urgency, `working: true` in its
+body, no push: the apps keep it off the Desk, under Off your mind as being worked on, spec 9.1.3) and sets the line
 `working`, linked to it, in one step; a `set_status` in state `working` with a `card_id` links a line the same way.
 While the card is open, the line keeps the link: a later `set_status` without `card_id` does not drop it, and a
 question filed in the session gets a line of its own instead of taking this one. When `revise_card` gives the card a
-title "Done: …" (or Fertig, Erledigt, Resolved, Gelöst), every line linked to it turns `done` with that title.
+title "Done: …" (or Fertig, Erledigt, Resolved, Gelöst), the version drops `working` (the card comes to the Desk
+as a quiet info, with a push) and every line linked to it turns `done` with that title.
 
 ## What is where
 

@@ -353,6 +353,33 @@ final class RoomTests: XCTestCase {
     room.close()
   }
 
+  /** An info its agent is still working on (`working: true`, spec 9.1.3): off the Desk and its stack, with the agent
+   *  under Off your mind; the version without it (its "Done: …") puts it on the Desk as a quiet info. */
+  func testAnInfoStillWorkedOnStaysOffTheDeskUntilItIsDone() async throws {
+    let room = try await founded()
+    addSession(room)
+    let card = String(repeating: "e5", count: 16)
+    func version(_ seq: Int, _ fields: [String: Any]) {
+      FakeHub.shared.envelope(["sender": agent, "group": hex(FakeDevice.sessionGroup(room.roomIdHex, session)), "seq": seq, "time": 1000 + seq, "kind": KIND.OBJECT_VERSION,
+                               "otype": OBJECT_TYPE.CARD, "ostate": CARD_STATE.OPEN, "oid": card, "files": [String]()],
+                              payload: ["object_type": "card", "object_version": seq, "card_type": "info"].merging(fields) { $1 })
+    }
+    version(1, ["title": "Working on: the migration", "body": "the migration", "working": true])
+    _ = try await room.sync()
+    XCTAssertFalse(room.board.stack.contains(card), "not on the stack")
+    var view = DeskModel(board: room.board).view(desk: nil)
+    XCTAssertFalse(view.reads.contains { $0.id == card }, "not on the Desk")
+    let worked = view.revising.first { $0.id == card }
+    XCTAssertEqual(worked?.working, true, "with the agent, being worked on")
+    XCTAssertNotNil(worked?.withAgent)
+    version(2, ["title": "Done: the migration", "body": "38 seconds.", "previous_version_hash": room.board.cards[card]?.versionHash ?? ""])
+    _ = try await room.sync()
+    XCTAssertTrue(room.board.stack.contains(card), "done: on the stack")
+    view = DeskModel(board: room.board).view(desk: nil)
+    XCTAssertTrue(view.reads.contains { $0.id == card && !$0.working && $0.withAgent == nil }, "on the Desk as an info")
+    room.close()
+  }
+
   func testACardPutOffThatHeAnswersOrHandsBackIsWoken() async throws {
     let room = try await founded()
     addSession(room)

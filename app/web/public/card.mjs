@@ -284,6 +284,7 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1 } =
   if (card.loading) return box(html`<p class="tc-quiet">Loading … this question is still being decrypted on this device.</p>`)
   // A card of a newer Trommi: nothing to answer from here; the room's notice offers the reload.
   if (card.unsupported) return box(html`<p class="tc-quiet">${NEEDS_NEWER}</p>`)
+  if (card.working) return box(html`<div class="tc-opts">${still('Being worked on', `${model.byAgent.get(card.agent)?.name ?? 'Its session'} is on it; it comes to your Desk when it is done.`)}</div>`)
   if (card.with_agent) return box(html`<div class="tc-opts">${still(WORDS.revising, 'It is with its session and comes back reworked.')}${saidFoot('You handed it back', card.with_agent, back(card, base, 'takeback'))}</div>`)
   // An info: Got it is its answer; at the column's foot What?? and the reverse card, as on a decision (the reverse
   // card hands it back for rework with the comments; Ctrl+Enter does the same from the field).

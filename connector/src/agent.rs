@@ -226,11 +226,13 @@ impl Client {
             .remove("urgency")
             .and_then(|v| v.as_str().map(urgency_byte))
             .unwrap_or(Urgency::Normal.byte());
+        // (a card still being worked on stays off his Desk: no push, spec 9.1.3)
+        let push = fields.get("working") != Some(&Value::Bool(true));
         let files = file_ids_of(&fields);
         let spec = Spec::First {
             object_type: ObjectType::Card.byte(),
             urgency,
-            push: true,
+            push,
             payload: Value::Object(fields).to_string(),
         };
         let sent = self.send(session_id.as_deref(), spec, files).await?;
@@ -268,6 +270,12 @@ impl Client {
         for (key, value) in changes {
             content.insert(key, value);
         }
+        // `working` is true or absent (spec 9.1.3); a version still working pushes nothing.
+        let working = content.get("working") == Some(&Value::Bool(true));
+        if !working {
+            content.remove("working");
+        }
+        let push = push && !working;
         for key in [
             "schema_version",
             "object_version",

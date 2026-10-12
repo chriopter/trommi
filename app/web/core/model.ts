@@ -605,7 +605,7 @@ function newCard(object_id: string, owner: string, r: ReceivedEnvelope): Card {
   return {
     object_id, agent_device_id: owner, object_state: 'open', urgency: 'normal', card_type: 'decision', title: '', teaser: null, body: null, options: [], sections: null, html: null,
     allows_multiple: false, recommended: null, urgency_reason: null, attachments: [], change_note: null, close_summary: null, withdraw_reason: null,
-    merged_into_object_id: null, merged_from_object_ids: null, object_version: 0, version_hash: null, envelope_number: 0, first_envelope_number: r.change, created_at: h.time,
+    merged_into_object_id: null, merged_from_object_ids: null, working: null, object_version: 0, version_hash: null, envelope_number: 0, first_envelope_number: r.change, created_at: h.time,
     session_id: h.sessionId ? hex(h.sessionId) : null, updated_at: h.time, versions: [], answer: null, answers: [], closed_how: null,
     in_revision: null, timeline_key: timelineKey('chat', `card/${object_id}`), content_state: 'header', state_envelope_number: 0,
   }
@@ -1149,8 +1149,9 @@ const byCreated = (model: Model) => (a: string, b: string) => (model.cards.get(a
  * the clock passed the end of a snooze: a chat message, a stroke or a status line costs nothing here. A pending
  * permission request whose time has run out becomes 'expired'.
  */
-/** A card that stands on the Desk: open, and not one the hub closed meanwhile (`catching_up`). */
-const onDesk = (c: Card | undefined): boolean => c?.object_state === 'open' && !c.catching_up
+/** A card that stands on the Desk: open, not one the hub closed meanwhile (`catching_up`), and not an info its agent
+ *  is still working on (`working`, spec 9.1.3: under Off your mind until its "Done: …"). */
+const onDesk = (c: Card | undefined): boolean => c?.object_state === 'open' && !c.catching_up && c.working !== true
 export function project(model: Model, change: Change, now: number = Date.now()): void {
   const before = model.stack, beforePerm = model.open_permission_ids
   const B = builder(model)

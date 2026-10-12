@@ -15,7 +15,7 @@ public let URGENCY_NAME = [0: "low", 1: "normal", 2: "high", 3: "critical"]
 public let URGENCY_CODE = ["low": 0, "normal": 1, "high": 2, "critical": 3]
 public let TIMELINE_KIND_NAME = [1: "chat", 2: "scribble"]
 public let CARD_CONTENT_FIELDS = ["card_type", "title", "teaser", "body", "options", "sections", "html", "allows_multiple", "recommended", "urgency_reason",
-                                  "attachments", "change_note", "close_summary", "withdraw_reason", "merged_into_object_id", "merged_from_object_ids"]
+                                  "attachments", "change_note", "close_summary", "withdraw_reason", "merged_into_object_id", "merged_from_object_ids", "working"]
 
 // ---- the record: one verified envelope, as the reducer sees it ----------------------------------------
 
@@ -266,6 +266,8 @@ public final class Card {
   public var withdrawReason: String? { fields["withdraw_reason"]?.string }
   public var mergedIntoObjectId: String? { fields["merged_into_object_id"]?.string }
   public var mergedFromObjectIds: [String] { (fields["merged_from_object_ids"]?.array ?? []).compactMap { $0.string } }
+  /** An info its agent is still working on (spec 9.1.3): off the Desk, under Off your mind, until a version without it. */
+  public var working: Bool { fields["working"] == .bool(true) }
 }
 
 public final class Permission {
@@ -535,8 +537,8 @@ public final class Board {
     if let c = cards[id] { return max(c.envelopeNumber, c.answers.compactMap(\.envelopeNumber).max() ?? 0) }
     return permissions[id].map { max($0.envelopeNumber, $0.verdict?.envelopeNumber ?? 0) } ?? 0
   }
-  /** Stands on the Desk: open, and not held back. */
-  func onDesk(_ id: String) -> Bool { guard let c = cards[id], c.objectState == "open" else { return false }; return !heldBack(id, open: true) }
+  /** Stands on the Desk: open, not held back, and not an info its agent is still working on (spec 9.1.3). */
+  func onDesk(_ id: String) -> Bool { guard let c = cards[id], c.objectState == "open", !c.working else { return false }; return !heldBack(id, open: true) }
   public var openPermissionIds: [String] = []
   /** What a newer client wrote that this version cannot show (model.mjs model.newer): how many, what, the newest. */
   public var newerCount = 0

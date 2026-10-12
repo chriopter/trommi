@@ -165,7 +165,8 @@ ${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}
 //
 // Which card lies where (stackOf below; the hub's card fields decide, nothing else):
 //   later   status "open" and snoozed_until set: he put it off; "Wake up" fetches it back
-//   works   status "open" and with_agent set (handed back by Revise or What??; it returns by itself; "Take back"),
+//   works   status "open" and with_agent set (handed back by Revise or What??; it returns by itself; "Take back";
+//           or an info its agent is still working on, card.working: its "Done: …" brings it to the Desk),
 //           or status "decided" while it is really with its session: answered within ACTING_MS and the session is
 //           online or cut off (it acts on the answer and has not closed it yet), or it has not picked the answer up
 //           (the receipt, card.heard false); "Take back"

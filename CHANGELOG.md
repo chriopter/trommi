@@ -15,8 +15,9 @@ look the same on the web and the iPhone.
 **New**
 - Star a card (the star beside its close button) to find it again: starred cards stand at the top of Off your
   mind, private and end-to-end encrypted, the same on all your devices (web and iPhone).
-- Connector: a new tool `start_task` files a quiet "Working on" card and the status line linked to it in one step;
-  when the card is revised to "Done: …", the line turns done by itself. Helpers no longer read board events
+- Connector: a new tool `start_task` files a "Working on" card and the status line linked to it in one step. The
+  card starts under Off your mind as being worked on, not on your Desk and without a notification (web and iPhone);
+  when it is revised to "Done: …", it comes to your Desk and the line turns done by itself. Helpers no longer read board events
   themselves: the coordinator forwards them.
 
 **Fixed**
