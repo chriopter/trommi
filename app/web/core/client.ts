@@ -665,7 +665,7 @@ export class Client {
       }
     } catch (e) { this.archivedLoaded.delete(session_id); throw e }
     const received = await this.engine.receiveGroup(items)
-    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }) })
+    this.tell(() => { this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now()) })
     await this.engine.noteArchivedOpened(session_id)
     return received.length
   }
