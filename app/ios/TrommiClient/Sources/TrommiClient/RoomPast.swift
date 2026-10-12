@@ -115,10 +115,14 @@ extension Room {
     for (n, r) in log where r.contentState == "ok" { whole[n] = r }
     readBackWhole = Room.readBackFromCache && record.past?.afterCut != true ? whole : [:]
     defer { readBackWhole = [:] }
-    // (the Desk on screen stays as it was until the read is through: no emit in between; its progress is shown)
+    // The Desk on screen stays as it was until the read is through: the views show a copy of the board as it stood
+    // (`readBackView`, kept also when the read fails half way, until one is through); its progress is shown. The
+    // cache on disk stays too (`cacheHeld`): an app ended meanwhile starts warm from it and reads back again.
+    if readBackView == nil { readBackView = board.heldCopy() }
     catchingUp = (0, max(cursor, coreCursor))
     defer { catchingUp = nil }
-    dropCache()
+    cacheHeld = true
+    log = [:]; restoredCount = 0; dirtyRecs = []; cacheDirty = false; cursor = 0
     board.reset()
     try applyGroups(Array(groups.values), &change)
     notePast { $0.passedOver = false; $0.closed = false; $0.afterCut = nil }
@@ -133,6 +137,10 @@ extension Room {
     let again = readBackAgain
     notePast { $0.readBack = again }
     readingBack = false
+    // the cache of before gives way to the board read back
+    await replaceCache()
+    readBackView = nil
+    change.room = true; change.stack = true
     // (each further pass needs keys that came during the one before: it ends)
     if again { try await tendPast(&report, &change) }
   }

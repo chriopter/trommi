@@ -1,7 +1,8 @@
 // WarmDeskTests: a launch from the cache shows only what the hub's Desk lists as open (the owner's rule: the Desk is
-// the hub's open list). The first paint waits for the hub's Desk (Room.holdDesk, waitForDesk); meanwhile no open card
-// stands; and a card this device knew as settled only from the hub's list never comes back on a later launch,
-// online or not (the list kept beside the cache, RoomCache.swift DeskKept).
+// the hub's open list). The first paint waits a moment for the hub's Desk (Room.holdDesk, waitForDesk); past it the
+// cached Desk stands as the list kept from the last launch filters it, never an empty one (the owner's rule of 12
+// October: only a first sign-in may show an empty Desk); and a card this device knew as settled only from the hub's
+// list never comes back on a later launch, online or not (the list kept beside the cache, RoomCache.swift DeskKept).
 import XCTest
 @testable import TrommiClient
 
@@ -51,7 +52,7 @@ final class WarmDeskTests: XCTestCase {
     let had = await room.restore()
     XCTAssertTrue(had)
     XCTAssertTrue(room.deskHolding, "the app draws nothing of the Desk yet")
-    XCTAssertEqual(shown(room), [], "from the cache alone nothing stands as open")
+    XCTAssertEqual(shown(room), [kept, closedA, status], "the cached Desk as the list kept from the last launch has it")
     _ = try await room.sync()
     XCTAssertFalse(room.deskHolding)
     XCTAssertFalse(room.board.deskWaiting)
@@ -61,16 +62,16 @@ final class WarmDeskTests: XCTestCase {
     room.close()
   }
 
-  func testPastTheWaitNoOpenCardStandsUntilTheDeskAnswers() async throws {
+  func testPastTheWaitTheCachedDeskStandsUntilTheDeskAnswers() async throws {
     let id = try await away()
     let room = try Room.open(base: base, roomId: id)
     _ = await room.restore()
     let t = Date()
     await room.waitForDesk()
     XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(t), 0.25, "the first paint waited a moment for the Desk")
-    XCTAssertFalse(room.deskHolding, "drawn now: \"Catching up…\"")
-    XCTAssertTrue(room.board.deskWaiting)
-    XCTAssertEqual(shown(room), [])
+    XCTAssertFalse(room.deskHolding, "drawn now, with a quiet \"Catching up…\"")
+    XCTAssertFalse(room.board.deskWaiting)
+    XCTAssertEqual(shown(room), [kept, closedA, status], "never an empty Desk on a warm open")
     XCTAssertTrue(room.behind)
     _ = try await room.sync()
     XCTAssertEqual(shown(room), [kept])

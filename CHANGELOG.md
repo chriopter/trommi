@@ -36,6 +36,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **No more "Unknown command: /trommi:connect"**: `trommi-connector setup claude` now replaces a Trommi plugin copy
   older than the slash command (Claude Code kept it because the version number stayed the same) and turns the plugin
   on when it was off, in the Claude Code account `CLAUDE_CONFIG_DIR` names.
+- **iPhone: cards never vanish while it catches up**: when keys of earlier messages arrived, the iPhone rebuilt its Desk from scratch, showed "Catching up… 0%" with no cards and threw its saved copy away. Now the Desk keeps every card on screen while it rereads, and the saved copy stays until the reread is through, so the next open is instant again.
 - **Closed helper sessions free their place**: `close_session` now really ends a helper session (once its open
   questions are answered), so an agent is no longer refused a new one while only a few show on the board. An agent
   may keep up to 100 helper sessions open at once (was 32).
@@ -58,6 +59,7 @@ On the iPhone, the Live Activity no longer shows a bare "0" when everything is a
 many agents are still at work.
 
 **Better**
+- **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
 - Web: a new version no longer reloads an open tab while you look at it: a quiet "A new version is ready" offers it, and the tab reloads by itself once it is in the background.
 - Web: pictures and previews come from the browser once shown, not from the hub on every open.
 - Web: an open tab no longer downloads the whole Desk every minute (about 100 MB an hour in a big room); it asks the hub only what changed.
