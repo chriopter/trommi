@@ -30,6 +30,21 @@ test('human registers: drafts, snoozes, ducks, crown, desks, session settings, u
   assert.equal(w.model.human.drafts.has(hc), false); assert.equal(w.model.human.raw.get(`draft/${hc}`).value, null)
 })
 
+test('a register iOS wrote with the id in hex on the wire is the same key: the snooze, draft, duck, desk and session of the web', () => {
+  const w = new World(); w.groups()
+  const card = id16(0xc1), desk = id16(0xde), hc = hex(card), hd = hex(desk), hs = hex(w.session)
+  w.register(`snooze/${hc}`, { until: null }, { sender: w.phone })
+  assert.ok(w.model.human.snoozes.has(hc) && w.last.registers.has(`snooze/${hc}`) && w.last.stack)
+  w.register(`draft/${hc}`, { note: 'from the phone' }, { sender: w.phone }); assert.equal(w.model.human.drafts.get(hc).note, 'from the phone')
+  w.register(`duck/${hc}`, { at: 1 }, { sender: w.phone }); assert.deepEqual(w.model.human.ducks.get(hc), { at: 1 })
+  w.register(`desk/${hd}`, { name: 'Work', created_at: 1 }, { sender: w.phone }); assert.equal(w.model.human.desks.get(hd).name, 'Work')
+  w.register(`session/${hs}`, { name: 'Builder', desk: hd }, { sender: w.phone })
+  assert.deepEqual(w.model.human.session_settings.get(hs), { name: 'Builder', desk: hd }, 'a desk id in hex inside the value stays the model\'s hex')
+  // the web's own later write (base64url) of the same card replaces it: one key
+  w.register(`snooze/${card}`, null, { lamport: 9 })
+  assert.equal(w.model.human.snoozes.has(hc), false)
+})
+
 test('a value that is not the current one of its name changes nothing', () => {
   const w = new World(); w.groups()
   const card = id16(0xc1)

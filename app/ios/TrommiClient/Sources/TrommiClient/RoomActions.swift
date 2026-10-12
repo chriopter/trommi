@@ -190,7 +190,7 @@ extension Room {
       for k in values.keys.sorted() {
         let v = values[k] ?? .null
         // (a value of null deletes the name; the 4 KiB limit is the register's, 9.3.5)
-        let value: Bytes? = v.isNull ? nil : try wire(v, maxBytes: 4096).payload
+        let value: Bytes? = v.isNull ? nil : try wire(Records.registerValue(k, v, toWire: true), maxBytes: 4096).payload
         let name = Records.registerName(k, toWire: true)
         try await send(sealed: { unsealed.remove(k) }) { .register(group: group, name: name, value: value) }
       }

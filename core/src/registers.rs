@@ -4,7 +4,7 @@
 //! in which kind of group, and keeps the current value of every name of one group ([`Registers`], plain data
 //! that the caller stores).
 //!
-//! An id inside a name (`device/<device id>`) is base64url, as bytes are in JSON (section 2). A value is JSON
+//! An id inside a name (`device/<device id>`, `snooze/<object>`, …) is base64url, as bytes are in JSON (section 2). A value is JSON
 //! text: this module does not look into it, except to hold a Desk's Goals to their limits.
 
 use crate::chain::{GroupFacts, Role};

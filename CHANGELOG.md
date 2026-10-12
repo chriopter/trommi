@@ -7,6 +7,14 @@ A day starts with a short summary (one to three plain sentences) and at most one
 real data), webp, at most 150 KB. Then its lines under **New**, **Better** and **Fixed**. What's new (web and iPhone)
 shows the summary and the picture, the lines folded under "All changes".
 
+## 12 October 2026
+
+A card you snooze, a draft, a duck or a session's settings now look the same on the web and the iPhone.
+
+**Fixed**
+- A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
+  writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).
+
 ## 11 October 2026
 
 Each agent now has its own page in Settings, with its plan, its usage and its sessions. On the iPhone you answer

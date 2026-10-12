@@ -154,7 +154,9 @@ const plainOptions = (options: unknown[]): unknown[] => options.map(o => { if (!
 
 // ---- registers (9.3) ---------------------------------------------------------------------------------------------
 
-/** Register names whose tail is one id of 16 bytes. */
+/** Register names whose tail is one id of 16 bytes (spec/v1.md 9.3.3). A new per-card or per-session register goes
+ *  into this list and needs nothing else. Written: base64url, always. Read: base64url, and the 32 hex digits an
+ *  earlier iOS app wrote on the wire, which already are the model's key (`hexId` takes no hex, so it stays). */
 const ID_NAMES: readonly string[] = ['desk/', 'session/', 'draft/', 'snooze/', 'duck/']
 const TIMELINE_SCOPES: readonly string[] = ['session/', 'card/', 'desk/']
 function mapName(name: string, id: (text: string, bytes: number) => string | null, snapshotFrom: string, snapshotTo: string): string {
