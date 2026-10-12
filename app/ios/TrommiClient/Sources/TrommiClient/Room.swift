@@ -170,6 +170,10 @@ public struct Store {
   public var behind: Bool { !synced || catchingUp != nil }
   /** Whether the board came from the cache (shown before the first catch-up). */
   public internal(set) var restored = false
+  /** A launch from the cache: the app's first paint of the Desk waits for the hub's Desk (RoomCache.swift holdDesk). */
+  public internal(set) var deskHolding = false
+  var deskHoldTask: Task<Void, Never>?
+  var deskWaiters: [CheckedContinuation<Void, Never>] = []
 
   public let roomId: RoomId
   public var roomIdHex: String { record.roomId }
@@ -476,6 +480,8 @@ public struct Store {
     // the cache is read while the hub is asked
     let restoring: Task<Bool, Never>? = cursor == 0 ? Task { @MainActor in await self.restore() } : nil
     var report = SyncReport()
+    // (a sync that ends before the hub's Desk answered, offline: the list kept from the last launch decides)
+    defer { deskAnswered() }
     if removedAt != nil { _ = await restoring?.value; throw TrommiError("removed", "this device was removed from the room") }
     // A token is not membership: the hub names the role it gave it for. A removed device gets one that reads the
     // proof of its removal and nothing else (spec/hub-api.md point 42).
@@ -542,12 +548,16 @@ public struct Store {
    * view a moment longer).
    */
   func deskFirst() async -> UInt64? {
-    guard let desk = try? await noted({ try await hub.desk() }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { return nil }
+    guard let desk = try? await noted({ try await hub.desk() }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
     var open = Set<String>()
     for kind in ["cards", "permission_requests"] {
       for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
     }
     deskSeen = (open, at)
+    keepDesk(open, at: at)
+    // (what the last launch's list held back and this one lists again stands: reopened elsewhere)
+    board.hubSettled = board.hubSettled.filter { !open.contains($0.key) }
+    board.deskWaiting = false
     // (a device that holds nothing yet: the Desk from the hub's list, before any of the history is read)
     if cursor == 0 && board.cards.isEmpty { await Spent.time("desk preview") { await deskPreview(desk) } }
     var change = Change()
@@ -563,6 +573,7 @@ public struct Store {
     change.stack = true
     board.project(change)
     emit(change)
+    deskAnswered()
     return at > cursor ? at : nil
   }
   /**
