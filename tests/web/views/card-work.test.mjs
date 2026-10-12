@@ -44,3 +44,12 @@ test('the strip stands above the title (live with the card\'s lead), its pen str
   assert.match(css, /\.tc-work-run \.run-pen \{[^}]*animation: tc-work-run/)
   assert.match(css, /prefers-reduced-motion: reduce\) \{ \.tc-work-run \.run-pen \{ animation: none; display: none; \}/)
 })
+
+test('an info its agent is still working on: with the agent from the start, no Take back', () => {
+  const card = open({ kind: 'info', working: true })
+  assert.ok(workOf(card, modelOf({ card })), 'the working strip')
+  const src = read('card.mjs'), app = read('app.mjs')
+  assert.match(src, /if \(card\.working\) return box\(/)
+  assert.match(app, /c\.working === true && status === 'open' && card\.kind === 'info'\) \{ card\.working = true; card\.with_agent \?\?=/)
+  assert.match(app, /c\.with_agent == null \|\| c\.working\) throw fail\(409/)
+})

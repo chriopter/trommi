@@ -1598,6 +1598,14 @@ async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
         "{listed}"
     );
     assert_eq!(listed[0]["urgency"], "low", "{listed}");
+    assert_eq!(
+        listed[0]["working"], true,
+        "off his Desk while worked on: {listed}"
+    );
+    assert!(
+        said.contains("not on his Desk"),
+        "the agent is told where it is: {said}"
+    );
 
     human.sync().await;
     let helper = human
@@ -1655,6 +1663,33 @@ async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
     assert_eq!(
         line["detail"], "Done: Migration der Tabelle orders",
         "{line}"
+    );
+    let listed: Value =
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "session": "Release" })).await)
+            .expect("JSON");
+    let done = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == card.as_str())
+        .expect("the card");
+    assert_eq!(done["working"], Value::Null, "done: on his Desk: {done}");
+    // What his devices read: version 1 working, the Done version without it.
+    let versions: Vec<&Value> = payloads(&human, "card_type")
+        .into_iter()
+        .filter(|p| {
+            p["title"]
+                .as_str()
+                .is_some_and(|t| t.ends_with("Migration der Tabelle orders"))
+        })
+        .collect();
+    assert!(
+        versions.iter().any(|p| p["working"] == true && p["title"].as_str().unwrap().starts_with("Working on")),
+        "{versions:?}"
+    );
+    assert!(
+        versions.iter().any(|p| p.get("working").is_none() && p["title"].as_str().unwrap().starts_with("Done")),
+        "{versions:?}"
     );
 
     // A title that already says it ("Arbeite an: …") is kept, the id is given.

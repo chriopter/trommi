@@ -1522,6 +1522,8 @@ impl Bridge {
                 a.insert("urgency".into(), json!("low"));
                 let mut fields = info_fields(&a, &[])?;
                 fields.insert("attachments".into(), json!([]));
+                // (off his Desk until it is done: Off your mind shows it as being worked on, spec 9.1.3)
+                fields.insert("working".into(), json!(true));
                 let sid = self.session_of(args, Map::new()).await?;
                 let card = self.client.send_card(fields, sid.clone()).await?;
                 let sid = self.line_session(sid.as_deref()).await;
@@ -1532,7 +1534,7 @@ impl Bridge {
                     Some((json!(label), "working", json!(detail), json!(card))),
                 )
                 .await?;
-                Ok(format!("card {card} \"{title}\" is on the board, status \"{line_id}\" is working and linked to it. When the work is done, revise_card {card} with a title \"Done: …\" and the result: the line turns done"))
+                Ok(format!("card {card} \"{title}\" is under Off your mind as being worked on (not on his Desk), status \"{line_id}\" is working and linked to it. When the work is done, revise_card {card} with a title \"Done: …\" and the result: the card comes to his Desk and the line turns done"))
             }
             "revise_card" => self.revise(args).await,
             "merge_cards" => {
@@ -2195,6 +2197,9 @@ impl Bridge {
             }),
         );
         m.insert("urgency".into(), json!(c.urgency));
+        if open && c.f("working") == &Value::Bool(true) {
+            m.insert("working".into(), json!(true));
+        }
         m.insert(
             "urgency_reason".into(),
             if c.f("urgency_reason").is_null() {
@@ -2448,6 +2453,10 @@ impl Bridge {
             .remove("urgency")
             .and_then(|v| v.as_str().map(String::from));
         let title = s(fields.get("title"));
+        if info && done_title(&title) {
+            // (done: the card leaves Off your mind for his Desk)
+            fields.insert("working".into(), Value::Null);
+        }
         self.client.revise(&card.object_id, fields, urgency).await?;
         let finished = if info && done_title(&title) {
             self.finish_lines(card.session_id.clone(), &card.object_id, &title)
