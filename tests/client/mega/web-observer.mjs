@@ -25,6 +25,8 @@ const { MemoryStore, memoryCache, TIMING } = await import(at('tests/web/client/h
 const binding = await import(at('core/wasm/pkg/trommi-core.js'))
 await binding.init(fs.readFileSync(path.join(tree, 'core/wasm/pkg/trommi_core_wasm_bg.wasm')))
 const { init: _i, Device, TrommiError, StoreConflict: _s, ...stateless } = binding
+// (the body codec is the core's: it is handed the binding, as core-wasm.ts does in the app)
+await import(at('app/web/core/codec.ts')).then(m => m.useCodec?.(binding), () => {})
 const core = { ...stateless, createDevice: s => Device.create(s), openDevice: s => Device.open(s), errorCode: e => (e instanceof TrommiError ? e.code : null) }
 const R = roomsOn({ core: async () => core, store: name => new MemoryStore(name), cache: async name => memoryCache(name), destroy: async () => {}, timing: TIMING })
 
