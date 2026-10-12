@@ -103,6 +103,8 @@ final class FakeDevice: CoreDevice {
     return try queue(.commit, group: group, parts: [commit, [0], [], [0]])
   }
   func archive(group: GroupId) throws {}
+  /** This device is in that session's group from here on (a test's join with the code). */
+  func joinForTest(session: String, agent: String) throws { state.sessions[session] = [agent]; try write([]) }
   /** A "Welcome" is JSON { session, agent, by }: this device is in that session's group from here on. */
   func joinWelcome(_ welcome: Bytes, room: RoomId, committer: DeviceId?, nowMs: UInt64) throws -> Joined {
     let w = parse(welcome)
@@ -242,6 +244,11 @@ final class FakeDevice: CoreDevice {
       let name = header.kind == .register ? payload.flatMap { parse($0)["name"] as? String } : nil
       return ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, register: name.map { RegisterChange(name: $0, current: true) })
     }
+    // (header "passed": a session group this device is not in yet, read past as the real core does: the cursor moves)
+    if group.count == 48, state.sessions[hex(group.suffix(16))] == nil, h["passed"] as? Bool == true {
+      if change > state.cursor { state.cursor = change; try? write([]) }
+      return made(.refused, code: "group-behind")
+    }
     if group.count == 48, state.sessions[hex(group.suffix(16))] == nil { return made(.refused, code: "group-behind") }
     // (header "before": written in an epoch before this device came into the group; its keys come by a handover)
     if h["before"] as? Bool == true, !(state.oldKeys ?? []).contains(hex(group)) {
@@ -336,7 +343,13 @@ final class FakeTools: CoreTools {
   func generatePushKey() throws -> Bytes { systemRandom(32) }
   func recoverySigner(code: Bytes) throws -> CoreSigner { throw TrommiError("not-built") }
   func joinRoomWithRecoveryCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64) async throws -> Bytes? { throw TrommiError("not-built") }
-  func joinSessionsWithRecoveryCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64) async throws -> (notJoined: [(group: GroupId, code: String)], again: Bool) { throw TrommiError("not-built") }
+  /** The sessions (its id and agent, hex) a sign-in with the code joins, when a test sets them; otherwise not built. */
+  nonisolated(unsafe) static var codeJoinsSessions: [(session: String, agent: String)]? = nil
+  func joinSessionsWithRecoveryCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64) async throws -> (notJoined: [(group: GroupId, code: String)], again: Bool) {
+    guard let sessions = Self.codeJoinsSessions, let d = device as? FakeDevice else { throw TrommiError("not-built") }
+    for (s, a) in sessions { try d.joinForTest(session: s, agent: a) }
+    return ([], false)
+  }
   func recoverWithCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64, confirm: @escaping ([DeviceId]) async -> Bool,
                        account: @escaping (Bytes) async throws -> Bytes) async throws -> (removed: [DeviceId], missingLink: Bytes?) { throw TrommiError("not-built") }
 }
