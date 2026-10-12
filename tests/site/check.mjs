@@ -1,6 +1,7 @@
 // The site checked as files, without a browser:
 //   - every link, picture, font, script and stylesheet a page names is there, every #anchor exists on its page;
-//   - nothing in public/ is named by nobody, nothing is larger than 1 MB;
+//   - nothing in public/ is named by nobody, nothing is larger than 1 MB but the demo video (public/video/, under
+//     16 MB a file: Cloudflare serves static assets up to 25 MiB);
 //   - the pages keep to their Content-Security-Policy: no inline script or style, nothing from another origin;
 //   - no link opens a new tab; the one mail address is the contact;
 //   - head and foot are the same on every page;
@@ -20,6 +21,7 @@ const pub = path.join(site, 'public')
 const ORIGIN = 'https://trommi.com'
 const CONTACT = 'trommi@mail101.de'
 const LIMIT = 1024 * 1024
+const VIDEO_LIMIT = 16 * 1024 * 1024
 
 let failed = 0
 const check = (ok, what, got) => { if (!ok) failed++; console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${ok || got === undefined ? '' : `: ${typeof got === 'string' ? got : JSON.stringify(got)}`}`) }
@@ -56,8 +58,9 @@ const pages = files.filter(f => f.endsWith('.html')).sort()
 check(JSON.stringify(pages) === JSON.stringify(['404.html', 'imprint.html', 'index.html', 'privacy.html']), 'the four pages are there', pages)
 
 // ---- sizes ----
-const large = walk(site).filter(f => fs.statSync(path.join(site, f)).size > LIMIT)
-check(large.length === 0, 'no file is larger than 1 MB', large)
+const isVideo = f => /^public\/video\/[\w-]+\.(mp4|webm)$/.test(f)
+const large = walk(site).filter(f => fs.statSync(path.join(site, f)).size > (isVideo(f) ? VIDEO_LIMIT : LIMIT))
+check(large.length === 0, 'no file is larger than 1 MB, no video larger than 16 MB', large)
 
 // ---- every page: what it names, and how ----
 const named = new Set(['_headers', ...pages])
@@ -86,6 +89,10 @@ for (const page of pages) {
     if (tag === 'base' || tag === 'iframe' || tag === 'form' || tag === 'object' || tag === 'embed') bad.push(`<${tag}> is not allowed by the policy`)
     if (tag === 'link') local(attrs.href, `link rel=${attrs.rel}`)
     if (tag === 'img') local(attrs.src, 'picture')
+    if (tag === 'video') { if (attrs.src) local(attrs.src, 'video'); if (attrs.poster) local(attrs.poster, 'poster') }
+    if (tag === 'source' && attrs.src) local(attrs.src, 'video')
+    if (tag === 'video' && !(attrs.width && attrs.height && attrs.poster)) bad.push('video without width, height and poster')
+    if (tag === 'video' && ('autoplay' in attrs || attrs.preload !== 'none')) bad.push('video that loads or plays before it is asked to')
     if (tag === 'img' || tag === 'source') for (const part of (attrs.srcset ?? '').split(',').map(s => s.trim().split(/\s+/)[0]).filter(Boolean)) local(part, 'picture')
     if (tag === 'img' && !('alt' in attrs)) bad.push(`picture without alt: ${attrs.src}`)
     if (tag === 'img' && !(attrs.width && attrs.height)) bad.push(`picture without width and height: ${attrs.src}`)
@@ -140,7 +147,7 @@ for (const line of fs.readFileSync(path.join(pub, '_headers'), 'utf8').split('\n
 }
 const all = rules['/*'] ?? {}
 const csp = Object.fromEntries((all['content-security-policy'] ?? '').split(';').map(d => d.trim()).filter(Boolean).map(d => { const [name, ...v] = d.split(/\s+/); return [name, v.join(' ')] }))
-const want = { 'default-src': "'none'", 'script-src': "'self'", 'style-src': "'self'", 'img-src': "'self'", 'font-src': "'self'", 'base-uri': "'none'", 'form-action': "'none'", 'frame-ancestors': "'none'" }
+const want = { 'default-src': "'none'", 'script-src': "'self'", 'style-src': "'self'", 'img-src': "'self'", 'font-src': "'self'", 'media-src': "'self'", 'base-uri': "'none'", 'form-action': "'none'", 'frame-ancestors': "'none'" }
 check(JSON.stringify(csp) === JSON.stringify(want), '_headers: the Content-Security-Policy allows the site itself and nothing else', csp)
 check(all['x-content-type-options'] === 'nosniff' && all['referrer-policy'] === 'no-referrer', '_headers: nosniff, no referrer', all)
 check(all['x-frame-options'] === 'DENY' && all['permissions-policy'] === 'camera=(), geolocation=(), microphone=()', '_headers: no framing, no camera, place or microphone', all)

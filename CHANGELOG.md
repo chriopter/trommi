@@ -34,6 +34,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **Web: a new Claude session asks in the sidebar**: a session of your own machine that wants to join shows as a
   row where sessions live, with its folder's name, "wants to join · <computer>", Allow and Deny; allowed, the row
   becomes the session.
+- **A demo video on trommi.com**: "See how it works", four minutes on the board with sound, right under the top.
 
 **Better**
 - **Faster start with many archived sessions**: web, iPhone and the connector load only active sessions from the

@@ -1,9 +1,9 @@
 # Cloudflare static assets headers (also read by dev/serve.mjs). The site asks nothing of another origin: one
-# stylesheet, one script (theme.js, the light/dark switch), the icon and fonts from here, no inline style or script
-# (inline SVG carries attributes only). Nothing may frame it, and its files are for its own pages only.
+# stylesheet, one script (theme.js, the light/dark switch), the icon, fonts, pictures and the demo video from here,
+# no inline style or script (inline SVG carries attributes only). Nothing may frame it, and its files are for its own pages only.
 # HTTPS only for a year, for trommi.com and every name under it (no preload).
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
@@ -13,3 +13,5 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
 /fonts/*
   Cache-Control: public, max-age=604800
+/video/*
+  Cache-Control: public, max-age=86400

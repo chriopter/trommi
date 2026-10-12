@@ -18,7 +18,7 @@ One Rust core does the cryptography for the web app, the iOS app and the connect
 
 <sub>Desk · Card · Chat · Scribble Board, from the made-up demo room (`demo/`).</sub>
 
-**[→ Open Trommi](https://app.trommi.com)**
+**[→ Open Trommi](https://app.trommi.com)** · **[▶ See how it works](https://trommi.com/#demo)** (a four-minute video)
 
 ## Install
 
