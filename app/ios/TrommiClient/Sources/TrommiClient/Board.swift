@@ -580,7 +580,7 @@ public final class Board {
   public func reset() {
     lastEnvelopeNumber = 0
     sessions = [:]; cards = [:]; permissions = [:]; notes = [:]; published = [:]; timelines = [:]
-    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []
+    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; deskWhole = false
     newerCount = 0; newerWhat = []; newerEnvelope = 0; deviceRegisters = [:]; alertSeq = 0; answerEchoes = [:]
   }
 
