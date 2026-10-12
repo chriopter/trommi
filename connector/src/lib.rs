@@ -30,6 +30,7 @@ pub mod trail;
 pub mod update;
 pub mod usage;
 pub mod util;
+pub mod vouch;
 pub mod vault;
 
 /// Sent as `Trommi-Client` on every request; the hub answers `client-too-old` when it wants a newer one.

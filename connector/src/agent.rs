@@ -421,6 +421,22 @@ impl Client {
         Ok(last)
     }
 
+    /// The current value of a shared register of this agent's main session (as JSON text), e.g. a human
+    /// device's `join_link/<nonce>` (12.4).
+    pub async fn session_register(&self, name: &str) -> Result<Option<String>> {
+        let group = self.core.lock().await.group_of(None)?;
+        let name = name.to_string();
+        self.vault
+            .call(move |v: &mut Vault| {
+                v.device
+                    .register(&group, &name)
+                    .ok()
+                    .flatten()
+                    .map(|value| String::from_utf8_lossy(value.expose()).into_owned())
+            })
+            .await
+    }
+
     /// Writes this device's label (`device/<id>`: name, platform, folder, host) into its main session, unless
     /// it stands there already.
     pub async fn ensure_device_register(&self, info: &Value) -> Result<()> {

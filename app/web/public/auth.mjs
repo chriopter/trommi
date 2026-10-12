@@ -1,14 +1,15 @@
 // ---- room ----
 // The room's own screens. Inside a room (pages of the board): /settings (one list, as iOS Settings: Invite a Device with
 // its code and the emoji check in place, beside it Invite an Agent, then a row per page: Agents (agents.mjs), Devices,
-// Account, Theme, Keyboard Shortcuts), /settings/devices (who is in the room, Push, inviting an agent; each device a page
+// Account, Theme, Keyboard Shortcuts, Security), /settings/security (every key that opens the account's data, and the self
+// test), /settings/devices (who is in the room, Push, inviting an agent; each device a page
 // of its own: rename, remove), /pair/:id (an agent's clipboard; a device's code), /settings/account (email, password, passkeys, Emergency Kit: each a page of its own; storage). Before a room (a screen of its own): Create
 // account (email + a passkey where the device can, else or by choice a password; this device founds the room and its
 // Emergency Kit is made at once), Log in (a passkey, email + password, or scan a signed-in device's code), Forgot
 // password (Emergency Kit, ending in a new password or a new passkey). A device is never asked for its name (deviceLabel). The UI says "account", never "room".
 // Calm and sober: this is about keys; pen drawings only on the choice buttons.
 // Core features that may not be there yet (usage, session handover) are shown only when the core has them.
-import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError } from './ui.mjs'
+import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError, toast } from './ui.mjs'
 import { CLIENT, account, checkEmoji, core, openInWorker, qrReader, ses } from './app.mjs'
 const read = (k, f = null) => { try { return localStorage.getItem(k) ?? f } catch { return f } }
 const write = (k, v) => { try { localStorage.setItem(k, v) } catch {} }
@@ -384,6 +385,13 @@ ${errorLine(error)}<p class="room-meta">"They don't match" burns the invite: nob
       }
       t.redirect(res, list ? `/settings?pair=${match[1]}` : `/pair/${match[1]}`)
     })
+    // Self-join (12.4): the person's Allow or Deny for an agent's ask; the prompt goes, from this page and the others.
+    t.post(/^\/vouch\/([0-9a-f]{1,64})$/, async ({ req, res, match, form }) => {
+      try { await client.answerVouch(match[1], form.get('allow') === 'yes') } catch (err) {
+        return t.sendStream(req, res, t.stream('prepend', 'says-host', toast({ head: 'Not answered', line: sayError(err), role: 'alert' })), 422)
+      }
+      t.sendStream(req, res, t.stream('remove', `vouch-ask-${match[1]}`, ''))
+    })
     t.live('invite', {
       take: (mm, clients) => new Map(clients.map(c => c.params.get('invite')).filter(Boolean).map(id => { const inv = m().invites.get(id); return [id, String(inviteMain(inv)).replace(/\d+ more min\.|less than a minute\.|no time left\./g, '').replace(/data-invite-clip-until-value="\d+"/, '')] })),
       diff: (was, now, c) => { const id = c.params.get('invite'); return was.get(id) !== now.get(id) ? String(t.stream('refresh')) : '' },
@@ -436,7 +444,7 @@ ${setRow({ href: '/settings/theme', icon: sk('moon'), word: 'Theme', detail: SHO
 ${setRow({ href: '/settings/keys', icon: sk('keycap'), word: 'Keyboard Shortcuts', id: 'settings-keys' })}
 </nav>
 <nav class="set-group" aria-label="About">
-${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Security Info', detail: 'self test', id: 'settings-proof' })}
+${isHuman() ? setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detail: 'keys, devices, self test', id: 'settings-security' }) : setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Self Test', detail: 'runs on this device', id: 'settings-proof' })}
 </nav>
 `, { back: false })
     }
@@ -448,6 +456,48 @@ ${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Security Info', det
     t.get(/^\/settings\/theme$/, ({ req, res }) => page(req, res, 'Theme · Settings', settingsPage('Theme', html`<div class="set-group set-choice" role="radiogroup" aria-label="Theme" data-controller="set-theme">${['light', 'dark', 'system'].map(v => html`<label class="set-row"><input type="radio" name="theme" value="${v}" data-action="change->set-theme#pick"${themeMode() === v ? raw(' checked') : ''}><span class="set-ico">${sk(v === 'light' ? 'sun' : v === 'dark' ? 'moon' : 'grid')}</span><b>${SHOWN[v]}</b>${sk('tick')}</label>`)}</div>
 <p class="set-note">System follows this device's own setting. The key T switches anywhere.</p>`, { lead: 'On this device.' }), { view: 'settings-theme' }))
     t.get(/^\/settings\/keys$/, ({ req, res }) => page(req, res, 'Keyboard Shortcuts · Settings', settingsPage('Keyboard Shortcuts', html`<div class="set-group set-keys-group">${keysList()}</div><p class="set-note">More keys later. Keys rest while you type in a field. <a href="/help.html#keys">On the help page</a></p>`), { view: 'settings-keys' }))
+
+    // ---- /settings/security: every key that opens the account's data, each with what it can read (v1.md 4, 5, 8;
+    // SECURITY.md), and the self test (/settings/proof). The account key is the room's recovery key: every epoch's
+    // content key is sealed to it, and the hub holds the code only sealed under the ways in. Live: the page is drawn
+    // anew when a device, an agent, the recovery key or the account changes. ----
+    const dayOf = ts => (ts == null ? null : new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))
+    const helperCount = () => {
+      const ids = new Set()
+      for (const s of m().sessions.values()) if (s.is_active && s.parent_session_id) for (const d of s.agent_device_ids) if (d !== s.creator_device_id && m().members.get(d)?.is_active) ids.add(d)
+      return ids.size
+    }
+    const securityDevices = () => [...m().members.values()].filter(d => d.is_active && d.device_role === 'human').sort((a, b) => a.added_entry_number - b.added_entry_number)
+    /** What opens the sealed copies of the account key, as the account says: its ways in, in words. */
+    const sealedUnder = st => {
+      const ways = [...(st?.has_password ? ['your password'] : []), ...((st?.passkeys ?? []).length ? [(st.passkeys.length === 1 ? 'your passkey' : 'a passkey')] : []), ...(st?.has_recovery ? ['your Emergency Kit'] : [])]
+      return ways.length ? ways.length === 1 ? ways[0] : `${ways.slice(0, -1).join(', ')} or ${ways.at(-1)}` : 'a way in of your account'
+    }
+    const securityMain = () => {
+      const st = client.hub ? m().room.account : DEMO_ACCOUNT
+      const key = m().room.recovery_key ?? null, since = dayOf(key?.since)
+      const helpers = helperCount()
+      const keyRow = html`<div class="set-row set-row-two set-fact" id="security-key"><span class="set-ico">${sk('key')}</span><span class="set-two"><b>Account key</b><small><span class="room-mono" id="security-key-fp">${key?.fingerprint ?? 'unknown'}</span> · recovery key, ${since ? `since ${since}` : 'since: unknown'}</small></span><span class="set-detail">everything</span><span></span></div>`
+      const kitRow = setRow({ href: '/settings/account/kit', icon: sk('page'), word: 'Emergency Kit', detail: st === undefined ? '…' : st?.has_recovery ? 'made' : 'not made yet', id: 'security-kit' })
+      const devRow = d => html`<a class="set-row set-row-two security-device" id="security-device-${d.device_id.slice(0, 16)}" href="/settings/devices/${d.device_id}" data-nav><span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${devName(d)}${d.is_me ? html` <span class="set-small set-inline">· this device</span>` : ''}</b><small><span class="room-mono">${fp(d)}</span> · ${dayOf(d.added_at) ? `added ${dayOf(d.added_at)}` : 'added: unknown'}</small></span><span class="set-detail">everything</span>${SET_CHEVRON}</a>`
+      const agentRow = html`<a class="set-row set-row-two" id="security-agents" href="/settings/agents" data-nav><span class="set-ico">${sk('terminal')}</span><span class="set-two"><b>Agents</b><small>${agentsDetail() || 'none'}${helpers ? ` · ${helpers} ${helpers === 1 ? 'helper' : 'helpers'}` : ''}: each with its own key</small></span><span class="set-detail">own session</span>${SET_CHEVRON}</a>`
+      return settingsPage('Security', html`<h3 class="set-label">Account key</h3><div class="set-group">${keyRow}${kitRow}</div>
+<p class="set-note" id="security-key-note">Opens everything; it is also your recovery key. The hub keeps it only sealed: ${sealedUnder(st)} opens it on a new device.</p>
+<h3 class="set-label">Authorized devices</h3><div class="set-group" id="security-devices">${securityDevices().map(devRow)}</div>
+<p class="set-note">Each of your devices reads everything, also what came before it was added.</p>
+<h3 class="set-label">Agents</h3><div class="set-group">${agentRow}</div>
+<p class="set-note">An agent reads only its own session and the helper sessions it starts; a helper reads only its own.</p>
+<p class="set-note set-note-strong" id="security-hub">Nobody else, not the hub either: it sees which device is in which group, when, and how much.</p>
+<h3 class="set-label">Check</h3><div class="set-group">${setRow({ href: '/settings/proof', icon: sk('tick'), word: 'Self Test', detail: 'runs on this device', id: 'settings-proof' })}</div>`,
+      { lead: 'Every key that opens your data, and the self test.' })
+    }
+    const securitySnap = () => JSON.stringify([securityDevices().map(d => [d.device_id, d.device_name, d.added_at ?? null, d.is_me, d.platform]), m().room.recovery_key ?? null, agentsDetail(), helperCount(), m().room.account ?? null])
+    t.live('settings-security', { take: securitySnap, diff: (was, now) => (was !== now ? String(t.stream('refresh')) : '') })
+    t.get(/^\/settings\/security$/, ({ req, res }) => {
+      if (!isHuman()) return t.redirect(res, '/settings/proof')
+      if (client.hub && m().room.account === undefined) loadAccount()
+      page(req, res, 'Security · Settings', securityMain(), { view: 'settings-security' })
+    })
 
     // ---- /settings/account ----
     // The account is read from the hub once per visit (client._setRoom: a change, so the page refreshes when it is in).

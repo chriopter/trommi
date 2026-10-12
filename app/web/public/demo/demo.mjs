@@ -241,10 +241,12 @@ export class MockClient {
     if (matches !== true) { this.changed(c => { invite.invite_state = 'failed'; invite.error = 'code-mismatch'; c.invites.add(invite_id) }); throw Object.assign(new Error('the check codes do not match: nobody was added, the invite is spent'), { code: 'code-mismatch' }) }
     this.addMember(invite)
   }
+  /** Self-join (12.4): the demo room has no agent that asks; an answer changes nothing. */
+  async answerVouch() {}
   addMember(invite) {
     this.changed(c => {
       invite.invite_state = 'joined'; c.invites.add(invite.invite_id)
-      const m = { device_id: invite.newcomer.device_id, device_role: invite.device_role, device_name: invite.newcomer.device_name, is_active: true, added_entry_number: ++this.entries, removed_entry_number: null, is_me: false, is_online: true }
+      const m = { device_id: invite.newcomer.device_id, device_role: invite.device_role, device_name: invite.newcomer.device_name, is_active: true, added_entry_number: ++this.entries, removed_entry_number: null, added_at: Date.now(), is_me: false, is_online: true }
       this.model.members.set(m.device_id, memberOf(m)); c.members = true
     })
   }

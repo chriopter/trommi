@@ -27,7 +27,8 @@ struct SettingsScreen: View {
     case "theme": ThemePage()
     case "whats-new": WhatsNewPage()
     case "data": DataPage()
-    case "mls-proof": CoreProofPage()   // CoreProofScreen.swift: an info screen, not a setting
+    case "security": SecurityPage()
+    case "mls-proof": CoreProofPage()   // CoreProofScreen.swift: the self test, a row of Security
     default: SettingsHome()
     }
   }
@@ -124,7 +125,7 @@ struct SettingsHome: View {
       SettingsGroup {
         link("data") { SettingsRow(title: "Data", detail: hubBytes.map { "\(megabytes($0)) on the hub" }, chevron: true) { Image(systemName: "chart.bar").font(.system(size: 19)).foregroundStyle(Ink.fg) } }
         RowRule()
-        link("mls-proof") { SettingsRow(title: "Security Info", chevron: true) { Image(systemName: "checkmark.shield").font(.system(size: 20)).foregroundStyle(Ink.fg) } }
+        link("security") { SettingsRow(title: "Security", detail: "Keys, devices, self test", chevron: true) { Sketch("lock") } }
         RowRule()
         // (App Review 5.1.1(i): the privacy policy reachable inside the app, the same page App Store Connect names)
         Link(destination: URL(string: "https://trommi.com/privacy")!) { SettingsRow(title: "Privacy Policy", chevron: true) { Image(systemName: "hand.raised").font(.system(size: 20)).foregroundStyle(Ink.fg) } }.buttonStyle(.plain)
@@ -296,6 +297,101 @@ struct AgentsPage: View {
       Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint)
     }
     .padding(.leading, 34).padding(.trailing, 16).frame(height: 60).contentShape(Rectangle())
+  }
+}
+
+// ---- Security ---------------------------------------------------------------------------------------------------
+// Every key that opens the account's data, each with what it can read (spec/v1.md 4, 5, 8; SECURITY.md), as the web's
+// /settings/security: the account key (the room's recovery key) with the Emergency Kit, the person's devices with
+// their fingerprints and the day each came, the agents, and the self test under it.
+
+/** A day as the pages show it ("12 Sept 2026"); nil for no time. */
+private func dayOf(_ ms: UInt64?) -> String? {
+  guard let ms else { return nil }
+  let f = DateFormatter(); f.locale = Locale(identifier: "en_GB"); f.dateFormat = "d MMM yyyy"
+  return f.string(from: Date(timeIntervalSince1970: Double(ms) / 1000))
+}
+/** What opens the sealed copies of the account key: its ways in, in words. */
+private func sealedUnder(_ a: AccountFacts?) -> String {
+  guard let a else { return "a way in of your account" }
+  let ways = (a.hasPassword ? ["your password"] : []) + (a.passkeys > 0 ? [a.passkeys == 1 ? "your passkey" : "a passkey"] : []) + (a.hasRecovery ? ["your Emergency Kit"] : [])
+  if ways.isEmpty { return "a way in of your account" }
+  return ways.count == 1 ? ways[0] : ways.dropLast().joined(separator: ", ") + " or " + ways.last!
+}
+
+/** A row of Security: an icon, a title with a second line under it, what it can read on the right. */
+private struct KeyRow<Icon: View>: View {
+  let title: String
+  let line: String
+  var reads: String
+  var chevron = false
+  @ViewBuilder var icon: Icon
+  var body: some View {
+    HStack(spacing: 14) {
+      icon.frame(width: 26, height: 26)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).font(Face.text(17, .medium)).foregroundStyle(Ink.fg).lineLimit(1)
+        Text(line).font(Face.mono(12)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true)
+      }
+      Spacer(minLength: 8)
+      Text(reads).font(Face.text(15)).foregroundStyle(Ink.muted).lineLimit(1)
+      if chevron { Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint) }
+    }
+    .padding(.horizontal, 16).padding(.vertical, 8).frame(minHeight: 60)
+    .contentShape(Rectangle())
+  }
+}
+
+struct SecurityPage: View {
+  @EnvironmentObject var model: BoardModel
+  @StateObject private var account = AccountState()
+  var body: some View {
+    let _ = model.version
+    let board = model.board
+    let devices = (board?.members.values.filter { $0.isActive && $0.deviceRole == "human" } ?? []).sorted { ($0.addedEntryNumber, $0.deviceId) < ($1.addedEntryNumber, $1.deviceId) }
+    let agents = concreteAgents(model.desk?.agents ?? [], members: board?.members ?? [:])
+    let sessions = agents.reduce(0) { $0 + $1.sessions.count }
+    let helpers: Int = {
+      var ids = Set<String>()
+      for s in board.map({ Array($0.sessions.values) }) ?? [] where s.isActive && s.parentSessionId != nil {
+        for d in s.agentDeviceIds where d != s.creatorDeviceId && board?.members[d]?.isActive == true { ids.insert(d) }
+      }
+      return ids.count
+    }()
+    let key = board?.recoveryKey
+    let facts = account.facts(model)
+    SettingsPage(title: "Security") {
+      Text("Every key that opens your data, and the self test.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(.horizontal, 16)
+      SettingsGroup(header: "Account Key", footer: "Opens everything; it is also your recovery key. The hub keeps it only sealed: \(sealedUnder(facts)) opens it on a new device.") {
+        KeyRow(title: "Account Key", line: "\(key?.fingerprint ?? "unknown") · recovery key, " + (dayOf(key?.since).map { "since \($0)" } ?? "since: unknown"), reads: "everything") { Sketch("key") }
+        RowRule()
+        Button { model.path.append(.settings("account/kit")) } label: {
+          SettingsRow(title: "Emergency Kit", detail: facts.map { $0.hasRecovery ? "made" : "not made yet" } ?? (account.loaded ? nil : "…"), chevron: true) { Sketch("page") }
+        }.buttonStyle(.plain)
+      }
+      SettingsGroup(header: "Authorized Devices", footer: "Each of your devices reads everything, also what came before it was added.") {
+        ForEach(Array(devices.enumerated()), id: \.element.deviceId) { i, d in
+          if i > 0 { RowRule() }
+          Button { model.path.append(.settings("devices/\(d.deviceId)")) } label: {
+            KeyRow(title: deviceName(d) + (d.isMe ? " · this device" : ""), line: "\(d.fingerprint) · " + (dayOf(d.addedAt).map { "added \($0)" } ?? "added: unknown"), reads: "everything", chevron: true) {
+              Group { if deviceIcon(d) == "phone" { PenMark("draw:phone", color: Ink.fg) } else { Sketch(deviceIcon(d)) } }
+            }
+          }.buttonStyle(.plain)
+        }
+      }
+      SettingsGroup(header: "Agents", footer: "An agent reads only its own session and the helper sessions it starts; a helper reads only its own.") {
+        Button { model.path.append(.settings("sessions")) } label: {
+          KeyRow(title: "Agents", line: (agents.isEmpty ? "none" : "\(agents.count) \(agents.count == 1 ? "agent" : "agents") · \(sessions) \(sessions == 1 ? "session" : "sessions")") + (helpers > 0 ? " · \(helpers) \(helpers == 1 ? "helper" : "helpers")" : "") + ": each with its own key", reads: "own session", chevron: true) { Sketch("terminal") }
+        }.buttonStyle(.plain)
+      }
+      Text("Nobody else, not the hub either: it sees which device is in which group, when, and how much.").font(Face.text(13, .semibold)).foregroundStyle(Ink.muted).padding(.horizontal, 16).fixedSize(horizontal: false, vertical: true)
+      SettingsGroup(header: "Check") {
+        Button { model.path.append(.settings("mls-proof")) } label: {
+          SettingsRow(title: "Self Test", detail: "runs on this device", chevron: true) { Sketch("tick") }
+        }.buttonStyle(.plain)
+      }
+    }
+    .task { await account.load(model) }
   }
 }
 

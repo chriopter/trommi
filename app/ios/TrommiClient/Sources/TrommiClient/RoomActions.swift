@@ -229,6 +229,8 @@ extension Room {
     var cur = (board.sessions[sid].map { board.settingsOf($0) } ?? board.human.sessionSettings[sid])?.object ?? [:]
     for (k, v) in fields { cur[k] = v }
     try await setRegisters(["session/\(sid)": .obj(cur)])
+    // a session that joined by itself takes its device along when it is archived (12.4)
+    if fields["archived"]?.truthy == true, cur["vouched"]?.object != nil { await retireVouched(sid) }
   }
   /** The device's name for the other devices (register device/<id>), once after joining. */
   public func sendDeviceRegister(name: String, platform: String) async throws {

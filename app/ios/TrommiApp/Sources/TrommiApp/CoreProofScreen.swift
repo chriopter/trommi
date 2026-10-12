@@ -90,7 +90,7 @@ struct CoreProofPage: View {
     let headline = running ? "Running…" : CoreProof.headline(steps)
     let ok = headline.hasPrefix("OK")
     let environment = CoreProof.environment(coreVersion: coreVersion)
-    SettingsPage(title: "Security Info") {
+    SettingsPage(title: "Self Test") {
       VStack(alignment: .leading, spacing: 8) {
         Text(headline)
           .font(.system(size: 22, weight: .bold))

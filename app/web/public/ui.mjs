@@ -843,6 +843,13 @@ export function toast({ head, line = '', undo = null, link = null, role = 'statu
   return html`<div class="says" data-controller="says" data-action="${ACTION}" role="${role}"${ms ? html` data-says-ms-value="${Math.round(ms)}"` : ''}><span class="says-words"><b>${head}</b>${line ? html`<span>${line}</span>` : ''}</span>${undo ? undoForm(undo) : ''}${link ? html`<a class="says-back says-go" data-nav href="${link.href}" data-action="says#leave">${link.label}</a>` : ''}${CLOCK}</div>`
 }
 
+/** A toast that asks a yes or no and stays until it is answered: two buttons, each a form posted to `action` with
+ *  `field` = yes or no (self-join, spec/v1.md 12.4: "allow this new session?"). */
+export function askToast({ id, head, line = '', action, field, yes, no }) {
+  const button = (value, label, cls) => html`<form method="post" action="${action}"><input type="hidden" name="${field}" value="${value}"><button type="submit" class="${cls}">${label}</button></form>`
+  return html`<div class="says says-ask" id="${id}" data-controller="says" data-action="${ACTION}" role="alert" data-says-ms-value="${15 * 60_000}"><span class="says-words"><b>${head}</b>${line ? html`<span>${line}</span>` : ''}</span>${button('yes', yes, 'says-back says-go')}${button('no', no, 'says-back')}</div>`
+}
+
 /** A toast made in the page, for an action a controller did itself: the same markup; undo is a function that takes it
  *  back (the toast goes as soon as it is pressed, also by U). */
 export function showToast({ head, line = '', undo = null, label = 'Undo', role = 'status', ms = null }) {

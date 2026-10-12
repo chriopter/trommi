@@ -599,6 +599,8 @@ pub struct Me {
     pub joining: bool,
     /// The check code of the join under way, once the inviter revealed it: (the six emoji, their words).
     pub check_code: Option<(Vec<String>, Vec<String>)>,
+    /// The hash of the Request of the join under way (base64url), once it is made: a self-join passes it on (12.4).
+    pub request_hash: Option<String>,
 }
 
 pub struct Member {
@@ -1142,16 +1144,20 @@ impl Member {
             me.check_code = None;
         }
         let shown = self.clone();
+        let hashed = self.clone();
+        self.me.lock().unwrap().request_hash = None;
         let storage = self.me.lock().unwrap().storage.clone().unwrap();
         let key_file = self.paths().map(|p| p.key_file);
         let res = async {
-            crate::join::join_room(link.trim(), storage.journal().clone(), move |code| {
+            crate::join::join_room_with(link.trim(), storage.journal().clone(), move |code| {
                 shown.me.lock().unwrap().check_code = Some((
                     code.emoji().iter().map(|e| e.to_string()).collect(),
                     code.words().iter().map(|w| w.to_string()).collect(),
                 ));
                 eprintln!("[trommi] invite answered: check code {}  ({})", code.emoji().join("  "), code.words().join(", "));
                 eprintln!("[trommi] the Trommi app shows six emoji on its invite page: the same six in the same order? Tap \"They match\" there; if not, \"They don't match\". Waiting for the app to add this session");
+            }, move |hash| {
+                hashed.me.lock().unwrap().request_hash = Some(hash.to_base64url());
             }, 800, 15 * 60_000).await?;
             // The slot is keyed from here on: the marker is what the slot logic looks for.
             if let Some(key_file) = &key_file {

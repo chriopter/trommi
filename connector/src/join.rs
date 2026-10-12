@@ -115,7 +115,20 @@ pub async fn join_room(
     poll_ms: u64,
     timeout_ms: u64,
 ) -> Result<()> {
-    let outcome = answer_invite(link, &journal, on_code, poll_ms, timeout_ms).await;
+    join_room_with(link, journal, on_code, |_| {}, poll_ms, timeout_ms).await
+}
+
+/// [`join_room`], and `on_request` is handed the hash of this device's Request before it leaves (12.1; a self-join
+/// passes it on to the human devices through its voucher, 12.4).
+pub async fn join_room_with(
+    link: &str,
+    journal: Journal,
+    on_code: impl Fn(&CheckCode) + Send,
+    on_request: impl Fn(&trommi_core::ids::Hash32) + Send,
+    poll_ms: u64,
+    timeout_ms: u64,
+) -> Result<()> {
+    let outcome = answer_invite(link, &journal, on_code, on_request, poll_ms, timeout_ms).await;
     if outcome.is_err() {
         let _ = journal.wipe();
     }
@@ -126,6 +139,7 @@ async fn answer_invite(
     link: &str,
     journal: &Journal,
     on_code: impl Fn(&CheckCode) + Send,
+    on_request: impl Fn(&trommi_core::ids::Hash32) + Send,
     poll_ms: u64,
     timeout_ms: u64,
 ) -> Result<()> {
@@ -187,6 +201,7 @@ async fn answer_invite(
         journal.commit()?;
 
         let signed = &request.signed_request;
+        on_request(&trommi_core::invite::request_hash(signed)?);
         let body = json!({
             "request": b64(&signed.request), "mac": b64(&signed.mac),
             "signature": b64(&signed.signature),

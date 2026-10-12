@@ -22,7 +22,7 @@ use crate::member::{Cfg, Member};
 use crate::prompt;
 use crate::slots::*;
 use crate::util::{js_string, now_ms};
-use crate::{cli, door, hooks, line, mcp, member, mirror, trail};
+use crate::{cli, door, hooks, line, mcp, member, mirror, trail, vouch};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -327,6 +327,14 @@ pub struct Conn {
     connecting: Mutex<Option<Connecting>>,
     /// Whether this process served the connect tool alone: once in the room, the client is told the list changed.
     offered_connect: AtomicBool,
+    /// Self-join (12.4), as the voucher: the asks this connector wrote for new sessions, nonce → (their owner,
+    /// the ask's value).
+    vouches: Mutex<HashMap<String, (String, Value)>>,
+    /// Self-join as the new session: whether one runs, and what the tools say about it meanwhile or after it failed.
+    self_joining: AtomicBool,
+    self_join_note: Mutex<Option<String>>,
+    /// No new self-join before this time (ms): after one that failed; never again after a denial.
+    self_join_after: std::sync::atomic::AtomicU64,
     self_ref: Mutex<Weak<Conn>>,
 }
 
@@ -978,6 +986,21 @@ impl Conn {
     }
 
     fn not_ready(&self) -> String {
+        if self.member.phase() != "ready" {
+            if let Some(note) = self.self_join_note.lock().unwrap().clone() {
+                if self.self_joining.load(Ordering::SeqCst) {
+                    return note;
+                }
+                if self.member.phase() == "needs-invite" {
+                    let again = if self.self_join_after.load(Ordering::SeqCst) == u64::MAX {
+                        ""
+                    } else {
+                        " A Trommi tool call a minute from now tries again."
+                    };
+                    return format!("This session is not on the Trommi board: {note}.{again}");
+                }
+            }
+        }
         let me = self.member.me.lock().unwrap();
         let phase = me.phase.as_str();
         if ["conflict", "halted", "lease-lost", "too-old", "retired"].contains(&phase) {
@@ -1163,6 +1186,224 @@ impl Conn {
         }
         if self.member.phase() == "ready" {
             self.touch();
+        } else if self.member.phase() == "needs-invite"
+            && self.member.paths().is_some_and(|p| !p.has_key)
+        {
+            self.self_join_soon();
+        }
+    }
+
+    // ---- self-join (spec/v1.md 12.4) ------------------------------------------------------------------------
+
+    /// A session without a key of its own asks a running session of the same machine and account to vouch for
+    /// it, once at a time; meanwhile and afterwards the tools say where it stands (`self_join_note`).
+    fn self_join_soon(&self) {
+        if !vouch::enabled()
+            || self.spare
+            || now_ms() < self.self_join_after.load(Ordering::SeqCst)
+            || self.self_joining.swap(true, Ordering::SeqCst)
+        {
+            return;
+        }
+        *self.self_join_note.lock().unwrap() = Some("Not on the Trommi board yet: joining by itself, asking a running session of this account on this machine to vouch for it. Try again in a moment.".into());
+        let c = self.arc();
+        tokio::spawn(async move {
+            let outcome = c.self_join().await;
+            if let Err(why) = &outcome {
+                // a denial holds for this process; anything else is asked again a minute later at the earliest
+                let after = if why.contains("denied") {
+                    u64::MAX
+                } else {
+                    now_ms() + env_ms("TROMMI_SELF_JOIN_RETRY_MS", 60_000)
+                };
+                c.self_join_after.store(after, Ordering::SeqCst);
+            }
+            *c.self_join_note.lock().unwrap() = outcome.err();
+            if let Some(why) = c.self_join_note.lock().unwrap().as_ref() {
+                eprintln!("[trommi] self-join: {why}");
+            }
+            c.self_joining.store(false, Ordering::SeqCst);
+        });
+    }
+    async fn self_join(&self) -> std::result::Result<(), String> {
+        let room = vouch::room_for(&self.cfg).ok_or("this machine is in no Trommi room yet")?;
+        let dir = self.cfg.keys_dir.join(&room);
+        let (account, account_label) = vouch::account();
+        let name = vouch::session_name(&self.cfg);
+        let ask = json!({ "op": "vouch", "owner": self.cfg.owner, "account": account, "account_label": account_label,
+            "name": name, "folder": self.cfg.shown, "host": self.cfg.host, "pid": pid() });
+        let mut found = None;
+        for p in vouch::held_slots(&dir) {
+            if let Ok(r) = door::knock(&p, &ask, 10_000).await {
+                if r["ok"] == Value::Bool(true) {
+                    found = Some((p, js_string(&r["nonce"]), js_string(&r["by"])));
+                    break;
+                }
+            }
+        }
+        let Some((voucher, nonce, by)) = found else {
+            return Err(format!("no running {} session of this account on this machine can vouch for this one, so it needs an invite of its own: in the Trommi app \"invite an agent\" (once per account; later sessions of it join by themselves)", crate::host::name()));
+        };
+        *self.self_join_note.lock().unwrap() = Some(format!("Not on the Trommi board yet: joining by itself, vouched by the session \"{by}\"; waiting for the human to allow it with one tap in the Trommi app (open on a phone or computer). Try again in a moment."));
+        eprintln!("[trommi] self-join: asked the session \"{by}\" to vouch for this one");
+        let done_req = json!({ "op": "vouch-done", "nonce": nonce, "owner": self.cfg.owner });
+        let done = || door::knock(&voucher, &done_req, 5000);
+        let until = now_ms() + env_ms("TROMMI_SELF_JOIN_WAIT_MS", vouch::LINK_WAIT_MS);
+        let link = loop {
+            if now_ms() > until {
+                let _ = done().await;
+                return Err("the human's Trommi app did not answer the self-join in time (no app open?): the next Trommi tool call asks again".into());
+            }
+            match door::knock(
+                &voucher,
+                &json!({ "op": "vouch-link", "nonce": nonce, "owner": self.cfg.owner }),
+                5000,
+            )
+            .await
+            {
+                Ok(r) if r["ok"] == Value::Bool(true) => {
+                    if let Some(link) = r["link"].as_str().filter(|l| !l.is_empty()) {
+                        break link.to_string();
+                    }
+                    if let Some(why) = r["refused"].as_str() {
+                        let _ = done().await;
+                        return Err(if why == "denied" {
+                            "the human denied this session in the Trommi app: it stays off the board. To use Trommi here, the human invites it (\"invite an agent\")".to_string()
+                        } else if why == "busy" {
+                            "not let in by itself yet: the human's Trommi app has too many self-join links open; the next Trommi tool call asks again".to_string()
+                        } else if why == "cap" {
+                            format!("not let in by itself: this account has {} sessions that joined by themselves already. Archive one in the Trommi app, or invite this session (\"invite an agent\")", vouch::MAX_PER_ACCOUNT)
+                        } else {
+                            format!("not let in by itself ({why}): invite this session in the Trommi app (\"invite an agent\")")
+                        });
+                    }
+                }
+                Ok(r) => {
+                    return Err(format!(
+                        "the vouching session stopped: {}",
+                        js_string(&r["error"])
+                    ))
+                }
+                Err(e) => return Err(format!("the vouching session is gone: {e}")),
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(env_ms(
+                "TROMMI_SELF_JOIN_POLL_MS",
+                2000,
+            )))
+            .await;
+        };
+        let member = self.member.clone();
+        let join = tokio::spawn(async move { member.join(&link, false, false).await });
+        // the Request's hash goes to the human devices through the voucher: they confirm only that Request
+        let mut passed = false;
+        while !join.is_finished() {
+            if !passed {
+                let hash = self.member.me.lock().unwrap().request_hash.clone();
+                if let Some(hash) = hash {
+                    passed = door::knock(&voucher, &json!({ "op": "vouch-hash", "nonce": nonce, "owner": self.cfg.owner, "request_hash": hash }), 5000)
+                        .await
+                        .is_ok_and(|r| r["ok"] == Value::Bool(true));
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+        let joined = join.await.map_err(|e| e.to_string())?;
+        let _ = done().await;
+        joined.map_err(|e| format!("not joined by itself: {}", e.text()))?;
+        if let Some(c) = self.member.client() {
+            let mut fields = Map::new();
+            fields.insert(
+                "text".into(),
+                json!(format!("{name} joined by itself, vouched by {by}.")),
+            );
+            let _ = c.send_message(fields, None, None).await;
+        }
+        eprintln!("[trommi] self-join: in, vouched by \"{by}\"");
+        Ok(())
+    }
+    /// As the voucher: a connector of another session of this machine asks to be let in. Only for the same
+    /// account (client and config folder) and another session; the ask goes into this agent's main session.
+    async fn vouch_ask(&self, req: &Value) -> Value {
+        let owner = js_string(&req["owner"]);
+        if !owner.is_empty() && owner == self.cfg.owner {
+            return json!({ "ok": false, "error": "the same session" });
+        }
+        if req["account"].as_str() != Some(vouch::account().0.as_str()) {
+            return json!({ "ok": false, "error": "another account" });
+        }
+        let Some(c) = self
+            .member
+            .client()
+            .filter(|_| self.member.phase() == "ready")
+        else {
+            return json!({ "ok": false, "error": self.not_ready() });
+        };
+        let clip = |v: &Value, n: usize| js_string(v).chars().take(n).collect::<String>();
+        let by = vouch::session_name(&self.cfg);
+        let nonce = crate::util::random_hex(16);
+        let value = json!({ "name": clip(&req["name"], 120), "folder": clip(&req["folder"], 400), "host": clip(&req["host"], 120),
+            "account": clip(&req["account"], 16), "account_label": clip(&req["account_label"], 120), "vouched_by": by,
+            "at": now_ms(), "request_hash": Value::Null });
+        let mut values = Map::new();
+        values.insert(format!("join_ask/{nonce}"), value.clone());
+        if let Err(e) = c.set_status(values, None).await {
+            return json!({ "ok": false, "error": e.text() });
+        }
+        self.vouches
+            .lock()
+            .unwrap()
+            .insert(nonce.clone(), (owner, value));
+        eprintln!(
+            "[trommi] vouching for a new session of this account (pid {})",
+            js_string(&req["pid"])
+        );
+        json!({ "ok": true, "nonce": nonce, "by": by })
+    }
+    /// The voucher's side of the later steps: `vouch-link` (the human device's answer), `vouch-hash` (the new
+    /// device's Request, written beside the ask), `vouch-done` (the ask is taken back).
+    async fn vouch_step(&self, op: &str, req: &Value) -> Value {
+        let nonce = js_string(&req["nonce"]);
+        let held = self.vouches.lock().unwrap().get(&nonce).cloned();
+        let Some((owner, mut value)) = held.filter(|(o, _)| *o == js_string(&req["owner"])) else {
+            return json!({ "ok": false, "error": "no such ask" });
+        };
+        let Some(c) = self.member.client() else {
+            return json!({ "ok": false, "error": self.not_ready() });
+        };
+        let name = format!("join_ask/{nonce}");
+        match op {
+            "vouch-link" => {
+                let answer = c
+                    .session_register(&format!("join_link/{nonce}"))
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                    .unwrap_or(Value::Null);
+                json!({ "ok": true, "link": answer["link"], "refused": answer["refused"] })
+            }
+            "vouch-hash" => {
+                value["request_hash"] = json!(js_string(&req["request_hash"])
+                    .chars()
+                    .take(64)
+                    .collect::<String>());
+                let mut values = Map::new();
+                values.insert(name, value.clone());
+                match c.set_status(values, None).await {
+                    Ok(_) => {
+                        self.vouches.lock().unwrap().insert(nonce, (owner, value));
+                        json!({ "ok": true })
+                    }
+                    Err(e) => json!({ "ok": false, "error": e.text() }),
+                }
+            }
+            _ => {
+                self.vouches.lock().unwrap().remove(&nonce);
+                let mut values = Map::new();
+                values.insert(name, Value::Null);
+                let _ = c.set_status(values, None).await;
+                json!({ "ok": true })
+            }
         }
     }
     async fn yield_key(&self, req: &Value) -> Value {
@@ -1275,6 +1516,8 @@ impl Conn {
                 json!({ "ok": true, "mine": req.get("ancestors").and_then(|a| a.as_array()).is_some_and(|a| a.iter().any(|x| x.as_u64() == Some(ppid() as u64))) })
             }
             "replaced" => self.replaced_key(&req).await,
+            "vouch" => self.vouch_ask(&req).await,
+            "vouch-link" | "vouch-hash" | "vouch-done" => self.vouch_step(&op, &req).await,
             "say" => {
                 // `trommi-connector say` names its session: another session's words never go into this one's
                 // chat. (A request without that field is this connector's own kind telling the human about a
@@ -2142,6 +2385,10 @@ pub async fn main_server() {
         loaded: disk_version(),
         initialized: AtomicBool::new(false),
         connecting: Mutex::new(None),
+        vouches: Mutex::new(HashMap::new()),
+        self_joining: AtomicBool::new(false),
+        self_join_note: Mutex::new(None),
+        self_join_after: std::sync::atomic::AtomicU64::new(0),
         offered_connect: AtomicBool::new(false),
         self_ref: Mutex::new(Weak::new()),
     });

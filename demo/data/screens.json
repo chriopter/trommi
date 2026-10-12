@@ -90,6 +90,7 @@
     {"id":"settings--account-emergency-kit","screen":"Settings","state":"Account: Emergency Kit","web":{"path":"/settings/account/kit","state":null,"mock":"1"}},
     {"id":"settings--theme","screen":"Settings","state":"Theme","web":{"path":"/settings/theme","state":null,"mock":"1"}},
     {"id":"settings--keyboard-shortcuts","screen":"Settings","state":"Keyboard Shortcuts","web":{"path":"/settings/keys","state":null,"mock":"1"}},
+    {"id":"settings--security","screen":"Settings","state":"Security","web":{"path":"/settings/security","state":null,"mock":"1"}},
     {"id":"artifacts","screen":"Artifacts","state":"As it is","web":{"path":"/artifacts","state":null,"mock":"1"}},
     {"id":"off-the-desk","screen":"Off the desk","state":"As it is","web":{"path":"/stacks/off","state":null,"mock":"1"}},
     {"id":"scribble-board","screen":"Scribble Board","state":"As it is","web":{"path":"/scribble-board","state":null,"mock":"1"}},

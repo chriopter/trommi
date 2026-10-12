@@ -29,6 +29,11 @@ pub const HEADS: &str = "heads";
 pub const BOARD_SNAPSHOT: &str = "board_snapshot/";
 /// The name under which human devices hand a Desk's Goals to a main session's agent (section 9.3.4).
 pub const GOALS: &str = "goals";
+/// The prefix under which a main session's agent asks the human devices to let in a new session of its machine and
+/// account (section 12.4): `join_ask/<nonce>`.
+pub const JOIN_ASK: &str = "join_ask/";
+/// The prefix under which a human device answers it with an invite link for that agent alone (section 12.4).
+pub const JOIN_LINK: &str = "join_link/";
 /// The prefix of the name of a Desk, whose value carries the Desk's Goals.
 pub const DESK: &str = "desk/";
 /// The most lines Goals have.
@@ -243,11 +248,11 @@ pub fn name_owner(name: &str, in_room: bool) -> Option<NameOwner> {
             ]);
         return room_humans.then_some(NameOwner::RoomHumans);
     }
-    if name == GOALS {
+    if name == GOALS || has_prefix(&[JOIN_LINK]) {
         return Some(NameOwner::SessionHumans);
     }
     let session_devices =
-        ["profile", "heard"].contains(&name) || has_prefix(&["status_line/", "alert/"]);
+        ["profile", "heard"].contains(&name) || has_prefix(&["status_line/", "alert/", JOIN_ASK]);
     session_devices.then_some(NameOwner::SessionDevices)
 }
 

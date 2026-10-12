@@ -5,6 +5,7 @@ mod common;
 use common::process::Seat;
 use common::{HubProc, Human};
 use serde_json::{json, Value};
+use trommi_connector::util::hex;
 use trommi_core::ids::GroupId;
 
 /// A hub, a human, and a connector joined by link with a main session, served over MCP.
@@ -1605,9 +1606,13 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
         .ok("reply", json!({ "text": "from the first session" }))
         .await;
 
-    // A second Claude Code session in the same folder, while the first one runs, idle.
+    // A second Claude Code session in the same folder, while the first one runs, idle (self-join off: what is
+    // tested here is that it never gets the first one's key; a_second_session_joins_by_itself_vouched_by_the_first)
     let mut second = seat
-        .serve_with(&[("TROMMI_SESSION_KEY", "test-other")])
+        .serve_with(&[
+            ("TROMMI_SESSION_KEY", "test-other"),
+            ("TROMMI_SELF_JOIN", "0"),
+        ])
         .await;
     let (said, failed) = second
         .call("reply", json!({ "text": "from the second session" }))
@@ -1694,4 +1699,178 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
         "nothing of the second session reached the first one's chat: {texts:?}"
     );
     resumed.close().await;
+}
+
+/// Self-join (spec/v1.md 12.4): a second session on the same machine and account gets onto the board without a
+/// manual invite. The running session vouches for it; the human's app answers with a link and confirms the very
+/// Request whose hash the voucher passed on. The new session has its own device and its own board session, and
+/// says there who vouched for it; nothing of it reaches the first session's chat; its resume is the same member.
+/// A session of another account is not vouched for.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_session_joins_by_itself_vouched_by_the_first() {
+    let (_hub, mut human, seat, group) = joined().await;
+    let me = human.seat(&group).await.expect("the first agent");
+    let mut first = seat.serve().await;
+    first.ready().await;
+
+    let other = [
+        ("TROMMI_SESSION_KEY", "test-second"),
+        ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+        ("TROMMI_SELF_JOIN", "1"),
+    ];
+    let mut second = seat.serve_with(&other).await;
+    // its first call starts the self-join and answers at once, politely
+    let (said, failed) = second.call("reply", json!({ "text": "too early" })).await;
+    assert!(failed, "{said}");
+    assert!(second.child.try_wait().expect("the process").is_none());
+    let (admitted, new_group, ask) = human.admit_self_join(&group).await;
+    assert_eq!(ask["vouched_by"], "project", "{ask}");
+    assert_eq!(ask["name"], "project", "{ask}");
+    assert!(admitted.device != me);
+    second.ready().await;
+    second
+        .ok("reply", json!({ "text": "from the second session" }))
+        .await;
+
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    let in_session = |group: &GroupId| hex(group.session_id().unwrap().as_bytes());
+    let texts_of = |human: &Human, group: &GroupId| -> Vec<String> {
+        human
+            .items
+            .iter()
+            .filter(|(s, _, _)| *s == in_session(group))
+            .filter_map(|(_, _, payload)| payload["text"].as_str().map(String::from))
+            .collect()
+    };
+    let new_texts = texts_of(&human, &new_group);
+    assert!(
+        new_texts.contains(&"project joined by itself, vouched by project.".to_string())
+            && new_texts.contains(&"from the second session".to_string()),
+        "{new_texts:?}"
+    );
+    assert!(
+        !texts_of(&human, &group)
+            .iter()
+            .any(|t| t.contains("second session")),
+        "nothing of the second session in the first one's chat"
+    );
+
+    // its resume is the same member, without another ask
+    second.close().await;
+    let mut resumed = seat.serve_with(&other).await;
+    resumed.ready().await;
+    resumed
+        .ok("reply", json!({ "text": "the second session, resumed" }))
+        .await;
+    human.sync().await;
+    assert!(human
+        .items
+        .iter()
+        .any(|(s, sender, payload)| *s == in_session(&new_group)
+            && *sender == admitted.device
+            && payload["text"] == "the second session, resumed"));
+    resumed.close().await;
+
+    // another account on the same machine: nobody vouches for it
+    let asks_before = human
+        .items
+        .iter()
+        .filter(|(_, _, p)| {
+            p["name"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("join_ask/"))
+        })
+        .count();
+    let foreign_config = seat.home.path().join("other-account");
+    let mut third = seat
+        .serve_with(&[
+            ("TROMMI_SESSION_KEY", "test-third"),
+            ("CLAUDE_CONFIG_DIR", foreign_config.to_str().unwrap()),
+            ("TROMMI_SELF_JOIN", "1"),
+        ])
+        .await;
+    let mut said = String::new();
+    for _ in 0..50 {
+        let (text, failed) = third.call("reply", json!({ "text": "third" })).await;
+        assert!(failed, "{text}");
+        if text.contains("needs an invite") {
+            said = text;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(
+        said.contains("invite"),
+        "it needs an invite of its own: {said}"
+    );
+    assert!(third.child.try_wait().expect("the process").is_none());
+    human.sync().await;
+    let asks_after = human
+        .items
+        .iter()
+        .filter(|(_, _, p)| {
+            p["name"]
+                .as_str()
+                .is_some_and(|n| n.starts_with("join_ask/"))
+        })
+        .count();
+    assert_eq!(asks_before, asks_after, "no ask for another account");
+    third.close().await;
+    first.close().await;
+}
+
+/// Self-join denied (spec/v1.md 12.4): the person taps Deny on the ask; the new session stays off the board, keeps
+/// running and says so, and nothing of it reaches the board.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_self_join_the_person_denies_stays_off_the_board() {
+    let (_hub, mut human, seat, group) = joined().await;
+    let mut first = seat.serve().await;
+    first.ready().await;
+    let mut second = seat
+        .serve_with(&[
+            ("TROMMI_SESSION_KEY", "test-denied"),
+            ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+            ("TROMMI_SELF_JOIN", "1"),
+        ])
+        .await;
+    let mut said = String::new();
+    for _ in 0..100 {
+        let (text, failed) = second.call("reply", json!({ "text": "too early" })).await;
+        assert!(failed, "{text}");
+        assert!(
+            text.contains("joining by itself"),
+            "never 'needs an invite' while it joins: {text}"
+        );
+        if text.contains("one tap") {
+            said = text;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(
+        said.contains("vouched by"),
+        "it says it waits for the person: {said}"
+    );
+    human.deny_self_join(&group).await;
+    let mut said = String::new();
+    for _ in 0..100 {
+        let (text, failed) = second.call("reply", json!({ "text": "denied?" })).await;
+        assert!(failed, "{text}");
+        if text.contains("denied") {
+            said = text;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(said.contains("invite"), "{said}");
+    assert!(second.child.try_wait().expect("the process").is_none());
+    human.sync().await;
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    assert!(!human
+        .items
+        .iter()
+        .any(|(_, _, p)| p["text"] == "denied?" || p["text"] == "too early"));
+    second.close().await;
+    first.close().await;
 }

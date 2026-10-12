@@ -180,8 +180,17 @@ process). A key `join` made in a terminal belongs to nobody until the first sess
 connector only takes its own session's key or one nobody owns; another session's key it never takes, also not
 while it is free, an idle holder hands its key over only to a connector of its own session, and `say` goes through
 a running connector only for its own session. So a second session in the same folder never writes into the
-first one's board session: it needs an invite of its own. `claude --resume` keeps the session id and with it the
-key; a new `claude` in the folder is a new session. `trommi-connector claim-key`, run inside a session, makes
+first one's board session: it is a member of its own, which joins by itself (below) or by an invite. `claude --resume` keeps the session id and with it the
+key; a new `claude` in the folder is a new session. A new session of the same machine and account joins by itself (spec/v1.md 12.4, `src/vouch.rs`): on its first
+use (a Trommi tool call or a hook) a session without a key of its own asks a running connector of the same account
+to vouch for it; that one writes `join_ask/<nonce>` into its main session; the human's app asks "Allow new Claude
+session …?", and on Allow answers with an invite link (`join_link/<nonce>`; on Deny with `denied`, and this process
+does not ask again); the new session joins with it, the voucher passes the Request's hash on, and the app confirms
+that Request (one tap instead of the emoji). Meanwhile the tools answer "joining by itself … waiting for the human to
+allow it"; the new session's first message says who vouched. It is off by default for now (`TROMMI_SELF_JOIN=1`
+turns it on): the web app and the iPhone app answer asks first, and a later connector release turns it on. Another
+account needs one invite by link.
+`trommi-connector claim-key`, run inside a session, makes
 the key its running connector holds that session's when nobody owns it yet (a key from a terminal `join`).
 
 When the human reconnects the session on another machine, the
