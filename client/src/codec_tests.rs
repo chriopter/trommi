@@ -794,3 +794,53 @@ fn numbers_as_javascript_has_them() {
     assert!(teaser_valid(&json!("é".repeat(160))));
     assert!(!teaser_valid(&json!("é".repeat(161))));
 }
+
+#[test]
+fn a_body_is_read_from_its_own_text() {
+    let prev = bytes(32, &[0xee, 1]);
+    // the order of the keys stays; a key named twice keeps its first place and its last value
+    let text = format!(
+        r#"{{"title":"Q","schema_version":2,"previous_version_hash":"{prev}","title":"R"}}"#
+    );
+    let Decoded::Body(out) = decode_body_text(BodyKind::Card, text.as_bytes()) else {
+        panic!()
+    };
+    assert_eq!(
+        out,
+        format!(
+            r#"{{"title":"R","schema_version":2,"previous_version_hash":"{}"}}"#,
+            hx(&prev)
+        )
+    );
+    // escapes in an id, in a teaser and in a key read as their text
+    let escaped = format!(
+        r#"{{"previous_version_hash":"\u{:04x}{}","teaser":"two\nlines","op\"t":1, "options" : [ {{ "key":"a", "final" : false }} ]}}"#,
+        prev.as_bytes()[0],
+        &prev[1..]
+    );
+    let card = body(decode_body(BodyKind::Card, escaped.as_bytes()));
+    assert_eq!(card["previous_version_hash"], json!(hx(&prev)));
+    assert!(card.get("teaser").is_none());
+    assert_eq!(card["op\"t"], json!(1));
+    assert_eq!(card["options"], json!([{ "key": "a" }]));
+    assert_eq!(
+        body(decode_body(BodyKind::Card, br#"{"teaser":"A short one"}"#))["teaser"],
+        json!("A short one")
+    );
+    // a byte order mark is read past; anything after the object is not a body
+    assert_eq!(
+        body(decode_body(
+            BodyKind::Answer,
+            b"\xEF\xBB\xBF{\"choices\":[]}"
+        )),
+        json!({ "choices": [] })
+    );
+    assert_eq!(
+        decode_body(BodyKind::Answer, br#"{"choices":[]} {}"#),
+        Decoded::Bad
+    );
+    assert_eq!(
+        decode_body(BodyKind::Answer, br#"{"choices":[}"#),
+        Decoded::Bad
+    );
+}

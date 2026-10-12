@@ -184,6 +184,178 @@
       "arguments": [],
       "returns": "bytes"
     },
+    "bodyFromWire": {
+      "arguments": [
+        {
+          "name": "kindName",
+          "type": "text"
+        },
+        {
+          "name": "payload",
+          "type": "bytes"
+        }
+      ],
+      "returns": "text"
+    },
+    "bodiesFromWire": {
+      "arguments": [
+        {
+          "name": "kindNames",
+          "type": "list<text>"
+        },
+        {
+          "name": "payloads",
+          "type": "list<bytes>"
+        }
+      ],
+      "returns": "text"
+    },
+    "bodyToWire": {
+      "arguments": [
+        {
+          "name": "kindName",
+          "type": "text"
+        },
+        {
+          "name": "fieldsJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "boardItemParse": {
+      "arguments": [
+        {
+          "name": "payload",
+          "type": "bytes"
+        }
+      ],
+      "returns": "text"
+    },
+    "registerToWire": {
+      "arguments": [
+        {
+          "name": "key",
+          "type": "text"
+        },
+        {
+          "name": "valueJson",
+          "type": "text"
+        }
+      ],
+      "returns": "RegisterWire"
+    },
+    "registerFromWire": {
+      "arguments": [
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "valueJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "registerKeyOf": {
+      "arguments": [
+        {
+          "name": "name",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "registerNameOf": {
+      "arguments": [
+        {
+          "name": "key",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "bodyFileIds": {
+      "arguments": [
+        {
+          "name": "kindName",
+          "type": "text"
+        },
+        {
+          "name": "fieldsJson",
+          "type": "text"
+        }
+      ],
+      "returns": "list<bytes>"
+    },
+    "attachmentFromWire": {
+      "arguments": [
+        {
+          "name": "attachmentJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "attachmentToWire": {
+      "arguments": [
+        {
+          "name": "attachmentJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "boardEntryFromWire": {
+      "arguments": [
+        {
+          "name": "entryJson",
+          "type": "text"
+        },
+        {
+          "name": "withId",
+          "type": "bool"
+        }
+      ],
+      "returns": "text"
+    },
+    "shapeIdFromWire": {
+      "arguments": [
+        {
+          "name": "id",
+          "type": "text"
+        }
+      ],
+      "returns": "optional<text>"
+    },
+    "shapeIdToWire": {
+      "arguments": [
+        {
+          "name": "id",
+          "type": "text"
+        }
+      ],
+      "returns": "optional<text>"
+    },
+    "pieceFromWire": {
+      "arguments": [
+        {
+          "name": "piece",
+          "type": "bytes"
+        }
+      ],
+      "returns": "optional<text>"
+    },
+    "pieceToWire": {
+      "arguments": [
+        {
+          "name": "pieceJson",
+          "type": "text"
+        }
+      ],
+      "returns": "bytes"
+    },
     "boardReduce": {
       "arguments": [
         {
@@ -2601,6 +2773,10 @@
       "sessionOps": "list<DeskSessionOp>",
       "nextWake": "number"
     },
+    "RegisterWire": {
+      "name": "text",
+      "value": "optional<bytes>"
+    },
     "Draft": {
       "kind": "DraftKind",
       "session": "optional<bytes>",
@@ -2690,6 +2866,7 @@
       "code": "optional<ErrorCode>",
       "finding": "optional<ErrorCode>",
       "payload": "optional<bytes>",
+      "body": "optional<text>",
       "bind": "optional<Bind>",
       "objectAfter": "optional<ObjectView>",
       "register": "optional<RegisterChange>",

@@ -127,6 +127,22 @@ functions! {
     fallible kit_keys_for(name, words);
     fallible account_id_parse(text);
     fallible envelope_header(envelope);
+    fallible body_from_wire(kind_name, payload);
+    fallible bodies_from_wire(kind_names, payloads);
+    fallible body_to_wire(kind_name, fields_json);
+    plain board_item_parse(payload);
+    fallible register_to_wire(key, value_json);
+    fallible register_from_wire(name, value_json);
+    plain register_key_of(name);
+    plain register_name_of(key);
+    fallible body_file_ids(kind_name, fields_json);
+    fallible attachment_from_wire(attachment_json);
+    fallible attachment_to_wire(attachment_json);
+    fallible board_entry_from_wire(entry_json, with_id);
+    plain shape_id_from_wire(id);
+    plain shape_id_to_wire(id);
+    plain piece_from_wire(piece);
+    fallible piece_to_wire(piece_json);
 }
 
 /// The methods of a facade object that return a `Result`, by name and arguments.

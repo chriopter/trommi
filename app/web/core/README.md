@@ -26,8 +26,8 @@ users**: the model the views read and the calls they make. Names are snake_case,
 | `client.ts` | The `Client`: the model, the human actions, timelines, files, invites, sessions, push, the local cache |
 | `room.ts` | How a device comes to hold a room: `foundRoom`, `openRoom`, `joinRoom`, `joinWithCode` |
 | `model.ts`, `model-shape.ts`, `types.ts` | The model's builder (no rules of its own), an empty model, the shapes. The Desk (stack, session lists, open requests, held, expired) comes from the client core's `ClientDesk` ([`client/`](../../../client/README.md)): `project()` hands it what a batch touched and applies what changed |
-| `codec.ts` | Bodies: the JSON of spec/v1.md 9.1 and 10.5 ↔ the model's fields; register names; attachment references |
-| `scribble.ts`, `ink.ts`, `palette.ts` | The Scribble Board: merge of items, snapshot file, packed points, colour tokens |
+| `codec.ts` | Bodies: the JSON of spec/v1.md 9.1 and 10.5 ↔ the model's fields, register names, attachment references. A thin wrapper: the rules are the client core's codec ([`client/src/codec.rs`](../../../client/src/codec.rs)), reached through the binding (`useCodec`). A received envelope brings its body already read (`ReceivedEnvelope.body`, JSON text): the model only parses it |
+| `scribble.ts`, `ink.ts`, `palette.ts` | The Scribble Board: merge of items, snapshot file, packed points, colour tokens. It runs in the page, which has no core, so it keeps a board item's wire rules for itself (the client core's `codec.rs` again, until the merge runs in the core) |
 | `work.ts` | A turn's work trail as the views fold it |
 | `store-idb.ts`, `tabs.ts` | The device's store and the cache on IndexedDB; one owner per browser profile ("Storage and tabs") |
 | `core-worker.ts`, `worker-protocol.ts` | The worker's entry and its messages |

@@ -25,9 +25,14 @@
 //! The numbers follow JavaScript's, which the web app wrote first and every app shares: a whole number may be
 //! written `3` or `3.0`, rounding is half up (`Math.round`), a position wraps to 32 bits.
 //!
-//! Objects come out with their keys sorted (serde_json's map); no reader depends on the order of a body's keys.
+//! A body read keeps the order of its keys at the top level; what this codec builds (registers, board items,
+//! attachments, everything written) has its keys sorted (serde_json's map). No reader depends on the order.
 
+use serde::de::{self, Deserializer, MapAccess, Visitor};
+use serde::Deserialize;
+use serde_json::value::RawValue;
 use serde_json::{Map, Number, Value};
+use std::borrow::Cow;
 use trommi_core::board_items::{Ink, ItemBody};
 use trommi_core::ids;
 use trommi_core::trail::StrokePiece;
@@ -86,62 +91,24 @@ impl BodyKind {
 
     /// The fields a writer writes for this kind (besides `schema_version`), by their model names; none for a
     /// Note (its fields are the app's), a board item and a register.
+    #[rustfmt::skip]
     fn fields(self) -> &'static [&'static str] {
         match self {
             Self::Message => &[
-                "content_type",
-                "text",
-                "details",
-                "html",
-                "attachments",
-                "explain",
-                "hand_back",
-                "present_card",
-                "copied_cards",
-                "marks",
-                "terminal",
-                "note",
-                "published_object_id",
+                "content_type", "text", "details", "html", "attachments", "explain", "hand_back", "present_card",
+                "copied_cards", "marks", "terminal", "note", "published_object_id",
             ],
             Self::Card => &[
-                "object_version",
-                "previous_version_hash",
-                "card_type",
-                "title",
-                "teaser",
-                "body",
-                "options",
-                "sections",
-                "html",
-                "allows_multiple",
-                "recommended",
-                "urgency_reason",
-                "attachments",
-                "change_note",
-                "close_summary",
-                "withdraw_reason",
-                "merged_into_object_id",
-                "merged_from_object_ids",
-                "working",
+                "object_version", "previous_version_hash", "card_type", "title", "teaser", "body", "options",
+                "sections", "html", "allows_multiple", "recommended", "urgency_reason", "attachments", "change_note",
+                "close_summary", "withdraw_reason", "merged_into_object_id", "merged_from_object_ids", "working",
             ],
             Self::Artifact => &[
-                "object_version",
-                "previous_version_hash",
-                "artifact_type",
-                "title",
-                "note",
-                "attachments",
+                "object_version", "previous_version_hash", "artifact_type", "title", "note", "attachments",
                 "released_until",
             ],
             Self::Answer => &[
-                "answer_action",
-                "choices",
-                "note",
-                "option_notes",
-                "attachments",
-                "marks",
-                "trusted",
-                "answered_at",
+                "answer_action", "choices", "note", "option_notes", "attachments", "marks", "trusted", "answered_at",
             ],
             Self::Request => &["tool_name", "description", "input_preview"],
             Self::TakeBack | Self::Verdict | Self::Note | Self::BoardItem | Self::Register => &[],
@@ -162,9 +129,9 @@ pub const BOARD_CONTENT_TYPES: [&str; 4] = ["strokes", "erase", "move", "send_aw
 
 /// A body as the model reads it, or why it is not read.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Decoded {
+pub enum Decoded<T = Fields> {
     /// The fields, in the model's names.
-    Body(Fields),
+    Body(T),
     /// A `schema_version` above 2: "needs a newer Trommi".
     NewerSchema,
     /// No body of its kind.
@@ -515,7 +482,9 @@ fn js_space(c: char) -> bool {
 /// A card's `teaser`: the two short lines the Desk row shows under the title. Plain text: not empty, already
 /// trimmed, no control characters (no line breaks), at most [`TEASER_MAX`] characters.
 pub fn teaser_valid(t: &Value) -> bool {
-    let Some(t) = t.as_str() else { return false };
+    t.as_str().is_some_and(teaser_text_valid)
+}
+fn teaser_text_valid(t: &str) -> bool {
     !t.is_empty()
         && t.trim_matches(js_space) == t
         && t.chars().count() <= TEASER_MAX
@@ -1241,136 +1210,378 @@ pub fn encode_piece(p: &Value) -> Result<String> {
 }
 
 // ---- the bodies -------------------------------------------------------------------------------------------------
+//
+// Reading is on every envelope that arrives, so a body is read without building it whole: its top level is taken
+// as its keys and the raw JSON text of each value (checked, not built), only the fields this codec converts are
+// built and replaced, and the text is written again from those pieces. A body keeps its own order of keys; a key
+// named twice stands where it first stood, with the value it was given last (as JavaScript reads it). Board items
+// and registers, which are small or read strictly, are built whole.
 
-/// The ids and renamed fields of a body, wire -> model.
-fn from_wire(kind: BodyKind, b: Fields) -> Result<Fields> {
-    if kind == BodyKind::BoardItem {
-        return board_from_wire(&b);
+/// A key of the body's top level, borrowed from the payload where it holds no escape.
+struct Key<'a>(Cow<'a, str>);
+
+impl<'de> Deserialize<'de> for Key<'de> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct Text;
+        impl<'de> Visitor<'de> for Text {
+            type Value = Key<'de>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a key")
+            }
+            fn visit_borrowed_str<E: de::Error>(
+                self,
+                text: &'de str,
+            ) -> std::result::Result<Key<'de>, E> {
+                Ok(Key(Cow::Borrowed(text)))
+            }
+            fn visit_str<E: de::Error>(self, text: &str) -> std::result::Result<Key<'de>, E> {
+                Ok(Key(Cow::Owned(text.to_owned())))
+            }
+        }
+        deserializer.deserialize_str(Text)
     }
-    if kind == BodyKind::Register {
-        let Some(name) = b.get("name").and_then(Value::as_str) else {
-            return bad("a register without a name");
-        };
-        let (key, value) = register_from_wire(name, b.get("value").unwrap_or(&Value::Null))?;
-        let lamport = b
-            .get("lamport")
-            .filter(|l| l.is_number())
-            .cloned()
-            .unwrap_or(0.into());
-        let mut out = Fields::new();
-        out.insert("name".into(), name.into());
-        out.insert("key".into(), Value::String(key));
-        out.insert("value".into(), value);
-        out.insert("lamport".into(), lamport);
-        return Ok(out);
+}
+
+/// A value of the top level: as it stands in the payload, or made here.
+enum Piece<'a> {
+    Raw(&'a RawValue),
+    Made(Value),
+    /// Made here, already written as JSON text.
+    Text(String),
+}
+
+impl Piece<'_> {
+    fn value(&self) -> Value {
+        match self {
+            // (the text was checked when the body was read: it is JSON)
+            Piece::Raw(raw) => serde_json::from_str(raw.get()).unwrap_or(Value::Null),
+            Piece::Text(text) => serde_json::from_str(text).unwrap_or(Value::Null),
+            Piece::Made(v) => v.clone(),
+        }
     }
-    let mut out = b;
+    fn text(&self) -> Cow<'_, str> {
+        match self {
+            Piece::Raw(raw) => Cow::Borrowed(raw.get()),
+            Piece::Text(text) => Cow::Borrowed(text),
+            Piece::Made(v) => Cow::Owned(v.to_string()),
+        }
+    }
+    fn is_null(&self) -> bool {
+        self.text() == "null"
+    }
+    fn is_array(&self) -> bool {
+        self.text().starts_with('[')
+    }
+    /// A string that stands without escapes, as it stands (no value is built).
+    fn plain_str(&self) -> Option<&str> {
+        match self {
+            Piece::Raw(raw) => {
+                let t = raw.get();
+                let inner = t.strip_prefix('"')?.strip_suffix('"')?;
+                (!inner.contains('\\')).then_some(inner)
+            }
+            Piece::Made(Value::String(s)) => Some(s),
+            Piece::Made(_) | Piece::Text(_) => None,
+        }
+    }
+    /// The id of `n` bytes this value names (base64url), as hex.
+    fn hex_id(&self, n: usize) -> Option<String> {
+        match self.plain_str() {
+            Some(s) => hex_id_str(s, n),
+            None => hex_id(&self.value(), n),
+        }
+    }
+}
+
+/// The top level of a body: its keys in order, each with its value.
+struct Body<'a>(Vec<(Cow<'a, str>, Piece<'a>)>);
+
+impl<'de> Deserialize<'de> for Body<'de> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct Object;
+        impl<'de> Visitor<'de> for Object {
+            type Value = Body<'de>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a JSON object")
+            }
+            fn visit_map<A: MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<Body<'de>, A::Error> {
+                let mut body = Body(Vec::with_capacity(map.size_hint().unwrap_or(8)));
+                while let Some(Key(key)) = map.next_key::<Key<'de>>()? {
+                    let value: &'de RawValue = map.next_value()?;
+                    body.put_piece(key, Piece::Raw(value));
+                }
+                Ok(body)
+            }
+        }
+        deserializer.deserialize_map(Object)
+    }
+}
+
+impl<'a> Body<'a> {
+    fn at(&self, key: &str) -> Option<usize> {
+        self.0.iter().position(|(k, _)| k == key)
+    }
+    fn get(&self, key: &str) -> Option<&Piece<'a>> {
+        self.at(key).map(|i| &self.0[i].1)
+    }
+    /// The value of `key` when it stands and is not null.
+    fn given(&self, key: &str) -> Option<Value> {
+        self.get(key).filter(|p| !p.is_null()).map(Piece::value)
+    }
+    fn put_piece(&mut self, key: Cow<'a, str>, piece: Piece<'a>) {
+        match self.at(&key) {
+            Some(i) => self.0[i].1 = piece,
+            None => self.0.push((key, piece)),
+        }
+    }
+    /// Sets `key`: in its place where it stands, else at the end.
+    fn put(&mut self, key: &'static str, value: Value) {
+        self.put_piece(Cow::Borrowed(key), Piece::Made(value));
+    }
+    /// Sets `key` to a value already written as JSON text.
+    fn put_text(&mut self, key: &'static str, text: String) {
+        self.put_piece(Cow::Borrowed(key), Piece::Text(text));
+    }
+    fn remove(&mut self, key: &str) -> Option<Piece<'a>> {
+        self.at(key).map(|i| self.0.remove(i).1)
+    }
+    fn write(&self, len: usize) -> String {
+        let mut out = String::with_capacity(len + 64);
+        out.push('{');
+        for (i, (k, v)) in self.0.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            if k.bytes().all(|c| c >= 0x20 && c != b'"' && c != b'\\') {
+                out.push('"');
+                out.push_str(k);
+                out.push('"');
+            } else {
+                out.push_str(&Value::String(k.to_string()).to_string());
+            }
+            out.push(':');
+            out.push_str(&v.text());
+        }
+        out.push('}');
+        out
+    }
+}
+
+/// Options (their JSON text) as every client reads them, `final` only where it is true, written again from their
+/// own text; none for a text that is no list.
+fn plain_options_text(text: &str) -> Option<String> {
+    let list: Vec<&RawValue> = serde_json::from_str(text).ok()?;
+    let mut out = String::with_capacity(text.len());
+    out.push('[');
+    for (i, option) in list.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        match serde_json::from_str::<Body>(option.get()) {
+            Ok(mut o) => {
+                if o.get("final").is_some_and(|f| f.text() != "true") {
+                    o.remove("final");
+                }
+                out.push_str(&o.write(option.get().len()));
+            }
+            Err(_) => out.push_str(option.get()),
+        }
+    }
+    out.push(']');
+    Some(out)
+}
+
+/// Whether a body's `schema_version` is one this client reads: `Err` names why not.
+fn version_ok(version: Option<&Value>) -> std::result::Result<(), Decoded<String>> {
+    match version {
+        None => Ok(()),
+        Some(v) => match whole(v) {
+            Some(x) if x > SCHEMA_VERSION as f64 => Err(Decoded::NewerSchema),
+            Some(x) if x == SCHEMA_VERSION as f64 => Ok(()),
+            _ => Err(Decoded::Bad),
+        },
+    }
+}
+
+/// The ids and renamed fields of a body that is no board item and no register, wire -> model.
+fn fields_from_wire(kind: BodyKind, out: &mut Body<'_>) -> Result<()> {
     match out.get("attachments") {
-        Some(list @ Value::Array(_)) => {
-            let list = list_from_wire(list)?;
-            out.insert("attachments".into(), list);
+        // (an empty list stays as it is)
+        Some(list) if list.text() == "[]" => {}
+        Some(list) if list.is_array() => {
+            let list = list_from_wire(&list.value())?;
+            out.put("attachments", list);
         }
         _ => {
             out.remove("attachments");
         }
     }
     if kind == BodyKind::Message {
-        if given(out.get("content_type")).is_none() {
-            out.insert("content_type".into(), "message".into());
+        if out.get("content_type").is_none_or(Piece::is_null) {
+            out.put("content_type", "message".into());
         }
-        if let Some(cards) = out.get_mut("copied_cards") {
-            *cards = id_list(cards, soft_hex);
+        if let Some(cards) = out.get("copied_cards") {
+            let cards = id_list(&cards.value(), soft_hex);
+            out.put("copied_cards", cards);
         }
         if let Some(artifact) = out.remove("artifact_object_id") {
-            if let Some(id) = hex_id(&artifact, 16) {
-                out.insert("published_object_id".into(), Value::String(id));
+            if let Some(id) = artifact.hex_id(16) {
+                out.put("published_object_id", Value::String(id));
             }
         }
-        if let Some(note) = out.remove("note") {
+        if let Some(note) = out.get("note") {
             // a bad note mark: the message stays, plain
-            if let Some(n) = note.as_object() {
-                let mut n = n.clone();
-                let id = n
-                    .get("object_id")
-                    .and_then(|v| hex_id(v, 16))
-                    .map_or(Value::Null, Value::String);
-                n.insert("object_id".into(), id);
-                let n = Value::Object(n);
-                if note_ref_valid(&n) {
-                    out.insert("note".into(), n);
+            let note = match note.value() {
+                Value::Object(mut n) => {
+                    let id = n.get("object_id").and_then(|v| hex_id(v, 16));
+                    n.insert("object_id".into(), id.map_or(Value::Null, Value::String));
+                    Some(Value::Object(n)).filter(note_ref_valid)
+                }
+                _ => None,
+            };
+            match note {
+                Some(n) => out.put("note", n),
+                None => {
+                    out.remove("note");
                 }
             }
         }
     }
     if matches!(kind, BodyKind::Card | BodyKind::Artifact | BodyKind::Note) {
-        if let Some(prev) = given(out.get("previous_version_hash")) {
-            let Some(h) = hex_id(prev, 32) else {
+        if let Some(prev) = out.get("previous_version_hash").filter(|p| !p.is_null()) {
+            let Some(h) = prev.hex_id(32) else {
                 return bad("previous_version_hash is not a hash");
             };
-            out.insert("previous_version_hash".into(), Value::String(h));
+            out.put("previous_version_hash", Value::String(h));
         }
     }
     if kind == BodyKind::Card {
-        if let Some(v) = out
-            .get_mut("merged_into_object_id")
-            .filter(|v| !v.is_null())
-        {
-            *v = soft_hex(v, 16);
+        if let Some(v) = out.given("merged_into_object_id") {
+            out.put("merged_into_object_id", soft_hex(&v, 16));
         }
-        if let Some(v) = out
-            .get_mut("merged_from_object_ids")
-            .filter(|v| !v.is_null())
-        {
-            *v = id_list(v, soft_hex);
+        if let Some(v) = out.given("merged_from_object_ids") {
+            out.put("merged_from_object_ids", id_list(&v, soft_hex));
         }
-        if given(out.get("teaser")).is_some_and(|t| !teaser_valid(t)) {
+        let teaser_bad = match out.get("teaser").filter(|t| !t.is_null()) {
+            Some(t) => match t.plain_str() {
+                Some(text) => !teaser_text_valid(text),
+                None => !teaser_valid(&t.value()),
+            },
+            None => false,
+        };
+        if teaser_bad {
             out.remove("teaser"); // a bad teaser: the Desk falls back to the body
         }
-        if let Some(Value::Array(options)) = out.get("options") {
-            let plain = plain_options(options);
-            out.insert("options".into(), plain);
+        // (options in which `final` stands nowhere stay as they are)
+        let options = out.get("options").filter(|o| o.is_array());
+        let may_change = options.is_some_and(|o| {
+            let t = o.text();
+            t.contains('\\') || t.contains("\"final\"")
+        });
+        if may_change {
+            let plain = options.and_then(|o| plain_options_text(&o.text()));
+            match plain {
+                Some(text) => out.put_text("options", text),
+                None => return bad("options are not readable"),
+            }
         }
     }
     if kind == BodyKind::Artifact {
-        if let Some(until) = out.remove("shared_until") {
-            out.insert("released_until".into(), until);
+        if let Some(until) = out.get("shared_until").map(Piece::value) {
+            out.put("released_until", until);
+            out.remove("shared_until");
         }
     }
+    Ok(())
+}
+
+/// A board item or a register value, built whole, wire -> model.
+fn whole_from_wire(kind: BodyKind, b: &Fields) -> Result<Fields> {
+    if kind == BodyKind::BoardItem {
+        return board_from_wire(b);
+    }
+    let Some(name) = b.get("name").and_then(Value::as_str) else {
+        return bad("a register without a name");
+    };
+    let (key, value) = register_from_wire(name, b.get("value").unwrap_or(&Value::Null))?;
+    let lamport = b
+        .get("lamport")
+        .filter(|l| l.is_number())
+        .cloned()
+        .unwrap_or(0.into());
+    let mut out = Fields::new();
+    out.insert("name".into(), name.into());
+    out.insert("key".into(), Value::String(key));
+    out.insert("value".into(), value);
+    out.insert("lamport".into(), lamport);
     Ok(out)
 }
 
-/// A payload as one JSON object of a version this client reads: `Err(Decoded::NewerSchema)` above 2, `Err(Bad)` for
-/// what is no such object (no UTF-8 JSON object, a version that is no whole number of at least 2).
-fn parse(payload: &[u8]) -> std::result::Result<Fields, Decoded> {
-    // (a byte order mark is read past, as the web's TextDecoder does)
-    let payload = payload.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(payload);
-    let Ok(Value::Object(parsed)) = serde_json::from_slice::<Value>(payload) else {
+/// A payload's text: UTF-8, a byte order mark read past (as the web's TextDecoder does).
+fn payload_text(payload: &[u8]) -> Option<&str> {
+    std::str::from_utf8(payload.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(payload)).ok()
+}
+
+/// A payload as one JSON object of a version this client reads, built whole.
+fn parse(payload: &[u8]) -> std::result::Result<Fields, Decoded<String>> {
+    let Some(Ok(Value::Object(parsed))) = payload_text(payload).map(serde_json::from_str::<Value>)
+    else {
         return Err(Decoded::Bad);
     };
-    match parsed.get("schema_version") {
-        None => Ok(parsed),
-        Some(v) => match whole(v) {
-            Some(x) if x > SCHEMA_VERSION as f64 => Err(Decoded::NewerSchema),
-            Some(x) if x == SCHEMA_VERSION as f64 => Ok(parsed),
-            _ => Err(Decoded::Bad),
-        },
+    version_ok(parsed.get("schema_version"))?;
+    Ok(parsed)
+}
+
+/// A body's payload (the JSON the core opened) as the model's fields, as JSON text: what the apps take across the
+/// facade. [`Decoded::NewerSchema`] for a `schema_version` above 2, [`Decoded::Bad`] for what is no body of its
+/// kind. A register gives `{ name, key, value, lamport }`: `key` is the model's key for the wire's `name`.
+pub fn decode_body_text(kind: BodyKind, payload: &[u8]) -> Decoded<String> {
+    if matches!(kind, BodyKind::BoardItem | BodyKind::Register) {
+        return match decode_whole(kind, payload) {
+            Decoded::Body(m) => Decoded::Body(Value::Object(m).to_string()),
+            Decoded::NewerSchema => Decoded::NewerSchema,
+            Decoded::Bad => Decoded::Bad,
+        };
     }
+    let Some(Ok(mut body)) = payload_text(payload).map(serde_json::from_str::<Body>) else {
+        return Decoded::Bad;
+    };
+    let version = body.get("schema_version").filter(|v| v.text() != "2");
+    if let Err(not) = version_ok(version.map(Piece::value).as_ref()) {
+        return not;
+    }
+    match fields_from_wire(kind, &mut body) {
+        Ok(()) => Decoded::Body(body.write(payload.len())),
+        Err(_) => Decoded::Bad,
+    }
+}
+
+fn decode_whole(kind: BodyKind, payload: &[u8]) -> Decoded {
+    let parsed = match parse(payload) {
+        Ok(p) => p,
+        Err(Decoded::NewerSchema) => return Decoded::NewerSchema,
+        Err(_) => return Decoded::Bad,
+    };
+    if kind == BodyKind::BoardItem && ItemBody::decode(payload).is_err() {
+        return Decoded::Bad;
+    }
+    whole_from_wire(kind, &parsed).map_or(Decoded::Bad, Decoded::Body)
 }
 
 /// A body's payload (the JSON the core opened) as the model's fields; [`Decoded::NewerSchema`] for a
 /// `schema_version` above 2, [`Decoded::Bad`] for what is no body of its kind. A register gives
 /// `{ name, key, value, lamport }`: `key` is the model's key for the wire's `name`.
 pub fn decode_body(kind: BodyKind, payload: &[u8]) -> Decoded {
-    let parsed = match parse(payload) {
-        Ok(p) => p,
-        Err(d) => return d,
-    };
-    if kind == BodyKind::BoardItem && ItemBody::decode(payload).is_err() {
-        return Decoded::Bad;
+    if matches!(kind, BodyKind::BoardItem | BodyKind::Register) {
+        return decode_whole(kind, payload);
     }
-    match from_wire(kind, parsed) {
-        Ok(fields) => Decoded::Body(fields),
-        Err(_) => Decoded::Bad,
+    match decode_body_text(kind, payload) {
+        Decoded::Body(text) => serde_json::from_str(&text).map_or(Decoded::Bad, Decoded::Body),
+        Decoded::NewerSchema => Decoded::NewerSchema,
+        Decoded::Bad => Decoded::Bad,
     }
 }
 
@@ -1379,7 +1590,8 @@ pub fn decode_body(kind: BodyKind, payload: &[u8]) -> Decoded {
 pub fn parse_board_item(payload: &[u8]) -> Decoded {
     let parsed = match parse(payload) {
         Ok(p) => p,
-        Err(d) => return d,
+        Err(Decoded::NewerSchema) => return Decoded::NewerSchema,
+        Err(_) => return Decoded::Bad,
     };
     if ItemBody::decode(payload).is_err() || board_from_wire(&parsed).is_err() {
         return Decoded::Bad;

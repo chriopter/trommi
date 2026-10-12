@@ -1192,3 +1192,47 @@ export function hubAddress(text: string): string
 export function recoveryAnchor(recoveryCode: Uint8Array, room: Uint8Array, rows: Uint8Array[]): Anchor
 /** The hub's sign-in under the recovery code, for a device that is not yet a member. */
 export function recoverySignIn(recoveryCode: Uint8Array, room: Uint8Array, hub: string, challenge: Uint8Array): SignedHubAuth
+
+// ---- the body codec (client/src/codec.rs) -----------------------------------------------------------------------
+// The bodies of stored content (spec/v1.md 9.1) between the wire and the model. A kind is 'message', 'board_item',
+// 'card', 'note', 'artifact', 'answer', 'take_back', 'request', 'verdict' or 'register'. The model's side crosses as
+// JSON text. A body that cannot be written is refused with `bad-format`, its message beginning with the codec's own
+// code: `bad-argument: …` or `bad-format: …`.
+
+/** A register write as a draft takes it: the wire's name, and the value as JSON bytes (null deletes). */
+export interface RegisterWire {
+  name: string
+  value: Uint8Array | null
+}
+/** A body's payload as the model's fields: their JSON text (it begins with `{`), or 'newer_schema', or 'bad'. */
+export function bodyFromWire(kindName: string, payload: Uint8Array): string
+/** Several bodies at once: one JSON list of the model's fields (an object) or 'newer_schema' or 'bad' each. */
+export function bodiesFromWire(kindNames: string[], payloads: Uint8Array[]): string
+/** A draft's fields (JSON, the model's names) as the payload text the core seals, with `schema_version` 2. */
+export function bodyToWire(kindName: string, fieldsJson: string): string
+/** A board item's payload in the wire's own form, checked: its JSON text, or 'newer_schema', or 'bad'. */
+export function boardItemParse(payload: Uint8Array): string
+/** A register write for the model's key and value (JSON; 'null' deletes). */
+export function registerToWire(key: string, valueJson: string): RegisterWire
+/** A register's name and value (JSON) as they came, as `{ key, value }` (JSON) in the model's form. */
+export function registerFromWire(name: string, valueJson: string): string
+/** A register's name on the wire as its key in the model. */
+export function registerKeyOf(name: string): string
+/** A register's key in the model as its name on the wire. */
+export function registerNameOf(key: string): string
+/** The files a body (the model's fields, JSON) names, for the envelope's header: none twice. */
+export function bodyFileIds(kindName: string, fieldsJson: string): Uint8Array[]
+/** A wire attachment reference (JSON) as the model keeps it (JSON). */
+export function attachmentFromWire(attachmentJson: string): string
+/** A model attachment reference (JSON) as a body carries it (JSON). */
+export function attachmentToWire(attachmentJson: string): string
+/** One shape as the wire carries it (JSON; `withId` in a snapshot file) as the model's entry (JSON). */
+export function boardEntryFromWire(entryJson: string, withId: boolean): string
+/** A shape id of the wire as the model writes it; null for no such id. */
+export function shapeIdFromWire(id: string): string | null
+/** A shape id of the model as the wire writes it; null for no such id. */
+export function shapeIdToWire(id: string): string | null
+/** The `piece` of a stroke piece message as the model's form (JSON); null for one the core would refuse. */
+export function pieceFromWire(piece: Uint8Array): string | null
+/** The model's piece (JSON) as the `piece` a stroke piece message carries. */
+export function pieceToWire(pieceJson: string): Uint8Array

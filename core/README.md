@@ -6,8 +6,9 @@ Production code only; every scenario, conformance and vector test lives in [`tes
 root.
 
 Above it sits the client core ([`client/`](../client/README.md), the crate `trommi-client-core`): the Desk's rules
-that every app shares. It knows nothing of MLS or envelopes; the apps hand it plain facts (a card's state, urgency,
-version, session). Both crates reach the apps through one facade, `core/swift/src` (the crate `trommi_core_ffi`):
+that every app shares, and the body codec (spec 9.1, wire ↔ model). It knows nothing of MLS or envelopes; the apps
+hand it plain facts (a card's state, urgency, version, session) and the bodies the core opened. It builds on this
+crate for ids and the board items' rules. Both crates reach the apps through one facade, `core/swift/src` (the crate `trommi_core_ffi`):
 the protocol as `CoreDevice` and the free calls, the client core as `ClientDesk` (`client.rs`). `core/wasm` binds that
 facade for the browser, UniFFI for Swift. The connector and the hub use `trommi-core` directly.
 
