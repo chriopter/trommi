@@ -1,7 +1,7 @@
 // The pictures of the apps on the site and in the README (public/images/): real screenshots of the demo room (the
 // made-up Fernly of demo/data) in the device frames of dev/showcase.html, taken in headless Chromium (dev/cdp.mjs) at
 // 2x on a transparent page, then written as WebP and as a PNG of 256 colours with ImageMagick (`magick` on the PATH).
-// The README's gallery of four phones is only a PNG and goes to .github/readme/ (the site does not show it).
+// The README's gallery of four phones is only a PNG, light only, and goes to .github/readme/ (the site does not show it).
 //
 //   node site/dev/showcase.mjs RAW
 //
@@ -31,9 +31,9 @@ const page = pathToFileURL(path.join(here, 'showcase.html')).href
 const jobs = []
 for (const t of ['light', 'dark']) {
   jobs.push([`hero-${t}`, { layout: 'hero', laptop: shot(`web-desk-${t}`), phone: shot(`ios-card-${t}`) }, 1100, 700])
-  for (const s of ['desk', 'card', 'chat', 'scribble']) jobs.push([`phone-${s}-${t}`, { layout: 'phone', phone: shot(`ios-${s}-${t}`) }, 300, 640])
-  jobs.push([`gallery-${t}`, { layout: 'gallery', phones: ['desk', 'card', 'chat', 'scribble'].map(s => shot(`ios-${s}-${t}`)).join(',') }, 1100, 560])
 }
+// the README shows its pictures light, on a light and on a dark GitHub alike
+jobs.push(['gallery-light', { layout: 'gallery', phones: ['desk', 'card', 'chat', 'scribble'].map(s => shot(`ios-${s}-light`)).join(',') }, 1100, 560])
 
 const MAX = 300 * 1024
 let bad = 0
