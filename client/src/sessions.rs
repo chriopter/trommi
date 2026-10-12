@@ -250,10 +250,12 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
         let closed_child = truthy(p.get("closed_at"))
             && truthy(p.get("parent_session"))
             && s.open_card_ids.is_empty();
+        // (the person's choice; else a helper its agent closed, or a group archived at the hub, by its agent or on a
+        // device of the person: also when this device missed the close itself, as it reads archived groups lazily)
         let chosen = if set.contains_key("archived") {
             truthy(set.get("archived"))
         } else {
-            closed_child
+            closed_child || s.group_archived
         };
         let back = s.is_online && s.is_active && s.parent_session_id.is_none() && parent.is_none();
         let dev = s.agent_device_id.as_deref().and_then(|d| m.members.get(d));
@@ -301,7 +303,7 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
             parent,
             archived: chosen && !back,
             replaced: false,
-            removed: !s.is_active,
+            removed: !s.is_active && !s.group_archived,
             position: position.unwrap_or(i as f64),
             placed: position.is_some(),
             desk: text(set.get("desk")).unwrap_or("").to_string(),
@@ -604,5 +606,56 @@ mod tests {
             ),
             ("Mine", "Core", 4.0, true)
         );
+    }
+
+    /// A helper whose group the hub archived (its agent closed it) is in the archive on every device, also on one
+    /// that missed the close itself (it reads archived groups lazily: the torture's iPhones showed them).
+    #[test]
+    fn a_helper_whose_group_is_archived_is_archived() {
+        let mut m = Model::new();
+        member(&mut m, D0, 3, true);
+        session(&mut m, S0, D0, true, None, 0);
+        session(&mut m, S2, D0, true, Some(S0), 1);
+        let s = m.sessions.get_mut(S2).unwrap();
+        s.group_archived = true;
+        s.is_active = false;
+        s.card_ids = vec!["c0".into()];
+        assert_eq!(shown(&m), vec![S0.to_string()]);
+        let row = session_list(&m, false).into_iter().find(|r| r.key == S2).unwrap();
+        assert!(row.archived && !row.removed);
+        // fetched back by the person: it shows
+        m.human.insert(
+            format!("session/{S2}"),
+            HumanRegister {
+                value: json!({ "archived": false }),
+                ..Default::default()
+            },
+        );
+        assert_eq!(shown(&m), vec![S0.to_string(), S2.to_string()]);
+    }
+
+    /// Two devices found an agent's session at once: the hub refuses the second, its core forgets the group. On that
+    /// device the session that held nothing is gone, as on every other device.
+    #[test]
+    fn a_founding_the_hub_refused_leaves_no_session() {
+        use crate::model::change::Change;
+        use crate::model::groups::{GroupIn, SessionOfGroup};
+        let mut m = Model::new();
+        m.my_device_id = Some("ee".repeat(16));
+        let me = "ee".repeat(16);
+        let room = GroupIn { group: "r".into(), session: None, leaves: vec![me.clone()], disallowed: 0, archived: false, epoch: 1 };
+        let mine = GroupIn {
+            group: "g".into(),
+            session: Some(SessionOfGroup { session_id: S1.into(), parent: None }),
+            leaves: vec![me.clone(), D0.into()],
+            disallowed: 0,
+            archived: false,
+            epoch: 0,
+        };
+        let mut c = Change::new();
+        m.apply_groups(&[room.clone(), mine], None, &mut c);
+        assert!(m.sessions.contains_key(S1));
+        m.apply_groups(&[room], None, &mut c);
+        assert!(!m.sessions.contains_key(S1), "forgotten with its group");
     }
 }

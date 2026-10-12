@@ -414,12 +414,13 @@ impl Model {
             s.is_active = !g.archived && speaker.is_some();
         }
         // A session whose group this device holds no more (it left, was removed, or a founding of its own the hub
-        // refused and the core forgot): not held here. One that holds nothing (a refused founding) is no session at
-        // all, as on a device that never saw it.
+        // refused and the core forgot): not held here. A founding that never got past its epoch 0 and holds nothing
+        // (the hub refused it: another device founded that agent's session first) is no session at all, as on a
+        // device that never saw it.
         let empty: Vec<String> = self
             .sessions
             .values()
-            .filter(|s| s.group_id.is_some() && !live.contains(&s.session_id))
+            .filter(|s| s.group_id.is_some() && !live.contains(&s.session_id) && s.session_key_epoch == 0)
             .filter(|s| s.card_ids.is_empty() && s.registers.is_empty())
             .filter(|s| self.timelines.get(&s.timeline_key).is_none_or(|t| t.item_count == 0 && t.items.is_empty()))
             .map(|s| s.session_id.clone())
