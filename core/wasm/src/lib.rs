@@ -19,7 +19,7 @@
 use js_sys::Array;
 use trommi_core_ffi as facade;
 use trommi_core_ffi::js::{FromJs, ToJs};
-use trommi_core_ffi::{CoreDevice, CoreError, FileDecryptor, FileEncryptor};
+use trommi_core_ffi::{ClientDesk, CoreDevice, CoreError, FileDecryptor, FileEncryptor};
 use wasm_bindgen::prelude::*;
 
 /// What every export returns: a pair. `[null, value]` when the call went through, `[code, message]` when the
@@ -302,6 +302,31 @@ methods!(RawFileEncryptor {
     file_id();
     update(plaintext);
     finish();
+});
+
+/// The client core's Desk (EXPERIMENT).
+#[wasm_bindgen]
+pub struct RawClientDesk(ClientDesk);
+
+#[wasm_bindgen]
+impl RawClientDesk {
+    /// An empty Desk.
+    pub fn create() -> Answer {
+        made(Ok::<_, CoreError>(RawClientDesk(ClientDesk::new())))
+    }
+}
+
+methods!(RawClientDesk {
+    put_cards(cards);
+    put_requests(requests);
+    remove(object_ids);
+    clear();
+    set_snooze(card, value, at);
+    set_archived(session_ids);
+    set_listing(at, listed);
+    forget_listing();
+    set_hold_all(hold);
+    project(now_ms);
 });
 
 /// The facade's file decryptor.

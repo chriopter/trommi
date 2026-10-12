@@ -995,6 +995,82 @@ export class FileEncryptor {
   close(): void
 }
 
+/** A card as the Desk needs it. `state`: 1 open, 2 answered, 3 closed; `urgency`: 3 critical, 2 high, 1 normal, 0 low. */
+export interface DeskCardIn {
+  objectId: string
+  sessionId: string | null
+  state: number
+  urgency: number
+  createdAt: number
+  agentDeviceId: string
+  versionChange: number
+  newest: number
+  inRevision: number | null
+  read: boolean
+}
+/** A permission request as the Desk needs it; `expiresAt` 0: not known (its body not read). */
+export interface DeskRequestIn {
+  objectId: string
+  sessionId: string | null
+  pending: boolean
+  envelopeNumber: number
+  newest: number
+  sentAt: number
+  expiresAt: number
+  read: boolean
+}
+/** One object the hub's Desk lists as open, with the change of its current version. */
+export interface DeskListed {
+  objectId: string
+  versionChange: number
+}
+/** One edit of the stack: at `at`, `gone` ids leave and `ids` come. */
+export interface DeskStackOp {
+  at: number
+  gone: number
+  ids: string[]
+}
+/** A session's open cards (not held), by the time they were asked; empty: none any more. */
+export interface DeskSessionOpen {
+  sessionId: string
+  cardIds: string[]
+}
+/** One edit of a session's list of open cards: at `at`, `gone` ids leave and `ids` come. */
+export interface DeskSessionOp {
+  sessionId: string
+  at: number
+  gone: number
+  ids: string[]
+}
+/** What changed of the Desk since the last answer (client/src/desk.rs `Delta`). */
+export interface DeskDelta {
+  whole: boolean
+  stack: string[]
+  stackOps: DeskStackOp[]
+  permissionsOpen: string[] | null
+  held: string[]
+  unheld: string[]
+  expired: string[]
+  handBackOver: string[]
+  sessionOpen: DeskSessionOpen[]
+  sessionOps: DeskSessionOp[]
+  nextWake: number
+}
+/** The client core's Desk (client/src/desk.rs): the app tells it what changed and asks what changed of the Desk. */
+export class ClientDesk {
+  constructor()
+  putCards(cards: DeskCardIn[]): void
+  putRequests(requests: DeskRequestIn[]): void
+  remove(objectIds: string[]): void
+  clear(): void
+  setSnooze(card: string, value: string | null, at: number): void
+  setArchived(sessionIds: string[]): void
+  setListing(at: number, listed: DeskListed[]): void
+  forgetListing(): void
+  setHoldAll(hold: boolean): void
+  project(nowMs: number): DeskDelta
+}
+
 /** Decrypts a stored file piece by piece. What `update` handed out counts only once `finish` succeeded. */
 export class FileDecryptor {
   constructor(file: FileRef)

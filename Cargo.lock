@@ -3051,6 +3051,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trommi-client-core"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "trommi-connector"
 version = "0.2.0"
 dependencies = [
@@ -3100,6 +3108,9 @@ name = "trommi-core-swift"
 version = "0.0.0"
 dependencies = [
  "js-sys",
+ "serde",
+ "serde_json",
+ "trommi-client-core",
  "trommi-core",
  "uniffi",
  "wasm-bindgen",

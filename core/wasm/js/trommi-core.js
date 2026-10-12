@@ -377,6 +377,21 @@ export class FileDecryptor extends FileObject {
   finish() { return this[CALL]('finish', [], true) }
 }
 
+/** The client core's Desk (client/src/desk.rs): the app tells it what changed and asks what changed of the Desk. */
+export class ClientDesk extends FileObject {
+  constructor() { super(call(raw.RawClientDesk, 'create', [])) }
+  putCards(cards) { return this[CALL]('put_cards', [cards]) }
+  putRequests(requests) { return this[CALL]('put_requests', [requests]) }
+  remove(objectIds) { return this[CALL]('remove', [objectIds]) }
+  clear() { return this[CALL]('clear', []) }
+  setSnooze(card, value, at) { return this[CALL]('set_snooze', [card, value, at]) }
+  setArchived(sessionIds) { return this[CALL]('set_archived', [sessionIds]) }
+  setListing(at, listed) { return this[CALL]('set_listing', [at, listed]) }
+  forgetListing() { return this[CALL]('forget_listing', []) }
+  setHoldAll(hold) { return this[CALL]('set_hold_all', [hold]) }
+  project(nowMs) { return this[CALL]('project', [nowMs]) }
+}
+
 // ---- everything without state -------------------------------------------------------------------------------------
 
 const plain = name => (...args) => callWith(raw, name, args)

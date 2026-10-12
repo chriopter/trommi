@@ -241,6 +241,10 @@ pub struct Core {
     reread_asked: Vec<GroupId>,
     /// Groups a re-admission was asked for in this process.
     asked_readmit: Vec<GroupId>,
+    /// The Welcomes as fetched for the batch of items being processed: asked for once per batch (a page of the
+    /// log, a burst of the stream), however many Commits of groups not held it brings (the client core's load
+    /// rule, client/src/plan.rs).
+    welcomes_batch: Option<Vec<Value>>,
     /// Requests of this device the hub voided or refused for good, by outbox id (of an envelope that was
     /// sealed again: the first one's).
     failed: BTreeMap<u64, Fault>,
@@ -557,6 +561,7 @@ impl Client {
                 reread_stored: Vec::new(),
                 reread_asked: Vec::new(),
                 asked_readmit: Vec::new(),
+                welcomes_batch: None,
                 failed: BTreeMap::new(),
                 replaced: BTreeMap::new(),
                 findings_said: 0,
@@ -1430,7 +1435,16 @@ impl Client {
     }
 
     async fn take_welcomes_now(&self, core: &mut Core, only: Option<GroupId>) -> Result<()> {
-        let rows = self.welcome_rows().await?;
+        // (for a Commit of a group not held, within a batch: the batch's one answer)
+        let rows = match (&only, &core.welcomes_batch) {
+            (Some(_), Some(rows)) => rows.clone(),
+            (Some(_), None) => {
+                let rows = self.welcome_rows().await?;
+                core.welcomes_batch = Some(rows.clone());
+                rows
+            }
+            (None, _) => self.welcome_rows().await?,
+        };
         let room = self.room;
         let mut joined_any = false;
         for row in rows {
@@ -1677,6 +1691,7 @@ impl Client {
         if core.halted.is_some() {
             return Ok(commands);
         }
+        core.welcomes_batch = None;
         for item in items {
             let Some(change) = item.get("change").and_then(Value::as_u64) else {
                 continue;

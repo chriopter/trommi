@@ -1,0 +1,10 @@
+[package]
+name = "trommi-client-core"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+description = "The client core: the board and Desk model, its settle and hand-back rules, the catch-up plan and the store interface, shared by the web app (wasm), the iOS app (UniFFI) and the Linux app. No IO: hosts fetch, the core decides."
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"

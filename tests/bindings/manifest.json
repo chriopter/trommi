@@ -525,6 +525,104 @@
     }
   },
   "objects": {
+    "ClientDesk": {
+      "new": {
+        "arguments": [],
+        "returns": "self"
+      },
+      "putCards": {
+        "arguments": [
+          {
+            "name": "cards",
+            "type": "list<DeskCardIn>"
+          }
+        ],
+        "returns": "void"
+      },
+      "putRequests": {
+        "arguments": [
+          {
+            "name": "requests",
+            "type": "list<DeskRequestIn>"
+          }
+        ],
+        "returns": "void"
+      },
+      "remove": {
+        "arguments": [
+          {
+            "name": "objectIds",
+            "type": "list<text>"
+          }
+        ],
+        "returns": "void"
+      },
+      "clear": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "setSnooze": {
+        "arguments": [
+          {
+            "name": "card",
+            "type": "text"
+          },
+          {
+            "name": "value",
+            "type": "optional<text>"
+          },
+          {
+            "name": "at",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "setArchived": {
+        "arguments": [
+          {
+            "name": "sessionIds",
+            "type": "list<text>"
+          }
+        ],
+        "returns": "void"
+      },
+      "setListing": {
+        "arguments": [
+          {
+            "name": "at",
+            "type": "number"
+          },
+          {
+            "name": "listed",
+            "type": "list<DeskListed>"
+          }
+        ],
+        "returns": "void"
+      },
+      "forgetListing": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "setHoldAll": {
+        "arguments": [
+          {
+            "name": "hold",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "project": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "DeskDelta"
+      }
+    },
     "CoreDevice": {
       "create": {
         "arguments": [
@@ -1924,6 +2022,60 @@
     "AccountName": {
       "email": "optional<text>",
       "id": "optional<text>"
+    },
+    "DeskCardIn": {
+      "objectId": "text",
+      "sessionId": "optional<text>",
+      "state": "number",
+      "urgency": "number",
+      "createdAt": "number",
+      "agentDeviceId": "text",
+      "versionChange": "number",
+      "newest": "number",
+      "inRevision": "optional<number>",
+      "read": "bool"
+    },
+    "DeskRequestIn": {
+      "objectId": "text",
+      "sessionId": "optional<text>",
+      "pending": "bool",
+      "envelopeNumber": "number",
+      "newest": "number",
+      "sentAt": "number",
+      "expiresAt": "number",
+      "read": "bool"
+    },
+    "DeskListed": {
+      "objectId": "text",
+      "versionChange": "number"
+    },
+    "DeskStackOp": {
+      "at": "number",
+      "gone": "number",
+      "ids": "list<text>"
+    },
+    "DeskSessionOpen": {
+      "sessionId": "text",
+      "cardIds": "list<text>"
+    },
+    "DeskSessionOp": {
+      "sessionId": "text",
+      "at": "number",
+      "gone": "number",
+      "ids": "list<text>"
+    },
+    "DeskDelta": {
+      "whole": "bool",
+      "stack": "list<text>",
+      "stackOps": "list<DeskStackOp>",
+      "permissionsOpen": "optional<list<text>>",
+      "held": "list<text>",
+      "unheld": "list<text>",
+      "expired": "list<text>",
+      "handBackOver": "list<text>",
+      "sessionOpen": "list<DeskSessionOpen>",
+      "sessionOps": "list<DeskSessionOp>",
+      "nextWake": "number"
     },
     "Draft": {
       "kind": "DraftKind",
