@@ -30,7 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const DEAF_HINT: &str = "This Claude Code session was started without --dangerously-load-development-channels server:trommi, so Claude Code drops the board's live events (chat, decisions) before you see them. Until the human restarts it with that flag (e.g. `claude --resume <session> --dangerously-load-development-channels server:trommi`), the events that came in are attached to your next tool result. Tell the human so once, with reply.";
+pub const DEAF_HINT: &str = "Claude Code does not show this server's live channel events in this session (that needs no restart and no flag): board events (chat, decisions) reach you through the Trommi monitor, whose lines \"Trommi · …\" say to call inbox, and the events that came in are attached to your next Trommi tool result.";
 pub const CODEX_HINT: &str = "Codex shows no board events by itself and this session cannot be woken yet: they reach you with your next trommi tool call or inbox. Call inbox at the start and at the end of every turn. Tell the human once, with reply, that board messages reach you on your next turn.";
 pub const OTHERS_NOTE: &str = "(This waited in the connector for another agent session of this folder, which held the key before this one.)";
 
@@ -2405,9 +2405,6 @@ pub async fn main_server() {
     } else {
         Some(MonitorFeed::new(ppid()))
     };
-    if !heard && !crate::host::is_codex() {
-        eprintln!("[trommi] {DEAF_HINT}");
-    }
     let member = Member::new(cfg.clone());
     let conn = Arc::new(Conn {
         cfg: cfg.clone(),
