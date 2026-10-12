@@ -1316,6 +1316,24 @@
       "snapshot": {
         "arguments": [],
         "returns": "text"
+      },
+      "sessionList": {
+        "arguments": [
+          {
+            "name": "reading",
+            "type": "bool"
+          }
+        ],
+        "returns": "text"
+      },
+      "setReading": {
+        "arguments": [
+          {
+            "name": "reading",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
       }
     },
     "CoreDevice": {

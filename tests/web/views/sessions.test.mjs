@@ -11,6 +11,7 @@ import { emptyModel } from '../../../app/web/core/model-shape.ts'
 import { sessionOf } from '../model/factory.mjs'
 import { BoardState } from '../../../app/web/public/app.mjs'
 import { deletionOf, register } from '../../../app/web/public/agents.mjs'
+import { withSessions } from './core-sessions.mjs'
 
 const D0 = 'd0'.repeat(16), D1 = 'd1'.repeat(16), D2 = 'd2'.repeat(16)
 const S0 = '50'.repeat(16), S1 = '51'.repeat(16), S2 = '52'.repeat(16), H0 = '60'.repeat(16)
@@ -36,7 +37,7 @@ function pairedTwice({ open = 0, settings = null } = {}) {
   session(m, S1, D1, { online: true })
   return m
 }
-const agentsOf = m => new BoardState({ model: m }).update().agents
+const agentsOf = m => new BoardState({ model: withSessions(m) }).update().agents
 const shown = m => agentsOf(m).filter(a => !a.archived).map(a => a.id)
 
 test('a connector paired again in its folder shows as one entry: the connected session, the old one replaced', () => {

@@ -189,6 +189,11 @@ final class SpeedTests: XCTestCase {
     let older = two.first!, newer = two.last!
     for s in two { s.agentSessionId = "same-agent" }
     older.lastActivityAt = 1_000; newer.lastActivityAt = 2_000
+    // (the client core's list names both by that id: client/src/sessions.rs, a_duplicate_agent_session_id_is_held_by_the_newest)
+    b.sessionList = b.sessionList.map { r in
+      guard let k = r["key"].string, two.contains(where: { $0.sessionId == k }), case .obj(var o) = r else { return r }
+      o["id"] = .str("same-agent"); return .obj(o)
+    }
     let d = DeskModel(board: b)
     XCTAssertEqual(d.byAgent["same-agent"]?.sessionId, newer.sessionId, "the newest session holds the id")
     XCTAssertEqual(d.sessionKey(of: "same-agent"), newer.sessionId)

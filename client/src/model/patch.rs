@@ -136,6 +136,18 @@ impl Model {
                 json!(self.open_permission_ids),
             );
         }
+        // The session list every app shows (sessions.rs), whenever something it is made from may have changed.
+        if change.room
+            || change.members
+            || !change.sessions.is_empty()
+            || !change.registers.is_empty()
+        {
+            p.insert(
+                "session_list".into(),
+                serde_json::to_value(crate::sessions::session_list(self, self.reading))
+                    .unwrap_or(Value::Null),
+            );
+        }
         let items: Vec<Value> = change
             .items
             .iter()

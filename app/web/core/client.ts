@@ -362,7 +362,7 @@ export class Client {
     const ch = this.change
     if (this.model.room.last_envelope_number !== this.engine.position) { this.model.room.last_envelope_number = this.engine.position; ch.room = true }
     const reading = this.readingHolds > 0 || this.rebuild !== null || this.engine.rescanPending
-    if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true }
+    if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true; this.board.setReading(reading) }
     this.fromBoard(ch)
     // (the engine moves its cursor only after an item's effects were reported: at any publish the model holds
     // everything up to it, and this change carries what the cache lacks of it)

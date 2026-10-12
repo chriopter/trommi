@@ -10,6 +10,7 @@ import { sessionOf } from '../model/factory.mjs'
 import { BoardState } from '../../../app/web/public/app.mjs'
 import { usageMark, usageFull, usageMeters, usagePlan, usageReset, agentsOf } from '../../../app/web/public/ui.mjs'
 import { agentsMain } from '../../../app/web/public/agents.mjs'
+import { withSessions } from './core-sessions.mjs'
 
 process.env.TZ = 'UTC'
 const NOW = Date.UTC(2026, 9, 11, 8, 30)   // Sun 11 Oct 2026 08:30
@@ -74,7 +75,7 @@ test('every session of an agent carries its main session\'s account; a helper of
   s(S1, D1, { is_main: true, account: claude })
   s(S2, D1, { is_main: false, parent_session: S1 }, S1)        // a helper session of the same connector
   s(S3, D2, { is_main: false, parent_session: S1 }, S1)        // a helper that is a device of its own
-  const agents = new BoardState({ model: m }).update().agents
+  const agents = new BoardState({ model: withSessions(m) }).update().agents
   for (const a of agents) assert.deepEqual(a.account, claude, a.id)
   const page = String(agentsMain(agentsOf(agents, m.members), '', () => 'Personal'))
   assert.equal((page.match(/class="use-full"/g) ?? []).length, 1)

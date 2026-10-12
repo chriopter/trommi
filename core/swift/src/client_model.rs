@@ -601,4 +601,21 @@ impl ClientModel {
     pub fn snapshot(&self) -> Result<String, CoreError> {
         self.with(|m, _| Ok(m.snapshot().to_string()))
     }
+
+    /// The room is being read (`reading`) or not: names a session without a profile "Loading …" meanwhile.
+    pub fn set_reading(&self, reading: bool) -> Result<(), CoreError> {
+        self.with(|m, c| {
+            if m.reading != reading {
+                m.reading = reading;
+                c.room = true;
+            }
+            Ok(())
+        })
+    }
+
+    /// The session list every app shows (client/src/sessions.rs), as JSON: one entry per session, in order, with its
+    /// name, online or gone, archived, parent. `reading`: the room is still being read.
+    pub fn session_list(&self, reading: bool) -> Result<String, CoreError> {
+        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::sessions::session_list(m, reading)).unwrap_or_default()))
+    }
 }

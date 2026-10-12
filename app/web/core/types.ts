@@ -516,6 +516,8 @@ export interface Model {
   stack: Hex[]
   open_permission_ids: Hex[]
   newer: Newer
+  /** The session list every device shows, as the client core makes it (client/src/sessions.rs). */
+  session_list?: SessionRow[]
   /** What model.ts keeps for itself (echoes, the projection's sort state, device names): never travels, never rendered. */
   _builder?: unknown
 }
@@ -539,4 +541,15 @@ export interface Change {
   room: boolean
   /** Exactly the items added or replaced in this batch, by timeline key. */
   items: Map<string, TimelineItem[]>
+}
+
+/** One entry of the session list (client/src/sessions.rs `SessionRow`). */
+export interface SessionRow {
+  id: string; key: string; session_id: string | null; agent_device_id: string | null
+  name: string; given: string; label: string; icon: string
+  online: boolean; offline_since: number | null
+  parent: string | null; parent_key: string | null
+  archived: boolean; replaced: boolean; removed: boolean
+  position: number; placed: boolean; desk: string; starred: boolean; main: boolean; own: boolean
+  waiting: number; fetched: boolean; last_activity_at: number
 }

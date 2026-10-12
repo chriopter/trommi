@@ -10,7 +10,7 @@
 // Every record the core changes is named in its change (that is the contract the app renders by); what the builder
 // keeps for itself (model._builder: echoes, the projection's sort state) does not travel.
 import { emptyChange, emptyModel } from './model-shape.ts'
-import type { Alert, Card, Change, HumanRegister, Invite, Member, Model, Newer, Note, OutboxItem, PermissionRequest, Published, Room, Session, Timeline, TimelineItem } from './types.ts'
+import type { Alert, Card, Change, HumanRegister, Invite, Member, Model, Newer, Note, OutboxItem, PermissionRequest, Published, Room, Session, SessionRow, Timeline, TimelineItem } from './types.ts'
 
 type Entries<V> = [string, V | null][]
 type ItemKey = number | string
@@ -36,6 +36,8 @@ export interface ModelPatch {
   outbox?: OutboxItem[]
   stack?: string[]
   open_permission_ids?: string[]
+  /** The session list (client/src/sessions.rs), whenever it may have changed. */
+  session_list?: SessionRow[]
   change: PlainChange
   extra?: Record<string, unknown>
 }
@@ -84,6 +86,8 @@ export function patchOf(model: Model, change: Change, extra?: Record<string, unk
   if (change.alerts) p.alerts = model.alerts
   if (change.outbox) p.outbox = model.outbox
   if (change.stack) { p.stack = model.stack; p.open_permission_ids = model.open_permission_ids }
+  // (the session list, whenever something it is made from may have changed: the core's own rule, patch.rs)
+  if (model.session_list && (change.room || change.members || change.sessions.size || change.registers.size)) p.session_list = model.session_list
   if (extra) p.extra = extra
   return p
 }
@@ -136,6 +140,7 @@ function slotOf(model: Model, key: string): { map: Map<string, unknown>; id: str
 export function applyPatch(m: Model, p: ModelPatch): Change {
   assignInPlace(m.room, { ...m.room, ...p.room })   // (fields the page set on its own, the account's, stay)
   if (p.newer) m.newer = p.newer
+  if (p.session_list) m.session_list = p.session_list
   if (p.members) {
     const keep = new Set(p.members.map(([id]) => id))
     for (const id of [...m.members.keys()]) if (!keep.has(id)) m.members.delete(id)

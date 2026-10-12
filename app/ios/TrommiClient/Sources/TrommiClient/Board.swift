@@ -460,6 +460,9 @@ public final class Board {
   public var alerts: [BoardAlert] = []
   public var stack: [String] = []
   public var openPermissionIds: [String] = []
+  /** The session list every device of the person shows (client/src/sessions.rs, one entry per session, in order):
+   *  which sessions, their names, online or gone, archived, their parents. DeskModel draws it as it comes. */
+  public internal(set) var sessionList: [JV] = []
   /** Open here, settled at the hub (or held while the app waits for the hub's first list): off the Desk. */
   public internal(set) var held: Set<String> = []
   /** What a newer client wrote that this version cannot show: how many, what, the newest. */
@@ -487,7 +490,7 @@ public final class Board {
     b.lastEnvelopeNumber = lastEnvelopeNumber; b.connection = connection; b.recoveryKey = recoveryKey
     b.members = members; b.sessions = sessions; b.cards = cards; b.permissions = permissions; b.notes = notes
     b.published = published; b.timelines = timelines; b.human = human; b.alerts = alerts
-    b.stack = stack; b.openPermissionIds = openPermissionIds; b.held = held
+    b.stack = stack; b.openPermissionIds = openPermissionIds; b.held = held; b.sessionList = sessionList
     b.newerCount = newerCount; b.newerWhat = newerWhat; b.newerEnvelope = newerEnvelope; b.deviceRegisters = deviceRegisters
     b.deskWaiting = deskWaiting
     return b
@@ -517,7 +520,7 @@ public final class Board {
   public func reset() {
     lastEnvelopeNumber = 0
     sessions = [:]; cards = [:]; permissions = [:]; notes = [:]; published = [:]; timelines = [:]; members = [:]
-    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; held = []
+    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; held = []; sessionList = []
     newerCount = 0; newerWhat = []; newerEnvelope = 0; deviceRegisters = [:]
     engine = ClientModel(myDeviceId: myDeviceId ?? "")
     try? engine.setWindowsOpen(open: true)

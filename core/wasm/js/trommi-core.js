@@ -425,6 +425,8 @@ export class ClientModel extends FileObject {
   noteNewer(what, envelopeNumber) { return this[CALL]('note_newer', [what, envelopeNumber]) }
   finish(nowMs) { return this[CALL]('finish', [nowMs]) }
   snapshot() { return this[CALL]('snapshot', []) }
+  sessionList(reading) { return this[CALL]('session_list', [reading]) }
+  setReading(reading) { return this[CALL]('set_reading', [reading]) }
   touchAll() { return this[CALL]('touch_all', []) }
   applyCardDeedsJson(received) { return this[CALL]('apply_card_deeds_json', [received]) }
   applyGroupsJson(groups, roles) { return this[CALL]('apply_groups_json', [groups, roles]) }

@@ -257,6 +257,8 @@ extension Board {
       alerts = a.map { BoardAlert(alertId: str($0["alert_id"]), code: str($0["code"]), message: str($0["message"]), envelopeNumber: optInt($0["envelope_number"]),
                                    senderDeviceId: $0["sender_device_id"].string, at: u64($0["at"]), source: $0["source"].string ?? "local") }
     }
+    // the session list every device shows, as the client core makes it (client/src/sessions.rs)
+    if let l = p["session_list"].array { sessionList = l }
     if let s = p["stack"].array { stack = s.compactMap { $0.string } }
     if let o = p["open_permission_ids"].array { openPermissionIds = o.compactMap { $0.string } }
     held = Set(cards.values.filter { $0.catchingUp }.map { $0.objectId } + permissions.values.filter { $0.catchingUp }.map { $0.objectId })

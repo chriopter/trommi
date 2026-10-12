@@ -1110,6 +1110,10 @@ export class ClientModel {
   noteNewer(what: string, envelopeNumber: number | null): void
   finish(nowMs: number): string
   snapshot(): string
+  /** The session list every app shows (client/src/sessions.rs), JSON: `SessionRow[]` in order. */
+  sessionList(reading: boolean): string
+  /** The room is being read or not (the session list names a session without a profile "Loading …" meanwhile). */
+  setReading(reading: boolean): void
   touchAll(): void
   applyCardDeedsJson(received: string): void
   applyGroupsJson(groups: string, roles: string): void

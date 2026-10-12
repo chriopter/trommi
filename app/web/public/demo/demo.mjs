@@ -34,6 +34,35 @@ const noteOf = n => Object.assign(n, { version_hashes: n.version_hashes ?? (n.ve
 const boardItems = items => items.map(it => (it.content?.content_type === 'strokes' && it.content.strokes?.some(e => e.attachment && !(e.attachment.file_key && e.attachment.sha256))
   ? { ...it, content: { ...it.content, strokes: it.content.strokes.map(e => (e.attachment ? { ...e, attachment: keyed(e.attachment) } : e)) } } : it))
 
+/**
+ * The session list of the mock room, in the shape of the client core's (client/src/sessions.rs `SessionRow`): the demo
+ * has no core, and its sessions are a fixture's, so the plain reading of it is enough here: the person's label, else
+ * the agent's name; archived as the person set it; in the person's order, else the fixture's; the parent named.
+ */
+function demoSessions(m) {
+  const list = [...m.sessions.values()]
+  const idOf = s => (s.agent_session_id && !/^[0-9a-f]{12,}$/.test(s.agent_session_id) ? s.agent_session_id : (s.session_id ?? s.agent_device_id).slice(0, 12))
+  const ids = new Map(list.map(s => [s.session_id ?? s.agent_device_id, idOf(s)]))
+  const crown = m.human.crown?.session_id ?? m.human.crown?.agent_device_id ?? null
+  const rows = list.filter(s => s.is_active !== false || s.card_ids?.length).map((s, i) => {
+    const key = s.session_id ?? s.agent_device_id, set = m.human.session_settings.get(key) ?? {}, p = s.profile ?? {}
+    const id = ids.get(key), given = p.agent_name || s.device_name || id, label = set.name || ''
+    const parentKey = 'parent' in set ? [...ids].find(([, v]) => v === set.parent)?.[0] ?? null : s.parent_session_id ?? p.parent_session ?? null
+    const closedChild = Boolean(p.closed_at && p.parent_session && !(s.open_card_ids?.length))
+    const chosen = 'archived' in set ? Boolean(set.archived) : closedChild
+    return {
+      id, key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id ?? null, name: label || given, given, label, icon: set.icon || p.icon || '',
+      online: Boolean(s.is_online), offline_since: s.offline_since ?? null, parent: parentKey && ids.has(parentKey) ? ids.get(parentKey) : null, parent_key: parentKey && ids.has(parentKey) ? parentKey : null,
+      archived: chosen && !(s.is_online && !parentKey), replaced: false, removed: s.is_active === false, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position),
+      desk: set.desk ?? 'main', starred: crown === key || crown === s.agent_device_id, main: Boolean(p.is_main), own: m.members.get(s.agent_device_id)?.device_role === 'human',
+      waiting: s.open_card_ids?.length ?? 0, fetched: 'archived' in set && !set.archived, last_activity_at: s.last_activity_at ?? 0,
+    }
+  })
+  const byId = new Map(rows.map(r => [r.id, r]))
+  for (const r of rows) if (r.parent && byId.has(r.parent)) r.desk = byId.get(r.parent).desk
+  return rows.sort((a, b) => a.position - b.position)
+}
+
 export class MockClient {
   constructor(fixture, { simulate = true } = {}) {
     this.listeners = new Map()
@@ -96,6 +125,7 @@ export class MockClient {
       s.card_ids.push(c.object_id); if (c.object_state === 'open') s.open_card_ids.push(c.object_id)
     }
     if (change && before !== m.stack.join()) change.stack = true
+    m.session_list = demoSessions(m)
   }
 
   // ---- timelines ----

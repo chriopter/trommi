@@ -25,6 +25,7 @@ pub mod desk;
 pub mod model;
 pub mod plan;
 pub mod registers;
+pub mod sessions;
 pub mod store;
 
 pub use board::{Board, Fact, Kind, Object, Source, State};

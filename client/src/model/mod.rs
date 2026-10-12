@@ -105,6 +105,8 @@ pub struct Model {
     pub desk_wake: u64,
     /// Every timeline's window is open (an app that keeps every item header: iOS).
     pub windows_open: bool,
+    /// The room is still being read (a sign-in, a read back): a session whose profile has not come is "Loading …".
+    pub reading: bool,
 }
 
 /// `<kind>:<id>`: a timeline's key.

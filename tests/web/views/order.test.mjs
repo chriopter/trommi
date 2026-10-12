@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { emptyModel } from '../../../app/web/core/model-shape.ts'
 import { sessionOf } from '../model/factory.mjs'
 import { BoardState, orderWrites } from '../../../app/web/public/app.mjs'
+import { withSessions } from './core-sessions.mjs'
 
 const A = { id: 'a', position: 0, placed: false }, B = { id: 'b', position: 1, placed: false }, C = { id: 'c', position: 2, placed: false }
 const ids = writes => Object.fromEntries(writes)
@@ -46,12 +47,12 @@ function room(settings = {}) {
   }
   return m
 }
-const names = m => new BoardState({ model: m }).update().agents.map(a => a.name)
+const names = m => new BoardState({ model: withSessions(m) }).update().agents.map(a => a.name)
 
 test('the order read back: places written win, a session never placed keeps its default place', () => {
   const m = room()
   assert.deepEqual(names(m), ['agent-1', 'agent-2', 'agent-3'])
-  const agents = new BoardState({ model: m }).update().agents
+  const agents = new BoardState({ model: withSessions(m) }).update().agents
   const writes = orderWrites(agents, agents[1].id, { before: agents[0].id })
   for (const [id, position] of writes) { const a = agents.find(x => x.id === id); m.human.session_settings.set(a.device_id, { ...(m.human.session_settings.get(a.device_id) ?? {}), position }) }
   assert.deepEqual(names(m), ['agent-2', 'agent-1', 'agent-3'])

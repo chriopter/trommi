@@ -390,6 +390,8 @@ methods!(RawClientModel {
     note_newer(what, envelope_number);
     finish(now_ms);
     snapshot();
+    session_list(reading);
+    set_reading(reading);
     touch_all();
     apply_card_deeds_json(received);
     apply_groups_json(groups, roles);
