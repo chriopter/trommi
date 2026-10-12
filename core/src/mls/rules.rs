@@ -155,6 +155,16 @@ impl RoomHistory {
             .is_some_and(|since| *since <= epoch)
     }
 
+    /// Whether any state of this history held `device` as a human or an agent device (revoked ones too). A
+    /// device it never held may be one a later room state holds: a Commit this device has not processed yet.
+    pub fn knows(&self, device: &DeviceId) -> bool {
+        self.revoked.contains_key(device)
+            || self
+                .states
+                .values()
+                .any(|state| state.is_human(device) || state.is_agent(device))
+    }
+
     /// Whether a state of this history held `key` as a recovery key.
     pub fn held_recovery_key(&self, key: &[u8; RECOVERY_KEY_LEN]) -> bool {
         self.recovery_keys.contains(key)

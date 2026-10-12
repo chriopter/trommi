@@ -4017,6 +4017,14 @@ impl<S: Storage> Device<S> {
                 if !by_human && !by_opener && !offending.contains(&added_by) {
                     offending.push(added_by);
                 }
+                // In a main session every leaf is a device of the room. One that no room state this device
+                // holds knows (nor the device that added it) is one a room Commit not processed yet brings, the
+                // agent's enrolment ahead of its session's Welcome: the Welcome is early, and taken again after
+                // the room (it uses up nothing). A device the room held and revoked is judged now. (A helper
+                // session's helper devices are in no room state.)
+                if session.parent.is_zero() && offending.iter().any(|device| !history.knows(device)) {
+                    return Err(Error::RoomBehind);
+                }
                 meta.distrusted = closed || !offending.is_empty();
             }
         }
