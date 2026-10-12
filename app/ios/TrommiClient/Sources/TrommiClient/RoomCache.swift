@@ -15,6 +15,64 @@ extension Room {
     var lamport: Int
   }
   static let snapshotEvery = 2000
+  /** The hub's Desk as last read, kept beside the cache (`deskFirst`, `restore`). */
+  struct DeskKept: Codable {
+    var v = 1
+    var open: [String]
+    var at: UInt64
+  }
+  static let deskAAD = "trommi ios desk"
+  /** How long the first paint of a launch from the cache waits for the hub's Desk; then "Catching up…" without cards. */
+  static let deskFirstNs: UInt64 = 300_000_000
+  /** How long no open card stands without the hub's Desk; then the list kept from the last launch decides (offline). */
+  static let deskHoldMaxNs: UInt64 = 5_000_000_000
+
+  /** Keeps the hub's Desk as read, for the next launch. */
+  func keepDesk(_ open: Set<String>, at: UInt64) {
+    guard let rs = try? recordStore() else { return }
+    // (a few ids: written at once, so that a launch right after finds it)
+    try? rs.writeSmall(DeskKept(open: open.sorted(), at: at), to: rs.deskURL, aad: Room.deskAAD)
+  }
+  /**
+   * The first paint of a launch from the cache: until the hub's Desk of this run answered, or `deskFirstNs` passed,
+   * the app draws nothing of the Desk (`deskHolding`); past it, no open card stands (`Board.deskWaiting`) until the
+   * Desk answers, at most `deskHoldMaxNs`, after which the list kept from the last launch decides.
+   */
+  func holdDesk() {
+    deskHolding = true
+    board.deskWaiting = true
+    deskHoldTask?.cancel()
+    deskHoldTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: Room.deskFirstNs)
+      guard let self, !Task.isCancelled, self.deskHolding else { return }
+      self.deskHolding = false
+      self.wakeDeskWaiters()
+      var ch = Change(); ch.room = true; ch.stack = true
+      self.emit(ch)
+      try? await Task.sleep(nanoseconds: Room.deskHoldMaxNs - Room.deskFirstNs)
+      guard !Task.isCancelled else { return }
+      self.deskAnswered()
+    }
+  }
+  /** The hub's Desk of this run answered (or none comes): what it lists, or the kept list, decides from here. */
+  func deskAnswered() {
+    guard deskHolding || board.deskWaiting else { return }
+    deskHoldTask?.cancel(); deskHoldTask = nil
+    deskHolding = false
+    board.deskWaiting = false
+    wakeDeskWaiters()
+    board.project()
+    var ch = Change(); ch.room = true; ch.stack = true
+    emit(ch)
+  }
+  func wakeDeskWaiters() { let w = deskWaiters; deskWaiters = []; for c in w { c.resume() } }
+  /** Waits until the first paint may be drawn (`holdDesk`): at once when nothing holds it. */
+  public func waitForDesk() async {
+    if !deskHolding { return }
+    await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+      if deskHolding { deskWaiters.append(c) } else { c.resume() }
+    }
+  }
 
   func recordStore() throws -> RecordStore {
     if let r = recordStoreMemo { return r }
@@ -135,6 +193,13 @@ extension Room {
     cursor = f.head.cursor
     lamport = max(lamport, f.head.lamport)
     board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
+    // What the hub's Desk last listed decides at once: a card it had settled stays off the Desk although this device
+    // never read its closing (it would stand again on every launch). The Desk of this run follows (`deskFirst`); until
+    // it answers no open card stands at all (`holdDesk`).
+    if let kept = rs.readSmall(DeskKept.self, from: rs.deskURL, aad: Room.deskAAD), kept.v == 1, kept.at <= cursor {
+      board.hubSettled = board.settled(byDesk: Set(kept.open), at: Int(kept.at))
+    }
+    if record.role == "human" { holdDesk() }
     board.project()
     restored = true
     ch.stack = true; ch.room = true
