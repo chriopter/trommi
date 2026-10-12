@@ -1031,7 +1031,11 @@ struct AgentInviteSheet: View {
             Text(steps[0].note).font(Face.text(13)).foregroundStyle(Ink.muted)
           }
           step(2, done: past, steps[1].title) {
-            if state == "open", inv != nil || demoLink != nil { CodeChip(text: steps[1].command) }
+            if state == "open", inv != nil || demoLink != nil {
+              CodeChip(text: steps[1].command)
+              Text("Or in Claude Code, the slash command:").font(Face.text(13)).foregroundStyle(Ink.muted)
+              CodeChip(text: steps[1].other)
+            }
             Text(steps[1].note).font(Face.text(13)).foregroundStyle(Ink.muted)
           }
           step(3, done: state == "joined", state == "confirm" ? "An agent wants to join. Its terminal shows six emoji, each with a word. Are they these, in this order?" : "Compare the six emoji Claude shows with the ones here") {

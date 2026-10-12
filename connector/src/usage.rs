@@ -154,7 +154,7 @@ pub fn data_dir() -> Option<PathBuf> {
 }
 
 /// Claude Code's folder of this process: `CLAUDE_CONFIG_DIR`, else `~/.claude`.
-fn claude_dir() -> Option<PathBuf> {
+pub fn claude_dir() -> Option<PathBuf> {
     std::env::var_os("CLAUDE_CONFIG_DIR")
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)

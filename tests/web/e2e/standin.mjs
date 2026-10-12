@@ -126,16 +126,19 @@ export const steps = [
     await A.until("location.pathname.startsWith('/pair/') && document.querySelector('[data-state=open] .clip-copy')", 'the agent invite page')
     const command = await A.js("return document.querySelector('[data-state=open] .clip-copy[data-line=connect] code').textContent")
     const link = /'(http\S+\/join#v1\.[^']+)'/.exec(command)?.[1]
-    check(Boolean(link), 'the page shows the connect command with the invite link', command.slice(0, 60))
+    check(Boolean(link), 'the page shows the connect prompt with the invite link', command.slice(0, 60))
     ctx.firstLink = link; ctx.firstInvite = await A.js("return location.pathname.split('/').pop()")
     // Exactly two lines to copy, in this order: install (once per machine; it sets up Claude Code and Codex), then the
-    // slash command with the link, pasted into claude in the project folder; what a press copies is what the line shows.
+    // plain prompt with the link, pasted into claude or codex in the project folder; what a press copies is what the
+    // line shows. The plugin's slash command is the smaller other way.
     const lines = await A.js("return [...document.querySelectorAll('[data-state=open] .clip-copy')].map(b => ({ line: b.dataset.line, shown: b.querySelector('code').textContent, copied: b.dataset.inviteClipTextParam }))")
     check(JSON.stringify(lines.map(l => [l.line, l.shown])) === JSON.stringify([
       ['install', 'curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh'],
-      ['connect', `/trommi:connect '${link}'`],
-    ]), 'the invite page shows the two lines: install, /trommi:connect with the link', lines.map(l => l.line))
+      ['connect', `Connect to Trommi with this invite link: '${link}'`],
+    ]), 'the invite page shows the two lines: install, the prompt with the link', lines.map(l => l.line))
     check(lines.every(l => l.copied === l.shown), 'each line copies what it shows')
+    const slash = await A.js("return document.querySelector('[data-state=open] .clip-alt[data-line=slash]')?.dataset.inviteClipTextParam ?? ''")
+    check(slash === `/trommi:connect '${link}'`, 'the slash command with the link is there as the other way', slash.slice(0, 40))
     const steps = await A.js("return [...document.querySelectorAll('[data-state=open] .clip-step > .clip-step-body > b')].map(b => b.textContent)")
     check(JSON.stringify(steps) === JSON.stringify(['First time on this computer? Install:', 'In your project folder, start claude (or codex) and paste:', 'Compare the six emoji Claude shows with the ones here']), 'the invite page has the three steps', steps)
     check(await A.js("return !document.body.innerText.includes('trommi-connector setup')"), 'no separate setup line any more')
