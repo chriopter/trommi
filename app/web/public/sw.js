@@ -12,16 +12,33 @@ const CACHE = `shell-${VERSION}`
 // removes itself and its caches (the page does not register it again: app boot, html[data-build="dev"]).
 const DEV = VERSION === 'dev'
 
-// A new deploy takes over at once: installed, it skips waiting and claims the open pages (they reload: app.mjs).
+// A file named by its content (the build's /gen/app/<name>-<hash>, /gen/bundle.<hash>): never changes, so it comes
+// from any version's cache before the network.
+const HASHED = /^\/gen\/(app\/|bundle\.)/
+// A new deploy takes over at once: installed, it skips waiting and claims the open pages. An open page is not
+// reloaded under the person: it offers a reload, and reloads by itself once it is in the background (app.mjs).
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
-    if (!DEV) { const cache = await caches.open(CACHE); await cache.addAll(SHELL) }
+    if (!DEV) {
+      const cache = await caches.open(CACHE)
+      // what an earlier version holds of the same hashed files is taken over; only what is new is fetched
+      const fetchNow = []
+      for (const path of SHELL) {
+        const kept = HASHED.test(path) ? await caches.match(path) : null
+        if (kept) await cache.put(path, kept); else fetchNow.push(path)
+      }
+      await cache.addAll(fetchNow)
+    }
     await self.skipWaiting()
   })())
 })
 self.addEventListener('activate', event => event.waitUntil((async () => {
-  for (const name of await caches.keys()) if (name.startsWith('shell-') && name !== CACHE) await caches.delete(name)
-  if (DEV) { await caches.delete(CACHE); await self.registration.unregister(); return }
+  // the version before this one stays: a page still open on it loads its own files from there; older ones go
+  const meta = await caches.open('sw-meta')
+  const before = await (await meta.match('/current'))?.text().catch(() => null) ?? null
+  for (const name of await caches.keys()) if (name.startsWith('shell-') && name !== CACHE && name !== before) await caches.delete(name)
+  if (DEV) { await caches.delete(CACHE); await caches.delete('sw-meta'); await self.registration.unregister(); return }
+  if (before !== CACHE) await meta.put('/current', new Response(CACHE))
   await self.clients.claim()
 })()))
 
@@ -71,9 +88,21 @@ self.addEventListener('fetch', event => {
   }
   // (The sandboxed frame keeps its own CSP: it never comes from the shell cache.)
   if (DEV || url.pathname.startsWith('/demo/') || url.pathname.startsWith('/artifact/') || url.pathname.startsWith('/a/') || url.pathname === '/frame') return
+  // A hashed file: from a cache (this version's, or the one before for a page still open on it), else the network
+  if (event.request.mode !== 'navigate' && HASHED.test(url.pathname)) {
+    event.respondWith((async () => {
+      const hit = await caches.match(url.pathname)
+      if (hit) return hit
+      const res = await fetch(event.request)
+      if (res.ok && SHELL.includes(url.pathname)) { const copy = res.clone(); event.waitUntil(caches.open(CACHE).then(c => c.put(url.pathname, copy)).catch(() => {})) }
+      return res
+    })())
+    return
+  }
   // Only the app's own files and its pages: anything else on this origin goes to the network untouched.
   if (event.request.mode !== 'navigate' && !SHELL.includes(url.pathname)) return
-  // Network first, the cache when offline: a phone that is online never runs yesterday's code. A navigation inside the
+  // The rest (the page, its unhashed files): network first, the cache when offline: a phone that is online never
+  // runs yesterday's code. A navigation inside the
   // app gets the shell ("/": the app routes in the page).
   const key = event.request.mode === 'navigate' && !/\.\w+$/.test(url.pathname) && !url.pathname.endsWith('/') ? '/' : url.pathname
   event.respondWith((async () => {

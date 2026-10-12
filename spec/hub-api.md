@@ -40,6 +40,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | **Content** | | |
 | `POST /v1/envelopes` | `{ envelope }` → `{ change }` or a refusal with `voided` | every stored item (9); the hub files it by its header |
 | `GET /v1/desk` | → `{ cards, permission_requests, notes, artifacts, registers, groups, change }` | open objects' newest envelopes, every writer's newest value per register, in the asker's groups |
+| `GET /v1/desk?brief=1&since=` | → `{ cards: [ { object_id, version_change, head_change } ], permission_requests, settled?, truncated, change }` | the same open cards and permission requests in the same order, as ids and version numbers only (no envelopes, no registers, no notes or artifacts); with `since`, only rows whose `head_change` is above it, those no longer open named in `settled`. A row rebuilt to an earlier state (a cut) shows in the next list without `since` |
 | `GET /v1/chats/{timeline}/items?before=&limit=` | → envelopes, newest first | `timeline` = `session/<hex>` or `card/<hex>` |
 | `GET /v1/boards/{board}?after_change=` | → `{ items, more }` | the board's items after the given change (10.3) |
 | `POST /v1/boards/{board}/frontier` | `{ frontier: { <writer>: [seq, hash] }, files: [file_id], snapshot?: [seq, hash] }` → `{ pruned }` | human devices: without `snapshot` before writing `board_snapshot/<board>`, with it once the value is taken (v1.md 10.9); `pruned`: item bodies pruned now |

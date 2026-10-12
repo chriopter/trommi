@@ -196,6 +196,15 @@ export interface Desk {
   truncated: boolean
   change: number
 }
+/** `GET /v1/desk?brief=1&since=`: the open cards and permission requests by id and version only. */
+export interface DeskEntry { object_id: Uint8Array; version_change: number; head_change: number }
+export interface DeskBrief {
+  cards: DeskEntry[]; permission_requests: DeskEntry[]
+  /** With `since`: the objects that changed after it and are no longer open. Null for a whole list. */
+  settled: Uint8Array[] | null
+  truncated: boolean
+  change: number
+}
 export interface ObjectEnvelopes {
   object_id: Uint8Array; group: Uint8Array; state: number; urgency: number; owner: Uint8Array; first_change: number; head_change: number
   items: EnvelopeItem[]; more: boolean
@@ -1397,6 +1406,20 @@ export class Hub {
     return {
       cards: objects(o.cards), notes: objects(o.notes), permission_requests: objects(o.permission_requests), artifacts: objects(o.artifacts),
       registers: list(o.registers, 'registers', 20_000).map(envelopeItem), ...(o.groups === undefined ? {} : { groups: list(o.groups, 'groups', 10_000).map(groupRow) }),
+      truncated: bool(o.truncated, 'truncated'), change: int(o.change, 'change'),
+    }
+  }
+  /** `GET /v1/desk?brief=1[&since=]`: the Desk's open cards and permission requests as ids and versions; with
+   *  `since`, only what changed after it (and what of that is no longer open). */
+  async deskBrief(since: number | null = null): Promise<DeskBrief> {
+    const o = obj(await this.get('/v1/desk', since === null ? { brief: 1 } : { brief: 1, since: ownInt(since, 'since') }, CAP_DESK), 'the Desk')
+    const entries = (v: unknown): DeskEntry[] => list(v, 'objects', 10_000).map(x => {
+      const d = obj(x, 'an object')
+      return { object_id: id(d.object_id, 'object_id', 16), version_change: int(d.version_change, 'version_change', 1), head_change: int(d.head_change, 'head_change', 1) }
+    })
+    return {
+      cards: entries(o.cards), permission_requests: entries(o.permission_requests),
+      settled: since === null ? null : list(o.settled, 'settled', 10_000).map(x => id(x, 'object_id', 16)),
       truncated: bool(o.truncated, 'truncated'), change: int(o.change, 'change'),
     }
   }
