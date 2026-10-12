@@ -5,7 +5,10 @@
 //! **Claude Code** gets the Trommi plugin from the repository's marketplace (`.claude-plugin/marketplace.json`,
 //! plugin folder `connector/plugin`). The plugin holds no program: its MCP server, hooks and monitor name the
 //! installed connector, `~/.local/share/trommi/bin/trommi-connector`, so an update of the connector needs no
-//! new plugin. The one thing a plugin cannot bring is the status line, and Claude Code has no command for it: that
+//! new plugin. Claude Code copies the plugin by its version and `plugin update` copies nothing while that stays the
+//! same, so after installing or updating, the copy is compared with the marketplace's folder and installed afresh when
+//! it differs; a plugin turned off is turned on. Every `claude` call runs in this process's environment, so a
+//! `CLAUDE_CONFIG_DIR` (one Claude Code account of several) is kept to. The one thing a plugin cannot bring is the status line, and Claude Code has no command for it: that
 //! one is written into its user settings (`settings.json`, only the `statusLine` member, every other byte as it was),
 //! around a status line that is there already (`usage.rs`). `remove claude` puts the one before back.
 //!
@@ -89,7 +92,7 @@ fn next(which: &str) -> &'static str {
     if which == "codex" {
         "quit every running Codex and start it again (a running Codex does not load new MCP servers), in a project folder; then ask it to connect to Trommi with the link from \"Invite an agent\" in the Trommi app."
     } else {
-        "start claude in a project folder and paste /trommi:connect '<link>' from \"Invite an agent\" in the Trommi app."
+        "start claude in a project folder and paste what \"Invite an agent\" in the Trommi app shows (the prompt with the link, or /trommi:connect '<link>')."
     }
 }
 
@@ -178,6 +181,109 @@ fn report(which: &str, flags: &[String], done: Result<Vec<String>, String>, remo
     }
 }
 
+/// The installed plugins, as Claude Code lists them.
+fn list_plugins() -> Result<Value, String> {
+    serde_json::from_str(&run("claude", &["plugin", "list", "--json"])?)
+        .map_err(|_| "`claude plugin list --json` did not answer in JSON".to_string())
+}
+
+/// The Trommi plugin of a `plugin list --json`: the user's install, else any.
+fn trommi_plugin(plugins: &Value) -> Option<Value> {
+    let ours = || {
+        plugins
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|plugin| plugin["id"] == "trommi@trommi")
+    };
+    ours()
+        .find(|plugin| plugin["scope"] == "user")
+        .or_else(|| ours().next())
+        .cloned()
+}
+
+/// The plugin's folder in the marketplace trommi as Claude Code keeps it: its `installLocation` and the source
+/// its `.claude-plugin/marketplace.json` names. `None` when that cannot be read.
+fn market_folder() -> Result<Option<std::path::PathBuf>, String> {
+    let listed: Value = serde_json::from_str(&run(
+        "claude",
+        &["plugin", "marketplace", "list", "--json"],
+    )?)
+    .map_err(|_| "`claude plugin marketplace list --json` did not answer in JSON".to_string())?;
+    let Some(location) = listed
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|market| market["name"] == "trommi")
+        .and_then(|market| market["installLocation"].as_str())
+        .map(std::path::PathBuf::from)
+    else {
+        return Ok(None);
+    };
+    let declared: Option<Value> =
+        std::fs::read_to_string(location.join(".claude-plugin/marketplace.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok());
+    Ok(declared.and_then(|declared| {
+        declared["plugins"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|plugin| plugin["name"] == "trommi")
+            .and_then(|plugin| plugin["source"].as_str())
+            .filter(|source| !source.contains(".."))
+            .map(|source| location.join(source))
+            .filter(|folder| folder.is_dir())
+    }))
+}
+
+/// Every file below `dir` (not `.git`, not Claude Code's own marks such as `.in_use`), as paths relative to it.
+fn files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    let mut open = vec![std::path::PathBuf::new()];
+    while let Some(rel) = open.pop() {
+        let Ok(entries) = std::fs::read_dir(dir.join(&rel)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if name == ".git" || name == ".in_use" || name == ".orphaned_at" {
+                continue;
+            }
+            let path = rel.join(&name);
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => open.push(path),
+                Ok(kind) if kind.is_file() => found.push(path),
+                _ => {}
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Why the installed copy of the plugin is not the marketplace's, or `None` when it is. Without the marketplace's
+/// folder at hand the copy must at least hold the plugin's command and manifest.
+fn stale(plugin: &Value, market: Option<&Path>) -> Option<String> {
+    let Some(copy) = plugin["installPath"].as_str().map(Path::new) else {
+        return Some("Claude Code names no folder for it".to_string());
+    };
+    match market {
+        Some(market) => files(market).into_iter().find_map(|file| {
+            let want = std::fs::read(market.join(&file)).ok()?;
+            match std::fs::read(copy.join(&file)) {
+                Ok(have) if have == want => None,
+                Ok(_) => Some(format!("{} differs", file.display())),
+                Err(_) => Some(format!("{} missing", file.display())),
+            }
+        }),
+        None => [".claude-plugin/plugin.json", "commands/connect.md"]
+            .into_iter()
+            .find(|file| !copy.join(file).is_file())
+            .map(|file| format!("{file} missing")),
+    }
+}
+
 /// `setup claude`. The lines say what was done.
 pub fn claude() -> Result<Vec<String>, String> {
     let program = program()?;
@@ -223,13 +329,7 @@ pub fn claude() -> Result<Vec<String>, String> {
             ));
         }
     }
-    let plugins: Value = serde_json::from_str(&run("claude", &["plugin", "list", "--json"])?)
-        .map_err(|_| "`claude plugin list --json` did not answer in JSON".to_string())?;
-    let installed = plugins
-        .as_array()
-        .into_iter()
-        .flatten()
-        .any(|plugin| plugin["id"] == "trommi@trommi");
+    let installed = trommi_plugin(&list_plugins()?).is_some();
     if installed {
         run("claude", &["plugin", "update", "trommi@trommi"])?;
         done.push("plugin trommi@trommi: there already, brought up to date".to_string());
@@ -239,6 +339,42 @@ pub fn claude() -> Result<Vec<String>, String> {
             &["plugin", "install", "trommi@trommi", "-s", "user", "-y"],
         )?;
         done.push("plugin trommi@trommi: installed for your user".to_string());
+    }
+    // `plugin update` copies nothing new while the plugin's version stays the same, so a copy made before the
+    // plugin got a file (commands/connect.md, say) keeps lacking it: compared with the marketplace, a copy that
+    // differs is installed afresh.
+    let market = market_folder()?;
+    let plugin = trommi_plugin(&list_plugins()?)
+        .ok_or("`claude plugin list --json` does not list trommi@trommi after installing it")?;
+    if let Some(missing) = stale(&plugin, market.as_deref()) {
+        run(
+            "claude",
+            &["plugin", "uninstall", "trommi@trommi", "-s", "user"],
+        )?;
+        run(
+            "claude",
+            &["plugin", "install", "trommi@trommi", "-s", "user", "-y"],
+        )?;
+        let again = trommi_plugin(&list_plugins()?)
+            .ok_or("`claude plugin list --json` does not list trommi@trommi after installing it")?;
+        if let Some(still) = stale(&again, market.as_deref()) {
+            return Err(format!("the installed Trommi plugin is not the marketplace's even after installing it afresh ({still}); remove it (`claude plugin uninstall trommi@trommi`) and run this again"));
+        }
+        done.push(format!(
+            "plugin trommi@trommi: the installed copy was old ({missing}), installed afresh"
+        ));
+    }
+    let plugin = trommi_plugin(&list_plugins()?)
+        .ok_or("`claude plugin list --json` does not list trommi@trommi after installing it")?;
+    if plugin["enabled"] == false {
+        run(
+            "claude",
+            &["plugin", "enable", "trommi@trommi", "-s", "user"],
+        )?;
+        done.push("plugin trommi@trommi: was turned off, turned on".to_string());
+    }
+    if let Some(dir) = usage::claude_dir() {
+        done.push(format!("Claude Code folder: {}", dir.display()));
     }
     done.push(format!("the plugin starts {program}"));
     usage::mark_declined(false);

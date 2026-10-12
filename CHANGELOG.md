@@ -25,8 +25,14 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   card starts under Off your mind as being worked on, not on your Desk and without a notification (web and iPhone);
   when it is revised to "Done: …", it comes to your Desk and the line turns done by itself. Helpers no longer read board events
   themselves: the coordinator forwards them.
+- **Invite an agent shows a prompt**: the line to paste is now plain words with the link, "Connect to Trommi with
+  this invite link: '…'", which works in Claude Code and Codex even without the slash command; `/trommi:connect`
+  stays below it as the other way (web and iPhone).
 
 **Fixed**
+- **No more "Unknown command: /trommi:connect"**: `trommi-connector setup claude` now replaces a Trommi plugin copy
+  older than the slash command (Claude Code kept it because the version number stayed the same) and turns the plugin
+  on when it was off, in the Claude Code account `CLAUDE_CONFIG_DIR` names.
 - **Closed helper sessions free their place**: `close_session` now really ends a helper session (once its open
   questions are answered), so an agent is no longer refused a new one while only a few show on the board. An agent
   may keep up to 100 helper sessions open at once (was 32).

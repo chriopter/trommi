@@ -28,14 +28,22 @@ Once per machine, in a terminal:
 curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh
 ```
 
-Then once per project folder, inside Claude Code started there:
+Then once per project folder, inside Claude Code (or Codex) started there, the line "Invite an agent" shows:
 
 ```
-/trommi:connect '<invite link>'
+Connect to Trommi with this invite link: '<invite link>'
 ```
+
+or, in Claude Code, the plugin's command `/trommi:connect '<invite link>'`.
+
+`setup claude` runs every `claude plugin …` command in its own environment, so with `CLAUDE_CONFIG_DIR` set (one of
+several Claude Code accounts) the plugin goes into that account. Claude Code keeps a copy of the plugin per version
+and `claude plugin update` copies nothing while the version stays the same; `setup claude` therefore compares the
+copy with the marketplace's plugin folder and installs it afresh when a file is missing or differs (an older copy
+without `commands/connect.md` has no `/trommi:connect`), and turns the plugin on when it is off.
 
 A session whose folder is in no room yet starts unconnected: its MCP server offers one tool, `connect(link)`, and
-the plugin's command `/trommi:connect` tells the agent to call it. The tool runs the same join as
+the pasted prompt, or the plugin's command `/trommi:connect`, makes the agent call it. The tool runs the same join as
 `trommi-connector connect` for this folder (an expired link is refused before a hub is asked, the Offer's MAC is
 checked, …) and answers with the six emoji and their words, which the agent shows in the chat. Once the human taps
 "They match" in the app, the same process goes online and announces its board tools (`notifications/tools/list_changed`);

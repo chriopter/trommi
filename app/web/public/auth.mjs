@@ -9,7 +9,7 @@
 // password (Emergency Kit, ending in a new password or a new passkey). A device is never asked for its name (deviceLabel). The UI says "account", never "room".
 // Calm and sober: this is about keys; pen drawings only on the choice buttons.
 // Core features that may not be there yet (usage, session handover) are shown only when the core has them.
-import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError, toast } from './ui.mjs'
+import { BELL, Controller, PLUS, SET_CHEVRON, agentsOf, avatar, connectCommand, connectPrompt, controller, copyText, doodleSvg, errorLine, html, keysList, raw, roomPage, roomShell, setRow, setThemeMode, settingsPage, sk, sketchSvg, themeMode, sayError, toast } from './ui.mjs'
 import { CLIENT, account, checkEmoji, core, openInWorker, qrReader, ses } from './app.mjs'
 const read = (k, f = null) => { try { return localStorage.getItem(k) ?? f } catch { return f } }
 const write = (k, v) => { try { localStorage.setItem(k, v) } catch {} }
@@ -286,9 +286,10 @@ ${canRemove ? html`<form method="post" action="/devices/remove" class="set-group
     const again = (agent, word = 'Pair again') => html`<form method="post" action="/pair" class="room-inline"><input type="hidden" name="role" value="${agent ? 'agent' : 'human'}"><button type="submit" class="room-primary">${word}</button></form>`
     const back = html`<a href="/settings/devices" data-nav class="room-back">Back to the devices</a>`
     // ---- inviting an agent: a clipboard with a short checklist ----
-    // Three commands, each one big thing to press (it copies): install the connector (once per machine), set it up for
-    // Claude Code or Codex (once per program), connect the folder with the link (once per folder; the link goes to the
-    // connector by the human's hands only, never into the model's prompt). Then waiting: the line ticks itself when the
+    // Two lines, each one big thing to press (it copies): install the connector (once per machine; it sets up Claude
+    // Code and Codex), then a plain prompt with the link pasted into the agent in the project folder (once per folder;
+    // the agent calls the connector's connect tool with it), the plugin's slash command as the smaller second way. The
+    // link is only ever typed by the human into that terminal. Then waiting: the line ticks itself when the
     // agent is in, and shows who came; last, start the program there.
     const CLAMP = raw('<svg class="clip-clamp" viewBox="0 0 120 44" aria-hidden="true"><path class="clamp-plate" d="M22 40 Q21 25 26 22 L43 21 Q46 9 60 8 Q74 9 77 21 L94 22 Q99 25 98 40 Z"/><path d="M52 21 Q53 15 60 14.6 Q67 15 68 21"/><path d="M30 31 Q60 29.4 90 31"/></svg>')
     const TICKBOX = raw('<svg class="clip-box" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6 5.2 Q12 4.4 19.3 4.9 Q20 12 19.5 19.2 Q12 20 4.9 19.4 Q4.2 12 4.6 5.2 Z"/><path class="clip-tick" d="M7.4 12.6 Q9.6 14.6 10.9 16.6 Q14.6 10.2 20.6 5.2"/></svg>')
@@ -307,9 +308,11 @@ ${canRemove ? html`<form method="post" action="/devices/remove" class="set-group
     const step = (state, inner) => html`<li class="clip-step${state ? ` is-${state}` : ''}">${TICKBOX}<div class="clip-step-body">${inner}</div></li>`
     /** What is left of a link's time, in words: never "0 more min". */
     /** The two lines of an agent invite (as the iOS agentConnectSteps): the installer once per machine (it sets up
-     *  Claude Code and Codex where installed), then the slash command inside claude with the invite's link. */
+     *  Claude Code and Codex where installed), then a plain prompt with the invite's link, pasted into claude or codex:
+     *  the agent calls the connector's connect tool with it, with or without the plugin's slash command, which stays
+     *  as the shorter way for Claude Code. */
     const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh'
-    const connectCommand = link => `/trommi:connect '${link}'`
+    const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
     const leftWords = until => { const ms = until - Date.now(); return ms > 90_000 ? `${Math.round(ms / 60000)} more min.` : ms > 0 ? 'less than a minute.' : 'no time left.' }
     const clipboard = (inv, error = '') => {
       // (an unused link whose time is up has run out; once a connector has answered it (check code, adding) the page stays
@@ -350,7 +353,7 @@ ${inv.takeover ? html`<h2>Continue ${contName}</h2><p class="clip-sub">A link fo
         : html`<h2>Invite an agent</h2><p class="clip-sub">On a Linux or macOS computer with Claude Code or Codex.</p>`}
 <ol class="clip-list">
 ${step(done, html`<b>First time on this computer? Install:</b>${open ? html`${copyLine(INSTALL, 'Copy', 'install')}<small>Skip this if you have installed Trommi before (check: <code>trommi-connector --version</code>).</small>` : ''}`)}
-${step(done, html`<b>In your project folder, start claude (or codex) and paste:</b>${open ? html`${copyLine(connectCommand(inv.link), 'Copy', 'connect', connectShown(connectCommand(inv.link)))}<small>Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". In Codex: start Codex again if it was running when Trommi was installed, then ask it to connect with this link.</small>` : ''}`)}
+${step(done, html`<b>In your project folder, start claude (or codex) and paste:</b>${open ? html`${copyLine(connectPrompt(inv.link), 'Copy', 'connect', connectShown(connectPrompt(inv.link)))}<small class="clip-or">Or in Claude Code, the slash command: ${altLine(connectCommand(inv.link))}</small><small>Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". In Codex: start Codex again if it was running when Trommi was installed.</small>` : ''}`)}
 ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)}
 </ol>${foot}</section></div></main>`
     }
