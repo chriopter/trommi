@@ -87,7 +87,9 @@ impl HubProc {
         Self::start_in_with(data, port, &[]).await
     }
 
-    async fn start_in_with(data: TempDir, port: u16, env: &[(&str, &str)]) -> HubProc {
+    /// The same with `env` on top (applied last: `HUB_URL` here names the address the hub takes as its own, e.g. a
+    /// proxy in front of it).
+    pub async fn start_in_with(data: TempDir, port: u16, env: &[(&str, &str)]) -> HubProc {
         let binary = hub_binary();
         assert!(
             binary.is_file(),
@@ -112,7 +114,6 @@ impl HubProc {
                     k.strip_prefix("MEGA_HUB_ENV_").map(|k| (k.to_string(), v))
                 }),
             )
-            .envs(env.iter().copied())
             .stdin(Stdio::null())
             .stdout(if port == 0 {
                 Stdio::piped()
@@ -123,6 +124,7 @@ impl HubProc {
         if port != 0 {
             command.env("HUB_URL", format!("http://127.0.0.1:{port}"));
         }
+        command.envs(env.iter().copied());
         let mut child = command.spawn().expect("the hub starts");
         let port = if port != 0 {
             port
