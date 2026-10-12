@@ -160,6 +160,10 @@ h2 { font-size: clamp(2.2rem, 5vw, 3.4rem); letter-spacing: -.04em; line-height:
 .intro b { color: var(--fg); font-weight: 600; }
 
 /* ---- Apps: three cards, each a stage with the real screenshot, then its name, a line and its link ---- */
+/* The demo: the board's recording as wide as the page, a screen lying on the paper. width/height on the tag and
+   aspect-ratio keep its place before the poster has come. */
+.demo { margin-top: 40px; overflow: hidden; background: var(--sunken); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); }
+.demo video { display: block; width: 100%; height: auto; aspect-ratio: 1920 / 1020; }
 .apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(14px, 2vw, 24px); margin-top: 40px; }
 .apps li { display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
 .stage { position: relative; aspect-ratio: 4 / 3; overflow: hidden; display: flex; align-items: flex-start; padding: 28px 0 0 28px; background: var(--sunken); border-bottom: 1px solid var(--line); }
@@ -244,6 +248,7 @@ h2 { font-size: clamp(2.2rem, 5vw, 3.4rem); letter-spacing: -.04em; line-height:
   .open-note { font-size: .82rem; }
   .hero-shot { margin-inline: -10px; }
   .hero-a .hero-shot { width: auto; margin-right: -10px; }
+  .demo { margin-top: 28px; border-radius: var(--r-md); }
   .term-body { font-size: .8rem; padding-inline: 16px; }
   .term pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 }
