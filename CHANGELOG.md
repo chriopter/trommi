@@ -16,10 +16,18 @@ while it runs.
 ![Settings → Agents in the demo room](app/web/public/changelog/2026-10-11.webp)
 
 **New**
+- A new Claude Code or Codex session on a computer and account that already has a connected agent gets onto the
+  board with one tap ("Allow new Claude session …?") instead of an invite link and the six emoji, as its own
+  session. Its first message says which session vouched for it; at most 8 such sessions per account, and archiving
+  one removes its device. The web and iPhone apps answer it now; the connector turns it on in a later release.
 - A card its session is working on says so above its title: "<session> is working on it", its status line and how
   long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
 - Trommi for Mac: the iPad's layout in a window, the questions waiting in the menu bar, Return sends and
   Shift+Return hands a card back; pairing by pasting the link.
+- Settings → Security lists every key that opens your data: the account key (your recovery key) with its
+- Settings → Security (web and iPhone) lists every key that opens your data: the account key (your recovery key) with its
+  fingerprint, your devices with theirs and the day each came, your agents, and what each of them can read. The self
+  test is a row there now.
 - iPhone: Settings → Data shows what this iPhone downloaded and uploaded (with a reset), and what your account keeps on
   the hub: messages, cards, files and the total size.
 - Settings → Agents shows each agent's plan, e-mail and usage (5-hour window and week, for Codex its credits);

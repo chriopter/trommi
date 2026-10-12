@@ -8,7 +8,7 @@
 import Foundation
 
 enum BoardCodec {
-  static let version: UInt8 = 3
+  static let version: UInt8 = 4
   struct Bad: Error {}
   static let bookkeeping: Set<String> = ["schema_version", "object_type", "object_version", "previous_version_hash"]
 
@@ -23,6 +23,7 @@ enum BoardCodec {
     w.b.append(version)
     w.os(b.roomId); w.os(b.hubURL); w.os(b.myDeviceId); w.os(b.myRole)
     w.i(b.keyEpoch); w.i(b.lastEntryNumber); w.i(b.lastEnvelopeNumber); w.s(b.connection)
+    w.os(b.recoveryKey?.fingerprint); ou(&w, b.recoveryKey?.since)
     w.u(UInt64(b.members.count)); for m in b.members.values.sorted(by: { $0.deviceId < $1.deviceId }) { member(&w, m) }
     w.u(UInt64(b.sessions.count)); for s in b.sessions.values.sorted(by: { $0.sessionId < $1.sessionId }) { session(&w, s) }
     // cards and timelines in framed groups, read back on all cores
@@ -90,7 +91,7 @@ enum BoardCodec {
   private static func member(_ w: inout RecCodec.W, _ m: RoomMember) {
     w.s(m.deviceId); w.s(m.deviceRole); w.s(m.fingerprint); w.s(m.deviceName); w.os(m.platform); w.os(m.folder); w.os(m.host)
     w.bool(m.isActive); w.i(m.addedEntryNumber); oi(&w, m.removedEntryNumber); w.bool(m.isMe); w.bool(m.isOnline); ou(&w, m.offlineSince)
-    link(&w, m.link); w.os(m.agentSessionId)
+    link(&w, m.link); w.os(m.agentSessionId); ou(&w, m.addedAt)
   }
   private static func session(_ w: inout RecCodec.W, _ s: Session) {
     w.s(s.sessionId); strs(&w, s.agentDeviceIds); strs(&w, s.everAgentIds)
@@ -186,6 +187,7 @@ enum BoardCodec {
     guard try r.byte() == version else { throw Bad() }
     b.roomId = try r.os(); b.hubURL = try r.os(); b.myDeviceId = try r.os(); b.myRole = try r.os()
     b.keyEpoch = try r.i(); b.lastEntryNumber = try r.i(); b.lastEnvelopeNumber = try r.i(); b.connection = try r.s()
+    if let fp = try r.os() { b.recoveryKey = RecoveryKey(fingerprint: fp, since: try ou(&r)) } else { _ = try ou(&r) }
     var members = [String: RoomMember](); for _ in 0..<(try count(&r)) { let m = try member(&r); members[m.deviceId] = m }
     var sessions = [String: Session](); for _ in 0..<(try count(&r)) { let s = try session(&r); sessions[s.sessionId] = s }
     var cards = [String: Card](); for c in try unframe(&r, { try card(&$0) }) { cards[c.objectId] = c }
@@ -226,7 +228,7 @@ enum BoardCodec {
     let m = RoomMember(deviceId: id, role: role)
     m.fingerprint = try r.s(); m.deviceName = try r.s(); m.platform = try r.os(); m.folder = try r.os(); m.host = try r.os()
     m.isActive = try r.bool(); m.addedEntryNumber = try r.i(); m.removedEntryNumber = try oi(&r); m.isMe = try r.bool(); m.isOnline = try r.bool(); m.offlineSince = try ou(&r)
-    m.link = try link(&r); m.agentSessionId = try r.os()
+    m.link = try link(&r); m.agentSessionId = try r.os(); m.addedAt = try ou(&r)
     return m
   }
   private static func session(_ r: inout RecCodec.R) throws -> Session {

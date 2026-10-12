@@ -205,6 +205,11 @@ export function cardHeard(model: Model, card: Card): boolean | null {
 // ---- members and sessions ------------------------------------------------------------------------------------------
 
 const fingerprintOf = (device_id: string): string => device_id.slice(0, 16).match(/.{4}/g)!.join(' ')
+/** A key's fingerprint as the app shows it: the first 8 bytes of its hex, in groups of four. */
+export const keyFingerprint = (key: Uint8Array): string => fingerprintOf([...key].map(b => b.toString(16).padStart(2, '0')).join(''))
+// The room Commits processed since the last applyGroups: how many, and the time of the last. A changed recovery key
+// is dated by that Commit only when it was the only one (a catch-up of several cannot say which one changed it).
+const roomCommits = new WeakMap<Model, { count: number; time: number | null }>()
 /** A session: one session group, its agent device, its cards and Chat. Keyed by session_id. */
 export function sessionOf(model: Model, session_id: string): Session {
   let s = model.sessions.get(session_id)
@@ -242,7 +247,7 @@ function memberOf(model: Model, device_id: string, device_role: Member['device_r
   if (!m) {
     const reg = builder(model).device_registers.get(device_id)
     m = { device_id, device_role, fingerprint: fingerprintOf(device_id), device_name: String(reg?.['device_name'] ?? ''), platform: reg?.['platform'] ?? null, folder: reg?.['folder'] ?? null, host: reg?.['host'] ?? null,
-      is_active: true, added_entry_number: epoch, removed_entry_number: null, is_me: device_id === model.room.my_device_id, is_online: false, offline_since: null, link: null }
+      is_active: true, added_entry_number: epoch, removed_entry_number: null, added_at: null, is_me: device_id === model.room.my_device_id, is_online: false, offline_since: null, link: null }
     model.members.set(device_id, m)
   }
   return m
@@ -258,6 +263,15 @@ export function applyGroups(model: Model, groups: readonly GroupSummary[], roles
   const room = groups.find(g => g.session === null)
   const epoch = roles?.epoch ?? room?.epoch ?? model.room.key_epoch
   if (model.room.key_epoch !== epoch) { model.room.key_epoch = epoch; change.room = true }
+  const seen = roomCommits.get(model)
+  roomCommits.delete(model)
+  if (roles?.recoveryHpkeKey?.length) {
+    const fingerprint = keyFingerprint(roles.recoveryHpkeKey), was = model.room.recovery_key
+    if (was?.fingerprint !== fingerprint) {
+      model.room.recovery_key = { fingerprint, since: was && seen?.count === 1 ? seen.time : null }
+      change.room = true
+    }
+  }
   const humans = new Set((roles?.humans ?? room?.leaves ?? []).map(hex))
   const agents = new Set((roles?.agents ?? []).map(hex))
   const now = new Map<string, Member['device_role']>()
@@ -319,6 +333,23 @@ export function applyCommit(model: Model, facts: CommitSummary, change: Change, 
   const group = hex(facts.group)
   const session = [...model.sessions.values()].find(s => s.group_id === group)
   const removed = facts.removes.map(hex)
+  // when a device came in: the room group adds human devices and names agent devices; a session group adds helpers
+  const time = facts.time ?? null
+  // (a member the lists already hold is dated only if it first showed in this Commit's epoch: this device's own
+  //  Commit can come back after the lists were read anew)
+  const added = (id: string, role: Member['device_role'], room = true): void => {
+    const known = model.members.get(id)
+    if (known && (known.added_at != null || !room || known.added_entry_number <= facts.epoch)) return
+    memberOf(model, id, role, facts.epoch + 1).added_at = time
+    change.members = true
+  }
+  if (!session && facts.group.length === 32) {
+    for (const d of facts.adds) added(hex(d), 'human')
+    if (facts.external) added(hex(facts.committer), 'human')
+    for (const d of facts.agents ?? []) added(hex(d), 'agent')
+    const seen = roomCommits.get(model)
+    roomCommits.set(model, { count: (seen?.count ?? 0) + 1, time })
+  } else for (const d of facts.adds) added(hex(d), 'agent', false)
   if (session) {
     session.session_key_epoch = facts.epoch + 1
     session.agent_device_ids = session.agent_device_ids.filter(d => !removed.includes(d))
@@ -1231,7 +1262,7 @@ export function expandCard(stored: unknown): Card {
 }
 const storedTimeline = (t: Timeline): Record<string, unknown> => { const { items: _items, ...rest } = t; return { ...rest, loaded_down_to: null, window_open: false } }
 const storedNote = (n: Note): Note | undefined => { const kept = n.pending ? n._base ?? undefined : n; if (!kept) return undefined; const { _base: _b, ...rest } = kept; return rest as Note }
-const ROOM_KEPT = ['room_id', 'hub_url', 'my_device_id', 'my_role', 'key_epoch', 'last_envelope_number'] as const
+const ROOM_KEPT = ['room_id', 'hub_url', 'my_device_id', 'my_role', 'recovery_key', 'key_epoch', 'last_envelope_number'] as const
 
 /** The records a change names, as entries for one Cache.setMany (undefined deletes). */
 export function cacheRecords(model: Model, change: Change): [key: string, value: unknown | undefined][] {
@@ -1285,7 +1316,7 @@ export function modelFromCache(entries: Iterable<readonly [string, unknown]>): M
       case 'pub': m.published.set(id, structuredClone(v) as Published); break
       case 'tlmeta': m.timelines.set(id, { ...structuredClone(v), items: new Map(), loaded_down_to: Infinity, window_open: false } as Timeline); break
       case 'reg': registers.push([id, structuredClone(v) as HumanRegister]); break
-      case 'members': for (const x of v as Member[]) m.members.set(x.device_id, { ...x }); break
+      case 'members': for (const x of v as Member[]) m.members.set(x.device_id, { ...x, added_at: x.added_at ?? null }); break
       case 'devregs': for (const [device, value] of v as [string, Obj][]) B.device_registers.set(device, value); break
       case 'room': Object.assign(m.room, v); break
       case 'newer': m.newer = structuredClone(v) as Model['newer']; break

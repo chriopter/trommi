@@ -100,6 +100,9 @@ public final class RoomMember {
   public var isActive = true
   public var addedEntryNumber = 0
   public var removedEntryNumber: Int?
+  /** When it was added: the time of the Commit that added it (its committer's clock, ms), as this device processed
+   *  it; nil when this device did not see that Commit (a device older than this one). */
+  public var addedAt: UInt64?
   public var isMe = false
   public var isOnline = false
   public var offlineSince: UInt64?
@@ -443,6 +446,18 @@ public func linkState(online: Bool, offlineSince: UInt64?, link l: AgentLink?, n
 
 // ---- the board ---------------------------------------------------------------------------------------------
 
+/** The room's recovery key as Settings → Security shows it. */
+public struct RecoveryKey: Equatable {
+  public var fingerprint: String
+  public var since: UInt64?
+  public init(fingerprint: String, since: UInt64?) { self.fingerprint = fingerprint; self.since = since }
+}
+/** A key's fingerprint as the app shows it: the first 8 bytes of its hex, in groups of four (the web's keyFingerprint). */
+public func keyFingerprint(_ key: Bytes) -> String {
+  let h = Array(key.prefix(8).map { String(format: "%02x", $0) }.joined())
+  return stride(from: 0, to: h.count, by: 4).map { String(h[$0..<min($0 + 4, h.count)]) }.joined(separator: " ")
+}
+
 public final class Board {
   public var roomId: String?
   public var hubURL: String?
@@ -455,6 +470,12 @@ public final class Board {
   public var lastEntryNumber = -1
   public var lastEnvelopeNumber = 0
   public var connection = "offline"
+  /** The room's recovery key (8.1), which every epoch's content key is sealed to: the fingerprint of its HPKE public
+   *  key, and the time of the one room Commit that put it in force (nil when this device did not see that Commit
+   *  alone: the founding, a key older than this device, a catch-up of several Commits). */
+  public var recoveryKey: RecoveryKey?
+  /** The room Commits taken since the recovery key was last read: how many, and the time of the last. */
+  var roomCommits: (count: Int, time: UInt64?) = (0, nil)
   public var members: [String: RoomMember] = [:]
   public var sessions: [String: Session] = [:]
   public var cards: [String: Card] = [:]
@@ -550,9 +571,9 @@ public final class Board {
    */
   public var fingerprint: Int {
     var h = Hasher()
-    h.combine(lastEnvelopeNumber); h.combine(newerCount); h.combine(alerts.count); h.combine(connection); h.combine(keyEpoch)
+    h.combine(lastEnvelopeNumber); h.combine(newerCount); h.combine(alerts.count); h.combine(connection); h.combine(keyEpoch); h.combine(recoveryKey?.fingerprint); h.combine(recoveryKey?.since)
     for m in members.values.sorted(by: { $0.deviceId < $1.deviceId }) {
-      h.combine(m.deviceId); h.combine(m.isActive); h.combine(m.isOnline); h.combine(m.deviceName); h.combine(m.link?.hears); h.combine(m.link?.working); h.combine(m.link?.cutSince)
+      h.combine(m.deviceId); h.combine(m.isActive); h.combine(m.isOnline); h.combine(m.deviceName); h.combine(m.addedAt); h.combine(m.link?.hears); h.combine(m.link?.working); h.combine(m.link?.cutSince)
     }
     for s in sessions.values.sorted(by: { $0.sessionId < $1.sessionId }) {
       h.combine(s.sessionId); h.combine(s.isOnline); h.combine(s.isActive); h.combine(s.link?.hears); h.combine(s.link?.working); h.combine(s.link?.attached)
@@ -579,6 +600,39 @@ public final class Board {
       if m.role == "agent" { touchAgent(m.id, &change) }
     }
     change.members = true
+  }
+  /**
+   * When a device came in (model.ts applyCommit): a room Commit adds human devices (also the one that joins with the
+   * recovery code) and names the agent devices; a session Commit adds helper devices. A device is dated only by the
+   * Commit that first brought it: one this board already dated, or a human device added to a session, is not.
+   */
+  public func applyCommitFacts(_ f: CommitFacts, room: Bool, change: inout Change) {
+    func added(_ id: String, _ role: String, _ isNew: Bool) {
+      if let known = members[id], known.addedAt != nil || !isNew { return }
+      let m = members[id] ?? RoomMember(deviceId: id, role: role)
+      m.addedAt = f.time
+      if members[id] == nil { m.isActive = true; m.addedEntryNumber = Int(f.epoch) + 1; m.isMe = id == myDeviceId; members[id] = m }
+      change.members = true
+    }
+    if room {
+      // (a room Add or a join from outside always brings a new device, 4.2; an agent named again is an old one)
+      for d in f.adds { added(hex(d), "human", true) }
+      if f.external { added(hex(f.committer), "human", true) }
+      for d in f.agents ?? [] { let id = hex(d); added(id, "agent", members[id]?.isActive != true) }
+      roomCommits = (roomCommits.count + 1, f.time)
+    } else {
+      for d in f.adds { let id = hex(d); added(id, "agent", members[id] == nil) }
+    }
+  }
+  /** The recovery key the room state names now: dated by the room Commit before it only when it was the only one. */
+  public func applyRecoveryKey(_ key: Bytes?, change: inout Change) {
+    let seen = roomCommits
+    roomCommits = (0, nil)
+    guard let key, !key.isEmpty else { return }
+    let fp = keyFingerprint(key)
+    guard recoveryKey?.fingerprint != fp else { return }
+    recoveryKey = RecoveryKey(fingerprint: fp, since: recoveryKey != nil && seen.count == 1 ? seen.time : nil)
+    change.room = true
   }
   /** GET devices: who is online, and the agents' links. */
   public func applyDevices(_ devices: [JV], change: inout Change) {

@@ -1,4 +1,4 @@
-// "MLS proof" (/settings/proof, the last row of Settings): the Rust core tests itself in this browser and the page
+// "MLS proof" (/settings/proof, the last row of Settings → Security): the Rust core tests itself in this browser and the page
 // shows what came of it. One first line (OK or FAIL), then every step with its time, then what ran: the core's
 // versions, the app, the browser. "Run again" repeats it, "Copy result" copies the same lines as plain text. The iOS
 // app has the same screen at the same place.
@@ -14,7 +14,7 @@ import { Controller, controller, copyText, html, settingsPage } from './ui.mjs'
 /* global __TROMMI_PROOF_WORKER__ */
 // The worker's address: the deployed bundle names its file (dev/build.mjs), the dev server serves the source.
 const WORKER = typeof __TROMMI_PROOF_WORKER__ === 'string' ? __TROMMI_PROOF_WORKER__ : '/gen/vendor/proof-worker.mjs'
-const TITLE = 'Security Info'
+const TITLE = 'Self Test'
 const RUNNING = 'The Rust core is testing itself…'
 
 /** A time the core measured (microseconds) in milliseconds: one decimal under 100 ms. */
@@ -66,7 +66,7 @@ const proofMain = ({ alone = false, room = null } = {}) => settingsPage(TITLE, h
 <p class="proof-do"><button type="button" class="set-pill" id="proof-again" data-action="proof#run" data-proof-target="again" disabled>Run again</button><button type="button" class="set-pill" id="proof-copy" data-action="proof#copy" data-proof-target="copy" disabled>Copy result</button></p>
 ${room?.room_id ? facts('This account', 'proof-room-head', [['Room', `${room.room_id.slice(0, 16)}…`], ['Key epoch', String(room.key_epoch)], ['Hub', room.hub_url]]) : ''}
 ${alone ? html`<p class="room-meta"><a href="/">Open Trommi</a></p>` : ''}
-</div>`, { lead: 'The encryption core tests itself on this device. Nothing is sent, nothing is stored.', back: !alone })
+</div>`, { lead: 'The encryption core tests itself on this device. Nothing is sent, nothing is stored.', back: alone ? false : '/settings/security', backWord: 'Security' })
 
 export function register(t) {
   const client = t.hub.client

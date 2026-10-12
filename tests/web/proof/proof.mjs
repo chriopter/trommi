@@ -149,7 +149,7 @@ try {
   await settled()
   const first = await read()
   const okLine = /^OK: the Rust core ran (\d+) steps in \d+ ms$/.exec(first.line ?? '')
-  check(first.title === 'Security Info' && first.back === 'Settings', 'the screen is a page of Settings: its title, the way back', first)
+  check(first.title === 'Self Test' && first.back === 'Security', 'the screen is a page of Settings → Security: its title, the way back', first)
   check(Boolean(okLine), 'the first line starts with OK and says how many steps ran in how many ms', first.line)
   check(first.steps.length > 0 && Number(okLine?.[1]) === first.steps.length, 'every step the line counts has a row', first.steps.length)
   check(first.steps.every(s => s.name && /^OK \d+(\.\d)? ms$/.test(s.time)), 'every step row shows OK and its time in ms', first.steps)
@@ -171,15 +171,15 @@ try {
   check(Object.entries(first.facts).every(([k, v]) => lines.includes(`${k}: ${v}`)), 'the copied text holds every version and browser line', copied)
 
   // ---- 2. from Settings ----
-  await open('/settings')
-  await until("document.querySelector('#settings-proof')", 'Settings shows the row')
+  await open('/settings/security')
+  await until("document.querySelector('#settings-proof')", 'Settings → Security shows the row')
   const row = await evaluate("(() => { const rows = [...document.querySelectorAll('main .set-row')]; const a = document.querySelector('#settings-proof'); return { last: rows.at(-1) === a, word: a.querySelector('b').textContent, detail: a.querySelector('.set-detail').textContent } })()")
-  check(row.last && row.word === 'Security Info' && row.detail === 'self test', 'Security Info is the last row of Settings', row)
+  check(row.last && row.word === 'Self Test' && row.detail === 'runs on this device', 'Self Test is the last row of Settings → Security', row)
   if (SHOTS) for (const [width, height] of [[1440, 900], [390, 844]]) for (const theme of ['light', 'dark']) {
     await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 600 })
     await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
-    await open('/settings'); await until("document.querySelector('#settings-proof')", 'Settings shows the row'); await toEnd()
-    await shot(`settings-end-${width}-${theme}`)
+    await open('/settings/security'); await until("document.querySelector('#settings-proof')", 'Settings → Security shows the row'); await toEnd()
+    await shot(`security-end-${width}-${theme}`)
   }
   await page.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
   await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })

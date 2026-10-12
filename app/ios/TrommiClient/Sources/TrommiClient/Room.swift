@@ -272,6 +272,7 @@ public struct Store {
     removedAt = record.removedAt
     var ch = Change()
     try applyGroups(try device.groups(), &ch)
+    board.applyRecoveryKey((try? device.recoveryHpkeKey()) ?? nil, change: &ch)
   }
 
   /**
@@ -340,6 +341,7 @@ public struct Store {
     onChange?(c)
     // (a desk, a session's settings, the sessions or the stream changed: the goals handed to the agents may be behind)
     if c.room || !c.sessions.isEmpty || c.registers.contains(where: { $0.hasPrefix("desk/") || $0.hasPrefix("session/") }) { goalsSoon() }
+    if !c.sessions.isEmpty || !c.registers.isEmpty { vouchSoon() }
   }
 
   /** A hub error that says this app is too old: remembered (the app shows it), and rethrown. */
@@ -355,6 +357,14 @@ public struct Store {
   // ---- desk goals for the agents (spec/v1.md 9.3.4, Goals.swift) -----------------------------------------
 
   var goalsTask: Task<Void, Never>?
+  /** Self-join (spec/v1.md 12.4, SelfJoin.swift): the look at the agents' asks that is due, and the asks answered. */
+  var vouchTask: Task<Void, Never>?
+  var vouchAnswered = Set<String>()
+  /** The asks waiting for the person's tap, as the app shows them ("Allow new Claude session …?"). */
+  public internal(set) var vouchAsks: [SelfJoinPlan.Ask] = []
+  /** This device's vouched links not through yet (nonce → account), counted against the cap; devices being removed. */
+  var vouchPending: [String: String] = [:]
+  var vouchRetiring = Set<String>()
   /** What this device last wrote to `goals` of a session, in this run. */
   private var goalsSaid: [String: JV] = [:]
   private func goalsSoon() {
@@ -428,8 +438,9 @@ public struct Store {
     change.room = true
   }
   func refreshGroups(_ change: inout Change) async throws {
-    let list = try await onCore { try $0.groups() }
+    let (list, recovery): ([GroupSummary], Bytes?) = try await onCore { d in (try d.groups(), (try? d.recoveryHpkeKey()) ?? nil) }
     try applyGroups(list, &change)
+    board.applyRecoveryKey(recovery, change: &change)
   }
 
   // ---- catching up ---------------------------------------------------------------------------------------
@@ -889,7 +900,8 @@ public struct Store {
 
   /** What the core made of one item. */
   enum Outcome {
-    case processed(Processed)
+    /** `facts`: what the Commit did (CoreDevice.lastCommitFacts), for the dates Settings → Security shows. */
+    case processed(Processed, facts: CommitFacts? = nil)
     /** `heads`: for a `heads` register of another device, how its heads compare with this device's chains. */
     /** `winner`: for a register write the core did not make current, the core's current value of its name (nil
      *  inside: none, or deleted); nil for anything else. */
@@ -949,6 +961,7 @@ public struct Store {
             Spent.add("core heads", since: th)
             let tp = Spent.now
             let p = try device.processLogEntry(entry)
+            let facts = isCommit ? device.lastCommitFacts() : nil
             Spent.add(isCommit ? "core commit" : "core message", since: tp)
             let tc = Spent.now
             for (leaf, seq) in had where seq > 0 {
@@ -956,7 +969,7 @@ public struct Store {
             }
             Spent.add("core cuts", since: tc)
             if case .message = p {} else { commits = true }
-            out.append(.processed(p))
+            out.append(.processed(p, facts: facts))
           case .envelope(let c, let bytes, let void):
             if readingBack, c <= before, let r = keep[c] { out.append(.kept(r)); continue }
             let te = Spent.now
@@ -1012,7 +1025,8 @@ public struct Store {
       cursor = max(cursor, parsed[i].change)
       board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
       switch o {
-      case .processed(let p):
+      case .processed(let p, let facts):
+        if let facts { board.applyCommitFacts(facts, room: facts.group == roomId, change: &change) }
         switch p {
         case .commit(let group, _, let superseded, let removed):
           groupsStale = true

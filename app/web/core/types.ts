@@ -175,6 +175,10 @@ export interface Room {
   hub_url: string | null
   my_device_id: Hex | null
   my_role: Role | null
+  /** The room's recovery key (8.1), which every epoch's content key is sealed to: the fingerprint of its HPKE public
+   *  key, and the time of the room Commit that put it in force (its committer's clock), null when this device did
+   *  not see that Commit (the founding, a key older than this device). Null until the room state is known. */
+  recovery_key: { fingerprint: string; since: Ms | null } | null
   /** The room group's epoch. */
   key_epoch: number
   /** THE cursor: the hub's change number up to which this device has processed. */
@@ -200,6 +204,9 @@ export interface Member extends Linked {
   /** The room group's epoch in which this device first saw the member, and the one in which it was gone. */
   added_entry_number: number
   removed_entry_number: number | null
+  /** When it was added: the time of the Commit that added it (its committer's clock), as this device processed it.
+   *  Null when this device did not see that Commit (a device added before this one, or a cache from before). */
+  added_at: Ms | null
   is_me: boolean
   is_online: boolean
   offline_since: Ms | null
@@ -457,8 +464,13 @@ export interface Invite {
   invite_state: InviteState
   newcomer: { device_id: Hex; device_name: string } | null
   error: string | null
+  /** Self-join (spec/v1.md 12.4): the agent's ask this invite answers; such an invite is confirmed by the client
+   *  itself once the ask names the Request's hash, never by the emoji. */
+  vouch?: Vouch
   [field: string]: unknown
 }
+/** An agent's ask to let in a new session of its machine and account (12.4): `join_ask/<nonce>` in `session_id`. */
+export interface Vouch { nonce: string; session_id: Hex; account: string; account_label: string; by_name: string }
 
 export interface Alert { alert_id: string; code: string; message: string; envelope_number: EnvelopeNumber | null; sender_device_id: Hex | null; at: Ms; source: 'local' | 'agent' }
 

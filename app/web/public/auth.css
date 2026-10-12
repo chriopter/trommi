@@ -494,6 +494,8 @@ fieldset.set-group { min-width: 0; padding: 0; margin-inline: 0; }
 .set-stack > button { justify-self: start; }
 .set-note-after { margin-top: 0; }
 .set-small { margin: 0; color: var(--muted); font: 400 var(--t-sm)/1.45 var(--font); }
+.set-small.set-inline { display: inline; }
+.set-note-strong { font-weight: 600; }
 /* Confirm it is you: the way in of now, asked again for a change */
 .set-proof-g { background: color-mix(in srgb, var(--yellow, #f3d34a) 20%, var(--surface)); }
 .set-proof { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); padding: var(--s-4); }

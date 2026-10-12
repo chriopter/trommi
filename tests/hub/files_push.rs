@@ -598,10 +598,14 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0")).refused(401, "unauthorised");
 
     // Live Activity: two marks (0 or 1) and a tag. Work begins: start; a mark changes: update
+    s.agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "generation": s.agent.lease, "hears": true, "working": true, "last_call_at": 1 })).refused(409, "lease-lost");
+    // the agent reports that it works (a new process takes the lease), before the phone registers its tokens: the
+    // round a new token schedules (HUB_LIVE_MS later) must see the work, however slow the machine
+    let lease = s.agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "hears": true, "working": true, "last_call_at": 1 })).ok();
+    s.agent.lease = lease["generation"].as_u64();
     let start_token = "cd".repeat(32);
     s.w.ada.post(hub, "/v1/live-activity", &json!({ "kind": "start", "token": start_token, "tag": "tag-1", "environment": "production", "topic": "com.trommi.app" })).ok();
     s.w.ada.post(hub, "/v1/live-activity", &json!({ "kind": "activity", "token": "ef".repeat(32), "tag": "tag-1", "environment": "production", "topic": "com.trommi.app" })).ok();
-    s.agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "generation": s.agent.lease, "hears": true, "working": true, "last_call_at": 1 })).refused(409, "lease-lost");
     let live = |hub: &TestHub, token: &str| -> Vec<Value> {
         hub.pushes()
             .iter()
@@ -609,9 +613,6 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
             .map(|p| serde_json::from_slice::<Value>(&p.body).unwrap()["aps"].clone())
             .collect()
     };
-    // the agent reports that it works (a new process takes the lease)
-    let lease = s.agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "hears": true, "working": true, "last_call_at": 1 })).ok();
-    s.agent.lease = lease["generation"].as_u64();
     hub.eventually("the start of the Live Activity", || {
         !live(hub, &start_token).is_empty()
     });

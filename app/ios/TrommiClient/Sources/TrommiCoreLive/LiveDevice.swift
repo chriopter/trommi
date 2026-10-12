@@ -17,6 +17,8 @@ import TrommiCoreRust
 public final class LiveDevice: TrommiClient.CoreDevice {
   let device: TrommiCoreRust.CoreDevice
   public let id: DeviceId
+  /// The Commit the last processLogEntry took (lastCommitFacts).
+  private var lastFacts: TrommiClient.CommitFacts?
 
   init(store: CoreStorage, create: Bool) throws {
     let adapter = StoreAdapter(store)
@@ -240,7 +242,15 @@ public final class LiveDevice: TrommiClient.CoreDevice {
     case .message(let bytes):
       theirs = TrommiCoreRust.LogEntry(change: entry.change, group: entry.group.data, kind: .message, bytes: bytes.data, recoveryAuth: nil)
     }
+    lastFacts = nil
     let done = try core { try device.processLogEntry(entry: theirs, nowMs: nowMs()) }
+    switch done.kind {
+    case .commit, .ownCommit, .observed:
+      if let c = done.commit {
+        lastFacts = TrommiClient.CommitFacts(group: c.group.bytes, epoch: c.epoch, committer: c.committer.bytes, external: c.external, adds: c.adds.map(\.bytes), agents: c.agents?.map(\.bytes), time: c.time)
+      }
+    default: break
+    }
     // The core names the epoch a Commit builds on; Core.swift's `epoch` is where the group stands after it.
     func commit(superseded: UInt64?, removed: Bool) -> TrommiClient.Processed {
       guard let c = done.commit else { return .skipped }
@@ -435,4 +445,6 @@ public final class LiveDevice: TrommiClient.CoreDevice {
   func recoveryKeys() throws -> (signatureKey: Bytes, hpkeKey: Bytes)? {
     try core { try device.roomRoles() }.map { ($0.recoverySignatureKey.bytes, $0.recoveryHpkeKey.bytes) }
   }
+  public func lastCommitFacts() -> TrommiClient.CommitFacts? { lastFacts }
+  public func recoveryHpkeKey() throws -> Bytes? { try recoveryKeys()?.hpkeKey }
 }

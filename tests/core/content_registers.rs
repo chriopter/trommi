@@ -635,7 +635,11 @@ mod rules {
             ("heard", false, false, true, true),
             ("alert/x", false, false, true, true),
             ("goals", false, true, false, false),
+            ("join_ask/x", false, false, true, true),
+            ("join_link/x", false, true, false, false),
             // Names the table does not have.
+            ("join_ask/", false, false, false, false),
+            ("join_link/", false, false, false, false),
             ("", false, false, false, false),
             ("desk/", false, false, false, false),
             ("desk", false, false, false, false),

@@ -143,6 +143,21 @@ public enum Processed: Equatable {
   case message(ReceivedMessage)
   case skipped
 }
+/** What a Commit did, as far as Settings → Security shows it (core `CommitSummary`): who it added, the agent devices a
+ *  room Commit names, its time (the committer's clock, ms; nil when its note does not decode). `epoch`: the one it
+ *  builds on. */
+public struct CommitFacts: Equatable {
+  public var group: GroupId
+  public var epoch: UInt64
+  public var committer: DeviceId
+  public var external: Bool
+  public var adds: [DeviceId]
+  public var agents: [DeviceId]?
+  public var time: UInt64?
+  public init(group: GroupId, epoch: UInt64, committer: DeviceId, external: Bool, adds: [DeviceId], agents: [DeviceId]?, time: UInt64?) {
+    self.group = group; self.epoch = epoch; self.committer = committer; self.external = external; self.adds = adds; self.agents = agents; self.time = time
+  }
+}
 /** How to go on after `processLogEntry` threw (core `log_finding`). */
 public enum LogFinding: Equatable { case early, duplicate, badGroup, local }
 public struct Joined: Equatable {
@@ -481,6 +496,11 @@ public protocol CoreDevice: CoreSigner {
    *  joins by invite uses `joinInvited`. */
   func joinWelcome(_ welcome: Bytes, room: RoomId, committer: DeviceId?, nowMs: UInt64) throws -> Joined
   func processLogEntry(_ entry: LogEntry) throws -> Processed
+  /** The Commit the last `processLogEntry` took (another device's, this device's own, or one followed as an
+   *  observer); nil after anything else. Asked right after it, on the same queue. */
+  func lastCommitFacts() -> CommitFacts?
+  /** The room's recovery key (its HPKE public key, 8.1) at the newest room state; nil before the device follows a room. */
+  func recoveryHpkeKey() throws -> Bytes?
   /**
    * Learns the past of a group this device came into later (by link, or by a Welcome into a session group), from its
    * public history, in steps (PastWalk.swift): `learnStart` with the founding GroupInfo (epoch 0), `learnSlice` with
@@ -802,4 +822,9 @@ public enum Core {
   public static var isInstalled: Bool { lock.lock(); defer { lock.unlock() }; return installed != nil }
   private static var installed: CoreTools?
   private static let lock = NSLock()
+}
+
+public extension CoreDevice {
+  func lastCommitFacts() -> CommitFacts? { nil }
+  func recoveryHpkeKey() throws -> Bytes? { nil }
 }
