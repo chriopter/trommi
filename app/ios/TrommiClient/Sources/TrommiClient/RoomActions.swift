@@ -5,19 +5,30 @@
 // Every write is one envelope the core seals and signs (`seal`); it is in the core's outbox, durable,
 // before the hub sees it.
 import Foundation
+import TrommiCoreRust
 
 extension Room {
   /** A local id for an own echo (shown at once, replaced when the hub has it). */
   func newLocalId() -> String { echoSeq += 1; return "local-\(nowMs())-\(echoSeq)" }
 
-  /** A body in the names of spec/v1.md, with its schema version; refused when it is too large to seal. */
-  private func wire(_ content: JV, maxBytes: Int = 60_000) throws -> (payload: Bytes, files: [FileId]) {
-    var c = Records.renameFiles(content, toWire: true, depth: 0)
-    // (an object gets the schema version; any other value, a register's string or number, goes as it is: `with`
-    // would turn it into an object holding nothing else)
-    if c.object != nil, (c["schema_version"].int ?? 0) == 0 { c = c.with("schema_version", .num(Double(Compat.SCHEMA_VERSION))) }
+  /** A body of `kind` (the model's fields) in the names of spec/v1.md, as the client core writes it for every app
+   *  (client/src/codec.rs: ids, files, its checks); refused when it is too large to seal. */
+  private func wire(_ kind: String, _ content: JV) throws -> (payload: Bytes, files: [FileId]) {
+    let fields = String(decoding: content.encoded(), as: UTF8.self)
+    let text: String, files: [Data]
+    do {
+      text = try bodyToWire(kindName: kind, fieldsJson: fields)
+      files = try bodyFileIds(kindName: kind, fieldsJson: fields)
+    } catch { throw TrommiError("bad-argument", "\(error)") }
+    let payload = Bytes(text.utf8)
+    if payload.count > 60_000 { throw TrommiError("too-large", "body over 60 KB: put it into an attachment") }
+    return (payload, files.map { Bytes($0) })
+  }
+  /** A board item (the views' form) as the wire's: whole 1/16 units, `shape_ids`, transforms baked in. */
+  private func wireBoardItem(_ content: JV) throws -> (payload: Bytes, files: [FileId]) {
+    let c = Records.renameFiles(Records.boardItem(content, toWire: true), toWire: true, depth: 0).with("schema_version", .num(Double(Compat.SCHEMA_VERSION)))
     let payload = c.encoded()
-    if payload.count > maxBytes { throw TrommiError("too-large", maxBytes == 60_000 ? "body over 60 KB: put it into an attachment" : "a register value is at most 4 KiB") }
+    if payload.count > 60_000 { throw TrommiError("too-large", "body over 60 KB: put it into an attachment") }
     return (payload, Records.fileIds(c))
   }
 
@@ -62,7 +73,7 @@ extension Room {
     board.echoItem(localId: lid, timelineKey: key, content: .obj(content), recipient: recipient, objectId: cardId)
     var ch = Change(); ch.sessions.insert(sid); emit(ch)
     do {
-      let w = try wire(.obj(content))
+      let w = try wire("message", .obj(content))
       let session = try unhex(sid), cardBytes = try cardId.map { try unhex($0) }
       try await send(localId: lid, files: w.files) { cardBytes.map { .cardChat(session: session, card: $0, payload: w.payload) } ?? .sessionChat(session: session, payload: w.payload) }
     } catch { var c = Change(); dropEcho(lid, &c); emit(c); throw error }
@@ -110,7 +121,7 @@ extension Room {
     board.echoAnswer(localId: lid, cardId: cardId, answer: .obj(echo), state: closes ? "closed" : "answered")
     var ch = Change(); ch.cards.insert(cardId); ch.stack = true; if let s = card.sessionId { ch.sessions.insert(s) }; emit(ch)
     do {
-      let w = try wire(.obj(content))
+      let w = try wire("answer", .obj(content))
       let object = try unhex(cardId), session = try sessionOf(card.sessionId)
       try await send(localId: lid, files: w.files) { .answer(session: session, object: object, choices: choices, closes: closes, payload: w.payload) }
     } catch {
@@ -137,7 +148,7 @@ extension Room {
   /** Take an answer back: the card is open again. */
   public func decideAgain(cardId: String) async throws {
     guard let card = board.cards[cardId], let a = card.answer, a.envelopeHash != nil, !a.pending, card.versionHash != nil else { throw TrommiError("decision-mismatch", "no answer in force to take back") }
-    let w = try wire(.obj([:]))
+    let w = try wire("take_back", .obj([:]))
     let object = try unhex(cardId), session = try sessionOf(card.sessionId)
     try await send { .takeBack(session: session, object: object, payload: w.payload) }
   }
@@ -145,7 +156,7 @@ extension Room {
   /** Allow or deny a permission request. */
   public func verdict(requestId: String, allow: Bool) async throws {
     guard let asked = board.permissions[requestId] else { throw TrommiError("not-found", "no such permission request") }
-    let w = try wire(.obj([:]))
+    let w = try wire("verdict", .obj([:]))
     let request = try unhex(requestId), session = try sessionOf(asked.sessionId)
     try await send { .verdict(session: session, request: request, allow: allow, payload: w.payload) }
   }
@@ -180,8 +191,12 @@ extension Room {
       for k in values.keys.sorted() {
         let v = values[k] ?? .null
         // (a value of null deletes the name; the 4 KiB limit is the register's, 9.3.5)
-        let value: Bytes? = v.isNull ? nil : try wire(Records.registerValue(k, v, toWire: true), maxBytes: 4096).payload
-        let name = Records.registerName(k, toWire: true)
+        // (the name and value as the client core writes them: ids base64url, client/src/codec.rs encode_register)
+        let reg: RegisterWire
+        do { reg = try registerToWire(key: k, valueJson: String(decoding: v.encoded(), as: UTF8.self)) } catch { throw TrommiError("bad-argument", "\(error)") }
+        let value: Bytes? = reg.value.map { Bytes($0) }
+        if (value?.count ?? 0) > 4096 { throw TrommiError("too-large", "a register value is at most 4 KiB") }
+        let name = reg.name
         let lid = echoes[k]
         try await send(localId: lid, sealed: { echoes.removeValue(forKey: k) }) { .register(group: group, name: name, value: value) }
       }
@@ -261,7 +276,7 @@ extension Room {
     for n in board.notes.values { lamport = max(lamport, n.causal?.lamport ?? 0, n.base?.value.causal?.lamport ?? 0) }
     lamport += 1
     content["lamport"] = .n(lamport)
-    let w = try wire(.obj(content))
+    let w = try wire("note", .obj(content))
     let object = try objectId.map { try unhex($0) }
     if object == nil && close { throw TrommiError("bad-argument", "a note that does not exist cannot be deleted") }
     let r = try await send(files: w.files) { object.map { .noteVersion(object: $0, closed: close, payload: w.payload) } ?? .noteFirst(payload: w.payload) }
@@ -482,15 +497,16 @@ extension Room {
   public func sendCanvas(_ timelineId: String, _ content: JV) async throws {
     let id = try boardId(timelineId)
     // (the views write the model's form; the wire's is whole 1/16 units and `shape_ids`: Records.boardItem)
-    let w = try wire(Records.boardItem(content, toWire: true))
+    let w = try wireBoardItem(content)
     try await send(files: w.files) { .boardItem(board: id, payload: w.payload) }
   }
   /** A selection of the board to a session: its picture and words; what was sent leaves the board. */
   public func sendSelection(sessionId: String, canvas timelineId: String, text: String, picture: JV, strokeIds: [String]) async throws {
     guard board.sessions[sessionId]?.agentDeviceId != nil else { throw TrommiError("bad-argument", "this session has no agent") }
-    var c: [String: JV] = ["content_type": "selection_sent", "attachments": [picture], "stroke_ids": .arr(strokeIds.map { .str($0) }), "board": .str(timelineId)]
+    // (a plain Chat message with the picture, as the web's sendStrokes sends it; the shapes leave the board below)
+    var c: [String: JV] = ["content_type": "message", "attachments": [picture]]
     if !text.isEmpty { c["text"] = .str(text) }
-    let w = try wire(.obj(c))
+    let w = try wire("message", .obj(c))
     let session = try unhex(sessionId)
     try await send(files: w.files) { .sessionChat(session: session, payload: w.payload) }
     if !strokeIds.isEmpty { try await sendCanvas(timelineId, .obj(["content_type": "send_away", "stroke_ids": .arr(strokeIds.map { .str($0) })])) }
