@@ -1767,6 +1767,12 @@ impl Conn {
             tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
         }
         let disk = disk_version();
+        let release = crate::update::verify_file(&self_path());
+        if disk != self.loaded {
+            if let crate::update::Release::Refused(_) = release {
+                return format!("The file at this connector's path ({}) is not loaded: {}. Run `trommi-connector update` in a terminal to put the signed release in its place; it is swapped in by itself then. (This connector, version {}, keeps running.)", self_path().display(), crate::update::standing(&release), self.loaded);
+            }
+        }
         if disk != self.loaded && self.swap_in().await {
             return format!("A new connector is in place; it is swapped in now, without a restart, and the tools are listed again. (This answer is from the connector that ran so far, version {}.)", self.loaded);
         }
@@ -2805,6 +2811,13 @@ impl Conn {
     /// Under a launcher that can take the binary at this connector's path: asks it to swap that one in (no card,
     /// no reconnect). False when it cannot: then the update goes the way of the card.
     async fn swap_in(&self) -> bool {
+        // (a binary that does not check against the manifest beside it is never started, not even to ask its ABI)
+        if matches!(
+            crate::update::verify_file(&self_path()),
+            crate::update::Release::Refused(_)
+        ) {
+            return false;
+        }
         if !crate::launch::launched() || !crate::launch::swappable(&self_path()) {
             return false;
         }

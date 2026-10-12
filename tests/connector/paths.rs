@@ -289,3 +289,37 @@ async fn a_session_started_while_the_hub_is_away_gets_in_once_it_is_back() {
     mcp.ready().await;
     mcp.close().await;
 }
+
+/// A binary at the connector's path that does not check against the manifest beside it (a local build copied
+/// over a release, or a tampered file) is never swapped in; reload_connector says so and how to get the release
+/// back, instead of saying that it was swapped in.
+#[tokio::test(flavor = "multi_thread")]
+async fn reload_never_claims_a_refused_binary_was_swapped_in() {
+    let hub = HubProc::start().await;
+    let (_human, seat) = joined_on(&hub).await;
+    let bin = seat.home.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let program = bin.join("trommi-connector");
+    let original = std::fs::read(common::process::connector_binary()).expect("the built connector");
+    std::fs::write(&program, &original).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // a release's manifest beside it that names another file
+    std::fs::write(bin.join("manifest.json"), b"{}").unwrap();
+    std::fs::write(bin.join("manifest.json.sig"), [0u8; 64]).unwrap();
+    let mut mcp = seat
+        .serve_launched(&program, &[("TROMMI_UPDATE_POLL_MS", "1000")])
+        .await;
+    mcp.ready().await;
+    let mut changed = original.clone();
+    changed.extend_from_slice(b"\nanother build");
+    let new_file = bin.join(".new.trommi-connector");
+    std::fs::write(&new_file, &changed).unwrap();
+    std::fs::set_permissions(&new_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::rename(&new_file, &program).unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    let (said, failed) = mcp.call("reload_connector", json!({})).await;
+    assert!(!said.contains("swapped in now"), "{said}");
+    assert!(said.contains("trommi-connector update"), "{failed} {said}");
+    mcp.close().await;
+}
