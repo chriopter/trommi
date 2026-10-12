@@ -382,7 +382,14 @@ impl DeskState {
             || matches!(&self.listing, Some(l) if !self.listed.contains_key(id) && newest <= l.at)
     }
     fn card_held(&self, c: &DeskCard) -> bool {
-        c.state == State::Open && self.held_by_list(&c.object_id, c.newest.max(c.version_change))
+        c.state == State::Open
+            && !self.in_archived(c.session_id.as_deref())
+            && self.held_by_list(&c.object_id, c.newest.max(c.version_change))
+    }
+    /// A card or request of an archived session: the hub lists only live sessions' objects (`active=1`), so its
+    /// absence from the list says nothing of it; it stands on no Desk anyway.
+    fn in_archived(&self, session: Option<&str>) -> bool {
+        session.is_some_and(|s| self.archived.contains(s))
     }
     /// Whether the person's "Later" still holds a card off the Desk at `now`, and until when (None inside: for good):
     /// until its time, and only for the version he put off. A newer version of the card (revised, its urgency raised)
@@ -449,7 +456,7 @@ impl DeskState {
                 .then_with(|| a.object_id.cmp(&b.object_id))
         });
         for r in pending {
-            if self.held_by_list(&r.object_id, r.newest.max(r.envelope_number)) {
+            if !self.in_archived(r.session_id.as_deref()) && self.held_by_list(&r.object_id, r.newest.max(r.envelope_number)) {
                 held.push(r.object_id.clone());
                 continue;
             }
@@ -841,6 +848,25 @@ mod tests {
         let p = d.project(1_000);
         assert_eq!(p.stack, ["a"], "version 8 is newer than the snooze written at 7");
         assert_eq!(p.next_wake, 0);
+    }
+
+    /// The hub's list holds only live sessions' objects: an open card of an archived session that it leaves out is
+    /// not held as settled elsewhere.
+    #[test]
+    fn an_archived_sessions_card_is_not_held_by_the_list() {
+        let mut d = DeskState::new();
+        d.put_card(DeskCard {
+            session_id: Some("old".into()),
+            ..card("a", 5)
+        });
+        d.set_listing(Some(Listing {
+            at: 50,
+            ..Default::default()
+        }));
+        assert_eq!(d.projection(1).held, ["a"]);
+        d.set_archived(["old".to_string()]);
+        assert!(d.projection(1).held.is_empty());
+        assert!(d.projection(1).stack.is_empty(), "and on no Desk");
     }
 
     #[test]
