@@ -16,6 +16,8 @@ small under the summary while the day is one of the newest three.
 
 Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and settings.
 
+![Starred cards on top of Off your mind, in the demo room](app/web/public/changelog/2026-10-12.webp)
+
 **New**
 - Star a card (the star beside its close button) to find it again: starred cards stand at the top of Off your
   mind, private and end-to-end encrypted, the same on all your devices (web and iPhone).
