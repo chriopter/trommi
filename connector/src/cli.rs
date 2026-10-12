@@ -62,11 +62,25 @@ pub async fn join(given: Option<String>) -> Result<String> {
         .map(|p| p.key_file.display().to_string())
         .unwrap_or_default();
     let out = format!(
-        "joined room {room} as device {}, session {sid}; key file {kf}\nNow start claude (or codex) in this folder.",
+        "joined room {room} as device {}, session {sid}; key file {kf}",
         c.me()
     );
+    // What this process wrote (the device's name) goes out before it ends; then the key is handed to the MCP
+    // server of the Claude Code (or Codex) session whose shell ran this, which goes online at once.
+    let _ = c.settle(3000).await;
     m.stop().await;
-    Ok(out)
+    // (the ring is not waited for: this process holds the device's state until it ends, and the server takes
+    // it once this process is gone)
+    let up = crate::hooks::ancestors(8);
+    let running = up.iter().any(|p| crate::door::bell_path(*p).exists());
+    if running {
+        let _ = ring(&up, 300).await;
+    }
+    Ok(if running {
+        format!("{out}\nThe Trommi MCP server of this session goes online with this key now; its board tools appear in a moment.")
+    } else {
+        format!("{out}\nNow start claude (or codex) in this folder, or reconnect its Trommi MCP server (/mcp).")
+    })
 }
 
 fn not_in_room(phase: &str) -> String {

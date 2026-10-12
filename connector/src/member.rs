@@ -298,6 +298,20 @@ pub fn resolve_room(cfg: &Cfg) -> Result<Option<String>> {
     }
     Ok(rooms.into_iter().next())
 }
+/// Whether a keyed slot of this folder waits for a connector of this session: no process holds it, and its owner
+/// record lets this session take it (a join of this session in a terminal or the agent's shell made it).
+pub fn key_waiting(cfg: &Cfg) -> bool {
+    let Ok(Some(room_id)) = resolve_room(cfg) else {
+        return false;
+    };
+    slots_in(cfg, &cfg.keys_dir.join(&room_id))
+        .into_iter()
+        .any(|n| {
+            let p = paths_of(cfg, &room_id, n);
+            holders_of(&p).is_empty() && may_take(owner_of(&p).as_ref(), &cfg.owner, ppid())
+        })
+}
+
 pub fn paths_of(cfg: &Cfg, room_id: &str, slot: u32) -> SlotPaths {
     let dir = cfg.keys_dir.join(room_id);
     let name = format!("{}-{slot}", cfg.base);
@@ -621,18 +635,29 @@ pub struct Member {
 /// How long a connector that found no hub of this protocol waits before it asks again.
 const NO_HUB_PAUSE_MS: u64 = 60_000;
 
+/// The name a new session shows until its agent introduces itself: the folder's name; for the home folder (or
+/// the root) the machine's name, else "Claude Code".
+pub fn default_name(cfg: &Cfg) -> String {
+    let folder = cfg
+        .folder
+        .file_name()
+        .map(|x| x.to_string_lossy().to_string())
+        .filter(|x| !x.is_empty());
+    match folder {
+        Some(name) if cfg.shown != "~" => name,
+        _ => Some(cfg.host.trim().to_string())
+            .filter(|h| !h.is_empty() && h != "localhost")
+            .unwrap_or_else(|| "Claude Code".into()),
+    }
+}
+
 pub fn client_name() -> Option<String> {
     Some(crate::CLIENT.to_string())
 }
 
 impl Member {
     pub fn new(cfg: Cfg) -> Arc<Member> {
-        let name = cfg
-            .folder
-            .file_name()
-            .map(|x| x.to_string_lossy().to_string())
-            .filter(|x| !x.is_empty())
-            .unwrap_or_else(|| cfg.shown.clone());
+        let name = default_name(&cfg);
         let device_info = json!({ "device_name": name, "platform": "claude-code", "folder": cfg.shown, "host": cfg.host });
         let m = Arc::new(Member {
             me: Mutex::new(Me {
@@ -1313,7 +1338,11 @@ impl Member {
                     .is_some_and(|p| !p.has_key && !p.busy.is_empty());
             (me.phase.clone(), keyless)
         };
-        if phase != "asleep" && !keyless && phase != "retired" {
+        // A key that a join in another process of this session made (`trommi-connector connect` through the
+        // agent's shell) is taken at once: the session is online without waiting for its next tool call.
+        let fresh =
+            phase == "needs-invite" && !self.me.lock().unwrap().joining && key_waiting(&self.cfg);
+        if phase != "asleep" && !keyless && !fresh && phase != "retired" {
             return;
         }
         // A device the hub refuses (unverified) stays stopped in this process: its state is kept, and trying
