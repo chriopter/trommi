@@ -42,7 +42,7 @@ const bad = (message: string): never => { throw new BodyError('bad-format', mess
 const FIELDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   message: ['content_type', 'text', 'details', 'html', 'attachments', 'explain', 'hand_back', 'present_card', 'copied_cards', 'marks', 'terminal', 'note', 'published_object_id'],
   card: ['object_version', 'previous_version_hash', 'card_type', 'title', 'teaser', 'body', 'options', 'sections', 'html', 'allows_multiple', 'recommended', 'urgency_reason', 'attachments',
-    'change_note', 'close_summary', 'withdraw_reason', 'merged_into_object_id', 'merged_from_object_ids'],
+    'change_note', 'close_summary', 'withdraw_reason', 'merged_into_object_id', 'merged_from_object_ids', 'working'],
   artifact: ['object_version', 'previous_version_hash', 'artifact_type', 'title', 'note', 'attachments', 'released_until'],
   answer: ['answer_action', 'choices', 'note', 'option_notes', 'attachments', 'marks', 'trusted', 'answered_at'],
   request: ['tool_name', 'description', 'input_preview'],

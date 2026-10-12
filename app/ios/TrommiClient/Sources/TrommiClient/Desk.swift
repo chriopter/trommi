@@ -193,6 +193,8 @@ public struct DeskCard: Identifiable {
   public var pending = false
   public var heard: Bool?
   public var withAgent: UInt64?
+  /** Its agent is still working on it (an info from start_task): with the agent, no Take back. */
+  public var working = false
   public var draft: JV?
   public var snoozedUntil: UInt64?
   public var snoozedAt: UInt64?
@@ -508,6 +510,9 @@ public final class DeskModel {
     if let r = c.inRevision, status == "open" {
       d.withAgent = m.timelines[c.timelineKey]?.items[r.envelopeNumber]?.sentAt ?? c.updatedAt
     }
+    // An info its agent is still working on (start_task, spec 9.1.3): with the agent from the start, under Off your
+    // mind with the working strip, never on the Desk; its "Done: …" version brings it to the Desk.
+    if c.working && status == "open" && d.kind == "info" { d.working = true; if d.withAgent == nil { d.withAgent = d.created } }
     if let dr = h.drafts[c.objectId], status == "open" { d.draft = dr }
     if let st = h.stars[c.objectId], st.object != nil { d.starred = max(1, clampedU64(st["at"].double)) }
     if let sn = h.snoozes[c.objectId], status == "open", let until = sn["until"].double {

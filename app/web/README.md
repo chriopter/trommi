@@ -182,7 +182,8 @@ instead); files come network first, the cache only offline. On the dev server (`
   shows). A row's title says its number, session and whole title.
 - **Selection bar:** while rows are selected, Later (the pull-tag: the rows go down into Off your mind), Egal, Read (with
   infos), Shred; one POST `/cards/batch`, one toast with Undo.
-- **With the agents:** answered cards whose session is still at it, one line each, below the open ones. A card answered
+- **With the agents:** answered cards whose session is still at it, and an info its agent is still working on
+  (`working`, from `start_task`: never on the Desk until its "Done: …" version), one line each, below the open ones. A card answered
   with a final option (a small pen tick on its tile) never lies here: the answer settles it, it goes to "Off the desk"
   at once ("settled by your answer"), and Take back opens it again.
 - **Foot:** Off your mind (the end list: what is with the agents, then snoozed, done, shredded cards, five lines; "Show

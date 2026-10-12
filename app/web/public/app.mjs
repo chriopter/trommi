@@ -819,6 +819,9 @@ export class BoardState {
     const mark = m.sessions.get(keyOf(c))?.heard_up_to
     if (Number.isInteger(said) && mark != null) card.heard = said <= mark
     if (c.in_revision && status === 'open') card.with_agent = this.timeOf(c.timeline_key, c.in_revision.envelope_number) ?? c.updated_at ?? Date.now()
+    // An info its agent is still working on (start_task, spec 9.1.3): with the agent from the start, under Off your
+    // mind with the working strip, never on the Desk; its "Done: …" version brings it to the Desk.
+    if (c.working === true && status === 'open' && card.kind === 'info') { card.working = true; card.with_agent ??= c.created_at ?? Date.now() }
     if (draft && status === 'open') card.draft = { keys: draft.keys ?? [], note: draft.note ?? '', notes: draft.notes ?? {}, ...(draft.marks?.length ? { marks: draft.marks } : {}), ts: draft.ts ?? 0 }
     if (snooze?.until > Date.now() && status === 'open') { card.snoozed_until = snooze.until; card.snoozed_at = snooze.at ?? 0 }
     else if (snooze?.until && status === 'open') card.unsnoozed = snooze.until   // woken by hand or by the clock: "Back from snooze"
@@ -1166,7 +1169,7 @@ function hubFacade(client, board) {
     },
     async takeBack(cardId) {
       const c = card(cardId)
-      if (c.status !== 'open' || c.with_agent == null) throw fail(409, 'this card is not with the agent')
+      if (c.status !== 'open' || c.with_agent == null || c.working) throw fail(409, 'this card is not with the agent')
       await client.sendMessage({ ...addressOf(m(), dev(c.agent)), object_id: cardId, text: 'The human took the card back; no need to rework or explain it.', present_card: true })
     },
     async message({ agent, text = '', card_id, handback, explain, attachments = [], marks, cards }) {

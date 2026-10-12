@@ -135,6 +135,8 @@ export interface CardBody extends BodyBase {
   withdraw_reason?: string | null
   merged_into_object_id?: Hex | null
   merged_from_object_ids?: Hex[] | null
+  /** An info its agent is still working on: off the Desk, under Off your mind (spec 9.1.3). */
+  working?: boolean | null
 }
 export interface AnswerBody extends BodyBase {
   answer_action?: AnswerAction | string
@@ -325,6 +327,8 @@ export interface Card {
   withdraw_reason: string | null
   merged_into_object_id: Hex | null
   merged_from_object_ids: Hex[] | null
+  /** Its agent is still working on it (spec 9.1.3): off the Desk until a version without it. */
+  working?: boolean | null
   object_version: number
   /** The envelope hash of the current version: an answer binds to it. */
   version_hash: Hex | null

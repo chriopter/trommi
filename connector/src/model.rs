@@ -293,7 +293,8 @@ pub struct Model {
     pub cards: BTreeMap<String, Card>,
     pub permissions: BTreeMap<String, Permission>,
     pub published: BTreeMap<String, Published>,
-    /// The open cards as the human's stack shows them: most urgent first, then oldest first.
+    /// The open cards as the human's stack shows them: most urgent first, then oldest first (one still being worked
+    /// on, `working`, is off his Desk: spec 9.1.3).
     pub stack: Vec<String>,
     /// What changed since the last [`Model::take_dirty`]: `card/<id>`, `session/<id>`, `perm/<id>`, `pub/<id>`.
     dirty: BTreeSet<String>,
@@ -478,7 +479,7 @@ impl Model {
         let mut open: Vec<&Card> = self
             .cards
             .values()
-            .filter(|c| c.object_state == "open")
+            .filter(|c| c.object_state == "open" && c.f("working") != &Value::Bool(true))
             .collect();
         open.sort_by_key(|c| (std::cmp::Reverse(rank(&c.urgency)), c.first_envelope_number));
         self.stack = open.iter().map(|c| c.object_id.clone()).collect();
