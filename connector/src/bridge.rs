@@ -1488,6 +1488,52 @@ impl Bridge {
                 let id = self.client.send_card(fields, sid).await?;
                 Ok(format!("info {id} put on the board; when the human has read and closed it, info_read arrives, which needs no answer{}", stripped_hint()))
             }
+            "start_task" => {
+                let what = trim(&s(args.get("title")));
+                if what.is_empty() {
+                    return Err(err("title is required: what is being worked on"));
+                }
+                let title = if working_title(&what) {
+                    what.clone()
+                } else {
+                    format!("Working on: {what}")
+                };
+                let line_id = if present(args.get("id")) {
+                    trim(&js_str(&args["id"]))
+                } else {
+                    String::new()
+                };
+                let line_id = if line_id.is_empty() {
+                    task_id(&what)
+                } else {
+                    line_id
+                };
+                let detail = if present(args.get("detail")) {
+                    trim(&js_str(&args["detail"]))
+                } else {
+                    String::new()
+                };
+                let mut a = Map::new();
+                a.insert("title".into(), json!(title));
+                a.insert(
+                    "body".into(),
+                    json!(if detail.is_empty() { &what } else { &detail }),
+                );
+                a.insert("urgency".into(), json!("low"));
+                let mut fields = info_fields(&a, &[])?;
+                fields.insert("attachments".into(), json!([]));
+                let sid = self.session_of(args, Map::new()).await?;
+                let card = self.client.send_card(fields, sid.clone()).await?;
+                let sid = self.line_session(sid.as_deref()).await;
+                let label = brief(&strip_working(&what), 40);
+                self.put_line(
+                    sid,
+                    &line_id,
+                    Some((json!(label), "working", json!(detail), json!(card))),
+                )
+                .await?;
+                Ok(format!("card {card} \"{title}\" is on the board, status \"{line_id}\" is working and linked to it. When the work is done, revise_card {card} with a title \"Done: …\" and the result: the line turns done"))
+            }
             "revise_card" => self.revise(args).await,
             "merge_cards" => {
                 let mut ids: Vec<String> = vec![];
@@ -1661,16 +1707,25 @@ impl Bridge {
                 };
                 // A line that waits on the human waits on a question: one that says so in words is linked to the
                 // session's newest open question, and a decision line without a card to it too.
+                // A line linked to its task's open "Working on" card keeps that link while it works.
                 let mut state = state;
                 let mut linked = String::new();
+                let infos = self.open_infos().await;
+                let task = before
+                    .as_ref()
+                    .and_then(|b| b.object_id.as_str())
+                    .filter(|o| infos.contains(*o))
+                    .map(String::from);
                 if card.is_none() {
                     let says =
                         waits_on_human(&format!("{} {}", plain(&json!(label)), plain(&detail)));
                     let kept = before
                         .as_ref()
                         .map(|b| b.object_id.clone())
-                        .filter(|v| !v.is_null());
-                    if (state == "decision" && kept.is_none()) || (state == "working" && says) {
+                        .filter(|v| !v.is_null() && task.is_none());
+                    if (state == "decision" && kept.is_none())
+                        || (state == "working" && says && task.is_none())
+                    {
                         if let Some(q) = self.open_questions(sid.as_deref()).await.first() {
                             card = Some(q.clone());
                             state = "decision";
@@ -1685,11 +1740,15 @@ impl Bridge {
                             before
                                 .as_ref()
                                 .map(|b| b.object_id.clone())
-                                .filter(|v| !v.is_null())
+                                .filter(|v| !v.is_null() && task.is_none())
                         })
                         .unwrap_or(Value::Null)
                 } else {
-                    Value::Null
+                    // (working or done: linked to the card given, else to its task's card)
+                    card.as_ref()
+                        .map(|c| json!(c.object_id))
+                        .or(task.map(Value::String))
+                        .unwrap_or(Value::Null)
                 };
                 let mut v = Map::new();
                 v.insert(format!("status_line/{id}"), json!({ "label": label, "state": state, "detail": detail, "object_id": object_id }));
@@ -2388,10 +2447,17 @@ impl Bridge {
         let urgency = fields
             .remove("urgency")
             .and_then(|v| v.as_str().map(String::from));
+        let title = s(fields.get("title"));
         self.client.revise(&card.object_id, fields, urgency).await?;
+        let finished = if info && done_title(&title) {
+            self.finish_lines(card.session_id.clone(), &card.object_id, &title)
+                .await
+        } else {
+            String::new()
+        };
         let place = self.place_of(&card.object_id).await;
         Ok(format!(
-            "card {} revised, now version {}, {place}{}{}",
+            "card {} revised, now version {}, {place}{}{finished}{}",
             card.object_id,
             card.object_version + 1,
             if card.in_revision.is_some() {
@@ -3133,6 +3199,52 @@ fn file_meta(m: &mut Map<String, Value>, paths: &[String], image: &Option<String
         }
     }
 }
+/// Whether a card title says the work on it is done ("Done: …", "Fertig: …", …).
+pub fn done_title(title: &str) -> bool {
+    regex::Regex::new(r"(?i)^\s*(done|fertig|erledigt|resolved|gelöst)\b")
+        .unwrap()
+        .is_match(title)
+}
+
+const WORKING: &str = r"(?i)^\s*(working on|arbeite an|in arbeit)\s*:\s*";
+
+/// Whether a title already says that it is being worked on ("Working on: …", "Arbeite an: …").
+fn working_title(title: &str) -> bool {
+    regex::Regex::new(WORKING).unwrap().is_match(title)
+}
+
+/// A title without its "Working on: " in front.
+fn strip_working(title: &str) -> String {
+    regex::Regex::new(WORKING)
+        .unwrap()
+        .replace(title, "")
+        .to_string()
+}
+
+/// The status id `start_task` derives from a title: its words in lower case, joined by "-", at most 32 characters.
+fn task_id(title: &str) -> String {
+    let mut id = String::new();
+    for w in strip_working(title)
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+    {
+        if !id.is_empty() && id.chars().count() + 1 + w.chars().count() > 32 {
+            break;
+        }
+        if !id.is_empty() {
+            id.push('-');
+        }
+        id.push_str(w);
+    }
+    let id: String = id.chars().take(32).collect();
+    if id.is_empty() {
+        "task".into()
+    } else {
+        id
+    }
+}
+
 fn brief(said: &str, max: usize) -> String {
     let line = regex::Regex::new(r"\s+")
         .unwrap()
@@ -3385,7 +3497,8 @@ impl Bridge {
 
     /// A question was filed: its session's status line now waits on it (decision, with the card), so that the
     /// human sees it and the line follows the answer. A line that already names the card stays; else the line
-    /// that says it waits on the human, else the session's one working line, else a line of its own.
+    /// that says it waits on the human, else the session's one working line, else a line of its own. A line linked
+    /// to an open info card (a task's "Working on" card) is never taken.
     async fn link_question(&self, sid: Option<String>, card: &str, title: &str) {
         let sid = self.line_session(sid.as_deref()).await;
         let lines = self
@@ -3422,9 +3535,14 @@ impl Bridge {
             }
             return;
         }
+        // (a line linked to its "Working on" card stays with that card: the question gets a line of its own)
+        let infos = self.open_infos().await;
         let working: Vec<&model::StatusLine> = lines
             .iter()
-            .filter(|l| l.state.as_str() == Some("working"))
+            .filter(|l| {
+                l.state.as_str() == Some("working")
+                    && !l.object_id.as_str().is_some_and(|o| infos.contains(o))
+            })
             .collect();
         let target =
             working
@@ -3517,6 +3635,54 @@ impl Bridge {
                 eprintln!("[trommi] status line {} not settled: {e}", l.id);
             }
         }
+    }
+
+    /// An info card was revised to "Done: …": every line of its session linked to it turns done, saying the title.
+    /// Returns what to tell the agent.
+    async fn finish_lines(&self, sid: Option<String>, card: &str, title: &str) -> String {
+        let sid = self.line_session(sid.as_deref()).await;
+        let lines = self
+            .my_session(sid.as_deref())
+            .await
+            .map(|s| s.status_lines)
+            .unwrap_or_default();
+        let mut done = vec![];
+        for l in lines
+            .iter()
+            .filter(|l| l.object_id.as_str() == Some(card) && l.state.as_str() != Some("done"))
+        {
+            match self
+                .put_line(
+                    sid.clone(),
+                    &l.id,
+                    Some((
+                        l.label.clone(),
+                        "done",
+                        json!(brief(title, 120)),
+                        json!(card),
+                    )),
+                )
+                .await
+            {
+                Ok(()) => done.push(format!("\"{}\"", l.id)),
+                Err(e) => eprintln!("[trommi] status line {} not done: {e}", l.id),
+            }
+        }
+        if done.is_empty() {
+            String::new()
+        } else {
+            format!("; status {} done", done.join(", "))
+        }
+    }
+
+    /// The ids of this agent's open info cards: a line linked to one follows its task, not a question.
+    async fn open_infos(&self) -> HashSet<String> {
+        self.my_cards()
+            .await
+            .into_iter()
+            .filter(|k| k.object_state == "open" && k.card_type() == "info")
+            .map(|k| k.object_id)
+            .collect()
     }
 
     /// The agent closed, withdrew or merged a card: the lines the connector made for it go, and a line that still

@@ -1564,6 +1564,114 @@ async fn a_status_line_follows_its_question_to_the_answer() {
     mcp.close().await;
 }
 
+/// `start_task` files the quiet "Working on" card and the status line linked to it in one step; the line keeps that
+/// link through updates and a question in the session (which gets a line of its own), and turns done when the card
+/// is revised to "Done: …".
+#[tokio::test(flavor = "multi_thread")]
+async fn start_task_files_its_card_and_line_and_done_flips_the_line() {
+    let (_hub, mut human, _seat, mut mcp, _group) = seated().await;
+    mcp.ok(
+        "open_session",
+        json!({ "name": "Release", "task": "Migration" }),
+    )
+    .await;
+    let said = mcp
+        .ok(
+            "start_task",
+            json!({ "session": "Release", "title": "Migration der Tabelle orders", "detail": "testet auf Staging" }),
+        )
+        .await;
+    let card = said
+        .split_whitespace()
+        .nth(1)
+        .expect("the card's id")
+        .to_string();
+    assert_eq!(card.len(), 32, "{said}");
+    let line_id = "migration-der-tabelle-orders";
+    assert!(said.contains(&format!("status \"{line_id}\"")), "{said}");
+    let listed: Value =
+        serde_json::from_str(&mcp.ok("list_cards", json!({ "session": "Release" })).await)
+            .expect("JSON");
+    assert_eq!(listed[0]["id"], card.as_str(), "{listed}");
+    assert_eq!(
+        listed[0]["title"], "Working on: Migration der Tabelle orders",
+        "{listed}"
+    );
+    assert_eq!(listed[0]["urgency"], "low", "{listed}");
+
+    human.sync().await;
+    let helper = human
+        .groups()
+        .await
+        .into_iter()
+        .find(|g| g.session.is_some_and(|s| !s.parent.is_zero()))
+        .expect("the helper's session")
+        .group;
+    let key = format!("status_line/{line_id}");
+    let line = human.register(&helper, &key).await.expect("the line");
+    assert_eq!(line["state"], "working", "{line}");
+    assert_eq!(line["object_id"], card.as_str(), "{line}");
+    assert_eq!(line["detail"], "testet auf Staging", "{line}");
+
+    // An update without card_id keeps the link; a question gets a line of its own.
+    mcp.ok(
+        "set_status",
+        json!({ "session": "Release", "id": line_id, "state": "working", "detail": "läuft auf Produktion" }),
+    )
+    .await;
+    let asked = mcp
+        .ok(
+            "create_decision",
+            json!({ "session": "Release", "title": "Jetzt ausrollen?", "options": [{ "key": "a", "label": "Jetzt" }, { "key": "b", "label": "Später" }] }),
+        )
+        .await;
+    let question = asked.split_whitespace().nth(1).expect("an id").to_string();
+    human.sync().await;
+    let line = human.register(&helper, &key).await.expect("the line");
+    assert_eq!(line["state"], "working", "{line}");
+    assert_eq!(line["object_id"], card.as_str(), "{line}");
+    assert_eq!(line["detail"], "läuft auf Produktion", "{line}");
+    let own = human
+        .register(&helper, &format!("status_line/q-{}", &question[..8]))
+        .await
+        .expect("the question's own line");
+    assert_eq!(own["state"], "decision", "{own}");
+
+    // "Working on" → "Done": the line turns done.
+    let revised = mcp
+        .ok(
+            "revise_card",
+            json!({ "card_id": card, "title": "Done: Migration der Tabelle orders", "body": "38 Sekunden Sperre." }),
+        )
+        .await;
+    assert!(
+        revised.contains(&format!("status \"{line_id}\" done")),
+        "{revised}"
+    );
+    human.sync().await;
+    let line = human.register(&helper, &key).await.expect("the line");
+    assert_eq!(line["state"], "done", "{line}");
+    assert_eq!(line["object_id"], card.as_str(), "{line}");
+    assert_eq!(
+        line["detail"], "Done: Migration der Tabelle orders",
+        "{line}"
+    );
+
+    // A title that already says it ("Arbeite an: …") is kept, the id is given.
+    let said = mcp
+        .ok(
+            "start_task",
+            json!({ "title": "Arbeite an: Login-Seite", "id": "login" }),
+        )
+        .await;
+    assert!(
+        said.contains("\"Arbeite an: Login-Seite\"") && said.contains("status \"login\""),
+        "{said}"
+    );
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
+    mcp.close().await;
+}
+
 /// Two agent sessions in one folder are two members: the key a terminal's `join` made is adopted by the first
 /// session that uses it, and a second session started in the same folder never takes it, also not once it is
 /// free, never gets it handed over, and cannot `say` through it. Only the first session again (a resume) is

@@ -113,9 +113,14 @@ list, a `codex` script that notes the queued wakes). `tests/connector/codex_real
 one session over many turns) against a local hub, opt-in: `cargo test -p trommi-tests --test connector_codex_real
 -- --ignored --nocapture` (`CODEX_MODEL`, `TROMMI_CODEX_RUNS`).
 
-## Helpers read their own events
+## Helpers and their events
 
-A helper (a subagent in a child session from `open_session`) calls `inbox` with `session: "<name>"`: it gets that
+The coordinator (the agent that opened the child sessions) reads every board event itself and forwards each to the
+helper it belongs to; helpers never call `inbox`. Before a helper starts, the coordinator files its "Working on"
+card in the helper's session (`start_task` with `session`) and hands it the card id; the helper revises that card to
+"Done: …" at its end.
+
+Optional, for clients that let helpers read their own events: a helper calls `inbox` with `session: "<name>"`: it gets that
 session's events alone, and the call claims the session. While the claim holds, the session's events wait for that
 helper only: plain `inbox`, the monitor line and channel events skip them, so the coordinator forwards nothing. A
 "Done: …" (or Fertig, Erledigt, Resolved, Gelöst) card the helper files there gives the coordinator one short line
@@ -141,6 +146,12 @@ the human answers, every line on the card, and every line that still says it wai
 session is open, turns `working` with "Antwort da: <labels>" (a card he put away unanswered: "Ohne Antwort
 weggelegt"). The connector's own line goes with `close_card` or `withdraw_card`, or when the agent sets a line of
 its own for the card; a final option makes it `done`.
+
+A task's line names its "Working on" info card. `start_task` files that card (low urgency) and sets the line
+`working`, linked to it, in one step; a `set_status` in state `working` with a `card_id` links a line the same way.
+While the card is open, the line keeps the link: a later `set_status` without `card_id` does not drop it, and a
+question filed in the session gets a line of its own instead of taking this one. When `revise_card` gives the card a
+title "Done: …" (or Fertig, Erledigt, Resolved, Gelöst), every line linked to it turns `done` with that title.
 
 ## What is where
 
