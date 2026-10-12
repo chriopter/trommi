@@ -30,7 +30,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const DEAF_HINT: &str = "This Claude Code session was started without --dangerously-load-development-channels server:trommi, so Claude Code drops the board's live events (chat, decisions) before you see them. Until the human restarts it with that flag (e.g. `claude --resume <session> --dangerously-load-development-channels server:trommi`), the events that came in are attached to your next tool result. Tell the human so once, with reply.";
+pub const DEAF_HINT: &str = "Claude Code does not show this server's live channel events in this session (that needs no restart and no flag): board events (chat, decisions) reach you through the Trommi monitor, whose lines \"Trommi · …\" say to call inbox, and the events that came in are attached to your next Trommi tool result.";
 pub const CODEX_HINT: &str = "Codex shows no board events by itself and this session cannot be woken yet: they reach you with your next trommi tool call or inbox. Call inbox at the start and at the end of every turn. Tell the human once, with reply, that board messages reach you on your next turn.";
 pub const OTHERS_NOTE: &str = "(This waited in the connector for another agent session of this folder, which held the key before this one.)";
 
@@ -890,11 +890,11 @@ impl Conn {
         let Some(c) = self.member.client() else {
             return;
         };
-        // The hub's link report has no last word: it learns that this process is gone when the lease runs out
-        // (60 s). What it gets here is that nothing works any more.
+        // The last word: nothing works any more, and the lease is given up (`leaving`), so the human devices see
+        // this agent go at once instead of when its lease runs out (60 s).
         let _ = (exit, more);
         let r = self.report().await;
-        let report = json!({ "hears": r["hears"] == "live", "working": false, "last_call_at": r["last_call_at"] });
+        let report = json!({ "hears": r["hears"] == "live", "working": false, "last_call_at": r["last_call_at"], "leaving": true });
         let said = tokio::time::timeout(
             std::time::Duration::from_millis(1500),
             c.report_link(report),
@@ -2405,9 +2405,6 @@ pub async fn main_server() {
     } else {
         Some(MonitorFeed::new(ppid()))
     };
-    if !heard && !crate::host::is_codex() {
-        eprintln!("[trommi] {DEAF_HINT}");
-    }
     let member = Member::new(cfg.clone());
     let conn = Arc::new(Conn {
         cfg: cfg.clone(),

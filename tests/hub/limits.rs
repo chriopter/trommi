@@ -103,13 +103,21 @@ fn an_older_process_closing_its_stream_never_overrides_a_newer_processs_here() {
     let told = seen(&mut human, &mut w);
     assert!(told.iter().any(|p| p["online"] == true && p["hears"] == true), "the new process's here: {told:?}");
     assert!(told.iter().all(|p| p["online"] == true), "no offline after the newer here: {told:?}");
-    // the new process's own stream closes: that is offline
+    // the lease holder's own stream drops (a human message it could not take at once, a network blip): while its
+    // lease runs it stays here, nothing says offline
     let new = agent.events(&w.hub, None);
     assert_eq!(new.status, 200);
     drop(new);
     std::thread::sleep(std::time::Duration::from_millis(500));
     let told = seen(&mut human, &mut w);
-    assert_eq!(told.last().map(|p| p["online"].clone()), Some(json!(false)), "the holder's close says offline: {told:?}");
+    assert!(told.iter().all(|p| p["online"] == true), "a dropped stream under a running lease says nothing: {told:?}");
+    // the process ends and gives its lease up: offline at once
+    let process = agent.process.clone();
+    let body = json!({ "process": process, "generation": agent.lease, "hears": true, "working": false, "last_call_at": 0, "leaving": true });
+    assert_eq!(agent.post(&w.hub, "/v1/link", &body).status, 200);
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let told = seen(&mut human, &mut w);
+    assert_eq!(told.last().map(|p| p["online"].clone()), Some(json!(false)), "leaving says offline: {told:?}");
 }
 
 #[test]
