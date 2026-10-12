@@ -55,8 +55,16 @@ const TRIM_EVERY = 100
 /** How long the model's changes are gathered before one write to the cache. Short: a page that goes away meanwhile
  *  finds its cache behind the device and reads the difference back (see `open`). */
 const FLUSH_MS = 40
-/** How often a running human device reads the hub's Desk again (`readDesk`), besides after every catch-up. */
-const DESK_EVERY_MS = 60_000
+/** A running human device reads what changed on the hub's Desk after every catch-up, shortly after a card or a
+ *  permission request came on the stream (`DESK_AFTER_MS`, several fold into one), and else every `DESK_EVERY_MS`;
+ *  the whole list at the start, when its groups changed, and every `DESK_WHOLE_MS` (`readDesk`). */
+const DESK_EVERY_MS = 5 * 60_000
+const DESK_WHOLE_MS = 30 * 60_000
+const DESK_AFTER_MS = 1500
+/** How many object reads of a Desk reading run at once. */
+const DESK_PARALLEL = 6
+/** More versions lacking than this: they are read with the full Desk in one answer, not one by one. */
+const DESK_ONE_BY_ONE = 40
 /** How soon the hub's Desk is read again after a session group was joined (`deskSoon`). */
 const DESK_SOON_MS = 250
 /** How many answered cards a reading of the Desk asks the hub about (`readDesk`). */
@@ -65,6 +73,13 @@ const CHUNK = 65_536
 const DAY = 86_400_000
 const INVITE_CONFIRM_MS = 5 * 60_000
 const MODEL_KEYS: readonly string[] = ['card/', 'session/', 'perm/', 'note/', 'pub/', 'tlmeta/', 'reg/', 'tl/', 'members', 'devregs', 'room', 'newer', 'alerts']
+/** `fn` over `items`, at most DESK_PARALLEL at once, the answers in the items' order. */
+async function inParallel<T, R>(items: readonly T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(DESK_PARALLEL, items.length) }, async () => { while (next < items.length) { const at = next++; out[at] = await fn(items[at]!) } }))
+  return out
+}
 const randomHex = (bytes: number): string => hex(crypto.getRandomValues(new Uint8Array(bytes)))
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 const codeText = (numbers: readonly number[]): string => numbers.map(n => String(n).padStart(2, '0')).join('-')
@@ -223,6 +238,13 @@ export class Client {
   private desk: { open: Set<string>; versions: Map<string, number>; at: number } | null = null
   private deskTimer: ReturnType<typeof setTimeout> | null = null
   private deskReading: Promise<void> | null = null
+  /** A reading of this run read the versions it lacked (`readDeskNow`). */
+  private deskVersionsRead = false
+  /** Asked for while a reading ran: one more after it. */
+  private deskAgain = false
+  /** The next reading is of the whole list (`readDesk`); when the last whole one was. */
+  private deskWholeDue = true
+  private deskWholeAt = 0
   /** The cards `readDesk` read the newest Chat page of, with the hand back it was read for. */
   private revisionRead = new Map<string, number>()
   /** Work the room's reading waits for (`readingUntil`): the session groups of a sign-in being joined. */
@@ -375,9 +397,11 @@ export class Client {
   private listen(): void {
     const e = this.engine
     const on = <K extends keyof EngineEvents>(event: K, fn: (data: EngineEvents[K]) => void): void => { this.offs.push(e.on(event, fn)) }
-    on('envelope', ({ received }) => {
+    on('envelope', ({ received, how }) => {
       M.applyEnvelope(this.model, received, this.change, { now: this.now() })
       const o = received.header.object
+      // a card or a request that came live: what the hub's Desk says of it now, shortly
+      if (how === 'ordered' && (o?.objectType === 'card' || o?.objectType === 'request') && this.started && this.is_human && this.engine.connection === 'live') this.deskSoon(DESK_AFTER_MS)
       if (o?.objectType === 'note' && this.noteBusy.get(hex(o.objectId))?.hash === hex(received.envelopeHash)) this.noteBack(hex(o.objectId))
     })
     on('log', ({ item, done }) => {
@@ -394,7 +418,7 @@ export class Client {
       // The hub's Desk lists only what lies in the groups this device is in: a device just signed in joins its
       // session groups one by one after it is in the room, and each one joined adds its open cards to the Desk.
       const sessions = groups.filter(g => g.session && !g.archived).length
-      if (sessions > this.sessionGroups) { this.sessionGroups = sessions; if (this.started && this.is_human) this.deskSoon() }
+      if (sessions !== this.sessionGroups) { this.sessionGroups = sessions; this.deskWholeDue = true; if (this.started && this.is_human) this.deskSoon() }
       const role = e.is_human ? 'human' : 'agent'
       if (this.model.room.my_role !== role) { this.model.room.my_role = role; this.change.room = true }
     })
@@ -600,10 +624,10 @@ export class Client {
     const received = await this.engine.receivePage(items)
     this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }); this.judgeDesk(ch, null) })
   }
-  /** Reads the hub's Desk again shortly (several groups joined at once ask once). */
-  private deskSoon(): void {
+  /** Reads the hub's Desk again shortly (several groups joined at once, several cards that came, ask once). */
+  private deskSoon(delay = DESK_SOON_MS): void {
     if (this.deskTimer !== null) clearTimeout(this.deskTimer)
-    this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, DESK_SOON_MS)
+    this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, delay)
   }
   /** The room counts as being read (`room.reading`) until `work` settles: room.ts hands it the session joins of a
    *  sign-in, which the Desk waits for. */
@@ -628,40 +652,68 @@ export class Client {
    */
   private readDesk(): Promise<void> {
     if (!this.is_human) return Promise.resolve()
-    return this.deskReading ??= this.readDeskNow().finally(() => {
+    if (this.deskReading) { this.deskAgain = true; return this.deskReading }
+    return this.deskReading = (async () => {
+      do { this.deskAgain = false; await this.readDeskNow() } while (this.deskAgain && this.started)
+    })().finally(() => {
       this.deskReading = null
-      if (this.started) { if (this.deskTimer !== null) clearTimeout(this.deskTimer); this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, DESK_EVERY_MS) }
+      if (this.started && this.deskTimer === null) this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, DESK_EVERY_MS)
     })
   }
+  /**
+   * One reading: the whole list (ids and versions, `GET /v1/desk?brief=1`) at the start, after the groups changed
+   * and now and then; otherwise only what changed since the last one's cursor (`&since=`), which is nothing most
+   * of the time. The versions this device lacks are read by their object route, a few at once.
+   */
   private async readDeskNow(): Promise<void> {
-    const desk = await timed('desk', () => this.hub.desk())
-    if (desk.truncated) return
-    const listed = [...desk.cards, ...desk.permission_requests]
-    this.desk = { open: new Set(listed.map(o => hex(o.object_id))), versions: new Map(listed.map(o => [hex(o.object_id), o.version?.change ?? 0])), at: desk.change }
+    const whole = this.deskWholeDue || !this.desk || this.now() - this.deskWholeAt >= DESK_WHOLE_MS
+    this.deskWholeDue = false
+    let brief
+    try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at)) } catch (e) { if (whole) this.deskWholeDue = true; throw e }
+    if (brief.truncated) { if (!whole) this.deskWholeDue = true; return }
+    const listed = [...brief.cards.map(o => ({ ...o, route: 'cards' as const })), ...brief.permission_requests.map(o => ({ ...o, route: 'permission-requests' as const }))]
+    if (whole || !this.desk) { this.desk = { open: new Set(), versions: new Map(), at: 0 }; this.deskWholeAt = this.now() }
+    const d = this.desk
+    for (const gone of brief.settled ?? []) { d.open.delete(hex(gone)); d.versions.delete(hex(gone)) }
+    for (const o of listed) { d.open.add(hex(o.object_id)); d.versions.set(hex(o.object_id), o.version_change) }
+    d.at = brief.change
+    // what this reading is about: everything, or what changed since the last
+    const touched = whole ? null : new Set([...listed.map(o => hex(o.object_id)), ...(brief.settled ?? []).map(hex)])
     // the newest versions this device lacks, read through the core
-    const missing = listed.filter(o => {
+    const lacking = listed.filter(o => {
       const id = hex(o.object_id), c = this.model.cards.get(id) ?? this.model.permissions.get(id)
-      return o.version && (!c || (c.envelope_number ?? 0) < o.version.change)
-    }).map(o => o.version!) as EnvelopeItem[]
+      return !c || (c.envelope_number ?? 0) < o.version_change
+    })
+    // (many lacking, as on a new device that has not read the room yet: the full Desk, which holds them all, in one
+    //  answer, so that a sign-in shows the true Desk at once; later readings while the room is still being read (its
+    //  catch-up behind the Desk, a rescan due, the session joins of a sign-in) leave them to that, which brings them)
+    const first = !this.deskVersionsRead
+    this.deskVersionsRead = true
+    const reading = this.engine.position < brief.change || this.engine.rescanPending || this.readingHolds > 0
+    const versions = lacking.length > DESK_ONE_BY_ONE && !first && reading ? []
+      : lacking.length > DESK_ONE_BY_ONE
+      ? await this.hub.desk().then(full => { const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
+      : (await inParallel(lacking, async o => {
+          const got = await this.hub.objectEnvelopes(o.route, o.object_id, { after: o.version_change - 1, limit: 1 }).catch(() => null)
+          return got?.items.filter(i => i.change === o.version_change) ?? []
+        })).flat()
+    const missing: EnvelopeItem[] = [...versions]
     // a card answered here and not yet closed by its agent (it counts as "an answer waits"): the hub's state of it,
-    // and what came after this device's last word on it (its closing, a newer version), the few there are
-    const open = new Set(listed.map(o => hex(o.object_id)))
-    const answered = [...this.model.cards.values()].filter(c => c.object_state === 'answered' && !open.has(c.object_id)).slice(0, ANSWERED_ASKED)
-    for (const c of answered) {
-      const got = await this.hub.objectEnvelopes('cards', unhex(c.object_id), { after: c.state_envelope_number, limit: 20 }).catch(() => null)
-      if (got && got.head_change > c.state_envelope_number) missing.push(...got.items)
+    // and what came after this device's last word on it (its closing, a newer version), the few there are; a
+    // reading of what changed asks only of those that changed
+    const answered = [...this.model.cards.values()].filter(c => c.object_state === 'answered' && !d.open.has(c.object_id) && (!touched || touched.has(c.object_id))).slice(0, ANSWERED_ASKED)
+    for (const got of await inParallel(answered, c => this.hub.objectEnvelopes('cards', unhex(c.object_id), { after: c.state_envelope_number, limit: 20 }).then(got => ({ got, c })).catch(() => null))) {
+      if (got && got.got.head_change > got.c.state_envelope_number) missing.push(...got.got.items)
     }
     const received = missing.length ? await this.engine.receivePage(missing.sort((x, y) => x.change - y.change)).catch(() => []) : []
     // a card the hub lists as open that this device holds as handed back: the newest page of its Chat says whether
     // the agent put it before the human again since (a present this device missed, or one an older app read before
     // the hand back it answered); once per hand back and run, the few there are
-    const handed = listed.map(o => this.model.cards.get(hex(o.object_id))).filter((c): c is Card => !!c?.in_revision && this.revisionRead.get(c.object_id) !== c.in_revision.envelope_number).slice(0, ANSWERED_ASKED)
+    const handed = [...d.open].map(id => this.model.cards.get(id)).filter((c): c is Card => !!c?.in_revision && this.revisionRead.get(c.object_id) !== c.in_revision.envelope_number).slice(0, ANSWERED_ASKED)
+    for (const c of handed) this.revisionRead.set(c.object_id, c.in_revision!.envelope_number)
+    const pages = await inParallel(handed, c => this.hub.chatItems('card', unhex(c.object_id), { limit: 20 }).catch(() => null))
     const deeds: ReceivedEnvelope[] = []
-    for (const c of handed) {
-      this.revisionRead.set(c.object_id, c.in_revision!.envelope_number)
-      const got = await this.hub.chatItems('card', unhex(c.object_id), { limit: 20 }).catch(() => null)
-      if (got?.items.length) deeds.push(...await this.engine.receivePage(got.items).catch(() => []))
-    }
+    for (const got of pages) if (got?.items.length) deeds.push(...await this.engine.receivePage(got.items).catch(() => []))
     this.tell(ch => {
       for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() })
       if (deeds.length) M.applyCardDeeds(this.model, deeds, ch, this.now())

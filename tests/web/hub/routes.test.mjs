@@ -10,6 +10,21 @@ import { scene, client, received, envelope, id, utf8, txt, until } from './helpe
 const copy = () => { const c = new Uint8Array(randomBytes(61)); c[0] = 2; return c }
 const KDF = { alg: 'argon2id', v: 1, m: 65536, t: 3, p: 1 }
 
+test('the brief Desk: ids and versions of the open cards; since a change, only what changed and what was settled', async t => {
+  const { hub, room_id, device } = await scene(t)
+  const a = id(16), b = id(16)
+  const object = (object_id, object_state) => ({ object_id, object_type: 'card', object_state, urgency: 'normal', answered_at: 0 })
+  await hub.postEnvelope(envelope(room_id, device, 1, { kind: 'version', object: object(a, 'open') }))
+  await hub.postEnvelope(envelope(room_id, device, 2, { kind: 'version', object: object(b, 'open') }))
+  const whole = await hub.deskBrief()
+  assert.deepEqual(whole.cards.map(c => [c.object_id, c.version_change, c.head_change]), [[a, 1, 1], [b, 2, 2]])
+  assert.deepEqual([whole.permission_requests, whole.settled, whole.truncated, whole.change], [[], null, false, 2])
+  await hub.postEnvelope(envelope(room_id, device, 3, { kind: 'version', object: object(a, 'closed') }))
+  const delta = await hub.deskBrief(whole.change)
+  assert.deepEqual([delta.cards, delta.settled, delta.change], [[], [a], 3])
+  assert.deepEqual((await hub.deskBrief(delta.change)).settled, [])
+})
+
 test('the Desk: open objects with their current version, registers, groups, the room\'s change', async t => {
   const { hub, room_id, device } = await scene(t)
   const card = id(16), note = id(16), register_id = id(16)

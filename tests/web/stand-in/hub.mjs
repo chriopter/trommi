@@ -336,6 +336,18 @@ export async function startFakeHub(opts = {}) {
     for (const e of a.room.envelopes) if (e.header.register_id && !e.void_code && sees(a, a.room.groups.get(e.group))) registers.set(`${e.group} ${e.header.sender} ${e.header.register_id}`, e)
     return { ...out, registers: [...registers.values()].sort((x, y) => x.change - y.change).map(paged), truncated: false, groups: groupList(a), change: a.room.change }
   }
+  // `GET /v1/desk?brief=1&since=` (hub content.rs desk_brief): ids and versions of the open cards and requests;
+  // with `since`, the rows changed after it, the ones no longer open in `settled`
+  function deskBrief(a, since) {
+    const out = { cards: [], permission_requests: [] }, settled = []
+    const objects = [...objectsOf(a.room, a).values()].filter(o => (since === null ? o.state === 1 : o.head_change > since) && ['cards', 'permission_requests'].includes(OBJECT_TABLES[o.type] ?? 'cards'))
+      .sort((x, y) => y.urgency - x.urgency || x.first_change - y.first_change)
+    for (const o of objects) {
+      if (o.state !== 1) { settled.push(o.object_id); continue }
+      out[OBJECT_TABLES[o.type] ?? 'cards'].push({ object_id: o.object_id, version_change: o.version?.change ?? o.first_change, head_change: o.head_change })
+    }
+    return { ...out, ...(since === null ? {} : { settled }), truncated: false, change: a.room.change }
+  }
   function changes(a, after, limit) {
     const head = a.room.change, upto = Math.min(after + CHANGES_WINDOW, head)
     const found = a.room.changes.filter(i => i.change > after && i.change <= upto && visible(a, i))
@@ -888,7 +900,12 @@ export async function startFakeHub(opts = {}) {
 
     // content
     if (is('POST', 'envelopes')) { const a = writer(rq); return postEnvelope({ ...a, rule: rq.rule }, field(body, 'envelope')) }
-    if (is('GET', 'desk')) return desk(member(auth(rq)))
+    if (is('GET', 'desk')) {
+      const brief = rq.query.get('brief'), since = number(rq, 'since')
+      if (brief === null && since === null) return desk(member(auth(rq)))
+      if (brief !== '1') throw refuse('bad-format', 'the Desk is read whole, or with brief=1 (and since=)')
+      return deskBrief(member(auth(rq)), since)
+    }
     if (is('GET', 'chats', null, null, 'items')) {
       const a = member(auth(rq))
       if (!['session', 'card'].includes(segs[1]) || !/^[0-9a-f]{32}$/.test(segs[2])) throw refuse('bad-format', 'a Chat is session/<id> or card/<id>, named by 32 hex digits')
