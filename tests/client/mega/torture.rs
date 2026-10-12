@@ -989,7 +989,10 @@ impl Torture {
                         }
                     }
                 } else if let (Some(t), Some(e)) = (a.killed_at, entry) {
-                    if at > t + LEASE_GONE_MS && e["online"] == true {
+                    // (a live session of the same folder, a second Claude Code session there, takes the folder's key
+                    // and so the killed one's place: the agent of that session is alive again, and online rightly)
+                    let taken_over = self.agents.iter().any(|b| b.alive && b.folder == a.folder && b.host == a.host);
+                    if !taken_over && at > t + LEASE_GONE_MS && e["online"] == true {
                         truths.push(format!("{} (killed {} s ago) is shown online", a.name, (at - t) / 1000));
                     }
                 }
