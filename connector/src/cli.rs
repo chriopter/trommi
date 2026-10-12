@@ -68,11 +68,19 @@ pub async fn join(given: Option<String>) -> Result<String> {
     // What this process wrote (the device's name) goes out before it ends; then the key is handed to the MCP
     // server of the Claude Code (or Codex) session whose shell ran this, which goes online at once.
     let _ = c.settle(3000).await;
-    m.stop().await;
     // (the ring is not waited for: this process holds the device's state until it ends, and the server takes
     // it once this process is gone)
     let up = crate::hooks::ancestors(8);
     let running = up.iter().any(|p| crate::door::bell_path(*p).exists());
+    if !running {
+        // no server takes over: the lease is given up, the device shows offline until a session starts here
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_millis(1500),
+            c.report_link(json!({ "hears": false, "working": false, "leaving": true })),
+        )
+        .await;
+    }
+    m.stop().await;
     if running {
         let _ = ring(&up, 300).await;
     }

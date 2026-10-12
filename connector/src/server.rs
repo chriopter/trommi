@@ -890,11 +890,11 @@ impl Conn {
         let Some(c) = self.member.client() else {
             return;
         };
-        // The hub's link report has no last word: it learns that this process is gone when the lease runs out
-        // (60 s). What it gets here is that nothing works any more.
+        // The last word: nothing works any more, and the lease is given up (`leaving`), so the human devices see
+        // this agent go at once instead of when its lease runs out (60 s).
         let _ = (exit, more);
         let r = self.report().await;
-        let report = json!({ "hears": r["hears"] == "live", "working": false, "last_call_at": r["last_call_at"] });
+        let report = json!({ "hears": r["hears"] == "live", "working": false, "last_call_at": r["last_call_at"], "leaving": true });
         let said = tokio::time::timeout(
             std::time::Duration::from_millis(1500),
             c.report_link(report),

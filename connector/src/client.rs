@@ -1249,16 +1249,18 @@ impl Client {
                     let blocked = change.is_some_and(|change| change > core.cursor)
                         && core.halted.is_none()
                         && !self.is_stopped();
+                    if blocked {
+                        // The item was not passed (it came before one it needs: a Welcome not taken yet, an
+                        // item the stream skipped). The hub's order is read here, with the Welcomes waiting,
+                        // and the stream is kept: dropping it showed the agent as gone after every such item.
+                        // What still does not pass stays above the cursor and is read again with the next
+                        // event or round.
+                        self.catch_up(&mut core).await?;
+                        self.take_welcomes(&mut core, None).await?;
+                        self.catch_up(&mut core).await?;
+                    }
                     drop(core);
                     self.deliver(commands).await;
-                    if blocked {
-                        // The item was not passed (it came before one it needs, or does not read). Nothing
-                        // after it is taken from this stream: the hub's order is asked for again, later.
-                        return Err(Fault::new(
-                            "offline",
-                            "an item of the stream could not be taken at its place",
-                        ));
-                    }
                 }
                 // 5.2.10: a session group this device is a leaf of was archived.
                 "presence" if event.data.get("archived") == Some(&Value::Bool(true)) => {

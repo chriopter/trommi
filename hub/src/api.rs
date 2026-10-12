@@ -1043,7 +1043,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                     name: "presence",
                     change: None,
                     data: json!({
-                        "device": b64(&auth.device), "online": true, "hears": rq.body["hears"].as_bool().unwrap_or(false),
+                        "device": b64(&auth.device), "online": rq.body["leaving"].as_bool() != Some(true), "hears": rq.body["hears"].as_bool().unwrap_or(false),
                         "working": rq.body["working"].as_bool().unwrap_or(false), "last_call_at": rq.body["last_call_at"].as_i64().unwrap_or(0),
                     }),
                 });
