@@ -53,6 +53,9 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 **Fixed**
 - **Helper sessions keep their names on every device**: a helper session whose start one device caught only late on
   a rough network (web and iPhone) now shows its name there too, and one closed meanwhile no longer shows as open (web).
+- **The red hand matches the Desk**: a session raises the red hand for a question only while that question stands
+  on your Desk (web and iPhone); put off, settled on another device or with its agent, it raises none. A session's
+  link (on its next step, not listening, cut off) is decided once for both apps.
 - **iPhone: agents show online after a fresh pairing**: an iPhone that read the room anew no longer shows every
   agent as offline until it reconnects.
 - **iPhone and web read every card and session by one rule**: the board model and its codec are shared by both
