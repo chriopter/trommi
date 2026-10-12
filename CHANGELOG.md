@@ -19,6 +19,9 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 ![Starred cards on top of Off your mind, in the demo room](app/web/public/changelog/2026-10-12.webp)
 
 **New**
+- **New sessions join with one tap**: a new Claude Code session on a machine where another session of the same
+  account is on the board asks your Trommi app "Allow new Claude session?" as soon as it starts, in any folder; one
+  tap lets it in, no invite link needed. Now on by default (`TROMMI_SELF_JOIN=0` turns it off).
 - Star a card (the star beside its close button) to find it again: starred cards stand at the top of Off your
   mind, private and end-to-end encrypted, the same on all your devices (web and iPhone).
 - **Connector: one step to a Working on card**: a new tool `start_task` files a "Working on" card and the status line linked to it in one step. The
