@@ -217,6 +217,26 @@ public final class RecordStore: @unchecked Sendable {
     return byNumber.keys.sorted().map { byNumber[$0]! }
   }
 
+  // ---- what waits for the past (RoomPast.swift): the bytes of envelopes passed over or closed for want of a key ----
+  var waitingDir: URL { dir.appendingPathComponent("waiting", isDirectory: true) }
+  /** Keeps the envelope of change `n` as the hub served it, sealed, until a read back opens it. */
+  public func keepWaiting(_ n: UInt64, _ bytes: Bytes) throws {
+    try FileManager.default.createDirectory(at: waitingDir, withIntermediateDirectories: true)
+    try Data(try seal(bytes, aad: "trommi ios waiting/\(n)")).write(to: waitingDir.appendingPathComponent("\(n).bin"), options: Self.writeOptions)
+  }
+  /** Every envelope kept by `keepWaiting`, by change; nil when one of them does not open (then none is trusted). */
+  public func readWaiting() -> [UInt64: Bytes]? {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: waitingDir.path)) ?? []
+    var out = [UInt64: Bytes]()
+    for name in names where name.hasSuffix(".bin") {
+      guard let n = UInt64(name.dropLast(4)), let d = try? Data(contentsOf: waitingDir.appendingPathComponent(name)),
+            let plain = open(Array(d), aad: "trommi ios waiting/\(n)") else { return nil }
+      out[n] = plain
+    }
+    return out
+  }
+  public func wipeWaiting() { try? FileManager.default.removeItem(at: waitingDir) }
+
   /** Everything gone (a resync from envelope 0, leaving the room). */
   public func wipe() {
     try? FileManager.default.removeItem(at: recordsDir)

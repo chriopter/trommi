@@ -210,5 +210,5 @@ extension Room {
     await saveCacheAndWait()
   }
   /** Throw the cache away (the board is read again from the hub). */
-  public func dropCache() { (try? recordStore())?.wipe(); log = [:]; restoredCount = 0; dirtyRecs = []; cursor = 0 }
+  public func dropCache() { (try? recordStore())?.wipe(); (try? recordStore())?.wipeWaiting(); notePast { $0.rawComplete = nil }; log = [:]; restoredCount = 0; dirtyRecs = []; cursor = 0 }
 }

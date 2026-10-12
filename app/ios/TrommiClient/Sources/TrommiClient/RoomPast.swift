@@ -27,12 +27,58 @@ public struct PastWork: Codable, Equatable {
   /** The read back is for a Cut (the core dropped what a removed device signed beyond it): nothing is taken from the
    *  cache, everything is judged by the core again. nil: no. */
   public var afterCut: Bool? = nil
-  public init(toLearn: [String] = []) { self.toLearn = toLearn }
+  /** What the passed over and closed items wait for: "group/epoch" (hex) of each whose key this device did not hold
+   *  when it came. Keys that came read back only once one of these is held. nil: not known (an older record, or
+   *  more than `waitingMax`): any keys read back. */
+  public var waiting: [String]? = []
+  /** The bytes of every passed over and closed item since the last read back are kept beside the cache
+   *  (RecordStore.keepWaiting): a read back takes the rest from the cache and reads nothing again from the hub. */
+  public var rawComplete: Bool? = nil
+  public init(toLearn: [String] = []) { self.toLearn = toLearn; rawComplete = true }
 }
 
 extension Room {
   /** Reading back puts what is held whole back without the core (off only to measure the difference: MegaRunTests). */
   nonisolated(unsafe) static var readBackFromCache = true
+  static let waitingMax = 512
+  /** At most this many bytes of waiting items are kept; past it a read back reads the hub's changes again. */
+  static let waitingBytesMax = 16 << 20
+
+  /**
+   * An item was passed over or closed for want of something (`group-behind`, `no-key`): what it waits for is noted
+   * (`PastWork.waiting`, only a key this device did not hold) and its bytes kept beside the cache.
+   */
+  func noteWaiting(change n: UInt64, bytes: Bytes, group: GroupId, epoch: UInt64, keyHeld: Bool?) {
+    let place = "\(hex(group))/\(epoch)"
+    notePast { p in
+      guard keyHeld == false, var w = p.waiting, !w.contains(place) else { return }
+      w.append(place)
+      p.waiting = w.count > Room.waitingMax ? nil : w
+    }
+    guard waitingBytes + bytes.count <= Room.waitingBytesMax, let rs = try? recordStore() else { waitingDropped = true; return }
+    waitingBytes += bytes.count
+    let prev = waitingTail
+    waitingTail = Task.detached(priority: .utility) { [weak self] in
+      _ = await prev?.value
+      if (try? rs.keepWaiting(n, bytes)) == nil { await MainActor.run { self?.waitingDropped = true } }
+    }
+  }
+  /** Keys came (a handover): a read back is due if they open what waits, or if what waits is not known. */
+  func keysCame() {
+    guard record.past?.closed == true || record.past?.passedOver == true else { return }
+    if record.past?.waiting == nil { notePast { $0.readBack = true }; if readingBack { readBackAgain = true } }
+    pastDue = true
+  }
+  /** Whether a key that a waiting item lacked is held now. */
+  private func waitingOpens() async -> Bool {
+    guard let w = record.past?.waiting, !w.isEmpty else { return false }
+    let places = w.compactMap { s -> (GroupId, UInt64)? in
+      let parts = s.split(separator: "/")
+      guard parts.count == 2, let g = try? unhex(String(parts[0])), let e = UInt64(parts[1]) else { return nil }
+      return (g, e)
+    }
+    return (try? await onCore { device in places.contains { (try? device.holdsKey(group: $0.0, epoch: $0.1)) == true } }) ?? false
+  }
 
   /** Changes what is left to do for the past and writes it down, if it changed. */
   func notePast(_ edit: (inout PastWork) -> Void) {
@@ -87,6 +133,10 @@ extension Room {
    */
   func tendPast(_ report: inout SyncReport, _ change: inout Change) async throws {
     pastDue = false
+    // (keys that came open what waits: read back)
+    if record.past?.readBack != true, record.past?.closed == true || record.past?.passedOver == true {
+      if await waitingOpens() { notePast { $0.readBack = true } }
+    }
     guard let noted = record.past, !noted.toLearn.isEmpty || noted.readBack else { return }
     for id in noted.toLearn.sorted(by: { learningRank($0) < learningRank($1) }) {
       // (a group this device is no longer in has no past to show)
@@ -105,16 +155,23 @@ extension Room {
     // The board and its cache are built again from the hub's changes. What the core holds (keys, chains, objects)
     // stays; the two notes are taken anew by this read.
     await saveTail?.value
+    await waitingTail?.value
     // What this device holds whole already (this run's records and the cache's) is put back as it is, without the
     // core: only what came without its body goes through the core again. (A big room read every envelope twice
     // here, one by one, each time keys came: most of a long "Catching up".)
     let rs = try? recordStore()
-    let cached: [Rec] = await Task.detached(priority: .userInitiated) { rs?.readAll() ?? [] }.value
+    let (cached, waitingRaw): ([Rec], [UInt64: Bytes]?) = await Task.detached(priority: .userInitiated) { (rs?.readAll() ?? [], rs?.readWaiting()) }.value
+    // From the cache alone when the bytes of every item that waits are kept: what is held is put back as it is, and
+    // only those go through the core again; nothing is read again from the hub. Else the hub's changes from the
+    // start, what is held whole put back without the core.
+    let fromCache = Room.readBackFromCache && record.past?.afterCut != true && record.past?.rawComplete == true && waitingRaw != nil
     var whole = [UInt64: Rec]()
-    for r in cached where r.opened { whole[UInt64(r.envelopeNumber)] = r }
-    for (n, r) in log where r.opened { whole[n] = r }
+    for r in cached where fromCache || r.opened { whole[UInt64(r.envelopeNumber)] = r }
+    for (n, r) in log where fromCache || r.opened { whole[n] = r }
+    if fromCache { for n in waitingRaw!.keys { whole[n] = nil } }
     readBackWhole = Room.readBackFromCache && record.past?.afterCut != true ? whole : [:]
     defer { readBackWhole = [:] }
+    let was = cursor
     // The Desk on screen stays as it was until the read is through: the views show a copy of the board as it stood
     // (`readBackView`, kept also when the read fails half way, until one is through); its progress is shown. The
     // cache on disk stays too (`cacheHeld`): an app ended meanwhile starts warm from it and reads back again.
@@ -125,17 +182,33 @@ extension Room {
     log = [:]; restoredCount = 0; dirtyRecs = []; cacheDirty = false; cursor = 0
     board.reset()
     try applyGroups(Array(groups.values), &change)
-    notePast { $0.passedOver = false; $0.closed = false; $0.afterCut = nil }
+    notePast { $0.passedOver = false; $0.closed = false; $0.afterCut = nil; $0.waiting = []; $0.rawComplete = false }
+    // (what waits is noted anew by this read, its bytes kept anew)
+    rs?.wipeWaiting()
+    waitingBytes = 0; waitingDropped = false
     readingBack = true
     readBackAgain = false
     defer { readingBack = false }
     // (a board shown is loaded anew from its snapshot by the core: what it holds now may lack what it showed)
     boardsReset &+= 1
-    Spent.count("read backs")
+    Spent.count(fromCache ? "read backs from the cache" : "read backs")
+    if fromCache {
+      // the cache's items and the waiting ones in the hub's order, as the hub's pages would bring them
+      let numbers = Set(whole.keys).union(waitingRaw!.keys).sorted()
+      for at in stride(from: 0, to: numbers.count, by: 2000) {
+        let part = numbers[at..<min(at + 2000, numbers.count)].map { Item.envelope(change: $0, bytes: waitingRaw![$0] ?? [], voidCode: nil) }
+        try await process(part, report: &report, change: &change)
+      }
+      cursor = max(cursor, was)
+      board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
+    }
     try await readChanges(&report, &change)
     // (keys that came during this read, after it had passed what they open: read back once more)
-    let again = readBackAgain
-    notePast { $0.readBack = again }
+    let opens = await waitingOpens()
+    let again = readBackAgain || opens
+    await waitingTail?.value   // (the waiting items' bytes are written)
+    let complete = !waitingDropped
+    notePast { $0.readBack = again; $0.rawComplete = complete }
     readingBack = false
     // (the read reads the live sessions alone: the archived ones this device opened are loaded again, still behind the
     // held view, so that the cache that replaces the one of before holds them too)
