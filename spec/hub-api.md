@@ -46,7 +46,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `POST /v1/boards/{board}/frontier` | `{ frontier: { <writer>: [seq, hash] }, files: [file_id], snapshot?: [seq, hash] }` → `{ pruned }` | human devices: without `snapshot` before writing `board_snapshot/<board>`, with it once the value is taken (v1.md 10.9); `pruned`: item bodies pruned now |
 | `GET /v1/cards/{object}?after=&limit=` (and `/notes/`, `/permission-requests/`, `/artifacts/`) | → `{ items, more, state, owner, … }`: every envelope of the object | pruned ones in pruned form |
 | `GET /v1/groups/{group}/chains/{sender}?after=&limit=` | → envelopes in pruned form, by `seq` | chain checks (9.0.5, 10.3) |
-| `GET /v1/changes?after=&limit=` | → `{ items, change, more }` | catch-up: everything the asker may see with a change number above `after` |
+| `GET /v1/changes?after=&limit=[&active=1\|&group=]` | → `{ items, change, more }` | catch-up: everything the asker may see with a change number above `after`; `active=1` without the envelopes of archived groups, `group=` one group's envelopes alone (point 46) |
 | `GET /v1/stream?after=` | server-sent events: `envelope`, `log`, `relay`, `welcome`, `request`, `presence`, `file_evicted`, `ping` | live; resumes by change number (`after`, or `Last-Event-ID`) |
 | **Files, shares, push, presence** | | |
 | `PUT /v1/files/{file_id}` · `GET` (with `Range`) · `DELETE` | bytes | 11; at most 67 125 269 stored bytes, which is 64 MiB of plaintext (`too-large`); `quota-exceeded` |
@@ -514,6 +514,17 @@ encrypted.
     kept as bound ones.
     A register value or Note version that a later Cut leaves beyond its writer's chain (9.0.10) has already
     pruned the ones before it: devices that come later find that writer's value unreadable.
+46. **Only active sessions are loaded** (owner, 12 October 2026; v1.md 5.2.10). `active=1` on `GET /v1/changes`
+    leaves out every envelope of an archived group (its Commits and MLS messages still come: a leaf keeps its
+    group state whole, and nothing more is taken for the group anyway); on `GET /v1/desk` (whole and `brief=1`)
+    and `GET /v1/rooms/{room}/groups` it leaves out every row of an archived group. `archived=1` on the Desk and
+    the list of groups gives the archived ones alone, and `group=<id>` on `GET /v1/changes` that group's
+    envelopes alone (nothing of the log), in the hub's order: how a client loads an archived session when it is
+    opened. One of the three at most (`bad-format`); `group=` only on a catch-up, and the asker sees only what it
+    may see without them. Web and the connector read with `active=1` from 12 October 2026; a client that does not
+    ask gets everything, as before. Measured on a room of 40 helper sessions with 10 envelopes each, 36 archived
+    (`tests/hub/active.rs`): a catch-up from the start 3 requests and 497 kB → 1 request and 86 kB; the Desk
+    190 kB → 20 kB; the list of groups 10 kB → 2 kB; one archived session opened, 1 request of 11 kB.
 
 ## Known limits
 

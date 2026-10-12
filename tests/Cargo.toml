@@ -392,3 +392,7 @@ path = "connector/codex_real.rs"
 [[bin]]
 name = "seed-account"
 path = "tools/seed_account.rs"
+
+[[test]]
+name = "hub_active"
+path = "hub/active.rs"

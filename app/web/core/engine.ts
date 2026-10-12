@@ -137,6 +137,9 @@ const DEAD: readonly string[] = ['gone', 'not-member', 'removed-sender', 'no-roo
 /** Refusals that mean "the group moved on under this Commit or message": process the log and build again. */
 const MOVED: readonly string[] = ['epoch-taken', 'room-behind', 'wrong-epoch', 'stale-session', 'group-behind']
 const PAGE = 1000
+/** A catch-up and a rescan read the live sessions alone (hub-api.md point 46): an archived session's envelopes are
+ *  loaded when it is opened (Client.loadArchived); its Commits still come, so the device's group state stays whole. */
+const ACTIVE = { active: true } as const
 /** How many items of a page the core is handed in one call (`feed`): one write of the store for all of them. */
 const FEED = 200
 /** At most this many bytes of envelopes are kept in memory for a rescan (`held`). */
@@ -775,6 +778,20 @@ export class Engine {
       return received
     }
   }
+  /** An archived session's envelopes, all of its group in the hub's order (`GET /v1/changes?group=`, point 46): its
+   *  chains whole from their start, so taken as the chains they are, as a gap's links are (fillGap). */
+  receiveGroup(items: readonly EnvelopeItem[]): Promise<ReceivedEnvelope[]> {
+    return this.serial(async () => {
+      const out: ReceivedEnvelope[] = []
+      for (const item of items) {
+        let r = await this.receive(item, true)
+        // one this device holds already (taken while the session was live): read back, as a rescan does
+        if (r?.outcome === 'refused' && r.code === 'replay') r = await this.receive(item, false)
+        if (r) out.push(await this.readBack(r))
+      }
+      return out
+    })
+  }
   /** Envelopes fetched out of the hub's order (a page of a Chat, a board's items, an object): shown as the core
    *  says, provisional until their chain reaches them. */
   receivePage(items: readonly EnvelopeItem[]): Promise<ReceivedEnvelope[]> {
@@ -810,10 +827,10 @@ export class Engine {
     try {
       // The next page is asked for while the core takes this one: the hub's cursor after a page is where the next
       // starts, whatever the core makes of it (a page that halts throws, and the one fetched ahead is dropped).
-      let next = timed('hub', () => this.hub.changes(this.position, PAGE))
+      let next = timed('hub', () => this.hub.changes(this.position, PAGE, ACTIVE))
       for (;;) {
         const page = await next
-        if (page.more) { next = timed('hub', () => this.hub.changes(page.change, PAGE)); next.catch(() => {}) }
+        if (page.more) { next = timed('hub', () => this.hub.changes(page.change, PAGE, ACTIVE)); next.catch(() => {}) }
         spent.items += page.items.length
         for (const item of page.items) if (item.kind !== 'envelope') spent.commits++
         await this.serial(() => this.ingest(page.items, page.change))
@@ -858,7 +875,7 @@ export class Engine {
     const held = this.held && this.held.from <= this.rescanFrom ? [...this.held.items.values()].filter(item => item.change > this.rescanFrom).sort((x, y) => x.change - y.change) : null
     if (held) mark(`rescan from memory: ${held.length} envelopes`)
     for (let after = this.rescanFrom; after < upTo;) {
-      const page = held ? { items: held, change: upTo, more: false } : await this.hub.changes(after, PAGE)
+      const page = held ? { items: held, change: upTo, more: false } : await this.hub.changes(after, PAGE, ACTIVE)
       await this.serial(async () => {
         // (what the chain could not take before is written now: in batches, like a page of a catch-up)
         // (an envelope this engine told whole in the hub's order is not read again: the chain holds it and the

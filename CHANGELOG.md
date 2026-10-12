@@ -35,6 +35,10 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   row where sessions live, with its folder's name, "wants to join · <computer>", Allow and Deny; allowed, the row
   becomes the session.
 
+**Better**
+- **Faster start with many archived sessions**: web and the connector load only active sessions from the hub; an
+  archived session is loaded when you open it.
+
 **Fixed**
 - **New agent online at once**: an agent that joins with `trommi-connector connect` goes online right away under its folder's name, not "gone" under a raw id until its first step.
 - **A new agent no longer waits forever for its session**: when the device that tapped "They match" could not found
