@@ -369,6 +369,10 @@ name = "connector_dead_hub"
 path = "connector/dead_hub.rs"
 
 [[test]]
+name = "connector_stream_cut"
+path = "connector/stream_cut.rs"
+
+[[test]]
 name = "hub_removal"
 path = "hub/removal.rs"
 
