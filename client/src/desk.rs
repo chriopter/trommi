@@ -263,8 +263,8 @@ pub struct DeskState {
     requests: HashMap<String, DeskRequest>,
     /// Snooze registers by the name they came under (hex or base64url), with the change of the write.
     snoozes: BTreeMap<String, (serde_json::Value, u64)>,
-    /// The snoozes by card (hex): the newer write of a card named both ways.
-    snooze_of: HashMap<String, serde_json::Value>,
+    /// The snoozes by card (hex): the newer write of a card named both ways, with the change it was written at.
+    snooze_of: HashMap<String, (serde_json::Value, u64)>,
     archived: BTreeSet<String>,
     listing: Option<Listing>,
     listed: HashMap<String, u64>,
@@ -339,7 +339,10 @@ impl DeskState {
                 best.insert(id, (value, *at));
             }
         }
-        self.snooze_of = best.into_iter().map(|(k, (v, _))| (k, v.clone())).collect();
+        self.snooze_of = best
+            .into_iter()
+            .map(|(k, (v, at))| (k, (v.clone(), at)))
+            .collect();
         self.whole_due = true;
     }
     pub fn set_archived(&mut self, sessions: impl IntoIterator<Item = String>) {
@@ -381,16 +384,33 @@ impl DeskState {
     fn card_held(&self, c: &DeskCard) -> bool {
         c.state == State::Open && self.held_by_list(&c.object_id, c.newest.max(c.version_change))
     }
+    /// Whether the person's "Later" still holds a card off the Desk at `now`, and until when (None inside: for good):
+    /// until its time, and only for the version he put off. A newer version of the card (revised, its urgency raised)
+    /// wakes it, as the clock does: what the agent says anew is never hidden behind an old snooze.
+    pub fn snooze_holds(&self, c: &DeskCard, now: u64) -> Option<Option<u64>> {
+        let (value, at) = self.snooze_of.get(&c.object_id)?;
+        if c.version_change > *at {
+            return None;
+        }
+        snoozed(value, now)
+    }
+    /// The snooze register of a card (hex), as it stands: its value and the change it was written at.
+    pub fn snooze_of(&self, card: &str) -> Option<&(serde_json::Value, u64)> {
+        self.snooze_of.get(card)
+    }
+    /// The cards (hex) a snooze register names.
+    pub fn snoozed_ids(&self) -> impl Iterator<Item = &String> {
+        self.snooze_of.keys()
+    }
+    pub fn card(&self, object_id: &str) -> Option<&DeskCard> {
+        self.cards.get(object_id)
+    }
     /// On the Desk now: open, not held, not snoozed, not in an archived session. The snooze's end, when one.
     fn card_visible(&self, c: &DeskCard, now: u64) -> (bool, Option<u64>) {
         if c.state != State::Open || c.working || self.card_held(c) {
             return (false, None);
         }
-        if let Some(until) = self
-            .snooze_of
-            .get(&c.object_id)
-            .and_then(|v| snoozed(v, now))
-        {
+        if let Some(until) = self.snooze_holds(c, now) {
             return (false, until);
         }
         (
@@ -916,14 +936,32 @@ mod tests {
             session_id: Some("old".into()),
             ..card("c", 3)
         });
-        d.set_snooze("a", serde_json::json!({ "until": 5_000 }), 1);
-        d.set_snooze("b", serde_json::json!({}), 1);
+        d.set_snooze("a", serde_json::json!({ "until": 5_000 }), 10);
+        d.set_snooze("b", serde_json::json!({}), 10);
         d.set_archived(["old".to_string()]);
         let p = d.projection(1_000);
         assert!(p.stack.is_empty());
         assert_eq!(p.next_wake, 5_000);
         assert_eq!(d.projection(6_000).stack, ["a"]);
         assert_eq!(p.session_open["s"], ["a", "b"]);
+    }
+
+    /// A snooze holds only the version he put off: a newer version (revised, its urgency raised) is back on the Desk,
+    /// and its red hand with it (the session's blocker reads the stack).
+    #[test]
+    fn a_newer_version_wakes_a_snoozed_card() {
+        let mut d = DeskState::new();
+        d.put_card(card("a", 5));
+        d.set_snooze("a", serde_json::json!({ "until": 9_000 }), 7);
+        assert!(d.project(1_000).stack.is_empty());
+        // a snooze not taken by the hub yet holds whatever the version
+        d.set_snooze("a", serde_json::json!({ "until": 9_000 }), u64::MAX);
+        d.put_card(card("a", 8));
+        assert!(d.projection(1_000).stack.is_empty());
+        d.set_snooze("a", serde_json::json!({ "until": 9_000 }), 7);
+        let p = d.project(1_000);
+        assert_eq!(p.stack, ["a"], "version 8 is newer than the snooze written at 7");
+        assert_eq!(p.next_wake, 0);
     }
 
     #[test]
