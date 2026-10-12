@@ -811,3 +811,7 @@ html body .inbox-answer.is-take.is-advised { padding-bottom: var(--s-3); }
 .use-bar > i { position: absolute; inset: 0 auto 0 0; width: var(--used); border-radius: 3px; background: var(--accent); }
 .use-bar.is-hot > i { background: var(--urg-high, #b4551b); }
 .use-fact { padding: 3px 7px; border-radius: 6px; background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg); }
+
+/* His star in a row's title (ui.mjs starMark): small, drawn, washed gold. */
+.row-star { display: inline-grid; place-items: center; width: 1.25em; height: 1.25em; margin-right: .35em; vertical-align: -.22em; color: var(--gold-pen); }
+.row-star .sketch { width: 100%; height: 100%; fill: var(--crown-wash); stroke: currentColor; stroke-width: 1.8; }

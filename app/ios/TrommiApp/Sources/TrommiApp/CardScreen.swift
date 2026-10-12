@@ -51,7 +51,13 @@ struct CardScreen: View {
           }
         }
         // the top row as in a chat: back, "⋯"; no bar, a soft edge
-        .pushedPills { EmptyView() } trailing: {
+        .pushedPills(extraTrailing: 54) { EmptyView() } trailing: {
+          if c.kind != "permission" {
+            Button { model.star(c) } label: { StarMark(on: c.starred != nil).frame(width: 22, height: 22).pillCircle() }
+              .buttonStyle(.plain)
+              .accessibilityLabel(c.starred != nil ? "Starred" : "Star this card")
+              .accessibilityAddTraits(c.starred != nil ? .isSelected : [])
+          }
           Menu {
             if let a = a { Button { model.path.append(.session(a.id)) } label: { Label("Open Session", systemImage: "bubble.left.and.bubble.right") } }
             Button { model.copyCard(c) } label: { Label("Copy", systemImage: "doc.on.doc") }

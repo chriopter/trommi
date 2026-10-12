@@ -387,6 +387,29 @@ struct Sketch: View {
   var body: some View { PenMark("sketch:\(name)", color: color, width: width) }
 }
 
+/** His star on a card (the web's ui.mjs starMark and the card's star button): the pen's star; set, washed gold. */
+struct StarMark: View {
+  var on = true
+  var color: Color = Ink.fg
+  var body: some View {
+    ZStack {
+      if on { StarShape().fill(Ink.crownWash).rotationEffect(.degrees(-2.3)) }
+      Sketch("star", color: on ? Ink.goldPen : color)
+    }
+  }
+}
+/** The star's five points in the pen's 24 box (ui.mjs SKETCH.star), for the gold under the line. */
+struct StarShape: Shape {
+  static let points: [(CGFloat, CGFloat)] = [(12, 3.2), (14.4, 9.5), (21.1, 9.8), (15.9, 14.1), (17.6, 20.6), (12, 16.9), (6.4, 20.6), (8.1, 14.1), (2.9, 9.8), (9.6, 9.5)]
+  func path(in r: CGRect) -> Path {
+    let s = min(r.width, r.height) / 24, dx = r.midX - 12 * s, dy = r.midY - 12 * s
+    var p = Path()
+    for (i, (x, y)) in Self.points.enumerated() { let q = CGPoint(x: dx + x * s, y: dy + y * s); if i == 0 { p.move(to: q) } else { p.addLine(to: q) } }
+    p.closeSubpath()
+    return p
+  }
+}
+
 /** A session's mark: its drawing in its colour, the crown when it is the desk's crowned session. */
 struct AgentMark: View {
   let agent: Agent

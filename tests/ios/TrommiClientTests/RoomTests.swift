@@ -334,6 +334,25 @@ final class RoomTests: XCTestCase {
                             payload: ["object_type": "card", "object_version": 1, "card_type": "decision", "title": title, "options": [["key": "yes", "label": "Yes"]]])
   }
 
+  func testAStarIsHisOwnRegisterOnTheCard() async throws {
+    let room = try await founded()
+    addSession(room)
+    let card = String(repeating: "e4", count: 16)
+    agentAsks(room, seq: 1, card: card, "Keep this one?")
+    _ = try await room.sync()
+    let posts = FakeHub.shared.envelopePosts.count
+    try await room.star(cardId: card, true)
+    XCTAssertGreaterThan(clampedU64(room.board.human.stars[card]?["at"].double), 0, "starred at once")
+    XCTAssertNotNil(DeskModel(board: room.board).cards.first { $0.id == card }?.starred, "the Desk's card says so")
+    let posted = parse(try unb64u(FakeHub.shared.envelopePosts[posts]))
+    XCTAssertEqual(parse(try unhex(posted["p"] as! String))["name"] as? String, "star/" + b64u(try unhex(card)), "one register, named for the card (its id base64url on the wire)")
+    _ = try await room.sync()
+    try await room.star(cardId: card, false)
+    XCTAssertNil(room.board.human.stars[card], "taken off")
+    XCTAssertNil(DeskModel(board: room.board).cards.first { $0.id == card }?.starred)
+    room.close()
+  }
+
   func testACardPutOffThatHeAnswersOrHandsBackIsWoken() async throws {
     let room = try await founded()
     addSession(room)

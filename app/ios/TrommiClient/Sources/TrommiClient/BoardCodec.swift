@@ -318,6 +318,8 @@ enum BoardCodec {
     h.drafts = try jvMap(&r); h.snoozes = try jvMap(&r); h.ducks = try jvMap(&r); h.crown = try r.jv(); h.desks = try jvMap(&r); h.sessionSettings = try jvMap(&r)
     h.scribbleSnapshots = try jvMap(&r)
     for _ in 0..<(try count(&r)) { let k = try r.s(); h.raw[k] = try register(&r) }
+    // (the stars are read back from raw: the snapshot's format stays as it was)
+    for (k, v) in h.raw where k.hasPrefix("star/") && !v.value.isNull { h.stars[String(k.dropFirst(5))] = v.value }
     return h
   }
   private static func alert(_ r: inout RecCodec.R) throws -> BoardAlert {

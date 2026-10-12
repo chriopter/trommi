@@ -6,7 +6,8 @@
 // leaves the marks: the widget says that something waits, without a number. The widget reads nothing else: no other
 // Keychain item, no file, no content key. A tap opens the card (or
 // the Desk). Past the push's stale date the widget dims and says so. The island is always black: its colours are
-// the board's dark tones; the lock screen follows the system's light or dark.
+// the board's dark tones; the lock screen follows the system's light or dark. With nothing waiting it shows no "0"
+// but "All answered": the bell, and the working ring with how many agents are at work, or a tick when none works.
 import Foundation
 import PushNotify
 import NotifyCoreLive
@@ -49,9 +50,17 @@ struct TrommiLiveActivity: Widget {
         Bell(size: 24, ink: .white, rings: ring).padding(.leading, 2).transaction { $0.animation = nil }
       } compactTrailing: {
         // (a fixed width and no transition: the island keeps its shape when the count or the card changes)
-        Text(s.done != nil ? "✓" : s.badge).font(.system(size: 17, weight: .bold, design: .rounded)).monospacedDigit()
-          .foregroundStyle(s.done != nil ? Isle.green : ring)
-          .frame(minWidth: 22).contentTransition(.identity)
+        Group {
+          if s.allClear && !ctx.isStale {
+            // nothing waits: no "0", but who works (the working ring) or a calm tick
+            if s.atWork { WorkRing(color: Isle.green).frame(width: 17, height: 17) }
+            else { Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(Isle.green) }
+          } else {
+            Text(s.done != nil ? "✓" : s.badge).font(.system(size: 17, weight: .bold, design: .rounded)).monospacedDigit()
+              .foregroundStyle(s.done != nil ? Isle.green : ring)
+          }
+        }
+        .frame(minWidth: 22).contentTransition(.identity)
       } minimal: {
         MinimalLive(s: s)
       }
@@ -114,6 +123,23 @@ struct IslandBody: View {
           .fixedSize(horizontal: false, vertical: true)
           .frame(maxWidth: .infinity, alignment: .leading)
         Answers(card: top, needsApp: s.needsApp == true, primary: ring, primaryFg: .black, secondaryBg: Color.white.opacity(0.14), secondaryFg: .white, height: 34)
+      } else if s.allClear && !stale {
+        // nothing waits: "All answered", and how many agents are at work (the activity stays while they work)
+        HStack(spacing: 10) {
+          Bell(size: 28, ink: .white, rings: Isle.green)
+          Text("All answered").font(.headline).foregroundStyle(.white).lineLimit(1)
+          Spacer(minLength: 4)
+          if s.atWork {
+            HStack(spacing: 5) {
+              WorkRing(color: Isle.green).frame(width: 12, height: 12)
+              Text(s.busy.map { "\($0) at work" } ?? "At work").font(.caption.weight(.medium)).monospacedDigit()
+            }
+            .foregroundStyle(Isle.dim)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Color.white.opacity(0.12), in: Capsule())
+          }
+        }
+        if !s.atWork { Text(s.workingText).font(.subheadline).foregroundStyle(Isle.dim).padding(.leading, 38) }
       } else {
         HStack(spacing: 10) {
           Bell(size: 28, ink: .white, rings: ring)
@@ -129,6 +155,21 @@ struct IslandBody: View {
   }
 }
 
+
+/** The working ring of the board, still: a faint loop and the stroke that goes round it while a session works. */
+struct WorkRing: View {
+  var color: Color
+  var body: some View {
+    GeometryReader { g in
+      let w = max(1.5, g.size.width * 0.14)
+      ZStack {
+        Circle().stroke(color.opacity(0.35), lineWidth: w)
+        Circle().trim(from: 0, to: 0.3).stroke(color, style: StrokeStyle(lineWidth: w, lineCap: .round)).rotationEffect(.degrees(-90))
+      }
+      .padding(w / 2)
+    }
+  }
+}
 
 /** "✓ Answered · Ship it", the title under it, and how many still wait. */
 struct DoneLine: View {
@@ -220,7 +261,7 @@ struct LockLive: View {
           Spacer(minLength: 0)
           if s.others > 0 { Text("+\(s.others) waiting").font(.caption.weight(.medium)).foregroundStyle(p.muted) }
         } else {
-          Text(stale ? "Not up to date" : s.waitingText).font(.subheadline.weight(.semibold)).foregroundStyle(p.ink)
+          Text(stale ? "Not up to date" : s.allClear ? "All answered" : s.waitingText).font(.subheadline.weight(.semibold)).foregroundStyle(p.ink)
           Spacer(minLength: 0)
           Text("Trommi").font(.caption.weight(.semibold)).foregroundStyle(p.muted)
         }
@@ -231,6 +272,15 @@ struct LockLive: View {
         Text(top.title).font(.headline).foregroundStyle(p.ink).lineLimit(2)
           .frame(maxWidth: .infinity, alignment: .leading)
         Answers(card: top, needsApp: s.needsApp == true, primary: ring, primaryFg: p.dark ? .black : .white, secondaryBg: p.soft, secondaryFg: p.ink)
+      } else if s.allClear && !stale {
+        if s.atWork {
+          HStack(spacing: 7) {
+            WorkRing(color: p.green).frame(width: 15, height: 15)
+            Text(s.workingText).font(.subheadline.weight(.medium)).foregroundStyle(p.ink)
+          }
+        } else {
+          Text(s.workingText).font(.subheadline).foregroundStyle(p.muted)
+        }
       } else {
         Text(s.workingText).font(.subheadline).foregroundStyle(p.muted)
       }

@@ -1166,7 +1166,7 @@ public struct Store {
       rec.winner = true
       if !r.current {
         guard r.of == nil, let w = winner, let values = rec.content?["values"].object, values.count == 1, let key = values.keys.first else { return }
-        let current: JV = w.flatMap { JV.parse($0) }.map { Records.renameFiles($0, toWire: false, depth: 0) } ?? .null
+        let current: JV = w.flatMap { JV.parse($0) }.map { Records.registerValue(key, Records.renameFiles($0, toWire: false, depth: 0), toWire: false) } ?? .null
         rec.content = rec.content?.with("values", .obj([key: current]))
       }
     }

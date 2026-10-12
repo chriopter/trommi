@@ -892,6 +892,8 @@ export class Client {
   }
   setDraft(object_id: string, draft: unknown): Promise<Sent> { return this.setRegisters({ [`draft/${object_id}`]: draft ?? null }) }
   snooze(object_id: string, until: number | null | undefined): Promise<Sent> { return this.setRegisters({ [`snooze/${object_id}`]: until == null ? null : { until } }) }
+  /** Star a card (null: take the star off). His own mark, kept end-to-end encrypted in the room like a snooze. */
+  star(object_id: string, on: boolean): Promise<Sent> { return this.setRegisters({ [`star/${object_id}`]: on ? { at: Date.now() } : null }) }
   duck(object_id: string, value: unknown): Promise<Sent> { return this.setRegisters({ [`duck/${object_id}`]: value ?? null }) }
   setCrown(value: unknown): Promise<Sent> { return this.setRegisters({ crown: value ?? null }) }
   setDesk(desk_id: string, value: unknown): Promise<Sent> {

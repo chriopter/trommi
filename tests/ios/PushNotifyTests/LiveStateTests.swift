@@ -91,4 +91,56 @@ final class LiveStateTests: XCTestCase {
     let full = LiveState.state(working: 1, waiting: [cand("a")], readable: true)
     XCTAssertEqual(try JSONDecoder().decode(LiveCounts.self, from: JSONEncoder().encode(full)), full)
   }
+
+  /** Nothing waits: no "0" but "All answered", with how many agents are at work (the phone's own count). */
+  func testAllClearWithAgentsAtWork() {
+    let s = LiveState.state(working: 1, waiting: [], readable: true, busy: 2)
+    XCTAssertTrue(s.allClear)
+    XCTAssertTrue(s.atWork)
+    XCTAssertEqual(s.busy, 2)
+    XCTAssertEqual(s.workingText, "2 agents at work")
+    XCTAssertEqual(LiveState.state(working: 1, waiting: [], readable: true, busy: 1).workingText, "1 agent at work")
+    // the hub's mark alone: at work, without a number
+    let mark = LiveState.state(working: 1, waiting: [], readable: true)
+    XCTAssertNil(mark.busy)
+    XCTAssertTrue(mark.atWork)
+    XCTAssertEqual(mark.workingText, "Agents at work")
+    // a working status line counts even before the hub's mark says so
+    XCTAssertTrue(LiveState.state(working: 0, waiting: [], readable: true, busy: 1).atWork)
+    // quiet: nobody works
+    let quiet = LiveState.state(working: 0, waiting: [], readable: true)
+    XCTAssertTrue(quiet.allClear)
+    XCTAssertFalse(quiet.atWork)
+    XCTAssertEqual(quiet.workingText, "No agent at work")
+  }
+
+  /** A question waiting, a card shown or the moment after an answer: not the clear state. */
+  func testNotAllClearWhileSomethingIsShown() {
+    XCTAssertFalse(LiveState.state(working: 1, waiting: [cand("a")], readable: true, busy: 1).allClear)
+    // the hub's mark of something waiting, not readable here
+    XCTAssertFalse(LiveCounts(working: 1, waiting: 1).allClear)
+    var done = LiveState.state(working: 1, waiting: [], readable: true)
+    done.done = LiveDone(title: "t", label: "Ship it")
+    XCTAssertFalse(done.allClear)
+  }
+
+  /** Locked out: no count of the sessions either, only the hub's marks. */
+  func testNoCountOfSessionsWhenNotReadable() {
+    XCTAssertNil(LiveState.state(working: 1, waiting: [], readable: false, busy: 3).busy)
+  }
+
+  /** The hub's sealed counts, opened on the phone, give the agents at work as a number. */
+  func testOpenedCountsAreTheAgentsAtWork() {
+    struct Nope: Error {}
+    struct Sealed: NotifyCore {
+      func openPush(key: [UInt8], sealed: [UInt8]) throws -> ApnsPush { throw Nope() }
+      func openLive(key: [UInt8], sealed: [UInt8]) throws -> (working: UInt64, waiting: UInt64) { (3, 0) }
+    }
+    var hub = LiveCounts(working: 1, waiting: 0)
+    hub.s = "AAAA"
+    let s = hub.opened(key: [UInt8](repeating: 1, count: 32), core: Sealed())
+    XCTAssertEqual(s.busy, 3)
+    XCTAssertEqual(s.workingText, "3 agents at work")
+    XCTAssertTrue(s.allClear)
+  }
 }

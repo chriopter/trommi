@@ -588,7 +588,7 @@ export class BoardState {
       for (const id of change.permissions) { wasClosed(id); this.cardCache.delete(id) }
       for (const key of change.registers) {
         const at = key.indexOf('/'), kind = key.slice(0, at), id = key.slice(at + 1)
-        if (kind === 'draft' || kind === 'snooze' || kind === 'duck') drop(id)
+        if (kind === 'draft' || kind === 'snooze' || kind === 'duck' || kind === 'star') drop(id)
         if (kind === 'session' || key === 'crown') { this.cardCache.clear(); this.eventCache.clear(); touched = true; wiped = true; this.closedGen++ }   // agent ids and names change
       }
     }
@@ -781,6 +781,7 @@ export class BoardState {
         : c.closed_how === 'answered' && c.object_state === 'answered' ? 'decided' : 'done'
     const snooze = h.snoozes.get(c.object_id)
     const draft = h.drafts.get(c.object_id)
+    const star = h.stars?.get(c.object_id)
     const atts = list => this.atts(list)
     const turns = revisionsOf(c)
     const versions = turns.slice(0, -1).map(v => ({ n: v.object_version, at: v.sent_at, title: v.content?.title ?? '', body: v.content?.body ?? '', options: v.content?.options ?? [], ...(v.content?.sections ? { sections: v.content.sections } : {}), ...(v.content?.html ? { html: v.content.html } : {}), recommended: v.content?.recommended ?? null, multiple: Boolean(v.content?.allows_multiple), attachments: atts(v.content?.attachments), urgency: v.urgency, note: v.content?.change_note ?? '' }))
@@ -820,6 +821,7 @@ export class BoardState {
     if (draft && status === 'open') card.draft = { keys: draft.keys ?? [], note: draft.note ?? '', notes: draft.notes ?? {}, ...(draft.marks?.length ? { marks: draft.marks } : {}), ts: draft.ts ?? 0 }
     if (snooze?.until > Date.now() && status === 'open') { card.snoozed_until = snooze.until; card.snoozed_at = snooze.at ?? 0 }
     else if (snooze?.until && status === 'open') card.unsnoozed = snooze.until   // woken by hand or by the clock: "Back from snooze"
+    if (star) card.starred = star.at ?? 1   // his star: when he set it
     // (its agent closed it after his answer, close_card: What?? asks about what it did)
     if (status === 'done' && c.closed_how === 'closed' && a && !a.pending && a.answer_action !== 'read' && a.answer_action !== 'shred') card.finished = true
     if (c.merged_into_object_id) card.merged_into = c.merged_into_object_id
@@ -1151,6 +1153,8 @@ function hubFacade(client, board) {
       if (c.kind === 'permission') throw new Error('an approval cannot be put off')
       await client.snooze(cardId, clear ? Date.now() : nextMorning())   // woken: a past until, so the row says "Back from snooze"
     },
+    /** Star a card, or take its star off: his own mark, on all his devices. */
+    star(cardId, on) { card(cardId); return client.star(cardId, Boolean(on)) },
     async reopen(cardId) {
       const c = card(cardId)
       if (c.status === 'open' && c.snoozed_until) return client.snooze(cardId, Date.now())

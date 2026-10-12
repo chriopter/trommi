@@ -3,7 +3,7 @@
 // the card's own page, its tiles are forms that answer with one tap.
 import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
 import { lastUndo, undoLast } from './ui.mjs'
-import { Controller, PLUS, SETTLED, WORDS, advisedLabels, agoSpan, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
+import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
 // ---- the infos: reports, notes, nothing to decide ----
 // An info is a card of the stack like any other, among the decisions by
 // its time (a knock first): the drawn page where a decision has its pictures, the title, and at the right What?? and
@@ -271,10 +271,12 @@ function offParts(model) {
       }
       return made.slice(0, n)
     }
-    closed = { trash: cards.trash, upTo, size: d.length + tr.length }
+    // (his starred closed cards: a sheet each, made from the two lists without making the thousands of others)
+    const starred = [...d.filter(c => c.starred).map(c => Object.assign(answered(c), { g: 'done' })), ...tr.filter(c => c.starred).map(c => Object.assign(thrown(c), { g: 'trash' }))]
+    closed = { trash: cards.trash, upTo, size: d.length + tr.length, starred }
     closedSheets.set(cards.done, closed)
   }
-  return { later, get closed() { return closed.upTo(Infinity) }, closedTop: n => closed.upTo(n), closedSize: closed.size }
+  return { later, get closed() { return closed.upTo(Infinity) }, closedTop: n => closed.upTo(n), closedSize: closed.size, closedStarred: closed.starred }
 }
 const closedSheets = new WeakMap()
 /** The foot of the Desk (#desk-stacks): Artifacts. */
@@ -290,9 +292,17 @@ const END_STEP = 5
 /** A section's heading at the Desk's foot: a pen rule with its small label. With href the label itself is the link to
  *  the section's whole page, underlined and with an arrow (Off your mind; Artifacts, with its count). */
 const divider = (label, link = '', { href = '', count = null } = {}) => html`<div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg>${href ? html`<a class="end-head" data-nav href="${href}" aria-label="All ${label}${count == null ? '' : `, ${count}`}"><span class="end-head-words">${label}</span>${count == null ? '' : html` <span class="off-count">${count}</span>`}${sk('go')}</a>` : html`<span aria-hidden="true">${label}</span>`}${link}</div>`
+/** His starred cards pinned at the top of the end list, the last starred first (card.starred: when he set the star);
+ *  the other rows below in their order, without them. starred: the sheets of every starred card off the Desk. */
+export function pinStarred(items, starred) {
+  if (!starred.length) return items
+  const ids = new Set(starred.map(s => s.card.id))
+  const pinned = [...starred].sort((x, y) => y.card.starred - x.card.starred).map(s => ({ card: s.card, g: s.g, at: s.at, said: s.said, pinned: true }))
+  return [...pinned, ...items.filter(s => !ids.has(s.card.id))]
+}
 /** The end list. On the Desk the first five rows under a heading that links to the rest; full (the page /stacks/off): every row, with its search. */
 function endList(model, base, { full = false, q = '' } = {}) {
-  const { later, closedTop, closedSize } = offParts(model)
+  const { later, closedTop, closedSize, closedStarred } = offParts(model)
   const works = workItems(model).map(i => ({ card: i.card, g: 'works', at: i.line?.updated ?? i.at, said: `${i.sender.name}${i.line?.label ? ` · ${i.line.label}` : ' is on it'}` }))
   const id = full ? 'off-end' : 'desk-end'
   const terms = String(q ?? '').toLowerCase().split(/\s+/).filter(Boolean)
@@ -300,6 +310,7 @@ function endList(model, base, { full = false, q = '' } = {}) {
   const whole = full || terms.length
   let items = [...works, ...later, ...closedTop(whole ? Infinity : END_STEP)]
   const total = whole ? items.length : works.length + later.length + closedSize
+  items = pinStarred(items, [...works, ...later].filter(s => s.card.starred).concat(closedStarred))
   if (terms.length) items = items.filter(s => terms.every(w => `${s.card.title} ${model.byAgent.get(s.card.agent)?.name ?? ''} ${s.said}`.toLowerCase().includes(w)))
   if (!items.length && !full) return html`<section id="${id}" class="endlist" hidden></section>`
   const row = (s, i) => {
@@ -308,7 +319,7 @@ function endList(model, base, { full = false, q = '' } = {}) {
       : s.g === 'later' ? html`<span class="end-tick is-later" title="Put off: Later" role="img" aria-label="Later">${sk('snooze')}</span>`
         : s.g === 'trash' ? html`<span class="end-tick is-thrown" title="${s.said}" role="img" aria-label="${s.said}">${sk(c.status === 'shredded' ? 'shred' : 'withdraw')}</span>`
           : html`<span class="end-tick is-done" title="Done" role="img" aria-label="Done">${sk('tick')}</span>`
-    return html`<li class="end-row" data-g="${s.g}"${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''} data-id="${c.id}">${box}<a class="end-title" data-nav href="${href}" title="${c.title} · ${s.said}">${c.title}</a><span class="end-said">${s.said}</span>${agoSpan(s.at, 'ago end-ago')}</li>`
+    return html`<li class="end-row" data-g="${s.g}"${s.pinned ? raw(' data-pinned') : ''}${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''} data-id="${c.id}">${box}<a class="end-title" data-nav href="${href}" title="${c.title} · ${s.said}">${c.starred ? starMark() : ''}${c.title}</a><span class="end-said">${s.said}</span>${agoSpan(s.at, 'ago end-ago')}</li>`
   }
   return html`<section id="${id}" class="endlist${full ? ' is-full' : ''}" aria-label="Off your mind">
 ${divider('Off your mind', '', full ? {} : { href: `${base}/stacks/off` })}

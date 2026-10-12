@@ -6,6 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { attachmentFromWire, attachmentRef, attachmentToWire, decodeBody, encodeBody, encodeBodyBytes, encodeRegister, fileIdsOf, fileRefOf, registerKeyOf, registerNameOf, shapeIdFromWire, shapeIdToWire, SCHEMA_VERSION } from '../../../app/web/core/codec.ts'
 import { device, hex, id16, bytes, raw } from './factory.mjs'
+import { readFileSync } from 'node:fs'
 
 const text = b => (b === null ? null : new TextDecoder().decode(b))
 /** A register write with its value as text, to compare. */
@@ -111,4 +112,20 @@ test('the files a body names, for the envelope\'s header; shape ids', () => {
   assert.equal(shapeIdFromWire(`${dev}/17/3`), `${hex(dev)}/17/3`); assert.equal(shapeIdToWire(`${hex(dev)}/17/3`), `${dev}/17/3`)
   for (const bad of [`${dev}/0/0`, `${dev}/1`, `${dev}/1/01`, `${hex(dev)}/1/0`, `x/1/0`, `${dev}/1/0/2`, null]) assert.equal(shapeIdFromWire(bad), null, String(bad))
   assert.equal(shapeIdToWire(`${dev}/1/0`), null)
+})
+
+// spec/register-names.json is shared with the iOS tests: the web writes what iOS reads, and reads what iOS writes
+test('register names and values against spec/register-names.json: base64url written, hex on the wire still read', () => {
+  const v = JSON.parse(readFileSync(new URL('../../../spec/register-names.json', import.meta.url), 'utf8'))
+  for (const n of v.names) {
+    assert.equal(registerNameOf(n.model), n.wire, `written: ${n.model}`)
+    assert.equal(registerKeyOf(n.wire), n.model, `read: ${n.wire}`)
+    if (n.legacy_wire) assert.equal(registerKeyOf(n.legacy_wire), n.model, `read as iOS wrote it: ${n.legacy_wire}`)
+  }
+  for (const x of v.values) {
+    const name = registerNameOf(x.key)
+    assert.deepEqual(JSON.parse(text(encodeRegister(x.key, x.model).value)), x.wire, `written: ${x.key}`)
+    assert.deepEqual(decodeBody('register', JSON.stringify({ name, value: x.wire, lamport: 1 })).value, x.model, `read: ${x.key}`)
+    if (x.legacy_wire) assert.deepEqual(decodeBody('register', JSON.stringify({ name, value: x.legacy_wire, lamport: 1 })).value, x.model, `read as iOS wrote it: ${x.key}`)
+  }
 })

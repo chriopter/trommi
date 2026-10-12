@@ -80,7 +80,7 @@ struct OffList: View {
   var query = ""
   /** On the Desk of an iPhone the list lies under the fold: its heading carries a small arrow (EndDivider). */
   var chevron: String? = nil
-  struct Row: Identifiable { var card: DeskCard; var g: String; var id: String { card.id } }
+  struct Row: Identifiable { var card: DeskCard; var g: String; var pinned = false; var id: String { card.id } }
   // (no Desk: the room was just left, a log out; the view is on its way out and draws nothing)
   var body: some View { if let d = model.desk { content(d) } }
   @ViewBuilder private func content(_ d: DeskModel) -> some View {
@@ -90,7 +90,8 @@ struct OffList: View {
     if !shown.isEmpty || full {
       VStack(alignment: .leading, spacing: 0) {
         if !full { EndDivider(title: "Off your mind", chevron: chevron, more: { model.path.append(.off) }).padding(.bottom, 4) }
-        ForEach(full ? shown : Array(shown.prefix(5))) { r in row(r) }
+        let lastPin = shown.last { $0.pinned }?.id
+        ForEach(full ? shown : Array(shown.prefix(5))) { r in row(r, lastPinned: r.id == lastPin) }
         if full && shown.isEmpty { Text(terms.isEmpty ? "Nothing yet." : "Nothing here has these words.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20) }
       }.padding(.top, 8)
     }
@@ -106,12 +107,20 @@ struct OffList: View {
     }.sorted { $0.1 > $1.1 }.map { Row(card: $0.0, g: "works") }
     let seen = Set(busy.map { $0.id })
     let rest = EndList().endItems(v, d).filter { !seen.contains($0.card.id) }.map { Row(card: $0.card, g: $0.g) }
-    return busy + rest
+    return OffList.pinStarred(busy + rest)
   }
-  @ViewBuilder private func row(_ r: Row) -> some View {
+  /** His starred cards pinned at the top, the last starred first; the others below in their order (desk.mjs pinStarred). */
+  static func pinStarred(_ rows: [Row]) -> [Row] {
+    let starred = rows.filter { $0.card.starred != nil }
+    if starred.isEmpty { return rows }
+    let pinned = starred.sorted { ($0.card.starred ?? 0) > ($1.card.starred ?? 0) }.map { Row(card: $0.card, g: $0.g, pinned: true) }
+    return pinned + rows.filter { $0.card.starred == nil }
+  }
+  @ViewBuilder private func row(_ r: Row, lastPinned: Bool = false) -> some View {
     let c = r.card
     // the title from the left edge; on the right the dot of work, Later's Z, or how a closed row closed
     HStack(spacing: 8) {
+      if c.starred != nil { StarMark().frame(width: 18, height: 18).accessibilityHidden(true) }
       Button { model.path.append(.card(c.id)) } label: {
         Text(c.title.isEmpty ? "(no title)" : c.title).font(Face.text(16, .medium))
           .foregroundStyle(r.g == "later" ? Ink.muted : Ink.fg)
@@ -120,7 +129,7 @@ struct OffList: View {
           .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .accessibilityLabel(r.g == "works" ? "\(c.title), being worked on" : r.g == "later" ? "\(c.title), later" : r.g == "trash" ? (c.status == "shredded" ? "\(c.title), shredded" : "\(c.title), withdrawn") : c.title)
+      .accessibilityLabel(c.starred != nil ? "Starred: \(c.title)" : r.g == "works" ? "\(c.title), being worked on" : r.g == "later" ? "\(c.title), later" : r.g == "trash" ? (c.status == "shredded" ? "\(c.title), shredded" : "\(c.title), withdrawn") : c.title)
       if r.g == "works" { PulseDot().frame(width: 44, height: 44) }
       else if r.g == "later" { Sketch("snooze", color: Ink.stampLater).frame(width: 20, height: 20).frame(width: 44, height: 44).accessibilityHidden(true) }
       // (a closed card: answered, done or read a green tick; shredded the shredder, withdrawn the return arrow, in quiet ink;
@@ -128,7 +137,8 @@ struct OffList: View {
       else if r.g == "trash" { Sketch(c.status == "shredded" ? "shred" : "withdraw", color: Ink.muted).frame(width: 19, height: 19).frame(width: 44, height: 44).accessibilityHidden(true) }
       else { Sketch("tick", color: Ink.accent).frame(width: 20, height: 20).frame(width: 44, height: 44).accessibilityHidden(true) }
     }
-    .overlay(alignment: .bottom) { Rectangle().fill(Ink.line).frame(height: 1) }
+    // (the last pinned row: a firmer rule under it, as on the web)
+    .overlay(alignment: .bottom) { Rectangle().fill(lastPinned ? Ink.lineStrong : Ink.line).frame(height: lastPinned ? 1.5 : 1) }
   }
 }
 

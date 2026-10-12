@@ -684,6 +684,84 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
 }
 
 #[test]
+fn the_live_activity_stays_while_an_agent_works_and_ends_when_all_is_quiet() {
+    let env = apns_env();
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let mut s = scene_on(TestHub::start_with(&env));
+    let (start, activity) = ("cd".repeat(32), "ef".repeat(32));
+    for (kind, token) in [("start", &start), ("activity", &activity)] {
+        s.w.ada.post(&s.w.hub, "/v1/live-activity", &json!({ "kind": kind, "token": token, "tag": "tag-1", "environment": "production", "topic": "com.trommi.app" })).ok();
+    }
+    let live = |hub: &TestHub, token: &str| -> Vec<Value> {
+        hub.pushes()
+            .iter()
+            .filter(|p| p.url.ends_with(token))
+            .map(|p| serde_json::from_slice::<Value>(&p.body).unwrap()["aps"].clone())
+            .collect()
+    };
+    let marks = |a: &Value| {
+        (
+            a["event"].as_str().unwrap_or("").to_string(),
+            a["content-state"]["working"].as_u64(),
+            a["content-state"]["waiting"].as_u64(),
+        )
+    };
+    let report = |s: &mut Scene, working: bool| {
+        let lease = s.agent.post(&s.w.hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "hears": true, "working": working, "last_call_at": 1 })).ok();
+        s.agent.lease = lease["generation"].as_u64();
+    };
+    // a question waits and the agent works: the activity starts
+    let id = enc::object_id(&s.group, &s.agent.id(), s.agent.chain(&s.group).0 + 1);
+    let v1 = card(&mut s, 1, 0);
+    report(&mut s, true);
+    let hub = &s.w.hub;
+    hub.eventually("the start", || {
+        live(hub, &start).iter().any(|a| marks(a).0 == "start")
+    });
+    hub.eventually("the agent at work", || {
+        live(hub, &start)
+            .iter()
+            .chain(live(hub, &activity).iter())
+            .any(|a| marks(a).1 == Some(1) && marks(a).2 == Some(1))
+    });
+    // the question is closed while the agent works: the activity stays ("All answered" and the work on the
+    // phone), with the marks working 1, waiting 0
+    s.agent
+        .send(
+            hub,
+            &s.group,
+            &object(
+                wire::KIND_VERSION,
+                id,
+                wire::TYPE_CARD,
+                wire::STATE_CLOSED,
+                1,
+                v1,
+                ZERO32,
+            ),
+        )
+        .ok();
+    hub.eventually("the update with nothing waiting", || {
+        live(hub, &activity)
+            .iter()
+            .any(|a| marks(a) == ("update".to_string(), Some(1), Some(0)))
+    });
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(
+        !live(&s.w.hub, &activity).iter().any(|a| marks(a).0 == "end"),
+        "no end while an agent works"
+    );
+    // the agent stops: nothing waits and nobody works, the activity ends
+    report(&mut s, false);
+    let hub = &s.w.hub;
+    hub.eventually("the end when all is quiet", || {
+        live(hub, &activity)
+            .iter()
+            .any(|a| marks(a) == ("end".to_string(), Some(0), Some(0)))
+    });
+}
+
+#[test]
 fn of_two_processes_on_one_agent_device_the_later_wins() {
     let mut s = scene_on(TestHub::start());
     let hub = &s.w.hub;

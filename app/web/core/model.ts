@@ -846,6 +846,7 @@ export function setHumanRegister(model: Model, key: string, value: unknown, w: R
     case 'draft': put(h.drafts, value); change.cards.add(id); break
     case 'snooze': put(h.snoozes, value); change.cards.add(id); change.stack = true; break
     case 'duck': put(h.ducks, value); change.cards.add(id); break
+    case 'star': put(h.stars, value); change.cards.add(id); change.stack = true; break
     case 'crown': h.crown = value ?? null; break
     case 'desk': put(h.desks, value); break
     case 'session': {
