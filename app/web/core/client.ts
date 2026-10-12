@@ -25,12 +25,14 @@
 // Nothing here logs. A file key, a share link's secret and a recovery code never go into an error's text.
 import { attachmentFromWire, attachmentRef, encodeBodyBytes, encodePiece, encodeRegister, fileIdsOf, fileRefOf, UPDATE_MESSAGE } from './codec.ts'
 import type { Fields } from './codec.ts'
-import type { Core, Device, Draft, FileRef, OutboxEntry, ReceivedEnvelope, Sealed } from './core-api.ts'
+import { relink, revivePatch, snapshotForCore } from './board.ts'
+import type { ClientModel, Core, Device, Draft, FileRef, OutboxEntry, ReceivedEnvelope, Sealed } from './core-api.ts'
 import { Engine } from './engine.ts'
 import type { EngineEvents, EngineMeta } from './engine.ts'
 import { accountCopiesBytes, HubError } from './hub.ts'
 import type { AccountCopies, EnvelopeItem, Hub, StreamEvent } from './hub.ts'
 import { b64u, hex, unb64u, unhex } from './ids.ts'
+import { applyPatch } from './mirror.ts'
 import * as M from './model.ts'
 import { mark, timed } from './spent.ts'
 import type { Cache } from './store-idb.ts'
@@ -204,6 +206,8 @@ function snapshotFiles(shapes: readonly Record<string, unknown>[]): Uint8Array[]
 
 export class Client {
   model: Model
+  /** The client core's board model (client/src/model): it builds the model; `model` is its copy, patched once per batch. */
+  private readonly board: ClientModel
   readonly core: Core
   readonly hub: Hub
   readonly engine: Engine
@@ -289,7 +293,7 @@ export class Client {
     this.model = M.emptyModel()
     // (an agent that waits for its main session is given one once it is connected: engine.ts `seatAgents`)
     opts.engine.isOnline = device => this.model.members.get(hex(device))?.is_online === true
-    M.useDesk(this.model, new this.core.ClientDesk())
+    this.board = new this.core.ClientModel(this.my_device_id)
     this.listen()
   }
   get is_human(): boolean { return this.engine.is_human }
@@ -306,10 +310,9 @@ export class Client {
     // dropped.
     if (kept && kept.device === this.my_device_id && kept.cursor <= e.cursor) {
       this.model = M.modelFromCache(await this.cache.range(''))
-      M.useDesk(this.model, new this.core.ClientDesk())
-      // (a mark of an earlier run is the past: `readDesk` sets it again from the hub's Desk of now)
-      for (const c of this.model.cards.values()) delete c.catching_up
-      for (const r of this.model.permissions.values()) delete r.catching_up
+      this.model.room.my_device_id = this.my_device_id
+      // (the core builds the model from here on; a mark of an earlier run is the past: `readDesk` sets it again)
+      this.board.load(snapshotForCore(this.model))
       // What stands open is what the hub's Desk listed when this device last read it (kept beside the cache): a card
       // it had settled stays off the Desk although this device never read its closing. The Desk of now follows
       // (`deskFirst`, `readDesk`), and only it lets anything else stand.
@@ -328,11 +331,11 @@ export class Client {
     Object.assign(room, { room_id: hex(this.room_id), hub_url: this.hub.hub_url, my_device_id: this.my_device_id, my_role: e.is_human ? 'human' : 'agent', last_envelope_number: e.position, connection: 'offline', outbox_blocked: null })
     const ch = M.emptyChange()
     ch.room = true
-    M.applyGroups(this.model, e.groups, e.roles, ch)
+    this.board.applyGroups(e.groups, e.roles ?? null)
     if (this.desk) this.deskToModel()
     this.sessionGroups = e.groups.filter(g => g.session && !g.archived).length
     for (const [key, value] of await this.cache.range('client/invite/')) { const k = value as InviteKept; this.invites.set(key.slice('client/invite/'.length), k); if (!k.done) this.model.invites.set(k.public.invite_id, k.public) }
-    M.project(this.model, ch, this.now())
+    this.fromBoard(ch)
     this.record(ch)
     return this
   }
@@ -360,7 +363,7 @@ export class Client {
     if (this.model.room.last_envelope_number !== this.engine.position) { this.model.room.last_envelope_number = this.engine.position; ch.room = true }
     const reading = this.readingHolds > 0 || this.rebuild !== null || this.engine.rescanPending
     if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true }
-    M.project(this.model, ch, this.now())
+    this.fromBoard(ch)
     // (the engine moves its cursor only after an item's effects were reported: at any publish the model holds
     // everything up to it, and this change carries what the cache lacks of it)
     if (this.rebuild === null) this.stamped = this.engine.cursor
@@ -432,7 +435,7 @@ export class Client {
     const e = this.engine
     const on = <K extends keyof EngineEvents>(event: K, fn: (data: EngineEvents[K]) => void): void => { this.offs.push(e.on(event, fn)) }
     on('envelope', ({ received, how }) => {
-      M.applyEnvelope(this.model, received, this.change, { now: this.now() })
+      this.board.applyEnvelopes([received], this.now())
       const o = received.header.object
       // a card or a request that came live: what the hub's Desk says of it now, shortly
       if (how === 'ordered' && (o?.objectType === 'card' || o?.objectType === 'request') && this.started && this.is_human && this.engine.connection === 'live') this.deskSoon(DESK_AFTER_MS)
@@ -440,15 +443,15 @@ export class Client {
     })
     on('log', ({ item, done }) => {
       const room = item.group.length === 32
-      if (done.commit) M.applyCommit(this.model, done.commit, this.change, { by_recovery: room && done.commit.external, removed_me: done.removed && room, now: this.now() })
+      if (done.commit) this.board.applyCommit(done.commit, room && done.commit.external, done.removed && room, this.now())
       const m = done.message
-      if (m?.kind === 'workTrail') { const s = e.groups.find(g => sameBytes(g.group, item.group))?.session; if (s) M.applyWorkTrail(this.model, hex(s.sessionId), m, item.change, this.change) }
-      else if (m?.kind === 'recoveryAuthConflict') M.pushAlert(this.model, this.change, { code: 'equivocation', message: 'two different confirmations of the recovery key were sent: neither replaces the one this device holds', envelope_number: item.change, sender_device_id: m.from ? hex(m.from) : null, at: this.now() })
-      else if (m?.kind === 'newerVersion') M.noteNewer(this.model, this.change, 'message type', { envelope_number: item.change })
+      if (m?.kind === 'workTrail') { const s = e.groups.find(g => sameBytes(g.group, item.group))?.session; if (s && m.from && m.turn) this.board.applyWorkTrail(hex(s.sessionId), m.from, m.turn, m.number, m.time, m.payload, item.change) }
+      else if (m?.kind === 'recoveryAuthConflict') this.board.pushAlert('equivocation', 'two different confirmations of the recovery key were sent: neither replaces the one this device holds', item.change, m.from ? hex(m.from) : null, this.now())
+      else if (m?.kind === 'newerVersion') this.board.noteNewer('message type', item.change)
     })
-    on('relay', m => { if (m.kind === 'strokePiece') M.applyStrokePiece(this.model, m, this.change, { now: this.now() }) })
+    on('relay', m => { if (m.kind === 'strokePiece' && m.from && m.board) this.board.applyStrokePiece(m.from, m.board, m.payload, this.now()) })
     on('groups', ({ groups, roles }) => {
-      M.applyGroups(this.model, groups, roles, this.change)
+      this.board.applyGroups(groups, roles ?? null)
       // The hub's Desk lists only what lies in the groups this device is in: a device just signed in joins its
       // session groups one by one after it is in the room, and each one joined adds its open cards to the Desk.
       const sessions = groups.filter(g => g.session && !g.archived).length
@@ -468,7 +471,7 @@ export class Client {
       for (const s of this.sending.values()) if (s.item.outbox_state === 'blocked') { s.item.outbox_state = 'sending'; s.item.error = null }
       if (held) { held.item.outbox_state = 'blocked'; held.item.error = blocked!.code }
       this.model.room.outbox_blocked = blocked ? { local_id: held?.local_id ?? '', code: blocked.code, message: blocked.message } : null
-      if (blocked) M.pushAlert(this.model, this.change, { code: 'chain-halted', message: `the hub refused an envelope (${blocked.code}). Sending is halted; the same envelope is tried again.`, at: this.now() })
+      if (blocked) this.board.pushAlert('chain-halted', `the hub refused an envelope (${blocked.code}). Sending is halted; the same envelope is tried again.`, null, null, this.now())
       this.change.outbox = this.change.room = true
     })
     // (a device that was removed stays `removed`: that is the last word on its connection)
@@ -478,7 +481,7 @@ export class Client {
       if (connection === 'live' && this.model.room.connection !== 'live' && this.started) void this.readDesk().catch(() => {})
       this.model.room.connection = connection; this.change.room = true
     })
-    on('alert', a => { M.pushAlert(this.model, this.change, { code: a.code, message: a.message, envelope_number: a.change, at: this.now() }) })
+    on('alert', a => { this.board.pushAlert(a.code, a.message ?? '', a.change ?? null, null, this.now()) })
     on('stream', event => this.onStream(event))
     on('invites', ({ open }) => this.invitesDone(open))
     on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() }; void this.reloadArchived().catch(() => {}) })
@@ -491,7 +494,8 @@ export class Client {
         this.change.room = true
         // said once, however this device processed the Commit that removed it (in the room's log, or served by the
         // hub's removal route after a `not-member`): never on the hub's word alone
-        if (!this.model.alerts.some(x => x.code === 'removed')) M.pushAlert(this.model, this.change, { code: 'removed', message: 'this device was removed from the room', at: this.now() })
+        this.fromBoard(this.change)
+        if (!this.model.alerts.some(x => x.code === 'removed')) this.board.pushAlert('removed', 'this device was removed from the room', null, null, this.now())
         this.publish()
       }
       // the hub no longer takes this device and the device did not confirm it: nothing is wiped, nothing more is
@@ -510,11 +514,11 @@ export class Client {
       case 'presence':
         // (an event without `hears` says only that a stream opened or closed: the link report held stands while the
         //  device is online; the hub tells a new stream the reports of now first, and every change after)
-        M.applyPresence(this.model, [{ device_id: hex(event.device), is_online: event.online, offline_since: event.online ? null : this.now(),
-          ...(event.hears === null ? {} : { link: { hears: event.hears ? 'live' : 'oncall', attached: true, working: event.working === true, last_call_at: event.last_call_at } }) }], this.change, this.now())
+        this.board.applyPresence(JSON.stringify([{ device_id: hex(event.device), is_online: event.online, offline_since: event.online ? null : this.now(),
+          ...(event.hears === null ? {} : { link: { hears: event.hears ? 'live' : 'oncall', attached: true, working: event.working === true, last_call_at: event.last_call_at } }) }]), this.now())
         // (an agent that came online without a main session gets one: engine.ts seatAgents)
         if (event.online && this.is_human && this.engine.roles?.agents.some(d => hex(d) === hex(event.device))) this.engine.keepSoon(0)
-        if (event.lost) M.pushAlert(this.model, this.change, { code: 'agent-lost', message: 'An agent lost its connection.', sender_device_id: hex(event.device), at: this.now() })
+        if (event.lost) this.board.pushAlert('agent-lost', 'An agent lost its connection.', null, hex(event.device), this.now())
         this.publish()
         return
       case 'invite_request': void this.checkInvite(hex(event.invite_id)).catch(() => {}); return
@@ -546,7 +550,7 @@ export class Client {
       const item: OutboxItem = { local_id, envelope_kind: 'register', object_id: null, timeline_key: null, recipient_device_id: null, outbox_state: 'sending', error: null, content: { key } } as OutboxItem
       this.sending.set(entry.id, { local_id, item })
       const sealed = { outboxId: entry.id, envelopeHash: info.envelopeHash, seq: info.header.seq, group: info.header.group, objectId: null, time: info.header.time } as Sealed
-      this.tell(ch => { M.echoRegisters(this.model, { local_id, values: { [key]: out.value ?? null } }, ch); this.model.outbox.push(item); ch.outbox = true; M.confirmEcho(this.model, local_id, sealed, ch) })
+      this.tell(ch => { this.board.echoRegisters(local_id, JSON.stringify({ [key]: out.value ?? null })); this.model.outbox.push(item); ch.outbox = true; this.confirmEcho(local_id, sealed) })
     }
   }
   /** The hub answered an outbox entry: its item leaves model.outbox; a refusal takes the echo back first. */
@@ -563,7 +567,7 @@ export class Client {
       if (at >= 0) this.model.outbox.splice(at, 1)
       this.change.outbox = true
       void (async () => { await this.engine.healNow().catch(() => {}); await again() })().catch(e => {
-        M.pushAlert(this.model, this.change, { code: this.core.errorCode(e) ?? 'stale-session', message: 'a message was not sent: its session waits for a repair', at: this.now() })
+        this.board.pushAlert(this.core.errorCode(e) ?? 'stale-session', 'a message was not sent: its session waits for a repair', null, null, this.now())
         this.publish()
       })
       return
@@ -573,8 +577,8 @@ export class Client {
       sent.item.outbox_state = 'failed'; sent.item.error = refusal
       // a refused Note version: the edit that waited behind it is tried on what stands
       for (const [id, busy] of this.noteBusy) if (busy.outbox === entry.id) this.noteBack(id)
-      M.rollbackEcho(this.model, sent.local_id, ch)
-      M.pushAlert(this.model, ch, { code: refusal, message: `the hub refused an envelope (${refusal})`, at: this.now() })
+      this.board.rollbackEcho(sent.local_id)
+      this.board.pushAlert(refusal, `the hub refused an envelope (${refusal})`, null, null, this.now())
       ch.outbox = true
       this.publish()
     }
@@ -589,7 +593,7 @@ export class Client {
       for (const [id, sent] of this.sending) {
         if (stored.has(id)) continue
         this.sending.delete(id)
-        M.rollbackEcho(this.model, sent.local_id, ch)
+        this.board.rollbackEcho(sent.local_id)
         const at = this.model.outbox.indexOf(sent.item)
         if (at >= 0) this.model.outbox.splice(at, 1)
         ch.outbox = true
@@ -721,7 +725,7 @@ export class Client {
     for (const list of [desk.cards, desk.notes, desk.permission_requests, desk.artifacts]) for (const o of list) if (o.version) items.push(o.version)
     items.sort((a, b) => a.change - b.change)
     const received = await this.engine.receivePage(items)
-    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }) })
+    this.tell(() => { this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now()) })
     if (!desk.truncated) this.knowDesk()
   }
   /**
@@ -743,7 +747,7 @@ export class Client {
     if (!late || this.deskKnown || this.deskHeld) return
     this.deskHeld = true
     this.deskHoldTimer = setTimeout(() => { this.deskHoldTimer = null; this.knowDesk() }, DESK_HOLD_MAX_MS)
-    this.tell(ch => { this.model.room.desk_waiting = true; ch.room = true; ch.stack = true; M.setDeskHold(this.model, true) })
+    this.tell(ch => { this.model.room.desk_waiting = true; ch.room = true; ch.stack = true; this.board.setDeskHold(true) })
   }
   /** The hub's Desk of this run decided (or none comes: the last list kept here does). */
   private knowDesk(): void {
@@ -752,7 +756,7 @@ export class Client {
     if (this.deskHoldTimer !== null) { clearTimeout(this.deskHoldTimer); this.deskHoldTimer = null }
     const held = this.deskHeld
     this.deskHeld = false
-    this.tell(ch => { if (held) { this.model.room.desk_waiting = false; ch.room = true; M.setDeskHold(this.model, false) } this.deskToModel(); ch.stack = true })
+    this.tell(ch => { if (held) { this.model.room.desk_waiting = false; ch.room = true; this.board.setDeskHold(false) } this.deskToModel(); ch.stack = true })
     this.deskWaitDone?.()
   }
   /** Keeps the hub's Desk as read, for the next start (`open`). */
@@ -854,8 +858,8 @@ export class Client {
     const deeds: ReceivedEnvelope[] = []
     for (const got of pages) if (got?.items.length) deeds.push(...await this.engine.receivePage(got.items).catch(() => []))
     this.tell(ch => {
-      for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() })
-      if (deeds.length) M.applyCardDeeds(this.model, deeds, ch, this.now())
+      this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now())
+      if (deeds.length) this.board.applyCardDeeds(deeds)
       this.deskToModel()
       ch.stack = true
     })
@@ -863,10 +867,26 @@ export class Client {
   /** The hub's Desk as read decides what stands (the client core's Desk: client/src/desk.rs, `M.project`): an open
    *  card or request it does not list, with nothing of it here newer than its change, is held back (`catching_up`);
    *  a hand back older than the version it lists is over. */
+  /** What the core's model changed since the last batch, put into the copy (`model`) and into `ch`. */
+  private fromBoard(ch: Change): void {
+    const text = this.board.finish(this.now())
+    if (!text) return
+    const patch = revivePatch(text)
+    const got = applyPatch(this.model, patch)
+    relink(this.model, patch)
+    if (patch.devregs) { const d = M.devregsOf(this.model); d.clear(); for (const [k, v] of patch.devregs) d.set(k, v) }
+    for (const k of ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites'] as const) for (const id of got[k]) ch[k].add(id)
+    for (const [k, list] of got.items) for (const it of list) M.addItem(ch, k, it)
+    ch.members ||= got.members; ch.alerts ||= got.alerts; ch.stack ||= got.stack; ch.room ||= got.room
+  }
+  /** An own send was sealed: the core's model learns its hash (the hub's copy will name it), number and object id. */
+  private confirmEcho(local_id: string, sealed: Sealed): void {
+    this.board.confirmEcho(local_id, hex(sealed.envelopeHash), sealed.seq, sealed.objectId ? hex(sealed.objectId) : null)
+  }
   private deskToModel(): void {
     const d = this.desk
     if (!d) return
-    M.setDeskListing(this.model, { at: d.at, open: new Map([...d.open].map(id => [id, d.versions.get(id) ?? 0])) })
+    this.board.setDeskListing(d.at, [...d.open].map(id => ({ objectId: id, versionChange: d.versions.get(id) ?? 0 })))
   }
   private async nameDevice(): Promise<void> {
     const name = this.opts.device_name
@@ -889,11 +909,11 @@ export class Client {
         // (a single message may go once more if the hub held its session as stale: its words are sealed anew)
         const again = drafts.length === 1 && !retried && (d.draft.kind === 'sessionChat' || d.draft.kind === 'cardChat') ? () => this.send(local_id, drafts, after, true) : null
         this.sending.set(sealed.outboxId, { local_id, item, again })
-        this.tell(ch => { this.model.outbox.push(item); ch.outbox = true; M.confirmEcho(this.model, local_id, sealed, ch); after?.(sealed) })
+        this.tell(ch => { this.model.outbox.push(item); ch.outbox = true; this.confirmEcho(local_id, sealed); after?.(sealed) })
       }
     } catch (e) {
       // what was sealed stays sealed (its number is used); what the echo showed beyond that is taken back
-      if (!last) this.tell(ch => M.rollbackEcho(this.model, local_id, ch))
+      if (!last) this.tell(() => this.board.rollbackEcho(local_id))
       throw e
     }
     return { local_id, envelope_hash: hex(last!.envelopeHash), seq: last!.seq }
@@ -930,7 +950,7 @@ export class Client {
     const payload = encodeBodyBytes('message', content)
     const timeline_key = M.timelineKey('chat', object_id ? `card/${object_id}` : `session/${sid}`)
     const local_id = `local-${randomHex(8)}`
-    this.tell(ch => M.echoTimelineItem(this.model, { local_id, timeline_key, content, recipient_device_id: recipient, object_id, now: this.now() }, ch))
+    this.tell(() => { this.board.echoItem(local_id, timeline_key, JSON.stringify(content), recipient ?? null, object_id ?? null, this.now()) })
     const draft: Draft = object_id ? { kind: 'cardChat', session: unhex(sid), card: unhex(object_id), payload } : { kind: 'sessionChat', session: unhex(sid), payload }
     const sent = await this.send(local_id, [{ draft, recipient, files: fileIdsOf('message', content), item: { timeline_key, object_id, content } }])
     // handed back (the reverse card) or "What??": the card goes to its agent and comes back up awake
@@ -966,7 +986,7 @@ export class Client {
     const echo: Omit<Answer, 'pending'> = { answer_action, choices, note: note ?? null, option_notes: option_notes ?? {}, attachments: attachments ?? [], marks: marks ?? [], trusted: !!trusted,
       bound_version_hash: card.version_hash, bound_object_version: card.object_version, envelope_number: null, envelope_hash: null, by_device_id: this.my_device_id, answered_at, taken_back_at: null, taken_back_sent_at: null }
     const local_id = `local-${randomHex(8)}`
-    this.tell(ch => { M.echoAnswer(this.model, { local_id, object_id, answer: echo, object_state: state }, ch) })
+    this.tell(() => { this.board.echoAnswer(local_id, object_id, JSON.stringify(echo), state) })
     const draft: Draft = { kind: 'answer', session: unhex(card.session_id!), objectId: unhex(object_id), choices, closes: state === 'closed', payload: encodeBodyBytes('answer', content) }
     const sent = await this.send(local_id, [{ draft, recipient, files: fileIdsOf('answer', content), item: { object_id, content } }])
     // answered while put off: awake, so a reworked or reopened card is back on the Desk
@@ -1052,7 +1072,7 @@ export class Client {
     let last: Sent | null = null
     for (const key of keys) {
       const local_id = `local-${randomHex(8)}`
-      if (!session_id && !key.startsWith('device/')) this.tell(ch => M.echoRegisters(this.model, { local_id, values: { [key]: values[key] ?? null } }, ch))
+      if (!session_id && !key.startsWith('device/')) this.tell(() => this.board.echoRegisters(local_id, JSON.stringify({ [key]: values[key] ?? null })))
       const { name, value } = encodeRegister(key, values[key] ?? null)
       last = await this.send(local_id, [{ draft: { kind: 'register', group, name, value }, files: fileIdsOf('register', { value: values[key] }), item: { content: { key } } }], sealed => {
         // (kept beside the outbox entry: a page loaded again before the hub took it shows the write, not the value
@@ -1104,11 +1124,11 @@ export class Client {
     const local_id = `local-${randomHex(8)}`
     const busy = object_id ? this.noteBusy.get(object_id) : undefined
     if (busy) {
-      this.tell(ch => { if (busy.next) M.rollbackEcho(this.model, busy.next.local_id, ch); M.echoNote(this.model, { local_id, object_id, fields: closed ? {} : own, closed }, ch) })
+      this.tell(() => { if (busy.next) this.board.rollbackEcho(busy.next.local_id); this.board.echoNote(local_id, object_id ?? null, JSON.stringify(closed ? {} : own), closed) })
       busy.next = { own: { ...(busy.next?.own ?? {}), ...own }, closed, local_id }
       return object_id!
     }
-    this.tell(ch => { M.echoNote(this.model, { local_id, object_id, fields: closed ? {} : own, closed }, ch) })
+    this.tell(() => { this.board.echoNote(local_id, object_id ?? null, JSON.stringify(closed ? {} : own), closed) })
     return this.sealNote(object_id, own, closed, local_id)
   }
   private async sealNote(object_id: string | null, own: Fields, closed: boolean, local_id: string): Promise<string> {
@@ -1163,7 +1183,7 @@ export class Client {
     const payload = encodeBodyBytes('board_item', content)
     const timeline_key = M.timelineKey('scribble', timeline_id)
     const local_id = `local-${randomHex(8)}`
-    this.tell(ch => M.echoTimelineItem(this.model, { local_id, timeline_key, content, now: this.now() }, ch))
+    this.tell(() => { this.board.echoItem(local_id, timeline_key, JSON.stringify(content), null, null, this.now()) })
     return this.send(local_id, [{ draft: { kind: 'boardItem', board: unhex(id), payload }, files: fileIdsOf('board_item', content), item: { timeline_key, content } }])
   }
   /** The points of a stroke still being drawn (7.2), to the other human devices that are connected: not stored,
@@ -1195,9 +1215,9 @@ export class Client {
     // `last`: how far the hub's page went, whatever of it could be read
     return { received: (await this.engine.receivePage(got.items)).filter(r => r.outcome !== 'refused'), more: got.more, last: got.items.at(-1)?.change ?? 0 }
   }
-  /** Older items of a timeline, newest first: from the cache where it holds them, else the hub's page. `into`: the
-   *  model the hub's page is applied to (the client's own, or a scratch one for a read that must not grow the window). */
-  private async older(timeline_key: string, before: number, limit: number, into: Model, ch: Change): Promise<{ items: TimelineItem[]; more: boolean }> {
+  /** Older items of a timeline, newest first: from the cache where it holds them, else the hub's page. `scratch`: the
+   *  page is read into a model of its own (a read that must not grow the window), else into the client's. */
+  private async older(timeline_key: string, before: number, limit: number, scratch: boolean): Promise<{ items: TimelineItem[]; more: boolean }> {
     await this.flush().catch(() => {})
     const local = await this.cached(timeline_key, { before, limit, reverse: true })
     if (local.length >= limit) return { items: local, more: true }
@@ -1205,11 +1225,9 @@ export class Client {
     try {
       const page = await this.page(timeline_key, { before, limit })
       more = page.more
-      const t = M.timelineOf(into, timeline_key)
-      t.window_open = true
-      for (const r of page.received) M.applyEnvelope(into, r, ch, { now: this.now() })
+      const got = JSON.parse(this.board.applyPage(timeline_key, page.received, scratch, this.now())) as TimelineItem[]
       const merged = new Map<number, TimelineItem>(local.map(i => [i.envelope_number!, i]))
-      for (const r of page.received) { const item = t.items.get(r.change); if (item) merged.set(r.change, merged.get(r.change)?.content && !item.content ? merged.get(r.change)! : item) }
+      for (const item of got) { const n = item.envelope_number!; merged.set(n, merged.get(n)?.content && !item.content ? merged.get(n)! : item) }
       return { items: [...merged.values()].sort((a, b) => b.envelope_number! - a.envelope_number!).slice(0, limit), more }
     } catch (e) {
       // offline: what the cache holds is what there is
@@ -1224,46 +1242,36 @@ export class Client {
     // A Chat's first window: its last `since_ms` (24 hours) or `limit` items, whichever holds more, at most
     // `KEEP_PER_CHAT`; what lies before it is read when the person scrolls up.
     if (since_ms !== undefined && !timeline_key.startsWith('scribble:')) {
-      const t = M.timelineOf(this.model, timeline_key), from = this.now() - since_ms
+      const from = this.now() - since_ms
       let loaded = 0, got = await this.loadTimeline(timeline_key, { limit })
       loaded += got.loaded
-      const oldest = (): number => t.items.get(t.loaded_down_to)?.sent_at ?? 0
+      const oldest = (): number => { const t = this.model.timelines.get(timeline_key); return t ? t.items.get(t.loaded_down_to)?.sent_at ?? 0 : 0 }
       while (got.has_more && got.loaded > 0 && loaded < KEEP_PER_CHAT && oldest() > from) { got = await this.loadTimeline(timeline_key, { limit: Math.min(200, KEEP_PER_CHAT - loaded) }); loaded += got.loaded }
       return { loaded, has_more: got.has_more }
     }
     // a board has no pages towards the past (its route reads forwards from a change): all of it, once
     if (timeline_key.startsWith('scribble:')) return { loaded: (await this.loadTimelineAfter(timeline_key, 0)).loaded, has_more: false }
-    const t = M.timelineOf(this.model, timeline_key)
-    t.window_open = true
-    const ch = M.emptyChange()
-    const { items, more } = await this.older(timeline_key, t.loaded_down_to, limit, this.model, ch)
-    for (const it of items) { if (!t.items.get(it.envelope_number!)?.content) t.items.set(it.envelope_number!, it); M.addItem(ch, timeline_key, t.items.get(it.envelope_number!)!) }
-    if (items.length) t.loaded_down_to = Math.min(t.loaded_down_to, items.at(-1)!.envelope_number!)
-    t.has_more = more && items.length > 0
-    ch.timelines.add(timeline_key)
-    this.tell(now => { for (const k of ch.timelines) now.timelines.add(k); for (const [k, list] of ch.items) for (const it of list) M.addItem(now, k, it); for (const c of ch.cards) now.cards.add(c); for (const s of ch.sessions) now.sessions.add(s) })
-    return { loaded: items.length, has_more: t.has_more }
+    const down = this.model.timelines.get(timeline_key)?.loaded_down_to ?? Infinity
+    const { items, more } = await this.older(timeline_key, down, limit, false)
+    const has_more = more && items.length > 0
+    this.tell(() => { this.board.putItems(timeline_key, JSON.stringify(items), items.length ? items.at(-1)!.envelope_number! : null, has_more) })
+    return { loaded: items.length, has_more }
   }
   /** A windowed read for scrolling: items before an envelope number, oldest first. Does not grow the window. */
   async timelineWindow(timeline_key: string, { before_envelope_number = Infinity, limit = 50 }: { before_envelope_number?: number; limit?: number } = {}): Promise<TimelineItem[]> {
-    const { items } = await this.older(timeline_key, before_envelope_number, limit, M.emptyModel(), M.emptyChange())
+    const { items } = await this.older(timeline_key, before_envelope_number, limit, true)
     return items.reverse()
   }
   /** A board's tail after a snapshot: every item after an envelope number, oldest first, all pages. */
   async loadTimelineAfter(timeline_key: string, after_envelope_number: number): Promise<{ loaded: number; items: TimelineItem[]; has_more: false }> {
-    const t = M.timelineOf(this.model, timeline_key)
-    t.window_open = true
-    const ch = M.emptyChange()
     const out = new Map<number, TimelineItem>()
     await this.flush().catch(() => {})
     for (const it of await this.cached(timeline_key, { after: after_envelope_number })) out.set(it.envelope_number!, it)
     try {
       for (let after = after_envelope_number; ;) {
         const page = await this.page(timeline_key, { after, limit: 500 })
-        for (const r of page.received) {
-          M.applyEnvelope(this.model, r, ch, { now: this.now() })
-          const item = t.items.get(r.change)
-          if (item && !(out.get(r.change)?.content && !item.content)) out.set(r.change, item)
+        for (const item of JSON.parse(this.board.applyPage(timeline_key, page.received, false, this.now())) as TimelineItem[]) {
+          if (!(out.get(item.envelope_number!)?.content && !item.content)) out.set(item.envelope_number!, item)
         }
         if (!page.more || page.last <= after) break
         after = page.last
@@ -1273,10 +1281,8 @@ export class Client {
       if (!(e instanceof HubError) || !e.transient || !out.size) throw e
     }
     const items = [...out.values()].sort((a, b) => a.envelope_number! - b.envelope_number!)
-    for (const it of items) { if (!t.items.get(it.envelope_number!)?.content) t.items.set(it.envelope_number!, it); M.addItem(ch, timeline_key, it) }
-    ch.timelines.add(timeline_key)
-    this.tell(now => { for (const k of ch.timelines) now.timelines.add(k); for (const [k, list] of ch.items) for (const it of list) M.addItem(now, k, it) })
-    return { loaded: items.length, items, has_more: false }
+    this.tell(() => { this.board.putItems(timeline_key, JSON.stringify(items), null, null) })
+    return { loaded: items.length, items: items.map(it => this.model.timelines.get(timeline_key)?.items.get(it.envelope_number!) ?? it), has_more: false }
   }
 
   // ---- attachments and Share links

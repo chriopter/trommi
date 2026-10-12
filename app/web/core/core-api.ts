@@ -27,7 +27,7 @@ export type {
   InviteConfirmed, InviteStepKind, InviteStep, JoinRequest,
   Urgency, ObjectType, ObjectState, DraftKind, Draft, Sealed, EnvelopeKind, TimelineKind, TimelineRef, ObjectHeader,
   EnvelopeHeader, BindKind, Bind, ObjectView, RegisterChange, EnvelopeOutcome, ReceivedEnvelope, ChainHead, WriterHead,
-  AccountName, Standing, ClientDesk, DeskCardIn, DeskRequestIn, DeskListed, DeskStackOp, DeskSessionOpen, DeskSessionOp, DeskDelta, HeadStanding, ServedItem, BoardLoaded, Gate, CommandKind, AnswerKind, CommandDecision, Finding, BoardItem,
+  AccountName, Standing, ClientDesk, ClientModel, DeskCardIn, DeskRequestIn, DeskListed, DeskStackOp, DeskSessionOpen, DeskSessionOp, DeskDelta, HeadStanding, ServedItem, BoardLoaded, Gate, CommandKind, AnswerKind, CommandDecision, Finding, BoardItem,
 } from '../../../core/wasm/js/trommi-core.js'
 
 /** Everything of the binding's module that has no state: versions, the self test, the account, files, share links,

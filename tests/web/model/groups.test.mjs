@@ -4,7 +4,8 @@
 //   node --test tests/web/model/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPresence, linkState, parentSessionOf, recipientOf } from '../../../app/web/core/model.ts'
+import { linkState, parentSessionOf, recipientOf } from '../../../app/web/core/model.ts'
+import { applyPresence } from './factory.mjs'
 import { World, device, hex, id16, bytes } from './factory.mjs'
 
 const helperGroup = (w, { helper = device(20), leaves, ...rest } = {}) => ({ group: bytes(48, 0xcc), session: { session_id: id16(0x61), parent: w.session }, epoch: 1,

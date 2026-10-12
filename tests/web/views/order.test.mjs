@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { emptyModel } from '../../../app/web/core/model-shape.ts'
-import { sessionOf } from '../../../app/web/core/model.ts'
+import { sessionOf } from '../model/factory.mjs'
 import { BoardState, orderWrites } from '../../../app/web/public/app.mjs'
 
 const A = { id: 'a', position: 0, placed: false }, B = { id: 'b', position: 1, placed: false }, C = { id: 'c', position: 2, placed: false }

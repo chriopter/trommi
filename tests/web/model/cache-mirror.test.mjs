@@ -7,7 +7,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { packPoints } from '../../../app/web/core/ink.ts'
 import { applyPatch, mirrorOf, patchOf, snapshotOf } from '../../../app/web/core/mirror.ts'
-import { applyPresence, cacheAll, cacheItemKey, cacheRecords, compactCard, confirmEcho, echoAnswer, echoNote, echoRegisters, echoTimelineItem, emptyChange, expandCard, modelFromCache, project, rollbackEcho, timelineOf } from '../../../app/web/core/model.ts'
+import { cacheAll, cacheItemKey, cacheRecords, compactCard, emptyChange, expandCard, modelFromCache } from '../../../app/web/core/model.ts'
+import { applyPresence, boardOf, confirmEcho, echoAnswer, echoNote, echoRegisters, echoTimelineItem, project, rollbackEcho, timelineOf } from './factory.mjs'
 import { encodePiece } from '../../../app/web/core/codec.ts'
 import { World, canon, device, hex, id16, bytes, withDesk } from './factory.mjs'
 
@@ -88,7 +89,7 @@ test('the cache: the records of every change, through JSON, give the model back'
   const all = new Map(cacheAll(w.model).map(([k, v]) => [k, JSON.parse(JSON.stringify(v))]))
   for (const [k, v] of all) assert.deepEqual(store.get(k), v, k)
   // the model goes on from the cache as from the original
-  const copy = new World(); copy.model = warm; copy.change = w.change; copy.seq = new Map(w.seq); copy.objects = structuredClone(w.objects); copy.clock = w.clock; copy.hashes = w.hashes
+  const copy = new World(); copy.model = warm; copy.board = boardOf(warm); copy.change = w.change; copy.seq = new Map(w.seq); copy.objects = structuredClone(w.objects); copy.clock = w.clock; copy.hashes = w.hashes
   for (const x of [w, copy]) x.answer(c1, { answer_action: 'answer', choices: ['b'] }, { state: 'closed' })
   assert.equal(warm.cards.get(hex(c1)).closed_how, 'settled'); assert.deepEqual(warm.stack, w.model.stack)
 })

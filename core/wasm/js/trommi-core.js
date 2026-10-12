@@ -395,6 +395,36 @@ export class ClientDesk extends FileObject {
   projectJson(nowMs) { return this[CALL]('project_json', [nowMs]) }
 }
 
+/** The client core's board model (client/src/model): what came goes in, the patch of a batch comes out. */
+export class ClientModel extends FileObject {
+  constructor(me = '') { super(call(raw.RawClientModel, 'create', [me])) }
+  setMe(myDeviceId) { return this[CALL]('set_me', [myDeviceId]) }
+  load(snapshot) { return this[CALL]('load', [snapshot]) }
+  applyEnvelopes(received, nowMs) { return this[CALL]('apply_envelopes', [received, nowMs]) }
+  applyCardDeeds(received) { return this[CALL]('apply_card_deeds', [received]) }
+  applyGroups(groups, roles) { return this[CALL]('apply_groups', [groups, roles]) }
+  applyCommit(facts, byRecovery, removedMe, nowMs) { return this[CALL]('apply_commit', [facts, byRecovery, removedMe, nowMs]) }
+  applyPresence(reports, nowMs) { return this[CALL]('apply_presence', [reports, nowMs]) }
+  applyWorkTrail(sessionId, from, turn, number, time, payload, changeNumber) { return this[CALL]('apply_work_trail', [sessionId, from, turn, number, time, payload, changeNumber]) }
+  applyStrokePiece(from, board, payload, nowMs) { return this[CALL]('apply_stroke_piece', [from, board, payload, nowMs]) }
+  echoItem(localId, timelineKey, content, recipient, objectId, nowMs) { return this[CALL]('echo_item', [localId, timelineKey, content, recipient, objectId, nowMs]) }
+  echoRegisters(localId, values) { return this[CALL]('echo_registers', [localId, values]) }
+  echoAnswer(localId, objectId, answer, objectState) { return this[CALL]('echo_answer', [localId, objectId, answer, objectState]) }
+  echoNote(localId, objectId, fields, closed) { return this[CALL]('echo_note', [localId, objectId, fields, closed]) }
+  confirmEcho(localId, hash, seq, objectId) { return this[CALL]('confirm_echo', [localId, hash, seq, objectId]) }
+  rollbackEcho(localId) { return this[CALL]('rollback_echo', [localId]) }
+  setDeskListing(at, listed) { return this[CALL]('set_desk_listing', [at, listed]) }
+  forgetDeskListing() { return this[CALL]('forget_desk_listing', []) }
+  setDeskHold(hold) { return this[CALL]('set_desk_hold', [hold]) }
+  setWindow(timelineKey, open, loadedDownTo, hasMore) { return this[CALL]('set_window', [timelineKey, open, loadedDownTo, hasMore]) }
+  applyPage(timelineKey, received, scratch, nowMs) { return this[CALL]('apply_page', [timelineKey, received, scratch, nowMs]) }
+  putItems(timelineKey, items, loadedDownTo, hasMore) { return this[CALL]('put_items', [timelineKey, items, loadedDownTo, hasMore]) }
+  pushAlert(code, message, envelopeNumber, senderDeviceId, nowMs) { return this[CALL]('push_alert', [code, message, envelopeNumber, senderDeviceId, nowMs]) }
+  noteNewer(what, envelopeNumber) { return this[CALL]('note_newer', [what, envelopeNumber]) }
+  finish(nowMs) { return this[CALL]('finish', [nowMs]) }
+  snapshot() { return this[CALL]('snapshot', []) }
+}
+
 // ---- everything without state -------------------------------------------------------------------------------------
 
 const plain = name => (...args) => callWith(raw, name, args)

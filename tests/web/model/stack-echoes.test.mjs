@@ -4,7 +4,8 @@
 //   node --test tests/web/model/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { confirmEcho, echoAnswer, echoNote, echoRegisters, echoTimelineItem, rollbackEcho, stackOf } from '../../../app/web/core/model.ts'
+import { stackOf } from '../../../app/web/core/model.ts'
+import { confirmEcho, echoAnswer, echoNote, echoRegisters, echoTimelineItem, rollbackEcho } from './factory.mjs'
 import { World, device, hex, id16, bytes } from './factory.mjs'
 
 const OPTIONS = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B', final: true }]

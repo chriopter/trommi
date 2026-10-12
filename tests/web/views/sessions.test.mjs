@@ -8,7 +8,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { emptyModel } from '../../../app/web/core/model-shape.ts'
-import { sessionOf } from '../../../app/web/core/model.ts'
+import { sessionOf } from '../model/factory.mjs'
 import { BoardState } from '../../../app/web/public/app.mjs'
 import { deletionOf, register } from '../../../app/web/public/agents.mjs'
 

@@ -650,6 +650,412 @@
         "returns": "DeskDelta"
       }
     },
+    "ClientModel": {
+      "new": {
+        "arguments": [
+          {
+            "name": "myDeviceId",
+            "type": "text"
+          }
+        ],
+        "returns": "self"
+      },
+      "setMe": {
+        "arguments": [
+          {
+            "name": "myDeviceId",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "load": {
+        "arguments": [
+          {
+            "name": "snapshot",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyEnvelopes": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "list<ReceivedEnvelope>"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "applyCardDeeds": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "list<ReceivedEnvelope>"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyGroups": {
+        "arguments": [
+          {
+            "name": "groups",
+            "type": "list<GroupSummary>"
+          },
+          {
+            "name": "roles",
+            "type": "optional<RoomRoles>"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyCommit": {
+        "arguments": [
+          {
+            "name": "facts",
+            "type": "CommitSummary"
+          },
+          {
+            "name": "byRecovery",
+            "type": "bool"
+          },
+          {
+            "name": "removedMe",
+            "type": "bool"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyPresence": {
+        "arguments": [
+          {
+            "name": "reports",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyWorkTrail": {
+        "arguments": [
+          {
+            "name": "sessionId",
+            "type": "text"
+          },
+          {
+            "name": "from",
+            "type": "bytes"
+          },
+          {
+            "name": "turn",
+            "type": "bytes"
+          },
+          {
+            "name": "number",
+            "type": "number"
+          },
+          {
+            "name": "time",
+            "type": "number"
+          },
+          {
+            "name": "payload",
+            "type": "bytes"
+          },
+          {
+            "name": "changeNumber",
+            "type": "number"
+          }
+        ],
+        "returns": "bool"
+      },
+      "applyStrokePiece": {
+        "arguments": [
+          {
+            "name": "from",
+            "type": "bytes"
+          },
+          {
+            "name": "board",
+            "type": "bytes"
+          },
+          {
+            "name": "payload",
+            "type": "bytes"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "bool"
+      },
+      "echoItem": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "content",
+            "type": "text"
+          },
+          {
+            "name": "recipient",
+            "type": "optional<text>"
+          },
+          {
+            "name": "objectId",
+            "type": "optional<text>"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "echoRegisters": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "values",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "echoAnswer": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "objectId",
+            "type": "text"
+          },
+          {
+            "name": "answer",
+            "type": "text"
+          },
+          {
+            "name": "objectState",
+            "type": "text"
+          }
+        ],
+        "returns": "bool"
+      },
+      "echoNote": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "objectId",
+            "type": "optional<text>"
+          },
+          {
+            "name": "fields",
+            "type": "text"
+          },
+          {
+            "name": "closed",
+            "type": "bool"
+          }
+        ],
+        "returns": "text"
+      },
+      "confirmEcho": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "hash",
+            "type": "text"
+          },
+          {
+            "name": "seq",
+            "type": "number"
+          },
+          {
+            "name": "objectId",
+            "type": "optional<text>"
+          }
+        ],
+        "returns": "void"
+      },
+      "rollbackEcho": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "setDeskListing": {
+        "arguments": [
+          {
+            "name": "at",
+            "type": "number"
+          },
+          {
+            "name": "listed",
+            "type": "list<DeskListed>"
+          }
+        ],
+        "returns": "void"
+      },
+      "forgetDeskListing": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "setDeskHold": {
+        "arguments": [
+          {
+            "name": "hold",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "setWindow": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "open",
+            "type": "bool"
+          },
+          {
+            "name": "loadedDownTo",
+            "type": "number"
+          },
+          {
+            "name": "hasMore",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyPage": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "received",
+            "type": "list<ReceivedEnvelope>"
+          },
+          {
+            "name": "scratch",
+            "type": "bool"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "putItems": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "items",
+            "type": "text"
+          },
+          {
+            "name": "loadedDownTo",
+            "type": "optional<number>"
+          },
+          {
+            "name": "hasMore",
+            "type": "optional<bool>"
+          }
+        ],
+        "returns": "void"
+      },
+      "pushAlert": {
+        "arguments": [
+          {
+            "name": "code",
+            "type": "text"
+          },
+          {
+            "name": "message",
+            "type": "text"
+          },
+          {
+            "name": "envelopeNumber",
+            "type": "optional<number>"
+          },
+          {
+            "name": "senderDeviceId",
+            "type": "optional<text>"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "noteNewer": {
+        "arguments": [
+          {
+            "name": "what",
+            "type": "text"
+          },
+          {
+            "name": "envelopeNumber",
+            "type": "optional<number>"
+          }
+        ],
+        "returns": "void"
+      },
+      "finish": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "snapshot": {
+        "arguments": [],
+        "returns": "text"
+      }
+    },
     "CoreDevice": {
       "create": {
         "arguments": [

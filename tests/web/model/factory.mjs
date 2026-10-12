@@ -8,12 +8,49 @@
 // The tests name every id as the wire's base64url text (device(), id16(), bytes()): that is what stands in a body's
 // JSON. The factory turns them into the bytes the core hands over (raw()), and hex() gives the model's form.
 import { b64u, idToHex, unb64u } from '../../../app/web/core/ids.ts'
-import { applyCommit, applyEnvelope, applyGroups, applyStrokePiece, applyWorkTrail, emptyChange, emptyModel, project, useDesk } from '../../../app/web/core/model.ts'
+import { relink, revivePatch, snapshotForCore } from '../../../app/web/core/board.ts'
+import { applyPatch } from '../../../app/web/core/mirror.ts'
+import { devregsOf, emptyChange, emptyModel } from '../../../app/web/core/model.ts'
 import { loadBinding } from '../stand-in/core.ts'
 
-/** The Desk's rules are the client core's (the binding's ClientDesk): every model of the tests gets one. */
+/** The model is the client core's (the binding's ClientModel); a test reads the page's copy of it (`model`). */
 const binding = await loadBinding()
-export const withDesk = model => { useDesk(model, new binding.ClientDesk()); return model }
+/** The core's model behind each copy. */
+const boards = new WeakMap()
+/** A copy with a core's model of its own (a model built from the cache: loaded into it). */
+export const withDesk = model => { const board = new binding.ClientModel(model.room.my_device_id ?? ''); if (model.cards.size || model.sessions.size) board.load(snapshotForCore(model)); boards.set(model, board); return model }
+export const boardOf = model => boards.get(model) ?? (withDesk(model), boards.get(model))
+/** The core's patch of everything since the last one, into the copy and into `ch`. */
+export function project(model, ch = emptyChange(), now = NOW) {
+  const text = boardOf(model).finish(now)
+  if (!text) return ch
+  const patch = revivePatch(text)
+  const got = applyPatch(model, patch)
+  relink(model, patch)
+  if (patch.devregs) { const d = devregsOf(model); d.clear(); for (const [k, v] of patch.devregs) d.set(k, v) }
+  for (const k of ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites']) for (const id of got[k]) ch[k].add(id)
+  for (const [k, list] of got.items) { let l = ch.items.get(k); if (!l) ch.items.set(k, l = []); l.push(...list) }
+  ch.members ||= got.members; ch.alerts ||= got.alerts; ch.stack ||= got.stack; ch.room ||= got.room
+  return ch
+}
+// The builder's calls of before, on the core's model (what a test calls directly).
+const hexOf = b => (b == null ? null : [...b].map(x => x.toString(16).padStart(2, '0')).join(''))
+export function echoTimelineItem(model, e, ch) { const it = JSON.parse(boardOf(model).echoItem(e.local_id, e.timeline_key, JSON.stringify(e.content), e.recipient_device_id ?? null, e.object_id ?? null, e.now ?? NOW)); project(model, ch); return model.timelines.get(e.timeline_key)?.items.get(e.local_id) ?? it }
+export function echoRegisters(model, e, ch) { boardOf(model).echoRegisters(e.local_id, JSON.stringify(e.values)); project(model, ch) }
+export function echoAnswer(model, e, ch) { const ok = boardOf(model).echoAnswer(e.local_id, e.object_id, JSON.stringify(e.answer), e.object_state); project(model, ch); return ok }
+export function echoNote(model, e, ch) { const key = boardOf(model).echoNote(e.local_id, e.object_id ?? null, JSON.stringify(e.fields), !!e.closed); project(model, ch); return key }
+export function confirmEcho(model, local_id, sealed, ch) { boardOf(model).confirmEcho(local_id, hexOf(sealed.envelopeHash), sealed.seq, sealed.objectId ? hexOf(sealed.objectId) : null); project(model, ch) }
+export function rollbackEcho(model, local_id, ch) { boardOf(model).rollbackEcho(local_id); project(model, ch) }
+export function applyPresence(model, reports, ch, now = NOW) { boardOf(model).applyPresence(JSON.stringify([...reports]), now); project(model, ch, now) }
+/** A timeline's window is open (the views read it): it counts headers too. */
+export function openWindow(model, key) { boardOf(model).setWindow(key, true, 0, false); project(model) }
+/** A timeline of the copy (an empty one when the model holds none). */
+export function timelineOf(model, key) {
+  const t = model.timelines.get(key)
+  if (t) return t
+  const at = key.indexOf(':'), id = key.slice(at + 1)
+  return { timeline_key: key, timeline_kind: key.slice(0, at), timeline_id: id, object_id: id.slice(id.indexOf('/') + 1), item_count: 0, newest_envelope_number: 0, items: new Map(), loaded_down_to: Infinity, has_more: false, window_open: false }
+}
 
 /** n bytes that begin with `tag`, as the wire's base64url. */
 export const bytes = (n, ...tag) => { const out = new Uint8Array(n); out.set(tag); return b64u(out) }
@@ -38,7 +75,7 @@ export const canon = v => JSON.stringify(v, (k, x) => {
 
 export class World {
   constructor() {
-    this.model = withDesk(emptyModel())
+    this.model = emptyModel()
     this.change = 0          // the hub's counter
     this.seq = new Map()     // `${group}/${sender}` -> the sender's last envelope number there
     this.hashes = 0
@@ -51,6 +88,8 @@ export class World {
     this.session_group = bytes(32, 0xbb, 1)
     this.model.room.my_device_id = hex(this.me)
     this.model.room.my_role = 'human'
+    withDesk(this.model)
+    this.board = boardOf(this.model)
     this.clock = NOW
     this.last = emptyChange()
   }
@@ -62,25 +101,25 @@ export class World {
       { group: this.session_group, session: { session_id: this.session, parent: null }, epoch: 2, leaves: [...humans, ...agents.slice(0, 1)] },
       ...extra,
     ].map(g => this.group(g))
-    return this.run(c => applyGroups(this.model, list, { epoch: roles.epoch ?? 3, state: new Uint8Array(32), humans: humans.map(raw), agents: agents.map(raw), recoverySignatureKey: new Uint8Array(32), recoveryHpkeKey: roles.recovery ?? new Uint8Array(32) }, c))
+    return this.run(() => this.board.applyGroups(list, { epoch: roles.epoch ?? 3, state: new Uint8Array(32), humans: humans.map(raw), agents: agents.map(raw), recoverySignatureKey: new Uint8Array(32), recoveryHpkeKey: roles.recovery ?? new Uint8Array(32), recoveryAuth: null }))
   }
   /** A GroupSummary; a main session's parent is zeros. */
   group({ group, session, epoch, leaves, disallowed = [], archived = false, pending = false }) {
-    return { group: raw(group), session: session && { roomId: new Uint8Array(32), sessionId: raw(session.session_id), parent: session.parent ? raw(session.parent) : new Uint8Array(16) }, epoch, leaves: leaves.map(raw), disallowed: disallowed.map(raw), archived, pending }
+    return { group: raw(group), session: session && { roomId: new Uint8Array(32), sessionId: raw(session.session_id), parent: session.parent ? raw(session.parent) : new Uint8Array(16) }, epoch, leaves: leaves.map(raw), disallowed: disallowed.map(raw), missingOpener: null, stale: disallowed.length > 0, archived, pending, ownFrom: 0, pastLearned: true }
   }
   /** A CommitSummary (`epoch`: the one it builds on), handed to the model. */
   commit({ group = this.room_group, epoch, committer = this.me, adds = [], removes = [], external = false, agents = null, time = this.clock }, opts = {}) {
-    return this.run(c => applyCommit(this.model, { group: raw(group), epoch, committer: raw(committer), external, adds: adds.map(raw), removes: removes.map(raw), cuts: [], agents: agents && agents.map(raw), roomEpoch: null, time }, c, { now: this.clock, ...opts }))
+    return this.run(() => this.board.applyCommit({ group: raw(group), epoch, committer: raw(committer), external, adds: adds.map(raw), removes: removes.map(raw), cuts: [], agents: agents && agents.map(raw), roomEpoch: null, time }, !!opts.by_recovery, !!opts.removed_me, opts.now ?? this.clock))
   }
   /** One step of a turn's work trail (a ReceivedMessage of kind 'workTrail') under the hub's change number `n`. */
   trail(session, { from = this.agent, turn, number, step }, n) {
     const message = { kind: 'workTrail', from: raw(from), keysTaken: 0, last: false, board: null, turn: raw(turn), number, time: this.clock += 500, payload: utf8(typeof step === 'string' ? step : JSON.stringify(step)) }
-    return this.run(c => applyWorkTrail(this.model, hex(session), message, n, c))
+    return this.run(() => this.board.applyWorkTrail(hex(session), message.from, message.turn, message.number, message.time, message.payload, n))
   }
   /** A piece of a stroke in progress (a ReceivedMessage of kind 'strokePiece'). */
   piece(board, piece, { from = this.phone } = {}) {
     const message = { kind: 'strokePiece', from: raw(from), keysTaken: 0, last: false, board: raw(board), turn: null, number: 0, time: 0, payload: utf8(piece) }
-    return this.run(c => applyStrokePiece(this.model, message, c, { now: this.clock }))
+    return this.run(() => this.board.applyStrokePiece(message.from, message.board, message.payload, this.clock))
   }
   /** What sealing an own envelope gives back. */
   sealed(hash, seq, { group = this.session_group, object_id = null } = {}) {
@@ -144,7 +183,7 @@ export class World {
    *  model's `result`, and the envelope's `hash` (base64url, to name it in a later one), `change` and `time`. */
   take(spec, ctx = { now: this.clock }) {
     const r = spec.header ? spec : this.envelope(spec)
-    const result = this.run(c => applyEnvelope(this.model, r, c, ctx))
+    const result = this.run(() => { const [a] = JSON.parse(this.board.applyEnvelopes([r], ctx.now)); return a.refused == null ? { applied: a.applied } : a })
     return { r, result, hash: b64u(r.envelopeHash), change: r.change, time: r.header.time }
   }
 
@@ -176,4 +215,17 @@ export class World {
   register(name, value, { sender = this.me, session = sender === this.agent ? this.session : null, current = true, lamport = 1, ...rest } = {}) {
     return this.take({ kind: 'register', sender, session, register_id: id16(0x7e), payload: { name, value, lamport }, register: { name, current }, ...rest })
   }
+}
+
+/** A session record in a copy, made if it is new (a test's own model: the views' tests build one by hand). */
+export function sessionOf(model, session_id) {
+  let s = model.sessions.get(session_id)
+  if (!s) {
+    s = { session_id, group_id: null, agent_device_ids: [], agent_device_id: null, agent_session_id: null, device_name: '', is_active: true, stale: false, group_archived: false,
+      is_online: false, offline_since: null, link: null, heard_up_to: null, heard_at: null, session_key_epoch: 0, created_by_agent: false, creator_device_id: null, parent_session_id: null,
+      profile: null, status_lines: [], agent_alerts: [], registers: new Map(), settings: null, card_ids: [], open_card_ids: [],
+      timeline_key: `chat:session/${session_id}`, last_activity_at: 0 }
+    model.sessions.set(session_id, s)
+  }
+  return s
 }

@@ -19,7 +19,9 @@
 use js_sys::Array;
 use trommi_core_ffi as facade;
 use trommi_core_ffi::js::{FromJs, ToJs};
-use trommi_core_ffi::{ClientDesk, CoreDevice, CoreError, FileDecryptor, FileEncryptor};
+use trommi_core_ffi::{
+    ClientDesk, ClientModel, CoreDevice, CoreError, FileDecryptor, FileEncryptor,
+};
 use wasm_bindgen::prelude::*;
 
 /// What every export returns: a pair. `[null, value]` when the call went through, `[code, message]` when the
@@ -330,6 +332,46 @@ methods!(RawClientDesk {
     put_cards_json(cards);
     put_requests_json(requests);
     project_json(now_ms);
+});
+
+/// The client core's board model.
+#[wasm_bindgen]
+pub struct RawClientModel(ClientModel);
+
+#[wasm_bindgen]
+impl RawClientModel {
+    /// An empty model of the device `me` (hex; "" while not known).
+    pub fn create(me: &JsValue) -> Answer {
+        made(arg::<String>(me).map(|me| RawClientModel(ClientModel::new(me))))
+    }
+}
+
+methods!(RawClientModel {
+    set_me(my_device_id);
+    load(snapshot);
+    apply_envelopes(received, now_ms);
+    apply_card_deeds(received);
+    apply_groups(groups, roles);
+    apply_commit(facts, by_recovery, removed_me, now_ms);
+    apply_presence(reports, now_ms);
+    apply_work_trail(session_id, from, turn, number, time, payload, change_number);
+    apply_stroke_piece(from, board, payload, now_ms);
+    echo_item(local_id, timeline_key, content, recipient, object_id, now_ms);
+    echo_registers(local_id, values);
+    echo_answer(local_id, object_id, answer, object_state);
+    echo_note(local_id, object_id, fields, closed);
+    confirm_echo(local_id, hash, seq, object_id);
+    rollback_echo(local_id);
+    set_desk_listing(at, listed);
+    forget_desk_listing();
+    set_desk_hold(hold);
+    set_window(timeline_key, open, loaded_down_to, has_more);
+    apply_page(timeline_key, received, scratch, now_ms);
+    put_items(timeline_key, items, loaded_down_to, has_more);
+    push_alert(code, message, envelope_number, sender_device_id, now_ms);
+    note_newer(what, envelope_number);
+    finish(now_ms);
+    snapshot();
 });
 
 /// The facade's file decryptor.

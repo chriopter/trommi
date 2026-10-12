@@ -1007,6 +1007,8 @@ export interface DeskCardIn {
   newest: number
   inRevision: number | null
   read: boolean
+  /** An info its agent is still working on (spec 9.1.3). */
+  working: boolean
 }
 /** A permission request as the Desk needs it; `expiresAt` 0: not known (its body not read). */
 export interface DeskRequestIn {
@@ -1075,6 +1077,37 @@ export class ClientDesk {
   putRequestsJson(requests: string): void
   /** The same as project, as the JSON of the core's `Delta` (snake case). */
   projectJson(nowMs: number): string
+}
+
+/** The client core's board model (client/src/model): what came goes in, the patch of a batch comes out (JSON in
+ *  the web model's `ModelPatch` shape). */
+export class ClientModel {
+  constructor(myDeviceId: string)
+  setMe(myDeviceId: string): void
+  load(snapshot: string): void
+  applyEnvelopes(received: ReceivedEnvelope[], nowMs: number): string
+  applyCardDeeds(received: ReceivedEnvelope[]): void
+  applyGroups(groups: GroupSummary[], roles: RoomRoles | null): void
+  applyCommit(facts: CommitSummary, byRecovery: boolean, removedMe: boolean, nowMs: number): void
+  applyPresence(reports: string, nowMs: number): void
+  applyWorkTrail(sessionId: string, from: Uint8Array, turn: Uint8Array, number: number, time: number, payload: Uint8Array, changeNumber: number): boolean
+  applyStrokePiece(from: Uint8Array, board: Uint8Array, payload: Uint8Array, nowMs: number): boolean
+  echoItem(localId: string, timelineKey: string, content: string, recipient: string | null, objectId: string | null, nowMs: number): string
+  echoRegisters(localId: string, values: string): void
+  echoAnswer(localId: string, objectId: string, answer: string, objectState: string): boolean
+  echoNote(localId: string, objectId: string | null, fields: string, closed: boolean): string
+  confirmEcho(localId: string, hash: string, seq: number, objectId: string | null): void
+  rollbackEcho(localId: string): void
+  setDeskListing(at: number, listed: DeskListed[]): void
+  forgetDeskListing(): void
+  setDeskHold(hold: boolean): void
+  setWindow(timelineKey: string, open: boolean, loadedDownTo: number, hasMore: boolean): void
+  applyPage(timelineKey: string, received: ReceivedEnvelope[], scratch: boolean, nowMs: number): string
+  putItems(timelineKey: string, items: string, loadedDownTo: number | null, hasMore: boolean | null): void
+  pushAlert(code: string, message: string, envelopeNumber: number | null, senderDeviceId: string | null, nowMs: number): string
+  noteNewer(what: string, envelopeNumber: number | null): void
+  finish(nowMs: number): string
+  snapshot(): string
 }
 
 /** Decrypts a stored file piece by piece. What `update` handed out counts only once `finish` succeeded. */

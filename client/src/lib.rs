@@ -22,6 +22,7 @@
 pub mod board;
 pub mod codec;
 pub mod desk;
+pub mod model;
 pub mod plan;
 pub mod registers;
 pub mod store;
