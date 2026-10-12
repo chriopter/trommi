@@ -91,6 +91,7 @@ many agents are still at work.
 
 **Better**
 - **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
+- Web: the start page offers "Try the demo" right under Log in, with a line saying nothing is sent.
 - Web: a new version no longer reloads an open tab while you look at it: a quiet "A new version is ready" offers it, and the tab reloads by itself once it is in the background.
 - Web: pictures and previews come from the browser once shown, not from the hub on every open.
 - Web: an open tab no longer downloads the whole Desk every minute (about 100 MB an hour in a big room); it asks the hub only what changed.

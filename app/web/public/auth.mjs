@@ -781,12 +781,15 @@ function deviceLabel(nav = navigator) {
 }
 const UNDER = raw('<svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><path d="M1.0 5.0 Q18.0 3.4 26.0 4.3 Q34.0 5.2 43.0 4.4 Q52.0 3.6 61.0 4.3 Q70.0 5.0 78.0 4.4 Q86.0 3.8 92.5 4.2 L99.0 4.6"/></svg>')
 const DEMO_LINK = html`<a href="/?mock=1" id="ob-demo" data-turbo="false">Try the demo</a>`
-/** One screen: the bell (the way back to the start), a short headline, at most one line under it, the demo at the foot. */
-const obShell = (title, inner, { lead = '', cls = '', home = true, foot = '' } = {}) => html`<main id="room" class="ob${cls ? ` ${cls}` : ''}" aria-labelledby="ob-title">
+/** On the start page the demo is the third way, right under Create account and Log in: a clear quieter button. */
+const DEMO_WAY = html`<a href="/?mock=1" id="ob-demo" class="ob-demo-way" data-turbo="false"><span>Try the demo</span><small>A made-up room: nothing is sent</small></a>`
+/** One screen: the bell (the way back to the start), a short headline, at most one line under it, the demo at the
+ *  foot (demo: false where the screen offers it itself, the start page). */
+const obShell = (title, inner, { lead = '', cls = '', home = true, foot = '', demo = true } = {}) => html`<main id="room" class="ob${cls ? ` ${cls}` : ''}" aria-labelledby="ob-title">
 <header class="ob-brand">${home ? html`<a href="/" id="room-home" aria-label="Trommi: back to the start">${BELL}<b>Trommi</b></a>` : html`<span>${BELL}<b>Trommi</b></span>`}</header>
 <h1 id="ob-title" class="ob-title">${title}</h1>${lead ? html`<p class="ob-lead">${lead}</p>` : ''}
 ${inner}
-<footer class="ob-foot">${foot}${DEMO_LINK}</footer></main>`
+<footer class="ob-foot">${foot}${demo ? DEMO_LINK : ''}</footer></main>`
 /** The one line a form says when it failed: its place is kept, so nothing jumps. */
 const obError = (error = '') => html`<p class="ob-error" role="alert" id="ob-error">${error}</p>`
 /** The email field of "Create account". `optional`: beside a passkey nothing rests on it, and the field says so. */
@@ -1100,7 +1103,7 @@ export async function roomScreen({ start, hub, openError = null, demo = '' }) {
 
   function welcome(error = '') {
     show(obShell(html`Your agents ring.<br>You <span class="ob-pen">decide.${UNDER}</span>`, html`${loggedOut ? html`<p class="ob-said" id="logged-out" role="status">${loggedOut === 'kept' ? 'Logged out. This device still shows under Devices.' : 'Logged out.'}</p>` : ''}${error ? html`<p class="ob-error is-shown" role="alert">${error}</p>` : ''}
-<div class="ob-stack"><button type="button" class="ob-go" id="way-create">Create account</button><button type="button" class="ob-second" id="way-login">Log in</button></div>`, { lead: 'Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.', cls: 'ob-welcome', home: false }), null)
+<div class="ob-stack"><button type="button" class="ob-go" id="way-create">Create account</button><button type="button" class="ob-second" id="way-login">Log in</button>${DEMO_WAY}</div>`, { lead: 'Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.', cls: 'ob-welcome', home: false, demo: false }), null)
     on('#way-create', 'click', () => createFlow())
     on('#way-login', 'click', () => loginFlow())
   }
