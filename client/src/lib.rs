@@ -3,7 +3,8 @@
 //! The protocol (MLS, envelopes, chains, the command gate) is `trommi-core`. Above it, each app used to keep its
 //! own copy of the board model, the Desk rules and the catch-up order (web TypeScript, iOS Swift, the connector's
 //! Rust). This crate is that layer, without IO: the host fetches what a [`plan::CatchUp`] asks for, hands what
-//! the protocol core accepted to the [`board::Board`] as [`board::Fact`]s, and renders [`desk::Desk`].
+//! the protocol core accepted to the [`board::Board`] as [`board::Fact`]s, tells [`desk::DeskState`] what changed,
+//! and renders its projection.
 //!
 //! # The rules
 //!
@@ -30,8 +31,8 @@ pub mod store;
 
 pub use board::{Board, Fact, Kind, Object, Source, State};
 pub use desk::{
-    Delta, Desk, DeskCard, DeskEntry, DeskRequest, DeskState, Listed, Listing, Projection,
-    Readiness, SessionOp, StackOp, REQUEST_LIFE_MAX_MS,
+    Delta, DeskCard, DeskRequest, DeskState, Listed, Listing, Projection, SessionOp, StackOp,
+    REQUEST_LIFE_MAX_MS,
 };
 pub use plan::{CatchUp, Step};
 pub use registers::{RegisterOutcome, Registers};

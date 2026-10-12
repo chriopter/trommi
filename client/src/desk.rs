@@ -21,7 +21,7 @@
 //! marks that changed, the sessions whose lists changed. A new list, a snooze, an archived session or the clock past
 //! the next wake builds the whole Desk again.
 
-use crate::board::{Board, Kind, State};
+use crate::board::{Kind, State};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -693,126 +693,6 @@ fn min_wake(a: u64, b: u64) -> u64 {
     m.unwrap_or(0)
 }
 
-// ---- the Desk of a host that keeps a `Board` (the Linux app) ---------------------------------------------------------
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Readiness {
-    /// Read here: it can be answered.
-    Ready,
-    /// Listed, not read yet: a quiet "Loading …" with nothing to answer.
-    Placeholder,
-}
-
-/// One row of the Desk.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DeskEntry {
-    pub object_id: String,
-    pub kind: Kind,
-    pub session_id: Option<String>,
-    pub readiness: Readiness,
-    /// The change of the version shown (or listed, for a placeholder).
-    pub change: u64,
-    /// The body to render, when read.
-    pub body: Option<serde_json::Value>,
-}
-
-/// The Desk of a [`Board`], in the order of the projection (cards, then requests), with a placeholder for every
-/// listed object the board holds nothing of.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Desk {
-    pub entries: Vec<DeskEntry>,
-    pub held: Vec<String>,
-    pub expired: Vec<String>,
-    pub hand_back_over: Vec<String>,
-    /// Built from a hub list (false: no list yet, or a truncated one; the Desk is this device's own view).
-    pub complete: bool,
-    pub next_expiry: u64,
-}
-
-impl Desk {
-    /// The Desk at `now`, from the board and the hub's list (if one was read).
-    pub fn build(board: &Board, listing: Option<&Listing>, now_ms: u64) -> Desk {
-        let mut state = DeskState::new();
-        for o in board.objects.values() {
-            let newest = o.state_change.max(o.version_change);
-            match o.kind {
-                Kind::Card => state.put_card(DeskCard {
-                    object_id: o.object_id.clone(),
-                    session_id: o.session_id.clone(),
-                    state: o.state,
-                    urgency: None,
-                    created_at: o.version_change,
-                    agent_device_id: None,
-                    version_change: o.version_change,
-                    newest,
-                    in_revision: o.hand_back,
-                    read: o.is_read(),
-                    working: false,
-                }),
-                Kind::Request => state.put_request(DeskRequest {
-                    object_id: o.object_id.clone(),
-                    session_id: o.session_id.clone(),
-                    pending: o.state == State::Open,
-                    envelope_number: o.version_change,
-                    newest,
-                    sent_at: o.sent_at,
-                    expires_at: o.expires_at,
-                    read: o.is_read(),
-                }),
-            }
-        }
-        state.set_listing(listing.cloned());
-        let p = state.projection(now_ms);
-        let mut desk = Desk {
-            held: p.held,
-            expired: p.expired,
-            hand_back_over: p.hand_back_over,
-            complete: state.listing().is_some(),
-            next_expiry: p.next_wake,
-            entries: Vec::new(),
-        };
-        let listed: BTreeMap<&str, &Listed> = state
-            .listing()
-            .iter()
-            .flat_map(|l| l.open.iter().map(|o| (o.object_id.as_str(), o)))
-            .collect();
-        for id in p.stack.iter().chain(p.permissions_open.iter()) {
-            let Some(o) = board.get(id) else { continue };
-            let want = listed
-                .get(id.as_str())
-                .map(|l| l.version_change)
-                .unwrap_or(0);
-            let read = o.is_read() && o.version_change >= want;
-            desk.entries.push(DeskEntry {
-                object_id: id.clone(),
-                kind: o.kind,
-                session_id: o.session_id.clone(),
-                readiness: if read {
-                    Readiness::Ready
-                } else {
-                    Readiness::Placeholder
-                },
-                change: o.version_change.max(want),
-                body: if read { o.body.clone() } else { None },
-            });
-        }
-        for (id, l) in &listed {
-            if board.get(id).is_none() {
-                desk.entries.push(DeskEntry {
-                    object_id: id.to_string(),
-                    kind: l.kind,
-                    session_id: l.session_id.clone(),
-                    readiness: Readiness::Placeholder,
-                    change: l.version_change.max(l.first_change),
-                    body: None,
-                });
-            }
-        }
-        desk
-    }
-}
-
 /// One edit of the stack, joined to the edit before when it starts right behind what that one put in (a page of
 /// new cards in a row crosses as one edit, not one per card).
 fn push_stack_op(ops: &mut Vec<StackOp>, at: u32, gone: u32, id: Option<String>) {
@@ -860,7 +740,6 @@ fn push_session_op(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{Fact, Source};
 
     fn card(id: &str, change: u64) -> DeskCard {
         DeskCard {
@@ -1187,50 +1066,5 @@ mod tests {
             assert_eq!(sessions, whole.session_open, "the sessions at step {step}");
             assert_eq!(perms, whole.permissions_open, "the requests at step {step}");
         }
-    }
-
-    fn fact(id: &str, kind: Kind, change: u64, state: State, body: bool) -> Fact {
-        Fact {
-            object_id: id.into(),
-            kind,
-            session_id: Some("s".into()),
-            change,
-            state,
-            is_version: true,
-            body: body.then(|| serde_json::json!({ "title": id })),
-            sent_at: 1_000,
-            expires_at: 0,
-            hand_back: None,
-            source: Source::Live,
-        }
-    }
-
-    #[test]
-    fn a_board_desk_with_placeholders() {
-        let mut board = Board::new();
-        board.apply(&fact("a", Kind::Card, 50, State::Open, true));
-        board.apply(&fact("old", Kind::Card, 20, State::Open, true));
-        let desk = Desk::build(
-            &board,
-            listing(100, &[("a", 80), ("unknown", 90)]).as_ref(),
-            2_000,
-        );
-        assert!(desk.complete);
-        assert_eq!(desk.held, ["old"]);
-        let rows: Vec<(&str, Readiness)> = desk
-            .entries
-            .iter()
-            .map(|e| (e.object_id.as_str(), e.readiness))
-            .collect();
-        assert_eq!(
-            rows,
-            [
-                ("a", Readiness::Placeholder),
-                ("unknown", Readiness::Placeholder)
-            ]
-        );
-        let own = Desk::build(&board, None, 0);
-        assert!(!own.complete);
-        assert_eq!(own.entries.len(), 2);
     }
 }
