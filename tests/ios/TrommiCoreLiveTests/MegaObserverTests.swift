@@ -29,6 +29,11 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   private var forward: URLSessionDataTask?
+  /// Set by stopLoading: the task this protocol served is gone (cancelled, timed out). Nothing more is said to its
+  /// client: Foundation on Linux crashes on a call for a task it has already finished.
+  private let state = NSLock()
+  private var stopped = false
+  private func live() -> Bool { state.withLock { !stopped } }
   private func answer(_ status: Int, _ body: String) {
     let r = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["content-type": "application/json", "retry-after": "1"])!
     client?.urlProtocol(self, didReceive: r, cacheStoragePolicy: .notAllowed)
@@ -54,7 +59,9 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
     if counted { let n = req.httpBody?.count ?? 0; MegaFaults.lock.withLock { MegaFaults.asked["bytes out", default: 0] += n } }
     let wait = MegaFaults.delayMs > 0 ? Double(Int(MegaFaults.rand() * Double(MegaFaults.delayMs))) / 1000 : 0
     DispatchQueue.global().asyncAfter(deadline: .now() + wait) { [self] in
-      forward = MegaFaults.plain.dataTask(with: req) { [self] data, response, error in
+      guard live() else { return }
+      let task = MegaFaults.plain.dataTask(with: req) { [self] data, response, error in
+        guard live() else { return }
         if let error { client?.urlProtocol(self, didFailWithError: error); return }
         if let response { client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed) }
         if let data { client?.urlProtocol(self, didLoad: data) }
@@ -62,10 +69,11 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
         if counted, let n = data?.count { MegaFaults.lock.withLock { MegaFaults.asked["bytes in", default: 0] += n } }
         client?.urlProtocolDidFinishLoading(self)
       }
-      forward?.resume()
+      state.withLock { forward = task }
+      task.resume()
     }
   }
-  override func stopLoading() { forward?.cancel() }
+  override func stopLoading() { state.withLock { stopped = true; return forward }?.cancel() }
 }
 
 @MainActor
