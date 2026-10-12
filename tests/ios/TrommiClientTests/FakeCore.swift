@@ -102,7 +102,15 @@ final class FakeDevice: CoreDevice {
     return try queue(.commit, group: group, parts: [commit, [0], [], [0]])
   }
   func archive(group: GroupId) throws {}
-  func joinWelcome(_ welcome: Bytes, room: RoomId, committer: DeviceId?, nowMs: UInt64) throws -> Joined { throw TrommiError("not-built") }
+  /** A "Welcome" is JSON { session, agent, by }: this device is in that session's group from here on. */
+  func joinWelcome(_ welcome: Bytes, room: RoomId, committer: DeviceId?, nowMs: UInt64) throws -> Joined {
+    let w = parse(welcome)
+    guard let r = state.room, let s = w["session"] as? String, let a = w["agent"] as? String else { throw TrommiError("bad-format") }
+    guard state.sessions[s] == nil else { throw TrommiError("wrong-epoch", "in the group already") }
+    state.sessions[s] = [a]
+    try write([])
+    return Joined(group: Self.sessionGroup(r, s), epoch: 1, addedBy: try unhex(w["by"] as? String ?? a))
+  }
 
   /** A "Commit" here is JSON: { session, agent } founds a session group; anything else only moves the epoch. */
   func processLogEntry(_ entry: LogEntry) throws -> Processed {
@@ -330,6 +338,12 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var wishes: [[String: Any]] = []
     /** Set: the answer to a posted Commit waits for a signal, while the Commit is in the changes already. */
     var holdCommitAnswer: DispatchSemaphore?
+    /** What GET /v1/welcomes lists, and how often it was read. */
+    var welcomes: [[String: Any]] = []
+    var welcomesRead = 0
+    /** The object ids (hex) GET /v1/desk lists as open cards, asked at each read; nil: the route is not there. */
+    var deskCards: (() -> [String])?
+    var deskReads = 0
     func add(_ item: [String: Any]) -> UInt64 { change += 1; var i = item; i["change"] = change; items.append(i); return change }
     /** A Commit in the log of a group. */
     func commit(group: Bytes, _ body: [String: Any]) { lock.withLock { _ = add(["kind": "commit", "group_id": b64u(group), "bytes": b64u(j(body))]) } }
@@ -348,7 +362,11 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
         return (200, ["room_id": b64u(try! unhex(room))])
       case ("GET", _) where path.hasSuffix("/challenge"): return (200, ["challenge": b64u(Bytes(repeating: 9, count: 32))])
       case ("POST", _) where path.hasSuffix("/tokens"): return (200, ["token": "t", "expires_at": nowMs() + 600_000, "role": "human"])
-      case ("GET", "/v1/welcomes"): return (200, [Any]())
+      case ("GET", "/v1/welcomes"): welcomesRead += 1; return (200, welcomes)
+      case ("GET", "/v1/desk"):
+        guard let cards = deskCards else { return (404, ["error": "not-found", "message": path]) }
+        deskReads += 1
+        return (200, ["change": change, "cards": cards().map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any]()])
       case ("PUT", "/v1/key-packages"): return (200, ["unused": 100])
       case ("GET", "/v1/changes"):
         let after = UInt64(query["after"] ?? "0") ?? 0
