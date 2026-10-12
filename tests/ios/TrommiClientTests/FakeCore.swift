@@ -340,6 +340,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var envelopePosts: [String] = []           // every envelope as it was posted, repeats included
     var refuse: [String: (status: Int, code: String, voided: Bool)] = [:]   // path -> refusal; `voided`: the hub kept the envelope's number as a void record
     var offline = false
+    /** "METHOD path" -> how many more times it is answered 502 (a hub behind a proxy that hiccups). */
+    var failTimes: [String: Int] = [:]
     var rooms = 0
     /** The wishes GET /v1/requests lists (POST /v1/requests adds none: a test names them). */
     var wishes: [[String: Any]] = []
@@ -363,6 +365,7 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     func answer(_ method: String, _ path: String, _ query: [String: String], _ body: [String: Any]) -> (Int, Any) {
       lock.lock(); defer { lock.unlock() }
       if let r = refuse[path] { return (r.status, ["error": r.code, "message": "refused", "voided": r.voided]) }
+      if let n = failTimes["\(method) \(path)"], n > 0 { failTimes["\(method) \(path)"] = n - 1; return (502, ["error": "unavailable", "message": "a hiccup"]) }
       posted.append((path, body))
       switch (method, path) {
       case ("POST", "/v1/rooms"):
