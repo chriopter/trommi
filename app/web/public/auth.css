@@ -366,6 +366,12 @@ dialog.ob-gate #room-screen { position: static; }
 .ob-second svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .ob-wide { width: 100%; }
 .ob-stack { display: grid; gap: 10px; margin: 34px 0 0; }
+/* The start page's third way (auth.mjs DEMO_WAY): under Log in, quieter than both buttons: no frame, the word and
+   one muted line under it; a dashed underline on hover. */
+.ob-demo-way { display: grid; justify-items: center; gap: 3px; margin-top: 6px; padding: 10px 12px; border-radius: 12px; color: var(--fg); text-decoration: none; font: 600 15px/1.2 var(--font); }
+.ob-demo-way small { color: var(--muted); font: 500 12.5px/1.3 var(--font); }
+.ob-demo-way:hover span, .ob-demo-way:focus-visible span { text-decoration: underline dashed; text-underline-offset: 4px; }
+.ob-demo-way:hover { background: var(--sunken); }
 .ob-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0 0; }
 .ob-link { padding: 0; border: 0; background: none; color: var(--accent); font: 600 inherit; font-size: inherit; font-family: var(--font); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
 .ob-link:hover { color: var(--accent-hover); }
