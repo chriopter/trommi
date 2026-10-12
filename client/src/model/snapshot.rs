@@ -136,6 +136,13 @@ impl Model {
         for c in self.cards.values_mut() {
             c.catching_up = false;
         }
+        // (a snooze mark a copy kept is looked at again by the next projection: its register may be gone since)
+        self.snooze_marked = self
+            .cards
+            .values()
+            .filter(|c| c.snoozed_until.is_some() || c.snoozed_at.is_some() || c.unsnoozed.is_some())
+            .map(|c| c.object_id.clone())
+            .collect();
         for r in self.permissions.values_mut() {
             r.catching_up = false;
         }
