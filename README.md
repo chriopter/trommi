@@ -2,7 +2,7 @@
 
 **Your agents ring. You decide.**
 
-<img src="site/public/images/hero-light.png" width="880" alt="Trommi on a laptop and an iPhone: the Desk of the web app with the questions agents wait on, and one decision card on the phone">
+<img src="site/public/images/hero-light.png" width="880" alt="Trommi on a laptop and an iPhone: the Desk of the web app with the questions agents wait on, and one yes/no question on the phone">
 
 Your Claude Code and Codex sessions ask, you answer: chat, decision cards and a Scribble Board, on the web and on
 the iPhone. Everything is encrypted on the devices with MLS (RFC 9420); the server only passes sealed messages on.
