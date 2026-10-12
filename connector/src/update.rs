@@ -41,6 +41,9 @@ pub const REPOSITORY: &str = "trommi/trommi";
 /// The largest manifest that is read.
 const MAX_MANIFEST_LEN: u64 = 1 << 20;
 
+/// Why a binary is refused that is not the file its manifest names.
+const NOT_NAMED: &str = "the binary is not the file the manifest names";
+
 /// What the check of a binary says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Release {
@@ -113,7 +116,7 @@ pub fn check(
     let same_hash = asset.get("sha256").and_then(Value::as_str)
         == Some(crate::util::hex(&crate::util::sha256(binary)).as_str());
     if !same_size || !same_hash {
-        return Err("the binary is not the file the manifest names");
+        return Err(NOT_NAMED);
     }
     Ok(version)
 }
@@ -160,6 +163,10 @@ pub fn standing(release: &Release) -> String {
         Release::Unverified => {
             "not verified: no signed release manifest lies beside this binary".into()
         }
+        // (a local build copied over the installed program: the manifest beside it is the release's)
+        Release::Refused(why) if *why == NOT_NAMED => format!(
+            "REFUSED as a release: {why} (a local build?); `trommi-connector update` puts the signed release back"
+        ),
         Release::Refused(why) => format!("REFUSED as a release: {why}"),
     }
 }
@@ -195,6 +202,50 @@ pub fn installed_version(key: &[u8; 32], dir: &Path) -> u64 {
         .ok()
         .and_then(|stated| stated.get("version").and_then(Value::as_u64))
         .unwrap_or(0)
+}
+
+/// What an install folder holds: the version its signed manifest names (0 without one), and whether its program
+/// is the file that manifest names for this machine (not so after a local build was copied over it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Installed {
+    pub version: u64,
+    pub program_is_release: bool,
+}
+
+/// The release an install folder holds, under `key`, for `target`.
+pub fn installed_release(key: &[u8; 32], target: &str, dir: &Path) -> Installed {
+    let version = installed_version(key, dir);
+    let program_is_release = version > 0
+        && match (
+            std::fs::read(dir.join("manifest.json")),
+            std::fs::read(dir.join("manifest.json.sig")),
+            std::fs::read(dir.join("trommi-connector")),
+        ) {
+            (Ok(manifest), Ok(signature), Ok(binary)) => check(
+                &Expect {
+                    key,
+                    target,
+                    running: 0,
+                },
+                &manifest,
+                &signature,
+                &binary,
+            )
+            .is_ok(),
+            _ => false,
+        };
+    Installed {
+        version,
+        program_is_release,
+    }
+}
+
+/// Whether the newest release (`newest`) is to be installed, for a process built as release `built` (0: no
+/// release) and a folder that holds `held`: a newer release than both, or the folder's own release again when
+/// its program is another file (a local build copied over it). Never an older one.
+pub fn wanted(newest: u64, built: u64, held: &Installed) -> bool {
+    newest > built.max(held.version)
+        || (newest == held.version && newest >= built && !held.program_is_release)
 }
 
 /// Puts a release into `dir` after [`check`] passed: `manifest.json.sig`, `manifest.json`, then
@@ -409,10 +460,11 @@ pub async fn update(only_look: bool) -> Result<String, String> {
     let tag = newest_release(&http).await?;
     let manifest = asset(&http, &tag, "manifest.json", MAX_MANIFEST_LEN).await?;
     let signature = asset(&http, &tag, "manifest.json.sig", 1024).await?;
+    let held = installed_release(&RELEASE_KEY, TARGET, &dir);
     let expect = Expect {
         key: &RELEASE_KEY,
         target: TARGET,
-        running: newer_of(RELEASE_VERSION, installed_version(&RELEASE_KEY, &dir)),
+        running: newer_of(RELEASE_VERSION, held.version),
     };
     // The manifest is believed only as far as its signature goes; the version it names decides whether the
     // binary is fetched at all.
@@ -432,17 +484,23 @@ pub async fn update(only_look: bool) -> Result<String, String> {
         ));
     }
     let version = stated.get("version").and_then(Value::as_u64).unwrap_or(0);
-    if version <= expect.running {
+    if !wanted(version, RELEASE_VERSION, &held) {
         return Ok(format!(
             "release {} is installed, and the newest is {tag}: nothing to do",
             expect.running
         ));
     }
+    // (the installed program is another file than its release's, a local build say: the release goes back)
+    let again = version == held.version && !held.program_is_release;
     if only_look {
-        return Ok(format!(
-            "release {tag} is newer than this one ({}), its manifest is signed with the release key: `trommi-connector update` installs it",
-            expect.running
-        ));
+        return Ok(if again {
+            format!("the installed program is not the file of release {version} (a local build?): `trommi-connector update` puts release {tag} back in its place")
+        } else {
+            format!(
+                "release {tag} is newer than this one ({}), its manifest is signed with the release key: `trommi-connector update` installs it",
+                expect.running
+            )
+        });
     }
     let name = format!("trommi-connector-{TARGET}");
     // The connector did not change in that release (the same SHA-256 as the installed program): nothing is
