@@ -41,7 +41,12 @@ const faultyFetch = async (input, init) => {
   if (faults.changes_down && url.includes('/v1/changes')) return new Response(JSON.stringify({ error: 'overloaded', message: 'mega: changes down' }), { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '1' } })
   if (faults.delay_ms) await new Promise(r => setTimeout(r, Math.floor(rand() * faults.delay_ms)))
   if (faults.fail && rand() < faults.fail && !url.includes('/stream')) return new Response(JSON.stringify({ error: 'unavailable', message: 'mega: injected' }), { status: 502, headers: { 'content-type': 'application/json' } })
-  return realFetch(input, init)
+  const res = await realFetch(input, init)
+  // (payload bytes both ways, as the iOS observer counts them; the live stream is left out)
+  const sent = typeof init?.body === 'string' ? Buffer.byteLength(init.body) : init?.body?.byteLength ?? 0
+  asked.set('bytes out', (asked.get('bytes out') ?? 0) + sent)
+  if (!url.includes('/stream')) res.clone().arrayBuffer().then(b => asked.set('bytes in', (asked.get('bytes in') ?? 0) + b.byteLength), () => {})
+  return res
 }
 
 const storage = { name: `mega-web-${path.basename(dir)}` }

@@ -603,10 +603,15 @@ public struct Store {
     for r in desk["registers"] as? [JSON] ?? [] { take(r) }
     for kind in ["cards", "permission_requests"] { for o in desk[kind] as? [JSON] ?? [] { take(o["version"] as? JSON) } }
     items.sort { $0.0 < $1.0 }
+    // (one flush of the store for all of them, at the end: DeviceStore.batched; one flush and one anchor write per
+    //  item made a fresh sign-in into a 1,000-card Desk spend 22 s here)
+    let store = deviceStore
     guard !items.isEmpty, let opened = try? await onCore({ device in
-      items.compactMap { item -> ReceivedEnvelope? in
-        guard let e = try? device.receiveEnvelope(item.1, change: item.0, ordered: false, voidCode: nil, nowMs: nowMs()), e.outcome != .refused else { return nil }
-        return e
+      try store.batched {
+        items.compactMap { item -> ReceivedEnvelope? in
+          guard let e = try? device.receiveEnvelope(item.1, change: item.0, ordered: false, voidCode: nil, nowMs: nowMs()), e.outcome != .refused else { return nil }
+          return e
+        }
       }
     }) else { return }
     var shown = 0
