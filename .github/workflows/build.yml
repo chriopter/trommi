@@ -10,7 +10,7 @@
 # (release.yml) and deliver each part whose inputs changed (web, hub, iOS; the connector is delivered by the release
 # itself: installers and `trommi-connector update` take the newest).
 #
-# Which jobs run: a part's tests and build run when its own folder changed, or core/, or what pins the build
+# Which jobs run: a part's tests and build run when its own folder changed, or core/ or client/, or what pins the build
 # (Cargo.toml, Cargo.lock, rust-toolchain.toml), compared with the commit before (on a pull request: with its base).
 # Whether there is a release: .github/scripts/inputs.sh hashes, per part, what its build reads (the paths of the
 # commit, by git); the release is made when one hash differs from the newest release's manifest. A part whose hash
@@ -176,7 +176,7 @@ jobs:
             : > "$RUNNER_TEMP/files"
             echo "nothing to compare with: every part counts as changed"
           fi
-          shared='core/|Cargo\.toml$|\.config/nextest\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/build\.yml$'
+          shared='core/|client/|Cargo\.toml$|\.config/nextest\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/build\.yml$'
           # part <job> '<its own paths>' [<its parts in the release>]: the job runs when its paths changed since the commit
           # compared with (main: the newest release's), and (main) when the inputs of one of its parts differ from the
           # newest release's, to build them
@@ -225,12 +225,12 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
-        run: cargo clippy --locked -p trommi-core -p trommi-core-wasm -p trommi-core-swift --all-targets -- -D warnings
+        run: cargo clippy --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift --all-targets -- -D warnings
       # the licence tables are what cargo reports for this Cargo.lock (.github/scripts/third_party.mjs)
       - name: THIRD-PARTY.md is current
         run: node .github/scripts/third_party.mjs --check
       - name: The crates' own tests
-        run: cargo test --locked -p trommi-core -p trommi-core-wasm -p trommi-core-swift
+        run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift
       # One test that fails must not hide the others: every target runs, the step fails at the end.
       - name: The scenario tests (tests/core, tests/bindings) and the test library
         run: |
@@ -527,7 +527,7 @@ jobs:
         id: core_inputs
         run: |
           set -eu
-          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
           echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache
@@ -622,7 +622,7 @@ jobs:
         id: core_inputs
         run: |
           set -eu
-          sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+          sum=$(git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
           echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache
