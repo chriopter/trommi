@@ -41,13 +41,13 @@
 // timeline.newest_human_envelope_number / newest_agent_envelope_number, the registers room_snapshot and session_history/.
 import { ANSWER_ACTIONS, BOARD_CONTENT_TYPES, CARD_CONTENT_FIELDS, CARD_TYPES, decodeBody, decodePiece } from './codec.ts'
 import type { BodyKind, Fields } from './codec.ts'
-import type { CommitSummary, GroupSummary, ReceivedEnvelope, ReceivedMessage, RoomRoles, Sealed } from './core-api.ts'
+import type { ClientDesk, CommitSummary, DeskCardIn, DeskRequestIn, GroupSummary, ReceivedEnvelope, ReceivedMessage, RoomRoles, Sealed } from './core-api.ts'
 import { hex } from './ids.ts'
 import { emptyModel, emptyChange, emptyNewer } from './model-shape.ts'
 import { stepEnvelope } from './work.ts'
 import type {
   Alert, Answer, Body, Card, CardOption, Causal, Change, ContentState, HumanRegister, ItemState, Link, Linked, LinkState, Member, Model, Note,
-  ObjectState, PermissionRequest, Published, Session, SessionSettings, StackKey, Timeline, TimelineItem, Urgency, WorkEnvelope,
+  ObjectState, PermissionRequest, Published, Session, SessionSettings, Timeline, TimelineItem, Urgency, WorkEnvelope,
 } from './types.ts'
 
 export { emptyModel, emptyChange }
@@ -75,9 +75,7 @@ type Echo =
   | { kind: 'answer'; object_id: string; state: ObjectState; version_hash: string | null; saved: Pick<Card, 'answer' | 'object_state' | 'closed_how'> }
   | { kind: 'note'; key: string }
 interface Turn { timeline_key: string; session_id: string; sender: string; started_at: number; last: number }
-interface Projection { keys: Map<string, StackKey>; sorted: string[]; nextPermExpiry: number; stackDirty: boolean; permsDirty: boolean; nextWake: number }
 interface Builder {
-  proj: Projection | null
   /** Each device's own register `device/<id>`: its name, platform, folder, host. */
   device_registers: Map<string, Obj>
   echoes: Map<string, Echo>
@@ -87,7 +85,7 @@ interface Builder {
   turns: Map<string, Turn>
 }
 function builder(model: Model): Builder {
-  return (model._builder ??= { proj: null, device_registers: new Map(), echoes: new Map(), by_hash: new Map(), turns: new Map() }) as Builder
+  return (model._builder ??= { device_registers: new Map(), echoes: new Map(), by_hash: new Map(), turns: new Map() }) as Builder
 }
 
 // ---- small things the client and the views' seam use ---------------------------------------------------------------
@@ -662,7 +660,7 @@ function applyCard(model: Model, r: ReceivedEnvelope, change: Change, hash: stri
     if (r.objectAfter) card.agent_device_id = hex(r.objectAfter.owner)
     const first = refHex(o.objectRef) === null
     // Its first version came after a later one (out of order): its place in every list is worked out again.
-    if (first && (n < card.first_envelope_number || card.created_at !== h.time)) { card.first_envelope_number = Math.min(card.first_envelope_number, n); card.created_at = h.time; B.proj = null }
+    if (first && (n < card.first_envelope_number || card.created_at !== h.time)) { card.first_envelope_number = Math.min(card.first_envelope_number, n); card.created_at = h.time; const d = (B as Builder & { desk?: DeskLink }).desk; if (d) d.whole = false }
     let v = card.versions.find(x => x.version_hash === hash)
     if (!v) {
       v = { object_version: 0, version_hash: hash, previous_version_hash: refHex(o.objectRef), envelope_number: n, sent_at: h.time, object_state: state, urgency: levelOf(content, o.urgency), content: content as Body | null }
@@ -1145,94 +1143,110 @@ export function rollbackEcho(model: Model, local_id: string, change: Change): vo
 
 // ---- projections ----------------------------------------------------------------------------
 
-const cmpStr = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-const stackKey = (c: Card): StackKey => [URGENCY_RANK[c.urgency] ?? 1, c.created_at, c.agent_device_id ?? '', c.object_id]
-const cmpKey = (x: StackKey, y: StackKey) => (y[0] - x[0]) || (x[1] - y[1]) || cmpStr(x[2], y[2]) || cmpStr(x[3], y[3])
-function bisect(arr: string[], key: StackKey, keyOf: (id: string) => StackKey): number { let lo = 0, hi = arr.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (cmpKey(keyOf(arr[mid]!), key) < 0) lo = mid + 1; else hi = mid } return lo }
-const byCreated = (model: Model) => (a: string, b: string) => (model.cards.get(a)?.created_at ?? 0) - (model.cards.get(b)?.created_at ?? 0) || cmpStr(a, b)
+/** The Desk's rules are the client core's (client/src/desk.rs, the binding's `ClientDesk`): the app tells it what
+ *  changed and takes back what changed of the Desk. The same rules on every app. */
+export type DeskEngine = Pick<ClientDesk, 'putCards' | 'putRequests' | 'remove' | 'clear' | 'setSnooze' | 'setArchived' | 'setListing' | 'forgetListing' | 'setHoldAll' | 'project'>
+/** What the model keeps of its Desk engine: whether it holds everything, what is still to hand over, what it held. */
+interface DeskLink { engine: DeskEngine; whole: boolean; listing: { at: number; open: Map<string, number> } | null | undefined; hold: boolean | undefined; archived: string; held: Set<string>; next_wake: number }
+const deskOf = (model: Model): DeskLink | null => (builder(model) as Builder & { desk?: DeskLink }).desk ?? null
+/** Gives the model its Desk engine (the client: one per model, made from the loaded core). */
+export function useDesk(model: Model, engine: DeskEngine): void {
+  (builder(model) as Builder & { desk?: DeskLink }).desk = { engine, whole: false, listing: undefined, hold: undefined, archived: '', held: new Set(), next_wake: 0 }
+}
+/** The hub's Desk as last read (client.ts `readDesk`): what it lists as open, by id with its version's change, and
+ *  at which change; null forgets it. It decides the Desk from the next projection on. */
+export function setDeskListing(model: Model, listing: { at: number; open: Map<string, number> } | null): void {
+  const d = deskOf(model)
+  if (d) d.listing = listing
+}
+/** The app waits for the hub's first list of a run (client.ts `deskFirst`): every open card and request is held. */
+export function setDeskHold(model: Model, hold: boolean): void {
+  const d = deskOf(model)
+  if (d) d.hold = hold
+}
+const byCreated = (model: Model) => (a: string, b: string) => (model.cards.get(a)?.created_at ?? 0) - (model.cards.get(b)?.created_at ?? 0) || (a < b ? -1 : a > b ? 1 : 0)
+const STATE_BYTE: Record<string, number> = { open: 1, answered: 2, closed: 3 }
+const deskCard = (c: Card): DeskCardIn => ({ objectId: c.object_id, sessionId: c.session_id, state: STATE_BYTE[c.object_state] ?? 1, urgency: URGENCY_RANK[c.urgency] ?? 1, createdAt: c.created_at,
+  agentDeviceId: c.agent_device_id ?? '', versionChange: c.envelope_number, newest: c.state_envelope_number, inRevision: c.in_revision?.envelope_number ?? null, read: c.content_state === 'ok' })
+const deskRequest = (p: PermissionRequest): DeskRequestIn => ({ objectId: p.object_id, sessionId: p.session_id, pending: p.permission_state === 'pending', envelopeNumber: p.envelope_number,
+  newest: p.envelope_number, sentAt: p.sent_at, expiresAt: p.expires_at || 0, read: !unreadRequest(p) })
+const snoozeAt = (model: Model, id: string): number => model.human.raw.get(`snooze/${id}`)?.envelope_number ?? Number.MAX_SAFE_INTEGER
 
 /**
- * Stack, per-session card lists, open permissions. Incremental: the open cards are kept sorted (with each card's
- * sort key), and only the cards and sessions a change touched are looked at; the first call after a bulk load, and
- * after a card was filed, builds the lists once. The stack then filters snoozed cards and archived sessions out of
- * the sorted list (no sorting), and only when a change names a card, a session, a snooze or a session register, or
- * the clock passed the end of a snooze: a chat message, a stroke or a status line costs nothing here. A pending
- * permission request whose time has run out becomes 'expired'.
+ * Stack, per-session card lists, open permission requests, from the Desk engine: what a change touched goes to it,
+ * what changed of the Desk comes back into the model. A card or request the hub settled (or that waits for the hub's
+ * first list) is marked `catching_up`, off the Desk; a request whose time ran out becomes 'expired'; a hand back older
+ * than the version the hub lists is over. A change that touches nothing of the Desk, before the clock reached the
+ * Desk's next wake, costs nothing here.
  */
-/** A card that stands on the Desk: open, not one the hub closed meanwhile (`catching_up`), and not an info its agent
- *  is still working on (`working`, spec 9.1.3: under Off your mind until its "Done: …"). */
-const onDesk = (c: Card | undefined): boolean => c?.object_state === 'open' && !c.catching_up && c.working !== true
-/** Whether his "Later" (`snooze/<id>`) still holds a card off the Desk: until its time, and only for the version he
- *  put off: a newer version of the card (revised, its urgency raised) wakes it, as the clock does. */
-export function snoozeHolds(model: Model, object_id: string, now: number = Date.now()): boolean {
-  const v = model.human.snoozes.get(object_id)
-  if (!v || (v.until != null && !(v.until > now))) return false
-  const at = model.human.raw.get(`snooze/${object_id}`)?.envelope_number
-  return !(Number.isInteger(at) && (model.cards.get(object_id)?.envelope_number ?? 0) > (at as number))
-}
 export function project(model: Model, change: Change, now: number = Date.now()): void {
-  const before = model.stack, beforePerm = model.open_permission_ids
-  const B = builder(model)
-  let P = B.proj
-  if (!P) {
-    const p: Projection = B.proj = { keys: new Map(), sorted: [], nextPermExpiry: Infinity, stackDirty: true, nextWake: Infinity, permsDirty: true }
-    P = p
-    for (const s of model.sessions.values()) { s.card_ids.sort(byCreated(model)); s.open_card_ids = s.card_ids.filter(id => onDesk(model.cards.get(id))) }
-    for (const c of model.cards.values()) if (onDesk(c)) p.keys.set(c.object_id, stackKey(c))
-    p.sorted = [...p.keys.keys()].sort((x, y) => cmpKey(p.keys.get(x)!, p.keys.get(y)!))
+  const d = deskOf(model)
+  if (!d) return
+  const relevant = change.cards.size || change.permissions.size || [...change.registers].some(k => k.startsWith('snooze/') || k.startsWith('session/'))
+  if (d.whole && !relevant && d.listing === undefined && d.hold === undefined && !(d.next_wake && now >= d.next_wake)) return
+  const before = model.stack
+  const e = d.engine
+  if (!d.whole) {
+    e.clear()
+    e.putCards([...model.cards.values()].map(deskCard))
+    e.putRequests([...model.permissions.values()].map(deskRequest))
+    for (const [id, v] of model.human.snoozes) e.setSnooze(id, JSON.stringify(v), snoozeAt(model, id))
+    for (const s of model.sessions.values()) s.card_ids.sort(byCreated(model))
+    d.whole = true
+    d.archived = ''
   } else {
-    const p = P
-    for (const id of change.cards) {
-      const c = model.cards.get(id)
-      const old = p.keys.get(id)
-      // the card's session list of open cards, by edit (sorted by created_at like card_ids)
-      const s = c?.session_id ? model.sessions.get(c.session_id) : null
-      if (s && c) {
-        const at = s.open_card_ids.indexOf(id)
-        const open = onDesk(c)
-        if (open && at < 0) { let i = s.open_card_ids.length; while (i > 0 && (model.cards.get(s.open_card_ids[i - 1]!)?.created_at ?? 0) > c.created_at) i--; s.open_card_ids.splice(i, 0, id) }
-        else if (!open && at >= 0) s.open_card_ids.splice(at, 1)
-      }
-      if (old) { const at = bisect(p.sorted, old, k => p.keys.get(k)!); if (p.sorted[at] === id) p.sorted.splice(at, 1); else p.sorted.splice(p.sorted.indexOf(id), 1); p.keys.delete(id) }
-      if (c && onDesk(c)) { const key = stackKey(c); p.sorted.splice(bisect(p.sorted, key, k => p.keys.get(k)!), 0, id); p.keys.set(id, key) }
-    }
-    if (change.permissions.size || now > p.nextPermExpiry) p.permsDirty = true
-    // The stack is filtered again only when something it depends on changed: a card, a session (archived), a snooze, or
-    // the clock passed a snooze's end.
-    if (change.cards.size || change.sessions.size || now >= p.nextWake) p.stackDirty = true
-    else for (const k of change.registers) if (k.startsWith('snooze/') || k.startsWith('session/')) { p.stackDirty = true; break }
+    const cards: DeskCardIn[] = [], requests: DeskRequestIn[] = [], gone: string[] = []
+    for (const id of change.cards) { const c = model.cards.get(id); if (c) cards.push(deskCard(c)); else gone.push(id) }
+    for (const id of change.permissions) { const p = model.permissions.get(id); if (p) requests.push(deskRequest(p)); else gone.push(id) }
+    if (cards.length) e.putCards(cards)
+    if (requests.length) e.putRequests(requests)
+    if (gone.length) e.remove(gone)
+    for (const k of change.registers) if (k.startsWith('snooze/')) { const id = k.slice(7), v = model.human.snoozes.get(id); e.setSnooze(id, v == null ? null : JSON.stringify(v), snoozeAt(model, id)) }
   }
-  if (P.stackDirty) {
-    P.stackDirty = false
-    const snoozes = model.human.snoozes
-    const archived = new Set<string>()
-    for (const s of model.sessions.values()) if (s.settings?.archived) archived.add(s.session_id)
-    const stack: string[] = []
-    let wake = Infinity
-    for (const id of P.sorted) {
-      if (snoozes.size && snoozeHolds(model, id, now)) { const until = snoozes.get(id)!.until; if (until != null && until < wake) wake = until; continue }
-      if (archived.size && archived.has(model.cards.get(id)?.session_id as string)) continue
-      stack.push(id)
-    }
-    model.stack = stack
-    P.nextWake = wake
+  // (a session is archived by its settings: a register `session/…`, or a session the groups changed)
+  if (!d.archived || change.sessions.size || [...change.registers].some(k => k.startsWith('session/'))) {
+    const archived = [...model.sessions.values()].filter(s => s.settings?.archived).map(s => s.session_id)
+    if (`|${archived.join()}` !== d.archived) { d.archived = `|${archived.join()}`; e.setArchived(archived) }
   }
-  if (P.permsDirty) {
-    P.permsDirty = false
-    const pending: PermissionRequest[] = []
-    for (const p of model.permissions.values()) {
-      if (p.permission_state !== 'pending' || p.catching_up) continue
-      // (one whose body is not read here yet has no expiry known: past the longest wait a connector gives one, it
-      //  expired whatever it said. The hub cannot tell, so its Desk lists such requests as open for ever.)
-      const ends = p.expires_at || (unreadRequest(p) ? p.sent_at + REQUEST_LIFE_MAX_MS : 0)
-      if (ends && now > ends) { p.permission_state = 'expired'; change.permissions.add(p.object_id); if (p.session_id) change.sessions.add(p.session_id) }
-      else pending.push(p)
-    }
-    P.nextPermExpiry = Math.min(Infinity, ...pending.map(p => p.expires_at || (unreadRequest(p) ? p.sent_at + REQUEST_LIFE_MAX_MS : Infinity)))
-    model.open_permission_ids = pending.sort((a, b) => a.envelope_number - b.envelope_number).map(p => p.object_id)
+  if (d.listing !== undefined) { if (d.listing) e.setListing(d.listing.at, [...d.listing.open].map(([objectId, versionChange]) => ({ objectId, versionChange }))); else e.forgetListing(); d.listing = undefined }
+  if (d.hold !== undefined) { e.setHoldAll(d.hold); d.hold = undefined }
+  const p = e.project(now)
+  d.next_wake = p.nextWake
+  const mark = (id: string, hold: boolean): void => {
+    const o = model.cards.get(id) ?? model.permissions.get(id)
+    if (!o || hold === !!o.catching_up) return
+    if (hold) o.catching_up = true; else delete o.catching_up
+    if (model.cards.has(id)) change.cards.add(id); else change.permissions.add(id)
+    if (o.session_id) change.sessions.add(o.session_id)
   }
-  const same = (x: string[], y: string[]) => x.length === y.length && x.every((v, i) => v === y[i])
-  if (!same(before, model.stack) || !same(beforePerm, model.open_permission_ids)) change.stack = true
+  let moved = false
+  if (p.whole) {
+    const held = new Set(p.held)
+    for (const id of d.held) if (!held.has(id)) mark(id, false)
+    for (const id of held) mark(id, true)
+    d.held = held
+    moved = p.stack.length !== before.length || p.stack.some((v, i) => v !== before[i])
+    model.stack = p.stack
+    for (const s of model.sessions.values()) s.open_card_ids = []
+  } else {
+    for (const id of p.held) { d.held.add(id); mark(id, true) }
+    for (const id of p.unheld) { d.held.delete(id); mark(id, false) }
+    if (p.stackOps.length) { const stack = model.stack.slice(); for (const op of p.stackOps) stack.splice(op.at, op.gone, ...op.ids); model.stack = stack; moved = true }
+  }
+  for (const { sessionId, cardIds } of p.sessionOpen) { const s = model.sessions.get(sessionId); if (s) s.open_card_ids = cardIds }
+  for (const op of p.sessionOps) { const s = model.sessions.get(op.sessionId); if (s) { const l = s.open_card_ids.slice(); l.splice(op.at, op.gone, ...op.ids); s.open_card_ids = l } }
+  if (p.permissionsOpen) {
+    const was = model.open_permission_ids
+    if (p.permissionsOpen.length !== was.length || p.permissionsOpen.some((v, i) => v !== was[i])) moved = true
+    model.open_permission_ids = p.permissionsOpen
+  }
+  for (const id of p.expired) {
+    const r = model.permissions.get(id)
+    if (!r || r.permission_state !== 'pending') continue
+    r.permission_state = 'expired'; change.permissions.add(id); if (r.session_id) change.sessions.add(r.session_id)
+  }
+  for (const id of p.handBackOver) { const c = model.cards.get(id); if (c?.in_revision) { c.in_revision = null; change.cards.add(id) } }
+  if (moved) change.stack = true
 }
 
 /** The stack of one desk (desk_id), or of all (none). */

@@ -261,7 +261,7 @@ export class Client {
   /** The hub's Desk of THIS run decided what stands open (`knowDesk`); until then the model is the cache's, and a card
    *  closed elsewhere since the last run would still stand. False only on a start from the cache. */
   private deskKnown = true
-  /** Past DESK_FIRST_MS without the hub's answer: every open card waits off the Desk (`judgeDesk`). */
+  /** Past DESK_FIRST_MS without the hub's answer: every open card waits off the Desk (the client core holds them all: `M.setDeskHold`). */
   private deskHeld = false
   private deskWait: Promise<void> | null = null
   private deskWaitDone: (() => void) | null = null
@@ -289,6 +289,7 @@ export class Client {
     this.model = M.emptyModel()
     // (an agent that waits for its main session is given one once it is connected: engine.ts `seatAgents`)
     opts.engine.isOnline = device => this.model.members.get(hex(device))?.is_online === true
+    M.useDesk(this.model, new this.core.ClientDesk())
     this.listen()
   }
   get is_human(): boolean { return this.engine.is_human }
@@ -305,6 +306,7 @@ export class Client {
     // dropped.
     if (kept && kept.device === this.my_device_id && kept.cursor <= e.cursor) {
       this.model = M.modelFromCache(await this.cache.range(''))
+      M.useDesk(this.model, new this.core.ClientDesk())
       // (a mark of an earlier run is the past: `readDesk` sets it again from the hub's Desk of now)
       for (const c of this.model.cards.values()) delete c.catching_up
       for (const r of this.model.permissions.values()) delete r.catching_up
@@ -327,7 +329,7 @@ export class Client {
     const ch = M.emptyChange()
     ch.room = true
     M.applyGroups(this.model, e.groups, e.roles, ch)
-    if (this.desk) this.judgeDesk(ch, null)
+    if (this.desk) this.deskToModel()
     this.sessionGroups = e.groups.filter(g => g.session && !g.archived).length
     for (const [key, value] of await this.cache.range('client/invite/')) { const k = value as InviteKept; this.invites.set(key.slice('client/invite/'.length), k); if (!k.done) this.model.invites.set(k.public.invite_id, k.public) }
     M.project(this.model, ch, this.now())
@@ -355,7 +357,6 @@ export class Client {
   /** Ends a batch: projects, tells the views what changed, hands the change's records to the cache. */
   private publish(): void {
     const ch = this.change
-    if (this.desk && (ch.cards.size || ch.permissions.size)) this.judgeDesk(ch, { cards: new Set(ch.cards), permissions: new Set(ch.permissions) })
     if (this.model.room.last_envelope_number !== this.engine.position) { this.model.room.last_envelope_number = this.engine.position; ch.room = true }
     const reading = this.readingHolds > 0 || this.rebuild !== null || this.engine.rescanPending
     if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true }
@@ -604,7 +605,7 @@ export class Client {
     this.started = true
     mark(`client start (${this.rebuild !== null ? `rebuild from ${this.rebuild}` : 'from the cache'})`)
     // From the cache, the Desk stands already: the hub's Desk is read alongside the catch-up and the stream, not
-    // before them (`judgeDesk` holds back by the Desk's own cursor, whichever comes first; the catch-up's end reads
+    // before them (the client core holds back by the Desk's own cursor, whichever comes first; the catch-up's end reads
     // it again only when this one is through). Without a cache it is what is shown first, and waited for.
     if (this.rebuild !== null) { await this.fromDesk().catch(() => {}); mark('desk read') }
     else if (this.is_human && !this.deskReading) void this.readDesk().catch(() => {}).finally(() => mark('desk read'))
@@ -714,12 +715,13 @@ export class Client {
       const listed = [...desk.cards, ...desk.permission_requests]
       this.desk = { open: new Set(listed.map(o => hex(o.object_id))), versions: new Map(listed.map(o => [hex(o.object_id), o.version?.change ?? 0])), at: desk.change }
       this.keepDesk()
+      this.deskToModel()
     }
     const items: EnvelopeItem[] = [...desk.registers]
     for (const list of [desk.cards, desk.notes, desk.permission_requests, desk.artifacts]) for (const o of list) if (o.version) items.push(o.version)
     items.sort((a, b) => a.change - b.change)
     const received = await this.engine.receivePage(items)
-    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }); this.judgeDesk(ch, null) })
+    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }) })
     if (!desk.truncated) this.knowDesk()
   }
   /**
@@ -741,7 +743,7 @@ export class Client {
     if (!late || this.deskKnown || this.deskHeld) return
     this.deskHeld = true
     this.deskHoldTimer = setTimeout(() => { this.deskHoldTimer = null; this.knowDesk() }, DESK_HOLD_MAX_MS)
-    this.tell(ch => { this.model.room.desk_waiting = true; ch.room = true; this.judgeDesk(ch, null) })
+    this.tell(ch => { this.model.room.desk_waiting = true; ch.room = true; ch.stack = true; M.setDeskHold(this.model, true) })
   }
   /** The hub's Desk of this run decided (or none comes: the last list kept here does). */
   private knowDesk(): void {
@@ -750,7 +752,7 @@ export class Client {
     if (this.deskHoldTimer !== null) { clearTimeout(this.deskHoldTimer); this.deskHoldTimer = null }
     const held = this.deskHeld
     this.deskHeld = false
-    this.tell(ch => { if (held) { this.model.room.desk_waiting = false; ch.room = true } this.judgeDesk(ch, null) })
+    this.tell(ch => { if (held) { this.model.room.desk_waiting = false; ch.room = true; M.setDeskHold(this.model, false) } this.deskToModel(); ch.stack = true })
     this.deskWaitDone?.()
   }
   /** Keeps the hub's Desk as read, for the next start (`open`). */
@@ -854,29 +856,17 @@ export class Client {
     this.tell(ch => {
       for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() })
       if (deeds.length) M.applyCardDeeds(this.model, deeds, ch, this.now())
-      this.judgeDesk(ch, null)
+      this.deskToModel()
+      ch.stack = true
     })
   }
-  /** Holds back, or lets stand, what the hub's Desk says (`readDesk`); `only`: the objects a change named. */
-  private judgeDesk(ch: Change, only: { cards: Set<string>; permissions: Set<string> } | null): void {
+  /** The hub's Desk as read decides what stands (the client core's Desk: client/src/desk.rs, `M.project`): an open
+   *  card or request it does not list, with nothing of it here newer than its change, is held back (`catching_up`);
+   *  a hand back older than the version it lists is over. */
+  private deskToModel(): void {
     const d = this.desk
-    // (waiting for the hub's first answer past DESK_FIRST_MS: no open card stands, `deskFirst`)
-    const held = this.deskHeld
-    if (!d && !held) return
-    const cards = only ? [...only.cards].map(id => this.model.cards.get(id)).filter((c): c is Card => !!c) : [...this.model.cards.values()]
-    for (const c of cards) {
-      const listed = !held && !!d?.open.has(c.object_id)
-      // settled at the hub: open here, not listed, and nothing of it here newer than the Desk
-      const hold = !listed && c.object_state === 'open' && (held || c.state_envelope_number <= d!.at)
-      // a hand back older than the version the hub lists is over: the agent answered it with that version
-      if (listed && c.in_revision && c.in_revision.envelope_number < (d!.versions.get(c.object_id) ?? 0)) { c.in_revision = null; ch.cards.add(c.object_id) }
-      if (hold !== !!c.catching_up) { if (hold) c.catching_up = true; else delete c.catching_up; ch.cards.add(c.object_id); if (c.session_id) ch.sessions.add(c.session_id) }
-    }
-    const perms = only ? [...only.permissions].map(id => this.model.permissions.get(id)).filter((r): r is NonNullable<typeof r> => !!r) : [...this.model.permissions.values()]
-    for (const r of perms) {
-      const hold = (held || !d!.open.has(r.object_id)) && r.permission_state === 'pending' && (held || r.envelope_number <= d!.at)
-      if (hold !== !!r.catching_up) { if (hold) r.catching_up = true; else delete r.catching_up; ch.permissions.add(r.object_id); if (r.session_id) ch.sessions.add(r.session_id) }
-    }
+    if (!d) return
+    M.setDeskListing(this.model, { at: d.at, open: new Map([...d.open].map(id => [id, d.versions.get(id) ?? 0])) })
   }
   private async nameDevice(): Promise<void> {
     const name = this.opts.device_name

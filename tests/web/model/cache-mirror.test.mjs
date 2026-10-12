@@ -9,7 +9,7 @@ import { packPoints } from '../../../app/web/core/ink.ts'
 import { applyPatch, mirrorOf, patchOf, snapshotOf } from '../../../app/web/core/mirror.ts'
 import { applyPresence, cacheAll, cacheItemKey, cacheRecords, compactCard, confirmEcho, echoAnswer, echoNote, echoRegisters, echoTimelineItem, emptyChange, expandCard, modelFromCache, project, rollbackEcho, timelineOf } from '../../../app/web/core/model.ts'
 import { encodePiece } from '../../../app/web/core/codec.ts'
-import { World, canon, device, hex, id16, bytes } from './factory.mjs'
+import { World, canon, device, hex, id16, bytes, withDesk } from './factory.mjs'
 
 const OPTIONS = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B', final: true }]
 const firstDiff = (a, b) => { const x = canon(a), y = canon(b); if (x === y) return null; let i = 0; while (x[i] === y[i]) i++; return `${x.slice(Math.max(0, i - 140), i + 100)}\n   vs\n${y.slice(Math.max(0, i - 140), i + 100)}` }
@@ -70,6 +70,7 @@ test('the cache: the records of every change, through JSON, give the model back'
   w.run(c => { c.room = true })
   // What a warm start reads: every record but the timeline items (their windows are read on demand).
   const warm = modelFromCache([...store].filter(([key]) => !key.startsWith('tl/')))
+  withDesk(warm)
   project(warm, emptyChange(), w.clock)
   // What the cache does not hold: the windows, live strokes, the connection.
   const expected = structuredClone({ ...w.model, _builder: undefined })

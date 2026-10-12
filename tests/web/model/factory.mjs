@@ -8,7 +8,12 @@
 // The tests name every id as the wire's base64url text (device(), id16(), bytes()): that is what stands in a body's
 // JSON. The factory turns them into the bytes the core hands over (raw()), and hex() gives the model's form.
 import { b64u, idToHex, unb64u } from '../../../app/web/core/ids.ts'
-import { applyCommit, applyEnvelope, applyGroups, applyStrokePiece, applyWorkTrail, emptyChange, emptyModel, project } from '../../../app/web/core/model.ts'
+import { applyCommit, applyEnvelope, applyGroups, applyStrokePiece, applyWorkTrail, emptyChange, emptyModel, project, useDesk } from '../../../app/web/core/model.ts'
+import { loadBinding } from '../stand-in/core.ts'
+
+/** The Desk's rules are the client core's (the binding's ClientDesk): every model of the tests gets one. */
+const binding = await loadBinding()
+export const withDesk = model => { useDesk(model, new binding.ClientDesk()); return model }
 
 /** n bytes that begin with `tag`, as the wire's base64url. */
 export const bytes = (n, ...tag) => { const out = new Uint8Array(n); out.set(tag); return b64u(out) }
@@ -33,7 +38,7 @@ export const canon = v => JSON.stringify(v, (k, x) => {
 
 export class World {
   constructor() {
-    this.model = emptyModel()
+    this.model = withDesk(emptyModel())
     this.change = 0          // the hub's counter
     this.seq = new Map()     // `${group}/${sender}` -> the sender's last envelope number there
     this.hashes = 0
