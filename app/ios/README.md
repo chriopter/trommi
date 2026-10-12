@@ -18,7 +18,7 @@ Targets of `TrommiClient`:
 
 | Target | What | Links the Rust core |
 | --- | --- | --- |
-| `TrommiClient` | The board model (`Board.swift`, `Desk.swift`), the device store, the hub client and live stream, the engine. `Core.swift` is the core as Swift sees it: the protocols `CoreTools` and `CoreDevice`, one call for one call of `core/README.md`. No crypto of its own; builds and tests on Linux without the library. | no |
+| `TrommiClient` | The board model (`Board.swift`, `Desk.swift`), the device store, the hub client and live stream, the engine. `Core.swift` is the core as Swift sees it: the protocols `CoreTools` and `CoreDevice`, one call for one call of `core/README.md`. No crypto of its own. The Desk's rules (stack, session lists, open requests, what the hub settled) are the client core's ([`client/`](../../client/README.md)): `Board.projectDesk` hands `ClientDesk` what changed and applies its answer, so it links the library's `ClientDesk` (`core/swift/build.sh host` before `swift test` on Linux). | the Desk only |
 | `TrommiCoreLive` | `LiveCore`: `CoreTools` on the real library (UniFFI module `TrommiCoreRust`). Its header lists which calls are real, which are stubbed (none) and what of the binding is not bound. | yes |
 | `ShareInbox` | The Share Extension's sealed inbox in the App Group (local storage, Apple's CryptoKit). | no |
 | `PushNotify` | What the Notification Service Extension and the Live Activity widget share with the app. | no |

@@ -25,7 +25,7 @@ users**: the model the views read and the calls they make. Names are snake_case,
 | `engine.ts` | Owns the `Device`: outbox pump, catch-up in the hub's order, live stream, upkeep ("Engine invariants") |
 | `client.ts` | The `Client`: the model, the human actions, timelines, files, invites, sessions, push, the local cache |
 | `room.ts` | How a device comes to hold a room: `foundRoom`, `openRoom`, `joinRoom`, `joinWithCode` |
-| `model.ts`, `model-shape.ts`, `types.ts` | The model's builder (no rules of its own), an empty model, the shapes |
+| `model.ts`, `model-shape.ts`, `types.ts` | The model's builder (no rules of its own), an empty model, the shapes. The Desk (stack, session lists, open requests, held, expired) comes from the client core's `ClientDesk` ([`client/`](../../../client/README.md)): `project()` hands it what a batch touched and applies what changed |
 | `codec.ts` | Bodies: the JSON of spec/v1.md 9.1 and 10.5 ↔ the model's fields; register names; attachment references |
 | `scribble.ts`, `ink.ts`, `palette.ts` | The Scribble Board: merge of items, snapshot file, packed points, colour tokens |
 | `work.ts` | A turn's work trail as the views fold it |
@@ -124,7 +124,7 @@ What the fields mean under protocol v1:
   change number (hand back, What??, present: `presented_envelope_number`), whatever order they are read in. `content_state` other than
   `ok` means the body is not readable here (pruned, no key, a newer schema). `catching_up`: open here, but the hub's Desk does
   not list it and this device holds nothing of it newer than that Desk (client.ts `readDesk`, at the start, after
-  every catch-up and every minute): settled elsewhere, off the stack. A card the Desk lists whose newest version
+  every catch-up and every minute; the rule is the client core's, `client/src/desk.rs`): settled elsewhere, off the stack. A card the Desk lists whose newest version
   this device lacks is read from the Desk's copy of that version. The Desk lists only the groups this device is
   in, so it is read again as soon as a session group was joined; a listed card not read yet stands as a quiet
   "Loading …" placeholder.
