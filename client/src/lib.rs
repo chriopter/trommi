@@ -20,6 +20,7 @@
 //! wasm-bindgen, with plain records. A host written in Rust (the Linux app) uses the types directly.
 
 pub mod board;
+pub mod codec;
 pub mod desk;
 pub mod plan;
 pub mod registers;
