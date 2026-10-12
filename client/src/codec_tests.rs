@@ -844,3 +844,22 @@ fn a_body_is_read_from_its_own_text() {
         Decoded::Bad
     );
 }
+
+/// What the fuzzer found (tests/fuzz/regress/client_codec): the text path and the fields path agree, and what the
+/// encoder refuses is not read either.
+#[test]
+fn the_fuzzers_findings() {
+    use super::{decode_body, decode_body_text, BodyKind, Decoded};
+    // a number beyond f64: refused by both paths
+    assert!(matches!(decode_body_text(BodyKind::Answer, br#"{"x":1e400}"#), Decoded::Bad));
+    assert!(matches!(decode_body(BodyKind::Answer, br#"{"x":1e400}"#), Decoded::Bad));
+    // an exponent that fits reads the same both ways, to the last bit
+    let Decoded::Body(f) = decode_body(BodyKind::Answer, br#"{"option_notes":3e159}"#) else { panic!() };
+    let Decoded::Body(t) = decode_body_text(BodyKind::Answer, br#"{"option_notes":3e159}"#) else { panic!() };
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&t).unwrap(), serde_json::Value::Object(f));
+    // a Chat message whose content_type is no text is no message
+    assert!(matches!(decode_body(BodyKind::Message, br#"{"content_type":5}"#), Decoded::Bad));
+    // the model's published_object_id is never read from the wire
+    let Decoded::Body(m) = decode_body(BodyKind::Message, br#"{"published_object_id":{},"text":"hi"}"#) else { panic!() };
+    assert!(!m.contains_key("published_object_id"));
+}

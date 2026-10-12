@@ -126,6 +126,14 @@ impl Model {
     pub fn apply_envelope(&mut self, r: &Received, change: &mut Change, now: u64) -> Applied {
         let local_id = self.by_hash.get(&r.hash).cloned();
         if r.outcome == Outcome::Refused {
+            // (an epoch before this device came into the group, or an item that waits for a key: nothing it could
+            // take, and no finding (16); the host reads that past again when its keys come)
+            if matches!(r.code.as_deref(), Some("group-behind") | Some("no-key")) {
+                return Applied {
+                    applied: false,
+                    refused: r.code.clone(),
+                };
+            }
             return self.finding(
                 change,
                 r,

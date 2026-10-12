@@ -1420,9 +1420,15 @@ fn fields_from_wire(kind: BodyKind, out: &mut Body<'_>) -> Result<()> {
         }
     }
     if kind == BodyKind::Message {
-        if out.get("content_type").is_none_or(Piece::is_null) {
-            out.put("content_type", "message".into());
+        match out.get("content_type") {
+            None => out.put("content_type", "message".into()),
+            Some(p) if p.is_null() => out.put("content_type", "message".into()),
+            // (a content type of a newer client is kept, and shown as one; anything else is no message)
+            Some(p) if !p.text().starts_with('"') => return bad("content_type is not a text"),
+            Some(_) => {}
         }
+        // (the model's name for the wire's artifact_object_id: never read from the wire itself)
+        out.remove("published_object_id");
         if let Some(cards) = out.get("copied_cards") {
             let cards = id_list(&cards.value(), soft_hex);
             out.put("copied_cards", cards);
@@ -1549,6 +1555,11 @@ pub fn decode_body_text(kind: BodyKind, payload: &[u8]) -> Decoded<String> {
     let Some(Ok(mut body)) = payload_text(payload).map(serde_json::from_str::<Body>) else {
         return Decoded::Bad;
     };
+    // (a number beyond f64 is kept as written by the raw pieces: read it whole as the fields path does, and refuse
+    // it as that path does; only a payload that holds an exponent or a long run of digits is read twice)
+    if numbers_doubtful(payload) && serde_json::from_slice::<Value>(payload).is_err() {
+        return Decoded::Bad;
+    }
     let version = body.get("schema_version").filter(|v| v.text() != "2");
     if let Err(not) = version_ok(version.map(Piece::value).as_ref()) {
         return not;
@@ -1557,6 +1568,26 @@ pub fn decode_body_text(kind: BodyKind, payload: &[u8]) -> Decoded<String> {
         Ok(()) => Decoded::Body(body.write(payload.len())),
         Err(_) => Decoded::Bad,
     }
+}
+
+/// Whether a payload may hold a number serde_json cannot read into an f64: a digit with an exponent after it, or a
+/// run of more than 300 digits. (Strings may trigger it too: they only cost a second read.)
+fn numbers_doubtful(payload: &[u8]) -> bool {
+    let mut run = 0usize;
+    for (i, b) in payload.iter().enumerate() {
+        if b.is_ascii_digit() {
+            run += 1;
+            if run > 300 {
+                return true;
+            }
+        } else {
+            if run > 0 && (*b == b'e' || *b == b'E') && payload.get(i + 1).is_some_and(|n| n.is_ascii_digit() || *n == b'+' || *n == b'-') {
+                return true;
+            }
+            run = 0;
+        }
+    }
+    false
 }
 
 fn decode_whole(kind: BodyKind, payload: &[u8]) -> Decoded {

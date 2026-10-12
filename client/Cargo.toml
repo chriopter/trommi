@@ -10,4 +10,4 @@ description = "The client core: the board and Desk model, its settle and hand-ba
 trommi-core = { path = "../core" }
 serde = { version = "=1.0.229", features = ["derive"] }
 # raw_value: a body is read without building its values (codec.rs)
-serde_json = { version = "=1.0.151", features = ["raw_value"] }
+serde_json = { version = "=1.0.151", features = ["raw_value", "float_roundtrip"] }

@@ -413,9 +413,28 @@ impl Model {
             s.session_key_epoch = g.epoch;
             s.is_active = !g.archived && speaker.is_some();
         }
+        // A session whose group this device holds no more (it left, was removed, or a founding of its own the hub
+        // refused and the core forgot): not held here. One that holds nothing (a refused founding) is no session at
+        // all, as on a device that never saw it.
+        let empty: Vec<String> = self
+            .sessions
+            .values()
+            .filter(|s| s.group_id.is_some() && !live.contains(&s.session_id))
+            .filter(|s| s.card_ids.is_empty() && s.registers.is_empty())
+            .filter(|s| self.timelines.get(&s.timeline_key).is_none_or(|t| t.item_count == 0 && t.items.is_empty()))
+            .map(|s| s.session_id.clone())
+            .collect();
+        for id in empty {
+            self.sessions.remove(&id);
+            if let Some(t) = self.timelines.remove(&timeline_key("chat", &format!("session/{id}"))) {
+                change.timelines.insert(t.timeline_key);
+            }
+            change.sessions.insert(id);
+        }
         for s in self.sessions.values_mut() {
             if s.group_id.is_some() && !live.contains(&s.session_id) {
-                s.is_active = false
+                s.is_active = false;
+                s.group_id = None;
             }
             change.sessions.insert(s.session_id.clone());
         }
