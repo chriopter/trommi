@@ -5,6 +5,7 @@ mod common;
 use common::process::Seat;
 use common::{HubProc, Human, TempDir};
 use serde_json::{json, Value};
+use trommi_core::ids::GroupId;
 
 fn tool_names(listed: &Value) -> Vec<String> {
     listed["tools"]
@@ -17,6 +18,11 @@ fn tool_names(listed: &Value) -> Vec<String> {
 
 /// A folder joined by the CLI, with its human.
 async fn joined_on(hub: &HubProc) -> (Human, Seat) {
+    let (human, seat, _group) = joined_with_group(hub).await;
+    (human, seat)
+}
+
+async fn joined_with_group(hub: &HubProc) -> (Human, Seat, GroupId) {
     let mut human = Human::found(&hub.url).await;
     let seat = Seat::new(&hub.url);
     let mut invite = human.invite(None).await;
@@ -26,9 +32,9 @@ async fn joined_on(hub: &HubProc) -> (Human, Seat) {
         let admitted = human.admit(&mut invite).await;
         human.found_session(&admitted).await
     };
-    let ((joined, log), _group) = tokio::join!(join, admit);
+    let ((joined, log), group) = tokio::join!(join, admit);
     assert!(joined, "the join failed:\n{log}");
-    (human, seat)
+    (human, seat, group)
 }
 
 /// The hub was set up again (its data gone): the folder's key is of a room no hub knows. The session says so,
@@ -107,4 +113,107 @@ fn the_update_card_and_its_tool_are_not_in_german() {
             assert!(!text.contains(word), "{word} in: {text}");
         }
     }
+}
+
+/// Whether the human's stream says the device is online, within `ms`.
+async fn online_within(human: &Human, device: &str, ms: u64) -> bool {
+    let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    let mut online = false;
+    while std::time::Instant::now() < end {
+        let Ok(mut stream) = human.hub.stream(0).await else {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            continue;
+        };
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(400);
+        while let Ok(Ok(Some(event))) = tokio::time::timeout_at(
+            deadline,
+            stream.next(std::time::Duration::from_secs(5)),
+        )
+        .await
+        {
+            if event.name == "presence" && event.data["device"] == device {
+                online = event.data["online"] == Value::Bool(true);
+            }
+        }
+        if online {
+            return true;
+        }
+    }
+    false
+}
+
+async fn test_switch(hub: &HubProc, what: &str, body: Value) {
+    let test = trommi_connector::hub::Hub::new(&hub.url, None, None).unwrap();
+    test.open_call(reqwest::Method::POST, &format!("/v1/__test/{what}"), Some(&body))
+        .await
+        .expect("the switch");
+}
+
+fn signal(pid: u32, sig: &str) {
+    let ok = std::process::Command::new("kill")
+        .args([sig, &pid.to_string()])
+        .status()
+        .expect("kill runs")
+        .success();
+    assert!(ok, "kill {sig} {pid}");
+}
+
+/// A laptop that sleeps: the connector stands still while the hub's clock runs on past its lease. Once it wakes,
+/// it is online again by itself, hears what the human wrote meanwhile, and its tools work.
+#[tokio::test(flavor = "multi_thread")]
+async fn after_a_sleep_past_the_lease_the_session_is_back_by_itself() {
+    let hub = HubProc::start().await;
+    let (mut human, seat, group) = joined_with_group(&hub).await;
+    let mut mcp = seat.serve_plain().await;
+    mcp.ready().await;
+    let device = human.seat(&group).await.expect("the agent's seat").to_base64url();
+    assert!(online_within(&human, &device, 5000).await, "online before");
+    let pid = mcp.child.id().expect("a pid");
+    signal(pid, "-STOP");
+    test_switch(&hub, "clock", json!({ "advance_ms": 10 * 60_000 })).await;
+    test_switch(&hub, "sweep", json!({})).await;
+    human
+        .say(&group, json!({ "content_type": "message", "text": "Written while you slept" }))
+        .await
+        .expect("the human writes");
+    signal(pid, "-CONT");
+    assert!(online_within(&human, &device, 30_000).await, "online again after the sleep");
+    let mut heard = String::new();
+    for _ in 0..100 {
+        heard.push_str(&mcp.ok("inbox", json!({})).await);
+        if heard.contains("Written while you slept") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(heard.contains("Written while you slept"), "{heard}");
+    assert!(mcp.ok("reply", json!({ "text": "Awake." })).await.starts_with("sent"));
+    mcp.close().await;
+}
+
+/// Two folders whose names differ only in case or punctuation (`~/project` and `~/Project`, `my-app` and
+/// `my_app`) are two folders: a session in the second never takes the first one's key.
+#[tokio::test(flavor = "multi_thread")]
+async fn folders_whose_names_slug_alike_do_not_share_keys() {
+    let hub = HubProc::start().await;
+    let (_human, seat) = joined_on(&hub).await;
+    let other = seat.home.path().join("Project");
+    std::fs::create_dir_all(&other).expect("a second folder");
+    let mut command = seat.command(&[]);
+    command
+        .current_dir(&other)
+        .env("TROMMI_FOLDER", &other)
+        .env("TROMMI_SESSION_KEY", "another-session")
+        .env("TROMMI_SELF_JOIN", "0");
+    let hello = json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "test", "version": "0" } });
+    let mut mcp = common::process::Mcp::start_as(command, hello).await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let listed = mcp.request("tools/list", json!({})).await;
+    let (said, _) = mcp.call("list_cards", json!({})).await;
+    assert_eq!(tool_names(&listed), ["connect"], "{listed}\n{said}");
+    mcp.close().await;
+    let base = |f: &std::path::Path| {
+        std::fs::read_to_string(f.join(".trommi/slot-base")).unwrap_or_default()
+    };
+    assert_ne!(base(&seat.folder), base(&other));
 }
