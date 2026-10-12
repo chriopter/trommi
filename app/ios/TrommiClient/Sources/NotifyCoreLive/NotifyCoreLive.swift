@@ -1,13 +1,10 @@
-// NotifyCoreLive: PushNotify's `NotifyCore` on trommi-core, for the Notification Service Extension. It opens the
-// sealed part of one push with the push key the app handed over; it holds no device and no group state.
+// NotifyCoreLive: PushNotify's `NotifyCore` on trommi-core, for the Notification Service Extension and the widget. It
+// opens the sealed part of one push with the push key the app handed over, and the envelope that rang with the
+// read-only copy of a session group's current content key; it holds no device and no group state.
 //
-//   real      version, openPush (the binding's `openApnsPush`)
+//   real      version, openPush (`openApnsPush`), openLive (`openLiveActivity`), openEnvelope (`openNotifyEnvelope`:
+//             the sender's signature and the body; the sender's membership and chain are the app's to check)
 //   stubbed   nothing
-//   not here  opening an envelope. The binding (core/swift) has no call for it without a device: a content key never
-//             leaves the core (`holdsKey` says only whether the device has one), and an envelope is opened by the
-//             device that checks its sender's chain (`receiveEnvelope`), which writes the device's store; the
-//             extension cannot hold that store beside the app. So the extension shows what the push itself
-//             carries (room, change, urgency) with the hub's fixed text.
 import Foundation
 import PushNotify
 import TrommiCoreRust
@@ -29,6 +26,21 @@ public final class NotifyCoreLive: NotifyCore {
     do {
       let counts = try openLiveActivity(key: Data(key), sealed: Data(sealed))
       return (counts.working, counts.waiting)
+    } catch let CoreError.Refused(code, message) {
+      throw NotifyCoreError(code: errorCodeText(code: code), message: message)
+    }
+  }
+
+  public func openEnvelope(keys: [PushNotify.NotifyKey], envelope: [UInt8]) throws -> NotifyEnvelope {
+    let held = keys.compactMap { k -> TrommiCoreRust.NotifyKey? in
+      guard let g = k.groupBytes, let key = k.keyBytes else { return nil }
+      return TrommiCoreRust.NotifyKey(group: Data(g), epoch: k.epoch, key: Data(key))
+    }
+    do {
+      let opened = try openNotifyEnvelope(keys: held, envelope: Data(envelope))
+      let h = opened.header
+      return NotifyEnvelope(group: [UInt8](h.group), epoch: h.epoch, isCard: h.kind == .version && h.object?.objectType == .card,
+                            push: h.push, payload: [UInt8](opened.payload))
     } catch let CoreError.Refused(code, message) {
       throw NotifyCoreError(code: errorCodeText(code: code), message: message)
     }

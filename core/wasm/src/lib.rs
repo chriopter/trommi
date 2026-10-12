@@ -112,6 +112,7 @@ functions! {
     fallible open_apns_push(key, sealed);
     fallible open_live_activity(key, sealed);
     fallible read_web_push(payload);
+    fallible open_notify_envelope(keys, envelope);
     fallible recovery_anchor(recovery_code, room, rows);
     fallible recovery_sign_in(recovery_code, room, hub, challenge);
     fallible board_reduce(snapshot, snapshot_frontier, items, frontier);
@@ -189,6 +190,7 @@ methods!(RawDevice {
     groups();
     group(group);
     holds_key(group, epoch);
+    notify_keys();
     outbox();
     outbox_accepted(id, change);
     outbox_refused(id, code);

@@ -2,9 +2,11 @@
 // board (at most every 2 s) it writes the context into the Keychain item the extension reads (PushNotify:
 // NotifyContext says what is in it, NotifyGroup where it lies): the push key, the room's id, the hub's address and
 // the room's cursor, from which the extension reads ahead (NotifyPrefetch); the app takes those pages back
-// (`takeAhead`). No content key and
-// no name of a session: a content key never leaves the core. The app stays the one owner of the device's state.
-// It writes only when something changed. Signed out: the context goes.
+// (`takeAhead`). Beside it, in an item of its own that only the app and the extension may read (PushNotify:
+// NotifyKeys), the content key of each session group's CURRENT epoch, written again whenever an epoch moves
+// (`Room.notifyKeysChanged`): with it the extension shows the title of the card that rang. Both only while
+// notifications are set up (a push key exists). The app stays the one owner of the device's state. It writes only
+// when something changed. Signed out: both go.
 import Foundation
 import SwiftUI
 import PushNotify
@@ -15,6 +17,11 @@ final class NotifyBridge {
   static let shared = NotifyBridge()
   private var due = false
   private var lastContext: NotifyContext?
+  /** The keys the room handed over last, and what was written of them. */
+  private var keys: NotifyKeySet?
+  private var lastKeys: NotifyKeySet?
+  /** The keys' item was removed because notifications are off on this phone. */
+  private var keysWiped = false
 
   /** After a change of the board: write within 2 s (a catch-up brings thousands of changes). */
   func boardChanged(_ m: BoardModel) {
@@ -30,13 +37,36 @@ final class NotifyBridge {
   /** Going to the background: written at once. */
   func writeNow(_ m: BoardModel) { write(m) }
 
+  /** A session group moved to another epoch (or the room opened): the extension gets the current keys at once. */
+  func keysChanged(_ m: BoardModel, _ k: [CoreNotifyKey]) {
+    guard let room = m.room else { return }
+    keys = NotifyKeySet(room: room.roomIdHex, keys: k.map { NotifyKey(group: $0.group, epoch: $0.epoch, key: $0.key) })
+    write(m)
+  }
+
   private func write(_ m: BoardModel) {
     #if os(iOS)
     guard !m.demo, let room = m.room, let pushKey = Push.key() else { return }
     let c = NotifyContext(pushKey: pushKey, rooms: [room.roomIdHex], hub: room.hub.hubURL, client: HubClient.clientName, cursor: room.cursor)
-    guard c != lastContext else { return }
-    // the error names a Keychain status at most, never a key
-    do { try NotifyGroup.writeContext(c); lastContext = c } catch { NSLog("trommi notify: context not written: %@", loggable(error)) }
+    if c != lastContext {
+      // the error names a Keychain status at most, never a key
+      do { try NotifyGroup.writeContext(c); lastContext = c } catch { NSLog("trommi notify: context not written: %@", loggable(error)) }
+    }
+    // Notifications off on this phone: no push comes, so the extension holds no key either.
+    if Push.level == "off" {
+      if !keysWiped { NotifyKeyGroup.clear(accessGroup: AppKeychain.notifyKeysGroup); keysWiped = true; lastKeys = nil }
+      return
+    }
+    if let k = keys, k.room == room.roomIdHex, k != lastKeys {
+      // without the shared group (a development build signed by xtool) the extension shows the neutral title
+      guard let group = AppKeychain.notifyKeysGroup else { return }
+      keysWiped = false
+      do { try NotifyKeyGroup.write(k, accessGroup: group); lastKeys = k } catch {
+        // a set not written must not leave the one before it (an older epoch, a session left) readable
+        NotifyKeyGroup.clear(accessGroup: group)
+        NSLog("trommi notify: keys not written: %@", loggable(error))
+      }
+    }
     #endif
   }
 
@@ -45,8 +75,11 @@ final class NotifyBridge {
     #if os(iOS)
     for room in lastContext?.rooms ?? [] { NotifyGroup.prefetch(room: room)?.clear() }
     NotifyGroup.clear()
+    NotifyKeyGroup.clear(accessGroup: AppKeychain.notifyKeysGroup)
     #endif
     lastContext = nil
+    keys = nil
+    lastKeys = nil
   }
 
   /** The room's pages read ahead, taken by their start; a page that is not JSON is dropped. */

@@ -11,7 +11,7 @@ let package = Package(
   dependencies: [.package(path: "../../app/ios/TrommiClient")],
   targets: [
     .testTarget(name: "TrommiClientTests", dependencies: [.product(name: "TrommiClient", package: client)], path: "TrommiClientTests", resources: [.copy("Fixtures")]),
-    .testTarget(name: "TrommiCoreLiveTests", dependencies: [.product(name: "TrommiCoreLive", package: client)], path: "TrommiCoreLiveTests"),
+    .testTarget(name: "TrommiCoreLiveTests", dependencies: [.product(name: "TrommiCoreLive", package: client), .product(name: "NotifyCoreLive", package: client)], path: "TrommiCoreLiveTests"),
     .testTarget(name: "ShareInboxTests", dependencies: [.product(name: "ShareInbox", package: client)], path: "ShareInboxTests"),
     .testTarget(name: "PushNotifyTests", dependencies: [.product(name: "PushNotify", package: client)], path: "PushNotifyTests"),
     .testTarget(name: "NotifyCoreLiveTests", dependencies: [.product(name: "NotifyCoreLive", package: client)], path: "NotifyCoreLiveTests"),

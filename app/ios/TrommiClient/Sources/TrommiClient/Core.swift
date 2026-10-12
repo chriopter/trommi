@@ -86,6 +86,15 @@ public struct SessionInfo: Equatable {
   public var agents: [DeviceId]
   public init(session: SessionId, parent: SessionId?, agents: [DeviceId]) { self.session = session; self.parent = parent; self.agents = agents }
 }
+/** The content key of one session group at its current epoch, as the notification extension gets it. Never log it. */
+public struct CoreNotifyKey: Equatable, CustomStringConvertible {
+  public var group: GroupId
+  public var epoch: UInt64
+  public var key: Bytes
+  public init(group: GroupId, epoch: UInt64, key: Bytes) { self.group = group; self.epoch = epoch; self.key = key }
+  public var description: String { "CoreNotifyKey(<redacted>)" }
+}
+
 public struct GroupSummary: Equatable {
   public var group: GroupId
   /** nil: the room group. */
@@ -474,8 +483,13 @@ public protocol CoreDevice: CoreSigner {
   /** false once a write met `StoreError.conflict`: another owner wrote; this object stops (core `is_owner`). */
   var isOwner: Bool { get }
   func groups() throws -> [GroupSummary]
-  /** Whether this device holds the content key of that group and epoch. The key itself never leaves the core. */
+  /** Whether this device holds the content key of that group and epoch. The key itself stays in the core. */
   func holdsKey(group: GroupId, epoch: UInt64) throws -> Bool
+  /**
+   * The one exception (spec/v1.md 6.4): of each session group, the content key of its current epoch, for the
+   * notification extension's read-only copy (NotifyBridge). No room group key, no older epoch.
+   */
+  func notifyKeys() throws -> [CoreNotifyKey]
 
   func keyPackagesToUpload(unusedAtHub: Int, nowMs: UInt64) throws -> UInt64?
   func keyPackage(nowMs: UInt64) throws -> Bytes

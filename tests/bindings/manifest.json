@@ -459,6 +459,19 @@
       ],
       "returns": "PushNote"
     },
+    "openNotifyEnvelope": {
+      "arguments": [
+        {
+          "name": "keys",
+          "type": "list<NotifyKey>"
+        },
+        {
+          "name": "envelope",
+          "type": "bytes"
+        }
+      ],
+      "returns": "NotifyOpened"
+    },
     "recoveryAnchor": {
       "arguments": [
         {
@@ -584,6 +597,10 @@
           }
         ],
         "returns": "bool"
+      },
+      "notifyKeys": {
+        "arguments": [],
+        "returns": "list<NotifyKey>"
       },
       "outbox": {
         "arguments": [],
@@ -2184,6 +2201,15 @@
     "LiveActivityCounts": {
       "working": "number",
       "waiting": "number"
+    },
+    "NotifyKey": {
+      "group": "bytes",
+      "epoch": "number",
+      "key": "bytes"
+    },
+    "NotifyOpened": {
+      "header": "EnvelopeHeader",
+      "payload": "bytes"
     },
     "SessionInfo": {
       "roomId": "bytes",

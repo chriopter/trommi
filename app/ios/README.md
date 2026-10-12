@@ -29,7 +29,7 @@ The app and its extensions (`TrommiApp/Package.swift` products, `xtool.yml`):
 | --- | --- | --- | --- |
 | `TrommiApp` | `com.trommi.ios` | everything | yes (about 3 MB) |
 | `TrommiShare.appex` | `com.trommi.ios.share` | `ShareInbox` | no |
-| `TrommiNotify.appex` | `com.trommi.ios.notify` | `PushNotify` | only what opens one push (`NotifyCoreLive`); see "Who owns the state" |
+| `TrommiNotify.appex` | `com.trommi.ios.notify` | `PushNotify` | only what opens one push and the envelope that rang (`NotifyCoreLive`); see "Who owns the state" |
 | `TrommiLive.appex` | `com.trommi.ios.live` | `PushNotify` | no |
 
 Each binary that links the core carries its own copy of it. Measured with the proof build of October 2026: the app
@@ -89,11 +89,17 @@ different items under one number.
 - **Extensions never open it**, and cannot: no path, no key. They cannot sign, send, or follow a group.
   - **Share Extension:** writes what was shared into the sealed inbox in the App Group; the app takes it from there
     and sends it.
-  - **Notification Service Extension:** gets, in one Keychain item whose access group is the App Group, the push key
-    and the room's id, and nothing else. With the push key it opens the sealed part of a push (room, change number,
-    urgency). It gets no content key: none ever leaves the core, so the extension opens no envelope and shows no
-    title. Every member of the App Group (the three extensions) can read the item. A title in the notification
-    needs a title the core seals separately, or a call of the binding that opens one envelope without the device.
+  - **Notification Service Extension:** gets two Keychain items, both `AfterFirstUnlockThisDeviceOnly`. The context
+    (PushNotify `NotifyContext`, access group: the App Group, which all three extensions can read): the push key, the
+    room's id, the hub, the client name and the room's cursor. With the push key it opens the sealed part of a push
+    (room, change number, urgency) and reads ahead. The keys (PushNotify `NotifyKeys`, access group
+    `<team>.com.trommi.ios.notify-keys`, which only the app and this extension are entitled to): of each session
+    group the content key of its CURRENT epoch (core `notify_keys`, spec/v1.md 6.4), never the room group's, never an
+    older one; the app writes them again whenever an epoch moves (`Room.notifyKeysChanged`, NotifyBridge). With them
+    the extension opens the one envelope that rang (core `open_notify_envelope`: the sender's signature, then the
+    body; not the sender's membership, not its chain) and shows a card's title. Such a key opens everything written
+    in that session during that epoch, not only the card. The extension writes nothing to the Keychain and signs
+    nothing.
   - **Live Activity widget:** holds no key and reads no file. It shows what ActivityKit hands it: the hub's two
     counts, and the most urgent card (title, session name, urgency, two answers) that the app put in after opening
     it on the phone. The hub never sees that card; while the phone cannot read the room the app puts none in.
@@ -239,7 +245,14 @@ target, bundle id, entitlement or secret.
   Group `group.com.trommi.ios` (`AppStore/TrommiNotify.entitlements`, `TrommiLive.entitlements`); `asc.py` turns on
   APP_GROUPS for both ids, and `ios_entitlements.py` checks the signed .appex against those files. The App Group is
   also the Keychain access group of the context item, which the widget now reads too (the push key): on iOS an App
-  Group entitlement is enough for that, no `keychain-access-groups` entry.
+  Group entitlement is enough for that.
+- The content keys of the notification title (11 October 2026) lie in an access group of their own:
+  `keychain-access-groups` in `AppStore/TrommiApp.entitlements` (`$(AppIdentifierPrefix)com.trommi.ios` FIRST, so
+  that an item added without a group, the push key's, stays the app's own; then
+  `$(AppIdentifierPrefix)com.trommi.ios.notify-keys`) and in `AppStore/TrommiNotify.entitlements` (the second only).
+  No portal step: every profile grants `<team>.*`. Xcode fills the prefix; `ios_entitlements.py` and `ship-local.sh`
+  read it as the signing team. xtool's development builds replace `keychain-access-groups` with each bundle's own
+  group, so there the extension finds no keys and shows the plain text.
 - The notification extension's reading ahead is plain HTTPS to the hub: no entitlement, no background mode.
 - The widget now links the Rust core (`NotifyCoreLive`), like the notification extension: each .appex is about 8 MB
   (a device build, Release). The package links `lib/ios` by a search path as for the app; nothing else changes in
@@ -628,8 +641,12 @@ and could come from a push the extension never saw).
 **The notification** (`Sources/TrommiNotify`, the Notification Service Extension; the pushes carry
 `mutable-content: 1`). The extension opens the hub's sealed message with the push key and shows the text its urgency
 calls for ("A new question.", "Urgent: a new question.", "An agent lost its connection." for a push without a
-ticket; `NotifyOpen.text`), threaded by room. It shows no title of a card: it holds no content key ("Who owns the
-state", "Not there yet"). Anything that does not open keeps the neutral text. With the push's ticket it then reads ahead, for a few
+ticket; `NotifyOpen.text`), threaded by room. Above it, the card's title: after reading ahead it finds the envelope of
+the push's change among the pages kept (or reads that one change, `after` = change − 1, the ticket in the header) and
+opens it with the read-only keys ("Who owns the state"; PushNotify `NotifyTitle`): a version of a card with the push
+flag gives its `title`, one line, at most 120 characters. No keys (before the first unlock, signed out, an xtool
+build), a key of an older epoch (the group moved on while the app slept), anything that does not open or is not a
+card: the title stays "Trommi". Anything that does not open keeps the neutral text. With the push's ticket it then reads ahead, for a few
 seconds at most, what the app will catch up on (`GET /v1/push-changes`, PushNotify `NotifyPrefetch`): the hub's pages
 as they come, ciphertext, into the App Group's container (`ahead/<room>/<after>-<change>.json`, at most 8 MB). The
 app takes a page whose start is its cursor instead of asking the hub (`Room.takeAhead`), and the core checks it like
@@ -740,9 +757,8 @@ chrome; the minimum is iOS 27.
 `TrommiCoreLive` binds every call of `Core.swift` to the core (`core/swift`, v2-bindings 33a943d). Its header
 (`LiveCore.swift`) lists what is bound and what of the binding is left out. What the app still cannot do:
 
-- **The notification title.** A content key never leaves the core, and the binding opens an envelope only on the
-  device that holds the group (`receiveEnvelope`), whose store the app owns. The Notification Service Extension
-  therefore opens the push itself (room, change, urgency) and shows the fixed text.
+- **The notification title on a phone.** Tested with the real core on Linux and macOS (`swift test`) and built for
+  iOS; that a TestFlight build's extension reads the keys from the shared access group is to be seen on a phone.
 - **Content from before a device came by link** is read once the group's past is learned (`RoomPast.swift`: the
   founding GroupInfo and the Commits of the group's log, read page by page, go to the core in slices of at most
   256 Commits and 16 MiB (`learnStart`, `learnSlice`, `learnFinish`; `PastWalk.swift`), then the changes are read

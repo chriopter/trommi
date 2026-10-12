@@ -9,7 +9,9 @@
 //
 // They are items of the APP alone. Every query names the app's own access group (<team>.<bundle id>), never the
 // App Group, so that an item an extension put under the same name into a shared group is not taken for one of
-// these, and a later change of the entitlements cannot move these into a shared group.
+// these, and a later change of the entitlements cannot move these into a shared group. The app's
+// `keychain-access-groups` list its own group FIRST, then the group it shares with the notification extension
+// (`<team>.com.trommi.ios.notify-keys`): an item added without naming a group lands in the first.
 //
 // A key is made only for a NEW state folder. A Keychain that cannot be read is an error, never "no key yet": making
 // a new key over an old one would lose the state for good. Elsewhere (Linux: tests) the items are 0600 files beside
@@ -22,6 +24,22 @@ import Foundation
 #if os(iOS) || os(macOS)
 import Security
 #endif
+
+/** The Keychain access groups the app names outside this file. */
+public enum AppKeychain {
+  /**
+   * The group the app shares with its notification extension alone (`keychain-access-groups` in both entitlements):
+   * `<team>.com.trommi.ios.notify-keys`, from the team of the app's own group. nil when that is not known (and on Linux).
+   */
+  public static var notifyKeysGroup: String? {
+    #if os(iOS)
+    guard let own = LocalKey.privateGroup, let team = own.split(separator: ".", maxSplits: 1).first, team.count == 10 else { return nil }
+    return "\(team).com.trommi.ios.notify-keys"
+    #else
+    return nil
+    #endif
+  }
+}
 
 public enum LocalKey {
   #if os(macOS)
@@ -62,7 +80,7 @@ public enum LocalKey {
    * The app's own access group, asked from the system once: the group of an item added without naming one is the
    * first of the app's groups, which for an app is its application identifier.
    */
-  private static let privateGroup: String? = {
+  static let privateGroup: String? = {
     var probe: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "group-probe",
                                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly, kSecReturnAttributes as String: true]
     #if os(macOS)
@@ -71,7 +89,8 @@ public enum LocalKey {
     var out: AnyObject?
     var rc = SecItemCopyMatching(probe.merging([kSecMatchLimit as String: kSecMatchLimitOne]) { a, _ in a } as CFDictionary, &out)
     if rc == errSecItemNotFound { rc = SecItemAdd(probe.merging([kSecValueData as String: Data([0])]) { a, _ in a } as CFDictionary, &out) }
-    guard rc == errSecSuccess, let group = (out as? [String: Any])?[kSecAttrAccessGroup as String] as? String, !group.hasPrefix("group.") else { return nil }
+    guard rc == errSecSuccess, let group = (out as? [String: Any])?[kSecAttrAccessGroup as String] as? String, !group.hasPrefix("group."),
+          !group.hasSuffix(".notify-keys") else { return nil }
     return group
   }()
   private static func query(_ account: String) throws -> [String: Any] {
