@@ -1217,8 +1217,9 @@ public struct Store {
       board.pushAlert(&change, code: "newer-version", message: Compat.UPDATE_MESSAGE, sender: hex(from))
     case .keys(_, let taken, _):
       // Keys of older epochs came (a handover, also one answering a key request, 7.1.1): items that took their place
-      // without a body can be opened now.
-      if taken > 0, record.past?.closed == true { notePast { $0.readBack = true }; pastDue = true; if readingBack { readBackAgain = true } }
+      // without a body can be opened now, and so can items passed over as written before this device came into the
+      // group (a sign-in with the code whose session a Welcome won: the keys of before it come by the handover).
+      if taken > 0, record.past?.closed == true || record.past?.passedOver == true { notePast { $0.readBack = true }; pastDue = true; if readingBack { readBackAgain = true } }
     case .recoveryAuth, .recoveryAuthConflict, .dropped: break
     }
   }

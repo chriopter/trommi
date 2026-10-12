@@ -63,7 +63,7 @@ final class RoomPastTests: XCTestCase {
     try writeNote(a, "three")
 
     let without = try await b.sync()
-    XCTAssertEqual(without.beforeJoining, 2)
+    XCTAssertEqual(without.beforeJoining, 4, "passed over, and once more when the handover's keys read them back (the web engine rescans too)")
     XCTAssertEqual(notes(b), [], "the chain of A began before B came: nothing of it is taken")
     XCTAssertEqual(b.record.past?.passedOver, true)
     XCTAssertEqual(try b.store.load().past?.passedOver, true, "noted in room.json")
