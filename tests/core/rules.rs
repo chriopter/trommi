@@ -708,8 +708,16 @@ fn helper_session_commits_follow_5_2_3_to_5_2_5() {
         session_verdict(&history, &SESSIONS, &founder, &no_human),
         Err(Error::BadCommit)
     );
+    let room_left = Sessions {
+        helpers: 99,
+        ..SESSIONS
+    };
+    assert_eq!(
+        session_verdict(&history, &room_left, &founder, &founding),
+        Ok(())
+    );
     let crowded = Sessions {
-        helpers: 32,
+        helpers: 100,
         ..SESSIONS
     };
     assert_eq!(

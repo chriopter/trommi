@@ -27,6 +27,9 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   themselves: the coordinator forwards them.
 
 **Fixed**
+- **Closed helper sessions free their place**: `close_session` now really ends a helper session (once its open
+  questions are answered), so an agent is no longer refused a new one while only a few show on the board. An agent
+  may keep up to 100 helper sessions open at once (was 32).
 - Web: starring a card no longer shows a line of code for a moment in place of the star.
 - A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
   writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).

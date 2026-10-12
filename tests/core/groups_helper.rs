@@ -352,7 +352,7 @@ fn the_hub_refuses_what_a_helper_session_may_not_hold() {
 }
 
 #[test]
-fn a_main_session_has_at_most_thirty_two_live_helper_sessions() {
+fn a_main_session_has_at_most_a_hundred_live_helper_sessions() {
     let Room {
         mut hub,
         mut agent,
@@ -363,7 +363,7 @@ fn a_main_session_has_at_most_thirty_two_live_helper_sessions() {
         ..
     } = room(true);
     let mut groups = Vec::new();
-    for _ in 0..32 {
+    for _ in 0..100 {
         groups.push(found_helper(&mut hub, &mut agent, &main, &mut []));
     }
     assert!(groups.iter().all(|group| hub.epoch(group) == Some(1)));
@@ -373,7 +373,7 @@ fn a_main_session_has_at_most_thirty_two_live_helper_sessions() {
         Err(Error::TooMany)
     );
     assert!(agent.outbox().is_empty());
-    assert_eq!(agent.groups().unwrap().len(), 33);
+    assert_eq!(agent.groups().unwrap().len(), 101);
 
     // An archived helper session is not live: its place is free again.
     hub.archive(&groups[0]);
