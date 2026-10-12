@@ -271,3 +271,21 @@ async fn helper_sessions_up_to_the_limit_then_close_one_to_open_another() {
     assert!(said.starts_with("child session opened"), "{said}");
     mcp.close().await;
 }
+
+/// A session that starts while the hub is away says so in plain words, and is in its room by itself once the hub
+/// is back, without a restart.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_started_while_the_hub_is_away_gets_in_once_it_is_back() {
+    let hub = HubProc::start().await;
+    let (_human, seat) = joined_on(&hub).await;
+    let (data, port) = hub.stop();
+    let mut mcp = seat.serve().await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let (said, failed) = mcp.call("reply", json!({ "text": "while away" })).await;
+    assert!(failed && said.contains("call the tool again"), "{said}");
+    let (said, failed) = mcp.call("create_decision", json!({ "title": "Q?", "body": "b", "options": [{"key":"a","label":"A"},{"key":"b","label":"B"}] })).await;
+    assert!(failed && said.contains("call the tool again"), "{said}");
+    let _hub = HubProc::start_in(data, port).await;
+    mcp.ready().await;
+    mcp.close().await;
+}
