@@ -345,12 +345,18 @@ jobs:
               [ "$tagged" = "$COMMIT" ] || { echo "::error::the tag $TAG is there already and names $tagged, not $COMMIT"; exit 1; }
             fi
             changed=$(jq -r '[.changed | to_entries[] | select(.value) | .key] | join(", ")' publish/manifest.json)
-            # the notes: the release day of CHANGELOG.md, short (one line per change), its heading with the day's
-            # releases (counted from the published ones); empty notes never stop a release
+            # the notes: what CHANGELOG.md added since the release before (v$newest), short, one line per change; the
+            # commit subjects since then when it added nothing; empty notes never stop a release
             gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$COMMIT" > "$RUNNER_TEMP/changelog.md" 2>/dev/null || : > "$RUNNER_TEMP/changelog.md"
             gh release list --exclude-drafts --limit 400 --json tagName,createdAt --jq '.[] | "\(.tagName) \(.createdAt)"' > "$RUNNER_TEMP/releases.txt" 2>/dev/null || : > "$RUNNER_TEMP/releases.txt"
+            prev= since=
+            if [ -n "$newest" ] && before=$(gh api "repos/$GH_REPO/commits/v$newest" --jq .sha 2>/dev/null) \
+              && gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$before" > "$RUNNER_TEMP/changelog-before.md" 2>/dev/null; then
+              prev="$RUNNER_TEMP/changelog-before.md" since="v$newest"
+              gh api "repos/$GH_REPO/compare/$before...$COMMIT" --jq '.commits[].commit.message | split("\n")[0]' > "$RUNNER_TEMP/subjects.txt" 2>/dev/null || : > "$RUNNER_TEMP/subjects.txt"
+            fi
             {
-              NOTES_BASE="https://raw.githubusercontent.com/$GH_REPO/$COMMIT/" node repo/.github/scripts/release_notes.mjs "$RUNNER_TEMP/changelog.md" "$TAG" "$RUNNER_TEMP/releases.txt" || true
+              NOTES_BASE="https://raw.githubusercontent.com/$GH_REPO/$COMMIT/" node repo/.github/scripts/release_notes.mjs "$RUNNER_TEMP/changelog.md" "$TAG" "$RUNNER_TEMP/releases.txt" "$prev" "$since" "$RUNNER_TEMP/subjects.txt" || true
               echo
               echo "---"
               echo
