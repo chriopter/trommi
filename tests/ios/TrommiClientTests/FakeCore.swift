@@ -79,10 +79,7 @@ final class FakeDevice: CoreDevice {
       GroupSummary(group: Self.sessionGroup(r, s), session: SessionInfo(session: try! unhex(s), parent: nil, agents: state.sessions[s]!.map { try! unhex($0) }), epoch: 1, leaves: [id] + state.sessions[s]!.map { try! unhex($0) }, archived: (state.archived ?? []).contains(hex(Self.sessionGroup(r, s))), pending: false)
     }
   }
-  /** Groups (hex) of which an item written before this device came was refused: their keys of before are missing
-   *  until a handover brings them (`oldKeys`). */
-  var lacksOldKeys = Set<String>()
-  func holdsKey(group: GroupId, epoch: UInt64) throws -> Bool { !lacksOldKeys.contains(hex(group)) || (state.oldKeys ?? []).contains(hex(group)) }
+  func holdsKey(group: GroupId, epoch: UInt64) throws -> Bool { true }
   /** A "key" per session group and epoch: its id and epoch, which the fake seals nothing with. */
   func notifyKeys() throws -> [CoreNotifyKey] {
     try groups().filter { $0.session != nil }.map { CoreNotifyKey(group: $0.group, epoch: $0.epoch, key: Array(($0.group + [UInt8(truncatingIfNeeded: $0.epoch)]).prefix(32))) }
@@ -287,7 +284,6 @@ final class FakeDevice: CoreDevice {
     if group.count == 48, state.sessions[hex(group.suffix(16))] == nil { return made(.refused, code: "group-behind") }
     // (header "before": written in an epoch before this device came into the group; its keys come by a handover)
     if h["before"] as? Bool == true, !(state.oldKeys ?? []).contains(hex(group)) {
-      lacksOldKeys.insert(hex(group))
       if change > state.cursor { state.cursor = change; try? write([]) }
       return made(.refused, code: "group-behind")
     }
@@ -422,8 +418,6 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     /** Every card the Desk listed so far (what a brief list with `since` names as settled once it is not open). */
     var deskListed = Set<String>()
     var deskBriefReads = 0
-    /** GET /v1/changes from the start (a catch-up from 0, a read back through the hub). */
-    var changesFromStart = 0
     var deskReads = 0
     /** The devices (hex) the hub holds a KeyPackage of; one claimed without is answered 404, as the hub does. */
     var keyPackages: Set<String> = []
@@ -485,7 +479,6 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
         return (200, ["items": archivedGroups.sorted().map { ["group_id": b64u(try! unhex($0)), "kind": "main", "live": false, "leaves": [String]()] as [String: Any] }, "more": false, "after": archivedGroups.count])
       case ("GET", "/v1/changes"):
         let after = UInt64(query["after"] ?? "0") ?? 0
-        if after == 0 { changesFromStart += 1 }
         let limit = Int(query["limit"] ?? "500") ?? 500
         // `active=1`: no envelope of an archived group; `group=`: that group's envelopes alone (point 46)
         func groupOf(_ i: [String: Any]) -> String? {

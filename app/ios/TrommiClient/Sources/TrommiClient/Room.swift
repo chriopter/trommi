@@ -46,8 +46,6 @@ public struct SyncReport { public var envelopes = 0, opened = 0, headerOnly = 0,
 
 /** A mark set from the core's queue and read after it. */
 final class Flag: @unchecked Sendable { var on = false }
-/** A value handed out of a core run (written there, read after it returned). */
-final class CoreOut<T>: @unchecked Sendable { var value: T; init(_ v: T) { value = v } }
 
 /** The hub said this app is too old to be served. */
 public struct UpgradeNotice: Equatable { public var minimumVersion: String?; public var message: String }
@@ -1031,11 +1029,8 @@ public struct Store {
     let store = deviceStore
     var keep = [UInt64: Rec]()
     if readingBack && !readBackWhole.isEmpty { for item in parsed { if case .envelope(let c, _, _) = item, let r = readBackWhole[c] { keep[c] = r } } }
-    let waiting = CoreOut([UInt64: Bool?]())
     let (outcomes, coreAt, findings): ([Outcome], UInt64, [ChainFinding]) = try await onCore { device in try store.batched { () -> ([Outcome], UInt64, [ChainFinding]) in
       var out = [Outcome]()
-      var waitHeld = [UInt64: Bool?]()
-      defer { waiting.value = waitHeld }
       var commits = false
       /// Per leaf of a group, the last envelope the core accepted of it: asked before and after a Commit, a number
       /// that went down says the core dropped what lay beyond a removed device's Cut (9.0.10).
@@ -1093,10 +1088,6 @@ public struct Store {
             // Refused with `group-behind` and the cursor left where it was: the group's next Commits are still to
             // come. Stop before it, so that it is read again with what it needs, instead of being passed over.
             if e.outcome == .refused, c > before, device.cursor < c { out.append(.stopped(code: e.code ?? "group-behind")); return done() }
-            // (passed over or closed for want of a key: whether that key is held now, for what waits: RoomPast.swift)
-            // (and anything else not taken whole: a read back from the cache hands it to the core again)
-            if (e.outcome == .refused && e.code == "group-behind") || e.code == "no-key" { waitHeld[c] = (try? device.holdsKey(group: e.header.group, epoch: e.header.epoch)) ?? false }
-            else if e.outcome == .refused || e.outcome == .chained || (e.outcome != .void && e.payload == nil) { waitHeld[c] = .some(nil) }
             var heads = [(sender: DeviceId, standing: HeadStanding)]()
             if e.outcome == .applied, e.register?.name == "heads", e.header.sender != device.id {
               heads = (try? device.compareHeads(group: e.header.group, writer: e.header.sender)) ?? []
@@ -1123,7 +1114,6 @@ public struct Store {
       return done()
     } }
     Spent.add("core (process)", since: coreStart)
-    let waitingHeld = waiting.value
     let boardStart = Spent.now
     defer { Spent.add("board (apply)", since: boardStart) }
     coreCursor = coreAt
@@ -1162,7 +1152,6 @@ public struct Store {
         }
       case .envelope(let e, let heads):
         try await freshGroups()
-        if let held = waitingHeld[e.change], case .envelope(_, let bytes, _) = parsed[i] { noteWaiting(change: e.change, bytes: bytes, group: e.header.group, epoch: e.header.epoch, keyHeld: held) }
         apply(e, report: &report, &change)
         for h in heads { applyHead(h.standing, of: h.sender, group: e.header.group, saidBy: e.header.sender, &change) }
       case .refused(let c, let code):
@@ -1189,20 +1178,12 @@ public struct Store {
       try await fillGap(group: g.group, sender: g.sender, before: g.seq, &report, &change)
       // the envelope itself again, along its sender's chain; still a gap: the hub withholds a part of the chain
       if let e = try? await onCore({ try $0.receiveEnvelope(bytes, change: c, ordered: true, voidCode: void, nowMs: nowMs()) }) {
-        await keepIfWaiting(e, bytes)
         apply(e, report: &report, &change)
       }
       cursor = max(cursor, c)
       board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
       if g.index + 1 < parsed.count { try await process(Array(parsed[(g.index + 1)...]), report: &report, change: &change) }
     }
-  }
-  /** An envelope taken outside a run of `process` (a gap filled): kept for a read back when it was not taken whole. */
-  func keepIfWaiting(_ e: ReceivedEnvelope, _ bytes: Bytes) async {
-    let keyed = (e.outcome == .refused && e.code == "group-behind") || e.code == "no-key"
-    guard keyed || e.outcome == .refused || e.outcome == .chained || (e.outcome != .void && e.payload == nil) else { return }
-    let held: Bool? = keyed ? ((try? await onCore { try $0.holdsKey(group: e.header.group, epoch: e.header.epoch) }) ?? false) : nil
-    noteWaiting(change: e.change, bytes: bytes, group: e.header.group, epoch: e.header.epoch, keyHeld: held)
   }
   /**
    * The links of a sender's chain this device misses before `before` (9.0.6), fetched from where it holds the chain
@@ -1219,7 +1200,6 @@ public struct Store {
         if seq >= before { break pages }
         let void = j["void_code"] as? String
         if let e = try? await onCore({ try $0.receiveEnvelope(bytes, change: n, ordered: true, voidCode: void, nowMs: nowMs()) }), e.outcome != .refused {
-          await keepIfWaiting(e, bytes)
           apply(e, report: &report, &change)
         }
         after = seq
@@ -1269,7 +1249,7 @@ public struct Store {
       // Keys of older epochs came (a handover, also one answering a key request, 7.1.1): items that took their place
       // without a body can be opened now, and so can items passed over as written before this device came into the
       // group (a sign-in with the code whose session a Welcome won: the keys of before it come by the handover).
-      if taken > 0 { keysCame() }
+      if taken > 0, record.past?.closed == true || record.past?.passedOver == true { notePast { $0.readBack = true }; pastDue = true; if readingBack { readBackAgain = true } }
     case .recoveryAuth, .recoveryAuthConflict, .dropped: break
     }
   }
