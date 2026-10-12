@@ -191,6 +191,9 @@ public struct Store {
    * sign-in so that a big account opens at once; the first catch-up waits for it. nil: none under way.
    */
   var codeJoinWork: Task<Void, Never>?
+  /** The session groups (hex) the code's joins of a sign-in left out (`finishCodeJoin`): a Welcome of one asks for its
+   *  keys at once (`takeWelcomes`). */
+  var codeJoinMissed = Set<String>()
   /** 7.1.1: when the hub's list of wishes was last read, and the wishes for keys answered in this run. */
   var keyWishesReadAt: UInt64 = 0
   var keyWishesAnswered = Set<Int>()
@@ -483,10 +486,23 @@ public struct Store {
     }
     var change = Change()
     // (a device back after a while: what was settled elsewhere leaves the Desk before the long history is read)
-    let until = await Spent.time("desk first") { await deskFirst() }
+    let groupsAtDesk = sessionGroupIds
+    var until = await Spent.time("desk first") { await deskFirst() }
     try await Spent.time("welcomes") { try await takeWelcomes(&change) }
+    let joiningByCode = record.codeJoin == true
     if let work = codeJoinWork { await Spent.time("wait session joins") { await work.value }; codeJoinWork = nil }
     await Spent.time("finish code join") { await finishCodeJoin() }
+    // A Welcome that came while the code's joins ran (another human device added this one first, and the join of that
+    // session was refused as `busy` or lost its epoch) is taken now, not at the next sync; then the joins once more.
+    if joiningByCode && (record.codeJoin == true || !codeJoinMissed.isEmpty) {
+      let before = sessionGroupIds
+      try? await takeWelcomes(&change)
+      if record.codeJoin == true && sessionGroupIds != before { await finishCodeJoin() }
+    }
+    // The hub's Desk lists only what lies in the groups this device is in: one read before a session group was joined
+    // (a sign-in's joins, a Welcome) would hold that session's open cards back as settled elsewhere. Read it again
+    // (the web client's `deskSoon` on `groups`).
+    if sessionGroupIds != groupsAtDesk { until = await Spent.time("desk again") { await deskFirst() } }
     // KeyPackages before the catch-up: a device back after long, or just signed in, may hold none at the hub, and
     // every session founded meanwhile leaves it out until it has (5.2.5); a long catch-up must not keep them back.
     // (upkeep: a failure here does not keep the board from showing; the end of this sync tries again)
@@ -627,6 +643,9 @@ public struct Store {
     }
   }
 
+  /** The session groups this device is in (hex). */
+  var sessionGroupIds: Set<String> { Set(groups.values.filter { $0.session != nil }.map { hex($0.group) }) }
+
   /** The Welcomes waiting for this device (a session group it was added to): joined, if the room's inviter made them. */
   func takeWelcomes(_ change: inout Change) async throws {
     let list = try await noted { try await hub.welcomes() }
@@ -650,6 +669,19 @@ public struct Store {
     // entries up to where the core has read are handed again, as the web engine's `handLog` does.
     for group in joinedGroups { try await handGroupLog(group, upTo: try await onCore { $0.cursor }, &change) }
     try await refreshGroups(&change)
+    // A sign-in with the code whose session another human device added this one to first (5.2.7, its Welcome won the
+    // race): the code selected none of that session's keys, and what was written before the Welcome stays closed
+    // until a human device hands them over. They are asked for at once, not after the grace (7.1.1): the person
+    // signed in a moment ago and waits for exactly this (web room.ts `joinSessions`, `askKeysNow`).
+    for group in joinedGroups where group != room && (record.codeJoin == true || codeJoinMissed.contains(hex(group))) {
+      codeJoinMissed.remove(hex(group))
+      await askKeysNow(group)
+    }
+  }
+  /** A wish for a session group's content keys now (7.1.1), without the grace `tendKeys` keeps. */
+  func askKeysNow(_ group: GroupId) async {
+    guard record.role == "human" else { return }
+    _ = try? await noted { try await hub.request("POST", "/requests", body: ["kind": "handover", "group": b64u(group)]) }
   }
 
   /**
@@ -1258,7 +1290,13 @@ public struct Store {
       _ = try? await serial { [self] in
         var report = SyncReport(), ch = Change()
         defer { self.board.project(); self.emit(ch) }
+        let before = self.sessionGroupIds
         try await self.takeWelcomes(&ch)
+        // (a session group joined: the hub's Desk lists its open cards now, and is read again, as at a catch-up)
+        if self.sessionGroupIds != before, let until = await self.deskFirst() {
+          try await self.readChanges(&report, &ch)
+          if self.cursor >= until { self.caughtUp(&ch) }
+        }
         if self.pastDue { try await self.tendPast(&report, &ch) }
       }
     case "presence":

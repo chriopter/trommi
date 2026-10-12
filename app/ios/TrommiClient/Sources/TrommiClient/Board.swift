@@ -279,6 +279,7 @@ public final class Permission {
   public var versionHash: String
   public var envelopeNumber: Int
   public var sentAt: UInt64
+  /** pending | allowed | denied | withdrawn | expired (set by the projection once `endsAt` has passed). */
   public var permissionState = "pending"
   public var verdict: (allow: Bool, byDeviceId: String, envelopeNumber: Int)?
   public var withdrawReason: String?
@@ -286,6 +287,13 @@ public final class Permission {
     self.objectId = objectId; self.agentDeviceId = agentDeviceId; self.sessionId = sessionId; self.toolName = toolName; self.description = description
     self.inputPreview = inputPreview; self.expiresAt = expiresAt; self.versionHash = versionHash; self.envelopeNumber = envelopeNumber; self.sentAt = sentAt
   }
+  /** The longest a permission request waits for its verdict: a connector's hook waits at most an hour
+   *  (TROMMI_PERMISSION_MS), and two minutes more for the clocks (web model.ts REQUEST_LIFE_MAX_MS). */
+  public static let lifeMaxMs: UInt64 = 62 * 60_000
+  /** When the request runs out: its bound deadline; one whose body was not read here (no bind, so no deadline known)
+   *  past the longest wait a connector gives one, whatever it said (the hub cannot tell, so its Desk lists such a
+   *  request as open for ever). The same rule as the web's `project()`. */
+  public var endsAt: UInt64 { expiresAt > 0 ? expiresAt : sentAt + Permission.lifeMaxMs }
 }
 
 public struct Note {
@@ -1155,6 +1163,16 @@ public final class Board {
       change.stack = true
       return (true, nil)
     }
+    // (the same version again, now with its body: a request first taken as its header only gets its deadline and fields)
+    if let k = known, k.versionHash == rec.envelopeHash {
+      guard k.expiresAt == 0, case let .permissionRequest(rid, exp)? = rec.bind, rid == k.objectId else { return (false, nil) }
+      k.expiresAt = exp
+      if let c = rec.content { k.toolName = c["tool_name"].string ?? ""; k.description = c["description"].string ?? ""; k.inputPreview = c["input_preview"].string ?? "" }
+      change.permissions.insert(k.objectId)
+      if let s = k.sessionId { change.sessions.insert(s) }
+      change.stack = true
+      return (true, nil)
+    }
     guard let oid = objectId, known == nil else { return refuse(&change, rec, "bad-object", "permission request without a new object id") }
     var expires: UInt64 = 0
     if let b = rec.bind {
@@ -1177,7 +1195,9 @@ public final class Board {
     guard rec.senderRole == "human" else { return "not-human" }
     guard let p = p, case let .verdict(requestId, requestHash, expiresAt, _)? = rec.bind, requestId == p.objectId else { return "request-mismatch" }
     if rec.recipientDeviceId != p.agentDeviceId { return "not-for-owner" }
-    if p.permissionState != "pending" { return "request-not-pending" }
+    // (a verdict counts on a request that ran out here as well: the web model takes it, and a catch-up read after the
+    //  deadline meets the request's expiry before the verdict that came in time)
+    if p.permissionState != "pending" && p.permissionState != "expired" { return "request-not-pending" }
     if requestHash != p.versionHash || expiresAt != p.expiresAt { return "request-changed" }
     return nil
   }
@@ -1342,6 +1362,12 @@ public final class Board {
       if let sid = c.sessionId, archived.contains(sid) { return false }
       return true
     }.map { $0.objectId }
-    openPermissionIds = permissions.values.filter { $0.permissionState == "pending" && !heldBack($0.objectId, open: true) && now <= $0.expiresAt }.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
+    // A pending request whose time has run out becomes `expired` (web model.ts `project()`); one held back as settled
+    // at the hub is left as it is, as the web leaves one that is `catching_up`.
+    var waiting = [Permission]()
+    for p in permissions.values where p.permissionState == "pending" && !heldBack(p.objectId, open: true) {
+      if now > p.endsAt { p.permissionState = "expired" } else { waiting.append(p) }
+    }
+    openPermissionIds = waiting.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
   }
 }
