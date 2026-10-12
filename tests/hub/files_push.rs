@@ -784,7 +784,8 @@ fn of_two_processes_on_one_agent_device_the_later_wins() {
     assert_eq!(second["generation"].as_u64(), Some(first + 1));
     let report = loop {
         let e = events.until("presence");
-        if e.data["device"] == b64(&s.agent.id()) && e.data["working"].is_boolean() {
+        // (a new stream is first told the agent's present report, from the first process's lease: passed over)
+        if e.data["device"] == b64(&s.agent.id()) && e.data["last_call_at"] == 5 {
             break e;
         }
     };

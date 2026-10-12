@@ -498,6 +498,8 @@ pub struct Dev {
     pub chains: HashMap<Vec<u8>, (u64, [u8; 32])>,
     pub token: Option<String>,
     pub lease: Option<u64>,
+    /// the process id of the last `link`
+    pub process: String,
     pub room: [u8; 32],
     /// a header the test adds to every request (the address the request seems to come from)
     pub ip: Option<String>,
@@ -518,6 +520,7 @@ impl Dev {
             chains: HashMap::new(),
             token: None,
             lease: None,
+            process: String::new(),
             room: [0; 32],
             ip: None,
         }
@@ -1057,7 +1060,8 @@ impl Dev {
     /// Acquires this agent device's lease as a new process (13.7).
     pub fn link(&mut self, hub: &TestHub) -> Reply {
         self.lease = None;
-        let reply = self.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "hears": true, "working": false, "last_call_at": 0 }));
+        self.process = b64(&random::<16>());
+        let reply = self.post(hub, "/v1/link", &json!({ "process": self.process, "hears": true, "working": false, "last_call_at": 0 }));
         self.lease = reply.json()["generation"].as_u64();
         reply
     }

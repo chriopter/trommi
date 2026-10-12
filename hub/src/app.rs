@@ -62,6 +62,8 @@ pub struct App {
     /// the recent history for the admin page's graphs
     pub metrics: crate::metrics::Metrics,
     live_due: Mutex<HashSet<Room>>,
+    /// per agent device: the lease end whose running out was told the human devices as "offline"
+    expiry_told: Mutex<HashMap<(Room, [u8; 32]), i64>>,
     /// per room: the bytes and the number of uploads in progress
     uploads: Mutex<HashMap<Room, (u64, usize)>>,
     /// one round of Live Activity pushes per room at a time
@@ -164,6 +166,7 @@ impl App {
             apns,
             ticket_key,
             closing: AtomicBool::new(false),
+            expiry_told: Mutex::new(HashMap::new()),
             in_flight: AtomicUsize::new(0),
             admitted: AtomicUsize::new(0),
             admitted_per_address: Mutex::new(HashMap::new()),
@@ -744,12 +747,12 @@ impl App {
     }
 
     /// A stream closed: the human devices see the device go offline, unless another stream of it is open. An agent
-    /// device's stream carries the lease generation it was opened under: when a later generation holds the lease
-    /// now, a newer process of the device already said it is here (`POST /v1/link`), and the close of the older
-    /// process's stream says nothing (its "offline" would come after that newer "here" and win). The look and the
-    /// telling happen under the writer, as a link's report and a stream's opening are told, so a presence event
-    /// never reaches the human devices after a later one it contradicts. (Whether an agent is lost is its lease's
-    /// matter: `lease_watch`.)
+    /// device that holds an unexpired lease (any generation: the same process's stream dropped and comes back, or
+    /// a newer process took over) stays here: its close says nothing, and it goes offline only when its lease runs
+    /// out (`lease_watch`) or its process gives the lease up (`POST /v1/link` with `leaving`). Otherwise every
+    /// dropped stream showed a working agent as gone until its next renewal. The look and the telling happen under
+    /// the writer, as a link's report and a stream's opening are told, so a presence event never reaches the human
+    /// devices after a later one it contradicts.
     pub fn stream_closed(self: &Arc<Self>, auth: Auth, generation: Option<u64>) {
         if self.closing.load(Ordering::Relaxed) {
             return;
@@ -766,9 +769,10 @@ impl App {
     fn tell_closed(self: &Arc<Self>, auth: &Auth, generation: Option<u64>) {
         let _ = self.db.write(|c| {
             let online = self.live.online(&auth.room, &auth.device);
-            if !online && newer_lease_held(c, auth, generation, util::now())? {
+            if !online && lease_holds(c, auth, util::now())? {
                 return Ok::<_, Refused>(());
             }
+            let _ = generation;
             self.presence(
                 &auth.room,
                 &auth.device,
@@ -793,6 +797,46 @@ impl App {
             .unwrap_or_default();
         for room in expired {
             self.live_soon(room);
+        }
+        // leases that ran out with no stream of their device open: the device is offline now (told once per lease)
+        let ran_out: Vec<(Room, [u8; 32], i64)> = self
+            .db
+            .read(|c| {
+                let mut s = c.prepare_cached("SELECT room_id, device, expires_at FROM agent_leases WHERE expires_at <= ?1 AND lost_at IS NULL")?;
+                let rows = s
+                    .query_map(params![now as i64], |r| {
+                        Ok((store::fixed::<32>(r.get(0)?)?, store::fixed::<32>(r.get(1)?)?, r.get(2)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok::<_, Refused>(rows)
+            })
+            .unwrap_or_default();
+        for (room, device, expires_at) in ran_out {
+            if self.expiry_told.lock().unwrap().get(&(room, device)) == Some(&expires_at) {
+                continue;
+            }
+            let _ = self.db.write(|c| {
+                use rusqlite::OptionalExtension;
+                let still: Option<i64> = c
+                    .prepare_cached(
+                        "SELECT expires_at FROM agent_leases WHERE room_id = ?1 AND device = ?2",
+                    )?
+                    .query_row(params![&room[..], &device[..]], |r| r.get(0))
+                    .optional()?;
+                if still == Some(expires_at) && !self.live.online(&room, &device) {
+                    self.presence(
+                        &room,
+                        &device,
+                        json!({ "device": b64(&device), "online": false }),
+                    );
+                }
+                Ok::<_, Refused>(())
+            });
+            let mut told = self.expiry_told.lock().unwrap();
+            if told.len() > 10_000 {
+                told.clear();
+            }
+            told.insert((room, device), expires_at);
         }
         // candidates: leases that ran out a while ago and were not told yet
         let candidates: Vec<(Room, [u8; 32], i64, i64)> = self
@@ -889,6 +933,23 @@ impl App {
                     }),
                     None => json!({ "device": b64(&device), "online": true }),
                 };
+                stream.send_now(crate::live::sse("presence", None, &data));
+            }
+            // an agent between two streams whose lease holds is here too
+            let streaming = self.live.online_devices(&auth.room);
+            let mut held = c.prepare_cached(
+                "SELECT device, hears, working, last_call_at FROM agent_leases WHERE room_id = ?1 AND expires_at > ?2",
+            )?;
+            let rows = held
+                .query_map(params![&auth.room[..], now], |r| {
+                    Ok((store::fixed::<32>(r.get(0)?)?, r.get::<_, bool>(1)?, r.get::<_, bool>(2)?, r.get::<_, i64>(3)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            for (device, hears, working, last_call_at) in rows {
+                if device == auth.device || streaming.contains(&device) {
+                    continue;
+                }
+                let data = json!({ "device": b64(&device), "online": true, "hears": hears, "working": working, "last_call_at": last_call_at });
                 stream.send_now(crate::live::sse("presence", None, &data));
             }
             Ok::<_, Refused>(())
@@ -1075,31 +1136,20 @@ pub fn check_lease(c: &rusqlite::Connection, auth: &Auth, given: Option<u64>, no
     }
 }
 
-/// Whether the device's lease is held, unexpired, under a generation later than `generation` (the one an agent
-/// process's stream was opened under): then a newer process of the device took over.
-pub fn newer_lease_held(
-    c: &rusqlite::Connection,
-    auth: &Auth,
-    generation: Option<u64>,
-    now: u64,
-) -> Res<bool> {
-    let Some(g) = generation else {
-        return Ok(false);
-    };
+/// Whether the device holds an unexpired lease (13.7), of any generation: then it is here, with or without a stream
+/// open (a connector whose stream dropped connects again; the same process or a newer one renews the lease).
+pub fn lease_holds(c: &rusqlite::Connection, auth: &Auth, now: u64) -> Res<bool> {
     use rusqlite::OptionalExtension;
-    let held: Option<(i64, i64)> = c
-        .prepare_cached(
-            "SELECT generation, expires_at FROM agent_leases WHERE room_id = ?1 AND device = ?2",
-        )?
-        .query_row(params![&auth.room[..], &auth.device[..]], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
+    let expires: Option<i64> = c
+        .prepare_cached("SELECT expires_at FROM agent_leases WHERE room_id = ?1 AND device = ?2")?
+        .query_row(params![&auth.room[..], &auth.device[..]], |r| r.get(0))
         .optional()?;
-    Ok(held.is_some_and(|(held, expires)| held as u64 > g && expires as u64 > now))
+    Ok(expires.is_some_and(|expires| expires as u64 > now))
 }
 
 /// `POST /v1/link` (13.7): a new process id acquires the lease with a generation one above the last, valid 60 s;
-/// the same process renews it and keeps its generation; a renewal under an older generation fails.
+/// the same process renews it and keeps its generation; a renewal under an older generation fails. A renewal
+/// with `leaving: true` ends the lease at once (the process stops).
 pub fn link(x: &Ctx, auth: &Auth, v: &Value) -> Res<Value> {
     if auth.who != Who::Agent {
         return Err(refuse("forbidden", "an agent device holds a lease"));
@@ -1131,7 +1181,9 @@ pub fn link(x: &Ctx, auth: &Auth, v: &Value) -> Res<Value> {
         (Some((_, g)), None) => g + 1,
         (None, None) => 1,
     };
-    let expires = x.now + 60_000;
+    // `leaving`: the process that holds the lease ends and gives it up; the device is offline at once
+    let leaving = v["leaving"].as_bool() == Some(true) && v["generation"].as_u64().is_some();
+    let expires = if leaving { x.now } else { x.now + 60_000 };
     x.c.prepare_cached(
         "INSERT INTO agent_leases (room_id, device, process, generation, expires_at, hears, working, last_call_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT (room_id, device) DO UPDATE SET process = excluded.process, generation = excluded.generation, expires_at = excluded.expires_at,

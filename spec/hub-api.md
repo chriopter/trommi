@@ -54,7 +54,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `POST /v1/invites` · `PUT /v1/invites/{id}/reveal` · `DELETE` | `{ offer, signature, mac }` (`mac`: the Offer's MAC, 32 bytes, length checked only, `bad-format` otherwise; may be left out for now (then stored and served as null; a `mac` that is there must be the 32 bytes, `null` too is `bad-format`), and required once every client sends it); Reveal + signature | human devices; `expires_at` at most the invite life of the Offer's kind ahead (10 minutes for a human device, 15 for an agent device) plus 2 minutes for the clocks (`bad-invite`); the hub's own expiry of the invite is the Offer's `expires_at`; the same Offer posted again with the same signature and MAC gets the first answer, with another `replay` |
 | `POST /v1/push` · `GET` · `DELETE` | `{ web_push: { endpoint, keys: { p256dh, auth } } \| apns: { token, key, environment, topic }, level }`; `GET` → `{ subscriptions, vapid_public_key, apns }` | 15; human devices |
 | `POST /v1/live-activity` | `{ kind: start \| activity, token, tag, environment, topic }` | 15.3 |
-| `POST /v1/link` | `{ process, generation?, hears, working, last_call_at }` → `{ generation, expires_at }` | 13.7; every later write of that device carries `Trommi-Lease: <generation>` (`lease-lost`) |
+| `POST /v1/link` | `{ process, generation?, hears, working, last_call_at, leaving? }` → `{ generation, expires_at }` | 13.7; `leaving: true` on a renewal ends the lease at once; every later write of that device carries `Trommi-Lease: <generation>` (`lease-lost`) |
 
 ## Tables
 
@@ -353,7 +353,7 @@ encrypted.
     event id; `relay` `{ group_id, epoch, sender, message }`; `welcome` `{ group_id }`; `request`; `presence`
     `{ device, online, hears?, working?, last_call_at? }`; `file_evicted` `{ file_id }`. Events without a change
     number are not replayed. A human device's new stream is first told who is here now: one `presence` per other
-    device with a stream open, with `hears`, `working` and `last_call_at` while its agent lease runs. A `presence`
+    device with a stream open or an agent lease that runs, with `hears`, `working` and `last_call_at` while its agent lease runs. A `presence`
     without `hears` says nothing of the link: the report a client holds stands while the device is online.
 21. A void record and an envelope beyond a Cut are served in pruned form; the latter only on the chain route,
     marked `cut` (not by a push ticket either). What a Cut cannot bring back stays as it is: the files of an

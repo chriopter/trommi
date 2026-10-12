@@ -2402,3 +2402,32 @@ async fn a_session_joined_by_the_connect_tool_stays_online_across_a_reconnect() 
     assert!(heard.to_string().contains("Still there?"), "{heard}");
     mcp.close().await;
 }
+
+/// A human message to a live session (no channel events: it waits for inbox) keeps the agent online on the
+/// human's side, and the message reaches inbox.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_human_message_keeps_a_live_session_online_and_reaches_inbox() {
+    let (_hub, mut human, seat, group) = joined().await;
+    let mut mcp = seat.serve_plain().await;
+    mcp.ready().await;
+    let device = human.seat(&group).await.expect("the agent's seat").to_base64url();
+    assert!(online_within(&human, &device, 3000).await, "online before");
+    for n in 0..3 {
+        human
+            .say(&group, json!({ "content_type": "message", "text": format!("Message {n}") }))
+            .await
+            .expect("the human writes");
+        tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+        assert!(online_within(&human, &device, 1000).await, "online after message {n}");
+    }
+    let mut heard = String::new();
+    for _ in 0..50 {
+        heard.push_str(&mcp.ok("inbox", json!({})).await);
+        if heard.contains("Message 2") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(heard.contains("Message 0") && heard.contains("Message 2"), "{heard}");
+    mcp.close().await;
+}
