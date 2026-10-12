@@ -92,6 +92,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   of a large or long decimal could change).
 - **Agents come back at once after a network blip**: the connector waited longer after every cut connection (up to a minute and a half), and its agent showed as away and missed your answers meanwhile; it now reconnects within about a second each time.
 - **A session asking to join by itself no longer gives up at a hiccup**: when the session vouching for it was busy reconnecting at that moment, the new session stayed off the board until its next tool call; it now waits for the voucher and gets in after your tap.
+- **iPhone: a card answered on two devices at once shows the answer**: when another device answered the same card a moment before this iPhone, the card went back to open here and stayed so; it now shows the other device's answer.
 
 **Better**
 - **iPhone catches up with a fraction of the traffic**: opening the app reads only what changed on your Desk (about 90 KB instead of 4.5 MB in a 1,000-card room), new keys from your other devices no longer make it reread the whole room, and a sign-in with the code reads each session once.
