@@ -509,8 +509,11 @@ public struct Store {
     var change = Change()
     // (a device back after a while: what was settled elsewhere leaves the Desk before the long history is read)
     let groupsAtDesk = sessionGroupIds
-    var until = await Spent.time("desk first") { await deskFirst() }
-    try await Spent.time("welcomes") { try await takeWelcomes(&change) }
+    // (the Desk is read alongside the Welcomes, and taken once they are in)
+    let deskRead = Task { @MainActor in await self.fetchDesk(whole: false) }
+    var until: UInt64?
+    do { try await Spent.time("welcomes") { try await takeWelcomes(&change) } } catch { deskRead.cancel(); _ = await deskRead.value; throw error }
+    until = await Spent.time("desk first") { await applyDesk(await deskRead.value) }
     let joiningByCode = record.codeJoin == true
     if let work = codeJoinWork { await Spent.time("wait session joins") { await work.value }; codeJoinWork = nil }
     await Spent.time("finish code join") { await finishCodeJoin() }
@@ -524,7 +527,7 @@ public struct Store {
     // The hub's Desk lists only what lies in the groups this device is in: one read before a session group was joined
     // (a sign-in's joins, a Welcome) would hold that session's open cards back as settled elsewhere. Read it again
     // (the web client's `deskSoon` on `groups`).
-    if sessionGroupIds != groupsAtDesk { until = await Spent.time("desk again") { await deskFirst() } }
+    if sessionGroupIds != groupsAtDesk { until = await Spent.time("desk again") { await deskFirst(whole: true) } }
     // KeyPackages before the catch-up: a device back after long, or just signed in, may hold none at the hub, and
     // every session founded meanwhile leaves it out until it has (5.2.5); a long catch-up must not keep them back.
     // (upkeep: a failure here does not keep the board from showing; the end of this sync tries again)
@@ -566,15 +569,39 @@ public struct Store {
    * waited. Returns that cursor; nil when the Desk was not had or is not ahead (a failure here only leaves the old
    * view a moment longer).
    */
-  func deskFirst() async -> UInt64? {
-    guard let desk = try? await noted({ try await hub.desk(active: true) }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
-    var listed = [String: Int]()
+  func deskFirst(whole: Bool = false) async -> UInt64? { await applyDesk(await fetchDesk(whole: whole)) }
+  /** The hub's Desk as this run reads it (see `applyDesk`), with the list it builds on; nil: not had. */
+  func fetchDesk(whole: Bool) async -> (desk: JSON, base: (open: Set<String>, at: UInt64)?)? {
+    // A device that holds nothing yet reads the full Desk (its versions make the preview); any other reads the
+    // brief list: whole at the first reading of a run, after its groups changed and every 30 minutes, else only
+    // what changed since the last (the web client's `readDesk`). A hub without the brief list: the full Desk.
+    let full = cursor == 0 && board.cards.isEmpty
+    let base = whole || deskWholeAt.map { nowMs() >= $0 + 30 * 60_000 } != false ? nil : deskSeen
+    var desk: JSON? = nil
+    if !full {
+      desk = try? await noted({ try await hub.deskBrief(since: base?.at) })
+      if desk?["truncated"] as? Bool == true || Wire.uint(desk?["change"]) == nil { desk = nil }
+      else { Spent.count(base == nil ? "desk brief whole" : "desk brief since") }
+    }
+    if desk == nil { desk = try? await noted({ try await hub.desk(active: true) }) }
+    return desk.map { ($0, base) }
+  }
+  /** Takes the hub's Desk read by `fetchDesk` (see `deskFirst`). */
+  func applyDesk(_ got: (desk: JSON, base: (open: Set<String>, at: UInt64)?)?) async -> UInt64? {
+    guard let desk = got?.desk, desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
+    let base = got?.base
+    let delta = desk["settled"] != nil && base != nil
+    // (by id, the change of its version: a delta builds on the list read before)
+    var listed: [String: Int] = delta ? deskListed : [:]
     for kind in ["cards", "permission_requests"] {
       for o in desk[kind] as? [JSON] ?? [] {
         guard let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) else { continue }
-        listed[hex(id)] = Int(Wire.uint((o["version"] as? JSON)?["change"]) ?? 0)
+        listed[hex(id)] = Int(Wire.uint((o["version"] as? JSON)?["change"]) ?? Wire.uint(o["version_change"]) ?? 0)
       }
     }
+    if delta { for s in desk["settled"] as? [Any] ?? [] { if let id = (s as? String).flatMap({ try? unb64u($0) }) { listed.removeValue(forKey: hex(id)) } } }
+    else { deskWholeAt = nowMs() }
+    deskListed = listed
     deskSeen = (Set(listed.keys), at)
     keepDesk(Set(listed.keys), at: at)
     board.deskWaiting = false
@@ -635,6 +662,10 @@ public struct Store {
 
   /** The hub's Desk of the last `deskFirst`: its open cards and requests, and its cursor. */
   var deskSeen: (open: Set<String>, at: UInt64)?
+  /** When the Desk was last read whole in this run (ms): a delta builds on it for 30 minutes. */
+  var deskWholeAt: UInt64?
+  /** The hub's Desk of the last reading, by id with the change of its version (a delta builds on it). */
+  var deskListed: [String: Int] = [:]
   /** The catch-up reached the Desk's change of `deskFirst`. */
   func caughtUp(_ change: inout Change) {
     catchingUp = nil
@@ -1325,7 +1356,7 @@ public struct Store {
         let before = self.sessionGroupIds
         try await self.takeWelcomes(&ch)
         // (a session group joined: the hub's Desk lists its open cards now, and is read again, as at a catch-up)
-        if self.sessionGroupIds != before, let until = await self.deskFirst() {
+        if self.sessionGroupIds != before, let until = await self.deskFirst(whole: true) {
           try await self.readChanges(&report, &ch)
           if self.cursor >= until { self.caughtUp(&ch) }
         }

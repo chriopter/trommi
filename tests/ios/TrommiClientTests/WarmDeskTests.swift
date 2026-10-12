@@ -100,6 +100,25 @@ final class WarmDeskTests: XCTestCase {
     room.close()
   }
 
+  /** A device that holds the room reads the Desk as the brief list: whole at a run's first reading, then only what
+   *  changed since (the web's `readDesk`); a card settled elsewhere leaves by the delta's `settled`. */
+  func testTheDeskIsReadAsTheBriefListAndThenAsADelta() async throws {
+    let id = try await away()
+    let room = try Room.open(base: base, roomId: id)
+    _ = await room.restore()
+    let before = FakeHub.shared.lock.withLock { FakeHub.shared.deskBriefReads }
+    _ = try await room.sync()
+    XCTAssertEqual(shown(room), [kept])
+    _ = try await room.sync()
+    let briefs = FakeHub.shared.lock.withLock { FakeHub.shared.deskBriefReads }
+    XCTAssertEqual(briefs - before, 2, "no full Desk once the room is held: the brief list, whole, then since")
+    XCTAssertEqual(Spent.take().contains("desk brief since"), true)
+    deskLists([])
+    _ = try await room.sync()
+    XCTAssertEqual(shown(room), [], "settled at the hub: the delta names it")
+    room.close()
+  }
+
   func testWhileWaitingNothingOpenStandsAndTheFingerprintSeesTheStack() {
     let b = Board()
     b.feedCard("x", at: 5)

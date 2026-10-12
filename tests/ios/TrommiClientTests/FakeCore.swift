@@ -415,6 +415,9 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var deskCards: (() -> [String])?
     /** Session groups (hex) the hub holds as archived (spec/hub-api.md point 46). */
     var archivedGroups: Set<String> = []
+    /** Every card the Desk listed so far (what a brief list with `since` names as settled once it is not open). */
+    var deskListed = Set<String>()
+    var deskBriefReads = 0
     var deskReads = 0
     /** The devices (hex) the hub holds a KeyPackage of; one claimed without is answered 404, as the hub does. */
     var keyPackages: Set<String> = []
@@ -452,7 +455,18 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
       case ("GET", "/v1/desk"):
         guard let cards = deskCards else { return (404, ["error": "not-found", "message": path]) }
         deskReads += 1
-        return (200, ["change": change, "cards": cards().map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any]()])
+        let open = cards()
+        // (the brief list with `since`: the open ones and, in `settled`, the ones listed before that are not open now)
+        if query["brief"] == "1" {
+          deskBriefReads += 1
+          if query["since"] != nil {
+            let settled = deskListed.subtracting(open)
+            deskListed.formUnion(open)
+            return (200, ["change": change, "cards": open.map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any](), "settled": settled.map { b64u(try! unhex($0)) }])
+          }
+        }
+        deskListed.formUnion(open)
+        return (200, ["change": change, "cards": open.map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any]()])
       case ("PUT", "/v1/key-packages"): return (200, ["unused": 100])
       case ("POST", "/v1/key-packages/claim"):
         let asked = (body["devices"] as? [String] ?? []).compactMap { try? unb64u($0) }.map(hex)
