@@ -53,6 +53,8 @@ public struct Agent: Identifiable, Equatable {
   public var hue: Int = 162
   /** Whether the human gave it a place in the order (its register's position; the sidebar's drag on the web). */
   public var placed: Bool = false
+  /** Archived because a newer pairing in the same folder took its place (replaceInSlots). */
+  public var replaced: Bool = false
 }
 
 public struct LinkWords: Equatable {
@@ -85,7 +87,7 @@ public func agoText(_ ts: UInt64, now: UInt64 = nowMs()) -> String {
   return f.string(from: Date(timeIntervalSince1970: Double(ts) / 1000))
 }
 
-let RECONNECT = "/mcp → trommi → Reconnect", LIVE_FLAG = "claude --resume --dangerously-load-development-channels server:trommi"
+let RECONNECT = "/mcp → trommi → Reconnect"
 /** The session's link in words (app.mjs linkOf). */
 public func linkOf(_ a: Agent?, now: UInt64 = nowMs()) -> LinkWords? {
   guard let a = a, !a.archived, !a.removed else { return nil }
@@ -111,10 +113,10 @@ public func linkOf(_ a: Agent?, now: UInt64 = nowMs()) -> LinkWords? {
   let m = idle.map(minutes)
   if let idle = idle, idle >= ASLEEP_MS, let m = m {
     return LinkWords(state: "asleep", sign: "ear-later", since: last, word: "not listening · \(m) min", short: "Not listening for \(m) min",
-                     line: "\(n) is not listening: it hears you only on its next step, and its last one was \(m) min ago.", fixSay: "Wake it: type anything in its terminal. To be heard at once, start it with", fixCode: LIVE_FLAG)
+                     line: "\(n) is not listening: it hears you only on its next step, and its last one was \(m) min ago.", fixSay: "Wake it: type anything in its terminal.", fixCode: nil)
   }
   return LinkWords(state: "oncall", sign: "ear-later", since: last, word: "on its next step", short: "Hears you on its next step",
-                   line: "\(n) hears you on its next step\(m.map { "; its last one was \($0) min ago" } ?? "").", fixSay: "To be heard at once, start it with", fixCode: LIVE_FLAG)
+                   line: "\(n) hears you on its next step\(m.map { "; its last one was \($0) min ago" } ?? "").", fixSay: nil, fixCode: nil)
 }
 
 // ---- a card as the Desk reads it ---------------------------------------------------------------------
@@ -450,6 +452,7 @@ public final class DeskModel {
     let list = m.sessions.values.filter { ($0.isActive && ($0.agentDeviceId != nil || $0.withHistory)) || !$0.cardIds.isEmpty }.sorted { $0.sessionId < $1.sessionId }
     var lastOfDevice = [String: UInt64]()
     for s in list { if let a = s.agentDeviceId { lastOfDevice[a] = max(lastOfDevice[a] ?? 0, s.lastActivityAt) } }
+    var slots = [Slot?](repeating: nil, count: list.count), waiting = [Int](repeating: 0, count: list.count), fetched = [Bool](repeating: false, count: list.count)
     var out: [Agent] = list.enumerated().map { i, s in
       let key = s.sessionId
       let set = m.settingsOf(s)
@@ -458,7 +461,8 @@ public final class DeskModel {
       let claimed = m.parentSessionOf(s)
       let wanted: String? = set.has("parent") ? set["parent"].string : claimed.flatMap { devToAgent[$0] ?? $0 }
       let parent = wanted.flatMap { agentToDev[$0] != nil ? $0 : nil }
-      let closedChild = p["closed_at"].truthy && p["parent_session"].truthy && s.openCardIds.isEmpty
+      // (the group names a helper's main, as the web's composed profile does; its own register need not: model.ts composeProfile)
+      let closedChild = p["closed_at"].truthy && (s.parentSessionId != nil || p["parent_session"].truthy) && s.openCardIds.isEmpty
       // Hidden (Archive, Delete, a closed helper); a main session whose agent is connected again shows, whatever hid it (as the web's).
       let chosen = set.has("archived") ? set["archived"].truthy : closedChild
       let back = s.isOnline && s.isActive && s.parentSessionId == nil && parent == nil
@@ -467,18 +471,53 @@ public final class DeskModel {
       let icon = set["icon"].string.flatMap { $0.isEmpty ? nil : $0 } ?? p["icon"].string ?? ""
       var a = Agent(id: id, deviceId: key, sessionId: key, agentDeviceId: s.agentDeviceId, given: given, name: label.isEmpty ? given : label, label: label, icon: icon,
                     mark: icon.isEmpty ? id : icon, online: s.isOnline, offlineSince: s.offlineSince, model: p["model"].string ?? "", task: p["task"].string ?? "",
-                    starred: crown == key || (crown != nil && crown == s.agentDeviceId), parent: parent, main: p["is_main"].truthy, desk: set["desk"].string,
+                    starred: crown == key || (crown != nil && crown == s.agentDeviceId), parent: parent, main: s.withHistory ? s.parentSessionId == nil : p["is_main"].truthy, desk: set["desk"].string,
                     archived: chosen && !back, position: set["position"].int ?? i, seen: s.lastActivityAt, active: s.lastActivityAt,
                     deviceActive: s.agentDeviceId.flatMap { lastOfDevice[$0] } ?? 0, removed: !s.isActive,
                     own: s.agentDeviceId == m.myDeviceId || (s.agentDeviceId.flatMap { m.members[$0]?.deviceRole } == "human"), link: s.link, heardUpTo: s.heardUpTo)
       a.hue = Pen.hueFor(id: a.id, mark: a.mark)
       a.placed = set["position"].int != nil
+      // The agent's slot: the folder on its machine (its device register), for a main session.
+      let dev = s.agentDeviceId.flatMap { m.members[$0] }
+      if s.parentSessionId == nil, let f = dev?.folder, !f.isEmpty { slots[i] = Slot(key: "\(dev?.host ?? "")\n\(f)", born: dev?.addedEntryNumber ?? 0) }
+      waiting[i] = s.openCardIds.count
+      fetched[i] = set.has("archived") && !set["archived"].truthy
       return a
     }
+    DeskModel.replaceInSlots(&out, slots: slots, waiting: waiting, fetched: fetched)
     let ids = DeskModel.newestById(out)
     for i in out.indices where out[i].parent == nil || ids[out[i].parent!] == nil { if out[i].desk == nil { out[i].desk = "main" } }
     for i in out.indices { if let p = out[i].parent, let pa = ids[p] { out[i].desk = pa.desk ?? "main" } }
-    return out.sorted { ($0.position, $0.id) < ($1.position, $1.id) }
+    // (by place; equal places keep the list's order, the order of the session ids, as the web's stable sort)
+    return out.enumerated().sorted { ($0.element.position, $0.offset) < ($1.element.position, $1.offset) }.map { $0.element }
+  }
+
+  struct Slot { var key: String; var born: Int }
+  /**
+   * One agent slot (a folder on a machine), one entry (app.mjs replaceInSlots). A connector paired again in its folder
+   * is a new agent device with a new main session; while one session of the slot is connected (else: the newest), the
+   * others go to the archive as replaced: never one with an open question, never one the person fetched back. Their
+   * helpers go with them. Arrays run parallel to `agents`.
+   */
+  static func replaceInSlots(_ agents: inout [Agent], slots: [Slot?], waiting: [Int], fetched: [Bool]) {
+    var bySlot = [String: [Int]](), keys = [String]()
+    for i in agents.indices { if let k = slots[i]?.key, !agents[i].archived { if bySlot[k] == nil { keys.append(k) }; bySlot[k, default: []].append(i) } }
+    var gone = Set<String>()
+    for k in keys {
+      let same = bySlot[k]!
+      if same.count < 2 { continue }
+      let live = same.filter { agents[$0].online }
+      let keep: [Int] = live.isEmpty ? [same.dropFirst().reduce(same[0]) { x, y in
+        let bx = slots[x]!.born, by = slots[y]!.born
+        return by > bx || (by == bx && agents[y].active > agents[x].active) ? y : x
+      }] : live
+      for i in same where !keep.contains(i) && !agents[i].online && waiting[i] == 0 && !fetched[i] {
+        agents[i].archived = true; agents[i].replaced = true; gone.insert(agents[i].id)
+      }
+    }
+    for i in agents.indices {
+      if let p = agents[i].parent, gone.contains(p), !agents[i].archived, !agents[i].online, waiting[i] == 0, !fetched[i] { agents[i].archived = true; agents[i].replaced = true }
+    }
   }
 
   /** The versions a human reads as the question: the first, and every later one that leaves it open. */

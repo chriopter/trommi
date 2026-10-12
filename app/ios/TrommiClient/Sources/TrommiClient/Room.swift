@@ -230,6 +230,17 @@ public struct Store {
     outcome[id] = .failure(HubError(status: 409, code: "epoch-taken", message: "another device changed the group first: this change was not made"))
   }
   var pumping = false
+  /** The invites whose steps run now (hex invite ids): `finishInvite` from "They match", or the upkeep's round
+   *  (`invitesSoon`). One runner per invite: two would claim two KeyPackages and make two Commits for one step. */
+  var invitesAtWork = Set<String>()
+  /** The upkeep's next round of invite steps, while one is planned; its pause grows while steps stay open. */
+  var invitesPlanned: Task<Void, Never>?
+  var invitesPause: UInt64 = 2_000_000_000
+  /** Agent devices of the room seen without a session, by hex: since when (`seatAgents`). */
+  var seatless: [String: UInt64] = [:]
+  /** How long an agent without a session waits for its inviter before any human device founds its session (the
+   *  web's heal_delay * 10). */
+  var seatGraceMs: UInt64 = 30_000
   /** The changes are being read again from the start (RoomPast.swift): an envelope below the core's cursor is handed in as the next of its chain. */
   var readingBack = false
   /** The archived sessions loaded in this run (hex session ids): RoomArchived.swift. */
@@ -306,7 +317,7 @@ public struct Store {
    */
   public func close() {
     closed = true
-    liveTask?.cancel(); goalsTask?.cancel(); cacheTask?.cancel()
+    liveTask?.cancel(); goalsTask?.cancel(); cacheTask?.cancel(); invitesPlanned?.cancel()
     hub.signer = nil
     hub.shutdown()
     // The core first (it wipes what it holds in memory and lets go of the store), then the store's lock.
@@ -316,7 +327,7 @@ public struct Store {
   public func shutdown() async {
     closed = true
     // (what waits on the hub ends now, not after its own timeouts: the queued work then fails with `closed`)
-    liveTask?.cancel()
+    liveTask?.cancel(); invitesPlanned?.cancel()
     hub.shutdown()
     // (queued work gets five seconds to end; after that, what still runs can no longer reach the core: `closed`)
     let queued = queueTail, saving = saveTail
@@ -366,6 +377,8 @@ public struct Store {
     // (a desk, a session's settings, the sessions or the stream changed: the goals handed to the agents may be behind)
     if c.room || !c.sessions.isEmpty || c.registers.contains(where: { $0.hasPrefix("desk/") || $0.hasPrefix("session/") }) { goalsSoon() }
     if !c.sessions.isEmpty || !c.registers.isEmpty { vouchSoon() }
+    // (an agent came into the room or came online: one may wait for its session, `seatAgents`)
+    if c.members && synced { invitesSoon() }
   }
 
   /** A hub error that says this app is too old: remembered (the app shows it), and rethrown. */
@@ -448,8 +461,10 @@ public struct Store {
     }
     // A device that is no leaf any more stays in the list as removed, so that what it wrote keeps its name.
     var members = [(id: String, role: String, active: Bool, added: Int, removed: Int?)]()
-    for id in humans.sorted() { members.append((id, "human", true, 0, nil)) }
-    for id in agents { members.append((id, "agent", true, 0, nil)) }
+    // (a device is dated when this board first knows it, as the web's memberOf: the slot rule takes the newest pairing)
+    let born = { (id: String) in board.members[id]?.addedEntryNumber ?? Int(room.epoch) }
+    for id in humans.sorted() { members.append((id, "human", true, born(id), nil)) }
+    for id in agents { members.append((id, "agent", true, born(id), nil)) }
     for (id, m) in board.members where !humans.contains(id) && !agents.contains(id) { members.append((id, m.deviceRole, false, m.addedEntryNumber, m.removedEntryNumber ?? Int(room.epoch))) }
     board.applyMembers(members, change: &change)
     for g in list {
@@ -545,6 +560,9 @@ public struct Store {
     await writeHeads()
     await tendKeys()
     await healSessions()
+    // (the steps of the invites this device confirmed, left from a "They match" that could not finish or from an
+    // earlier run: after this sync, outside its turn, since each step waits for the hub's word)
+    invitesSoon(0)
     Spent.add("upkeep", since: upkeep)
     synced = true
     if preview != nil { preview = nil; change.room = true }

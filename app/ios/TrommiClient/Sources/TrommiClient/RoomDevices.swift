@@ -120,8 +120,94 @@ extension Room {
     }
     guard p.code != nil else { throw TrommiError("bad-invite", "this invite waits for no code") }
     let invite = p.invite, numbers = p.numbers, hash = p.requestHash
+    // (at work from the Commit on: the upkeep's round leaves this invite to this call)
+    invitesAtWork.insert(hex(invite))
+    defer { invitesAtWork.remove(hex(invite)) }
     try await commit { try $0.inviteConfirm(invite: invite, numbers: numbers, requestHash: hash, matches: true, nowMs: nowMs())?.outboxId }
     return try await finishInvite(invite, history: history)
+  }
+
+  /**
+   * The upkeep's round of invite steps (the web's `invited`, engine.ts): every invite of this device that the core
+   * still names steps for and that no other call is running is taken on where it stopped (`finishInvite`). The steps
+   * live in the core's state, so they survive the app: a "They match" that could not finish (the newcomer had no
+   * KeyPackage at the hub yet, the hub was away, the app was closed) goes on at the next sync or launch. While steps
+   * stay open, another round follows after a pause that grows to 30 s.
+   */
+  func invitesSoon(_ delay: UInt64? = nil) {
+    if invitesPlanned != nil || closed || removedAt != nil { return }
+    let pause = delay ?? invitesPause
+    invitesPlanned = Task { @MainActor [weak self] in
+      if pause > 0 { try? await Task.sleep(nanoseconds: pause) }
+      guard let self = self, !Task.isCancelled else { return }
+      let open = await self.tendInvites()
+      let seating = (try? await self.serial { await self.seatAgents() }) ?? false
+      self.invitesPlanned = nil
+      if Task.isCancelled || self.closed { return }
+      if open || seating { self.invitesSoon(); self.invitesPause = min(self.invitesPause * 2, 30_000_000_000) } else { self.invitesPause = 2_000_000_000 }
+    }
+  }
+  /**
+   * An agent device of the room that sits in no session group gets its main session (5.2.2, 5.2.5), founded by this
+   * device with the agent as its seat (the web's engine.ts `seatAgents`). Its inviter founds it right after "They
+   * match" (`finishInvite`); when that inviter cannot (a tab closed, an iPhone sent away in the middle), any human
+   * device does it, once the agent is connected and has waited `seatGraceMs` without one. An agent this device saw
+   * in a session group (archived ones too), or that the hub lists in one, is never given a second: the hub refuses
+   * a second live main session for the same agent anyway (5.2.2). Runs in the queue's turn (`serial`); returns
+   * whether an agent still waits for a session (the upkeep looks again).
+   */
+  func seatAgents() async -> Bool {
+    guard let agents = (try? await onCore({ try $0.roomAgents() })) ?? nil, !agents.isEmpty else { seatless = [:]; return false }
+    var coming = Set<String>()
+    for s in (try? await onCore({ try $0.inviteSteps() })) ?? [] {
+      switch s {
+      case .addToSession(_, _, let d): coming.insert(hex(d))
+      case .foundSession(_, let a, _), .takeOver(_, _, _, let a, _): coming.insert(hex(a))
+      default: break
+      }
+    }
+    var seated = Set(groups.values.filter { $0.session != nil }.flatMap { $0.leaves.map(hex) })
+    let waiting = agents.map(hex).filter { !seated.contains($0) && !coming.contains($0) }
+    seatless = seatless.filter { waiting.contains($0.key) }
+    if waiting.isEmpty { return false }
+    // (a founding of this device that the hub has not answered: looked at again next round)
+    if groups.values.contains(where: { $0.session != nil && $0.session?.parent == nil && $0.pending && $0.epoch == 0 }) { return true }
+    let now = nowMs()
+    var due = [String]()
+    for id in waiting {
+      guard let since = seatless[id] else { seatless[id] = now; continue }
+      if now >= since + seatGraceMs && board.members[id]?.isOnline == true { due.append(id) }
+    }
+    if due.isEmpty { return true }
+    guard let rows = try? await noted({ try await hub.groups() }) else { return true }
+    for g in rows where g["kind"] as? String != "room" { for l in g["leaves"] as? [String] ?? [] { if let b = try? unb64u(l) { seated.insert(hex(b)) } } }
+    for id in due where !seated.contains(id) {
+      guard let agent = try? unhex(id) else { continue }
+      do {
+        guard let kp = try await noted({ try await hub.claimKeyPackages([agent]) }).first?.keyPackage else { continue }
+        let others = (roomGroup.flatMap { groups[hex($0)]?.leaves } ?? []).filter { hex($0) != deviceIdHex }
+        let claimed = others.isEmpty ? [] : try await noted { try await hub.claimKeyPackages(others, partial: true) }
+        _ = try await onCore { try $0.foundSession(agent: agent, keyPackages: [kp] + claimed.map(\.keyPackage), nowMs: nowMs()) }
+        pumpOutbox()
+        seatless[id] = nil
+        return true   // one founding at a time: the next round sees it pending, then merged
+      } catch { continue }
+    }
+    return true
+  }
+
+  /** One round: returns whether steps are left (of invites this round ran, or of ones another call runs now). */
+  @discardableResult func tendInvites() async -> Bool {
+    guard let steps = try? await serial({ [self] in try await self.onCore { try $0.inviteSteps() } }), !steps.isEmpty else { return false }
+    var ids = [Bytes]()
+    for s in steps where !ids.contains(s.invite) { ids.append(s.invite) }
+    for invite in ids where !invitesAtWork.contains(hex(invite)) {
+      invitesAtWork.insert(hex(invite))
+      _ = try? await finishInvite(invite)
+      invitesAtWork.remove(hex(invite))
+    }
+    let left = (try? await serial({ [self] in try await self.onCore { try $0.inviteSteps() } })) ?? steps
+    return !left.isEmpty
   }
 
   /**
@@ -152,7 +238,14 @@ extension Room {
         if history { try await serial { [self] in _ = try await self.onCore { try $0.inviteHandover(invite: invite) }; self.pumpOutbox() } }
         else { try await serial { [self] in try await self.onCore { try $0.inviteForget(invite: invite) } }; return founded }
       case .addToSession(_, let group, let device):
-        guard let kp = try await noted({ try await hub.claimKeyPackages([device]) }).first?.keyPackage else { throw TrommiError("not-found", "the new device has no KeyPackage left at the hub") }
+        // The newcomer is in the room; it puts its KeyPackages up only once it joined there, so the hub may hold none
+        // of it yet (404). Not a failure of the pairing: the step stays with the core, and the upkeep's next round
+        // (`invitesSoon`) adds the device to its sessions once it has.
+        let kp: Bytes
+        do {
+          guard let got = try await noted({ try await hub.claimKeyPackages([device]) }).first?.keyPackage else { invitesSoon(); return founded }
+          kp = got
+        } catch { invitesSoon(); return founded }
         try await commit { try $0.addToSession(group: group, device: device, keyPackage: kp, nowMs: nowMs()) }
         // (the old keys of that session, 7.1: the core names no step for them)
         try await serial { [self] in _ = try await self.onCore { try $0.sendHandover(group: group, recipient: device) }; self.pumpOutbox() }

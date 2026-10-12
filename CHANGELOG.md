@@ -49,6 +49,11 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   `--dangerously-load-development-channels`; board events reach it through the Trommi monitor.
 - Web: videos on a Desk row show their first frame, from the middle of the picture.
 - trommi.com shows the plain prompt to connect an agent, with the slash command below it, as the invite page does.
+- **Pairing in a room with sessions**: "Pair a device" or a reinstall on the iPhone no longer stops with "no
+  KeyPackage for a device"; the new device is added to every session as soon as it is ready, also after the app
+  was closed. The iPhone now also founds the session of a new agent whose inviter went away.
+- **The same sessions everywhere**: iPhone and web list the same sessions in the same order and under the same
+  names; an agent paired again in its folder shows once, a closed helper goes to the archive on the iPhone too.
 - **New agent online at once**: an agent that joins with `trommi-connector connect` goes online right away under its folder's name, not "gone" under a raw id until its first step.
 - **A new agent no longer waits forever for its session**: when the device that tapped "They match" could not found
   the agent's session (an iPhone sent away right after, a tab closed), your web app now does it once the agent is
