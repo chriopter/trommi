@@ -3,6 +3,7 @@
 // rules, so this device arrives at the same board as the web app. The names follow the JS model (snake_case fields
 // become camelCase); every refusal code is the JS one.
 import Foundation
+import TrommiCoreRust
 
 public let ALERTS_MAX = 200
 public let LAMPORT_MAX = 1 << 48
@@ -498,48 +499,35 @@ public final class Board {
   public var human = HumanRegisters()
   public var alerts: [BoardAlert] = []
   public var stack: [String] = []
+  // ---- the Desk: the client core's rules (client/src/desk.rs, TrommiCoreRust.ClientDesk) ---------------------
+  /** Open here, settled at the hub (or held while the app waits for the hub's first list): off the Desk. Not stored. */
+  public private(set) var held: Set<String> = []
+  /** Open here, but settled at the hub: off its Desk (the client core's `held`). */
+  public func heldBack(_ id: String, open: Bool) -> Bool { open && held.contains(id) }
+  /** The hub's Desk as read at change `at`: what it lists as open, by id (hex) with the change of its version; nil
+   *  forgets it. It decides the Desk from the next projection on. */
+  public func setDeskListing(_ open: [String: Int]?, at: Int) { deskListing = .some(open.map { (at, $0) }) }
+  var deskListing: (Int, [String: Int])??
+  /** The Desk engine holds every card and request of this board (false: hand it all at the next projection). */
+  var deskWhole = false
+  /** What the Desk engine was last told of each object (the next projection tells it only what differs). */
+  var deskSent: [String: String] = [:]
+  /** When the Desk changes by the clock alone (a snooze ends, a request runs out); 0: never. */
+  var deskWake: UInt64 = 0
+  var deskArchived = "-"
+  lazy var deskEngine = ClientDesk()
   /**
-   * While a catch-up is behind the hub's Desk (Room.deskFirst): the cards and permission requests the Desk lists as
-   * open. One this device holds as open that is not among them was settled elsewhere meanwhile and is held back
-   * (off the Desk, and not shown as a question) until the catch-up reaches the Desk's cursor. nil: nothing held back.
-   * Not stored: each start reads the Desk again.
+   * No open card or request stands at all (the Desk says "Catching up…"); the client core holds everything open
+   * meanwhile (`set_hold_all`). Not set by the room: a launch from the cache shows the cached Desk as the list kept
+   * from the last launch filters it, never an empty one. Not stored.
    */
-  public var deskGate: Set<String>?
-  /**
-   * Open here although the hub's Desk, read at a change this device had passed, did not list them (the hub settled
-   * them: answered, read, closed): by id, that change. Held back as well, as long as nothing newer of them came
-   * (a card answered again, reopened, revised). Set by Room.settleWithDesk at every catch-up; not stored.
-   */
-  public var hubSettled: [String: Int] = [:]
-  /**
-   * No open card or request stands at all (the Desk says "Catching up…"). Not set by the room: a launch from the
-   * cache shows the cached Desk as the list kept from the last launch filters it (`hubSettled`), never an empty one.
-   * Not stored.
-   */
-  public var deskWaiting = false
-  /** Open here, but settled at the hub: not on its Desk while a catch-up is behind it (`deskGate`), or not on it
-   *  after this device passed its cursor (`hubSettled`). */
-  public func heldBack(_ id: String, open: Bool) -> Bool {
-    guard open else { return false }
-    if deskWaiting { return true }
-    if let gate = deskGate, !gate.contains(id) { return true }
-    guard let at = hubSettled[id] else { return false }
-    return newest(id) <= at
-  }
-  /** What is open here and was not on the hub's Desk read at change `at`, with nothing newer than `at`: by id, `at`. */
-  public func settled(byDesk open: Set<String>, at: Int) -> [String: Int] {
-    var out = [String: Int]()
-    for c in cards.values where c.objectState == "open" && !open.contains(c.objectId) && newest(c.objectId) <= at { out[c.objectId] = at }
-    for p in permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) && newest(p.objectId) <= at { out[p.objectId] = at }
-    return out
-  }
+  public var deskWaiting = false { didSet { if deskWaiting != oldValue { deskHold = deskWaiting } } }
+  var deskHold: Bool?
   /** The newest change of a card or permission request this board took: its version's, or an answer's. */
   func newest(_ id: String) -> Int {
     if let c = cards[id] { return max(c.envelopeNumber, c.answers.compactMap(\.envelopeNumber).max() ?? 0) }
     return permissions[id].map { max($0.envelopeNumber, $0.verdict?.envelopeNumber ?? 0) } ?? 0
   }
-  /** Stands on the Desk: open, not held back, and not an info its agent is still working on (spec 9.1.3). */
-  func onDesk(_ id: String) -> Bool { guard let c = cards[id], c.objectState == "open", !c.working else { return false }; return !heldBack(id, open: true) }
   public var openPermissionIds: [String] = []
   /** What a newer client wrote that this version cannot show (model.mjs model.newer): how many, what, the newest. */
   public var newerCount = 0
@@ -566,7 +554,7 @@ public final class Board {
     roomId = o.roomId ?? roomId; hubURL = o.hubURL ?? hubURL; myDeviceId = o.myDeviceId ?? myDeviceId; myRole = o.myRole ?? myRole
     keyEpoch = max(keyEpoch, o.keyEpoch); lastEntryNumber = max(lastEntryNumber, o.lastEntryNumber); lastEnvelopeNumber = o.lastEnvelopeNumber; connection = o.connection
     members = o.members; sessions = o.sessions; cards = o.cards; permissions = o.permissions; notes = o.notes; published = o.published; timelines = o.timelines
-    human = o.human; alerts = o.alerts; stack = o.stack; openPermissionIds = o.openPermissionIds
+    human = o.human; alerts = o.alerts; stack = o.stack; openPermissionIds = o.openPermissionIds; held = o.held; deskWhole = false
     newerCount = o.newerCount; newerWhat = o.newerWhat; newerEnvelope = o.newerEnvelope; deviceRegisters = o.deviceRegisters; alertSeq = o.alertSeq; answerEchoes = [:]
   }
   /**
@@ -577,7 +565,7 @@ public final class Board {
     let b = Board()
     b.adopt(self)
     b.recoveryKey = recoveryKey; b.roomCommits = roomCommits
-    b.deskGate = deskGate; b.hubSettled = hubSettled; b.deskWaiting = deskWaiting
+    b.held = held; b.deskWaiting = deskWaiting
     b.stack = stack; b.openPermissionIds = openPermissionIds
     return b
   }
@@ -1350,47 +1338,103 @@ public final class Board {
   // ---- projections ------------------------------------------------------------------------------
 
   static let urgencyRank = ["critical": 3, "high": 2, "normal": 1, "low": 0]
-  /** The stack (open cards, the most urgent first, then the oldest), per-session open lists, open permissions. */
   /**
-   * The projection again for what one batch touched (a live envelope): only those sessions' card lists are sorted, and
-   * the open stack only when cards, registers or permissions changed (a chat message touches neither: O(1) work).
+   * The stack (open cards, the most urgent first, then the oldest), per-session open lists, open permission requests,
+   * from the client core's Desk (client/src/desk.rs): what a batch touched goes to it, what changed of the Desk comes
+   * back. A batch that touches nothing of the Desk (a chat message) costs nothing here, before the next wake.
    */
   public func project(_ change: Change, now: UInt64 = nowMs()) {
-    if change.stack || change.room || change.members { project(now: now); return }
-    for sid in change.sessions {
-      guard let s = sessions[sid] else { continue }
-      s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { onDesk($0) }
+    if change.stack || change.room || change.members {
+      for s in sessions.values { s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) } }
+      projectDesk(nil, now: now)
+      return
     }
-    if !change.cards.isEmpty || !change.registers.isEmpty || !change.permissions.isEmpty { projectStack(now: now) }
+    for sid in change.sessions { sessions[sid]?.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) } }
+    projectDesk(change, now: now)
   }
   public func project(now: UInt64 = nowMs()) {
-    for s in sessions.values {
-      s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { onDesk($0) }
-    }
-    projectStack(now: now)
+    for s in sessions.values { s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) } }
+    projectDesk(nil, now: now)
   }
-  private func projectStack(now: UInt64) {
-    let archived = Set(sessions.values.filter { $0.settings["archived"].truthy }.map { $0.sessionId })
-    let open = cards.values.filter { onDesk($0.objectId) }.sorted { a, b in
-      let ra = Board.urgencyRank[a.urgency] ?? 1, rb = Board.urgencyRank[b.urgency] ?? 1
-      if ra != rb { return ra > rb }
-      if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-      if a.agentDeviceId != b.agentDeviceId { return a.agentDeviceId < b.agentDeviceId }
-      return a.objectId < b.objectId
+  private static let stateByte: [String: UInt8] = ["open": 1, "answered": 2, "closed": 3]
+  private func deskCard(_ c: Card) -> DeskCardIn {
+    DeskCardIn(objectId: c.objectId, sessionId: c.sessionId, state: Board.stateByte[c.objectState] ?? 1, urgency: UInt8(Board.urgencyRank[c.urgency] ?? 1), createdAt: c.createdAt,
+               agentDeviceId: c.agentDeviceId, versionChange: UInt64(max(0, c.envelopeNumber)), newest: UInt64(max(0, newest(c.objectId))),
+               inRevision: c.inRevision.map { UInt64(max(0, $0.envelopeNumber)) }, read: c.contentState == "ok")
+  }
+  private func deskRequest(_ p: Permission) -> DeskRequestIn {
+    // (one whose body did not open here has no deadline: expiresAt 0, and it ends a lifetime after it was sent)
+    DeskRequestIn(objectId: p.objectId, sessionId: p.sessionId, pending: p.permissionState == "pending", envelopeNumber: UInt64(max(0, p.envelopeNumber)),
+                  newest: UInt64(max(0, newest(p.objectId))), sentAt: p.sentAt, expiresAt: p.expiresAt, read: p.expiresAt > 0)
+  }
+  private func deskKey(_ c: Card) -> String { "\(c.objectState)|\(c.urgency)|\(c.createdAt)|\(c.agentDeviceId)|\(c.envelopeNumber)|\(newest(c.objectId))|\(c.inRevision?.envelopeNumber ?? -1)|\(c.contentState)|\(c.sessionId ?? "")" }
+  private func deskKey(_ p: Permission) -> String { "\(p.permissionState)|\(p.envelopeNumber)|\(newest(p.objectId))|\(p.sentAt)|\(p.expiresAt)|\(p.sessionId ?? "")" }
+  /** When each snooze was written (its change number; one not taken yet counts as the newest). */
+  private func snoozeAt(_ id: String) -> UInt64 { human.raw["snooze/\(id)"].map { $0.pending ? UInt64.max >> 12 : UInt64(max(0, $0.envelopeNumber)) } ?? UInt64.max >> 12 }
+  private func snoozeJSON(_ v: JV?) -> String? {
+    guard let v, !v.isNull, let data = try? JSONSerialization.data(withJSONObject: v.any, options: [.fragmentsAllowed]) else { return nil }
+    return String(data: data, encoding: .utf8)
+  }
+
+  private func projectDesk(_ change: Change?, now: UInt64) {
+    let e = deskEngine
+    if deskWhole, deskListing == nil, deskHold == nil, let c = change, c.cards.isEmpty, c.permissions.isEmpty,
+       !c.registers.contains(where: { $0.hasPrefix("snooze/") || $0.hasPrefix("session/") }), deskWake == 0 || now < deskWake { return }
+    if !deskWhole {
+      try? e.clear()
+      try? e.putCards(cards: cards.values.map(deskCard))
+      try? e.putRequests(requests: permissions.values.map(deskRequest))
+      for (id, v) in human.snoozes { try? e.setSnooze(card: id, value: snoozeJSON(v), at: snoozeAt(id)) }
+      deskSent = [:]
+      for c in cards.values { deskSent[c.objectId] = deskKey(c) }
+      for p in permissions.values { deskSent[p.objectId] = deskKey(p) }
+      deskArchived = "-"
+      deskWhole = true
+    } else if let change {
+      let cs = change.cards.compactMap { cards[$0] }, rs = change.permissions.compactMap { permissions[$0] }
+      let gone = change.cards.filter { cards[$0] == nil } + change.permissions.filter { permissions[$0] == nil }
+      for c in cs { deskSent[c.objectId] = deskKey(c) }
+      for p in rs { deskSent[p.objectId] = deskKey(p) }
+      for id in gone { deskSent.removeValue(forKey: id) }
+      if !cs.isEmpty { try? e.putCards(cards: cs.map(deskCard)) }
+      if !rs.isEmpty { try? e.putRequests(requests: rs.map(deskRequest)) }
+      if !gone.isEmpty { try? e.remove(objectIds: Array(gone)) }
+      for k in change.registers where k.hasPrefix("snooze/") { let id = String(k.dropFirst(7)); try? e.setSnooze(card: id, value: snoozeJSON(human.snoozes[id]), at: snoozeAt(id)) }
+    } else {
+      // (no change named: what differs from what the engine was last told goes, nothing else)
+      var cs = [DeskCardIn](), rs = [DeskRequestIn](), seen = Set<String>()
+      for c in cards.values { seen.insert(c.objectId); let k = deskKey(c); if deskSent[c.objectId] != k { deskSent[c.objectId] = k; cs.append(deskCard(c)) } }
+      for p in permissions.values { seen.insert(p.objectId); let k = deskKey(p); if deskSent[p.objectId] != k { deskSent[p.objectId] = k; rs.append(deskRequest(p)) } }
+      let gone = deskSent.keys.filter { !seen.contains($0) }
+      for id in gone { deskSent.removeValue(forKey: id) }
+      if !cs.isEmpty { try? e.putCards(cards: cs) }
+      if !rs.isEmpty { try? e.putRequests(requests: rs) }
+      if !gone.isEmpty { try? e.remove(objectIds: gone) }
+      for (id, v) in human.snoozes { try? e.setSnooze(card: id, value: snoozeJSON(v), at: snoozeAt(id)) }
     }
-    stack = open.filter { c in
-      if let v = human.snoozes[c.objectId], v.object != nil { if v["until"].isNull { return false }; if let u = v["until"].double, clampedU64(u) > now { return false } }
-      if let sid = c.sessionId, archived.contains(sid) { return false }
-      return true
-    }.map { $0.objectId }
-    // A pending request whose time has run out becomes `expired` (web model.ts `project()`); one held back as settled
-    // at the hub is left as it is, as the web leaves one that is `catching_up`.
-    var waiting = [Permission]()
-    for p in permissions.values where p.permissionState == "pending" && !heldBack(p.objectId, open: true) {
-      if now > p.endsAt { p.permissionState = "expired" } else { waiting.append(p) }
+    let archived = sessions.values.filter { $0.settings["archived"].truthy }.map { $0.sessionId }.sorted()
+    if archived.joined(separator: ",") != deskArchived { deskArchived = archived.joined(separator: ","); try? e.setArchived(sessionIds: archived) }
+    if let hold = deskHold { try? e.setHoldAll(hold: hold); deskHold = nil }
+    if let listing = deskListing {
+      if let (at, open) = listing { try? e.setListing(at: UInt64(max(0, at)), listed: open.map { DeskListed(objectId: $0.key, versionChange: UInt64(max(0, $0.value))) }) } else { try? e.forgetListing() }
+      deskListing = nil
     }
-    openPermissionIds = waiting.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
+    guard let p = try? e.project(nowMs: now) else { return }
+    deskWake = p.nextWake
+    if p.whole {
+      held = Set(p.held)
+      stack = p.stack
+      for s in sessions.values { s.openCardIds = [] }
+    } else {
+      for id in p.held { held.insert(id) }
+      for id in p.unheld { held.remove(id) }
+      for op in p.stackOps { stack.replaceSubrange(Int(op.at)..<Int(op.at + op.gone), with: op.ids) }
+    }
+    for so in p.sessionOpen { sessions[so.sessionId]?.openCardIds = so.cardIds }
+    for op in p.sessionOps { sessions[op.sessionId]?.openCardIds.replaceSubrange(Int(op.at)..<Int(op.at + op.gone), with: op.ids) }
+    if let open = p.permissionsOpen { openPermissionIds = open }
+    // A pending request whose time has run out becomes `expired` (web model.ts `project()`)
+    for id in p.expired where permissions[id]?.permissionState == "pending" { permissions[id]?.permissionState = "expired"; deskSent[id] = nil }
+    for id in p.handBackOver { cards[id]?.inRevision = nil }
   }
 }

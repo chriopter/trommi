@@ -194,7 +194,7 @@ extension Room {
     // never read its closing (it would stand again on every launch). The Desk of this run follows (`deskFirst`); until
     // it answers no open card stands at all (`holdDesk`).
     if let kept = rs.readSmall(DeskKept.self, from: rs.deskURL, aad: Room.deskAAD), kept.v == 1, kept.at <= cursor {
-      board.hubSettled = board.settled(byDesk: Set(kept.open), at: Int(kept.at))
+      board.setDeskListing(Dictionary(kept.open.map { ($0, 0) }, uniquingKeysWith: { a, _ in a }), at: Int(kept.at))
     }
     if record.role == "human" { holdDesk() }
     board.project()

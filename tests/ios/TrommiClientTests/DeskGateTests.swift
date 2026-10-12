@@ -1,4 +1,4 @@
-// DeskGateTests: what the hub's Desk holds back on this device (Board.deskGate, Board.hubSettled, Room.deskFirst):
+// DeskGateTests: what the hub's Desk holds back on this device (the client core's Desk through Board.setDeskListing, Room.deskFirst):
 // no card the hub has settled stands on the Desk as a question, neither while a catch-up is behind nor after it.
 import Foundation
 import XCTest
@@ -15,16 +15,20 @@ final class DeskGateTests: XCTestCase {
   }
   private func shown(_ b: Board) -> Set<String> { Set(DeskModel(board: b).cards.filter { $0.status == "open" }.map(\.id)) }
 
+  private func listing(_ b: Board, _ open: [String], at: Int) { b.setDeskListing(Dictionary(uniqueKeysWithValues: open.map { ($0, 0) }), at: at) }
+
   func testWhileBehindOnlyWhatTheDeskListsStands() {
     let b = Board()
     card(b, "old-answered-elsewhere", at: 10)
     card(b, "still-open", at: 11)
-    XCTAssertEqual(shown(b), ["old-answered-elsewhere", "still-open"], "without a Desk read: as held")
-    b.deskGate = ["still-open", "not-read-yet"]
     b.project()
-    XCTAssertEqual(shown(b), ["still-open"], "settled elsewhere: held back while the catch-up is behind")
+    XCTAssertEqual(shown(b), ["old-answered-elsewhere", "still-open"], "without a Desk read: as held")
+    listing(b, ["still-open", "not-read-yet"], at: 50)
+    b.project()
+    XCTAssertEqual(shown(b), ["still-open"], "settled elsewhere: held back")
     XCTAssertEqual(b.stack, ["still-open"])
     card(b, "not-read-yet", at: 40)
+    b.project()
     XCTAssertEqual(shown(b), ["still-open", "not-read-yet"], "read during the catch-up, open at the hub: shown at once")
   }
 
@@ -34,13 +38,13 @@ final class DeskGateTests: XCTestCase {
     card(b, "open", at: 20)
     card(b, "newer", at: 60)                  // came after the Desk was read
     card(b, "closed", at: 30, state: "closed")
-    let settled = b.settled(byDesk: ["open"], at: 50)
-    XCTAssertEqual(Set(settled.keys), ["ghost"], "only what is open here, missing there, and has nothing newer")
-    b.hubSettled = settled
+    listing(b, ["open"], at: 50)
     b.project()
+    XCTAssertEqual(b.held, ["ghost"], "only what is open here, missing there, and has nothing newer")
     XCTAssertEqual(shown(b), ["open", "newer"])
     // something newer of it comes (reopened, revised): it stands again
     b.cards["ghost"]!.envelopeNumber = 70
+    b.project()
     XCTAssertEqual(shown(b), ["open", "newer", "ghost"])
   }
 

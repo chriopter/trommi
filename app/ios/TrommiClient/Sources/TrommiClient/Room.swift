@@ -578,33 +578,30 @@ public struct Store {
    * A start behind the hub (a device back after a while, or one just signed in): before the history since the
    * cursor is read, which can be long, the hub's Desk says what is open now (the web client's `deskFirst`). Until the
    * catch-up reaches the Desk's cursor, a card or permission request this device holds as open that the Desk does not
-   * list was settled elsewhere and is held back (`Board.deskGate`): no old question stands on the Desk as if it
+   * list was settled elsewhere and is held back (the client core's Desk, `Board.setDeskListing`): no old question stands on the Desk as if it
    * waited. Returns that cursor; nil when the Desk was not had or is not ahead (a failure here only leaves the old
    * view a moment longer).
    */
   func deskFirst() async -> UInt64? {
     guard let desk = try? await noted({ try await hub.desk(active: true) }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
-    var open = Set<String>()
+    var listed = [String: Int]()
     for kind in ["cards", "permission_requests"] {
-      for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
+      for o in desk[kind] as? [JSON] ?? [] {
+        guard let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) else { continue }
+        listed[hex(id)] = Int(Wire.uint((o["version"] as? JSON)?["change"]) ?? 0)
+      }
     }
-    deskSeen = (open, at)
-    keepDesk(open, at: at)
-    // (what the last launch's list held back and this one lists again stands: reopened elsewhere)
-    board.hubSettled = board.hubSettled.filter { !open.contains($0.key) }
+    deskSeen = (Set(listed.keys), at)
+    keepDesk(Set(listed.keys), at: at)
     board.deskWaiting = false
     // (a device that holds nothing yet: the Desk from the hub's list, before any of the history is read)
     if cursor == 0 && board.cards.isEmpty { await Spent.time("desk preview") { await deskPreview(desk) } }
     var change = Change()
-    if at > cursor {
-      board.deskGate = open
-      catchingUp = (cursor, at)
-      for c in board.cards.values where c.objectState == "open" && !open.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
-      for p in board.permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) { change.permissions.insert(p.objectId); if let sid = p.sessionId { change.sessions.insert(sid) } }
-    } else {
-      // (nothing to read: what is open here and not there is compared at once)
-      settleWithDesk(&change)
-    }
+    // The hub's list decides the Desk (the client core's rule, the same on every app): what it leaves out, with
+    // nothing newer here than its change, was settled elsewhere and is held back; a hand back older than the version
+    // it lists is over.
+    board.setDeskListing(listed, at: Int(at))
+    if at > cursor { catchingUp = (cursor, at) }
     change.stack = true
     board.project(change)
     emit(change)
@@ -663,37 +660,10 @@ public struct Store {
 
   /** The hub's Desk of the last `deskFirst`: its open cards and requests, and its cursor. */
   var deskSeen: (open: Set<String>, at: UInt64)?
-  /** The catch-up reached the Desk's cursor of `deskFirst`: nothing is held back for being behind any more. */
+  /** The catch-up reached the Desk's change of `deskFirst`. */
   func caughtUp(_ change: inout Change) {
     catchingUp = nil
-    if let gate = board.deskGate {
-      board.deskGate = nil
-      for c in board.cards.values where c.objectState == "open" && !gate.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
-      for p in board.permissions.values where p.permissionState == "pending" && !gate.contains(p.objectId) { change.permissions.insert(p.objectId) }
-    }
-    settleWithDesk(&change)
     change.stack = true
-  }
-  /**
-   * This device has passed the cursor of the hub's Desk: whatever it holds as open that the Desk did not list, and
-   * that has nothing newer than that cursor, the hub settled (answered, read, closed) and this device did not take
-   * (an envelope it could not open, a step it refused). It is held back (`Board.hubSettled`) instead of standing on
-   * the Desk as a question that waits, and said in the log.
-   */
-  func settleWithDesk(_ change: inout Change) {
-    guard let seen = deskSeen, cursor >= seen.at else { return }
-    let settled = board.settled(byDesk: seen.open, at: Int(seen.at))
-    if settled.keys.sorted() != board.hubSettled.keys.sorted() {
-      for id in Set(settled.keys).symmetricDifference(board.hubSettled.keys) {
-        if board.cards[id] != nil { change.cards.insert(id) } else { change.permissions.insert(id) }
-        if let sid = board.cards[id]?.sessionId ?? board.permissions[id]?.sessionId { change.sessions.insert(sid) }
-      }
-    }
-    board.hubSettled = settled
-    if !settled.isEmpty {
-      Spent.count("held back: settled at the hub", settled.count)
-      PerfLog.line("held back: \(settled.count) open here, settled at the hub: \(settled.keys.sorted().prefix(20).joined(separator: " "))")
-    }
   }
 
   /** The session groups this device is in (hex). */

@@ -91,7 +91,7 @@ final class WarmDeskTests: XCTestCase {
     FakeHub.shared.offline = true
     room = try Room.open(base: base, roomId: id)
     _ = await room.restore()
-    XCTAssertEqual(room.board.hubSettled.keys.sorted(), [closedA, status].sorted(), "held back from the kept list at once")
+    XCTAssertTrue(room.board.deskWaiting, "nothing open stands until the hub's Desk answers or the wait ends")
     _ = try? await room.sync()
     XCTAssertFalse(room.deskHolding)
     XCTAssertFalse(room.board.deskWaiting)

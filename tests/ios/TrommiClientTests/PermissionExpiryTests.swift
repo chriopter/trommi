@@ -82,7 +82,7 @@ final class PermissionExpiryTests: XCTestCase {
   func testOneHeldBackAsSettledAtTheHubIsLeftAlone() {
     let b = board(), id = String(repeating: "5", count: 32)
     request(b, id, at: 5, expires: t0 + 1_000)
-    b.deskGate = []
+    b.setDeskListing([:], at: 1_000_000)      // the hub's list leaves it out: settled there
     b.project(now: t0 + 5_000)
     XCTAssertEqual(state(b, id), "pending", "held back (web: catching_up) keeps its state")
     XCTAssertEqual(b.openPermissionIds, [])
