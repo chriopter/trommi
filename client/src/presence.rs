@@ -197,4 +197,19 @@ mod tests {
         m.apply_here(&mut c, 30);
         assert!(m.members[D1].is_online);
     }
+
+    /// A new stream tells who is here before this device has read its groups: the report waits for the device.
+    #[test]
+    fn a_report_before_the_groups_waits_for_the_device() {
+        use crate::model::groups::{GroupIn, RolesIn};
+        let mut m = Model::new();
+        let mut c = Change::new();
+        m.apply_presence_event(&ev(D0, true, Some(true)), &mut c, 10);
+        assert!(!m.members.contains_key(D0));
+        let room = GroupIn { group: "r".into(), session: None, leaves: vec![], disallowed: 0, archived: false, epoch: 1 };
+        let roles = RolesIn { epoch: 1, humans: vec![], agents: vec![D0.into()], recovery_fingerprint: None };
+        m.apply_groups(&[room], Some(&roles), &mut c);
+        assert!(m.members[D0].is_online, "online as the stream said");
+        assert_eq!(m.members[D0].link.as_ref().map(|l| l.hears.as_str()), Some("live"));
+    }
 }
