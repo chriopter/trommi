@@ -417,6 +417,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var keyPackages: Set<String> = []
     /** What GET /v1/rooms/{room}/groups lists as live (`kind`, `leaves` in base64url). */
     var liveGroups: [[String: Any]] = []
+    /** GET /v1/groups/{group}/info answers a founding GroupInfo (the fake core reads nothing of it); false: not there. */
+    var servesGroupInfo = false
     func add(_ item: [String: Any]) -> UInt64 { change += 1; var i = item; i["change"] = change; items.append(i); return change }
     /** A Commit in the log of a group. */
     func commit(group: Bytes, _ body: [String: Any]) { lock.withLock { _ = add(["kind": "commit", "group_id": b64u(group), "bytes": b64u(j(body))]) } }
@@ -437,6 +439,7 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
       case ("GET", _) where path.hasSuffix("/challenge"): return (200, ["challenge": b64u(Bytes(repeating: 9, count: 32))])
       case ("POST", _) where path.hasSuffix("/tokens"): return (200, ["token": "t", "expires_at": nowMs() + 600_000, "role": "human"])
       case ("GET", "/v1/welcomes"): welcomesRead += 1; return (200, welcomes)
+      case ("GET", _) where servesGroupInfo && path.hasPrefix("/v1/groups/") && path.hasSuffix("/info"): return (200, ["epoch": 0, "group_info": b64u(j(["founding": true]))])
       case ("GET", _) where path.contains("/chains/"):
         let parts = path.split(separator: "/").map(String.init)
         let key = "\(hex((try? unb64u(parts[2])) ?? []))/\(hex((try? unb64u(parts[4])) ?? []))"

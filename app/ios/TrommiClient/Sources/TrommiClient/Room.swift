@@ -722,6 +722,10 @@ public struct Store {
     // entries up to where the core has read are handed again, as the web engine's `handLog` does.
     for group in joinedGroups { try await handGroupLog(group, upTo: try await onCore { $0.cursor }, &change) }
     try await refreshGroups(&change)
+    // What was passed over before these joins (an envelope of a group this device did not hold yet: its Welcome not at
+    // the hub yet, or not read) is read back now, whatever learning the group's past brings (none for a helper session
+    // whose walk waits, 5.2.6): as the web engine's `behind` rule.
+    if !joinedGroups.isEmpty, record.past?.passedOver == true { notePast { $0.readBack = true } }
     // A sign-in with the code whose session another human device added this one to first (5.2.7, its Welcome won the
     // race): the code selected none of that session's keys, and what was written before the Welcome stays closed
     // until a human device hands them over. They are asked for at once, not after the grace (7.1.1): the person

@@ -71,6 +71,8 @@ const DESK_SOON_MS = 250
  *  cards wait off the Desk until the list answers, and past DESK_HOLD_MAX_MS the last list kept here decides. */
 const DESK_FIRST_MS = 300
 const DESK_HOLD_MAX_MS = 5000
+/** A failed read of the hub's archived sessions (`archivedSoon`) is tried again after this long. */
+const ARCHIVED_RETRY_MS = 3000
 /** Where the hub's Desk as last read is kept between runs. */
 const DESK_KEY = 'client/desk'
 /** How many answered cards a reading of the Desk asks the hub about (`readDesk`). */
@@ -449,7 +451,12 @@ export class Client {
       // The hub's Desk lists only what lies in the groups this device is in: a device just signed in joins its
       // session groups one by one after it is in the room, and each one joined adds its open cards to the Desk.
       const sessions = groups.filter(g => g.session && !g.archived).length
-      if (sessions !== this.sessionGroups) { this.sessionGroups = sessions; this.deskWholeDue = true; if (this.started && this.is_human) this.deskSoon() }
+      if (sessions !== this.sessionGroups) {
+        // (a session group joined later than the hub archived it, its Welcome read after the stream's word of the
+        //  archiving: held as archived too, as at the start)
+        if (sessions > this.sessionGroups && this.started) this.archivedSoon()
+        this.sessionGroups = sessions; this.deskWholeDue = true; if (this.started && this.is_human) this.deskSoon()
+      }
       const role = e.is_human ? 'human' : 'agent'
       if (this.model.room.my_role !== role) { this.model.room.my_role = role; this.change.room = true }
     })
@@ -614,6 +621,18 @@ export class Client {
   }
   /** The sessions the hub holds as archived that this device still holds as live (archived while it was away): it
    *  holds them as archived too, so that it loads them only when one is opened (loadArchived). One small request. */
+  /** `learnArchived` once more, after what runs now; a failed read is tried again a while later. */
+  private archivedSoon(): void {
+    if (this.archivedRun) { this.archivedAgain = true; return }
+    this.archivedRun = this.learnArchived().catch(() => {
+      if (this.started) setTimeout(() => { if (this.started) this.archivedSoon() }, ARCHIVED_RETRY_MS)
+    }).finally(() => {
+      this.archivedRun = null
+      if (this.archivedAgain) { this.archivedAgain = false; this.archivedSoon() }
+    })
+  }
+  private archivedRun: Promise<void> | null = null
+  private archivedAgain = false
   private async learnArchived(): Promise<void> {
     for (const row of await this.hub.roomGroups({ archived: true })) {
       const held = this.engine.groups.find(g => g.session && sameBytes(g.group, row.group))

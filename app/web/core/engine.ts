@@ -149,6 +149,8 @@ const HELD_KEEP_MS = 120_000
 /** After a read of the hub's Welcomes that brought nothing, how many items that wait for a group pass before the
  *  next (`repairByWelcome`): a Welcome that comes meanwhile is found that many items later at most. */
 const WELCOMES_AGAIN = 64
+/** At most this many groups are noted in `behind` (one entry each, whatever the number of their envelopes). */
+const BEHIND_GROUPS = 4096
 const same = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 
 /** JSON with its keys in order: two values are the same value exactly when these texts are equal. */
@@ -208,6 +210,15 @@ export class Engine {
   /** Per group, the log number up to which `handLog` handed the log to the device. */
   private readonly logRead = new Map<string, number>()
   private rescanDue = false
+  /** The envelopes the core refused as `group-behind` while this device's group was not that far (not joined yet, or
+   *  its log not processed up to the envelope's epoch), per group (hex): the first such change and the lowest epoch.
+   *  Once the device's group reaches that epoch (`behindMet`, after each refresh), the envelopes from that change on
+   *  are read once more (a rescan). A rescan that still finds the group missing does not lose them, and neither does
+   *  a group joined later whose past learning reads nothing again. Kept in the meta store across restarts. */
+  private behind = new Map<string, { change: number; epoch: number }>()
+  /** A read of the hub's Welcomes failed: the next one is tried after this many ms (0: none failed), by itself. */
+  private welcomesWait = 0
+  private welcomesRetry = false
   /** The changes whose envelope this engine told in the hub's order with its body: a rescan does not read them again.
    *  (In memory: a rescan after a restart reads everything from its start, as before.) */
   private readonly whole = new Set<number>()
@@ -251,6 +262,8 @@ export class Engine {
       this.rescanDue = due === true || typeof due === 'number'
       this.rescanFrom = typeof due === 'number' ? due : 0
       this.learnDue = (await this.opts.meta.get('learn').catch(() => null)) === true
+      const behind = await this.opts.meta.get('behind').catch(() => null)
+      if (Array.isArray(behind)) for (const row of behind) if (Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'number' && typeof row[2] === 'number') this.behind.set(row[0], { change: row[1], epoch: row[2] })
     })
     // the signer asks whatever device the engine holds at that moment: a reopened one signs as the same key
     if (this.room_id) this.hub.useSigner(this.room_id, (hub, challenge) => this.device.hubSignIn(hub, challenge))
@@ -319,6 +332,34 @@ export class Engine {
     this.groups = await d.groups()
     this.roles = await d.roomRoles()
     this.emit('groups', { groups: this.groups, roles: this.roles })
+    await this.behindMet()
+  }
+  /** Notes an envelope the core refused as `group-behind` for a group this device does not hold that far yet
+   *  (`behind`). One of an epoch before the device's own start in the group stays refused, and is not noted. */
+  private async noteBehind(item: Extract<ChangeItem, { kind: 'envelope' }>, received: ReceivedEnvelope | null): Promise<void> {
+    if (received?.outcome !== 'refused' || received.code !== 'group-behind') return
+    const { group, epoch } = received.header, held = this.group(group)
+    if (held && held.epoch >= epoch) return
+    const key = hex(group), was = this.behind.get(key)
+    if (was && was.change <= item.change && was.epoch <= epoch) return
+    if (!was && this.behind.size >= BEHIND_GROUPS) return
+    this.behind.set(key, { change: Math.min(was?.change ?? item.change, item.change), epoch: Math.min(was?.epoch ?? epoch, epoch) })
+    await this.opts.meta.set('behind', [...this.behind].map(([k, v]) => [k, v.change, v.epoch])).catch(() => {})
+  }
+  /** The groups of `behind` this device now holds up to the epoch noted: their envelopes from the change noted on are
+   *  read once more (a rescan from just before it). */
+  private async behindMet(): Promise<void> {
+    let from: number | null = null
+    for (const [key, b] of this.behind) {
+      const g = this.groups.find(x => hex(x.group) === key)
+      if (!g || g.epoch < b.epoch) continue
+      this.behind.delete(key)
+      from = Math.min(from ?? b.change, b.change)
+    }
+    if (from === null) return
+    mark(`behind met: rescan from ${from - 1}`)
+    await this.opts.meta.set('behind', [...this.behind].map(([k, v]) => [k, v.change, v.epoch])).catch(() => {})
+    await this.wantRescan(Math.max(0, from - 1))
   }
   private group(group: Uint8Array): GroupSummary | undefined { return this.groups.find(g => same(g.group, group)) }
 
@@ -645,7 +686,7 @@ export class Engine {
     if (behind()) {
       // a Welcome this device has not taken yet may be what it lacks
       if (await this.repairByWelcome()) { this.repairs++; received = await this.receive(item, true) }
-      if (behind()) { await this.wantRescan(); return }
+      if (behind()) { await this.noteBehind(item, received); await this.wantRescan(); return }
     }
     if (received?.outcome === 'refused' && received.code === 'gap') { this.repairs++; received = await this.fillGap(item, received) }
     if (batched && this.repairs !== was) await this.wantRescan(item.change)
@@ -884,6 +925,7 @@ export class Engine {
         const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo && !this.whole.has(item.change))
         const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null): Promise<void> => {
           let received = first
+          await this.noteBehind(item, received)
           if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
           if (received && received.outcome !== 'refused') {
             if (received.payload) this.whole.add(item.change)
@@ -969,7 +1011,16 @@ export class Engine {
     if (!this.room_id) return false
     const room = this.room_id
     let rows
-    try { rows = await this.hub.welcomes() } catch { return false }
+    try { rows = await this.hub.welcomes() } catch {
+      // (tried again by itself, ever later: a Welcome does not wait for the next change of the room to be read)
+      this.welcomesWait = Math.min(Math.max(this.welcomesWait * 2, this.timing.backoff_first), this.timing.backoff_max)
+      if (!this.welcomesRetry) {
+        this.welcomesRetry = true
+        this.later(this.welcomesWait, () => { this.welcomesRetry = false; this.welcomesRead = null; this.keepSoon(0) })
+      }
+      return false
+    }
+    this.welcomesWait = 0
     let joined = false, later = false
     // a device that only follows the room group (it holds the room's roles and is no leaf of it) takes the room's
     // Commits first: the Welcome is judged against them (5.2.6)

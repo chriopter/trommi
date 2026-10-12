@@ -51,6 +51,8 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   New, Better and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
 
 **Fixed**
+- **Helper sessions keep their names on every device**: a helper session whose start one device caught only late on
+  a rough network (web and iPhone) now shows its name there too, and one closed meanwhile no longer shows as open (web).
 - **Web: a card you put off comes back when its agent writes again**: Later holds a card only for the version you
   put off; a revision or a raised urgency brings it back to the Desk at once, and its morning brings it back while
   the page stays open. A card on Later no longer raises the red hand in the sidebar.
