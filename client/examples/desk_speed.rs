@@ -16,6 +16,7 @@ fn card(n: u64) -> DeskCard {
         newest: n,
         in_revision: None,
         read: true,
+        working: false,
     }
 }
 

@@ -25,6 +25,8 @@ record! {
         pub in_revision: Option<u64>,
         /// Its newest version's body was read here.
         pub read: bool,
+        /// An info its agent is still working on (spec 9.1.3): on neither the stack nor its session's list.
+        pub working: bool,
     }
 }
 
@@ -147,6 +149,7 @@ impl ClientDesk {
                     newest: c.newest,
                     in_revision: c.in_revision,
                     read: c.read,
+                    working: c.working,
                 });
             }
             Ok(())

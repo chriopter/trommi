@@ -2060,7 +2060,8 @@
       "versionChange": "number",
       "newest": "number",
       "inRevision": "optional<number>",
-      "read": "bool"
+      "read": "bool",
+      "working": "bool"
     },
     "DeskRequestIn": {
       "objectId": "text",

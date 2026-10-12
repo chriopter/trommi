@@ -1360,14 +1360,14 @@ public final class Board {
   private func deskCard(_ c: Card) -> DeskCardIn {
     DeskCardIn(objectId: c.objectId, sessionId: c.sessionId, state: Board.stateByte[c.objectState] ?? 1, urgency: UInt8(Board.urgencyRank[c.urgency] ?? 1), createdAt: c.createdAt,
                agentDeviceId: c.agentDeviceId, versionChange: UInt64(max(0, c.envelopeNumber)), newest: UInt64(max(0, newest(c.objectId))),
-               inRevision: c.inRevision.map { UInt64(max(0, $0.envelopeNumber)) }, read: c.contentState == "ok")
+               inRevision: c.inRevision.map { UInt64(max(0, $0.envelopeNumber)) }, read: c.contentState == "ok", working: c.working)
   }
   private func deskRequest(_ p: Permission) -> DeskRequestIn {
     // (one whose body did not open here has no deadline: expiresAt 0, and it ends a lifetime after it was sent)
     DeskRequestIn(objectId: p.objectId, sessionId: p.sessionId, pending: p.permissionState == "pending", envelopeNumber: UInt64(max(0, p.envelopeNumber)),
                   newest: UInt64(max(0, newest(p.objectId))), sentAt: p.sentAt, expiresAt: p.expiresAt, read: p.expiresAt > 0)
   }
-  private func deskKey(_ c: Card) -> String { "\(c.objectState)|\(c.urgency)|\(c.createdAt)|\(c.agentDeviceId)|\(c.envelopeNumber)|\(newest(c.objectId))|\(c.inRevision?.envelopeNumber ?? -1)|\(c.contentState)|\(c.sessionId ?? "")" }
+  private func deskKey(_ c: Card) -> String { "\(c.working)|\(c.objectState)|\(c.urgency)|\(c.createdAt)|\(c.agentDeviceId)|\(c.envelopeNumber)|\(newest(c.objectId))|\(c.inRevision?.envelopeNumber ?? -1)|\(c.contentState)|\(c.sessionId ?? "")" }
   private func deskKey(_ p: Permission) -> String { "\(p.permissionState)|\(p.envelopeNumber)|\(newest(p.objectId))|\(p.sentAt)|\(p.expiresAt)|\(p.sessionId ?? "")" }
   /** When each snooze was written (its change number; one not taken yet counts as the newest). */
   private func snoozeAt(_ id: String) -> UInt64 { human.raw["snooze/\(id)"].map { $0.pending ? UInt64.max >> 12 : UInt64(max(0, $0.envelopeNumber)) } ?? UInt64.max >> 12 }

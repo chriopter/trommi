@@ -1170,7 +1170,7 @@ const byCreated = (model: Model) => (a: string, b: string) => (model.cards.get(a
 const DESK_STATE = new Set(['open', 'answered', 'closed'])
 // (in the field order of `DeskCard` and `DeskRequest`, as a list: the engine reads a struct from either form)
 const deskCard = (c: Card): string => JSON.stringify([c.object_id, c.session_id, DESK_STATE.has(c.object_state) ? c.object_state : 'open', c.urgency ?? null, c.created_at,
-  c.agent_device_id ?? '', c.envelope_number, c.state_envelope_number, c.in_revision?.envelope_number ?? null, c.content_state === 'ok'])
+  c.agent_device_id ?? '', c.envelope_number, c.state_envelope_number, c.in_revision?.envelope_number ?? null, c.content_state === 'ok', c.working === true])
 const deskRequest = (p: PermissionRequest): string => JSON.stringify([p.object_id, p.session_id, p.permission_state === 'pending', p.envelope_number,
   p.envelope_number, p.sent_at, p.expires_at || 0, !unreadRequest(p)])
 const jsonList = (items: string[]): string => `[${items.join(',')}]`

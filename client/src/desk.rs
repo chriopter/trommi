@@ -88,6 +88,10 @@ pub struct DeskCard {
     /// Its newest version's body was read here.
     #[serde(default = "yes")]
     pub read: bool,
+    /// An info its agent is still working on (spec 9.1.3): open, but on neither the stack nor its session's list
+    /// until a version without it.
+    #[serde(default)]
+    pub working: bool,
 }
 
 /// A permission request as the Desk needs it.
@@ -379,7 +383,7 @@ impl DeskState {
     }
     /// On the Desk now: open, not held, not snoozed, not in an archived session. The snooze's end, when one.
     fn card_visible(&self, c: &DeskCard, now: u64) -> (bool, Option<u64>) {
-        if c.state != State::Open || self.card_held(c) {
+        if c.state != State::Open || c.working || self.card_held(c) {
             return (false, None);
         }
         if let Some(until) = self
@@ -405,6 +409,7 @@ impl DeskState {
             .values()
             .filter(|c| {
                 c.state == State::Open
+                    && !c.working
                     && c.session_id.as_deref() == Some(session)
                     && !self.card_held(c)
             })
@@ -529,7 +534,10 @@ impl DeskState {
             // (what the card says, read before anything changes: the card itself is not copied)
             let held_now = self.card_held(c);
             let hand_back = !held_now && self.listing.is_some() && self.hand_back_over(c);
-            let in_session = match (&c.session_id, c.state == State::Open && !held_now) {
+            let in_session = match (
+                &c.session_id,
+                c.state == State::Open && !c.working && !held_now,
+            ) {
                 (Some(s), true) => Some((s.clone(), c.created_at)),
                 _ => None,
             };
@@ -720,6 +728,7 @@ impl Desk {
                     newest,
                     in_revision: o.hand_back,
                     read: o.is_read(),
+                    working: false,
                 }),
                 Kind::Request => state.put_request(DeskRequest {
                     object_id: o.object_id.clone(),
@@ -845,6 +854,7 @@ mod tests {
             newest: change,
             in_revision: None,
             read: true,
+            working: false,
         }
     }
     fn request(id: &str, change: u64) -> DeskRequest {
@@ -1007,6 +1017,30 @@ mod tests {
 
     /// The deltas, applied to what the last answers said, always give the whole projection: many random edits.
     #[test]
+    fn an_info_still_worked_on_stands_nowhere() {
+        let mut d = DeskState::new();
+        d.put_card(card("a", 1));
+        d.put_card(DeskCard {
+            working: true,
+            ..card("b", 2)
+        });
+        let p = d.projection(5);
+        assert_eq!(p.stack, vec!["a".to_string()]);
+        assert_eq!(p.session_open.get("s"), Some(&vec!["a".to_string()]));
+        d.project(5);
+        d.put_card(DeskCard {
+            working: false,
+            ..card("b", 3)
+        });
+        let delta = d.project(5);
+        assert_eq!(
+            delta.stack_ops.len(),
+            1,
+            "its Done version brings it to the Desk"
+        );
+    }
+
+    #[test]
     fn deltas_give_the_whole_desk() {
         for seed in [7u64, 11, 13, 101, 997, 4_242, 65_537, 1_000_003] {
             deltas_with(seed);
@@ -1040,6 +1074,7 @@ mod tests {
                     newest: next(300),
                     version_change: next(300),
                     in_revision: if next(5) == 0 { Some(next(300)) } else { None },
+                    working: next(6) == 0,
                     ..card(&id, 0)
                 }),
                 10..=11 => d.remove(&id),
