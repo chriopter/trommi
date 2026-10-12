@@ -70,6 +70,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 On the iPhone, the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
 many agents are still at work.
 - **`trommi-connector update` replaces a local build**: a connector built by hand and copied over the installed one ("REFUSED as a release" in `--version`) is now replaced by the signed release, also when that release is the newest; before, update said "nothing to do".
+- **No more stuck agent after a hub reset or removal**: a session whose key the hub no longer takes (removed, taken over while away, or of a room the hub does not know) now offers `/trommi:connect` again, and a new invite link gets it back on the board without a restart; before, it said to connect and then refused the link.
 
 **Better**
 - **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.

@@ -2035,6 +2035,12 @@ impl member::Host for ConnHost {
     fn on_retired(&self) -> BoxFut<'_, ()> {
         Box::pin(async move {
             if let Some(c) = self.0.upgrade() {
+                // the board tools give way to connect (a new invite link); once joined, they come back
+                c.offered_connect.store(true, Ordering::SeqCst);
+                let _ = c
+                    .out
+                    .notification("notifications/tools/list_changed", Value::Null)
+                    .await;
                 let text = c
                     .member
                     .me
@@ -2206,6 +2212,10 @@ impl mcp::Server for Conn {
                     return prompt::tools_list_json_with_connect(!self.heard(), note.as_deref());
                 }
                 return prompt::connect_list_json(note.as_deref());
+            }
+            // (Codex lists once: connect stays in its list, for a key the hub stops taking later on)
+            if crate::host::is_codex() {
+                return prompt::tools_list_json_with_connect(true, None);
             }
             prompt::tools_list_json(!self.heard())
         })
@@ -2656,6 +2666,11 @@ impl Conn {
     fn unconnected(&self) -> bool {
         if self.member.phase() == "ready" || !self.cfg.invite.is_empty() {
             return false;
+        }
+        // A key the hub no longer takes (removed, taken over, or of a room the hub does not know, as after the
+        // hub was set up again): the session is off the board, and a new invite link is the way back.
+        if self.member.phase() == "retired" {
+            return true;
         }
         match member::resolve_room(&self.cfg) {
             Ok(None) => true,

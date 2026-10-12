@@ -396,3 +396,7 @@ path = "tools/seed_account.rs"
 [[test]]
 name = "hub_active"
 path = "hub/active.rs"
+
+[[test]]
+name = "connector_paths"
+path = "connector/paths.rs"
