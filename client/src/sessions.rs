@@ -266,6 +266,10 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
             .or_else(|| {
                 Some(device_name_of(m, s.agent_device_id.as_deref())).filter(|n| !n.is_empty())
             })
+            // (a helper session without a device of its own shows its opener's, as the session's facts do)
+            .or_else(|| {
+                Some(device_name_of(m, s.creator_device_id.as_deref())).filter(|n| !n.is_empty())
+            })
             .unwrap_or_else(|| {
                 if reading && !profile_known {
                     "Loading …".to_string()
