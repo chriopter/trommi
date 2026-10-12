@@ -1302,6 +1302,9 @@ export class Engine {
             break
           }
           case 'foundSession': {
+            // (its founding went out and waits for the hub's answer or its place in the log: not a second one, which
+            //  the hub refuses and which fails the step: the founding is looked at again once that one is through)
+            if (this.groups.some(g => g.session && g.session.parent.every(b => b === 0) && g.pending && g.epoch === 0 && g.leaves.some(l => same(l, device!)))) break
             const others = (this.roles?.humans ?? []).filter(h => !same(h, this.device_id))
             // (a partial claim: a human device without a KeyPackage at the hub is left out and added later, 5.2.7)
             const claimed = others.length ? await this.hub.claimKeyPackages(others, { partial: true }) : []
