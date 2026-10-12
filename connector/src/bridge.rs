@@ -970,6 +970,7 @@ impl Bridge {
             self.reopen(&found).await?;
             return Ok(Some(found));
         }
+        self.sweep_closed_children().await;
         let key = name.to_lowercase();
         let model = self
             .my_session(None)
@@ -993,6 +994,58 @@ impl Bridge {
         self.save_state();
         eprintln!("[trommi] child session \"{name}\" opened: {sid}");
         Ok(Some(sid))
+    }
+    /// Ends a closed child (close_session) on the hub: its answered cards are closed with it, and with no open
+    /// question left its group is archived (5.2.10), so that it no longer counts among the main session's live
+    /// helper sessions (5.2.5). An open question keeps it live: the human can still answer it. Returns the
+    /// answered cards closed, the open questions left, and whether it was archived.
+    async fn retire(&self, sid: &str) -> Result<(usize, usize, bool)> {
+        let left: Vec<Card> = self
+            .my_cards()
+            .await
+            .into_iter()
+            .filter(|c| c.session_id.as_deref() == Some(sid) && c.object_state == "answered")
+            .collect();
+        for c in &left {
+            self.client.close(&c.object_id, SESSION_ENDED).await?;
+        }
+        let open = self
+            .my_cards()
+            .await
+            .iter()
+            .filter(|c| c.session_id.as_deref() == Some(sid) && c.object_state == "open")
+            .count();
+        if open > 0 {
+            return Ok((left.len(), open, false));
+        }
+        self.client.archive_child_session(sid).await?;
+        Ok((left.len(), 0, true))
+    }
+    /// Archives every closed child whose open questions were answered since (see [`Self::retire`]), before a
+    /// new one is founded: what the board no longer shows as active no longer counts against the limit.
+    async fn sweep_closed_children(&self) {
+        let closed: Vec<String> = {
+            let c = self.client.core.lock().await;
+            c.child_session_ids()
+                .into_iter()
+                .filter(|sid| {
+                    c.model
+                        .sessions
+                        .get(sid)
+                        .and_then(|s| s.profile.as_ref())
+                        .and_then(|p| p.get("closed_at"))
+                        .is_some_and(truthy)
+                })
+                .collect()
+        };
+        for sid in closed {
+            if let Err(e) = self.retire(&sid).await {
+                eprintln!(
+                    "[trommi] closed child session {sid} not archived: {}",
+                    e.message
+                );
+            }
+        }
     }
     /// A closed child (close_session) that is written to again is open again.
     async fn reopen(&self, sid: &str) -> Result<()> {
@@ -1882,6 +1935,15 @@ impl Bridge {
                     }
                 }
                 let existed = self.find_child(&name).await;
+                let was_closed = match &existed {
+                    Some(x) => self
+                        .my_session(Some(x))
+                        .await
+                        .and_then(|s| s.profile)
+                        .and_then(|p| p.get("closed_at").cloned())
+                        .is_some_and(|v| truthy(&v)),
+                    None => false,
+                };
                 let sid = match &existed {
                     Some(x) => x.clone(),
                     None => {
@@ -1907,7 +1969,7 @@ impl Bridge {
                         self.client.set_status(v, Some(sid.clone())).await?;
                     }
                 }
-                Ok(format!("{}: \"{name}\" ({sid}), under your session on the board. Pass session: \"{name}\" to reply, create_decision, create_info, merge_cards, set_status, clear_status, introduce, list_cards and publish_asset to write into it; the human's messages and answers there arrive with meta session=\"{name}\".", if existed.is_some() { "child session already open" } else { "child session opened" }))
+                Ok(format!("{}: \"{name}\" ({sid}), under your session on the board. Pass session: \"{name}\" to reply, create_decision, create_info, merge_cards, set_status, clear_status, introduce, list_cards and publish_asset to write into it; the human's messages and answers there arrive with meta session=\"{name}\".", if existed.is_none() { "child session opened" } else if was_closed { "child session reopened" } else { "child session already open" }))
             }
             "close_session" => {
                 let name = trim(&s(args
@@ -1956,27 +2018,29 @@ impl Bridge {
                 let mut v = Map::new();
                 v.insert("profile".into(), Value::Object(p));
                 self.client.set_status(v, Some(sid.clone())).await?;
-                let left: Vec<Card> = self
-                    .my_cards()
-                    .await
-                    .into_iter()
-                    .filter(|c| {
-                        c.session_id.as_deref() == Some(&sid) && c.object_state == "answered"
-                    })
-                    .collect();
-                for c in &left {
-                    self.client.close(&c.object_id, SESSION_ENDED).await?;
+                let (l, open, archived) = self.retire(&sid).await?;
+                if archived {
+                    self.state.lock().unwrap()["children"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove(&name.to_lowercase());
+                    self.save_state();
                 }
-                let open = self
-                    .my_cards()
-                    .await
-                    .iter()
-                    .filter(|c| c.session_id.as_deref() == Some(&sid) && c.object_state == "open")
-                    .count();
-                let l = left.len();
-                Ok(format!("child session \"{name}\" closed: archived on the board, still readable there{}{}. open_session(\"{name}\") opens it again.",
-                    if l > 0 { format!("; {l} answered card{} of it {} closed with it", if l == 1 { "" } else { "s" }, if l == 1 { "was" } else { "were" }) } else { String::new() },
-                    if open > 0 { format!("; {open} open question{} of it stay{} on the human's stack, and the session stays in the active list until {} answered", if open == 1 { "" } else { "s" }, if open == 1 { "s" } else { "" }, if open == 1 { "it is" } else { "they are" }) } else { String::new() }))
+                let answered = if l > 0 {
+                    format!(
+                        "; {l} answered card{} of it {} closed with it",
+                        if l == 1 { "" } else { "s" },
+                        if l == 1 { "was" } else { "were" }
+                    )
+                } else {
+                    String::new()
+                };
+                Ok(if archived {
+                    format!("child session \"{name}\" closed and archived: off the board's active list, still readable in its archive, no longer counted among your live helper sessions{answered}. open_session(\"{name}\") opens a new one.")
+                } else {
+                    format!("child session \"{name}\" closed{answered}; {open} open question{} of it stay{} on the human's stack, so the session stays live (and counted) until {} answered; it is archived at the next open_session after that. Writing to it again opens it again.",
+                        if open == 1 { "" } else { "s" }, if open == 1 { "s" } else { "" }, if open == 1 { "it is" } else { "they are" })
+                })
             }
             "publish_asset" => {
                 if !present(args.get("path")) && !present(args.get("content")) {

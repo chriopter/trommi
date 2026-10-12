@@ -259,7 +259,7 @@ fn devices_and_sessions_of_a_room() {
     w.set_agents(&[agent.id(), second.id()])
         .refused(429, "too-many");
 
-    // 16: live helper sessions per main session 32: here 2
+    // 16: live helper sessions per main session 100: here 2
     w.catch_up(&mut bea, &room);
     let (session, _main) = w.found_main(&mut [&mut bea], Some(&mut agent));
     let humans = [w.ada.id(), bea.id()];
@@ -278,6 +278,19 @@ fn devices_and_sessions_of_a_room() {
         .post(
             &w.hub,
             &format!("/v1/groups/{}/archive", b64(&helper_groups[0])),
+            &json!({}),
+        )
+        .ok();
+    let (third, reply, _) = w.found_helper(&mut agent, &session, &humans, &[]);
+    reply.ok();
+    w.found_helper(&mut agent, &session, &humans, &[])
+        .1
+        .refused(429, "too-many");
+    // nor one its opener archived (5.2.10)
+    agent
+        .post(
+            &w.hub,
+            &format!("/v1/groups/{}/archive", b64(&third)),
             &json!({}),
         )
         .ok();
@@ -640,7 +653,7 @@ fn share_links_of_a_room() {
     share(now + day).refused(429, "too-many");
 }
 
-/// The limits of spec/v1.md section 16 at their real values, where a test can reach them: 256 agent devices, 32
+/// The limits of spec/v1.md section 16 at their real values, where a test can reach them: 256 agent devices, 100
 /// live helper sessions, 20 passkeys, a 48 KiB message, a 64 MiB file, a Share link of 180 days.
 #[test]
 fn the_defaults_at_their_exact_values() {
@@ -750,7 +763,7 @@ fn agent_devices_and_helper_sessions_at_their_exact_values() {
             reply.refused(429, "too-many");
         }
     }
-    // 32 live helper sessions under one main session: the 33rd is refused
+    // 100 live helper sessions under one main session: the 101st is refused
     let mut agent = first.unwrap();
     agent.sign_in(&w.hub, &w.room).ok();
     agent.link(&w.hub).ok();
@@ -759,7 +772,7 @@ fn agent_devices_and_helper_sessions_at_their_exact_values() {
     let humans = [w.ada.id()];
     boundary(
         "live helper sessions of a main session",
-        32,
+        100,
         |_| w.found_helper(&mut agent, &session, &humans, &[]).1,
         429,
         "too-many",

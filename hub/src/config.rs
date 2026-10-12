@@ -283,7 +283,7 @@ impl Config {
             max_rooms: number(env, "HUB_MAX_ROOMS", 1000),
             humans: number(env, "HUB_LIMIT_HUMANS", 1000),
             agents: number(env, "HUB_LIMIT_AGENTS", 256),
-            helpers_per_main: number(env, "HUB_LIMIT_HELPERS_PER_MAIN", 32),
+            helpers_per_main: number(env, "HUB_LIMIT_HELPERS_PER_MAIN", 100),
             key_packages: number(env, "HUB_LIMIT_KEY_PACKAGES", 100),
             key_package_days: 90,
             open_invites: number(env, "HUB_LIMIT_OPEN_INVITES", 16),

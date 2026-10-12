@@ -44,7 +44,7 @@ pub const MAX_AGENT_DEVICES: usize = 256;
 /// The most helper devices in one helper session.
 pub const MAX_HELPER_DEVICES: usize = 7;
 /// The most live helper sessions of one main session.
-pub const MAX_LIVE_HELPERS: usize = 32;
+pub const MAX_LIVE_HELPERS: usize = 100;
 /// The most bytes of a Commit with its GroupInfo and Welcome.
 pub const MAX_COMMIT_REQUEST_LEN: usize = 1 << 20;
 /// The highest epoch a stored group may stand in. A group cannot reach it by Commits; a stored state above it

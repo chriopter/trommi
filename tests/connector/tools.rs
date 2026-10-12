@@ -18,7 +18,15 @@ async fn seated_as(
     hello: Option<Value>,
     env: &[(&str, std::ffi::OsString)],
 ) -> (HubProc, Human, Seat, common::process::Mcp, GroupId) {
-    let hub = HubProc::start().await;
+    seated_on(HubProc::start().await, hello, env).await
+}
+
+/// The same on a hub of the test's own.
+async fn seated_on(
+    hub: HubProc,
+    hello: Option<Value>,
+    env: &[(&str, std::ffi::OsString)],
+) -> (HubProc, Human, Seat, common::process::Mcp, GroupId) {
     let mut human = Human::found(&hub.url).await;
     let seat = Seat::new(&hub.url);
     let mut invite = human.invite(None).await;
@@ -1034,6 +1042,93 @@ async fn a_helper_claims_its_session_and_reads_its_own_events() {
             && coordinator.contains(&third),
         "{coordinator}"
     );
+    mcp.close().await;
+}
+
+/// The session id in open_session's answer: `…: "<name>" (<id>), …`.
+fn opened_sid(answer: &str) -> String {
+    answer
+        .split_once(" (")
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(sid, _)| sid.to_string())
+        .unwrap_or_else(|| panic!("no session id in {answer}"))
+}
+
+/// What the owner met: closed helper sessions went on counting at the hub and in the core (the board only hid
+/// them), until open_session was refused `too-many` with four on view. A closed one is archived now and frees
+/// its place; one with an open question stays live until it is answered; one a human archived is no longer
+/// "already open"; a closed name opens a new session. (The hub's limit is lowered to 3 here.)
+#[tokio::test(flavor = "multi_thread")]
+async fn closed_helper_sessions_are_archived_and_free_their_place() {
+    let hub = HubProc::start_with(&[("HUB_LIMIT_HELPERS_PER_MAIN", "3")]).await;
+    let (_hub, mut human, _seat, mut mcp, _group) = seated_on(hub, None, &[]).await;
+    let mut sids = std::collections::BTreeMap::new();
+    for name in ["A", "B", "C"] {
+        let opened = mcp.ok("open_session", json!({ "name": name })).await;
+        assert!(opened.starts_with("child session opened"), "{opened}");
+        sids.insert(name, opened_sid(&opened));
+    }
+    let (refused, failed) = mcp.call("open_session", json!({ "name": "D" })).await;
+    assert!(failed && refused.contains("live helper sessions"), "{refused}");
+
+    // closed without an open question: archived, its place free
+    let closed = mcp.ok("close_session", json!({ "name": "A" })).await;
+    assert!(closed.contains("closed and archived"), "{closed}");
+    let opened = mcp.ok("open_session", json!({ "name": "D" })).await;
+    assert!(opened.starts_with("child session opened"), "{opened}");
+    sids.insert("D", opened_sid(&opened));
+
+    // closed with an open question: live (and counted) until it is answered
+    let made = mcp
+        .ok(
+            "create_decision",
+            json!({ "session": "B", "title": "Which?", "options": [{ "key": "a", "label": "A" }, { "key": "b", "label": "B" }] }),
+        )
+        .await;
+    let card = made.split_whitespace().nth(1).expect("the card's id").to_string();
+    let closed = mcp.ok("close_session", json!({ "name": "B" })).await;
+    assert!(closed.contains("1 open question of it stays"), "{closed}");
+    let (refused, failed) = mcp.call("open_session", json!({ "name": "E" })).await;
+    assert!(failed && refused.contains("live helper sessions"), "{refused}");
+    human.sync().await;
+    human
+        .answer(&card, json!({ "answer_action": "answer", "choices": ["b"] }), &["b"], false)
+        .await
+        .expect("taken");
+    mcp.event("decision").await;
+    let opened = mcp.ok("open_session", json!({ "name": "E" })).await;
+    assert!(opened.starts_with("child session opened"), "{opened}");
+
+    // a session a human archived is over for the connector too: the same name opens a new one
+    human.sync().await;
+    let c = human
+        .groups()
+        .await
+        .into_iter()
+        .find(|g| g.session.is_some_and(|s| hex(s.session_id.as_bytes()) == sids["C"]))
+        .expect("the human device is a leaf of C")
+        .group;
+    human.archive(&c).await;
+    // (it hears it from the hub's stream; until then the name still finds the live C)
+    let mut reopened = String::new();
+    for _ in 0..300 {
+        reopened = mcp.ok("open_session", json!({ "name": "C" })).await;
+        if !reopened.starts_with("child session already open") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(reopened.starts_with("child session opened"), "{reopened}");
+    assert_ne!(opened_sid(&reopened), sids["C"]);
+
+    // a closed name opens a new session, not the archived one
+    let closed = mcp.ok("close_session", json!({ "name": "D" })).await;
+    assert!(closed.contains("closed and archived"), "{closed}");
+    let opened = mcp.ok("open_session", json!({ "name": "A" })).await;
+    assert!(opened.starts_with("child session opened"), "{opened}");
+    assert_ne!(opened_sid(&opened), sids["A"]);
+    let (refused, failed) = mcp.call("open_session", json!({ "name": "F" })).await;
+    assert!(failed && refused.contains("live helper sessions"), "{refused}");
     mcp.close().await;
 }
 

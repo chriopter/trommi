@@ -640,7 +640,7 @@ impl Client {
 
     /// Brings the groups the device holds into the core: which sessions there are, which is the main one, who
     /// sits in them.
-    async fn refresh_groups(&self, core: &mut Core) -> Result<()> {
+    pub(crate) async fn refresh_groups(&self, core: &mut Core) -> Result<()> {
         let me = self.me;
         let rows = self
             .vault
@@ -691,6 +691,47 @@ impl Client {
             self.emit(ClientEvent::Session { session_id });
         }
         Ok(())
+    }
+
+    /// Records as archived (5.2.10) the session groups among `groups` that this device still holds as live:
+    /// what a human device archived, or this device in a call whose answer was lost. What is live here is
+    /// then what is live at the hub, and the core counts the same live helper sessions as the hub (5.2.5).
+    pub(crate) async fn take_archived(&self, core: &mut Core, groups: Vec<GroupId>) -> Result<()> {
+        let held: Vec<GroupId> = groups
+            .into_iter()
+            .filter(|group| core.groups.values().any(|g| g == group))
+            .collect();
+        if held.is_empty() {
+            return Ok(());
+        }
+        self.vault
+            .call(move |v: &mut Vault| -> Result<()> {
+                for group in &held {
+                    v.device.archive(group)?;
+                }
+                Ok(())
+            })
+            .await??;
+        self.refresh_groups(core).await?;
+        core.commit()
+    }
+
+    /// Asks the hub which of this device's session groups it holds as archived, and records them (see
+    /// [`Self::take_archived`]): an archive event this process did not hear is caught up here.
+    pub(crate) async fn catch_up_archived(&self, core: &mut Core) -> Result<()> {
+        let list = self
+            .hub
+            .get(&format!("/v1/rooms/{}/groups", b64(self.room.as_bytes())))
+            .await?;
+        let gone: Vec<GroupId> = list
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter(|item| item.get("live") == Some(&Value::Bool(false)))
+            .filter_map(|item| group_of_item(item).ok())
+            .collect();
+        self.take_archived(core, gone).await
     }
 
     /// Goes online and stays: signs in, takes the lease, catches up, then follows the stream in the
@@ -1217,6 +1258,12 @@ impl Client {
                             "offline",
                             "an item of the stream could not be taken at its place",
                         ));
+                    }
+                }
+                // 5.2.10: a session group this device is a leaf of was archived.
+                "presence" if event.data.get("archived") == Some(&Value::Bool(true)) => {
+                    if let Ok(group) = group_of_item(&event.data) {
+                        self.take_archived(&mut core, vec![group]).await?;
                     }
                 }
                 "welcome" => {

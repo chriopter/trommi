@@ -120,7 +120,7 @@ Keep your own context small: you coordinate, helpers work. Keep a few long-lived
 
 ## close_session
 
-Close a helper's child session once its card says "Done: …"; pass summary to post a last word. Its open questions stay on the human's stack.
+Close a helper's child session once its card says "Done: …"; pass summary to post a last word. It is archived and no longer counts among your live helper sessions; open_session with the same name opens a new one. Its open questions stay on the human's stack and keep it live until answered.
 
 ## share_asset
 

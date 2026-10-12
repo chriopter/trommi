@@ -1961,7 +1961,7 @@ fn an_archived_session_takes_nothing_more_and_a_reject_reaches_the_human_devices
         2
     );
 
-    // only a human device archives; the room group is not archived
+    // an agent device archives no main session (only its own helper sessions); the room group is not archived
     agent
         .post(
             &w.hub,
@@ -2032,6 +2032,54 @@ fn an_archived_session_takes_nothing_more_and_a_reject_reaches_the_human_devices
             .len(),
         1
     );
+}
+
+/// 5.2.10: a helper session's opener archives it, as it founded it without a human's approval; another agent
+/// device does not, and the leaves hear of it.
+#[test]
+fn an_opener_archives_its_own_helper_session_and_no_other() {
+    let mut w = World::new();
+    let mut agent = w.enrol_agent();
+    let (session, _main) = w.found_main(&mut [], Some(&mut agent));
+    let mut other = w.enrol_agent();
+    let (other_session, _) = w.found_main(&mut [], Some(&mut other));
+    let humans = [w.ada.id()];
+    let (helper, reply, _) = w.found_helper(&mut agent, &session, &humans, &[]);
+    reply.ok();
+    let (others_helper, reply, _) = w.found_helper(&mut other, &other_session, &humans, &[]);
+    reply.ok();
+    let archive = |dev: &Dev, group: &[u8]| {
+        dev.post(
+            &w.hub,
+            &format!("/v1/groups/{}/archive", b64(group)),
+            &json!({}),
+        )
+    };
+    // not another agent's helper session
+    archive(&other, &helper).refused(403, "forbidden");
+    archive(&agent, &others_helper).refused(403, "forbidden");
+    let mut events = w.ada.events(&w.hub, None);
+    archive(&agent, &helper).ok();
+    // again: the first answer
+    archive(&agent, &helper).ok();
+    // (presence also says who is online)
+    let e = loop {
+        let e = events.until("presence");
+        if e.data.get("archived").is_some() {
+            break e;
+        }
+    };
+    assert_eq!(e.data["archived"], true, "{:?}", e.data);
+    assert_eq!(e.data["group_id"], b64(&helper));
+    let list = groups(&w, &w.ada);
+    assert_eq!(group_of(&list, &helper)["live"], false);
+    assert_eq!(group_of(&list, &others_helper)["live"], true);
+    // the opener sees it archived in its own list too
+    let own = groups(&w, &agent);
+    assert_eq!(group_of(&own, &helper)["live"], false);
+    agent
+        .post_message(&w.hub, &helper, b"x", false)
+        .refused(410, "gone");
 }
 
 #[test]

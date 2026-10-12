@@ -395,7 +395,7 @@ pub fn found_session(x: &Ctx, auth: &Auth, f: &Founding, fx: &mut Effects) -> Re
         if live as usize >= x.cfg.helpers_per_main {
             return Err(refuse(
                 "too-many",
-                "a main session has at most 32 live helper sessions",
+                "a main session holds its number of live helper sessions",
             ));
         }
         (GroupKind::Helper, Some(session.parent))
@@ -1417,11 +1417,28 @@ pub fn group_page(c: &Connection, auth: &Auth, after: i64, limit: i64) -> Res<Va
     Ok(json!({ "items": items, "more": more, "after": cursor }))
 }
 
+/// 5.2.10: a human device archives any session; a helper session's opener (its main session's agent leaf now)
+/// archives that helper session too, as it founded it without a human's approval.
 pub fn archive(x: &Ctx, auth: &Auth, group_id: &[u8], fx: &mut Effects) -> Res<Value> {
-    auth.human()?;
+    auth.member()?;
     let row = store::group(x.c, &auth.room, group_id)?;
     if row.kind == GroupKind::Room {
         return Err(refuse("forbidden", "the room group is not archived"));
+    }
+    if auth.who != Who::Human {
+        let opener = match (auth.who, row.kind, row.parent_group()) {
+            (Who::Agent, GroupKind::Helper, Some(parent)) => {
+                let view = store::room_view(x.c, &auth.room)?;
+                store::agent_leaf(x.c, &view, &parent)? == Some(auth.device)
+            }
+            _ => false,
+        };
+        if !opener {
+            return Err(refuse(
+                "forbidden",
+                "a human device archives a session, an opener its own helper session",
+            ));
+        }
     }
     if row.live {
         x.c.prepare_cached("UPDATE groups SET live = 0, archived_at = ?1 WHERE group_id = ?2")?
