@@ -312,6 +312,9 @@ extension Room {
       var change = Change()
       for session in left.notJoined { board.pushAlert(&change, code: session.code, message: "a session could not be joined when this device signed in: another device of yours can add it") }
       try? await refreshGroups(&change)
+      // What a catch-up passed over before these joins went through (a session's envelopes, its agent's name among
+      // them, read while the device was not in that group yet) is read back now that the groups are held.
+      if record.past?.passedOver == true { notePast { $0.readBack = true }; pastDue = true }
       emit(change)
     }
     LocalKey.delete(item, dir: store.dir)
