@@ -1152,6 +1152,14 @@ const byCreated = (model: Model) => (a: string, b: string) => (model.cards.get(a
 /** A card that stands on the Desk: open, not one the hub closed meanwhile (`catching_up`), and not an info its agent
  *  is still working on (`working`, spec 9.1.3: under Off your mind until its "Done: …"). */
 const onDesk = (c: Card | undefined): boolean => c?.object_state === 'open' && !c.catching_up && c.working !== true
+/** Whether his "Later" (`snooze/<id>`) still holds a card off the Desk: until its time, and only for the version he
+ *  put off: a newer version of the card (revised, its urgency raised) wakes it, as the clock does. */
+export function snoozeHolds(model: Model, object_id: string, now: number = Date.now()): boolean {
+  const v = model.human.snoozes.get(object_id)
+  if (!v || (v.until != null && !(v.until > now))) return false
+  const at = model.human.raw.get(`snooze/${object_id}`)?.envelope_number
+  return !(Number.isInteger(at) && (model.cards.get(object_id)?.envelope_number ?? 0) > (at as number))
+}
 export function project(model: Model, change: Change, now: number = Date.now()): void {
   const before = model.stack, beforePerm = model.open_permission_ids
   const B = builder(model)
@@ -1192,7 +1200,7 @@ export function project(model: Model, change: Change, now: number = Date.now()):
     const stack: string[] = []
     let wake = Infinity
     for (const id of P.sorted) {
-      if (snoozes.size) { const v = snoozes.get(id); if (v && (v.until == null || v.until > now)) { if (v.until != null && v.until < wake) wake = v.until; continue } }
+      if (snoozes.size && snoozeHolds(model, id, now)) { const until = snoozes.get(id)!.until; if (until != null && until < wake) wake = until; continue }
       if (archived.size && archived.has(model.cards.get(id)?.session_id as string)) continue
       stack.push(id)
     }

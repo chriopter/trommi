@@ -42,6 +42,13 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **Calmer hero picture**: the phone on trommi.com and in the README now shows one short yes/no question.
 
 **Fixed**
+- **Web: a card you put off comes back when its agent writes again**: Later holds a card only for the version you
+  put off; a revision or a raised urgency brings it back to the Desk at once, and its morning brings it back while
+  the page stays open. A card on Later no longer raises the red hand in the sidebar.
+- **Web: no restart flag**: a session that hears you on its next step no longer asks for a restart with
+  `--dangerously-load-development-channels`; board events reach it through the Trommi monitor.
+- Web: videos on a Desk row show their first frame, from the middle of the picture.
+- trommi.com shows the plain prompt to connect an agent, with the slash command below it, as the invite page does.
 - **New agent online at once**: an agent that joins with `trommi-connector connect` goes online right away under its folder's name, not "gone" under a raw id until its first step.
 - **A new agent no longer waits forever for its session**: when the device that tapped "They match" could not found
   the agent's session (an iPhone sent away right after, a tab closed), your web app now does it once the agent is
@@ -122,7 +129,6 @@ Agents get their own page. Answer from the Lock Screen. Pushes give nothing away
   long ago, with a running pen line (handed back, or answered while the session works on it; web and iPhone).
 - Trommi for Mac: the iPad's layout in a window, the questions waiting in the menu bar, Return sends and
   Shift+Return hands a card back; pairing by pasting the link.
-- Settings → Security lists every key that opens your data: the account key (your recovery key) with its
 - Settings → Security (web and iPhone) lists every key that opens your data: the account key (your recovery key) with its
   fingerprint, your devices with theirs and the day each came, your agents, and what each of them can read. The self
   test is a row there now.
