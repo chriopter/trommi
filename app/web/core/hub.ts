@@ -411,6 +411,12 @@ function envelopePage(v: unknown, limit: number, from: number, direction: 1 | -1
   })
   return { items, more: bool(o.more, 'more') }
 }
+/** Which sessions an answer covers (hub-api.md point 46): every one (none set), the live ones (`active`), the
+ *  archived ones (`archived`), or for a catch-up one group's envelopes (`group`). */
+export interface Only { active?: boolean; archived?: boolean; group?: Uint8Array }
+function onlyQuery(only: Only): Record<string, string | number> {
+  return { ...(only.active ? { active: 1 } : {}), ...(only.archived ? { archived: 1 } : {}), ...(only.group ? { group: enc(only.group) } : {}) }
+}
 function groupRow(v: unknown): GroupRow {
   const o = obj(v, 'a group')
   return {
@@ -1024,14 +1030,15 @@ export class Hub {
     if (!this.signer) wrong('this hub client has no signer: useSigner first')
     return `/v1/rooms/${this.signer.room}${rest}`
   }
-  /** `GET /v1/rooms/{room}/groups`: what the asker may see of the room's groups. */
-  async roomGroups(): Promise<GroupRow[]> {
+  /** `GET /v1/rooms/{room}/groups`: what the asker may see of the room's groups; `only`: the live or the archived
+   *  ones alone (point 46). */
+  async roomGroups(only: Only = {}): Promise<GroupRow[]> {
     // in pages of up to 1000 (and 8 MiB), the next from the answer's `after`; a hub that answers the bare list of
     // every group (before point 43) is read as one page
     const out: GroupRow[] = []
     let after: string | null = null
     for (let pages = 0; pages < 1000; pages++) {
-      const v = await this.get(this.roomPath('/groups'), { limit: 1000, after: after ?? undefined }, CAP_DESK)
+      const v = await this.get(this.roomPath('/groups'), { limit: 1000, after: after ?? undefined, ...onlyQuery(only) }, CAP_DESK)
       if (Array.isArray(v)) return list(v, 'groups', 10_000).map(groupRow)
       const o = obj(v, 'a page of groups')
       out.push(...list(o.items, 'items', 1000).map(groupRow))
@@ -1392,9 +1399,10 @@ export class Hub {
   async postEnvelope(envelope: Uint8Array): Promise<{ change: number }> {
     return { change: int(obj(await this.send('POST', '/v1/envelopes', { envelope: enc(envelope) }), 'an envelope answer').change, 'change', 1) }
   }
-  /** `GET /v1/desk`: the open objects with their current version, every writer's newest value per register, the groups. */
-  async desk(): Promise<Desk> {
-    const o = obj(await this.get('/v1/desk', undefined, CAP_DESK), 'the Desk')
+  /** `GET /v1/desk`: the open objects with their current version, every writer's newest value per register, the groups;
+   *  `only`: of the live sessions alone (what a start loads), or of the archived ones (when one is opened). */
+  async desk(only: Only = {}): Promise<Desk> {
+    const o = obj(await this.get('/v1/desk', onlyQuery(only), CAP_DESK), 'the Desk')
     const objects = (v: unknown): DeskObject[] => list(v, 'objects', 1000).map(x => {
       const d = obj(x, 'an object')
       return {
@@ -1411,8 +1419,8 @@ export class Hub {
   }
   /** `GET /v1/desk?brief=1[&since=]`: the Desk's open cards and permission requests as ids and versions; with
    *  `since`, only what changed after it (and what of that is no longer open). */
-  async deskBrief(since: number | null = null): Promise<DeskBrief> {
-    const o = obj(await this.get('/v1/desk', since === null ? { brief: 1 } : { brief: 1, since: ownInt(since, 'since') }, CAP_DESK), 'the Desk')
+  async deskBrief(since: number | null = null, only: Only = {}): Promise<DeskBrief> {
+    const o = obj(await this.get('/v1/desk', { ...(since === null ? { brief: 1 } : { brief: 1, since: ownInt(since, 'since') }), ...onlyQuery(only) }, CAP_DESK), 'the Desk')
     const entries = (v: unknown): DeskEntry[] => list(v, 'objects', 10_000).map(x => {
       const d = obj(x, 'an object')
       return { object_id: id(d.object_id, 'object_id', 16), version_change: int(d.version_change, 'version_change', 1), head_change: int(d.head_change, 'head_change', 1) }
@@ -1482,11 +1490,12 @@ export class Hub {
   /**
    * `GET /v1/changes?after=&limit=`: catch-up, everything this device may see above change `after`, in the hub's one
    * order. The items come strictly ascending by `change`, all above `after` and none above the answer's `change`,
-   * which is the cursor for the next call; an answer that breaks this is refused whole.
+   * which is the cursor for the next call; an answer that breaks this is refused whole. `only.active`: no envelope of
+   * an archived session (its Commits still come); `only.group`: that group's envelopes alone (point 46).
    */
-  async changes(after: number, limit = 200): Promise<{ items: ChangeItem[]; change: number; more: boolean }> {
+  async changes(after: number, limit = 200, only: Only = {}): Promise<{ items: ChangeItem[]; change: number; more: boolean }> {
     const from = ownInt(after, 'after'), most = Math.min(1000, Math.max(1, ownInt(limit, 'limit')))
-    const o = obj(await this.get('/v1/changes', { after: from, limit: most }, CAP_LIST), 'a catch-up answer')
+    const o = obj(await this.get('/v1/changes', { after: from, limit: most, ...onlyQuery(only) }, CAP_LIST), 'a catch-up answer')
     const change = int(o.change, 'change'), more = bool(o.more, 'more')
     if (change < from || change - from > CHANGES_WINDOW) bad('a cursor outside the stretch asked for')
     let at = from

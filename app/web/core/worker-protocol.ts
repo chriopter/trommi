@@ -46,7 +46,7 @@ export const CALLS: readonly string[] = Object.freeze([
   'duck', 'star', 'setCrown', 'setDesk', 'saveNote', 'deleteNote', 'sendStrokes', 'sendStrokePiece', 'declareBoardFrontier', 'postBoardFrontier', 'createInvite', 'confirmInvite', 'answerVouch', 'removeDevices',
   'leaveRoom',
   // timelines and attachments
-  'loadTimeline', 'timelineWindow', 'loadTimelineAfter', 'uploadAttachment', 'fetchAttachment', 'attachmentBlob',
+  'loadTimeline', 'loadArchived', 'timelineWindow', 'loadTimelineAfter', 'uploadAttachment', 'fetchAttachment', 'attachmentBlob',
   'shareAttachment', 'myShares', 'revokeShare',
   // push
   'pushSubscribe', 'pushStates',

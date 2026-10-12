@@ -97,7 +97,8 @@ public enum NotifyPrefetch {
     for _ in 0..<pagesPerPush {
       guard after < push.change, var comps = URLComponents(string: "\(hub)/v1/push-changes") else { break }
       // the ticket goes in a header, never in the URL (which proxies log)
-      comps.queryItems = [URLQueryItem(name: "after", value: String(after)), URLQueryItem(name: "limit", value: String(pageLimit))]
+      // (as the app reads: the live sessions alone, spec/hub-api.md point 46)
+      comps.queryItems = [URLQueryItem(name: "after", value: String(after)), URLQueryItem(name: "limit", value: String(pageLimit)), URLQueryItem(name: "active", value: "1")]
       guard let url = comps.url,
             let data = await get(url, ["trommi-client": context.client ?? "ios/0.0.0", "trommi-ticket": NotifyText.b64u(push.ticket)]),
             let page = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

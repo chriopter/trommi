@@ -1373,10 +1373,13 @@ fn group_item(
 }
 
 /// Every group the asker may see, in one list (the answer without `limit`, and the Desk's `groups`).
-pub fn group_list(c: &Connection, auth: &Auth) -> Res<Vec<Value>> {
+pub fn group_list(c: &Connection, auth: &Auth, only: &crate::content::Only) -> Res<Vec<Value>> {
     let view = store::room_view(c, &auth.room)?;
     let mut out = Vec::new();
     for row in store::groups_of_room(c, &auth.room)? {
+        if !only.takes(row.live) {
+            continue;
+        }
         if let Some(item) = group_item(c, auth, &view, &row)? {
             out.push(item);
         }
@@ -1386,7 +1389,13 @@ pub fn group_list(c: &Connection, auth: &Auth) -> Res<Vec<Value>> {
 
 /// `GET /v1/rooms/{room}/groups?after=&limit=`: a page of that list, in the order of founding, up to `limit`
 /// groups and the answer's byte budget (the first always); `after` of the next call is the answer's `after`.
-pub fn group_page(c: &Connection, auth: &Auth, after: i64, limit: i64) -> Res<Value> {
+pub fn group_page(
+    c: &Connection,
+    auth: &Auth,
+    after: i64,
+    limit: i64,
+    only: &crate::content::Only,
+) -> Res<Value> {
     let view = store::room_view(c, &auth.room)?;
     let (mut items, mut bytes, mut cursor, mut more) = (Vec::new(), 0usize, after, false);
     // groups the asker may not see are skipped, so the page is read in steps until it is full or the room ends
@@ -1399,6 +1408,10 @@ pub fn group_page(c: &Connection, auth: &Auth, after: i64, limit: i64) -> Res<Va
             if items.len() as i64 == limit {
                 more = true;
                 break 'pages;
+            }
+            if !only.takes(row.live) {
+                cursor = founded;
+                continue;
             }
             if let Some(item) = group_item(c, auth, &view, &row)? {
                 bytes += item.to_string().len();

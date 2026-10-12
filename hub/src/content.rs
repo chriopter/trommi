@@ -1202,13 +1202,15 @@ fn collect(rows: &mut rusqlite::Rows, limit: i64, pruned: bool) -> Res<(Vec<Valu
 
 /// `GET /v1/desk`: the open objects with their current version, every writer's newest value per register, and
 /// the groups, in what the asker may read.
-pub fn desk(c: &Connection, auth: &Auth) -> Res<Value> {
+pub fn desk(c: &Connection, auth: &Auth, only: &Only) -> Res<Value> {
     auth.member()?;
     let readable = store::readable_groups(c, auth)?;
+    let archived = archived_groups(c, &auth.room)?;
     let sees = |group: &[u8]| {
         readable
             .as_ref()
             .is_none_or(|g| g.iter().any(|x| x == group))
+            && only.takes(!archived.iter().any(|x| x == group))
     };
     let mut out = json!({});
     let (mut desk_bytes, mut truncated, mut any) = (0usize, false, false);
@@ -1282,22 +1284,32 @@ pub fn desk(c: &Connection, auth: &Auth) -> Res<Value> {
     }
     out["registers"] = Value::Array(registers);
     out["truncated"] = json!(truncated);
-    out["groups"] = Value::Array(crate::delivery::group_list(c, auth)?);
+    out["groups"] = Value::Array(crate::delivery::group_list(c, auth, only)?);
     out["change"] = json!(store::room_row(c, &auth.room)?.change);
     Ok(out)
+}
+
+/// The archived groups of a room.
+fn archived_groups(c: &Connection, room: &Room) -> Res<Vec<Vec<u8>>> {
+    Ok(c
+        .prepare_cached("SELECT group_id FROM groups WHERE room_id = ?1 AND live = 0")?
+        .query_map([&room[..]], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
 }
 
 /// `GET /v1/desk?brief=1&since=`: the Desk's open cards and permission requests as ids and version numbers only,
 /// no envelopes, no registers (the same rows as the full Desk, in its order; a client reads the versions it lacks
 /// by their object route). With `since`, only the rows whose `head_change` is above it: the open ones listed, the
 /// ones no longer open named in `settled`. Nothing in it that the full Desk does not show.
-pub fn desk_brief(c: &Connection, auth: &Auth, since: Option<i64>) -> Res<Value> {
+pub fn desk_brief(c: &Connection, auth: &Auth, since: Option<i64>, only: &Only) -> Res<Value> {
     auth.member()?;
     let readable = store::readable_groups(c, auth)?;
+    let archived = archived_groups(c, &auth.room)?;
     let sees = |group: &[u8]| {
         readable
             .as_ref()
             .is_none_or(|g| g.iter().any(|x| x == group))
+            && only.takes(!archived.iter().any(|x| x == group))
     };
     let mut out = json!({});
     let mut truncated = false;
@@ -1521,7 +1533,33 @@ pub const CHANGES_WINDOW: i64 = 20_000;
 /// visible are read (two integers a row, filtered and limited in SQL), then only the items that fit the limit
 /// and the answer's byte budget are loaded. The cursor never skips an item the asker may see.
 pub fn changes(c: &Connection, auth: &Auth, after: i64, limit: Option<i64>) -> Res<Value> {
-    changes_upto(c, auth, after, limit, None)
+    changes_upto(c, auth, after, limit, None, &Only::default())
+}
+
+/// Which session groups an answer covers (hub-api.md point 46): every one the asker may see; only live ones
+/// (`active=1`: an archived session is loaded when it is opened); or for a catch-up one group's envelopes alone
+/// (`group=`), how an archived session is loaded.
+#[derive(Debug, Clone, Default)]
+pub struct Only {
+    pub active: bool,
+    pub archived: bool,
+    pub group: Option<Vec<u8>>,
+}
+
+impl Only {
+    /// Whether a group's rows are in the answer, by whether it is live.
+    pub fn takes(&self, live: bool) -> bool {
+        !(self.active && !live || self.archived && live)
+    }
+}
+
+/// The groups of a room that are archived, as upper-case hex (for `json_each`).
+fn archived_hex(c: &Connection, room: &Room) -> Res<String> {
+    let rows: Vec<String> = c
+        .prepare_cached("SELECT hex(group_id) FROM groups WHERE room_id = ?1 AND live = 0")?
+        .query_map([&room[..]], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(json!(rows).to_string())
 }
 
 /// `GET /v1/changes` as far as `ceiling` at most: what a push ticket reads (15.2), the changes up to the one that
@@ -1532,8 +1570,13 @@ pub fn changes_upto(
     after: i64,
     limit: Option<i64>,
     ceiling: Option<i64>,
+    only: &Only,
 ) -> Res<Value> {
     let limit = clamp(limit, 200, 1000);
+    // `active=1`: no envelope of an archived group (its Commits and MLS messages still come: a leaf keeps its
+    // group state whole); `group=`: that group's envelopes alone, nothing of the log
+    let skipped = if only.active { archived_hex(c, &auth.room)? } else { "[]".to_string() };
+    let one = only.group.as_ref().map(|g| crate::util::hex(g).to_uppercase());
     let room_head = store::room_row(c, &auth.room)?.change;
     let head = ceiling.map_or(room_head, |top| top.min(room_head));
     let upto = after.saturating_add(CHANGES_WINDOW).min(head);
@@ -1555,7 +1598,7 @@ pub fn changes_upto(
     {
         let mut s = c.prepare_cached(
             "SELECT change, length(bytes) FROM group_log
-             WHERE room_id = ?1 AND change > ?2 AND change <= ?3
+             WHERE room_id = ?1 AND change > ?2 AND change <= ?3 AND ?9 IS NULL
                AND (?4 = 1 OR hex(group_id) IN (SELECT value FROM json_each(?5))
                     OR (kind = 'commit' AND (?6 = 1 OR hex(group_id) IN (SELECT value FROM json_each(?7)))))
              ORDER BY change LIMIT ?8",
@@ -1570,7 +1613,8 @@ pub fn changes_upto(
                     leaf,
                     recovery,
                     public,
-                    limit + 1
+                    limit + 1,
+                    one
                 ],
                 |r| Ok((r.get(0)?, r.get(1)?, true)),
             )?
@@ -1584,6 +1628,8 @@ pub fn changes_upto(
             "SELECT change, length(header) + CASE WHEN ?6 = 1 THEN 0 ELSE coalesce(length(body), 0) END FROM envelopes
              WHERE room_id = ?1 AND change > ?2 AND change <= ?3 AND cut = 0
                AND (?4 = 1 OR ?6 = 1 OR hex(group_id) IN (SELECT value FROM json_each(?5)))
+               AND hex(group_id) NOT IN (SELECT value FROM json_each(?8))
+               AND (?9 IS NULL OR hex(group_id) = ?9)
              ORDER BY change LIMIT ?7",
         )?;
         let rows = s
@@ -1595,7 +1641,9 @@ pub fn changes_upto(
                     human,
                     leaf,
                     recovery,
-                    limit + 1
+                    limit + 1,
+                    skipped,
+                    one
                 ],
                 |r| Ok((r.get(0)?, r.get(1)?, false)),
             )?

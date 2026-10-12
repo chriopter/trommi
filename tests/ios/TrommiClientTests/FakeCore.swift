@@ -22,6 +22,7 @@ final class FakeDevice: CoreDevice {
     var registers: [String: String] = [:]          // "<group>/<name>" -> value (JSON text)
     var pending: String?                           // an own Commit of the room group that the log has not handed back (hex)
     var oldKeys: [String]?                         // groups (hex) whose keys of before this device came were handed over
+    var archived: [String]?                        // session groups (hex) archived here (5.2.10)
   }
   let store: CoreStorage
   var state: State
@@ -74,7 +75,7 @@ final class FakeDevice: CoreDevice {
   func groups() throws -> [GroupSummary] {
     guard isOwner, let r = state.room else { return [] }
     return [GroupSummary(group: try unhex(r), session: nil, epoch: state.epoch, leaves: [id], archived: false, pending: state.pending != nil)] + state.sessions.keys.sorted().map { s in
-      GroupSummary(group: Self.sessionGroup(r, s), session: SessionInfo(session: try! unhex(s), parent: nil, agents: state.sessions[s]!.map { try! unhex($0) }), epoch: 1, leaves: [id] + state.sessions[s]!.map { try! unhex($0) }, archived: false, pending: false)
+      GroupSummary(group: Self.sessionGroup(r, s), session: SessionInfo(session: try! unhex(s), parent: nil, agents: state.sessions[s]!.map { try! unhex($0) }), epoch: 1, leaves: [id] + state.sessions[s]!.map { try! unhex($0) }, archived: (state.archived ?? []).contains(hex(Self.sessionGroup(r, s))), pending: false)
     }
   }
   func holdsKey(group: GroupId, epoch: UInt64) throws -> Bool { true }
@@ -102,7 +103,10 @@ final class FakeDevice: CoreDevice {
     state.pending = hex(commit)
     return try queue(.commit, group: group, parts: [commit, [0], [], [0]])
   }
-  func archive(group: GroupId) throws {}
+  func archive(group: GroupId) throws {
+    var a = state.archived ?? []
+    if !a.contains(hex(group)) { a.append(hex(group)); state.archived = a; try write([]) }
+  }
   /** This device is in that session's group from here on (a test's join with the code). */
   func joinForTest(session: String, agent: String) throws { state.sessions[session] = [agent]; try write([]) }
   /** A "Welcome" is JSON { session, agent, by }: this device is in that session's group from here on. */
@@ -379,6 +383,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var welcomesRead = 0
     /** The object ids (hex) GET /v1/desk lists as open cards, asked at each read; nil: the route is not there. */
     var deskCards: (() -> [String])?
+    /** Session groups (hex) the hub holds as archived (spec/hub-api.md point 46). */
+    var archivedGroups: Set<String> = []
     var deskReads = 0
     func add(_ item: [String: Any]) -> UInt64 { change += 1; var i = item; i["change"] = change; items.append(i); return change }
     /** A Commit in the log of a group. */
@@ -411,11 +417,25 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
         deskReads += 1
         return (200, ["change": change, "cards": cards().map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any]()])
       case ("PUT", "/v1/key-packages"): return (200, ["unused": 100])
+      case ("GET", _) where path.hasPrefix("/v1/rooms/") && path.hasSuffix("/groups") && query["archived"] == "1":
+        return (200, ["items": archivedGroups.sorted().map { ["group_id": b64u(try! unhex($0)), "kind": "main", "live": false, "leaves": [String]()] as [String: Any] }, "more": false, "after": archivedGroups.count])
       case ("GET", "/v1/changes"):
         let after = UInt64(query["after"] ?? "0") ?? 0
         let limit = Int(query["limit"] ?? "500") ?? 500
-        let page = Array(items.filter { ($0["change"] as! UInt64) > after }.prefix(limit))
-        let upTo = page.last.map { $0["change"] as! UInt64 } ?? change
+        // `active=1`: no envelope of an archived group; `group=`: that group's envelopes alone (point 46)
+        func groupOf(_ i: [String: Any]) -> String? {
+          guard i["kind"] as? String == "envelope", let e = (i["envelope"] as? String).flatMap({ try? unb64u($0) }) else { return nil }
+          return (parse(e)["h"] as? [String: Any])?["group"] as? String
+        }
+        let one = query["group"].flatMap { try? unb64u($0) }.map(hex)
+        let wanted: ([String: Any]) -> Bool = { i in
+          let g = groupOf(i)
+          if let one { return g == one }
+          if query["active"] == "1", let g { return !self.archivedGroups.contains(g) }
+          return true
+        }
+        let page = Array(items.filter { ($0["change"] as! UInt64) > after && wanted($0) }.prefix(limit))
+        let upTo = page.count < limit ? change : (page.last.map { $0["change"] as! UInt64 } ?? change)
         return (200, ["items": page, "change": upTo, "more": upTo < change])
       case ("POST", "/v1/envelopes"):
         let e = body["envelope"] as! String
