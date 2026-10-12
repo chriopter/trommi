@@ -70,6 +70,7 @@ const DESK_SOON_MS = 250
 /** How many answered cards a reading of the Desk asks the hub about (`readDesk`). */
 const ANSWERED_ASKED = 20
 const CHUNK = 65_536
+const MIB_ = 1 << 20
 const DAY = 86_400_000
 const INVITE_CONFIRM_MS = 5 * 60_000
 const MODEL_KEYS: readonly string[] = ['card/', 'session/', 'perm/', 'note/', 'pub/', 'tlmeta/', 'reg/', 'tl/', 'members', 'devregs', 'room', 'newer', 'alerts']
@@ -128,6 +129,10 @@ function decrypt(core: Core, file: FileRef, stored: Uint8Array): Uint8Array {
 export async function getDecrypted(core: Core, hub: Hub, file: FileRef): Promise<Uint8Array> {
   return decrypt(core, file, (await hub.getFile(file.fileId)).bytes)
 }
+/** The stored bytes a file is decrypted from: kept in this browser's cache as the hub serves them, still encrypted
+ *  (`fetchAttachment`). Small ones only, and at most FILES_KEPT bytes in all, the least recently used dropped. */
+const FILE_KEPT_MAX = 4 * MIB_
+const FILES_KEPT = 96 * MIB_
 
 // ---- Share links (11.5) ---------------------------------------------------------------------------------------------
 
@@ -477,7 +482,7 @@ export class Client {
         this.publish()
         return
       case 'invite_request': void this.checkInvite(hex(event.invite_id)).catch(() => {}); return
-      case 'file_evicted': this.attachmentCache.delete(hex(event.file_id)); return
+      case 'file_evicted': this.attachmentCache.delete(hex(event.file_id)); void this.cache.delete(`file/${hex(event.file_id)}`).catch(() => {}); return
       case 'archived': void this.engine.archive(event.group).catch(() => {}); return
       default:
     }
@@ -1165,10 +1170,36 @@ export class Client {
   async fetchAttachment(ref: AttachmentRef): Promise<Uint8Array> {
     const hit = this.attachmentCache.get(ref.attachment_id)
     if (hit) return hit
-    const bytes = await getDecrypted(this.core, this.hub, fileRefOf(ref))
+    const file = fileRefOf(ref)
+    // the bytes as the hub stored them, kept in this browser's cache: decrypted and checked against the file's
+    // hash as if they had just come (a kept copy that fails is dropped and fetched again)
+    const kept = await this.cache.get(`file/${ref.attachment_id}`).catch(() => undefined)
+    if (kept instanceof Uint8Array) {
+      try { const bytes = decrypt(this.core, file, kept); this.remember(ref.attachment_id, bytes); void this.keptFile(ref.attachment_id, null); return bytes } catch { void this.cache.delete(`file/${ref.attachment_id}`).catch(() => {}) }
+    }
+    const stored = (await this.hub.getFile(file.fileId)).bytes
+    const bytes = decrypt(this.core, file, stored)
     this.remember(ref.attachment_id, bytes)
+    if (stored.length <= FILE_KEPT_MAX) void this.keptFile(ref.attachment_id, stored).catch(() => {})
     return bytes
   }
+  /** Keeps a file's stored bytes in the cache (`stored`), or marks a kept one as just used (null); drops the least
+   *  recently used ones beyond FILES_KEPT. One list of what is kept, in the order of use. */
+  private keptFile(id: string, stored: Uint8Array | null): Promise<void> {
+    return this.filesKept = this.filesKept.catch(() => {}).then(async () => {
+      const list = ((await this.cache.get('client/files').catch(() => null)) ?? []) as [string, number][]
+      const at = list.findIndex(([k]) => k === id)
+      // (a use of one kept: moved to the end now and then, not written on every picture shown)
+      if (!stored && (at < 0 || Math.random() < 0.9)) return
+      const size = stored ? stored.length : list[at]![1]
+      if (at >= 0) list.splice(at, 1)
+      list.push([id, size])
+      const drop: string[] = []
+      for (let total = list.reduce((n, [, b]) => n + b, 0); total > FILES_KEPT && list.length > 1;) { const [k, b] = list.shift()!; drop.push(k); total -= b }
+      await this.cache.setMany([...(stored ? [[`file/${id}`, stored] as [string, unknown]] : []), ...drop.map((k): [string, undefined] => [`file/${k}`, undefined]), ['client/files', list]])
+    })
+  }
+  private filesKept: Promise<void> = Promise.resolve()
   async attachmentBlob(ref: AttachmentRef): Promise<Blob> { return new Blob([await this.fetchAttachment(ref) as Uint8Array<ArrayBuffer>], { type: ref.media_type ?? 'application/octet-stream' }) }
 
   /** A link for someone outside the room to one file of an open Artifact (11.5): the hub learns the hash of the
