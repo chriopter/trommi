@@ -267,6 +267,8 @@ public struct Store {
   var waitingBytes = 0
   var waitingDropped = false
   var waitingTail: Task<Void, Never>?
+  /** The role the hub gave this run's token for (`catchUp`); nil: not signed in in this run. */
+  var signedInAs: String?
   /** Keys came while the past was being read back (7.1.1): read back once more when that read ends. */
   var readBackAgain = false
   /** The chains (group/sender, hex) whose gap this run filled once already (`fillGap`). */
@@ -506,7 +508,14 @@ public struct Store {
     // A token is not membership: the hub names the role it gave it for. A removed device gets one that reads the
     // proof of its removal and nothing else (spec/hub-api.md point 42).
     let role: String
-    do { role = try await noted { try await hub.signIn() } } catch { _ = await restoring?.value; throw error }
+    // A token of this run that is good for two minutes more is used as it is (the web keeps its token too): a removed
+    // device's token is answered `not-member` (spec/hub-api.md point 8), and then it signs in again at once below.
+    let kept = signedInAs != nil && hub.holdsToken(validFor: 120_000)
+    if kept { role = signedInAs!; Spent.count("sign-in kept") }
+    else {
+      do { role = try await noted { try await hub.signIn() } } catch { _ = await restoring?.value; throw error }
+      signedInAs = role == "removed" ? nil : role
+    }
     _ = await restoring?.value
     if role == "removed" {
       try await checkRemoval()
@@ -518,7 +527,12 @@ public struct Store {
     // (the Desk is read alongside the Welcomes, and taken once they are in)
     let deskRead = Task { @MainActor in await self.fetchDesk(whole: false) }
     var until: UInt64?
-    do { try await Spent.time("welcomes") { try await takeWelcomes(&change) } } catch { deskRead.cancel(); _ = await deskRead.value; throw error }
+    do { try await Spent.time("welcomes") { try await takeWelcomes(&change) } } catch {
+      deskRead.cancel(); _ = await deskRead.value
+      // (the kept token is not good any more: signed in again, and the hub says what this device is now)
+      if kept, let h = error as? HubError, h.code == "not-member" || h.status == 401 { hub.forgetToken(); signedInAs = nil; return try await catchUp() }
+      throw error
+    }
     until = await Spent.time("desk first") { await applyDesk(await deskRead.value) }
     let joiningByCode = record.codeJoin == true
     if let work = codeJoinWork { await Spent.time("wait session joins") { await work.value }; codeJoinWork = nil }

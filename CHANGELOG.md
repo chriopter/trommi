@@ -90,6 +90,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **A session asking to join by itself no longer gives up at a hiccup**: when the session vouching for it was busy reconnecting at that moment, the new session stayed off the board until its next tool call; it now waits for the voucher and gets in after your tap.
 
 **Better**
+- **iPhone catches up with a fraction of the traffic**: opening the app reads only what changed on your Desk (about 90 KB instead of 4.5 MB in a 1,000-card room), new keys from your other devices no longer make it reread the whole room, and a sign-in with the code reads each session once.
 - **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
 - Web: the start page offers "Try the demo" right under Log in, with a line saying nothing is sent.
 - Web: a new version no longer reloads an open tab while you look at it: a quiet "A new version is ready" offers it, and the tab reloads by itself once it is in the background.

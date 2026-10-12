@@ -46,6 +46,7 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
     let path = request.url?.path ?? ""
     let route = "\(request.httpMethod ?? "GET") " + path.replacingOccurrences(of: #"/[A-Za-z0-9_-]{20,}"#, with: "/:id", options: .regularExpression)
     MegaFaults.lock.withLock { MegaFaults.asked[route, default: 0] += 1 }
+    if let f = ProcessInfo.processInfo.environment["TROMMI_ROUTE_LOG"], let h = FileHandle(forWritingAtPath: f) { h.seekToEndOfFile(); h.write(Data("\(request.httpMethod ?? "GET") \(path)?\(request.url?.query ?? "")\n".utf8)); try? h.close() }
     if MegaFaults.changesDown && path.contains("/v1/changes") { return answer(503, #"{"error":"overloaded","message":"mega: changes down"}"#) }
     if MegaFaults.fail > 0 && !path.contains("/stream") && MegaFaults.rand() < MegaFaults.fail { return answer(502, #"{"error":"unavailable","message":"mega: injected"}"#) }
     var req = request

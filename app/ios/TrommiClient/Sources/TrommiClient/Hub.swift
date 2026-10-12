@@ -187,6 +187,8 @@ public final class HubClient: @unchecked Sendable {
     _ = try? await send(req, cap: Self.maxJSON)
     forgetToken()
   }
+  /** Whether a token is held that stays good for `ms` more. */
+  public func holdsToken(validFor ms: UInt64) -> Bool { tokenNow(validFor: ms) != nil }
   private func tokenNow(validFor ms: UInt64) -> String? { lock.withLock { token.flatMap { nowMs() + ms < tokenExpiresAt ? $0 : nil } } }
   private func setToken(_ t: String?, expiresAt: UInt64) { lock.withLock { if !shut || t == nil { token = t; tokenExpiresAt = expiresAt } } }
 
