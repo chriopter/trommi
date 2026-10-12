@@ -28,6 +28,8 @@ look the same on the web and the iPhone.
 - iPhone: a short hiccup of the server no longer fails a sign-in with the code: a reading is asked again, as on the web.
 - iPhone: opening the app no longer shows old cards for a moment that were closed on another device, and a card the
   hub had already closed no longer comes back on every launch; the Desk shows only what is open now.
+- iPhone: signed in with the code, a helper session no longer stays without its name: what was written there before the
+  iPhone came opens once another device hands over the keys, as on the web.
 On the iPhone, the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
 many agents are still at work.
 

@@ -21,6 +21,7 @@ final class FakeDevice: CoreDevice {
     var seqs: [String: UInt64] = [:]               // "<group>/<sender>" -> last accepted number
     var registers: [String: String] = [:]          // "<group>/<name>" -> value (JSON text)
     var pending: String?                           // an own Commit of the room group that the log has not handed back (hex)
+    var oldKeys: [String]?                         // groups (hex) whose keys of before this device came were handed over
   }
   let store: CoreStorage
   var state: State
@@ -132,6 +133,12 @@ final class FakeDevice: CoreDevice {
     case .message(let bytes):
       try write([])
       let m = parse(bytes)
+      // { keys: <group hex> }: a handover of the keys of the epochs before this device came into that group
+      if let g = m["keys"] as? String {
+        state.oldKeys = (state.oldKeys ?? []) + [g]
+        try write([])
+        return .message(.keys(from: try unhex(state.id), taken: 1, last: true))
+      }
       guard let from = (m["from"] as? String).flatMap({ try? unhex($0) }) else { return .message(.dropped) }
       return .message(.workTrail(from: from, turn: [1, 2], number: (m["number"] as? NSNumber)?.uint32Value ?? 1, time: 5, step: j(["text": m["text"] as? String ?? "", "tool": "Bash"])))
     }
@@ -236,6 +243,11 @@ final class FakeDevice: CoreDevice {
       return ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, register: name.map { RegisterChange(name: $0, current: true) })
     }
     if group.count == 48, state.sessions[hex(group.suffix(16))] == nil { return made(.refused, code: "group-behind") }
+    // (header "before": written in an epoch before this device came into the group; its keys come by a handover)
+    if h["before"] as? Bool == true, !(state.oldKeys ?? []).contains(hex(group)) {
+      if change > state.cursor { state.cursor = change; try? write([]) }
+      return made(.refused, code: "group-behind")
+    }
     let key = "\(hex(group))/\(sender)"
     let have = state.seqs[key] ?? 0
     guard ordered else { return made(voidCode != nil ? .void : have >= seq ? .applied : .provisional, code: voidCode) }
