@@ -50,12 +50,16 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
       while stream.hasBytesAvailable { let n = stream.read(&buf, maxLength: buf.count); if n <= 0 { break }; data.append(buf, count: n) }
       stream.close(); req.httpBodyStream = nil; req.httpBody = data
     }
+    let counted = !path.contains("/stream")
+    if counted { let n = req.httpBody?.count ?? 0; MegaFaults.lock.withLock { MegaFaults.asked["bytes out", default: 0] += n } }
     let wait = MegaFaults.delayMs > 0 ? Double(Int(MegaFaults.rand() * Double(MegaFaults.delayMs))) / 1000 : 0
     DispatchQueue.global().asyncAfter(deadline: .now() + wait) { [self] in
       forward = MegaFaults.plain.dataTask(with: req) { [self] data, response, error in
         if let error { client?.urlProtocol(self, didFailWithError: error); return }
         if let response { client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed) }
         if let data { client?.urlProtocol(self, didLoad: data) }
+        // (payload bytes in, as the web observer counts them; the live stream is left out)
+        if counted, let n = data?.count { MegaFaults.lock.withLock { MegaFaults.asked["bytes in", default: 0] += n } }
         client?.urlProtocolDidFinishLoading(self)
       }
       forward?.resume()
@@ -135,6 +139,10 @@ final class MegaObserverTests: XCTestCase {
       var rss = 0.0
       if let status = try? String(contentsOfFile: "/proc/self/status", encoding: .utf8), let line = status.split(separator: "\n").first(where: { $0.hasPrefix("VmRSS:") }) {
         rss = (Double(line.split(separator: " ").dropFirst().first ?? "0") ?? 0) * 1024
+      }
+      // (where the time went, by step, into TROMMI_SPENT_LOG when it names a file)
+      if let f = ProcessInfo.processInfo.environment["TROMMI_SPENT_LOG"], let h = FileHandle(forWritingAtPath: f) ?? { FileManager.default.createFile(atPath: f, contents: nil); return FileHandle(forWritingAtPath: f) }() {
+        h.seekToEndOfFile(); h.write(Data("stats: \(Spent.take())\n".utf8)); try? h.close()
       }
       let requests = MegaFaults.lock.withLock { () -> [String: Int] in let a = MegaFaults.asked; if cmd["reset"] as? Bool == true { MegaFaults.asked = [:] }; return a }
       return ["rss": rss, "desk": room?.board.stack.count ?? 0, "cards": room?.board.cards.count ?? 0, "requests": requests]
