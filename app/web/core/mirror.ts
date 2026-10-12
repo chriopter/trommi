@@ -123,6 +123,7 @@ function slotOf(model: Model, key: string): { map: Map<string, unknown>; id: str
     case 'draft': return { map: h.drafts, id }
     case 'snooze': return { map: h.snoozes as Map<string, unknown>, id }
     case 'duck': return { map: h.ducks, id }
+    case 'star': return { map: h.stars as Map<string, unknown>, id }
     case 'desk': return { map: h.desks, id }
     case 'session': return { map: h.session_settings as Map<string, unknown>, id }
     case 'scribble_snapshot': return { map: h.scribble_snapshots, id }

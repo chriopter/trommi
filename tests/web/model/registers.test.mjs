@@ -6,7 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { World, device, hex, id16, bytes } from './factory.mjs'
 
-test('human registers: drafts, snoozes, ducks, crown, desks, session settings, under the model\'s keys', () => {
+test('human registers: drafts, snoozes, ducks, stars, crown, desks, session settings, under the model\'s keys', () => {
   const w = new World(); w.groups()
   const card = id16(0xc1), desk = id16(0xde), hc = hex(card), hd = hex(desk), hs = hex(w.session)
   w.register(`draft/${card}`, { keys: ['a'], note: 'maybe' })
@@ -15,6 +15,7 @@ test('human registers: drafts, snoozes, ducks, crown, desks, session settings, u
   assert.equal(raw.by_device_id, hex(w.me)); assert.equal(raw.pending, false); assert.equal(raw.envelope_number, 1); assert.equal(raw.causal.lamport, 1)
   w.register(`snooze/${card}`, { until: w.clock + 60_000 }); assert.equal(w.model.human.snoozes.get(hc).until, w.clock + 60_000 - 1000)
   w.register(`duck/${card}`, { at: 1 }); assert.deepEqual(w.model.human.ducks.get(hc), { at: 1 })
+  w.register(`star/${card}`, { at: 7 }); assert.deepEqual(w.model.human.stars.get(hc), { at: 7 }); assert.ok(w.last.cards.has(hc) && w.last.stack, 'a star redraws the card and the lists')
   w.register('crown', { session_id: w.session, agent_device_id: w.agent })
   assert.deepEqual(w.model.human.crown, { session_id: hs, agent_device_id: hex(w.agent) }, 'ids inside a value are the model\'s hex')
   w.register(`desk/${desk}`, { name: 'Work', created_at: 1, order: 0, goals: 'ship it', crown: { session_id: w.session } })
@@ -26,8 +27,24 @@ test('human registers: drafts, snoozes, ducks, crown, desks, session settings, u
   // a desk whose id is no 16 bytes (the app's 'main') keeps its name
   w.register('desk/main', { name: 'Desk' }); assert.ok(w.model.human.desks.has('main'))
   // deleted: gone from the map, a tombstone in raw
+  w.register(`star/${card}`, null); assert.equal(w.model.human.stars.has(hc), false, 'the star taken off')
   w.register(`draft/${card}`, null)
   assert.equal(w.model.human.drafts.has(hc), false); assert.equal(w.model.human.raw.get(`draft/${hc}`).value, null)
+})
+
+test('a register iOS wrote with the id in hex on the wire is the same key: the snooze, draft, duck, desk and session of the web', () => {
+  const w = new World(); w.groups()
+  const card = id16(0xc1), desk = id16(0xde), hc = hex(card), hd = hex(desk), hs = hex(w.session)
+  w.register(`snooze/${hc}`, { until: null }, { sender: w.phone })
+  assert.ok(w.model.human.snoozes.has(hc) && w.last.registers.has(`snooze/${hc}`) && w.last.stack)
+  w.register(`draft/${hc}`, { note: 'from the phone' }, { sender: w.phone }); assert.equal(w.model.human.drafts.get(hc).note, 'from the phone')
+  w.register(`duck/${hc}`, { at: 1 }, { sender: w.phone }); assert.deepEqual(w.model.human.ducks.get(hc), { at: 1 })
+  w.register(`desk/${hd}`, { name: 'Work', created_at: 1 }, { sender: w.phone }); assert.equal(w.model.human.desks.get(hd).name, 'Work')
+  w.register(`session/${hs}`, { name: 'Builder', desk: hd }, { sender: w.phone })
+  assert.deepEqual(w.model.human.session_settings.get(hs), { name: 'Builder', desk: hd }, 'a desk id in hex inside the value stays the model\'s hex')
+  // the web's own later write (base64url) of the same card replaces it: one key
+  w.register(`snooze/${card}`, null, { lamport: 9 })
+  assert.equal(w.model.human.snoozes.has(hc), false)
 })
 
 test('a value that is not the current one of its name changes nothing', () => {

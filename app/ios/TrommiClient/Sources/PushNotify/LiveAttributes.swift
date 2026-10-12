@@ -7,7 +7,7 @@ import Foundation
 
 /**
  * What the Live Activity shows. The hub pushes `{ working, waiting }`, each 0 or 1, and nothing else (its pushes
- * decode with the rest nil); `card`, `done`, `needsApp` and `exact` are set by the app on this phone (LiveState),
+ * decode with the rest nil); `card`, `done`, `needsApp`, `exact` and `busy` are set by the app on this phone (LiveState),
  * after it opened the cards, and never leave it except to ActivityKit.
  */
 public struct LiveCounts: Codable, Hashable {
@@ -23,10 +23,14 @@ public struct LiveCounts: Codable, Hashable {
   public var card: LiveCard?
   /** Just answered from the island: shown for a moment before the next card. */
   public var done: LiveDone?
+  /** How many agents are at work: the sealed count opened, or the sessions with a working status line on this phone. */
+  public var busy: Int?
   /** The answer from the island did not go out (the app could not open the room or the card): open the card. */
   public var needsApp: Bool?
-  public init(working: Int, waiting: Int, card: LiveCard? = nil, done: LiveDone? = nil, needsApp: Bool? = nil, exact: Bool? = nil) {
+  public init(working: Int, waiting: Int, card: LiveCard? = nil, done: LiveDone? = nil, needsApp: Bool? = nil, exact: Bool? = nil,
+              busy: Int? = nil) {
     self.working = working; self.waiting = waiting; self.card = card; self.done = done; self.needsApp = needsApp; self.exact = exact
+    self.busy = busy
   }
   /**
    * What to show: with the hub's sealed counts opened under this phone's push key, the exact numbers; else as it
@@ -37,6 +41,7 @@ public struct LiveCounts: Codable, Hashable {
           let counts = try? core.openLive(key: key, sealed: sealed) else { return self }
     var out = self
     out.working = Int(clamping: counts.working); out.waiting = Int(clamping: counts.waiting); out.exact = true
+    out.busy = out.working
     return out
   }
   /** Whether `waiting` counts the questions (the app counted them), not only marks that some wait. */
@@ -45,8 +50,15 @@ public struct LiveCounts: Codable, Hashable {
   public var waitingText: String {
     waiting == 0 ? "Nothing waiting" : !counted ? "Questions waiting" : waiting == 1 ? "1 question waiting" : "\(waiting) questions waiting"
   }
-  /** "Agents at work" or "No agent at work": the hub says whether, never how many. */
-  public var workingText: String { working > 0 ? "Agents at work" : "No agent at work" }
+  /** Someone is at work: the hub's mark, or the phone's own count. */
+  public var atWork: Bool { working > 0 || (busy ?? 0) > 0 }
+  /** "2 agents at work" when counted, "Agents at work" from the hub's mark alone, else "No agent at work". */
+  public var workingText: String {
+    if let n = busy, n > 0 { return n == 1 ? "1 agent at work" : "\(n) agents at work" }
+    return working > 0 ? "Agents at work" : "No agent at work"
+  }
+  /** Nothing waits and nothing is shown: the calm state ("All answered"), not a "0". */
+  public var allClear: Bool { waiting == 0 && card == nil && done == nil }
   /** The island's badge: the count when counted, a dot for the hub's mark. */
   public var badge: String { counted || waiting == 0 ? "\(waiting)" : "•" }
   /** How many wait beside the one shown: only when counted. */

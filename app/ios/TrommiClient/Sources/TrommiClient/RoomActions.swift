@@ -190,7 +190,7 @@ extension Room {
       for k in values.keys.sorted() {
         let v = values[k] ?? .null
         // (a value of null deletes the name; the 4 KiB limit is the register's, 9.3.5)
-        let value: Bytes? = v.isNull ? nil : try wire(v, maxBytes: 4096).payload
+        let value: Bytes? = v.isNull ? nil : try wire(Records.registerValue(k, v, toWire: true), maxBytes: 4096).payload
         let name = Records.registerName(k, toWire: true)
         try await send(sealed: { unsealed.remove(k) }) { .register(group: group, name: name, value: value) }
       }
@@ -203,6 +203,8 @@ extension Room {
   }
   public func setDraft(cardId: String, _ draft: JV?) async throws { try await setRegisters(["draft/\(cardId)": draft ?? .null]) }
   public func snooze(cardId: String, until: UInt64?) async throws { try await setRegisters(["snooze/\(cardId)": until.map { .obj(["until": .n($0)]) } ?? .null]) }
+  /** Star a card, or take its star off: his own mark, end-to-end encrypted in the room like a snooze. */
+  public func star(cardId: String, _ on: Bool) async throws { try await setRegisters(["star/\(cardId)": on ? .obj(["at": .n(nowMs())]) : .null]) }
   public func setCrown(_ v: JV?) async throws { try await setRegisters(["crown": v ?? .null]) }
   public func setDesk(_ id: String, _ v: JV?) async throws { try await setRegisters(["desk/\(id)": v ?? .null]) }
   /** The first desk of every account (spec/v1.md 9.3.3): `desk/main`, the same value from every device, so two

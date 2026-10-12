@@ -52,7 +52,7 @@ export class MockClient {
       published: new Map((f.published ?? []).map(p => [p.object_id, publishedOf(p)])),
       timelines: new Map(),
       human: {
-        drafts: toMap(f.human.drafts), snoozes: toMap(f.human.snoozes), ducks: toMap(f.human.ducks), crown: f.human.crown ?? null,
+        drafts: toMap(f.human.drafts), snoozes: toMap(f.human.snoozes), ducks: toMap(f.human.ducks), stars: toMap(f.human.stars), crown: f.human.crown ?? null,
         desks: toMap(f.human.desks), session_settings: toMap(f.human.session_settings), scribble_snapshots: new Map(), raw: new Map(),
       },
       invites: new Map(), alerts: [], outbox: [], stack: [], open_permission_ids: [],
@@ -173,7 +173,7 @@ export class MockClient {
   }
   async setRegisters(values) {
     const h = this.model.human
-    const MAPS = { draft: h.drafts, snooze: h.snoozes, duck: h.ducks, desk: h.desks, session: h.session_settings }
+    const MAPS = { draft: h.drafts, snooze: h.snoozes, duck: h.ducks, star: h.stars, desk: h.desks, session: h.session_settings }
     this.changed(c => {
       for (const [key, value] of Object.entries(values)) {
         c.registers.add(key)
@@ -183,8 +183,8 @@ export class MockClient {
         if (map) { if (value == null) map.delete(id); else map.set(id, value) }
         if (value == null) h.raw.delete(key); else h.raw.set(key, { value, envelope_number: this.model.room.last_envelope_number, by_device_id: this.model.room.my_device_id })
         if (kind === 'session') c.sessions.add(id)
-        if (kind === 'snooze' || kind === 'session') c.stack = true
-        if (kind === 'draft' || kind === 'snooze' || kind === 'duck') c.cards.add(id)
+        if (kind === 'snooze' || kind === 'session' || kind === 'star') c.stack = true
+        if (kind === 'draft' || kind === 'snooze' || kind === 'duck' || kind === 'star') c.cards.add(id)
       }
     })
   }
@@ -194,6 +194,7 @@ export class MockClient {
   setDraft(id, v) { return this.setRegisters({ [`draft/${id}`]: v }) }
   snooze(id, until) { return this.setRegisters({ [`snooze/${id}`]: until == null ? null : { until, at: Date.now() } }) }
   duck(id, v) { return this.setRegisters({ [`duck/${id}`]: v }) }
+  star(id, on) { return this.setRegisters({ [`star/${id}`]: on ? { at: Date.now() } : null }) }
   setCrown(v) { return this.setRegisters({ crown: v }) }
   setDesk(id, v) { return this.setRegisters({ [`desk/${id}`]: v }) }
   async saveNote({ object_id = hex(32), ...fields }) {

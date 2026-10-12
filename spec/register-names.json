@@ -1,0 +1,181 @@
+{
+ "about": "Register names and the ids in their values (spec/v1.md 9.3.3): `wire` is what every client writes (ids base64url), `model` the clients' own key or value (ids lower-case hex), `legacy_wire` what iOS wrote before 2026-10-12 (hex on the wire), which every client still reads as the same key or value. Hand-written; read by tests/web/model/codec.test.mjs and tests/ios/TrommiClientTests/RegisterNameTests.swift.",
+ "names": [
+  {
+   "wire": "draft/wcjP1t3k6_L5AAcOFRwjKg",
+   "model": "draft/c1c8cfd6dde4ebf2f900070e151c232a",
+   "legacy_wire": "draft/c1c8cfd6dde4ebf2f900070e151c232a"
+  },
+  {
+   "wire": "snooze/wcjP1t3k6_L5AAcOFRwjKg",
+   "model": "snooze/c1c8cfd6dde4ebf2f900070e151c232a",
+   "legacy_wire": "snooze/c1c8cfd6dde4ebf2f900070e151c232a"
+  },
+  {
+   "wire": "duck/wcjP1t3k6_L5AAcOFRwjKg",
+   "model": "duck/c1c8cfd6dde4ebf2f900070e151c232a",
+   "legacy_wire": "duck/c1c8cfd6dde4ebf2f900070e151c232a"
+  },
+  {
+   "wire": "star/wcjP1t3k6_L5AAcOFRwjKg",
+   "model": "star/c1c8cfd6dde4ebf2f900070e151c232a",
+   "legacy_wire": "star/c1c8cfd6dde4ebf2f900070e151c232a"
+  },
+  {
+   "wire": "desk/3uXs8_oBCA8WHSQrMjlARw",
+   "model": "desk/dee5ecf3fa01080f161d242b32394047",
+   "legacy_wire": "desk/dee5ecf3fa01080f161d242b32394047"
+  },
+  {
+   "wire": "session/UVhfZm10e4KJkJeepayzug",
+   "model": "session/51585f666d747b828990979ea5acb3ba",
+   "legacy_wire": "session/51585f666d747b828990979ea5acb3ba"
+  },
+  {
+   "wire": "read/session/UVhfZm10e4KJkJeepayzug",
+   "model": "read/session/51585f666d747b828990979ea5acb3ba",
+   "legacy_wire": "read/session/51585f666d747b828990979ea5acb3ba"
+  },
+  {
+   "wire": "read/card/wcjP1t3k6_L5AAcOFRwjKg",
+   "model": "read/card/c1c8cfd6dde4ebf2f900070e151c232a",
+   "legacy_wire": "read/card/c1c8cfd6dde4ebf2f900070e151c232a"
+  },
+  {
+   "wire": "read/desk/3uXs8_oBCA8WHSQrMjlARw",
+   "model": "read/desk/dee5ecf3fa01080f161d242b32394047",
+   "legacy_wire": "read/desk/dee5ecf3fa01080f161d242b32394047"
+  },
+  {
+   "wire": "device/AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dw",
+   "model": "device/030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dc",
+   "legacy_wire": "device/030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dc"
+  },
+  {
+   "wire": "alert/REtSWWBnbnV8g4qRmJ-mrbS7wsnQ197l7PP6AQgPFh0",
+   "model": "alert/444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d",
+   "legacy_wire": "alert/444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d"
+  },
+  {
+   "wire": "desk/main",
+   "model": "desk/main"
+  },
+  {
+   "wire": "crown",
+   "model": "crown"
+  },
+  {
+   "wire": "kit",
+   "model": "kit"
+  },
+  {
+   "wire": "heads",
+   "model": "heads"
+  },
+  {
+   "wire": "goals",
+   "model": "goals"
+  },
+  {
+   "wire": "status_line/tests",
+   "model": "status_line/tests"
+  }
+ ],
+ "values": [
+  {
+   "key": "session/51585f666d747b828990979ea5acb3ba",
+   "wire": {
+    "name": "S",
+    "desk": "3uXs8_oBCA8WHSQrMjlARw",
+    "archived": true
+   },
+   "model": {
+    "name": "S",
+    "desk": "dee5ecf3fa01080f161d242b32394047",
+    "archived": true
+   },
+   "legacy_wire": {
+    "name": "S",
+    "desk": "dee5ecf3fa01080f161d242b32394047",
+    "archived": true
+   }
+  },
+  {
+   "key": "session/51585f666d747b828990979ea5acb3ba",
+   "wire": {
+    "name": "S",
+    "desk": "main"
+   },
+   "model": {
+    "name": "S",
+    "desk": "main"
+   }
+  },
+  {
+   "key": "crown",
+   "wire": {
+    "session_id": "UVhfZm10e4KJkJeepayzug",
+    "agent_device_id": "AwoRGB8mLTQ7QklQV15lbHN6gYiPlp2kq7K5wMfO1dw"
+   },
+   "model": {
+    "session_id": "51585f666d747b828990979ea5acb3ba",
+    "agent_device_id": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dc"
+   },
+   "legacy_wire": {
+    "session_id": "51585f666d747b828990979ea5acb3ba",
+    "agent_device_id": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dc"
+   }
+  },
+  {
+   "key": "desk/dee5ecf3fa01080f161d242b32394047",
+   "wire": {
+    "name": "Work",
+    "created_at": 5,
+    "crown": {
+     "session_id": "UVhfZm10e4KJkJeepayzug"
+    }
+   },
+   "model": {
+    "name": "Work",
+    "created_at": 5,
+    "crown": {
+     "session_id": "51585f666d747b828990979ea5acb3ba"
+    }
+   },
+   "legacy_wire": {
+    "name": "Work",
+    "created_at": 5,
+    "crown": {
+     "session_id": "51585f666d747b828990979ea5acb3ba"
+    }
+   }
+  },
+  {
+   "key": "goals",
+   "wire": {
+    "desk_id": "3uXs8_oBCA8WHSQrMjlARw",
+    "desk_name": "Work",
+    "goals": "ship"
+   },
+   "model": {
+    "desk_id": "dee5ecf3fa01080f161d242b32394047",
+    "desk_name": "Work",
+    "goals": "ship"
+   },
+   "legacy_wire": {
+    "desk_id": "dee5ecf3fa01080f161d242b32394047",
+    "desk_name": "Work",
+    "goals": "ship"
+   }
+  },
+  {
+   "key": "snooze/c1c8cfd6dde4ebf2f900070e151c232a",
+   "wire": {
+    "until": 99
+   },
+   "model": {
+    "until": 99
+   }
+  }
+ ]
+}

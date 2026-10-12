@@ -155,13 +155,24 @@ enum LiveActivities {
     }
   }
 
+  /** How many sessions are at work, on every desk: online, not archived, with a working status line (as the
+   *  session's working ring counts them, SessionScreen). */
+  static func busy(_ m: BoardModel) -> Int {
+    guard let d = m.desk else { return 0 }
+    return Set(d.tasks.filter { t in
+      guard t.state == "working", let a = d.byAgent[t.agent] else { return false }
+      return a.online && a.archived != true
+    }.map(\.agent)).count
+  }
+
   private static func applyCards() async {
+    if demoHeld { return }
     let m = BoardModel.shared
-    let list = candidates(m), canRead = readable(m)
+    let list = candidates(m), canRead = readable(m), atWork = busy(m)
     for a in Activity<TrommiActivityAttributes>.activities {
       let s = a.content.state
       if s.done != nil { continue }   // the moment after an answer: answer() goes on from there
-      var next = LiveState.state(working: s.working, waiting: list, readable: canRead)
+      var next = LiveState.state(working: s.working, waiting: list, readable: canRead, busy: atWork)
       if !canRead { next.waiting = s.waiting; next.exact = s.exact; next.s = s.s }   // the hub's marks and sealed counts stand; nothing of a card
       if next.card?.id == s.card?.id, s.needsApp == true { next.needsApp = true }
       if next == s { continue }
@@ -194,9 +205,9 @@ enum LiveActivities {
     }
     try? await Task.sleep(nanoseconds: 2_500_000_000)
     // the next card in one step (no moment of the count alone in between)
-    let list = candidates(m), canRead = readable(m)
+    let list = candidates(m), canRead = readable(m), atWork = busy(m)
     for a in Activity<TrommiActivityAttributes>.activities where a.content.state.done != nil {
-      let next = LiveState.state(working: a.content.state.working, waiting: list, readable: canRead)
+      let next = LiveState.state(working: a.content.state.working, waiting: list, readable: canRead, busy: atWork)
       await a.update(ActivityContent(state: next, staleDate: a.content.staleDate, relevanceScore: a.content.relevanceScore))
     }
     return .answered
@@ -215,13 +226,23 @@ enum LiveActivities {
 
   /**
    * The screenshot hook TROMMI_LIVE=1 beside TROMMI_SCREEN (the demo): an activity started here, without a hub, with
-   * the demo's cards, to see and try the island in the simulator.
+   * the demo's cards, to see and try the island in the simulator. TROMMI_LIVE=clear: nothing waits, the demo's
+   * sessions at work; clear-quiet: nothing waits and nothing works.
    */
-  static func startForDemo() {
+  /** The demo's clear states stand as they were started (the demo's cards would replace them). */
+  private static var demoHeld = false
+
+  static func startForDemo(_ how: String = "1") {
+    demoHeld = how != "1"
     Task { @MainActor in
       for a in Activity<TrommiActivityAttributes>.activities { await a.end(nil, dismissalPolicy: .immediate) }
       let m = BoardModel.shared
-      let s = LiveState.state(working: 2, waiting: candidates(m), readable: true)
+      let s: LiveCounts
+      switch how {
+      case "clear": s = LiveState.state(working: 1, waiting: [], readable: true, busy: busy(m))
+      case "clear-quiet": s = LiveState.state(working: 0, waiting: [], readable: true)
+      default: s = LiveState.state(working: 1, waiting: candidates(m), readable: true, busy: busy(m))
+      }
       do { _ = try Activity.request(attributes: TrommiActivityAttributes(tag: "demo"), content: ActivityContent(state: s, staleDate: nil), pushType: nil) }
       catch { log.error("trommi live: the demo's activity did not start: \(String(describing: error), privacy: .public)") }
     }

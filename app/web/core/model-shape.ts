@@ -13,7 +13,7 @@ export function emptyModel(): Model {
 }
 export const emptyNewer = (): Newer => ({ count: 0, what: [], envelope_number: 0 })
 function emptyHuman(): HumanRegisters {
-  return { drafts: new Map(), snoozes: new Map(), ducks: new Map(), crown: null, desks: new Map(), session_settings: new Map(), scribble_snapshots: new Map(), raw: new Map() }
+  return { drafts: new Map(), snoozes: new Map(), ducks: new Map(), stars: new Map(), crown: null, desks: new Map(), session_settings: new Map(), scribble_snapshots: new Map(), raw: new Map() }
 }
 
 /** A change record: what a batch touched. Every field always present. */

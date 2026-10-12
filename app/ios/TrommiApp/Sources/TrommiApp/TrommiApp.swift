@@ -254,8 +254,8 @@ final class BoardModel: ObservableObject {
       // TROMMI_PAGE=<settings page>: that page of Settings over it (screenshots of a page the web has no state for)
       if let page = env["TROMMI_PAGE"], !page.isEmpty { deskPath.append(.settings(page)) }
       #if canImport(ActivityKit) && os(iOS)
-      // TROMMI_LIVE=1: the Live Activity with the demo's cards (LiveActivities.startForDemo)
-      if env["TROMMI_LIVE"] == "1" { LiveActivities.startForDemo() }
+      // TROMMI_LIVE=1 (or clear, clear-quiet): the Live Activity with the demo's cards (LiveActivities.startForDemo)
+      if let how = env["TROMMI_LIVE"], ["1", "clear", "clear-quiet"].contains(how) { LiveActivities.startForDemo(how) }
       #endif
       return
     }
@@ -780,6 +780,12 @@ final class BoardModel: ObservableObject {
   func shred(_ c: DeskCard, note: String = "") {
     guard let room = acting() else { return }
     act { try await room.shred(cardId: c.id, note: note.isEmpty ? nil : String(note.prefix(2000))); self.say("Shredded", c.title, undo: { [weak self] in self?.reopen(c.id) }) }
+  }
+  /** Star a card or take its star off: his own mark, on all his devices. */
+  func star(_ c: DeskCard) {
+    guard let room = acting() else { return }
+    let on = c.starred == nil
+    act { try await room.star(cardId: c.id, on) }
   }
   func snooze(_ c: DeskCard) {
     guard let room = acting() else { return }

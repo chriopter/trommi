@@ -4,6 +4,7 @@ import XCTest
 final class BoardCodecTests: XCTestCase {
   /** Every stored field of the board's parts is in BoardCodec: a new field makes this count differ (then add it there).
    *  (The Board's count holds `deskGate`, `hubSettled`, `preview` and `roomCommits` too, which are not stored: each start reads the hub's Desk again, Room.deskFirst.
+   *  HumanRegisters' count holds `stars`, which is read back from `raw`, not stored twice.
    *  The Timeline's count holds `revision`, which is not stored either: a counter of changes in memory, DeskModel's cache key.) */
   func testFieldsCovered() {
     let rec = Rec(envelopeNumber: 1, envelopeHash: "aa", senderDeviceId: "bb", senderRole: "agent", recipientDeviceId: nil, sentAt: 1, kind: 2, isHead: true, object: nil,
@@ -12,7 +13,7 @@ final class BoardCodecTests: XCTestCase {
     let counts: [(Any, Int)] = [
       (RoomMember(deviceId: "aa", role: "human"), 16), (Session("s"), 27), (Card("c", agent: "a", rec: rec), 21),
       (Permission(objectId: "p", agentDeviceId: "a", sessionId: nil, toolName: "t", description: "d", inputPreview: "i", expiresAt: 1, versionHash: "v", envelopeNumber: 1, sentAt: 1), 13),
-      (Timeline("chat:session/x"), 15), (Board(), 30), (HumanRegisters(), 8),
+      (Timeline("chat:session/x"), 15), (Board(), 30), (HumanRegisters(), 9),
     ]
     for (x, n) in counts { XCTAssertEqual(Mirror(reflecting: x).children.count, n, "fields of \(type(of: x)): update BoardCodec and this count") }
   }
@@ -45,6 +46,9 @@ final class BoardCodecTests: XCTestCase {
     b.cards["c1"] = c
     b.human.desks = ["main": .obj(["name": .str("Desk")])]
     b.human.raw["desk/main"] = RegisterValue(value: .str("x"), envelopeNumber: 9, senderSequence: 2, byDeviceId: "aa", causal: Causal(senderDeviceId: "aa", senderSequence: 2, sentAt: 9, lamport: 3))
+    b.human.stars = ["c1": .obj(["at": .num(5)])]
+    b.human.raw["star/c1"] = RegisterValue(value: .obj(["at": .num(5)]), envelopeNumber: 11, senderSequence: 3, byDeviceId: "aa", causal: Causal(senderDeviceId: "aa", senderSequence: 3, sentAt: 11, lamport: 4))
+    b.human.raw["star/c2"] = RegisterValue(value: .null, envelopeNumber: 12, senderSequence: 4, byDeviceId: "aa", causal: Causal(senderDeviceId: "aa", senderSequence: 4, sentAt: 12, lamport: 5))
     b.notes["n1"] = Note(objectId: "n1", byDeviceId: "aa", text: "hi", extra: ["k": .bool(true)], objectVersion: 1, versionHash: "ee", versionHashes: ["ee"], causal: nil, envelopeNumber: 10, objectState: "open")
 
     let bytes = BoardCodec.encode(b, bodiesKept: 60)
@@ -57,6 +61,7 @@ final class BoardCodecTests: XCTestCase {
     XCTAssertEqual(bt.items[41]?.content?["text"].string, "m41")
     XCTAssertEqual(bt.items[2]?.recipientDeviceId, "bb"); XCTAssertNil(bt.items[3]?.recipientDeviceId)
     XCTAssertTrue(bt.hasMore)
+    XCTAssertEqual(back.human.stars["c1"]?["at"].double, 5, "his star comes back from the register"); XCTAssertNil(back.human.stars["c2"], "a star taken off stays off")
     XCTAssertEqual(back.cards["c1"]?.title, "T"); XCTAssertEqual(back.cards["c1"]?.answer?.choices, ["a"]); XCTAssertEqual(back.cards["c1"]?.answer?.optionNotes["a"], "x")
     XCTAssertEqual(back.sessions[s.sessionId]?.agentAlerts.first?.key, "k")
     XCTAssertEqual(back.notes["n1"]?.extra["k"], .bool(true))
