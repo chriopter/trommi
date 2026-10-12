@@ -271,7 +271,10 @@ final class FakeDevice: CoreDevice {
     func made(_ outcome: EnvelopeOutcome, code: String? = nil) -> ReceivedEnvelope {
       let payload = outcome == .applied || outcome == .provisional ? (e["p"] as? String).flatMap { try? unhex($0) } : nil
       let name = header.kind == .register ? payload.flatMap { parse($0)["name"] as? String } : nil
-      return ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, register: name.map { RegisterChange(name: $0, current: true) })
+      // (an object as the core's replay of headers leaves it: this envelope's state, its sender the owner, it the current version)
+      let after = outcome == .applied ? header.object.map { ObjectView(objectId: $0.objectId, type: $0.type, owner: header.sender, state: $0.state, current: Self.hash(bytes)) } : nil
+      return ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, objectAfter: after,
+                              register: name.map { RegisterChange(name: $0, current: true) })
     }
     // (header "passed": a session group this device is not in yet, read past as the real core does: the cursor moves)
     if group.count == 48, state.sessions[hex(group.suffix(16))] == nil, h["passed"] as? Bool == true {

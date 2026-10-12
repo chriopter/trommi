@@ -11,11 +11,11 @@ final class PermissionExpiryTests: XCTestCase {
 
   private func board() -> Board {
     let b = Board()
-    let s = b.sessionOf(sid); s.agentDeviceIds = [agent]; s.everAgentIds = [agent]; s.agentDeviceId = agent
+    var g = Change(); b.applySession(sessionId: sid, agentIds: [agent], epoch: 1, parentSessionId: nil, archived: false, change: &g)
     return b
   }
-  private func rec(_ n: Int, kind: Int, sender: String, role: String, to: String? = nil, object: ObjectHead?, content: JV?, bind: DecodedBind?, hash: String? = nil) -> Rec {
-    Rec(envelopeNumber: n, envelopeHash: hash ?? String(format: "%064x", n), senderDeviceId: sender, senderRole: role, recipientDeviceId: to, sentAt: t0, kind: kind,
+  private func rec(_ n: Int, kind: Int, sender: String, role: String, to: String? = nil, object: ObjectHead?, content: JV?, bind: DecodedBind?, hash: String? = nil) -> OldRec {
+    OldRec(envelopeNumber: n, envelopeHash: hash ?? String(format: "%064x", n), senderDeviceId: sender, senderRole: role, recipientDeviceId: to, sentAt: t0, kind: kind,
         isHead: true, object: object, timelineKind: nil, timelineId: nil, sessionId: sid, content: content, contentState: content == nil ? "header" : "ok", bind: bind,
         causal: Causal(senderDeviceId: sender, senderSequence: UInt64(n), sentAt: t0, lamport: n), senderSequence: UInt64(n), epoch: 1)
   }

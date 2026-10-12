@@ -62,14 +62,13 @@ final class SecurityKeysTests: XCTestCase {
     XCTAssertNil(b.recoveryKey?.since, "a session Commit dates nothing")
   }
 
-  func testTheCacheKeepsBoth() throws {
+  func testTheCacheKeepsBoth() throws {  // (the client core's snapshot)
     let b = board()
     var ch = Change()
     b.applyRecoveryKey(key(0x44), change: &ch)
     b.applyCommitFacts(facts(room, adds: [dev(3)], time: 11), room: true, change: &ch); b.applyRecoveryKey(key(0x55), change: &ch)
-    let bytes = BoardCodec.encode(b, bodiesKept: 60)
     let back = Board()
-    try bytes.withUnsafeBufferPointer { try BoardCodec.decode($0, into: back) }
+    XCTAssertTrue(back.loadModel(b.modelSnapshot()))
     XCTAssertEqual(back.members[hex(dev(3))]?.addedAt, 11); XCTAssertNil(back.members[hex(dev(2))]?.addedAt)
     XCTAssertEqual(back.recoveryKey, RecoveryKey(fingerprint: "5500 0000 0000 0000", since: 11))
   }

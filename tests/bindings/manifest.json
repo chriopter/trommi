@@ -691,6 +691,28 @@
         ],
         "returns": "text"
       },
+      "applyReceivedJson": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "setWindowsOpen": {
+        "arguments": [
+          {
+            "name": "open",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
       "applyCardDeeds": {
         "arguments": [
           {
@@ -1044,6 +1066,74 @@
       },
       "finish": {
         "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "applyCardDeedsJson": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "touchAll": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "applyGroupsJson": {
+        "arguments": [
+          {
+            "name": "groups",
+            "type": "text"
+          },
+          {
+            "name": "roles",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyCommitJson": {
+        "arguments": [
+          {
+            "name": "facts",
+            "type": "text"
+          },
+          {
+            "name": "byRecovery",
+            "type": "bool"
+          },
+          {
+            "name": "removedMe",
+            "type": "bool"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyPageJson": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "received",
+            "type": "text"
+          },
+          {
+            "name": "scratch",
+            "type": "bool"
+          },
           {
             "name": "nowMs",
             "type": "number"

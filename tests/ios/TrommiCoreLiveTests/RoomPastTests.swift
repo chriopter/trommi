@@ -27,7 +27,7 @@ final class RoomPastTests: XCTestCase {
     try XCTUnwrap(try tools.createDevice(store: DeviceStore(directory: try scratchFolder(self), key: systemRandom(32))) as? LiveDevice)
   }
   private func writeNote(_ device: LiveDevice, _ text: String) throws {
-    _ = try device.seal(.noteFirst(payload: utf8(#"{"schema_version":1,"text":"\#(text)","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
+    _ = try device.seal(.noteFirst(payload: utf8(#"{"schema_version":2,"text":"\#(text)","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
     try hub.post(device)
   }
   /// The texts of the Notes on a room's board whose bodies opened.

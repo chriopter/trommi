@@ -163,6 +163,31 @@ impl ClientModel {
         })
     }
 
+    /// Envelopes as the client core reads them (JSON, `client/src/model/received.rs` `Received`: ids as hex, the body
+    /// as its JSON text): for an app whose own records of the core's answers are not this binding's (iOS), and for
+    /// the replay of what an app stored. Returns as `apply_envelopes` does.
+    pub fn apply_received_json(&self, received: String, now_ms: u64) -> Result<String, CoreError> {
+        let list: Vec<rx::Received> = serde_json::from_str(&received).map_err(json_err)?;
+        self.with(|m, c| {
+            let out: Vec<serde_json::Value> = list
+                .iter()
+                .map(|r| {
+                    let a = m.apply_envelope(r, c, now_ms);
+                    serde_json::json!({ "applied": a.applied, "refused": a.refused })
+                })
+                .collect();
+            Ok(serde_json::Value::Array(out).to_string())
+        })
+    }
+
+    /// Every timeline's window is open from here on: every item header stays (an app that keeps them all).
+    pub fn set_windows_open(&self, open: bool) -> Result<(), CoreError> {
+        self.with(|m, _| {
+            m.windows_open = open;
+            Ok(())
+        })
+    }
+
     /// The deeds on cards (hand back, What??, present) of a page of card Chats read out of the hub's order.
     pub fn apply_card_deeds(&self, received: Vec<ReceivedEnvelope>) -> Result<(), CoreError> {
         self.with(|m, c| {
@@ -506,6 +531,69 @@ impl ClientModel {
             let p = m.patch(c);
             *c = Change::new();
             Ok(p.to_string())
+        })
+    }
+
+    /// The deeds on cards of a page of card Chats read out of the hub's order, as JSON (`Received` list).
+    pub fn apply_card_deeds_json(&self, received: String) -> Result<(), CoreError> {
+        let list: Vec<rx::Received> = serde_json::from_str(&received).map_err(json_err)?;
+        self.with(|m, c| {
+            m.apply_card_deeds(&list, c);
+            Ok(())
+        })
+    }
+
+    /// Every record is named changed: the next `finish` gives the whole model (a copy made anew).
+    pub fn touch_all(&self) -> Result<(), CoreError> {
+        self.with(|m, c| {
+            m.touch_all(c);
+            Ok(())
+        })
+    }
+
+    /// Room groups and their sessions as JSON (client/src/model/groups.rs `GroupIn` list, and `RolesIn` or null):
+    /// for an app whose records of the core's answers are not this binding's (iOS).
+    pub fn apply_groups_json(&self, groups: String, roles: String) -> Result<(), CoreError> {
+        let groups: Vec<GroupIn> = serde_json::from_str(&groups).map_err(json_err)?;
+        let roles: Option<RolesIn> = serde_json::from_str(&roles).map_err(json_err)?;
+        self.with(|m, c| {
+            m.apply_groups(&groups, roles.as_ref(), c);
+            Ok(())
+        })
+    }
+
+    /// What a processed Commit did, as JSON (`CommitIn`).
+    pub fn apply_commit_json(
+        &self,
+        facts: String,
+        by_recovery: bool,
+        removed_me: bool,
+        now_ms: u64,
+    ) -> Result<(), CoreError> {
+        let f: CommitIn = serde_json::from_str(&facts).map_err(json_err)?;
+        self.with(|m, c| {
+            m.apply_commit(&f, c, by_recovery, removed_me, now_ms);
+            Ok(())
+        })
+    }
+
+    /// A page of one timeline as JSON (`Received` list), as `apply_page` does.
+    pub fn apply_page_json(
+        &self,
+        timeline_key: String,
+        received: String,
+        scratch: bool,
+        now_ms: u64,
+    ) -> Result<String, CoreError> {
+        let list: Vec<rx::Received> = serde_json::from_str(&received).map_err(json_err)?;
+        self.with(|m, c| {
+            Ok(serde_json::Value::Array(
+                m.apply_page(&timeline_key, &list, scratch, now_ms, c)
+                    .into_iter()
+                    .map(serde_json::Value::Object)
+                    .collect(),
+            )
+            .to_string())
         })
     }
 

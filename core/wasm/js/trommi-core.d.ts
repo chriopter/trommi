@@ -1087,6 +1087,8 @@ export class ClientModel {
   load(snapshot: string): void
   applyEnvelopes(received: ReceivedEnvelope[], nowMs: number): string
   applyCardDeeds(received: ReceivedEnvelope[]): void
+  applyReceivedJson(received: string, nowMs: number): string
+  setWindowsOpen(open: boolean): void
   applyGroups(groups: GroupSummary[], roles: RoomRoles | null): void
   applyCommit(facts: CommitSummary, byRecovery: boolean, removedMe: boolean, nowMs: number): void
   applyPresence(reports: string, nowMs: number): void
@@ -1108,6 +1110,11 @@ export class ClientModel {
   noteNewer(what: string, envelopeNumber: number | null): void
   finish(nowMs: number): string
   snapshot(): string
+  touchAll(): void
+  applyCardDeedsJson(received: string): void
+  applyGroupsJson(groups: string, roles: string): void
+  applyCommitJson(facts: string, byRecovery: boolean, removedMe: boolean, nowMs: number): void
+  applyPageJson(timelineKey: string, received: string, scratch: boolean, nowMs: number): string
 }
 
 /** Decrypts a stored file piece by piece. What `update` handed out counts only once `finish` succeeded. */

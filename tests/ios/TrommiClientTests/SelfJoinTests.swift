@@ -13,15 +13,14 @@ final class SelfJoinTests: XCTestCase {
   private func set(_ b: Board, _ values: JV, by sender: String, role: String, session: String? = nil) {
     n += 1
     var ch = Change()
-    b.apply(Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: sender, senderRole: role, recipientDeviceId: nil, sentAt: UInt64(n), kind: KIND.STATUS, isHead: true,
+    b.apply(OldRec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: sender, senderRole: role, recipientDeviceId: nil, sentAt: UInt64(n), kind: KIND.STATUS, isHead: true,
                 object: nil, timelineKind: nil, timelineId: nil, sessionId: session, content: ["values": values], contentState: "ok", bind: nil,
                 causal: Causal(senderDeviceId: sender, senderSequence: UInt64(n), sentAt: UInt64(n), lamport: n), senderSequence: UInt64(n), epoch: 1), change: &ch)
   }
   private func room() -> Board {
     let b = Board()
     b.myDeviceId = h
-    let s = b.sessionOf(s1)
-    s.agentDeviceIds = [agent]; s.everAgentIds = [agent]; s.agentDeviceId = agent; s.sessionKeyEpoch = 1
+    var g = Change(); b.applySession(sessionId: s1, agentIds: [agent], epoch: 1, parentSessionId: nil, archived: false, change: &g)
     return b
   }
   private let ask: JV = ["name": "second", "folder": "~/project", "account": "a1b2c3d4e5f60718", "account_label": "claude .claude", "vouched_by": "project", "request_hash": .null]
@@ -52,8 +51,7 @@ final class SelfJoinTests: XCTestCase {
     let b = room()
     for i in 0..<SelfJoinPlan.maxVouched {
       let sid = String(format: "%032x", i + 100), dev = String(format: "%064x", i + 100)
-      let s = b.sessionOf(sid)
-      s.agentDeviceIds = [dev]; s.everAgentIds = [dev]; s.agentDeviceId = dev
+      var g = Change(); b.applySession(sessionId: sid, agentIds: [dev], epoch: 1, parentSessionId: nil, archived: false, change: &g)
       set(b, [.init("session/\(sid)"): ["vouched": ["by": .str(s1), "account": "a1b2c3d4e5f60718"]]], by: h, role: "human")
     }
     set(b, [.init("join_ask/n3"): ask], by: agent, role: "agent", session: s1)
@@ -81,8 +79,7 @@ final class SelfJoinTests: XCTestCase {
     // sixteen live sessions that joined so, of sixteen accounts, and eight more open: the room is full
     for i in 0..<16 {
       let sid = String(format: "%032x", i + 200), dev = String(format: "%064x", i + 200)
-      let s = b.sessionOf(sid)
-      s.agentDeviceIds = [dev]; s.everAgentIds = [dev]; s.agentDeviceId = dev
+      var g = Change(); b.applySession(sessionId: sid, agentIds: [dev], epoch: 1, parentSessionId: nil, archived: false, change: &g)
       set(b, [.init("session/\(sid)"): ["vouched": ["by": .str(s1), "account": .str(String(format: "%016x", i + 100))]]], by: h, role: "human")
     }
     XCTAssertEqual(SelfJoinPlan.asks(b, answered: [], holds: { _ in true }, pending: (0..<8).map { String(format: "%016x", $0 + 300) }).filter { $0.refused == "cap" }.count, 30)

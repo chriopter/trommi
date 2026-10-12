@@ -351,6 +351,8 @@ methods!(RawClientModel {
     load(snapshot);
     apply_envelopes(received, now_ms);
     apply_card_deeds(received);
+    apply_received_json(received, now_ms);
+    set_windows_open(open);
     apply_groups(groups, roles);
     apply_commit(facts, by_recovery, removed_me, now_ms);
     apply_presence(reports, now_ms);
@@ -372,6 +374,11 @@ methods!(RawClientModel {
     note_newer(what, envelope_number);
     finish(now_ms);
     snapshot();
+    touch_all();
+    apply_card_deeds_json(received);
+    apply_groups_json(groups, roles);
+    apply_commit_json(facts, by_recovery, removed_me, now_ms);
+    apply_page_json(timeline_key, received, scratch, now_ms);
 });
 
 /// The facade's file decryptor.

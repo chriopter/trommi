@@ -89,20 +89,59 @@ impl BodyKind {
     fn fields(self) -> &'static [&'static str] {
         match self {
             Self::Message => &[
-                "content_type", "text", "details", "html", "attachments", "explain", "hand_back", "present_card",
-                "copied_cards", "marks", "terminal", "note", "published_object_id",
+                "content_type",
+                "text",
+                "details",
+                "html",
+                "attachments",
+                "explain",
+                "hand_back",
+                "present_card",
+                "copied_cards",
+                "marks",
+                "terminal",
+                "note",
+                "published_object_id",
             ],
             Self::Card => &[
-                "object_version", "previous_version_hash", "card_type", "title", "teaser", "body", "options",
-                "sections", "html", "allows_multiple", "recommended", "urgency_reason", "attachments", "change_note",
-                "close_summary", "withdraw_reason", "merged_into_object_id", "merged_from_object_ids", "working",
+                "object_version",
+                "previous_version_hash",
+                "card_type",
+                "title",
+                "teaser",
+                "body",
+                "options",
+                "sections",
+                "html",
+                "allows_multiple",
+                "recommended",
+                "urgency_reason",
+                "attachments",
+                "change_note",
+                "close_summary",
+                "withdraw_reason",
+                "merged_into_object_id",
+                "merged_from_object_ids",
+                "working",
             ],
             Self::Artifact => &[
-                "object_version", "previous_version_hash", "artifact_type", "title", "note", "attachments",
+                "object_version",
+                "previous_version_hash",
+                "artifact_type",
+                "title",
+                "note",
+                "attachments",
                 "released_until",
             ],
             Self::Answer => &[
-                "answer_action", "choices", "note", "option_notes", "attachments", "marks", "trusted", "answered_at",
+                "answer_action",
+                "choices",
+                "note",
+                "option_notes",
+                "attachments",
+                "marks",
+                "trusted",
+                "answered_at",
             ],
             Self::Request => &["tool_name", "description", "input_preview"],
             Self::TakeBack | Self::Verdict | Self::Note | Self::BoardItem | Self::Register => &[],
@@ -151,10 +190,16 @@ impl std::error::Error for BodyError {}
 type Result<T> = std::result::Result<T, BodyError>;
 
 fn bad<T>(message: &str) -> Result<T> {
-    Err(BodyError { code: "bad-format", message: message.to_owned() })
+    Err(BodyError {
+        code: "bad-format",
+        message: message.to_owned(),
+    })
 }
 fn argument<T>(message: &str) -> Result<T> {
-    Err(BodyError { code: "bad-argument", message: message.to_owned() })
+    Err(BodyError {
+        code: "bad-argument",
+        message: message.to_owned(),
+    })
 }
 
 // ---- numbers, as JavaScript has them ----------------------------------------------------------------------------
@@ -175,7 +220,8 @@ fn is_i32(v: &Value) -> bool {
     whole(v).is_some_and(|x| (-2_147_483_648.0..2_147_483_648.0).contains(&x))
 }
 fn i32s(v: &Value, n: usize) -> bool {
-    v.as_array().is_some_and(|a| a.len() == n && a.iter().all(is_i32))
+    v.as_array()
+        .is_some_and(|a| a.len() == n && a.iter().all(is_i32))
 }
 fn is_u32(v: &Value) -> bool {
     whole(v).is_some_and(|x| (0.0..=4_294_967_295.0).contains(&x))
@@ -224,7 +270,10 @@ fn quantum(v: Option<&Value>) -> i32 {
 }
 /// A length in board units as quanta, 1 to 1000 units; `fallback` where it is no positive number.
 fn length_q(v: Option<&Value>, fallback: f64) -> i64 {
-    let x = v.and_then(num).filter(|x| x.is_finite() && *x > 0.0).unwrap_or(fallback);
+    let x = v
+        .and_then(num)
+        .filter(|x| x.is_finite() && *x > 0.0)
+        .unwrap_or(fallback);
     (js_round(x * Q) as i64).clamp(1, MAX_WIDTH)
 }
 
@@ -246,10 +295,12 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
         _ => None,
     };
     let t = text.as_bytes();
-    if t.len() % 2 != 0 {
+    if !t.len().is_multiple_of(2) {
         return None;
     }
-    t.chunks(2).map(|p| Some(digit(p[0])? << 4 | digit(p[1])?)).collect()
+    t.chunks(2)
+        .map(|p| Some(digit(p[0])? << 4 | digit(p[1])?))
+        .collect()
 }
 /// A wire id of exactly `n` bytes (base64url) as hex.
 fn hex_id_str(text: &str, n: usize) -> Option<String> {
@@ -290,7 +341,9 @@ fn id_list(v: &Value, id: IdMap) -> Value {
 /// 2^32 - 1).
 fn shape_parts(id: &str, sender_ok: fn(&str) -> bool) -> Option<(&str, &str, &str)> {
     let mut parts = id.split('/');
-    let (Some(sender), Some(seq), Some(index), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+    let (Some(sender), Some(seq), Some(index), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
         return None;
     };
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit());
@@ -302,13 +355,21 @@ fn shape_parts(id: &str, sender_ok: fn(&str) -> bool) -> Option<(&str, &str, &st
 }
 /// A shape id `<sender>/<envelope number>/<index>` (10.1) as the model writes it: the sender in hex.
 pub fn shape_id_from_wire(id: &str) -> Option<String> {
-    let b64 = |s: &str| s.len() == 43 && s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_');
+    let b64 = |s: &str| {
+        s.len() == 43
+            && s.bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    };
     let (sender, seq, index) = shape_parts(id, b64)?;
     Some(format!("{}/{seq}/{index}", hex_id_str(sender, 32)?))
 }
 /// A shape id of the model as the wire writes it: the sender in base64url.
 pub fn shape_id_to_wire(id: &str) -> Option<String> {
-    let hex64 = |s: &str| s.len() == 64 && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c));
+    let hex64 = |s: &str| {
+        s.len() == 64
+            && s.bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    };
     let (sender, seq, index) = shape_parts(id, hex64)?;
     Some(format!("{}/{seq}/{index}", wire_id_str(sender, 32)?))
 }
@@ -316,8 +377,11 @@ pub fn shape_id_to_wire(id: &str) -> Option<String> {
 // ---- attachments (9.1.1) ----------------------------------------------------------------------------------------
 
 fn b64u_text(v: Option<&Value>) -> bool {
-    v.and_then(Value::as_str)
-        .is_some_and(|s| !s.is_empty() && s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'))
+    v.and_then(Value::as_str).is_some_and(|s| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    })
 }
 /// A value that stands and is not null (JavaScript's `!= null`).
 fn given(v: Option<&Value>) -> Option<&Value> {
@@ -326,7 +390,10 @@ fn given(v: Option<&Value>) -> Option<&Value> {
 /// A page named as another attachment of the same list: `attachment:<id>`.
 fn page_ref(page: &Value, to: fn(&str, usize) -> Option<String>) -> Value {
     match page.as_str().and_then(|p| p.strip_prefix("attachment:")) {
-        Some(id) => to(id, 16).map_or_else(|| page.clone(), |id| Value::String(format!("attachment:{id}"))),
+        Some(id) => to(id, 16).map_or_else(
+            || page.clone(),
+            |id| Value::String(format!("attachment:{id}")),
+        ),
         None => page.clone(),
     }
 }
@@ -334,7 +401,9 @@ fn page_ref(page: &Value, to: fn(&str, usize) -> Option<String>) -> Value {
 /// A wire attachment reference as the model keeps it; `bad-format` for one that names no file. Fields a newer
 /// client added are kept.
 pub fn attachment_from_wire(a: &Value) -> Result<Fields> {
-    let Some(a) = a.as_object() else { return bad("an attachment is not an object") };
+    let Some(a) = a.as_object() else {
+        return bad("an attachment is not an object");
+    };
     let Some(attachment_id) = a.get("file_id").and_then(|v| hex_id(v, 16)) else {
         return bad("an attachment names no file");
     };
@@ -349,7 +418,9 @@ pub fn attachment_from_wire(a: &Value) -> Result<Fields> {
         }
     }
     if let Some(poster) = given(a.get("poster_file_id")) {
-        let Some(id) = hex_id(poster, 16) else { return bad("a poster names no file") };
+        let Some(id) = hex_id(poster, 16) else {
+            return bad("a poster names no file");
+        };
         out.insert("poster_attachment_id".into(), Value::String(id));
     }
     if let Some(page) = out.get_mut("page") {
@@ -358,12 +429,24 @@ pub fn attachment_from_wire(a: &Value) -> Result<Fields> {
     Ok(out)
 }
 
-const ATTACHMENT_FIELDS: [&str; 10] =
-    ["file_key", "sha256", "file_name", "media_type", "total_size", "width", "height", "caption", "page", "marks"];
+const ATTACHMENT_FIELDS: [&str; 10] = [
+    "file_key",
+    "sha256",
+    "file_name",
+    "media_type",
+    "total_size",
+    "width",
+    "height",
+    "caption",
+    "page",
+    "marks",
+];
 
 /// A model attachment reference as a body carries it: the fields of 9.1.1 alone, with a name and a type always.
 pub fn attachment_to_wire(a: &Value) -> Result<Fields> {
-    let Some(a) = a.as_object() else { return argument("an attachment is not an object") };
+    let Some(a) = a.as_object() else {
+        return argument("an attachment is not an object");
+    };
     let file_id = a.get("attachment_id").and_then(|v| wire_id(v, 16));
     let (Some(file_id), true, true) = (
         file_id,
@@ -386,19 +469,31 @@ pub fn attachment_to_wire(a: &Value) -> Result<Fields> {
         *page = page_ref(page, wire_id_str);
     }
     if let Some(poster) = given(a.get("poster_attachment_id")) {
-        let Some(id) = wire_id(poster, 16) else { return bad("a poster names no file") };
+        let Some(id) = wire_id(poster, 16) else {
+            return bad("a poster names no file");
+        };
         out.insert("poster_file_id".into(), Value::String(id));
     }
     Ok(out)
 }
 
 fn list_from_wire(list: &Value) -> Result<Value> {
-    let Some(list) = list.as_array() else { return bad("attachments is not a list") };
-    list.iter().map(|a| attachment_from_wire(a).map(Value::Object)).collect::<Result<_>>().map(Value::Array)
+    let Some(list) = list.as_array() else {
+        return bad("attachments is not a list");
+    };
+    list.iter()
+        .map(|a| attachment_from_wire(a).map(Value::Object))
+        .collect::<Result<_>>()
+        .map(Value::Array)
 }
 fn list_to_wire(list: &Value) -> Result<Value> {
-    let Some(list) = list.as_array() else { return bad("attachments is not a list") };
-    list.iter().map(|a| attachment_to_wire(a).map(Value::Object)).collect::<Result<_>>().map(Value::Array)
+    let Some(list) = list.as_array() else {
+        return bad("attachments is not a list");
+    };
+    list.iter()
+        .map(|a| attachment_to_wire(a).map(Value::Object))
+        .collect::<Result<_>>()
+        .map(Value::Array)
 }
 
 // ---- small rules of single fields -------------------------------------------------------------------------------
@@ -407,8 +502,14 @@ fn list_to_wire(list: &Value) -> Result<Value> {
 fn js_space(c: char) -> bool {
     matches!(
         c,
-        '\u{9}' | '\u{a}' | '\u{b}' | '\u{c}' | '\u{d}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}'
-            | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'
+        '\u{9}' | '\u{a}' | '\u{b}' | '\u{c}' | '\u{d}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
     )
 }
 /// A card's `teaser`: the two short lines the Desk row shows under the title. Plain text: not empty, already
@@ -427,11 +528,14 @@ pub fn note_ref_valid(v: &Value) -> bool {
     if o.keys().any(|k| k != "object_id" && k != "written_at") {
         return false;
     }
-    let id_ok = o
-        .get("object_id")
-        .and_then(Value::as_str)
-        .is_some_and(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)));
-    id_ok && given(o.get("written_at")).is_none_or(|at| is_safe(at) && whole(at).is_some_and(|x| x >= 0.0))
+    let id_ok = o.get("object_id").and_then(Value::as_str).is_some_and(|s| {
+        s.len() == 32
+            && s.bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    });
+    id_ok
+        && given(o.get("written_at"))
+            .is_none_or(|at| is_safe(at) && whole(at).is_some_and(|x| x >= 0.0))
 }
 /// Options as every client reads them: `final` only where it is true.
 fn plain_options(options: &[Value]) -> Value {
@@ -458,7 +562,12 @@ fn plain_options(options: &[Value]) -> Value {
 const ID_NAMES: [&str; 6] = ["desk/", "session/", "draft/", "snooze/", "duck/", "star/"];
 const READ_SCOPES: [&str; 3] = ["read/session/", "read/card/", "read/desk/"];
 
-fn map_name(name: &str, id: fn(&str, usize) -> Option<String>, snapshot_from: &str, snapshot_to: &str) -> String {
+fn map_name(
+    name: &str,
+    id: fn(&str, usize) -> Option<String>,
+    snapshot_from: &str,
+    snapshot_to: &str,
+) -> String {
     let tail = |prefix: &str, n: usize, out: &str| -> Option<String> {
         let rest = name.strip_prefix(prefix)?;
         Some(id(rest, n).map_or_else(|| name.to_owned(), |got| format!("{out}{got}")))
@@ -475,11 +584,21 @@ fn map_name(name: &str, id: fn(&str, usize) -> Option<String>, snapshot_from: &s
 /// A register's name on the wire -> its key in the model (`board_snapshot/<board>` is
 /// `scribble_snapshot/desk/<board>`).
 pub fn register_key_of(name: &str) -> String {
-    map_name(name, hex_id_str, "board_snapshot/", "scribble_snapshot/desk/")
+    map_name(
+        name,
+        hex_id_str,
+        "board_snapshot/",
+        "scribble_snapshot/desk/",
+    )
 }
 /// A register's key in the model -> its name on the wire.
 pub fn register_name_of(key: &str) -> String {
-    map_name(key, wire_id_str, "scribble_snapshot/desk/", "board_snapshot/")
+    map_name(
+        key,
+        wire_id_str,
+        "scribble_snapshot/desk/",
+        "board_snapshot/",
+    )
 }
 
 fn with_id(value: &Fields, field: &str, n: usize, id: IdMap) -> Value {
@@ -490,7 +609,9 @@ fn with_id(value: &Fields, field: &str, n: usize, id: IdMap) -> Value {
     Value::Object(out)
 }
 fn crown_ids(v: &Value, id: IdMap) -> Value {
-    let Some(o) = v.as_object() else { return v.clone() };
+    let Some(o) = v.as_object() else {
+        return v.clone();
+    };
     let mut out = o.clone();
     if let Some(s) = out.get_mut("session_id") {
         *s = id(s, 16);
@@ -501,7 +622,9 @@ fn crown_ids(v: &Value, id: IdMap) -> Value {
     Value::Object(out)
 }
 fn frontier_ids(f: &Value, id: IdMap) -> Value {
-    let Some(o) = f.as_object() else { return f.clone() };
+    let Some(o) = f.as_object() else {
+        return f.clone();
+    };
     let mut out = Fields::new();
     for (k, v) in o {
         let key = match id(&Value::String(k.clone()), 32) {
@@ -521,7 +644,9 @@ fn frontier_ids(f: &Value, id: IdMap) -> Value {
 }
 /// The ids inside a register's value, one way or the other; the rest of the value is the app's and stays.
 fn register_value(key: &str, value: &Value, to_model: bool) -> Result<Value> {
-    let Some(o) = value.as_object() else { return Ok(value.clone()) };
+    let Some(o) = value.as_object() else {
+        return Ok(value.clone());
+    };
     let id: IdMap = if to_model { soft_hex } else { soft_wire };
     Ok(if key == "crown" {
         crown_ids(value, id)
@@ -552,13 +677,22 @@ fn register_value(key: &str, value: &Value, to_model: bool) -> Result<Value> {
                     out.insert(k.clone(), v.clone());
                 }
             }
-            out.insert("attachment".into(), Value::Object(attachment_from_wire(o.get("attachment").unwrap_or(&null))?));
+            out.insert(
+                "attachment".into(),
+                Value::Object(attachment_from_wire(o.get("attachment").unwrap_or(&null))?),
+            );
             if let Some(f) = frontier {
                 out.insert("frontier".into(), f);
             }
-            out.insert("last_envelope_number".into(), given(o.get("change")).cloned().unwrap_or(0.into()));
+            out.insert(
+                "last_envelope_number".into(),
+                given(o.get("change")).cloned().unwrap_or(0.into()),
+            );
         } else {
-            out.insert("attachment".into(), Value::Object(attachment_to_wire(o.get("attachment").unwrap_or(&null))?));
+            out.insert(
+                "attachment".into(),
+                Value::Object(attachment_to_wire(o.get("attachment").unwrap_or(&null))?),
+            );
             if let Some(f) = frontier {
                 out.insert("frontier".into(), f);
             }
@@ -594,12 +728,25 @@ pub fn encode_register(key: &str, value: &Value) -> Result<(String, Option<Strin
 // ---- board items (10.5) and stroke pieces (7.2) ------------------------------------------------------------------
 
 fn utf8_len_in(v: Option<&Value>, min: usize, max: usize) -> bool {
-    v.and_then(Value::as_str).is_some_and(|s| (min..=max).contains(&s.len()))
+    v.and_then(Value::as_str)
+        .is_some_and(|s| (min..=max).contains(&s.len()))
 }
 fn points_ok(v: Option<&Value>) -> bool {
-    v.and_then(Value::as_str).is_some_and(|s| Ink::from_base64url(s).is_ok())
+    v.and_then(Value::as_str)
+        .is_some_and(|s| Ink::from_base64url(s).is_ok())
 }
-const SHAPE_FIELDS: [&str; 10] = ["color", "width", "points", "live", "at", "text", "size", "wrap", "rect", "attachment"];
+const SHAPE_FIELDS: [&str; 10] = [
+    "color",
+    "width",
+    "points",
+    "live",
+    "at",
+    "text",
+    "size",
+    "wrap",
+    "rect",
+    "attachment",
+];
 const PENS: [&str; 2] = ["pen", "marker"];
 const NOTES: [&str; 3] = ["text", "sticky", "voice"];
 
@@ -631,7 +778,9 @@ impl Family {
 /// One shape as the wire carries it, checked as trommi-core checks it (with its `id` in a snapshot file, without
 /// in a board item); its family.
 pub fn check_wire_shape(e: &Value, with_id: bool) -> Result<Family> {
-    let Some(e) = e.as_object() else { return bad("a shape is not an object") };
+    let Some(e) = e.as_object() else {
+        return bad("a shape is not an object");
+    };
     let tool = e.get("tool").and_then(Value::as_str).unwrap_or("");
     let family = if PENS.contains(&tool) {
         Family::Pen
@@ -643,7 +792,11 @@ pub fn check_wire_shape(e: &Value, with_id: bool) -> Result<Family> {
         return bad("an unknown tool");
     };
     if e.contains_key("id") != with_id {
-        return bad(if with_id { "a shape without its id" } else { "a shape names an id" });
+        return bad(if with_id {
+            "a shape without its id"
+        } else {
+            "a shape names an id"
+        });
     }
     for f in SHAPE_FIELDS.iter().chain(["group", "id"].iter()) {
         if let Some(v) = e.get(*f) {
@@ -660,7 +813,9 @@ pub fn check_wire_shape(e: &Value, with_id: bool) -> Result<Family> {
     }
     match family {
         Family::Pen => {
-            if !utf8_len_in(e.get("color"), 1, 40) || !e.get("width").is_some_and(size_ok) || !points_ok(e.get("points"))
+            if !utf8_len_in(e.get("color"), 1, 40)
+                || !e.get("width").is_some_and(size_ok)
+                || !points_ok(e.get("points"))
             {
                 return bad("a stroke is not readable");
             }
@@ -669,7 +824,9 @@ pub fn check_wire_shape(e: &Value, with_id: bool) -> Result<Family> {
             }
         }
         Family::Note => {
-            let wrap_ok = e.get("wrap").is_none_or(|w| is_i32(w) && whole(w).is_some_and(|x| x > 0.0));
+            let wrap_ok = e
+                .get("wrap")
+                .is_none_or(|w| is_i32(w) && whole(w).is_some_and(|x| x > 0.0));
             if !e.get("at").is_some_and(|a| i32s(a, 2))
                 || !utf8_len_in(e.get("text"), 0, 20_000)
                 || !e.get("size").is_some_and(size_ok)
@@ -685,13 +842,21 @@ pub fn check_wire_shape(e: &Value, with_id: bool) -> Result<Family> {
                 && a.is_some_and(|a| {
                     utf8_len_in(a.get("file_name"), 1, 255)
                         && utf8_len_in(a.get("media_type"), 1, 255)
-                        && a.get("total_size").is_some_and(|t| is_safe(t) && whole(t).is_some_and(|x| x >= 0.0))
+                        && a.get("total_size")
+                            .is_some_and(|t| is_safe(t) && whole(t).is_some_and(|x| x >= 0.0))
                 });
-            let Some(a) = a.filter(|_| readable) else { return bad("a picture is not readable") };
-            if ["width", "height"].iter().any(|f| a.get(*f).is_some_and(|v| !is_u32(v))) {
+            let Some(a) = a.filter(|_| readable) else {
+                return bad("a picture is not readable");
+            };
+            if ["width", "height"]
+                .iter()
+                .any(|f| a.get(*f).is_some_and(|v| !is_u32(v)))
+            {
                 return bad("a picture size is not a whole number");
             }
-            if a.get("file_key").and_then(|k| hex_id(k, 32)).is_none() || a.get("sha256").and_then(|s| hex_id(s, 32)).is_none() {
+            if a.get("file_key").and_then(|k| hex_id(k, 32)).is_none()
+                || a.get("sha256").and_then(|s| hex_id(s, 32)).is_none()
+            {
                 return bad("a picture names no file");
             }
             attachment_from_wire(e.get("attachment").unwrap_or(&Value::Null))?;
@@ -713,11 +878,17 @@ pub fn entry_from_wire(e: &Value, with_id: bool) -> Result<Fields> {
             out.insert("width".into(), units(get("width")));
             out.insert("points".into(), get("points").clone());
             if let Some(live) = e.get("live") {
-                out.insert("live".into(), hex_id(live, 16).map_or(Value::Null, Value::String));
+                out.insert(
+                    "live".into(),
+                    hex_id(live, 16).map_or(Value::Null, Value::String),
+                );
             }
         }
         Family::Note => {
-            let at = get("at").as_array().map(|a| a.iter().map(units).collect()).unwrap_or_default();
+            let at = get("at")
+                .as_array()
+                .map(|a| a.iter().map(units).collect())
+                .unwrap_or_default();
             out.insert("at".into(), Value::Array(at));
             out.insert("text".into(), get("text").clone());
             out.insert("size".into(), units(get("size")));
@@ -728,7 +899,10 @@ pub fn entry_from_wire(e: &Value, with_id: bool) -> Result<Fields> {
         }
         Family::Image => {
             let a = attachment_from_wire(get("attachment"))?;
-            let rect = get("rect").as_array().map(|r| r.iter().map(units).collect()).unwrap_or_default();
+            let rect = get("rect")
+                .as_array()
+                .map(|r| r.iter().map(units).collect())
+                .unwrap_or_default();
             out.insert("rect".into(), Value::Array(rect));
             let or = |k: &str, d: Value| given(a.get(k)).cloned().unwrap_or(d);
             out.insert("nw".into(), or("width", 0.into()));
@@ -753,15 +927,29 @@ fn js_string(v: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Null => "null".into(),
         Value::Bool(b) => b.to_string(),
-        Value::Number(n) => n.as_f64().map_or_else(|| n.to_string(), |x| fnum(x).to_string()),
-        Value::Array(a) => a.iter().map(|x| if x.is_null() { String::new() } else { js_string(x) }).collect::<Vec<_>>().join(","),
+        Value::Number(n) => n
+            .as_f64()
+            .map_or_else(|| n.to_string(), |x| fnum(x).to_string()),
+        Value::Array(a) => a
+            .iter()
+            .map(|x| {
+                if x.is_null() {
+                    String::new()
+                } else {
+                    js_string(x)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(","),
         Value::Object(_) => "[object Object]".into(),
     }
 }
 
 /// A model entry -> the wire's shape; `bad-format` for what no reader would take.
 pub fn entry_to_wire(e: &Value) -> Result<Fields> {
-    let Some(e) = e.as_object() else { return bad("a shape is not an object") };
+    let Some(e) = e.as_object() else {
+        return bad("a shape is not an object");
+    };
     let null = Value::Null;
     let tool = e.get("tool").unwrap_or(&null);
     let name = tool.as_str().unwrap_or("");
@@ -771,23 +959,41 @@ pub fn entry_to_wire(e: &Value) -> Result<Fields> {
     }
     let marker = name == "marker";
     if PENS.contains(&name) {
-        let color = given(e.get("color")).cloned().unwrap_or_else(|| (if marker { "yellow" } else { "ink" }).into());
+        let color = given(e.get("color"))
+            .cloned()
+            .unwrap_or_else(|| (if marker { "yellow" } else { "ink" }).into());
         out.insert("color".into(), color);
-        out.insert("width".into(), length_q(e.get("width"), if marker { 18.0 } else { 4.0 }).into());
+        out.insert(
+            "width".into(),
+            length_q(e.get("width"), if marker { 18.0 } else { 4.0 }).into(),
+        );
         if let Some(p) = e.get("points") {
             out.insert("points".into(), p.clone());
         }
         if let Some(live) = given(e.get("live")) {
-            let Some(id) = wire_id(live, 16) else { return bad("a live stroke id is not 16 bytes") };
+            let Some(id) = wire_id(live, 16) else {
+                return bad("a live stroke id is not 16 bytes");
+            };
             out.insert("live".into(), Value::String(id));
         }
     } else if NOTES.contains(&name) {
         let at = e.get("at").and_then(Value::as_array);
         let at_i = |i: usize| quantum(at.and_then(|a| a.get(i)));
-        out.insert("at".into(), Value::Array(vec![at_i(0).into(), at_i(1).into()]));
-        out.insert("text".into(), Value::String(given(e.get("text")).map_or_else(String::new, js_string)));
+        out.insert(
+            "at".into(),
+            Value::Array(vec![at_i(0).into(), at_i(1).into()]),
+        );
+        out.insert(
+            "text".into(),
+            Value::String(given(e.get("text")).map_or_else(String::new, js_string)),
+        );
         out.insert("size".into(), length_q(e.get("size"), 20.0).into());
-        out.insert("color".into(), given(e.get("color")).cloned().unwrap_or_else(|| "ink".into()));
+        out.insert(
+            "color".into(),
+            given(e.get("color"))
+                .cloned()
+                .unwrap_or_else(|| "ink".into()),
+        );
         if let Some(w) = given(e.get("wrap")) {
             out.insert("wrap".into(), length_q(Some(w), 1.0).into());
         }
@@ -802,20 +1008,38 @@ pub fn entry_to_wire(e: &Value) -> Result<Fields> {
                 a.insert(k.into(), fnum(js_round(x)));
             }
         }
-        if let Some(m) = e.get("mime").and_then(Value::as_str).filter(|m| !m.is_empty()) {
+        if let Some(m) = e
+            .get("mime")
+            .and_then(Value::as_str)
+            .filter(|m| !m.is_empty())
+        {
             a.insert("media_type".into(), m.into());
         }
-        if let Some(n) = e.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) {
+        if let Some(n) = e
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|n| !n.is_empty())
+        {
             a.insert("file_name".into(), n.into());
         }
-        let r: Vec<Value> = (0..4).map(|i| quantum(rect.and_then(|r| r.get(i))).into()).collect();
+        let r: Vec<Value> = (0..4)
+            .map(|i| quantum(rect.and_then(|r| r.get(i))).into())
+            .collect();
         out.insert("rect".into(), Value::Array(r));
         out.insert("attachment".into(), Value::Object(a));
     }
-    if let Some(z) = e.get("z").and_then(num).filter(|z| *z != 0.0 && !z.is_nan()) {
+    if let Some(z) = e
+        .get("z")
+        .and_then(num)
+        .filter(|z| *z != 0.0 && !z.is_nan())
+    {
         out.insert("z".into(), to_i32(js_round(z)).into());
     }
-    if let Some(g) = e.get("group").and_then(Value::as_str).filter(|g| !g.is_empty()) {
+    if let Some(g) = e
+        .get("group")
+        .and_then(Value::as_str)
+        .filter(|g| !g.is_empty())
+    {
         out.insert("group".into(), g.into());
     }
     let out = Value::Object(out);
@@ -831,11 +1055,19 @@ fn unique(list: &[Value]) -> bool {
     list.iter().all(|v| seen.insert(v.to_string()))
 }
 fn ids_from_wire(list: Option<&Value>) -> Result<Value> {
-    let Some(list) = list.and_then(Value::as_array).filter(|l| !l.is_empty() && l.len() <= MAX_SHAPE_IDS && unique(l)) else {
+    let Some(list) = list
+        .and_then(Value::as_array)
+        .filter(|l| !l.is_empty() && l.len() <= MAX_SHAPE_IDS && unique(l))
+    else {
         return bad("shape ids: 1 to 2 000, none twice");
     };
     list.iter()
-        .map(|id| id.as_str().and_then(shape_id_from_wire).map(Value::String).map_or_else(|| bad("a shape id is not readable"), Ok))
+        .map(|id| {
+            id.as_str()
+                .and_then(shape_id_from_wire)
+                .map(Value::String)
+                .map_or_else(|| bad("a shape id is not readable"), Ok)
+        })
         .collect::<Result<_>>()
         .map(Value::Array)
 }
@@ -851,10 +1083,17 @@ fn board_from_wire(b: &Fields) -> Result<Fields> {
     let ty = b.get("content_type").and_then(Value::as_str).unwrap_or("");
     let mut out = Fields::new();
     if ty == "strokes" && has("strokes")? && !has("shape_ids")? && !has("offset")? {
-        let Some(list) = b.get("strokes").and_then(Value::as_array).filter(|l| !l.is_empty() && l.len() <= MAX_SHAPES) else {
+        let Some(list) = b
+            .get("strokes")
+            .and_then(Value::as_array)
+            .filter(|l| !l.is_empty() && l.len() <= MAX_SHAPES)
+        else {
             return bad("strokes: 1 to 1 000 shapes");
         };
-        let strokes = list.iter().map(|e| entry_from_wire(e, false).map(Value::Object)).collect::<Result<_>>()?;
+        let strokes = list
+            .iter()
+            .map(|e| entry_from_wire(e, false).map(Value::Object))
+            .collect::<Result<_>>()?;
         out.insert("content_type".into(), ty.into());
         out.insert("strokes".into(), Value::Array(strokes));
         return Ok(out);
@@ -866,10 +1105,15 @@ fn board_from_wire(b: &Fields) -> Result<Fields> {
     }
     if ty == "move" && !has("strokes")? && has("offset")? {
         let offset = b.get("offset").filter(|o| i32s(o, 2));
-        let Some(offset) = offset.and_then(Value::as_array) else { return bad("an offset is two whole numbers") };
+        let Some(offset) = offset.and_then(Value::as_array) else {
+            return bad("an offset is two whole numbers");
+        };
         out.insert("content_type".into(), ty.into());
         out.insert("stroke_ids".into(), ids_from_wire(b.get("shape_ids"))?);
-        out.insert("offset".into(), Value::Array(offset.iter().map(units).collect()));
+        out.insert(
+            "offset".into(),
+            Value::Array(offset.iter().map(units).collect()),
+        );
         return Ok(out);
     }
     bad("not a board item")
@@ -877,10 +1121,17 @@ fn board_from_wire(b: &Fields) -> Result<Fields> {
 fn board_to_wire(c: &Fields) -> Result<Fields> {
     let ty = c.get("content_type").and_then(Value::as_str).unwrap_or("");
     let ids = || -> Result<Value> {
-        let Some(list) = c.get("stroke_ids").and_then(Value::as_array) else { return bad("stroke_ids is not a list") };
+        let Some(list) = c.get("stroke_ids").and_then(Value::as_array) else {
+            return bad("stroke_ids is not a list");
+        };
         let list: Vec<Value> = list
             .iter()
-            .map(|id| id.as_str().and_then(shape_id_to_wire).map(Value::String).map_or_else(|| bad("a shape id is not readable"), Ok))
+            .map(|id| {
+                id.as_str()
+                    .and_then(shape_id_to_wire)
+                    .map(Value::String)
+                    .map_or_else(|| bad("a shape id is not readable"), Ok)
+            })
             .collect::<Result<_>>()?;
         if list.is_empty() || list.len() > MAX_SHAPE_IDS || !unique(&list) {
             return bad("shape ids: 1 to 2 000, none twice");
@@ -890,11 +1141,18 @@ fn board_to_wire(c: &Fields) -> Result<Fields> {
     let mut out = Fields::new();
     match ty {
         "strokes" => {
-            let list = c.get("strokes").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+            let list = c
+                .get("strokes")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
             if list.is_empty() || list.len() > MAX_SHAPES {
                 return bad("strokes: 1 to 1 000 shapes");
             }
-            let strokes = list.iter().map(|e| entry_to_wire(e).map(Value::Object)).collect::<Result<_>>()?;
+            let strokes = list
+                .iter()
+                .map(|e| entry_to_wire(e).map(Value::Object))
+                .collect::<Result<_>>()?;
             out.insert("strokes".into(), Value::Array(strokes));
         }
         "erase" | "send_away" => {
@@ -907,7 +1165,9 @@ fn board_to_wire(c: &Fields) -> Result<Fields> {
             out.insert("offset".into(), Value::Array(vec![at(0), at(1)]));
         }
         _ => {
-            let shown = c.get("content_type").map_or_else(|| "undefined".to_owned(), js_string);
+            let shown = c
+                .get("content_type")
+                .map_or_else(|| "undefined".to_owned(), js_string);
             return argument(&format!("unknown content_type {shown}"));
         }
     }
@@ -924,10 +1184,19 @@ pub fn decode_piece(json: &[u8]) -> Option<Fields> {
     let p: Value = serde_json::from_slice(json).ok()?;
     let p = p.as_object()?;
     let stroke = p.get("stroke").and_then(|s| hex_id(s, 16))?;
-    let number_ok = p.get("number").is_some_and(|n| is_u32(n) && whole(n).is_some_and(|x| x >= 1.0));
-    let tool = p.get("tool").and_then(Value::as_str).filter(|t| PENS.contains(t))?;
+    let number_ok = p
+        .get("number")
+        .is_some_and(|n| is_u32(n) && whole(n).is_some_and(|x| x >= 1.0));
+    let tool = p
+        .get("tool")
+        .and_then(Value::as_str)
+        .filter(|t| PENS.contains(t))?;
     let width = p.get("width").filter(|w| size_ok(w))?;
-    if !number_ok || !utf8_len_in(p.get("color"), 1, 40) || !points_ok(p.get("points")) || StrokePiece::decode(json).is_err() {
+    if !number_ok
+        || !utf8_len_in(p.get("color"), 1, 40)
+        || !points_ok(p.get("points"))
+        || StrokePiece::decode(json).is_err()
+    {
         return None;
     }
     let mut out = Fields::new();
@@ -945,14 +1214,24 @@ pub fn decode_piece(json: &[u8]) -> Option<Fields> {
 pub fn encode_piece(p: &Value) -> Result<String> {
     let null = Value::Null;
     let get = |k: &str| p.get(k).unwrap_or(&null);
-    let Some(stroke) = wire_id(get("stroke"), 16) else { return bad("a live stroke id is not 16 bytes") };
+    let Some(stroke) = wire_id(get("stroke"), 16) else {
+        return bad("a live stroke id is not 16 bytes");
+    };
     let marker = get("tool").as_str() == Some("marker");
     let mut out = Fields::new();
     out.insert("stroke".into(), Value::String(stroke));
     out.insert("number".into(), get("number").clone());
     out.insert("tool".into(), get("tool").clone());
-    out.insert("color".into(), given(p.get("color")).cloned().unwrap_or_else(|| (if marker { "yellow" } else { "ink" }).into()));
-    out.insert("width".into(), length_q(p.get("width"), if marker { 18.0 } else { 4.0 }).into());
+    out.insert(
+        "color".into(),
+        given(p.get("color"))
+            .cloned()
+            .unwrap_or_else(|| (if marker { "yellow" } else { "ink" }).into()),
+    );
+    out.insert(
+        "width".into(),
+        length_q(p.get("width"), if marker { 18.0 } else { 4.0 }).into(),
+    );
     out.insert("points".into(), get("points").clone());
     let json = Value::Object(out).to_string();
     if decode_piece(json.as_bytes()).is_none() {
@@ -969,9 +1248,15 @@ fn from_wire(kind: BodyKind, b: Fields) -> Result<Fields> {
         return board_from_wire(&b);
     }
     if kind == BodyKind::Register {
-        let Some(name) = b.get("name").and_then(Value::as_str) else { return bad("a register without a name") };
+        let Some(name) = b.get("name").and_then(Value::as_str) else {
+            return bad("a register without a name");
+        };
         let (key, value) = register_from_wire(name, b.get("value").unwrap_or(&Value::Null))?;
-        let lamport = b.get("lamport").filter(|l| l.is_number()).cloned().unwrap_or(0.into());
+        let lamport = b
+            .get("lamport")
+            .filter(|l| l.is_number())
+            .cloned()
+            .unwrap_or(0.into());
         let mut out = Fields::new();
         out.insert("name".into(), name.into());
         out.insert("key".into(), Value::String(key));
@@ -1005,7 +1290,10 @@ fn from_wire(kind: BodyKind, b: Fields) -> Result<Fields> {
             // a bad note mark: the message stays, plain
             if let Some(n) = note.as_object() {
                 let mut n = n.clone();
-                let id = n.get("object_id").and_then(|v| hex_id(v, 16)).map_or(Value::Null, Value::String);
+                let id = n
+                    .get("object_id")
+                    .and_then(|v| hex_id(v, 16))
+                    .map_or(Value::Null, Value::String);
                 n.insert("object_id".into(), id);
                 let n = Value::Object(n);
                 if note_ref_valid(&n) {
@@ -1016,15 +1304,23 @@ fn from_wire(kind: BodyKind, b: Fields) -> Result<Fields> {
     }
     if matches!(kind, BodyKind::Card | BodyKind::Artifact | BodyKind::Note) {
         if let Some(prev) = given(out.get("previous_version_hash")) {
-            let Some(h) = hex_id(prev, 32) else { return bad("previous_version_hash is not a hash") };
+            let Some(h) = hex_id(prev, 32) else {
+                return bad("previous_version_hash is not a hash");
+            };
             out.insert("previous_version_hash".into(), Value::String(h));
         }
     }
     if kind == BodyKind::Card {
-        if let Some(v) = out.get_mut("merged_into_object_id").filter(|v| !v.is_null()) {
+        if let Some(v) = out
+            .get_mut("merged_into_object_id")
+            .filter(|v| !v.is_null())
+        {
             *v = soft_hex(v, 16);
         }
-        if let Some(v) = out.get_mut("merged_from_object_ids").filter(|v| !v.is_null()) {
+        if let Some(v) = out
+            .get_mut("merged_from_object_ids")
+            .filter(|v| !v.is_null())
+        {
             *v = id_list(v, soft_hex);
         }
         if given(out.get("teaser")).is_some_and(|t| !teaser_valid(t)) {
@@ -1048,7 +1344,9 @@ fn from_wire(kind: BodyKind, b: Fields) -> Result<Fields> {
 fn parse(payload: &[u8]) -> std::result::Result<Fields, Decoded> {
     // (a byte order mark is read past, as the web's TextDecoder does)
     let payload = payload.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(payload);
-    let Ok(Value::Object(parsed)) = serde_json::from_slice::<Value>(payload) else { return Err(Decoded::Bad) };
+    let Ok(Value::Object(parsed)) = serde_json::from_slice::<Value>(payload) else {
+        return Err(Decoded::Bad);
+    };
     match parsed.get("schema_version") {
         None => Ok(parsed),
         Some(v) => match whole(v) {
@@ -1093,7 +1391,9 @@ pub fn parse_board_item(payload: &[u8]) -> Decoded {
 fn to_wire(kind: BodyKind, f: &Fields) -> Result<Fields> {
     match kind {
         BodyKind::BoardItem => return board_to_wire(f),
-        BodyKind::Register => return argument("a register is written with encode_register: the core makes its body"),
+        BodyKind::Register => {
+            return argument("a register is written with encode_register: the core makes its body")
+        }
         _ => {}
     }
     let mut out = Fields::new();
@@ -1121,8 +1421,14 @@ fn to_wire(kind: BodyKind, f: &Fields) -> Result<Fields> {
     if kind == BodyKind::Message {
         let ct = out.get("content_type").cloned().unwrap_or(Value::Null);
         if ct.as_str() != Some("message") {
-            let shown = if ct.is_null() { "null".to_owned() } else { js_string(&ct) };
-            return argument(&format!("a Chat message has content_type message, not {shown}"));
+            let shown = if ct.is_null() {
+                "null".to_owned()
+            } else {
+                js_string(&ct)
+            };
+            return argument(&format!(
+                "a Chat message has content_type message, not {shown}"
+            ));
         }
         if out.get("terminal").and_then(Value::as_str) == Some("work") {
             return argument("a work trail is no stored message (spec 7.3)");
@@ -1131,7 +1437,9 @@ fn to_wire(kind: BodyKind, f: &Fields) -> Result<Fields> {
             *v = id_list(v, soft_wire);
         }
         if let Some(p) = given(out.get("published_object_id")) {
-            let Some(id) = wire_id(p, 16) else { return bad("published_object_id is not an object id") };
+            let Some(id) = wire_id(p, 16) else {
+                return bad("published_object_id is not an object id");
+            };
             out.remove("published_object_id");
             out.insert("artifact_object_id".into(), Value::String(id));
         }
@@ -1140,29 +1448,42 @@ fn to_wire(kind: BodyKind, f: &Fields) -> Result<Fields> {
                 return argument("note must be { object_id: 32 hex, written_at?: ms }");
             }
             let mut n = note.as_object().cloned().unwrap_or_default();
-            let id = n.get("object_id").and_then(|v| wire_id(v, 16)).map_or(Value::Null, Value::String);
+            let id = n
+                .get("object_id")
+                .and_then(|v| wire_id(v, 16))
+                .map_or(Value::Null, Value::String);
             n.insert("object_id".into(), id);
             out.insert("note".into(), Value::Object(n));
         }
     }
     if matches!(kind, BodyKind::Card | BodyKind::Artifact | BodyKind::Note) {
         if let Some(prev) = given(out.get("previous_version_hash")) {
-            let Some(h) = wire_id(prev, 32) else { return bad("previous_version_hash is not a hash") };
+            let Some(h) = wire_id(prev, 32) else {
+                return bad("previous_version_hash is not a hash");
+            };
             out.insert("previous_version_hash".into(), Value::String(h));
         }
     }
     if kind == BodyKind::Card {
         if given(out.get("teaser")).is_some_and(|t| !teaser_valid(t)) {
-            return argument(&format!("teaser must be plain one-paragraph text, trimmed, at most {TEASER_MAX} characters"));
+            return argument(&format!(
+                "teaser must be plain one-paragraph text, trimmed, at most {TEASER_MAX} characters"
+            ));
         }
         if let Some(Value::Array(options)) = out.get("options") {
             let plain = plain_options(options);
             out.insert("options".into(), plain);
         }
-        if let Some(v) = out.get_mut("merged_into_object_id").filter(|v| !v.is_null()) {
+        if let Some(v) = out
+            .get_mut("merged_into_object_id")
+            .filter(|v| !v.is_null())
+        {
             *v = soft_wire(v, 16);
         }
-        if let Some(v) = out.get_mut("merged_from_object_ids").filter(|v| !v.is_null()) {
+        if let Some(v) = out
+            .get_mut("merged_from_object_ids")
+            .filter(|v| !v.is_null())
+        {
             *v = id_list(v, soft_wire);
         }
     }
@@ -1187,9 +1508,15 @@ pub fn encode_body(kind: BodyKind, fields: &Fields) -> Result<String> {
 pub fn file_ids_of(kind: BodyKind, fields: &Fields) -> Vec<[u8; 16]> {
     let mut out: Vec<[u8; 16]> = Vec::new();
     let mut add = |a: Option<&Value>| {
-        let Some(a) = a.and_then(Value::as_object) else { return };
+        let Some(a) = a.and_then(Value::as_object) else {
+            return;
+        };
         for f in ["attachment_id", "poster_attachment_id"] {
-            let id = a.get(f).and_then(Value::as_str).filter(|s| s.len() == 32).and_then(unhex);
+            let id = a
+                .get(f)
+                .and_then(Value::as_str)
+                .filter(|s| s.len() == 32)
+                .and_then(unhex);
             if let Some(Ok(id)) = id.map(<[u8; 16]>::try_from) {
                 if !out.contains(&id) {
                     out.push(id);
@@ -1197,11 +1524,21 @@ pub fn file_ids_of(kind: BodyKind, fields: &Fields) -> Vec<[u8; 16]> {
             }
         }
     };
-    for a in fields.get("attachments").and_then(Value::as_array).into_iter().flatten() {
+    for a in fields
+        .get("attachments")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         add(Some(a));
     }
     if kind == BodyKind::BoardItem {
-        for e in fields.get("strokes").and_then(Value::as_array).into_iter().flatten() {
+        for e in fields
+            .get("strokes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             add(e.get("attachment"));
         }
     }

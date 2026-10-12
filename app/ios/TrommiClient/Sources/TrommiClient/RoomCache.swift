@@ -8,7 +8,7 @@ import Foundation
 extension Room {
   /** The cache's small head: where the records stop. */
   struct Head: Codable {
-    var v = 4
+    var v = 5
     /** How many records the store held when this head was written: fewer on reading means a store damaged beyond its tail. */
     var records: Int
     var cursor: UInt64
@@ -58,7 +58,6 @@ extension Room {
     deskHolding = false
     board.deskWaiting = false
     wakeDeskWaiters()
-    board.project()
     var ch = Change(); ch.room = true; ch.stack = true
     emit(ch)
   }
@@ -108,10 +107,7 @@ extension Room {
     let head = Head(records: restoredCount + log.count, cursor: cursor, lamport: lamport)
     var snap: [UInt8]? = nil
     if wantSnap {
-      var w = RecCodec.W()
-      w.b.append(2); w.u(cursor); w.i(lamport); w.u(UInt64(head.records))
-      BoardCodec.encode(board, into: &w)
-      snap = w.b
+      snap = JV.obj(["v": 1, "cursor": .num(Double(cursor)), "lamport": .num(Double(lamport)), "records": .num(Double(head.records)), "model": .str(board.modelSnapshot())]).encoded()
       sinceSnapshot = 0
     }
     let prev = saveTail
@@ -141,18 +137,13 @@ extension Room {
   }
   private func restoreOnce() async -> Bool {
     guard let rs = try? recordStore() else { return false }
-    typealias Snap = (cursor: UInt64, lamport: Int, records: Int, board: Board)
+    typealias Snap = (cursor: UInt64, lamport: Int, records: Int, model: String)
     let found: (head: Head, snap: Snap?, ix: RecordStore.Index)? = await Task.detached(priority: .userInitiated) {
-      guard let h = rs.readSmall(Head.self, from: rs.headURL, aad: "trommi ios head"), h.v == 4 else { return nil }
+      guard let h = rs.readSmall(Head.self, from: rs.headURL, aad: "trommi ios head"), h.v == 5 else { return nil }
       var snap: Snap? = nil
-      if let plain = rs.readBoard() {
-        snap = plain.withUnsafeBufferPointer { buf -> Snap? in
-          var r = RecCodec.R(b: buf)
-          guard (try? r.byte()) == 2, let c = try? r.u(), let l = try? r.i(), let n = try? r.u() else { return nil }
-          let b = Board()
-          guard (try? BoardCodec.decode(&r, into: b)) != nil, r.at == buf.count, c <= h.cursor else { return nil }
-          return (c, l, Int(n), b)
-        }
+      // (the client core's model as a whole, and the cursor, lamport and record count it stands at)
+      if let plain = rs.readBoard(), let v = JV.parse(plain), v["v"].int == 1, let c = v["cursor"].int, c <= h.cursor, let m = v["model"].string {
+        snap = (UInt64(c), v["lamport"].int ?? 0, v["records"].int ?? 0, m)
       }
       guard let ix = rs.index(after: snap.map { Int($0.cursor) }) else { return nil }
       return (h, snap, ix)
@@ -167,7 +158,7 @@ extension Room {
     guard upto - lo0 >= f.head.records - (f.snap?.records ?? 0) else { rs.wipe(); return false }
     var ch = Change()
     if let sn = f.snap {
-      board.adopt(sn.board)
+      guard board.loadModel(sn.model) else { rs.wipe(); return false }
       try? applyGroups(Array(groups.values), &ch)
     }
     let slice = 2048
@@ -183,7 +174,7 @@ extension Room {
         var c = Change(); try? applyGroups(Array(groups.values), &c)
         return false
       }
-      for r in recs { board.apply(r, change: &ch) }
+      for r in recs { replay(r) }
     }
     restoredCount = f.head.records
     sinceSnapshot = f.snap == nil ? Room.snapshotEvery : upto - lo0
@@ -197,7 +188,7 @@ extension Room {
       board.setDeskListing(Dictionary(kept.open.map { ($0, 0) }, uniquingKeysWith: { a, _ in a }), at: Int(kept.at))
     }
     if record.role == "human" { holdDesk() }
-    board.project()
+    board.project(&ch)
     restored = true
     ch.stack = true; ch.room = true
     emit(ch)

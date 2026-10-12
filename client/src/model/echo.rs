@@ -51,7 +51,7 @@ impl Model {
     /// What an older echo of the same key would fall back to: the confirmed value under both.
     fn pending_base(&self, key: &str) -> Option<HumanRegister> {
         self.echoes.values().find_map(|e| match e {
-            Echo::Registers { before, open } if open.iter().any(|k| k == key) => {
+            Echo::Registers { before, open, .. } if open.iter().any(|k| k == key) => {
                 Some(before.get(key).cloned().flatten())
             }
             _ => None,
@@ -89,8 +89,17 @@ impl Model {
                 change,
             );
         }
-        self.echoes
-            .insert(local_id.to_string(), Echo::Registers { before, open });
+        self.echo_seq += 1;
+        let values = values.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        self.echoes.insert(
+            local_id.to_string(),
+            Echo::Registers {
+                before,
+                open,
+                values,
+                seq: self.echo_seq,
+            },
+        );
     }
 
     /// An answer as card.answer with `pending: true`, the card in the state the answer leaves it. False without the card.
@@ -305,8 +314,34 @@ impl Model {
                     }
                 }
             }
-            Echo::Registers { before, open } => {
+            Echo::Registers { before, open, .. } => {
                 for key in open {
+                    // an older own write of the same name still in flight stands again in front
+                    let older = self
+                        .echoes
+                        .values()
+                        .filter_map(|e| match e {
+                            Echo::Registers {
+                                open, values, seq, ..
+                            } if open.contains(&key) => values.get(&key).map(|v| (*seq, v.clone())),
+                            _ => None,
+                        })
+                        .max_by_key(|(seq, _)| *seq);
+                    if let Some((_, v)) = older {
+                        let me = self.my_device_id.clone();
+                        self.set_human_register(
+                            &key,
+                            v,
+                            RegisterWrite {
+                                envelope_number: None,
+                                sender_device_id: me,
+                                pending: true,
+                                causal: None,
+                            },
+                            change,
+                        );
+                        continue;
+                    }
                     let old = before.get(&key).cloned().flatten();
                     let (value, w) = match old {
                         Some(o) => (

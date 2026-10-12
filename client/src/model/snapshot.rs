@@ -143,3 +143,28 @@ impl Model {
         Ok(())
     }
 }
+
+impl Model {
+    /// Every record is named changed: the next patch is the whole model (a copy made anew).
+    pub fn touch_all(&self, change: &mut super::change::Change) {
+        change.cards.extend(self.cards.keys().cloned());
+        change.sessions.extend(self.sessions.keys().cloned());
+        change.permissions.extend(self.permissions.keys().cloned());
+        change.notes.extend(self.notes.keys().cloned());
+        change.published.extend(self.published.keys().cloned());
+        change.timelines.extend(self.timelines.keys().cloned());
+        change.registers.extend(self.human.keys().cloned());
+        for (k, t) in &self.timelines {
+            let list = change.items.entry(k.clone()).or_default();
+            for ik in t.items.keys() {
+                if !list.contains(ik) {
+                    list.push(ik.clone());
+                }
+            }
+        }
+        change.members = true;
+        change.alerts = true;
+        change.stack = true;
+        change.room = true;
+    }
+}

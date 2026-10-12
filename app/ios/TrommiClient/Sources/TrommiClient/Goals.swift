@@ -88,7 +88,8 @@ public enum GoalsSync {
    */
   public static func toWrite(_ board: Board, holdsKey: (String) -> Bool, said: [String: JV] = [:]) -> [(sessionId: String, value: JV)] {
     wanted(board, holdsKey: holdsKey).filter { w in
-      let have = board.human.raw["goals/\(w.sessionId)"]?.value ?? .null
+      // (the session's register `goals`, as the web reads it)
+      let have = board.sessions[w.sessionId]?.registers["goals"]?.value ?? .null
       return have != w.value && said[w.sessionId] != w.value
     }
   }

@@ -35,7 +35,7 @@ public enum SelfJoinPlan {
     where s.isActive && s.parentSessionId == nil && !s.settings["archived"].truthy && holds(s.sessionId) {
       for key in s.registers.keys.sorted() where key.hasPrefix("join_ask/") {
         let nonce = String(key.dropFirst("join_ask/".count)), ask = s.registers[key]?.value ?? .null
-        guard !nonce.isEmpty, ask.object != nil, !answered.contains(nonce), (board.human.raw["join_link/\(nonce)"]?.value ?? .null).isNull else { continue }
+        guard !nonce.isEmpty, ask.object != nil, !answered.contains(nonce), (s.registers["join_link/\(nonce)"]?.value ?? .null).isNull else { continue }
         let account = ask["account"].string ?? ""
         let full = accounts.filter { $0 == account }.count >= maxVouched || accounts.count >= maxVouchedRoom
         let refused = account.isEmpty ? "bad-ask" : full ? "cap" : open >= maxVouchedOpen ? "busy" : nil

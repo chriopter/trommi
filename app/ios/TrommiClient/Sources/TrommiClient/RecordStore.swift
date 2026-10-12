@@ -3,15 +3,30 @@
 // key is in the Keychain on iOS):
 //
 //   records/<first>.seg  append-only segments of records: [u32 length][u64 change number][12 nonce][sealed record
-//                        in RecCodec's bytes], AAD "trommi ios record/<number>" (a record cannot be moved to another
+//                        as JSON (`Rec`)], AAD "trommi ios record/<number>" (a record cannot be moved to another
 //                        number). A record seen again (its body loaded later) is appended again; the later one
 //                        wins. A segment closes at 1 MiB (read in parallel).
 //   head.bin             the cursor and the lamport: small, rewritten on each save.
-//   board.bin            now and then the board as a whole, so a start replays only what came after it.
+//   board.bin            now and then the client core's model as a whole (its snapshot JSON), so a start replays
+//                        only what came after it.
 //
 // One new message therefore writes its record (about a KiB) and the head, not the room. Reading verifies every seal;
 // a damaged tail (a crash mid-write) is cut off and the rest kept.
 import Foundation
+
+/** What the cache keeps of one change: an envelope as the client core read it (`received`: Records' `receivedJSON`), or
+ *  a step of a work trail (`work`). `opened`: its body opened here. */
+public struct Rec {
+  public var envelopeNumber: Int
+  public var json: JV
+  public var opened: Bool
+  public init(envelopeNumber: Int, json: JV, opened: Bool) { self.envelopeNumber = envelopeNumber; self.json = json; self.opened = opened }
+  static func encode(_ r: Rec) -> Bytes { JV.obj(["n": .num(Double(r.envelopeNumber)), "o": .bool(r.opened), "r": r.json]).encoded() }
+  static func decode(_ b: Bytes) -> Rec? {
+    guard let v = JV.parse(b), let n = v["n"].int else { return nil }
+    return Rec(envelopeNumber: n, json: v["r"], opened: v["o"].truthy)
+  }
+}
 
 public final class RecordStore: @unchecked Sendable {
   public static let segmentLimit = 1 << 20
@@ -26,7 +41,7 @@ public final class RecordStore: @unchecked Sendable {
   /** The hub's Desk as last read (Room.deskFirst): its open cards and requests and its cursor. */
   var deskURL: URL { dir.appendingPathComponent("desk.bin") }
 
-  /** The board snapshot (BoardCodec bytes and what goes with them), sealed as a whole. */
+  /** The board snapshot (the core's model and what goes with it), sealed as a whole. */
   public func writeBoard(_ plain: [UInt8]) throws { try Data(try seal(plain, aad: "trommi ios board")).write(to: boardURL, options: Self.writeOptions) }
   public func readBoard() -> [UInt8]? {
     guard let d = try? Data(contentsOf: boardURL) else { return nil }
@@ -80,7 +95,7 @@ public final class RecordStore: @unchecked Sendable {
     var out = [UInt8]()
     out.reserveCapacity(recs.count * 600)
     for r in recs {
-      let sealed = try seal(RecCodec.encode(r), aad: "trommi ios record/\(r.envelopeNumber)")
+      let sealed = try seal(Rec.encode(r), aad: "trommi ios record/\(r.envelopeNumber)")
       let n = UInt64(r.envelopeNumber), len = UInt32(8 + sealed.count)
       out += [UInt8(len >> 24), UInt8(len >> 16 & 0xff), UInt8(len >> 8 & 0xff), UInt8(len & 0xff)]
       for i in (0..<8).reversed() { out.append(UInt8(n >> (UInt64(i) * 8) & 0xff)) }
@@ -156,7 +171,7 @@ public final class RecordStore: @unchecked Sendable {
         sealed = [UInt8](d)
       }
       guard let plain = open(sealed, aad: "trommi ios record/\(e.n)") else { return nil }
-      return plain.withUnsafeBufferPointer { try? RecCodec.decode($0) }
+      return Rec.decode(plain)
     }
   }
   /** Open and decode a run of the index's entries; nil when one seal does not open (the store is not to be trusted). */
@@ -165,7 +180,7 @@ public final class RecordStore: @unchecked Sendable {
     out.reserveCapacity(range.count)
     for e in ix.entries[range] {
       let sealed = Array(ix.files[e.file][e.at..<(e.at + e.len)])
-      guard let plain = open(sealed, aad: "trommi ios record/\(e.n)"), let r = plain.withUnsafeBufferPointer({ try? RecCodec.decode($0) }), r.envelopeNumber == e.n else { return nil }
+      guard let plain = open(sealed, aad: "trommi ios record/\(e.n)"), let r = Rec.decode(plain), r.envelopeNumber == e.n else { return nil }
       out.append(r)
     }
     return out
@@ -189,7 +204,7 @@ public final class RecordStore: @unchecked Sendable {
         var n = 0
         for k in 0..<8 { n = n << 8 | Int(b[at + 4 + k]) }
         let sealed = Array(b[(at + 12)..<(at + 4 + len)])
-        guard let plain = open(sealed, aad: "trommi ios record/\(n)"), let r = plain.withUnsafeBufferPointer({ try? RecCodec.decode($0) }), r.envelopeNumber == n else { break }
+        guard let plain = open(sealed, aad: "trommi ios record/\(n)"), let r = Rec.decode(plain), r.envelopeNumber == n else { break }
         got.append((n, r))
         at += 4 + len
       }

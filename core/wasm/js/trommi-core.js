@@ -402,6 +402,8 @@ export class ClientModel extends FileObject {
   load(snapshot) { return this[CALL]('load', [snapshot]) }
   applyEnvelopes(received, nowMs) { return this[CALL]('apply_envelopes', [received, nowMs]) }
   applyCardDeeds(received) { return this[CALL]('apply_card_deeds', [received]) }
+  applyReceivedJson(received, nowMs) { return this[CALL]('apply_received_json', [received, nowMs]) }
+  setWindowsOpen(open) { return this[CALL]('set_windows_open', [open]) }
   applyGroups(groups, roles) { return this[CALL]('apply_groups', [groups, roles]) }
   applyCommit(facts, byRecovery, removedMe, nowMs) { return this[CALL]('apply_commit', [facts, byRecovery, removedMe, nowMs]) }
   applyPresence(reports, nowMs) { return this[CALL]('apply_presence', [reports, nowMs]) }
@@ -423,6 +425,11 @@ export class ClientModel extends FileObject {
   noteNewer(what, envelopeNumber) { return this[CALL]('note_newer', [what, envelopeNumber]) }
   finish(nowMs) { return this[CALL]('finish', [nowMs]) }
   snapshot() { return this[CALL]('snapshot', []) }
+  touchAll() { return this[CALL]('touch_all', []) }
+  applyCardDeedsJson(received) { return this[CALL]('apply_card_deeds_json', [received]) }
+  applyGroupsJson(groups, roles) { return this[CALL]('apply_groups_json', [groups, roles]) }
+  applyCommitJson(facts, byRecovery, removedMe, nowMs) { return this[CALL]('apply_commit_json', [facts, byRecovery, removedMe, nowMs]) }
+  applyPageJson(timelineKey, received, scratch, nowMs) { return this[CALL]('apply_page_json', [timelineKey, received, scratch, nowMs]) }
 }
 
 // ---- everything without state -------------------------------------------------------------------------------------

@@ -247,6 +247,7 @@ pub fn item_state_of(content: Option<&Obj>, content_state: &str) -> &'static str
 impl Model {
     /// A timeline, made if it is new.
     pub fn timeline_of(&mut self, key: &str) -> &mut Timeline {
+        let open = self.windows_open;
         self.timelines.entry(key.to_string()).or_insert_with(|| {
             let (kind, id) = key.split_once(':').unwrap_or((key, ""));
             let scope_id = id.split_once('/').map(|(_, s)| s).unwrap_or(id);
@@ -260,7 +261,7 @@ impl Model {
                 items: Default::default(),
                 loaded_down_to: None,
                 has_more: false,
-                window_open: false,
+                window_open: open,
             }
         })
     }
@@ -1862,7 +1863,7 @@ impl Model {
             causal: Some(causal.clone()),
         };
         let echo_open = local_id.as_ref().and_then(|l| match self.echoes.get(l) {
-            Some(super::Echo::Registers { open, before }) if open.contains(&key) => {
+            Some(super::Echo::Registers { open, before, .. }) if open.contains(&key) => {
                 Some(before.get(&key).cloned().flatten())
             }
             _ => None,

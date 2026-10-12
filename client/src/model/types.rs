@@ -14,6 +14,7 @@ fn is_false(b: &bool) -> bool {
 
 /// The signed facts of a register or note write (spec 9.3.2), kept for display and for the cache.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Causal {
     pub sender_device_id: String,
     pub sender_sequence: u64,
@@ -22,7 +23,8 @@ pub struct Causal {
 }
 
 /// One version of a card.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CardVersion {
     pub object_version: i64,
     pub version_hash: String,
@@ -36,7 +38,8 @@ pub struct CardVersion {
 
 /// An answer to a card: the known fields, and whatever an echo or a newer client put beside them (`extra`:
 /// `unsupported`, `no_body`, `local_id`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Answer {
     pub answer_action: String,
     pub choices: Value,
@@ -59,7 +62,8 @@ pub struct Answer {
 }
 
 /// A hand back (or What??) in force.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct InRevision {
     pub by: String,
     pub envelope_number: u64,
@@ -91,7 +95,8 @@ pub const CARD_TYPES: &[&str] = &["decision", "info"];
 pub const ANSWER_ACTIONS: &[&str] = &["answer", "read", "shred"];
 
 /// A card. The fields of its newest version's body live in `fields` (every one of `CARD_CONTENT_FIELDS`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Card {
     pub object_id: String,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -129,7 +134,8 @@ impl Card {
 }
 
 /// A permission request's verdict.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Verdict {
     pub allow: bool,
     pub by_device_id: String,
@@ -137,7 +143,8 @@ pub struct Verdict {
 }
 
 /// A permission request.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PermissionRequest {
     pub object_id: String,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -158,7 +165,8 @@ pub struct PermissionRequest {
 }
 
 /// An Artifact (the model's map keeps its old name, `published`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Published {
     pub object_id: String,
     pub agent_device_id: String,
@@ -183,7 +191,8 @@ pub type Note = Obj;
 pub type TimelineItem = Obj;
 
 /// A timeline: its counts and the window of items in memory (by envelope number, or local id while pending).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Timeline {
     pub timeline_key: String,
     pub timeline_kind: String,
@@ -227,7 +236,8 @@ impl ItemKey {
 }
 
 /// An agent's link report as the model keeps it (`clean_link`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Link {
     pub hears: String,
     pub attached: bool,
@@ -239,14 +249,16 @@ pub struct Link {
 }
 
 /// The connector's last word before its stream closed.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LinkExit {
     pub reason: String,
     pub claude: String,
 }
 
 /// A device of the room: a human device, an agent device or a helper device.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Member {
     pub device_id: String,
     pub device_role: String,
@@ -266,7 +278,8 @@ pub struct Member {
 }
 
 /// One status line an agent keeps in its session.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct StatusLine {
     pub id: String,
     pub label: Value,
@@ -278,7 +291,8 @@ pub struct StatusLine {
 }
 
 /// A register of a session group, raw.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RegisterValue {
     pub value: Value,
     pub envelope_number: u64,
@@ -287,7 +301,8 @@ pub struct RegisterValue {
 }
 
 /// An alert an agent keeps in its session (`alert/<key>`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AgentAlert {
     pub key: String,
     pub value: Value,
@@ -295,7 +310,8 @@ pub struct AgentAlert {
 }
 
 /// A session: one session group, its agent device, its cards and Chat.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Session {
     pub session_id: String,
     pub group_id: Option<String>,
@@ -329,7 +345,8 @@ pub struct Session {
 }
 
 /// A room register as the human devices keep it: its raw entry. A delete stays as `value: null`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HumanRegister {
     pub value: Value,
     pub envelope_number: Option<u64>,
@@ -339,7 +356,8 @@ pub struct HumanRegister {
 }
 
 /// Something the app tells the person (a finding, an agent's alert).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Alert {
     pub alert_id: String,
     pub code: String,

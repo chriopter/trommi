@@ -33,7 +33,7 @@ final class SpeedTests: XCTestCase {
     b.timelines.values.filter { $0.timelineId.hasPrefix("session/") }.max { $0.items.count < $1.items.count }!.objectId
   }
   /** One new chat message from an agent of `session`, as the live stream brings it. */
-  private func message(_ b: Board, session: String, n: Int) -> Rec { PerfLog.chatLine(b, session: session, number: n, text: "one more line \(n)")! }
+  private func message(_ b: Board, session: String, n: Int) -> JV { PerfLog.chatLine(b, session: session, number: n, text: "one more line \(n)")! }
 
   func testTheMainThreadPerChange() throws {
     let path = ProcessInfo.processInfo.environment["TROMMI_SPEED_FIXTURE"] ?? ""
@@ -71,7 +71,7 @@ final class SpeedTests: XCTestCase {
     let cycle = ms {
       n += 1
       var ch = Change()
-      b.apply(message(b, session: quiet, n: n), change: &ch)
+      b.apply(received: [message(b, session: quiet, n: n)]); b.project(&ch)
       _ = b.fingerprint
       d.update()
       _ = d.view(desk: ALL_DESKS)
@@ -85,7 +85,7 @@ final class SpeedTests: XCTestCase {
     let cycleHere = ms {
       n += 1
       var ch = Change()
-      b.apply(message(b, session: big, n: n), change: &ch)
+      b.apply(received: [message(b, session: big, n: n)]); b.project(&ch)
       _ = b.fingerprint
       d.update()
       _ = d.view(desk: ALL_DESKS)
@@ -94,9 +94,9 @@ final class SpeedTests: XCTestCase {
       for a in rows { _ = ChatTeaser.of(d.messagesOf(agent: a)) }
     }
     row("ONE LIVE MESSAGE into the open big chat (cycle)", cycleHere)
-    row("BoardCodec.encode (the cache)", ms { _ = BoardCodec.encode(b) })
-    let enc = BoardCodec.encode(b)
-    row("BoardCodec.decode (the cache, \(enc.count / 1024) KB)", ms { let x = Board(); enc.withUnsafeBufferPointer { try? BoardCodec.decode($0, into: x) } })
+    row("the model's snapshot (the cache)", ms { _ = b.modelSnapshot() })
+    let enc = b.modelSnapshot()
+    row("the model loaded (the cache, \(enc.utf8.count / 1024) KB)", ms { _ = Board().loadModel(enc) })
   }
 
   // ---- the caches change nothing ----
@@ -130,7 +130,7 @@ final class SpeedTests: XCTestCase {
     // a new message into a chat
     let s = b.timelines.values.filter { $0.timelineId.hasPrefix("session/") }.max { $0.items.count < $1.items.count }!.objectId
     var ch = Change()
-    b.apply(message(b, session: s, n: 990_000_001), change: &ch)
+    b.apply(received: [message(b, session: s, n: 990_000_001)]); b.project(&ch)
     XCTAssertTrue(ch.timelines.count + ch.sessions.count > 0, "the message was taken")
     assertSame(d, b, "a new message")
     // a body changed in place (a header filled, an item edited where the timeline lies)
@@ -154,9 +154,9 @@ final class SpeedTests: XCTestCase {
       assertSame(d, b, "a device's role")
     }
     // the board read again from scratch: new timelines, revisions from 0
-    let again = try demo()
-    b.adopt(again)
-    assertSame(d, b, "the board adopted")
+    // (a board read again from scratch: the copy of the core's model, made anew)
+    _ = b.takeAll()
+    assertSame(d, b, "the board taken again")
   }
 
   func testTheDeskUnitsAreTheSame() throws {

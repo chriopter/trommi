@@ -2,8 +2,8 @@
 // board the views read (Board.swift). This file holds what the room is and how it keeps up with the hub:
 //
 //   catch up   GET /v1/changes after the cursor: Commits, messages and envelopes in the hub's order, each handed to
-//              the core, which checks it and keeps the keys, chains and object state; what it opened becomes a record
-//              (Records.swift) and is applied to the board by the same reducer as ever.
+//              the core, which checks it and keeps the keys, chains and object state; what it took goes into the
+//              client core's model (`ClientModel`, the same as the web app's), whose patch the board takes.
 //   live       GET /v1/stream (server-sent events) with the same items, resumed by change number.
 //   outbox     everything this device wants sent is in the core's outbox, stored with the state it implies; it is
 //              posted in order and the hub's answer reported back. After a crash the same bytes go out again.
@@ -215,6 +215,8 @@ public struct Store {
   var echoSeq = 0
   /** Records applied since launch, by change number: what the cache appends at its next save. */
   var log: [UInt64: Rec] = [:]
+  /** The room's recovery HPKE key as the core last said it (its fingerprint stands in Settings → Security). */
+  var recoveryKeyNow: Bytes?
   /** What this device sealed and has not seen back yet, by envelope hash (hex): the local id of its echo. */
   var ownEchoes: [String: String] = [:]
   /** What the hub said to an envelope this device sealed, by outbox id. */
@@ -306,8 +308,8 @@ public struct Store {
     board.roomId = record.roomId; board.hubURL = record.hubURL; board.myDeviceId = record.myDeviceId; board.myRole = record.role
     removedAt = record.removedAt
     var ch = Change()
+    recoveryKeyNow = (try? device.recoveryHpkeKey()) ?? nil
     try applyGroups(try device.groups(), &ch)
-    board.applyRecoveryKey((try? device.recoveryHpkeKey()) ?? nil, change: &ch)
   }
 
   /**
@@ -371,6 +373,9 @@ public struct Store {
   }
 
   func emit(_ c: Change) {
+    // (what the client core's model changed since its last patch goes with it)
+    var c = c
+    board.project(&c)
     if c.isEmpty { return }
     Spent.count("emits")
     onChange?(c)
@@ -445,41 +450,20 @@ public struct Store {
     groups = Dictionary(list.map { (hex($0.group), $0) }, uniquingKeysWith: { a, _ in a })
     guard let room = list.first(where: { $0.session == nil }) else { return }   // not in a room yet (founding, joining)
     roomGroup = room.group
-    let humans = Set(room.leaves.map(hex))
+    let humans = room.leaves.map(hex)
     state = (Int(room.epoch), humans.count)
-    board.keyEpoch = Int(room.epoch)
-    // As the web's applyGroups: every leaf of a session group that is no human device is an agent (or helper) device,
-    // also one the room no longer enrols; the enrolled ones open helper sessions.
-    let enrolled = Set(list.flatMap { $0.session?.agents ?? [] }.map(hex))
-    var seats = [String: (agents: [String], opener: String?)]()
-    var agents = [String]()
-    for g in list {
-      guard let s = g.session else { continue }
-      let seat = Board.seats(leaves: g.leaves.map(hex), humans: humans, enrolled: enrolled, helper: s.parent != nil)
-      seats[hex(g.group)] = seat
-      for a in seat.agents where !agents.contains(a) { agents.append(a) }
-    }
-    // A device that is no leaf any more stays in the list as removed, so that what it wrote keeps its name.
-    var members = [(id: String, role: String, active: Bool, added: Int, removed: Int?)]()
-    // (a device is dated when this board first knows it, as the web's memberOf: the slot rule takes the newest pairing)
-    let born = { (id: String) in board.members[id]?.addedEntryNumber ?? Int(room.epoch) }
-    for id in humans.sorted() { members.append((id, "human", true, born(id), nil)) }
-    for id in agents { members.append((id, "agent", true, born(id), nil)) }
-    for (id, m) in board.members where !humans.contains(id) && !agents.contains(id) { members.append((id, m.deviceRole, false, m.addedEntryNumber, m.removedEntryNumber ?? Int(room.epoch))) }
-    board.applyMembers(members, change: &change)
-    for g in list {
-      guard let s = g.session else { continue }
-      let sid = hex(s.session)
-      sessionIdOfGroup[hex(g.group)] = sid
-      let seat = seats[hex(g.group)] ?? (agents: s.agents.map(hex), opener: nil)
-      board.applySession(sessionId: sid, agentIds: seat.agents, epoch: Int(g.epoch), parentSessionId: s.parent.map(hex), archived: g.archived, opener: seat.opener, change: &change)
-    }
-    change.room = true
+    for g in list { if let s = g.session { sessionIdOfGroup[hex(g.group)] = hex(s.session) } }
+    // (the enrolled agent devices: those the session groups name; every other leaf that is no human device is a helper)
+    var enrolled = [String]()
+    for d in list.flatMap({ $0.session?.agents ?? [] }).map(hex) where !enrolled.contains(d) { enrolled.append(d) }
+    board.applyGroups(list, humans: humans, agents: enrolled, epoch: room.epoch, recoveryHpkeKey: recoveryKeyNow)
+    change.room = true; change.members = true
+    board.project(&change)
   }
   func refreshGroups(_ change: inout Change) async throws {
     let (list, recovery): ([GroupSummary], Bytes?) = try await onCore { d in (try d.groups(), (try? d.recoveryHpkeKey()) ?? nil) }
+    recoveryKeyNow = recovery
     try applyGroups(list, &change)
-    board.applyRecoveryKey(recovery, change: &change)
     await notifyKeysIfMoved(list)
   }
 
@@ -567,7 +551,7 @@ public struct Store {
     synced = true
     if preview != nil { preview = nil; change.room = true }
     Task { await self.refreshPresence() }
-    board.project()
+    board.project(&change)
     change.stack = true
     emit(change)
     pumpOutbox()
@@ -603,7 +587,7 @@ public struct Store {
     board.setDeskListing(listed, at: Int(at))
     if at > cursor { catchingUp = (cursor, at) }
     change.stack = true
-    board.project(change)
+    board.project(&change)
     emit(change)
     deskAnswered()
     return at > cursor ? at : nil
@@ -636,18 +620,9 @@ public struct Store {
         }
       }
     }) else { return }
-    var shown = 0
-    for e in opened {
-      if e.header.kind == .register, e.register?.name == "heads" { continue }
-      guard var rec = Records.record(e, senderRole: roleOf(e.header.sender)), rec.contentState == "ok" else { continue }
-      if e.header.kind == .register { rec.winner = true }
-      if let sid = rec.sessionId {
-        if rec.senderRole == "agent" { p.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
-        else if let to = rec.recipientDeviceId { p.sawAgent(sid, to, epoch: rec.epoch) }
-      }
-      if p.apply(rec, change: &change).applied { shown += 1 }
-    }
-    p.project()
+    let list = opened.filter { e in e.payload != nil && !(e.header.kind == .register && e.register?.name == "heads") }.map(receivedJSON)
+    let shown = p.apply(received: list).filter { $0.applied }.count
+    p.project(&change)
     Spent.count("desk preview items", shown)
     PerfLog.line("desk preview: \(shown) of \(items.count) taken, \(p.stack.count) cards on the Desk")
     guard !p.stack.isEmpty else { return }
@@ -925,7 +900,7 @@ public struct Store {
       if cursor <= before { throw finding("bad-format", "the hub says there is more and gives nothing new") }
       // A long catch-up shows what it has page by page (what the hub settled meanwhile is held back: deskFirst);
       // reading back builds the board anew and shows it at its end.
-      if !readingBack && !change.isEmpty { board.project(change); emit(change); change = Change() }
+      if !readingBack { board.project(&change); if !change.isEmpty { emit(change); change = Change() } }
     }
     throw finding("bad-format", "the hub's changes do not end")
   }
@@ -979,9 +954,7 @@ public struct Store {
     /** `facts`: what the Commit did (CoreDevice.lastCommitFacts), for the dates Settings → Security shows. */
     case processed(Processed, facts: CommitFacts? = nil)
     /** `heads`: for a `heads` register of another device, how its heads compare with this device's chains. */
-    /** `winner`: for a register write the core did not make current, the core's current value of its name (nil
-     *  inside: none, or deleted); nil for anything else. */
-    case envelope(ReceivedEnvelope, heads: [(sender: DeviceId, standing: HeadStanding)], winner: Bytes?? = nil)
+    case envelope(ReceivedEnvelope, heads: [(sender: DeviceId, standing: HeadStanding)])
     case refused(change: UInt64, code: String)
     /** The run ends before this item; the cursor stays in front of it. */
     case stopped(code: String)
@@ -1070,9 +1043,7 @@ public struct Store {
             if e.outcome == .applied, e.register?.name == "heads", e.header.sender != device.id {
               heads = (try? device.compareHeads(group: e.header.group, writer: e.header.sender)) ?? []
             }
-            var winner: Bytes?? = nil
-            if e.outcome == .applied, let r = e.register, !r.current, r.of == nil { winner = .some(try? device.register(group: e.header.group, name: r.name)) }
-            out.append(.envelope(e, heads: heads, winner: winner))
+            out.append(.envelope(e, heads: heads))
           }
         } catch {
           // A local failure is not the item's fault: stop here, nothing after it is processed out of order.
@@ -1114,7 +1085,7 @@ public struct Store {
       board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
       switch o {
       case .processed(let p, let facts):
-        if let facts { board.applyCommitFacts(facts, room: facts.group == roomId, change: &change) }
+        if let facts { board.applyCommitFacts(facts, room: facts.group == roomId); change.members = true }
         switch p {
         case .commit(let group, _, let superseded, let removed):
           groupsStale = true
@@ -1130,9 +1101,9 @@ public struct Store {
           if case .log(_, let entry) = parsed[i] { applyMessage(m, group: entry.group, change: entry.change, &change) }
         case .skipped: break
         }
-      case .envelope(let e, let heads, let winner):
+      case .envelope(let e, let heads):
         try await freshGroups()
-        apply(e, report: &report, &change, winner: winner)
+        apply(e, report: &report, &change)
         for h in heads { applyHead(h.standing, of: h.sender, group: e.header.group, saidBy: e.header.sender, &change) }
       case .refused(let c, let code):
         report.refused += 1
@@ -1144,13 +1115,7 @@ public struct Store {
         try await freshGroups()
         report.envelopes += 1; report.opened += 1
         Spent.count("read back from the cache")
-        lamport = max(lamport, rec.causal.lamport)
-        // (as `apply` does for an envelope the core applied: the board learns who writes in the session)
-        if let sid = rec.sessionId {
-          if rec.senderRole == "agent" { board.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
-          else if let to = rec.recipientDeviceId { board.sawAgent(sid, to, epoch: rec.epoch) }
-        }
-        board.apply(rec, change: &change)
+        replay(rec)
         log[UInt64(rec.envelopeNumber)] = rec
         sinceSnapshot += 1
         cacheSoon(UInt64(rec.envelopeNumber))
@@ -1221,8 +1186,10 @@ public struct Store {
     switch m {
     case let .workTrail(from, turn, number, time, step):
       // (which session: the group the message came in; the item is kept and folded like every chat item)
-      guard let sid = sessionIdOfGroup[hex(group)], let rec = Records.workStep(session: sid, sender: hex(from), turn: hex(turn), number: Int(number), time: time, step: step, change: n) else { return }
-      board.apply(rec, change: &change)
+      guard let sid = sessionIdOfGroup[hex(group)] else { return }
+      let rec = Rec(envelopeNumber: Int(n), json: .obj(["work": .obj(["session": .str(sid), "from": .str(hex(from)), "turn": .str(hex(turn)), "number": .num(Double(number)),
+                                                                       "time": .num(Double(time)), "step": .str(String(decoding: step, as: UTF8.self))])]), opened: true)
+      guard replay(rec) else { return }
       log[n] = rec
       cacheSoon(n)
     case let .strokePiece(from, boardId, piece):
@@ -1247,7 +1214,7 @@ public struct Store {
   }
 
   /** One received envelope into the board. */
-  func apply(_ e: ReceivedEnvelope, report: inout SyncReport, _ change: inout Change, winner: Bytes?? = nil) {
+  func apply(_ e: ReceivedEnvelope, report: inout SyncReport, _ change: inout Change) {
     let n = e.change, sender = hex(e.header.sender)
     report.envelopes += 1
     if let f = e.finding { board.pushAlert(&change, code: f, message: "the hub set an item of another device aside for a reason this device cannot check", envelopeNumber: Int(n), sender: sender) }
@@ -1270,51 +1237,43 @@ public struct Store {
       return
     case .void:
       report.voids += 1
+      board.apply(received: [receivedJSON(e)])
       return
     case .chained:
       // Chained and never applied. A body that did not open still counts for its object's state (9.2.1) and goes
-      // on as a header; a refusal by who may write it or by its epoch (checks 7 and 8) shows nothing.
+      // on as a header; a refusal by who may write it or by its epoch (checks 7 and 8) shows nothing (the client
+      // core's model says so, as on the web).
       if e.code == "no-key" { notePast { $0.closed = true } }
-      if e.code != "pruned" { board.pushAlert(&change, code: e.code ?? "forbidden", message: "an item was not applied", envelopeNumber: Int(n), sender: sender) }
     case .applied, .provisional: break
     }
     // `heads` is the devices' own bookkeeping (9.0.7), compared in the core: nothing of it is on the board.
     if e.header.kind == .register, e.register?.name == "heads" { return }
-    guard var rec = Records.record(e, senderRole: roleOf(e.header.sender)) else { report.voids += 1; return }
-    // A register write: which value is in force is the core's word (9.3.2, `RegisterChange.current`), not the
-    // board's. Made current: it is shown as it is. Not made current: the board shows the core's current value of
-    // that name instead (an own echo that lost goes with it).
-    if e.header.kind == .register, let r = e.register {
-      rec.winner = true
-      if !r.current {
-        guard r.of == nil, let w = winner, let values = rec.content?["values"].object, values.count == 1, let key = values.keys.first else { return }
-        let current: JV = w.flatMap { JV.parse($0) }.map { Records.registerValue(key, Records.renameFiles($0, toWire: false, depth: 0), toWire: false) } ?? .null
-        rec.content = rec.content?.with("values", .obj([key: current]))
-      }
-    }
-    // A lamport far above every one seen is not counted (9.3.2: the core counts it as 0; so does the board).
-    if rec.causal.lamport > 0, !lamportAccepted(rec.causal.lamport, lamport) {
-      board.pushAlert(&change, code: "lamport-inflated", message: "a write claims a lamport far above every one seen: counted as 0", envelopeNumber: Int(n), sender: rec.senderDeviceId)
-      rec.causal.lamport = 0
-    }
-    switch rec.contentState {
-    case "ok": report.opened += 1
-    case "pruned", "header": report.headerOnly += 1
-    default: report.undecryptable += 1
-    }
-    rec.localId = ownEchoes.removeValue(forKey: rec.envelopeHash)
-    // The core checked who may write what (9.2); the board's reducer checks again and needs to know the devices.
-    if e.outcome == .applied, let sid = rec.sessionId {
-      if rec.senderRole == "agent" { board.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
-      else if let to = rec.recipientDeviceId { board.sawAgent(sid, to, epoch: rec.epoch) }
-    }
-    lamport = max(lamport, rec.causal.lamport)
-    board.apply(rec, change: &change)
-    var kept = rec
-    kept.localId = nil
-    log[n] = kept
+    if e.outcome == .applied || e.outcome == .provisional { if e.payload == nil { report.headerOnly += 1 } else { report.opened += 1 } }
+    else if e.code == "pruned" { report.headerOnly += 1 } else { report.undecryptable += 1 }
+    let json = receivedJSON(e)
+    board.apply(received: [json])
+    ownEchoes.removeValue(forKey: hex(e.hash))
+    log[n] = Rec(envelopeNumber: Int(n), json: .obj(["received": json]), opened: e.payload != nil)
     sinceSnapshot += 1
     cacheSoon(n)
+  }
+  /** The stream's `presence` event in the model's names. */
+  static func presence(_ d: JV) -> JV {
+    guard let id = d["device"].string.flatMap({ try? unb64u($0) }) else { return .null }
+    let online = d["online"].truthy
+    var link: [String: JV] = ["hears": .str(d["hears"].truthy ? "live" : "oncall"), "working": .bool(d["working"].truthy)]
+    if let t = d["last_call_at"].int, t > 0 { link["last_call_at"] = .num(Double(t)) }
+    var out: [String: JV] = ["device_id": .str(hex(id)), "is_online": .bool(online), "link": .obj(link)]
+    if !online, let t = d["offline_since"].int { out["offline_since"] = .num(Double(t)) }
+    return .obj(out)
+  }
+  /** A record of the warm-start log into the board again: an envelope as the core read it, or a step of a work trail. */
+  @discardableResult func replay(_ rec: Rec) -> Bool {
+    if rec.json["received"].object != nil { return board.apply(received: [rec.json["received"]]).first?.applied ?? false }
+    let w = rec.json["work"]
+    guard let from = try? unhex(w["from"].string ?? ""), let turn = try? unhex(w["turn"].string ?? "") else { return false }
+    return board.applyWorkTrail(session: w["session"].string ?? "", from: from, turn: turn, number: UInt32(w["number"].int ?? 0), time: UInt64(w["time"].int ?? 0),
+                                step: Bytes((w["step"].string ?? "").utf8), change: UInt64(rec.envelopeNumber))
   }
   /** Takes out of every conversation what was shown as not yet confirmed under that number of a sender's chain, except the envelope `keep`. */
   private func dropProvisional(sender: String, seq: UInt64, keep: String, _ change: inout Change) {
@@ -1347,7 +1306,7 @@ public struct Store {
       if let i = item, i.change <= cursor { return }
       _ = try? await serial { [self] in
         var report = SyncReport(), change = Change()
-        defer { self.board.project(change); self.emit(change); self.pumpOutbox() }
+        defer { self.board.project(&change); self.emit(change); self.pumpOutbox() }
         var taken = false
         if let i = item, i.change > self.cursor { taken = (try? await self.process([i], report: &report, change: &change)) != nil }
         if !taken { try await self.readChanges(&report, &change) }
@@ -1362,7 +1321,7 @@ public struct Store {
     case "welcome":
       _ = try? await serial { [self] in
         var report = SyncReport(), ch = Change()
-        defer { self.board.project(); self.emit(ch) }
+        defer { self.board.project(&ch); self.emit(ch) }
         let before = self.sessionGroupIds
         try await self.takeWelcomes(&ch)
         // (a session group joined: the hub's Desk lists its open cards now, and is read again, as at a catch-up)
@@ -1374,7 +1333,7 @@ public struct Store {
       }
     case "presence":
       var ch = Change()
-      board.applyPresence(Records.presence(data), change: &ch)
+      board.applyPresence(Room.presence(data)); ch.members = true
       emit(ch)
     case "request":
       // a wish of a signed-in device (readmit, handover, session) or a join request of an invite; a wish for keys
@@ -1392,7 +1351,7 @@ public struct Store {
           // (the stored flag, not only `pastDue`: a pass that failed half way left it set)
           guard self.pastDue || self.record.past?.readBack == true else { return }
           var report = SyncReport(), ch = Change()
-          defer { self.board.project(ch); self.emit(ch) }
+          defer { self.board.project(&ch); self.emit(ch) }
           try await self.tendPast(&report, &ch)
         }
       }
@@ -1562,7 +1521,7 @@ public struct Store {
     if !synced { _ = try? await sync(); return }
     _ = try? await serial { [self] in
       var report = SyncReport(), ch = Change()
-      defer { self.board.project(ch); self.emit(ch) }
+      defer { self.board.project(&ch); self.emit(ch) }
       try? await self.readChanges(&report, &ch)
       try await self.refreshGroups(&ch)
     }

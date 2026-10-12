@@ -102,11 +102,7 @@ final class WarmDeskTests: XCTestCase {
 
   func testWhileWaitingNothingOpenStandsAndTheFingerprintSeesTheStack() {
     let b = Board()
-    let rec = Rec(envelopeNumber: 5, envelopeHash: "aa", senderDeviceId: "bb", senderRole: "agent", recipientDeviceId: nil, sentAt: 1, kind: 2, isHead: true, object: nil,
-                  timelineKind: nil, timelineId: nil, sessionId: nil, content: nil, contentState: "ok", bind: nil, causal: Causal(senderDeviceId: "bb", senderSequence: 1, sentAt: 1, lamport: 1),
-                  senderSequence: 1, epoch: 1)
-    let c = Card("x", agent: "a", rec: rec); c.envelopeNumber = 5; c.objectState = "open"
-    b.cards["x"] = c
+    b.feedCard("x", at: 5)
     b.project()
     let before = b.fingerprint
     b.deskWaiting = true

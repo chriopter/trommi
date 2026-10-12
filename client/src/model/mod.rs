@@ -33,6 +33,9 @@ pub enum Echo {
     Registers {
         before: BTreeMap<String, Option<HumanRegister>>,
         open: Vec<String>,
+        /// The values it showed, and its place among the echoes (a later one stands in front).
+        values: BTreeMap<String, serde_json::Value>,
+        seq: u64,
     },
     Answer {
         object_id: String,
@@ -88,6 +91,7 @@ pub struct Model {
     pub turns: BTreeMap<String, Turn>,
     pub room_commits: Option<(u64, Option<u64>)>,
     pub alert_seq: u64,
+    pub echo_seq: u64,
     pub desk: DeskState,
     pub desk_sent: HashMap<String, String>,
     pub desk_archived: Option<String>,
@@ -99,6 +103,8 @@ pub struct Model {
     pub desk_dirty: bool,
     /// When the Desk changes by the clock alone; 0: never.
     pub desk_wake: u64,
+    /// Every timeline's window is open (an app that keeps every item header: iOS).
+    pub windows_open: bool,
 }
 
 /// `<kind>:<id>`: a timeline's key.
