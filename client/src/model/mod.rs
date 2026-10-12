@@ -103,6 +103,8 @@ pub struct Model {
     pub desk_dirty: bool,
     /// When the Desk changes by the clock alone; 0: never.
     pub desk_wake: u64,
+    /// Presence reports of devices the groups have not named yet, by device (groups.rs `apply_presence`).
+    pub presence_held: HashMap<String, groups::DeviceReport>,
     /// Every timeline's window is open (an app that keeps every item header: iOS).
     pub windows_open: bool,
     /// The room is still being read (a sign-in, a read back): a session whose profile has not come is "Loading …".

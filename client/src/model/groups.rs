@@ -160,6 +160,27 @@ impl Model {
             .cloned()
             .unwrap_or_default();
         let is_me = self.my_device_id.as_deref() == Some(device_id);
+        if !self.members.contains_key(device_id) {
+            if let Some(r) = self.presence_held.remove(device_id) {
+                let mut m = Member {
+                    device_id: device_id.to_string(),
+                    device_role: role.to_string(),
+                    device_name: js_string(reg.get("device_name")),
+                    fingerprint: fingerprint_of(device_id),
+                    platform: reg.get("platform").cloned().unwrap_or(Value::Null),
+                    folder: reg.get("folder").cloned().unwrap_or(Value::Null),
+                    host: reg.get("host").cloned().unwrap_or(Value::Null),
+                    is_active: true,
+                    added_entry_number: epoch,
+                    is_me,
+                    ..Default::default()
+                };
+                m.is_online = r.is_online;
+                m.offline_since = if r.is_online { None } else { r.offline_since };
+                m.link = r.link.as_ref().and_then(clean_link);
+                self.members.insert(device_id.to_string(), m);
+            }
+        }
         self.members
             .entry(device_id.to_string())
             .or_insert_with(|| Member {
@@ -181,6 +202,9 @@ impl Model {
             })
     }
 }
+
+/// At most this many reports wait for a device the groups have not named yet.
+const PRESENCE_HELD_MAX: usize = 1000;
 
 /// `String(v ?? '')` of JavaScript, for the values a register holds.
 pub fn js_string(v: Option<&Value>) -> String {
@@ -578,6 +602,15 @@ impl Model {
     pub fn apply_presence(&mut self, reports: &[DeviceReport], change: &mut Change, now: u64) {
         for d in reports {
             let Some(m) = self.members.get_mut(&d.device_id) else {
+                // A device the groups have not named yet (a new stream tells who is here before this device has read
+                // its groups): its report waits for it (`member_of`), the newest one, its link kept as presence does.
+                if self.presence_held.len() < PRESENCE_HELD_MAX || self.presence_held.contains_key(&d.device_id) {
+                    let mut r = d.clone();
+                    if r.link.is_none() && r.is_online {
+                        r.link = self.presence_held.get(&d.device_id).and_then(|h| h.link.clone());
+                    }
+                    self.presence_held.insert(d.device_id.clone(), r);
+                }
                 continue;
             };
             m.is_online = d.is_online;
