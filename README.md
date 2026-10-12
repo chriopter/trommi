@@ -404,6 +404,16 @@ core/swift/build.sh                           # the core for Swift
 (cd tests/ios && swift test)
 ```
 
+All clients against each other (nightly in CI, `.github/workflows/clients_mega.yml`): the web app's client layer,
+the iOS app's engine (both with the real core) and the connector, each twice, in one room on a real hub, through one
+long seeded random timeline; it fails where two devices show anything different. Then their speed with 1,000 cards.
+
+```sh
+tests/client/mega/prepare.sh .                # the core for the browser and for Swift, the iOS test runner
+MEGA_SEEDS=1,2,3 cargo test -p trommi-tests --test client_mega every_client_shows_the_same -- --ignored --nocapture
+cargo test -p trommi-tests --test client_mega speed_of_every_client -- --ignored --nocapture
+```
+
 More: [`app/web/README.md`](app/web/README.md), [`app/ios/README.md`](app/ios/README.md),
 [`connector/README.md`](connector/README.md), [`core/README.md`](core/README.md).
 

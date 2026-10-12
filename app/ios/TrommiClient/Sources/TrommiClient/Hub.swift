@@ -104,7 +104,21 @@ public final class HubClient: @unchecked Sendable {
     return (FastJSON.parse([UInt8](data))?.any as? [Any])?.compactMap { $0 as? JSON } ?? []
   }
 
+  /** The waits (ms) before a GET that was not reached, or met 502 to 504, is tried again: it changes nothing (the web
+   *  client's `get_retry`). A write is sent once here: its caller knows that the same bytes may go again. */
+  nonisolated(unsafe) static var getRetryMs: [UInt64] = [300, 1000]
   private func exchange(_ method: String, _ path: String, query: [String: String], body: Data?, contentType: String?, auth: Bool, headers: [String: String], retried: Bool = false) async throws -> (Data, HTTPURLResponse?) {
+    let waits = method == "GET" ? Self.getRetryMs : []
+    for attempt in 0... {
+      do { return try await exchangeOnce(method, path, query: query, body: body, contentType: contentType, auth: auth, headers: headers, retried: retried) }
+      catch let e as HubError where attempt < waits.count && (e.isOffline || (502...504).contains(e.status)) {
+        let wait = e.retryAfter.map { UInt64($0) * 1000 } ?? waits[attempt]
+        try await Task.sleep(nanoseconds: (min(5000, wait) + UInt64.random(in: 0..<200)) * 1_000_000)
+      }
+    }
+    fatalError("unreachable")
+  }
+  private func exchangeOnce(_ method: String, _ path: String, query: [String: String], body: Data?, contentType: String?, auth: Bool, headers: [String: String], retried: Bool) async throws -> (Data, HTTPURLResponse?) {
     var req = try await urlRequest(method, path, query: query, auth: auth, headers: headers)
     if let body = body {
       req.httpBody = body

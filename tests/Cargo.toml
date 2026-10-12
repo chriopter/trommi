@@ -247,6 +247,11 @@ path = "hub/admin.rs"
 name = "connector_e2e"
 path = "connector/e2e.rs"
 
+# Every client against each other: web, iOS (on Linux) and the connector in one room (ignored; tests/client/mega.rs).
+[[test]]
+name = "client_mega"
+path = "client/mega.rs"
+
 [[test]]
 name = "connector_keys"
 path = "connector/keys.rs"
