@@ -137,6 +137,9 @@ extension Room {
     let again = readBackAgain
     notePast { $0.readBack = again }
     readingBack = false
+    // (the read reads the live sessions alone: the archived ones this device opened are loaded again, still behind the
+    // held view, so that the cache that replaces the one of before holds them too)
+    await reloadArchived(&report, &change)
     // the cache of before gives way to the board read back
     await replaceCache()
     readBackView = nil

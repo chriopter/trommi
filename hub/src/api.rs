@@ -97,6 +97,32 @@ fn group_id(text: &str) -> Res<Vec<u8>> {
         .ok_or_else(|| refuse("bad-format", "a group id is 32 or 48 bytes, base64url"))
 }
 
+/// Which session groups an answer covers (hub-api.md point 46): `active=1` live ones only, `archived=1`
+/// archived ones only, `group=` (a catch-up, where `with_group`) one group's envelopes alone.
+fn only(rq: &Rq, with_group: bool) -> Res<content::Only> {
+    let flag = |name: &str| match rq.q(name) {
+        None | Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(_) => Err(refuse("bad-format", format!("{name}: 1 or 0"))),
+    };
+    let only = content::Only {
+        active: flag("active")?,
+        archived: flag("archived")?,
+        group: match rq.q("group") {
+            Some(g) if with_group => Some(group_id(g)?),
+            Some(_) => return Err(refuse("bad-format", "group: only a catch-up takes it")),
+            None => None,
+        },
+    };
+    if [only.active, only.archived, only.group.is_some()].iter().filter(|x| **x).count() > 1 {
+        return Err(refuse("bad-format", "active, archived and group: one at most"));
+    }
+    if only.archived && with_group {
+        return Err(refuse("bad-format", "archived: a catch-up takes group= instead"));
+    }
+    Ok(only)
+}
+
 fn commit_body(v: &Value) -> Res<CommitBody> {
     Ok(CommitBody {
         epoch: v["epoch"]
@@ -565,12 +591,13 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             open_limit()?;
             let (room, device, change) = crate::push::check_ticket(&app.ticket_key, rq.ticket.as_deref().unwrap_or(""), t)?;
             let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?);
+            let only = only(rq, true)?;
             app.read(|x| {
                 if store::standing(x.c, &room, &device)? != Some(Who::Human) {
                     return Err(refuse("unauthorised", "the ticket is wrong or ran out"));
                 }
                 let auth = store::Auth { room, device, who: Who::Human };
-                content::changes_upto(x.c, &auth, after, limit, Some(change))
+                content::changes_upto(x.c, &auth, after, limit, Some(change), &only)
             })
         }
         ("GET", ["push-envelope"]) => {
@@ -759,15 +786,18 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             let (after, limit) = (rq.q_int("after")?, rq.q_int("limit")?);
             app.read(|x| content::chain(x.c, &rq.auth(app, x.c)?, &group, &sender, after, limit))
         }
-        ("GET", ["rooms", room, "groups"]) => app.read(|x| {
-            let auth = rq.auth(app, x.c)?;
-            own_room(&auth, room)?;
-            match rq.q_int("limit")? {
-                // the paged form; without `limit` the whole list, as before
-                Some(limit) => delivery::group_page(x.c, &auth, rq.q_int("after")?.unwrap_or(0), limit.clamp(1, 1000)),
-                None => Ok(Value::Array(delivery::group_list(x.c, &auth)?)),
-            }
-        }),
+        ("GET", ["rooms", room, "groups"]) => {
+            let only = only(rq, false)?;
+            app.read(|x| {
+                let auth = rq.auth(app, x.c)?;
+                own_room(&auth, room)?;
+                match rq.q_int("limit")? {
+                    // the paged form; without `limit` the whole list, as before
+                    Some(limit) => delivery::group_page(x.c, &auth, rq.q_int("after")?.unwrap_or(0), limit.clamp(1, 1000), &only),
+                    None => Ok(Value::Array(delivery::group_list(x.c, &auth, &only)?)),
+                }
+            })
+        }
         ("GET", ["welcomes"]) => {
             let after = rq.q_int("after")?.unwrap_or(0);
             app.read(|x| delivery::welcomes(x.c, &rq.auth(app, x.c)?, after))
@@ -924,9 +954,9 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                 Posted::Voided(refusal) => Err(refusal),
             }
         }
-        ("GET", ["desk"]) => match (rq.q("brief"), rq.q_int("since")?) {
-            (None, None) => app.read(|x| content::desk(x.c, &rq.auth(app, x.c)?)),
-            (Some("1"), since) => app.read(|x| content::desk_brief(x.c, &rq.auth(app, x.c)?, since)),
+        ("GET", ["desk"]) => match (rq.q("brief"), rq.q_int("since")?, only(rq, false)?) {
+            (None, None, only) => app.read(|x| content::desk(x.c, &rq.auth(app, x.c)?, &only)),
+            (Some("1"), since, only) => app.read(|x| content::desk_brief(x.c, &rq.auth(app, x.c)?, since, &only)),
             _ => Err(refuse("bad-format", "the Desk is read whole, or with brief=1 (and since=)")),
         },
         ("GET", ["chats", scope, timeline, "items"]) => {
@@ -953,8 +983,8 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             app.read(|x| content::object_envelopes(x.c, &rq.auth(app, x.c)?, table, &object, after, limit))
         }
         ("GET", ["changes"]) => {
-            let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?);
-            app.read(|x| content::changes(x.c, &rq.auth(app, x.c)?, after, limit))
+            let (after, limit, only) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?, only(rq, true)?);
+            app.read(|x| content::changes_upto(x.c, &rq.auth(app, x.c)?, after, limit, None, &only))
         }
 
         // ---- files and shares

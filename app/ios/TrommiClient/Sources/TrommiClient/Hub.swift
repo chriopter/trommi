@@ -215,9 +215,16 @@ public final class HubClient: @unchecked Sendable {
 
   // ---- catching up and the stream ------------------------------------------------------------------------
 
-  /** Everything this device may see with a change number above `after`, in the hub's order: { items, change, more }. */
-  public func changes(after: UInt64, limit: Int = 1000) async throws -> JSON {
-    try await request("GET", "/changes", query: ["after": String(after), "limit": String(limit)])
+  /**
+   * Everything this device may see with a change number above `after`, in the hub's order: { items, change, more }.
+   * `active`: no envelope of an archived session (its Commits still come); `group`: that group's envelopes alone,
+   * how an archived session is loaded when it is opened (spec/hub-api.md point 46).
+   */
+  public func changes(after: UInt64, limit: Int = 1000, active: Bool = false, group: GroupId? = nil) async throws -> JSON {
+    var q = ["after": String(after), "limit": String(limit)]
+    if active { q["active"] = "1" }
+    if let group { q["group"] = b64u(group) }
+    return try await request("GET", "/changes", query: q)
   }
   /** The request of the live stream (server-sent events), resuming after a change number. */
   public func streamRequest(after: UInt64) async throws -> URLRequest {
@@ -227,15 +234,16 @@ public final class HubClient: @unchecked Sendable {
     return req
   }
   /** What the Desk shows without history: open objects' newest envelopes, the registers, the groups. */
-  public func desk() async throws -> JSON { try await request("GET", "/desk") }
+  public func desk(active: Bool = false) async throws -> JSON { try await request("GET", "/desk", query: active ? ["active": "1"] : [:]) }
   /**
    * The groups this device may see, page by page (`?limit=1000&after=`, `{ items, more, after }`, spec/hub-api.md
    * point 43). A hub that answers the bare list (an older one) is read as one page.
    */
-  public func groups() async throws -> [JSON] {
+  public func groups(archived: Bool = false) async throws -> [JSON] {
     var all = [JSON](), after: String? = nil
     for _ in 0..<10_000 {
       var q = ["limit": "1000"]
+      if archived { q["archived"] = "1" }
       if let a = after { q["after"] = a }
       let (data, _) = try await exchange("GET", "/rooms/\(b64u(room))/groups", query: q, body: nil, contentType: nil, auth: true, headers: [:])
       let any = FastJSON.parse([UInt8](data))?.any

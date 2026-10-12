@@ -150,6 +150,17 @@ export async function startFakeHub(opts = {}) {
     if (!/^\d{1,18}$/.test(v)) throw refuse('bad-format', `${name}: a number`)
     return Number(v)
   }
+  // which sessions an answer covers (hub-api.md point 46): `active=1` live ones, `archived=1` archived ones, `group=`
+  // (a catch-up) one group's envelopes alone
+  function only(rq, withGroup) {
+    const flag = name => { const v = rq.query.get(name); if (v === null || v === '0') return false; if (v === '1') return true; throw refuse('bad-format', `${name}: 1 or 0`) }
+    const o = { active: flag('active'), archived: flag('archived'), group: rq.query.get('group') }
+    if (o.group !== null && !withGroup) throw refuse('bad-format', 'group: only a catch-up takes it')
+    if ([o.active, o.archived, o.group !== null].filter(Boolean).length > 1) throw refuse('bad-format', 'active, archived and group: one at most')
+    if (o.archived && withGroup) throw refuse('bad-format', 'archived: a catch-up takes group= instead')
+    return o
+  }
+  const takes = (o, g) => !g || !((o.active && !g.live) || (o.archived && g.live))
   const clamp = (v, fallback, max) => Math.min(max, Math.max(1, v ?? fallback))
   function group(r, id) {
     const g = r.groups.get(id)
@@ -318,29 +329,29 @@ export async function startFakeHub(opts = {}) {
     }
     return objects
   }
-  function groupList(a) {
-    return [...a.room.groups.values()].filter(g => sees(a, g) || g.kind === 'room').map(g => ({
+  function groupList(a, o = {}) {
+    return [...a.room.groups.values()].filter(g => (sees(a, g) || g.kind === 'room') && takes(o, g)).map(g => ({
       group_id: g.group_id, kind: g.kind, session_id: g.session_id, parent: g.parent, epoch: g.epoch, room_epoch: g.room_epoch, live: g.live, stale: false, leaves: [...g.leaves],
     }))
   }
-  function desk(a) {
+  function desk(a, o = {}) {
     const out = { cards: [], notes: [], permission_requests: [], artifacts: [] }
-    const objects = [...objectsOf(a.room, a).values()].filter(o => o.state === 1).sort((x, y) => y.urgency - x.urgency || x.first_change - y.first_change)
-    for (const o of objects) {
-      out[OBJECT_TABLES[o.type] ?? 'cards'].push({
-        object_id: o.object_id, group_id: o.group_id, state: o.state, urgency: o.urgency, answered_at: o.answered_at, owner: o.owner,
-        first_change: o.first_change, head_change: o.head_change, version: o.version ? paged(o.version) : null,
+    const objects = [...objectsOf(a.room, a).values()].filter(x => x.state === 1 && takes(o, a.room.groups.get(x.group_id))).sort((x, y) => y.urgency - x.urgency || x.first_change - y.first_change)
+    for (const x of objects) {
+      out[OBJECT_TABLES[x.type] ?? 'cards'].push({
+        object_id: x.object_id, group_id: x.group_id, state: x.state, urgency: x.urgency, answered_at: x.answered_at, owner: x.owner,
+        first_change: x.first_change, head_change: x.head_change, version: x.version ? paged(x.version) : null,
       })
     }
     const registers = new Map()
-    for (const e of a.room.envelopes) if (e.header.register_id && !e.void_code && sees(a, a.room.groups.get(e.group))) registers.set(`${e.group} ${e.header.sender} ${e.header.register_id}`, e)
-    return { ...out, registers: [...registers.values()].sort((x, y) => x.change - y.change).map(paged), truncated: false, groups: groupList(a), change: a.room.change }
+    for (const e of a.room.envelopes) if (e.header.register_id && !e.void_code && sees(a, a.room.groups.get(e.group)) && takes(o, a.room.groups.get(e.group))) registers.set(`${e.group} ${e.header.sender} ${e.header.register_id}`, e)
+    return { ...out, registers: [...registers.values()].sort((x, y) => x.change - y.change).map(paged), truncated: false, groups: groupList(a, o), change: a.room.change }
   }
   // `GET /v1/desk?brief=1&since=` (hub content.rs desk_brief): ids and versions of the open cards and requests;
   // with `since`, the rows changed after it, the ones no longer open in `settled`
-  function deskBrief(a, since) {
+  function deskBrief(a, since, only = {}) {
     const out = { cards: [], permission_requests: [] }, settled = []
-    const objects = [...objectsOf(a.room, a).values()].filter(o => (since === null ? o.state === 1 : o.head_change > since) && ['cards', 'permission_requests'].includes(OBJECT_TABLES[o.type] ?? 'cards'))
+    const objects = [...objectsOf(a.room, a).values()].filter(o => (since === null ? o.state === 1 : o.head_change > since) && ['cards', 'permission_requests'].includes(OBJECT_TABLES[o.type] ?? 'cards') && takes(only, a.room.groups.get(o.group_id)))
       .sort((x, y) => y.urgency - x.urgency || x.first_change - y.first_change)
     for (const o of objects) {
       if (o.state !== 1) { settled.push(o.object_id); continue }
@@ -348,9 +359,13 @@ export async function startFakeHub(opts = {}) {
     }
     return { ...out, ...(since === null ? {} : { settled }), truncated: false, change: a.room.change }
   }
-  function changes(a, after, limit) {
+  function changes(a, after, limit, o = {}) {
     const head = a.room.change, upto = Math.min(after + CHANGES_WINDOW, head)
-    const found = a.room.changes.filter(i => i.change > after && i.change <= upto && visible(a, i))
+    // `active`: no envelope of an archived group (its log still comes); `group`: that group's envelopes alone
+    const wanted = i => i.kind !== 'envelope'
+      ? !o.group
+      : (!o.active || a.room.groups.get(i.group)?.live !== false) && (!o.group || i.group === o.group)
+    const found = a.room.changes.filter(i => i.change > after && i.change <= upto && visible(a, i) && wanted(i))
     const items = found.slice(0, limit)
     const cursor = found.length > limit ? items[items.length - 1].change : upto
     return { items: items.map(served), change: Math.max(cursor, after), more: cursor < head }
@@ -782,7 +797,7 @@ export async function startFakeHub(opts = {}) {
       return { items: found.slice(0, limit).map(e => ({ ...paged(e), seq: e.header.seq })), more: found.length > limit }
     }
     if (is('GET', 'rooms', null, 'groups')) {
-      const a = ownRoom(auth(rq), segs[1]), all = groupList(a)
+      const a = ownRoom(auth(rq), segs[1]), all = groupList(a, only(rq, false))
       // paged as the hub pages it (point 43): in the order of founding, `after` the answer's own cursor; bare without `limit`
       const limit = number(rq, 'limit')
       if (limit === null || limit === undefined || opts.bare_lists) return all
@@ -902,9 +917,10 @@ export async function startFakeHub(opts = {}) {
     if (is('POST', 'envelopes')) { const a = writer(rq); return postEnvelope({ ...a, rule: rq.rule }, field(body, 'envelope')) }
     if (is('GET', 'desk')) {
       const brief = rq.query.get('brief'), since = number(rq, 'since')
-      if (brief === null && since === null) return desk(member(auth(rq)))
+      const o = only(rq, false)
+      if (brief === null && since === null) return desk(member(auth(rq)), o)
       if (brief !== '1') throw refuse('bad-format', 'the Desk is read whole, or with brief=1 (and since=)')
-      return deskBrief(member(auth(rq)), since)
+      return deskBrief(member(auth(rq)), since, o)
     }
     if (is('GET', 'chats', null, null, 'items')) {
       const a = member(auth(rq))
@@ -935,7 +951,7 @@ export async function startFakeHub(opts = {}) {
         ...page(o.items.filter(e => e.change > after), clamp(number(rq, 'limit'), 500, 2000)),
       }
     }
-    if (is('GET', 'changes')) return changes(auth(rq), number(rq, 'after') ?? 0, clamp(number(rq, 'limit'), 200, 1000))
+    if (is('GET', 'changes')) return changes(auth(rq), number(rq, 'after') ?? 0, clamp(number(rq, 'limit'), 200, 1000), only(rq, true))
 
     // files and shares
     if (is('PUT', 'files', null)) {

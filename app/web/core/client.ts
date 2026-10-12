@@ -473,7 +473,7 @@ export class Client {
     on('alert', a => { M.pushAlert(this.model, this.change, { code: a.code, message: a.message, envelope_number: a.change, at: this.now() }) })
     on('stream', event => this.onStream(event))
     on('invites', ({ open }) => this.invitesDone(open))
-    on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() } })
+    on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() }; void this.reloadArchived().catch(() => {}) })
     on('batch', () => this.publish())
     on('reopened', () => { void this.reconcile().catch(() => {}) })
     on('closed', ({ code }) => {
@@ -610,6 +610,48 @@ export class Client {
     this.inviteTimer = setInterval(() => this.watchInvites(), 1000)
     void this.nameDevice().catch(() => {})
     void this.ensureDesk().catch(() => {})
+    void this.learnArchived().catch(() => {})
+  }
+  /** The sessions the hub holds as archived that this device still holds as live (archived while it was away): it
+   *  holds them as archived too, so that it loads them only when one is opened (loadArchived). One small request. */
+  private async learnArchived(): Promise<void> {
+    for (const row of await this.hub.roomGroups({ archived: true })) {
+      const held = this.engine.groups.find(g => g.session && sameBytes(g.group, row.group))
+      if (!row.live && held && !held.archived) await this.engine.archive(row.group)
+    }
+  }
+  /** The archived sessions loaded in this run (session ids, hex). */
+  private archivedLoaded = new Set<string>()
+  /**
+   * An archived session is loaded when it is opened (hub-api.md point 46): a catch-up leaves its envelopes out, so
+   * its cards, registers (its name, its status lines) and the rest of its content are read now, in one pass over
+   * its group alone (`GET /v1/changes?group=`), through the core. Once a run; a live session has nothing to load.
+   */
+  async loadArchived(session_id: string): Promise<number> {
+    const group = this.engine.groups.find(g => g.session && hex(g.session.sessionId) === session_id)
+    if (!group?.archived || this.archivedLoaded.has(session_id)) return 0
+    this.archivedLoaded.add(session_id)
+    const items: EnvelopeItem[] = []
+    try {
+      for (let after = 0, pages = 0; pages < 1000; pages++) {
+        const page = await this.hub.changes(after, 1000, { group: group.group })
+        for (const item of page.items) if (item.kind === 'envelope') items.push({ ...item, cut: false })
+        if (!page.more || page.change === after) break
+        after = page.change
+      }
+    } catch (e) { this.archivedLoaded.delete(session_id); throw e }
+    const received = await this.engine.receiveGroup(items)
+    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }) })
+    await this.engine.noteArchivedOpened(session_id)
+    return received.length
+  }
+  /** After a rescan (it reads the live sessions alone, and a model built again from nothing lost what an opened
+   *  archived session brought): the archived sessions this device opened are loaded again. */
+  private async reloadArchived(): Promise<void> {
+    for (const sid of await this.engine.openedArchived()) {
+      this.archivedLoaded.delete(sid)
+      await this.loadArchived(sid).catch(() => {})
+    }
   }
   /**
    * Every account has at least one desk, from its creation on: the first is `desk/main`, "Personal". A human device
@@ -646,7 +688,7 @@ export class Client {
   /** A model without a usable cache: the open objects and the registers at once, from the hub's Desk, each read
    *  back through the core (it holds their chains already). The rest comes with the rescan. */
   private async fromDesk(): Promise<void> {
-    const desk = await this.hub.desk()
+    const desk = await this.hub.desk({ active: true })
     // (what it lists as open decides the Desk from here on, as `readDesk`: an old question read again by the
     //  rebuild below never stands on the Desk because its answer comes later in the history)
     if (!desk.truncated) {
@@ -742,7 +784,7 @@ export class Client {
     const whole = this.deskWholeDue || !this.desk || this.now() - this.deskWholeAt >= DESK_WHOLE_MS
     this.deskWholeDue = false
     let brief
-    try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at)) } catch (e) { if (whole) this.deskWholeDue = true; this.knowDesk(); throw e }
+    try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at, { active: true })) } catch (e) { if (whole) this.deskWholeDue = true; this.knowDesk(); throw e }
     if (brief.truncated) { if (!whole) { this.deskWholeDue = true; this.deskAgain = true } else this.knowDesk(); return }
     const listed = [...brief.cards.map(o => ({ ...o, route: 'cards' as const })), ...brief.permission_requests.map(o => ({ ...o, route: 'permission-requests' as const }))]
     if (whole || !this.desk) { this.desk = { open: new Set(), versions: new Map(), at: 0 }; this.deskWholeAt = this.now() }
@@ -768,7 +810,7 @@ export class Client {
     const reading = this.engine.position < brief.change || this.engine.rescanPending || this.readingHolds > 0
     const versions = lacking.length > DESK_ONE_BY_ONE && !first && reading ? []
       : lacking.length > DESK_ONE_BY_ONE
-      ? await this.hub.desk().then(full => { const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
+      ? await this.hub.desk({ active: true }).then(full => { const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
       : (await inParallel(lacking, async o => {
           const got = await this.hub.objectEnvelopes(o.route, o.object_id, { after: o.version_change - 1, limit: 1 }).catch(() => null)
           return got?.items.filter(i => i.change === o.version_change) ?? []
@@ -1168,6 +1210,8 @@ export class Client {
   }
   /** Loads the next older page of a timeline into the window. */
   async loadTimeline(timeline_key: string, { limit = 50, since_ms }: { limit?: number; since_ms?: number } = {}): Promise<{ loaded: number; has_more: boolean }> {
+    // an archived session's page opened: the session itself first (its cards, its name), which no catch-up brought
+    if (timeline_key.startsWith('chat:session/')) await this.loadArchived(timeline_key.slice('chat:session/'.length)).catch(() => {})
     // A Chat's first window: its last `since_ms` (24 hours) or `limit` items, whichever holds more, at most
     // `KEEP_PER_CHAT`; what lies before it is read when the person scrolls up.
     if (since_ms !== undefined && !timeline_key.startsWith('scribble:')) {

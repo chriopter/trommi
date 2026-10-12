@@ -1307,7 +1307,7 @@ impl Client {
             let answer = self
                 .hub
                 .get(&format!(
-                    "/v1/changes?after={}&limit={CHANGES_LIMIT}",
+                    "/v1/changes?after={}&limit={CHANGES_LIMIT}&active=1",
                     core.cursor
                 ))
                 .await;

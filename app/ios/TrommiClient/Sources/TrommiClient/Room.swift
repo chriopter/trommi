@@ -36,6 +36,9 @@ public struct RoomRecord: Codable {
   public var codeJoin: Bool? = nil
   /** When this device's core confirmed that it was removed from the room (ms); nil: it is in (Room.removedAt). */
   public var removedAt: UInt64? = nil
+  /** The archived sessions this device opened (hex session ids, newest last, at most 20): loaded again after a read
+   *  back, which reads the live sessions alone (RoomArchived.swift); nil: none. */
+  public var archivedOpened: [String]? = nil
 }
 
 /** `beforeJoining`: envelopes of an epoch before this device came into their group, which it cannot take until it learned that group's past (RoomPast.swift): passed over. */
@@ -229,6 +232,8 @@ public struct Store {
   var pumping = false
   /** The changes are being read again from the start (RoomPast.swift): an envelope below the core's cursor is handed in as the next of its chain. */
   var readingBack = false
+  /** The archived sessions loaded in this run (hex session ids): RoomArchived.swift. */
+  var archivedLoaded = Set<String>()
   /** While reading back: what this device holds whole already, by change number; put back without the core. */
   var readBackWhole: [UInt64: Rec] = [:]
   /** Something came that the past waits for (a Welcome, keys): `tendPast` is due after what is being processed. */
@@ -527,6 +532,8 @@ public struct Store {
     if (try? await publishKeyPackages()) != nil { pumpOutbox() }
     try await Spent.time("read changes") { try await readChanges(&report, &change) }
     if let until, cursor >= until { caughtUp(&change) }
+    // (sessions archived while this device was away: held as archived, loaded only when opened; upkeep)
+    await learnArchived(&change)
     // (the log said that this device was removed: nothing more is written or read)
     if removedAt != nil { emit(change); throw TrommiError("removed", "this device was removed from the room") }
     // (what was written before this device came is upkeep too: what is left of it is noted and goes on next time)
@@ -558,7 +565,7 @@ public struct Store {
    * view a moment longer).
    */
   func deskFirst() async -> UInt64? {
-    guard let desk = try? await noted({ try await hub.desk() }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
+    guard let desk = try? await noted({ try await hub.desk(active: true) }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
     var open = Set<String>()
     for kind in ["cards", "permission_requests"] {
       for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
@@ -909,11 +916,11 @@ public struct Store {
       let waited = Spent.now
       if let fetching = ahead { ahead = nil; page = try await noted { try await fetching.value } }
       else if let read = takeAhead?(cursor) { page = read; Spent.count("pages read ahead", 1) }
-      else { page = try await noted { try await hub.changes(after: cursor) } }
+      else { page = try await noted { try await hub.changes(after: cursor, active: true) } }
       Spent.add("hub page wait", since: waited)
       if page["more"] as? Bool == true, let next = Wire.uint(page["change"]), next > cursor {
         let hub = self.hub
-        if let read = takeAhead?(next) { ahead = Task { read } } else { ahead = Task { try await hub.changes(after: next) } }
+        if let read = takeAhead?(next) { ahead = Task { read } } else { ahead = Task { try await hub.changes(after: next, active: true) } }
       }
       let raw = page["items"] as? [JSON] ?? []
       let items = try Self.ordered(raw, after: cursor)
