@@ -25,6 +25,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   themselves: the coordinator forwards them.
 
 **Fixed**
+- Web: starring a card no longer shows a line of code for a moment in place of the star.
 - A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
   writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).
 - iPhone: a permission request whose time ran out says "expired", as on the web, and one signed in with the code
