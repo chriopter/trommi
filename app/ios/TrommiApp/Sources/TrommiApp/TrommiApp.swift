@@ -274,9 +274,12 @@ final class BoardModel: ObservableObject {
     r.notifyKeysChanged = { [weak self] keys in if let m = self { NotifyBridge.shared.keysChanged(m, keys) } }
     ShareImport.shared.attach(self)   // the Share Extension's inbox (ShareImport.swift)
     // the board from the encrypted cache first (no network), then live: the catch-up starts where the cache stopped
+    // (a launch from the cache: the Desk is drawn once the hub's Desk answered, at most a moment: a card closed
+    //  elsewhere since the last launch never stands on it, Room.holdDesk)
     Task { @MainActor in
-      if await r.restore() { desk?.update(); checkKit(); version &+= 1 }
+      let had = await r.restore()
       startLive()
+      if had { await r.waitForDesk(); desk?.update(); checkKit(); version &+= 1 }
     }
   }
   /** A change of the board: the projection again, at most every 80 ms (a catch-up brings thousands). */
@@ -288,6 +291,8 @@ final class BoardModel: ObservableObject {
       pendingUpdate = false
       // (the room group's own Commit said that this device was removed: what is stored here goes, and the start says so)
       if let r = room, r.removedAt != nil { removedHere(r); return }
+      // (the first paint from the cache waits for the hub's Desk: attach draws it)
+      if let r = room, r.deskHolding { return }
       if let r = room, !demo, r.vouchAsks != vouchAsks { vouchAsks = r.vouchAsks }
       // a batch that changed nothing visible (a refresh with no news): no render at all
       if let r = room {

@@ -23,6 +23,8 @@ public final class RecordStore: @unchecked Sendable {
   var recordsDir: URL { dir.appendingPathComponent("records", isDirectory: true) }
   var headURL: URL { dir.appendingPathComponent("head.bin") }
   var boardURL: URL { dir.appendingPathComponent("board.bin") }
+  /** The hub's Desk as last read (Room.deskFirst): its open cards and requests and its cursor. */
+  var deskURL: URL { dir.appendingPathComponent("desk.bin") }
 
   /** The board snapshot (BoardCodec bytes and what goes with them), sealed as a whole. */
   public func writeBoard(_ plain: [UInt8]) throws { try Data(try seal(plain, aad: "trommi ios board")).write(to: boardURL, options: Self.writeOptions) }
@@ -205,6 +207,7 @@ public final class RecordStore: @unchecked Sendable {
     try? FileManager.default.removeItem(at: recordsDir)
     try? FileManager.default.removeItem(at: headURL)
     try? FileManager.default.removeItem(at: boardURL)
+    try? FileManager.default.removeItem(at: deskURL)
   }
 
   /** Total bytes of the segments (for the compaction rule and the measurements). */

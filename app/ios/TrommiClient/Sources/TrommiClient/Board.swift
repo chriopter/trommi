@@ -509,10 +509,16 @@ public final class Board {
    * (a card answered again, reopened, revised). Set by Room.settleWithDesk at every catch-up; not stored.
    */
   public var hubSettled: [String: Int] = [:]
+  /**
+   * A launch from the cache waits for the hub's Desk of this run (Room.deskFirst): meanwhile no open card or request
+   * stands (the Desk says "Catching up…"), as the cache may hold ones settled elsewhere since. Not stored.
+   */
+  public var deskWaiting = false
   /** Open here, but settled at the hub: not on its Desk while a catch-up is behind it (`deskGate`), or not on it
    *  after this device passed its cursor (`hubSettled`). */
   public func heldBack(_ id: String, open: Bool) -> Bool {
     guard open else { return false }
+    if deskWaiting { return true }
     if let gate = deskGate, !gate.contains(id) { return true }
     guard let at = hubSettled[id] else { return false }
     return newest(id) <= at
@@ -594,6 +600,8 @@ public final class Board {
     for c in cards.values where c.answer?.pending == true || c.inRevision != nil { h.combine(c.objectId); h.combine(c.objectState) }
     for n in notes.values where n.pending { h.combine(n.objectId); h.combine(n.text) }
     h.combine(human.raw.values.filter { $0.pending }.count)
+    // (what stands on the Desk: a card held back or let stand by the hub's Desk changes nothing above)
+    h.combine(stack); h.combine(openPermissionIds); h.combine(deskWaiting)
     return h.finalize()
   }
 

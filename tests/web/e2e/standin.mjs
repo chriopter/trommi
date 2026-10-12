@@ -340,7 +340,7 @@ export const steps = [
     await A.shot('standin-09e-menu-whats-new')
     await A.click('#menu-news')
     await A.until("location.pathname === '/whats-new' && document.querySelectorAll('.news-day').length", 'the What\'s new page')
-    const shown = await A.js("return { first: document.querySelector('.news-date')?.firstChild.textContent.trim(), kinds: [...document.querySelectorAll('.news-day:first-child .news-kind b')].map(b => b.textContent), seen: localStorage.getItem('trommi-news-seen'), dot: document.getElementById('menu-news-dot')?.hidden }")
+    const shown = await A.js("return { first: document.querySelector('.news-date')?.firstChild.textContent.trim(), kinds: [...(document.querySelector('.news-day')?.querySelectorAll('.news-kind b') ?? [])].map(b => b.textContent), seen: localStorage.getItem('trommi-news-seen'), dot: document.getElementById('menu-news-dot')?.hidden }")
     const file = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../CHANGELOG.md'), 'utf8')
     const newest = /^## +(.+?)(?: +\(|$)/m.exec(file)?.[1]
     check(shown.first === newest && shown.kinds.length > 0 && shown.kinds.every(k => ['New', 'Better', 'Fixed'].includes(k)), 'the newest day of CHANGELOG.md first, with its parts', shown)
