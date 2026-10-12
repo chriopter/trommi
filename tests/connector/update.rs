@@ -2,8 +2,8 @@
 //! for all files of a release, in the form of `release/manifest.sh` and `release/sign.sh`.
 use ed25519_dalek::{Signer, SigningKey};
 use trommi_connector::update::{
-    check, install, installed_version, tag_number, tags_in_feed, verify_file, Expect, Release,
-    RELEASE_KEY,
+    check, install, installed_release, installed_version, tag_number, tags_in_feed, verify_file,
+    wanted, Expect, Release, RELEASE_KEY,
 };
 
 const TARGET: &str = "x86_64-unknown-linux-musl";
@@ -376,6 +376,56 @@ fn a_checked_release_is_put_in_place_and_a_refused_one_changes_nothing() {
         .filter(|name| name.starts_with(".new."))
         .collect();
     assert!(left.is_empty(), "nothing half written is left: {left:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A local build put in place of the installed program (the release's manifest still beside it) says "REFUSED as
+/// a release" in `--version`. `update` must put the signed release back, also when that release is the newest:
+/// the installed manifest's version is not what runs, the program is another file.
+#[test]
+fn an_unsigned_build_in_place_of_the_installed_program_is_replaced_by_the_same_release() {
+    let dir = std::env::temp_dir().join(format!(
+        "trommi-install-{}",
+        trommi_connector::util::random_hex(4)
+    ));
+    let case = Case::new();
+    let public = case.key.verifying_key().to_bytes();
+    let expect = Expect {
+        key: &public,
+        target: TARGET,
+        running: 0,
+    };
+    let manifest = case.good(278);
+    let signature = case.sign(&manifest);
+    assert_eq!(
+        install(&expect, &dir, &manifest, &signature, &case.binary),
+        Ok(278)
+    );
+    let held = installed_release(&public, TARGET, &dir);
+    assert_eq!((held.version, held.program_is_release), (278, true));
+    assert!(!wanted(278, 0, &held), "the release that is in place is not fetched again");
+    assert!(wanted(279, 0, &held), "a newer one is");
+
+    // The human builds the connector and copies it over the installed one.
+    std::fs::write(dir.join("trommi-connector"), b"a local build").expect("the local build");
+    let held = installed_release(&public, TARGET, &dir);
+    assert_eq!((held.version, held.program_is_release), (278, false));
+    assert!(
+        wanted(278, 0, &held),
+        "the newest release is installed again in place of the local build"
+    );
+    assert!(!wanted(277, 0, &held), "never an older one");
+    assert_eq!(
+        install(&expect, &dir, &manifest, &signature, &case.binary),
+        Ok(278)
+    );
+    assert_eq!(
+        std::fs::read(dir.join("trommi-connector")).expect("the program"),
+        case.binary
+    );
+    assert!(installed_release(&public, TARGET, &dir).program_is_release);
+    // A build that runs as a newer release than the newest one wants nothing.
+    assert!(!wanted(278, 279, &installed_release(&public, TARGET, &dir)));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
