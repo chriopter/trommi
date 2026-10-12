@@ -1277,9 +1277,12 @@ export class Engine {
    * steps that were open, and tells the client which invites are still at work. A step that fails (no KeyPackage at
    * the hub yet, the hub not reached) is simply there again at the next round.
    */
+  /** The pause before the invite steps are tried again after one failed (0: none failed in the last round). */
+  private invitePause = 0
   private async invited(): Promise<InviteStep[]> {
     this.owing = false
     let steps: InviteStep[]
+    let failed = false
     try { steps = await this.serial(() => this.call(d => d.inviteSteps())) } catch { return [] }
     for (const step of steps) {
       const id = step.inviteId, device = step.device, group = step.group
@@ -1322,14 +1325,18 @@ export class Engine {
       } catch (e) {
         if (this.isLocal(e)) throw e
         this.owing = true
+        failed = true
       }
     }
+    // (a step that failed, the newcomer's KeyPackage not at the hub yet, a Commit that lost its epoch: tried again
+    //  soon, after a pause that doubles from backoff_first up to heal_delay * 5; a round without a failure resets it)
+    this.invitePause = failed ? Math.min(this.invitePause ? this.invitePause * 2 : this.timing.backoff_first, this.timing.heal_delay * 5) : 0
     // what is left now (the core drops an invite that has nothing left); a newcomer that only waits to be added
     // to sessions counts as in
     let left = steps
     if (steps.length) {
       try { left = await this.serial(() => this.call(d => d.inviteSteps())) } catch { /* the list of before */ }
-      if (left.length) { this.owing = true; this.later(this.timing.heal_delay * 5, () => this.keepSoon(0)) }
+      if (left.length) { this.owing = true; this.later(this.invitePause || this.timing.heal_delay * 5, () => this.keepSoon(0)) }
     }
     this.emit('invites', { open: [...new Set(left.filter(s => s.kind !== 'addToSession').map(s => hex(s.inviteId)))] })
     this.emit('batch', null)
