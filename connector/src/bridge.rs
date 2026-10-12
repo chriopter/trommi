@@ -10,7 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-pub const MAX_ASSET: u64 = 64 * 1024 * 1024;
+/// The largest file a tool sends: what a padded file holds at most (64 MiB less the byte of its pad mark).
+pub const MAX_ASSET: u64 = trommi_core::files::MAX_CONTENT_LEN;
 pub const ASSET_TYPES: [&str; 5] = ["html", "image", "video", "audio", "file"];
 pub const RETENTION_DAYS: u64 = 30;
 /// A Share link lasts at most 180 days (spec/v1.md 11.5).
@@ -1164,9 +1165,9 @@ impl Bridge {
         let fname = basename(&file.display().to_string());
         if size > MAX_ASSET {
             return Err(err(format!(
-                "{fname} is {} MB; at most {} MB",
-                (size as f64 / 1048576.0).round(),
-                MAX_ASSET / 1048576
+                "{fname} is {} bytes; a file sent to the board holds at most {} bytes (64 MiB less one): shrink or split it",
+                size,
+                MAX_ASSET
             )));
         }
         let bytes = std::fs::read(&file)?;
@@ -2059,7 +2060,7 @@ impl Bridge {
                 } else {
                     let bytes = js_str(&args["content"]).into_bytes();
                     if bytes.len() as u64 > MAX_ASSET {
-                        return Err(err("content is too large"));
+                        return Err(err(format!("content is {} bytes; at most {MAX_ASSET} bytes (64 MiB less one)", bytes.len())));
                     }
                     let media = if args.get("type").is_some_and(truthy)
                         && args["type"].as_str() != Some("html")

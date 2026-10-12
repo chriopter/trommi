@@ -74,6 +74,7 @@ many agents are still at work.
 - **No more stuck agent after a hub reset or removal**: a session whose key the hub no longer takes (removed, taken over while away, or of a room the hub does not know) now offers `/trommi:connect` again, and a new invite link gets it back on the board without a restart; before, it said to connect and then refused the link.
 - "The connector needs an update" now says to run `trommi-connector update` (the swap happens by itself), not to update the plugin or run a connect script that no longer exist.
 - **Folders with alike names keep their own keys**: `~/project` and `~/Project` (or `my-app` and `my_app`) no longer share Trommi keys; before, a session in one could see or take the agent of the other.
+- **A 64 MB attachment no longer fails with "too-large"**: the connector took files of exactly 64 MiB, which the hub refuses once padded; it now takes up to 64 MiB less one byte and says the limit in bytes before anything is sent.
 
 **Better**
 - **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.

@@ -217,3 +217,33 @@ async fn folders_whose_names_slug_alike_do_not_share_keys() {
     };
     assert_ne!(base(&seat.folder), base(&other));
 }
+
+/// The largest attachment and asset the tools take (64 MiB less one byte: a padded file holds 64 MiB with its
+/// mark) goes through to the hub; one byte more is refused
+/// before anything is sent, with its size in the words.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_largest_attachment_and_asset_go_through() {
+    let hub = HubProc::start().await;
+    let (_human, seat) = joined_on(&hub).await;
+    let mut mcp = seat.serve().await;
+    mcp.ready().await;
+    let big = seat.folder.join("big.bin");
+    let mut bytes = vec![0u8; (64 << 20) - 1];
+    for (i, b) in bytes.iter_mut().enumerate() {
+        *b = (i * 7919 % 251) as u8;
+    }
+    std::fs::write(&big, &bytes).expect("written");
+    let said = mcp
+        .ok("reply", json!({ "text": "the log", "attachments": [big.display().to_string()] }))
+        .await;
+    assert!(said.starts_with("sent"), "{said}");
+    let said = mcp.ok("publish_asset", json!({ "path": big.display().to_string() })).await;
+    assert!(!said.is_empty(), "{said}");
+    bytes.push(0);
+    std::fs::write(&big, &bytes).expect("written");
+    let (said, failed) = mcp
+        .call("reply", json!({ "text": "too big", "attachments": [big.display().to_string()] }))
+        .await;
+    assert!(failed && said.contains("67108864 bytes") && said.contains("64 MiB"), "{said}");
+    mcp.close().await;
+}
