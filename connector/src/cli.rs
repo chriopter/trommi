@@ -87,7 +87,7 @@ pub async fn join(given: Option<String>) -> Result<String> {
     Ok(if running {
         format!("{out}\nThe Trommi MCP server of this session goes online with this key now; its board tools appear in a moment.")
     } else {
-        format!("{out}\nNow start claude (or codex) in this folder, or reconnect its Trommi MCP server (/mcp).")
+        format!("{out}\nNow start claude (or codex) in this folder. A Claude Code that runs here already: /mcp, then trommi, then Reconnect; a Codex that runs here already: quit it and start it again (`codex resume` keeps the conversation).")
     })
 }
 

@@ -34,6 +34,8 @@ async fn joined_with_group(hub: &HubProc) -> (Human, Seat, GroupId) {
     };
     let ((joined, log), group) = tokio::join!(join, admit);
     assert!(joined, "the join failed:\n{log}");
+    // what to do next, for either program
+    assert!(log.contains("/mcp") && log.contains("codex resume"), "{log}");
     (human, seat, group)
 }
 
