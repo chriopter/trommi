@@ -180,6 +180,6 @@ pub fn update_line() -> &'static str {
     if is_codex() {
         "run `trommi-connector update` in a terminal, then quit Codex and start it again (`codex resume` keeps the conversation)"
     } else {
-        "update the trommi plugin (or run the connect script again), then /mcp → trommi → Reconnect"
+        "run `trommi-connector update` in a terminal; this session's connector swaps the new one in by itself (if it does not: /mcp, then trommi, then Reconnect)"
     }
 }

@@ -2,7 +2,7 @@
 //!
 //!   trommi-connector                  the launcher of the MCP server (launch.rs; Claude Code starts it)
 //!   trommi-connector serve            MCP server (the launcher's child)
-//!   trommi-connector join <link>      join a room with an agent invite link, then exit
+//!   trommi-connector connect <link>   join a room with an agent invite link, then exit (also: join)
 //!   trommi-connector whoami           print room, key file and folder
 //!   trommi-connector say "<text>" [--session <name>] [--urgent]
 //!   trommi-connector permission|notice|denied|resolved    the plugin's hooks (hook JSON on stdin)
