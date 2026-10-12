@@ -334,6 +334,40 @@ final class RoomTests: XCTestCase {
                             payload: ["object_type": "card", "object_version": 1, "card_type": "decision", "title": title, "options": [["key": "yes", "label": "Yes"]]])
   }
 
+  /// Two human devices answer the same card at once. The hub takes the other device's answer and refuses this one's.
+  /// The other one's answer, which came while this device's was on its way, stays: the card is answered here too, as
+  /// on every other device (the torture run, seed 403: the card stayed open on one iPhone for good).
+  func testAnAnswerTheHubRefusedForAnotherDevicesAnswerLeavesThatOne() async throws {
+    let room = try await founded()
+    addSession(room)
+    let card = String(repeating: "e5", count: 16), other = String(repeating: "ef", count: 32)
+    agentAsks(room, seq: 1, card: card, "Which one?")
+    _ = try await room.sync()
+    room.board.members[other] = RoomMember(deviceId: other, role: "human")
+    let hold = DispatchSemaphore(value: 0)
+    FakeHub.shared.lock.withLock { FakeHub.shared.holdEnvelope = hold }
+    let answering = Task { try await room.answer(cardId: card, choices: ["yes"]) }
+    for _ in 0..<200 where room.board.cards[card]?.answer?.pending != true { try await Task.sleep(nanoseconds: 10_000_000) }
+    XCTAssertEqual(room.board.cards[card]?.objectState, "answered", "the echo: answered at once")
+    // the other device's answer reaches this one first
+    let version = room.board.cards[card]?.versionHash ?? ""
+    FakeHub.shared.envelope(["sender": other, "group": hex(FakeDevice.sessionGroup(room.roomIdHex, session)), "seq": 1, "time": 2000, "kind": KIND.ANSWER,
+                             "otype": OBJECT_TYPE.CARD, "ostate": CARD_STATE.ANSWERED, "oid": card, "recipient": agent, "bind": ["card": card, "version": version, "choices": ["yes"]],
+                             "files": [String]()],
+                            payload: ["answer_action": "answer", "choices": ["yes"], "answered_at": 2000])
+    _ = try await room.sync()
+    // and the hub refuses this device's, keeping its number as a void record
+    FakeHub.shared.lock.withLock { FakeHub.shared.refuse["/v1/envelopes"] = (403, "forbidden", true); FakeHub.shared.holdEnvelope = nil }
+    hold.signal()
+    do { try await answering.value; XCTFail("refused") } catch let e as HubError { XCTAssertEqual(e.code, "forbidden") }
+    let c = room.board.cards[card]
+    XCTAssertEqual(c?.objectState, "answered", "answered, by the other device")
+    XCTAssertEqual(c?.answer?.byDeviceId, other)
+    XCTAssertEqual(c?.answer?.pending, false)
+    FakeHub.shared.lock.withLock { FakeHub.shared.refuse = [:] }
+    room.close()
+  }
+
   func testAStarIsHisOwnRegisterOnTheCard() async throws {
     let room = try await founded()
     addSession(room)

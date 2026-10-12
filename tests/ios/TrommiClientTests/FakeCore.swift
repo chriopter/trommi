@@ -273,8 +273,14 @@ final class FakeDevice: CoreDevice {
       let name = header.kind == .register ? payload.flatMap { parse($0)["name"] as? String } : nil
       // (an object as the core's replay of headers leaves it: this envelope's state, its sender the owner, it the current version)
       let after = outcome == .applied ? header.object.map { ObjectView(objectId: $0.objectId, type: $0.type, owner: header.sender, state: $0.state, current: Self.hash(bytes)) } : nil
-      return ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, objectAfter: after,
-                              register: name.map { RegisterChange(name: $0, current: true) })
+      var r = ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, objectAfter: after,
+                               register: name.map { RegisterChange(name: $0, current: true) })
+      // (header "bind": an answer's binding as the core reads it from the body: card, version hash, choices)
+      if header.kind == .answer, let bind = h["bind"] as? [String: Any], let card = (bind["card"] as? String).flatMap({ try? unhex($0) }),
+         let version = (bind["version"] as? String).flatMap({ try? unhex($0) }) {
+        r.bind = .answer(objectId: card, versionHash: version, choices: bind["choices"] as? [String] ?? [])
+      }
+      return r
     }
     // (header "passed": a session group this device is not in yet, read past as the real core does: the cursor moves)
     if group.count == 48, state.sessions[hex(group.suffix(16))] == nil, h["passed"] as? Bool == true {
@@ -406,6 +412,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var wishes: [[String: Any]] = []
     /** Set: the answer to a posted Commit waits for a signal, while the Commit is in the changes already. */
     var holdCommitAnswer: DispatchSemaphore?
+    /** Set: a posted envelope waits for a signal before the hub looks at it (what `refuse` says then counts). */
+    var holdEnvelope: DispatchSemaphore?
     /** What GET /v1/groups/{group}/chains/{sender} serves, by "group hex/sender hex": the chain's items with `seq`. */
     var chains: [String: [[String: Any]]] = [:]
     /** What GET /v1/welcomes lists, and how often it was read. */
@@ -523,7 +531,19 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     for q in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] { query[q.name] = q.value }
     var data = request.httpBody ?? Data()
     if data.isEmpty, let s = request.httpBodyStream { s.open(); var buf = [UInt8](repeating: 0, count: 65536); while s.hasBytesAvailable { let n = s.read(&buf, maxLength: buf.count); if n <= 0 { break }; data.append(buf, count: n) }; s.close() }
-    let (status, answer) = hub.answer(request.httpMethod ?? "GET", url.path, query, parse(Bytes(data)))
+    let method = request.httpMethod ?? "GET", body = parse(Bytes(data))
+    if url.path == "/v1/envelopes", let hold = hub.lock.withLock({ hub.holdEnvelope }) {
+      Thread.detachNewThread { [self] in
+        hold.wait()
+        let (status, answer) = hub.answer(method, url.path, query, body)
+        let res = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["content-type": "application/json"])!
+        client?.urlProtocol(self, didReceive: res, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: answer))
+        client?.urlProtocolDidFinishLoading(self)
+      }
+      return
+    }
+    let (status, answer) = hub.answer(method, url.path, query, body)
     let res = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["content-type": "application/json"])!
     let deliver = { [self] in
       client?.urlProtocol(self, didReceive: res, cacheStoragePolicy: .notAllowed)
