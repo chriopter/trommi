@@ -3358,7 +3358,7 @@ impl<S: Storage> Device<S> {
         // Where the log shows it, a helper session's opener is its main session's agent leaf there.
         let stands = place.unwrap_or(u64::MAX);
         // Where the log shows it, the group it founds is among the groups this device holds: it is not
-        // counted against itself (5.2.5: 32 live helper sessions).
+        // counted against itself (5.2.5: 100 live helper sessions).
         if let (Some(_), Some((session, _))) = (place, session) {
             if let Some(count) = known.helpers.get_mut(&session.parent) {
                 *count = count.saturating_sub(1);
@@ -3835,8 +3835,9 @@ impl<S: Storage> Device<S> {
         })
     }
 
-    /// Records that a human device archived the session (5.2.10): the device commits and sends nothing more in
-    /// its group (`gone`). The group's keys stay.
+    /// Records that the session was archived (5.2.10), by a human device or, a helper session, by its opener:
+    /// the device commits and sends nothing more in its group (`gone`), and it no longer counts among its main
+    /// session's live helper sessions (5.2.5). The group's keys stay.
     pub fn archive(&mut self, group: &GroupId) -> Result<(), Error> {
         self.transact(|this, batch| {
             if group.is_room() {

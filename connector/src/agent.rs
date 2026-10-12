@@ -534,6 +534,11 @@ impl Client {
                 .session_id()
                 .ok_or_else(|| Fault::new("no-session", "this agent has no session yet"))?;
             let parent = session_id_of(&main)?;
+            // What the hub archived meanwhile no longer counts here either (5.2.5, 5.2.10). A hub that cannot
+            // be asked refuses the founding below as well.
+            if let Err(fault) = self.catch_up_archived(&mut core).await {
+                eprintln!("[trommi] archived sessions not checked: {}", fault.message);
+            }
             let humans: Vec<DeviceId> = self
                 .vault
                 .call(|v: &mut Vault| {
@@ -599,6 +604,30 @@ impl Client {
         values.insert("profile".into(), Value::Object(profile));
         self.set_status(values, Some(session.clone())).await?;
         Ok(session)
+    }
+
+    /// Archives a helper session this agent opened (5.2.10): the hub takes nothing more for its group, and the
+    /// session no longer counts among the main session's live helper sessions (5.2.5). Archived is for good:
+    /// what continues it is a new helper session. Archiving one that is archived already is no error.
+    pub async fn archive_child_session(&self, session_id: &str) -> Result<()> {
+        let mut core = self.core.lock().await;
+        self.active(&core)?;
+        if core.session_id().as_deref() == Some(session_id) {
+            return Err(Fault::new(
+                "forbidden",
+                "an agent archives only its helper sessions, not its main session",
+            ));
+        }
+        let Ok(group) = core.group_of(Some(session_id)) else {
+            return Ok(());
+        };
+        self.hub
+            .post(
+                &format!("/v1/groups/{}/archive", b64(group.as_bytes())),
+                &json!({}),
+            )
+            .await?;
+        self.take_archived(&mut core, vec![group]).await
     }
 
     /// Adds a helper device to a helper session this agent opened (5.2.4), with the KeyPackage the device

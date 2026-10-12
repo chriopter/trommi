@@ -77,8 +77,17 @@ impl HubProc {
         Self::start_in(data, 0).await
     }
 
+    /// Starts the hub with `env` on top of the test's own (`HUB_LIMIT_…` for a limit a test reaches).
+    pub async fn start_with(env: &[(&str, &str)]) -> HubProc {
+        Self::start_in_with(TempDir::new("hub"), 0, env).await
+    }
+
     /// Starts the hub over `data` (a restart keeps its database); `port` 0 picks a free one.
     pub async fn start_in(data: TempDir, port: u16) -> HubProc {
+        Self::start_in_with(data, port, &[]).await
+    }
+
+    async fn start_in_with(data: TempDir, port: u16, env: &[(&str, &str)]) -> HubProc {
         let binary = hub_binary();
         assert!(
             binary.is_file(),
@@ -103,6 +112,7 @@ impl HubProc {
                     k.strip_prefix("MEGA_HUB_ENV_").map(|k| (k.to_string(), v))
                 }),
             )
+            .envs(env.iter().copied())
             .stdin(Stdio::null())
             .stdout(if port == 0 {
                 Stdio::piped()
@@ -312,6 +322,23 @@ impl Human {
     pub async fn seat(&self, group: &GroupId) -> Option<DeviceId> {
         let group = *group;
         self.v(move |v| v.seat(&group)).await
+    }
+
+    /// Archives a session group (5.2.10): at the hub, then on the device.
+    pub async fn archive(&self, group: &GroupId) {
+        self.hub
+            .post(
+                &format!("/v1/groups/{}/archive", b64(group.as_bytes())),
+                &serde_json::json!({}),
+            )
+            .await
+            .expect("archived at the hub");
+        let group = *group;
+        self.v(move |v| {
+            v.device.archive(&group).expect("archived");
+            v.commit().expect("stored");
+        })
+        .await;
     }
 
     /// The groups the device is a leaf of.
