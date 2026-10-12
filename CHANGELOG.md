@@ -84,6 +84,7 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   invisible and direction-changing characters, also the tag characters that spell text no one sees.
 - Numbers in settings and card fields keep their exact value when a device writes them again (the last digits
   of a large or long decimal could change).
+- **Agents come back at once after a network blip**: the connector waited longer after every cut connection (up to a minute and a half), and its agent showed as away and missed your answers meanwhile; it now reconnects within about a second each time.
 
 **Better**
 - **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
