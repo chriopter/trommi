@@ -76,3 +76,23 @@ async fn a_key_of_a_room_the_hub_no_longer_knows_gives_way_to_a_new_invite() {
     mcp.ready().await;
     mcp.close().await;
 }
+
+/// What a hint tells the human to run exists: the connector is updated by `trommi-connector update` (the plugin
+/// holds no program, and there is no connect script any more), and the join command is `connect`.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_update_and_usage_hints_name_commands_that_exist() {
+    let line = trommi_connector::host::update_line();
+    assert!(line.contains("trommi-connector update"), "{line}");
+    assert!(!line.contains("connect script") && !line.contains("plugin"), "{line}");
+
+    let seat = Seat::new("http://127.0.0.1:9");
+    let output = seat
+        .command(&["connect"])
+        .env_remove("TROMMI_INVITE")
+        .output()
+        .await
+        .expect("connect runs");
+    let told = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{told}");
+    assert!(told.contains("trommi-connector connect '<invite link>'"), "{told}");
+}

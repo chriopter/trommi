@@ -17,7 +17,7 @@ pub async fn join(given: Option<String>) -> Result<String> {
         .or_else(|| member::env("TROMMI_INVITE"))
         .ok_or_else(|| {
             Fault::plain(
-                "usage: trommi-connector join <invite link>  (or TROMMI_INVITE=<link> ... join)",
+                "usage: trommi-connector connect '<invite link>' (the link from \"Invite an agent\" in the Trommi app)",
             )
         })?;
     let m = Member::new(connector_config(None, true));
