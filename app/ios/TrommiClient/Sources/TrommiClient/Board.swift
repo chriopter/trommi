@@ -518,11 +518,27 @@ public final class Board {
 
   /** Forget everything the records built (a store that could not be read to its end, a read back from the start). */
   public func reset() {
+    // (who is connected is not in the history: presence is not replayed. What this board knows of it goes to the new
+    // model, which holds each report until the groups name its device again)
+    let presence: [JV] = members.values.filter { $0.isOnline || $0.link != nil }.map { m in
+      var o: [String: JV] = ["device_id": .str(m.deviceId), "is_online": .bool(m.isOnline)]
+      if let t = m.offlineSince { o["offline_since"] = .num(Double(t)) }
+      if let l = m.link {
+        var lj: [String: JV] = ["hears": .str(l.hears), "attached": .bool(l.attached), "working": .bool(l.working)]
+        if let t = l.lastCallAt { lj["last_call_at"] = .num(Double(t)) }
+        if let t = l.since { lj["since"] = .num(Double(t)) }
+        if let t = l.cutSince { lj["cut_since"] = .num(Double(t)) }
+        if l.exitReason != nil || l.exitClaude != nil { lj["exit"] = .obj(["reason": .str(l.exitReason ?? ""), "claude": .str(l.exitClaude ?? "gone")]) }
+        o["link"] = .obj(lj)
+      }
+      return .obj(o)
+    }
     lastEnvelopeNumber = 0
     sessions = [:]; cards = [:]; permissions = [:]; notes = [:]; published = [:]; timelines = [:]; members = [:]
     human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; held = []; sessionList = []
     newerCount = 0; newerWhat = []; newerEnvelope = 0; deviceRegisters = [:]
     engine = ClientModel(myDeviceId: myDeviceId ?? "")
+    if !presence.isEmpty { try? engine.applyPresence(reports: String(decoding: JV.arr(presence).encoded(), as: UTF8.self), nowMs: nowMs()) }
     try? engine.setWindowsOpen(open: true)
     if deskWaiting { try? engine.setDeskHold(hold: true) }
   }
