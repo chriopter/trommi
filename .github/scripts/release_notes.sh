@@ -7,6 +7,8 @@
 # when the day is today. CHANGELOG.md itself names no release numbers.
 # The block as GitHub shows a release: a line that goes on (hard-wrapped) is joined to the one before, since a
 # release's body keeps every line break; "<", ">" and "&" outside `code` are escaped, or GitHub drops "<…>" as HTML.
+# NOTES_BASE (e.g. https://raw.githubusercontent.com/<repo>/<commit>/): put in front of the picture's path, which
+# CHANGELOG.md gives from the repository's root.
 # Prints nothing when there is no such block; never fails, so the notes can never stop a release.
 [ -s "${1:-}" ] || exit 0
 tag=${2:-}
@@ -34,7 +36,7 @@ if iso=$(date -d "$day" +%F 2>/dev/null); then
   elif [ -n "$first" ]; then range=" (v$first – v$last)"; fi
 fi
 
-printf '%s\n' "$block" | awk -v head="## $day$range" '
+printf '%s\n' "$block" | awk -v head="## $day$range" -v base="${NOTES_BASE:-}" '
   # outside `code`: &, < and > as entities
   function esc(s,   n, parts, i, out) {
     n = split(s, parts, "`")
@@ -47,8 +49,10 @@ printf '%s\n' "$block" | awk -v head="## $day$range" '
   }
   function flush() { if (have) print esc(cur); have = 0; cur = "" }
   NR == 1 { print head; next }
+  # the picture: its path from the repository root, made a whole address
+  base != "" && /^!\[[^]]*\]\([^:)]+\) *$/ { flush(); i = index($0, "]("); print substr($0, 1, i + 1) base substr($0, i + 2); next }
   /^[ \t]*$/ { flush(); print ""; next }
-  # a line that starts something of its own: an item, a part (**New**), a heading, a table, a quote
+  # a line that starts something of its own: an item, a part (**New**), a heading, a picture, a table, a quote
   /^([-*+] |[0-9]+\. |#|\*\*[^*]+\*\* *$|!\[|\||>)/ { flush(); cur = $0; have = 1; next }
   # any other line goes on with the line before it
   { line = $0; sub(/^[ \t]+/, "", line); if (have) cur = cur " " line; else { cur = line; have = 1 } }

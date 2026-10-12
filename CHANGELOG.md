@@ -8,6 +8,10 @@ start: up to its first colon, comma or full stop, with a leading "Web:" or "iPho
 too little, a line begins with its own short form in bold: `- **Readable addresses**: …`. The newest three days are
 open with the first three lines of each part; the rest and older days open with a tap.
 
+A day may have at most one picture, a line `![what it shows](app/web/public/changelog/<YYYY-MM-DD>.webp)` right
+under its summary: a screenshot of the demo room only (`?mock=1`, never real data), webp, at most 150 KB. It shows
+small under the summary while the day is one of the newest three.
+
 ## 12 October 2026
 
 Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and settings.
@@ -45,8 +49,8 @@ many agents are still at work.
 - Web: a tab opened again is live in under a second in a big room: the Desk is checked with the hub while it catches up, not before.
 - iPhone Live Activity with nothing waiting: "All answered" with the working ring and how many agents are at work
   (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
-- **What's new at a glance**: the newest three days open with a one-line summary and the first lines of New, Better
-  and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
+- **What's new at a glance**: the newest three days open with a one-line summary, its picture and the first lines of
+  New, Better and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
 
 **Fixed**
 - A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
@@ -68,6 +72,8 @@ many agents are still at work.
 ## 11 October 2026
 
 Agents get their own page. Answer from the Lock Screen. Pushes give nothing away.
+
+![Settings → Agents in the demo room](app/web/public/changelog/2026-10-11.webp)
 
 **New**
 - iPhone: a notification shows the question's title, decrypted on your phone. Until the phone was first unlocked,
@@ -238,6 +244,8 @@ Agents get their own page. Answer from the Lock Screen. Pushes give nothing away
 
 One encryption core everywhere. The connector installs with one line. A new demo room.
 
+![The Desk of the demo room](app/web/public/changelog/2026-10-10.webp)
+
 **New**
 - Trommi now runs on one Rust core built on OpenMLS, the same code in the web app, the iPhone app
   and the connector. Everything on your board stays end-to-end encrypted.
@@ -262,6 +270,8 @@ One encryption core everywhere. The connector installs with one line. A new demo
 ## 9 October 2026
 
 Goals for each desk. The connector on macOS. Live Activities on the iPhone.
+
+![A desk's goals under the greeting, in the demo room](app/web/public/changelog/2026-10-09.webp)
 
 **New**
 - Live Activities on the iPhone keep what waits for you in view; pushes carry the card's title.

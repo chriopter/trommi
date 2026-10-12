@@ -1,6 +1,7 @@
 // WhatsNew.swift: What's new, a row of the menu (MenuPill): the repository's CHANGELOG.md, bundled with the app
 // (Resources/CHANGELOG.md, a link to the file at the root), newest first. The newest three days are open: the date,
-// the summary line, then New, Better and Fixed with their first three lines by their short form (Changelog.head), the
+// the summary line, the day's picture small under it (a shot of the demo room, loaded from the web app:
+// https://app.trommi.com/changelog/…), then New, Better and Fixed with their first three lines by their short form (Changelog.head), the
 // rest under "+N more"; a line opens to its whole text. Older days are one row with their counts, open on a tap.
 // The same file, reading and layout as the web app's page (app/web/dev/build.mjs parseChangelog and changelogHead,
 // app/web/public/news.mjs). Opening it marks the newest day as seen on this phone; until then the menu's row says so.
@@ -15,7 +16,10 @@ struct ChangelogDay: Equatable {
   var day: String
   var releases: String
   var summary = ""
+  /** The day's one picture: what it shows, and where the web app serves it. */
+  var picture: Picture?
   var parts: [Part]
+  struct Picture: Equatable { var alt: String; var url: URL }
   /** The parts in the order New, Better, Fixed (others after them). */
   var ordered: [Part] { parts.sorted { Self.rank($0.kind) < Self.rank($1.kind) } }
   /** "19 new · 41 better · 35 fixed" */
@@ -67,6 +71,10 @@ enum Changelog {
       }
       guard !days.isEmpty else { continue }
       let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if days[days.count - 1].parts.isEmpty, let pic = picture(trimmed) {
+        if days[days.count - 1].picture == nil { days[days.count - 1].picture = pic }
+        continue
+      }
       if days[days.count - 1].parts.isEmpty, !trimmed.isEmpty, !trimmed.hasPrefix("- "), !trimmed.hasPrefix("* "), !trimmed.hasPrefix("**") {
         let s = days[days.count - 1].summary
         days[days.count - 1].summary = s.isEmpty ? trimmed : s + " " + trimmed
@@ -83,6 +91,19 @@ enum Changelog {
       }
     }
     return days
+  }
+
+  /** Where the web app serves the changelog's pictures (app/web/public/changelog/). */
+  static let pictures = URL(string: "https://app.trommi.com/")!
+  /** "![words](app/web/public/changelog/<name>.webp)" as its words and the picture's address on the web app. */
+  static func picture(_ line: String) -> ChangelogDay.Picture? {
+    guard line.hasPrefix("!["), line.hasSuffix(")"), let close = line.range(of: "](") else { return nil }
+    let alt = String(line[line.index(line.startIndex, offsetBy: 2)..<close.lowerBound])
+    var path = String(line[close.upperBound..<line.index(before: line.endIndex)])
+    if path.hasPrefix("app/web/public/") { path.removeFirst("app/web/public/".count) }
+    if path.hasPrefix("/") { path.removeFirst() }
+    guard path.hasPrefix("changelog/"), path.hasSuffix(".webp"), !path.contains(".."), let url = URL(string: path, relativeTo: pictures)?.absoluteURL else { return nil }
+    return .init(alt: alt, url: url)
   }
 
   /** A line's short form, as the web app's changelogHead: a bold start ("**Readable addresses**: …") is the head; else
@@ -138,7 +159,7 @@ struct WhatsNewPage: View {
               Text(d.day).font(Face.display(19, .bold))
               if !d.releases.isEmpty { Text(d.releases).font(Face.text(13)).foregroundStyle(Ink.muted) }
             }.padding(.horizontal, 4)
-            WhatsNewDay(day: d)
+            WhatsNewDay(day: d, picture: true)
           }
         } else {
           WhatsNewOlderDay(day: d)
@@ -149,14 +170,25 @@ struct WhatsNewPage: View {
   }
 }
 
-/** A day's summary line and its parts, each with its first lines and "+N more". */
+/** A day's summary line, its picture (on the open days only), and its parts, each with its first lines and "+N more". */
 struct WhatsNewDay: View {
   let day: ChangelogDay
+  var picture = false
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       if !day.summary.isEmpty {
         Text((try? AttributedString(markdown: day.summary)) ?? AttributedString(day.summary)).font(Face.text(17, .semibold))
           .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+      }
+      if picture, let pic = day.picture {
+        AsyncImage(url: pic.url) { phase in
+          if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) } else { Rectangle().fill(Ink.sunken).aspectRatio(2.2, contentMode: .fit) }
+        }
+        .frame(maxWidth: 280, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Ink.line))
+        .padding(.horizontal, 4)
+        .accessibilityLabel(pic.alt)
       }
       SettingsGroup {
         ForEach(Array(day.ordered.enumerated()), id: \.offset) { i, p in

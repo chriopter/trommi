@@ -548,6 +548,7 @@ details.set-group.set-exp > summary { border-radius: 12px; }
 .news-date { margin: 0 2px; font: 700 var(--t-md)/1.2 var(--display); }
 .news-date small { margin-left: 6px; color: var(--muted); font: 500 var(--t-xs)/1 var(--font); }
 .news-summary { margin: -4px 2px 2px; font: 600 var(--t-md)/1.4 var(--font); text-wrap: pretty; }
+.news-pic { display: block; width: min(100%, 360px); height: auto; margin: 0 2px 4px; border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); border-radius: 10px; background: var(--sunken); }
 .news-parts { margin: 0; }
 .news-part { padding: var(--s-3) var(--s-4); }
 .news-part + .news-part { border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent); }
