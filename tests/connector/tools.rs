@@ -2253,3 +2253,152 @@ async fn a_self_join_the_person_denies_stays_off_the_board() {
     second.close().await;
     first.close().await;
 }
+
+// ---- a new agent is online and named at once -------------------------------------------------------------------
+
+/// Whether the human's stream says the device is online, within `ms`: the presence events of a stream opened now
+/// (the hub tells a new human stream who is here first, and every change after).
+async fn online_within(human: &Human, device: &str, ms: u64) -> bool {
+    let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    let mut online = false;
+    while std::time::Instant::now() < end {
+        let Ok(mut stream) = human.hub.stream(0).await else {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            continue;
+        };
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(400);
+        while let Ok(Ok(Some(event))) = tokio::time::timeout_at(
+            deadline,
+            stream.next(std::time::Duration::from_secs(5)),
+        )
+        .await
+        {
+            if event.name == "presence" && event.data["device"] == device {
+                online = event.data["online"] == Value::Bool(true);
+            }
+        }
+        if online {
+            return true;
+        }
+    }
+    false
+}
+
+/// The exact flow of a fresh Claude Code that joins by link while its MCP server runs: the agent runs
+/// `trommi-connector connect <link>` through Bash, the human confirms, the one-shot process exits. The running
+/// server takes the key and goes online by itself within two seconds, without a tool call, and the session is
+/// named after its folder at once. Then the same after a reconnect (/mcp): the new server is online and named
+/// without a tool call, and it stays online after the human writes to it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_joined_by_the_cli_is_online_and_named_at_once() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let mut mcp = seat.serve().await;
+    let listed = mcp.request("tools/list", json!({})).await;
+    assert_eq!(tool_names(&listed), ["connect"], "{listed}");
+
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = seat.join(&link);
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        let group = human.found_session(&admitted).await;
+        (admitted, group)
+    };
+    let ((joined, log), (admitted, group)) = tokio::join!(connect, admit);
+    assert!(joined, "the join failed:\n{log}");
+    let device = admitted.device.to_base64url();
+
+    assert!(
+        online_within(&human, &device, 2000).await,
+        "the running server went online by itself within 2 s; the join said:\n{log}"
+    );
+    let named = async {
+        for _ in 0..40 {
+            human.sync().await;
+            if let Some(reg) = human.register(&group, &format!("device/{device}")).await {
+                return Some(reg);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        None
+    };
+    let reg = named.await.expect("the device register is written at once");
+    assert_eq!(reg["device_name"], "project", "{reg}");
+
+    // a reconnect (/mcp): the old server ends, a new one starts
+    mcp.close().await;
+    let mut mcp = seat.serve().await;
+    assert!(
+        online_within(&human, &device, 3000).await,
+        "after a reconnect the new server is online without a tool call"
+    );
+    human
+        .say(&group, json!({ "content_type": "message", "text": "Still there?" }))
+        .await
+        .expect("the human writes");
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert!(
+        online_within(&human, &device, 1000).await,
+        "a message of the human leaves it online"
+    );
+    let heard = mcp.event("chat").await;
+    assert!(heard.to_string().contains("Still there?"), "{heard}");
+    mcp.close().await;
+}
+
+/// The same by the connect tool (/trommi:connect): online and named once the human confirmed, then after a
+/// reconnect (/mcp) online again without a tool call, and still online after the human writes to it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_joined_by_the_connect_tool_stays_online_across_a_reconnect() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let mut mcp = seat.serve().await;
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = mcp.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        let group = human.found_session(&admitted).await;
+        (admitted, group)
+    };
+    let ((said, failed), (admitted, group)) = tokio::join!(connect, admit);
+    assert!(!failed, "{said}");
+    let device = admitted.device.to_base64url();
+    assert!(
+        online_within(&human, &device, 3000).await,
+        "online once the human confirmed"
+    );
+
+    mcp.close().await;
+    let mut mcp = seat.serve().await;
+    assert!(
+        online_within(&human, &device, 3000).await,
+        "after a reconnect the new server is online without a tool call"
+    );
+    let mut reg = None;
+    for _ in 0..40 {
+        human.sync().await;
+        reg = human.register(&group, &format!("device/{device}")).await;
+        if reg.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let reg = reg.expect("the device register is written");
+    assert_eq!(reg["device_name"], "project", "{reg}");
+    human
+        .say(&group, json!({ "content_type": "message", "text": "Still there?" }))
+        .await
+        .expect("the human writes");
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    assert!(
+        online_within(&human, &device, 1000).await,
+        "a message of the human leaves it online"
+    );
+    let heard = mcp.event("chat").await;
+    assert!(heard.to_string().contains("Still there?"), "{heard}");
+    mcp.close().await;
+}
