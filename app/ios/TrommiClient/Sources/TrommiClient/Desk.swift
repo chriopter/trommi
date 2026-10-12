@@ -520,7 +520,7 @@ public final class DeskModel {
     return d
   }
   private func permissionCard(_ p: Permission, _ number: Int, now: UInt64) -> DeskCard {
-    let status = p.permissionState == "pending" && !(p.expiresAt > 0 && p.expiresAt < now) ? "open" : "done"
+    let status = p.permissionState == "pending" && now <= p.endsAt ? "open" : "done"
     let key = p.sessionId ?? p.agentDeviceId
     let choice = p.verdict.map { $0.allow ? "allow" : "deny" }
     return DeskCard(id: p.objectId, agent: devToAgent[key] ?? String(key.prefix(SESSION_ID_LEN)), number: number, kind: "permission", status: status, urgency: "critical", urgencyReason: "",

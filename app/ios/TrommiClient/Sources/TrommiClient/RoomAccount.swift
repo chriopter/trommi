@@ -308,6 +308,7 @@ extension Room {
     do { stored = try LocalKey.read(item, dir: store.dir) } catch { if given == nil { return }; stored = nil }
     if let code = given ?? stored {
       guard let left = try? await Core.tools.joinSessionsWithRecoveryCode(device: device, code: code, hub: recoveryHub ?? hub, nowMs: nowMs()), !left.again else { return }
+      codeJoinMissed = Set(left.notJoined.map { hex($0.group) })
       var change = Change()
       for session in left.notJoined { board.pushAlert(&change, code: session.code, message: "a session could not be joined when this device signed in: another device of yours can add it") }
       try? await refreshGroups(&change)
