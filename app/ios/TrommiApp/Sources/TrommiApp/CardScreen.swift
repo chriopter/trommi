@@ -494,7 +494,7 @@ struct LinkNote: View {
       VStack(alignment: .leading, spacing: 4) {
         if !receipt.isEmpty { Text(receipt).font(Face.text(15, .medium)).foregroundStyle(Ink.fg) }
         if let l = link, l.state != "live" { Text(l.line).font(Face.text(14)).foregroundStyle(Ink.muted) }
-        if let say = link?.fixSay, let code = link?.fixCode { VStack(alignment: .leading, spacing: 4) { Text(say).font(Face.text(13)).foregroundStyle(Ink.muted); CodeChip(text: code) } }
+        if let say = link?.fixSay { VStack(alignment: .leading, spacing: 4) { Text(say).font(Face.text(13)).foregroundStyle(Ink.muted); if let code = link?.fixCode { CodeChip(text: code) } } }
         else if late { VStack(alignment: .leading, spacing: 4) { Text("Look at its terminal: type anything to wake it, or reconnect it with").font(Face.text(13)).foregroundStyle(Ink.muted); CodeChip(text: "/mcp → trommi → Reconnect") } }
       }
     }

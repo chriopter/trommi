@@ -23,6 +23,7 @@ final class FakeDevice: CoreDevice {
     var pending: String?                           // an own Commit of the room group that the log has not handed back (hex)
     var oldKeys: [String]?                         // groups (hex) whose keys of before this device came were handed over
     var archived: [String]?                        // session groups (hex) archived here (5.2.10)
+    var adds: [[String]]?                          // open invite steps "add this device to that session group": [invite, group, device] (hex), kept with the state as the core keeps its invites
   }
   let store: CoreStorage
   var state: State
@@ -90,8 +91,32 @@ final class FakeDevice: CoreDevice {
     _ = try queue(.roomFounding, group: room, parts: [j(["room": state.room!, "founder": state.id]), [0]])
     return room!
   }
-  func foundSession(agent: DeviceId, keyPackages: [Bytes], nowMs: UInt64) throws -> SessionId { throw TrommiError("not-built") }
-  func addToSession(group: GroupId, device: DeviceId, keyPackage: Bytes, nowMs: UInt64) throws -> UInt64 { throw TrommiError("not-built") }
+  /** A session founded for the agent: this device is in its group at once (the fake has no Welcome to wait for). */
+  func foundSession(agent: DeviceId, keyPackages: [Bytes], nowMs: UInt64) throws -> SessionId {
+    let sid = systemRandom(16)
+    state.sessions[hex(sid)] = [hex(agent)]
+    try write([])
+    founded.append(agent)
+    return sid
+  }
+  /** The agents a session was founded for, in order. */
+  var founded: [DeviceId] = []
+  /** The agent devices the room enrols (a test's room roles). */
+  var roomAgentsForTest: [DeviceId]?
+  func roomAgents() throws -> [DeviceId]? { roomAgentsForTest }
+  /** A Commit that adds the device to the session group: the invite step that named it is done; `busy` while one is pending. */
+  func addToSession(group: GroupId, device: DeviceId, keyPackage: Bytes, nowMs: UInt64) throws -> UInt64 {
+    guard state.pending == nil else { throw TrommiError("busy") }
+    let commit = j(["add": hex(device), "to": hex(group)])
+    state.pending = hex(commit)
+    state.adds = (state.adds ?? []).filter { !($0[1] == hex(group) && $0[2] == hex(device)) }
+    added.append((group, device))
+    return try queue(.commit, group: group, parts: [commit, [0], [], [0]])
+  }
+  /** The devices added to session groups, in order. */
+  var added: [(group: GroupId, device: DeviceId)] = []
+  /** An invite of this device that still has to add `device` to that session group (a test's "They match"). */
+  func inviteAddsForTest(invite: Bytes, group: GroupId, device: DeviceId) throws { state.adds = (state.adds ?? []) + [[hex(invite), hex(group), hex(device)]]; try write([]) }
   func removeAgents(_ remove: [DeviceId], nowMs: UInt64) throws -> UInt64 { throw TrommiError("not-built") }
   func removeHumanDevices(_ cuts: [Cut], nowMs: UInt64) throws -> UInt64 { throw TrommiError("not-built") }
   func cleanSession(group: GroupId, cuts: [Cut], replacement: (device: DeviceId, keyPackage: Bytes)?, nowMs: UInt64) throws -> UInt64 { throw TrommiError("not-built") }
@@ -287,7 +312,9 @@ final class FakeDevice: CoreDevice {
   func inviteOpen(role: InviteRole, session: SessionId?, app: String, hub: String, nowMs: UInt64) throws -> InviteOpened { throw TrommiError("not-built") }
   func inviteAccept(invite: Bytes, request: SignedRequest, nowMs: UInt64) throws -> InviteAccepted { throw TrommiError("not-built") }
   func inviteConfirm(invite: Bytes, numbers: [UInt8], requestHash: Hash32, matches: Bool, nowMs: UInt64) throws -> InviteConfirmed? { throw TrommiError("not-built") }
-  func inviteSteps() throws -> [InviteStep] { [] }
+  func inviteSteps() throws -> [InviteStep] {
+    (state.adds ?? []).map { .addToSession(invite: try! unhex($0[0]), group: try! unhex($0[1]), device: try! unhex($0[2])) }
+  }
   func inviteHandover(invite: Bytes) throws -> [UInt64] { throw TrommiError("not-built") }
   func inviteRecommit(invite: Bytes, nowMs: UInt64) throws -> UInt64 { throw TrommiError("not-built") }
   func inviteForget(invite: Bytes) throws {}
@@ -386,6 +413,10 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     /** Session groups (hex) the hub holds as archived (spec/hub-api.md point 46). */
     var archivedGroups: Set<String> = []
     var deskReads = 0
+    /** The devices (hex) the hub holds a KeyPackage of; one claimed without is answered 404, as the hub does. */
+    var keyPackages: Set<String> = []
+    /** What GET /v1/rooms/{room}/groups lists as live (`kind`, `leaves` in base64url). */
+    var liveGroups: [[String: Any]] = []
     func add(_ item: [String: Any]) -> UInt64 { change += 1; var i = item; i["change"] = change; items.append(i); return change }
     /** A Commit in the log of a group. */
     func commit(group: Bytes, _ body: [String: Any]) { lock.withLock { _ = add(["kind": "commit", "group_id": b64u(group), "bytes": b64u(j(body))]) } }
@@ -417,6 +448,13 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
         deskReads += 1
         return (200, ["change": change, "cards": cards().map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any]()])
       case ("PUT", "/v1/key-packages"): return (200, ["unused": 100])
+      case ("POST", "/v1/key-packages/claim"):
+        let asked = (body["devices"] as? [String] ?? []).compactMap { try? unb64u($0) }.map(hex)
+        let have = asked.filter { keyPackages.contains($0) }
+        if have.count < asked.count && body["partial"] as? Bool != true { return (404, ["error": "not-found", "message": "no KeyPackage for a device"]) }
+        return (200, ["key_packages": Dictionary(uniqueKeysWithValues: have.map { (b64u(try! unhex($0)), b64u(j(["key_package": $0]))) })])
+      case ("GET", _) where path.hasPrefix("/v1/rooms/") && path.hasSuffix("/groups") && query["archived"] != "1":
+        return (200, ["items": liveGroups, "more": false, "after": liveGroups.count])
       case ("GET", _) where path.hasPrefix("/v1/rooms/") && path.hasSuffix("/groups") && query["archived"] == "1":
         return (200, ["items": archivedGroups.sorted().map { ["group_id": b64u(try! unhex($0)), "kind": "main", "live": false, "leaves": [String]()] as [String: Any] }, "more": false, "after": archivedGroups.count])
       case ("GET", "/v1/changes"):

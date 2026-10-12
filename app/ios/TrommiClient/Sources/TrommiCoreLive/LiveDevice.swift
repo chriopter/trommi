@@ -451,4 +451,5 @@ public final class LiveDevice: TrommiClient.CoreDevice {
   }
   public func lastCommitFacts() -> TrommiClient.CommitFacts? { lastFacts }
   public func recoveryHpkeKey() throws -> Bytes? { try recoveryKeys()?.hpkeKey }
+  public func roomAgents() throws -> [DeviceId]? { try roomRoles()?.agents }
 }

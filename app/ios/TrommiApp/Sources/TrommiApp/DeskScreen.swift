@@ -231,7 +231,7 @@ struct CutSlip: View {
               Text("\(Text(u.agent.name).font(Face.text(15, .semibold)))\(Text(" is cut off\(u.link?.since != nil ? " since \(clockText(u.link!.since!))" : ""): it cannot hear you and cannot write to you.").font(Face.text(15)))")
                 .foregroundStyle(Ink.fg).multilineTextAlignment(.leading)
             }
-            if let fix = u.link?.fixCode { HStack(spacing: 6) { Text(u.link?.fixSay ?? "").font(Face.text(13)).foregroundStyle(Ink.muted); CodeChip(text: fix) }.padding(.leading, 28) }
+            if let say = u.link?.fixSay { HStack(spacing: 6) { Text(say).font(Face.text(13)).foregroundStyle(Ink.muted); if let fix = u.link?.fixCode { CodeChip(text: fix) } }.padding(.leading, 28) }
           }
         }.buttonStyle(.plain)
       }

@@ -472,7 +472,9 @@ const sessionKey = s => s.session_id ?? s.agent_device_id
 //  no session: model.ts takes such settings into the session they belong to once it knows it)
 const sessionsOf = m => {
   const agents = new Set([...m.sessions.values()].filter(s => s.group_id).flatMap(s => [s.agent_device_id, ...(s.agent_device_ids ?? [])]).filter(Boolean))
-  return [...m.sessions].filter(([k, s]) => k === sessionKey(s) && !(s.group_id == null && agents.has(k))).map(([, s]) => s)
+  // (in the order of their keys, on every device: the order they reached this device differs from device to device,
+  //  and the iPhone reads the same order; a place the person gave a session goes first, BoardState.agents)
+  return [...m.sessions].filter(([k, s]) => k === sessionKey(s) && !(s.group_id == null && agents.has(k))).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, s]) => s)
 }
 // What belongs to a session (a card, a request, a published object) names it by session_id or by its agent.
 const keyOf = o => o.session_id ?? o.agent_device_id
@@ -636,7 +638,12 @@ export class BoardState {
     // Agents (sessions) and their ids on the board. A card's board form names its agent: only when that naming
     // changes (a session came, went or was renamed) are all cards made again; a status line changes nothing here.
     const devToAgent = new Map(), agentToDev = new Map()
-    for (const s of sessionsOf(m)) { const id = agentIdOf(s), key = sessionKey(s); devToAgent.set(key, id); agentToDev.set(id, key) }
+    // (two sessions naming the same id: the one active last holds it, as on the iPhone)
+    for (const s of sessionsOf(m)) {
+      const id = agentIdOf(s), key = sessionKey(s), had = agentToDev.get(id)
+      devToAgent.set(key, id)
+      if (had === undefined || !((m.sessions.get(had)?.last_activity_at ?? 0) > (s.last_activity_at ?? 0))) agentToDev.set(id, key)
+    }
     const naming = [...devToAgent].join()
     if (naming !== this.naming) { this.naming = naming; this.cardCache.clear(); this.eventCache.clear(); touched = true; wiped = true; this.closedGen++ }
     this.devToAgent = devToAgent; this.agentToDev = agentToDev
