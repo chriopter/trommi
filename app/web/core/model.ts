@@ -41,7 +41,7 @@
 // timeline.newest_human_envelope_number / newest_agent_envelope_number, the registers room_snapshot and session_history/.
 import { ANSWER_ACTIONS, BOARD_CONTENT_TYPES, CARD_CONTENT_FIELDS, CARD_TYPES, decodeBody, decodePiece } from './codec.ts'
 import type { BodyKind, Fields } from './codec.ts'
-import type { ClientDesk, CommitSummary, DeskCardIn, DeskRequestIn, GroupSummary, ReceivedEnvelope, ReceivedMessage, RoomRoles, Sealed } from './core-api.ts'
+import type { ClientDesk, CommitSummary, GroupSummary, ReceivedEnvelope, ReceivedMessage, RoomRoles, Sealed } from './core-api.ts'
 import { hex } from './ids.ts'
 import { emptyModel, emptyChange, emptyNewer } from './model-shape.ts'
 import { stepEnvelope } from './work.ts'
@@ -1145,7 +1145,7 @@ export function rollbackEcho(model: Model, local_id: string, change: Change): vo
 
 /** The Desk's rules are the client core's (client/src/desk.rs, the binding's `ClientDesk`): the app tells it what
  *  changed and takes back what changed of the Desk. The same rules on every app. */
-export type DeskEngine = Pick<ClientDesk, 'putCards' | 'putRequests' | 'remove' | 'clear' | 'setSnooze' | 'setArchived' | 'setListing' | 'forgetListing' | 'setHoldAll' | 'project'>
+export type DeskEngine = Pick<ClientDesk, 'putCardsJson' | 'putRequestsJson' | 'remove' | 'clear' | 'setSnooze' | 'setArchived' | 'setListing' | 'forgetListing' | 'setHoldAll' | 'projectJson'>
 /** What the model keeps of its Desk engine: whether it holds everything, what is still to hand over, what it held. */
 interface DeskLink { engine: DeskEngine; whole: boolean; listing: { at: number; open: Map<string, number> } | null | undefined; hold: boolean | undefined; archived: string; held: Set<string>; next_wake: number }
 const deskOf = (model: Model): DeskLink | null => (builder(model) as Builder & { desk?: DeskLink }).desk ?? null
@@ -1165,11 +1165,18 @@ export function setDeskHold(model: Model, hold: boolean): void {
   if (d) d.hold = hold
 }
 const byCreated = (model: Model) => (a: string, b: string) => (model.cards.get(a)?.created_at ?? 0) - (model.cards.get(b)?.created_at ?? 0) || (a < b ? -1 : a > b ? 1 : 0)
-const STATE_BYTE: Record<string, number> = { open: 1, answered: 2, closed: 3 }
-const deskCard = (c: Card): DeskCardIn => ({ objectId: c.object_id, sessionId: c.session_id, state: STATE_BYTE[c.object_state] ?? 1, urgency: URGENCY_RANK[c.urgency] ?? 1, createdAt: c.created_at,
-  agentDeviceId: c.agent_device_id ?? '', versionChange: c.envelope_number, newest: c.state_envelope_number, inRevision: c.in_revision?.envelope_number ?? null, read: c.content_state === 'ok' })
-const deskRequest = (p: PermissionRequest): DeskRequestIn => ({ objectId: p.object_id, sessionId: p.session_id, pending: p.permission_state === 'pending', envelopeNumber: p.envelope_number,
-  newest: p.envelope_number, sentAt: p.sent_at, expiresAt: p.expires_at || 0, read: !unreadRequest(p) })
+/** A card and a request as the Desk engine reads them (client/src/desk.rs `DeskCard`, `DeskRequest`): one JSON text
+ *  crosses for a whole batch. */
+const DESK_STATE = new Set(['open', 'answered', 'closed'])
+// (in the field order of `DeskCard` and `DeskRequest`, as a list: the engine reads a struct from either form)
+const deskCard = (c: Card): string => JSON.stringify([c.object_id, c.session_id, DESK_STATE.has(c.object_state) ? c.object_state : 'open', c.urgency ?? null, c.created_at,
+  c.agent_device_id ?? '', c.envelope_number, c.state_envelope_number, c.in_revision?.envelope_number ?? null, c.content_state === 'ok'])
+const deskRequest = (p: PermissionRequest): string => JSON.stringify([p.object_id, p.session_id, p.permission_state === 'pending', p.envelope_number,
+  p.envelope_number, p.sent_at, p.expires_at || 0, !unreadRequest(p)])
+const jsonList = (items: string[]): string => `[${items.join(',')}]`
+/** What changed of the Desk (client/src/desk.rs `Delta`). */
+interface DeskDeltaJson { whole: boolean; stack: string[]; stack_ops: { at: number; gone: number; ids: string[] }[]; permissions_open: string[] | null; held: string[]; unheld: string[]
+  expired: string[]; hand_back_over: string[]; session_open: Record<string, string[]>; session_ops: { session_id: string; at: number; gone: number; ids: string[] }[]; next_wake: number }
 const snoozeAt = (model: Model, id: string): number => model.human.raw.get(`snooze/${id}`)?.envelope_number ?? Number.MAX_SAFE_INTEGER
 
 /**
@@ -1188,18 +1195,18 @@ export function project(model: Model, change: Change, now: number = Date.now()):
   const e = d.engine
   if (!d.whole) {
     e.clear()
-    e.putCards([...model.cards.values()].map(deskCard))
-    e.putRequests([...model.permissions.values()].map(deskRequest))
+    e.putCardsJson(jsonList([...model.cards.values()].map(deskCard)))
+    e.putRequestsJson(jsonList([...model.permissions.values()].map(deskRequest)))
     for (const [id, v] of model.human.snoozes) e.setSnooze(id, JSON.stringify(v), snoozeAt(model, id))
     for (const s of model.sessions.values()) s.card_ids.sort(byCreated(model))
     d.whole = true
     d.archived = ''
   } else {
-    const cards: DeskCardIn[] = [], requests: DeskRequestIn[] = [], gone: string[] = []
+    const cards: string[] = [], requests: string[] = [], gone: string[] = []
     for (const id of change.cards) { const c = model.cards.get(id); if (c) cards.push(deskCard(c)); else gone.push(id) }
     for (const id of change.permissions) { const p = model.permissions.get(id); if (p) requests.push(deskRequest(p)); else gone.push(id) }
-    if (cards.length) e.putCards(cards)
-    if (requests.length) e.putRequests(requests)
+    if (cards.length) e.putCardsJson(jsonList(cards))
+    if (requests.length) e.putRequestsJson(jsonList(requests))
     if (gone.length) e.remove(gone)
     for (const k of change.registers) if (k.startsWith('snooze/')) { const id = k.slice(7), v = model.human.snoozes.get(id); e.setSnooze(id, v == null ? null : JSON.stringify(v), snoozeAt(model, id)) }
   }
@@ -1210,8 +1217,8 @@ export function project(model: Model, change: Change, now: number = Date.now()):
   }
   if (d.listing !== undefined) { if (d.listing) e.setListing(d.listing.at, [...d.listing.open].map(([objectId, versionChange]) => ({ objectId, versionChange }))); else e.forgetListing(); d.listing = undefined }
   if (d.hold !== undefined) { e.setHoldAll(d.hold); d.hold = undefined }
-  const p = e.project(now)
-  d.next_wake = p.nextWake
+  const p = JSON.parse(e.projectJson(now)) as DeskDeltaJson
+  d.next_wake = p.next_wake
   const mark = (id: string, hold: boolean): void => {
     const o = model.cards.get(id) ?? model.permissions.get(id)
     if (!o || hold === !!o.catching_up) return
@@ -1231,21 +1238,22 @@ export function project(model: Model, change: Change, now: number = Date.now()):
   } else {
     for (const id of p.held) { d.held.add(id); mark(id, true) }
     for (const id of p.unheld) { d.held.delete(id); mark(id, false) }
-    if (p.stackOps.length) { const stack = model.stack.slice(); for (const op of p.stackOps) stack.splice(op.at, op.gone, ...op.ids); model.stack = stack; moved = true }
+    // (edited in place: the stack crosses to the page as a copy, patchOf, never as this array)
+    if (p.stack_ops.length) { for (const op of p.stack_ops) model.stack.splice(op.at, op.gone, ...op.ids); moved = true }
   }
-  for (const { sessionId, cardIds } of p.sessionOpen) { const s = model.sessions.get(sessionId); if (s) s.open_card_ids = cardIds }
-  for (const op of p.sessionOps) { const s = model.sessions.get(op.sessionId); if (s) { const l = s.open_card_ids.slice(); l.splice(op.at, op.gone, ...op.ids); s.open_card_ids = l } }
-  if (p.permissionsOpen) {
+  for (const [sessionId, cardIds] of Object.entries(p.session_open)) { const s = model.sessions.get(sessionId); if (s) s.open_card_ids = cardIds }
+  for (const op of p.session_ops) model.sessions.get(op.session_id)?.open_card_ids.splice(op.at, op.gone, ...op.ids)
+  if (p.permissions_open) {
     const was = model.open_permission_ids
-    if (p.permissionsOpen.length !== was.length || p.permissionsOpen.some((v, i) => v !== was[i])) moved = true
-    model.open_permission_ids = p.permissionsOpen
+    if (p.permissions_open.length !== was.length || p.permissions_open.some((v, i) => v !== was[i])) moved = true
+    model.open_permission_ids = p.permissions_open
   }
   for (const id of p.expired) {
     const r = model.permissions.get(id)
     if (!r || r.permission_state !== 'pending') continue
     r.permission_state = 'expired'; change.permissions.add(id); if (r.session_id) change.sessions.add(r.session_id)
   }
-  for (const id of p.handBackOver) { const c = model.cards.get(id); if (c?.in_revision) { c.in_revision = null; change.cards.add(id) } }
+  for (const id of p.hand_back_over) { const c = model.cards.get(id); if (c?.in_revision) { c.in_revision = null; change.cards.add(id) } }
   if (moved) change.stack = true
 }
 

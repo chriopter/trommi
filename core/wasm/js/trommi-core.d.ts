@@ -1069,6 +1069,12 @@ export class ClientDesk {
   forgetListing(): void
   setHoldAll(hold: boolean): void
   project(nowMs: number): DeskDelta
+  /** The browser's lane: the same as putCards, as one JSON list of the core's `DeskCard` (snake case). */
+  putCardsJson(cards: string): void
+  /** The same as putRequests, as one JSON list of the core's `DeskRequest` (snake case). */
+  putRequestsJson(requests: string): void
+  /** The same as project, as the JSON of the core's `Delta` (snake case). */
+  projectJson(nowMs: number): string
 }
 
 /** Decrypts a stored file piece by piece. What `update` handed out counts only once `finish` succeeded. */

@@ -255,6 +255,39 @@ impl ClientDesk {
         })
     }
 
+    /// Cards that are new or changed, as one JSON list of client/src/desk.rs `DeskCard` (snake case, `state` as
+    /// text): the browser's way, one text across instead of a record per card.
+    pub fn put_cards_json(&self, cards: String) -> Result<(), CoreError> {
+        let cards: Vec<DeskCard> = serde_json::from_str(&cards)
+            .map_err(|_| CoreError::bad_format("a list of Desk cards"))?;
+        self.with(|d| {
+            for c in cards {
+                d.put_card(c);
+            }
+            Ok(())
+        })
+    }
+
+    /// Permission requests that are new or changed, as one JSON list of client/src/desk.rs `DeskRequest`.
+    pub fn put_requests_json(&self, requests: String) -> Result<(), CoreError> {
+        let requests: Vec<DeskRequest> = serde_json::from_str(&requests)
+            .map_err(|_| CoreError::bad_format("a list of Desk requests"))?;
+        self.with(|d| {
+            for r in requests {
+                d.put_request(r);
+            }
+            Ok(())
+        })
+    }
+
+    /// What changed of the Desk at `now_ms`, as the JSON of client/src/desk.rs `Delta` (snake case).
+    pub fn project_json(&self, now_ms: u64) -> Result<String, CoreError> {
+        self.with(|d| {
+            serde_json::to_string(&d.project(now_ms))
+                .map_err(|_| CoreError::internal("the Desk could not be said"))
+        })
+    }
+
     /// What changed of the Desk at `now_ms` since the last answer.
     pub fn project(&self, now_ms: u64) -> Result<DeskDelta, CoreError> {
         self.with(|d| {

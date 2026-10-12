@@ -390,6 +390,9 @@ export class ClientDesk extends FileObject {
   forgetListing() { return this[CALL]('forget_listing', []) }
   setHoldAll(hold) { return this[CALL]('set_hold_all', [hold]) }
   project(nowMs) { return this[CALL]('project', [nowMs]) }
+  putCardsJson(cards) { return this[CALL]('put_cards_json', [cards]) }
+  putRequestsJson(requests) { return this[CALL]('put_requests_json', [requests]) }
+  projectJson(nowMs) { return this[CALL]('project_json', [nowMs]) }
 }
 
 // ---- everything without state -------------------------------------------------------------------------------------

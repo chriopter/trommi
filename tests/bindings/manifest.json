@@ -613,6 +613,33 @@
         ],
         "returns": "void"
       },
+      "putCardsJson": {
+        "arguments": [
+          {
+            "name": "cards",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "putRequestsJson": {
+        "arguments": [
+          {
+            "name": "requests",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "projectJson": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
       "project": {
         "arguments": [
           {

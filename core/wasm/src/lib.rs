@@ -327,6 +327,9 @@ methods!(RawClientDesk {
     forget_listing();
     set_hold_all(hold);
     project(now_ms);
+    put_cards_json(cards);
+    put_requests_json(requests);
+    project_json(now_ms);
 });
 
 /// The facade's file decryptor.

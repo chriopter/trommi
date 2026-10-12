@@ -275,7 +275,7 @@ pub struct DeskState {
     visible: Vec<StackKey>,
     visible_key: HashMap<String, StackKey>,
     /// Each session's open, not held cards by (time asked, id), as last answered.
-    session_sets: HashMap<String, BTreeSet<(u64, String)>>,
+    session_sets: HashMap<String, Vec<(u64, String)>>,
     /// Where each card stands in `session_sets`.
     session_of_card: HashMap<String, (String, u64)>,
     held: BTreeSet<String>,
@@ -495,6 +495,8 @@ impl DeskState {
             return self.whole(now);
         }
         let mut d = Delta::default();
+        // (per session, its last edit: the next one right behind it is joined to it)
+        let mut last_op: HashMap<String, usize> = HashMap::new();
         // the cards that changed: their place in the stack, their hold, their sessions
         let dirty = std::mem::take(&mut self.dirty_cards);
         for id in &dirty {
@@ -503,35 +505,36 @@ impl DeskState {
                 let pos = self.visible.partition_point(|k| k < &old);
                 if self.visible.get(pos) == Some(&old) {
                     self.visible.remove(pos);
-                    d.stack_ops.push(StackOp {
-                        at: pos as u32,
-                        gone: 1,
-                        ids: Vec::new(),
-                    });
+                    push_stack_op(&mut d.stack_ops, pos as u32, 1, None);
                 }
             }
             if let Some((s, at)) = self.session_of_card.remove(id) {
                 if let Some(set) = self.session_sets.get_mut(&s) {
                     let entry = (at, id.clone());
-                    let pos = set.range(..&entry).count();
-                    set.remove(&entry);
-                    d.session_ops.push(SessionOp {
-                        session_id: s,
-                        at: pos as u32,
-                        gone: 1,
-                        ids: Vec::new(),
-                    });
+                    let pos = set.partition_point(|e| e < &entry);
+                    if set.get(pos) == Some(&entry) {
+                        set.remove(pos);
+                    }
+                    push_session_op(&mut d.session_ops, &mut last_op, s, pos as u32, 1, None);
                 }
             }
             let was_held = self.held.contains(id);
-            let Some(c) = self.cards.get(id).cloned() else {
+            let Some(c) = self.cards.get(id) else {
                 if was_held {
                     self.held.remove(id);
                     d.unheld.push(id.clone());
                 }
                 continue;
             };
-            let held_now = self.card_held(&c);
+            // (what the card says, read before anything changes: the card itself is not copied)
+            let held_now = self.card_held(c);
+            let hand_back = !held_now && self.listing.is_some() && self.hand_back_over(c);
+            let in_session = match (&c.session_id, c.state == State::Open && !held_now) {
+                (Some(s), true) => Some((s.clone(), c.created_at)),
+                _ => None,
+            };
+            let visible = self.card_visible(c, now);
+            let key = matches!(visible, (true, _)).then(|| stack_key(c));
             if held_now != was_held {
                 if held_now {
                     self.held.insert(id.clone());
@@ -541,38 +544,32 @@ impl DeskState {
                     d.unheld.push(id.clone());
                 }
             }
-            if !held_now && self.listing.is_some() && self.hand_back_over(&c) {
+            if hand_back {
                 d.hand_back_over.push(id.clone());
             }
-            if c.state == State::Open && !held_now {
-                if let Some(s) = &c.session_id {
-                    let set = self.session_sets.entry(s.clone()).or_default();
-                    let entry = (c.created_at, id.clone());
-                    let pos = set.range(..&entry).count();
-                    set.insert(entry);
-                    self.session_of_card
-                        .insert(id.clone(), (s.clone(), c.created_at));
-                    d.session_ops.push(SessionOp {
-                        session_id: s.clone(),
-                        at: pos as u32,
-                        gone: 0,
-                        ids: vec![id.clone()],
-                    });
-                }
+            if let Some((s, created_at)) = in_session {
+                let set = self.session_sets.entry(s.clone()).or_default();
+                let entry = (created_at, id.clone());
+                let pos = set.partition_point(|e| e < &entry);
+                set.insert(pos, entry);
+                push_session_op(
+                    &mut d.session_ops,
+                    &mut last_op,
+                    s.clone(),
+                    pos as u32,
+                    0,
+                    Some(id.clone()),
+                );
+                self.session_of_card.insert(id.clone(), (s, created_at));
             }
-            match self.card_visible(&c, now) {
-                (true, _) => {
-                    let key = stack_key(&c);
+            match (visible, key) {
+                ((true, _), Some(key)) => {
                     let pos = self.visible.partition_point(|k| k < &key);
                     self.visible.insert(pos, key.clone());
                     self.visible_key.insert(id.clone(), key);
-                    d.stack_ops.push(StackOp {
-                        at: pos as u32,
-                        gone: 0,
-                        ids: vec![id.clone()],
-                    });
+                    push_stack_op(&mut d.stack_ops, pos as u32, 0, Some(id.clone()));
                 }
-                (false, Some(until)) => self.wake_from_cards = self.wake_from_cards.min(until),
+                ((false, Some(until)), _) => self.wake_from_cards = self.wake_from_cards.min(until),
                 _ => {}
             }
         }
@@ -627,10 +624,11 @@ impl DeskState {
         for (s, ids) in &p.session_open {
             for id in ids {
                 let at = self.cards[id].created_at;
+                // (the lists come sorted by the time each card was asked: kept as they are)
                 self.session_sets
                     .entry(s.clone())
                     .or_default()
-                    .insert((at, id.clone()));
+                    .push((at, id.clone()));
                 self.session_of_card.insert(id.clone(), (s.clone(), at));
             }
         }
@@ -784,6 +782,50 @@ impl Desk {
         }
         desk
     }
+}
+
+/// One edit of the stack, joined to the edit before when it starts right behind what that one put in (a page of
+/// new cards in a row crosses as one edit, not one per card).
+fn push_stack_op(ops: &mut Vec<StackOp>, at: u32, gone: u32, id: Option<String>) {
+    if let Some(last) = ops.last_mut() {
+        if at == last.at + last.ids.len() as u32 {
+            last.gone += gone;
+            last.ids.extend(id);
+            return;
+        }
+    }
+    ops.push(StackOp {
+        at,
+        gone,
+        ids: id.into_iter().collect(),
+    });
+}
+
+/// One edit of a session's list, joined to that session's edit before as [`push_stack_op`] does (the edits of
+/// different sessions do not touch each other).
+fn push_session_op(
+    ops: &mut Vec<SessionOp>,
+    last_op: &mut HashMap<String, usize>,
+    session_id: String,
+    at: u32,
+    gone: u32,
+    id: Option<String>,
+) {
+    if let Some(&i) = last_op.get(&session_id) {
+        let last = &mut ops[i];
+        if at == last.at + last.ids.len() as u32 {
+            last.gone += gone;
+            last.ids.extend(id);
+            return;
+        }
+    }
+    last_op.insert(session_id.clone(), ops.len());
+    ops.push(SessionOp {
+        session_id,
+        at,
+        gone,
+        ids: id.into_iter().collect(),
+    });
 }
 
 #[cfg(test)]
