@@ -229,12 +229,22 @@ function composeProfile(s: Session): void {
   const { parent_session: _p, is_main: _m, ...own } = isObject(raw) ? raw : {}
   s.profile = { ...own, ...(s.parent_session_id ? { parent_session: s.parent_session_id } : {}), ...(s.group_id != null ? { is_main: s.parent_session_id == null } : {}) }
 }
+/** The name a device gave itself (its register `device/<id>`): `device_name`, else the last part of its folder; read
+ *  from the member, else from the register itself (an agent that left). The same on the iPhone (Board.deviceNameOf). */
+function deviceNameOf(model: Model, device_id: string | null | undefined): string {
+  if (!device_id) return ''
+  const m = model.members.get(device_id), reg = builder(model).device_registers.get(device_id)
+  const named = m?.device_name || String(reg?.['device_name'] ?? '')
+  if (named) return named
+  const folder = String(m?.folder ?? reg?.['folder'] ?? '')
+  return folder.split(/[/\\]/).filter(Boolean).pop() ?? ''
+}
 /** Copy the speaking device's facts onto its session; a helper session without a device of its own shows its opener's. */
 function syncSessionAgent(model: Model, s: Session): void {
   const m = s.agent_device_id ? model.members.get(s.agent_device_id) : undefined
   const opener = s.creator_device_id && s.creator_device_id !== s.agent_device_id ? model.members.get(s.creator_device_id) : undefined
   s.agent_session_id = s.agent_device_id?.slice(0, 16) ?? null
-  s.device_name = m?.device_name || opener?.device_name || ''
+  s.device_name = deviceNameOf(model, s.agent_device_id) || deviceNameOf(model, opener?.device_id) || ''
   s.is_online = Boolean(m?.is_online || opener?.is_online)
   s.offline_since = s.is_online ? null : m?.offline_since ?? opener?.offline_since ?? null
   s.link = (m?.is_online || !opener?.is_online ? m?.link : null) ?? opener?.link ?? null

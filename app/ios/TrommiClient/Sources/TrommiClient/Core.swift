@@ -515,6 +515,8 @@ public protocol CoreDevice: CoreSigner {
   func lastCommitFacts() -> CommitFacts?
   /** The room's recovery key (its HPKE public key, 8.1) at the newest room state; nil before the device follows a room. */
   func recoveryHpkeKey() throws -> Bytes?
+  /** The agent devices the room group enrols now (its `agents` list, 12.1.6); nil before the device follows a room. */
+  func roomAgents() throws -> [DeviceId]?
   /**
    * Learns the past of a group this device came into later (by link, or by a Welcome into a session group), from its
    * public history, in steps (PastWalk.swift): `learnStart` with the founding GroupInfo (epoch 0), `learnSlice` with
@@ -841,4 +843,5 @@ public enum Core {
 public extension CoreDevice {
   func lastCommitFacts() -> CommitFacts? { nil }
   func recoveryHpkeKey() throws -> Bytes? { nil }
+  func roomAgents() throws -> [DeviceId]? { nil }
 }
