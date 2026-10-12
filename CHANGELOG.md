@@ -37,9 +37,18 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **A demo video on trommi.com**: "See how it works", four minutes on the board with sound, right under the top.
 
 **Better**
+- **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
 - **Faster start with many archived sessions**: web, iPhone and the connector load only active sessions from the
   hub; an archived session is loaded when you open it, and stays loaded when the app reads the room anew.
 - **Calmer hero picture**: the phone on trommi.com and in the README now shows one short yes/no question.
+- Web: a new version no longer reloads an open tab while you look at it: a quiet "A new version is ready" offers it, and the tab reloads by itself once it is in the background.
+- Web: pictures and previews come from the browser once shown, not from the hub on every open.
+- Web: an open tab no longer downloads the whole Desk every minute (about 100 MB an hour in a big room); it asks the hub only what changed.
+- Web: a tab opened again is live in under a second in a big room: the Desk is checked with the hub while it catches up, not before.
+- iPhone Live Activity with nothing waiting: "All answered" with the working ring and how many agents are at work
+  (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
+- **What's new at a glance**: the newest three days open with a one-line summary, its picture and the first lines of
+  New, Better and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
 
 **Fixed**
 - **Web: a card you put off comes back when its agent writes again**: Later holds a card only for the version you
@@ -65,26 +74,8 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **Closed helper sessions free their place**: `close_session` now really ends a helper session (once its open
   questions are answered), so an agent is no longer refused a new one while only a few show on the board. An agent
   may keep up to 100 helper sessions open at once (was 32).
-- Web: starring a card no longer shows a line of code for a moment in place of the star.
-- A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
-  writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).
-- iPhone: a permission request whose time ran out says "expired", as on the web, and one signed in with the code
-  no longer misses a helper session that another device added it to first.
-- Web: opening the app again no longer shows old cards for a moment that were closed on another device; the Desk
-  shows only what is open now.
-- iPhone: the cards of a session another device let it into no longer stay missing: what an agent wrote there before
-  is read from the hub, as on the web.
-- iPhone: a short hiccup of the server no longer fails a sign-in with the code: a reading is asked again, as on the web.
-- iPhone: opening the app no longer shows old cards for a moment that were closed on another device, and a card the
-  hub had already closed no longer comes back on every launch; the Desk shows only what is open now.
-- iPhone: signed in with the code, a helper session no longer stays without its name: what its agent wrote there
-  before the iPhone was in it is read again once the sign-in has joined the session, or once another device hands over
-  the keys, as on the web.
-On the iPhone, the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
-many agents are still at work.
 - **`trommi-connector update` replaces a local build**: a connector built by hand and copied over the installed one ("REFUSED as a release" in `--version`) is now replaced by the signed release, also when that release is the newest; before, update said "nothing to do".
 - **No more stuck agent after a hub reset or removal**: a session whose key the hub no longer takes (removed, taken over while away, or of a room the hub does not know) now offers `/trommi:connect` again, and a new invite link gets it back on the board without a restart; before, it said to connect and then refused the link.
-- "The connector needs an update" now says to run `trommi-connector update` (the swap happens by itself), not to update the plugin or run a connect script that no longer exist.
 - **Folders with alike names keep their own keys**: `~/project` and `~/Project` (or `my-app` and `my_app`) no longer share Trommi keys; before, a session in one could see or take the agent of the other.
 - **A 64 MB attachment no longer fails with "too-large"**: the connector took files of exactly 64 MiB, which the hub refuses once padded; it now takes up to 64 MiB less one byte and says the limit in bytes before anything is sent.
 - **A second window in the same folder can be invited**: when a new Claude Code or Codex session in a folder whose agent belongs to another session was not let in by itself (denied, too many, or self-join off), `/trommi:connect` with an invite link now works; before, the connect tool was missing and refused.
@@ -102,6 +93,7 @@ many agents are still at work.
   New, Better and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
 
 **Fixed**
+- Web: starring a card no longer shows a line of code for a moment in place of the star.
 - A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
   writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).
 - iPhone: a permission request whose time ran out says "expired", as on the web, and one signed in with the code
@@ -113,10 +105,12 @@ many agents are still at work.
 - iPhone: a short hiccup of the server no longer fails a sign-in with the code: a reading is asked again, as on the web.
 - **iPhone: no flash of closed cards on opening**: opening the app no longer shows old cards for a moment that were closed on another device, and a card the
   hub had already closed no longer comes back on every launch; the Desk shows only what is open now.
-- iPhone: signed in with the code, a helper session no longer stays without its name: what was written there before the
-  iPhone came opens once another device hands over the keys, as on the web.
+- **iPhone: helper sessions keep their name**: signed in with the code, a helper session no longer stays without its name: what its agent wrote there
+  before the iPhone was in it is read again once the sign-in has joined the session, or once another device hands over
+  the keys, as on the web.
 - iPhone: the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
   many agents are still at work.
+- "The connector needs an update" now says to run `trommi-connector update` (the swap happens by itself), not to update the plugin or run a connect script that no longer exist.
 
 ## 11 October 2026
 
