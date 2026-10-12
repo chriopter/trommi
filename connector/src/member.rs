@@ -733,12 +733,17 @@ impl Member {
 
     fn out_text(was: &Value) -> String {
         let kf = was["key_file"].as_str().unwrap_or("");
-        if was["verified"] == Value::Bool(false) {
-            format!("This connector stopped: the hub no longer takes its device. Either the human removed it or let another connector continue this Trommi session while this one was away, or the hub is wrong. Its state is kept ({kf}); nothing sent from here reaches the board. To use Trommi again here, the human reconnects this session in the Trommi app (a new invite link), then {}.", if crate::host::is_codex() { "gives you the link here and you call connect with it" } else { "/trommi:connect '<link>' in this session" })
-        } else if was["replaced"] == Value::Bool(true) {
-            format!("This connector is retired: the human let another connector continue this Trommi session (a new invite link for the same session), and this key ({kf}) no longer belongs to the room; it is put aside, and no other usable key is left in this folder. Nothing sent from here reaches the board. If this {} session should use Trommi again, the human invites this session again in the Trommi app.", crate::host::name())
+        let then = if crate::host::is_codex() {
+            "gives you the link here and you call connect with it"
         } else {
-            format!("This connector is retired: the human removed its key ({kf}) from the Trommi room; it is put aside, and no other usable key is left in this folder. Nothing sent from here reaches the board. To use Trommi again here, the human invites this session again in the Trommi app.")
+            "runs /trommi:connect '<link>' in this session"
+        };
+        if was["verified"] == Value::Bool(false) {
+            format!("This connector stopped: the hub no longer takes its device. Either the human removed it or let another connector continue this Trommi session while this one was away, or the room is gone from this hub (a new account, a hub set up again). Its state is kept ({kf}); nothing sent from here reaches the board. To use Trommi again here, the human makes a new invite in the Trommi app (\"Invite an agent\"), then {then}; no restart is needed.")
+        } else if was["replaced"] == Value::Bool(true) {
+            format!("This connector is retired: the human let another connector continue this Trommi session (a new invite link for the same session), and this key ({kf}) no longer belongs to the room; it is put aside, and no other usable key is left in this folder. Nothing sent from here reaches the board. If this {} session should use Trommi again, the human makes a new invite in the Trommi app (\"Invite an agent\"), then {then}.", crate::host::name())
+        } else {
+            format!("This connector is retired: the human removed its key ({kf}) from the Trommi room; it is put aside, and no other usable key is left in this folder. Nothing sent from here reaches the board. To use Trommi again here, the human makes a new invite in the Trommi app (\"Invite an agent\"), then {then}.")
         }
     }
     /// The slot this process holds is out. A removal this device verified itself (it processed the Commit)
