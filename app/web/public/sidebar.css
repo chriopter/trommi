@@ -71,6 +71,14 @@
 .agent-invite-label { font-weight: 500; white-space: nowrap; }
 #agents:not(:has(.agent-row[data-unit])) .agent-invite-go { background: var(--accent-soft); color: var(--accent); }
 #agents:not(:has(.agent-row[data-unit])) .agent-invite-label { font-weight: 600; }
+.join-row .agent-entry { cursor: default; }
+.join-mark { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 1.5px dashed var(--accent); color: var(--accent); }
+.join-mark svg { width: 16px; height: 16px; }
+.join-line { color: var(--muted); font-size: .85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.join-acts { flex: none; display: flex; gap: 4px; padding-right: var(--s-2); }
+.join-answer { margin: 0; }
+.join-acts button { min-height: 30px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line, currentColor); background: none; color: inherit; font: inherit; font-size: .85em; cursor: pointer; }
+.join-acts .join-allow { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
 .agent-row { display: flex; align-items: center; min-width: 0; border-radius: var(--r-md); }
 .agent-entry { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-3); min-height: 46px; padding: 6px var(--s-3); border: 0; border-radius: var(--r-md); background: none; text-align: left; transition: background var(--d-fast); }
 .agent-entry:hover { background: var(--sunken); }

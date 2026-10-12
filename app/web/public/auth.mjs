@@ -393,7 +393,8 @@ ${errorLine(error)}<p class="room-meta">"They don't match" burns the invite: nob
       try { await client.answerVouch(match[1], form.get('allow') === 'yes') } catch (err) {
         return t.sendStream(req, res, t.stream('prepend', 'says-host', toast({ head: 'Not answered', line: sayError(err), role: 'alert' })), 422)
       }
-      t.sendStream(req, res, t.stream('remove', `vouch-ask-${match[1]}`, ''))
+      // (Deny: the row goes at once; Allow: it says "joining…" until the session's own row takes its place)
+      t.sendStream(req, res, form.get('allow') === 'yes' ? '' : t.stream('remove', `join-${match[1]}`, ''))
     })
     t.live('invite', {
       take: (mm, clients) => new Map(clients.map(c => c.params.get('invite')).filter(Boolean).map(id => { const inv = m().invites.get(id); return [id, String(inviteMain(inv)).replace(/\d+ more min\.|less than a minute\.|no time left\./g, '').replace(/data-invite-clip-until-value="\d+"/, '')] })),

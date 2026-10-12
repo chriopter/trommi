@@ -31,9 +31,15 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **Invite an agent shows a prompt**: the line to paste is now plain words with the link, "Connect to Trommi with
   this invite link: '…'", which works in Claude Code and Codex even without the slash command; `/trommi:connect`
   stays below it as the other way (web and iPhone).
+- **Web: a new Claude session asks in the sidebar**: a session of your own machine that wants to join shows as a
+  row where sessions live, with its folder's name, "wants to join · <computer>", Allow and Deny; allowed, the row
+  becomes the session.
 
 **Fixed**
 - **New agent online at once**: an agent that joins with `trommi-connector connect` goes online right away under its folder's name, not "gone" under a raw id until its first step.
+- **A new agent no longer waits forever for its session**: when the device that tapped "They match" could not found
+  the agent's session (an iPhone sent away right after, a tab closed), your web app now does it once the agent is
+  connected.
 - **No more "Unknown command: /trommi:connect"**: `trommi-connector setup claude` now replaces a Trommi plugin copy
   older than the slash command (Claude Code kept it because the version number stayed the same) and turns the plugin
   on when it was off, in the Claude Code account `CLAUDE_CONFIG_DIR` names.

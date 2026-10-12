@@ -51,7 +51,7 @@ import type {
   Core, Cut, Device, Draft, ErrorCode, Fed, FeedItem, FeedOutcome, GroupSummary, InviteStep, OutboxEntry, Processed, ReceivedEnvelope, ReceivedMessage, RoomRoles, Sealed, Store,
 } from './core-api.ts'
 import { HubError, logEntry } from './hub.ts'
-import type { ChangeItem, EnvelopeItem, Hub, LogItem, NewAccount, OutboxAnswer, StreamEvent } from './hub.ts'
+import type { ChangeItem, EnvelopeItem, GroupRow, Hub, LogItem, NewAccount, OutboxAnswer, StreamEvent } from './hub.ts'
 import { hex } from './ids.ts'
 import { halving, inSlices } from './slices.ts'
 import type { Connection } from './types.ts'
@@ -1016,7 +1016,7 @@ export class Engine {
     // (not waited for: the hub may hold the answer back while this device is not in yet)
     if (!this.stockAsked && !this.stocking && this.now() - this.timedAt < this.timing.upkeep_every) void this.stockKeyPackages().catch(() => {})
     await this.serial(async () => { await this.joinWelcomes(null); await this.tellFindings(); this.emit('batch', null) })
-    if (this.is_human) await this.heal(await this.invited())
+    if (this.is_human) { const steps = await this.invited(); await this.seatAgents(steps); await this.heal(steps) }
     if (this.is_human) await timed('keys', () => this.askForKeys())
     if (this.now() - this.timedAt >= this.timing.upkeep_every) { this.timedAt = this.now(); await this.timed() }
     if (this.learnDue) { mark('learn'); await timed('learn', () => this.learn()); mark('learn end') }
@@ -1107,6 +1107,56 @@ export class Engine {
           if (now.pending || now.disallowed.length || now.leaves.some(l => same(l, device))) return null
           return d.addToSession(g.group, device, keyPackage, this.now())
         }).catch(() => {})
+      }
+    }
+  }
+  /** Whether an agent device is connected now: the client's presence (the engine does not follow it). */
+  isOnline: (device: Uint8Array) => boolean = () => false
+  /** Agent devices of the room seen without a main session, by hex: since when (`seatAgents`). */
+  private readonly seatless = new Map<string, number>()
+  /**
+   * An agent device of the room that sits in no main session gets one (5.2.2, 5.2.5: a human device founds it, with
+   * the agent as its seat). Its inviter founds it right after "They match" (`invited`); when that inviter cannot
+   * (an iPhone sent away in the middle, a tab closed before the founding went out), any human device does it here,
+   * once the agent is connected and has waited `heal_delay * 10` without a session. An agent this device saw in a
+   * main session, archived ones too, or that the hub lists in a live one, is never given a second: the hub refuses
+   * a second live main session for the same agent anyway (5.2.2), so two human devices at once found one.
+   */
+  private async seatAgents(steps: InviteStep[]): Promise<void> {
+    const agents = this.roles?.agents ?? []
+    const coming = new Set(steps.flatMap(s => (s.device ? [hex(s.device)] : [])))
+    const isMain = (g: GroupSummary): boolean => !!g.session && g.session.parent.every(b => b === 0)
+    const seated = new Set(this.groups.filter(g => g.session).flatMap(g => g.leaves.map(hex)))
+    const waiting = agents.filter(a => !seated.has(hex(a)) && !coming.has(hex(a)))
+    for (const id of [...this.seatless.keys()]) if (!waiting.some(a => hex(a) === id)) this.seatless.delete(id)
+    // (a founding of this device that the hub has not answered: the next upkeep looks again)
+    if (!waiting.length || this.groups.some(g => isMain(g) && g.pending && g.epoch === 0)) return
+    const now = this.now(), grace = this.timing.heal_delay * 10
+    // (looked at again while one waits: its connector may come later; the client also wakes this when it does)
+    this.later(grace, () => this.keepSoon(0))
+    const due = waiting.filter(a => {
+      const id = hex(a), since = this.seatless.get(id)
+      if (since === undefined) { this.seatless.set(id, now); return false }
+      return now - since >= grace && this.isOnline(a)
+    })
+    if (!due.length) return
+    let rows: GroupRow[]
+    try { rows = await this.hub.roomGroups() } catch { this.owing = true; return }
+    for (const g of rows) if (g.kind !== 'room') for (const l of g.leaves) seated.add(hex(l))
+    for (const agent of due) {
+      if (seated.has(hex(agent))) continue
+      try {
+        const keyPackage = (await this.hub.claimKeyPackages([agent]))[0]!.key_package
+        const others = (this.roles?.humans ?? []).filter(h => !same(h, this.device_id))
+        const claimed = others.length ? await this.hub.claimKeyPackages(others, { partial: true }) : []
+        await this.do(d => d.foundSession(agent, [keyPackage, ...claimed.map(c => c.key_package)], this.now()))
+        this.seatless.delete(hex(agent))
+        // one founding at a time: the next upkeep sees it pending, then merged
+        return
+      } catch (e) {
+        if (this.isLocal(e)) throw e
+        this.owing = true
+        this.later(grace, () => this.keepSoon(0))
       }
     }
   }

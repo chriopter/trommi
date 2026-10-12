@@ -306,10 +306,20 @@ controller('corner-note', class extends Controller {
   }
 })
 
+/** A new session of an agent's own machine that asks to join (self-join, spec/v1.md 12.4), as a row where sessions
+ *  live: its folder's name and "wants to join · <host>", with Allow and Deny on the row. Allowed, it says "joining…"
+ *  until the session is founded and its own row takes the place; denied, it goes. */
+export function joinRow(j) {
+  const button = (value, label, cls) => html`<form method="post" action="/vouch/${j.nonce}" class="join-answer"><input type="hidden" name="allow" value="${value}"><button type="submit" class="${cls}">${label}</button></form>`
+  const line = j.state === 'joining' ? 'joining…' : `wants to join${j.host ? ` · ${j.host}` : ''}`
+  const tip = `New ${j.kind} session in ${j.folder || j.name}${j.host ? ` on ${j.host}` : ''}${j.by ? `, vouched for by ${j.by}` : ''}`
+  return html`<div class="agent-row join-row" id="join-${j.nonce}" data-state="${j.state}" title="${tip}"><span class="agent-entry"><span class="join-mark" aria-hidden="true">${PLUS}</span><span class="agent-text"><strong>${j.name}</strong><small class="join-line">${line}</small></span></span>${j.state === 'ask' ? html`<span class="join-acts" role="group" aria-label="${`Allow new ${j.kind} session ${j.name}?`}">${button('yes', 'Allow', 'join-allow')}${button('no', 'Deny', 'join-deny')}</span>` : ''}</div>`
+}
+
 /** The rows of #agents: the sessions (the Scribble Board is the back of the Desk: its page corner). current: the session in view, if any. */
 export function sidebarRows(model, base, current = null) {
   const { here, away } = sidebarParts(model, base, current)
-  return html`${here.map(r => r[1])}${inviteAgentButton()}${away.length ? html`<h2 class="caps agent-heading agent-heading-away">Disconnected</h2>${away.map(r => r[1])}` : ''}${inDemo() ? raw('<span class="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="Every screen of the app in the demo, for review">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave the demo: back to your desks">leave</a></span>') : ''}`
+  return html`${here.map(r => r[1])}${(model.joins ?? []).map(joinRow)}${inviteAgentButton()}${away.length ? html`<h2 class="caps agent-heading agent-heading-away">Disconnected</h2>${away.map(r => r[1])}` : ''}${inDemo() ? raw('<span class="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="Every screen of the app in the demo, for review">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave the demo: back to your desks">leave</a></span>') : ''}`
 }
 // ---- All desks as a filter ----
 // The head says only where the user is: "All desks" or the desk's name, big, beside the desk drawing, a small chevron

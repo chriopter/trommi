@@ -285,6 +285,8 @@ export class Client {
     this.room_id = opts.engine.room_id ?? fail('no-room', 'this device has no room')
     this.my_device_id = hex(opts.engine.device_id)
     this.model = M.emptyModel()
+    // (an agent that waits for its main session is given one once it is connected: engine.ts `seatAgents`)
+    opts.engine.isOnline = device => this.model.members.get(hex(device))?.is_online === true
     this.listen()
   }
   get is_human(): boolean { return this.engine.is_human }
@@ -502,6 +504,8 @@ export class Client {
         //  device is online; the hub tells a new stream the reports of now first, and every change after)
         M.applyPresence(this.model, [{ device_id: hex(event.device), is_online: event.online, offline_since: event.online ? null : this.now(),
           ...(event.hears === null ? {} : { link: { hears: event.hears ? 'live' : 'oncall', attached: true, working: event.working === true, last_call_at: event.last_call_at } }) }], this.change, this.now())
+        // (an agent that came online without a main session gets one: engine.ts seatAgents)
+        if (event.online && this.is_human && this.engine.roles?.agents.some(d => hex(d) === hex(event.device))) this.engine.keepSoon(0)
         if (event.lost) M.pushAlert(this.model, this.change, { code: 'agent-lost', message: 'An agent lost its connection.', sender_device_id: hex(event.device), at: this.now() })
         this.publish()
         return
@@ -1487,7 +1491,7 @@ export class Client {
     if (refused) return answer({ refused })
     const vouch: Vouch = { nonce, session_id: s.session_id, account: String(ask['account']), account_label: String(ask['account_label'] ?? ''), by_name: String(s.settings?.name ?? ask['vouched_by'] ?? '') }
     let invite: Invite
-    try { invite = await this.createInvite({ device_role: 'agent', label: String(ask['name'] ?? '').slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch }) }
+    try { invite = await this.createInvite({ device_role: 'agent', label: (String(ask['name'] ?? '') || String(ask['folder'] ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '').slice(0, 120) || null, desk: s.settings?.desk ?? null, vouch }) }
     catch { return answer({ refused: 'busy' }) }
     await answer({ link: invite.link, invite_id: invite.invite_id })
   }
