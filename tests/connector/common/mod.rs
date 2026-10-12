@@ -97,6 +97,12 @@ impl HubProc {
             .env("HUB_TEST_CONTROL", "1")
             .env("HUB_LIMIT_FOUND_PER_IP_HOUR", "100000")
             .env("HUB_PUSH_HOSTS", "127.0.0.1:9")
+            // (the mega test of the clients lifts the limits: MEGA_HUB_ENV_<name>=<value>)
+            .envs(
+                std::env::vars().filter_map(|(k, v)| {
+                    k.strip_prefix("MEGA_HUB_ENV_").map(|k| (k.to_string(), v))
+                }),
+            )
             .stdin(Stdio::null())
             .stdout(if port == 0 {
                 Stdio::piped()
@@ -218,6 +224,8 @@ pub struct Human {
     pub items: Vec<(String, DeviceId, Value)>,
     /// The Chat messages on a card's own Chat that opened: (card's object id as hex, payload).
     pub card_chats: Vec<(String, Value)>,
+    /// Further human devices a session founded by this device adds at once (their KeyPackages claimed then).
+    pub also_add: Vec<DeviceId>,
 }
 
 pub fn fault_of(error: Error) -> Fault {
@@ -281,6 +289,7 @@ impl Human {
             trail: Vec::new(),
             items: Vec::new(),
             card_chats: Vec::new(),
+            also_add: Vec::new(),
         };
         human.post_all().await.expect("the founding is taken");
         human
@@ -706,9 +715,25 @@ impl Human {
                         .await;
                     }
                     InviteStep::FoundSession { agent, key_package } => {
+                        let mut key_packages = vec![key_package];
+                        for human in self.also_add.clone() {
+                            let id = human.to_base64url();
+                            if let Ok(claimed) = self
+                                .hub
+                                .post(
+                                    "/v1/key-packages/claim",
+                                    &json!({ "devices": [id.clone()] }),
+                                )
+                                .await
+                            {
+                                if let Ok(kp) = unb64(&claimed["key_packages"], &id) {
+                                    key_packages.push(kp);
+                                }
+                            }
+                        }
                         self.v(move |v| {
                             v.device
-                                .found_session(&agent, std::slice::from_ref(&key_package), now_ms())
+                                .found_session(&agent, &key_packages, now_ms())
                                 .expect("the founding is built");
                         })
                         .await;
@@ -901,6 +926,7 @@ impl Human {
                 trail: Vec::new(),
                 items: Vec::new(),
                 card_chats: Vec::new(),
+                also_add: Vec::new(),
                 founding_account: None,
             }
         };

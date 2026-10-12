@@ -23,6 +23,9 @@ look the same on the web and the iPhone.
   no longer misses a helper session that another device added it to first.
 - Web: opening the app again no longer shows old cards for a moment that were closed on another device; the Desk
   shows only what is open now.
+- iPhone: the cards of a session another device let it into no longer stay missing: what an agent wrote there before
+  is read from the hub, as on the web.
+- iPhone: a short hiccup of the server no longer fails a sign-in with the code: a reading is asked again, as on the web.
 On the iPhone, the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
 many agents are still at work.
 
