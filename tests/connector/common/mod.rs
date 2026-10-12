@@ -673,6 +673,11 @@ impl Human {
 
     /// The person taps Deny on the next ask of the agent of `voucher` (12.4): `join_link/<nonce>` = `{ refused: denied }`.
     pub async fn deny_self_join(&mut self, voucher: &GroupId) {
+        self.refuse_self_join(voucher, "denied").await
+    }
+
+    /// Answers the newest ask in the session of `voucher` with `{ refused: why }` (`denied`, `cap`, `busy`).
+    pub async fn refuse_self_join(&mut self, voucher: &GroupId, why: &str) {
         let session = hex(voucher.session_id().expect("a session group").as_bytes());
         let mut nonce = None;
         for _ in 0..600 {
@@ -697,7 +702,7 @@ impl Human {
         self.set_register(
             voucher,
             &format!("join_link/{nonce}"),
-            Some(json!({ "refused": "denied" })),
+            Some(json!({ "refused": why })),
         )
         .await
         .expect("the answer is written");

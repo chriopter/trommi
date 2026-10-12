@@ -2599,7 +2599,7 @@ impl Client {
         if !self.guarded.load(Ordering::SeqCst) {
             return Err(Fault::new(
                 "offline",
-                "the hub has not been reached since this connector started; nothing is signed before it has",
+                "the Trommi hub has not been reached since this connector started (no network, or the hub is down); it keeps trying by itself: call the tool again in a minute. Nothing was sent",
             ));
         }
         // Nothing is queued without a bound while the hub is away (what is sealed again takes the place of
@@ -2607,7 +2607,7 @@ impl Client {
         if again.is_none() && core.outbox.len() >= MAX_WAITING {
             return Err(Fault::new(
                 "offline",
-                "the hub has been away for too long and too much waits for it; nothing more is queued until it is back",
+                "the Trommi hub has been away for too long and too much waits for it (no network, or the hub is down); nothing more is queued until it is back: call the tool again later",
             ));
         }
         let draft = crate::agent::draft(core, &group, &spec)?;

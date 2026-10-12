@@ -136,7 +136,10 @@ pub fn connector_config(folder_override: Option<String>, write: bool) -> Cfg {
         .unwrap()
         .replace(&shown, "")
         .to_string();
-    let derived = format!("{}-{}", slug(&host), slug(&rest));
+    // (the slug alone is lossy: ~/project and ~/Project, my-app and my_app are one slug; a short hash of the
+    // folder's full path keeps their keys apart)
+    let tag = crate::util::hex(&crate::util::sha256(fs_.as_bytes()));
+    let derived = format!("{}-{}-{}", slug(&host), slug(&rest), &tag[..8]);
     let base = slot_base(&folder, &derived, write);
     let session = env("TROMMI_SESSION_KEY").unwrap_or_else(|| format!("ppid:{}", ppid()));
     let owner = if let Some(c) = env("CLAUDE_CODE_SESSION_ID") {
