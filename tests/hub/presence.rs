@@ -1,5 +1,6 @@
 //! Presence at a stream's opening: a human device whose page was loaded fresh is told at once who is here, with
-//! each agent's link report while its lease runs, instead of waiting for the next change of presence.
+//! each agent's link report while its lease runs, instead of waiting for the next change of presence; a `here`
+//! event ends the list.
 
 mod common;
 
@@ -28,15 +29,19 @@ fn a_new_stream_of_a_human_device_is_told_who_is_here_at_once() {
     // a page loaded fresh: its first events say who is here, nothing else had to happen
     let mut page = w.ada.events(hub, None);
     assert_eq!(page.status, 200);
+    // (then one `here` ends the list: a device it did not name is not here)
     let mut told = std::collections::HashMap::new();
+    let mut whole = false;
     while let Some(e) = page.next(Duration::from_secs(2)) {
         if e.name == "presence" {
             told.insert(e.data["device"].as_str().unwrap().to_string(), e.data.clone());
         }
-        if told.contains_key(&b64(&agent.id())) && told.contains_key(&b64(&quiet.id())) {
+        if e.name == "here" {
+            whole = true;
             break;
         }
     }
+    assert!(whole, "the list ends with a `here` event");
     let a = &told[&b64(&agent.id())];
     assert_eq!(a["online"], true);
     assert_eq!(a["hears"], true, "the lease's link report comes with it: {a}");

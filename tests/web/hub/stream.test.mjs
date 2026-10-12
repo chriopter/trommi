@@ -8,7 +8,8 @@ import { scene, client, received, envelope, id, utf8, until, txt } from './helpe
 /** Opens a stream and records what it hands over. */
 function listen(t, hub, after = () => 0) {
   const heard = { events: [], states: [], errors: [], changes: () => heard.events.filter(e => e.event === 'change').map(e => e.item.change) }
-  const close = hub.stream(after, e => heard.events.push(e), s => heard.states.push([s, Date.now()]), e => heard.errors.push(e))
+  // (the `here` that ends the opening list of who is here comes on every new stream: not what these tests count)
+  const close = hub.stream(after, e => { if (e.event !== 'here') heard.events.push(e) }, s => heard.states.push([s, Date.now()]), e => heard.errors.push(e))
   t.after(close)
   return Object.assign(heard, { close })
 }
@@ -96,6 +97,7 @@ test('a receiver is awaited: one whose write fails gets the event again, and the
   const got = []
   let fail = true, busy = 0, overlapped = false
   const close = hub.stream(() => 0, async e => {
+    if (e.event !== 'change') return
     if (busy++) overlapped = true
     await new Promise(r => setTimeout(r, 15))
     busy -= 1

@@ -1400,7 +1400,17 @@ public struct Store {
       }
     case "presence":
       var ch = Change()
-      board.applyPresence(Records.presence(data), change: &ch)
+      let report = Records.presence(data)
+      if report["is_online"].truthy, let id = report["device_id"].string { namedHere?.insert(id) }
+      board.applyPresence(report, change: &ch)
+      emit(ch)
+    case "here":
+      // (the list of who is here is whole: a device shown online that it did not name left while no stream was
+      //  open, its `online: false` missed, as presence is not replayed)
+      guard let named = namedHere else { return }
+      namedHere = nil
+      var ch = Change()
+      board.applyHere(named: named, change: &ch)
       emit(ch)
     case "request":
       // a wish of a signed-in device (readmit, handover, session) or a join request of an invite; a wish for keys
@@ -1447,6 +1457,7 @@ public struct Store {
             if status == 401 { unauthorised = true; reader.stop(); break }
             if status != 200 { refused = true; reader.stop(); break }
             live = true; board.connection = "live"
+            streamOpened()
             var ch = Change(); ch.room = true; emit(ch)
           case .event(let name, let data):
             pause = 300_000_000   // (a stream that brought something was a real one: the next pause is short again)
@@ -1468,6 +1479,11 @@ public struct Store {
     }
     live = false
   }
+
+  /** The live stream opened (again): the hub's list of who is here comes first, ended by a `here` event. */
+  func streamOpened() { namedHere = [] }
+  /** The devices the hub named online since the live stream opened, until its `here` ends that list (nil: none open). */
+  var namedHere: Set<String>?
 
   /** Who is online and what the agents' links say. */
   public func refreshPresence() async {

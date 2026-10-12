@@ -900,7 +900,8 @@ impl App {
 
     /// A stream opened: told under the writer, in order with what the lease watch tells. A human device's new
     /// stream is then told, first, who is here now: one `presence` event per other device with a stream open,
-    /// with its agent's link report while its lease runs (`hears`, `working`, `last_call_at`). Without it a page
+    /// with its agent's link report while its lease runs (`hears`, `working`, `last_call_at`), then one `here`
+    /// event that ends the list. Without it a page
     /// loaded fresh showed every agent as gone until its next lease renewal. (Under the writer too: every later
     /// change of presence is published after it, so the newest word on a device always comes last.)
     pub fn stream_opened(self: &Arc<Self>, auth: &Auth, stream: &crate::live::Stream) {
@@ -952,6 +953,9 @@ impl App {
                 let data = json!({ "device": b64(&device), "online": true, "hears": hears, "working": working, "last_call_at": last_call_at });
                 stream.send_now(crate::live::sse("presence", None, &data));
             }
+            // the list is whole: a device it did not name is not here (a client whose stream was cut missed its
+            // `online: false`, and no presence is replayed)
+            stream.send_now(crate::live::sse("here", None, &json!({})));
             Ok::<_, Refused>(())
         });
     }

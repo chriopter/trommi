@@ -154,6 +154,8 @@ export type StreamEvent =
   | { event: 'request'; kind: 'readmit' | 'handover' | 'session' | 'reject'; id: number; device: Uint8Array; group: Uint8Array | null; n: number | null; committer: Uint8Array | null }
   | { event: 'invite_request'; invite_id: Uint8Array }
   | { event: 'presence'; device: Uint8Array; online: boolean; lost: boolean; hears: boolean | null; working: boolean | null; last_call_at: number | null }
+  /** The end of the list of who is here that a human device's new stream is told first. */
+  | { event: 'here' }
   | { event: 'archived'; group: Uint8Array }
   | { event: 'file_evicted'; file_id: Uint8Array }
 
@@ -499,6 +501,7 @@ function streamEvent(name: string, v: unknown): StreamEvent | null {
         event: 'presence', device: id(o.device, 'device', 32), online: bool(o.online, 'online'), lost: o.lost === true,
         hears: maybe(o.hears, h => bool(h, 'hears')), working: maybe(o.working, w => bool(w, 'working')), last_call_at: maybe(o.last_call_at, t => int(t, 'last_call_at')),
       }
+    case 'here': return { event: 'here' }
     default: return null     // an event of a later hub: not this client's
   }
 }
