@@ -157,7 +157,7 @@ extension Room {
    * whether an agent still waits for a session (the upkeep looks again).
    */
   func seatAgents() async -> Bool {
-    guard let agents = (try? await onCore({ try $0.roomAgents() })) ?? nil, !agents.isEmpty else { seatless = [:]; return false }
+    guard let agents = (try? await onCore({ try $0.roomAgents() })) ?? nil, !agents.isEmpty else { return false }
     var coming = Set<String>()
     for s in (try? await onCore({ try $0.inviteSteps() })) ?? [] {
       switch s {
@@ -166,34 +166,30 @@ extension Room {
       default: break
       }
     }
-    var seated = Set(groups.values.filter { $0.session != nil }.flatMap { $0.leaves.map(hex) })
-    let waiting = agents.map(hex).filter { !seated.contains($0) && !coming.contains($0) }
-    seatless = seatless.filter { waiting.contains($0.key) }
-    if waiting.isEmpty { return false }
-    // (a founding of this device that the hub has not answered: looked at again next round)
-    if groups.values.contains(where: { $0.session != nil && $0.session?.parent == nil && $0.pending && $0.epoch == 0 }) { return true }
-    let now = nowMs()
-    var due = [String]()
-    for id in waiting {
-      guard let since = seatless[id] else { seatless[id] = now; continue }
-      if now >= since + seatGraceMs && board.members[id]?.isOnline == true { due.append(id) }
-    }
-    if due.isEmpty { return true }
+    // Who waits and who is due is the client core's rule (client/src/seats.rs); here the hub is asked and the
+    // session founded.
+    let seated = Set(groups.values.filter { $0.session != nil }.flatMap { $0.leaves.map(hex) })
+    let pendingFounding = groups.values.contains(where: { $0.session != nil && $0.session?.parent == nil && $0.pending && $0.epoch == 0 })
+    let known: JV = .obj(["agents": .arr(agents.map { .str(hex($0)) }), "seated": .arr(seated.sorted().map { .str($0) }),
+                          "coming": .arr(coming.sorted().map { .str($0) }), "founding_pending": .bool(pendingFounding)])
+    try? board.engine.setSeatGrace(ms: seatGraceMs)
+    guard let text = try? board.engine.seatPlan(known: String(decoding: known.encoded(), as: UTF8.self), nowMs: nowMs()),
+          let plan = JV.parse(Bytes(text.utf8)) else { return false }
+    guard let candidates = plan["candidates"].array?.compactMap({ $0.string }) else { return pendingFounding || plan["recheck_at"].double != nil }
     guard let rows = try? await noted({ try await hub.groups() }) else { return true }
-    for g in rows where g["kind"] as? String != "room" { for l in g["leaves"] as? [String] ?? [] { if let b = try? unb64u(l) { seated.insert(hex(b)) } } }
-    for id in due where !seated.contains(id) {
-      guard let agent = try? unhex(id) else { continue }
-      do {
-        guard let kp = try await noted({ try await hub.claimKeyPackages([agent]) }).first?.keyPackage else { continue }
-        let others = (roomGroup.flatMap { groups[hex($0)]?.leaves } ?? []).filter { hex($0) != deviceIdHex }
-        let claimed = others.isEmpty ? [] : try await noted { try await hub.claimKeyPackages(others, partial: true) }
-        _ = try await onCore { try $0.foundSession(agent: agent, keyPackages: [kp] + claimed.map(\.keyPackage), nowMs: nowMs()) }
-        pumpOutbox()
-        seatless[id] = nil
-        return true   // one founding at a time: the next round sees it pending, then merged
-      } catch { continue }
-    }
-    return true
+    var hubSeated = [String]()
+    for g in rows where g["kind"] as? String != "room" { for l in g["leaves"] as? [String] ?? [] { if let b = try? unb64u(l) { hubSeated.append(hex(b)) } } }
+    let enc = { (l: [String]) in String(decoding: JV.arr(l.map { .str($0) }).encoded(), as: UTF8.self) }
+    guard let id = (try? board.engine.seatAfterHub(candidates: enc(candidates), hubSeated: enc(hubSeated))) ?? nil, let agent = try? unhex(id) else { return true }
+    do {
+      guard let kp = try await noted({ try await hub.claimKeyPackages([agent]) }).first?.keyPackage else { return true }
+      let others = (roomGroup.flatMap { groups[hex($0)]?.leaves } ?? []).filter { hex($0) != deviceIdHex }
+      let claimed = others.isEmpty ? [] : try await noted { try await hub.claimKeyPackages(others, partial: true) }
+      _ = try await onCore { try $0.foundSession(agent: agent, keyPackages: [kp] + claimed.map(\.keyPackage), nowMs: nowMs()) }
+      pumpOutbox()
+      try? board.engine.seatFounded(agent: id)
+    } catch {}
+    return true   // one founding at a time: the next round sees it pending, then merged
   }
 
   /** One round: returns whether steps are left (of invites this round ran, or of ones another call runs now). */

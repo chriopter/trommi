@@ -27,6 +27,8 @@ pub mod model;
 pub mod plan;
 pub mod presence;
 pub mod registers;
+pub mod seats;
+pub mod selfjoin;
 pub mod sessions;
 pub mod status;
 pub mod store;

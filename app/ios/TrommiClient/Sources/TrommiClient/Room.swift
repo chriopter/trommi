@@ -238,8 +238,6 @@ public struct Store {
   /** The upkeep's next round of invite steps, while one is planned; its pause grows while steps stay open. */
   var invitesPlanned: Task<Void, Never>?
   var invitesPause: UInt64 = 2_000_000_000
-  /** Agent devices of the room seen without a session, by hex: since when (`seatAgents`). */
-  var seatless: [String: UInt64] = [:]
   /** How long an agent without a session waits for its inviter before any human device founds its session (the
    *  web's heal_delay * 10). */
   var seatGraceMs: UInt64 = 30_000

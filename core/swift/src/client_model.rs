@@ -288,6 +288,56 @@ impl ClientModel {
         })
     }
 
+    /// The seat rule's look (client/src/seats.rs): JSON `{agents, seated, coming, founding_pending}` (hex ids) as the
+    /// app knows it; who is connected is the model's. Answers `{recheck_at}` (nothing to do; look again then) or
+    /// `{candidates}` (read the hub's list of groups, then `seat_after_hub`).
+    pub fn seat_plan(&self, known: String, now_ms: u64) -> Result<String, CoreError> {
+        let k: trommi_client_core::seats::Known = serde_json::from_str(&known).map_err(json_err)?;
+        self.with(|m, _| Ok(serde_json::to_string(&m.seat_plan(k, now_ms)).unwrap_or_default()))
+    }
+    /// After the hub's list: the one agent to found now, of `candidates` (JSON list of hex), none of which the hub lists
+    /// in a session group (`hub_seated`, JSON list of hex).
+    pub fn seat_after_hub(&self, candidates: String, hub_seated: String) -> Result<Option<String>, CoreError> {
+        let c: Vec<String> = serde_json::from_str(&candidates).map_err(json_err)?;
+        let h: std::collections::BTreeSet<String> = serde_json::from_str(&hub_seated).map_err(json_err)?;
+        self.with(|m, _| Ok(m.seats.after_hub(&c, &h)))
+    }
+    /// The founding of `agent`'s main session went out.
+    pub fn seat_founded(&self, agent: String) -> Result<(), CoreError> {
+        self.with(|m, _| {
+            m.seats.founded(&agent);
+            Ok(())
+        })
+    }
+    /// How long an agent waits without a session before this device founds it (tests; default 30 s).
+    pub fn set_seat_grace(&self, ms: u64) -> Result<(), CoreError> {
+        self.with(|m, _| {
+            m.seats.grace_ms = ms;
+            Ok(())
+        })
+    }
+    /// Self-join (client/src/selfjoin.rs): the agents' asks to act on, JSON `[{session_id, nonce, ask, refused}]`.
+    /// `answered`: the nonces this device answered; `pending`: the accounts of its vouched links not through yet.
+    pub fn self_join_asks(&self, answered: String, pending: String) -> Result<String, CoreError> {
+        let a: std::collections::BTreeSet<String> = serde_json::from_str(&answered).map_err(json_err)?;
+        let p: Vec<String> = serde_json::from_str(&pending).map_err(json_err)?;
+        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::selfjoin::asks(m, &a, &p)).unwrap_or_default()))
+    }
+    /// Whether a vouched Request is let in: none while the ask names no hash yet.
+    pub fn self_join_verdict(&self, session_id: String, nonce: String, request_hash: String) -> Result<Option<bool>, CoreError> {
+        self.with(|m, _| Ok(trommi_client_core::selfjoin::verdict(m, &session_id, &nonce, &request_hash)))
+    }
+    /// The devices of archived self-joined sessions still in the room, JSON list of hex.
+    pub fn self_join_retire(&self) -> Result<String, CoreError> {
+        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::selfjoin::to_retire(m)).unwrap_or_default()))
+    }
+    /// The asks as rows of the sidebar, JSON `[{nonce, session_id, state, folder, name, host, kind, by}]`; `invites`:
+    /// JSON `{invite_id: state}` of the invites this device knows.
+    pub fn join_rows(&self, invites: String) -> Result<String, CoreError> {
+        let i: std::collections::BTreeMap<String, String> = serde_json::from_str(&invites).map_err(json_err)?;
+        self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::selfjoin::join_rows(m, &i)).unwrap_or_default()))
+    }
+
     /// What the hub says of devices: JSON `[{device_id, is_online, offline_since, link?}]`.
     pub fn apply_presence(&self, reports: String, now_ms: u64) -> Result<(), CoreError> {
         let reports: Vec<DeviceReport> = serde_json::from_str(&reports).map_err(json_err)?;

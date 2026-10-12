@@ -967,6 +967,93 @@
         ],
         "returns": "void"
       },
+      "seatPlan": {
+        "arguments": [
+          {
+            "name": "known",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "seatAfterHub": {
+        "arguments": [
+          {
+            "name": "candidates",
+            "type": "text"
+          },
+          {
+            "name": "hubSeated",
+            "type": "text"
+          }
+        ],
+        "returns": "optional<text>"
+      },
+      "seatFounded": {
+        "arguments": [
+          {
+            "name": "agent",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "setSeatGrace": {
+        "arguments": [
+          {
+            "name": "ms",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "selfJoinAsks": {
+        "arguments": [
+          {
+            "name": "answered",
+            "type": "text"
+          },
+          {
+            "name": "pending",
+            "type": "text"
+          }
+        ],
+        "returns": "text"
+      },
+      "selfJoinVerdict": {
+        "arguments": [
+          {
+            "name": "sessionId",
+            "type": "text"
+          },
+          {
+            "name": "nonce",
+            "type": "text"
+          },
+          {
+            "name": "requestHash",
+            "type": "text"
+          }
+        ],
+        "returns": "optional<bool>"
+      },
+      "selfJoinRetire": {
+        "arguments": [],
+        "returns": "text"
+      },
+      "joinRows": {
+        "arguments": [
+          {
+            "name": "invites",
+            "type": "text"
+          }
+        ],
+        "returns": "text"
+      },
       "applyWorkTrail": {
         "arguments": [
           {

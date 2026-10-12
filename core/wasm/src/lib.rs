@@ -375,6 +375,14 @@ methods!(RawClientModel {
     stream_opened();
     apply_presence_event(event, now_ms);
     apply_here(now_ms);
+    seat_plan(known, now_ms);
+    seat_after_hub(candidates, hub_seated);
+    seat_founded(agent);
+    set_seat_grace(ms);
+    self_join_asks(answered, pending);
+    self_join_verdict(session_id, nonce, request_hash);
+    self_join_retire();
+    join_rows(invites);
     apply_work_trail(session_id, from, turn, number, time, payload, change_number);
     apply_stroke_piece(from, board, payload, now_ms);
     echo_item(local_id, timeline_key, content, recipient, object_id, now_ms);

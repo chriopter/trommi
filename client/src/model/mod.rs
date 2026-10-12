@@ -120,6 +120,8 @@ pub struct Model {
     pub status_wake: u64,
     /// The devices the hub named online since the live stream opened, until its `here` ends that list (presence.rs).
     pub named_here: Option<std::collections::BTreeSet<String>>,
+    /// Which agent of the room waits for its main session, and since when (seats.rs).
+    pub seats: crate::seats::SeatPlanner,
 }
 
 /// `<kind>:<id>`: a timeline's key.

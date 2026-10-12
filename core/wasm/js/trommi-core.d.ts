@@ -1098,6 +1098,21 @@ export class ClientModel {
   applyPresenceEvent(event: string, nowMs: number): boolean
   /** The `here` that ends a new stream's list of who is here: every other device shown online is offline now. */
   applyHere(nowMs: number): void
+  /** The seat rule's look (client/src/seats.rs): JSON `{agents, seated, coming, founding_pending}` in; JSON
+   *  `{recheck_at}` or `{candidates}` out. */
+  seatPlan(known: string, nowMs: number): string
+  /** After the hub's list of groups: the one agent (hex) to found now, if any. */
+  seatAfterHub(candidates: string, hubSeated: string): string | null
+  seatFounded(agent: string): void
+  setSeatGrace(ms: number): void
+  /** Self-join (client/src/selfjoin.rs): the asks to act on, JSON `[{session_id, nonce, ask, refused}]`. */
+  selfJoinAsks(answered: string, pending: string): string
+  /** Whether a vouched Request is let in; null while the ask names no hash. */
+  selfJoinVerdict(sessionId: string, nonce: string, requestHash: string): boolean | null
+  /** The devices (hex) of archived self-joined sessions still in the room, JSON list. */
+  selfJoinRetire(): string
+  /** The asks as the sidebar's rows, JSON; `invites`: JSON `{invite_id: state}`. */
+  joinRows(invites: string): string
   applyWorkTrail(sessionId: string, from: Uint8Array, turn: Uint8Array, number: number, time: number, payload: Uint8Array, changeNumber: number): boolean
   applyStrokePiece(from: Uint8Array, board: Uint8Array, payload: Uint8Array, nowMs: number): boolean
   echoItem(localId: string, timelineKey: string, content: string, recipient: string | null, objectId: string | null, nowMs: number): string

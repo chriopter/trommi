@@ -410,6 +410,14 @@ export class ClientModel extends FileObject {
   streamOpened() { return this[CALL]('stream_opened', []) }
   applyPresenceEvent(event, nowMs) { return this[CALL]('apply_presence_event', [event, nowMs]) }
   applyHere(nowMs) { return this[CALL]('apply_here', [nowMs]) }
+  seatPlan(known, nowMs) { return this[CALL]('seat_plan', [known, nowMs]) }
+  seatAfterHub(candidates, hubSeated) { return this[CALL]('seat_after_hub', [candidates, hubSeated]) }
+  seatFounded(agent) { return this[CALL]('seat_founded', [agent]) }
+  setSeatGrace(ms) { return this[CALL]('set_seat_grace', [ms]) }
+  selfJoinAsks(answered, pending) { return this[CALL]('self_join_asks', [answered, pending]) }
+  selfJoinVerdict(sessionId, nonce, requestHash) { return this[CALL]('self_join_verdict', [sessionId, nonce, requestHash]) }
+  selfJoinRetire() { return this[CALL]('self_join_retire', []) }
+  joinRows(invites) { return this[CALL]('join_rows', [invites]) }
   applyWorkTrail(sessionId, from, turn, number, time, payload, changeNumber) { return this[CALL]('apply_work_trail', [sessionId, from, turn, number, time, payload, changeNumber]) }
   applyStrokePiece(from, board, payload, nowMs) { return this[CALL]('apply_stroke_piece', [from, board, payload, nowMs]) }
   echoItem(localId, timelineKey, content, recipient, objectId, nowMs) { return this[CALL]('echo_item', [localId, timelineKey, content, recipient, objectId, nowMs]) }
