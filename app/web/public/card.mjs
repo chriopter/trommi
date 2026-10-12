@@ -1906,8 +1906,8 @@ export function register(t) {
         const id = client.params.get('card'), k = `${id}|${client.params.get('from') ?? ''}`, a = was.get(k), b = now.get(k)
         if (!b) return a ? String(stream('refresh')) : ''
         if (!a) return ''
-        const star = a.star !== b.star ? String(stream('replace', `card-star-${id}`, b.star)) : ''
-        const face = star + (t.differs(a.face, b.face) ? String(stream('replace', `card-lead-${id}`, b.face)) : '') + (a.say !== b.say ? String(stream('replace', `card-say-${id}`, b.say)) : '')
+        const star = a.star !== b.star ? String(stream('replace', `card-star-${id}`, raw(b.star))) : ''
+        const face = star + (t.differs(a.face, b.face) ? String(stream('replace', `card-lead-${id}`, b.face)) : '') + (a.say !== b.say ? String(stream('replace', `card-say-${id}`, raw(b.say))) : '')
         if (client.params.has('old')) return t.differs(a.thread, b.thread) ? String(stream('replace', `card-thread-${id}`, b.thread)) : ''
         return face + (t.differs(a.answerSig, b.answerSig) ? stream('replace', `card-answer-${id}`, b.answer) : '') + (t.differs(a.thread, b.thread) ? stream('replace', `card-thread-${id}`, b.thread) : '')
       },
