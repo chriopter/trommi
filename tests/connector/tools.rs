@@ -1970,8 +1970,6 @@ async fn a_second_session_joins_by_itself_vouched_by_the_first() {
         .ok("reply", json!({ "text": "from the second session" }))
         .await;
 
-    human.sync().await;
-    assert!(human.findings.is_empty(), "{:?}", human.findings);
     let in_session = |group: &GroupId| hex(group.session_id().unwrap().as_bytes());
     let texts_of = |human: &Human, group: &GroupId| -> Vec<String> {
         human
@@ -1981,7 +1979,18 @@ async fn a_second_session_joins_by_itself_vouched_by_the_first() {
             .filter_map(|(_, _, payload)| payload["text"].as_str().map(String::from))
             .collect()
     };
-    let new_texts = texts_of(&human, &new_group);
+    // the line who vouched is sent by the joining process itself, right after the join: on a slow machine it may
+    // still be on its way when the session's own reply is in
+    let mut new_texts = Vec::new();
+    for _ in 0..50 {
+        human.sync().await;
+        new_texts = texts_of(&human, &new_group);
+        if new_texts.contains(&"project joined by itself, vouched by project.".to_string()) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(human.findings.is_empty(), "{:?}", human.findings);
     assert!(
         new_texts.contains(&"project joined by itself, vouched by project.".to_string())
             && new_texts.contains(&"from the second session".to_string()),

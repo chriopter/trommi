@@ -1307,16 +1307,25 @@ impl Conn {
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
         let joined = join.await.map_err(|e| e.to_string())?;
+        // the line that says who vouched goes first, before the voucher is told it is done (a knock that may take
+        // a while): the session is usable from the join on, and its own first words come after this line
+        if joined.is_ok() {
+            if let Some(c) = self.member.client() {
+                let mut fields = Map::new();
+                fields.insert(
+                    "text".into(),
+                    json!(format!("{name} joined by itself, vouched by {by}.")),
+                );
+                if let Err(e) = c.send_message(fields, None, None).await {
+                    eprintln!(
+                        "[trommi] self-join: the line who vouched was not sent: {}",
+                        e.text()
+                    );
+                }
+            }
+        }
         let _ = done().await;
         joined.map_err(|e| format!("not joined by itself: {}", e.text()))?;
-        if let Some(c) = self.member.client() {
-            let mut fields = Map::new();
-            fields.insert(
-                "text".into(),
-                json!(format!("{name} joined by itself, vouched by {by}.")),
-            );
-            let _ = c.send_message(fields, None, None).await;
-        }
         eprintln!("[trommi] self-join: in, vouched by \"{by}\"");
         Ok(())
     }
