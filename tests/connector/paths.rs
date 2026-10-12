@@ -247,3 +247,25 @@ async fn the_largest_attachment_and_asset_go_through() {
     assert!(failed && said.contains("67108864 bytes") && said.contains("64 MiB"), "{said}");
     mcp.close().await;
 }
+
+/// An agent opens helper sessions up to the limit (100 live); the next one is refused in words that say what to
+/// do (close one), and after close_session a new one opens.
+#[tokio::test(flavor = "multi_thread")]
+async fn helper_sessions_up_to_the_limit_then_close_one_to_open_another() {
+    let hub = HubProc::start().await;
+    let (_human, seat) = joined_on(&hub).await;
+    let mut mcp = seat.serve().await;
+    mcp.ready().await;
+    for n in 0..100 {
+        let (said, failed) = mcp.call("open_session", json!({ "name": format!("H{n}") })).await;
+        assert!(!failed, "helper {n}: {said}");
+    }
+    let (said, failed) = mcp.call("open_session", json!({ "name": "One more" })).await;
+    eprintln!("101st: {said}");
+    assert!(failed, "{said}");
+    assert!(said.contains("close_session"), "{said}");
+    mcp.ok("close_session", json!({ "name": "H0" })).await;
+    let said = mcp.ok("open_session", json!({ "name": "One more" })).await;
+    assert!(said.starts_with("child session opened"), "{said}");
+    mcp.close().await;
+}

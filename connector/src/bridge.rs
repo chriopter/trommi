@@ -987,7 +987,13 @@ impl Bridge {
         for (k, v) in profile {
             p.insert(k, v);
         }
-        let sid = self.client.open_child_session(p).await?;
+        let sid = self.client.open_child_session(p).await.map_err(|e| {
+            if e.code == "too-many" {
+                err("this agent has as many live helper sessions as it may (100): close_session one whose helper is done (it is archived and frees its place), then open this one again")
+            } else {
+                e
+            }
+        })?;
         self.state.lock().unwrap()["children"]
             .as_object_mut()
             .unwrap()
