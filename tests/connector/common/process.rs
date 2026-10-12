@@ -52,6 +52,11 @@ pub struct Seat {
 }
 
 impl Seat {
+    /// The runtime directory, where the connector's sockets are.
+    pub fn run_dir(&self) -> &std::path::Path {
+        self.run.path()
+    }
+
     pub fn new(hub_url: &str) -> Seat {
         let home = TempDir::new("seat");
         let folder = home.path().join("project");
