@@ -441,6 +441,23 @@ public struct Store {
     let (list, recovery): ([GroupSummary], Bytes?) = try await onCore { d in (try d.groups(), (try? d.recoveryHpkeKey()) ?? nil) }
     try applyGroups(list, &change)
     board.applyRecoveryKey(recovery, change: &change)
+    await notifyKeysIfMoved(list)
+  }
+
+  /**
+   * Called with the session groups' current content keys whenever one of them moved to another epoch (or came or
+   * went), and once after opening: the app hands them to the notification extension (NotifyBridge). Only then are
+   * the keys asked of the core.
+   */
+  public var notifyKeysChanged: (([CoreNotifyKey]) -> Void)?
+  private var notifyEpochs: [String]?
+  /** A refusal of the core here costs only the title in a notification: it never stops a catch-up. */
+  private func notifyKeysIfMoved(_ list: [GroupSummary]) async {
+    guard let hook = notifyKeysChanged else { return }
+    let epochs = list.filter { $0.session != nil }.map { "\(hex($0.group))@\($0.epoch)" }.sorted()
+    guard epochs != notifyEpochs, let keys = try? await onCore({ try $0.notifyKeys() }) else { return }
+    notifyEpochs = epochs
+    hook(keys)
   }
 
   // ---- catching up ---------------------------------------------------------------------------------------

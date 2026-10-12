@@ -5,14 +5,32 @@
 
 Every entry of TrommiApp.entitlements must be in the app's signature, and each extension's file in its own
 signature (TrommiShare, TrommiNotify, TrommiLive). A signature may carry more (application-identifier, the team);
-it may not carry less or another value. With --distribution the app's signature must also name a team and say
-get-task-allow false (a build App Store Connect takes). --mac: the Mac app, TrommiMac.entitlements and no extensions
-(there, a build App Store Connect takes carries no com.apple.security.get-task-allow). Exit 1 names every
-difference."""
+it may not carry less or another value. `$(AppIdentifierPrefix)` in a file (the keychain access groups) is the
+signing team followed by a dot: the team the signature names, or, in an ad hoc signature without a team, any team or
+none. With --distribution the app's signature must also name a team and say get-task-allow false (a build App Store
+Connect takes). --mac: the Mac app, TrommiMac.entitlements and no extensions (there, a build App Store Connect takes
+carries no com.apple.security.get-task-allow). Exit 1 names every difference."""
 import plistlib
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+PREFIX = "$(AppIdentifierPrefix)"
+
+
+def same(want, have, team) -> bool:
+    """Whether a signed value is the file's value, with Xcode's team prefix filled in."""
+    if isinstance(want, str) and PREFIX in want:
+        if not isinstance(have, str):
+            return False
+        head, _, rest = want.partition(PREFIX)
+        if team:
+            return have == f"{head}{team}.{rest}"
+        return re.fullmatch(re.escape(head) + r"(?:[A-Z0-9]{10}\.)?" + re.escape(rest), have) is not None
+    if isinstance(want, list):
+        return isinstance(have, list) and len(want) == len(have) and all(same(w, h, team) for w, h in zip(want, have))
+    return want == have
 
 PARTS = [
     ("", "TrommiApp.entitlements"),
@@ -44,7 +62,7 @@ def main() -> int:
         for key, value in want.items():
             if key not in have:
                 wrong.append(f"{bundle.name}: {key} is missing")
-            elif have[key] != value:
+            elif not same(value, have[key], have.get("com.apple.developer.team-identifier")):
                 wrong.append(f"{bundle.name}: {key} is {have[key]!r}, the file says {value!r}")
         if distribution:
             if mac:

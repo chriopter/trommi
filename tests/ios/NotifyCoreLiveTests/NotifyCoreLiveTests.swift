@@ -28,6 +28,13 @@ final class NotifyCoreLiveTests: XCTestCase {
     throw XCTSkip("no sealed APNs push to open: the binding seals none and spec/vectors carries none")
   }
 
+  /// What is not an envelope opens nothing, whatever keys are handed in.
+  func testOpenEnvelopeRefusesWhatIsNoEnvelope() {
+    let keys = [NotifyKey(group: [UInt8](repeating: 1, count: 48), epoch: 1, key: [UInt8](repeating: 7, count: 32))]
+    XCTAssertThrowsError(try core.openEnvelope(keys: keys, envelope: [1, 2, 3])) { XCTAssertEqual(($0 as? NotifyCoreError)?.code, "bad-format") }
+    XCTAssertThrowsError(try core.openEnvelope(keys: [], envelope: [])) { XCTAssertNotNil($0 as? NotifyCoreError) }
+  }
+
   /// A Live Activity block that does not open, or has another length, gives no counts.
   func testOpenLiveRefusesWhatDoesNotOpen() {
     let key = [UInt8](repeating: 7, count: 32)

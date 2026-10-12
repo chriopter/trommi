@@ -175,6 +175,8 @@ enum Push {
     level = l
     for k in UserDefaults.standard.dictionaryRepresentation().keys where k.hasPrefix("push.") { UserDefaults.standard.removeObject(forKey: k) }
     if let t = UserDefaults.standard.string(forKey: "trommi-push-token") { await register(token: t) }
+    // off: the notification extension's copy of the content keys goes at once; on again: it is written anew
+    if let m = model { NotifyBridge.shared.writeNow(m) }
     #if canImport(ActivityKit) && os(iOS)
     LiveActivities.levelChanged()
     #endif

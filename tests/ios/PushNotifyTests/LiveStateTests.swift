@@ -135,6 +135,7 @@ final class LiveStateTests: XCTestCase {
     struct Sealed: NotifyCore {
       func openPush(key: [UInt8], sealed: [UInt8]) throws -> ApnsPush { throw Nope() }
       func openLive(key: [UInt8], sealed: [UInt8]) throws -> (working: UInt64, waiting: UInt64) { (3, 0) }
+      func openEnvelope(keys: [NotifyKey], envelope: [UInt8]) throws -> NotifyEnvelope { throw Nope() }
     }
     var hub = LiveCounts(working: 1, waiting: 0)
     hub.s = "AAAA"

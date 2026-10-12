@@ -62,6 +62,11 @@ public struct PrefetchStore {
     return found
   }
 
+  /** The kept page that holds `change` (it starts before it and ends at or after it), read and left in place. */
+  public func page(holding change: UInt64) -> Data? {
+    entries().first { $0.after < change && change <= $0.change }.flatMap { try? Data(contentsOf: $0.url) }
+  }
+
   /** The pages that end at or before `after` go: the app has read them. The page that starts there stays. */
   public func drop(upTo after: UInt64) {
     for e in entries() where e.change <= after { try? FileManager.default.removeItem(at: e.url) }
@@ -103,5 +108,18 @@ public enum NotifyPrefetch {
       if (page["more"] as? Bool) != true { break }
     }
     return kept
+  }
+
+  /**
+   * The one change that rang, read straight from the hub (`after` = change − 1, one item) and not kept: for when the
+   * pages kept do not hold it (the store full, the app's cursor already past it). nil without a ticket or a hub.
+   */
+  public static func one(_ push: ApnsPush, context: NotifyContext, get: (URL, [String: String]) async -> Data?) async -> Data? {
+    guard !push.ticket.isEmpty, push.change > 0, let hub = context.hub,
+          hub.hasPrefix("https://") || hub.hasPrefix("http://127.0.0.1") || hub.hasPrefix("http://localhost"),
+          var comps = URLComponents(string: "\(hub)/v1/push-changes") else { return nil }
+    comps.queryItems = [URLQueryItem(name: "after", value: String(push.change - 1)), URLQueryItem(name: "limit", value: "1")]
+    guard let url = comps.url else { return nil }
+    return await get(url, ["trommi-client": context.client ?? "ios/0.0.0", "trommi-ticket": NotifyText.b64u(push.ticket)])
   }
 }

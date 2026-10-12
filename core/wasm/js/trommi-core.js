@@ -167,7 +167,7 @@ function wipe(entries) {
 
 // The device's calls, by the names the module exports them under.
 const DEVICE_CALLS = [
-  'id', 'room', 'cursor', 'is_human', 'is_owner', 'room_roles', 'groups', 'group', 'holds_key',
+  'id', 'room', 'cursor', 'is_human', 'is_owner', 'room_roles', 'groups', 'group', 'holds_key', 'notify_keys',
   'outbox', 'outbox_accepted', 'outbox_refused', 'key_packages_to_upload', 'key_package',
   'found_room', 'found_session', 'found_helper', 'add_to_session', 'remove_agents',
   'remove_human_devices', 'clean_session', 'readmit_helper', 'readmit_human', 'update', 'archive',
@@ -416,6 +416,7 @@ export const generatePushKey = plain('generate_push_key')
 export const openApnsPush = plain('open_apns_push')
 export const openLiveActivity = plain('open_live_activity')
 export const readWebPush = plain('read_web_push')
+export const openNotifyEnvelope = plain('open_notify_envelope')
 export const recoveryAnchor = plain('recovery_anchor')
 export const recoverySignIn = plain('recovery_sign_in')
 export const boardReduce = plain('board_reduce')

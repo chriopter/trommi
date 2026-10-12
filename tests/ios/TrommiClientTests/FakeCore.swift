@@ -77,6 +77,10 @@ final class FakeDevice: CoreDevice {
     }
   }
   func holdsKey(group: GroupId, epoch: UInt64) throws -> Bool { true }
+  /** A "key" per session group and epoch: its id and epoch, which the fake seals nothing with. */
+  func notifyKeys() throws -> [CoreNotifyKey] {
+    try groups().filter { $0.session != nil }.map { CoreNotifyKey(group: $0.group, epoch: $0.epoch, key: Array(($0.group + [UInt8(truncatingIfNeeded: $0.epoch)]).prefix(32))) }
+  }
   func keyPackagesToUpload(unusedAtHub: Int, nowMs: UInt64) throws -> UInt64? { nil }
   func keyPackage(nowMs: UInt64) throws -> Bytes { j(["key_package": state.id]) }
   func foundRoom(recoveryCode: Bytes, nowMs: UInt64) throws -> RoomId {

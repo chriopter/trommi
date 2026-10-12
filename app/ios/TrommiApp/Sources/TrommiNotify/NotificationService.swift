@@ -5,13 +5,17 @@
 //   2. `e` is opened by trommi-core (NotifyCore.openPush): the room, the change number, the urgency;
 //   3. with the push's ticket it reads ahead what the app will catch up on (NotifyPrefetch: the hub's pages,
 //      ciphertext, into the App Group's container), a few seconds at most;
-//   4. the notification goes out with the text that urgency calls for (NotifyOpen.text), threaded by its room.
-// No title of a card is shown: a content key never leaves the core, so the extension has none and opens no
-// envelope (PushNotify's NotifyContext.swift and NotifyCore.swift). A push that does not open leaves the fixed text
-// exactly as it came. No error is ever shown.
+//   4. with the read-only copy of its room's current content keys (PushNotify: NotifyKeys, an item only the app and
+//      this extension read) it opens the envelope of that change and takes the card's title (NotifyTitle);
+//   5. the notification goes out with that title, the text that urgency calls for (NotifyOpen.text), threaded by
+//      its room.
+// A push that does not open leaves the fixed text exactly as it came; an envelope that does not open (no keys yet,
+// the phone not unlocked since it started, a new epoch the app has not written yet) leaves the title "Trommi". No
+// error is ever shown.
 //
-// The extension does no cryptography in Swift and never opens the device's store: it holds no device key, no
-// content key and no MLS state, and cannot sign, send or sign in.
+// The extension does no cryptography in Swift and never opens the device's store: it holds no device key and no MLS
+// state, writes nothing to the Keychain, and cannot sign, send or sign in. The title it shows is decrypted, but its
+// sender is checked only by signature; the app checks everything when it opens.
 import Foundation
 import PushNotify
 import NotifyCoreLive
@@ -71,13 +75,18 @@ enum NotifyWork {
           let c = fallback.mutableCopy() as? UNMutableNotificationContent else { return fallback }
     c.threadIdentifier = NotifyOpen.thread(push)
     c.body = NotifyOpen.text(push)
-    if let store = NotifyGroup.prefetch(room: NotifyOpen.roomHex(push)) {
+    let store = NotifyGroup.prefetch(room: NotifyOpen.roomHex(push))
+    if let store {
       _ = await NotifyPrefetch.run(push, context: context, store: store, get: fetch)
+    }
+    if !Task.isCancelled,
+       let title = await NotifyTitle.find(push, context: context, keys: NotifyKeyGroup.read(), store: store, core: NotifyCoreLive(), get: fetch) {
+      c.title = title
     }
     return c
   }
 
-  /** One GET, bounded in time; nil on anything but 200. The ticket in the URL is never logged. */
+  /** One GET, bounded in time; nil on anything but 200. The ticket travels in a header and is never logged. */
   static func fetch(_ url: URL, _ headers: [String: String]) async -> Data? {
     var req = URLRequest(url: url, timeoutInterval: 6)
     for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }

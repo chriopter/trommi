@@ -113,20 +113,34 @@ sign_dir="$work/signing"
 APP_GROUPS=group.com.trommi.ios "$PY" "$TOOLS/asc.py" identity "$app" "$sign_dir"
 chmod 600 "$ASC_IDENTITY_DIR/key.pem"
 # Each bundle: its profile's entitlements plus its own (the app: aps-environment production, the App Group, the
-# associated domain applinks:app.trommi.com, communication notifications; each extension: the App Group), each one
-# checked against what its profile grants (a profile grants associated domains as "*").
+# associated domain applinks:app.trommi.com, communication notifications, its keychain access groups; each extension:
+# the App Group; the notification extension also the keychain access group it shares with the app alone), each one
+# checked against what its profile grants (a profile grants associated domains as "*", keychain groups as "<team>.*").
 merge_entitlements() {
 "$PY" - "$1" "$2" "$3" <<'PYEOF'
-import plistlib, sys
+import fnmatch, plistlib, sys
 out, extra, prov = sys.argv[1:]
 ent = plistlib.load(open(out, "rb"))
 raw = open(prov, "rb").read()
 granted = plistlib.loads(raw[raw.index(b"<?xml"):raw.index(b"</plist>") + 8])["Entitlements"]
+# Xcode's $(AppIdentifierPrefix) (the keychain access groups) is the profile's team and a dot.
+team = granted.get("com.apple.developer.team-identifier", "")
+def fill(v):
+    if isinstance(v, str):
+        return v.replace("$(AppIdentifierPrefix)", team + ".")
+    return [fill(x) for x in v] if isinstance(v, list) else v
+def grants(k, v):
+    g = granted.get(k)
+    if g == v or (isinstance(v, list) and g == "*"):
+        return True
+    # a profile grants keychain access groups as patterns ("<team>.*")
+    return isinstance(v, list) and isinstance(g, list) and all(any(fnmatch.fnmatchcase(x, p) for p in g) for x in v)
 # Communication notifications (the session's drawing on a push) need a tick in the developer portal the API cannot
 # make (app/ios/README.md "Push"): without it the build ships without them, and a push shows the title without the drawing.
 OPTIONAL = {"com.apple.developer.usernotifications.communication"}
 for k, v in plistlib.load(open(extra, "rb")).items():
-    if granted.get(k) != v and not (isinstance(v, list) and granted.get(k) == "*"):
+    v = fill(v)
+    if not grants(k, v):
         if k in OPTIONAL:
             print(f"warning: {k} left out (the profile does not grant it; app/ios/README.md \"Push\")")
             continue

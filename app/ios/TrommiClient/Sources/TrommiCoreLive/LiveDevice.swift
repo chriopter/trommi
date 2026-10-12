@@ -53,8 +53,12 @@ public final class LiveDevice: TrommiClient.CoreDevice {
     }
   }
 
-  /// Whether this device holds the content key of that group and epoch. The key itself never leaves the core.
+  /// Whether this device holds the content key of that group and epoch. The key itself stays in the core.
   public func holdsKey(group: GroupId, epoch: UInt64) throws -> Bool { try core { try device.holdsKey(group: group.data, epoch: epoch) } }
+  /// Of each session group, the content key of its current epoch: the notification extension's read-only copy.
+  public func notifyKeys() throws -> [CoreNotifyKey] {
+    try core { try device.notifyKeys() }.map { CoreNotifyKey(group: $0.group.bytes, epoch: $0.epoch, key: $0.key.bytes) }
+  }
 
   // ---- real: KeyPackages ----------------------------------------------------------------------------------
 
