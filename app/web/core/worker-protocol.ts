@@ -40,7 +40,7 @@ export interface Extra { stats?: Record<string, number> | null; tabRole?: string
  *  room snapshots (no view calls it); `sendStrokePiece` is new (spec 7.2). */
 export const CALLS: readonly string[] = Object.freeze([
   // life
-  'start', 'stop', 'flush', 'settle', 'catchUp',
+  'start', 'stop', 'flush', 'settle', 'catchUp', 'deskFirst',
   // human actions
   'sendMessage', 'answer', 'trust', 'markRead', 'shred', 'decideAgain', 'verdict', 'setRegisters', 'setDraft', 'snooze',
   'duck', 'star', 'setCrown', 'setDesk', 'saveNote', 'deleteNote', 'sendStrokes', 'sendStrokePiece', 'declareBoardFrontier', 'postBoardFrontier', 'createInvite', 'confirmInvite', 'answerVouch', 'removeDevices',

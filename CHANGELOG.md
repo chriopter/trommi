@@ -21,6 +21,8 @@ look the same on the web and the iPhone.
   writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).
 - iPhone: a permission request whose time ran out says "expired", as on the web, and one signed in with the code
   no longer misses a helper session that another device added it to first.
+- Web: opening the app again no longer shows old cards for a moment that were closed on another device; the Desk
+  shows only what is open now.
 On the iPhone, the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
 many agents are still at work.
 

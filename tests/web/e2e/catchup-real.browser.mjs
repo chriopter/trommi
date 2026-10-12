@@ -51,7 +51,7 @@ const head = ctx => ctx.writer.page.js('return trommi.client.model.room.last_env
 const q = s => JSON.stringify(s)
 
 /** The agent: a device on the real core in Node, let in by the agent invite of page A. */
-async function agentIn(ctx, A, name = 'cr-agent') {
+export async function agentIn(ctx, A, name = 'cr-agent') {
   await ui.openSettings(A)
   // (Settings has two of them, one for each layout: the one shown is pressed)
   const shown = "[...document.querySelectorAll('#settings-invite-agent')].find(b => b.getClientRects().length)"
