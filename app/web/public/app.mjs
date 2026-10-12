@@ -141,7 +141,8 @@ export function blockedOf(agent, state, now = Date.now()) {
     return null
   }
   if (agent.error) return { why: 'error', text: `Error: ${String(agent.error).slice(0, 160)}` }
-  const waiting = (state.cards ?? []).filter(c => c.agent === agent.id && c.status === 'open' && !c.with_agent)
+  // (what he put off, Later, is not on the Desk: it does not make the session wait on him either)
+  const waiting = (state.cards ?? []).filter(c => c.agent === agent.id && c.status === 'open' && !c.with_agent && !c.snoozed_until)
   if (waiting.some(c => c.kind === 'permission')) return { why: 'permission', text: 'Waiting for permission' }
   if (waiting.some(c => c.urgency === 'critical')) return { why: 'blocking', text: 'Waiting for you: a blocking question' }
   return null
@@ -171,7 +172,7 @@ export function quietOf(agent, state, now = Date.now()) {
 export const ASLEEP_MS = 10 * 60000
 /** An answer the session has not picked up for this long is worth a word. */
 export const UNHEARD_MS = 2 * 60000
-const RECONNECT = '/mcp → trommi → Reconnect', LIVE_FLAG = 'claude --resume --dangerously-load-development-channels server:trommi'
+const RECONNECT = '/mcp → trommi → Reconnect'
 /** What differs for a session in Codex (its device says platform "codex"): it is restarted, never reconnected in
  *  /mcp; it shows no live events but is woken by its connector, and without that reads the board on its next turn. */
 const codexOf = agent => agent?.client === 'codex'
@@ -195,8 +196,8 @@ export function linkOf(agent, now = Date.now()) {
   const ago = min == null ? '' : `; its last one was ${min} min ago`
   // Codex between turns is there, not asleep: it reads what you write when its next turn starts
   if (codex) return { state: 'oncall', sign: 'ear-later', since: last, word: 'on its next turn', short: 'Reads you on its next turn', line: `${n} runs in Codex: it reads what you write when its next turn starts${ago}.`, fix: idle != null && idle >= ASLEEP_MS ? { say: 'To start a turn now, type anything in its Codex terminal. Trommi wakes Codex by itself once the connector is current:', code: 'trommi-connector update' } : null }
-  if (idle != null && idle >= ASLEEP_MS) return { state: 'asleep', sign: 'ear-later', since: last, word: `not listening · ${min} min`, short: `Not listening for ${min} min`, line: `${n} is not listening: it hears you only on its next step, and its last one was ${min} min ago.`, fix: { say: 'Wake it: type anything in its terminal. To be heard at once, start it with', code: LIVE_FLAG } }
-  return { state: 'oncall', sign: 'ear-later', since: last, word: 'on its next step', short: 'Hears you on its next step', line: `${n} hears you on its next step${ago}.`, fix: { say: 'To be heard at once, start it with', code: LIVE_FLAG } }
+  if (idle != null && idle >= ASLEEP_MS) return { state: 'asleep', sign: 'ear-later', since: last, word: `not listening · ${min} min`, short: `Not listening for ${min} min`, line: `${n} is not listening: it hears you only on its next step, and its last one was ${min} min ago.`, fix: { say: 'Wake it: type anything in its terminal.', code: '' } }
+  return { state: 'oncall', sign: 'ear-later', since: last, word: 'on its next step', short: 'Hears you on its next step', line: `${n} hears you on its next step${ago}.`, fix: null }
 }
 /** Whether the card's session has the human's last word on it (his answer, or the hand-back): null when there is
  *  nothing to hear; else { heard: true | false | null (no receipts), waiting: ms, late }. */
@@ -586,6 +587,16 @@ export function closedMemo(state, key, fn) {
   return closedKept.m.get(key)
 }
 
+/** Whether his "Later" still holds a card off the Desk: until its time (the next morning) and only for the version he
+ *  put off. A newer version of the card (revised, its urgency raised) wakes it, as the clock does:
+ *  what the agent says anew is never hidden behind an old snooze. The same rule as the core's stack (core/model.ts). */
+export function snoozeHolds(m, c, now = Date.now()) {
+  const v = m.human.snoozes.get(c.object_id)
+  if (!v || (v.until != null && !(v.until > now))) return false
+  const at = m.human.raw.get(`snooze/${c.object_id}`)?.envelope_number
+  return !(Number.isInteger(at) && (c.envelope_number ?? 0) > at)
+}
+
 export class BoardState {
   constructor(client) {
     this.client = client
@@ -726,6 +737,13 @@ export class BoardState {
     }
     this.state = state
     this.version++
+    // (when the next of his snoozes ends: the page wakes that card then, without waiting for another change: boot)
+    // (over his snoozes alone, a few: never a pass over every card)
+    this.wakes = []; this.nextWake = Infinity
+    for (const id of m.human.snoozes.keys()) {
+      const c = state.byId.get(id)
+      if (c?.status === 'open' && c.snoozed_until) { this.wakes.push(id); this.nextWake = Math.min(this.nextWake, c.snoozed_until) }
+    }
     return state
   }
 
@@ -853,8 +871,8 @@ export class BoardState {
     // mind with the working strip, never on the Desk; its "Done: …" version brings it to the Desk.
     if (c.working === true && status === 'open' && card.kind === 'info') { card.working = true; card.with_agent ??= c.created_at ?? Date.now() }
     if (draft && status === 'open') card.draft = { keys: draft.keys ?? [], note: draft.note ?? '', notes: draft.notes ?? {}, ...(draft.marks?.length ? { marks: draft.marks } : {}), ts: draft.ts ?? 0 }
-    if (snooze?.until > Date.now() && status === 'open') { card.snoozed_until = snooze.until; card.snoozed_at = snooze.at ?? 0 }
-    else if (snooze?.until && status === 'open') card.unsnoozed = snooze.until   // woken by hand or by the clock: "Back from snooze"
+    if (status === 'open' && snoozeHolds(m, c)) { card.snoozed_until = snooze.until; card.snoozed_at = snooze.at ?? 0 }
+    else if (snooze?.until && status === 'open') card.unsnoozed = snooze.until   // woken by hand, by the clock or by a new version: "Back from snooze"
     if (star) card.starred = star.at ?? 1   // his star: when he set it
     // (its agent closed it after his answer, close_card: What?? asks about what it did)
     if (status === 'done' && c.closed_how === 'closed' && a && !a.pending && a.answer_action !== 'read' && a.answer_action !== 'shred') card.finished = true
@@ -2226,7 +2244,24 @@ async function start(client, { fresh = false } = {}) {
     board.update(c)
     unpatched = true
     window.trommi.lastUpdateMs = performance.now() - t
+    wakeLater()
   }
+  // A card he put off comes back on the Desk when its time comes (the next morning), also while the page stays open
+  // and nothing else changes: its board form is made again then (BoardState.nextWake).
+  let wakeTimer = 0, wakeAt = Infinity
+  const wakeLater = () => {
+    if (board.nextWake === wakeAt) return
+    clearTimeout(wakeTimer); wakeTimer = 0; wakeAt = board.nextWake
+    if (!Number.isFinite(wakeAt)) return
+    wakeTimer = setTimeout(() => {
+      wakeTimer = 0; wakeAt = Infinity
+      const cards = new Set(board.wakes)
+      if (!pending) pending = merge({ cards: new Set(), sessions: new Set(), permissions: new Set(), notes: new Set(), published: new Set(), timelines: new Set(), registers: new Set(), invites: new Set() }, { cards })
+      else merge(pending, { cards })
+      frame ||= requestAnimationFrame(() => apply())
+    }, Math.min(2 ** 31 - 1, Math.max(0, wakeAt - Date.now()) + 100))
+  }
+  wakeLater()
   const apply = () => {
     cancelAnimationFrame(frame); frame = 0
     update()
@@ -2248,6 +2283,7 @@ async function start(client, { fresh = false } = {}) {
     cancelAnimationFrame(frame); frame = 0
     pending = null; unpatched = false
     board.update()
+    wakeLater()
     router.refresh()
     conn()
   }

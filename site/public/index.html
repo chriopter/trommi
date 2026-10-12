@@ -129,11 +129,13 @@
       <ol class="term-body">
         <li><span class="c"># 1. once per machine: install the connector</span>
 <pre tabindex="0" aria-label="The install command"><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh</pre></li>
-        <li><span class="c"># 2. in Claude Code, in a project folder, with the invite link from Invite Agent… in the app</span>
+        <li><span class="c"># 2. in a project folder, start claude (or codex) and paste, with the invite link from Invite Agent… in the app</span>
+<pre tabindex="0" aria-label="The connect prompt"><span class="p">&gt;</span> Connect to Trommi with this invite link: '<i>the invite link</i>'</pre>
+<span class="c"># or in Claude Code, the slash command</span>
 <pre tabindex="0" aria-label="The connect command"><span class="p">&gt;</span> /trommi:connect '<i>the invite link</i>'</pre></li>
         <li><span class="c"># 3. compare the six emoji here and in the app, confirm: the next question lands on your Desk</span></li>
       </ol>
-      <p class="term-note">In Codex, ask the agent to connect with the link.</p>
+      <p class="term-note">Claude Code asks once whether to use the trommi MCP server: choose “Use this MCP server”.</p>
     </div>
   </div>
 </section>
