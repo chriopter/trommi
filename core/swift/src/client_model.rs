@@ -309,6 +309,10 @@ impl ClientModel {
             Ok(())
         })
     }
+    /// This device's founding for `agent` failed: when to try again (ms; a short pause that doubles up to the grace).
+    pub fn seat_failed(&self, agent: String, now_ms: u64) -> Result<u64, CoreError> {
+        self.with(|m, _| Ok(m.seats.failed(&agent, now_ms)))
+    }
     /// How long an agent waits without a session before this device founds it (tests; default 30 s).
     pub fn set_seat_grace(&self, ms: u64) -> Result<(), CoreError> {
         self.with(|m, _| {

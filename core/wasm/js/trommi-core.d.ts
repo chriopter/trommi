@@ -1104,6 +1104,8 @@ export class ClientModel {
   /** After the hub's list of groups: the one agent (hex) to found now, if any. */
   seatAfterHub(candidates: string, hubSeated: string): string | null
   seatFounded(agent: string): void
+  /** This device's founding for the agent failed: when to try again (ms). */
+  seatFailed(agent: string, nowMs: number): number
   setSeatGrace(ms: number): void
   /** Self-join (client/src/selfjoin.rs): the asks to act on, JSON `[{session_id, nonce, ask, refused}]`. */
   selfJoinAsks(answered: string, pending: string): string

@@ -49,7 +49,16 @@ pub struct SeatPlanner {
     /// Agent devices seen without a session: since when.
     seatless: BTreeMap<String, u64>,
     pub grace_ms: u64,
+    /// The agents this device's own invites were at work on at the last look (`Known::coming`).
+    was_coming: BTreeSet<String>,
+    /// A founding of this device that failed: when to try again, and how often it failed.
+    retry: BTreeMap<String, (u64, u32)>,
+    /// Agents whose inviter is this device and whose founding the core gave up: no grace for them.
+    own: BTreeSet<String>,
 }
+
+/// The first pause after a founding that failed; it doubles up to the grace.
+pub const SEAT_RETRY_FIRST_MS: u64 = 1_000;
 
 impl Default for SeatPlanner {
     fn default() -> Self {
@@ -59,7 +68,7 @@ impl Default for SeatPlanner {
 
 impl SeatPlanner {
     pub fn new(grace_ms: u64) -> Self {
-        Self { seatless: BTreeMap::new(), grace_ms }
+        Self { seatless: BTreeMap::new(), grace_ms, was_coming: BTreeSet::new(), retry: BTreeMap::new(), own: BTreeSet::new() }
     }
 
     /// One upkeep's look.
@@ -70,6 +79,16 @@ impl SeatPlanner {
             .filter(|a| !k.seated.contains(*a) && !k.coming.contains(*a))
             .collect();
         self.seatless.retain(|id, _| waiting.contains(&id));
+        self.retry.retain(|id, _| waiting.contains(&id));
+        self.own.retain(|id| waiting.contains(&id));
+        // An agent this device's own invite was at work on that left those steps without a session (its founding
+        // failed and the core gave it up): its inviter is this device, so no grace is waited out for it.
+        for a in &waiting {
+            if self.was_coming.contains(*a) && !self.seatless.contains_key(*a) {
+                self.own.insert((*a).clone());
+            }
+        }
+        self.was_coming = k.coming.iter().filter(|a| k.agents.contains(a)).cloned().collect();
         if waiting.is_empty() || k.founding_pending {
             return Plan::Idle { recheck_at: None };
         }
@@ -77,7 +96,8 @@ impl SeatPlanner {
         let mut next: Option<u64> = None;
         for a in waiting {
             let since = *self.seatless.entry(a.clone()).or_insert(k.now_ms);
-            let at = since + self.grace_ms;
+            let grace_end = if self.own.contains(a) { since } else { since + self.grace_ms };
+            let at = grace_end.max(self.retry.get(a).map_or(0, |r| r.0));
             if k.now_ms >= at && k.online.contains(a) {
                 due.push(a.clone());
             } else {
@@ -101,6 +121,17 @@ impl SeatPlanner {
     /// The founding went out: the agent no longer waits here.
     pub fn founded(&mut self, agent: &str) {
         self.seatless.remove(agent);
+        self.retry.remove(agent);
+        self.own.remove(agent);
+    }
+
+    /// This device's founding for `agent` failed (the hub away, a KeyPackage not there yet): it is tried again soon,
+    /// after a pause that doubles from [`SEAT_RETRY_FIRST_MS`] up to the grace. Returns when.
+    pub fn failed(&mut self, agent: &str, now: u64) -> u64 {
+        let tries = self.retry.get(agent).map_or(0, |r| r.1) + 1;
+        let pause = (SEAT_RETRY_FIRST_MS << (tries - 1).min(16)).min(self.grace_ms.max(SEAT_RETRY_FIRST_MS));
+        self.retry.insert(agent.to_string(), (now + pause, tries));
+        now + pause
     }
 }
 
@@ -163,5 +194,24 @@ mod tests {
         k.online.insert("a3".into());
         assert_eq!(p.plan(&k), Plan::AskHub { candidates: vec!["a2".into()] });
     }
-}
 
+    /// A founding this device's own invite was at work on that the core gave up: due at once, not after the grace;
+    /// a founding that fails is tried again after a short, growing pause.
+    #[test]
+    fn an_own_founding_that_failed_is_tried_again_soon() {
+        let mut p = SeatPlanner::new(30_000);
+        let mut k = known(0);
+        k.online.insert("a3".into());
+        assert_eq!(p.plan(&k), Plan::Idle { recheck_at: Some(30_000) }, "a2 waits its grace; a3 is coming");
+        // the invite of a3 is gone, a3 still has no session: due now
+        k.coming.clear();
+        k.now_ms = 1_000;
+        assert_eq!(p.plan(&k), Plan::AskHub { candidates: vec!["a3".into()] });
+        assert_eq!(p.failed("a3", 1_000), 2_000);
+        k.now_ms = 1_500;
+        assert!(matches!(p.plan(&k), Plan::Idle { .. }));
+        k.now_ms = 2_000;
+        assert_eq!(p.plan(&k), Plan::AskHub { candidates: vec!["a3".into()] });
+        assert_eq!(p.failed("a3", 2_000), 4_000, "the pause doubles");
+    }
+}

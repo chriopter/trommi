@@ -413,6 +413,7 @@ export class ClientModel extends FileObject {
   seatPlan(known, nowMs) { return this[CALL]('seat_plan', [known, nowMs]) }
   seatAfterHub(candidates, hubSeated) { return this[CALL]('seat_after_hub', [candidates, hubSeated]) }
   seatFounded(agent) { return this[CALL]('seat_founded', [agent]) }
+  seatFailed(agent, nowMs) { return this[CALL]('seat_failed', [agent, nowMs]) }
   setSeatGrace(ms) { return this[CALL]('set_seat_grace', [ms]) }
   selfJoinAsks(answered, pending) { return this[CALL]('self_join_asks', [answered, pending]) }
   selfJoinVerdict(sessionId, nonce, requestHash) { return this[CALL]('self_join_verdict', [sessionId, nonce, requestHash]) }

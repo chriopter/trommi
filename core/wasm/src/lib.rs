@@ -378,6 +378,7 @@ methods!(RawClientModel {
     seat_plan(known, now_ms);
     seat_after_hub(candidates, hub_seated);
     seat_founded(agent);
+    seat_failed(agent, now_ms);
     set_seat_grace(ms);
     self_join_asks(answered, pending);
     self_join_verdict(session_id, nonce, request_hash);

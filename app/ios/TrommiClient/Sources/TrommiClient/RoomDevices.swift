@@ -188,7 +188,10 @@ extension Room {
       _ = try await onCore { try $0.foundSession(agent: agent, keyPackages: [kp] + claimed.map(\.keyPackage), nowMs: nowMs()) }
       pumpOutbox()
       try? board.engine.seatFounded(agent: id)
-    } catch {}
+    } catch {
+      // (tried again soon: a pause that grows, the core's rule; the upkeep looks again by then)
+      _ = try? board.engine.seatFailed(agent: id, nowMs: nowMs())
+    }
     return true   // one founding at a time: the next round sees it pending, then merged
   }
 

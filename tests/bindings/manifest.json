@@ -993,6 +993,19 @@
         ],
         "returns": "optional<text>"
       },
+      "seatFailed": {
+        "arguments": [
+          {
+            "name": "agent",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "number"
+      },
       "seatFounded": {
         "arguments": [
           {

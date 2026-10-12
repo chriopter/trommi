@@ -287,7 +287,7 @@ export class Client {
     this.model = M.emptyModel()
     this.board = new this.core.ClientModel(this.my_device_id)
     // (an agent that waits for its main session is given one once it is connected: the core's seat rule, engine.ts `seatAgents`)
-    opts.engine.seats = { plan: (k, now) => this.board.seatPlan(k, now), afterHub: (c, h) => this.board.seatAfterHub(c, h), founded: a => this.board.seatFounded(a), grace: ms => this.board.setSeatGrace(ms) }
+    opts.engine.seats = { plan: (k, now) => this.board.seatPlan(k, now), afterHub: (c, h) => this.board.seatAfterHub(c, h), founded: a => this.board.seatFounded(a), failed: (a, now) => this.board.seatFailed(a, now), grace: ms => this.board.setSeatGrace(ms) }
     this.listen()
   }
   get is_human(): boolean { return this.engine.is_human }

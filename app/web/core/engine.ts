@@ -1182,7 +1182,7 @@ export class Engine {
   }
   /** The seat rule (client/src/seats.rs), as the client's core model holds it: who waits, since when, who is
    *  connected (the engine does not follow presence). Null: no rule here (a device that is no human's). */
-  seats: { plan: (known: string, now: number) => string; afterHub: (candidates: string, hubSeated: string) => string | null; founded: (agent: string) => void; grace: (ms: number) => void } | null = null
+  seats: { plan: (known: string, now: number) => string; afterHub: (candidates: string, hubSeated: string) => string | null; founded: (agent: string) => void; failed: (agent: string, now: number) => number; grace: (ms: number) => void } | null = null
   /**
    * An agent device of the room that sits in no main session gets one (5.2.2, 5.2.5: a human device founds it, with
    * the agent as its seat). Its inviter founds it right after "They match" (`invited`); when that inviter cannot
@@ -1227,7 +1227,9 @@ export class Engine {
     } catch (e) {
       if (this.isLocal(e)) throw e
       this.owing = true
-      this.later(grace, () => this.keepSoon(0))
+      // (tried again soon: a pause that grows, the core's rule)
+      const at = rule.failed(id, this.now())
+      this.later(Math.max(0, at - this.now()), () => this.keepSoon(0))
     }
   }
   /** A stale session this device could not repair: said once per group and reason (nothing is written in it until
