@@ -62,6 +62,18 @@ pub struct SessionRow {
     /// The person fetched it back from the archive.
     pub fetched: bool,
     pub last_activity_at: u64,
+    /// Its link at the model's clock (none for an archived or removed session): status.rs.
+    pub link: Option<crate::status::LinkView>,
+    /// Why it is stopped (the red hand), at the model's clock: status.rs.
+    pub blocked: Option<crate::status::Blocked>,
+    /// A status line of it says "working".
+    pub working: bool,
+    /// Quiet: its last sign of life, when that was long ago (status.rs `QUIET_MS`).
+    pub quiet_since: Option<u64>,
+    /// When the agent process behind it last said anything, in any of its sessions.
+    pub device_active: u64,
+    /// When its link, red hand or quiet hint may change by the clock alone.
+    pub recheck_at: Option<u64>,
 }
 
 fn is_hex_id(s: &str) -> bool {
@@ -193,6 +205,39 @@ fn parent_claim<'a>(m: &'a Model, s: &'a Session) -> Option<&'a str> {
 /// The session list. `reading`: the room is still being read (a session whose profile has not come shows
 /// "Loading …" rather than its id).
 pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
+    let (mut out, list) = rows_of(m, reading);
+    // Each session's link, red hand and quiet hint, at the model's clock (status.rs).
+    let ctx = crate::status::Context::new(m, m.clock);
+    for (a, s) in out.iter_mut().zip(list.iter()) {
+        let st = crate::status::status_of(&ctx, s, a.archived, a.removed, a.online, a.parent.is_some());
+        a.link = st.link;
+        a.blocked = st.blocked;
+        a.working = st.working;
+        a.quiet_since = st.quiet_since;
+        a.device_active = st.device_active;
+        a.recheck_at = st.recheck_at;
+    }
+    out.sort_by(|a, b| {
+        a.position
+            .partial_cmp(&b.position)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out
+}
+
+/// The sessions the list shows as archived (their session ids): the Desk leaves their cards out, so that a card
+/// stands on the Desk exactly when its session stands in the list.
+pub fn archived_sessions(m: &Model) -> Vec<String> {
+    rows_of(m, false)
+        .0
+        .into_iter()
+        .filter(|r| r.archived)
+        .filter_map(|r| r.session_id)
+        .collect()
+}
+
+/// The rows in the list's order before the places, with the session each was made from (no status yet).
+fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>) {
     let all = sessions_of(m);
     let mut dev_to_agent: HashMap<String, String> = HashMap::new();
     let mut agent_to_dev: HashMap<String, String> = HashMap::new();
@@ -318,6 +363,7 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
             waiting: s.open_card_ids.len(),
             fetched: set.contains_key("archived") && !truthy(set.get("archived")),
             last_activity_at: s.last_activity_at,
+            ..Default::default()
         });
         let folder = dev
             .and_then(|d| d.folder.as_str())
@@ -355,12 +401,7 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
             None => {}
         }
     }
-    out.sort_by(|a, b| {
-        a.position
-            .partial_cmp(&b.position)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    out
+    (out, list)
 }
 
 /// One entry per folder: see the module's rules.

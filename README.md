@@ -58,7 +58,7 @@ Updates come by themselves: a running connector installs a new signed release an
                  one implementation of all cryptography
                                    │
                 client/  (Rust)    │
-          the Desk's rules, once   │
+   board, Desk, sessions, once     │
                    │               │
        ┌───────────┴──────┬────────┴─────────┬──────────────────┐
        │ WebAssembly      │ UniFFI (Swift)   │ native           │ native
@@ -72,11 +72,12 @@ Updates come by themselves: a running connector installs a new signed release an
 ```
 
 Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `client/`
-(the client core) is what every app decides the same way above it: the Desk (which cards stand on it and in which
-order, what the hub settled, what ran out, when to look again) and the load plan of a catch-up. Both reach the web
+(the client core) is what every app decides the same way above it: the board model, the Desk (which cards stand on
+it, what the hub settled, what ran out, what is put off, when to look again), the session list (names, order, one
+per folder, archive) with each session's link and red hand, and the load plan of a catch-up. Both reach the web
 app and the iOS app through the same facade (`core/swift/src`, bound by `core/wasm` and UniFFI). What stays in each
-app: the network and the live stream, storage, the sync engine, the board model, the UI, and in the connector its
-MCP tools. [`client/README.md`](client/README.md) has the detail.
+app: the network and the live stream, storage, the sync engine, the UI and its words, and in the connector its MCP
+tools. [`client/README.md`](client/README.md) has the detail.
 
 ## Under the hood
 

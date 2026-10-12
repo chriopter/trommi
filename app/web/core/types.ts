@@ -167,9 +167,7 @@ export interface Link {
   cut_since: Ms | null
   exit: { reason: string; claude: 'alive' | 'gone' | 'checking' } | null
 }
-export type LinkStateName = 'live' | 'oncall' | 'asleep' | 'cut' | 'gone'
-export interface LinkState { state: LinkStateName; since: Ms | null; idle_ms: number | null; reason: string }
-/** What linkState reads: a member or a session. */
+/** What a link's state is read from (client/src/status.rs): a member or a session. */
 export interface Linked { is_online?: boolean; offline_since?: Ms | null; link?: Link | null }
 
 export interface Room {
@@ -306,6 +304,11 @@ export interface Card {
   /** The hub closed this card after this device's cursor, and this device has not taken the closing yet (a start
    *  after a long time away: client.ts `deskFirst`). It stays off the Desk until the catch-up reaches it. */
   catching_up?: boolean
+  /** The person's "Later" that holds it off the Desk now (client/src/desk.rs `snooze_holds`): until when, and when he
+   *  put it off; `unsnoozed`: an open card whose snooze ended (the clock, by hand, a newer version). */
+  snoozed_until?: number
+  snoozed_at?: number
+  unsnoozed?: number
   /** The device that owns the card now (spec 9.2): the one a human addresses an answer to. */
   agent_device_id: Hex
   session_id: Hex | null
@@ -539,6 +542,8 @@ export interface Change {
   outbox: boolean
   stack: boolean
   room: boolean
+  /** The session list was made again (its status: a link, a red hand, a quiet hint), with nothing else changed. */
+  status?: boolean
   /** Exactly the items added or replaced in this batch, by timeline key. */
   items: Map<string, TimelineItem[]>
 }
@@ -552,4 +557,12 @@ export interface SessionRow {
   archived: boolean; replaced: boolean; removed: boolean
   position: number; placed: boolean; desk: string; starred: boolean; main: boolean; own: boolean
   waiting: number; fetched: boolean; last_activity_at: number
+  /** At the core's clock (client/src/status.rs): its link (none when archived or removed), why it is stopped (the red
+   *  hand), whether a status line says working, since when it is quiet, when its agent process last said anything. */
+  link: LinkView | null; blocked: Blocked | null; working: boolean; quiet_since: number | null; device_active: number
+  recheck_at: number | null
 }
+/** A session's link (client/src/status.rs `LinkView`). */
+export interface LinkView { state: 'live' | 'oncall' | 'asleep' | 'cut' | 'gone'; since: number | null; reason: string }
+/** Why a session is stopped (client/src/status.rs `Blocked`). */
+export interface Blocked { why: 'cut' | 'offline' | 'permission' | 'blocking'; since: number | null }

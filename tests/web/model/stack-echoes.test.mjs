@@ -151,3 +151,25 @@ test('a note: pending under its local id, then under its object id, then the con
   w.run(c => echoNote(w.model, { local_id: 'N4', fields: { text: 'x' } }, c)); w.run(c => rollbackEcho(w.model, 'N4', c))
   assert.equal(w.model.notes.has('N4'), false); assert.equal(n.text, 'call the plumber')
 })
+
+// The red hand and the Desk are one rule (client/src/status.rs): a blocking question raises its session's hand only
+// while it stands on the Desk. Put off (Later), both go; a newer version of it brings both back ("Back from snooze").
+test('the red hand stands exactly while the blocking question stands on the Desk', async () => {
+  const { applyPresence } = await import('./factory.mjs')
+  const w = new World(); w.groups()
+  w.run(c => applyPresence(w.model, [{ device_id: hex(w.agent), is_online: true, offline_since: null }], c, w.clock))
+  const q = id16(0xc9, 1)
+  w.card(q, { title: 'blocking', object_version: 1 }, { urgency: 'critical' })
+  const row = () => w.model.session_list.find(r => r.key === hex(w.session))
+  assert.deepEqual(w.model.stack, [hex(q)])
+  assert.equal(row().blocked?.why, 'blocking')
+  w.register(`snooze/${q}`, { until: w.clock + 3_600_000, at: w.clock })
+  assert.deepEqual(w.model.stack, [])
+  assert.equal(row().blocked, null, 'put off: no hand')
+  assert.ok(w.model.cards.get(hex(q)).snoozed_until)
+  w.card(q, { title: 'blocking, revised', object_version: 2 }, { urgency: 'critical', previous: w.objects.get(q).current })
+  assert.deepEqual(w.model.stack, [hex(q)], 'a newer version wakes it')
+  assert.equal(w.model.cards.get(hex(q)).snoozed_until, undefined)
+  assert.ok(w.model.cards.get(hex(q)).unsnoozed)
+  assert.equal(row().blocked?.why, 'blocking')
+})

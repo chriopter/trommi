@@ -4,8 +4,8 @@
 //   node --test tests/web/model/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { linkState, parentSessionOf, recipientOf } from '../../../app/web/core/model.ts'
-import { applyPresence } from './factory.mjs'
+import { parentSessionOf, recipientOf } from '../../../app/web/core/model.ts'
+import { applyPresence, project } from './factory.mjs'
 import { World, device, hex, id16, bytes } from './factory.mjs'
 
 const helperGroup = (w, { helper = device(20), leaves, ...rest } = {}) => ({ group: bytes(48, 0xcc), session: { session_id: id16(0x61), parent: w.session }, epoch: 1,
@@ -91,19 +91,21 @@ test('presence and the link: online, on call, asleep, cut, gone; a helper sessio
   const hs = hex(w.session), ha = hex(w.agent)
   const report = (fields, now = w.clock) => w.run(c => applyPresence(w.model, [{ device_id: ha, ...fields }], c, now))
   report({ is_online: true, link: { hears: 'live', attached: true, working: true, last_call_at: w.clock, since: w.clock - 5 } })
+  // (the link's state is the client core's, at its clock: the session list's row, client/src/status.rs)
+  const linkAt = now => { if (now !== undefined) w.run(c => project(w.model, c, now)); return w.model.session_list.find(r => r.key === hs).link }
   let s = w.model.sessions.get(hs)
-  assert.equal(s.is_online, true); assert.equal(s.link.working, true); assert.equal(linkState(s, w.clock).state, 'live'); assert.ok(w.last.sessions.has(hs) && w.last.members)
+  assert.equal(s.is_online, true); assert.equal(s.link.working, true); assert.equal(linkAt().state, 'live'); assert.ok(w.last.sessions.has(hs) && w.last.members)
   assert.equal(w.model.sessions.get(hex(id16(0x61))).is_online, true, 'the helper session has no stream of its own yet')
   report({ is_online: true, link: { hears: 'oncall', attached: true, working: false, last_call_at: w.clock - 60_000 } })
-  assert.deepEqual([linkState(w.model.sessions.get(hs), w.clock).state, linkState(w.model.sessions.get(hs), w.clock).idle_ms], ['oncall', 60_000])
-  assert.equal(linkState(w.model.sessions.get(hs), w.clock + 20 * 60_000).state, 'asleep')
+  assert.deepEqual(linkAt(), { state: 'oncall', since: w.clock - 60_000, reason: '' })
+  assert.equal(linkAt(w.clock + 20 * 60_000).state, 'asleep')
   report({ is_online: true, link: { hears: 'live', attached: false, since: 5 } })
-  assert.deepEqual([linkState(w.model.sessions.get(hs)).state, linkState(w.model.sessions.get(hs)).reason], ['cut', 'detached'])
+  assert.deepEqual([linkAt().state, linkAt().reason], ['cut', 'detached'])
   report({ is_online: false, offline_since: w.clock - 1, link: { hears: 'live', exit: { reason: 'sigterm', claude: 'alive' } } })
   s = w.model.sessions.get(hs)
-  assert.equal(s.offline_since, w.clock - 1); assert.deepEqual(linkState(s), { state: 'cut', since: w.clock - 1, idle_ms: null, reason: 'sigterm' })
+  assert.equal(s.offline_since, w.clock - 1); assert.deepEqual(linkAt(), { state: 'cut', since: w.clock - 1, reason: 'sigterm' })
   report({ is_online: false, offline_since: w.clock })
-  assert.equal(linkState(w.model.members.get(ha)).state, 'gone'); assert.equal(w.model.sessions.get(hs).link, null)
+  assert.equal(linkAt().state, 'gone'); assert.equal(w.model.sessions.get(hs).link, null)
   // a report of a device the model does not know is nothing
   w.run(c => applyPresence(w.model, [{ device_id: hex(device(99)), is_online: true }], c))
   assert.equal(w.last.members, false)

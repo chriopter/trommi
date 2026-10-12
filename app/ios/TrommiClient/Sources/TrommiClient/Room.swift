@@ -325,7 +325,7 @@ public struct Store {
    */
   public func close() {
     closed = true
-    liveTask?.cancel(); goalsTask?.cancel(); cacheTask?.cancel(); invitesPlanned?.cancel()
+    liveTask?.cancel(); goalsTask?.cancel(); cacheTask?.cancel(); invitesPlanned?.cancel(); wakeTask?.cancel()
     hub.signer = nil
     hub.shutdown()
     // The core first (it wipes what it holds in memory and lets go of the store), then the store's lock.
@@ -335,7 +335,7 @@ public struct Store {
   public func shutdown() async {
     closed = true
     // (what waits on the hub ends now, not after its own timeouts: the queued work then fails with `closed`)
-    liveTask?.cancel(); invitesPlanned?.cancel()
+    liveTask?.cancel(); invitesPlanned?.cancel(); wakeTask?.cancel()
     hub.shutdown()
     // (queued work gets five seconds to end; after that, what still runs can no longer reach the core: `closed`)
     let queued = queueTail, saving = saveTail
@@ -382,6 +382,7 @@ public struct Store {
     // (what the client core's model changed since its last patch goes with it)
     var c = c
     board.project(&c)
+    wakeLater()
     if c.isEmpty { return }
     Spent.count("emits")
     onChange?(c)
@@ -405,6 +406,23 @@ public struct Store {
   // ---- desk goals for the agents (spec/v1.md 9.3.4, Goals.swift) -----------------------------------------
 
   var goalsTask: Task<Void, Never>?
+  /** The emit at the client core's next wake (Board.wakeAt: a snooze ends, a request runs out, a session falls asleep,
+   *  a red hand after its grace): the core decides it at its clock, the app only asks again then. */
+  var wakeTask: Task<Void, Never>?
+  var wakeTaskAt: UInt64?
+  func wakeLater() {
+    let at = board.wakeAt
+    if at == wakeTaskAt { return }
+    wakeTask?.cancel(); wakeTask = nil; wakeTaskAt = at
+    guard let at = at, !closed else { return }
+    let now = nowMs(), wait = at > now ? at - now : 0
+    wakeTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: (min(wait, 86_400_000) + 50) * 1_000_000)
+      guard let self = self, !Task.isCancelled, !self.closed else { return }
+      self.wakeTask = nil; self.wakeTaskAt = nil
+      self.emit(Change())
+    }
+  }
   /** Self-join (spec/v1.md 12.4, SelfJoin.swift): the look at the agents' asks that is due, and the asks answered. */
   var vouchTask: Task<Void, Never>?
   var vouchAnswered = Set<String>()

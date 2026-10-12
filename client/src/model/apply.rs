@@ -733,6 +733,7 @@ fn new_card(object_id: &str, owner: &str, r: &Received) -> Card {
         content_state: "header".into(),
         unsupported: None,
         state_envelope_number: 0,
+        ..Default::default()
     }
 }
 

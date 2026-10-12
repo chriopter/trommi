@@ -88,6 +88,14 @@ impl Model {
     /// Stack, per-session card lists, open permission requests, from the Desk rules. A change that touches nothing of
     /// the Desk, before the clock reached its next wake, costs nothing here.
     pub fn project(&mut self, change: &mut Change, now: u64) {
+        self.clock = now;
+        if self.started_at == 0 {
+            self.started_at = now;
+        }
+        if self.status_wake != 0 && now >= self.status_wake {
+            self.status_wake = 0;
+            change.status = true;
+        }
         let relevant = !change.cards.is_empty()
             || !change.permissions.is_empty()
             || change
@@ -163,18 +171,10 @@ impl Model {
                 }
             }
         }
-        // (a session is archived by its settings: a register `session/…`, or a session the groups changed)
-        let archived: Vec<String> = self
-            .sessions
-            .values()
-            .filter(|s| {
-                s.settings
-                    .as_ref()
-                    .and_then(|v| v.get("archived"))
-                    .is_some_and(super::apply::truthy)
-            })
-            .map(|s| s.session_id.clone())
-            .collect();
+        // (a session is archived as the session list shows it (sessions.rs): the person's choice, a closed helper, a
+        // replaced pairing; a main whose agent is back is not. One rule: a card stands on the Desk exactly when its
+        // session stands in the list)
+        let archived: Vec<String> = crate::sessions::archived_sessions(self);
         let joined = archived.join(",");
         if self.desk_archived.as_deref() != Some(joined.as_str()) {
             self.desk_archived = Some(joined);
@@ -288,6 +288,60 @@ impl Model {
         }
         if moved {
             change.stack = true
+        }
+        self.mark_snoozes(change, now);
+    }
+
+    /// Each open card's snooze as the views show it, from the Desk's own rule (`DeskState::snooze_holds`): held off
+    /// until its time (`snoozed_until`, `snoozed_at`), or back from it (`unsnoozed`). Over the snoozed cards alone.
+    fn mark_snoozes(&mut self, change: &mut Change, now: u64) {
+        let ids: std::collections::BTreeSet<String> = self
+            .desk
+            .snoozed_ids()
+            .cloned()
+            .chain(self.snooze_marked.iter().cloned())
+            .collect();
+        for id in ids {
+            let (mut until, mut at, mut woken) = (None, None, None);
+            let open = self.cards.get(&id).is_some_and(|c| c.object_state == "open");
+            if let (true, Some(d), Some((value, _))) =
+                (open, self.desk.card(&id), self.desk.snooze_of(&id))
+            {
+                let end = value
+                    .get("until")
+                    .and_then(Value::as_f64)
+                    .filter(|u| u.is_finite() && *u > 0.0)
+                    .map(|u| u.min(MAX_SAFE as f64) as u64);
+                if self.desk.snooze_holds(d, now).is_some() {
+                    until = end;
+                    at = value
+                        .get("at")
+                        .and_then(Value::as_f64)
+                        .filter(|u| u.is_finite() && *u >= 0.0)
+                        .map(|u| u.min(MAX_SAFE as f64) as u64)
+                        .or(Some(0));
+                } else {
+                    woken = end;
+                }
+            }
+            let Some(c) = self.cards.get_mut(&id) else {
+                self.snooze_marked.remove(&id);
+                continue;
+            };
+            if (c.snoozed_until, c.snoozed_at, c.unsnoozed) != (until, at, woken) {
+                c.snoozed_until = until;
+                c.snoozed_at = at;
+                c.unsnoozed = woken;
+                change.cards.insert(id.clone());
+                if let Some(s) = &c.session_id {
+                    change.sessions.insert(s.clone());
+                }
+            }
+            if until.is_some() || at.is_some() || woken.is_some() {
+                self.snooze_marked.insert(id);
+            } else {
+                self.snooze_marked.remove(&id);
+            }
         }
     }
 }

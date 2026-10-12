@@ -98,27 +98,10 @@ export function hubUrl() {
 }
 
 // ---- blocked ----
-// When a session is really stopped: the raised red hand. It is about a SESSION, not a card, and it
-// can stand without any card. (A card that is urgent knocks; that is the knock, ui.mjs isKnock.)
-//
-// A session is blocked when
-//   - it is disconnected while a status line of its says "working" (for longer than a blip: OFFLINE_GRACE_MS),
-//   - it is cut off (linkOf below): its Claude Code runs and its Trommi tools are gone, working line or not,
-//   - it reported an error (agent.error, set through /agent/profile; a later call of the session clears it),
-//   - it waits for him: an open approval request, or an open card it marked as blocking (urgency critical),
-// Being quiet is NOT a stop: a connected session with a working line that said nothing for
-// QUIET_MS only gets a grey hint, quietOf() ("quiet for 24 min"): no red hand, no push, not in the Desk's badge.
-// For a child session (agent.parent) "it" is the agent process behind it: a helper whose main agent is online and
-// still talking (agent.device_active) is not quiet.
-// Shared by the views and the board model below.
-
-/** Nothing from a working, connected session for this long: a quiet grey hint on the session, nothing more. */
-const QUIET_MS = 15 * 60000
-/** A link that drops and comes back within this time (a restart of the session's bridge) is no stop. */
-const OFFLINE_GRACE_MS = 60000
-
-// When this hub started: every session is away until it links again, and that is no stop either.
-const STARTED = Date.now()
+// When a session is really stopped: the raised red hand. It is about a SESSION, not a card, and it can stand without
+// any card (cut off, or disconnected while working). Whether it stands is the client core's rule, decided with the
+// Desk (client/src/status.rs): a question that is not on the Desk (put off, settled elsewhere, with its agent) raises
+// no hand. Being quiet is no stop: a grey hint, quietOf(). Here they get their words.
 const minutes = ms => Math.max(1, Math.round(ms / 60000))
 const two = n => String(n).padStart(2, '0')
 /** 14:05 today, else "3 Oct 14:05". */
@@ -127,44 +110,31 @@ const clock = (t, now) => {
   return `${today ? '' : `${d.getDate()} ${d.toLocaleString('en', { month: 'short' })} `}${two(d.getHours())}:${two(d.getMinutes())}`
 }
 
-/** agent: a record of state.agents (online kept by the hub's commit). Returns null, or { why, text } where text is
- *  the plain words for a tooltip ("Connection lost since 14:05", "Error: …", "Waiting for permission"). */
+/** agent: a record of state.agents. Returns null, or { why, text, since } where text is the plain words for a tooltip
+ *  ("Connection lost since 14:05", "Waiting for permission"). Whether it is stopped is the client core's (the row's
+ *  `blocked`, client/src/status.rs): it reads the Desk, so the red hand and the Desk never disagree. */
 export function blockedOf(agent, state, now = Date.now()) {
-  if (!agent || agent.archived) return null
-  const link = linkOf(agent, now)
-  if (link?.state === 'cut') return { why: 'cut', text: link.short, since: link.since }
-  const working = (state.tasks ?? []).filter(t => t.agent === agent.id && t.state === 'working')
-  if (!agent.online) {
-    // offline_since: when the hub saw its last stream close (hub /devices); older hubs only give the last activity.
-    const since = agent.offline_since ?? null
-    if (working.length && now - Math.max(since ?? agent.seen ?? 0, STARTED) >= OFFLINE_GRACE_MS) return { why: 'offline', text: since ? `Connection lost since ${clock(since, now)}` : 'Disconnected while working', since }
-    return null
-  }
-  if (agent.error) return { why: 'error', text: `Error: ${String(agent.error).slice(0, 160)}` }
-  // (what he put off, Later, is not on the Desk: it does not make the session wait on him either)
-  const waiting = (state.cards ?? []).filter(c => c.agent === agent.id && c.status === 'open' && !c.with_agent && !c.snoozed_until)
-  if (waiting.some(c => c.kind === 'permission')) return { why: 'permission', text: 'Waiting for permission' }
-  if (waiting.some(c => c.urgency === 'critical')) return { why: 'blocking', text: 'Waiting for you: a blocking question' }
-  return null
+  const b = agent?.blocked
+  if (!b || agent.archived) return null
+  if (b.why === 'cut') return { why: 'cut', text: linkOf(agent, now)?.short || 'Cut off', since: b.since ?? null }
+  if (b.why === 'offline') return { why: 'offline', text: b.since ? `Connection lost since ${clock(b.since, now)}` : 'Disconnected while working', since: b.since ?? null }
+  if (b.why === 'permission') return { why: 'permission', text: 'Waiting for permission' }
+  return { why: 'blocking', text: 'Waiting for you: a blocking question' }
 }
 
 /** The quiet hint: { text: "quiet for 24 min", minutes } for a connected session whose working line has seen nothing
- *  for QUIET_MS, else null. Never a stop: blockedOf does not know it. */
+ *  for a while (the client core's `quiet_since`), else null. Never a stop: blockedOf does not know it. */
 export function quietOf(agent, state, now = Date.now()) {
-  if (!agent || agent.archived || !agent.online) return null
-  const working = (state.tasks ?? []).filter(t => t.agent === agent.id && t.state === 'working')
-  if (!working.length) return null
-  const last = Math.max(agent.active ?? 0, agent.connected ?? 0, agent.parent ? agent.device_active ?? 0 : 0, ...working.map(t => t.updated ?? 0))
-  if (now - last < QUIET_MS) return null
-  const n = minutes(now - last)
+  if (!agent || agent.archived || !agent.online || agent.quiet_since == null) return null
+  const n = minutes(now - agent.quiet_since)
   return { text: `quiet for ${n} min`, minutes: n }
 }
 
 // ---- link ----
 // Whether a session can HEAR the human and SPEAK to him, which is more than "its connector has a stream" (agent.online).
 // The session's connector reports it to the hub (agent.link, README "The link"), and writes a receipt when it really
-// handed the human's words to the agent (card.heard). The five states are the core's (core/model.ts linkState, the
-// same rules here: the views are rendered without the core at hand); here they get their words.
+// handed the human's words to the agent (card.heard). The five states are the client core's (client/src/status.rs
+// link_state, decided at its clock and handed over in the session list: agent.link_view); here they get their words.
 //   agent.link: { hears: 'live' | 'oncall', attached, last_call_at, since, cut_since, exit: { reason, claude } } or null
 //   card.heard: true (the agent has his answer or hand-back), false (it waits in the connector), null (not known:
 //               nothing to hear, or a connector that writes no receipts)
@@ -179,25 +149,25 @@ const codexOf = agent => agent?.client === 'codex'
 /** The session's link: { state: 'live' | 'oncall' | 'asleep' | 'cut' | 'gone', sign, word, short, line, since, fix: { say, code } | null }; null for none. */
 export function linkOf(agent, now = Date.now()) {
   if (!agent || agent.archived || agent.removed) return null
+  // (the state is the client core's, at its clock: client/src/status.rs `link_state`; here it gets its words)
+  const v = agent.link_view
+  if (!v) return null
   const n = agent.name, l = agent.link ?? null, codex = codexOf(agent)
   const prog = codex ? 'Codex' : 'Claude Code', reconnect = codex ? 'quit Codex, then: codex resume' : RECONNECT
-  if (!agent.online) {
-    const since = agent.offline_since ?? null, at = since ? clock(since, now) : ''
-    if (l?.exit?.claude === 'alive') return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `${n} is cut off${at ? ` since ${at}` : ''}: its ${prog} runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: reconnect } }
+  const since = v.since ?? null, at = since ? clock(since, now) : ''
+  if (v.state === 'cut' && !agent.online) return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `${n} is cut off${at ? ` since ${at}` : ''}: its ${prog} runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: reconnect } }
+  if (v.state === 'gone') {
     const how = l?.exit ? `its ${prog} session ended.` : 'it stopped without a word: its session ended, was killed, or its machine is off the network.'
     return { state: 'gone', sign: 'plug', since, word: `gone${at ? ` · ${at}` : ''}`, short: at ? `Gone since ${at}` : 'Gone', line: `${n} is gone${at ? ` since ${at}` : ''}: ${how}`, fix: { say: 'Start it again in its folder:', code: codex ? 'codex resume' : 'claude --continue' } }
   }
-  if (l?.cut_since || (l && l.attached === false)) {
-    const since = l.cut_since ?? l.since ?? null, at = since ? clock(since, now) : ''
-    return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `A ${prog} session in ${n}'s folder is cut off${at ? ` since ${at}` : ''}: it runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: reconnect } }
-  }
-  if (!l || l.hears !== 'oncall') return { state: 'live', sign: 'ear', since: null, word: '', short: '', line: `${n} hears you at once.`, fix: null }
-  const last = l.last_call_at ?? l.since ?? null, idle = last ? Math.max(0, now - last) : null, min = idle == null ? null : minutes(idle)
+  if (v.state === 'cut') return { state: 'cut', sign: 'ear-off', since, word: `cut off${at ? ` · ${at}` : ''}`, short: at ? `Cut off since ${at}` : 'Cut off', line: `A ${prog} session in ${n}'s folder is cut off${at ? ` since ${at}` : ''}: it runs, its Trommi tools are gone. It cannot hear you and cannot write to you.`, fix: { say: 'In its terminal:', code: reconnect } }
+  if (v.state === 'live') return { state: 'live', sign: 'ear', since: null, word: '', short: '', line: `${n} hears you at once.`, fix: null }
+  const idle = since ? Math.max(0, now - since) : null, min = idle == null ? null : minutes(idle)
   const ago = min == null ? '' : `; its last one was ${min} min ago`
   // Codex between turns is there, not asleep: it reads what you write when its next turn starts
-  if (codex) return { state: 'oncall', sign: 'ear-later', since: last, word: 'on its next turn', short: 'Reads you on its next turn', line: `${n} runs in Codex: it reads what you write when its next turn starts${ago}.`, fix: idle != null && idle >= ASLEEP_MS ? { say: 'To start a turn now, type anything in its Codex terminal. Trommi wakes Codex by itself once the connector is current:', code: 'trommi-connector update' } : null }
-  if (idle != null && idle >= ASLEEP_MS) return { state: 'asleep', sign: 'ear-later', since: last, word: `not listening · ${min} min`, short: `Not listening for ${min} min`, line: `${n} is not listening: it hears you only on its next step, and its last one was ${min} min ago.`, fix: { say: 'Wake it: type anything in its terminal.', code: '' } }
-  return { state: 'oncall', sign: 'ear-later', since: last, word: 'on its next step', short: 'Hears you on its next step', line: `${n} hears you on its next step${ago}.`, fix: null }
+  if (codex) return { state: 'oncall', sign: 'ear-later', since, word: 'on its next turn', short: 'Reads you on its next turn', line: `${n} runs in Codex: it reads what you write when its next turn starts${ago}.`, fix: idle != null && idle >= ASLEEP_MS ? { say: 'To start a turn now, type anything in its Codex terminal. Trommi wakes Codex by itself once the connector is current:', code: 'trommi-connector update' } : null }
+  if (v.state === 'asleep') return { state: 'asleep', sign: 'ear-later', since, word: `not listening · ${min} min`, short: `Not listening for ${min} min`, line: `${n} is not listening: it hears you only on its next step, and its last one was ${min} min ago.`, fix: { say: 'Wake it: type anything in its terminal.', code: '' } }
+  return { state: 'oncall', sign: 'ear-later', since, word: 'on its next step', short: 'Hears you on its next step', line: `${n} hears you on its next step${ago}.`, fix: null }
 }
 /** Whether the card's session has the human's last word on it (his answer, or the hand-back): null when there is
  *  nothing to hear; else { heard: true | false | null (no receipts), waiting: ms, late }. */
@@ -560,16 +530,6 @@ export function closedMemo(state, key, fn) {
   return closedKept.m.get(key)
 }
 
-/** Whether his "Later" still holds a card off the Desk: until its time (the next morning) and only for the version he
- *  put off. A newer version of the card (revised, its urgency raised) wakes it, as the clock does:
- *  what the agent says anew is never hidden behind an old snooze. The same rule as the core's stack (core/model.ts). */
-export function snoozeHolds(m, c, now = Date.now()) {
-  const v = m.human.snoozes.get(c.object_id)
-  if (!v || (v.until != null && !(v.until > now))) return false
-  const at = m.human.raw.get(`snooze/${c.object_id}`)?.envelope_number
-  return !(Number.isInteger(at) && (c.envelope_number ?? 0) > at)
-}
-
 export class BoardState {
   constructor(client) {
     this.client = client
@@ -687,7 +647,10 @@ export class BoardState {
     }
     const agents = this.agents()
     const shelved = new Set(agents.filter(a => a.archived).map(a => a.id))
-    const queue = cardsMemo(cards, `queue ${[...shelved]}`, () => cards.filter(c => c.status === 'open' && !shelved.has(c.agent) && !c.snoozed_until).sort((a, b) => a.created - b.created || a.number - b.number).map(c => c.id))
+    // The Desk: what the client core's Desk holds (its stack and open requests: not held, not put off, not of an
+    // archived session; client/src/desk.rs), with the infos their agents still work on (Off your mind), by age.
+    const onCoreDesk = new Set([...(m.stack ?? []), ...(m.open_permission_ids ?? [])])
+    const queue = cardsMemo(cards, `queue ${[...shelved]} ${m.stack?.length}:${m.stack?.join()} ${m.open_permission_ids?.join()}`, () => cards.filter(c => c.status === 'open' && (onCoreDesk.has(c.id) || (c.working && !shelved.has(c.agent) && !c.snoozed_until))).sort((a, b) => a.created - b.created || a.number - b.number).map(c => c.id))
     const tasks = []
     for (const s of sessionsOf(m)) for (const t of s.status_lines ?? []) tasks.push({ agent: devToAgent.get(sessionKey(s)), id: t.id, label: t.label, state: t.state, detail: t.detail, card_id: t.object_id ?? null, updated: t.updated_at ?? 0 })
     // (the order he dragged them into in the menu: each desk's register holds its place, order; a desk made since then
@@ -715,13 +678,6 @@ export class BoardState {
     }
     this.state = state
     this.version++
-    // (when the next of his snoozes ends: the page wakes that card then, without waiting for another change: boot)
-    // (over his snoozes alone, a few: never a pass over every card)
-    this.wakes = []; this.nextWake = Infinity
-    for (const id of m.human.snoozes.keys()) {
-      const c = state.byId.get(id)
-      if (c?.status === 'open' && c.snoozed_until) { this.wakes.push(id); this.nextWake = Math.min(this.nextWake, c.snoozed_until) }
-    }
     return state
   }
 
@@ -733,9 +689,6 @@ export class BoardState {
     const rows = m.session_list ?? []
     const byKey = new Map(rows.map(r => [r.key, r]))
     const list = rows.map(r => m.sessions.get(r.key) ?? [...m.sessions.values()].find(s => sessionKey(s) === r.key)).filter(Boolean)
-    // When the agent process behind a session last said anything, in any of its sessions (main or child).
-    const lastOfDevice = new Map()
-    for (const s of list) if (s.agent_device_id) lastOfDevice.set(s.agent_device_id, Math.max(lastOfDevice.get(s.agent_device_id) ?? 0, s.last_activity_at ?? 0))
     // The account and usage an agent process names (its main session's profile `account`): shown on each of its sessions.
     const accountOf = new Map()
     for (const s of list) {
@@ -749,11 +702,13 @@ export class BoardState {
       return {
         id: r.id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: r.given, label: r.label, icon: r.icon, icon_by: set.icon ? 'human' : 'agent',
         online: r.online, offline_since: r.offline_since ?? null, account: accountOf.get(s.agent_device_id) ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: r.starred, parent: r.parent ?? null, main: r.main,
-        desk: r.desk, archived: r.archived, replaced: r.replaced, group: set.group ?? null, position: r.position, placed: r.placed, seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: lastOfDevice.get(s.agent_device_id) ?? 0,
+        desk: r.desk, archived: r.archived, replaced: r.replaced, group: set.group ?? null, position: r.position, placed: r.placed, seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: r.device_active ?? 0,
         removed: r.removed, own: r.own,
         link: s.link ?? null, heard_up_to: s.heard_up_to ?? null,
         slot: !s.parent_session_id && dev?.folder ? `${dev.host ?? ''}\n${dev.folder}` : null, born: dev?.added_entry_number ?? 0,
         waiting: r.waiting, fetched: r.fetched,
+        // (at the client core's clock: client/src/status.rs)
+        link_view: r.link ?? null, blocked: r.blocked ?? null, working: Boolean(r.working), quiet_since: r.quiet_since ?? null,
       }
     })
     const byId = new Map(out.map(a => [a.id, a]))
@@ -791,7 +746,6 @@ export class BoardState {
     const status = c.catching_up ? 'catching' : c.object_state === 'open' ? 'open'
       : c.closed_how === 'shredded' ? 'shredded'
         : c.closed_how === 'answered' && c.object_state === 'answered' ? 'decided' : 'done'
-    const snooze = h.snoozes.get(c.object_id)
     const draft = h.drafts.get(c.object_id)
     const star = h.stars?.get(c.object_id)
     const atts = list => this.atts(list)
@@ -834,8 +788,9 @@ export class BoardState {
     // mind with the working strip, never on the Desk; its "Done: …" version brings it to the Desk.
     if (c.working === true && status === 'open' && card.kind === 'info') { card.working = true; card.with_agent ??= c.created_at ?? Date.now() }
     if (draft && status === 'open') card.draft = { keys: draft.keys ?? [], note: draft.note ?? '', notes: draft.notes ?? {}, ...(draft.marks?.length ? { marks: draft.marks } : {}), ts: draft.ts ?? 0 }
-    if (status === 'open' && snoozeHolds(m, c)) { card.snoozed_until = snooze.until; card.snoozed_at = snooze.at ?? 0 }
-    else if (snooze?.until && status === 'open') card.unsnoozed = snooze.until   // woken by hand, by the clock or by a new version: "Back from snooze"
+    // (his "Later" as the client core holds it: until its time and only for the version he put off, desk.rs)
+    if (status === 'open' && c.snoozed_until) { card.snoozed_until = c.snoozed_until; card.snoozed_at = c.snoozed_at ?? 0 }
+    else if (status === 'open' && c.unsnoozed) card.unsnoozed = c.unsnoozed   // woken by hand, by the clock or by a new version: "Back from snooze"
     if (star) card.starred = star.at ?? 1   // his star: when he set it
     // (its agent closed it after his answer, close_card: What?? asks about what it did)
     if (status === 'done' && c.closed_how === 'closed' && a && !a.pending && a.answer_action !== 'read' && a.answer_action !== 'shred') card.finished = true
@@ -2207,24 +2162,7 @@ async function start(client, { fresh = false } = {}) {
     board.update(c)
     unpatched = true
     window.trommi.lastUpdateMs = performance.now() - t
-    wakeLater()
   }
-  // A card he put off comes back on the Desk when its time comes (the next morning), also while the page stays open
-  // and nothing else changes: its board form is made again then (BoardState.nextWake).
-  let wakeTimer = 0, wakeAt = Infinity
-  const wakeLater = () => {
-    if (board.nextWake === wakeAt) return
-    clearTimeout(wakeTimer); wakeTimer = 0; wakeAt = board.nextWake
-    if (!Number.isFinite(wakeAt)) return
-    wakeTimer = setTimeout(() => {
-      wakeTimer = 0; wakeAt = Infinity
-      const cards = new Set(board.wakes)
-      if (!pending) pending = merge({ cards: new Set(), sessions: new Set(), permissions: new Set(), notes: new Set(), published: new Set(), timelines: new Set(), registers: new Set(), invites: new Set() }, { cards })
-      else merge(pending, { cards })
-      frame ||= requestAnimationFrame(() => apply())
-    }, Math.min(2 ** 31 - 1, Math.max(0, wakeAt - Date.now()) + 100))
-  }
-  wakeLater()
   const apply = () => {
     cancelAnimationFrame(frame); frame = 0
     update()
@@ -2246,7 +2184,6 @@ async function start(client, { fresh = false } = {}) {
     cancelAnimationFrame(frame); frame = 0
     pending = null; unpatched = false
     board.update()
-    wakeLater()
     router.refresh()
     conn()
   }

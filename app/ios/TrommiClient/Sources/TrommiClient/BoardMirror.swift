@@ -62,6 +62,7 @@ extension Board {
     c.contentState = v["content_state"].string ?? "header"
     c.unsupported = !v["unsupported"].isNull
     c.catchingUp = v["catching_up"].truthy
+    c.snoozedUntil = optU64(v["snoozed_until"]); c.snoozedAt = optU64(v["snoozed_at"]); c.unsnoozed = optU64(v["unsnoozed"])
     return c
   }
   func permissionOf(_ v: JV) -> Permission {
@@ -259,13 +260,14 @@ extension Board {
     }
     // the session list every device shows, as the client core makes it (client/src/sessions.rs)
     if let l = p["session_list"].array { sessionList = l }
+    if let w = p["wake_at"].double { wakeAt = w > 0 ? UInt64(w) : nil }
     if let s = p["stack"].array { stack = s.compactMap { $0.string } }
     if let o = p["open_permission_ids"].array { openPermissionIds = o.compactMap { $0.string } }
     held = Set(cards.values.filter { $0.catchingUp }.map { $0.objectId } + permissions.values.filter { $0.catchingUp }.map { $0.objectId })
     let c = p["change"]
     ch.cards = Set(strings(c["cards"])); ch.sessions = Set(strings(c["sessions"])); ch.permissions = Set(strings(c["permissions"])); ch.notes = Set(strings(c["notes"]))
     ch.published = Set(strings(c["published"])); ch.timelines = Set(strings(c["timelines"])); ch.registers = Set(strings(c["registers"]))
-    ch.members = c["members"].truthy; ch.alerts = c["alerts"].truthy; ch.stack = c["stack"].truthy; ch.room = c["room"].truthy
+    ch.members = c["members"].truthy; ch.alerts = c["alerts"].truthy; ch.stack = c["stack"].truthy; ch.room = c["room"].truthy; ch.status = p["session_list"].array != nil
     return ch
   }
 }

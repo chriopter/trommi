@@ -29,6 +29,9 @@ host fetches, stores and draws; the client core decides.
 | --- | --- | --- |
 | `src/desk.rs` | `DeskState`: the Desk of one device. The hub's open list decides (`Listing`): an object open here that the list leaves out, with nothing newer here than the list's change, is held (settled elsewhere); while the app waits for the hub's first list everything open is held (`set_hold_all`). The stack order (urgency, time asked, agent, id), snoozes and archived sessions, each session's open cards, the open permission requests, a request whose time ran out (its deadline, or unread and older than `REQUEST_LIFE_MAX_MS`), a hand back older than the version the hub lists, and when to look again by the clock (`next_wake`). `project(now)` answers with a `Delta`: only what changed (stack and session edits, held and unheld), the whole Desk only the first time and after `clear`. | web, iOS (through `ClientDesk`) |
 | `src/codec.rs` | The bodies of stored content (spec 9.1) between the wire and the model, both ways: ids (base64url ↔ hex), attachment references (`file_id` ↔ `attachment_id`), a message's `artifact_object_id` ↔ `published_object_id`, an Artifact's `shared_until` ↔ `released_until`, register names and the ids in their values, board items (`shape_ids`, 1/16 units ↔ `stroke_ids`, board units) and stroke pieces, read as trommi-core's `board_items` and `trail` read them. `decode_body` (the model's fields), `decode_body_text` (the same as JSON text, read from the body's own text without building it whole: the hot path), `encode_body`, `encode_register`, `register_from_wire`, `file_ids_of`, `decode_piece`, `encode_piece`. The numbers follow JavaScript's, which the web wrote first. | web (`codec.ts`, and every received envelope's `body`), the board model |
+| `src/model/` | The board model (`Model`): cards, answers, requests, notes, published objects, timelines, registers, members and sessions as every app shows them, built from what the protocol core accepted; its Desk is `desk.rs`'s, and each open card carries its snooze as the Desk holds it (`snoozed_until`, `unsnoozed`). `finish(now)` hands an app the patch of what a batch touched, with `wake_at`: when to project again by the clock alone. | web (`ClientModel`, mirrored in `mirror.ts`), iOS (`BoardMirror.swift`) |
+| `src/sessions.rs` | The session list (`SessionRow`): which sessions show, their names, online or gone, archived (the person's choice, a closed helper, a replaced pairing of the same folder), parent, desk and order. The Desk leaves out the cards of the sessions it lists as archived. | web (`BoardState.agents`), iOS (`DeskModel.agents`) |
+| `src/status.rs` | Each session's link (`live`, `oncall`, `asleep`, `cut`, `gone`), its red hand (`blocked`: cut off, gone while working, or a permission request or a blocking question that stands on the Desk) and its quiet hint, decided at the model's clock, with the moment it may change (`recheck_at`). | web and iOS, through the session list |
 | `examples/codec_speed.rs` | The codec alone: 10 000 card and message bodies read. | by hand |
 | `src/plan.rs` | The load rules of a catch-up as steps (`CatchUp`, `Step`): the Desk once (then its changes since), the open objects' current versions, the history once, Welcomes once per page, then the live stream. | a Rust host, tests |
 | `src/board.rs` | Board facts (`Fact`, `Source`, `Board`): newest to oldest, what history brings may only close. | a Rust host, tests |
@@ -43,8 +46,9 @@ host fetches, stores and draws; the client core decides.
 - **Storage:** IndexedDB and the tabs (web), files and the Keychain (iOS), the journal (connector).
 - **The sync engine:** the hub's order, Welcomes, a group's past, gaps in a sender's chain (web `engine.ts`,
   `room.ts`; iOS `Room*.swift`; connector `client.rs`).
-- **The board model:** cards, answers, notes, timelines, registers as each app shows them (web `model.ts`, iOS
-  `Board.swift`, connector `model.rs`). Its Desk projection is this crate's.
+- **A copy of the board model** to render from, kept by the core's patches (web `mirror.ts`, iOS `BoardMirror.swift`);
+  the connector keeps its own (`model.rs`).
+- **Words:** what a link, a red hand or a snooze says; the core decides which, the app says it.
 - **The UI:** the web's views, SwiftUI; the connector's MCP tools.
 
 ## The body codec across the facade

@@ -700,6 +700,7 @@ export class Client {
     if (this.goalsTimer !== null) { clearTimeout(this.goalsTimer); this.goalsTimer = null }
     if (this.deskTimer !== null) { clearTimeout(this.deskTimer); this.deskTimer = null }
     if (this.deskHoldTimer !== null) { clearTimeout(this.deskHoldTimer); this.deskHoldTimer = null }
+    if (this.wakeTimer !== null) { clearTimeout(this.wakeTimer); this.wakeTimer = null }
     this.deskWaitDone?.()
     await this.engine.stop()
     for (const off of this.offs.splice(0)) off()
@@ -878,6 +879,19 @@ export class Client {
     for (const k of ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites'] as const) for (const id of got[k]) ch[k].add(id)
     for (const [k, list] of got.items) for (const it of list) M.addItem(ch, k, it)
     ch.members ||= got.members; ch.alerts ||= got.alerts; ch.stack ||= got.stack; ch.room ||= got.room
+    if (patch.session_list) ch.status = true
+    if (patch.wake_at !== undefined) this.wakeAt(patch.wake_at)
+  }
+  /** When the core's model changes by the clock alone (a snooze ends, a request runs out, a session falls asleep, a
+   *  red hand after its grace): a batch then, so that the core decides it, not the page. */
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null
+  private wakeTime = 0
+  private wakeAt(at: number): void {
+    if (at === this.wakeTime) return
+    if (this.wakeTimer !== null) { clearTimeout(this.wakeTimer); this.wakeTimer = null }
+    this.wakeTime = at
+    if (!at) return
+    this.wakeTimer = setTimeout(() => { this.wakeTimer = null; this.wakeTime = 0; this.publish() }, Math.min(2 ** 31 - 1, Math.max(0, at - this.now()) + 50))
   }
   /** An own send was sealed: the core's model learns its hash (the hub's copy will name it), number and object id. */
   private confirmEcho(local_id: string, sealed: Sealed): void {

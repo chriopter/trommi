@@ -5,8 +5,6 @@
 import Foundation
 
 public let SESSION_ID_LEN = 12
-public let QUIET_MS: UInt64 = 15 * 60_000
-public let OFFLINE_GRACE_MS: UInt64 = 60_000
 public let UNHEARD_MS: UInt64 = 2 * 60_000
 public let ACTING_MS: UInt64 = 6 * 60 * 60 * 1000
 
@@ -55,7 +53,18 @@ public struct Agent: Identifiable, Equatable {
   public var placed: Bool = false
   /** Archived because a newer pairing in the same folder took its place (the client core's session list). */
   public var replaced: Bool = false
+  /** At the client core's clock (client/src/status.rs): its link (nil when archived or removed), why it is stopped
+   *  (the red hand: it reads the Desk), whether a status line says working, since when it is quiet. */
+  public var linkState: CoreLink? = nil
+  public var blocked: CoreBlocked? = nil
+  public var working: Bool = false
+  public var quietSince: UInt64? = nil
 }
+
+/** A session's link as the client core decides it (status.rs `LinkView`). */
+public struct CoreLink: Equatable { public var state: String; public var since: UInt64?; public var reason: String }
+/** Why a session is stopped, as the client core decides it (status.rs `Blocked`). */
+public struct CoreBlocked: Equatable { public var why: String; public var since: UInt64? }
 
 public struct LinkWords: Equatable {
   public var state: String              // live | oncall | asleep | cut | gone
@@ -88,34 +97,32 @@ public func agoText(_ ts: UInt64, now: UInt64 = nowMs()) -> String {
 }
 
 let RECONNECT = "/mcp → trommi → Reconnect"
-/** The session's link in words (app.mjs linkOf). */
+/** The session's link in words (app.mjs linkOf); its state is the client core's (Agent.linkState). */
 public func linkOf(_ a: Agent?, now: UInt64 = nowMs()) -> LinkWords? {
-  guard let a = a, !a.archived, !a.removed else { return nil }
+  guard let a = a, !a.archived, !a.removed, let v = a.linkState else { return nil }
   let n = a.name, l = a.link
-  if !a.online {
-    let since = a.offlineSince, at = since.map { clockText($0, now: now) } ?? ""
-    if l?.exitClaude == "alive" {
-      return LinkWords(state: "cut", sign: "ear-off", since: since, word: "cut off\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Cut off" : "Cut off since \(at)",
-                       line: "\(n) is cut off\(at.isEmpty ? "" : " since \(at)"): its Claude Code runs, its Trommi tools are gone. It cannot hear you and cannot write to you.", fixSay: "In its terminal:", fixCode: RECONNECT)
-    }
+  let since = v.since, at = since.map { clockText($0, now: now) } ?? ""
+  switch v.state {
+  case "cut" where !a.online:
+    return LinkWords(state: "cut", sign: "ear-off", since: since, word: "cut off\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Cut off" : "Cut off since \(at)",
+                     line: "\(n) is cut off\(at.isEmpty ? "" : " since \(at)"): its Claude Code runs, its Trommi tools are gone. It cannot hear you and cannot write to you.", fixSay: "In its terminal:", fixCode: RECONNECT)
+  case "gone":
     let how = l?.exitReason != nil ? "its Claude Code session ended." : "it stopped without a word: its session ended, was killed, or its machine is off the network."
     return LinkWords(state: "gone", sign: "plug", since: since, word: "gone\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Gone" : "Gone since \(at)",
                      line: "\(n) is gone\(at.isEmpty ? "" : " since \(at)"): \(how)", fixSay: "Start it again in its folder:", fixCode: "claude --continue")
-  }
-  if let l = l, l.cutSince != nil || !l.attached {
-    let since = l.cutSince ?? l.since, at = since.map { clockText($0, now: now) } ?? ""
+  case "cut":
     return LinkWords(state: "cut", sign: "ear-off", since: since, word: "cut off\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Cut off" : "Cut off since \(at)",
                      line: "A Claude Code session in \(n)'s folder is cut off\(at.isEmpty ? "" : " since \(at)"): it runs, its Trommi tools are gone. It cannot hear you and cannot write to you.", fixSay: "In its terminal:", fixCode: RECONNECT)
+  case "live":
+    return LinkWords(state: "live", sign: "ear", since: nil, word: "", short: "", line: "\(n) hears you at once.", fixSay: nil, fixCode: nil)
+  default: break
   }
-  guard let l = l, l.hears == "oncall" else { return LinkWords(state: "live", sign: "ear", since: nil, word: "", short: "", line: "\(n) hears you at once.", fixSay: nil, fixCode: nil) }
-  let last = l.lastCallAt ?? l.since
-  let idle = last.map { now > $0 ? now - $0 : 0 }
-  let m = idle.map(minutes)
-  if let idle = idle, idle >= ASLEEP_MS, let m = m {
-    return LinkWords(state: "asleep", sign: "ear-later", since: last, word: "not listening · \(m) min", short: "Not listening for \(m) min",
+  let m = since.map { minutes(now > $0 ? now - $0 : 0) }
+  if v.state == "asleep", let m = m {
+    return LinkWords(state: "asleep", sign: "ear-later", since: since, word: "not listening · \(m) min", short: "Not listening for \(m) min",
                      line: "\(n) is not listening: it hears you only on its next step, and its last one was \(m) min ago.", fixSay: "Wake it: type anything in its terminal.", fixCode: nil)
   }
-  return LinkWords(state: "oncall", sign: "ear-later", since: last, word: "on its next step", short: "Hears you on its next step",
+  return LinkWords(state: "oncall", sign: "ear-later", since: since, word: "on its next step", short: "Hears you on its next step",
                    line: "\(n) hears you on its next step\(m.map { "; its last one was \($0) min ago" } ?? "").", fixSay: nil, fixCode: nil)
 }
 
@@ -362,7 +369,6 @@ public final class DeskModel {
   public private(set) var tasks: [Task1] = []
   /** By agent id, built once per update (a big room has hundreds of sessions: no scan of every card or line per row). */
   private var workingOf: [String: [Task1]] = [:]
-  private var waitingOf: [String: [DeskCard]] = [:]
   public private(set) var desks: [DeskDesc] = []
   private(set) var devToAgent: [String: String] = [:]
   private(set) var agentToDev: [String: String] = [:]
@@ -420,7 +426,6 @@ public final class DeskModel {
     tasks = []
     for s in sessions { for t in s.statusLines { tasks.append(Task1(agent: devToAgent[s.sessionId] ?? "", id: t.id, label: t.label, state: t.state, detail: t.detail, cardId: t.objectId, updated: t.updatedAt)) } }
     workingOf = Dictionary(grouping: tasks.filter { $0.state == "working" }, by: { $0.agent })
-    waitingOf = Dictionary(grouping: cards.filter { $0.status == "open" && $0.withAgent == nil }, by: { $0.agent })
     var d = m.human.desks.compactMap { (id, v) -> DeskDesc? in
       guard v.object != nil else { return nil }
       let name = (v["name"].string ?? "").trimmingCharacters(in: .whitespaces)
@@ -469,6 +474,13 @@ public final class DeskModel {
       a.hue = Pen.hueFor(id: a.id, mark: a.mark)
       a.placed = r["placed"].truthy
       a.replaced = r["replaced"].truthy
+      let lv = r["link"]
+      if lv.object != nil { a.linkState = CoreLink(state: lv["state"].string ?? "live", since: lv["since"].double.map { UInt64(max(0, $0)) }, reason: lv["reason"].string ?? "") }
+      let bv = r["blocked"]
+      if bv.object != nil { a.blocked = CoreBlocked(why: bv["why"].string ?? "", since: bv["since"].double.map { UInt64(max(0, $0)) }) }
+      a.working = r["working"].truthy
+      a.quietSince = r["quiet_since"].double.map { UInt64(max(0, $0)) }
+      if let d = r["device_active"].double { a.deviceActive = UInt64(max(0, d)) }
       return a
     }
   }
@@ -507,9 +519,8 @@ public final class DeskModel {
     if c.working && status == "open" && d.kind == "info" { d.working = true; if d.withAgent == nil { d.withAgent = d.created } }
     if let dr = h.drafts[c.objectId], status == "open" { d.draft = dr }
     if let st = h.stars[c.objectId], st.object != nil { d.starred = max(1, clampedU64(st["at"].double)) }
-    if let sn = h.snoozes[c.objectId], status == "open", let until = sn["until"].double {
-      if clampedU64(until) > now { d.snoozedUntil = clampedU64(until); d.snoozedAt = clampedU64(sn["at"].double) } else { d.unsnoozed = clampedU64(until) }
-    }
+    // (his "Later" as the client core holds it: until its time and only for the version he put off, desk.rs)
+    if status == "open" { if let u = c.snoozedUntil { d.snoozedUntil = u; d.snoozedAt = c.snoozedAt ?? 0 } else if let u = c.unsnoozed { d.unsnoozed = u } }
     if status == "done" && c.closedHow == "closed", let a = a, !a.pending, a.answerAction != "read", a.answerAction != "shred" { d.finished = true }
     d.mergedInto = c.mergedIntoObjectId
     d.mergedFrom = c.mergedFromObjectIds
@@ -595,7 +606,10 @@ public final class DeskModel {
     let byA = DeskModel.newestById(everyone)
     let shelved = Set(everyone.filter { $0.archived }.map { $0.id })
     let mine: (DeskCard) -> Bool = { onDesk(byA[$0.agent]) }
-    let allOpen = cards.filter { $0.status == "open" && !shelved.contains($0.agent) && $0.snoozedUntil == nil }.sorted { ($0.created, $0.number) < ($1.created, $1.number) }
+    // The Desk: what the client core's Desk holds (its stack and open requests: not held, not put off, not of an
+    // archived session; client/src/desk.rs), with the infos their agents still work on (Off your mind), by age.
+    let onCoreDesk = Set(board.stack).union(board.openPermissionIds)
+    let allOpen = cards.filter { $0.status == "open" && (onCoreDesk.contains($0.id) || ($0.working && !shelved.contains($0.agent) && $0.snoozedUntil == nil)) }.sorted { ($0.created, $0.number) < ($1.created, $1.number) }
     let allFresh = allOpen.filter { $0.withAgent == nil && $0.kind != "info" }
     let open = allOpen.filter(mine)
     let reads = open.filter { $0.withAgent == nil && $0.kind == "info" }.sorted { ($1.isKnock ? 1 : 0, $1.created) < ($0.isKnock ? 1 : 0, $0.created) }
@@ -634,30 +648,20 @@ public final class DeskModel {
                 goals: all ? "" : desks.first { $0.id == deskId }?.goals ?? "")
   }
 
-  /** agent: why the session is stopped, or nil (app.mjs blockedOf). */
+  /** agent: why the session is stopped, or nil (app.mjs blockedOf): the client core's decision (Agent.blocked), in words. */
   public func blockedOf(_ a: Agent, now: UInt64 = nowMs()) -> (String, String)? {
-    if a.archived { return nil }
-    let link = linkOf(a, now: now)
-    if link?.state == "cut" { return ("cut", link!.short) }
-    let working = workingOf[a.id] ?? []
-    if !a.online {
-      let since = a.offlineSince
-      if !working.isEmpty && now - min(now, max(since ?? a.seen, 0)) >= OFFLINE_GRACE_MS { return ("offline", since.map { "Connection lost since \(clockText($0, now: now))" } ?? "Disconnected while working") }
-      return nil
+    guard !a.archived, let b = a.blocked else { return nil }
+    switch b.why {
+    case "cut": return ("cut", linkOf(a, now: now)?.short ?? "Cut off")
+    case "offline": return ("offline", b.since.map { "Connection lost since \(clockText($0, now: now))" } ?? "Disconnected while working")
+    case "permission": return ("permission", "Waiting for permission")
+    default: return ("blocking", "Waiting for you: a blocking question")
     }
-    let waiting = waitingOf[a.id] ?? []
-    if waiting.contains(where: { $0.kind == "permission" }) { return ("permission", "Waiting for permission") }
-    if waiting.contains(where: { $0.urgency == "critical" }) { return ("blocking", "Waiting for you: a blocking question") }
-    return nil
   }
-  /** The quiet hint: "quiet for 24 min". */
+  /** The quiet hint: "quiet for 24 min" (the client core's quiet_since). */
   public func quietOf(_ a: Agent, now: UInt64 = nowMs()) -> String? {
-    if a.archived || !a.online { return nil }
-    let working = workingOf[a.id] ?? []
-    if working.isEmpty { return nil }
-    let last = max(a.active, a.parent != nil ? a.deviceActive : 0, working.map { $0.updated }.max() ?? 0)
-    if now - min(now, last) < QUIET_MS { return nil }
-    return "quiet for \(minutes(now - last)) min"
+    guard !a.archived, a.online, let q = a.quietSince else { return nil }
+    return "quiet for \(minutes(now > q ? now - q : 0)) min"
   }
   /** Whether the card's session has his last word on it (heardOf). */
   public func heardOf(_ c: DeskCard, now: UInt64 = nowMs()) -> (heard: Bool?, waiting: UInt64, late: Bool)? {

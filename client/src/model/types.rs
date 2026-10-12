@@ -125,6 +125,14 @@ pub struct Card {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<Value>,
     pub state_envelope_number: u64,
+    /// The person's "Later" that holds it off the Desk now (desk.rs `snooze_holds`): until when, and when he put it off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snoozed_at: Option<u64>,
+    /// An open card whose snooze ended (by the clock, by hand, by a newer version): until when it was put off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unsnoozed: Option<u64>,
 }
 
 impl Card {

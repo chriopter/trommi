@@ -16,6 +16,8 @@ pub struct Change {
     pub alerts: bool,
     pub stack: bool,
     pub room: bool,
+    /// The session list's status changed by the clock (a link asleep, a red hand after the grace, a quiet hint).
+    pub status: bool,
     /// The items added or replaced in this batch, by timeline key, in the order they came.
     pub items: BTreeMap<String, Vec<ItemKey>>,
 }
@@ -37,6 +39,7 @@ impl Change {
             && !self.alerts
             && !self.stack
             && !self.room
+            && !self.status
             && self.cards.is_empty()
             && self.sessions.is_empty()
             && self.permissions.is_empty()

@@ -44,7 +44,7 @@ impl Model {
     }
 
     /// The patch for one change.
-    pub fn patch(&self, change: &Change) -> Value {
+    pub fn patch(&mut self, change: &Change) -> Value {
         let mut p = Map::new();
         p.insert("room".into(), self.room_json());
         if change.room {
@@ -136,18 +136,32 @@ impl Model {
                 json!(self.open_permission_ids),
             );
         }
-        // The session list every app shows (sessions.rs), whenever something it is made from may have changed.
+        // The session list every app shows (sessions.rs), whenever something it is made from may have changed: the
+        // sessions, their devices, the person's settings, the Desk (the red hand reads it), the clock.
         if change.room
             || change.members
+            || change.stack
+            || change.status
             || !change.sessions.is_empty()
             || !change.registers.is_empty()
+            || !change.cards.is_empty()
+            || !change.permissions.is_empty()
         {
+            let rows = crate::sessions::session_list(self, self.reading);
+            self.status_wake = rows.iter().filter_map(|r| r.recheck_at).min().unwrap_or(0);
             p.insert(
                 "session_list".into(),
-                serde_json::to_value(crate::sessions::session_list(self, self.reading))
-                    .unwrap_or(Value::Null),
+                serde_json::to_value(rows).unwrap_or(Value::Null),
             );
         }
+        // When the app is to project again although nothing came: the next snooze or request to run out, the next
+        // change of a session's status by the clock (0: none).
+        let wake = [self.desk_wake, self.status_wake]
+            .into_iter()
+            .filter(|w| *w != 0)
+            .min()
+            .unwrap_or(0);
+        p.insert("wake_at".into(), json!(wake));
         let items: Vec<Value> = change
             .items
             .iter()
@@ -156,7 +170,7 @@ impl Model {
         p.insert("change".into(), json!({
             "cards": change.cards, "sessions": change.sessions, "permissions": change.permissions, "notes": change.notes,
             "published": change.published, "timelines": change.timelines, "registers": change.registers, "invites": [],
-            "members": change.members, "alerts": change.alerts, "outbox": false, "stack": change.stack, "room": change.room,
+            "members": change.members, "alerts": change.alerts, "outbox": false, "stack": change.stack, "room": change.room, "status": change.status,
             "items": items,
         }));
         Value::Object(p)

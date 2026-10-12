@@ -34,6 +34,26 @@ const noteOf = n => Object.assign(n, { version_hashes: n.version_hashes ?? (n.ve
 const boardItems = items => items.map(it => (it.content?.content_type === 'strokes' && it.content.strokes?.some(e => e.attachment && !(e.attachment.file_key && e.attachment.sha256))
   ? { ...it, content: { ...it.content, strokes: it.content.strokes.map(e => (e.attachment ? { ...e, attachment: keyed(e.attachment) } : e)) } } : it))
 
+/** A fixture session's status in the core's shape (client/src/status.rs), read plainly: its link, the red hand from
+ *  what stands on the mock Desk, its working line. */
+function demoStatus(m, s, archived, removed) {
+  const l = s.link ?? null, online = Boolean(s.is_online), now = Date.now()
+  const link = archived || removed ? null
+    : !online ? { state: l?.exit?.claude === 'alive' ? 'cut' : 'gone', since: s.offline_since ?? null, reason: l?.exit?.reason ?? '' }
+      : l?.cut_since ? { state: 'cut', since: l.cut_since, reason: 'folder' }
+        : l && l.attached === false ? { state: 'cut', since: l.since ?? null, reason: 'detached' }
+          : !l || l.hears !== 'oncall' ? { state: 'live', since: null, reason: '' }
+            : { state: now - (l.last_call_at ?? l.since ?? now) >= 10 * 60000 ? 'asleep' : 'oncall', since: l.last_call_at ?? l.since ?? null, reason: '' }
+  const working = (s.status_lines ?? []).some(t => t.state === 'working')
+  const key = s.session_id ?? s.agent_device_id
+  const desk = new Set(m.stack), mineOn = [...m.cards.values()].filter(c => (c.session_id ?? c.agent_device_id) === key && desk.has(c.object_id) && !c.in_revision)
+  const asks = [...m.permissions.values()].some(p => (p.session_id ?? p.agent_device_id) === key && m.open_permission_ids.includes(p.object_id))
+  const blocked = archived ? null : link?.state === 'cut' ? { why: 'cut', since: link.since }
+    : !online ? (working ? { why: 'offline', since: s.offline_since ?? null } : null)
+      : asks ? { why: 'permission', since: null } : mineOn.some(c => c.urgency === 'critical') ? { why: 'blocking', since: null } : null
+  return { link, blocked, working, quiet_since: null, device_active: s.last_activity_at ?? 0, recheck_at: null }
+}
+
 /**
  * The session list of the mock room, in the shape of the client core's (client/src/sessions.rs `SessionRow`): the demo
  * has no core, and its sessions are a fixture's, so the plain reading of it is enough here: the person's label, else
@@ -56,6 +76,7 @@ function demoSessions(m) {
       archived: chosen && !(s.is_online && !parentKey), replaced: false, removed: s.is_active === false, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position),
       desk: set.desk ?? 'main', starred: crown === key || crown === s.agent_device_id, main: Boolean(p.is_main), own: m.members.get(s.agent_device_id)?.device_role === 'human',
       waiting: s.open_card_ids?.length ?? 0, fetched: 'archived' in set && !set.archived, last_activity_at: s.last_activity_at ?? 0,
+      ...demoStatus(m, s, chosen && !(s.is_online && !parentKey), s.is_active === false),
     }
   })
   const byId = new Map(rows.map(r => [r.id, r]))
@@ -116,6 +137,11 @@ export class MockClient {
     const m = this.model, now = Date.now()
     const archived = id => Boolean(m.human.session_settings.get(id)?.archived)
     const before = m.stack.join()
+    for (const c of m.cards.values()) {
+      const until = m.human.snoozes.get(c.object_id)?.until, open = c.object_state === 'open'
+      delete c.snoozed_until; delete c.snoozed_at; delete c.unsnoozed
+      if (open && until > now) { c.snoozed_until = until; c.snoozed_at = m.human.snoozes.get(c.object_id)?.at ?? 0 } else if (open && until) c.unsnoozed = until
+    }
     m.stack = [...m.cards.values()].filter(c => c.object_state === 'open' && !(m.human.snoozes.get(c.object_id)?.until > now) && !archived(c.agent_device_id))
       .sort((a, b) => URG[a.urgency] - URG[b.urgency] || a.first_envelope_number - b.first_envelope_number).map(c => c.object_id)
     m.open_permission_ids = [...m.permissions.values()].filter(p => p.permission_state === 'pending').sort((a, b) => a.envelope_number - b.envelope_number).map(p => p.object_id)

@@ -7,7 +7,7 @@ import { BOARD_CONTENT_TYPES } from './codec.ts'
 import { applyPatch } from './mirror.ts'
 import { emptyModel, emptyChange } from './model-shape.ts'
 import type {
-  Alert, Body, Card, CardOption, Change, ContentState, HumanRegister, ItemState, Link, Linked, LinkState, Member, Model, Note,
+  Alert, Body, Card, CardOption, Change, ContentState, HumanRegister, ItemState, Link, Member, Model, Note,
   PermissionRequest, Published, Session, Timeline, TimelineItem,
 } from './types.ts'
 
@@ -22,7 +22,7 @@ export const cardSupported = (card: { unsupported?: unknown } | null | undefined
 export function addItem(change: Change, key: string, item: TimelineItem): void { let l = change.items.get(key); if (!l) change.items.set(key, l = []); l.push(item) }
 const CHANGE_SETS = ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites'] as const
 export function changeIsEmpty(c: Change): boolean {
-  return c.items.size === 0 && !c.members && !c.alerts && !c.outbox && !c.stack && !c.room && CHANGE_SETS.every(k => c[k].size === 0)
+  return c.items.size === 0 && !c.members && !c.alerts && !c.outbox && !c.stack && !c.room && !c.status && CHANGE_SETS.every(k => c[k].size === 0)
 }
 export const timelineKey = (timeline_kind: string, timeline_id: string): string => `${timeline_kind}:${timeline_id}`
 export interface TimelineKeyParts { timeline_kind: string; timeline_id: string; scope: string; scope_id: string }
@@ -56,7 +56,8 @@ export function choicesFinal(card: { options?: (CardOption | null | undefined)[]
 //     cut_since    a Claude Code session of the folder lives while its connector is gone (seen by this connector)
 //     exit         the connector's last word before its stream closed: why, and whether its Claude Code process lived
 //                  on ('alive'), ended ('gone') or was still being looked at ('checking')
-// The five states, from the hub's two facts (is_online, offline_since) and the report:
+// The five states, from the hub's two facts (is_online, offline_since) and the report (decided by the client core,
+// client/src/status.rs `link_state`):
 //   gone     no stream, and no word that Claude Code lives on
 //   cut      no stream but its Claude Code lives (exit.claude 'alive'); or a stream, and a session of its folder lost
 //            its connector (cut_since); or a stream with nobody attached
@@ -74,24 +75,6 @@ export function cleanLink(report: unknown): Link | null {
   const exit = isObject(l['exit']) ? { reason: String(l['exit']['reason'] ?? '').slice(0, 40), claude: CLAUDE.includes(l['exit']['claude']) ? l['exit']['claude'] : 'gone' } : null
   return { hears: l['hears'], attached: l['attached'] !== false, last_call_at: stamp(l['last_call_at']), working: l['working'] === true, since: stamp(l['since']), cut_since: stamp(l['cut_since']), exit }
 }
-/**
- * The state of a member's or a session's link (both carry is_online, offline_since, link):
- * { state: 'live' | 'oncall' | 'asleep' | 'cut' | 'gone', since, idle_ms, reason }.
- *   since    when it was cut off or went (null: not known); for asleep, its last tool call
- *   idle_ms  oncall and asleep: how long ago its last tool call was
- *   reason   gone and cut: the connector's exit reason ('' when it left without a word), or 'folder' / 'detached'
- */
-export function linkState(subject: Linked | null | undefined, now: number = Date.now(), { asleep_ms = ASLEEP_MS }: { asleep_ms?: number } = {}): LinkState {
-  const l = subject?.link ?? null
-  if (!subject?.is_online) return { state: l?.exit?.claude === 'alive' ? 'cut' : 'gone', since: subject?.offline_since ?? null, idle_ms: null, reason: l?.exit?.reason ?? '' }
-  if (l?.cut_since) return { state: 'cut', since: l.cut_since, idle_ms: null, reason: 'folder' }
-  if (l && !l.attached) return { state: 'cut', since: l.since, idle_ms: null, reason: 'detached' }
-  if (!l || l.hears !== 'oncall') return { state: 'live', since: null, idle_ms: null, reason: '' }
-  const last = l.last_call_at ?? l.since
-  const idle_ms = last ? Math.max(0, now - last) : null
-  return { state: idle_ms != null && idle_ms >= asleep_ms ? 'asleep' : 'oncall', since: last, idle_ms, reason: '' }
-}
-
 // ---- the receipt: what the agent has been handed ------------------------------------------------------------
 // The connector writes the session register `heard` = { up_to, at } when it really hands the human's commands to the
 // agent: every command of this session up to envelope number up_to is with the agent. heard_up_to null: nothing is known.

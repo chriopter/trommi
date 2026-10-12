@@ -198,6 +198,11 @@ public final class Card {
   public var unsupported = false
   /** Settled at the hub after this device's cursor, not taken yet: off the Desk (the client core's Desk). */
   public var catchingUp = false
+  /** His "Later" as the client core holds it (client/src/desk.rs `snooze_holds`: until its time, only for the version he
+   *  put off): until when, and when he put it off; `unsnoozed`: an open card whose snooze ended. */
+  public var snoozedUntil: UInt64?
+  public var snoozedAt: UInt64?
+  public var unsnoozed: UInt64?
   /** A card of the copy (BoardMirror.swift `cardOf`): every field is set from the core's record. */
   init(snapshot id: String, agent: String) {
     objectId = id; agentDeviceId = agent; envelopeNumber = 0; firstEnvelopeNumber = 0; createdAt = 0; sessionId = nil; updatedAt = 0
@@ -368,12 +373,14 @@ public struct Change {
   public var cards = Set<String>(), sessions = Set<String>(), permissions = Set<String>(), notes = Set<String>(), published = Set<String>()
   public var timelines = Set<String>(), registers = Set<String>(), invites = Set<String>()
   public var members = false, alerts = false, outbox = false, stack = false, room = false
+  /** The session list was made again (a link, a red hand, a quiet hint changed by the clock). */
+  public var status = false
   public init() {}
-  public var isEmpty: Bool { cards.isEmpty && sessions.isEmpty && permissions.isEmpty && notes.isEmpty && published.isEmpty && timelines.isEmpty && registers.isEmpty && invites.isEmpty && !members && !alerts && !outbox && !stack && !room }
+  public var isEmpty: Bool { cards.isEmpty && sessions.isEmpty && permissions.isEmpty && notes.isEmpty && published.isEmpty && timelines.isEmpty && registers.isEmpty && invites.isEmpty && !members && !alerts && !outbox && !stack && !room && !status }
   public mutating func merge(_ o: Change) {
     cards.formUnion(o.cards); sessions.formUnion(o.sessions); permissions.formUnion(o.permissions); notes.formUnion(o.notes); published.formUnion(o.published)
     timelines.formUnion(o.timelines); registers.formUnion(o.registers); invites.formUnion(o.invites)
-    members = members || o.members; alerts = alerts || o.alerts; outbox = outbox || o.outbox; stack = stack || o.stack; room = room || o.room
+    members = members || o.members; alerts = alerts || o.alerts; outbox = outbox || o.outbox; stack = stack || o.stack; room = room || o.room; status = status || o.status
   }
 }
 
@@ -403,18 +410,6 @@ public func lamportAccepted(_ lamport: Int, _ seen: Int) -> Bool { lamport > 0 &
 public func choicesFinal(_ card: Card?, _ choices: [String]) -> Bool {
   let final = Set((card?.options ?? []).filter { $0.final }.map { $0.key })
   return !choices.isEmpty && choices.allSatisfy { final.contains($0) }
-}
-
-/** The state of a member's or a session's link (model.mjs linkState). */
-public struct LinkState: Equatable { public var state: String; public var since: UInt64?; public var idleMs: UInt64?; public var reason: String }
-public func linkState(online: Bool, offlineSince: UInt64?, link l: AgentLink?, now: UInt64 = nowMs()) -> LinkState {
-  if !online { return LinkState(state: l?.exitClaude == "alive" ? "cut" : "gone", since: offlineSince, idleMs: nil, reason: l?.exitReason ?? "") }
-  if let c = l?.cutSince { return LinkState(state: "cut", since: c, idleMs: nil, reason: "folder") }
-  if let l = l, !l.attached { return LinkState(state: "cut", since: l.since, idleMs: nil, reason: "detached") }
-  guard let l = l, l.hears == "oncall" else { return LinkState(state: "live", since: nil, idleMs: nil, reason: "") }
-  let last = l.lastCallAt ?? l.since
-  let idle = last.map { now > $0 ? now - $0 : 0 }
-  return LinkState(state: idle.map { $0 >= ASLEEP_MS } == true ? "asleep" : "oncall", since: last, idleMs: idle, reason: "")
 }
 
 // ---- the board ---------------------------------------------------------------------------------------------
@@ -459,6 +454,9 @@ public final class Board {
   public var human = HumanRegisters()
   public var alerts: [BoardAlert] = []
   public var stack: [String] = []
+  /** When the core's model changes by the clock alone (a snooze ends, a request runs out, a session's status): the
+   *  app projects again then (Room `wakeLater`); nil: never. */
+  public internal(set) var wakeAt: UInt64?
   public var openPermissionIds: [String] = []
   /** The session list every device of the person shows (client/src/sessions.rs, one entry per session, in order):
    *  which sessions, their names, online or gone, archived, their parents. DeskModel draws it as it comes. */

@@ -109,6 +109,15 @@ pub struct Model {
     pub windows_open: bool,
     /// The room is still being read (a sign-in, a read back): a session whose profile has not come is "Loading …".
     pub reading: bool,
+    /// The cards that carry a snooze mark (`snoozed_until`, `unsnoozed`).
+    pub snooze_marked: std::collections::BTreeSet<String>,
+    /// The model's clock: the `now` of the last projection (the session list's status is decided at it).
+    pub clock: u64,
+    /// When this app's run started: the first projection's clock.
+    pub started_at: u64,
+    /// When the session list's status may change by the clock alone (0: never); the projection past it sends the
+    /// list again.
+    pub status_wake: u64,
 }
 
 /// `<kind>:<id>`: a timeline's key.
