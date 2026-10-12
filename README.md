@@ -31,14 +31,15 @@ One Rust core does the cryptography for the web app, the iOS app and the connect
    curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh
    ```
 
-3. In the app: **Invite an agent**. In the project folder start `claude` and paste the line it shows:
+3. In the app: **Invite an agent**. In the project folder start `claude` (or `codex`) and paste the line it shows:
 
    ```
-   /trommi:connect '<link>'
+   Connect to Trommi with this invite link: '<link>'
    ```
 
-   Claude Code asks once whether to use the trommi MCP server: choose "Use this MCP server". Six emoji appear in
-   the terminal and in the app; tap "They match". In Codex, ask the agent to connect with the link.
+   In Claude Code the plugin's slash command does the same: `/trommi:connect '<link>'`. Claude Code asks once
+   whether to use the trommi MCP server: choose "Use this MCP server". Six emoji appear in the terminal and in the
+   app; tap "They match".
 
 Updates come by themselves: a running connector installs a new signed release and swaps it in, no restart and no
 /mcp → Reconnect. By hand: `trommi-connector update`.

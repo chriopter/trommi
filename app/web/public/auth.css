@@ -161,6 +161,10 @@ body > main#room:not(.room-paged) { max-width: none; margin: 0; padding-inline: 
 .clip-link-same { font-size: 0; }
 .clip-link-same::after { content: attr(data-same); font-size: var(--t-sm); }
 .clip-copy-word { display: grid; place-items: center; min-width: 76px; height: 36px; padding: 0 var(--s-3); border-radius: 6px; background: var(--fg); color: var(--bg); font: 700 var(--t-sm)/1 var(--font); }
+.clip-or { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); }
+.room .clip button.clip-alt { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer; text-align: left; }
+.clip-alt code { min-width: 0; overflow-wrap: anywhere; font: 500 var(--t-sm)/1.4 var(--mono); }
+.room .clip .clip-alt .clip-copy-word { min-width: 0; height: 28px; padding: 0 var(--s-2); font-size: var(--t-xs, 0.75rem); }
 .clip-in { display: flex; align-items: center; gap: 10px; }
 .clip-ask { display: grid; gap: 9px; }
 .clip-ask small strong { color: var(--fg); font-weight: 700; }

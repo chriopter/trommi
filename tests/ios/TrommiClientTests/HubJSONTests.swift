@@ -26,12 +26,14 @@ final class HubJSONTests: XCTestCase {
     XCTAssertEqual(loggable(TrommiError("a code with spaces", "")), "other")
     XCTAssertEqual(loggable(CocoaError(.fileNoSuchFile)), "error")
   }
-  /// The two lines of an agent's invite, as the web's page has them, the link in the second.
+  /// The two lines of an agent's invite, as the web's page has them, the link in the second: a plain prompt first, the
+  /// plugin's slash command as the other way.
   func testTheAgentsTwoLines() {
     let link = "https://app.trommi.com/join#v1.a.b.c.d"
     XCTAssertEqual(agentConnectSteps(link: link).map(\.command), [
       "curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh",
-      "/trommi:connect 'https://app.trommi.com/join#v1.a.b.c.d'"])
+      "Connect to Trommi with this invite link: 'https://app.trommi.com/join#v1.a.b.c.d'"])
+    XCTAssertEqual(agentConnectSteps(link: link).map(\.other), ["", "/trommi:connect 'https://app.trommi.com/join#v1.a.b.c.d'"])
     XCTAssertEqual(agentConnectSteps(link: link).map(\.title), ["First time on this computer? Install:", "In your project folder, start claude (or codex) and paste:"])
     XCTAssertEqual(agentConnectSteps(link: link)[0].note, "Skip this if you have installed Trommi before (check: trommi-connector --version).")
     XCTAssertEqual(agentConnectSteps(link: link)[1].note, "Claude Code asks once whether to use the trommi MCP server: choose \"Use this MCP server\".")

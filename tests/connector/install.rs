@@ -789,20 +789,25 @@ struct Desk {
     dir: TempDir,
 }
 
+/// Like Claude Code, `install` copies the marketplace's plugin folder (`market/plugin`) into the cache and
+/// `update` copies nothing while the version is the same; every call notes the Claude Code folder it was given.
 const CLAUDE: &str = r#"#!/bin/sh
-state=$(dirname "$0")/..
+state=$(cd "$(dirname "$0")/.." && pwd)
 echo "claude $*" >> "$state/calls"
+echo "${CLAUDE_CONFIG_DIR:-unset}" >> "$state/config-dirs"
 case "$*" in
   "plugin marketplace list --json") if [ -f "$state/markets" ]; then cat "$state/markets"; else echo '[]'; fi ;;
   "plugin marketplace add trommi/trommi --sparse .claude-plugin connector/plugin")
-    echo '[{"name":"trommi","source":"github","repo":"trommi/trommi","installLocation":"/x"}]' > "$state/markets" ;;
+    printf '[{"name":"trommi","source":"github","repo":"trommi/trommi","installLocation":"%s/market"}]' "$state" > "$state/markets" ;;
   "plugin marketplace update trommi") [ -f "$state/markets" ] || exit 1 ;;
   "plugin list --json") if [ -f "$state/plugins" ]; then cat "$state/plugins"; else echo '[]'; fi ;;
   "plugin install trommi@trommi -s user -y")
     [ -f "$state/markets" ] || { echo "no such marketplace" >&2; exit 1; }
-    echo '[{"id":"trommi@trommi","version":"2.0.0","scope":"user","enabled":true}]' > "$state/plugins" ;;
+    rm -rf "$state/cache"; cp -r "$state/market/plugin" "$state/cache"
+    printf '[{"id":"trommi@trommi","version":"2.0.0","scope":"user","enabled":true,"installPath":"%s/cache"}]' "$state" > "$state/plugins" ;;
   "plugin update trommi@trommi") [ -f "$state/plugins" ] || exit 1 ;;
-  "plugin uninstall trommi@trommi") rm -f "$state/plugins" ;;
+  "plugin enable trommi@trommi -s user") sed -i 's/"enabled":false/"enabled":true/' "$state/plugins" ;;
+  "plugin uninstall trommi@trommi"|"plugin uninstall trommi@trommi -s user") rm -f "$state/plugins" ;;
   "plugin marketplace remove trommi") rm -f "$state/markets" ;;
   *) echo "unexpected: $*" >&2; exit 2 ;;
 esac
@@ -835,6 +840,23 @@ impl Desk {
         std::fs::create_dir_all(&tools).expect("a folder");
         executable(&tools.join("claude"), CLAUDE);
         executable(&tools.join("codex"), CODEX);
+        // the marketplace's checkout: its declaration and the plugin folder it names
+        let market = dir.path().join("market");
+        for (file, text) in [
+            (
+                ".claude-plugin/marketplace.json",
+                r#"{"name":"trommi","plugins":[{"name":"trommi","source":"./plugin"}]}"#,
+            ),
+            (
+                "plugin/.claude-plugin/plugin.json",
+                r#"{"name":"trommi","version":"2.0.0"}"#,
+            ),
+            ("plugin/commands/connect.md", "Call the tool `connect`.\n"),
+        ] {
+            let path = market.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).expect("a folder");
+            std::fs::write(path, text).expect("written");
+        }
         if installed {
             let bin = dir.path().join(".local/share/trommi/bin");
             std::fs::create_dir_all(&bin).expect("a folder");
@@ -932,6 +954,9 @@ fn setup_claude_adds_the_marketplace_and_the_plugin_once() {
             "claude plugin marketplace add trommi/trommi --sparse .claude-plugin connector/plugin",
             "claude plugin list --json",
             "claude plugin install trommi@trommi -s user -y",
+            "claude plugin marketplace list --json",
+            "claude plugin list --json",
+            "claude plugin list --json",
         ]
     );
     // again: nothing is added a second time. Without --verbose it is one line and what to do next.
@@ -952,14 +977,81 @@ fn setup_claude_adds_the_marketplace_and_the_plugin_once() {
         "{text}"
     );
     assert_eq!(
-        desk.calls()[8..],
+        desk.calls()[14..],
         [
             "claude plugin marketplace list --json",
             "claude plugin marketplace update trommi",
             "claude plugin list --json",
             "claude plugin update trommi@trommi",
+            "claude plugin marketplace list --json",
+            "claude plugin list --json",
+            "claude plugin list --json",
         ]
     );
+}
+
+/// The plugin got a file (commands/connect.md) after it was installed, under the same version: `plugin update`
+/// copies nothing then, so setup installs it afresh; a plugin turned off is turned on; and every call goes to the
+/// Claude Code folder of `CLAUDE_CONFIG_DIR`, the account setup runs in.
+#[test]
+fn setup_claude_renews_an_old_copy_turns_the_plugin_on_and_keeps_to_claude_config_dir() {
+    let desk = Desk::new(true);
+    let account = desk.dir.path().join("accounts/second");
+    let account = account.to_str().unwrap();
+    let env = [("CLAUDE_CONFIG_DIR", account)];
+    let first = desk.run(&["setup", "claude", "--verbose"], b"", &env);
+    assert!(first.status.success(), "{}", said(&first));
+    // the copy of an earlier plugin: no command
+    let cache = desk.dir.path().join("cache");
+    std::fs::remove_dir_all(cache.join("commands")).expect("removed");
+    let before = desk.calls().len();
+    let again = desk.run(&["setup", "claude", "--verbose"], b"", &env);
+    let text = said(&again);
+    assert!(again.status.success(), "{text}");
+    assert!(
+        text.contains("the installed copy was old (commands/connect.md missing), installed afresh"),
+        "{text}"
+    );
+    assert!(text.contains(&format!("Claude Code folder: {account}")), "{text}");
+    assert!(cache.join("commands/connect.md").is_file());
+    let calls = desk.calls()[before..].to_vec();
+    for call in [
+        "claude plugin update trommi@trommi",
+        "claude plugin uninstall trommi@trommi -s user",
+        "claude plugin install trommi@trommi -s user -y",
+    ] {
+        assert!(calls.iter().any(|c| c == call), "{call}: {calls:?}");
+    }
+    // turned off: turned on
+    let plugins = desk.dir.path().join("plugins");
+    std::fs::write(
+        &plugins,
+        read(&plugins).replace("\"enabled\":true", "\"enabled\":false"),
+    )
+    .expect("written");
+    let on = desk.run(&["setup", "claude", "--verbose"], b"", &env);
+    assert!(said(&on).contains("was turned off, turned on"), "{}", said(&on));
+    assert!(read(&plugins).contains("\"enabled\":true"));
+    assert!(desk
+        .calls()
+        .contains(&"claude plugin enable trommi@trommi -s user".to_string()));
+    let dirs = read(&desk.dir.path().join("config-dirs"));
+    assert!(
+        dirs.lines().all(|dir| dir == account),
+        "every claude call in the account's folder: {dirs}"
+    );
+    // the status line went into that account's settings, not ~/.claude
+    assert!(std::path::Path::new(account).join("settings.json").is_file());
+    assert!(!desk.settings().exists());
+    // a copy that only differs is renewed too
+    std::fs::write(cache.join("commands/connect.md"), "old words\n").expect("written");
+    let third = desk.run(&["setup", "claude", "--verbose"], b"", &env);
+    assert!(
+        said(&third).contains("commands/connect.md differs"),
+        "{}",
+        said(&third)
+    );
+    assert_eq!(read(&cache.join("commands/connect.md")), "Call the tool `connect`.\n");
 }
 
 #[test]
