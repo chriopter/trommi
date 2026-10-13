@@ -670,8 +670,9 @@ struct CopyLinkButton: View {
 }
 
 /** The session's running work at the end of the conversation, and that it is answering: one row of small chips (mark,
- *  title, age), never two rows; what does not fit lies on a stack "+N" at its end, listed under the row on a tap. A chip with a question opens it; one without shows its detail
- *  under the row on a tap, a second tap hides it (web session.mjs sessionStatus). */
+ *  title, age), never two rows; what does not fit lies on a stack "+N" at its end, listed under the row on a tap. A tap
+ *  on any chip opens it under the row (its whole text, how it stands, the way to its card), a second tap closes it; a
+ *  stale line greyed and still (web session.mjs sessionStatus). */
 struct SessionStatus: View {
   @EnvironmentObject var model: BoardModel
   @State private var shown: String? = nil   // (the chip whose detail stands under the row, by session and id)
@@ -686,7 +687,8 @@ struct SessionStatus: View {
     let last = messages.last { $0.from != "event" }
     let answering = last?.from == "user" && now - min(now, last!.ts) < WORKING_WINDOW && agent.online
     // (their state as the client core made it, status.rs line_state: working, waiting on him, put off with its card, done for a while)
-    let lines = tasks.filter { ["working", "decision", "later"].contains($0.state ?? "") || ($0.state == "done" && now - min(now, $0.updated) < WORKING_WINDOW) }
+    // (a stale line, nobody updated it for LINE_STALE_MS: greyed and still, for a day)
+    let lines = tasks.filter { ["working", "decision", "later"].contains($0.state ?? "") || ($0.state == "done" && now - min(now, $0.updated) < WORKING_WINDOW) || ($0.state == "stale" && now - min(now, $0.updated) < 24 * 60 * 60 * 1000) }
     if answering || !lines.isEmpty {
       VStack(alignment: .leading, spacing: 8) {
         if answering {
@@ -709,10 +711,7 @@ struct SessionStatus: View {
               .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
               .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.lineStrong))
           }
-          if let key = shown, let t = lines.first(where: { "\($0.agent):\($0.id)" == key }) {
-            Text([t.label, t.detail ?? ""].filter { !$0.isEmpty }.joined(separator: ": "))
-              .font(Face.text(14)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
-          }
+          if let key = shown, let t = lines.first(where: { "\($0.agent):\($0.id)" == key }) { opened(t) }
         }
       }.padding(.vertical, 12)
     }
@@ -735,18 +734,40 @@ struct SessionStatus: View {
     .accessibilityHint(pileFrom == nil ? "Lists them" : "Hides them")
   }
 
+  /** A chip opened under the row: its whole text, how it stands, and the way to its card when it stands for one. */
+  @ViewBuilder private func opened(_ t: Task1) -> some View {
+    let card = model.desk?.lineCard(t)
+    let said = ["working": "working", "decision": "waits on you", "later": "put off", "done": "done", "stale": "no news for a while"][t.state ?? ""] ?? ""
+    VStack(alignment: .leading, spacing: 6) {
+      (Text(t.label).font(Face.text(14, .semibold)) + Text((t.detail ?? "").isEmpty ? "" : ": \(t.detail!)").font(Face.text(14)))
+        .foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true)
+      HStack(spacing: 12) {
+        Text(said).font(Face.text(12)).foregroundStyle(Ink.muted)
+        if let c = card {
+          Button { model.path.append(.card(c.id)) } label: {
+            HStack(spacing: 6) { Text("Open card").font(Face.text(14, .semibold)).underline(true, color: Ink.accent); Text(c.title).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1) }
+              .frame(minHeight: 44).contentShape(Rectangle())
+          }.buttonStyle(.plain)
+        }
+      }
+    }
+    .padding(.horizontal, 12).padding(.vertical, 10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.sunken))
+  }
+
   @ViewBuilder private func chip(_ t: Task1) -> some View {
     // (the card the line stands for, paired as on the Desk: a line with no card of its own opens the card its session works on)
     let card = model.desk?.lineCard(t)
     let key = "\(t.agent):\(t.id)", on = shown == key
-    let quiet = t.state == "later" || t.state == "done"
+    let quiet = t.state == "later" || t.state == "done" || t.state == "stale"
     Button {
-      if let c = card { model.path.append(.card(c.id)) }
-      else { withAnimation(.easeOut(duration: 0.18)) { shown = on ? nil : key } }
+      withAnimation(.easeOut(duration: 0.18)) { shown = on ? nil : key }
     } label: {
       HStack(spacing: 6) {
         Group {
           if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
+          else if t.state == "stale" { Circle().strokeBorder(Ink.faint, lineWidth: 1.6).frame(width: 11, height: 11) }
           else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
           else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
           else { Sketch("tick", color: Ink.faint) }
@@ -762,7 +783,7 @@ struct SessionStatus: View {
       .overlay(Capsule().strokeBorder(t.state == "decision" ? Ink.urgHigh.opacity(0.55) : on ? Ink.lineStrong : .clear, lineWidth: 1))
       .contentShape(Capsule())
     }.buttonStyle(.plain)
-    .accessibilityHint(card != nil ? "Opens the question" : on ? "Hides the details" : "Shows the details")
+    .accessibilityHint(on ? "Hides the details" : "Shows the details")
   }
 }
 /** "now", "4m", "3h", "4 Oct": agoText short, for a time beside a small clock. */

@@ -362,26 +362,29 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
   return html`<nav class="session-mode${phone ? ' is-phone' : ''}" id="session-filters-${phone ? 'phone-' : ''}${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${here}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${here}?only=questions"${on ? raw(' aria-current="page"') : ''}${phone ? '' : raw(` data-controller="title" data-title-count-value="${n}"`)}>Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
 }
 /** The lines a session's page shows (their state as the client core made it, client/src/status.rs line_state): the working ones, those that wait on
- *  him, those put off with their card, and a done one for a while; not the stale ones nor those of a gone session. */
-const shownLines = (tasks, now = Date.now()) => tasks.filter(t => ['working', 'decision', 'later'].includes(t.state) || (t.state === 'done' && now - (t.updated ?? 0) < WORKING_WINDOW))
-const lineMark = t => html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span>`
+ *  him, those put off with their card, a done one for a while, and a stale one (nobody updated it for LINE_STALE_MS)
+ *  greyed and still for a day; not those of a gone session. */
+const STALE_SHOWN_MS = 24 * 60 * 60_000
+const shownLines = (tasks, now = Date.now()) => tasks.filter(t => ['working', 'decision', 'later'].includes(t.state) || (t.state === 'done' && now - (t.updated ?? 0) < WORKING_WINDOW) || (t.state === 'stale' && now - (t.updated ?? 0) < STALE_SHOWN_MS))
+// (a stale line: a still, hollow ring, no spinning)
+const lineMark = t => html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'stale' ? html`<i class="status-still" aria-hidden="true"></i>` : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span>`
+const STATE_WORD = { working: 'working', decision: 'waits on you', later: 'put off', done: 'done', stale: 'no news for a while' }
 /** The status lines of the session's running work, and that it is answering, at the end of the conversation: one row
  *  of small chips (mark, title, age), never two rows; what does not fit lies on a stack "+N" at its end (controller
- *  "status-lines"). A chip with a question
- *  opens it; one without shows its detail under the row on a tap (and hides it on a second). */
+ *  "status-lines"). A tap on a chip opens it under the row: its whole text, how it stands, and, when it stands for a
+ *  card, the way to that card; a second tap closes it. */
 function sessionStatus(s, base, now = Date.now()) {
   const last = s.messages.findLast(m => m.from !== 'event')
   const answering = last?.from === 'user' && now - last.ts < WORKING_WINDOW
   const lines = shownLines(s.tasks, now)
   return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.length ? html`<div class="status-chips" role="list">${lines.map(t => {
-    const card = lineCard(t, s.model, s.cards, s.tasks), tip = [t.label, t.detail].filter(Boolean).join(': ')
+    const card = lineCard(t, s.model, s.cards, s.tasks)
     const inner = html`${lineMark(t)}<b>${t.label}</b>${t.updated ? html`<span class="status-age" aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${agoSpan(t.updated, 'offscreen')}` : ''}`
-    if (card) return html`<a class="status-chip" role="listitem" data-state="${t.state}" data-nav href="${questionPath(card, base)}" title="${t.label}">${inner}</a>`
-    return html`<button type="button" class="status-chip" role="listitem" data-state="${t.state}" data-key="${t.agent}:${t.id}" data-detail="${tip}" title="${t.label}" aria-expanded="false" data-action="status-lines#toggle">${inner}</button>`
-  })}</div><p class="status-detail-line" hidden></p>` : ''}</div>`
+    return html`<button type="button" class="status-chip" role="listitem" data-state="${t.state}" data-key="${t.agent}:${t.id}" data-label="${t.label}" data-detail="${t.detail ?? ''}" data-said="${STATE_WORD[t.state] ?? ''}"${card ? html` data-href="${questionPath(card, base)}" data-card="${card.title}"` : ''} title="${t.label}" aria-expanded="false" aria-controls="status-open-${s.id}" data-action="status-lines#toggle">${inner}</button>`
+  })}</div><div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
 }
-// A chip without a question: a tap shows its title and detail under the row, a second tap hides it; the one shown stays
-// shown when the live piece is drawn anew.
+// A tap on a chip opens it under the row (its whole text, how it stands, the way to its card), a second tap closes it;
+// the one open stays open when the live piece is drawn anew.
 const statusOpen = new Set()
 // No sideways scroll (the owner, 13 October 2026): the chips that fit stand in the row; what does not fit lies on a
 // small stack "+N" at its end (its edges show), and a tap on the stack opens what lies on it, one under the other,
@@ -429,15 +432,17 @@ controller('status-lines', class extends Controller {
   toggle(e) {
     const chip = e.currentTarget, on = chip.getAttribute('aria-expanded') === 'true'
     for (const c of this.element.querySelectorAll('.status-chip[data-key]')) { c.setAttribute('aria-expanded', 'false'); statusOpen.delete(c.dataset.key) }
-    const out = this.element.querySelector('.status-detail-line')
+    const out = this.element.querySelector('.status-open')
     if (on) { if (out) out.hidden = true; return }
     this.show(chip)
   }
   show(chip) {
-    const out = this.element.querySelector('.status-detail-line')
+    const out = this.element.querySelector('.status-open')
     if (!out) return
     chip.setAttribute('aria-expanded', 'true'); statusOpen.add(chip.dataset.key)
-    out.textContent = chip.dataset.detail; out.hidden = false
+    const d = chip.dataset
+    out.innerHTML = String(html`<p class="status-open-text"><b>${d.label}</b>${d.detail ? html`: ${d.detail}` : ''}</p><p class="status-open-foot"><span>${d.said}</span>${d.href ? html`<a class="status-open-card" data-nav href="${d.href}">Open card<small>${d.card}</small></a>` : ''}</p>`)
+    out.hidden = false
   }
 })
 /** "N open": the questions of this session that wait, and the way to the first of them. */
