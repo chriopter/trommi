@@ -289,6 +289,7 @@ impl Model {
         if moved {
             change.stack = true
         }
+        self.project_walk(change);
         self.mark_snoozes(change, now);
     }
 

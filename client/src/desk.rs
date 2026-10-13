@@ -692,6 +692,64 @@ impl DeskState {
     }
 }
 
+/// One open card or request of the walk, as its order needs it (see [`walk_order`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WalkCard {
+    pub object_id: String,
+    /// An info (a report, a note: nothing to decide), or a card from a newer Trommi read as one.
+    #[serde(default)]
+    pub info: bool,
+    /// A permission request: it blocks its agent, as a critical card does.
+    #[serde(default)]
+    pub permission: bool,
+    /// `critical`, `high`, `normal`, `low`.
+    #[serde(default)]
+    pub urgency: Option<String>,
+    #[serde(default)]
+    pub created_at: u64,
+}
+
+/// A card's place in the walk: its band, infos before decisions, then time (an info's newest first, a decision's
+/// oldest first), then its id (as the stack: what a copy of the model holds orders it the same).
+type WalkKey = (Reverse<u8>, bool, u64, String);
+
+/// The band of a card in the walk: what blocks its agent (critical, a permission request) first, then what knocks
+/// (high), then the rest. Low and normal share the last band.
+fn band(c: &WalkCard) -> u8 {
+    match c.urgency.as_deref() {
+        _ if c.permission => 2,
+        Some("critical") => 2,
+        Some("high") => 1,
+        _ => 0,
+    }
+}
+
+fn walk_key(c: &WalkCard) -> WalkKey {
+    let time = if c.info { u64::MAX - c.created_at } else { c.created_at };
+    (Reverse(band(c)), !c.info, time, c.object_id.clone())
+}
+
+/// The walk: every open card and request that waits for the person, in the Desk's order, the same in every app (its
+/// rows, Blitz, the next question after one decided on its own page). By band: what blocks an agent (critical, a
+/// permission request), then what knocks (high), then the rest; in each band the infos first, newest first, then the
+/// decisions, oldest first.
+pub fn walk_order(cards: &mut [WalkCard]) {
+    cards.sort_by_cached_key(walk_key);
+}
+
+/// The open question to offer after `card` (open or decided just now): the first of the walk that stands after it in
+/// the Desk's order, else the first of the walk (the walk goes round), never `card` itself. `walk` is in its order
+/// ([`walk_order`]); None when nothing else waits.
+pub fn next_in_walk<'a>(walk: &'a [WalkCard], card: &WalkCard) -> Option<&'a str> {
+    let key = walk_key(card);
+    let at = walk.partition_point(|c| walk_key(c) <= key);
+    walk[at..]
+        .iter()
+        .chain(walk[..at].iter())
+        .find(|c| c.object_id != card.object_id)
+        .map(|c| c.object_id.as_str())
+}
+
 fn min_wake(a: u64, b: u64) -> u64 {
     let m = [a, b]
         .into_iter()

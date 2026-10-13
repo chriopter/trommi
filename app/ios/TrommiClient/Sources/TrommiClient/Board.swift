@@ -507,6 +507,8 @@ public final class Board {
    *  app projects again then (Room `wakeLater`); nil: never. */
   public internal(set) var wakeAt: UInt64?
   public var openPermissionIds: [String] = []
+  /** The walk: every open card and request that waits for him, in the Desk's order (client/src/model/walk.rs). */
+  public internal(set) var deskOrder: [String] = []
   /** The session list every device of the person shows (client/src/sessions.rs, one entry per session, in order):
    *  which sessions, their names, online or gone, archived, their parents. DeskModel draws it as it comes. */
   public internal(set) var sessionList: [JV] = []
@@ -538,7 +540,7 @@ public final class Board {
     b.lastEnvelopeNumber = lastEnvelopeNumber; b.connection = connection; b.recoveryKey = recoveryKey
     b.members = members; b.sessions = sessions; b.cards = cards; b.permissions = permissions; b.notes = notes
     b.published = published; b.timelines = timelines; b.human = human; b.alerts = alerts
-    b.stack = stack; b.openPermissionIds = openPermissionIds; b.held = held; b.sessionList = sessionList
+    b.stack = stack; b.openPermissionIds = openPermissionIds; b.deskOrder = deskOrder; b.held = held; b.sessionList = sessionList
     b.newerCount = newerCount; b.newerWhat = newerWhat; b.newerEnvelope = newerEnvelope; b.deviceRegisters = deviceRegisters
     b.deskWaiting = deskWaiting
     return b
@@ -583,7 +585,7 @@ public final class Board {
     }
     lastEnvelopeNumber = 0
     sessions = [:]; cards = [:]; permissions = [:]; notes = [:]; published = [:]; timelines = [:]; members = [:]
-    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; held = []; sessionList = []
+    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; deskOrder = []; held = []; sessionList = []
     newerCount = 0; newerWhat = []; newerEnvelope = 0; deviceRegisters = [:]
     engine = ClientModel(myDeviceId: myDeviceId ?? "")
     if !presence.isEmpty { try? engine.applyPresence(reports: String(decoding: JV.arr(presence).encoded(), as: UTF8.self), nowMs: nowMs()) }

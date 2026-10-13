@@ -366,6 +366,14 @@ impl Card {
     pub fn field(&self, name: &str) -> Value {
         self.fields.get(name)
     }
+    /// A card of a newer Trommi (its type or schema): read as an info. (`unsupported` may stand as null.)
+    pub fn is_unsupported(&self) -> bool {
+        match &self.unsupported {
+            None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+            Some(Value::String(s)) => !s.is_empty(),
+            Some(_) => true,
+        }
+    }
 }
 
 /// A permission request's verdict.

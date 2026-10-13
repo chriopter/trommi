@@ -406,6 +406,7 @@ methods!(RawClientModel {
     finish_part(now_ms, max_cards);
     snapshot();
     session_list(reading);
+    next_open_after(card_id, within);
     set_reading(reading);
     touch_all();
     apply_card_deeds_json(received);

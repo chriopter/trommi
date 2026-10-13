@@ -11,6 +11,7 @@ pub mod project;
 pub mod received;
 pub mod snapshot;
 pub mod types;
+pub mod walk;
 pub mod window;
 
 use crate::desk::DeskState;
@@ -84,6 +85,8 @@ pub struct Model {
     pub newer: Newer,
     pub stack: Vec<String>,
     pub open_permission_ids: Vec<String>,
+    /// The walk: every open card and request that waits for the person, in the Desk's order (walk.rs).
+    pub desk_order: Vec<String>,
     // what the builder keeps for itself
     pub device_registers: HashMap<String, Map<String, Value>>,
     pub echoes: HashMap<String, Echo>,
