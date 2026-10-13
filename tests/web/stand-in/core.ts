@@ -22,6 +22,8 @@ import type {
   Core, Cut, Device, ErrorCode, Fed, FeedItem, InviteConfirmed, LogEntry, OutboxEntry, PlacedCommit, Processed, ServedCommit, ServedEnd, ServedEnvelope, ServedGroup, ServedRoom, ServedStart, Store,
 } from '../../../app/web/core/core-api.ts'
 
+import { useCodec } from '../../../app/web/core/codec.ts'
+
 export type Binding = typeof BindingModule
 
 // ---- bytes ---------------------------------------------------------------------------------------------------------
@@ -433,5 +435,6 @@ export async function loadBinding(): Promise<Binding> {
   const pkg = other ? pathToFileURL(other.endsWith('/') ? other : `${other}/`) : new URL('../../../core/wasm/pkg/', import.meta.url)
   const [binding, fs] = await Promise.all([import(new URL('trommi-core.js', pkg).href) as Promise<Binding>, import('node:fs')])
   await binding.init(fs.readFileSync(new URL('trommi_core_wasm_bg.wasm', pkg)))
+  useCodec(binding)   // the app's body codec (app/web/core/codec.ts) calls the core
   return binding
 }

@@ -19,6 +19,7 @@
 // only, CSP `script-src 'self'`; a worker's script and its imports take no integrity).
 import * as binding from '../../../core/wasm/js/trommi-core.js'
 import type { Core, Device, ErrorCode, ProvisionalDevice, Store } from './core-api.ts'
+import { useCodec } from './codec.ts'
 
 /** The binding's store on IndexedDB (store-idb.ts is handed this class and wraps it). */
 export { IdbStore } from '../../../core/wasm/js/idb-store.js'
@@ -50,6 +51,7 @@ const whole = (device: binding.Device): Device => Object.assign(device, refusals
 
 async function load(): Promise<Core> {
   await binding.init(fetch(__TROMMI_CORE_WASM__, { integrity: `sha256-${__TROMMI_CORE_WASM_SHA256__}` }))
+  useCodec(binding)   // the body codec's calls (codec.ts)
   const { init: _init, Device: _Device, TrommiError: _TrommiError, StoreConflict: _StoreConflict, ...stateless } = binding
   return {
     ...stateless,

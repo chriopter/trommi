@@ -1965,6 +1965,56 @@ async fn two_sessions_in_one_folder_never_share_a_key() {
     resumed.close().await;
 }
 
+/// Self-join while the voucher's door is away for a moment (its slot opened again, as after the hub restarted):
+/// the new session keeps asking for the link until the door is back, instead of giving up at the first knock
+/// that finds no socket (found by the torture run, seed 126: the session stayed off the board until a tool call
+/// a minute later).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_self_join_outlasts_a_moment_without_the_vouchers_door() {
+    let (_hub, mut human, seat, group) = joined().await;
+    let mut first = seat.serve().await;
+    first.ready().await;
+    let other = [
+        ("TROMMI_SESSION_KEY", "test-second"),
+        ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+        ("TROMMI_SELF_JOIN", "1"),
+    ];
+    let mut second = seat.serve_with(&other).await;
+    let (said, failed) = second.call("reply", json!({ "text": "too early" })).await;
+    assert!(failed, "{said}");
+    let mut asked = false;
+    for _ in 0..300 {
+        human.sync().await;
+        if human.asked_in(&group) {
+            asked = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(asked, "the first session asked the human");
+    // every socket of the machine is away for 1.5 s (the joining session polls every 200 ms)
+    let sockets: Vec<std::path::PathBuf> = std::fs::read_dir(seat.run_dir())
+        .expect("the runtime directory")
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .flat_map(|d| std::fs::read_dir(d.path()).into_iter().flatten().flatten())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "sock"))
+        .collect();
+    assert!(!sockets.is_empty(), "the doors are found");
+    for p in &sockets {
+        std::fs::rename(p, p.with_extension("away")).expect("moved away");
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    for p in &sockets {
+        std::fs::rename(p.with_extension("away"), p).expect("back");
+    }
+    let (_admitted, _new_group, _ask) = human.admit_self_join(&group).await;
+    second.ready().await;
+    second.close().await;
+    first.close().await;
+}
+
 /// Self-join (spec/v1.md 12.4): a second session on the same machine and account gets onto the board without a
 /// manual invite. The running session vouches for it; the human's app answers with a link and confirms the very
 /// Request whose hash the voucher passed on. The new session has its own device and its own board session, and

@@ -63,10 +63,14 @@ impl Decode for RoomState {
         let epoch = reader.u64()?;
         let state = reader.value()?;
         let listed: Vec<DeviceId> = reader.vector()?;
-        let humans: BTreeSet<DeviceId> = listed.iter().copied().collect();
-        if humans.len() != listed.len() {
+        // ascending and each once, as they are written: one state has one encoding
+        if listed
+            .windows(2)
+            .any(|pair| matches!(pair, [a, b] if a >= b))
+        {
             return Err(Error::BadFormat);
         }
+        let humans: BTreeSet<DeviceId> = listed.into_iter().collect();
         Ok(Self {
             epoch,
             state,

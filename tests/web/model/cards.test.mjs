@@ -4,7 +4,9 @@
 //   node --test tests/web/model/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { holderOf, timelineOf } from '../../../app/web/core/model.ts'
+import { holderOf } from '../../../app/web/core/model.ts'
+import { timelineOf } from './factory.mjs'
+import { openWindow } from './factory.mjs'
 import { World, device, hex, id16 } from './factory.mjs'
 
 const OPTIONS = [{ key: 'sqlite', label: 'SQLite' }, { key: 'files', label: 'Plain files', final: true }]
@@ -95,7 +97,7 @@ test('pruned: the header still counts, the card shows as pruned; its conversatio
   assert.equal(card.versions.length, 1); assert.equal(card.versions[0].content, null); assert.equal(card.object_version, 1)
   assert.equal(card.answers.length, 1); assert.equal(card.answers[0].bound_version_hash, hex(v1.hash), 'the header names the version answered')
   assert.equal(w.model.alerts.length, 0, 'nobody is told of a pruned body')
-  timelineOf(w.model, `chat:session/${hex(w.session)}`).window_open = true      // the conversation is open: it counts headers too
+  openWindow(w.model, `chat:session/${hex(w.session)}`)      // the conversation is open: it counts headers too
   const m = w.message({}, { outcome: 'chained', code: 'pruned' })
   const item = w.model.timelines.get(`chat:session/${hex(w.session)}`).items.get(m.change)
   assert.equal(item.item_state, 'pruned'); assert.equal(item.content, null)

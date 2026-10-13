@@ -1,19 +1,24 @@
 #!/usr/bin/env node
-// A release's notes (release.yml, job publish): the newest day of CHANGELOG.md, short. Releases of the same day
-// repeat it as it grows.
-//   node .github/scripts/release_notes.mjs <CHANGELOG.md of this release> [<this tag> <published releases>]
-// <published releases>: a file of lines "<tag> <created, ISO 8601 UTC>" (gh release list). The heading gets the day's
-// releases in brackets, counted from them: every release v<N> made on that day (Europe/Berlin), this tag included
-// when the day is today. CHANGELOG.md itself names no release numbers.
-// What is kept of the day: the first sentence of its summary, its picture, and under New, Better and Fixed one line
-// per change: its short form as What's new shows it (changelogHead: the bold start, else the start up to the first
-// colon, comma or full stop; cut at 120 characters here, not 78; one of fewer than four words reads on to the first
-// colon or full stop), a "Web:"/"iPhone:" tag after it in brackets. A part named twice is one part; a line whose
-// short form is there already, and text outside a part's list, are left out.
+// A release's notes (release.yml, job publish): what changed since the release before, short.
+//   node .github/scripts/release_notes.mjs <CHANGELOG.md> [<this tag> <published releases>
+//     [<CHANGELOG.md of the release before> <its tag> [<commit subjects since it>]]]
+// With the release before: the lines CHANGELOG.md added since then (a line counts as there before when its text, its
+// text without a bold start or tag, that text's first 60 characters, or its short form was), under the heading of the
+// newest day with new lines and "(since v<N>)"; the day's summary and picture only when they are new too. Days older
+// than the newest day of the release before are left out (history filled in later is not news). When
+// CHANGELOG.md added nothing: the commit subjects (PR titles) since, by their New:/Fixed:/Updated: start, internal ones
+// (tests, CI, refactors) left out; none left: a line saying so.
+// Without it: the whole newest day, its heading with the day's releases in brackets, counted from <published
+// releases> (lines "<tag> <created, ISO 8601 UTC>"): every v<N> made that day (Europe/Berlin), this tag included.
+// Each line is the short form What's new shows (changelogHead: the bold start, else the start up to the first colon,
+// comma or full stop; cut at 120 characters here, not 78; one of fewer than four words reads on to the first colon
+// or full stop), a "Web:"/"iPhone:" tag after it in brackets, under New, Better, Fixed in that order. Repeated
+// lines and text outside a part's list are left out; the summary is its first sentence.
 // "<", ">" and "&" outside `code` are escaped, or GitHub drops "<…>" as HTML.
 // NOTES_BASE (e.g. https://raw.githubusercontent.com/<repo>/<commit>/): put in front of the picture's path, which
 // CHANGELOG.md gives from the repository's root.
-// Prints nothing when there is no such day; never fails, so the notes can never stop a release.
+// Without a day (no CHANGELOG.md yet) but with the release before: "## Since v<N>" and the commit subjects.
+// Prints nothing when there is no such day otherwise; never fails, so the notes can never stop a release.
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -70,58 +75,126 @@ function range(iso, tag, list) {
   return sorted.length === 1 ? ` (v${sorted[0]})` : ` (v${sorted[0]} – v${sorted.at(-1)})`
 }
 
-/** The notes for CHANGELOG.md's text; '' when it has no day. */
-export function releaseNotes(changelog, { tag = '', list = '', base = '' } = {}) {
-  const lines = String(changelog).split(/\r?\n/)
-  const start = lines.findIndex(l => /^## /.test(l))
-  if (start < 0) return ''
-  let end = lines.findIndex((l, i) => i > start && /^## /.test(l))
-  if (end < 0) end = lines.length
-  const day = lines[start].replace(/^## */, '').replace(/ *\([^)]*\) *$/, '').trim()
-  const when = new Date(`${day} 12:00 UTC`)
-  const iso = Number.isNaN(when.getTime()) ? '' : when.toISOString().slice(0, 10)
-
-  // the block's lines joined where they go on (hard-wrapped)
-  const items = []
-  for (const raw of lines.slice(start + 1, end)) {
-    if (/^\s*$/.test(raw)) { items.push(''); continue }
-    if (/^([-*+] |[0-9]+\. |#|\*\*[^*]+\*\* *$|!\[|\||>)/.test(raw) || !items.length || items.at(-1) === '') items.push(raw.trim())
-    else items[items.length - 1] += ` ${raw.trim()}`
+/** CHANGELOG.md as days: { day, summary, picture: { alt, path }, parts: [[name, [line text]]] }, newest first. */
+export function readDays(changelog) {
+  const days = []
+  let at = null, part = null, last = null
+  const add = text => {
+    if (!at) return
+    const name = /^\*\*([^*]+)\*\* *$/.exec(text)
+    if (name) { part = name[1].trim(); if (!at.parts.has(part)) at.parts.set(part, []); last = null; return }
+    const pic = /^!\[([^\]]*)\]\(([^:)]+)\) *$/.exec(text)
+    if (pic) { if (!at.picture) at.picture = { alt: pic[1], path: pic[2] }; last = null; return }
+    const li = /^[-*+] +(.*)$/.exec(text)
+    if (li && part) { at.parts.get(part).push(li[1]); last = { list: at.parts.get(part) }; return }
+    last = null
+    if (!part && !at.summary) at.summary = text
   }
+  // a line that goes on (hard-wrapped) is joined to the one before
+  let cur = null
+  const flush = () => { if (cur !== null) add(cur); cur = null }
+  for (const raw of String(changelog).split(/\r?\n/)) {
+    if (/^## /.test(raw)) {
+      flush()
+      at = { day: raw.replace(/^## */, '').replace(/ *\([^)]*\) *$/, '').trim(), summary: '', picture: null, parts: new Map() }
+      part = null
+      days.push(at)
+    } else if (/^\s*$/.test(raw)) flush()
+    else if (/^([-*+] |[0-9]+\. |#|\*\*[^*]+\*\* *$|!\[|\||>)/.test(raw) || cur === null) { flush(); cur = raw.trim() }
+    else cur += ` ${raw.trim()}`
+  }
+  flush()
+  return days.map(d => ({ ...d, parts: [...d.parts] }))
+}
 
-  let summary = '', picture = '', part = null
+const norm = s => String(s).replace(/\s+/g, ' ').trim().toLowerCase()
+const ORDER = ['New', 'Better', 'Fixed']
+const byOrder = (a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99)
+
+/** A commit subject (a PR's title) as { part, line }, or null when it is internal (tests, CI, refactors). */
+export function subjectLine(subject) {
+  let s = String(subject).trim().replace(/^\d{4}-\d{2}-\d{2}-\d+: */, '').replace(/ *\(#\d+\)$/, '')
+  if (!s || /^Merge /.test(s)) return null
+  if (/\b(tests?|CI|workflows?|build\.yml|lint|refactors?|fuzz)\b/i.test(s)) return null
+  const kind = /^(New|Better|Updated|Fixed|Removed): +/.exec(s)
+  let part = 'Other'
+  if (kind) { part = { New: 'New', Better: 'Better', Updated: 'Better', Fixed: 'Fixed', Removed: 'Better' }[kind[1]]; s = s.slice(kind[0].length) }
+  s = s.split(/;? +(?:New|Better|Updated|Fixed|Removed): /)[0]
+  const { tag, head } = noteHead(s)
+  return { part, line: tag ? `${head} (${tag})` : head }
+}
+
+/** The notes for CHANGELOG.md's text; '' when it has no day.
+ *  previous: CHANGELOG.md of the release before (since: its tag): only what was added since then is listed; without
+ *  it, the whole newest day. subjects: the commit subjects since that release, listed when CHANGELOG.md added nothing. */
+export function releaseNotes(changelog, { tag = '', list = '', base = '', previous = null, since = '', subjects = [] } = {}) {
+  const days = readDays(changelog)
+  if (!days.length && (previous == null || !since)) return ''
+  if (!days.length) days.push({ day: '', summary: '', picture: null, parts: [] })
+  const before = previous == null ? null : readDays(previous)
+  const oldText = new Set(), oldHead = new Set(), oldPics = new Set(), oldSummary = new Set()
+  for (const d of before || []) {
+    if (d.picture) oldPics.add(d.picture.path)
+    if (d.summary) oldSummary.add(norm(d.summary))
+    for (const [, lines] of d.parts) for (const l of lines) { const h = noteHead(l); oldText.add(norm(l)); oldText.add(norm(h.text)); oldText.add(norm(h.text).slice(0, 60)); oldHead.add(norm(h.head)) }
+  }
+  // a day older than the newest one of the release before is not this release's (a backfilled or restored history)
+  const dateOf = d => { const t = new Date(`${d.day} 12:00 UTC`).getTime(); return Number.isNaN(t) ? null : t }
+  const latest = Math.max(-Infinity, ...(before || []).map(dateOf).filter(t => t != null))
   const parts = new Map(), seen = new Set()
-  for (const item of items) {
-    if (!item) continue
-    const name = /^\*\*([^*]+)\*\* *$/.exec(item)
-    if (name) { part = name[1].trim(); if (!parts.has(part)) parts.set(part, []); continue }
-    const pic = /^!\[([^\]]*)\]\(([^:)]+)\) *$/.exec(item)
-    if (pic) { if (!picture) picture = `![${pic[1]}](${base}${pic[2]})`; continue }
-    const li = /^[-*+] +(.*)$/.exec(item)
-    if (li && part) {
-      const { tag: t, head } = noteHead(li[1])
-      const line = t ? `${head} (${t})` : head
-      if (seen.has(line.toLowerCase())) continue
-      seen.add(line.toLowerCase())
-      parts.get(part).push(line)
-      continue
+  let day = null, summary = '', picture = null
+  for (const d of before ? days : days.slice(0, 1)) {
+    if (before && dateOf(d) != null && dateOf(d) < latest) continue
+    let any = false
+    for (const [name, lines] of d.parts) {
+      for (const l of lines) {
+        const { tag: t, head, text } = noteHead(l)
+        if (before && (oldText.has(norm(l)) || oldText.has(norm(text)) || oldText.has(norm(text).slice(0, 60)) || oldHead.has(norm(head)))) continue
+        const line = t ? `${head} (${t})` : head
+        if (seen.has(norm(line))) continue
+        seen.add(norm(line))
+        if (!parts.has(name)) parts.set(name, [])
+        parts.get(name).push(line)
+        any = true
+      }
     }
-    if (!part && !summary) summary = item.split(/(?<=[.!?])\s+/)[0]
+    if (any && !day) day = d
   }
-
-  const out = [`## ${day}${iso ? range(iso, tag, list) : ''}`, '']
+  day ||= days[0]
+  const top = days[0]
+  if (top.summary && !(before && oldSummary.has(norm(top.summary)))) summary = top.summary.split(/(?<=[.!?])\s+/)[0]
+  if (top.picture && !(before && oldPics.has(top.picture.path))) picture = top.picture
+  if (before && !parts.size) {
+    for (const sub of subjects) {
+      const s = subjectLine(sub)
+      if (!s || seen.has(norm(s.line))) continue
+      seen.add(norm(s.line))
+      if (!parts.has(s.part)) parts.set(s.part, [])
+      parts.get(s.part).push(s.line)
+    }
+  }
+  const when = new Date(`${day.day} 12:00 UTC`)
+  const iso = Number.isNaN(when.getTime()) ? '' : when.toISOString().slice(0, 10)
+  const out = [day.day ? `## ${day.day}${since ? ` (since ${since})` : iso ? range(iso, tag, list) : ''}` : `## Since ${since}`, '']
   if (summary) out.push(esc(summary), '')
-  if (picture) out.push(picture, '')
-  for (const [name, list] of parts) {
-    if (!list.length) continue
-    out.push(`**${name}**`, ...list.map(l => `- ${esc(l)}`), '')
-  }
+  if (picture) out.push(`![${picture.alt}](${base}${picture.path})`, '')
+  for (const [name, lines] of [...parts].sort(([a], [b]) => byOrder(a, b))) out.push(`**${name}**`, ...lines.map(l => `- ${esc(l)}`), '')
+  if (before && !parts.size) out.push('Nothing you can see changed: internal work only.', '')
   return out.join('\n').replace(/\n+$/, '\n')
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const [file, tag = '', list = ''] = process.argv.slice(2)
-    if (file && fs.existsSync(file)) process.stdout.write(releaseNotes(fs.readFileSync(file, 'utf8'), { tag, list, base: process.env.NOTES_BASE || '' }))
+    // <CHANGELOG.md> [<tag> <releases> [<CHANGELOG.md of the release before> <its tag> [<commit subjects since>]]]
+    const [file, tag = '', list = '', prev = '', since = '', subs = ''] = process.argv.slice(2)
+    const read = f => { try { return f ? fs.readFileSync(f, 'utf8') : null } catch { return null } }
+    const previous = read(prev)
+    if (file && fs.existsSync(file)) {
+      process.stdout.write(releaseNotes(fs.readFileSync(file, 'utf8'), {
+        tag, list, base: process.env.NOTES_BASE || '',
+        previous, since: previous == null ? '' : since,
+        subjects: (read(subs) || '').split('\n').filter(Boolean),
+      }))
+    }
   } catch {}
 }

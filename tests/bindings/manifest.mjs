@@ -159,7 +159,7 @@ const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
 if (!same(manifest, sources)) problem('the Rust facade is not what manifest.json says: review the change, then run this with --write')
 
 // What a binding names an object and its constructors.
-const TS_OBJECT = { CoreDevice: 'Device', FileEncryptor: 'FileEncryptor', FileDecryptor: 'FileDecryptor' }
+const TS_OBJECT = { CoreDevice: 'Device', FileEncryptor: 'FileEncryptor', FileDecryptor: 'FileDecryptor', ClientDesk: 'ClientDesk', ClientModel: 'ClientModel' }
 // The store's own types are the host's to implement: in TypeScript they are the interface Store.
 const call = ({ arguments: args, returns }) => `(${args.map(argument => `${argument.name}: ${argument.type}`).join(', ')}) -> ${returns}`
 
@@ -217,7 +217,7 @@ const listed = block => Object.fromEntries([...block.matchAll(/(?:plain |fallibl
 const names = declared => Object.fromEntries(Object.entries(declared).map(([name, { arguments: args }]) => [name, args.map(argument => argument.name)]))
 const sorted = object => Object.fromEntries(Object.entries(object).sort(([a], [b]) => a < b ? -1 : 1))
 if (!same(sorted(listed(/functions! \{(.*?)\n\}/s.exec(wasm)[1])), sorted(names(manifest.functions)))) problem('core/wasm/src/lib.rs does not export exactly the facade\'s functions with their arguments in order')
-for (const [object, rawName, left] of [['CoreDevice', 'RawDevice', ['create', 'open', 'close']], ['FileEncryptor', 'RawFileEncryptor', ['new', 'close']], ['FileDecryptor', 'RawFileDecryptor', ['new', 'close']]]) {
+for (const [object, rawName, left] of [['CoreDevice', 'RawDevice', ['create', 'open', 'close']], ['FileEncryptor', 'RawFileEncryptor', ['new', 'close']], ['FileDecryptor', 'RawFileDecryptor', ['new', 'close']], ['ClientDesk', 'RawClientDesk', ['new', 'close']], ['ClientModel', 'RawClientModel', ['new', 'close']]]) {
   const exported = listed(new RegExp(`methods!\\(${rawName} \\{(.*?)\\}\\);`, 's').exec(wasm)[1])
   const declared = names(manifest.objects[object])
   for (const name of left) delete declared[name]

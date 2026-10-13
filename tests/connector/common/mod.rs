@@ -87,7 +87,9 @@ impl HubProc {
         Self::start_in_with(data, port, &[]).await
     }
 
-    async fn start_in_with(data: TempDir, port: u16, env: &[(&str, &str)]) -> HubProc {
+    /// The same with `env` on top (applied last: `HUB_URL` here names the address the hub takes as its own, e.g. a
+    /// proxy in front of it).
+    pub async fn start_in_with(data: TempDir, port: u16, env: &[(&str, &str)]) -> HubProc {
         let binary = hub_binary();
         assert!(
             binary.is_file(),
@@ -112,7 +114,6 @@ impl HubProc {
                     k.strip_prefix("MEGA_HUB_ENV_").map(|k| (k.to_string(), v))
                 }),
             )
-            .envs(env.iter().copied())
             .stdin(Stdio::null())
             .stdout(if port == 0 {
                 Stdio::piped()
@@ -123,6 +124,7 @@ impl HubProc {
         if port != 0 {
             command.env("HUB_URL", format!("http://127.0.0.1:{port}"));
         }
+        command.envs(env.iter().copied());
         let mut child = command.spawn().expect("the hub starts");
         let port = if port != 0 {
             port
@@ -748,18 +750,34 @@ impl Human {
                     }
                     InviteStep::FoundSession { agent, key_package } => {
                         let mut key_packages = vec![key_package];
-                        for human in self.also_add.clone() {
-                            let id = human.to_base64url();
+                        // every other human device of the room the hub holds a KeyPackage of (5.2.5), as the apps
+                        // claim them; and those named in `also_add`
+                        let me = self.id;
+                        let humans: Vec<DeviceId> = self
+                            .v(move |v| {
+                                v.device
+                                    .room_history()
+                                    .map(|h| h.newest().humans.iter().copied().filter(|d| *d != me).collect())
+                                    .unwrap_or_default()
+                            })
+                            .await;
+                        let mut others: Vec<DeviceId> = humans;
+                        for d in self.also_add.clone() {
+                            if !others.contains(&d) {
+                                others.push(d);
+                            }
+                        }
+                        let ids: Vec<String> = others.iter().map(|d| d.to_base64url()).collect();
+                        if !ids.is_empty() {
                             if let Ok(claimed) = self
                                 .hub
-                                .post(
-                                    "/v1/key-packages/claim",
-                                    &json!({ "devices": [id.clone()] }),
-                                )
+                                .post("/v1/key-packages/claim", &json!({ "devices": ids, "partial": true }))
                                 .await
                             {
-                                if let Ok(kp) = unb64(&claimed["key_packages"], &id) {
-                                    key_packages.push(kp);
+                                for id in &ids {
+                                    if let Ok(kp) = unb64(&claimed["key_packages"], id) {
+                                        key_packages.push(kp);
+                                    }
                                 }
                             }
                         }
@@ -834,8 +852,24 @@ impl Human {
                             .v(move |v| v.device.invite_checked(&invite, &helpers))
                             .await;
                     }
-                    InviteStep::AddToSession { .. } => {
-                        panic!("the stand-in adds no human device")
+                    InviteStep::AddToSession { group, device } => {
+                        // a human device missing from a live session (5.2.7): one KeyPackage of it, the Commit,
+                        // the session's old keys; a device the hub holds none of waits for the next round
+                        let id = device.to_base64url();
+                        let Ok(claimed) = self
+                            .hub
+                            .post("/v1/key-packages/claim", &json!({ "devices": [id.clone()] }))
+                            .await
+                        else {
+                            continue;
+                        };
+                        let Ok(kp) = unb64(&claimed["key_packages"], &id) else { continue };
+                        self.v(move |v| {
+                            if v.device.add_to_session(&group, &device, &kp, now_ms()).is_ok() {
+                                let _ = v.device.send_handover(&group, &device);
+                            }
+                        })
+                        .await;
                     }
                 }
                 waited = false;

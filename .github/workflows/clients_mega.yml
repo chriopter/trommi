@@ -1,7 +1,8 @@
 # The mega test of the clients (tests/client/mega.rs): web (the client layer with the real core, on Node), iOS (the
 # app's engine with the real core, its test runner on Linux) and the connector, each twice, in one room on the real
 # hub, through one long seeded random timeline. It fails where two devices of an app, web and iOS, or an agent and
-# the person's devices show something different. Then the speed of every client with a big Desk.
+# the person's devices show something different. Then the speed of every client with a big Desk. Beside it, the
+# torture run (job `torture`): the real connector, web and a growing fleet of iPhones behind a misbehaving network.
 #
 # Nightly and by hand; never a required check of a pull request (it takes long and its seeds are random: a failure
 # names its seed, and `MEGA_SEEDS=<seed>` repeats it locally, see the test's header).
@@ -20,6 +21,10 @@ on:
         description: 'Steps per seed'
         required: false
         default: '50'
+      fleet:
+        description: 'iPhones in the torture run'
+        required: false
+        default: '100'
 
 permissions: {}
 
@@ -63,7 +68,7 @@ jobs:
         if: steps.bindgen.outputs.cache-hit != 'true'
         run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
       - name: The core for the browser and for Swift, the iOS test runner
-        run: sh tests/client/mega/prepare.sh .
+        run: bash tests/client/mega/prepare.sh .
       - name: The hub and the test
         run: cargo build --locked -p trommi-hub -p trommi-tests --test client_mega
       - name: Every client shows the same
@@ -96,4 +101,93 @@ jobs:
         with:
           name: clients-mega
           path: ${{ runner.temp }}/mega
+          retention-days: 14
+
+  # The torture run (tests/client/mega/torture.rs): the real connector joined every way, presence, a misbehaving
+  # network and a restarting hub, web devices and a fleet of iPhones in one account; every device must show the same
+  # at every checkpoint. The fleet grows step by step, a seed each: 10, 25, 50, then the full fleet (100) with 1,000
+  # cards. Every size runs even when one before failed; the summary names the failed seeds (MEGA_SEEDS=<seed> with
+  # the same sizes repeats one). Failures of known open bugs are listed under the bug's name and do not fail.
+  torture:
+    name: Torture (up to ${{ inputs.fleet || '100' }} iPhones)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Compiler (rust-toolchain.toml), Swift
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+          swift --version
+          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bindgen
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: wasm-bindgen
+        if: steps.bindgen.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
+      - name: The core for the browser and for Swift, the iOS test runner
+        run: bash tests/client/mega/prepare.sh .
+      - name: The hub, the connector and the test
+        run: cargo build --locked -p trommi-hub -p trommi-connector -p trommi-tests --test client_mega
+      - name: Torture, the fleet growing to ${{ inputs.fleet || '100' }} iPhones
+        env:
+          MEGA_OUT: ${{ runner.temp }}/mega/torture
+          FLEET: ${{ inputs.fleet || '100' }}
+          RUN: ${{ github.run_number }}
+          MEGA_AGENTS: '8'
+          MEGA_STEPS: ${{ inputs.steps || '60' }}
+          MEGA_BUDGET_SCALE: '2'
+        run: |
+          set -u
+          failed=0
+          for n in 10 25 50 "$FLEET"; do
+            [ "$n" -le "$FLEET" ] || continue
+            cards=200; [ "$n" -lt "$FLEET" ] || cards=1000
+            seed=$((RUN * 7 + n))
+            echo "== $n iPhones, $cards cards, seed $seed"
+            MEGA_FLEET=$n MEGA_CARDS=$cards MEGA_SEEDS=$seed \
+              cargo test --locked -p trommi-tests --test client_mega torture::torture -- --ignored --exact --nocapture \
+              > "$RUNNER_TEMP/torture-$n.log" 2>&1 || { failed=1; echo "seed $seed ($n iPhones, $cards cards) failed"; }
+            grep -h '^FAIL \|^KNOWN \|^TORTURE ' "$RUNNER_TEMP/torture-$n.log" | head -80
+            [ "$n" != "$FLEET" ] || break
+          done
+          exit $failed
+      - name: Summary
+        if: always()
+        env:
+          MEGA_OUT: ${{ runner.temp }}/mega/torture
+          STEPS: ${{ inputs.steps || '60' }}
+        run: |
+          {
+            echo '### Torture'
+            echo "Sizes: MEGA_AGENTS=8 MEGA_STEPS=$STEPS MEGA_BUDGET_SCALE=2; MEGA_FLEET and MEGA_CARDS per run below"
+            for f in "$RUNNER_TEMP"/torture-*.log; do
+              [ -f "$f" ] || continue
+              echo "#### $(basename "$f" .log | sed 's/torture-//') iPhones"
+              grep -h '^== torture seed\|^TORTURE FAILED SEEDS\|^TORTURE known' "$f" || true
+            done
+            echo '#### Per seed: timings, per-device bytes'
+            for f in "$MEGA_OUT"/torture-*/summary.json; do [ -f "$f" ] || continue; echo '```json'; jq '{seed, phones, web, metrics, network, known: (.known | length)}' "$f"; echo '```'; done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: clients-mega-torture
+          path: |
+            ${{ runner.temp }}/mega/torture
+            ${{ runner.temp }}/torture-*.log
           retention-days: 14

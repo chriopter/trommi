@@ -54,7 +54,8 @@ repository yet; these scripts wait for them.
 ```
 worker.js              http -> https, the universal links' file
 wrangler.jsonc  THIRD-PARTY.md   fonts, Argon2, the QR reader, the word list: whose they are
-core/                  the client core (TypeScript): the room, sync, crypto, storage, the worker. core/README.md
+core/                  the client layer (TypeScript): the room, sync, storage, the worker; crypto and the Desk's rules
+                       come from Rust (core/, client/) as WebAssembly. core/README.md
 dev/                   serve, build, check, verify; look, perf and the browser tests (cdp.mjs drives Chromium)
 public/
   index.html  sw.js  manifest.webmanifest  _headers  robots.txt  frame.html (the sandbox a published page runs in)

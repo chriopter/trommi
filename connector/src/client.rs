@@ -22,7 +22,7 @@ use crate::vault::{side_key, Vault};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use trommi_core::device::{
@@ -241,6 +241,10 @@ pub struct Core {
     reread_asked: Vec<GroupId>,
     /// Groups a re-admission was asked for in this process.
     asked_readmit: Vec<GroupId>,
+    /// The Welcomes as fetched for the batch of items being processed: asked for once per batch (a page of the
+    /// log, a burst of the stream), however many Commits of groups not held it brings (the client core's load
+    /// rule, client/src/plan.rs).
+    welcomes_batch: Option<Vec<Value>>,
     /// Requests of this device the hub voided or refused for good, by outbox id (of an envelope that was
     /// sealed again: the first one's).
     failed: BTreeMap<u64, Fault>,
@@ -451,6 +455,8 @@ pub struct Client {
     report: std::sync::Mutex<Value>,
     /// The code of the last fault the owner was told of: the same one is not said again and again.
     told: std::sync::Mutex<String>,
+    /// Items the live stream brought, all streams together: a stream that brought one worked (`run`).
+    streamed: AtomicU64,
 }
 
 fn group_of_item(item: &Value) -> Result<GroupId> {
@@ -555,6 +561,7 @@ impl Client {
                 reread_stored: Vec::new(),
                 reread_asked: Vec::new(),
                 asked_readmit: Vec::new(),
+                welcomes_batch: None,
                 failed: BTreeMap::new(),
                 replaced: BTreeMap::new(),
                 findings_said: 0,
@@ -576,6 +583,7 @@ impl Client {
             wake: tokio::sync::Notify::new(),
             report: std::sync::Mutex::new(json!({})),
             told: std::sync::Mutex::new(String::new()),
+            streamed: AtomicU64::new(0),
         });
         {
             let mut core = client.core.lock().await;
@@ -1154,21 +1162,26 @@ impl Client {
                 return;
             }
             let began = std::time::Instant::now();
+            let streamed = self.streamed.load(Ordering::SeqCst);
             let round = async {
                 if !self.is_online() {
                     self.go_online().await?;
                 }
                 self.follow().await
             };
-            match round.await {
-                // The stream ended (a token ran out). Only one that lived a while resets the pause: a hub
-                // that ends every stream at once is asked again more and more slowly.
+            let outcome = round.await;
+            // A stream that lived a while or brought something worked: whatever ended it (its token ran out, the
+            // network cut it), the next one is opened after the shortest pause. Only rounds that bring nothing
+            // make it longer: a hub that ends every stream at once, or none that answers, is asked more and more
+            // slowly.
+            if began.elapsed() >= STREAM_LIVED || self.streamed.load(Ordering::SeqCst) != streamed {
+                pause_ms = 1000;
+            }
+            match outcome {
+                // The stream ended (a token ran out).
                 Ok(()) => {
                     no_hub = 0;
                     self.told.lock().unwrap_or_else(|e| e.into_inner()).clear();
-                    if began.elapsed() >= STREAM_LIVED {
-                        pause_ms = 1000;
-                    }
                 }
                 Err(fault) if is_transient(&fault) || fault.code == "unauthorised" => no_hub = 0,
                 Err(fault) if crate::hub::is_no_hub(&fault) => {
@@ -1243,6 +1256,7 @@ impl Client {
             let mut core = self.core.lock().await;
             match event.name.as_str() {
                 "envelope" | "log" => {
+                    self.streamed.fetch_add(1, Ordering::SeqCst);
                     let change = event.data.get("change").and_then(Value::as_u64);
                     let commands = self.process_items(&mut core, &[event.data]).await?;
                     self.after_items(&mut core).await?;
@@ -1421,7 +1435,16 @@ impl Client {
     }
 
     async fn take_welcomes_now(&self, core: &mut Core, only: Option<GroupId>) -> Result<()> {
-        let rows = self.welcome_rows().await?;
+        // (for a Commit of a group not held, within a batch: the batch's one answer)
+        let rows = match (&only, &core.welcomes_batch) {
+            (Some(_), Some(rows)) => rows.clone(),
+            (Some(_), None) => {
+                let rows = self.welcome_rows().await?;
+                core.welcomes_batch = Some(rows.clone());
+                rows
+            }
+            (None, _) => self.welcome_rows().await?,
+        };
         let room = self.room;
         let mut joined_any = false;
         for row in rows {
@@ -1668,6 +1691,7 @@ impl Client {
         if core.halted.is_some() {
             return Ok(commands);
         }
+        core.welcomes_batch = None;
         for item in items {
             let Some(change) = item.get("change").and_then(Value::as_u64) else {
                 continue;

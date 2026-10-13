@@ -4,7 +4,7 @@
 // to the real library by the target TrommiCoreLive (UniFFI, core/swift/TrommiCoreRust).
 //
 //   TrommiClient     model (Board, Desk, …), the device store, the hub client, the engine `Room`. No crypto of its
-//                    own and no link to the Rust library: it builds and tests on Linux without it.
+//                    own; the Desk's rules are the client core's (Rust, TrommiCoreRust's ClientDesk).
 //   TrommiCoreLive   `Core.swift` on the Rust core. Only the app links it: +3 MB.
 //   NotifyCoreLive   PushNotify's one call (open a push) on the Rust core, for the notification extension alone,
 //                    so that it links neither the engine nor the model.
@@ -30,7 +30,7 @@ let package = Package(
     .package(path: "../../../core/swift/TrommiCoreRust"),
   ],
   targets: [
-    .target(name: "TrommiClient", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),
+    .target(name: "TrommiClient", dependencies: [.product(name: "Crypto", package: "swift-crypto"), .product(name: "TrommiCoreRust", package: "TrommiCoreRust")]),
     .target(name: "TrommiCoreLive", dependencies: ["TrommiClient", .product(name: "TrommiCoreRust", package: "TrommiCoreRust")]),
     .target(name: "NotifyCoreLive", dependencies: ["PushNotify", .product(name: "TrommiCoreRust", package: "TrommiCoreRust")]),
     .target(name: "ShareInbox", dependencies: [.product(name: "Crypto", package: "swift-crypto")]),

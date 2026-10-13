@@ -36,10 +36,7 @@ public enum JV: Equatable, Hashable, Codable, CustomStringConvertible {
     }
   }
   /** Parse UTF-8 JSON bytes; nil when it is not JSON. */
-  public static func parse(_ bytes: Bytes) -> JV? {
-    guard let v = try? JSONDecoder().decode(JV.self, from: Data(bytes)) else { return nil }
-    return v
-  }
+  public static func parse(_ bytes: Bytes) -> JV? { JSONParse.parse(bytes) }
   public var any: Any {
     switch self {
     case .null: return NSNull()

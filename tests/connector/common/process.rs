@@ -52,6 +52,11 @@ pub struct Seat {
 }
 
 impl Seat {
+    /// The runtime directory, where the connector's sockets are.
+    pub fn run_dir(&self) -> &std::path::Path {
+        self.run.path()
+    }
+
     pub fn new(hub_url: &str) -> Seat {
         let home = TempDir::new("seat");
         let folder = home.path().join("project");
@@ -281,17 +286,35 @@ impl Mcp {
     }
 
     /// Starts the server and says `hello` as the client's `initialize`.
-    pub async fn start_as(mut command: Command, hello: Value) -> Mcp {
+    pub async fn start_as(command: Command, hello: Value) -> Mcp {
+        Self::start_logged(command, hello, None).await
+    }
+
+    /// The same with the server's stderr into `log` (a file of the test's output), each line after the time it
+    /// came at (ms since 1970).
+    pub async fn start_logged(mut command: Command, hello: Value, log: Option<std::fs::File>) -> Mcp {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(if std::env::var_os("TROMMI_TEST_LOG").is_some() {
-                Stdio::inherit()
-            } else {
-                Stdio::null()
+            .stderr(match log {
+                Some(_) => Stdio::piped(),
+                None if std::env::var_os("TROMMI_TEST_LOG").is_some() => Stdio::inherit(),
+                None => Stdio::null(),
             })
             .spawn()
             .expect("the connector starts");
+        if let (Some(mut file), Some(stderr)) = (log, child.stderr.take()) {
+            tokio::spawn(async move {
+                use std::io::Write;
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let at = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_millis());
+                    let _ = writeln!(file, "{at} {line}");
+                }
+            });
+        }
         let stdin = child.stdin.take().expect("its stdin");
         let lines = BufReader::new(child.stdout.take().expect("its stdout")).lines();
         let mut mcp = Mcp {
@@ -312,6 +335,15 @@ impl Mcp {
     pub async fn send(&mut self, message: &Value) {
         self.stdin
             .write_all(format!("{message}\n").as_bytes())
+            .await
+            .expect("the connector reads");
+        self.stdin.flush().await.expect("flushed");
+    }
+
+    /// Sends one line as it is, JSON or not.
+    pub async fn send_raw(&mut self, line: &str) {
+        self.stdin
+            .write_all(format!("{line}\n").as_bytes())
             .await
             .expect("the connector reads");
         self.stdin.flush().await.expect("flushed");

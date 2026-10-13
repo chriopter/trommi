@@ -995,6 +995,160 @@ export class FileEncryptor {
   close(): void
 }
 
+/** A card as the Desk needs it. `state`: 1 open, 2 answered, 3 closed; `urgency`: 3 critical, 2 high, 1 normal, 0 low. */
+export interface DeskCardIn {
+  objectId: string
+  sessionId: string | null
+  state: number
+  urgency: number
+  createdAt: number
+  agentDeviceId: string
+  versionChange: number
+  newest: number
+  inRevision: number | null
+  read: boolean
+  /** An info its agent is still working on (spec 9.1.3). */
+  working: boolean
+}
+/** A permission request as the Desk needs it; `expiresAt` 0: not known (its body not read). */
+export interface DeskRequestIn {
+  objectId: string
+  sessionId: string | null
+  pending: boolean
+  envelopeNumber: number
+  newest: number
+  sentAt: number
+  expiresAt: number
+  read: boolean
+}
+/** One object the hub's Desk lists as open, with the change of its current version. */
+export interface DeskListed {
+  objectId: string
+  versionChange: number
+}
+/** One edit of the stack: at `at`, `gone` ids leave and `ids` come. */
+export interface DeskStackOp {
+  at: number
+  gone: number
+  ids: string[]
+}
+/** A session's open cards (not held), by the time they were asked; empty: none any more. */
+export interface DeskSessionOpen {
+  sessionId: string
+  cardIds: string[]
+}
+/** One edit of a session's list of open cards: at `at`, `gone` ids leave and `ids` come. */
+export interface DeskSessionOp {
+  sessionId: string
+  at: number
+  gone: number
+  ids: string[]
+}
+/** What changed of the Desk since the last answer (client/src/desk.rs `Delta`). */
+export interface DeskDelta {
+  whole: boolean
+  stack: string[]
+  stackOps: DeskStackOp[]
+  permissionsOpen: string[] | null
+  held: string[]
+  unheld: string[]
+  expired: string[]
+  handBackOver: string[]
+  sessionOpen: DeskSessionOpen[]
+  sessionOps: DeskSessionOp[]
+  nextWake: number
+}
+/** The client core's Desk (client/src/desk.rs): the app tells it what changed and asks what changed of the Desk. */
+export class ClientDesk {
+  constructor()
+  putCards(cards: DeskCardIn[]): void
+  putRequests(requests: DeskRequestIn[]): void
+  remove(objectIds: string[]): void
+  clear(): void
+  setSnooze(card: string, value: string | null, at: number): void
+  setArchived(sessionIds: string[]): void
+  setListing(at: number, listed: DeskListed[]): void
+  forgetListing(): void
+  setHoldAll(hold: boolean): void
+  project(nowMs: number): DeskDelta
+  /** The browser's lane: the same as putCards, as one JSON list of the core's `DeskCard` (snake case). */
+  putCardsJson(cards: string): void
+  /** The same as putRequests, as one JSON list of the core's `DeskRequest` (snake case). */
+  putRequestsJson(requests: string): void
+  /** The same as project, as the JSON of the core's `Delta` (snake case). */
+  projectJson(nowMs: number): string
+}
+
+/** The client core's board model (client/src/model): what came goes in, the patch of a batch comes out (JSON in
+ *  the web model's `ModelPatch` shape). */
+export class ClientModel {
+  constructor(myDeviceId: string)
+  setMe(myDeviceId: string): void
+  load(snapshot: string): void
+  applyEnvelopes(received: ReceivedEnvelope[], nowMs: number): string
+  applyCardDeeds(received: ReceivedEnvelope[]): void
+  applyReceivedJson(received: string, nowMs: number): string
+  setWindowsOpen(open: boolean): void
+  /** The patch carries cards lean (`lean: true`, `lazy` names the fields left out); `cardJson` gives a card whole. */
+  setLeanCards(lean: boolean): void
+  cardJson(objectId: string): string
+  applyGroups(groups: GroupSummary[], roles: RoomRoles | null): void
+  applyCommit(facts: CommitSummary, byRecovery: boolean, removedMe: boolean, nowMs: number): void
+  applyPresence(reports: string, nowMs: number): void
+  /** The live stream opened (again): the hub's list of who is here comes first, ended by its `here`. */
+  streamOpened(): void
+  /** One `presence` stream event, JSON as the hub sends it: whether an agent device came online. */
+  applyPresenceEvent(event: string, nowMs: number): boolean
+  /** The `here` that ends a new stream's list of who is here: every other device shown online is offline now. */
+  applyHere(nowMs: number): void
+  /** The seat rule's look (client/src/seats.rs): JSON `{agents, seated, coming, founding_pending}` in; JSON
+   *  `{recheck_at}` or `{candidates}` out. */
+  seatPlan(known: string, nowMs: number): string
+  /** After the hub's list of groups: the one agent (hex) to found now, if any. */
+  seatAfterHub(candidates: string, hubSeated: string): string | null
+  seatFounded(agent: string): void
+  /** This device's founding for the agent failed: when to try again (ms). */
+  seatFailed(agent: string, nowMs: number): number
+  setSeatGrace(ms: number): void
+  /** Self-join (client/src/selfjoin.rs): the asks to act on, JSON `[{session_id, nonce, ask, refused}]`. */
+  selfJoinAsks(answered: string, pending: string): string
+  /** Whether a vouched Request is let in; null while the ask names no hash. */
+  selfJoinVerdict(sessionId: string, nonce: string, requestHash: string): boolean | null
+  /** The devices (hex) of archived self-joined sessions still in the room, JSON list. */
+  selfJoinRetire(): string
+  /** The asks as the sidebar's rows, JSON; `invites`: JSON `{invite_id: state}`. */
+  joinRows(invites: string): string
+  applyWorkTrail(sessionId: string, from: Uint8Array, turn: Uint8Array, number: number, time: number, payload: Uint8Array, changeNumber: number): boolean
+  applyStrokePiece(from: Uint8Array, board: Uint8Array, payload: Uint8Array, nowMs: number): boolean
+  echoItem(localId: string, timelineKey: string, content: string, recipient: string | null, objectId: string | null, nowMs: number): string
+  echoRegisters(localId: string, values: string): void
+  echoAnswer(localId: string, objectId: string, answer: string, objectState: string): boolean
+  echoNote(localId: string, objectId: string | null, fields: string, closed: boolean): string
+  confirmEcho(localId: string, hash: string, seq: number, objectId: string | null): void
+  rollbackEcho(localId: string): void
+  setDeskListing(at: number, listed: DeskListed[]): void
+  forgetDeskListing(): void
+  setDeskHold(hold: boolean): void
+  setWindow(timelineKey: string, open: boolean, loadedDownTo: number, hasMore: boolean): void
+  applyPage(timelineKey: string, received: ReceivedEnvelope[], scratch: boolean, nowMs: number): string
+  putItems(timelineKey: string, items: string, loadedDownTo: number | null, hasMore: boolean | null): void
+  pushAlert(code: string, message: string, envelopeNumber: number | null, senderDeviceId: string | null, nowMs: number): string
+  noteNewer(what: string, envelopeNumber: number | null): void
+  finish(nowMs: number): string
+  /** As `finish`, in parts of at most `maxCards` cards: called again until it gives "". */
+  finishPart(nowMs: number, maxCards: number): string
+  snapshot(): string
+  /** The session list every app shows (client/src/sessions.rs), JSON: `SessionRow[]` in order. */
+  sessionList(reading: boolean): string
+  /** The room is being read or not (the session list names a session without a profile "Loading …" meanwhile). */
+  setReading(reading: boolean): void
+  touchAll(): void
+  applyCardDeedsJson(received: string): void
+  applyGroupsJson(groups: string, roles: string): void
+  applyCommitJson(facts: string, byRecovery: boolean, removedMe: boolean, nowMs: number): void
+  applyPageJson(timelineKey: string, received: string, scratch: boolean, nowMs: number): string
+}
+
 /** Decrypts a stored file piece by piece. What `update` handed out counts only once `finish` succeeded. */
 export class FileDecryptor {
   constructor(file: FileRef)
@@ -1070,3 +1224,47 @@ export function hubAddress(text: string): string
 export function recoveryAnchor(recoveryCode: Uint8Array, room: Uint8Array, rows: Uint8Array[]): Anchor
 /** The hub's sign-in under the recovery code, for a device that is not yet a member. */
 export function recoverySignIn(recoveryCode: Uint8Array, room: Uint8Array, hub: string, challenge: Uint8Array): SignedHubAuth
+
+// ---- the body codec (client/src/codec.rs) -----------------------------------------------------------------------
+// The bodies of stored content (spec/v1.md 9.1) between the wire and the model. A kind is 'message', 'board_item',
+// 'card', 'note', 'artifact', 'answer', 'take_back', 'request', 'verdict' or 'register'. The model's side crosses as
+// JSON text. A body that cannot be written is refused with `bad-format`, its message beginning with the codec's own
+// code: `bad-argument: …` or `bad-format: …`.
+
+/** A register write as a draft takes it: the wire's name, and the value as JSON bytes (null deletes). */
+export interface RegisterWire {
+  name: string
+  value: Uint8Array | null
+}
+/** A body's payload as the model's fields: their JSON text (it begins with `{`), or 'newer_schema', or 'bad'. */
+export function bodyFromWire(kindName: string, payload: Uint8Array): string
+/** Several bodies at once: one JSON list of the model's fields (an object) or 'newer_schema' or 'bad' each. */
+export function bodiesFromWire(kindNames: string[], payloads: Uint8Array[]): string
+/** A draft's fields (JSON, the model's names) as the payload text the core seals, with `schema_version` 2. */
+export function bodyToWire(kindName: string, fieldsJson: string): string
+/** A board item's payload in the wire's own form, checked: its JSON text, or 'newer_schema', or 'bad'. */
+export function boardItemParse(payload: Uint8Array): string
+/** A register write for the model's key and value (JSON; 'null' deletes). */
+export function registerToWire(key: string, valueJson: string): RegisterWire
+/** A register's name and value (JSON) as they came, as `{ key, value }` (JSON) in the model's form. */
+export function registerFromWire(name: string, valueJson: string): string
+/** A register's name on the wire as its key in the model. */
+export function registerKeyOf(name: string): string
+/** A register's key in the model as its name on the wire. */
+export function registerNameOf(key: string): string
+/** The files a body (the model's fields, JSON) names, for the envelope's header: none twice. */
+export function bodyFileIds(kindName: string, fieldsJson: string): Uint8Array[]
+/** A wire attachment reference (JSON) as the model keeps it (JSON). */
+export function attachmentFromWire(attachmentJson: string): string
+/** A model attachment reference (JSON) as a body carries it (JSON). */
+export function attachmentToWire(attachmentJson: string): string
+/** One shape as the wire carries it (JSON; `withId` in a snapshot file) as the model's entry (JSON). */
+export function boardEntryFromWire(entryJson: string, withId: boolean): string
+/** A shape id of the wire as the model writes it; null for no such id. */
+export function shapeIdFromWire(id: string): string | null
+/** A shape id of the model as the wire writes it; null for no such id. */
+export function shapeIdToWire(id: string): string | null
+/** The `piece` of a stroke piece message as the model's form (JSON); null for one the core would refuse. */
+export function pieceFromWire(piece: Uint8Array): string | null
+/** The model's piece (JSON) as the `piece` a stroke piece message carries. */
+export function pieceToWire(pieceJson: string): Uint8Array

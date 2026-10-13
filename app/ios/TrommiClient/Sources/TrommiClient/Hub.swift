@@ -187,6 +187,8 @@ public final class HubClient: @unchecked Sendable {
     _ = try? await send(req, cap: Self.maxJSON)
     forgetToken()
   }
+  /** Whether a token is held that stays good for `ms` more. */
+  public func holdsToken(validFor ms: UInt64) -> Bool { tokenNow(validFor: ms) != nil }
   private func tokenNow(validFor ms: UInt64) -> String? { lock.withLock { token.flatMap { nowMs() + ms < tokenExpiresAt ? $0 : nil } } }
   private func setToken(_ t: String?, expiresAt: UInt64) { lock.withLock { if !shut || t == nil { token = t; tokenExpiresAt = expiresAt } } }
 
@@ -235,6 +237,13 @@ public final class HubClient: @unchecked Sendable {
   }
   /** What the Desk shows without history: open objects' newest envelopes, the registers, the groups. */
   public func desk(active: Bool = false) async throws -> JSON { try await request("GET", "/desk", query: active ? ["active": "1"] : [:]) }
+  /** The Desk as ids and version numbers only (`GET /v1/desk?brief=1&since=`): with `since`, only what changed after
+   *  it, and what of that is no longer open in `settled`. */
+  public func deskBrief(since: UInt64?) async throws -> JSON {
+    var q = ["brief": "1", "active": "1"]
+    if let s = since { q["since"] = String(s) }
+    return try await request("GET", "/desk", query: q)
+  }
   /**
    * The groups this device may see, page by page (`?limit=1000&after=`, `{ items, more, after }`, spec/hub-api.md
    * point 43). A hub that answers the bare list (an older one) is read as one page.

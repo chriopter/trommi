@@ -12,9 +12,9 @@ final class SessionListTests: XCTestCase {
   let s0 = String(repeating: "50", count: 16), s1 = String(repeating: "51", count: 16), h0 = String(repeating: "60", count: 16), h1 = String(repeating: "61", count: 16)
 
   private var n = 0
-  private func rec(from: String, session: String?, values: [String: JV]) -> Rec {
+  private func rec(from: String, session: String?, values: [String: JV]) -> OldRec {
     n += 1
-    return Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: from, senderRole: from == human ? "human" : "agent", recipientDeviceId: nil, sentAt: UInt64(1_000_000 + n),
+    return OldRec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: from, senderRole: from == human ? "human" : "agent", recipientDeviceId: nil, sentAt: UInt64(1_000_000 + n),
                kind: KIND.STATUS, isHead: true, object: nil, timelineKind: nil, timelineId: nil, sessionId: session, content: .obj(["values": .obj(values)]), contentState: "ok",
                bind: nil, causal: Causal(senderDeviceId: from, senderSequence: UInt64(n), sentAt: UInt64(n), lamport: n), senderSequence: UInt64(n), epoch: 1)
   }

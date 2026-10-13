@@ -27,7 +27,7 @@ final class RoomRemovalTests: XCTestCase {
     try XCTUnwrap(try tools.createDevice(store: DeviceStore(directory: try scratchFolder(self), key: systemRandom(32))) as? LiveDevice)
   }
   private func writeNote(_ device: LiveDevice, _ text: String) throws {
-    _ = try device.seal(.noteFirst(payload: utf8(#"{"schema_version":1,"text":"\#(text)","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
+    _ = try device.seal(.noteFirst(payload: utf8(#"{"schema_version":2,"text":"\#(text)","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
     try hub.post(device)
   }
   private func notes(_ room: Room) -> [String] { room.board.notes.values.map(\.text).filter { !$0.isEmpty }.sorted() }
@@ -148,7 +148,7 @@ final class RoomRemovalTests: XCTestCase {
     try hub.deliver(to: c)
     // A's Cut of C is taken now, before C writes
     let cut = try a.cutOf(group: room, device: c.id)
-    _ = try c.seal(.noteFirst(payload: utf8(#"{"schema_version":1,"text":"by c","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
+    _ = try c.seal(.noteFirst(payload: utf8(#"{"schema_version":2,"text":"by c","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
     try hub.postWaiting(c)
     _ = try await b.sync()
     XCTAssertEqual(notes(b), ["by c", "one"])

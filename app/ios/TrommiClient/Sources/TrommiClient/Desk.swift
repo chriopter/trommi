@@ -5,8 +5,6 @@
 import Foundation
 
 public let SESSION_ID_LEN = 12
-public let QUIET_MS: UInt64 = 15 * 60_000
-public let OFFLINE_GRACE_MS: UInt64 = 60_000
 public let UNHEARD_MS: UInt64 = 2 * 60_000
 public let ACTING_MS: UInt64 = 6 * 60 * 60 * 1000
 
@@ -53,9 +51,20 @@ public struct Agent: Identifiable, Equatable {
   public var hue: Int = 162
   /** Whether the human gave it a place in the order (its register's position; the sidebar's drag on the web). */
   public var placed: Bool = false
-  /** Archived because a newer pairing in the same folder took its place (replaceInSlots). */
+  /** Archived because a newer pairing in the same folder took its place (the client core's session list). */
   public var replaced: Bool = false
+  /** At the client core's clock (client/src/status.rs): its link (nil when archived or removed), why it is stopped
+   *  (the red hand: it reads the Desk), whether a status line says working, since when it is quiet. */
+  public var linkState: CoreLink? = nil
+  public var blocked: CoreBlocked? = nil
+  public var working: Bool = false
+  public var quietSince: UInt64? = nil
 }
+
+/** A session's link as the client core decides it (status.rs `LinkView`). */
+public struct CoreLink: Equatable { public var state: String; public var since: UInt64?; public var reason: String }
+/** Why a session is stopped, as the client core decides it (status.rs `Blocked`). */
+public struct CoreBlocked: Equatable { public var why: String; public var since: UInt64? }
 
 public struct LinkWords: Equatable {
   public var state: String              // live | oncall | asleep | cut | gone
@@ -88,34 +97,32 @@ public func agoText(_ ts: UInt64, now: UInt64 = nowMs()) -> String {
 }
 
 let RECONNECT = "/mcp → trommi → Reconnect"
-/** The session's link in words (app.mjs linkOf). */
+/** The session's link in words (app.mjs linkOf); its state is the client core's (Agent.linkState). */
 public func linkOf(_ a: Agent?, now: UInt64 = nowMs()) -> LinkWords? {
-  guard let a = a, !a.archived, !a.removed else { return nil }
+  guard let a = a, !a.archived, !a.removed, let v = a.linkState else { return nil }
   let n = a.name, l = a.link
-  if !a.online {
-    let since = a.offlineSince, at = since.map { clockText($0, now: now) } ?? ""
-    if l?.exitClaude == "alive" {
-      return LinkWords(state: "cut", sign: "ear-off", since: since, word: "cut off\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Cut off" : "Cut off since \(at)",
-                       line: "\(n) is cut off\(at.isEmpty ? "" : " since \(at)"): its Claude Code runs, its Trommi tools are gone. It cannot hear you and cannot write to you.", fixSay: "In its terminal:", fixCode: RECONNECT)
-    }
+  let since = v.since, at = since.map { clockText($0, now: now) } ?? ""
+  switch v.state {
+  case "cut" where !a.online:
+    return LinkWords(state: "cut", sign: "ear-off", since: since, word: "cut off\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Cut off" : "Cut off since \(at)",
+                     line: "\(n) is cut off\(at.isEmpty ? "" : " since \(at)"): its Claude Code runs, its Trommi tools are gone. It cannot hear you and cannot write to you.", fixSay: "In its terminal:", fixCode: RECONNECT)
+  case "gone":
     let how = l?.exitReason != nil ? "its Claude Code session ended." : "it stopped without a word: its session ended, was killed, or its machine is off the network."
     return LinkWords(state: "gone", sign: "plug", since: since, word: "gone\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Gone" : "Gone since \(at)",
                      line: "\(n) is gone\(at.isEmpty ? "" : " since \(at)"): \(how)", fixSay: "Start it again in its folder:", fixCode: "claude --continue")
-  }
-  if let l = l, l.cutSince != nil || !l.attached {
-    let since = l.cutSince ?? l.since, at = since.map { clockText($0, now: now) } ?? ""
+  case "cut":
     return LinkWords(state: "cut", sign: "ear-off", since: since, word: "cut off\(at.isEmpty ? "" : " · \(at)")", short: at.isEmpty ? "Cut off" : "Cut off since \(at)",
                      line: "A Claude Code session in \(n)'s folder is cut off\(at.isEmpty ? "" : " since \(at)"): it runs, its Trommi tools are gone. It cannot hear you and cannot write to you.", fixSay: "In its terminal:", fixCode: RECONNECT)
+  case "live":
+    return LinkWords(state: "live", sign: "ear", since: nil, word: "", short: "", line: "\(n) hears you at once.", fixSay: nil, fixCode: nil)
+  default: break
   }
-  guard let l = l, l.hears == "oncall" else { return LinkWords(state: "live", sign: "ear", since: nil, word: "", short: "", line: "\(n) hears you at once.", fixSay: nil, fixCode: nil) }
-  let last = l.lastCallAt ?? l.since
-  let idle = last.map { now > $0 ? now - $0 : 0 }
-  let m = idle.map(minutes)
-  if let idle = idle, idle >= ASLEEP_MS, let m = m {
-    return LinkWords(state: "asleep", sign: "ear-later", since: last, word: "not listening · \(m) min", short: "Not listening for \(m) min",
+  let m = since.map { minutes(now > $0 ? now - $0 : 0) }
+  if v.state == "asleep", let m = m {
+    return LinkWords(state: "asleep", sign: "ear-later", since: since, word: "not listening · \(m) min", short: "Not listening for \(m) min",
                      line: "\(n) is not listening: it hears you only on its next step, and its last one was \(m) min ago.", fixSay: "Wake it: type anything in its terminal.", fixCode: nil)
   }
-  return LinkWords(state: "oncall", sign: "ear-later", since: last, word: "on its next step", short: "Hears you on its next step",
+  return LinkWords(state: "oncall", sign: "ear-later", since: since, word: "on its next step", short: "Hears you on its next step",
                    line: "\(n) hears you on its next step\(m.map { "; its last one was \($0) min ago" } ?? "").", fixSay: nil, fixCode: nil)
 }
 
@@ -170,10 +177,18 @@ public struct DeskCard: Identifiable {
   public var title: String
   public var teaser: String
   public var body: String
-  public var options: [Option]
-  public var sections: [JV]?
+  /** Its options, sections, attachments and recommended keys: of a card of the board read from it when first asked (a
+   *  lean card reads them from the client core), so that a Desk of a thousand cards does not hold them all. */
+  public var options: [Option] { get { ownOptions ?? from?.options ?? [] } set { ownOptions = newValue } }
+  public var sections: [JV]? { get { ownSections ?? from?.sections } set { ownSections = newValue } }
   public var html: String?
-  public var attachments: [JV]
+  public var attachments: [JV] { get { ownAttachments ?? from?.attachments ?? [] } set { ownAttachments = newValue } }
+  var ownOptions: [Option]?
+  var ownSections: [JV]?
+  var ownAttachments: [JV]?
+  var ownRecommended: [String]?
+  /** The board's card it was made from (its lazy parts). */
+  var from: Card?
   public var version: Int
   public var multiple: Bool
   public var choices: [String]
@@ -182,7 +197,7 @@ public struct DeskCard: Identifiable {
   public var summary: String
   public var created: UInt64
   public var decided: UInt64?
-  public var recommended: [String]
+  public var recommended: [String] { get { ownRecommended ?? from?.recommended ?? [] } set { ownRecommended = newValue } }
   public var versionHash: String?
   public var contentState: String
   public var revised: UInt64?
@@ -206,10 +221,19 @@ public struct DeskCard: Identifiable {
   /** Its agent closed it after his answer (close_card): What?? asks about what it did. */
   public var finished = false
   public var mergedInto: String?
-  public var mergedFrom: [String] = []
+  public var mergedFrom: [String] { get { ownMergedFrom ?? from?.mergedFromObjectIds ?? [] } set { ownMergedFrom = newValue } }
+  var ownMergedFrom: [String]?
   public var noteAttachments: [JV] = []
   public var answeredVersion: Int?
   public var unsupported = false
+  init(id: String, agent: String, number: Int, kind: String, status: String, urgency: String, urgencyReason: String, title: String, teaser: String, body: String,
+       options: [Option]?, sections: [JV]?, html: String?, attachments: [JV]?, version: Int, multiple: Bool, choices: [String], note: String, summary: String,
+       created: UInt64, decided: UInt64?, recommended: [String]?, versionHash: String?, contentState: String, from: Card? = nil) {
+    self.id = id; self.agent = agent; self.number = number; self.kind = kind; self.status = status; self.urgency = urgency; self.urgencyReason = urgencyReason
+    self.title = title; self.teaser = teaser; self.body = body; self.ownOptions = options; self.ownSections = sections; self.html = html; self.ownAttachments = attachments
+    self.version = version; self.multiple = multiple; self.choices = choices; self.note = note; self.summary = summary; self.created = created; self.decided = decided
+    self.ownRecommended = recommended; self.versionHash = versionHash; self.contentState = contentState; self.from = from
+  }
   public var isKnock: Bool { kind == "permission" || urgency == "high" || urgency == "critical" }
   public var knockWord: String? { kind == "permission" ? "Knock! Permission" : urgency == "critical" ? "Knock! Blocking" : urgency == "high" ? "Knock" : nil }
   public var nr: String { "Nr. \(number)" }
@@ -362,7 +386,6 @@ public final class DeskModel {
   public private(set) var tasks: [Task1] = []
   /** By agent id, built once per update (a big room has hundreds of sessions: no scan of every card or line per row). */
   private var workingOf: [String: [Task1]] = [:]
-  private var waitingOf: [String: [DeskCard]] = [:]
   public private(set) var desks: [DeskDesc] = []
   private(set) var devToAgent: [String: String] = [:]
   private(set) var agentToDev: [String: String] = [:]
@@ -393,8 +416,11 @@ public final class DeskModel {
     devToAgent = [:]; agentToDev = [:]
     let sessions = m.sessions.values.sorted { $0.sessionId < $1.sessionId }
     // (two sessions may name the same agent id, e.g. one agent_session_id twice: the newest session holds the id)
+    // (each session's board id as the client core's session list names it; one it does not list, by the same rule)
+    var listed = [String: String]()
+    for r in m.sessionList { if let k = r["key"].string, let id = r["id"].string { listed[k] = id } }
     for s in sessions {
-      let id = agentIdOf(s); devToAgent[s.sessionId] = id
+      let id = listed[s.sessionId] ?? agentIdOf(s); devToAgent[s.sessionId] = id
       if let had = agentToDev[id], let h = m.sessions[had], h.lastActivityAt > s.lastActivityAt { continue }
       agentToDev[id] = s.sessionId
     }
@@ -417,7 +443,6 @@ public final class DeskModel {
     tasks = []
     for s in sessions { for t in s.statusLines { tasks.append(Task1(agent: devToAgent[s.sessionId] ?? "", id: t.id, label: t.label, state: t.state, detail: t.detail, cardId: t.objectId, updated: t.updatedAt)) } }
     workingOf = Dictionary(grouping: tasks.filter { $0.state == "working" }, by: { $0.agent })
-    waitingOf = Dictionary(grouping: cards.filter { $0.status == "open" && $0.withAgent == nil }, by: { $0.agent })
     var d = m.human.desks.compactMap { (id, v) -> DeskDesc? in
       guard v.object != nil else { return nil }
       let name = (v["name"].string ?? "").trimmingCharacters(in: .whitespaces)
@@ -444,79 +469,36 @@ public final class DeskModel {
   public func agentOf(cardId: String) -> Agent? { byCard[cardId].flatMap { byAgent[$0.agent] } }
   public func sessionKey(of agentId: String) -> String? { agentToDev[agentId] }
 
+  /**
+   * The sessions as the sidebar shows them: the client core's session list (Board.sessionList, client/src/sessions.rs),
+   * the same on every device of the person. What is added here is only what the views draw beside it.
+   */
   private func makeAgents() -> [Agent] {
     let m = board
-    let crown = m.human.crown["session_id"].string ?? m.human.crown["agent_device_id"].string
-    // (a session only a register named, with no group and nothing in it, is none: a board cached before the
-    // registers stopped making sessions may still hold one)
-    let list = m.sessions.values.filter { ($0.isActive && ($0.agentDeviceId != nil || $0.withHistory)) || !$0.cardIds.isEmpty }.sorted { $0.sessionId < $1.sessionId }
     var lastOfDevice = [String: UInt64]()
-    for s in list { if let a = s.agentDeviceId { lastOfDevice[a] = max(lastOfDevice[a] ?? 0, s.lastActivityAt) } }
-    var slots = [Slot?](repeating: nil, count: list.count), waiting = [Int](repeating: 0, count: list.count), fetched = [Bool](repeating: false, count: list.count)
-    var out: [Agent] = list.enumerated().map { i, s in
-      let key = s.sessionId
-      let set = m.settingsOf(s)
+    for s in m.sessions.values { if let a = s.agentDeviceId { lastOfDevice[a] = max(lastOfDevice[a] ?? 0, s.lastActivityAt) } }
+    return m.sessionList.compactMap { r -> Agent? in
+      let key = r["key"].string ?? ""
+      guard let s = m.sessions[key] else { return nil }
       let p = s.profile
-      let id = devToAgent[key] ?? String(key.prefix(SESSION_ID_LEN))
-      let claimed = m.parentSessionOf(s)
-      let wanted: String? = set.has("parent") ? set["parent"].string : claimed.flatMap { devToAgent[$0] ?? $0 }
-      let parent = wanted.flatMap { agentToDev[$0] != nil ? $0 : nil }
-      // (the group names a helper's main, as the web's composed profile does; its own register need not: model.ts composeProfile)
-      let closedChild = p["closed_at"].truthy && (s.parentSessionId != nil || p["parent_session"].truthy) && s.openCardIds.isEmpty
-      // Hidden (Archive, Delete, a closed helper); a main session whose agent is connected again shows, whatever hid it (as the web's).
-      let chosen = set.has("archived") ? set["archived"].truthy : closedChild
-      let back = s.isOnline && s.isActive && s.parentSessionId == nil && parent == nil
-      let given = p["agent_name"].string.flatMap { $0.isEmpty ? nil : $0 } ?? (s.deviceName.isEmpty ? id : s.deviceName)
-      let label = set["name"].string ?? ""
-      let icon = set["icon"].string.flatMap { $0.isEmpty ? nil : $0 } ?? p["icon"].string ?? ""
-      var a = Agent(id: id, deviceId: key, sessionId: key, agentDeviceId: s.agentDeviceId, given: given, name: label.isEmpty ? given : label, label: label, icon: icon,
-                    mark: icon.isEmpty ? id : icon, online: s.isOnline, offlineSince: s.offlineSince, model: p["model"].string ?? "", task: p["task"].string ?? "",
-                    starred: crown == key || (crown != nil && crown == s.agentDeviceId), parent: parent, main: s.withHistory ? s.parentSessionId == nil : p["is_main"].truthy, desk: set["desk"].string,
-                    archived: chosen && !back, position: set["position"].int ?? i, seen: s.lastActivityAt, active: s.lastActivityAt,
-                    deviceActive: s.agentDeviceId.flatMap { lastOfDevice[$0] } ?? 0, removed: !s.isActive,
-                    own: s.agentDeviceId == m.myDeviceId || (s.agentDeviceId.flatMap { m.members[$0]?.deviceRole } == "human"), link: s.link, heardUpTo: s.heardUpTo)
+      let id = r["id"].string ?? String(key.prefix(SESSION_ID_LEN))
+      let icon = r["icon"].string ?? ""
+      var a = Agent(id: id, deviceId: key, sessionId: key, agentDeviceId: s.agentDeviceId, given: r["given"].string ?? id, name: r["name"].string ?? id,
+                    label: r["label"].string ?? "", icon: icon, mark: icon.isEmpty ? id : icon, online: r["online"].truthy, offlineSince: r["offline_since"].double.map { UInt64($0) },
+                    model: p["model"].string ?? "", task: p["task"].string ?? "", starred: r["starred"].truthy, parent: r["parent"].string, main: r["main"].truthy,
+                    desk: r["desk"].string, archived: r["archived"].truthy, position: Int((r["position"].double ?? 0).rounded()), seen: s.lastActivityAt, active: s.lastActivityAt,
+                    deviceActive: s.agentDeviceId.flatMap { lastOfDevice[$0] } ?? 0, removed: r["removed"].truthy, own: r["own"].truthy, link: s.link, heardUpTo: s.heardUpTo)
       a.hue = Pen.hueFor(id: a.id, mark: a.mark)
-      a.placed = set["position"].int != nil
-      // The agent's slot: the folder on its machine (its device register), for a main session.
-      let dev = s.agentDeviceId.flatMap { m.members[$0] }
-      if s.parentSessionId == nil, let f = dev?.folder, !f.isEmpty { slots[i] = Slot(key: "\(dev?.host ?? "")\n\(f)", born: dev?.addedEntryNumber ?? 0) }
-      waiting[i] = s.openCardIds.count
-      fetched[i] = set.has("archived") && !set["archived"].truthy
+      a.placed = r["placed"].truthy
+      a.replaced = r["replaced"].truthy
+      let lv = r["link"]
+      if lv.object != nil { a.linkState = CoreLink(state: lv["state"].string ?? "live", since: lv["since"].double.map { UInt64(max(0, $0)) }, reason: lv["reason"].string ?? "") }
+      let bv = r["blocked"]
+      if bv.object != nil { a.blocked = CoreBlocked(why: bv["why"].string ?? "", since: bv["since"].double.map { UInt64(max(0, $0)) }) }
+      a.working = r["working"].truthy
+      a.quietSince = r["quiet_since"].double.map { UInt64(max(0, $0)) }
+      if let d = r["device_active"].double { a.deviceActive = UInt64(max(0, d)) }
       return a
-    }
-    DeskModel.replaceInSlots(&out, slots: slots, waiting: waiting, fetched: fetched)
-    let ids = DeskModel.newestById(out)
-    for i in out.indices where out[i].parent == nil || ids[out[i].parent!] == nil { if out[i].desk == nil { out[i].desk = "main" } }
-    for i in out.indices { if let p = out[i].parent, let pa = ids[p] { out[i].desk = pa.desk ?? "main" } }
-    // (by place; equal places keep the list's order, the order of the session ids, as the web's stable sort)
-    return out.enumerated().sorted { ($0.element.position, $0.offset) < ($1.element.position, $1.offset) }.map { $0.element }
-  }
-
-  struct Slot { var key: String; var born: Int }
-  /**
-   * One agent slot (a folder on a machine), one entry (app.mjs replaceInSlots). A connector paired again in its folder
-   * is a new agent device with a new main session; while one session of the slot is connected (else: the newest), the
-   * others go to the archive as replaced: never one with an open question, never one the person fetched back. Their
-   * helpers go with them. Arrays run parallel to `agents`.
-   */
-  static func replaceInSlots(_ agents: inout [Agent], slots: [Slot?], waiting: [Int], fetched: [Bool]) {
-    var bySlot = [String: [Int]](), keys = [String]()
-    for i in agents.indices { if let k = slots[i]?.key, !agents[i].archived { if bySlot[k] == nil { keys.append(k) }; bySlot[k, default: []].append(i) } }
-    var gone = Set<String>()
-    for k in keys {
-      let same = bySlot[k]!
-      if same.count < 2 { continue }
-      let live = same.filter { agents[$0].online }
-      let keep: [Int] = live.isEmpty ? [same.dropFirst().reduce(same[0]) { x, y in
-        let bx = slots[x]!.born, by = slots[y]!.born
-        return by > bx || (by == bx && agents[y].active > agents[x].active) ? y : x
-      }] : live
-      for i in same where !keep.contains(i) && !agents[i].online && waiting[i] == 0 && !fetched[i] {
-        agents[i].archived = true; agents[i].replaced = true; gone.insert(agents[i].id)
-      }
-    }
-    for i in agents.indices {
-      if let p = agents[i].parent, gone.contains(p), !agents[i].archived, !agents[i].online, waiting[i] == 0, !fetched[i] { agents[i].archived = true; agents[i].replaced = true }
     }
   }
 
@@ -529,10 +511,10 @@ public final class DeskModel {
     let turns = DeskModel.revisionsOf(c)
     let key = c.sessionId ?? c.agentDeviceId
     var d = DeskCard(id: c.objectId, agent: devToAgent[key] ?? String(key.prefix(SESSION_ID_LEN)), number: number, kind: c.cardType == "info" ? "info" : "decision", status: status,
-                     urgency: c.urgency, urgencyReason: c.urgencyReason ?? "", title: c.title, teaser: c.teaser ?? "", body: c.body ?? "", options: c.options, sections: c.sections,
-                     html: c.html, attachments: c.attachments, version: max(1, c.objectVersion), multiple: c.allowsMultiple, choices: a?.choices ?? [], note: a?.note ?? "",
+                     urgency: c.urgency, urgencyReason: c.urgencyReason ?? "", title: c.title, teaser: c.teaser ?? "", body: c.body ?? "", options: nil, sections: nil,
+                     html: c.html, attachments: nil, version: max(1, c.objectVersion), multiple: c.allowsMultiple, choices: a?.choices ?? [], note: a?.note ?? "",
                      summary: c.closeSummary ?? c.withdrawReason ?? "", created: c.createdAt, decided: a?.answeredAt ?? (status == "done" ? c.updatedAt : nil),
-                     recommended: c.recommended, versionHash: c.versionHash, contentState: c.contentState)
+                     recommended: nil, versionHash: c.versionHash, contentState: c.contentState, from: c)
     if turns.count > 1 { d.versions = Array(turns.dropLast()); d.revised = turns.last?.sentAt ?? c.updatedAt; d.revisionNote = c.changeNote ?? "" }
     if let a = a {
       d.answeredVersion = a.boundObjectVersion
@@ -554,12 +536,10 @@ public final class DeskModel {
     if c.working && status == "open" && d.kind == "info" { d.working = true; if d.withAgent == nil { d.withAgent = d.created } }
     if let dr = h.drafts[c.objectId], status == "open" { d.draft = dr }
     if let st = h.stars[c.objectId], st.object != nil { d.starred = max(1, clampedU64(st["at"].double)) }
-    if let sn = h.snoozes[c.objectId], status == "open", let until = sn["until"].double {
-      if clampedU64(until) > now { d.snoozedUntil = clampedU64(until); d.snoozedAt = clampedU64(sn["at"].double) } else { d.unsnoozed = clampedU64(until) }
-    }
+    // (his "Later" as the client core holds it: until its time and only for the version he put off, desk.rs)
+    if status == "open" { if let u = c.snoozedUntil { d.snoozedUntil = u; d.snoozedAt = c.snoozedAt ?? 0 } else if let u = c.unsnoozed { d.unsnoozed = u } }
     if status == "done" && c.closedHow == "closed", let a = a, !a.pending, a.answerAction != "read", a.answerAction != "shred" { d.finished = true }
     d.mergedInto = c.mergedIntoObjectId
-    d.mergedFrom = c.mergedFromObjectIds
     if c.unsupported || c.contentState == "newer_schema" { d.unsupported = true }
     return d
   }
@@ -642,7 +622,10 @@ public final class DeskModel {
     let byA = DeskModel.newestById(everyone)
     let shelved = Set(everyone.filter { $0.archived }.map { $0.id })
     let mine: (DeskCard) -> Bool = { onDesk(byA[$0.agent]) }
-    let allOpen = cards.filter { $0.status == "open" && !shelved.contains($0.agent) && $0.snoozedUntil == nil }.sorted { ($0.created, $0.number) < ($1.created, $1.number) }
+    // The Desk: what the client core's Desk holds (its stack and open requests: not held, not put off, not of an
+    // archived session; client/src/desk.rs), with the infos their agents still work on (Off your mind), by age.
+    let onCoreDesk = Set(board.stack).union(board.openPermissionIds)
+    let allOpen = cards.filter { $0.status == "open" && (onCoreDesk.contains($0.id) || ($0.working && !shelved.contains($0.agent) && $0.snoozedUntil == nil)) }.sorted { ($0.created, $0.number) < ($1.created, $1.number) }
     let allFresh = allOpen.filter { $0.withAgent == nil && $0.kind != "info" }
     let open = allOpen.filter(mine)
     let reads = open.filter { $0.withAgent == nil && $0.kind == "info" }.sorted { ($1.isKnock ? 1 : 0, $1.created) < ($0.isKnock ? 1 : 0, $0.created) }
@@ -681,30 +664,20 @@ public final class DeskModel {
                 goals: all ? "" : desks.first { $0.id == deskId }?.goals ?? "")
   }
 
-  /** agent: why the session is stopped, or nil (app.mjs blockedOf). */
+  /** agent: why the session is stopped, or nil (app.mjs blockedOf): the client core's decision (Agent.blocked), in words. */
   public func blockedOf(_ a: Agent, now: UInt64 = nowMs()) -> (String, String)? {
-    if a.archived { return nil }
-    let link = linkOf(a, now: now)
-    if link?.state == "cut" { return ("cut", link!.short) }
-    let working = workingOf[a.id] ?? []
-    if !a.online {
-      let since = a.offlineSince
-      if !working.isEmpty && now - min(now, max(since ?? a.seen, 0)) >= OFFLINE_GRACE_MS { return ("offline", since.map { "Connection lost since \(clockText($0, now: now))" } ?? "Disconnected while working") }
-      return nil
+    guard !a.archived, let b = a.blocked else { return nil }
+    switch b.why {
+    case "cut": return ("cut", linkOf(a, now: now)?.short ?? "Cut off")
+    case "offline": return ("offline", b.since.map { "Connection lost since \(clockText($0, now: now))" } ?? "Disconnected while working")
+    case "permission": return ("permission", "Waiting for permission")
+    default: return ("blocking", "Waiting for you: a blocking question")
     }
-    let waiting = waitingOf[a.id] ?? []
-    if waiting.contains(where: { $0.kind == "permission" }) { return ("permission", "Waiting for permission") }
-    if waiting.contains(where: { $0.urgency == "critical" }) { return ("blocking", "Waiting for you: a blocking question") }
-    return nil
   }
-  /** The quiet hint: "quiet for 24 min". */
+  /** The quiet hint: "quiet for 24 min" (the client core's quiet_since). */
   public func quietOf(_ a: Agent, now: UInt64 = nowMs()) -> String? {
-    if a.archived || !a.online { return nil }
-    let working = workingOf[a.id] ?? []
-    if working.isEmpty { return nil }
-    let last = max(a.active, a.parent != nil ? a.deviceActive : 0, working.map { $0.updated }.max() ?? 0)
-    if now - min(now, last) < QUIET_MS { return nil }
-    return "quiet for \(minutes(now - last)) min"
+    guard !a.archived, a.online, let q = a.quietSince else { return nil }
+    return "quiet for \(minutes(now > q ? now - q : 0)) min"
   }
   /** Whether the card's session has his last word on it (heardOf). */
   public func heardOf(_ c: DeskCard, now: UInt64 = nowMs()) -> (heard: Bool?, waiting: UInt64, late: Bool)? {

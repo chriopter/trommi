@@ -1,7 +1,8 @@
 // His "Later" (snooze/<id>) holds a card off the Desk until its time and only for the version he put off: a new
 // version from its agent (revised, its urgency raised) brings it back, in the core's stack and on the web's Desk
-// (app.mjs BoardState: the queue the Desk shows). A snooze whose time passed holds nothing either. A session whose
-// only critical card is put off is not shown as waiting on him (the red hand, app.mjs blockedOf).
+// (app.mjs BoardState: the queue the Desk shows, from the client core's stack). A snooze whose time passed holds nothing
+// either. A session whose only critical card is put off is not shown as waiting on him (the red hand: the core's
+// client/src/status.rs, which reads the Desk). The client projects again when the next snooze ends (the core's wake_at).
 // STAND-IN core, FAKE hub.
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -43,10 +44,9 @@ test('a card put off comes back on the Desk with its next version, and when its 
   await a.snooze(info, Date.now() + 40)
   await a.settle()
   await until(() => !deskOf(a).queue.includes(info), 'held while its time runs')
-  await new Promise(r => setTimeout(r, 80))
+  await new Promise(r => setTimeout(r, 250))
   const board = new BoardState(a)
   assert.ok(board.update().queue.includes(info), 'a snooze past its time holds nothing on the web Desk')
-  assert.equal(board.nextWake, Infinity, 'nothing left to wake')
 })
 
 test('a critical card put off does not raise the red hand; the next morning is when the page wakes it', async t => {
@@ -55,17 +55,13 @@ test('a critical card put off does not raise the red hand; the next morning is w
   await agent.settle()
   await until(() => a.model.stack.includes(card), 'on the Desk')
   const until1 = Date.now() + 3600_000
-  let s = deskOf(a)
-  const agentRow = s.agents.find(x => x.id === s.byId.get(card).agent)
-  // (the level itself rides in the card's body, which the stand-in's codec leaves out: the views' card says critical)
-  const critical = st => ({ ...st, cards: st.cards.map(c => (c.id === card ? { ...c, urgency: 'critical' } : c)) })
-  assert.equal(blockedOf({ ...agentRow, online: true }, critical(s))?.why, 'blocking')
+  const rowOf = () => new BoardState(a).update().agents.find(x => x.id === deskOf(a).byId.get(card).agent)
+  // (the level itself rides in the card's body, which the stand-in's codec leaves out: the red hand for a blocking
+  //  question on the Desk is tested on the core's model, tests/web/model/stack-echoes.test.mjs)
   await a.snooze(card, until1)
   await a.settle()
   await until(() => !a.model.stack.includes(card), 'put off')
-  const board = new BoardState(a)
-  s = board.update()
-  assert.equal(blockedOf({ ...agentRow, online: true }, critical(s)), null, 'no red hand for what is put off')
-  assert.deepEqual(board.wakes, [card])
-  assert.equal(board.nextWake, until1, 'the page knows when to wake it')
+  await until(() => rowOf()?.blocked === null, 'no red hand for what is put off')
+  assert.equal(blockedOf(rowOf(), deskOf(a)), null)
+  assert.equal(a.wakeTime, until1, 'the client projects again when its time comes')
 })

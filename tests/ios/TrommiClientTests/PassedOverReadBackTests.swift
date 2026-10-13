@@ -40,5 +40,27 @@ final class PassedOverReadBackTests: XCTestCase {
     room.close()
   }
 
+  /** A session's envelope that came before this device could read the session's Welcome (the Welcome was not at the
+   *  hub yet, or its read failed) is passed over; once the Welcome is joined it is read back, whatever learning the
+   *  group's past brought (here none: the fake core learns no epochs). Found by the torture run of the clients
+   *  (tests/client/mega/torture.rs): a helper session without its name on one device. */
+  func testWhatWasPassedOverOpensWhenItsGroupIsJoinedLater() async throws {
+    let room = try await Room.foundRoom(hubURL: hubURL, base: base).room
+    let hub = FakeHub.shared
+    let group = FakeDevice.sessionGroup(room.roomIdHex, session)
+    hub.envelope(["sender": agent, "group": hex(group), "seq": 1, "time": 1001, "kind": KIND.TIMELINE_ITEM, "tk": TIMELINE.CHAT, "ts": TIMELINE_SCOPE.SESSION, "tr": session, "files": [String](), "passed": true],
+                 payload: ["content_type": "message", "text": "written before the Welcome was read"])
+    _ = try await room.sync()
+    XCTAssertEqual(room.record.past?.passedOver, true, "a group this device does not hold yet: passed over")
+    XCTAssertEqual(texts(room), [])
+
+    hub.lock.withLock { hub.servesGroupInfo = true; hub.welcomes = [["group_id": b64u(group), "welcome": b64u(j(["session": session, "agent": agent, "by": String(repeating: "ef", count: 32)]))]] }
+    _ = try await room.sync()
+    _ = try await room.sync()
+    XCTAssertEqual(room.sessionGroupIds, [hex(group)])
+    XCTAssertEqual(texts(room), ["written before the Welcome was read"], "read back once its group was joined")
+    room.close()
+  }
+
   private func texts(_ room: Room) -> [String] { room.board.timelines.values.flatMap { $0.items.values.compactMap { $0.content?["text"].string } } }
 }

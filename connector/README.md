@@ -170,10 +170,10 @@ as a quiet info, with a push) and every line linked to it turns `done` with that
 | `src/store.rs` | the state on disk: one directory per slot (0700), a lock, a snapshot and a log of checksummed records; one record per step |
 | `src/vault.rs`, `src/keeper.rs` | the core's `Device` over that journal, on a thread of its own; the device does groups, stored content, joining and sign-in itself |
 | `src/hub.rs` | the hub's routes (`spec/hub-api.md`): JSON, sign-in by signed challenge, the lease header, the stream |
-| `src/client.rs` | the device at work: the hub's order (one cursor for log and envelopes), Welcomes, the command gate's answers, the outbox, lease, removal, the rollback guard, and when to stop asking a hub that is none |
+| `src/client.rs` | the device at work: the hub's order (one cursor for log and envelopes), Welcomes (once per batch), the command gate's answers, the outbox, lease, removal, the rollback guard, and when to stop asking a hub that is none |
 | `src/agent.rs` | what an agent writes: Chat, cards, registers, permission requests, Artifacts and files, helper sessions, the work trail |
 | `src/join.rs` | joining by link with the six emoji |
-| `src/model.rs` | what this agent knows of the board |
+| `src/model.rs` | what this agent knows of the board (an agent has no Desk: the client core's Desk, [`client/`](../client/README.md), is the human devices') |
 | `src/bridge.rs`, `src/html.rs` | every tool, and a human's command as a channel event |
 | `src/server.rs`, `src/mcp.rs`, `src/member.rs`, `src/slots.rs`, `src/slotstore.rs`, `src/door.rs` | the MCP server, this process as a member, key slots per folder, the sockets hooks reach it through |
 | `src/line.rs`, `src/mirror.rs`, `src/trail.rs`, `src/hooks.rs` | the monitor's line, the terminal mirror, the work trail, the permission hooks |

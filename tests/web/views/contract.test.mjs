@@ -301,7 +301,6 @@ const TYPED = [
   ['app.mjs', 'const sessionKey = s =>', { s: 'Session' }],
   ['app.mjs', 'const keyOf = o =>', { o: ['Card', 'PermissionRequest', 'Published'] }],
   ['app.mjs', 'const revisionsOf = c =>', { c: 'Card', v: 'CardVersion' }],
-  ['app.mjs', 'function parentClaim(m, s) {', { s: 'Session', parent: 'Session' }],
   ['app.mjs', 'const agentIdOf = s =>', { s: 'Session' }],
   ['app.mjs', '\n  agents() {', { s: 'Session' }],
   ['app.mjs', '\n  boardCard(c, number) {', { c: 'Card', a: 'Answer' }],

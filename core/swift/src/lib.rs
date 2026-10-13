@@ -22,6 +22,9 @@
 mod macros;
 
 pub mod account;
+pub mod client;
+pub mod client_model;
+pub mod codec;
 pub mod content;
 pub mod device;
 pub mod error;
@@ -38,6 +41,12 @@ pub mod store;
 pub mod wipe;
 
 pub use account::*;
+pub use client::{
+    ClientDesk, DeskCardIn, DeskDelta, DeskListed, DeskRequestIn, DeskSessionOp, DeskSessionOpen,
+    DeskStackOp,
+};
+pub use client_model::ClientModel;
+pub use codec::*;
 pub use content::*;
 pub use device::{log_finding, CoreDevice};
 pub use error::{error_code_from_text, error_code_text, CoreError, ErrorCode};

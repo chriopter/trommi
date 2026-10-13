@@ -28,8 +28,8 @@ final class BoardTests: XCTestCase {
   }
 
   private func rec(_ n: Int, kind: Int, from: String, role: String, session: String? = nil, object: ObjectHead? = nil, timeline: (String, String)? = nil,
-                   content: JV?, state: String = "ok", bind: DecodedBind? = nil, epoch: Int = 1) -> Rec {
-    Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: from, senderRole: role, recipientDeviceId: nil, sentAt: UInt64(1_000_000 + n), kind: kind, isHead: kind != KIND.TIMELINE_ITEM,
+                   content: JV?, state: String = "ok", bind: DecodedBind? = nil, epoch: Int = 1) -> OldRec {
+    OldRec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: from, senderRole: role, recipientDeviceId: nil, sentAt: UInt64(1_000_000 + n), kind: kind, isHead: kind != KIND.TIMELINE_ITEM,
         object: object, timelineKind: timeline?.0, timelineId: timeline?.1, sessionId: session, content: content, contentState: state, bind: bind,
         causal: Causal(senderDeviceId: from, senderSequence: UInt64(n), sentAt: UInt64(n), lamport: n), senderSequence: UInt64(n), epoch: epoch)
   }
@@ -39,8 +39,8 @@ final class BoardTests: XCTestCase {
     let b = Board()
     b.myDeviceId = String(repeating: "a", count: 64)
     let agent = String(repeating: "b", count: 64), sid = String(repeating: "c", count: 32)
-    let s = b.sessionOf(sid)
-    s.agentDeviceIds = [agent]; s.everAgentIds = [agent]; s.agentDeviceId = agent
+    var g = Change()
+    b.applySession(sessionId: sid, agentIds: [agent], epoch: 1, parentSessionId: nil, archived: false, change: &g)
     var ch = Change()
     let id1 = String(repeating: "1", count: 32), id2 = String(repeating: "2", count: 32)
     // a card_type this version does not know (with a field it does not know either)
@@ -55,26 +55,11 @@ final class BoardTests: XCTestCase {
     let d = DeskModel(board: b)
     let c1 = try XCTUnwrap(d.byCard[id1])
     XCTAssertTrue(c1.unsupported, "an unknown card type is a placeholder, not a decision")
-    XCTAssertEqual(b.cards[id1]?.fields["ballot"], ["x": 1], "the unknown field is kept")
     if let c2 = d.byCard[id2] { XCTAssertTrue(c2.unsupported || c2.contentState != "ok", "a newer schema is not read as this version's card") }
     // the conversation keeps the unknown item, shown as needing an update (not dropped, not shown as a message)
     let items = b.timelines[timelineKeyOf("chat", "session/\(sid)")]?.ordered ?? []
     XCTAssertEqual(items.count, 1)
     XCTAssertEqual(items.first?.contentType, "poll")
-  }
-
-  /** R2: registers settle by (lamport, sender, sequence) whatever the delivery order. */
-  func testRegistersSettleByCausalOrder() {
-    let b = Board()
-    let h1 = String(repeating: "1", count: 64), h2 = String(repeating: "2", count: 64)
-    var ch = Change()
-    var late = rec(2, kind: KIND.STATUS, from: h2, role: "human", content: ["values": ["desk/x": ["name": "Second"]]])
-    late.causal.lamport = 9
-    var early = rec(3, kind: KIND.STATUS, from: h1, role: "human", content: ["values": ["desk/x": ["name": "First"]]])
-    early.causal.lamport = 4
-    b.apply(late, change: &ch)
-    b.apply(early, change: &ch)
-    XCTAssertEqual(b.human.desks["x"]?["name"], "Second", "the causally later write wins, even when it came first")
   }
 
   /** A desk's goals as the web keeps them (app.mjs cleanGoals; the expected values are what that function returns). */

@@ -27,6 +27,9 @@ use serde_json::{json, Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+/// How long a self-join knocks at a voucher whose door does not answer before it takes it as gone.
+const VOUCHER_AWAY_MS: u64 = 15_000;
 use std::sync::{Arc, Mutex, Weak};
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -129,10 +132,7 @@ pub fn channel_text(text: &str) -> String {
     let tags = regex::Regex::new(r"<([A-Za-z/!?])").unwrap();
     let cleaned: String = text
         .chars()
-        .filter(|c| {
-            (*c == '\n' || *c == '\t' || !c.is_control())
-                && !matches!(*c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{200e}' | '\u{200f}')
-        })
+        .filter(|c| (*c == '\n' || *c == '\t' || !c.is_control()) && !crate::line::invisible(*c))
         .collect();
     tags.replace_all(&cleaned, "&lt;$1").into_owned()
 }
@@ -1292,6 +1292,9 @@ impl Conn {
         let done_req = json!({ "op": "vouch-done", "nonce": nonce, "owner": self.cfg.owner });
         let done = || door::knock(&voucher, &done_req, 5000);
         let until = now_ms() + env_ms("TROMMI_SELF_JOIN_WAIT_MS", vouch::LINK_WAIT_MS);
+        // A voucher whose door does not answer for a moment (its slot opened again, as after the hub restarted) is
+        // knocked at again; one that stays away this long is gone.
+        let mut away_since: Option<u64> = None;
         let link = loop {
             if now_ms() > until {
                 let _ = done().await;
@@ -1305,6 +1308,7 @@ impl Conn {
             .await
             {
                 Ok(r) if r["ok"] == Value::Bool(true) => {
+                    away_since = None;
                     if let Some(link) = r["link"].as_str().filter(|l| !l.is_empty()) {
                         break link.to_string();
                     }
@@ -1327,11 +1331,17 @@ impl Conn {
                         js_string(&r["error"])
                     ))
                 }
-                Err(e) => return Err(format!("the vouching session is gone: {e}")),
+                Err(e) => {
+                    let since = *away_since.get_or_insert_with(now_ms);
+                    if now_ms().saturating_sub(since) >= VOUCHER_AWAY_MS {
+                        return Err(format!("the vouching session is gone: {e}"));
+                    }
+                }
             }
+
             tokio::time::sleep(std::time::Duration::from_millis(env_ms(
                 "TROMMI_SELF_JOIN_POLL_MS",
-                2000,
+                500,
             )))
             .await;
         };

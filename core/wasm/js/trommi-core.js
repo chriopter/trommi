@@ -377,6 +377,78 @@ export class FileDecryptor extends FileObject {
   finish() { return this[CALL]('finish', [], true) }
 }
 
+/** The client core's Desk (client/src/desk.rs): the app tells it what changed and asks what changed of the Desk. */
+export class ClientDesk extends FileObject {
+  constructor() { super(call(raw.RawClientDesk, 'create', [])) }
+  putCards(cards) { return this[CALL]('put_cards', [cards]) }
+  putRequests(requests) { return this[CALL]('put_requests', [requests]) }
+  remove(objectIds) { return this[CALL]('remove', [objectIds]) }
+  clear() { return this[CALL]('clear', []) }
+  setSnooze(card, value, at) { return this[CALL]('set_snooze', [card, value, at]) }
+  setArchived(sessionIds) { return this[CALL]('set_archived', [sessionIds]) }
+  setListing(at, listed) { return this[CALL]('set_listing', [at, listed]) }
+  forgetListing() { return this[CALL]('forget_listing', []) }
+  setHoldAll(hold) { return this[CALL]('set_hold_all', [hold]) }
+  project(nowMs) { return this[CALL]('project', [nowMs]) }
+  putCardsJson(cards) { return this[CALL]('put_cards_json', [cards]) }
+  putRequestsJson(requests) { return this[CALL]('put_requests_json', [requests]) }
+  projectJson(nowMs) { return this[CALL]('project_json', [nowMs]) }
+}
+
+/** The client core's board model (client/src/model): what came goes in, the patch of a batch comes out. */
+export class ClientModel extends FileObject {
+  constructor(me = '') { super(call(raw.RawClientModel, 'create', [me])) }
+  setMe(myDeviceId) { return this[CALL]('set_me', [myDeviceId]) }
+  load(snapshot) { return this[CALL]('load', [snapshot]) }
+  applyEnvelopes(received, nowMs) { return this[CALL]('apply_envelopes', [received, nowMs]) }
+  applyCardDeeds(received) { return this[CALL]('apply_card_deeds', [received]) }
+  applyReceivedJson(received, nowMs) { return this[CALL]('apply_received_json', [received, nowMs]) }
+  setWindowsOpen(open) { return this[CALL]('set_windows_open', [open]) }
+  setLeanCards(lean) { return this[CALL]('set_lean_cards', [lean]) }
+  cardJson(objectId) { return this[CALL]('card_json', [objectId]) }
+  applyGroups(groups, roles) { return this[CALL]('apply_groups', [groups, roles]) }
+  applyCommit(facts, byRecovery, removedMe, nowMs) { return this[CALL]('apply_commit', [facts, byRecovery, removedMe, nowMs]) }
+  applyPresence(reports, nowMs) { return this[CALL]('apply_presence', [reports, nowMs]) }
+  streamOpened() { return this[CALL]('stream_opened', []) }
+  applyPresenceEvent(event, nowMs) { return this[CALL]('apply_presence_event', [event, nowMs]) }
+  applyHere(nowMs) { return this[CALL]('apply_here', [nowMs]) }
+  seatPlan(known, nowMs) { return this[CALL]('seat_plan', [known, nowMs]) }
+  seatAfterHub(candidates, hubSeated) { return this[CALL]('seat_after_hub', [candidates, hubSeated]) }
+  seatFounded(agent) { return this[CALL]('seat_founded', [agent]) }
+  seatFailed(agent, nowMs) { return this[CALL]('seat_failed', [agent, nowMs]) }
+  setSeatGrace(ms) { return this[CALL]('set_seat_grace', [ms]) }
+  selfJoinAsks(answered, pending) { return this[CALL]('self_join_asks', [answered, pending]) }
+  selfJoinVerdict(sessionId, nonce, requestHash) { return this[CALL]('self_join_verdict', [sessionId, nonce, requestHash]) }
+  selfJoinRetire() { return this[CALL]('self_join_retire', []) }
+  joinRows(invites) { return this[CALL]('join_rows', [invites]) }
+  applyWorkTrail(sessionId, from, turn, number, time, payload, changeNumber) { return this[CALL]('apply_work_trail', [sessionId, from, turn, number, time, payload, changeNumber]) }
+  applyStrokePiece(from, board, payload, nowMs) { return this[CALL]('apply_stroke_piece', [from, board, payload, nowMs]) }
+  echoItem(localId, timelineKey, content, recipient, objectId, nowMs) { return this[CALL]('echo_item', [localId, timelineKey, content, recipient, objectId, nowMs]) }
+  echoRegisters(localId, values) { return this[CALL]('echo_registers', [localId, values]) }
+  echoAnswer(localId, objectId, answer, objectState) { return this[CALL]('echo_answer', [localId, objectId, answer, objectState]) }
+  echoNote(localId, objectId, fields, closed) { return this[CALL]('echo_note', [localId, objectId, fields, closed]) }
+  confirmEcho(localId, hash, seq, objectId) { return this[CALL]('confirm_echo', [localId, hash, seq, objectId]) }
+  rollbackEcho(localId) { return this[CALL]('rollback_echo', [localId]) }
+  setDeskListing(at, listed) { return this[CALL]('set_desk_listing', [at, listed]) }
+  forgetDeskListing() { return this[CALL]('forget_desk_listing', []) }
+  setDeskHold(hold) { return this[CALL]('set_desk_hold', [hold]) }
+  setWindow(timelineKey, open, loadedDownTo, hasMore) { return this[CALL]('set_window', [timelineKey, open, loadedDownTo, hasMore]) }
+  applyPage(timelineKey, received, scratch, nowMs) { return this[CALL]('apply_page', [timelineKey, received, scratch, nowMs]) }
+  putItems(timelineKey, items, loadedDownTo, hasMore) { return this[CALL]('put_items', [timelineKey, items, loadedDownTo, hasMore]) }
+  pushAlert(code, message, envelopeNumber, senderDeviceId, nowMs) { return this[CALL]('push_alert', [code, message, envelopeNumber, senderDeviceId, nowMs]) }
+  noteNewer(what, envelopeNumber) { return this[CALL]('note_newer', [what, envelopeNumber]) }
+  finish(nowMs) { return this[CALL]('finish', [nowMs]) }
+  finishPart(nowMs, maxCards) { return this[CALL]('finish_part', [nowMs, maxCards]) }
+  snapshot() { return this[CALL]('snapshot', []) }
+  sessionList(reading) { return this[CALL]('session_list', [reading]) }
+  setReading(reading) { return this[CALL]('set_reading', [reading]) }
+  touchAll() { return this[CALL]('touch_all', []) }
+  applyCardDeedsJson(received) { return this[CALL]('apply_card_deeds_json', [received]) }
+  applyGroupsJson(groups, roles) { return this[CALL]('apply_groups_json', [groups, roles]) }
+  applyCommitJson(facts, byRecovery, removedMe, nowMs) { return this[CALL]('apply_commit_json', [facts, byRecovery, removedMe, nowMs]) }
+  applyPageJson(timelineKey, received, scratch, nowMs) { return this[CALL]('apply_page_json', [timelineKey, received, scratch, nowMs]) }
+}
+
 // ---- everything without state -------------------------------------------------------------------------------------
 
 const plain = name => (...args) => callWith(raw, name, args)
@@ -429,3 +501,20 @@ export const hubAddress = plain('hub_address')
 export const kitKeysFor = plain('kit_keys_for')
 export const accountIdParse = plain('account_id_parse')
 export const envelopeHeader = plain('envelope_header')
+// The body codec (client/src/codec.rs): bodies of stored content between the wire and the model, as JSON text.
+export const bodyFromWire = plain('body_from_wire')
+export const bodiesFromWire = plain('bodies_from_wire')
+export const bodyToWire = plain('body_to_wire')
+export const boardItemParse = plain('board_item_parse')
+export const registerToWire = plain('register_to_wire')
+export const registerFromWire = plain('register_from_wire')
+export const registerKeyOf = plain('register_key_of')
+export const registerNameOf = plain('register_name_of')
+export const bodyFileIds = plain('body_file_ids')
+export const attachmentFromWire = plain('attachment_from_wire')
+export const attachmentToWire = plain('attachment_to_wire')
+export const boardEntryFromWire = plain('board_entry_from_wire')
+export const shapeIdFromWire = plain('shape_id_from_wire')
+export const shapeIdToWire = plain('shape_id_to_wire')
+export const pieceFromWire = plain('piece_from_wire')
+export const pieceToWire = plain('piece_to_wire')

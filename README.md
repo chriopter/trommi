@@ -57,7 +57,10 @@ Updates come by themselves: a running connector installs a new signed release an
                          core/  (Rust, OpenMLS)
                  one implementation of all cryptography
                                    │
-       ┌──────────────────┬────────┴─────────┬──────────────────┐
+                client/  (Rust)    │
+   board, Desk, sessions, once     │
+                   │               │
+       ┌───────────┴──────┬────────┴─────────┬──────────────────┐
        │ WebAssembly      │ UniFFI (Swift)   │ native           │ native
        ▼                  ▼                  ▼                  ▼
     app/web/           app/ios/          connector/            hub/
@@ -67,6 +70,14 @@ Updates come by themselves: a running connector installs a new signed release an
        └───────────── MLS (end-to-end encrypted) ───────────────▲
                     sealed messages only; keys stay on devices
 ```
+
+Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `client/`
+(the client core) is what every app decides the same way above it: the board model, the Desk (which cards stand on
+it, what the hub settled, what ran out, what is put off, when to look again), the session list (names, order, one
+per folder, archive) with each session's link and red hand, and the load plan of a catch-up. Both reach the web
+app and the iOS app through the same facade (`core/swift/src`, bound by `core/wasm` and UniFFI). What stays in each
+app: the network and the live stream, storage, the sync engine, the UI and its words, and in the connector its MCP
+tools. [`client/README.md`](client/README.md) has the detail.
 
 ## Under the hood
 
@@ -362,6 +373,7 @@ main ─────────────────── full builds; one 
 | | |
 |---|---|
 | `core/` | the shared Rust core on OpenMLS; `core/wasm` for the browser, `core/swift` for iOS |
+| `client/` | the client core (Rust): the Desk's rules and the catch-up's load plan, shared by the web app and the iOS app through `core/swift`'s facade (`ClientDesk`) |
 | `hub/` | the hub (the server) and its updater; `hub/deploy/` installs it |
 | `app/web/` | the web app |
 | `app/ios/` | the iOS app (Swift, SwiftUI) |
@@ -385,6 +397,7 @@ Rust is pinned in `rust-toolchain.toml`, Node in `.node-version`.
 ```sh
 # Core, hub, connector
 cargo test --locked -p trommi-core
+cargo test --locked -p trommi-client-core   # the client core (the Desk)
 cargo test --locked -p trommi-tests          # core, hub, connector and deploy tests
 cargo build --release -p trommi-hub -p trommi-connector
 
@@ -410,7 +423,43 @@ cargo test -p trommi-tests --test client_mega speed_of_every_client -- --ignored
 ```
 
 More: [`app/web/README.md`](app/web/README.md), [`app/ios/README.md`](app/ios/README.md),
-[`connector/README.md`](connector/README.md), [`core/README.md`](core/README.md).
+[`connector/README.md`](connector/README.md), [`core/README.md`](core/README.md), [`client/README.md`](client/README.md).
+
+</details>
+
+<details>
+<summary><b>Fuzzing</b> · libFuzzer targets, property tests, nightly</summary>
+
+The harnesses are in `tests/src/fuzz/`, one `run(bytes)` each; the libFuzzer targets in `tests/fuzz/` (a cargo-fuzz
+crate of its own) are one line each. Every run checks properties, not only "no panic":
+
+| Target | What | Properties |
+|---|---|---|
+| `core_decode` | every decoder of the core | `decode(encode(x)) == x`; canonical where the format says so |
+| `board_merge` | Scribble Board items of up to four writers | any order and replays give one board; a snapshot reads back |
+| `content_flow` | stored content through the hub's and devices' checks, with forgeries | flipped bytes, foreign signatures, non-members and replays are never taken; hub and devices agree |
+| `mls_devices` | real OpenMLS devices against the hub in memory | replayed and flipped log entries change nothing; devices converge; an outsider opens nothing |
+| `hub_api` | every non-streaming route (`api::fuzz_route`, feature `fuzz`) | no `internal` on bad input; nothing of one room served outside it |
+| web model (`tests/web/model/fuzz.test.mjs`) | random stories of core results into `model.ts` | the page's copy and the cache give the model back |
+| `connector_text` | board text in channel tags, received file names, invite links | no tag can be closed or opened; no hidden characters; files stay in the cache |
+
+```sh
+# in CI and locally: every kept reproducer and seed, then random inputs (FUZZ_CASES, default 64)
+cargo test --locked -p trommi-tests --test core_fuzz_props
+FUZZ_TARGET=devices FUZZ_FILE=crash-… FUZZ_DEBUG=1 cargo test -p trommi-tests --test core_fuzz_props one_input -- --ignored --nocapture
+
+# libFuzzer (cargo install cargo-fuzz; RUSTC_BOOTSTRAP=1 lets the pinned stable compiler build it)
+cd tests/fuzz && RUSTC_BOOTSTRAP=1 cargo fuzz build -O -s none
+dev/fuzz/campaign.sh 3600 4 core_decode hub_api   # seconds, workers per target, targets; corpus and crashes in tests/fuzz/
+
+# black box: the hub over real HTTP (raw requests), the built connector over MCP (tool calls and lines)
+FUZZ_HTTP_CASES=5000 cargo test -p trommi-tests --test hub_fuzz_http -- --nocapture
+FUZZ_MCP_CASES=5000 cargo test -p trommi-tests --test connector_fuzz_mcp -- --nocapture
+```
+
+A crash is minimized (`cargo fuzz tmin`), kept under `tests/fuzz/regress/<target>/` (replayed by `fuzz_props`), and
+fixed. Seeds: `tests/fuzz/seeds/` (`cargo test -p trommi-tests --test core_fuzz_props write_seeds -- --ignored`); the
+growing corpus stays out of git. Nightly in CI: `.github/workflows/fuzz.yml`, every target for a few minutes.
 
 </details>
 

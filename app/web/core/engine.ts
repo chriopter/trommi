@@ -52,7 +52,7 @@ import type {
 } from './core-api.ts'
 import { HubError, logEntry } from './hub.ts'
 import type { ChangeItem, EnvelopeItem, GroupRow, Hub, LogItem, NewAccount, OutboxAnswer, StreamEvent } from './hub.ts'
-import { hex } from './ids.ts'
+import { hex, unhex } from './ids.ts'
 import { halving, inSlices } from './slices.ts'
 import type { Connection } from './types.ts'
 
@@ -151,6 +151,8 @@ const HELD_KEEP_MS = 120_000
 /** After a read of the hub's Welcomes that brought nothing, how many items that wait for a group pass before the
  *  next (`repairByWelcome`): a Welcome that comes meanwhile is found that many items later at most. */
 const WELCOMES_AGAIN = 64
+/** At most this many groups are noted in `behind` (one entry each, whatever the number of their envelopes). */
+const BEHIND_GROUPS = 4096
 const same = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
 
 /** JSON with its keys in order: two values are the same value exactly when these texts are equal. */
@@ -210,6 +212,15 @@ export class Engine {
   /** Per group, the log number up to which `handLog` handed the log to the device. */
   private readonly logRead = new Map<string, number>()
   private rescanDue = false
+  /** The envelopes the core refused as `group-behind` while this device's group was not that far (not joined yet, or
+   *  its log not processed up to the envelope's epoch), per group (hex): the first such change and the lowest epoch.
+   *  Once the device's group reaches that epoch (`behindMet`, after each refresh), the envelopes from that change on
+   *  are read once more (a rescan). A rescan that still finds the group missing does not lose them, and neither does
+   *  a group joined later whose past learning reads nothing again. Kept in the meta store across restarts. */
+  private behind = new Map<string, { change: number; epoch: number }>()
+  /** A read of the hub's Welcomes failed: the next one is tried after this many ms (0: none failed), by itself. */
+  private welcomesWait = 0
+  private welcomesRetry = false
   /** The changes whose envelope this engine told in the hub's order with its body: a rescan does not read them again.
    *  (In memory: a rescan after a restart reads everything from its start, as before.) */
   private readonly whole = new Set<number>()
@@ -253,6 +264,8 @@ export class Engine {
       this.rescanDue = due === true || typeof due === 'number'
       this.rescanFrom = typeof due === 'number' ? due : 0
       this.learnDue = (await this.opts.meta.get('learn').catch(() => null)) === true
+      const behind = await this.opts.meta.get('behind').catch(() => null)
+      if (Array.isArray(behind)) for (const row of behind) if (Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'number' && typeof row[2] === 'number') this.behind.set(row[0], { change: row[1], epoch: row[2] })
     })
     // the signer asks whatever device the engine holds at that moment: a reopened one signs as the same key
     if (this.room_id) this.hub.useSigner(this.room_id, (hub, challenge) => this.device.hubSignIn(hub, challenge))
@@ -321,6 +334,34 @@ export class Engine {
     this.groups = await d.groups()
     this.roles = await d.roomRoles()
     this.emit('groups', { groups: this.groups, roles: this.roles })
+    await this.behindMet()
+  }
+  /** Notes an envelope the core refused as `group-behind` for a group this device does not hold that far yet
+   *  (`behind`). One of an epoch before the device's own start in the group stays refused, and is not noted. */
+  private async noteBehind(item: Extract<ChangeItem, { kind: 'envelope' }>, received: ReceivedEnvelope | null): Promise<void> {
+    if (received?.outcome !== 'refused' || received.code !== 'group-behind') return
+    const { group, epoch } = received.header, held = this.group(group)
+    if (held && held.epoch >= epoch) return
+    const key = hex(group), was = this.behind.get(key)
+    if (was && was.change <= item.change && was.epoch <= epoch) return
+    if (!was && this.behind.size >= BEHIND_GROUPS) return
+    this.behind.set(key, { change: Math.min(was?.change ?? item.change, item.change), epoch: Math.min(was?.epoch ?? epoch, epoch) })
+    await this.opts.meta.set('behind', [...this.behind].map(([k, v]) => [k, v.change, v.epoch])).catch(() => {})
+  }
+  /** The groups of `behind` this device now holds up to the epoch noted: their envelopes from the change noted on are
+   *  read once more (a rescan from just before it). */
+  private async behindMet(): Promise<void> {
+    let from: number | null = null
+    for (const [key, b] of this.behind) {
+      const g = this.groups.find(x => hex(x.group) === key)
+      if (!g || g.epoch < b.epoch) continue
+      this.behind.delete(key)
+      from = Math.min(from ?? b.change, b.change)
+    }
+    if (from === null) return
+    mark(`behind met: rescan from ${from - 1}`)
+    await this.opts.meta.set('behind', [...this.behind].map(([k, v]) => [k, v.change, v.epoch])).catch(() => {})
+    await this.wantRescan(Math.max(0, from - 1))
   }
   private group(group: Uint8Array): GroupSummary | undefined { return this.groups.find(g => same(g.group, group)) }
 
@@ -647,7 +688,7 @@ export class Engine {
     if (behind()) {
       // a Welcome this device has not taken yet may be what it lacks
       if (await this.repairByWelcome()) { this.repairs++; received = await this.receive(item, true) }
-      if (behind()) { await this.wantRescan(); return }
+      if (behind()) { await this.noteBehind(item, received); await this.wantRescan(); return }
     }
     if (received?.outcome === 'refused' && received.code === 'gap') { this.repairs++; received = await this.fillGap(item, received) }
     if (batched && this.repairs !== was) await this.wantRescan(item.change)
@@ -886,6 +927,7 @@ export class Engine {
         const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo && !this.whole.has(item.change))
         const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null): Promise<void> => {
           let received = first
+          await this.noteBehind(item, received)
           if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
           if (received && received.outcome !== 'refused') {
             if (received.payload) this.whole.add(item.change)
@@ -971,7 +1013,16 @@ export class Engine {
     if (!this.room_id) return false
     const room = this.room_id
     let rows
-    try { rows = await this.hub.welcomes() } catch { return false }
+    try { rows = await this.hub.welcomes() } catch {
+      // (tried again by itself, ever later: a Welcome does not wait for the next change of the room to be read)
+      this.welcomesWait = Math.min(Math.max(this.welcomesWait * 2, this.timing.backoff_first), this.timing.backoff_max)
+      if (!this.welcomesRetry) {
+        this.welcomesRetry = true
+        this.later(this.welcomesWait, () => { this.welcomesRetry = false; this.welcomesRead = null; this.keepSoon(0) })
+      }
+      return false
+    }
+    this.welcomesWait = 0
     let joined = false, later = false
     // a device that only follows the room group (it holds the room's roles and is no leaf of it) takes the room's
     // Commits first: the Welcome is judged against them (5.2.6)
@@ -1129,54 +1180,56 @@ export class Engine {
       }
     }
   }
-  /** Whether an agent device is connected now: the client's presence (the engine does not follow it). */
-  isOnline: (device: Uint8Array) => boolean = () => false
-  /** Agent devices of the room seen without a main session, by hex: since when (`seatAgents`). */
-  private readonly seatless = new Map<string, number>()
+  /** The seat rule (client/src/seats.rs), as the client's core model holds it: who waits, since when, who is
+   *  connected (the engine does not follow presence). Null: no rule here (a device that is no human's). */
+  seats: { plan: (known: string, now: number) => string; afterHub: (candidates: string, hubSeated: string) => string | null; founded: (agent: string) => void; failed: (agent: string, now: number) => number; grace: (ms: number) => void } | null = null
   /**
    * An agent device of the room that sits in no main session gets one (5.2.2, 5.2.5: a human device founds it, with
    * the agent as its seat). Its inviter founds it right after "They match" (`invited`); when that inviter cannot
    * (an iPhone sent away in the middle, a tab closed before the founding went out), any human device does it here,
-   * once the agent is connected and has waited `heal_delay * 10` without a session. An agent this device saw in a
-   * main session, archived ones too, or that the hub lists in a live one, is never given a second: the hub refuses
-   * a second live main session for the same agent anyway (5.2.2), so two human devices at once found one.
+   * once the agent is connected and has waited `heal_delay * 10` without a session. Who waits and who is due is the
+   * client core's rule (client/src/seats.rs); here the hub is asked and the session founded. An agent this device saw
+   * in a session, archived ones too, or that the hub lists in one, is never given a second: the hub refuses a second
+   * live main session for the same agent anyway (5.2.2), so two human devices at once found one.
    */
   private async seatAgents(steps: InviteStep[]): Promise<void> {
-    const agents = this.roles?.agents ?? []
-    const coming = new Set(steps.flatMap(s => (s.device ? [hex(s.device)] : [])))
+    const rule = this.seats
+    if (!rule) return
     const isMain = (g: GroupSummary): boolean => !!g.session && g.session.parent.every(b => b === 0)
-    const seated = new Set(this.groups.filter(g => g.session).flatMap(g => g.leaves.map(hex)))
-    const waiting = agents.filter(a => !seated.has(hex(a)) && !coming.has(hex(a)))
-    for (const id of [...this.seatless.keys()]) if (!waiting.some(a => hex(a) === id)) this.seatless.delete(id)
-    // (a founding of this device that the hub has not answered: the next upkeep looks again)
-    if (!waiting.length || this.groups.some(g => isMain(g) && g.pending && g.epoch === 0)) return
-    const now = this.now(), grace = this.timing.heal_delay * 10
-    // (looked at again while one waits: its connector may come later; the client also wakes this when it does)
-    this.later(grace, () => this.keepSoon(0))
-    const due = waiting.filter(a => {
-      const id = hex(a), since = this.seatless.get(id)
-      if (since === undefined) { this.seatless.set(id, now); return false }
-      return now - since >= grace && this.isOnline(a)
-    })
-    if (!due.length) return
+    const grace = this.timing.heal_delay * 10
+    rule.grace(grace)
+    const known = {
+      agents: (this.roles?.agents ?? []).map(hex),
+      seated: [...new Set(this.groups.filter(g => g.session).flatMap(g => g.leaves.map(hex)))],
+      coming: steps.flatMap(s => (s.device ? [hex(s.device)] : [])),
+      founding_pending: this.groups.some(g => isMain(g) && g.pending && g.epoch === 0),
+    }
+    const plan = JSON.parse(rule.plan(JSON.stringify(known), this.now())) as { recheck_at?: number | null; candidates?: string[] }
+    if (!plan.candidates) {
+      // (looked at again while one waits out its grace: its connector may come later; the client also wakes this when it does)
+      if (plan.recheck_at) this.later(Math.max(0, plan.recheck_at - this.now()), () => this.keepSoon(0))
+      return
+    }
     let rows: GroupRow[]
     try { rows = await this.hub.roomGroups() } catch { this.owing = true; return }
-    for (const g of rows) if (g.kind !== 'room') for (const l of g.leaves) seated.add(hex(l))
-    for (const agent of due) {
-      if (seated.has(hex(agent))) continue
-      try {
-        const keyPackage = (await this.hub.claimKeyPackages([agent]))[0]!.key_package
-        const others = (this.roles?.humans ?? []).filter(h => !same(h, this.device_id))
-        const claimed = others.length ? await this.hub.claimKeyPackages(others, { partial: true }) : []
-        await this.do(d => d.foundSession(agent, [keyPackage, ...claimed.map(c => c.key_package)], this.now()))
-        this.seatless.delete(hex(agent))
-        // one founding at a time: the next upkeep sees it pending, then merged
-        return
-      } catch (e) {
-        if (this.isLocal(e)) throw e
-        this.owing = true
-        this.later(grace, () => this.keepSoon(0))
-      }
+    const hubSeated = new Set<string>()
+    for (const g of rows) if (g.kind !== 'room') for (const l of g.leaves) hubSeated.add(hex(l))
+    const id = rule.afterHub(JSON.stringify(plan.candidates), JSON.stringify([...hubSeated]))
+    if (!id) return
+    const agent = unhex(id)
+    try {
+      const keyPackage = (await this.hub.claimKeyPackages([agent]))[0]!.key_package
+      const others = (this.roles?.humans ?? []).filter(h => !same(h, this.device_id))
+      const claimed = others.length ? await this.hub.claimKeyPackages(others, { partial: true }) : []
+      await this.do(d => d.foundSession(agent, [keyPackage, ...claimed.map(c => c.key_package)], this.now()))
+      // one founding at a time: the next upkeep sees it pending, then merged
+      rule.founded(id)
+    } catch (e) {
+      if (this.isLocal(e)) throw e
+      this.owing = true
+      // (tried again soon: a pause that grows, the core's rule)
+      const at = rule.failed(id, this.now())
+      this.later(Math.max(0, at - this.now()), () => this.keepSoon(0))
     }
   }
   /** A stale session this device could not repair: said once per group and reason (nothing is written in it until
@@ -1224,9 +1277,12 @@ export class Engine {
    * steps that were open, and tells the client which invites are still at work. A step that fails (no KeyPackage at
    * the hub yet, the hub not reached) is simply there again at the next round.
    */
+  /** The pause before the invite steps are tried again after one failed (0: none failed in the last round). */
+  private invitePause = 0
   private async invited(): Promise<InviteStep[]> {
     this.owing = false
     let steps: InviteStep[]
+    let failed = false
     try { steps = await this.serial(() => this.call(d => d.inviteSteps())) } catch { return [] }
     for (const step of steps) {
       const id = step.inviteId, device = step.device, group = step.group
@@ -1246,6 +1302,9 @@ export class Engine {
             break
           }
           case 'foundSession': {
+            // (its founding went out and waits for the hub's answer or its place in the log: not a second one, which
+            //  the hub refuses and which fails the step: the founding is looked at again once that one is through)
+            if (this.groups.some(g => g.session && g.session.parent.every(b => b === 0) && g.pending && g.epoch === 0 && g.leaves.some(l => same(l, device!)))) break
             const others = (this.roles?.humans ?? []).filter(h => !same(h, this.device_id))
             // (a partial claim: a human device without a KeyPackage at the hub is left out and added later, 5.2.7)
             const claimed = others.length ? await this.hub.claimKeyPackages(others, { partial: true }) : []
@@ -1269,14 +1328,18 @@ export class Engine {
       } catch (e) {
         if (this.isLocal(e)) throw e
         this.owing = true
+        failed = true
       }
     }
+    // (a step that failed, the newcomer's KeyPackage not at the hub yet, a Commit that lost its epoch: tried again
+    //  soon, after a pause that doubles from backoff_first up to heal_delay * 5; a round without a failure resets it)
+    this.invitePause = failed ? Math.min(this.invitePause ? this.invitePause * 2 : this.timing.backoff_first, this.timing.heal_delay * 5) : 0
     // what is left now (the core drops an invite that has nothing left); a newcomer that only waits to be added
     // to sessions counts as in
     let left = steps
     if (steps.length) {
       try { left = await this.serial(() => this.call(d => d.inviteSteps())) } catch { /* the list of before */ }
-      if (left.length) { this.owing = true; this.later(this.timing.heal_delay * 5, () => this.keepSoon(0)) }
+      if (left.length) { this.owing = true; this.later(this.invitePause || this.timing.heal_delay * 5, () => this.keepSoon(0)) }
     }
     this.emit('invites', { open: [...new Set(left.filter(s => s.kind !== 'addToSession').map(s => hex(s.inviteId)))] })
     this.emit('batch', null)
