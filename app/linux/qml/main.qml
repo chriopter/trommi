@@ -81,6 +81,12 @@ ApplicationWindow {
     }
     property var chat: { try { return JSON.parse(trommi.chat_json) } catch (e) { return [] } }
     property var files: { try { return JSON.parse(trommi.files_json) } catch (e) { return ({}) } }
+    // the app core's view model, as the shell folded it (shell.rs); `core`: it is the one behind this window
+    property var view: { try { return JSON.parse(trommi.view_json) } catch (e) { return ({}) } }
+    readonly property bool core: view.phase !== undefined
+    // which of the window's three faces shows: the wait, the sign-in, the board
+    readonly property bool starting: core ? view.phase === "starting" : trommi.starting
+    readonly property bool signedIn: core ? ["opening", "live", "offline"].indexOf(view.phase) >= 0 : trommi.signed_in
     property var selectedSession: {
         for (let i = 0; i < sessions.length; i++) if (sessions[i].id === trommi.selected) return sessions[i]
         return null
@@ -90,7 +96,7 @@ ApplicationWindow {
     Timer {
         id: shotTimer
         interval: Math.max(200, trommi.shot_after_ms)
-        running: trommi.shot_path !== "" && (trommi.signed_in ? window.desk.length > 0 || trommi.scene === "empty" : !trommi.starting)
+        running: trommi.shot_path !== "" && (window.signedIn ? window.core || window.desk.length > 0 || trommi.scene === "empty" : !window.starting)
         // a scene's steps, one per tick: `chat` opens a session (TROMMI_LINUX_SESSION names it), `say` also writes
         // to its agent, `answer` answers the first decision card with its first option; then the picture
         property int step: 0
@@ -164,7 +170,7 @@ ApplicationWindow {
         // ---- signing in --------------------------------------------------------------------------------------------
         SignIn {
             anchors.fill: parent
-            visible: !trommi.signed_in && !trommi.starting
+            visible: !window.signedIn && !window.starting
             trommi: trommi
             theme: theme
         }
@@ -172,11 +178,11 @@ ApplicationWindow {
         // ---- starting --------------------------------------------------------------------------------------------
         Item {
             anchors.fill: parent
-            visible: trommi.starting
+            visible: window.starting
             Column {
                 anchors.centerIn: parent
                 spacing: 12
-                BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: trommi.starting }
+                BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: window.starting }
                 Label { text: trommi.status; color: theme.muted; anchors.horizontalCenter: parent.horizontalCenter }
             }
         }
@@ -185,9 +191,19 @@ ApplicationWindow {
         RowLayout {
             anchors.fill: parent
             spacing: 0
-            visible: trommi.signed_in
+            visible: window.signedIn
 
+            // the app core behind the window: the sidebar and the Desk are drawn from its view model
+            ViewSidebar {
+                visible: window.core
+                Layout.preferredWidth: 272
+                Layout.fillHeight: true
+                theme: theme
+                sidebar: window.view.sidebar || ({})
+                onTheme_toggled: trommi.set_theme(theme.dark ? "light" : "dark")
+            }
             Sidebar {
+                visible: !window.core
                 Layout.preferredWidth: 272
                 Layout.fillHeight: true
                 trommi: trommi
@@ -201,9 +217,16 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 color: theme.surface
 
+                ViewDesk {
+                    anchors.fill: parent
+                    visible: window.core
+                    theme: theme
+                    desk: window.view.desk || ({})
+                    sidebar: window.view.sidebar || ({})
+                }
                 Desk {
                     anchors.fill: parent
-                    visible: trommi.selected === "" && !window.openCardData
+                    visible: !window.core && trommi.selected === "" && !window.openCardData
                     trommi: trommi
                     theme: theme
                     cards: window.desk
@@ -213,7 +236,7 @@ ApplicationWindow {
                 }
                 CardView {
                     anchors.fill: parent
-                    visible: trommi.selected === "" && !!window.openCardData
+                    visible: !window.core && trommi.selected === "" && !!window.openCardData
                     trommi: trommi
                     theme: theme
                     card: window.openCardData || ({})
@@ -223,7 +246,7 @@ ApplicationWindow {
                 }
                 Chat {
                     anchors.fill: parent
-                    visible: trommi.selected !== ""
+                    visible: !window.core && trommi.selected !== ""
                     trommi: trommi
                     theme: theme
                     items: window.chat
@@ -235,7 +258,7 @@ ApplicationWindow {
 
         // a refusal or a failure, said once at the bottom
         Rectangle {
-            visible: trommi.error !== "" && trommi.signed_in
+            visible: trommi.error !== "" && window.signedIn
             anchors.bottom: parent.bottom
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottomMargin: 18

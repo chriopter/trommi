@@ -28,6 +28,9 @@ fn main() {
         "qml/CardView.qml",
         "qml/Chat.qml",
         "qml/Attachment.qml",
+        "qml/ViewSidebar.qml",
+        "qml/ViewDesk.qml",
+        "qml/ViewDeskRow.qml",
         "qml/pen.mjs",
     ]))
     .qt_module("Quick")
