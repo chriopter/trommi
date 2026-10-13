@@ -13,3 +13,6 @@
   day's highlights, at most one picture), written or updated once a day by whoever ships last that day, in its own
   small pull request, from the day's release notes.
 - Never commit secrets, keys or private e-mail addresses. Docs go into README.md.
+- App logic lives once, in `core/client` (its README, "The app core"). The apps under `app/` only draw and run their
+  platform's services and I/O: no decisions, no sorting, no state-dependent texts there. `core/client/tests/shells.rs`
+  holds the old logic folders to shrinking only.

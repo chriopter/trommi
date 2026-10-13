@@ -53,7 +53,9 @@ fn the_versions_are_the_workspace_pins() {
     let swift = include_str!("../../core/bindings/swift/Cargo.toml");
     assert!(swift.contains("uniffi = { version = \"=0.32.2\""));
     assert!(reported.binding.contains("UniFFI 0.32.2"));
-    assert!(include_str!("../../core/bindings/wasm/Cargo.toml").contains("wasm-bindgen = \"=0.2.129\""));
+    assert!(
+        include_str!("../../core/bindings/wasm/Cargo.toml").contains("wasm-bindgen = \"=0.2.129\"")
+    );
 }
 
 #[test]
@@ -600,4 +602,56 @@ fn a_founded_room_is_whole_and_takes_no_readmission() {
         code_of(device.readmit_human(room, id, key_package, now())),
         ErrorCode::Forbidden
     );
+}
+
+#[test]
+fn the_app_core_takes_one_event_and_answers_with_its_effects() {
+    use trommi_core_ffi::{AppCore, AppPacket};
+    let app = AppCore::new();
+    let start = r#"{"type":"start","config":{"platform":"test","version":"0","seed":1}}"#;
+    let out = app
+        .handle(
+            1_000,
+            AppPacket {
+                json: start.into(),
+                blobs: vec![],
+            },
+        )
+        .unwrap();
+    let effects: serde_json::Value = serde_json::from_str(&out.json).unwrap();
+    assert_eq!(effects[0]["type"], "render");
+    assert_eq!(effects[1]["op"]["op"], "device_load");
+    let id = effects[1]["id"].as_u64().unwrap();
+    let loaded = format!(
+        r#"{{"type":"store","id":{id},"result":{{"ok":{{"answer":"device","revision":0,"entries":[]}}}}}}"#
+    );
+    app.handle(
+        1_001,
+        AppPacket {
+            json: loaded,
+            blobs: vec![],
+        },
+    )
+    .unwrap();
+    let view: serde_json::Value = serde_json::from_str(&app.view_json().unwrap()).unwrap();
+    assert_eq!(view["phase"], "signed_out");
+    // a blob index that is not there, and JSON that is not the contract's, are bad-format
+    let bad = app.handle(
+        0,
+        AppPacket {
+            json: r#"{"type":"push","payload":0}"#.into(),
+            blobs: vec![],
+        },
+    );
+    assert_eq!(code_of(bad), ErrorCode::BadFormat);
+    let ok = app.handle(
+        0,
+        AppPacket {
+            json: r#"{"type":"push","payload":0}"#.into(),
+            blobs: vec![vec![1]],
+        },
+    );
+    assert!(ok.is_ok());
+    app.close();
+    assert_eq!(code_of(app.view_json()), ErrorCode::Internal);
 }

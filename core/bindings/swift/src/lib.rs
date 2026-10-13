@@ -22,6 +22,7 @@
 mod macros;
 
 pub mod account;
+pub mod app;
 pub mod client;
 pub mod client_model;
 pub mod codec;
@@ -41,6 +42,7 @@ pub mod store;
 pub mod wipe;
 
 pub use account::*;
+pub use app::{AppCore, AppPacket};
 pub use client::{
     ClientDesk, DeskCardIn, DeskDelta, DeskListed, DeskRequestIn, DeskSessionOp, DeskSessionOpen,
     DeskStackOp, OffPile, off_pile,
