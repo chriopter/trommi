@@ -17,13 +17,20 @@
 # base moved on before it merged was checked on another tree; then nothing matches and main runs them all too (the
 # merge queue avoids that: it checks the commit that lands).
 #
+#   .github/scripts/checked_tree.sh [<part>=<check job name>]...
+#   WORKFLOW: the workflow whose runs count (default build.yml; each pipeline names its own file)
 #   GH_TOKEN, GITHUB_REPOSITORY, GITHUB_SHA: as in a workflow (the token needs actions: read and contents: read)
+# Without parts: core, web, connector and hub with their check jobs in build.yml.
 set -u
+workflow=.github/workflows/${WORKFLOW:-build.yml}
+[ $# -gt 0 ] || set -- 'core=Core (check)' 'web=Web app (check)' 'connector=Connector (check)' 'hub=Hub (check)'
 none() {
   [ -n "${1:-}" ] && echo "checked_tree.sh: $1" >&2
-  printf 'core=false\nweb=false\nconnector=false\nhub=false\n'
+  for pair in $parts_list; do echo "$pair=false"; done
   exit 0
 }
+parts_list=
+for pair in "$@"; do parts_list="$parts_list ${pair%%=*}"; done
 repo=$GITHUB_REPOSITORY
 tree=$(git rev-parse "$GITHUB_SHA^{tree}" 2>/dev/null) || none "no tree for $GITHUB_SHA"
 printf '%s' "$tree" | grep -Eq '^[0-9a-f]{40}$' || none "not a tree: $tree"
@@ -41,7 +48,7 @@ passed=
 for run in $runs; do
   printf '%s' "$run" | grep -Eq '^[1-9][0-9]{0,19}$' || continue
   gh api "repos/$repo/actions/runs/$run" \
-    --jq 'select(.path == ".github/workflows/build.yml" and .repository.full_name == "'"$repo"'" and .head_repository.full_name == "'"$repo"'"
+    --jq 'select(.path == "'"$workflow"'" and .repository.full_name == "'"$repo"'" and .head_repository.full_name == "'"$repo"'"
       and ((.event == "merge_group" and (.head_branch | startswith("gh-readonly-queue/main/")))
         or (.event == "pull_request" and "'"$head"'" != "" and .head_sha == "'"$head"'"))) | .id' \
     | grep -qx "$run" || { echo "checked_tree.sh: run $run is neither main's merge queue nor the merged pull request at its head" >&2; continue; }
@@ -49,8 +56,6 @@ for run in $runs; do
   passed=$(printf '%s\n%s\n' "$passed" "$names")
   echo "checked_tree.sh: run $run checked tree $tree" >&2
 done
-say() { if printf '%s\n' "$passed" | grep -Fxq "$2"; then echo "$1=true"; else echo "$1=false"; fi; }
-say core 'Core (check)'
-say web 'Web app (check)'
-say connector 'Connector (check)'
-say hub 'Hub (check)'
+for pair in "$@"; do
+  if printf '%s\n' "$passed" | grep -Fxq "${pair#*=}"; then echo "${pair%%=*}=true"; else echo "${pair%%=*}=false"; fi
+done
