@@ -69,9 +69,10 @@ struct OffScreen: View {
 
 /**
  * Off your mind as ONE list, a plain feed (his word, 9 October: "no archiving, no ticking: the feed runs off at the
- * bottom, that is enough"): what the agents are still working on first (a small pulsing green dot), then Later, then
- * what is closed, the newest first (shredded and withdrawn ones struck through). One line per row, the title only; a
- * tap opens the card. On the Desk five rows; its heading, a link, opens this list in full, with its search.
+ * bottom, that is enough"): what the agents are still working on first, as live cards on one stack (RunningStack, his
+ * pick of 13 October), then Later, then what is closed, the newest first (shredded and withdrawn ones struck through),
+ * one short line each, the title only; a tap opens the card. On the Desk five lines; its heading, a link, opens this
+ * list in full, with its search.
  */
 struct OffList: View {
   @EnvironmentObject var model: BoardModel
@@ -90,8 +91,11 @@ struct OffList: View {
     if !shown.isEmpty || full {
       VStack(alignment: .leading, spacing: 0) {
         if !full { EndDivider(title: "Off your mind", chevron: chevron, more: { model.path.append(.off) }).padding(.bottom, 4) }
-        let lastPin = shown.last { $0.pinned }?.id
-        ForEach(full ? shown : Array(shown.prefix(5))) { r in row(r, lastPinned: r.id == lastPin) }
+        // what runs: live cards on one stack that fans out; the rest: one short line each (desk.mjs offList)
+        let busy = shown.filter { $0.g == "works" }, rest = shown.filter { $0.g != "works" }
+        if !busy.isEmpty { RunningStack(cards: busy.map(\.card), startOpen: full).padding(.bottom, 10) }
+        let lastPin = rest.last { $0.pinned }?.id
+        ForEach(full ? rest : Array(rest.prefix(5))) { r in row(r, lastPinned: r.id == lastPin) }
         if full && shown.isEmpty { Text(terms.isEmpty ? "Nothing yet." : "Nothing here has these words.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20) }
       }.padding(.top, 8)
     }
@@ -122,26 +126,95 @@ struct OffList: View {
     HStack(spacing: 8) {
       if c.starred != nil { StarMark().frame(width: 18, height: 18).accessibilityHidden(true) }
       Button { model.path.append(.card(c.id)) } label: {
-        Text(c.title.isEmpty ? "(no title)" : c.title).font(Face.text(16, .medium))
-          .foregroundStyle(r.g == "later" ? Ink.muted : Ink.fg)
+        Text(c.title.isEmpty ? "(no title)" : c.title).font(Face.text(14))
+          .foregroundStyle(Ink.muted)
           .strikethrough(r.g == "trash" && c.status == "shredded", color: Ink.faint)
           .lineLimit(1).truncationMode(.tail)
-          .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+          .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading).contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .accessibilityLabel(c.starred != nil ? "Starred: \(c.title)" : r.g == "works" ? "\(c.title), being worked on" : r.g == "later" ? "\(c.title), later" : r.g == "trash" ? (c.status == "shredded" ? "\(c.title), shredded" : "\(c.title), withdrawn") : c.title)
       if r.g == "works" { PulseDot().frame(width: 44, height: 44) }
-      else if r.g == "later" { Sketch("snooze", color: Ink.stampLater).frame(width: 20, height: 20).frame(width: 44, height: 44).accessibilityHidden(true) }
+      else if r.g == "later" { Sketch("snooze", color: Ink.stampLater).frame(width: 16, height: 16).frame(width: 36, height: 36).accessibilityHidden(true) }
       // (a closed card: answered, done or read a green tick; shredded the shredder, withdrawn the return arrow, in quiet ink;
       //  the title as it is; a shredded one struck through as well)
-      else if r.g == "trash" { Sketch(c.status == "shredded" ? "shred" : "withdraw", color: Ink.muted).frame(width: 19, height: 19).frame(width: 44, height: 44).accessibilityHidden(true) }
-      else { Sketch("tick", color: Ink.accent).frame(width: 20, height: 20).frame(width: 44, height: 44).accessibilityHidden(true) }
+      else if r.g == "trash" { Sketch(c.status == "shredded" ? "shred" : "withdraw", color: Ink.faint).frame(width: 15, height: 15).frame(width: 36, height: 36).accessibilityHidden(true) }
+      else { Sketch("tick", color: Ink.accent).frame(width: 16, height: 16).frame(width: 36, height: 36).accessibilityHidden(true) }
     }
     // (the last pinned row: a firmer rule under it, as on the web)
     .overlay(alignment: .bottom) { Rectangle().fill(lastPinned ? Ink.lineStrong : Ink.line).frame(height: lastPinned ? 1.5 : 1) }
   }
 }
 
+
+/**
+ * What the agents are working on, as live cards on one stack (desk.mjs offList): the newest on top, the edges of the
+ * others behind it and "+N running"; a tap beside the top card fans them all out, Fold lays them together again. A
+ * card shows who is on it (its drawing), the title, its status line and how long.
+ */
+struct RunningStack: View {
+  @EnvironmentObject var model: BoardModel
+  let cards: [DeskCard]
+  var startOpen = false
+  @State private var open: Bool? = nil
+  var body: some View {
+    let fanned = open ?? startOpen
+    if cards.count == 1 { card(cards[0]) }
+    else if fanned {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(cards, id: \.id) { card($0) }
+        if !startOpen {
+          Button { withAnimation(.easeOut(duration: 0.2)) { open = false } } label: {
+            Text("Fold").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted).underline(true, color: Ink.accent)
+              .frame(minHeight: 44).contentShape(Rectangle())
+          }.buttonStyle(.plain)
+        }
+      }
+    } else {
+      let behind = min(cards.count - 1, 3)
+      ZStack(alignment: .bottomTrailing) {
+        ForEach((1...max(behind, 1)).reversed(), id: \.self) { k in
+          RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Ink.surface)
+            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Ink.fg.opacity(0.4), lineWidth: 1.5))
+            .rotationEffect(.degrees(Double(k) * (k % 2 == 0 ? -0.5 : 0.7)))
+            .offset(x: CGFloat(k % 2 == 0 ? -2 * k : 4 * k), y: CGFloat(8 * k))
+            .opacity(k <= behind ? 1 : 0)
+        }
+        card(cards[0])
+        Text("+\(cards.count - 1) running").font(Face.text(12, .semibold)).foregroundStyle(Ink.bg)
+          .padding(.horizontal, 12).padding(.vertical, 7).background(Capsule().fill(Ink.fg))
+          .contentShape(Rectangle().inset(by: -10))
+          .offset(x: -14, y: 12)
+          .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { open = true } }
+      }
+      .padding(.bottom, CGFloat(behind) * 8 + 8)
+      .accessibilityElement(children: .contain)
+      .accessibilityAction(named: "Show all \(cards.count) running") { open = true }
+    }
+  }
+  private func card(_ c: DeskCard) -> some View {
+    let d = model.desk, a = d?.byAgent[c.agent]
+    let line = d?.workLine(c, working: d?.tasks.filter { $0.state == "working" } ?? [])
+    let at = line?.updated ?? (c.status == "open" ? c.withAgent : c.decided) ?? 0
+    return Button { model.path.append(.card(c.id)) } label: {
+      HStack(alignment: .center, spacing: 12) {
+        if let a { AgentMark(agent: { var x = a; x.starred = false; return x }(), size: 28) }
+        VStack(alignment: .leading, spacing: 3) {
+          Text(c.title).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
+          (Text(a?.name ?? "").font(Face.text(12, .semibold)).foregroundColor(Ink.fg) + Text(" · \(line?.label ?? "on it")").font(Face.text(12)).foregroundColor(Ink.muted)).lineLimit(1)
+        }
+        Spacer(minLength: 6)
+        if at > 0 { Text(agoShort(at)).font(Face.text(11)).foregroundStyle(Ink.faint).frame(maxHeight: .infinity, alignment: .top) }
+      }
+      .padding(.horizontal, 14).padding(.vertical, 12)
+      .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Ink.surface))
+      .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Ink.fg.opacity(0.55), lineWidth: 1.5))
+      .contentShape(RoundedRectangle(cornerRadius: 13))
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(c.title), \(a?.name ?? "") is on it")
+  }
+}
 
 /** The small green dot of something still being worked on: it breathes. */
 struct PulseDot: View {
