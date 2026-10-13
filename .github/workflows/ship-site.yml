@@ -90,6 +90,7 @@ jobs:
             site
             tests/site
             .node-version
+            .github/actions/check-site
       - uses: ./.github/actions/check-site
 
   # The result of the checks, for the jobs that need them: the part's passed, the core's passed or was not asked for
@@ -154,6 +155,7 @@ jobs:
             tests/site
             .github/tools/wrangler
             .node-version
+            .github/actions/check-site
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version

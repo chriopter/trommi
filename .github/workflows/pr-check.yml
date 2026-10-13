@@ -225,4 +225,5 @@ jobs:
             site
             tests/site
             .node-version
+            .github/actions/check-site
       - uses: ./.github/actions/check-site
