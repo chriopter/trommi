@@ -33,6 +33,7 @@ mod changes;
 mod codec;
 mod content;
 mod desk;
+mod files;
 mod groups;
 mod items;
 mod json;

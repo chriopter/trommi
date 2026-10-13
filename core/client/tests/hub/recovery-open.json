@@ -1,0 +1,15 @@
+{
+  "answer": "{\"expires_at\":1791902314146,\"recovery_id\":\"ZPZyVPVP9tmbfTC3iHyaCg\"}",
+  "asked": {
+    "room": "8IDcm-PT-GV14JsIArcEwi4hq4q6Tt1TXZLujNYw3G8",
+    "route": "open_recovery"
+  },
+  "content_range": null,
+  "name": "recovery-open",
+  "request": {
+    "body": "{}",
+    "method": "POST",
+    "path": "/v1/rooms/8IDcm-PT-GV14JsIArcEwi4hq4q6Tt1TXZLujNYw3G8/recovery"
+  },
+  "status": 200
+}

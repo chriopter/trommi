@@ -446,7 +446,7 @@ fn groups_read() {
         body(&r),
         serde_json::json!({ "groups": [g(), b64(other.as_bytes())] })
     );
-    assert_eq!(r.max_answer, 16 << 20);
+    assert_eq!(r.max_answer, 12 << 20);
     let o = b64(other.as_bytes());
     let read = |group: &str, epoch: u64, founding: &str, log: &[String], more: bool| {
         format!(
@@ -503,6 +503,23 @@ fn groups_read() {
         Err(Failure::Refused {
             status: 404,
             code: Some("not-found".into())
+        })
+    );
+    // the answer was full: that group, and every one after it, is read alone
+    let full = |group: &str| {
+        format!(
+            r#"{{"group":"{group}","error":"too-large","message":"the answer is full: read this group alone","status":413}}"#
+        )
+    };
+    let Answer::GroupsRead(rows) = taken(&x, &answer(&[read(&g(), 2, f0, &two, false), full(&o)]))
+    else {
+        panic!()
+    };
+    assert_eq!(
+        rows[1],
+        Err(Failure::Refused {
+            status: 413,
+            code: Some("too-large".into())
         })
     );
     for bad in [

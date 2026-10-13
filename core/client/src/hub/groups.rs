@@ -4,16 +4,17 @@
 use super::items::log_item;
 use super::json::{bad, Json, Obj, Read, MAX_NUMBER};
 use super::limits::{
-    CAP_DESK, CAP_GROUP_INFO, CAP_LIST, CAP_WRITE, LOG_PAGE, MAX_AT_ONCE, MAX_CLAIM,
-    MAX_GROUPS_PAGE, MAX_KEY_PACKAGE, MAX_LEAVES, MAX_LOG, MAX_MLS, MAX_WELCOMES, MAX_WISHES,
+    CAP_DESK, CAP_GROUPS_READ, CAP_GROUP_INFO, CAP_LIST, CAP_WRITE, LOG_PAGE, MAX_AT_ONCE,
+    MAX_CLAIM, MAX_GROUPS_PAGE, MAX_KEY_PACKAGE, MAX_LEAVES, MAX_LOG, MAX_MLS, MAX_REMOVAL,
+    MAX_SEALED_KEYS, MAX_SMALL_STRUCT, MAX_WELCOMES, MAX_WISHES,
 };
 use super::outbox::{commit_body, committed};
 use super::refusal;
 use super::request::{b64, begin};
 use super::stream::wish_row;
 use super::types::{
-    Answer, ChangeItem, GroupRead, GroupRow, GroupRowKind, LogItem, OutboxAnswer, Site, WelcomeRow,
-    WishKind,
+    Answer, ChangeItem, GroupRead, GroupRow, GroupRowKind, LogItem, OutboxAnswer, RecoveryLinkRow,
+    SealedKeysPage, Site, WelcomeRow, WishKind,
 };
 use super::Failure;
 use crate::app::io::{HttpClass, HttpRequest};
@@ -282,7 +283,7 @@ pub(crate) fn read_request(
         return bad("the request: a group once");
     }
     let ids: Vec<String> = groups.iter().map(|g| b64(g.as_bytes())).collect();
-    let request = begin(site, "POST", "/v1/groups/read", true, CAP_LIST)?
+    let request = begin(site, "POST", "/v1/groups/read", true, CAP_GROUPS_READ)?
         .json(&json!({ "groups": ids }))
         .class(HttpClass::Background)
         .done();
@@ -451,7 +452,7 @@ pub(crate) fn groups_request(
     Ok((request, asked))
 }
 
-fn group_row(v: &Json, room: &RoomId) -> Read<GroupRow> {
+pub(crate) fn group_row(v: &Json, room: Option<&RoomId>) -> Read<GroupRow> {
     let o = v.obj("a group: an object")?;
     let group = o.need("group_id").group("a group's group_id")?;
     let kind = o.need("kind").one_of(
@@ -472,7 +473,7 @@ fn group_row(v: &Json, room: &RoomId) -> Read<GroupRow> {
         .transpose()?
         .filter(|p| !p.is_zero());
     // the row is of the room asked for, and what it says of itself is what its id says
-    if group.room_id() != *room
+    if room.is_some_and(|room| group.room_id() != *room)
         || (kind == GroupRowKind::Room) != group.is_room()
         || session.is_some_and(|s| group.session_id() != Some(s))
         || (kind == GroupRowKind::Helper) != parent.is_some()
@@ -515,7 +516,7 @@ pub(crate) fn groups(asked: &GroupsAsked, body: &Json) -> Read<Answer> {
     let mut seen = HashSet::new();
     let mut items = Vec::with_capacity(list.len());
     for v in list {
-        let row = group_row(v, &asked.room)?;
+        let row = group_row(v, Some(&asked.room))?;
         if !seen.insert(row.group) {
             return bad("a group twice");
         }
@@ -590,4 +591,154 @@ pub(crate) fn reject_request(site: &Site<'_>, group: &GroupId, n: u64) -> Read<H
             .json(&json!({ "n": n }))
             .done(),
     )
+}
+
+// ---- GET /v1/sealed-keys?after=&limit=
+
+pub(crate) fn sealed_keys_request(
+    site: &Site<'_>,
+    after: u64,
+    limit: u32,
+) -> Read<(HttpRequest, (u64, u32))> {
+    let limit = limit.clamp(1, MAX_SEALED_KEYS);
+    let request = begin(site, "GET", "/v1/sealed-keys", true, CAP_LIST)?
+        .query("after", cursor(after)?)
+        .query("limit", limit)
+        .class(HttpClass::Background)
+        .done();
+    Ok((request, (after, limit)))
+}
+
+/// The SealedKeys and RecoveryLinks above `after`, each list ascending by change. The cursor is the newest
+/// change served and no further (one that ran ahead would skip keys), and moves when there is `more`.
+pub(crate) fn sealed_keys(after: u64, limit: u32, body: &Json) -> Read<Answer> {
+    let o = body.obj("sealed keys: an object")?;
+    let change = o.need("change").int("change: the cursor")?;
+    let more = o.need("more").bool("more")?;
+    let mut rows = Vec::new();
+    let mut at = after;
+    for v in o
+        .need("rows")
+        .list(limit as usize, "rows: at most the number asked for")?
+    {
+        let r = v.obj("a row: an object")?;
+        let row_change = r.need("change").count("a row's change")?;
+        if row_change <= at {
+            return bad("sealed keys out of order");
+        }
+        at = row_change;
+        rows.push((
+            row_change,
+            r.need("sealed_key")
+                .bytes(1, MAX_SMALL_STRUCT, "sealed_key")?
+                .0,
+        ));
+    }
+    let mut links = Vec::new();
+    let mut link_at = after;
+    for v in o
+        .need("links")
+        .list(limit as usize, "links: at most the number asked for")?
+    {
+        let r = v.obj("a link: an object")?;
+        let row = RecoveryLinkRow {
+            room_epoch: r.need("room_epoch").int("a link's room_epoch")?,
+            change: r.need("change").count("a link's change")?,
+            recovery_link: r
+                .need("recovery_link")
+                .bytes(1, MAX_SMALL_STRUCT, "recovery_link")?
+                .0,
+        };
+        if row.change <= link_at {
+            return bad("recovery links out of order");
+        }
+        link_at = row.change;
+        links.push(row);
+    }
+    if change != at.max(link_at) || (more && change == after) {
+        return bad("a cursor that is not where the lists end");
+    }
+    Ok(Answer::SealedKeys(SealedKeysPage {
+        rows,
+        links,
+        change,
+        more,
+    }))
+}
+
+// ---- GET /v1/groups/{group}/removal?after=
+
+pub(crate) fn removal_request(
+    site: &Site<'_>,
+    group: &GroupId,
+    after: u64,
+) -> Read<(HttpRequest, LogAsked)> {
+    let request = begin(site, "GET", &group_path(group, "removal"), true, CAP_LIST)?
+        .query("after", cursor(after)?)
+        .class(HttpClass::Background)
+        .done();
+    let asked = LogAsked {
+        group: *group,
+        after,
+        limit: MAX_REMOVAL as u32,
+        commits_only: true,
+    };
+    Ok((request, asked))
+}
+
+/// The group's Commits after `after`, up to and including the one that removed the asking key, whose log
+/// number is `removed_at`: none beyond it, and the last page ends on it.
+pub(crate) fn removal(asked: &LogAsked, body: &Json) -> Read<Answer> {
+    let removed_at = body
+        .obj("a removal page: an object")?
+        .need("removed_at")
+        .count("removed_at")?;
+    let (items, more) = log_page(body, &asked.group, asked.after, MAX_REMOVAL, true)?;
+    let items: Vec<LogItem> = items.into_iter().map(|(item, _)| item).collect();
+    let last = items.last().map_or(asked.after, |i| i.n);
+    if last > removed_at || (!more && last != removed_at) {
+        return bad("a removal that does not end on the removing Commit");
+    }
+    Ok(Answer::Removal {
+        items,
+        more,
+        removed_at,
+    })
+}
+
+// ---- POST /v1/rooms/{room}/recovery, DELETE /v1/rooms/{room}/recovery/{id}
+
+pub(crate) fn open_recovery_request(site: &Site<'_>, room: &RoomId) -> Read<HttpRequest> {
+    let path = format!("/v1/rooms/{}/recovery", b64(room.as_bytes()));
+    Ok(begin(site, "POST", &path, true, CAP_WRITE)?
+        .json(&json!({}))
+        .done())
+}
+
+pub(crate) fn recovery_opened(body: &Json) -> Read<Answer> {
+    let o = body.obj("a recovery: an object")?;
+    Ok(Answer::Recovery {
+        id: o.need("recovery_id").fixed("recovery_id: 16 bytes")?,
+        expires_at: o.need("expires_at").int("a recovery's expires_at")?,
+    })
+}
+
+pub(crate) fn drop_recovery_request(
+    site: &Site<'_>,
+    room: &RoomId,
+    recovery: &[u8; 16],
+) -> Read<HttpRequest> {
+    let path = format!(
+        "/v1/rooms/{}/recovery/{}",
+        b64(room.as_bytes()),
+        b64(recovery)
+    );
+    Ok(begin(site, "DELETE", &path, true, CAP_WRITE)?.done())
+}
+
+pub(crate) fn recovery_dropped(body: &Json) -> Read<Answer> {
+    let o = body.obj("a dropped recovery: an object")?;
+    Ok(Answer::Dropped {
+        dropped: o.need("dropped").bool("dropped")?,
+    })
 }

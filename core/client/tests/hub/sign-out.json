@@ -1,0 +1,14 @@
+{
+  "answer": "{}",
+  "asked": {
+    "route": "sign_out"
+  },
+  "content_range": null,
+  "name": "sign-out",
+  "request": {
+    "body": null,
+    "method": "DELETE",
+    "path": "/v1/token"
+  },
+  "status": 200
+}
