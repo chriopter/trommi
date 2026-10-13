@@ -164,3 +164,58 @@ fn a_kept_request_is_sent_again_after_a_restart() {
     assert!(!sim.cache.contains_key(&format!("{KEPT_PREFIX}reject/one")), "deleted once answered");
     assert!(sim.log.iter().all(|e| !format!("{e:?}").contains(&format!("{HUB_URL}/v1/nowhere"))));
 }
+
+fn archived_here(sim: &Sim, group: &trommi_core::ids::GroupId) -> bool {
+    sim.app.engine().is_some_and(|e| e.device().group(group).is_ok_and(|g| g.archived))
+}
+
+#[test]
+fn a_session_is_archived_at_the_hub_and_here_and_its_vouched_agent_retired() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    live(&world, &mut sim);
+    let agent = world.agent.id();
+    assert!(world.hub.borrow().is_agent(&agent));
+    let (id, effects) = sim.app.archive_session(sim.now_ms, world.group, vec![agent]);
+    sim.run(effects);
+    let id = id.expect("a device").expect("sent");
+    let mut answers = Vec::new();
+    settle(&world, &mut sim, &mut answers);
+    assert_eq!(answers.len(), 1);
+    assert_eq!((answers[0].id, answers[0].keep.clone()), (id, Some(format!("archive/{}", hex(world.group.as_bytes())))));
+    assert!(world.hub.borrow().is_archived(&world.group));
+    assert!(archived_here(&sim, &world.group));
+    assert!(!world.hub.borrow().is_agent(&agent), "the vouched agent is out of the room's agents");
+    assert!(sim.cache.keys().all(|k| !k.starts_with(KEPT_PREFIX)));
+    // the room group cannot be archived, nor a group this device does not hold
+    let (refused, _) = sim.app.archive_session(sim.now_ms, world.room, Vec::new());
+    assert_eq!(refused, Some(Err("forbidden")));
+}
+
+#[test]
+fn an_archive_cut_by_a_restart_is_finished_after_it() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    live(&world, &mut sim);
+    let agent = world.agent.id();
+    sim.hold = true;
+    let (_, effects) = sim.app.archive_session(sim.now_ms, world.group, vec![agent]);
+    sim.run(effects);
+    // the hub takes the archive, the answer is lost with the process
+    let (_, request) = sim.held.iter().find(|(_, r)| r.url.ends_with("/archive")).cloned().expect("the archive is sent");
+    assert_eq!(world.hub.borrow_mut().http(sim.now_ms, &request).map(|r| r.status).ok(), Some(200));
+    assert!(!archived_here(&sim, &world.group));
+    sim.restart();
+    sim.hold = false;
+    sim.send(start());
+    let mut answers = Vec::new();
+    settle(&world, &mut sim, &mut answers);
+    assert!(archived_here(&sim, &world.group), "archived after the restart");
+    assert!(!world.hub.borrow().is_agent(&agent), "and the vouched agent retired");
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}

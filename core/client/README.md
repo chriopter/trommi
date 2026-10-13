@@ -90,7 +90,9 @@ action may send with `keep`: `POST /v1/groups/{group}/archive`, `DELETE /v1/file
 (the same bytes), `DELETE /v1/shares/{share}`, `DELETE /v1/invites/{invite}`, `DELETE /v1/push`, and
 `POST /v1/groups/{group}/reject`. Never with `keep`: a route that makes something new on each arrival
 (`POST /v1/shares`, `POST /v1/invites`, a Request), the account routes, or anything the device's outbox carries
-(Commits, messages, envelopes: those go through `App::act`). Randomness for what an action makes beside the protocol
+(Commits, messages, envelopes: those go through `App::act`). Archiving a session is one call, `App::archive_session(now, group, retire)`: the
+archive goes to the hub as a kept request, and once the hub took it the engine archives the group on the device and
+removes the vouched agent devices `retire` from the room's agents by one room Commit, also after a restart. Randomness for what an action makes beside the protocol
 (a file's key, a share link's secret) comes from the device's own source, `Engine::with_entropy`, so a seeded App
 stays exact.
 

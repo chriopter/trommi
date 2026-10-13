@@ -604,6 +604,15 @@ impl Hub {
     }
 
     /// The human devices of the room's newest state.
+    /// Whether the room's newest state names `device` among its agents.
+    pub fn is_agent(&self, device: &DeviceId) -> bool {
+        self.room.as_ref().and_then(Observer::history).is_some_and(|h| h.newest().is_agent(device))
+    }
+
+    pub fn is_archived(&self, group: &GroupId) -> bool {
+        self.archived.contains(group)
+    }
+
     pub fn humans(&self) -> Vec<DeviceId> {
         self.room.as_ref().and_then(Observer::history).map(|h| h.newest().humans.iter().copied().collect()).unwrap_or_default()
     }

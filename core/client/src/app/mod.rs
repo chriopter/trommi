@@ -347,6 +347,21 @@ impl App {
         (result, out)
     }
 
+    /// Archives a session group and retires the agent devices vouched into it (`engine::requests`,
+    /// `Engine::archive_session`): kept across a restart. The hub's answer comes in [`App::take_answers`] too.
+    pub fn archive_session(
+        &mut self,
+        now_ms: u64,
+        group: trommi_core::ids::GroupId,
+        retire: Vec<trommi_core::ids::DeviceId>,
+    ) -> (Option<Result<IoId, &'static str>>, Vec<Effect>) {
+        let mut out = Vec::new();
+        let result = self.with_engine(now_ms, &mut out, |engine, ctx| engine.archive_session(ctx, group, retire));
+        self.after_engine(now_ms, &mut out);
+        self.render(&mut out);
+        (result, out)
+    }
+
     /// The actions' requests answered (or given up) since the last call, in the order they ended.
     pub fn take_answers(&mut self) -> Vec<engine::requests::Answered> {
         std::mem::take(&mut self.answers)

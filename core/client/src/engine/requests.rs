@@ -46,9 +46,27 @@ pub struct Answered {
     pub result: Result<HttpResponse, Failure>,
 }
 
+/// What the engine itself does once a request it sent for an action is answered: kept with the request, so a
+/// restart between the answer and the step still takes it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum Then {
+    /// 5.2.10: the session group is archived on this device, and the agent devices vouched into it are retired
+    /// (removed from the room's `agents` by a room Commit). Ids as base64url.
+    Archive { group: String, retire: Vec<String> },
+}
+
+/// A kept request as the app store holds it.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Kept {
+    request: HttpRequest,
+    #[serde(default)]
+    then: Option<Then>,
+}
+
 struct Out {
     request: HttpRequest,
     keep: Option<String>,
+    then: Option<Then>,
     /// The id it is sent under now.
     flying: Option<IoId>,
     tries: u32,
@@ -111,16 +129,87 @@ impl Engine {
         }
         let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client };
         let request = build(&site).map_err(|_| "bad-request")?;
+        self.send_request(ctx, request, keep, None)
+    }
+
+    fn send_request(&mut self, ctx: &mut Ctx<'_>, request: HttpRequest, keep: Option<String>, then: Option<Then>) -> Result<IoId, &'static str> {
         if let Some(name) = &keep {
-            let Ok(value) = serde_json::to_vec(&without_token(&request)) else { return Err("bad-request") };
+            let kept = Kept { request: without_token(&request), then: then.clone() };
+            let Ok(value) = serde_json::to_vec(&kept) else { return Err("bad-request") };
             let id = ctx.id();
             self.pending.insert(id, Asked::KeptWrite);
             ctx.out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: kept_key(name), value: value.into() }], delete: Vec::new() } });
         }
         let id = ctx.id();
-        self.requests.outs.insert(id, Out { request, keep, flying: None, tries: 0, retry: Retry::default() });
+        self.requests.outs.insert(id, Out { request, keep, then, flying: None, tries: 0, retry: Retry::default() });
         self.drive(ctx);
         Ok(id)
+    }
+
+    /// Archives a session group (5.2.10) and retires the agent devices vouched into it (`retire`), as the web's
+    /// archive does: the hub is told (`POST /v1/groups/{group}/archive`, kept across a restart), and once it took
+    /// it (or says the group is `gone`), the device archives the group and removes `retire` from the room's agents
+    /// by one room Commit, which goes through the outbox like any other. The answer also comes in
+    /// [`Report::Answer`] under the id returned. Refused: `forbidden` (not a human device, or the room group),
+    /// `not-found` (a group this device does not hold), `busy`, `stopped`.
+    pub fn archive_session(&mut self, ctx: &mut Ctx<'_>, group: GroupId, retire: Vec<DeviceId>) -> Result<IoId, &'static str> {
+        if self.stopped.is_some() {
+            return Err("stopped");
+        }
+        if group.is_room() || !self.device.is_human() {
+            return Err("forbidden");
+        }
+        if self.device.group(&group).is_err() {
+            return Err("not-found");
+        }
+        let site = Site { url: &self.hub, token: Some(self.token.as_ref().map_or("waits-for-a-sign-in", |t| t.value.as_str())), client: &self.client };
+        let request = crate::hub::archive_request(&site, &group).map_err(|_| "bad-request")?;
+        let name = format!("archive/{}", crate::engine::feed::hex(group.as_bytes()));
+        let then = Then::Archive { group: trommi_core::ids::base64url_encode(group.as_bytes()), retire: retire.iter().map(DeviceId::to_base64url).collect() };
+        self.send_request(ctx, request, Some(name), Some(then))
+    }
+
+    /// The engine's own step after an answer (see [`Then`]).
+    fn then(&mut self, ctx: &mut Ctx<'_>, then: &Then, result: &Result<HttpResponse, Failure>) {
+        match then {
+            Then::Archive { group, retire } => {
+                let taken = match result {
+                    Ok(response) => match crate::hub::archive_answer(response) {
+                        Ok(()) => true,
+                        Err(Failure::Refused { code: Some(code), .. }) => code == "gone",
+                        Err(_) => false,
+                    },
+                    Err(_) => false,
+                };
+                let Some(group) = trommi_core::ids::base64url_decode(group).ok().and_then(|b| GroupId::from_bytes(&b).ok()) else { return };
+                if !taken {
+                    return;
+                }
+                self.archive_held(ctx, &group);
+                let retire: Vec<DeviceId> = retire.iter().filter_map(|d| DeviceId::from_base64url(d).ok()).collect();
+                if !retire.is_empty() {
+                    // (one Commit for all; a device that is no enrolled agent any more is left out, `not-member`)
+                    let mut result = self.device.remove_agents(&retire, ctx.now);
+                    if result == Err(Error::NotMember) {
+                        result = Ok(0);
+                        for device in &retire {
+                            match self.device.remove_agents(std::slice::from_ref(device), ctx.now) {
+                                Ok(_) | Err(Error::NotMember) => {}
+                                Err(e) => result = Err(e),
+                            }
+                        }
+                    }
+                    if let Err(e) = result {
+                        ctx.log(LogLevel::Warn, format!("archive: the vouched devices were not retired: {}", e.code()));
+                        self.local(ctx, &e);
+                    }
+                }
+                self.report(Report::Groups);
+                self.tending.changed();
+                // (what this wrote is stored before the kept request is let go: the barrier)
+                self.flush(ctx);
+            }
+        }
     }
 
     /// Sends what waits and may go now: a request that needs the token only with one.
@@ -183,6 +272,9 @@ impl Engine {
             self.requests.outs.insert(id, out);
             return;
         }
+        if let Some(then) = &out.then {
+            self.then(ctx, then, &result);
+        }
         if let Some(name) = &out.keep {
             if !transient {
                 let key = kept_key(name);
@@ -210,13 +302,13 @@ impl Engine {
         };
         for entry in entries.iter().take(KEPT_MAX) {
             let name = entry.key.strip_prefix(KEPT_PREFIX).unwrap_or_default().to_string();
-            let Ok(request) = serde_json::from_slice::<HttpRequest>(&entry.value.0) else { continue };
+            let Ok(Kept { request, then }) = serde_json::from_slice::<Kept>(&entry.value.0) else { continue };
             // (only to this engine's hub: a kept request never names another address)
             if name.is_empty() || !request.url.starts_with(&format!("{}/", self.hub)) || self.requests.outs.values().any(|o| o.keep.as_deref() == Some(&name)) {
                 continue;
             }
             let id = ctx.id();
-            self.requests.outs.insert(id, Out { request, keep: Some(name), flying: None, tries: 0, retry: Retry::default() });
+            self.requests.outs.insert(id, Out { request, keep: Some(name), then, flying: None, tries: 0, retry: Retry::default() });
         }
     }
 }
