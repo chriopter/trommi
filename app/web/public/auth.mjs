@@ -1109,7 +1109,7 @@ export async function roomScreen({ start, hub, openError = null, demo = '' }) {
   }
 
   function welcome(error = '') {
-    show(obShell(html`Your agents ring.<br>You <span class="ob-pen">decide.${UNDER}</span>`, html`${loggedOut ? html`<p class="ob-said" id="logged-out" role="status">${loggedOut === 'kept' ? 'Logged out. This device still shows under Devices.' : 'Logged out.'}</p>` : ''}${error ? html`<p class="ob-error is-shown" role="alert">${error}</p>` : ''}
+    show(obShell(html`Your agents ring.<br>Answer <span class="ob-pen">anywhere.${UNDER}</span>`, html`${loggedOut ? html`<p class="ob-said" id="logged-out" role="status">${loggedOut === 'kept' ? 'Logged out. This device still shows under Devices.' : 'Logged out.'}</p>` : ''}${error ? html`<p class="ob-error is-shown" role="alert">${error}</p>` : ''}
 <div class="ob-stack"><button type="button" class="ob-go" id="way-create">Create account</button><button type="button" class="ob-second" id="way-login">Log in</button>${DEMO_WAY}</div>`, { lead: 'Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.', cls: 'ob-welcome', home: false, demo: false }), null)
     on('#way-create', 'click', () => createFlow())
     on('#way-login', 'click', () => loginFlow())

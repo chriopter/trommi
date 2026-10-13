@@ -1,6 +1,6 @@
 # Trommi
 
-**Your agents ring. You decide.**
+**Your agents ring. Answer anywhere.**
 
 <img src="site/public/images/hero-light.png" width="880" alt="Trommi on a laptop and an iPhone: the Desk of the web app with the questions agents wait on, and one yes/no question on the phone">
 
@@ -622,7 +622,7 @@ growing corpus stays out of git. Nightly in CI: `.github/workflows/nightly.yml`,
 
 ## License
 
-[O'Saasy](LICENSE.md). Third-party licences: [THIRD-PARTY.md](THIRD-PARTY.md) (the web app's own:
+Open code, self-hostable, under the [O'Saasy license](LICENSE.md): read it, change it, run your own hub; only selling it as a competing hosted service is not allowed. Third-party licences: [THIRD-PARTY.md](THIRD-PARTY.md) (the web app's own:
 [`app/web/THIRD-PARTY.md`](app/web/THIRD-PARTY.md)).
 
 Found a vulnerability? Write to trommi@mail101.de.
