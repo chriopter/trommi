@@ -6,7 +6,7 @@
   "content_range": null,
   "name": "account-put-kit-stale",
   "request": {
-    "body": "{\"auth_key\":\"lUmXjxw0cF3fnGC3m3D6X7qkkwos3DrPNtWRou6Cjbk\",\"proof\":{\"password\":{\"auth_key\":\"9cMHHeLtpB_Cr-2RnPY4sHcqdivC7JbrYlAHgbmdkFM\"}},\"revision\":1,\"sealed_copy\":\"AgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ\"}",
+    "body": "{\"auth_key\":\"MLyE9_Gfmpp-eXoPE_UkUcXpI78fCmIWAGQ4DnrdRDI\",\"proof\":{\"password\":{\"auth_key\":\"6Lj0-EZSuWDvvxIe1MEjJAhxLwMQZS1V_FI0QrNU8gk\"}},\"revision\":1,\"sealed_copy\":\"AgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ\"}",
     "method": "PUT",
     "path": "/v1/account/kit"
   },

@@ -1,0 +1,16 @@
+{
+  "answer": "{\"cards\":[{\"head_change\":13,\"object_id\":\"njQ5zdny2ad1pd_Gavv98g\",\"version_change\":13}],\"change\":28,\"permission_requests\":[],\"settled\":[\"a2BeZPHYcIR2fT3sZAqyBQ\"],\"truncated\":false}",
+  "asked": {
+    "active": false,
+    "route": "desk_brief",
+    "since": 12
+  },
+  "content_range": null,
+  "name": "desk-brief-settled",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/desk?brief=1&since=12"
+  },
+  "status": 200
+}

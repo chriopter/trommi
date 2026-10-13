@@ -1,10 +1,11 @@
 {
-  "answer": "{\"cards\":[{\"head_change\":13,\"object_id\":\"DpmlqU16AVf8uD3qvVO30A\",\"version_change\":13},{\"head_change\":12,\"object_id\":\"R__yOLBL-xQYDyeBN241PA\",\"version_change\":12}],\"change\":26,\"permission_requests\":[],\"truncated\":false}",
+  "answer": "{\"cards\":[{\"head_change\":13,\"object_id\":\"njQ5zdny2ad1pd_Gavv98g\",\"version_change\":13},{\"head_change\":12,\"object_id\":\"a2BeZPHYcIR2fT3sZAqyBQ\",\"version_change\":12}],\"change\":26,\"permission_requests\":[],\"truncated\":false}",
   "asked": {
     "active": true,
     "route": "desk_brief",
     "since": null
   },
+  "content_range": null,
   "name": "desk-brief",
   "request": {
     "body": null,

@@ -1,8 +1,8 @@
 {
   "answer": "{\"dropped\":true}",
   "asked": {
-    "recovery": "ZPZyVPVP9tmbfTC3iHyaCg",
-    "room": "8IDcm-PT-GV14JsIArcEwi4hq4q6Tt1TXZLujNYw3G8",
+    "recovery": "wjJIIZpJ_YSydXx4pUuyQw",
+    "room": "6Bz2L6NITbaL2biTLbM_w--uuyH0jDCmARAL8ORUjwM",
     "route": "drop_recovery"
   },
   "content_range": null,
@@ -10,7 +10,7 @@
   "request": {
     "body": null,
     "method": "DELETE",
-    "path": "/v1/rooms/8IDcm-PT-GV14JsIArcEwi4hq4q6Tt1TXZLujNYw3G8/recovery/ZPZyVPVP9tmbfTC3iHyaCg"
+    "path": "/v1/rooms/6Bz2L6NITbaL2biTLbM_w--uuyH0jDCmARAL8ORUjwM/recovery/wjJIIZpJ_YSydXx4pUuyQw"
   },
   "status": 200
 }

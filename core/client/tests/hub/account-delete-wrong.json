@@ -6,7 +6,7 @@
   "content_range": null,
   "name": "account-delete-wrong",
   "request": {
-    "body": "{\"password\":{\"auth_key\":\"9cMHHeLtpB_Cr-2RnPY4sHcqdivC7JbrYlAHgbmdkFM\"}}",
+    "body": "{\"password\":{\"auth_key\":\"6Lj0-EZSuWDvvxIe1MEjJAhxLwMQZS1V_FI0QrNU8gk\"}}",
     "method": "DELETE",
     "path": "/v1/account"
   },

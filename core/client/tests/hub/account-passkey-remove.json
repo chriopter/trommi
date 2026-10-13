@@ -1,0 +1,15 @@
+{
+  "answer": "{\"deleted\":true}",
+  "asked": {
+    "credential_id": "PDGIo-FqVKabm7Rd7wogGe3Nf8w",
+    "route": "remove_passkey"
+  },
+  "content_range": null,
+  "name": "account-passkey-remove",
+  "request": {
+    "body": "{\"proof\":{\"kit\":{\"auth_key\":\"DTujfSkb8CbSdbkK87XpLZ9T6MP549-j744hnnvAJZY\"}}}",
+    "method": "DELETE",
+    "path": "/v1/account/passkeys/PDGIo-FqVKabm7Rd7wogGe3Nf8w"
+  },
+  "status": 200
+}

@@ -1,0 +1,26 @@
+{
+  "answer": "{\"pruned\":0}",
+  "asked": {
+    "board": "pAHPyylRjAjOJ3PEDLMOvQ",
+    "frontier": [
+      [
+        "tgmpNu8sJxlMTLYPoN5_Ob1mETF18ol3JZpwvzaKsKg",
+        3,
+        "9z2VW8WVnNpBdQKNbt8bAfIZZRgg6BU9o6BIJyYxbUA"
+      ]
+    ],
+    "route": "board_frontier",
+    "snapshot": [
+      4,
+      "kSOcDZ-QecsxnRqLXP48de9RLnR5hlFjoJ8ICfI4bVw"
+    ]
+  },
+  "content_range": null,
+  "name": "board-frontier-snapshot",
+  "request": {
+    "body": "{\"files\":[],\"frontier\":{\"tgmpNu8sJxlMTLYPoN5_Ob1mETF18ol3JZpwvzaKsKg\":[3,\"9z2VW8WVnNpBdQKNbt8bAfIZZRgg6BU9o6BIJyYxbUA\"]},\"snapshot\":[4,\"kSOcDZ-QecsxnRqLXP48de9RLnR5hlFjoJ8ICfI4bVw\"]}",
+    "method": "POST",
+    "path": "/v1/boards/pAHPyylRjAjOJ3PEDLMOvQ/frontier"
+  },
+  "status": 200
+}

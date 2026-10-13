@@ -1,15 +1,15 @@
 {
-  "answer": "{\"request_hash\":\"uL-F-vwmqyVt4wxOGao3wdHcWNy2jr_vh-xzGDwfhy4\"}",
+  "answer": "{\"request_hash\":\"vpue2wikcS-Zvo6VJA8mzNCxbxinaixbiXlJcrFkg48\"}",
   "asked": {
-    "invite": "Dyb9Zodq3sjQIBl0z346uA",
+    "invite": "6_YAknSLSoT6yNdV02NnYw",
     "route": "post_invite_request"
   },
   "content_range": null,
   "name": "invite-request",
   "request": {
-    "body": "{\"mac\":\"wtiAKJ1kgw4948xUCV9pTEL8Pt1l7X6ytLuYiMULn7E\",\"request\":\"kPJUA_ldrtizweHIN9-2Xm6lFGq1e7r2Mc7OilMegHUPJv1mh2reyNAgGXTPfjq4Fmh0dHA6Ly8xMjcuMC4wLjE6MzkwNTUBQTYAAQAFAAEAAyAviE4EWBQONEnmnSSbJklgrtCohblbJXktIkLZhv2BPSAFaphza8jYJmlqJXF56tCROYUrwcHwpqeydPimnSyVQSAimBCqDe29QIOHsfzN9Oa55ryMflU4_Z489nkqz8EP0QABICKYEKoN7b1Ag4ex_M305rnmvIx-VTj9njz2eSrPwQ_RAgABAgADBvAB8AIACgACAAEBAAAAAGrONV4AAAAAfZpGbgBAQOF3o3E7aofHcUmQYJ534eOuAMPHk54pvfKZc27onJAfMPGiuWeYQtkkRi1uEyTOhg9P2WdE-cIpNjwT8GVo2ggAQEDII-dhifOou5__3Md3-sxjnIM77_jFLKIHoMn3HM2QPIf61d98Y8IgSCG_Vc0pcJGFZd23p-VkPVUBh9TZ91ADhEoLULM_ClTjnmcEkdqGaJTEOoMDJjor48fiSEhS8kU\",\"signature\":\"4GkAqYXHnHIfWpGoRJPKVUTbLSdBzMFJTEPNuGRVaH4dRekcNuFd9pIJ663hUcZb_cZ6mdimggbN9Y8Jhsd0Dw\"}",
+    "body": "{\"mac\":\"Q-VyEOpv639Ax7V7mBJWrfec5NeoCSji_KacQ99LabE\",\"request\":\"hfK5r9NrWHN8HaphvJyS95ASdgUuUsBV0JJUVIdcIAbr9gCSdItKhPrI11XTY2djFmh0dHA6Ly8xMjcuMC4wLjE6MzU2NTcBQTYAAQAFAAEAAyCVznUgpZi6epHrpv1ot5GCwRkVuygI9pt0IH-G3nDMCSCo9gHjY1gDSeAdyL_VW6BWdMCXLnFQJFQyOMO3w910PCBPNw2ley4IHlM-ptm85PxKM4X5MTRwxKolDGhLjBC-WQABIE83DaV7LggeUz6m2bzk_EozhfkxNHDEqiUMaEuMEL5ZAgABAgADBvAB8AIACgACAAEBAAAAAGrOPtYAAAAAfZpP5gBAQGmrAilAsgqUyevw8gw2b04MTgYr7p4YeZUNsC1DokVAPswZ1wVOY3NFH4KjozimJ3-Gd6nxQs8ChgDwxav4MwYAQEBOQ2_3n5r2Txd5WMxW_vkr-6EZfxhQvRklmaDvNG5uK5CgSGt-Kvy5lg-rzcq2g7VVr206XUzc0YnZ7M-GHFIBlO93pkms5g4b0UqnPFPhItnVUK5tPNkZpkkBAVJVY8c\",\"signature\":\"0XRUlP-3rB3jG0KJcBwNXe42LQb5qfxVcqq3TxGkaIDR5mpaVYy_9PMkBBqDKm4aDrBUBnACIGeM_--Bu3lpDA\"}",
     "method": "POST",
-    "path": "/v1/invites/Dyb9Zodq3sjQIBl0z346uA/request"
+    "path": "/v1/invites/6_YAknSLSoT6yNdV02NnYw/request"
   },
   "status": 200
 }

@@ -1,0 +1,14 @@
+{
+  "answer": "{\"revision\":2}",
+  "asked": {
+    "route": "put_email"
+  },
+  "content_range": null,
+  "name": "account-put-email",
+  "request": {
+    "body": "{\"email\":\"ada-b3d815ff7f32@example.org\",\"kit\":{\"auth_key\":\"DTujfSkb8CbSdbkK87XpLZ9T6MP549-j744hnnvAJZY\",\"sealed_copy\":\"AgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA\"},\"proof\":{\"kit\":{\"auth_key\":\"xqM8Ce5UoAABSVdxqg_MKHM4qWYtexNHvT7hCmNSTlw\"}},\"revision\":1}",
+    "method": "PUT",
+    "path": "/v1/account/email"
+  },
+  "status": 200
+}

@@ -1,0 +1,14 @@
+{
+  "answer": "{\"error\":\"forbidden\",\"message\":\"the e-mail of an account is set once\"}",
+  "asked": {
+    "route": "put_email"
+  },
+  "content_range": null,
+  "name": "account-put-email-again",
+  "request": {
+    "body": "{\"email\":\"ada-b3d815ff7f32@example.org\",\"kit\":{\"auth_key\":\"DTujfSkb8CbSdbkK87XpLZ9T6MP549-j744hnnvAJZY\",\"sealed_copy\":\"AgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBA\"},\"proof\":{\"kit\":{\"auth_key\":\"DTujfSkb8CbSdbkK87XpLZ9T6MP549-j744hnnvAJZY\"}},\"revision\":2}",
+    "method": "PUT",
+    "path": "/v1/account/email"
+  },
+  "status": 403
+}

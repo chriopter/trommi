@@ -1,0 +1,18 @@
+{
+  "answer": "{\"stored\":true}",
+  "asked": {
+    "epoch": 2,
+    "group": "7I7erCmOZqgyk31dlpJ4jCWPZFMtrFeXp_EWGafQQTunTmY18QQ3BgugwPpkA9X9",
+    "kind": "SealedKey",
+    "parts": 1,
+    "route": "outbox"
+  },
+  "content_range": null,
+  "name": "outbox-sealed-key",
+  "request": {
+    "body": "{\"sealed_key\":\"MOyO3qwpjmaoMpN9XZaSeIwlj2RTLaxXl6fxFhmn0EE7p05mNfEENwYLoMD6ZAPV_QAAAAAAAAACgXJ801Poobr3R3Hfr-AFyjChY0YVDiy8Zj_n8u85tZoAAAAAAAAAASAvAEAvmOYCmiUDhyRzAdimYB6yR-s4FGmgWsj3fCykrSDNBnduLeRzCCC3A6hQkHL3riaHZoyXsqi1IHVNOgUcvTDOS40Itupr7mGrzVQfJ3tOMRE_aBoOn2ll_5abHiMGY6wYBjfxgGieE7b06gDds7lAMZBXKF1N_OFcQL-5d9MSPG4EV6mdsF3XiGm79PbjOyDotFHb85Or3_-BmGY56Sp8a8DX4wzU5WA59Mq6mdeXsA\"}",
+    "method": "PUT",
+    "path": "/v1/sealed-keys"
+  },
+  "status": 200
+}

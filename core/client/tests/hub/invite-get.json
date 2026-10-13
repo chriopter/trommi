@@ -1,7 +1,7 @@
 {
-  "answer": "{\"expires_at\":1791903174623,\"mac\":\"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk\",\"offer\":\"kPJUA_ldrtizweHIN9-2Xm6lFGq1e7r2Mc7OilMegHUPJv1mh2reyNAgGXTPfjq4AQAAAAAAAAAAAAAAAAAAAAAAAAGhNcCP3xxQEVjmMO1fNSREXe4hUmfxZelKgH3_1VAQSYiPviQZSBIMTc9hDQlmXojq4vAKfVrQ3pbR8bs7NmFdatTXlA8AAAAAAAAAAP1ppWsv7bxtwyevwhuVvUV2wz8ChFRcFrZfCEiuLJac\",\"signature\":\"ajdxebGZXGWVGt5xmxqjwDb730Php3rGO4H-yI35zRuR5GCLUu-Sz_unHcsKxLuw14k2_pyWJrBw0PLNuwEVBA\"}",
+  "answer": "{\"expires_at\":1791905598979,\"mac\":\"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk\",\"offer\":\"hfK5r9NrWHN8HaphvJyS95ASdgUuUsBV0JJUVIdcIAbr9gCSdItKhPrI11XTY2djAQAAAAAAAAAAAAAAAAAAAAAAAAGhNeWOAxmHrHQasH_OFtOxGj5KEgrhoYqzGF9mYxH8RmjZzuPqEBEBwbjkURkEb4K7W3Tx_jWkdnbPLLsIrPmTvGP9nggAAAAAAAAAAFc8m-5zIsTEEvPv1IRBfS82mT581hz2tCNO6WDT0xIY\",\"signature\":\"H3Tb4AsMgulYRAaGxUYeqJz-A9bdSIJUAX_NmucsYxQi9TpS2vuN1_loP5MZ41Qkss2UEFX15UKJlgsgSebaCA\"}",
   "asked": {
-    "invite": "Dyb9Zodq3sjQIBl0z346uA",
+    "invite": "6_YAknSLSoT6yNdV02NnYw",
     "route": "get_invite"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/invites/Dyb9Zodq3sjQIBl0z346uA"
+    "path": "/v1/invites/6_YAknSLSoT6yNdV02NnYw"
   },
   "status": 200
 }

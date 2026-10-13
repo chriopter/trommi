@@ -6,7 +6,7 @@
   "content_range": null,
   "name": "account-delete-wait",
   "request": {
-    "body": "{\"password\":{\"auth_key\":\"VSXNmZuMMpwEp-jBdIeZL7m7t78moCfsIeaNUuklhVY\"}}",
+    "body": "{\"password\":{\"auth_key\":\"3r91G5c_08rUpNYBrZk9b0laZN0LNY7ZLK7uEbEooe0\"}}",
     "method": "DELETE",
     "path": "/v1/account"
   },

@@ -1,7 +1,7 @@
 {
-  "answer": "{\"reveal\":\"Dyb9Zodq3sjQIBl0z346uO35eXyZGTZdPUpp8YoeYU0UreXR77xE3p_kiTum73XauL-F-vwmqyVt4wxOGao3wdHcWNy2jr_vh-xzGDwfhy4\",\"signature\":\"aRTfkNZ_lmMhD3dfDCCYKm97D-jfFgaypOyZ4PvH6hJ3-sGf_52GoixZYS5Ivem7j_ebnTDVq_TcVDCZpc0gCw\"}",
+  "answer": "{\"reveal\":\"6_YAknSLSoT6yNdV02NnYxzLzy2CvokV6UUpIVSg8Wi9JTZ1rpy0tnYK1501SzZUvpue2wikcS-Zvo6VJA8mzNCxbxinaixbiXlJcrFkg48\",\"signature\":\"aacCKhEpMIvNOvkb7LwX3BXBWy9veSKBjoKNNeLCMNEGydRNyPF8YjOFcCoPRcS3jqv3nnyg-8Zp2bNKSdqmCg\"}",
   "asked": {
-    "invite": "Dyb9Zodq3sjQIBl0z346uA",
+    "invite": "6_YAknSLSoT6yNdV02NnYw",
     "route": "get_reveal"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/invites/Dyb9Zodq3sjQIBl0z346uA/reveal"
+    "path": "/v1/invites/6_YAknSLSoT6yNdV02NnYw/reveal"
   },
   "status": 200
 }

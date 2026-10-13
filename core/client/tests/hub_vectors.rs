@@ -11,13 +11,13 @@ use trommi_client_core::app::{Header, HttpResponse};
 use trommi_client_core::hub::{
     AccountProof, Answer, ByteRange, ChangeItem, Codec, DeskOnly, EnvelopeItem, Failure, Kdf,
     KdfValue, KitPart, LiveActivity, LogItem, NewAccount, NewPassword, ObjectRoute, Only,
-    PushLevel, PushRegistration, PushTarget, Route, Site, StreamEvent, StreamReader, Timeline,
-    WishKind,
+    PasskeyAssertion, PasskeyRegistration, PushLevel, PushRegistration, PushTarget, Route, Site,
+    StreamEvent, StreamReader, Timeline, WishKind,
 };
 use trommi_core::envelope::Envelope;
 use trommi_core::ids::{
-    base64url_decode, base64url_encode as b64, BoardId, DeviceId, FileId, GroupId, InviteId,
-    ObjectId, RoomId, SessionId, ShareId,
+    base64url_decode, base64url_encode as b64, BoardId, DeviceId, FileId, GroupId, Hash32,
+    InviteId, ObjectId, RoomId, SessionId, ShareId,
 };
 use trommi_core::store::{OutboxEntry, OutboxKind};
 
@@ -224,6 +224,7 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     "RelayMessage" => OutboxKind::RelayMessage,
                     "Envelope" => OutboxKind::Envelope,
                     "KeyPackages" => OutboxKind::KeyPackages,
+                    "SealedKey" => OutboxKind::SealedKey,
                     other => panic!("{name}: a kind this test does not know: {other}"),
                 };
                 let entry = OutboxEntry {
@@ -503,6 +504,14 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                             .and_then(Value::as_str)
                             .map(str::to_owned),
                         row.group.session_id().map(|s| b64(s.as_bytes()))
+                    );
+                    // (a session that is no helper's names no parent, or one of zeros)
+                    assert_eq!(
+                        raw.get("parent")
+                            .and_then(Value::as_str)
+                            .filter(|p| *p != b64(&[0; 16]))
+                            .map(str::to_owned),
+                        row.parent.map(|p| b64(p.as_bytes()))
                     );
                 }
                 assert_eq!((&raw["more"], &raw["after"]), (&more.into(), &after.into()));
@@ -787,19 +796,26 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                 );
             }
             "chat" | "board" => {
-                let id: [u8; 16] = base64url_decode(
-                    asked[if route == "chat" { "session" } else { "board" }]
-                        .as_str()
-                        .unwrap(),
-                )
-                .unwrap()
-                .try_into()
-                .unwrap();
-                let (session, board) = (SessionId::new(id), BoardId::new(id));
+                // (a Chat is a session's, or a card's)
+                let of_card = asked.get("card").is_some();
+                let named = match route {
+                    "chat" if of_card => "card",
+                    "chat" => "session",
+                    _ => "board",
+                };
+                let id: [u8; 16] = base64url_decode(asked[named].as_str().unwrap())
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
+                let (session, board, card) =
+                    (SessionId::new(id), BoardId::new(id), ObjectId::new(id));
                 let limit = asked["limit"].as_u64().unwrap() as u32;
                 let route = match route {
                     "chat" => Route::Chat {
-                        timeline: Timeline::Session(&session),
+                        timeline: match of_card {
+                            true => Timeline::Card(&card),
+                            false => Timeline::Session(&session),
+                        },
                         before: asked["before"].as_u64(),
                         limit,
                     },
@@ -826,12 +842,41 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                         .try_into()
                         .unwrap(),
                 );
+                let bytes = |v: &Value| base64url_decode(v.as_str().unwrap()).unwrap();
+                let head = |v: &Value| {
+                    (
+                        v[0].as_u64().unwrap(),
+                        Hash32::from_slice(&bytes(&v[1])).unwrap(),
+                    )
+                };
+                let frontier: Vec<(DeviceId, u64, Hash32)> = asked
+                    .get("frontier")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .map(|w| {
+                        (
+                            DeviceId::from_slice(&bytes(&w[0])).unwrap(),
+                            w[1].as_u64().unwrap(),
+                            Hash32::from_slice(&bytes(&w[2])).unwrap(),
+                        )
+                    })
+                    .collect();
                 let route = Route::BoardFrontier {
                     board: &board,
-                    frontier: &[],
+                    frontier: &frontier,
                     files: &[],
-                    snapshot: None,
+                    snapshot: asked.get("snapshot").filter(|s| !s.is_null()).map(head),
                 };
+                // (the body recorded names the writers and the snapshot the codec writes)
+                if !frontier.is_empty() {
+                    let (request, _) = Codec.request(&SITE, &route).unwrap();
+                    let (ours, theirs): (Value, Value) = (
+                        serde_json::from_slice(request.body.as_ref().unwrap()).unwrap(),
+                        serde_json::from_str(v["request"]["body"].as_str().unwrap()).unwrap(),
+                    );
+                    assert_eq!(ours, theirs, "{name}");
+                }
                 let Ok(Answer::Pruned { pruned }) = read(&route) else {
                     panic!("{name} is not read")
                 };
@@ -1013,6 +1058,10 @@ fn what_the_real_hub_answered_is_read_without_loss() {
             | "account_passkey_challenge"
             | "put_kit"
             | "put_password"
+            | "put_email"
+            | "passkey_login"
+            | "add_passkey"
+            | "remove_passkey"
             | "delete_account" => {
                 let kit = KitPart {
                     auth_key: [1; 32],
@@ -1035,8 +1084,54 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     token: None,
                     ..SITE
                 };
+                let assertion = PasskeyAssertion {
+                    credential_id: vec![4; 20],
+                    authenticator_data: vec![5; 37],
+                    client_data_json: vec![6; 80],
+                    signature: vec![7; 70],
+                    user_handle: None,
+                };
+                let passkey = PasskeyRegistration {
+                    attestation_object: vec![8; 120],
+                    client_data_json: vec![6; 80],
+                    sealed_copy: [2; 61],
+                    transports: None,
+                };
+                let credential = asked
+                    .get("credential_id")
+                    .map(|c| base64url_decode(c.as_str().unwrap()).unwrap())
+                    .unwrap_or_default();
                 let (site, route) = match route {
                     "create_account" => (&SITE, Route::CreateAccount { account: &new }),
+                    "put_email" => (
+                        &SITE,
+                        Route::PutEmail {
+                            email: "a@b.example",
+                            kit: &kit,
+                            revision: 1,
+                            proof: &proof,
+                        },
+                    ),
+                    "passkey_login" => (
+                        &nobody,
+                        Route::PasskeyLogin {
+                            assertion: &assertion,
+                        },
+                    ),
+                    "add_passkey" => (
+                        &SITE,
+                        Route::AddPasskey {
+                            passkey: &passkey,
+                            proof: &proof,
+                        },
+                    ),
+                    "remove_passkey" => (
+                        &SITE,
+                        Route::RemovePasskey {
+                            credential_id: &credential,
+                            proof: &proof,
+                        },
+                    ),
                     "account" => (&SITE, Route::Account),
                     "account_usage" => (&SITE, Route::AccountUsage),
                     "login" => (
@@ -1120,10 +1215,22 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                                 KdfValue::Number(n) => assert_eq!(raw["kdf"][key], *n),
                             }
                         }
-                        assert_eq!(
-                            raw["passkeys"].as_array().unwrap().len(),
-                            view.passkeys.len()
-                        );
+                        let passkeys = raw["passkeys"].as_array().unwrap();
+                        assert_eq!(passkeys.len(), view.passkeys.len());
+                        for (raw, row) in passkeys.iter().zip(&view.passkeys) {
+                            assert_eq!(raw["credential_id"], b64(&row.credential_id));
+                            assert_eq!(raw["sealed_copy"], b64(&row.sealed_copy));
+                            assert_eq!(raw["created_at"], row.created_at);
+                            assert_eq!(raw["last_used_at"].as_u64(), row.last_used_at);
+                            let transports: Vec<Value> =
+                                row.transports.iter().map(|t| t.as_str().into()).collect();
+                            assert_eq!(
+                                raw.get("transports")
+                                    .cloned()
+                                    .unwrap_or(Value::Array(vec![])),
+                                Value::Array(transports)
+                            );
+                        }
                         let rooms: Vec<Value> = view
                             .rooms
                             .iter()
@@ -1157,6 +1264,13 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                         assert_eq!(raw.get("kit_form").is_some(), challenge.kit_form.is_some());
                     }
                     Ok(Answer::Revision { revision }) => assert_eq!(raw["revision"], revision),
+                    Ok(Answer::PasskeyAdded {
+                        credential_id,
+                        created_at,
+                    }) => {
+                        assert_eq!(raw["credential_id"], b64(&credential_id));
+                        assert_eq!(raw["created_at"], created_at);
+                    }
                     Ok(Answer::Done) => assert_eq!(raw["deleted"], true),
                     other => panic!("{name} is not read: {other:?}"),
                 }
@@ -1325,6 +1439,7 @@ fn what_the_real_hub_answered_is_read_without_loss() {
         "account",
         "account_passkey_challenge",
         "account_usage",
+        "add_passkey",
         "board",
         "board_frontier",
         "chain",
@@ -1354,18 +1469,21 @@ fn what_the_real_hub_answered_is_read_without_loss() {
         "open_recovery",
         "outbox",
         "passkey_challenge",
+        "passkey_login",
         "post_invite",
         "post_invite_request",
         "post_share",
         "push_register",
         "push_remove",
         "push_state",
+        "put_email",
         "put_file",
         "put_kit",
         "put_password",
         "put_reveal",
         "recover",
         "reject",
+        "remove_passkey",
         "room_groups",
         "sealed_keys",
         "sign_out",
@@ -1376,5 +1494,5 @@ fn what_the_real_hub_answered_is_read_without_loss() {
         "wishes",
     ];
     assert_eq!(seen.into_iter().collect::<Vec<_>>(), built);
-    assert!(all.len() >= 90, "{} vectors", all.len());
+    assert!(all.len() >= 105, "{} vectors", all.len());
 }

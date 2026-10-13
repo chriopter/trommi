@@ -1,7 +1,7 @@
 {
   "answer": "{\"pruned\":0}",
   "asked": {
-    "board": "HMRDpyy0rQECH9apWRTXlw",
+    "board": "pAHPyylRjAjOJ3PEDLMOvQ",
     "route": "board_frontier"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": "{\"files\":[],\"frontier\":{}}",
     "method": "POST",
-    "path": "/v1/boards/HMRDpyy0rQECH9apWRTXlw/frontier"
+    "path": "/v1/boards/pAHPyylRjAjOJ3PEDLMOvQ/frontier"
   },
   "status": 200
 }

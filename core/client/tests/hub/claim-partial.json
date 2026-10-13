@@ -1,16 +1,17 @@
 {
-  "answer": "{\"key_packages\":{\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\":\"AAEABQABAAMggFaL_WFO4PZkVK4Jc7FW0ItO7COxViXlxLR5XQkWa1kguOBsMimgxEC5RjLjZN66-dzxB8dCa9umM3lgI_F_ZG0giL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBAAASCIvvJI4-ZZQGCk_pzUYF8Hf1UXFfOu769IRndYxaOYEAIAAQIAAwbwAfACAAoAAgABAQAAAABqzi-_AAAAAH2aQM8AQEBqbH-MIggNW56XH6RHIEyIuRGqD2yEVn6UUJdfvOTPUn97msPJ1yyWdzCje7cki7eLdfPpo5JoOBep9dyGq6UPAEBAQmaRtDsEJdqr4bUDYoM5g-3XlUXnl-q_4Nxr0SXfsIM5hvwueufk7c7dP2BcQT-GckrgSWGlgax8MPUnCxIdAw\"},\"missing\":[\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\"]}",
+  "answer": "{\"key_packages\":{\"5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOig\":\"AAEABQABAAMgkbc7bVFAH513N90yNv-cZXzTYy4BxTtLUfDPseclGmAgQ2VyzAKqKl4wQ7FYT-l2jGI1uRQjAKweNtoQcyL-CR8g5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOigAASDkxbr672qMpoTaXqZ0xXKvyr9iCCEhFSWXGg0Rtyc6KAIAAQIAAwbwAfACAAoAAgABAQAAAABqzj7WAAAAAH2aT-YAQECtw-0TEF7VK0WrmCEB96UG9ykukPXjC91YotS7hCjS5boN1mbuZJL5gfUs2tofcd2VGVuGpMCh3UPA7G2AbyQGAEBA4RDsy3MGnvSvby5kUvFTEAa4bgvArNkAshMgyutq0jMhlvXttheGE_joCfGqavniVnXIhxgh96F59t__bxNgAw\"},\"missing\":[\"PZ4Lk5KziSxl1fndGt1GFisCFaVUntwzSaMu-1JNpV8\"]}",
   "asked": {
     "devices": [
-      "iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA",
-      "6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI"
+      "5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOig",
+      "PZ4Lk5KziSxl1fndGt1GFisCFaVUntwzSaMu-1JNpV8"
     ],
     "partial": true,
     "route": "claim"
   },
+  "content_range": null,
   "name": "claim-partial",
   "request": {
-    "body": "{\"devices\":[\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\",\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\"],\"partial\":true}",
+    "body": "{\"devices\":[\"5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOig\",\"PZ4Lk5KziSxl1fndGt1GFisCFaVUntwzSaMu-1JNpV8\"],\"partial\":true}",
     "method": "POST",
     "path": "/v1/key-packages/claim"
   },

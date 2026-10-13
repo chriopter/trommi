@@ -6,6 +6,7 @@
     "only": "all",
     "route": "changes"
   },
+  "content_range": null,
   "name": "changes-unauthorised",
   "request": {
     "body": null,

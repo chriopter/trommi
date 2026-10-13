@@ -1,12 +1,12 @@
 {
-  "answer": "{\"account\":\"88de01a9-38cd-4b98-ad06-4b54d9ca8123\",\"email\":\"ada-259477fa6180@example.com\",\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"rooms\":[{\"challenge\":\"zweSH5-fP6xKO4qJs7zQfTWLcIqMeg6xCHNMNfccoeo\",\"room_id\":\"kPJUA_ldrtizweHIN9-2Xm6lFGq1e7r2Mc7OilMegHU\",\"sealed_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\"}]}",
+  "answer": "{\"account\":\"7c7d2642-b5b8-4bf2-91f5-8d9559dd329e\",\"email\":\"ada-5f37d96f1ee6@example.com\",\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"rooms\":[{\"challenge\":\"vVtw7sA5vCnYp8jIxViB4g-X5RcAT8yjf--ojZDDELw\",\"room_id\":\"hfK5r9NrWHN8HaphvJyS95ASdgUuUsBV0JJUVIdcIAY\",\"sealed_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\"}]}",
   "asked": {
     "route": "recover"
   },
   "content_range": null,
   "name": "account-recover",
   "request": {
-    "body": "{\"account\":\"ada-259477fa6180@example.com\",\"auth_key\":\"rX8LQqQRyLzKWHrY1624ScjEaqzCZVeYmxw7nWgNrmw\"}",
+    "body": "{\"account\":\"ada-5f37d96f1ee6@example.com\",\"auth_key\":\"6-R4rmkNHczC-sKQgKcJdx0vGdAqQdD7yXGWAV_Aerw\"}",
     "method": "POST",
     "path": "/v1/account/recover"
   },

@@ -1,0 +1,18 @@
+{
+  "answer": "{\"error\":\"forbidden\",\"message\":\"a human device addresses the session's agent device\",\"voided\":true}",
+  "asked": {
+    "epoch": 2,
+    "group": "7I7erCmOZqgyk31dlpJ4jCWPZFMtrFeXp_EWGafQQTunTmY18QQ3BgugwPpkA9X9",
+    "kind": "Envelope",
+    "parts": 1,
+    "route": "outbox"
+  },
+  "content_range": null,
+  "name": "outbox-envelope-voided",
+  "request": {
+    "body": "{\"envelope\":\"AQIBADDsjt6sKY5mqDKTfV2WkniMJY9kUy2sV5en8RYZp9BBO6dOZjXxBDcGC6DA-mQD1f0AAAAAAAAAAkAxkFcoXU384VxAv7l30xI8bgRXqZ2wXdeIabv09uM7AAAAAAAAAASuKFLZ7N-ARO67WN3C37bro52eCQ03jalGAhZdsQqtFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABoTXcc5sBAqdOZjXxBDcGC6DA-mQD1f0A9R14EIISx8tKwzFkQRBr6fijzFnTi63Esk9i1YbafVMyJE8cQU9CYQ45zGeu4Q33qHudChqLu7kpxtCV5_OK5kU7AkWeZpuY40EWER9IDuOWxUydMmYQiswPJKcLQbhFqgb18TeshQ2mkTaxgwpIJRRktltpzRXf-e59fkextLhylufZjt4gMFqCmKHvPMXEUBU3EnLZRjdgRTFFe_viDt4wNUGF7gVsMkJdy4DoTFpgQHpLNF8iNUpz05ZgmXyd9DZ7d1JLdWx3ExeaKmyw40fKd3zEMuunwekG3qUaNJWqqjIzG5nrKKhFnbXOD6PMR443N3pAoTvhD-pi97SNe2T28unu8wjrvRpcJahDLBtjmETgElEwO5clWQiRBUBAezaglkv23FKua8rXMtZdAPvecQ_a7QngnUON203EXmCo_of-ZWE6c7TAezqH_BB4qUBSo5jRr-Fy2pgO2bzgBw\"}",
+    "method": "POST",
+    "path": "/v1/envelopes"
+  },
+  "status": 403
+}
