@@ -276,7 +276,7 @@ fn the_codec_and_the_real_hub_agree() {
         vec![info0, key0, out.commit.clone(), out.group_info.clone(), out.welcome.clone().unwrap_or_default(), key1],
     );
     let Ok(Answer::Outbox(founded)) = outbox(&rec, "outbox-group-founding", &e, None) else { panic!("a session is founded") };
-    assert_eq!(founded.founded, Some(group_id(&group2)));
+    assert_eq!(founded.group, Some(group_id(&group2)));
     w.ada.merge(&group2);
 
     // ---- catch-up from the start, page by page; the same of the live sessions; one group's envelopes
@@ -368,5 +368,203 @@ fn the_codec_and_the_real_hub_agree() {
     let sealed = founder.sealed_key(&new_room, 0, &info, 0, &recovery.hpke_public, true);
     let e = entry(OutboxKind::RoomFounding, Some(&new_room), 0, vec![info, sealed]);
     let Ok(Answer::Outbox(founded)) = outbox(&rec, "outbox-room-founding", &e, None) else { panic!("a room is founded") };
-    assert_eq!(founded.founded, Some(GroupId::room(RoomId::new(new_room))));
+    assert_eq!(founded.room, Some(RoomId::new(new_room)));
+}
+
+/// Signs in through the codec with `key` (a device's, or the room's recovery signature key); returns the token.
+fn sign_in(rec: &Recorder, name: &str, room: &RoomId, key: &openmls_basic_credential::SignatureKeyPair) -> (String, trommi_client_core::hub::Role) {
+    let asked = json!({ "route": "challenge", "room": b64(room.as_bytes()) });
+    let Ok(Answer::Challenge(challenge)) = rec.ask(&format!("challenge-{name}"), &Route::Challenge { room }, asked) else {
+        panic!("a challenge is handed out")
+    };
+    let auth = wire::HubAuth {
+        room_id: *room.as_bytes(),
+        hub: rec.url.as_bytes().to_vec(),
+        device: key.to_public_vec().try_into().unwrap(),
+        challenge,
+    }
+    .bytes();
+    let signature = sign_with_label(key, "TrommiHubAuth", &auth);
+    let asked = json!({ "route": "token", "room": b64(room.as_bytes()) });
+    let route = Route::Token { room, auth: &auth, signature: &signature };
+    match rec.ask(&format!("token-{name}"), &route, asked) {
+        Ok(Answer::Token { token, expires_at, role }) => {
+            assert!(expires_at > 1_700_000_000_000);
+            (token, role)
+        }
+        other => panic!("no token: {other:?}"),
+    }
+}
+
+#[test]
+fn signing_in_and_joining_through_the_codec() {
+    use trommi_client_core::hub::{GroupRowKind, ObjectRoute, Role, WishKind};
+    use trommi_core::ids::{DeviceId, ObjectId};
+
+    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
+    let mut rec = Recorder {
+        port: w.hub.port,
+        url: w.hub.url.clone(),
+        token: None,
+        write: std::env::var("TROMMI_HUB_VECTORS").as_deref() == Ok("write"),
+    };
+    let room = RoomId::new(w.room);
+    let room_group = w.room.to_vec();
+
+    // ---- a room with two main sessions, some content, and an agent that has not read its Welcome
+    let mut agent = w.enrol_agent();
+    let (session, group) = w.found_main(&mut [], Some(&mut agent));
+    let mut other = w.enrol_agent();
+    let (_, group2) = w.found_main(&mut [], Some(&mut other));
+    for text in ["one", "two", "three", "four"] {
+        agent.send(&w.hub, &group, &chat(&session, w.ada.id(), text)).ok();
+    }
+    let card_id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
+    let card = object(wire::KIND_VERSION, card_id, wire::TYPE_CARD, wire::STATE_OPEN, 0, ZERO32, ZERO32);
+    agent.send(&w.hub, &group, &card).ok();
+    w.ada.post_message(&w.hub, &group, b"a stored message", false).ok();
+
+    // ---- the recovery key signs in, reads the room group and posts the join of a new device
+    let (token, role) = sign_in(&rec, "recovery", &room, &w.recovery.sign);
+    assert_eq!(role, Role::Recovery);
+    rec.token = Some(token);
+    let room_id = group_id(&room_group);
+    let asked = json!({ "route": "group_info", "group": b64(&room_group), "epoch": null });
+    let Ok(Answer::GroupInfo { epoch, group_info: base }) = rec.ask("group-info", &Route::GroupInfo { group: &room_id, epoch: None }, asked) else {
+        panic!("the room's GroupInfo is read")
+    };
+    let asked = json!({ "route": "group_info", "group": b64(&room_group), "epoch": 0 });
+    assert!(matches!(
+        rec.ask("group-info-founding", &Route::GroupInfo { group: &room_id, epoch: Some(0) }, asked),
+        Ok(Answer::GroupInfo { epoch: 0, .. })
+    ));
+    let asked = json!({ "route": "group_log", "group": b64(&room_group), "after": 0, "limit": 1, "commits_only": true });
+    let route = Route::GroupLog { group: &room_id, after: 0, limit: 1, commits_only: true };
+    let Ok(Answer::GroupLog { items, more }) = rec.ask("group-log-commits", &route, asked) else { panic!("the room's Commits are read") };
+    assert!(items.len() == 1 && more && items.iter().all(|i| matches!(i, ChangeItem::Commit(_))));
+
+    let now = w.ada.room_now();
+    assert_eq!(epoch, now.0);
+    let mut dana = Dev::new();
+    dana.room = w.room;
+    let out = dana.external_join(&base, now);
+    let auth = recovery_auth(&w.recovery.sign, &out, &base, now, &dana.id());
+    let key = dana.sealed_key(&room_group, out.epoch + 1, &out.group_info, out.epoch, &w.recovery.hpke_public, true);
+    let e = entry(OutboxKind::ExternalCommit, Some(&room_group), out.epoch, vec![out.commit.clone(), out.group_info.clone(), key, auth]);
+    let joined = rec.ask("outbox-external-commit", &Route::Outbox { room: &room, entry: &e, extra: None }, asked_entry(&e));
+    assert!(matches!(&joined, Ok(Answer::Outbox(a)) if a.epoch == Some(out.epoch + 1)), "{joined:?}");
+
+    // ---- the new device signs in as itself, lists the room's groups and joins the sessions in one request
+    let (token, role) = sign_in(&rec, "human", &room, &dana.signer);
+    assert_eq!(role, Role::Human);
+    rec.token = Some(token.clone());
+    dana.token = Some(token);
+    let (mut after, mut pages, mut rows) = (0, 0, Vec::new());
+    loop {
+        let asked = json!({ "route": "room_groups", "room": b64(&w.room), "after": after, "limit": 2 });
+        let name = format!("room-groups-{pages}");
+        let Ok(Answer::RoomGroups { items, more, after: next }) = rec.ask(&name, &Route::RoomGroups { room: &room, after, limit: 2 }, asked) else {
+            panic!("{name} is read")
+        };
+        rows.extend(items);
+        (after, pages) = (next, pages + 1);
+        if !more {
+            break;
+        }
+    }
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].kind, GroupRowKind::Room);
+    assert_eq!(rows[0].leaves.len(), 2, "the founder and the device that joined");
+    assert!(rows[1..].iter().all(|r| r.kind == GroupRowKind::Main && r.live && r.parent.is_none()));
+
+    let nowhere: [u8; 48] = [&w.room[..], &random::<16>()[..]].concat().try_into().unwrap();
+    let sessions = [group_id(&group), group_id(&group2), group_id(&nowhere)];
+    let asked = json!({ "route": "groups_read", "groups": sessions.iter().map(|g| b64(g.as_bytes())).collect::<Vec<_>>() });
+    let Ok(Answer::GroupsRead(read)) = rec.ask("groups-read", &Route::GroupsRead { groups: &sessions }, asked) else {
+        panic!("the sessions are read in one request")
+    };
+    assert_eq!(read.len(), 3);
+    assert_eq!(read[2], Err(Failure::Refused { status: 404, code: Some("not-found".into()) }));
+    let now = dana.room_now();
+    let mut joins = Vec::new();
+    for (bytes, one) in [&group, &group2].into_iter().zip(&read) {
+        let one = one.as_ref().expect("a session the new device may read");
+        assert!(one.complete && one.epoch == 1 && one.log.len() == 1 && one.founding.is_some());
+        let out = dana.external_join(&one.info, now);
+        let auth = recovery_auth(&w.recovery.sign, &out, &one.info, now, &dana.id());
+        let key = dana.sealed_key(bytes, out.epoch + 1, &out.group_info, now.0, &w.recovery.hpke_public, true);
+        joins.push(entry(OutboxKind::ExternalCommit, Some(bytes), out.epoch, vec![out.commit, out.group_info, key, auth]));
+    }
+    let asked_joins = |entries: &[OutboxEntry]| {
+        json!({ "route": "joins", "entries": entries.iter().map(|e| json!({ "group": b64(e.group.unwrap().as_bytes()), "epoch": e.epoch })).collect::<Vec<_>>() })
+    };
+    let Ok(Answer::Joins(answers)) = rec.ask("joins", &Route::Joins { entries: &joins }, asked_joins(&joins)) else {
+        panic!("the joins are answered in their places")
+    };
+    assert!(matches!(&answers[..], [Ok(a), Ok(b)] if a.epoch == Some(2) && b.epoch == Some(2)), "{answers:?}");
+    // one that the hub refuses, in its place
+    let stray = [entry(OutboxKind::ExternalCommit, Some(&nowhere), 0, vec![vec![1; 600], vec![2; 600], vec![3; 100], vec![4; 100]])];
+    let Ok(Answer::Joins(answers)) = rec.ask("joins-refused", &Route::Joins { entries: &stray }, asked_joins(&stray)) else {
+        panic!("a refusal in its place")
+    };
+    assert!(matches!(&answers[..], [Err(Failure::Refused { code: Some(_), .. })]), "{answers:?}");
+
+    // ---- the log with a message, a sender's chain, an object's envelopes
+    let session_group = group_id(&group);
+    let asked = json!({ "route": "group_log", "group": b64(&group), "after": 0, "limit": 200, "commits_only": false });
+    let route = Route::GroupLog { group: &session_group, after: 0, limit: 200, commits_only: false };
+    let Ok(Answer::GroupLog { items, more }) = rec.ask("group-log", &route, asked) else { panic!("the session's log is read") };
+    assert!(!more && items.iter().any(|i| matches!(i, ChangeItem::Message(_))));
+    let rejected = items.iter().rev().find_map(|i| match i {
+        ChangeItem::Commit(l) => Some(l.n),
+        _ => None,
+    });
+    let sender = DeviceId::new(agent.id());
+    let asked = json!({ "route": "chain", "group": b64(&group), "sender": b64(&agent.id()), "after": 1, "limit": 3 });
+    let route = Route::Chain { group: &session_group, sender: &sender, after: 1, limit: 3 };
+    let Ok(Answer::Chain { items, more }) = rec.ask("chain", &route, asked) else { panic!("a chain is read") };
+    assert_eq!((items.iter().map(|i| i.seq).collect::<Vec<_>>(), more), (vec![2, 3, 4], true));
+    let object_id = ObjectId::new(card_id);
+    let asked = json!({ "route": "object", "kind": "cards", "object": b64(&card_id), "after": 0, "limit": 10 });
+    let route = Route::Object { route: ObjectRoute::Cards, object: &object_id, after: 0, limit: 10 };
+    let Ok(Answer::Object(card)) = rec.ask("object-card", &route, asked) else { panic!("a card's envelopes are read") };
+    assert_eq!((card.items.len(), card.more, card.group), (1, false, session_group));
+
+    // ---- KeyPackages claimed: all or nothing, and with `partial` the devices the hub holds none of
+    let devices = [DeviceId::new(agent.id()), DeviceId::new(dana.id())];
+    let asked_claim = |devices: &[DeviceId], partial: bool| {
+        json!({ "route": "claim", "devices": devices.iter().map(|d| b64(d.as_bytes())).collect::<Vec<_>>(), "partial": partial })
+    };
+    let one = &devices[..1];
+    let Ok(Answer::Claimed { key_packages, missing }) = rec.ask("claim", &Route::ClaimKeyPackages { devices: one, partial: false }, asked_claim(one, false)) else {
+        panic!("a KeyPackage is claimed")
+    };
+    assert!(key_packages.len() == 1 && key_packages[0].0 == devices[0] && missing.is_empty());
+    let Ok(Answer::Claimed { key_packages, missing }) = rec.ask("claim-partial", &Route::ClaimKeyPackages { devices: &devices, partial: true }, asked_claim(&devices, true)) else {
+        panic!("a partial claim names what is missing")
+    };
+    assert_eq!((key_packages.len(), missing), (1, vec![devices[1]]));
+    let refused = rec.ask("claim-refused", &Route::ClaimKeyPackages { devices: &devices, partial: false }, asked_claim(&devices, false));
+    assert!(matches!(refused, Err(Failure::Refused { code: Some(_), .. })), "{refused:?}");
+
+    // ---- a wish, the list of wishes, a Commit rejected
+    let asked = json!({ "route": "wish", "kind": "handover" });
+    let wished = rec.ask("wish", &Route::Wish { kind: WishKind::Handover, group: Some(&session_group), key_package: None }, asked);
+    let Ok(Answer::Wished { id }) = wished else { panic!("a wish is taken: {wished:?}") };
+    let asked = json!({ "route": "reject", "group": b64(&group), "n": rejected });
+    let done = rec.ask("reject", &Route::RejectCommit { group: &session_group, n: rejected.unwrap() }, asked);
+    assert_eq!(done.ok(), Some(Answer::Done));
+    let Ok(Answer::Wishes(list)) = rec.ask("wishes", &Route::Wishes, json!({ "route": "wishes" })) else { panic!("the wishes are listed") };
+    assert!(list.iter().any(|w| w.id == id) && list.iter().any(|w| w.n == rejected && w.committer.is_some()), "{list:?}");
+
+    // ---- the Welcome that waits for the agent of the second session
+    rec.token = other.token.clone();
+    let Ok(Answer::Welcomes(welcomes)) = rec.ask("welcomes", &Route::Welcomes { after: 0 }, json!({ "route": "welcomes", "after": 0 })) else {
+        panic!("the Welcomes are read")
+    };
+    assert_eq!(welcomes.len(), 1);
+    assert_eq!(welcomes[0].group, group_id(&group2));
+    let after = welcomes[0].id;
+    let none = rec.ask("welcomes-none", &Route::Welcomes { after }, json!({ "route": "welcomes", "after": after }));
+    assert_eq!(none.ok(), Some(Answer::Welcomes(vec![])));
 }

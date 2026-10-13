@@ -1,0 +1,18 @@
+{
+  "answer": "{\"device\":\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\",\"error\":\"not-found\",\"message\":\"no KeyPackage for a device\"}",
+  "asked": {
+    "devices": [
+      "iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA",
+      "6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI"
+    ],
+    "partial": false,
+    "route": "claim"
+  },
+  "name": "claim-refused",
+  "request": {
+    "body": "{\"devices\":[\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\",\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\"]}",
+    "method": "POST",
+    "path": "/v1/key-packages/claim"
+  },
+  "status": 404
+}

@@ -5,7 +5,7 @@
 //! on. Byte strings are `Vec<u8>`; `Debug` of anything that holds content, a key or a token shows its kind only.
 
 use super::Failure;
-use trommi_core::ids::{DeviceId, FileId, GroupId, InviteId, ObjectId, RoomId};
+use trommi_core::ids::{DeviceId, FileId, GroupId, InviteId, ObjectId, RoomId, SessionId};
 use trommi_core::store::OutboxEntry;
 
 /// Where and as whom a request goes. The codec adds nothing of its own: no token it remembers, no clock.
@@ -282,9 +282,10 @@ pub struct OutboxAnswer {
     pub epoch: Option<u64>,
     /// `Message`: its number in the group's log; none for a relayed one.
     pub n: Option<u64>,
-    /// `RoomFounding`, `GroupFounding`: the group the hub founded, which is the entry's own when it names one
-    /// (checked).
-    pub founded: Option<GroupId>,
+    /// `RoomFounding`: the room the hub founded, which is the entry's own when it names one (checked).
+    pub room: Option<RoomId>,
+    /// `GroupFounding`: the session group the hub founded, which is the entry's own when it names one (checked).
+    pub group: Option<GroupId>,
     /// `RecoveryCommit`: whether the part was kept (false: the same part came before).
     pub kept: Option<bool>,
     /// `RecoveryFinish`: what the finish published.
@@ -307,8 +308,8 @@ pub struct GroupRead {
     /// The current GroupInfo and its epoch.
     pub info: Vec<u8>,
     pub epoch: u64,
-    /// The GroupInfo of epoch 0; `info` itself when the group is at epoch 0.
-    pub founding: Vec<u8>,
+    /// The GroupInfo of epoch 0; `None` when the group is at epoch 0 (then `info` is it).
+    pub founding: Option<Vec<u8>>,
     /// The group's Commits, oldest first: one per epoch from 0, at most up to `epoch` (checked).
     pub log: Vec<LogItem>,
     /// `log` reaches `epoch`. False: the Commits did not fit the first page; that group is read alone.
@@ -326,6 +327,8 @@ pub enum GroupRowKind {
 pub struct GroupRow {
     pub group: GroupId,
     pub kind: GroupRowKind,
+    /// A helper session: its main session. `None` for the room group and a main session.
+    pub parent: Option<SessionId>,
     pub epoch: u64,
     pub room_epoch: u64,
     pub live: bool,
@@ -352,6 +355,8 @@ pub struct WishRow {
     pub key_package: Option<Vec<u8>>,
     pub n: Option<u64>,
     pub committer: Option<DeviceId>,
+    /// When the hub took it; told by `GET /v1/requests`, not by the stream.
+    pub at: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -374,8 +379,9 @@ pub enum Answer {
     },
     Changes(ChangesPage),
     Welcomes(Vec<WelcomeRow>),
+    /// Commits and messages of one group, as `ChangeItem`s (never an envelope).
     GroupLog {
-        items: Vec<LogItem>,
+        items: Vec<ChangeItem>,
         more: bool,
     },
     Chain {

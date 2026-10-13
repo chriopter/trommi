@@ -1,10 +1,11 @@
 //! The codec's two calls: a route to its request, an answer to its typed result.
 
 use super::json::{bad, Read};
-use super::limits::{CAP_LIST, CAP_WRITE};
+use super::limits::{CAP_DESK, CAP_GROUP_INFO, CAP_LIST, CAP_WRITE};
 use super::types::{Answer, Route, Site};
-use super::{answer, changes, desk, outbox, stream, Failure};
+use super::{answer, changes, content, desk, groups, outbox, signin, stream, Failure};
 use crate::app::io::{HttpRequest, HttpResponse};
+use trommi_core::ids::GroupId;
 
 /// The codec's note of what was asked, kept by the engine beside the pending request and handed back with the
 /// answer: the answer is checked against it.
@@ -18,6 +19,20 @@ enum Kind {
     DeskBrief { since: Option<u64> },
     Outbox(outbox::Asked),
     KeyPackagesHeld,
+    Challenge,
+    Token,
+    Welcomes { after: u64 },
+    GroupLog(groups::LogAsked),
+    GroupInfo { epoch: Option<u64> },
+    Joins { epochs: Vec<u64> },
+    GroupsRead { groups: Vec<GroupId> },
+    Claim(groups::ClaimAsked),
+    RoomGroups(groups::GroupsAsked),
+    Chain(content::PageAsked),
+    Object(content::PageAsked),
+    Wish,
+    Wishes,
+    RejectCommit,
 }
 
 /// The hub's routes without I/O. Stateless: everything a call needs is in its arguments.
@@ -25,18 +40,6 @@ enum Kind {
 pub struct Codec;
 
 impl Codec {
-    /// Whether this codec builds `route` yet (the rest follow in the order the engine needs them).
-    pub fn builds(route: &Route<'_>) -> bool {
-        matches!(
-            route,
-            Route::Changes { .. }
-                | Route::Stream { .. }
-                | Route::DeskBrief { .. }
-                | Route::Outbox { .. }
-                | Route::KeyPackagesHeld
-        )
-    }
-
     /// The whole request of a route: method, absolute URL, headers (the bearer and `trommi-client` among them),
     /// body, timeout, class and the most its answer may hold. `Err` ([`Failure::BadAnswer`], "the request: …")
     /// only for a route that cannot be asked as given.
@@ -60,7 +63,79 @@ impl Codec {
                 (request, Kind::Outbox(asked))
             }
             Route::KeyPackagesHeld => (outbox::held_request(site)?, Kind::KeyPackagesHeld),
-            _ => return bad("the request: a route this codec does not build yet"),
+            Route::Challenge { room } => (signin::challenge_request(site, room)?, Kind::Challenge),
+            Route::Token {
+                room,
+                auth,
+                signature,
+            } => (
+                signin::token_request(site, room, auth, signature)?,
+                Kind::Token,
+            ),
+            Route::Welcomes { after } => (
+                groups::welcomes_request(site, after)?,
+                Kind::Welcomes { after },
+            ),
+            Route::GroupLog {
+                group,
+                after,
+                limit,
+                commits_only,
+            } => {
+                let (request, asked) =
+                    groups::log_request(site, group, after, limit, commits_only)?;
+                (request, Kind::GroupLog(asked))
+            }
+            Route::GroupInfo { group, epoch } => (
+                groups::info_request(site, group, epoch)?,
+                Kind::GroupInfo { epoch },
+            ),
+            Route::Joins { entries } => {
+                let (request, epochs) = groups::joins_request(site, entries)?;
+                (request, Kind::Joins { epochs })
+            }
+            Route::GroupsRead { groups } => {
+                let (request, groups) = groups::read_request(site, groups)?;
+                (request, Kind::GroupsRead { groups })
+            }
+            Route::ClaimKeyPackages { devices, partial } => {
+                let (request, asked) = groups::claim_request(site, devices, partial)?;
+                (request, Kind::Claim(asked))
+            }
+            Route::RoomGroups { room, after, limit } => {
+                let (request, asked) = groups::groups_request(site, room, after, limit)?;
+                (request, Kind::RoomGroups(asked))
+            }
+            Route::Chain {
+                group,
+                sender,
+                after,
+                limit,
+            } => {
+                let (request, asked) = content::chain_request(site, group, sender, after, limit)?;
+                (request, Kind::Chain(asked))
+            }
+            Route::Object {
+                route,
+                object,
+                after,
+                limit,
+            } => {
+                let (request, asked) = content::object_request(site, route, object, after, limit)?;
+                (request, Kind::Object(asked))
+            }
+            Route::Wish {
+                kind,
+                group,
+                key_package,
+            } => (
+                groups::wish_request(site, kind, group, key_package)?,
+                Kind::Wish,
+            ),
+            Route::Wishes => (groups::wishes_request(site)?, Kind::Wishes),
+            Route::RejectCommit { group, n } => {
+                (groups::reject_request(site, group, n)?, Kind::RejectCommit)
+            }
         };
         Ok((request, Expect(kind)))
     }
@@ -85,6 +160,25 @@ impl Codec {
                 }
             }
             Kind::Stream => return stream_has_no_answer(),
+            Kind::Challenge => signin::challenge(&answer(response, CAP_WRITE)?)?,
+            Kind::Token => signin::token(&answer(response, CAP_WRITE)?)?,
+            Kind::Welcomes { after } => groups::welcomes(*after, &answer(response, CAP_LIST)?)?,
+            Kind::GroupLog(asked) => groups::log(asked, &answer(response, CAP_LIST)?)?,
+            Kind::GroupInfo { epoch } => groups::info(*epoch, &answer(response, CAP_GROUP_INFO)?)?,
+            Kind::Joins { epochs } => groups::joins(epochs, &answer(response, CAP_WRITE)?)?,
+            Kind::GroupsRead { groups } => groups::read(groups, &answer(response, CAP_LIST)?)?,
+            Kind::Claim(asked) => groups::claimed(asked, &answer(response, CAP_DESK)?)?,
+            Kind::RoomGroups(asked) => groups::groups(asked, &answer(response, CAP_LIST)?)?,
+            Kind::Chain(asked) => content::chain(asked, &answer(response, CAP_LIST)?)?,
+            Kind::Object(asked) => content::object(asked, &answer(response, CAP_LIST)?)?,
+            Kind::Wish => Answer::Wished {
+                id: groups::wished(&answer(response, CAP_WRITE)?)?,
+            },
+            Kind::Wishes => groups::wishes(&answer(response, CAP_LIST)?)?,
+            Kind::RejectCommit => {
+                groups::wished(&answer(response, CAP_WRITE)?)?;
+                Answer::Done
+            }
         })
     }
 

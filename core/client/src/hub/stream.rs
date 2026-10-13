@@ -399,5 +399,6 @@ pub(crate) fn wish_row(o: super::json::Obj<'_>) -> Read<WishRow> {
             .maybe("committer")
             .map(|v| v.id(DeviceId::from_slice, "a request's committer"))
             .transpose()?,
+        at: o.maybe("at").map(|v| v.int("a request's at")).transpose()?,
     })
 }

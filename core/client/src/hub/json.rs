@@ -230,6 +230,12 @@ impl Json {
         }
     }
 
+    /// Exactly `N` bytes.
+    pub(crate) fn fixed<const N: usize>(&self, why: &'static str) -> Read<[u8; N]> {
+        let bytes = self.bytes(N, N, why)?;
+        <[u8; N]>::try_from(&bytes.0[..]).or(bad(why))
+    }
+
     /// An id of the protocol core: bytes of its one length.
     pub(crate) fn id<T, E>(&self, from: fn(&[u8]) -> Result<T, E>, why: &'static str) -> Read<T> {
         let bytes = self.bytes(1, 48, why)?;

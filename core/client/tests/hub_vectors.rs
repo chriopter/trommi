@@ -9,10 +9,12 @@
 use serde_json::Value;
 use trommi_client_core::app::{Header, HttpResponse};
 use trommi_client_core::hub::{
-    Answer, ChangeItem, Codec, EnvelopeItem, Failure, LogItem, Only, Route, Site, StreamEvent,
-    StreamReader,
+    Answer, ChangeItem, Codec, EnvelopeItem, Failure, LogItem, ObjectRoute, Only, Route, Site,
+    StreamEvent, StreamReader, WishKind,
 };
-use trommi_core::ids::{base64url_decode, base64url_encode as b64, GroupId, RoomId};
+use trommi_core::ids::{
+    base64url_decode, base64url_encode as b64, DeviceId, GroupId, ObjectId, RoomId,
+};
 use trommi_core::store::{OutboxEntry, OutboxKind};
 
 const SITE: Site<'static> = Site {
@@ -213,6 +215,7 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     "RoomFounding" => OutboxKind::RoomFounding,
                     "GroupFounding" => OutboxKind::GroupFounding,
                     "Commit" => OutboxKind::Commit,
+                    "ExternalCommit" => OutboxKind::ExternalCommit,
                     "Message" => OutboxKind::Message,
                     "RelayMessage" => OutboxKind::RelayMessage,
                     "Envelope" => OutboxKind::Envelope,
@@ -306,13 +309,18 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     answer.unused.map(u64::from),
                     "{name}"
                 );
-                let founded = raw
-                    .get("room_id")
-                    .or(raw.get("group_id"))
-                    .and_then(Value::as_str);
                 assert_eq!(
-                    founded.map(str::to_owned),
-                    answer.founded.map(|g| b64(g.as_bytes())),
+                    raw.get("room_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    answer.room.map(|r| b64(r.as_bytes())),
+                    "{name}"
+                );
+                assert_eq!(
+                    raw.get("group_id")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    answer.group.map(|g| b64(g.as_bytes())),
                     "{name}"
                 );
             }
@@ -371,17 +379,375 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     }
                 }
             }
+            "challenge" | "token" => {
+                let room =
+                    RoomId::from_slice(&base64url_decode(asked["room"].as_str().unwrap()).unwrap())
+                        .unwrap();
+                let nobody = Site {
+                    token: None,
+                    ..SITE
+                };
+                let route = match route {
+                    "challenge" => Route::Challenge { room: &room },
+                    _ => Route::Token {
+                        room: &room,
+                        auth: &[1; 100],
+                        signature: &[2; 64],
+                    },
+                };
+                let (request, expect) = Codec.request(&nobody, &route).unwrap();
+                assert_eq!(
+                    request.url.strip_prefix(SITE.url),
+                    v["request"]["path"].as_str(),
+                    "{name}"
+                );
+                match Codec.answer(&expect, &response) {
+                    Ok(Answer::Challenge(challenge)) => {
+                        assert_eq!(raw["challenge"], b64(&challenge))
+                    }
+                    Ok(Answer::Token {
+                        token,
+                        expires_at,
+                        role,
+                    }) => {
+                        assert_eq!(raw["token"], token);
+                        assert_eq!(raw["expires_at"], expires_at);
+                        assert_eq!(raw["role"], format!("{role:?}").to_lowercase());
+                    }
+                    other => panic!("{name} is not read: {other:?}"),
+                }
+            }
+            "group_info" => {
+                let g = group(&asked["group"]);
+                let route = Route::GroupInfo {
+                    group: &g,
+                    epoch: asked["epoch"].as_u64(),
+                };
+                let Ok(Answer::GroupInfo { epoch, group_info }) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                assert_eq!(raw["epoch"], epoch);
+                assert_eq!(raw["group_info"], b64(&group_info));
+            }
+            "group_log" => {
+                let g = group(&asked["group"]);
+                let route = Route::GroupLog {
+                    group: &g,
+                    after: asked["after"].as_u64().unwrap(),
+                    limit: asked["limit"].as_u64().unwrap() as u32,
+                    commits_only: asked["commits_only"].as_bool().unwrap(),
+                };
+                let Ok(Answer::GroupLog { items, more }) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                let list = raw["items"].as_array().unwrap();
+                assert_eq!(list.len(), items.len(), "{name}");
+                for (raw, item) in list.iter().zip(&items) {
+                    same_change(raw, item);
+                }
+                assert_eq!(raw["more"], more);
+            }
+            "welcomes" => {
+                let route = Route::Welcomes {
+                    after: asked["after"].as_u64().unwrap(),
+                };
+                let Ok(Answer::Welcomes(rows)) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                let list = raw.as_array().unwrap();
+                assert_eq!(list.len(), rows.len(), "{name}");
+                for (raw, row) in list.iter().zip(&rows) {
+                    assert_eq!(raw["id"], row.id);
+                    assert_eq!(raw["group_id"], b64(row.group.as_bytes()));
+                    assert_eq!(raw["welcome"], b64(&row.welcome));
+                    assert_eq!(raw["at"], row.at);
+                }
+            }
+            "room_groups" => {
+                let room =
+                    RoomId::from_slice(&base64url_decode(asked["room"].as_str().unwrap()).unwrap())
+                        .unwrap();
+                let route = Route::RoomGroups {
+                    room: &room,
+                    after: asked["after"].as_u64().unwrap(),
+                    limit: asked["limit"].as_u64().unwrap() as u32,
+                };
+                let Ok(Answer::RoomGroups { items, more, after }) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                let list = raw["items"].as_array().unwrap();
+                assert_eq!(list.len(), items.len(), "{name}");
+                for (raw, row) in list.iter().zip(&items) {
+                    assert_eq!(raw["group_id"], b64(row.group.as_bytes()));
+                    assert_eq!(raw["kind"], format!("{:?}", row.kind).to_lowercase());
+                    assert_eq!(
+                        (&raw["epoch"], &raw["room_epoch"]),
+                        (&row.epoch.into(), &row.room_epoch.into())
+                    );
+                    assert_eq!(
+                        (&raw["live"], &raw["stale"]),
+                        (&row.live.into(), &row.stale.into())
+                    );
+                    let leaves: Vec<Value> = row
+                        .leaves
+                        .iter()
+                        .map(|l| b64(l.as_bytes()).into())
+                        .collect();
+                    assert_eq!(raw["leaves"], Value::Array(leaves));
+                    assert_eq!(
+                        raw.get("session_id")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        row.group.session_id().map(|s| b64(s.as_bytes()))
+                    );
+                }
+                assert_eq!((&raw["more"], &raw["after"]), (&more.into(), &after.into()));
+            }
+            "groups_read" => {
+                let groups: Vec<GroupId> = asked["groups"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(group)
+                    .collect();
+                let Ok(Answer::GroupsRead(rows)) = read(&Route::GroupsRead { groups: &groups })
+                else {
+                    panic!("{name} is not read")
+                };
+                let list = raw["groups"].as_array().unwrap();
+                assert_eq!(list.len(), rows.len(), "{name}");
+                for (raw, row) in list.iter().zip(&rows) {
+                    match row {
+                        Err(failure) => {
+                            let code = raw["error"].as_str().map(str::to_owned);
+                            let status = raw["status"].as_u64().unwrap() as u16;
+                            assert_eq!(failure, &Failure::Refused { status, code });
+                        }
+                        Ok(row) => {
+                            assert_eq!(raw["group"], b64(row.group.as_bytes()));
+                            assert_eq!(raw["info"]["epoch"], row.epoch);
+                            assert_eq!(raw["info"]["group_info"], b64(&row.info));
+                            assert_eq!(
+                                raw["founding"]["group_info"].as_str().map(str::to_owned),
+                                row.founding.as_deref().map(b64)
+                            );
+                            let log = raw["log"]["items"].as_array().unwrap();
+                            assert_eq!(log.len(), row.log.len(), "{name}");
+                            for (raw, item) in log.iter().zip(&row.log) {
+                                same_log(raw, item);
+                            }
+                            assert!(row.complete);
+                        }
+                    }
+                }
+            }
+            "joins" => {
+                let entries: Vec<OutboxEntry> = asked["entries"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|e| OutboxEntry {
+                        id: 1,
+                        kind: OutboxKind::ExternalCommit,
+                        group: Some(group(&e["group"])),
+                        epoch: e["epoch"].as_u64().unwrap(),
+                        parts: vec![vec![1]; 4],
+                    })
+                    .collect();
+                let Ok(Answer::Joins(answers)) = read(&Route::Joins { entries: &entries }) else {
+                    panic!("{name} is not read")
+                };
+                let list = raw["answers"].as_array().unwrap();
+                assert_eq!(list.len(), answers.len(), "{name}");
+                for (raw, answer) in list.iter().zip(&answers) {
+                    match answer {
+                        Ok(answer) => {
+                            assert_eq!(raw["epoch"].as_u64(), answer.epoch);
+                            assert_eq!(raw["change"].as_u64(), answer.change);
+                        }
+                        Err(failure) => {
+                            let code = raw["error"].as_str().map(str::to_owned);
+                            let status = raw["status"].as_u64().unwrap() as u16;
+                            assert_eq!(failure, &Failure::Refused { status, code });
+                        }
+                    }
+                }
+            }
+            "chain" => {
+                let g = group(&asked["group"]);
+                let sender = DeviceId::from_slice(
+                    &base64url_decode(asked["sender"].as_str().unwrap()).unwrap(),
+                )
+                .unwrap();
+                let route = Route::Chain {
+                    group: &g,
+                    sender: &sender,
+                    after: asked["after"].as_u64().unwrap(),
+                    limit: asked["limit"].as_u64().unwrap() as u32,
+                };
+                let Ok(Answer::Chain { items, more }) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                let list = raw["items"].as_array().unwrap();
+                assert_eq!(list.len(), items.len(), "{name}");
+                for (raw, item) in list.iter().zip(&items) {
+                    assert_eq!(raw["seq"], item.seq);
+                    same_envelope(raw, &item.item);
+                    assert_eq!(
+                        raw.get("cut").and_then(Value::as_bool).unwrap_or(false),
+                        item.item.cut
+                    );
+                }
+                assert_eq!(raw["more"], more);
+            }
+            "object" => {
+                let object = ObjectId::from_slice(
+                    &base64url_decode(asked["object"].as_str().unwrap()).unwrap(),
+                )
+                .unwrap();
+                let route = Route::Object {
+                    route: ObjectRoute::Cards,
+                    object: &object,
+                    after: asked["after"].as_u64().unwrap(),
+                    limit: asked["limit"].as_u64().unwrap() as u32,
+                };
+                let Ok(Answer::Object(got)) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                assert_eq!(raw["object_id"], b64(got.object.as_bytes()));
+                assert_eq!(raw["group_id"], b64(got.group.as_bytes()));
+                let list = raw["items"].as_array().unwrap();
+                assert_eq!(list.len(), got.items.len(), "{name}");
+                for (raw, item) in list.iter().zip(&got.items) {
+                    same_envelope(raw, item);
+                }
+                assert_eq!(raw["more"], got.more);
+            }
+            "claim" => {
+                let devices: Vec<DeviceId> = asked["devices"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|d| {
+                        DeviceId::from_slice(&base64url_decode(d.as_str().unwrap()).unwrap())
+                            .unwrap()
+                    })
+                    .collect();
+                let route = Route::ClaimKeyPackages {
+                    devices: &devices,
+                    partial: asked["partial"].as_bool().unwrap(),
+                };
+                if status != 200 {
+                    assert!(
+                        matches!(read(&route), Err(Failure::Refused { code: Some(_), .. })),
+                        "{name}"
+                    );
+                    continue;
+                }
+                let Ok(Answer::Claimed {
+                    key_packages,
+                    missing,
+                }) = read(&route)
+                else {
+                    panic!("{name} is not read")
+                };
+                assert_eq!(
+                    raw["key_packages"].as_object().unwrap().len(),
+                    key_packages.len(),
+                    "{name}"
+                );
+                for (device, bytes) in &key_packages {
+                    assert_eq!(raw["key_packages"][b64(device.as_bytes())], b64(bytes));
+                }
+                let named: Vec<Value> = missing.iter().map(|d| b64(d.as_bytes()).into()).collect();
+                assert_eq!(
+                    raw.get("missing").cloned().unwrap_or(Value::Array(vec![])),
+                    Value::Array(named)
+                );
+            }
+            "wish" => {
+                let g = GroupId::room(RoomId::new([1; 32]));
+                let route = Route::Wish {
+                    kind: WishKind::Handover,
+                    group: Some(&g),
+                    key_package: None,
+                };
+                let (request, expect) = Codec.request(&SITE, &route).unwrap();
+                assert_eq!(
+                    request.url.strip_prefix(SITE.url),
+                    v["request"]["path"].as_str()
+                );
+                let Ok(Answer::Wished { id }) = Codec.answer(&expect, &response) else {
+                    panic!("{name} is not read")
+                };
+                assert_eq!(raw["id"], id);
+            }
+            "reject" => {
+                let g = group(&asked["group"]);
+                let route = Route::RejectCommit {
+                    group: &g,
+                    n: asked["n"].as_u64().unwrap(),
+                };
+                assert_eq!(read(&route), Ok(Answer::Done), "{name}");
+                assert!(raw["id"].is_u64());
+            }
+            "wishes" => {
+                let Ok(Answer::Wishes(rows)) = read(&Route::Wishes) else {
+                    panic!("{name} is not read")
+                };
+                let list = raw.as_array().unwrap();
+                assert_eq!(list.len(), rows.len(), "{name}");
+                for (raw, row) in list.iter().zip(&rows) {
+                    assert_eq!(raw["id"], row.id);
+                    assert_eq!(raw["device"], b64(row.device.as_bytes()));
+                    assert_eq!(raw["kind"], format!("{:?}", row.kind).to_lowercase());
+                    assert_eq!(raw["at"].as_u64(), row.at);
+                    assert_eq!(raw.get("n").and_then(Value::as_u64), row.n);
+                    assert_eq!(
+                        raw.get("group_id")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        row.group.map(|g| b64(g.as_bytes()))
+                    );
+                    assert_eq!(
+                        raw.get("committer")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        row.committer.map(|d| b64(d.as_bytes()))
+                    );
+                    assert_eq!(
+                        raw.get("key_package")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        row.key_package.as_deref().map(b64)
+                    );
+                }
+            }
             other => panic!("{name}: a route this test does not know: {other}"),
         }
     }
-    // every route that is built has a vector of the real hub
+    // every route has a vector of the real hub
     let built = [
+        "chain",
+        "challenge",
         "changes",
+        "claim",
         "desk_brief",
+        "group_info",
+        "group_log",
+        "groups_read",
+        "joins",
         "key_packages_held",
+        "object",
         "outbox",
+        "reject",
+        "room_groups",
         "stream",
+        "token",
+        "welcomes",
+        "wish",
+        "wishes",
     ];
     assert_eq!(seen.into_iter().collect::<Vec<_>>(), built);
-    assert!(all.len() >= 20, "{} vectors", all.len());
+    assert!(all.len() >= 45, "{} vectors", all.len());
 }

@@ -33,3 +33,23 @@ pub const MAX_OPEN: usize = 10_000;
 pub const MAX_AT_ONCE: usize = 64;
 /// Most single-use KeyPackages one upload holds (hub-api.md "Decided" 41).
 pub const MAX_KEY_PACKAGES: usize = 100;
+/// Most one GroupInfo answer may hold: a GroupInfo of 1 MiB in base64url and the JSON around it.
+pub const CAP_GROUP_INFO: usize = 2 * MIB;
+/// A signature or a MAC: 64 and 32 bytes in v1.md; their exact form is the protocol core's to check.
+pub const MAX_TAG: usize = 128;
+/// Most Welcomes one answer holds (the hub's 8 MiB of them).
+pub const MAX_WELCOMES: usize = 10_000;
+/// Most entries one page of a group's log may be asked for.
+pub const MAX_LOG: u32 = 1000;
+/// The page of Commits `POST /v1/groups/read` gives per group.
+pub const LOG_PAGE: usize = 256;
+/// Most envelopes one page of a chain or an object may be asked for.
+pub const MAX_PAGE: u32 = 2000;
+/// Most devices one claim of KeyPackages names.
+pub const MAX_CLAIM: usize = 1024;
+/// Most rows one page of the room's groups may be asked for.
+pub const MAX_GROUPS_PAGE: u32 = 1000;
+/// Most leaves a group's row lists (the tree's 2 047 nodes hold 1 024; with room).
+pub const MAX_LEAVES: usize = 4096;
+/// Most wishes `GET /v1/requests` lists.
+pub const MAX_WISHES: usize = 100_000;

@@ -26,18 +26,21 @@
 //!   characters, an outbox entry without its parts) is also [`Failure::BadAnswer`], its text beginning
 //!   "the request:"; nothing is sent.
 //!
-//! Built so far: catch-up, the live stream, the Desk's open list and the outbox ([`Codec::builds`]). Sign-in,
-//! joins and the other routes follow; until then `request` refuses them.
+//! Every [`Route`] is built: sign-in, catch-up, the live stream, the Desk's open list, the outbox, the delivery
+//! service's reads and joins. The account, file, share, invite and push routes follow as further variants.
 
 mod changes;
 mod codec;
+mod content;
 mod desk;
+mod groups;
 mod items;
 mod json;
 pub mod limits;
 mod outbox;
 mod refusal;
 mod request;
+mod signin;
 pub mod stream;
 mod types;
 

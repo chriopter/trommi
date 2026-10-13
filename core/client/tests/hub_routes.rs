@@ -698,8 +698,8 @@ fn outbox_foundings() {
         serde_json::json!({ "group_info": "AQ", "sealed_key": "Ag", "account": { "kit": { "auth_key": "x" } } })
     );
     assert_eq!(
-        taken(&x, &format!(r#"{{"room_id":"{}"}}"#, b64(&[1; 32]))).founded,
-        Some(room_group)
+        taken(&x, &format!(r#"{{"room_id":"{}"}}"#, b64(&[1; 32]))).room,
+        Some(room())
     );
     refused(&x, &format!(r#"{{"room_id":"{}"}}"#, b64(&[3; 32])));
     refused(&x, &format!(r#"{{"room_id":"{}"}}"#, b64(&[1; 31])));
@@ -736,7 +736,7 @@ fn outbox_foundings() {
             &x,
             &format!(r#"{{"group_id":"{}"}}"#, b64(group.as_bytes()))
         )
-        .founded,
+        .group,
         Some(group)
     );
     refused(&x, &format!(r#"{{"group_id":"{}"}}"#, b64(&[1; 48])));
@@ -921,31 +921,4 @@ fn outbox_recovery() {
         ..OutboxExtra::default()
     };
     assert!(outbox(&e, Some(&short)).is_err());
-}
-
-#[test]
-fn what_is_built_and_what_is_not_yet() {
-    let (room, group) = (room(), session_group());
-    assert!(Codec::builds(&Route::Changes {
-        after: 0,
-        limit: 1,
-        only: Only::All
-    }));
-    assert!(Codec::builds(&Route::Stream { after: 0 }));
-    let later = [
-        Route::Challenge { room: &room },
-        Route::Welcomes { after: 0 },
-        Route::GroupInfo {
-            group: &group,
-            epoch: None,
-        },
-        Route::Wishes,
-    ];
-    for route in later {
-        assert!(!Codec::builds(&route));
-        assert!(matches!(
-            Codec.request(&SITE, &route),
-            Err(Failure::BadAnswer { .. })
-        ));
-    }
 }

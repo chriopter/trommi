@@ -348,7 +348,7 @@ pub(crate) fn read(asked: &Asked, body: &Json) -> Read<OutboxAnswer> {
                 return bad("another room than the one founded");
             }
             OutboxAnswer {
-                founded: Some(GroupId::room(room)),
+                room: Some(room),
                 ..none
             }
         }
@@ -363,7 +363,7 @@ pub(crate) fn read(asked: &Asked, body: &Json) -> Read<OutboxAnswer> {
                 return bad("another group than the one founded");
             }
             OutboxAnswer {
-                founded: Some(founded),
+                group: Some(founded),
                 ..none
             }
         }

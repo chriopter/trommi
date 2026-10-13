@@ -1,0 +1,13 @@
+{
+  "answer": "[{\"at\":1791901135118,\"committer\":null,\"device\":\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\",\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us\",\"id\":1,\"key_package\":null,\"kind\":\"handover\",\"n\":null},{\"at\":1791901135118,\"committer\":\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\",\"device\":\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\",\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us\",\"id\":2,\"key_package\":null,\"kind\":\"reject\",\"n\":3}]",
+  "asked": {
+    "route": "wishes"
+  },
+  "name": "wishes",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/requests"
+  },
+  "status": 200
+}

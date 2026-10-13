@@ -1,0 +1,16 @@
+{
+  "answer": "{\"after\":5,\"items\":[{\"epoch\":3,\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA\",\"kind\":\"room\",\"leaves\":[\"hxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DM\",\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":null,\"stale\":false},{\"epoch\":1,\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us\",\"kind\":\"main\",\"leaves\":[\"hxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DM\",\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\"],\"live\":true,\"parent\":null,\"room_epoch\":1,\"session_id\":\"ElC7OuQGEEX0u-c2_xPLrA\",\"stale\":false}],\"more\":true}",
+  "asked": {
+    "after": 0,
+    "limit": 2,
+    "room": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "route": "room_groups"
+  },
+  "name": "room-groups-0",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/rooms/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/groups?after=0&limit=2"
+  },
+  "status": 200
+}
