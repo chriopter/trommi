@@ -189,7 +189,14 @@ impl qobject::Trommi {
                         o.as_mut().set_status(QString::from("Not signed in"));
                     });
                     // (a scene signs in on its own: TROMMI_LINUX_EMAIL and TROMMI_LINUX_PASSWORD, at TROMMI_HUB)
-                    if let (Ok(email), Ok(password)) = (std::env::var("TROMMI_LINUX_EMAIL"), std::env::var("TROMMI_LINUX_PASSWORD")) {
+                    // (or with the Emergency Kit: TROMMI_LINUX_KIT_ACCOUNT and TROMMI_LINUX_KIT_WORDS)
+                    if let (Ok(account), Ok(words)) = (std::env::var("TROMMI_LINUX_KIT_ACCOUNT"), std::env::var("TROMMI_LINUX_KIT_WORDS")) {
+                        let hub = std::env::var("TROMMI_HUB").unwrap_or_default();
+                        match signin::with_kit(&hub, &account, &words, sink_for(thread.clone())).await {
+                            Ok(engine) => run(engine),
+                            Err(f) => tell_error(&thread, f.text()),
+                        }
+                    } else if let (Ok(email), Ok(password)) = (std::env::var("TROMMI_LINUX_EMAIL"), std::env::var("TROMMI_LINUX_PASSWORD")) {
                         let hub = std::env::var("TROMMI_HUB").unwrap_or_default();
                         let sink = sink_for(thread.clone());
                         match signin::with_password(&hub, &email, &password, sink).await {
