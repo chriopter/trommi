@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""App Store Connect API steps of the TestFlight workflow (.github/workflows/deploy_ios.yml). Standard library only; the
+"""App Store Connect API steps of the TestFlight workflow (.github/workflows/ship-apple.yml). Standard library only; the
 JWT is signed with the openssl command line tool, so it runs on a stock macOS runner and on Linux alike.
 
   asc.py prepare-mac BUNDLE_ID      the Mac app (ASC_PLATFORM=MAC_OS): the bundle id with Push Notifications and
@@ -568,7 +568,7 @@ def whats_new(changelog):
     print(text)
 
 
-# ---- TestFlight crash reports (asc.py crashes; .github/workflows/ios_crashes.yml) ----
+# ---- TestFlight crash reports (asc.py crashes; .github/workflows/nightly.yml, job ios_crashes) ----
 # Read only. The repository is public and the artifact can be downloaded by anyone signed in to GitHub, so nothing a
 # tester typed or is known by is asked for: no `tester`, `email` or `comment` field and no include; KEEP lists what
 # is kept of a submission all the same, should the API send more. summary.md and issue.md say the same.

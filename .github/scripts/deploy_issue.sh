@@ -1,7 +1,7 @@
 #!/bin/sh
-# One GitHub issue per failing delivery of a part (deploy_hub.yml, deploy_web.yml, job `report`), and per failing
-# build of main (build.yml, job `report`: WHAT=build LABEL=build-failed), and per failing night of the full-size
-# tests (nightly.yml: Nightly, WHAT='full tests' LABEL=nightly-failed):
+# One GitHub issue per failing delivery of a part (ship-hub.yml, ship-web.yml, job `report`), and per failing
+# build of a part on main (ship-connector.yml, ship-apple.yml, job `report`: WHAT=build LABEL=build-failed), and per failing night of the full-size
+# nightly tests (nightly.yml: Nightly, WHAT=tests LABEL=nightly-failed):
 #   .github/scripts/deploy_issue.sh <Hub|Web|Main>
 # With RESULT=failure: opens "<Part> <WHAT> <TAG> failed" with the label LABEL (the reason, the run, what runs now),
 # or comments on the open issue of that part with that label. With RESULT=success: closes that issue with a

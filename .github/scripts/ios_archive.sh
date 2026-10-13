@@ -1,5 +1,5 @@
 #!/bin/bash
-# The archive of the iOS app, the same on a pull request (build.yml, no secret) and in the delivery
+# The archive of the iOS app, the same in the checks (no secret) and in the delivery
 # (ios_testflight.sh). It needs no Apple account and creates nothing on it:
 #   ios_archive.sh <archive path> <derived data path> [BUILD_SETTING=value …]
 #

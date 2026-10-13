@@ -1,5 +1,5 @@
 #!/bin/bash
-# The TestFlight delivery of the iOS app on a macOS runner; deploy_ios.yml runs it under `op run`, which is where
+# The TestFlight delivery of the iOS app on a macOS runner; ship-apple.yml runs it under `op run`, which is where
 # the App Store Connect key comes from. Steps: the bundle ids and the app record (asc.py prepare) -> the build
 # number (the highest App Store Connect has, plus one) -> Trommi.xcodeproj from AppStore/project.yml (XcodeGen) ->
 # archive (ios_archive.sh: signed ad hoc, nothing created on the Apple account) -> check the archive -> export for
@@ -11,7 +11,7 @@
 #   ios_testflight.sh              every step, one after another
 #   ios_testflight.sh upload       up to the upload; writes version and build to GITHUB_OUTPUT
 #   ios_testflight.sh after        the rest (processed, groups, What to Test, review) for TF_VERSION and TF_BUILD, on any
-#                                  machine with python3 and openssl: deploy_ios.yml runs it on Linux, so the Mac is
+#                                  machine with python3 and openssl: ship-apple.yml runs it on Linux, so the Mac is
 #                                  not held while App Store Connect processes the build
 #
 # Environment, from the 1Password Environment: APPLE_ASC_KEY (the .p8 of a team key with the Admin role; it may
@@ -23,9 +23,9 @@
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
 # TESTFLIGHT_TESTER (an address kept in the group), NOTES (What to Test; default: the newest day of CHANGELOG.md),
 # APPSTORE_DEMO_PASSWORD (the demo account's password for Beta App Review),
-# TF_GATE=release (main: upload only once the release of build.yml run RUN_ID, v$VERSION_RELEASE, is published and
-# verified; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed, checked .ipa; the gate
-# only verifies an existing release, if any is named; the upload is checked offline and NOT sent; no wait, no group),
+# TF_GATE=release (main: upload only when the checks of the ship-apple.yml run RUN_ID passed and the app is not out
+# there yet, ios_release_gate.sh; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed,
+# checked .ipa; the upload is checked offline and NOT sent; no wait, no group),
 # TF_UPLOADER=xcode (the fallback: a second Xcode export with destination upload instead of the API).
 # Nothing here prints a value of the first four. The key lies in one file under RUNNER_TEMP, mode 600, removed when
 # the script ends (and once more by the workflow, whatever happened).

@@ -1,6 +1,6 @@
 #!/bin/bash
 # The TestFlight delivery of the Mac app (the target TrommiMac of AppStore/project.yml; app/ios/README.md "On a Mac")
-# on a macOS runner; deploy_ios.yml runs it under `op run` beside the iOS delivery, with the same key. Steps: the bundle
+# on a macOS runner; ship-apple.yml runs it under `op run` beside the iOS delivery, with the same key. Steps: the bundle
 # id and whether its app record has the macOS platform (asc.py prepare-mac; while it has not, nothing is built and the
 # job ends green saying so) -> the build number (the highest Mac build App Store Connect has, plus one) ->
 # Trommi.xcodeproj (XcodeGen) -> archive, signed ad hoc as the iOS one (nothing is created on the Apple account; the
@@ -17,7 +17,7 @@
 # 1Password Environment; RUNNER_TEMP, COMMIT, XCODEGEN; TF_GATE, TF_DRY_RUN, TF_UPLOADER, TESTFLIGHT_TESTER, NOTES),
 # and MAC_BUNDLE_ID (default: the PRODUCT_BUNDLE_IDENTIFIER of TrommiMac in project.yml). TF_UPLOADER=xcode: a
 # second Xcode export with destination upload instead of the API. The Rust core for the Mac must be in place
-# (core/swift/TrommiCoreRust/lib/macos, from build.yml's artifact). Nothing here prints a value of the key.
+# (core/swift/TrommiCoreRust/lib/macos, from the job ios's artifact). Nothing here prints a value of the key.
 set -euo pipefail
 
 mode=${1:-upload}

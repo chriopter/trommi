@@ -1,0 +1,36 @@
+# The Linux app (app/linux) on main: its build, its tests and the smoke test of the window (pr-check.yml, called), when
+# the app or what it is built from changed. Nothing is released or delivered yet: its release series linux-v<N> comes
+# with the AppImage. It reads no secret.
+name: ship-linux
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - app/linux/**
+      - client/**
+      - core/**
+      - connector/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/ship-linux.yml
+      - .github/workflows/pr-check.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ship-linux
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Checks
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/pr-check.yml
+    with:
+      parts: linux
+      workflow: ship-linux.yml
