@@ -459,6 +459,7 @@ export class ClientModel extends FileObject {
 const plain = name => (...args) => callWith(raw, name, args)
 
 export const versions = plain('versions')
+export const offPile = plain('off_pile')
 export const selfTest = plain('self_test')
 export const logFinding = plain('log_finding')
 export const errorCodeText = plain('error_code_text')

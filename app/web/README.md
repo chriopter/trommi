@@ -186,8 +186,10 @@ instead); files come network first, the cache only offline. On the dev server (`
   (`working`, from `start_task`: never on the Desk until its "Done: …" version), one line each, below the open ones. A card answered
   with a final option (a small pen tick on its tile) never lies here: the answer settles it, it goes to "Off the desk"
   at once ("settled by your answer"), and Take back opens it again.
-- **Foot:** Off your mind (the end list: what is with the agents, then snoozed, done, shredded cards, five lines; "Show
-  more" at the right end of its heading opens `/stacks/off`, the whole list with a search), Artifacts (the newest four;
+- **Foot:** Off your mind as one pile (`desk.mjs offList`, laid out by the client core's `off_pile`): the first three
+  running cards one under the other, then one pile that says what lies on it ("+2 running · 1 put off · 14 done") and
+  opens in place (the other running cards, then the put-off and done ones small at the bottom, twelve; Fold); its
+  heading opens `/stacks/off`, every card with the pile open and a search), Artifacts (the newest four;
   its heading "Artifacts N" is the link that opens `/artifacts`: Media and Pages together, the newest first, the filter
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
   the rest as they come near).

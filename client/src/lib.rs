@@ -25,6 +25,7 @@ pub mod codec;
 pub mod desk;
 pub mod desk_delete;
 pub mod model;
+pub mod off_pile;
 pub mod plan;
 pub mod presence;
 pub mod registers;
