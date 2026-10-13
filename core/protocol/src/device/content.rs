@@ -315,7 +315,12 @@ pub struct ReceivedEnvelope {
 }
 
 impl ReceivedEnvelope {
-    fn of(change: u64, envelope_hash: Hash32, header: Header, outcome: EnvelopeOutcome) -> Self {
+    pub(super) fn of(
+        change: u64,
+        envelope_hash: Hash32,
+        header: Header,
+        outcome: EnvelopeOutcome,
+    ) -> Self {
         Self {
             change,
             envelope_hash,
@@ -1305,17 +1310,48 @@ impl<S: Storage> Device<S> {
                 held = this.held_objects(&group)?;
                 &held
             };
-            let received = chain::receive(
-                &Facts(this),
-                &Facts(this),
-                &this.chains(&group)?,
-                objects,
-                &this.id,
-                bytes,
-                &served,
-                mode,
-                now_ms,
-            );
+            // A group started from the hub's list (9.0.6): a sender's chain this device holds nothing of
+            // begins just before its first envelope served after the list.
+            let mut chains = this.chains(&group)?;
+            let began = if in_order {
+                this.start_listed(&header, change, &mut chains)?
+            } else {
+                Ok(false)
+            };
+            let received = match &began {
+                Ok(_) => chain::receive(
+                    &Facts(this),
+                    &Facts(this),
+                    &chains,
+                    objects,
+                    &this.id,
+                    bytes,
+                    &served,
+                    mode,
+                    now_ms,
+                ),
+                Err(code) => Err(code.clone()),
+            };
+            // A chain begun below a `heads` of the person's own human devices: the hub left out what they
+            // had read (`withheld`) or serves another envelope under that number (`equivocation`).
+            let received = match (received, began) {
+                (Ok(receipt), Ok(true)) => {
+                    let start = chains
+                        .started_at(&header.sender)
+                        .ok_or(Error::Internal("a chain begun without its start"))?;
+                    match this.below_floor(&group, &header.sender, start)? {
+                        Some(finding) => {
+                            this.put_finding(batch, &group, &header.sender, &finding);
+                            Err(finding)
+                        }
+                        None => {
+                            this.put_chains(batch, &group, &chains)?;
+                            Ok(receipt)
+                        }
+                    }
+                }
+                (received, _) => received,
+            };
             let receipt = match received {
                 Ok(receipt) => receipt,
                 Err(fault) if is_fault(&fault) => return Err(fault),
@@ -1532,6 +1568,9 @@ impl<S: Storage> Device<S> {
             }
         };
         let (sender, seq) = (received.header.sender, received.header.seq);
+        // A `heads` of the person's own human devices bounds where a chain of a group started from the
+        // hub's list may begin (9.0.6).
+        self.keep_floor(batch, &received.header, &body)?;
         if standing == Standing::Provisional {
             self.put_stored(
                 batch,

@@ -181,7 +181,7 @@ const DEVICE_CALLS = [
   'recovery_plan_start', 'recovery_plan_slice', 'recovery_plan_finish',
   'invite_open', 'invite_accept', 'invite_confirm', 'invite_recommit', 'invite_steps', 'invite_handover', 'invite_checked', 'invite_forget',
   'join_link', 'join_request', 'join_reveal', 'join_observe', 'join_invited',
-  'seal', 'outbox_voided', 'envelope_abandon', 'receive_envelope', 'receive_relay', 'heads_due', 'compare_heads',
+  'seal', 'outbox_voided', 'envelope_abandon', 'receive_envelope', 'start_from_list', 'adopt_listed', 'receive_relay', 'heads_due', 'compare_heads',
   'cut_of', 'chain_head', 'chain_cut', 'object', 'objects', 'object_owner', 'register', 'register_of', 'board_load',
   'command', 'command_finished', 'commands_pending', 'commands_uncertain', 'findings', 'findings_read',
 ]

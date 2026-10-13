@@ -115,6 +115,10 @@ name = "core_device_objects"
 path = "core/device_objects.rs"
 
 [[test]]
+name = "core_device_listed"
+path = "core/device_listed.rs"
+
+[[test]]
 name = "core_device_cost"
 path = "core/device_cost.rs"
 

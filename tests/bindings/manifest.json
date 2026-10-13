@@ -2518,6 +2518,40 @@
         ],
         "returns": "ReceivedEnvelope"
       },
+      "startFromList": {
+        "arguments": [
+          {
+            "name": "group",
+            "type": "bytes"
+          },
+          {
+            "name": "atChange",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "adoptListed": {
+        "arguments": [
+          {
+            "name": "group",
+            "type": "bytes"
+          },
+          {
+            "name": "objectId",
+            "type": "bytes"
+          },
+          {
+            "name": "envelope",
+            "type": "bytes"
+          },
+          {
+            "name": "change",
+            "type": "number"
+          }
+        ],
+        "returns": "ReceivedEnvelope"
+      },
       "receiveRelay": {
         "arguments": [
           {

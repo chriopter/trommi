@@ -92,6 +92,7 @@ mod facts;
 mod history;
 mod invite;
 mod key_requests;
+mod listed;
 
 pub use content::{
     board_reduce, BoardItem, BoardSnapshot, Confirmation, Draft, EnvelopeOutcome, ReceivedEnvelope,

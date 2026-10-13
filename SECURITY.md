@@ -38,6 +38,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   too.
 - A removed device loses access at once.
 - A device deletes its data only after checking the signed removal itself, never on the hub's word alone.
+- A new device starts from the hub's list of what is open and reads what is new. Older entries are fetched when
+  you open them. The hub can leave a card out or show an older version of one; it cannot read, make up or alter
+  one.
 - A room holds at most 1000 devices.
 - Files are encrypted on the device. Push notifications carry no content.
 - The web app keeps pictures it showed in the browser still encrypted, as the hub stores them (at most 96 MB);

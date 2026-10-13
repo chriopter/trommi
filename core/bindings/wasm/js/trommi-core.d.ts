@@ -907,6 +907,12 @@ export class Device {
    * envelope at all reject; every other finding is an outcome.
    */
   receiveEnvelope(envelope: Uint8Array, change: number, ordered: boolean, voidCode: ErrorCode | null | undefined, nowMs: number): Promise<ReceivedEnvelope>
+  /** Starts `group` from the hub's list at change `atChange` (9.0.6): chains begin at the first envelope served after
+   *  it, open objects are taken from their signed headers. Human devices only, for a group with no other sender's chain. */
+  startFromList(group: Uint8Array, atChange: number): Promise<void>
+  /** The newest version the hub lists of an open object of a group started from the list, served under `change`:
+   *  taken from its header (`object_after`) when unknown here, else shown as it stands (`provisional`). */
+  adoptListed(group: Uint8Array, objectId: Uint8Array, envelope: Uint8Array, change: number): Promise<ReceivedEnvelope>
   /** A relayed stroke piece: no cursor movement. Null for one that does not open; `bad-format` for anything else. */
   receiveRelay(group: Uint8Array, message: Uint8Array, nowMs: number): Promise<ReceivedMessage | null>
   /** The `heads` value (JSON) to write in `group` now as a register named `heads`, or null when nothing is due. */
