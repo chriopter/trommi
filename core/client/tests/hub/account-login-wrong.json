@@ -1,0 +1,14 @@
+{
+  "answer": "{\"error\":\"wrong-login\",\"message\":\"e-mail or secret is wrong\"}",
+  "asked": {
+    "route": "login"
+  },
+  "content_range": null,
+  "name": "account-login-wrong",
+  "request": {
+    "body": "{\"account\":\"ada-c74b4352cab7@example.com\",\"auth_key\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\"}",
+    "method": "POST",
+    "path": "/v1/account/login"
+  },
+  "status": 401
+}

@@ -74,7 +74,7 @@ impl std::fmt::Debug for OutboxExtra {
 }
 
 /// One request to the hub, by its meaning. Borrowed: an outbox entry may hold megabytes and is not copied to ask.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub enum Route<'a> {
     /// `GET /v1/rooms/{room}/challenge` (no token).
     Challenge { room: &'a RoomId },
@@ -218,6 +218,384 @@ pub enum Route<'a> {
         secret: &'a [u8; 32],
         range: Option<ByteRange>,
     },
+
+    // ---- invites (v1.md 12.1): the three signed messages, by invite id
+    /// `GET /v1/invites/{invite}`: the Offer. With a token (a human device of its room) also the Requests.
+    GetInvite { invite: &'a InviteId },
+    /// `POST /v1/invites/{invite}/request`: the new device's Request, its MAC and signature; no token.
+    PostInviteRequest {
+        invite: &'a InviteId,
+        request: &'a [u8],
+        mac: &'a [u8],
+        signature: &'a [u8],
+    },
+    /// `GET /v1/invites/{invite}/reveal`: the Reveal once the inviter published it (`not-found` until then);
+    /// no token.
+    GetReveal { invite: &'a InviteId },
+    /// `POST /v1/invites`: a human device publishes its signed Offer.
+    PostInvite {
+        offer: &'a [u8],
+        signature: &'a [u8],
+        mac: &'a [u8],
+    },
+    /// `PUT /v1/invites/{invite}/reveal`: the inviter accepted one Request.
+    PutReveal {
+        invite: &'a InviteId,
+        reveal: &'a [u8],
+        signature: &'a [u8],
+    },
+    /// `DELETE /v1/invites/{invite}`: "they don't match" burns the invite.
+    DeleteInvite { invite: &'a InviteId },
+
+    // ---- the account (hub-api.md "The account"). Login keys and sealed copies go in bodies only.
+    /// `POST /v1/account/login`: `account` is an e-mail (it contains `@`) or the account's id; no token.
+    Login {
+        account: &'a str,
+        auth_key: &'a [u8; 32],
+    },
+    /// `POST /v1/account/recover`: the same with the Emergency Kit's key; no token.
+    Recover {
+        account: &'a str,
+        auth_key: &'a [u8; 32],
+    },
+    /// `POST /v1/account/passkey/challenge`: for a sign-in with a passkey, or for the passkey of a new account,
+    /// with the id that account will have; no token.
+    PasskeyChallenge,
+    /// `POST /v1/account/passkey/login`; no token.
+    PasskeyLogin { assertion: &'a PasskeyAssertion },
+    /// `POST /v1/account`: sign-up for a room that has none yet, by a human device of it.
+    CreateAccount { account: &'a NewAccount },
+    /// `GET /v1/account`.
+    Account,
+    /// `GET /v1/account/usage`.
+    AccountUsage,
+    /// `PUT /v1/account/password`, with the way in of now proved.
+    PutPassword {
+        password: &'a NewPassword,
+        revision: u64,
+        proof: &'a AccountProof,
+    },
+    /// `PUT /v1/account/kit`: a new Emergency Kit replaces the one before.
+    PutKit {
+        kit: &'a KitPart,
+        revision: u64,
+        proof: &'a AccountProof,
+    },
+    /// `PUT /v1/account/email`: gives an account without e-mail one, once, with its kit made anew under it.
+    PutEmail {
+        email: &'a str,
+        kit: &'a KitPart,
+        revision: u64,
+        proof: &'a AccountProof,
+    },
+    /// `POST /v1/account/passkeys/challenge`: for adding a passkey to this room's account, or for a proof.
+    AccountPasskeyChallenge,
+    /// `POST /v1/account/passkeys`.
+    AddPasskey {
+        passkey: &'a PasskeyRegistration,
+        proof: &'a AccountProof,
+    },
+    /// `DELETE /v1/account/passkeys/{credential_id}`.
+    RemovePasskey {
+        credential_id: &'a [u8],
+        proof: &'a AccountProof,
+    },
+    /// `DELETE /v1/account`: the account, each of its rooms and everything stored for them.
+    DeleteAccount { proof: &'a AccountProof },
+
+    // ---- push (v1.md 15), human devices
+    /// `POST /v1/push`.
+    PushRegister { registration: &'a PushRegistration },
+    /// `GET /v1/push`: this device's registrations and the hub's Web Push key.
+    PushState,
+    /// `DELETE /v1/push`: the registration with that endpoint, or all of this device's.
+    PushRemove { endpoint: Option<&'a str> },
+    /// `POST /v1/live-activity` (15.3).
+    LiveActivity { activity: &'a LiveActivity },
+}
+
+/// A kit's part of a body: its login key and the code sealed under its wrap key. `Debug` shows neither.
+#[derive(Clone, PartialEq, Eq)]
+pub struct KitPart {
+    pub auth_key: [u8; 32],
+    pub sealed_copy: [u8; 61],
+}
+
+/// The key derivation record: the hub stores and returns exactly the pinned one (v1 §16.6), at most 8 members,
+/// each a text or a whole number. As an answer gives it: sorted by name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Kdf(pub Vec<(String, KdfValue)>);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KdfValue {
+    Text(String),
+    Number(u64),
+}
+
+/// A password as a body sets it: its login key, the code sealed under its wrap key, and how they were derived.
+#[derive(Clone, PartialEq, Eq)]
+pub struct NewPassword {
+    pub auth_key: [u8; 32],
+    pub sealed_copy: [u8; 61],
+    pub kdf: Kdf,
+}
+
+/// A passkey's registration: what the platform's authenticator made, and the code sealed under its PRF key.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasskeyRegistration {
+    pub attestation_object: Vec<u8>,
+    pub client_data_json: Vec<u8>,
+    pub sealed_copy: [u8; 61],
+    /// Up to 8 of lower-case letters and hyphens.
+    pub transports: Option<Vec<String>>,
+}
+
+/// A passkey's signed challenge.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasskeyAssertion {
+    pub credential_id: Vec<u8>,
+    pub authenticator_data: Vec<u8>,
+    pub client_data_json: Vec<u8>,
+    pub signature: Vec<u8>,
+    /// Sent with a login when the authenticator gave one; never part of a proof.
+    pub user_handle: Option<Vec<u8>>,
+}
+
+/// The way in of now, proved once more: every change of a way in carries it (hub-api.md "A token alone changes
+/// no way in").
+#[derive(Clone, PartialEq, Eq)]
+pub enum AccountProof {
+    Password { auth_key: [u8; 32] },
+    Kit { auth_key: [u8; 32] },
+    Passkey(PasskeyAssertion),
+}
+
+/// `POST /v1/account`, and `account` of `POST /v1/rooms`: the Emergency Kit and at least one way in.
+#[derive(Clone, PartialEq, Eq)]
+pub struct NewAccount {
+    pub email: Option<String>,
+    pub kit: KitPart,
+    pub password: Option<NewPassword>,
+    pub passkey: Option<PasskeyRegistration>,
+}
+
+/// The one way in that the account's new copies keep (v1.md 8.6, 8.7).
+#[derive(Clone, PartialEq, Eq)]
+pub enum CopyOfWayIn {
+    /// The password used just now: a new copy under it, the login key stays.
+    Password { sealed_copy: [u8; 61] },
+    /// A password set anew.
+    NewPassword(NewPassword),
+    /// The passkey used just now.
+    Passkey {
+        credential_id: Vec<u8>,
+        sealed_copy: [u8; 61],
+    },
+    /// A passkey registered anew.
+    NewPasskey(PasskeyRegistration),
+}
+
+/// The account's new sealed copies that come with new recovery keys: a new kit and one way in.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AccountCopies {
+    pub kit: KitPart,
+    /// The account's revision the copies were made at (`…/recovery-code`); a recovery (8.7) has none.
+    pub revision: Option<u64>,
+    pub way_in: Option<CopyOfWayIn>,
+}
+
+macro_rules! secret_debug {
+    ($($type:ty),+) => {
+        $(impl std::fmt::Debug for $type {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(concat!(stringify!($type), "(<redacted>)"))
+            }
+        })+
+    };
+}
+
+secret_debug!(
+    KitPart,
+    NewPassword,
+    PasskeyRegistration,
+    PasskeyAssertion,
+    AccountProof,
+    NewAccount,
+    CopyOfWayIn,
+    AccountCopies,
+    LoginAnswer,
+    AccountView,
+    PushRegistration,
+    LiveActivity
+);
+
+/// Which salt an Emergency Kit's keys have (v1.md 8.8.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KitForm {
+    Email,
+    Id,
+}
+
+/// One room of a login's answer: the sealed copy of its recovery code and a sign-in challenge of that room.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LoginRoom {
+    pub room: RoomId,
+    pub sealed_copy: [u8; 61],
+    pub challenge: [u8; 32],
+}
+
+/// What a login answers. `Debug` shows nothing of it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LoginAnswer {
+    pub rooms: Vec<LoginRoom>,
+    pub kdf: Option<Kdf>,
+    /// The account's id as it is printed: a UUID, lower case, with dashes.
+    pub account: String,
+    pub email: Option<String>,
+}
+
+/// A passkey challenge with the id of the account the passkey is for, which is the text of `user_handle`
+/// (checked).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PasskeyChallenge {
+    pub challenge: [u8; 32],
+    pub account: String,
+    pub user_handle: [u8; 16],
+    /// Of this room's account (`AccountPasskeyChallenge`): what a new kit of it is salted with.
+    pub email: Option<String>,
+    pub kit_form: Option<KitForm>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasskeyRow {
+    pub credential_id: Vec<u8>,
+    pub sealed_copy: [u8; 61],
+    pub transports: Vec<String>,
+    pub created_at: u64,
+    pub last_used_at: Option<u64>,
+}
+
+/// `GET /v1/account`: the account of this device's room with its sealed copies; no hash leaves the hub.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AccountView {
+    pub email: Option<String>,
+    pub account: String,
+    pub kit_form: KitForm,
+    pub revision: u64,
+    pub has_password: bool,
+    pub kdf: Option<Kdf>,
+    pub password_copy: Option<[u8; 61]>,
+    pub kit_copy: [u8; 61],
+    pub user_handle: [u8; 16],
+    pub passkeys: Vec<PasskeyRow>,
+    pub rooms: Vec<RoomId>,
+}
+
+/// `GET /v1/account/usage`: counts and sizes of the account's own rooms.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AccountUsage {
+    pub rooms: u64,
+    pub groups: u64,
+    pub live_groups: u64,
+    pub devices: u64,
+    pub commits: u64,
+    pub messages: u64,
+    pub envelopes: u64,
+    pub cards: u64,
+    pub open_cards: u64,
+    pub files: u64,
+    pub file_bytes: u64,
+    pub log_bytes: u64,
+    pub envelope_bytes: u64,
+    pub total_bytes: u64,
+}
+
+/// An invite as the hub serves it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InviteOffer {
+    pub offer: Vec<u8>,
+    pub signature: Vec<u8>,
+    /// The MAC that binds the Offer to the link; none from an invite stored before it (the protocol core then
+    /// refuses the Offer).
+    pub mac: Option<Vec<u8>>,
+    pub expires_at: u64,
+    /// For a human device of the invite's room: the Requests so far, at most 4.
+    pub requests: Option<Vec<InviteRequestRow>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InviteRequestRow {
+    pub request: Vec<u8>,
+    pub mac: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PushLevel {
+    All,
+    Knocking,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum PushTarget {
+    WebPush {
+        endpoint: String,
+        p256dh: Vec<u8>,
+        auth: Vec<u8>,
+    },
+    Apns {
+        token: String,
+        key: Vec<u8>,
+        environment: String,
+        topic: String,
+    },
+}
+
+/// A device's registration for push. `Debug` shows nothing of it (an endpoint and a token are credentials).
+#[derive(Clone, PartialEq, Eq)]
+pub struct PushRegistration {
+    pub target: PushTarget,
+    pub level: PushLevel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PushKind {
+    WebPush,
+    Apns,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PushSubscription {
+    pub kind: PushKind,
+    pub endpoint: String,
+    pub level: PushLevel,
+    pub created_at: u64,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PushState {
+    pub subscriptions: Vec<PushSubscription>,
+    /// The hub's VAPID key, 65 bytes.
+    pub vapid_public_key: Vec<u8>,
+    /// Whether the hub sends to APNs.
+    pub apns: bool,
+}
+
+/// A Live Activity's token (15.3): `start` (push-to-start) or the running activity's.
+#[derive(Clone, PartialEq, Eq)]
+pub struct LiveActivity {
+    pub start: bool,
+    pub token: String,
+    pub tag: String,
+    pub environment: String,
+    pub topic: String,
+}
+
+impl std::fmt::Debug for Route<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // (a route may hold a login key, a share secret, a sign-in's signature: nothing of it is for a log)
+        f.write_str("Route(<redacted>)")
+    }
 }
 
 /// Which sessions the Desk covers (hub-api.md point 46).
@@ -604,6 +982,36 @@ pub enum Answer {
     Shared {
         expires_at: u64,
     },
+    Invite(InviteOffer),
+    /// `PostInviteRequest`: the hash the hub filed the Request under.
+    Requested {
+        request_hash: [u8; 32],
+    },
+    Reveal {
+        reveal: Vec<u8>,
+        signature: Vec<u8>,
+    },
+    /// `PostInvite`.
+    Invited {
+        invite: InviteId,
+    },
+    Login(LoginAnswer),
+    PasskeyChallenge(PasskeyChallenge),
+    Account(AccountView),
+    Usage(AccountUsage),
+    /// `PutPassword`, `PutKit`, `PutEmail`: the account's revision now.
+    Revision {
+        revision: u64,
+    },
+    PasskeyAdded {
+        credential_id: Vec<u8>,
+        created_at: u64,
+    },
+    Push(PushState),
+    /// `PushRemove`: how many registrations went.
+    Removed {
+        deleted: u64,
+    },
 }
 
 impl std::fmt::Debug for Answer {
@@ -638,6 +1046,18 @@ impl std::fmt::Debug for Answer {
             Answer::FileStored { .. } => "FileStored",
             Answer::File(_) => "File",
             Answer::Shared { .. } => "Shared",
+            Answer::Invite(_) => "Invite",
+            Answer::Requested { .. } => "Requested",
+            Answer::Reveal { .. } => "Reveal",
+            Answer::Invited { .. } => "Invited",
+            Answer::Login(_) => "Login",
+            Answer::PasskeyChallenge(_) => "PasskeyChallenge",
+            Answer::Account(_) => "Account",
+            Answer::Usage(_) => "Usage",
+            Answer::Revision { .. } => "Revision",
+            Answer::PasskeyAdded { .. } => "PasskeyAdded",
+            Answer::Push(_) => "Push",
+            Answer::Removed { .. } => "Removed",
         })
     }
 }

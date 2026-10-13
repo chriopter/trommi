@@ -1,10 +1,11 @@
 {
-  "answer": "{\"cards\":[{\"head_change\":13,\"object_id\":\"DpmlqU16AVf8uD3qvVO30A\",\"version_change\":13}],\"change\":26,\"permission_requests\":[],\"settled\":[],\"truncated\":false}",
+  "answer": "{\"cards\":[{\"head_change\":13,\"object_id\":\"531bpCnAoFiXyFXeXd8s-g\",\"version_change\":13}],\"change\":26,\"permission_requests\":[],\"settled\":[],\"truncated\":false}",
   "asked": {
     "active": false,
     "route": "desk_brief",
     "since": 12
   },
+  "content_range": null,
   "name": "desk-brief-since",
   "request": {
     "body": null,

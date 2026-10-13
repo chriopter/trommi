@@ -1,15 +1,16 @@
 {
   "answer": "{\"id\":2}",
   "asked": {
-    "group": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us",
+    "group": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS3k-KibKGh-g9Goc9MM0lGw",
     "n": 3,
     "route": "reject"
   },
+  "content_range": null,
   "name": "reject",
   "request": {
     "body": "{\"n\":3}",
     "method": "POST",
-    "path": "/v1/groups/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us/reject"
+    "path": "/v1/groups/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS3k-KibKGh-g9Goc9MM0lGw/reject"
   },
   "status": 200
 }
