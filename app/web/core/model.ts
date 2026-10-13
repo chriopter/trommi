@@ -1,5 +1,5 @@
-// model.ts: what the views read of the board model besides the records themselves (core/README.md "The model" is the
-// contract; the shapes are types.ts). The model is BUILT by the client core (client/src/model, the binding's
+// model.ts: what the views read of the board model besides the records themselves (core/protocol/README.md "The model" is the
+// contract; the shapes are types.ts). The model is BUILT by the client core (core/client/src/model, the binding's
 // `ClientModel`): what the Rust core accepted goes in there, and client.ts puts its patch into the page's copy once per
 // batch (board.ts, mirror.ts). What stays here is read-only: small rules the views share (a card's link to its agent,
 // the receipt, who holds an object, an item's state), the stack of one desk, and the records of the app's local cache.
@@ -57,7 +57,7 @@ export function choicesFinal(card: { options?: (CardOption | null | undefined)[]
 //     exit         the connector's last word before its stream closed: why, and whether its Claude Code process lived
 //                  on ('alive'), ended ('gone') or was still being looked at ('checking')
 // The five states, from the hub's two facts (is_online, offline_since) and the report (decided by the client core,
-// client/src/status.rs `link_state`):
+// core/client/src/status.rs `link_state`):
 //   gone     no stream, and no word that Claude Code lives on
 //   cut      no stream but its Claude Code lives (exit.claude 'alive'); or a stream, and a session of its folder lost
 //            its connector (cut_since); or a stream with nobody attached

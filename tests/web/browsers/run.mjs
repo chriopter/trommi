@@ -13,7 +13,7 @@
 //     all        (default) engine, bindings, private, and app when TROMMI_HUB_BIN is set; not remote
 // Exit 0: every step passed · 1: a step failed · 2: it could not start (the message says what is missing).
 // Needs Playwright in a folder of its own (pw.mjs says how; TROMMI_PLAYWRIGHT, PLAYWRIGHT_BROWSERS_PATH) and the
-// core's WASM package (core/wasm/build.sh). It writes under TROMMI_BROWSERS_TMP, and its screenshots and a
+// core's WASM package (core/bindings/wasm/build.sh). It writes under TROMMI_BROWSERS_TMP, and its screenshots and a
 // report-<mode>.json per engine under TROMMI_BROWSERS_OUT/<engine>/. One browser at a time.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -41,7 +41,7 @@ fs.mkdirSync(out, { recursive: true })
 let failed = 0, could = true
 try {
   loadPlaywright()
-  if (!fs.existsSync(path.join(REPO, 'core/wasm/pkg/trommi_core_wasm_bg.wasm'))) throw Object.assign(new Error('the Rust core\'s WASM package is missing: core/wasm/pkg/ (run core/wasm/build.sh)'), { cannot: true })
+  if (!fs.existsSync(path.join(REPO, 'core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm'))) throw Object.assign(new Error('the Rust core\'s WASM package is missing: core/bindings/wasm/pkg/ (run core/bindings/wasm/build.sh)'), { cannot: true })
   const modes = mode === 'all' ? ['engine', 'bindings', 'private', ...(process.env.TROMMI_HUB_BIN ? ['app'] : [])] : [mode]
   if (mode === 'all' && !process.env.TROMMI_HUB_BIN) console.log('SKIPPED: app (TROMMI_HUB_BIN is not set). Nothing below is evidence about the app\'s screens.')
   for (const name of modes) {

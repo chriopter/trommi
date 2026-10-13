@@ -12,7 +12,7 @@ extension Room {
   func newLocalId() -> String { echoSeq += 1; return "local-\(nowMs())-\(echoSeq)" }
 
   /** A body of `kind` (the model's fields) in the names of spec/v1.md, as the client core writes it for every app
-   *  (client/src/codec.rs: ids, files, its checks); refused when it is too large to seal. */
+   *  (core/client/src/codec.rs: ids, files, its checks); refused when it is too large to seal. */
   private func wire(_ kind: String, _ content: JV) throws -> (payload: Bytes, files: [FileId]) {
     let fields = String(decoding: content.encoded(), as: UTF8.self)
     let text: String, files: [Data]
@@ -191,7 +191,7 @@ extension Room {
       for k in values.keys.sorted() {
         let v = values[k] ?? .null
         // (a value of null deletes the name; the 4 KiB limit is the register's, 9.3.5)
-        // (the name and value as the client core writes them: ids base64url, client/src/codec.rs encode_register)
+        // (the name and value as the client core writes them: ids base64url, core/client/src/codec.rs encode_register)
         let reg: RegisterWire
         do { reg = try registerToWire(key: k, valueJson: String(decoding: v.encoded(), as: UTF8.self)) } catch { throw TrommiError("bad-argument", "\(error)") }
         let value: Bytes? = reg.value.map { Bytes($0) }

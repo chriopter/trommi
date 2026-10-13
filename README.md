@@ -53,40 +53,28 @@ Updates come by themselves: a running connector installs a new signed release an
 - **Connector:** one signed program that joins a Claude Code or Codex session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
-```
-┌─────────────┐  ┌───────────────────┐
-│ app/web     │  │ app/ios           │
-│ WebAssembly │  │ iPhone, iPad, Mac │
-└─────────────┘  └───────────────────┘
-       │                   │
-╔═ Trommi core (Rust) ═════════════════════════╗
-║ ┌─────────────────────┐ ┌──────────────────┐ ║
-║ │ client/             │ │ connector/       │ ║
-║ │ board, Desk,        │ │ Claude Code and  │ ║
-║ │ sessions, presence  │ │ Codex (native)   │ ║
-║ └─────────────────────┘ └──────────────────┘ ║
-║            │                    │            ║  ┌────────────────────┐
-║ ┌──────────────────────────────────────────┐ ║  │ hub/ (server)      │
-║ │ core/                                    │ ║  │ stores ciphertext, │
-║ │ all cryptography                         │ ║  │ checks MLS changes │
-║ └──────────────────────────────────────────┘ ║  └────────────────────┘
-╚══════════════════════════════════════════════╝            │
-                      │                                     │
-┌───────────────────────────────────────────────────────────────────┐
-│                              OpenMLS                              │
-└───────────────────────────────────────────────────────────────────┘
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/architecture-dark.svg">
+  <img alt="The apps (app/web, app/ios, app/linux) only draw and do their platform's I/O; core/client, the app core in Rust, decides what every screen shows, runs the sync and keeps the cache; core/protocol holds MLS and all cryptography; core/bindings binds both to wasm, UniFFI and plain Rust. The connector and the hub sit beside them, everything on OpenMLS." src=".github/readme/architecture-light.svg">
+</picture>
 
-Each box is built on the one below it. `client/`, `connector/` and `core/` form the Trommi core in Rust; the hub shares no code with it: both sit on OpenMLS. All
-devices talk to the hub with sealed MLS messages, and keys stay on devices.
+All logic is Rust and exists once. Everything Rust shares lives under `core/`:
 
-Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `client/`
-(the client core) is what every app decides the same way above it: the board model, the Desk (which cards stand on
-it, what the hub settled, what ran out, what is put off, when to look again), the session list (names, order, one
-per folder, archive) with each session's link and red hand, and the load plan of a catch-up. Both reach the web
-app and the iOS app through the same facade (`core/swift/src`, bound by `core/wasm` and UniFFI). What stays in each
-app: the network and the live stream, storage, the sync engine, the UI and its words, and in the connector its MCP
-tools. [`client/README.md`](client/README.md) has the detail.
+- `core/protocol/` (the crate `trommi-core`): MLS, envelopes, chains, the command gate, files: every key and every
+  rule of the protocol.
+- `core/client/` (`trommi-client-core`): the app core. What every app decides the same way: the board model, the
+  Desk (which cards stand on it, what the hub settled, what ran out, what is put off, when to look again), the
+  session list with each session's link and red hand, and the load plan of a catch-up; and, being built now, the
+  sync with the hub, the actions, the cache and the view model of every screen.
+- `core/bindings/` (`swift/`, `wasm/`): one facade, bound to Swift through UniFFI and to the browser through
+  wasm-bindgen; a Rust host (the Linux app) uses the crates directly.
+
+An app only draws the view model it is given, passes taps back, and does the I/O its platform wants done its own way
+(fetch, URLSession, reqwest), plus the platform's own services (push, notifications, the Keychain, file pickers).
+The picture shows that target; today the web and iOS apps still run their own sync and part of the Desk's rules
+([`core/client/README.md`](core/client/README.md) has the detail). The connector and the hub share no code with the
+apps' layers: the connector sits on `core/protocol`, the hub on OpenMLS alone. All devices talk to the hub with
+sealed MLS messages, and keys stay on devices.
 
 ## Under the hood
 
@@ -97,7 +85,7 @@ tools. [`client/README.md`](client/README.md) has the detail.
   [OpenMLS](https://github.com/openmls/openmls) `=0.9.1`.
 - **One suite**, no negotiation: `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` (X25519, ChaCha20-Poly1305,
   SHA-256, Ed25519).
-- **One Rust core** (`core/`, the crate `trommi-core`) does all of it: as WebAssembly in the browser, through UniFFI
+- **One Rust core** (`core/protocol/`, the crate `trommi-core`) does all of it: as WebAssembly in the browser, through UniFFI
   on iOS, natively in the connector. The hub checks group changes with OpenMLS itself and holds no keys. There is no second implementation.
 - **A device is its key:** one Ed25519 key per device, made on the device; private keys never leave it.
 - **Content** (chat, cards, notes, board items) is stored as signed envelopes, encrypted under a content key that
@@ -328,7 +316,7 @@ spctl --assess --type open --context context:primary-signature -v Trommi-macOS.d
 **Fails closed.** Without the environment `mac`, or without the certificate or the App Store Connect key in its
 1Password Environment, the job ends green with a notice and nothing is attached; no unsigned or un-notarized app is
 ever published. A build on any Mac without secrets (signed ad hoc, the same checks, Gatekeeper must refuse it):
-`core/swift/build.sh macos`, then `.github/scripts/mac_direct.sh adhoc`.
+`core/bindings/swift/build.sh macos`, then `.github/scripts/mac_direct.sh adhoc`.
 
 **Set up once** (owner):
 
@@ -367,7 +355,7 @@ src/view.rs     the app's copy of the board model, kept by the client core's pat
 src/store.rs    ~/.local/share/trommi-linux/<room>/: the device (the connector's journal) and the model cache
 ```
 
-**Binding.** The engine is Rust and calls the facade crate `core/swift` (`trommi-core-swift`, without its UniFFI
+**Binding.** The engine is Rust and calls the facade crate `core/bindings/swift` (`trommi-core-swift`, without its UniFFI
 and wasm features) directly: `CoreDevice` and `ClientModel`, the records iOS gets, with no foreign-function layer.
 Only the window crosses into C++, through [cxx-qt](https://github.com/KDAB/cxx-qt): one object, plain properties.
 The hub client and the journal on disk are the connector's (`trommi-connector`). Nothing is decided in the app:
@@ -519,8 +507,9 @@ nightly ──────────────── nightly.yml: the giant 
 
 | | |
 |---|---|
-| `core/` | the shared Rust core on OpenMLS; `core/wasm` for the browser, `core/swift` for iOS |
-| `client/` | the client core (Rust): the Desk's rules and the catch-up's load plan, shared by the web app and the iOS app through `core/swift`'s facade (`ClientDesk`) |
+| `core/protocol/` | the protocol core in Rust on OpenMLS: MLS, envelopes, chains, files |
+| `core/bindings/` | the one facade over both cores: `wasm/` for the browser, `swift/` for iOS and the Mac |
+| `core/client/` | the app core (Rust): the board model, the Desk's rules and the catch-up's load plan, shared by every app through `core/bindings` |
 | `hub/` | the hub (the server) and its updater; `hub/deploy/` installs it |
 | `app/web/` | the web app |
 | `app/ios/` | the iOS app (Swift, SwiftUI) |
@@ -555,7 +544,7 @@ cargo build --release -p trommi-hub -p trommi-connector
 node app/web/dev/serve.mjs 8900               # the app; ?mock=1 for the demo room
 
 # iOS
-core/swift/build.sh                           # the core for Swift
+core/bindings/swift/build.sh                           # the core for Swift
 (cd tests/ios && swift test)
 ```
 
@@ -580,7 +569,7 @@ cargo test -p trommi-tests --test client_mega speed_of_every_client -- --ignored
 ```
 
 More: [`app/web/README.md`](app/web/README.md), [`app/ios/README.md`](app/ios/README.md),
-[`connector/README.md`](connector/README.md), [`core/README.md`](core/README.md), [`client/README.md`](client/README.md).
+[`connector/README.md`](connector/README.md), [`core/protocol/README.md`](core/protocol/README.md), [`core/client/README.md`](core/client/README.md).
 
 </details>
 

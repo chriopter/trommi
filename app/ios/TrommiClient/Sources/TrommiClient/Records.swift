@@ -1,5 +1,5 @@
 // Records.swift: the Scribble Board's bodies between the views' form and the wire's (board items, the snapshot file).
-// Every other body and every register is written by the client core (client/src/codec.rs, `bodyToWire`,
+// Every other body and every register is written by the client core (core/client/src/codec.rs, `bodyToWire`,
 // `registerToWire`) and read by it (inside `ClientModel`). Here, for the board only:
 //   attachment_id        a body's `file_id` (base64url there, lower-case hex in the model), likewise poster_attachment_id
 //   stroke_ids, board units  a board item's `shape_ids` and whole 1/16 units (`boardItem`)

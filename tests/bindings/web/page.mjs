@@ -1,8 +1,8 @@
 // The test page: the binding in the page itself and in module workers, under the web app's Content-Security-Policy.
 // tests/bindings/browser.mjs loads it in headless Chromium and calls run(what).
-import * as core from '/core/wasm/pkg/trommi-core.js'
-import { StoreConflict } from '/core/wasm/pkg/trommi-core.js'
-import { IdbStore } from '/core/wasm/pkg/idb-store.js'
+import * as core from '/core/bindings/wasm/pkg/trommi-core.js'
+import { StoreConflict } from '/core/bindings/wasm/pkg/trommi-core.js'
+import { IdbStore } from '/core/bindings/wasm/pkg/idb-store.js'
 import { runScenario } from '/tests/bindings/scenario.mjs'
 import { accountVectors } from '/tests/bindings/vectors.mjs'
 
@@ -282,7 +282,7 @@ const cases = {
 globalThis.run = async (what, argument) => {
   // The .wasm is fetched here so that its type and the time to load it are seen.
   const start = performance.now()
-  const response = await fetch('/core/wasm/pkg/trommi_core_wasm_bg.wasm')
+  const response = await fetch('/core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm')
   const contentType = response.headers.get('content-type')
   await core.init(response)
   const load = Math.round((performance.now() - start) * 10) / 10

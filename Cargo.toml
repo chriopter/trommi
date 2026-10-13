@@ -3,7 +3,7 @@
 # the rest (build with --locked), the compiler in rust-toolchain.toml.
 [workspace]
 resolver = "2"
-members = ["core", "client", "core/wasm", "core/swift", "core/swift/bindgen", "hub", "hub/updater", "connector", "tests", "tests/shipped"]
+members = ["core/protocol", "core/client", "core/bindings/wasm", "core/bindings/swift", "core/bindings/swift/bindgen", "hub", "hub/updater", "connector", "tests", "tests/shipped"]
 exclude = ["tests/fuzz"]
 
 [workspace.package]

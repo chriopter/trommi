@@ -4,7 +4,7 @@
 //
 // No key is derived here and nothing is sealed: the prf output goes to the worker as bytes, where the core makes
 // the passkey's wrap key (account.ts, core `passkeyWrapKey`). The page's thread never loads the core, so the prf
-// input is written out here; it is the core's constant (core/src/account.rs PASSKEY_PRF_INPUT, `passkeyPrfInput()`),
+// input is written out here; it is the core's constant (core/protocol/src/account.rs PASSKEY_PRF_INPUT, `passkeyPrfInput()`),
 // and tests/web/account compares the two.
 import { Hub } from './hub.ts'
 import { b64u } from './ids.ts'

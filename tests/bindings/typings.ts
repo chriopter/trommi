@@ -3,8 +3,8 @@
 import {
   Device, FileDecryptor, FileEncryptor, StoreConflict, TrommiError, init, logFinding, selfTest, sessionGroupId,
   type ErrorCode, type LogEntry, type OutboxEntry, type Store, type StoredState, type StoreWrite,
-} from '../../core/wasm/js/trommi-core.js'
-import { IdbStore } from '../../core/wasm/js/idb-store.js'
+} from '../../core/bindings/wasm/js/trommi-core.js'
+import { IdbStore } from '../../core/bindings/wasm/js/idb-store.js'
 
 /** A store of the host's own satisfies the interface. */
 class OwnStore implements Store {
@@ -69,7 +69,7 @@ export async function use(hubCode: string, entry: LogEntry): Promise<void> {
 }
 
 /** A draft names its kind; what a kind does not use is left out. */
-export const drafts: import('../../core/wasm/js/trommi-core.js').Draft[] = [
+export const drafts: import('../../core/bindings/wasm/js/trommi-core.js').Draft[] = [
   { kind: 'register', group: new Uint8Array(32), name: 'heads', value: null },
   { kind: 'answer', session: new Uint8Array(16), objectId: new Uint8Array(16), choices: ['yes'], closes: true, payload: new Uint8Array() },
   // @ts-expect-error there is no such kind

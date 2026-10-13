@@ -1,4 +1,4 @@
-// postOutbox against the fake hub: every kind of core/src/store.rs `OutboxKind` goes to its route with its parts in
+// postOutbox against the fake hub: every kind of core/protocol/src/store.rs `OutboxKind` goes to its route with its parts in
 // their places, and a post that is sent again gets the first answer and is kept once.
 import test from 'node:test'
 import assert from 'node:assert/strict'

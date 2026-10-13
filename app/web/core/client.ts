@@ -179,7 +179,7 @@ export interface ClientOptions {
 interface InviteKept { public: Invite; checked_at?: number; done?: boolean; code?: number[]; request_hash?: string; committed?: boolean }
 
 /** A board's id from its timeline id (`desk/<hex>`). */
-/** Deleting a desk (client/src/desk_delete.rs): the desk's board as the app read it. */
+/** Deleting a desk (core/client/src/desk_delete.rs): the desk's board as the app read it. */
 export interface DeskBoardKnown { shapes: string[]; files: string[]; notes: number; snapshot_empty: boolean }
 export interface DeskDeleteKnown { board?: DeskBoardKnown | null; files_gone?: string[] }
 /** What a desk holds, counted (board, pictures, notes: null while its board is not read). */
@@ -218,7 +218,7 @@ function snapshotFiles(shapes: readonly Record<string, unknown>[]): Uint8Array[]
 
 export class Client {
   model: Model
-  /** The client core's board model (client/src/model): it builds the model; `model` is its copy, patched once per batch. */
+  /** The client core's board model (core/client/src/model): it builds the model; `model` is its copy, patched once per batch. */
   private board: ClientModel
   readonly core: Core
   readonly hub: Hub
@@ -556,7 +556,7 @@ export class Client {
   private onStream(event: StreamEvent): void {
     switch (event.event) {
       case 'presence':
-        // (the client core reads it: client/src/presence.rs, the same on every app)
+        // (the client core reads it: core/client/src/presence.rs, the same on every app)
         this.board.applyPresenceEvent(JSON.stringify({ device: hex(event.device), online: event.online, lost: event.lost, hears: event.hears, working: event.working, last_call_at: event.last_call_at }), this.now())
         // (an agent that came online without a main session gets one: engine.ts seatAgents)
         if (event.online && this.is_human && this.engine.roles?.agents.some(d => hex(d) === hex(event.device))) this.engine.keepSoon(0)
@@ -949,7 +949,7 @@ export class Client {
       ch.stack = true
     })
   }
-  /** The hub's Desk as read decides what stands (the client core's Desk: client/src/desk.rs, `M.project`): an open
+  /** The hub's Desk as read decides what stands (the client core's Desk: core/client/src/desk.rs, `M.project`): an open
    *  card or request it does not list, with nothing of it here newer than its change, is held back (`catching_up`);
    *  a hand back older than the version it lists is over. */
   /** What the core's model changed since the last batch, put into the copy (`model`) and into `ch`. */
@@ -1100,7 +1100,7 @@ export class Client {
   shred({ object_id, note }: { object_id: string; note?: string | null }): Promise<Sent> { return this.answer({ object_id, answer_action: 'shred', note }) }
 
   /** The open question to offer after this card (decided just now): the next in the Desk's order among the sessions
-   *  `within` (by session key: the desk in view; null: every desk), else the first that waits (client/src/model/walk.rs). */
+   *  `within` (by session key: the desk in view; null: every desk), else the first that waits (core/client/src/model/walk.rs). */
   nextOpenAfter(cardId: string, within: string[] | null = null): string | null { return this.board.nextOpenAfter(cardId, within) }
 
   /** Takes the answer in force back: the card is open again. */
@@ -1595,7 +1595,7 @@ export class Client {
     this.vouchTimer = setTimeout(() => { this.vouchTimer = null; void this.answerAsks().catch(() => {}) }, 300)
   }
   /** Each live main session whose agent asks to let a new session in (`join_ask/<nonce>`) gets a link for it in
-   *  `join_link/<nonce>`, or `{ refused }` (the client core's bounds, client/src/selfjoin.rs: `cap`, `busy`; `busy` too
+   *  `join_link/<nonce>`, or `{ refused }` (the client core's bounds, core/client/src/selfjoin.rs: `cap`, `busy`; `busy` too
    *  when no invite can be opened). */
   private async answerAsks(): Promise<void> {
     if (!this.started || this.model.room.connection !== 'live') return
@@ -1610,7 +1610,7 @@ export class Client {
     }
   }
   /** The asks of the agents to act on, each with the refusal it gets at once: the client core's rule
-   *  (client/src/selfjoin.rs: bad-ask, cap, busy), this device's answered ones and its open vouched links counted in. */
+   *  (core/client/src/selfjoin.rs: bad-ask, cap, busy), this device's answered ones and its open vouched links counted in. */
   private selfJoinAsks(): { session_id: string; nonce: string; ask: Record<string, unknown>; refused: string | null }[] {
     const pending = [...this.invites.values()].filter(k => !k.done && k.public['vouch']).map(k => (k.public['vouch'] as Vouch).account)
     return JSON.parse(this.board.selfJoinAsks(JSON.stringify([...this.vouchAnswered]), JSON.stringify(pending)))
@@ -1653,7 +1653,7 @@ export class Client {
     const device = this.model.sessions.get(session_id)?.agent_device_id
     if (device) await this.retireDevice(device)
   }
-  /** A self-joined session's device goes (client/src/selfjoin.rs `to_retire` names them), once at a time. */
+  /** A self-joined session's device goes (core/client/src/selfjoin.rs `to_retire` names them), once at a time. */
   private async retireDevice(device: string): Promise<void> {
     if (this.vouchRetiring.has(device) || !(this.engine.roles?.agents ?? []).some(a => hex(a) === device)) return
     this.vouchRetiring.add(device)
@@ -1674,7 +1674,7 @@ export class Client {
     await e.healNow()
     return { key_epoch: this.model.room.key_epoch }
   }
-  // ---- deleting a desk (client/src/desk_delete.rs): the core decides each step, this client does it ----
+  // ---- deleting a desk (core/client/src/desk_delete.rs): the core decides each step, this client does it ----
   /** The desks a delete was begun on (by any device): the app finishes each on its start. */
   desksDeleting(): string[] { return this.is_human ? JSON.parse(this.board.desksDeleting()) as string[] : [] }
   /** What a desk holds, counted (the confirm names these). board: the desk's board as read, or null. */
@@ -1709,7 +1709,7 @@ export class Client {
     }
     return plan()
   }
-  /** His starred cards, the last starred first (client/src/stars.rs): `[{ object_id, at }]`. */
+  /** His starred cards, the last starred first (core/client/src/stars.rs): `[{ object_id, at }]`. */
   starredCards(): { object_id: string; at: number }[] { return JSON.parse(this.board.starredCards()) as { object_id: string; at: number }[] }
   /** Log out. The core lets no device commit its own removal, so nothing is removed here: what is still in the
    *  outbox goes out if it can, the client stops, and the caller wipes this device's storage. The device stays a

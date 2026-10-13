@@ -243,7 +243,7 @@ pub struct Core {
     asked_readmit: Vec<GroupId>,
     /// The Welcomes as fetched for the batch of items being processed: asked for once per batch (a page of the
     /// log, a burst of the stream), however many Commits of groups not held it brings (the client core's load
-    /// rule, client/src/plan.rs).
+    /// rule, core/client/src/plan.rs).
     welcomes_batch: Option<Vec<Value>>,
     /// Requests of this device the hub voided or refused for good, by outbox id (of an envelope that was
     /// sealed again: the first one's).

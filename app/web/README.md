@@ -2,7 +2,7 @@
 
 The app at **https://app.trommi.com**: a static, local-first single-page app. Every device makes its own keys, keeps
 the room in IndexedDB, decrypts and renders locally (the client core in a Web Worker, the page with a copy of its
-model: [`core/README.md`](core/README.md)), and talks to the hub only in sealed envelopes. No framework: plain ES
+model: [`core/protocol/README.md`](core/protocol/README.md)), and talks to the hub only in sealed envelopes. No framework: plain ES
 modules and CSS, one file per view; deployed as one minified bundle that loads each view when it is first needed
 (Cloudflare Workers static assets: `wrangler.jsonc`, directory `public/`, build step `dev/build.mjs`).
 
@@ -55,7 +55,7 @@ repository yet; these scripts wait for them.
 worker.js              http -> https, the universal links' file, /whats-new.json (whats-new.mjs: What's new from the releases' notes)
 wrangler.jsonc  THIRD-PARTY.md   fonts, Argon2, the QR reader, the word list: whose they are
 core/                  the client layer (TypeScript): the room, sync, storage, the worker; crypto and the Desk's rules
-                       come from Rust (core/, client/) as WebAssembly. core/README.md
+                       come from Rust (core/protocol/, core/client/) as WebAssembly. core/protocol/README.md
 dev/                   serve, build, check, verify; look, perf and the browser tests (cdp.mjs drives Chromium)
 public/
   index.html  sw.js  manifest.webmanifest  _headers  robots.txt  frame.html (the sandbox a published page runs in)
@@ -117,7 +117,7 @@ inline script or style whose hash is not in `_headers`, and broken demo data.
   one chunk per lazy view, the core as chunks of its own, the demo, the core's worker in one file
   (`core-worker-<hash>.mjs`), the account screens' part of it (`core-worker-account-<hash>.mjs`, loaded only by them)
   and `core-start-<hash>.mjs`, which `index.html` runs first to start the worker. Beside them lies the Rust core,
-  `trommi-core-<hash>.wasm`, as `core/wasm/build.sh` made it (`core/wasm/pkg/`; the build runs that script only when
+  `trommi-core-<hash>.wasm`, as `core/bindings/wasm/build.sh` made it (`core/bindings/wasm/pkg/`; the build runs that script only when
   its output is missing or older than the core's sources); the binding's scripts are inside the worker. Every name
   carries its content's hash; `_headers` keeps them immutable.
 - `public/gen/vendor/tools-reference.mjs`: the connector's tools and events, for the help page.
@@ -130,7 +130,7 @@ inline script or style whose hash is not in `_headers`, and broken demo data.
 `node dev/build.mjs` checks only and prints the cold start's size; `--write` writes into `public/` (never commit that:
 it rewrites `index.html`, `sw.js` and `_headers` too). In Cloudflare's build (`WORKERS_CI=1`) it runs `npm ci` in
 `app/web/` first, writes, and refuses another Node, esbuild, Rust or wasm-bindgen than the pinned ones
-(`.node-version`, `app/web/package-lock.json`, `rust-toolchain.toml`, `core/wasm/Cargo.toml`). `dev/serve.mjs` serves the
+(`.node-version`, `app/web/package-lock.json`, `rust-toolchain.toml`, `core/bindings/wasm/Cargo.toml`). `dev/serve.mjs` serves the
 build from memory: by default the sources as modules of their own, with `--bundle` as deployed.
 
 **Integrity.** The bundle's `index.html` carries `integrity` (sha384) on the entry, `core-start` and every
@@ -141,7 +141,7 @@ the Rust core's scripts are inside it, and its `.wasm` is fetched with the SHA-2
 
 **Deploying.** Cloudflare Workers: root directory `app/web`, build command `node dev/build.mjs` (`wrangler.jsonc`),
 deploy command `npx wrangler deploy`, Node from `.node-version`. The build reads `app/web/`, `demo/data/`,
-`connector/tools.json`, `connector/prompt.md`, `core/` (through `core/wasm/pkg/`), `Cargo.toml`, `Cargo.lock`,
+`connector/tools.json`, `connector/prompt.md`, `core/` (through `core/bindings/wasm/pkg/`), `Cargo.toml`, `Cargo.lock`,
 `rust-toolchain.toml` and `.node-version` (`package.json` and `package-lock.json` are in `app/web/`): a change to any of them is a new build.
 
 ### Verifying the build
@@ -263,7 +263,7 @@ The app says **account**, never "room" (inside, the core founds and joins a room
 
 ### IndexedDB
 
-The core owns the schema (`core/README.md`, "Storage adapter"): database `trommi`, keys prefixed `room/`; device keys as non-extractable CryptoKeys; records `card/<object_id>`, `session/<session_id>`, `perm/<id>`, `note/<id>`, `pub/<id>`, `reg/<key>`, `tlmeta/<timeline_key>`, `tl/<timeline_key>/<envelope_number>`, `sync` (cursor + chains, same transaction), `room`, `outbox`, `invite/<id>`; written incrementally (~200 ms batches). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the desk in view (`trommi-desk`); the developer switches below are sessionStorage only. The mock room keeps nothing.
+The core owns the schema (`core/protocol/README.md`, "Storage adapter"): database `trommi`, keys prefixed `room/`; device keys as non-extractable CryptoKeys; records `card/<object_id>`, `session/<session_id>`, `perm/<id>`, `note/<id>`, `pub/<id>`, `reg/<key>`, `tlmeta/<timeline_key>`, `tl/<timeline_key>/<envelope_number>`, `sync` (cursor + chains, same transaction), `room`, `outbox`, `invite/<id>`; written incrementally (~200 ms batches). The app keeps only per-browser conveniences in localStorage: theme (`trommi-theme`), rail (`trommi-rail`), open crowns (`trommi-crowns-open`), the desk in view (`trommi-desk`); the developer switches below are sessionStorage only. The mock room keeps nothing.
 
 ### Render strategy (performance)
 

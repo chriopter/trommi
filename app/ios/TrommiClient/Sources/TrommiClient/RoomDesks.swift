@@ -1,4 +1,4 @@
-// RoomDesks.swift: deleting a desk with everything on it (client/src/desk_delete.rs), as the web's client.ts
+// RoomDesks.swift: deleting a desk with everything on it (core/client/src/desk_delete.rs), as the web's client.ts
 // `deskDeleteStep` and desks.mjs `deleteDesk`. The client core plans each step from the board and what this device read
 // of the desk's Scribble Board; this device does the step and asks again, until the desk is gone:
 // mark the desk (`deleting`, so that any human device finishes a delete broken off), shred its open cards, remove the

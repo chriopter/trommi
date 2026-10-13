@@ -110,7 +110,7 @@ export function hubUrl() {
 // ---- blocked ----
 // When a session is really stopped: the raised red hand. It is about a SESSION, not a card, and it can stand without
 // any card (cut off, or disconnected while working). Whether it stands is the client core's rule, decided with the
-// Desk (client/src/status.rs): a question that is not on the Desk (put off, settled elsewhere, with its agent) raises
+// Desk (core/client/src/status.rs): a question that is not on the Desk (put off, settled elsewhere, with its agent) raises
 // no hand. Being quiet is no stop: a grey hint, quietOf(). Here they get their words.
 const minutes = ms => Math.max(1, Math.round(ms / 60000))
 const two = n => String(n).padStart(2, '0')
@@ -122,7 +122,7 @@ const clock = (t, now) => {
 
 /** agent: a record of state.agents. Returns null, or { why, text, since } where text is the plain words for a tooltip
  *  ("Connection lost since 14:05", "Waiting for permission"). Whether it is stopped is the client core's (the row's
- *  `blocked`, client/src/status.rs): it reads the Desk, so the red hand and the Desk never disagree. */
+ *  `blocked`, core/client/src/status.rs): it reads the Desk, so the red hand and the Desk never disagree. */
 export function blockedOf(agent, state, now = Date.now()) {
   const b = agent?.blocked
   if (!b || agent.archived) return null
@@ -143,7 +143,7 @@ export function quietOf(agent, state, now = Date.now()) {
 // ---- link ----
 // Whether a session can HEAR the human and SPEAK to him, which is more than "its connector has a stream" (agent.online).
 // The session's connector reports it to the hub (agent.link, README "The link"), and writes a receipt when it really
-// handed the human's words to the agent (card.heard). The five states are the client core's (client/src/status.rs
+// handed the human's words to the agent (card.heard). The five states are the client core's (core/client/src/status.rs
 // link_state, decided at its clock and handed over in the session list: agent.link_view); here they get their words.
 //   agent.link: { hears: 'live' | 'oncall', attached, last_call_at, since, cut_since, exit: { reason, claude } } or null
 //   card.heard: true (the agent has his answer or hand-back), false (it waits in the connector), null (not known:
@@ -159,7 +159,7 @@ const codexOf = agent => agent?.client === 'codex'
 /** The session's link: { state: 'live' | 'oncall' | 'asleep' | 'cut' | 'gone', sign, word, short, line, since, fix: { say, code } | null }; null for none. */
 export function linkOf(agent, now = Date.now()) {
   if (!agent || agent.archived || agent.removed) return null
-  // (the state is the client core's, at its clock: client/src/status.rs `link_state`; here it gets its words)
+  // (the state is the client core's, at its clock: core/client/src/status.rs `link_state`; here it gets its words)
   const v = agent.link_view
   if (!v) return null
   const n = agent.name, l = agent.link ?? null, codex = codexOf(agent)
@@ -200,7 +200,7 @@ export function heardOf(card, now = Date.now()) {
 // stored on the hub for it, it is this browser's choice like any desk.
 const ALL_DESKS = 'all'
 /** The walk (the Desk's rows, Blitz, a card's before and next): every open card that waits for him on this desk, in
- *  the client core's order (client/src/desk.rs walk_order, the patch's desk_order), the same on every device: what
+ *  the client core's order (core/client/src/desk.rs walk_order, the patch's desk_order), the same on every device: what
  *  blocks an agent first, then what knocks, then the rest; in each the infos first, newest first, then the decisions,
  *  oldest first. Not what is with an agent. */
 export const walkOf = m => (m.walk ??= (() => {
@@ -669,11 +669,11 @@ export class BoardState {
     const agents = this.agents()
     const shelved = new Set(agents.filter(a => a.archived).map(a => a.id))
     // The Desk: what the client core's Desk holds (its stack and open requests: not held, not put off, not of an
-    // archived session; client/src/desk.rs), with the infos their agents still work on (Off your mind), by age.
+    // archived session; core/client/src/desk.rs), with the infos their agents still work on (Off your mind), by age.
     const onCoreDesk = new Set([...(m.stack ?? []), ...(m.open_permission_ids ?? [])])
     const queue = cardsMemo(cards, `queue ${[...shelved]} ${m.stack?.length}:${m.stack?.join()} ${m.open_permission_ids?.join()}`, () => cards.filter(c => c.status === 'open' && (onCoreDesk.has(c.id) || (c.working && !shelved.has(c.agent) && !c.snoozed_until))).sort((a, b) => a.created - b.created || a.number - b.number).map(c => c.id))
     const tasks = []
-    // (each line's state as shown: the client core's, at its clock, in the session list (client/src/status.rs
+    // (each line's state as shown: the client core's, at its clock, in the session list (core/client/src/status.rs
     //  line_state: its card and session decide, so it says what Off your mind says); a session the list does not name:
     //  gone. set_state: what its agent set)
     const linesOf = new Map((m.session_list ?? []).map(r => [r.key, r.lines ?? {}]))
@@ -713,7 +713,7 @@ export class BoardState {
 
   agents() {
     // Which sessions show, under which name, online or gone, archived, under which parent and in which order: the
-    // client core's session list (client/src/sessions.rs), the same on every device of the person. What is added here
+    // client core's session list (core/client/src/sessions.rs), the same on every device of the person. What is added here
     // is only what the page draws beside it (account, usage, link, the agent's own words).
     const m = this.model
     const rows = m.session_list ?? []
@@ -737,7 +737,7 @@ export class BoardState {
         link: s.link ?? null, heard_up_to: s.heard_up_to ?? null,
         slot: !s.parent_session_id && dev?.folder ? `${dev.host ?? ''}\n${dev.folder}` : null, born: dev?.added_entry_number ?? 0,
         waiting: r.waiting, fetched: r.fetched,
-        // (at the client core's clock: client/src/status.rs)
+        // (at the client core's clock: core/client/src/status.rs)
         link_view: r.link ?? null, blocked: r.blocked ?? null, working: Boolean(r.working), quiet_since: r.quiet_since ?? null,
       }
     })
@@ -1156,7 +1156,7 @@ function hubFacade(client, board) {
     },
     /** Star a card, or take its star off: his own mark, on all his devices. */
     star(cardId, on) { card(cardId); return client.star(cardId, Boolean(on)) },
-    /** The open question to offer after this card: the client core's (client/src/model/walk.rs), among the sessions
+    /** The open question to offer after this card: the client core's (core/client/src/model/walk.rs), among the sessions
      *  `within` (the desk in view; null: every desk). Null when nothing else waits. */
     async nextOpenAfter(cardId, within = null) { return (await client.nextOpenAfter(cardId, within)) ?? null },
     async reopen(cardId) {

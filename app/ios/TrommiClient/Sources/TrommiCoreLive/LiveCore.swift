@@ -1,8 +1,8 @@
 // LiveCore.swift: `CoreTools` (TrommiClient/Core.swift) on the Rust core, through the UniFFI module TrommiCoreRust
-// (core/swift, built by core/swift/build.sh). The app installs it once at launch: `Core.tools = LiveCore()`.
+// (core/bindings/swift, built by core/bindings/swift/build.sh). The app installs it once at launch: `Core.tools = LiveCore()`.
 // The device is LiveDevice.swift; the store, errors and bytes at the edge are LiveStore.swift.
 //
-// WHAT IS REAL AND WHAT IS STUBBED, against the binding of core/swift/src at v2-bindings 33a943d.
+// WHAT IS REAL AND WHAT IS STUBBED, against the binding of core/bindings/swift/src at v2-bindings 33a943d.
 //
 //   STUBBED      nothing.
 //                Every call of Core.swift is one call into the binding, with the shapes changed and nothing else.
@@ -163,7 +163,7 @@ open class LiveCore: CoreTools {
   /// says nothing about the request (`passing`: the hub failed or is busy, wants a new sign-in, a newer client or
   /// the lease), a code no hub answers with (`notOfAHub`), and a code this core does not know. Every other code
   /// judges the request, `quota-exceeded`, `too-many` and `gap` among them: the core undoes what the entry was for.
-  /// The two lists are the core's (core/src/device.rs `refusal_is_passing`, core/swift/src/device.rs `is_hub_code`);
+  /// The two lists are the core's (core/protocol/src/device.rs `refusal_is_passing`, core/bindings/swift/src/device.rs `is_hub_code`);
   /// a test holds them together.
   public func isFinalRefusal(_ code: String) -> Bool { Self.isFinalRefusal(code) }
   public static func isFinalRefusal(_ code: String) -> Bool {

@@ -1,5 +1,5 @@
 // LiveCore and LiveDevice on the real Rust library, on Linux. That this file links and runs under `swift test` is the
-// proof that the static library of core/swift/build.sh, UniFFI's Swift file and the package's linker settings fit
+// proof that the static library of core/bindings/swift/build.sh, UniFFI's Swift file and the package's linker settings fit
 // together. No hub runs here: where a test needs the hub's one order, `PocketHub` (RecoveryTests.swift) keeps it.
 import Foundation
 import XCTest
@@ -19,7 +19,7 @@ func scratchFolder(_ test: XCTestCase) throws -> URL {
 /// The repository's root: the first folder above this file that holds the core's manifest.
 func repositoryRoot() -> URL {
   var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-  while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("core/Cargo.toml").path) { root.deleteLastPathComponent() }
+  while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("core/protocol/Cargo.toml").path) { root.deleteLastPathComponent() }
   return root
 }
 
@@ -51,15 +51,15 @@ final class LiveCoreTests: XCTestCase {
 
   // ---- the library itself ---------------------------------------------------------------------------------
 
-  /// The `version` of the package in core/Cargo.toml, read from the checkout this test was built in.
+  /// The `version` of the package in core/protocol/Cargo.toml, read from the checkout this test was built in.
   private func cargoVersion() throws -> String {
-    let manifest = try String(contentsOf: repositoryRoot().appendingPathComponent("core/Cargo.toml"), encoding: .utf8)
+    let manifest = try String(contentsOf: repositoryRoot().appendingPathComponent("core/protocol/Cargo.toml"), encoding: .utf8)
     for line in manifest.split(separator: "\n") {
       if line.hasPrefix("[") && line != "[package]" { break }
       let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
       if parts.count == 2, parts[0] == "version" { return parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
     }
-    throw TrommiError("test", "no version in core/Cargo.toml")
+    throw TrommiError("test", "no version in core/protocol/Cargo.toml")
   }
 
   func testVersionIsTheCoresOwn() throws {
@@ -121,9 +121,9 @@ final class LiveCoreTests: XCTestCase {
     XCTAssertEqual(device.logFinding(TrommiError("bad-commit")), .badGroup)
   }
 
-  /// Every code of the core's list, as core/swift/src/error.rs spells them.
+  /// Every code of the core's list, as core/bindings/swift/src/error.rs spells them.
   private func everyCode() throws -> [String] {
-    let source = try String(contentsOf: repositoryRoot().appendingPathComponent("core/swift/src/error.rs"), encoding: .utf8)
+    let source = try String(contentsOf: repositoryRoot().appendingPathComponent("core/bindings/swift/src/error.rs"), encoding: .utf8)
     guard let start = source.range(of: "pub enum ErrorCode {"), let end = source.range(of: "\n    }\n", range: start.upperBound..<source.endIndex) else { throw TrommiError("test", "no ErrorCode in error.rs") }
     return source[start.upperBound..<end.lowerBound].split(separator: "\n").compactMap { line -> String? in
       guard let eq = line.range(of: " = \""), line.hasSuffix("\",") else { return nil }

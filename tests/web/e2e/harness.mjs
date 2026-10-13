@@ -59,7 +59,7 @@ export function missing({ hub = false } = {}) {
   const chromium = process.env.CHROMIUM || 'chromium'
   const found = chromium.includes('/') ? fs.existsSync(chromium) : (process.env.PATH ?? '').split(path.delimiter).some(d => fs.existsSync(path.join(d, chromium)))
   if (!found) out.push(`Chromium is missing: no "${chromium}" on the PATH (set CHROMIUM to the program)`)
-  if (!fs.existsSync(path.join(REPO, 'core/wasm/pkg/trommi_core_wasm_bg.wasm'))) out.push('the Rust core\'s WASM package is missing: core/wasm/pkg/ (run core/wasm/build.sh)')
+  if (!fs.existsSync(path.join(REPO, 'core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm'))) out.push('the Rust core\'s WASM package is missing: core/bindings/wasm/pkg/ (run core/bindings/wasm/build.sh)')
   if (!fs.existsSync(path.join(REPO, 'app/web/node_modules/esbuild'))) out.push('esbuild is missing (npm ci in app/web)')
   if (hub) {
     const bin = process.env.TROMMI_HUB_BIN

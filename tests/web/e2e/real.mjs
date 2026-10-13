@@ -426,8 +426,8 @@ export const steps = [
     await A.click('#settings-invite-agent')
     await arrives(A, "location.pathname.startsWith('/pair/') && document.querySelector('[data-state=open] .clip-copy[data-line=connect] code')", 'the agent invite page')
     const link = /'(http\S+\/join#v1\.[^']+)'/.exec(await A.js("return document.querySelector('[data-state=open] .clip-copy[data-line=connect] code').textContent"))?.[1]
-    const binding = await import('../../../core/wasm/pkg/trommi-core.js')
-    await binding.init(fs.readFileSync(new URL('../../../core/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
+    const binding = await import('../../../core/bindings/wasm/pkg/trommi-core.js')
+    await binding.init(fs.readFileSync(new URL('../../../core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
     const { init: _i, Device, TrommiError, StoreConflict: _s, ...stateless } = binding
     const core = { ...stateless, createDevice: store => Device.create(store), openDevice: store => Device.open(store), errorCode: e => (e instanceof TrommiError ? e.code : null) }
     const R = roomsOn({ core: async () => core, store: name => new MemoryStore(name), cache: async name => memoryCache(name), destroy: async () => {}, timing: TIMING })

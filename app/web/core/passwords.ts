@@ -1,7 +1,7 @@
 // passwords.ts: what the account screens check and make on the PAGE, before anything goes to the core worker: is
 // this an e-mail address, is the new password long enough, are these twelve words, and a generated password to offer.
 //
-// The rules themselves are the core's (core/src/account.rs: normaliseEmail, checkPassword, parseKitWords), and the
+// The rules themselves are the core's (core/protocol/src/account.rs: normaliseEmail, checkPassword, parseKitWords), and the
 // core decides: account.ts asks it again in the worker for everything that is sent or derived, and its refusals
 // (`bad-email`, `weak-password`, `bad-recovery-words`) are worded by the screens exactly like these checks. The page's
 // thread never loads the core (its WASM is the worker's), so a form's own word, said while the person types and

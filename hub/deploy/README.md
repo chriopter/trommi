@@ -72,7 +72,7 @@ trails after thirty days. The table per stored thing is in `spec/v1.md`, section
 Each part has its own pipeline on `main` (`.github/workflows/ship-<part>.yml`), started by a push that changed the
 part or the core: it runs the part's full tests (and the core's, when it changed) and delivers the part, on its own,
 when what that part has out there was built from other inputs: `.github/scripts/inputs.sh` hashes, per part (web, connector, ios, hub, updater),
-the files its build reads (as git lists them for the commit: mode, object, path; `core/`, `client/` and the Rust pins
+the files its build reads (as git lists them for the commit: mode, object, path; `core/`, `core/client/` and the Rust pins
 count for every part, each part's own build and delivery files for it, tests for none), and
 `.github/scripts/deployed.sh` compares that with what is out there. A delivery that failed is therefore made again
 by the next run. There is no release of every part; N is the pipeline's run number (plus its `RELEASE_BASE`): it only grows.

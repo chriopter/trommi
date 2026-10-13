@@ -1,4 +1,4 @@
-// core.ts: the core for the client tests: the REAL binding (core/wasm/pkg), with one thing added for the FAKE hub.
+// core.ts: the core for the client tests: the REAL binding (core/bindings/wasm/pkg), with one thing added for the FAKE hub.
 // TEST ONLY: it lives under tests/, is never shipped, and the product has no switch that loads it.
 //
 // Everything is the binding's own, unchanged: devices, MLS groups, Commits, Welcomes, stored content (`seal`,
@@ -17,7 +17,7 @@
 // that), then one atomic write of the facts. A crash between the two leaves a Commit in the outbox without its
 // facts; the fake hub then takes it as "no change of members". A failed write of the facts closes the real device
 // too, as the binding does on its own failure.
-import type * as BindingModule from '../../../core/wasm/js/trommi-core.js'
+import type * as BindingModule from '../../../core/bindings/wasm/js/trommi-core.js'
 import type {
   Core, Cut, Device, ErrorCode, Fed, FeedItem, InviteConfirmed, LogEntry, OutboxEntry, PlacedCommit, Processed, ServedCommit, ServedEnd, ServedEnvelope, ServedGroup, ServedRoom, ServedStart, Store,
 } from '../../../app/web/core/core-api.ts'
@@ -427,12 +427,12 @@ export function standInCore(binding: Binding, opts: { stateStore(deviceStore: St
   }
 }
 
-/** The binding as Node loads it: the same module and .wasm a browser gets (core/wasm/pkg, built by core/wasm/build.sh). */
+/** The binding as Node loads it: the same module and .wasm a browser gets (core/bindings/wasm/pkg, built by core/bindings/wasm/build.sh). */
 export async function loadBinding(): Promise<Binding> {
   const { pathToFileURL } = await import('node:url')
   // TROMMI_CORE_PKG: another build of the binding (a directory), for a core that is not merged into this tree yet
   const other = process.env['TROMMI_CORE_PKG']
-  const pkg = other ? pathToFileURL(other.endsWith('/') ? other : `${other}/`) : new URL('../../../core/wasm/pkg/', import.meta.url)
+  const pkg = other ? pathToFileURL(other.endsWith('/') ? other : `${other}/`) : new URL('../../../core/bindings/wasm/pkg/', import.meta.url)
   const [binding, fs] = await Promise.all([import(new URL('trommi-core.js', pkg).href) as Promise<Binding>, import('node:fs')])
   await binding.init(fs.readFileSync(new URL('trommi_core_wasm_bg.wasm', pkg)))
   useCodec(binding)   // the app's body codec (app/web/core/codec.ts) calls the core

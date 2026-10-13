@@ -1,7 +1,7 @@
 // engine.mjs: what an engine gives of the things Trommi's core stands on, asked by pages/probe.mjs under the app's
 // own Content-Security-Policy, in the page and in a module worker:
 //   WebAssembly under 'wasm-unsafe-eval' (and refused without it) · IndexedDB `transaction.durability` for the hint
-//   "strict" (core/wasm/js/idb-store.js refuses to write when it does not read back "strict") · Web Locks: exclusive,
+//   "strict" (core/bindings/wasm/js/idb-store.js refuses to write when it does not read back "strict") · Web Locks: exclusive,
 //   ifAvailable, a wait given up, steal and its notice, query, a lock freed when its worker ends · a stream of
 //   events read with fetch as app/web/core/hub.ts reads it.
 // `probeChecks` is also what private.mjs holds a private window against.

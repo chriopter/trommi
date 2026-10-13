@@ -321,7 +321,7 @@ public final class LiveDevice: TrommiClient.CoreDevice {
       TrommiClient.OutboxKind(rawValue: Self.number(entry.kind)).map { TrommiClient.OutboxEntry(id: entry.id, kind: $0, group: entry.group?.bytes, epoch: entry.epoch, parts: entry.parts.map(\.bytes)) }
     }
   }
-  /// The number core/src/store.rs gives the kind, which is also the raw value of Core.swift's `OutboxKind`.
+  /// The number core/protocol/src/store.rs gives the kind, which is also the raw value of Core.swift's `OutboxKind`.
   private static func number(_ kind: TrommiCoreRust.OutboxKind) -> UInt8 {
     switch kind {
     case .roomFounding: return 1

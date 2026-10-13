@@ -406,11 +406,11 @@ export function chunks<T>(list: T[], size = 400): T[][] {
 //
 // THE PAGE HAS NO CORE: this module runs in the page that draws the board (gen/vendor/scribble.mjs), where the
 // WebAssembly core is not loaded, and the merge above works on the wire's form. So the rules of a board item's body
-// stand here once more, for the page: they are the client core's (client/src/codec.rs: `check_wire_shape`,
+// stand here once more, for the page: they are the client core's (core/client/src/codec.rs: `check_wire_shape`,
 // `entry_from_wire`, `entry_to_wire`, the board items of `decode_body` and `encode_body`), which every other reader
 // uses (the worker's model reads board items through the core), and they go when the merge runs in the core
 // (core-api.ts boardReduce). A change of the rules is made in both, and the tests of both hold them to each other
-// (tests/web/model/scribble.test.mjs, client/src/codec_tests.rs).
+// (tests/web/model/scribble.test.mjs, core/client/src/codec_tests.rs).
 
 const bad = (message: string): never => { throw failure('bad-format', message) }
 const isObject = (v: unknown): v is Fields => !!v && typeof v === 'object' && !Array.isArray(v)

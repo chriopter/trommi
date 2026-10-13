@@ -6,7 +6,7 @@ import { lastUndo, undoLast } from './ui.mjs'
 import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, avatar, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
 // ---- the rows: the questions and the infos (reports, notes, nothing to decide) ----
 // An info is a card of the stack like any other: the drawn page where a decision has its pictures, the title, and at
-// the right What?? and the tick (ui.mjs deskRow, tiles). The order is the client core's (client/src/desk.rs
+// the right What?? and the tick (ui.mjs deskRow, tiles). The order is the client core's (core/client/src/desk.rs
 // walk_order, the patch's desk_order), the same on every device: what blocks an agent first, then what knocks, then
 // the rest; in each the infos first, newest first, then the decisions, oldest first.
 // (What the agents finished stands in the end list, endList below, not among these rows.)
@@ -290,7 +290,7 @@ const deskStacks = (model, base) => html`<div class="inbox-stacks stack-tabs is-
 // the shredder and struck through, withdrawn by its agent with the return arrow). Fold lays it together again. Its
 // heading, a link, opens the page /stacks/off: every card, the pile open, with its search. A title opens its card.
 // How the pile is laid out from the counts (how many on top, the real totals, how many rows the Desk shows) is the
-// client core's rule (client/src/off_pile.rs off_pile), mirrored here by offPile.
+// client core's rule (core/client/src/off_pile.rs off_pile), mirrored here by offPile.
 /** A section's heading at the Desk's foot: a pen rule with its small label. With href the label itself is the link to
  *  the section's whole page, underlined and with an arrow (Off your mind; Artifacts, with its count). */
 const divider = (label, link = '', { href = '', count = null } = {}) => html`<div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg>${href ? html`<a class="end-head" data-nav href="${href}" aria-label="All ${label}${count == null ? '' : `, ${count}`}"><span class="end-head-words">${label}</span>${count == null ? '' : html` <span class="off-count">${count}</span>`}${sk('go')}</a>` : html`<span aria-hidden="true">${label}</span>`}${link}</div>`
@@ -302,7 +302,7 @@ export function pinStarred(items, starred) {
   const pinned = [...starred].sort((x, y) => y.card.starred - x.card.starred).map(s => ({ card: s.card, g: s.g, at: s.at, said: s.said, pinned: true }))
   return [...pinned, ...items.filter(s => !ids.has(s.card.id))]
 }
-/** Off your mind as one pile, from the real totals: the client core's rule (client/src/off_pile.rs off_pile), the same
+/** Off your mind as one pile, from the real totals: the client core's rule (core/client/src/off_pile.rs off_pile), the same
  *  numbers on every app (the page draws without the core: tests/web/views/off-pile.test.mjs holds the two equal). */
 export const PILE_TOP = 3, PILE_REST = 12, PILE_SHEETS = 3
 export function offPile(running, putOff, closed, full) {
@@ -858,7 +858,7 @@ export function register(t) {
         const m = model(), from = m0.byCard.get(String(form.get('from'))), home = String(form.get('back') ?? '')
         const said = done.length && WHAT[way] ? `said=${done[0]}:${WHAT[way]}` : ''
         if (home.startsWith(`${BASE}/chat/`) && /^[\w\-/%+.]+$/.test(home)) return redirect(res, `${home}${said ? `?${said}` : ''}`)
-        // (which comes next: the client core's, client/src/model/walk.rs next_open_after)
+        // (which comes next: the client core's, core/client/src/model/walk.rs next_open_after)
         const nextId = done.length && from ? await Promise.resolve(hub.nextOpenAfter?.(from.id, deskScope(m))).catch(() => null) : null
         const next = done.length ? (nextId && m.byCard.get(nextId)) || null : from
         return redirect(res, next ? `${cardPath(next, BASE)}?${[said, form.has('focus') ? 'focus=1' : ''].filter(Boolean).join('&')}`.replace(/\?$/, '') : `${BASE}/${said ? `?${said}` : ''}`)

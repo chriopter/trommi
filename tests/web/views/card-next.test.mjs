@@ -27,7 +27,7 @@ test('the decided card offers the next question, or says there is none, and Clos
 })
 
 test('which question comes next is the client core\'s, not the page\'s', () => {
-  // (client/src/model/walk.rs next_open_after, through the worker: the Desk's order, the desk in view)
+  // (core/client/src/model/walk.rs next_open_after, through the worker: the Desk's order, the desk in view)
   assert.match(src, /const next = await Promise\.resolve\(hub\.nextOpenAfter\?\.\(id, deskScope\(model\(\)\)\)\)/)
   // (while it still waits; else the first that waits on this desk in the core's order)
   assert.match(src, /model\.state\.desk_order \?\? \[\]\)\.find\(x => waits\.has\(x\)\)/)

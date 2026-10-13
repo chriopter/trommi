@@ -1,4 +1,4 @@
-// OldRec.swift: the record the board's reducer took before the model was the client core's (client/src/model), for
+// OldRec.swift: the record the board's reducer took before the model was the client core's (core/client/src/model), for
 // the tests written in its words: a decoded envelope (`content` in the model's names). `Board.apply(_:change:)` turns
 // it into what the client core reads (an envelope as the core took it: the body in the wire's names, the object as the
 // core's replay leaves it) and hands it to the core's model. `applyMembers` and `applySession` give the core the

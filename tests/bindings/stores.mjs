@@ -1,6 +1,6 @@
 // Stores for the tests of the browser binding, with the core's contract: a store in memory (for Node, where there
 // is no IndexedDB), and a wrapper that makes the next write of any store fail.
-import { StoreConflict } from '../../core/wasm/pkg/trommi-core.js'
+import { StoreConflict } from '../../core/bindings/wasm/pkg/trommi-core.js'
 
 /** What survives a "restart" in a test: name -> { revision, entries (Map of hex key -> { key, value }), owned }. */
 const disk = new Map()

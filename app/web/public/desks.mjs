@@ -1,7 +1,7 @@
 // Settings · Desks (/settings/desks): a card per desk with its Scribble Board small and what it holds, counted, and
 // a bin that deletes the desk with everything on it.
 //
-// The numbers are the client core's (client/src/desk_delete.rs `desk_contents`, through `client.deskContents`), once
+// The numbers are the client core's (core/client/src/desk_delete.rs `desk_contents`, through `client.deskContents`), once
 // the desk's board is read on this device (controller "desks"); the page is drawn first with the same numbers counted
 // here from the board model (`deskCounts`), which the core's then replace. The confirm names exactly what goes and is
 // held to delete.

@@ -11,7 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 # Default features only. Run alone (`cargo test -p trommi-tests-shipped --locked`), nothing in this package's
 # graph turns `vectors` on; a build of the whole workspace unifies it on, and the tests hold there too.
-trommi-core = { path = "../../core" }
+trommi-core = { path = "../../core/protocol" }
 # OpenMLS itself, for the member of `gate.rs` that builds what no device builds.
 openmls = { workspace = true }
 openmls_rust_crypto = { workspace = true }

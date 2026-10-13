@@ -7,7 +7,7 @@
 
 import Foundation
 
-/** What the asks on a board call for: the client core's rule (client/src/selfjoin.rs), the same as the web's. */
+/** What the asks on a board call for: the client core's rule (core/client/src/selfjoin.rs), the same as the web's. */
 public enum SelfJoinPlan {
   public struct Ask: Equatable {
     public let sessionId: String

@@ -13,8 +13,8 @@
 //                  beside the device's (`<name>:stand-in`) and `standInCore` is handed the app's wrapped store,
 //                  which does not say its name. One worker holds one device, so "the last one loaded" is its;
 //                - destroy(name) deletes that second store too, so logging out leaves nothing of it behind.
-import * as binding from '../../../core/wasm/js/trommi-core.js'
-import { IdbStore as BindingStore } from '../../../core/wasm/js/idb-store.js'
+import * as binding from '../../../core/bindings/wasm/js/trommi-core.js'
+import { IdbStore as BindingStore } from '../../../core/bindings/wasm/js/idb-store.js'
 import type { Core } from '../../../app/web/core/core-api.ts'
 import { standInCore } from '../stand-in/core.ts'
 

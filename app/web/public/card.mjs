@@ -198,7 +198,7 @@ ${optionsSaid(card, model.state.assets, version)}
 /** The words of the left column (#card-lead-<id>): what the live stream replaces (the picture keeps its place). */
 /** Who a card comes from, above its title, on its page and in Blitz (the owner, 13 October 2026): the session's drawing
  *  and where it stands, desk › main session › itself, its name in bold; a link to the session. The path is the
- *  client core's (client/src/sessions.rs `path`), drawn here only. */
+ *  client core's (core/client/src/sessions.rs `path`), drawn here only. */
 function fromLine(a, base) {
   const path = a.path?.length ? a.path : [a.name], name = path.at(-1)
   return html`<a class="tc-fromline" data-nav href="${base}/chat/${encodeURIComponent(a.id)}" style="--hue:${a.hue}" aria-label="From ${path.join(', ')}">${raw(doodleSvg(a.mark))}${path.slice(0, -1).map(p => html`<span>${p}</span><i aria-hidden="true">›</i>`)}<b>${name}</b></a>`
@@ -453,7 +453,7 @@ function placeOf(card, model) {
 export const starButton = (card, base) => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, base, 'star')}"><input type="hidden" name="stay" value="1"><input type="hidden" name="on" value="${card.starred ? '' : '1'}"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(Boolean(card.starred))}" title="${card.starred ? 'Unstar' : 'Star'}" aria-label="${card.starred ? 'Starred' : 'Star'}">${sk('star')}</button></form>`
 
 /** The open question to offer after this one was decided: the client core's answer at the time (id from the answer's
- *  redirect, client/src/model/walk.rs `next_open_after`) while it still waits, else the first that waits on this desk
+ *  redirect, core/client/src/model/walk.rs `next_open_after`) while it still waits, else the first that waits on this desk
  *  in the core's order (desk_order). */
 const nextOpen = (card, model, id) => {
   const waits = new Set(walkOf(model).map(c => c.id))

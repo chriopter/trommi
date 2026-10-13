@@ -1,13 +1,13 @@
 // The facade's manifest, and the check that both bindings cover it.
 //
-// The facade is declared once, in Rust (core/swift/src). This script reads those declarations (every exported
+// The facade is declared once, in Rust (core/bindings/swift/src). This script reads those declarations (every exported
 // function, every method of the three objects, every record and enum), writes them down in a neutral form
 // (tests/bindings/manifest.json, in the repository), and compares with it:
 //   - the Rust sources themselves: a call that changed without the manifest fails here, so a change is deliberate;
-//   - the TypeScript declarations (core/wasm/js/trommi-core.d.ts): the same calls, argument names and types;
-//   - the JavaScript layer (core/wasm/js/trommi-core.js: the names) and the wasm-bindgen exports
-//     (core/wasm/src/lib.rs: the names and the order of the arguments);
-//   - the generated Swift (core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift), if it was built.
+//   - the TypeScript declarations (core/bindings/wasm/js/trommi-core.d.ts): the same calls, argument names and types;
+//   - the JavaScript layer (core/bindings/wasm/js/trommi-core.js: the names) and the wasm-bindgen exports
+//     (core/bindings/wasm/src/lib.rs: the names and the order of the arguments);
+//   - the generated Swift (core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift), if it was built.
 //
 //   node tests/bindings/manifest.mjs            check
 //   node tests/bindings/manifest.mjs --write    write manifest.json from the Rust sources, then check
@@ -84,7 +84,7 @@ function argumentsOf(text, type) {
 
 function fromSources() {
   const manifest = { functions: {}, objects: {}, records: {}, enums: {} }
-  const folder = path.join(repo, 'core/swift/src')
+  const folder = path.join(repo, 'core/bindings/swift/src')
   for (const file of fs.readdirSync(folder).sort()) {
     const source = fs.readFileSync(path.join(folder, file), 'utf8')
     // Records and enums, as the macros of macros.rs take them.
@@ -119,7 +119,7 @@ function fromSources() {
 // ---- the TypeScript declarations ----------------------------------------------------------------------------------
 
 function fromTypings() {
-  const source = read('core/wasm/js/trommi-core.d.ts').replace(/\/\*\*.*?\*\//gs, '').replace(/^\s*\/\/.*$/gm, '')
+  const source = read('core/bindings/wasm/js/trommi-core.d.ts').replace(/\/\*\*.*?\*\//gs, '').replace(/^\s*\/\/.*$/gm, '')
   const found = { functions: {}, objects: {}, records: {}, enums: {} }
   const args = text => split(text).map(argument => {
     const [, name, optional, type] = /^(\w+)(\??): (.*)$/s.exec(argument)
@@ -190,7 +190,7 @@ for (const [name, cases] of Object.entries(manifest.enums)) {
 }
 
 // The JavaScript layer: the same names (it hands the arguments on as they come).
-const layer = read('core/wasm/js/trommi-core.js')
+const layer = read('core/bindings/wasm/js/trommi-core.js')
 const exported = [...layer.matchAll(/^export const (\w+) = plain\('(\w+)'\)$/gm)]
 for (const [, name, raw] of exported) if (camel(raw) !== name) problem(`trommi-core.js exports ${name} for ${raw}`)
 const layerFunctions = exported.map(([, name]) => name).sort()
@@ -212,20 +212,20 @@ const deviceCalls = [.../const DEVICE_CALLS = \[(.*?)\]/s.exec(layer)[1].matchAl
 const deviceMethods = Object.keys(manifest.objects.CoreDevice).filter(name => !['create', 'open', 'close'].includes(name)).sort()
 if (!same(deviceCalls, deviceMethods)) problem('trommi-core.js does not list exactly the device\'s calls')
 // The wasm-bindgen exports hand their arguments on by position: the same names in the same order as the facade's.
-const wasm = read('core/wasm/src/lib.rs')
+const wasm = read('core/bindings/wasm/src/lib.rs')
 const listed = block => Object.fromEntries([...block.matchAll(/(?:plain |fallible )?(\w+)\(([^)]*)\);/g)].map(([, name, args]) => [camel(name), split(args).map(camel)]))
 const names = declared => Object.fromEntries(Object.entries(declared).map(([name, { arguments: args }]) => [name, args.map(argument => argument.name)]))
 const sorted = object => Object.fromEntries(Object.entries(object).sort(([a], [b]) => a < b ? -1 : 1))
-if (!same(sorted(listed(/functions! \{(.*?)\n\}/s.exec(wasm)[1])), sorted(names(manifest.functions)))) problem('core/wasm/src/lib.rs does not export exactly the facade\'s functions with their arguments in order')
+if (!same(sorted(listed(/functions! \{(.*?)\n\}/s.exec(wasm)[1])), sorted(names(manifest.functions)))) problem('core/bindings/wasm/src/lib.rs does not export exactly the facade\'s functions with their arguments in order')
 for (const [object, rawName, left] of [['CoreDevice', 'RawDevice', ['create', 'open', 'close']], ['FileEncryptor', 'RawFileEncryptor', ['new', 'close']], ['FileDecryptor', 'RawFileDecryptor', ['new', 'close']], ['ClientDesk', 'RawClientDesk', ['new', 'close']], ['ClientModel', 'RawClientModel', ['new', 'close']]]) {
   const exported = listed(new RegExp(`methods!\\(${rawName} \\{(.*?)\\}\\);`, 's').exec(wasm)[1])
   const declared = names(manifest.objects[object])
   for (const name of left) delete declared[name]
-  if (!same(sorted(exported), sorted(declared))) problem(`core/wasm/src/lib.rs does not export exactly the calls of ${object} with their arguments in order`)
+  if (!same(sorted(exported), sorted(declared))) problem(`core/bindings/wasm/src/lib.rs does not export exactly the calls of ${object} with their arguments in order`)
 }
 
 // Swift, as UniFFI generated it.
-const swiftFile = 'core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift'
+const swiftFile = 'core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift'
 let swiftChecked = false
 if (fs.existsSync(path.join(repo, swiftFile))) {
   swiftChecked = true
@@ -259,7 +259,7 @@ if (fs.existsSync(path.join(repo, swiftFile))) {
       else if (call(found[name]) !== call(wanted)) problem(`Swift: ${object}.${name}${call(found[name])}, the facade has ${call(wanted)}`)
     }
   }
-  // The store a Swift host implements: the three calls of core/swift/src/store.rs.
+  // The store a Swift host implements: the three calls of core/bindings/swift/src/store.rs.
   const protocol = /^public protocol CoreStore: .*?\n(.*?)^\}/ms.exec(swift)?.[1] ?? ''
   const storeCalls = [...protocol.matchAll(/^\s*func (\w+)\(([^)]*)\)/gm)].map(([, name, args]) => `${name}(${args})`)
   if (!same(storeCalls, ['load()', 'apply(write: StoreWrite)', 'close()'])) problem(`Swift: the protocol CoreStore is ${storeCalls}`)
@@ -274,7 +274,7 @@ if (fs.existsSync(path.join(repo, swiftFile))) {
     if (!same(found, Object.keys(cases))) problem(`Swift: the enum ${name} has ${found}, the facade has ${Object.keys(cases)}`)
   }
 } else if (process.argv.includes('--swift')) {
-  problem(`${swiftFile} is not there: run core/swift/build.sh host`)
+  problem(`${swiftFile} is not there: run core/bindings/swift/build.sh host`)
 }
 
 for (const text of problems) console.error(`FAILED: ${text}`)

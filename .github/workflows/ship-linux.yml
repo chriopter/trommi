@@ -10,7 +10,6 @@ on:
       - app/linux/**
       - app/web/public/ui.mjs
       - app/web/public/fonts/**
-      - client/**
       - core/**
       - connector/**
       - Cargo.toml

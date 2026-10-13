@@ -21,19 +21,19 @@ dir=ios-speed${BEFORE:+-before}
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 
 # the tree to build: this checkout's app (or BEFORE's, with the harness commit's app changes put in), its core's
-# Swift package (the library: MAC_CORE_LIB, a core/swift/TrommiCoreRust on the Mac that core/swift/build.sh filled), the demo
+# Swift package (the library: MAC_CORE_LIB, a core/bindings/swift/TrommiCoreRust on the Mac that core/bindings/swift/build.sh filled), the demo
 mkdir -p "$tmp/src"
 if [ -n "${BEFORE:-}" ]; then
-  git -C "$repo" archive "$BEFORE" app/ios core/swift demo | tar xf - -C "$tmp/src"
+  git -C "$repo" archive "$BEFORE" app/ios core/bindings/swift demo | tar xf - -C "$tmp/src"
   for c in ${HARNESS:?HARNESS=<the harness commits, oldest first>}; do git -C "$repo" diff "$c~1" "$c" -- app/ios | (cd "$tmp/src" && git apply); done
 else
-  git -C "$repo" ls-files -z app/ios core/swift demo | (cd "$repo" && xargs -0 tar cf -) | tar xf - -C "$tmp/src"
+  git -C "$repo" ls-files -z app/ios core/bindings/swift demo | (cd "$repo" && xargs -0 tar cf -) | tar xf - -C "$tmp/src"
 fi
 node "$repo/tests/tools/mega-fixture.mjs" "$tmp/mega.json" ${FIXTURE_ARGS:-} > /dev/null   # (FIXTURE_ARGS: "COPIES CHAT CARD_X PICTURE_EVERY")
 on_mac "rm -rf ~/$dir && mkdir -p ~/$dir"
 tar cf - -C "$tmp" src mega.json | on_mac "tar xf - -C ~/$dir"
-lib=${MAC_CORE_LIB:-'~/ios-mega/core/swift/TrommiCoreRust'}
-on_mac "set -e; cd ~/$dir/src; mkdir -p core/swift/TrommiCoreRust/lib; cp -R $lib/lib/ios-simulator core/swift/TrommiCoreRust/lib/; cp $lib/Sources/TrommiCoreRust/TrommiCoreRust.swift core/swift/TrommiCoreRust/Sources/TrommiCoreRust/; mkdir -p core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include; cp $lib/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/
+lib=${MAC_CORE_LIB:-'~/ios-mega/core/bindings/swift/TrommiCoreRust'}
+on_mac "set -e; cd ~/$dir/src; mkdir -p core/bindings/swift/TrommiCoreRust/lib; cp -R $lib/lib/ios-simulator core/bindings/swift/TrommiCoreRust/lib/; cp $lib/Sources/TrommiCoreRust/TrommiCoreRust.swift core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/; mkdir -p core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include; cp $lib/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/
 cd app/ios/TrommiApp/AppStore && ~/bin/xcodegen/bin/xcodegen generate --spec project.yml --quiet
 TROMMI_IOS_SIMULATOR=1 xcodebuild build -project Trommi.xcodeproj -scheme Trommi -configuration Release -destination 'generic/platform=iOS Simulator' -derivedDataPath ~/Library/Caches/$dir-derived \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= ARCHS=arm64 ONLY_ACTIVE_ARCH=YES > ~/Library/Caches/$dir-build.log 2>&1 || { grep -E 'error:' ~/Library/Caches/$dir-build.log | sort -u | head -30; exit 1; }"
