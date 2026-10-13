@@ -360,14 +360,17 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
   const here = sessionPath(s.id, base), on = mode === 'questions', n = s.fresh.length
   return html`<nav class="session-mode${phone ? ' is-phone' : ''}" id="session-filters-${phone ? 'phone-' : ''}${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${here}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${here}?only=questions"${on ? raw(' aria-current="page"') : ''}${phone ? '' : raw(` data-controller="title" data-title-count-value="${n}"`)}>Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
 }
+/** The lines a session's page shows (their state as app.mjs lineState made it): the working ones, those that wait on
+ *  him, those put off with their card, and a done one for a while; not the stale ones nor those of a gone session. */
+const shownLines = (tasks, now = Date.now()) => tasks.filter(t => ['working', 'decision', 'later'].includes(t.state) || (t.state === 'done' && now - (t.updated ?? 0) < WORKING_WINDOW))
 /** The status lines of the session's running work, and that it is answering. They stand at the end of the conversation. */
 function sessionStatus(s, base, now = Date.now()) {
   const last = s.messages.findLast(m => m.from !== 'event')
   const answering = last?.from === 'user' && now - last.ts < WORKING_WINDOW
-  const lines = s.tasks.filter(t => t.state !== 'done' || now - (t.updated ?? 0) < WORKING_WINDOW)
+  const lines = shownLines(s.tasks, now)
   return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
     const card = lineCard(t, s.model, s.cards, s.tasks)
-    const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? html`<span class="status-when"><span data-short aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${ico('clock')}${agoSpan(t.updated, 'offscreen')}</span>` : ''}`
+    const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? html`<span class="status-when"><span data-short aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${ico('clock')}${agoSpan(t.updated, 'offscreen')}</span>` : ''}`
     // (on a phone only the title and the time; a tap opens the detail and the way to its question below, a second shuts it)
     const href = card ? questionPath(card, base) : ''
     return html`<div class="status-row" data-key="${t.agent}:${t.id}">${card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${href}" data-action="click->status-lines#toggle">${inner}</a>` : html`<p class="status-line" data-state="${t.state}" data-action="click->status-lines#toggle">${inner}</p>`}${t.detail || card ? html`<div class="status-more">${t.detail ? html`<p>${t.detail}</p>` : ''}${card ? html`<a class="status-open" data-nav href="${href}">Open the question →</a>` : ''}</div>` : ''}</div>`

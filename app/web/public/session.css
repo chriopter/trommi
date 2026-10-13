@@ -588,6 +588,8 @@ turbo-frame.log-earlier[busy] > .log-earlier-link { opacity: .5; pointer-events:
 .status-line[data-state="done"] b { color: var(--muted); font-weight: 500; }
 .status-line[data-state="decision"] .status-mark { color: var(--urg-high); }
 .status-line[data-state="done"] .status-mark { color: var(--faint); }
+.status-line[data-state="later"] b { color: var(--muted); font-weight: 500; }
+.status-line[data-state="later"] .status-mark { color: var(--faint); }
 .session-status .working { margin-top: var(--s-2); }
 /* a status row: its line, and on a phone what a tap opens below it (session.mjs status-lines) */
 .status-row { display: grid; max-width: 100%; min-width: 0; }

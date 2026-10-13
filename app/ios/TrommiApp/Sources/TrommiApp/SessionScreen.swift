@@ -681,7 +681,8 @@ struct SessionStatus: View {
     // (a turn's trail says by itself that the agent works, and at which step: no second line under a running one)
     let last = messages.last { $0.from != "event" }
     let answering = last?.from == "user" && now - min(now, last!.ts) < WORKING_WINDOW && agent.online
-    let lines = tasks.filter { $0.state != "done" || now - min(now, $0.updated) < WORKING_WINDOW }
+    // (their state as DeskModel.lineState made it: working, waiting on him, put off with its card, done for a while)
+    let lines = tasks.filter { ["working", "decision", "later"].contains($0.state ?? "") || ($0.state == "done" && now - min(now, $0.updated) < WORKING_WINDOW) }
     if answering || !lines.isEmpty {
       VStack(alignment: .leading, spacing: 8) {
         if answering {
@@ -701,6 +702,7 @@ struct SessionStatus: View {
                 Group {
                   if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
                   else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
+                  else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
                   else { Sketch("tick", color: Ink.accent) }
                 }.frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
                 Text(t.label).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)

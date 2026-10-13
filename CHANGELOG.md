@@ -19,6 +19,11 @@ The App Store listing now opens with your encrypted notes.
 **Better**
 - App Store listing leads with the encrypted notes screenshot (iPhone and iPad); the others follow in their old order.
 
+**Fixed**
+- **Status lines follow their cards**: a line under the conversation no longer says "working" or "waiting on you"
+  once its card is put off (it shows quietly with the snooze mark), answered long ago or closed; a line nobody updated
+  for 6 hours and a line of an archived session no longer show, and no longer count as work (web and iPhone).
+
 ## 12 October 2026
 
 Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and settings.
