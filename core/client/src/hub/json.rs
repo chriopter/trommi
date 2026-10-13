@@ -126,21 +126,41 @@ impl<'de> Visitor<'de> for Seed<'_> {
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Json, A::Error> {
         self.spend()?;
         let mut out: Vec<(String, Json)> = Vec::new();
-        while let Some(name) = map.next_key::<String>()? {
-            // (before the member is read or kept: an object beyond the cap costs nothing past this point)
-            if out.len() == MAX_MEMBERS {
-                return Err(de::Error::custom("more members than any object has"));
-            }
+        // (a name beyond the cap is refused before it is read: see `Name`)
+        while let Some(name) = map.next_key_seed(Name {
+            full: out.len() == MAX_MEMBERS,
+        })? {
             self.spend()?;
             let value = map.next_value_seed(Seed { left: self.left })?;
             out.push((name, value));
         }
         // sorted by name: a name twice then stands side by side, and a reader finds a member in a few steps
         out.sort_unstable_by(|a, b| order(&a.0, &b.0));
-        if out.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        if out
+            .windows(2)
+            .any(|pair| order(&pair[0].0, &pair[1].0).is_eq())
+        {
             return Err(de::Error::custom("a member named twice"));
         }
         Ok(Json::Map(out))
+    }
+}
+
+/// A member's name. In an object that is `full` there is none: the parser calls this once it knows that another
+/// member follows and before it reads a byte of the name, so an object beyond the cap ends there.
+struct Name {
+    full: bool,
+}
+
+impl<'de> DeserializeSeed<'de> for Name {
+    type Value = String;
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<String, D::Error> {
+        if self.full {
+            return Err(de::Error::custom("more members than any object has"));
+        }
+        #[cfg(test)]
+        NAMES.with(|c| c.set(c.get() + 1));
+        serde::Deserialize::deserialize(d)
     }
 }
 
@@ -155,6 +175,8 @@ fn order(a: &str, b: &str) -> std::cmp::Ordering {
 thread_local! {
     /// How many names this thread compared.
     static COMPARED: Cell<u64> = const { Cell::new(0) };
+    /// How many members' names this thread read.
+    static NAMES: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Most members an object may have: no object of the protocol has more than the 1024 devices of a claim's
@@ -340,11 +362,12 @@ mod tests {
         assert!(Json::parse(b"\"\xff\"", 16).is_err());
     }
 
-    /// The names compared while `text` was read.
-    fn compared(text: &str) -> (bool, u64) {
+    /// The names compared, and the names read, while `text` was read.
+    fn compared(text: &str) -> (bool, u64, u64) {
         COMPARED.with(|c| c.set(0));
+        NAMES.with(|c| c.set(0));
         let good = parse(text).is_ok();
-        (good, COMPARED.with(Cell::get))
+        (good, COMPARED.with(Cell::get), NAMES.with(Cell::get))
     }
 
     /// The `i`th of the names below: distinct, and in no order.
@@ -366,31 +389,38 @@ mod tests {
     fn reading_an_object_costs_no_more_than_its_size() {
         // the work is counted, not timed
         for members in [16, 256, 1024, MAX_MEMBERS] {
-            let (good, work) = compared(&object_of(members));
+            let (good, work, names) = compared(&object_of(members));
             assert!(good, "{members} members");
+            assert_eq!(names, members as u64);
             assert!(
                 work <= PER_MEMBER * members as u64,
                 "{members} members: {work}"
             );
         }
-        // one member more than any object of the protocol: refused where it stands, before a name is compared
-        let (good, work) = compared(&object_of(MAX_MEMBERS + 1));
-        assert!(!good);
-        assert_eq!(work, 0);
-        // 30 000 distinct members fit 1 MiB (and 800 000 fit the 16 MiB of a list): the same
+        // one member more than any object of the protocol: refused where that member begins, with no name
+        // compared and none read beyond the cap
+        let cap = MAX_MEMBERS as u64;
+        assert_eq!(compared(&object_of(MAX_MEMBERS + 1)), (false, 0, cap));
+        // 30 000 distinct members fit 1 MiB (and over 800 000 the 16 MiB of a list): the same
         let many = object_of(30_000);
         assert!(many.len() < 1 << 20);
-        assert_eq!(compared(&many), (false, 0));
+        assert_eq!(compared(&many), (false, 0, cap));
+        // what follows the cap is not read: not the name (here one that is no text at all), not the rest
+        let cut = object_of(MAX_MEMBERS).replacen('}', ",\"\\uZZZZ", 1);
+        assert_eq!(compared(&cut), (false, 0, cap));
         // many full objects in one answer, side by side and one in the other: still per member
         let full = object_of(MAX_MEMBERS);
         let list = format!("[{}]", [full.as_str(); 8].join(","));
-        let (good, work) = compared(&list);
-        assert!(good);
-        assert!(work <= 8 * PER_MEMBER * MAX_MEMBERS as u64, "{work}");
+        let (good, work, names) = compared(&list);
+        assert!(good && names == 8 * cap);
+        assert!(work <= 8 * PER_MEMBER * cap, "{work}");
         let nested = full.replacen(":0", &format!(":{full}"), 1);
-        let (good, work) = compared(&nested);
-        assert!(good);
-        assert!(work <= 2 * PER_MEMBER * MAX_MEMBERS as u64, "{work}");
+        let (good, work, names) = compared(&nested);
+        assert!(good && names == 2 * cap);
+        assert!(work <= 2 * PER_MEMBER * cap, "{work}");
+        // an object in a full object's member beyond the cap is not read either
+        let beyond = object_of(MAX_MEMBERS + 1).replacen(":0}", &format!(":{full}}}"), 1);
+        assert_eq!(compared(&beyond), (false, 0, cap));
     }
 
     #[test]
