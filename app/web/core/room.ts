@@ -63,6 +63,8 @@ export type SignInStep = { step: 'reading'; done?: number; total?: number } | { 
 export interface SessionJoins { joined: number; not_joined: { group: Uint8Array; code: string }[] }
 /** What a session's join is checked and built from: its founding and current GroupInfos and its Commits. */
 type SessionInput = { founding: Uint8Array; current: Uint8Array; commits: ServedCommit[] }
+/** How many session groups one `POST /v1/groups/read` asks for (the hub takes 64). */
+const READ_AT_ONCE = 32
 /** How many session groups' Commits are read from the hub at a time while they are joined behind a sign-in. */
 const SESSION_READS = 12
 /** Refusals of a session join that mean the group moved on: its GroupInfos and Commits are read again. A
@@ -489,9 +491,23 @@ export function roomsOn(env: RoomEnv): Rooms {
       p.catch(() => {})
       return p
     })
-    let next = 0
-    const reader = async (): Promise<void> => { while (next < groups.length) { const at = next++; await readSession(hub, groups[at]!).then(hooks[at]!.done, hooks[at]!.fail) } }
-    void Promise.all(Array.from({ length: Math.min(SESSION_READS, groups.length) }, reader))
+    // In requests of READ_AT_ONCE groups (`POST /v1/groups/read`, all asked at once); a group the answer leaves to a
+    // reading of its own, or a hub without the route, is read alone, a few at a time
+    const alone: number[] = []
+    const asked: Promise<void>[] = []
+    for (let from = 0; from < groups.length; from += READ_AT_ONCE) {
+      const chunk = groups.slice(from, from + READ_AT_ONCE)
+      asked.push(hub.readGroups(chunk).then(got => {
+        for (const [i, one] of got.entries()) { if (one) hooks[from + i]!.done(one); else alone.push(from + i) }
+      }, () => { for (let i = 0; i < chunk.length; i++) alone.push(from + i) }))
+    }
+    void Promise.all(asked).then(() => {
+      alone.sort((x, y) => x - y)
+      const left = alone.map(i => groups[i]!), hooksLeft = alone.map(i => hooks[i]!)
+      let k = 0
+      const one = async (): Promise<void> => { while (k < left.length) { const at = k++; await readSession(hub, left[at]!).then(hooksLeft[at]!.done, hooksLeft[at]!.fail) } }
+      void Promise.all(Array.from({ length: Math.min(SESSION_READS, left.length) }, one))
+    })
     return reads
   }
 

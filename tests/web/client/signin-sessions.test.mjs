@@ -33,6 +33,9 @@ test('a sign-in with the code says how far it is, stocks its KeyPackages at once
   // (the three main sessions' joins in one request, `POST /v1/commits`, not one each)
   const posts = fake.requests.slice(before).filter(r => r.method === 'POST' && (r.path === '/v1/commits' || /^\/v1\/groups\/[^/]+\/commits$/.test(r.path)))
   assert.deepEqual(posts.map(r => r.path === '/v1/commits' ? 'together' : 'alone'), ['alone', 'together'], 'the room group\'s join alone, then the sessions\' together')
+  // (and what the joins are built from is read in one request too, while the room group is joined)
+  assert.equal(fake.requests.slice(before).filter(r => r.method === 'POST' && r.path === '/v1/groups/read').length, 1)
+  assert.equal(fake.requests.slice(before).filter(r => r.method === 'GET' && /^\/v1\/groups\/[^/]+\/log$/.test(r.path)).length, 1, 'the room group\'s log alone is read by itself')
   await c.start()
   await until(() => c.engine.groups.filter(g => g.session).length === sessions, 'the new device in every session')
 })
@@ -76,12 +79,13 @@ test('joins posted together: one refused for good, one the hub throttles, the ot
   assert.equal(done.joined, 2, 'the throttled one went through on its next post, the third at once')
 })
 
-test('a hub without POST /v1/commits (from before it): the joins go one by one, as before', async t => {
+test('a hub without POST /v1/commits and POST /v1/groups/read (from before them): the sessions are read and joined one by one, as before', async t => {
   const { fake, a, recovery_code } = await scene(t, { agent: true })
   await addAgent(t, a, {}, 'agent2')
   await a.settle()
   const R = await rooms()
   fake.faults.add({ method: 'POST', path: '/v1/commits', refuse: { error: 'not-found', status: 404 }, times: 100 })
+  fake.faults.add({ method: 'POST', path: '/v1/groups/read', refuse: { error: 'not-found', status: 404 }, times: 100 })
   const before = fake.requests.length
   const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
   t.after(() => c.stop().catch(() => {}))
