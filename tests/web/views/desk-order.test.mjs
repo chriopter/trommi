@@ -8,6 +8,6 @@ import fs from 'node:fs'
 const src = fs.readFileSync(new URL('../../../app/web/public/desk.mjs', import.meta.url), 'utf8')
 
 test('the rows follow the core\'s desk_order, no order of the page\'s own', () => {
-  assert.match(src, /for \(const id of model\.state\.desk_order \?\? \[\]\)/)
+  assert.match(src, /const deskCards = m => walkOf\(m\)/)
   assert.doesNotMatch(src, /byUrgency|urgRank/)
 })

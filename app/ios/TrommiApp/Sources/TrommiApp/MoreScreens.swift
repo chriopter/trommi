@@ -16,12 +16,17 @@ struct BlitzScreen: View {
   @State private var current: String?
   var body: some View {
     let _ = model.version
-    let walk = model.view?.deskCards() ?? []
-    let id = current.flatMap { c in walk.contains { $0.id == c } ? c : nil } ?? walk.first?.id
+    let v = model.view
+    let walk = v?.deskCards() ?? []
+    // (the card answered, put off or handed back leaves the walk: the next is the client core's, the one after it in the
+    //  Desk's order, client/src/model/walk.rs; as on the web)
+    let within = v.flatMap { $0.all || $0.deskId == nil ? nil : $0.here.map { $0.deviceId } }
+    let id = current.flatMap { c in walk.contains { $0.id == c } ? c : model.board?.nextOpenAfter(c, within: within) } ?? walk.first?.id
     Group {
       if let id = id {
         CardScreen(cardId: id, walk: true)
           .id(id)
+          .onAppear { current = id }
           .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
               let at = walk.firstIndex { $0.id == id } ?? 0

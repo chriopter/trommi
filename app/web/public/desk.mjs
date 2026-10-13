@@ -1,7 +1,7 @@
-// The Desk: every open question as a row, in the hub's fixed order, and at its foot the end list
+// The Desk: every open question as a row, in the client core's order, and at its foot the end list
 // (Off your mind) and the Artifacts. The markup is the one app.css and desk.css style. A row never unfolds: its text is a link to
 // the card's own page, its tiles are forms that answer with one tap.
-import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
+import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, deskScope, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
 import { lastUndo, undoLast } from './ui.mjs'
 import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, avatar, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
 // ---- the rows: the questions and the infos (reports, notes, nothing to decide) ----
@@ -10,14 +10,7 @@ import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, ava
 // walk_order, the patch's desk_order), the same on every device: what blocks an agent first, then what knocks, then
 // the rest; in each the infos first, newest first, then the decisions, oldest first.
 // (What the agents finished stands in the end list, endList below, not among these rows.)
-function deskCards(model) {
-  const here = new Set([...model.fresh, ...(model.reads ?? [])])
-  if (!here.size) return []
-  const out = []
-  for (const id of model.state.desk_order ?? []) { const c = model.byCard.get(id); if (c && here.delete(c)) out.push(c) }
-  // (a card the core's order does not name yet, between two patches: at the end, until it does)
-  return here.size ? out.concat([...here]) : out
-}
+const deskCards = m => walkOf(m)
 /** The Desk's top is where one arrives: one big line in the display face, its last word underlined with the pen, and
  *  at the right, on the list's right edge, the tools for what waits (the duck for all, Blitz: the count stands
  *  there). The line is one of the greetings below, picked once per page load (it does not change while the page stays
@@ -788,7 +781,7 @@ controller('sheet', class extends Controller {
 
 // ---- the Desk's routes and live pieces ----
 export function register(t) {
-  const { BASE, model, says, redirect } = t
+  const { BASE, hub, model, says, redirect } = t
   // The whole end list with its search: GET <base>/stacks/off?q=…
   t.get(/^\/stacks\/(off)$/, ({ req, res, url, match }) => {
     const m = t.model(), q = String(url.searchParams.get('q') ?? '').trim().slice(0, 120)
@@ -850,9 +843,9 @@ export function register(t) {
         const m = model(), from = m0.byCard.get(String(form.get('from'))), home = String(form.get('back') ?? '')
         const said = done.length && WHAT[way] ? `said=${done[0]}:${WHAT[way]}` : ''
         if (home.startsWith(`${BASE}/chat/`) && /^[\w\-/%+.]+$/.test(home)) return redirect(res, `${home}${said ? `?${said}` : ''}`)
-        const walk0 = walkOf(m0), walk = walkOf(m)
-        const after = from ? walk0.slice(walk0.indexOf(from) + 1) : []
-        const next = done.length ? after.map(c => m.byCard.get(c.id)).find(c => c && walk.includes(c)) ?? walk.find(c => c.id !== from?.id) : from
+        // (which comes next: the client core's, client/src/model/walk.rs next_open_after)
+        const nextId = done.length && from ? await Promise.resolve(hub.nextOpenAfter?.(from.id, deskScope(m))).catch(() => null) : null
+        const next = done.length ? (nextId && m.byCard.get(nextId)) || null : from
         return redirect(res, next ? `${cardPath(next, BASE)}?${[said, form.has('focus') ? 'focus=1' : ''].filter(Boolean).join('&')}`.replace(/\?$/, '') : `${BASE}/${said ? `?${said}` : ''}`)
       }
       if (!t.wantsStream(req)) return redirect(res, BASE || '/')

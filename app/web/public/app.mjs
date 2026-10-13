@@ -199,9 +199,18 @@ export function heardOf(card, now = Date.now()) {
 // "All desks": the desk id ALL_DESKS stands for every desk at once (the single desks are its children); nothing is
 // stored on the hub for it, it is this browser's choice like any desk.
 const ALL_DESKS = 'all'
-/** The walk (Blitz, a card's before and next): every open card that waits for him, the questions first, then what
- *  is only to read, card by card. Not what is with an agent. */
-export const walkOf = m => (m.walk ??= [...m.fresh, ...(m.reads ?? [])])
+/** The walk (the Desk's rows, Blitz, a card's before and next): every open card that waits for him on this desk, in
+ *  the client core's order (client/src/desk.rs walk_order, the patch's desk_order), the same on every device: what
+ *  blocks an agent first, then what knocks, then the rest; in each the infos first, newest first, then the decisions,
+ *  oldest first. Not what is with an agent. */
+export const walkOf = m => (m.walk ??= (() => {
+  const here = new Set([...m.fresh, ...(m.reads ?? [])]), out = []
+  for (const id of m.state.desk_order ?? []) { const c = m.byCard.get(id); if (c && here.delete(c)) out.push(c) }
+  // (a card the core's order does not name yet, between two patches: at the end, until it does)
+  return here.size ? out.concat([...here]) : out
+})())
+/** The sessions of the desk in view, by session key, for the client core's walk (null: every desk). */
+export const deskScope = m => (m.all || m.desk == null ? null : m.agents.map(a => a.device_id))
 /** The last part of a folder's path: "~/git/game" is "game". */
 export const folderName = f => String(f ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || ''
 /**
