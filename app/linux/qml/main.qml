@@ -14,32 +14,21 @@ ApplicationWindow {
     title: "Trommi"
     color: theme.bg
 
-    // The web board's tokens (app/web/public/app.css), light and dark.
-    QtObject {
+    // the web board's tokens and tones (Theme.qml); dark only when the person picks it, as on the web
+    Theme {
         id: theme
-        // (Qt.styleHints.colorScheme: Qt 6.5 and later; 2 is Dark. Older Qt: light)
-        readonly property bool dark: Qt.styleHints.colorScheme === 2
-        readonly property color bg: dark ? "#0e1311" : "#f5f6f2"
-        readonly property color surface: dark ? "#171d1a" : "#ffffff"
-        readonly property color sunken: dark ? "#111715" : "#eceee8"
-        readonly property color fg: dark ? "#e9eeea" : "#141c18"
-        readonly property color muted: dark ? "#9aa8a0" : "#5c6862"
-        readonly property color faint: dark ? "#6c7a73" : "#8a958f"
-        readonly property color line: dark ? "#252f2a" : "#e1e5df"
-        readonly property color lineStrong: dark ? "#35423b" : "#c9d0c8"
-        readonly property color accent: dark ? "#6fd0b5" : "#1b6a57"
-        readonly property color accentSoft: dark ? "#17332b" : "#dcefe8"
-        readonly property color accentFg: dark ? "#08130f" : "#ffffff"
-        readonly property color high: dark ? "#f2a56c" : "#b4551b"
-        readonly property color highSoft: dark ? "#3a2415" : "#fbe9dc"
-        readonly property color critical: dark ? "#ff8a80" : "#b3261e"
-        readonly property color criticalSoft: dark ? "#41191a" : "#fbe0de"
-        readonly property color working: "#b07a06"
-        readonly property color online: dark ? "#6fd0b5" : "#1f8a4c"
-        readonly property string sans: Qt.fontFamilies().indexOf("IBM Plex Sans") >= 0 ? "IBM Plex Sans"
-            : (Qt.fontFamilies().indexOf("Adwaita Sans") >= 0 ? "Adwaita Sans" : Application.font.family)
-        readonly property string display: Qt.fontFamilies().indexOf("Bricolage Grotesque") >= 0 ? "Bricolage Grotesque" : sans
+        dark: trommi.theme_mode === "dark"
+        sans: plex.name || "IBM Plex Sans"
+        display: bricolage.name || "Bricolage Grotesque"
+        mono: plexMono.name || "IBM Plex Mono"
     }
+    // the web's faces, from the app's resources (app/web/public/fonts): the latin files only. Their latin-ext
+    // siblings carry the same family name and none of the basic letters; loaded beside them, Qt draws some words
+    // from the wrong file.
+    FontLoader { id: plex; source: "../fonts/f7.woff2" }
+    FontLoader { id: bricolage; source: "../fonts/f1.woff2" }
+    FontLoader { id: plexMono; source: "../fonts/f3.woff2" }
+    FontLoader { source: "../fonts/f5.woff2" }
 
     font.family: theme.sans
     font.pixelSize: 14
@@ -65,7 +54,19 @@ ApplicationWindow {
     }
 
     property var desk: { try { return JSON.parse(trommi.desk_json) } catch (e) { return [] } }
-    property var sessions: { try { return JSON.parse(trommi.sessions_json) } catch (e) { return [] } }
+    property var board: { try { return JSON.parse(trommi.sessions_json) } catch (e) { return ({ desks: [], sessions: [] }) } }
+    property var sessions: board.sessions || []
+    /** The card whose own page is open (its id), or "". */
+    property string openCard: ""
+    property var openCardData: {
+        for (let i = 0; i < desk.length; i++) if (desk[i].id === openCard) return desk[i]
+        return null
+    }
+    Connections { target: trommi; function onSelectedChanged() { window.openCard = "" } }
+    function sessionOf(id) {
+        for (let i = 0; i < sessions.length; i++) if (sessions[i].id === id) return sessions[i]
+        return null
+    }
     property var chat: { try { return JSON.parse(trommi.chat_json) } catch (e) { return [] } }
     property var selectedSession: {
         for (let i = 0; i < sessions.length; i++) if (sessions[i].id === trommi.selected) return sessions[i]
@@ -97,6 +98,13 @@ ApplicationWindow {
             if (scene === "say" && step === 1) {
                 step = 2
                 trommi.send("Looks good from the Linux app. Ship the split hero, please.")
+                shotTimer.restart()
+                return
+            }
+            if (scene === "card" && step === 0) {
+                step = 1
+                for (let i = 0; i < window.desk.length; i++) if ((window.desk[i].options || []).length > 2) { window.openCard = window.desk[i].id; break }
+                if (window.openCard === "" && window.desk.length) window.openCard = window.desk[0].id
                 shotTimer.restart()
                 return
             }
@@ -143,7 +151,7 @@ ApplicationWindow {
             }
         }
 
-        // ---- the board: sidebar and the Desk or a Chat ------------------------------------------------------------
+        // ---- the board: the sidebar, and the Desk, a card or a Chat ----------------------------------------------
         RowLayout {
             anchors.fill: parent
             spacing: 0
@@ -154,58 +162,35 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 trommi: trommi
                 theme: theme
-                sessions: window.sessions
-                openCount: window.desk.length
+                board: window.board
+                onHome: window.openCard = ""
             }
 
-            Rectangle { Layout.fillHeight: true; width: 1; color: theme.line }
-
-            ColumnLayout {
+            Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 0
-
-                // the top bar: where one is, and whether the stream is live
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 56
-                    color: theme.bg
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 28
-                        anchors.rightMargin: 20
-                        spacing: 10
-                        Label {
-                            text: window.selectedSession ? window.selectedSession.name : "Desk"
-                            font.family: theme.display
-                            font.pixelSize: 21
-                            font.weight: Font.DemiBold
-                            color: theme.fg
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                        Rectangle { width: 8; height: 8; radius: 4; color: trommi.live ? theme.online : theme.faint }
-                        Label {
-                            text: trommi.live ? "Live" : trommi.status
-                            color: theme.muted
-                            font.pixelSize: 12
-                        }
-                    }
-                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.line }
-                }
+                color: theme.surface
 
                 Desk {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    visible: trommi.selected === ""
+                    anchors.fill: parent
+                    visible: trommi.selected === "" && !window.openCardData
                     trommi: trommi
                     theme: theme
                     cards: window.desk
+                    sessions: window.sessions
+                    onOpenCard: (id) => window.openCard = id
                 }
-
+                CardView {
+                    anchors.fill: parent
+                    visible: trommi.selected === "" && !!window.openCardData
+                    trommi: trommi
+                    theme: theme
+                    card: window.openCardData || ({})
+                    from: window.openCardData ? window.sessionOf(window.openCardData.session_id) : null
+                    onBack: window.openCard = ""
+                }
                 Chat {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    anchors.fill: parent
                     visible: trommi.selected !== ""
                     trommi: trommi
                     theme: theme

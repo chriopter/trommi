@@ -27,6 +27,8 @@ pub mod qobject {
         #[qproperty(i32, shot_after_ms)]
         #[qproperty(QString, scene)]
         #[qproperty(QString, scene_session)]
+        #[qproperty(QString, theme_mode)]
+        #[qproperty(QString, greeting)]
         type Trommi = super::TrommiRust;
 
         /// Opens the room this machine holds, if any, from its cache, and starts catching up and listening.
@@ -53,6 +55,9 @@ pub mod qobject {
         /// Writes to the selected session's agent.
         #[qinvokable]
         fn send(self: Pin<&mut Trommi>, text: &QString);
+        /// Light or dark, kept for the next start (the web's rule: light unless the person picks dark).
+        #[qinvokable]
+        fn set_theme(self: Pin<&mut Trommi>, mode: &QString);
         /// Writes a picture of the window to `shot_path` was done (QML): ends a scene run.
         #[qinvokable]
         fn shot_taken(self: Pin<&mut Trommi>);
@@ -84,6 +89,8 @@ pub struct TrommiRust {
     shot_after_ms: i32,
     scene: QString,
     scene_session: QString,
+    theme_mode: QString,
+    greeting: QString,
 }
 
 impl Default for TrommiRust {
@@ -107,6 +114,14 @@ impl Default for TrommiRust {
             shot_after_ms: env("TROMMI_LINUX_SHOT_AFTER_MS").parse().unwrap_or(1500),
             scene: QString::from(env("TROMMI_LINUX_SCENE").as_str()),
             scene_session: QString::from(env("TROMMI_LINUX_SESSION").as_str()),
+            theme_mode: QString::from(
+                Some(env("TROMMI_LINUX_THEME"))
+                    .filter(|t| !t.is_empty())
+                    .or_else(|| std::fs::read_to_string(crate::store::base_dir().join("theme")).ok())
+                    .unwrap_or_default()
+                    .trim(),
+            ),
+            greeting: QString::from(env("TROMMI_LINUX_GREETING").as_str()),
         }
     }
 }
@@ -309,6 +324,13 @@ impl qobject::Trommi {
                 tell_error(&thread, format!("Not sent: {}", f.text()));
             }
         });
+    }
+
+    fn set_theme(mut self: Pin<&mut Self>, mode: &QString) {
+        let mode = if mode.to_string() == "dark" { "dark" } else { "light" };
+        let _ = crate::store::private_dir(&crate::store::base_dir());
+        let _ = std::fs::write(crate::store::base_dir().join("theme"), mode);
+        self.as_mut().set_theme_mode(QString::from(mode));
     }
 
     fn shot_taken(self: Pin<&mut Self>) {
