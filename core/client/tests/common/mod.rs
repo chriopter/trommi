@@ -154,6 +154,8 @@ pub struct World {
     pub me_store: TestStore,
     cards: u32,
     ticks: u64,
+    /// Agents of further sessions (`another_session`).
+    pub others: Vec<Peer>,
 }
 
 impl World {
@@ -196,13 +198,18 @@ impl World {
         assert!(agent.group(&group).is_ok(), "the agent is in its session");
         let id = me.id();
         drop(me);
-        World { hub: Rc::new(RefCell::new(hub)), founder, agent, room, session, group, me: id, me_store, cards: 0, ticks: 0 }
+        World { hub: Rc::new(RefCell::new(hub)), founder, agent, room, session, group, me: id, me_store, cards: 0, ticks: 0, others: Vec::new() }
     }
 
     /// A Sim whose device store holds the App's device as it stands, whose hub is the stand-in.
     pub fn sim(&self) -> Sim {
+        self.sim_of(&self.me_store)
+    }
+
+    /// A Sim over another device's stored state.
+    pub fn sim_of(&self, store: &TestStore) -> Sim {
         let mut sim = Sim::new(now());
-        let stored = self.me_store.0.borrow();
+        let stored = store.0.borrow();
         sim.device = (stored.0, stored.1.clone());
         self.attach(&mut sim);
         sim
@@ -219,6 +226,55 @@ impl World {
     pub fn reopen_me(&self, sim: &Sim) -> Peer {
         let store = TestStore(Rc::new(RefCell::new((sim.device.0, sim.device.1.clone()))));
         Device::open(store, Box::new(SystemEntropy)).expect("the stored device opens")
+    }
+
+    /// One more agent device with a main session of its own. Returns the session's group.
+    pub fn another_session(&mut self) -> GroupId {
+        let hub = &mut *self.hub.borrow_mut();
+        let (mut agent, _) = new_peer();
+        agent.key_packages_to_upload(0, now()).expect("key packages");
+        assert!(post_all(hub, &mut agent).is_empty());
+        sync(hub, &mut self.founder);
+        let epoch = invite(&mut self.founder, &mut agent, Role::Agent);
+        assert!(post_all(hub, &mut self.founder).is_empty());
+        let info = hub.group_infos.get(&(self.room, epoch)).expect("the GroupInfo of the Offer's epoch").clone();
+        agent.join_observe(&info).expect("the room is followed");
+        sync(hub, &mut agent);
+        let packages = hub.claim(&[self.me, agent.id()]).expect("a KeyPackage of each");
+        let session = self.founder.found_session(&agent.id(), &packages, now()).expect("the founding is built");
+        assert!(post_all(hub, &mut self.founder).is_empty());
+        sync(hub, &mut agent);
+        post_all(hub, &mut agent);
+        sync(hub, &mut self.founder);
+        self.others.push(agent);
+        GroupId::session(self.room.room_id(), session)
+    }
+
+    /// A new human device of the person signs in with the recovery code: it is in the room group and in no
+    /// session, and has taken the hub's order up to its end. Returns its stored state, its id and the code's keys.
+    pub fn newcomer(&mut self) -> (TestStore, DeviceId, RecoveryKeys) {
+        use trommi_core::recovery::{select_anchor, ServedCommit, ServedGroup, ServedRoom};
+        let hub = &mut *self.hub.borrow_mut();
+        let keys = RecoveryKeys::from_code(Secret::new([0xC0; 32])).expect("the keys of the code");
+        let (mut device, store) = new_peer();
+        let room = self.room.room_id();
+        let groups: Vec<GroupId> = std::iter::once(self.room).chain(hub.session_groups()).collect();
+        let raw: Vec<_> = groups.iter().map(|g| hub.served(g)).collect();
+        let commits: Vec<Vec<ServedCommit<'_>>> =
+            raw.iter().map(|(_, c, _)| c.iter().map(|(change, commit, auth)| ServedCommit { change: *change, commit, recovery_auth: auth.as_deref() }).collect()).collect();
+        let served: Vec<ServedGroup<'_>> = raw.iter().zip(&commits).map(|((founding, _, current), commits)| ServedGroup { founding, commits, current }).collect();
+        let anchor = select_anchor(&keys, &room, &hub.rows).expect("an anchor").epoch;
+        let anchor = hub.group_infos[&(self.room, anchor)].clone();
+        let joined = device
+            .join_room_with_code(&keys, &ServedRoom { room, group: served[0], anchor: &anchor, rows: &hub.rows, links: &[], sessions: &served[1..] }, now())
+            .expect("the room verifies");
+        assert!(joined.unverified.is_empty() && joined.missing_link.is_none());
+        drop(served);
+        drop(commits);
+        assert_eq!(post_all(hub, &mut device), Vec::<String>::new());
+        sync(hub, &mut device);
+        assert!(device.is_human());
+        (store, device.id(), keys)
     }
 
     /// The agent says a line in its session's Chat. Returns the change the hub gave it.

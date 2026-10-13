@@ -65,6 +65,7 @@ pub struct App {
     timer: Option<u64>,
     /// What the engine reported for the person (until the views show them: W4).
     alerts: Vec<engine::Alert>,
+    sessions_not_joined: Option<Vec<(trommi_core::ids::GroupId, &'static str)>>,
     /// The board model, fed from the engine's reports.
     board: engine::feed::Board,
     /// The device's source of randomness when it is not the system's (a seeded test).
@@ -90,6 +91,7 @@ impl App {
             engine: None,
             timer: None,
             alerts: Vec::new(),
+            sessions_not_joined: None,
             board: engine::feed::Board::default(),
             entropy: None,
         }
@@ -126,6 +128,21 @@ impl App {
         self.after_engine(now_ms, &mut out);
         self.render(&mut out);
         (result, out)
+    }
+
+    /// Joins the live session groups of a sign-in with the code (`engine::sync::joins`): read and posted together.
+    /// The sign-in's flow calls this once the device is in the room; nothing happens without a device.
+    pub fn join_sessions(&mut self, now_ms: u64, joins: engine::sync::joins::SessionJoins) -> Vec<Effect> {
+        let mut out = Vec::new();
+        self.with_engine(now_ms, &mut out, |engine, ctx| engine.join_sessions(ctx, joins));
+        self.after_engine(now_ms, &mut out);
+        self.render(&mut out);
+        out
+    }
+
+    /// Once a sign-in's sessions are through: the ones this device is not in, each with the reason. None before.
+    pub fn sessions_not_joined(&self) -> Option<&[(trommi_core::ids::GroupId, &'static str)]> {
+        self.sessions_not_joined.as_deref()
     }
 
     /// The engine's alerts so far, oldest first.
@@ -287,6 +304,7 @@ impl App {
                     }
                 }
                 Report::Stopped(_) => self.next_view.phase = Phase::Stopped,
+                Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
                 Report::Alert(alert) => {
                     if self.alerts.len() >= ALERTS_MAX {
                         self.alerts.remove(0);

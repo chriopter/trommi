@@ -234,7 +234,7 @@ impl Board {
                 m.apply_presence_event(&event, c, now);
             }
             Report::Here => m.apply_here(c, now),
-            Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::Stopped(_) => {}
+            Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::Stopped(_) => {}
         }
     }
 

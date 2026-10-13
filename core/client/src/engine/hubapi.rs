@@ -95,7 +95,7 @@ pub enum Route<'a> {
     Outbox { room: &'a RoomId, entry: &'a OutboxEntry, extra: Option<&'a OutboxExtra> },
     /// `POST /v1/commits`: joins of several session groups from outside in one request (1 to 64, one per group).
     Joins { entries: &'a [OutboxEntry] },
-    /// `POST /v1/groups/read`: what joining several groups from outside needs (1 to 64).
+    /// `POST /v1/groups/read`: what joining several groups from outside needs (1 to 64, each group once).
     GroupsRead { groups: &'a [GroupId] },
     /// `PUT /v1/key-packages` with nothing to add: how many unused ones the hub holds.
     KeyPackagesHeld,
@@ -276,10 +276,10 @@ pub struct GroupRead {
     pub epoch: u64,
     /// The GroupInfo of epoch 0; none for a group still at epoch 0 (`info` is it).
     pub founding: Option<Vec<u8>>,
-    /// The group's Commits, oldest first.
+    /// The group's first Commits, oldest first.
     pub log: Vec<LogItem>,
-    /// False when the Commits did not fit the answer: the engine reads that group alone (`GroupLog`).
-    pub complete: bool,
+    /// The log goes on after them: the engine reads on (`GroupLog`, Commits only).
+    pub more: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -346,7 +346,8 @@ pub enum Answer {
     Outbox(OutboxAnswer),
     /// One per entry asked, in order.
     Joins(Vec<Result<OutboxAnswer, Failure>>),
-    /// One per group asked, in order.
+    /// One per group asked, in order. A row refused as `too-large` did not fit the answer (the engine reads that
+    /// group alone); `not-found`: the asker may not see the group.
     GroupsRead(Vec<Result<GroupRead, Failure>>),
     KeyPackagesHeld { unused: u32 },
     Claimed { key_packages: Vec<(DeviceId, Vec<u8>)>, missing: Vec<DeviceId> },

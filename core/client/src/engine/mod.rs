@@ -53,6 +53,11 @@
 //!
 //! [`feed::Board`] turns the reports into the board model (`crate::model`), which the views are made from.
 //!
+//! # A sign-in's sessions
+//!
+//! A device that signed in with the code joins its session groups from outside ([`sync::joins`]): what the joins
+//! need is read for many groups in one request, and the joins are posted together, each answered in its place.
+//!
 //! # Which order the model is handed
 //!
 //! The engine hands the model each envelope as the protocol core took it. What is authenticated in that:
@@ -68,8 +73,7 @@
 //!
 //! Of upkeep only the timed round is here (KeyPackages stocked, `heads` written, missing keys asked for: once the
 //! order is at rest, then every [`sync::UPKEEP_EVERY_MS`]). Still to come: the invite steps, 5.2.7 to 5.2.9, the
-//! seats, the core's findings, the joins of a sign-in with the hub's batch
-//! routes, the Desk as a delta on a warm start, the reading of the room's past (one module, one entry point, behind [`Engine::reread_from`]), recovery
+//! seats, the core's findings, the Desk as a delta on a warm start, the reading of the room's past (one module, one entry point, behind [`Engine::reread_from`]), recovery
 //! of a closed device, relayed pieces and wishes.
 //!
 //! The contract fixes the retry rule here, so every app waits the same way.
