@@ -86,7 +86,7 @@ Each part is then delivered only when it changed:
 | --- | --- | --- | --- |
 | Web app | `web-release`: the files the worker serves, the worker, its settings, `manifest.json`, `checksums.txt` | `web.tar.gz` | `deploy_web.yml`: the Cloudflare worker `trommi-app` at https://app.trommi.com |
 | Connector | `connector-release`: four binaries | the four binaries | the release is the delivery: `install.sh` and `trommi-connector update` take the newest `v<N>`, and keep the installed program when its SHA-256 is the same |
-| iOS app | `ios-release`: the Rust core for iOS and its Swift bindings | nothing (inputs and changed only) | `deploy_ios.yml`: a TestFlight build in the group "Intern" |
+| iOS app | nothing in `build.yml`; `ios.yml` (after the build run, when its release marks iOS changed) makes `ios-release`: the Rust core for iOS and its Swift bindings | nothing (inputs and changed only) | `deploy_ios.yml`, called by `ios.yml`: a TestFlight build in the group "Intern" |
 | Hub | `hub-release`: the hub and its updater as static programs | both programs | `deploy_hub.yml` (hub or updater changed): the server takes `v<N>` (below) and restarts the hub only when the hub's inputs changed |
 
 A release is published by one run at a time; a run whose release number is not above the newest published one
