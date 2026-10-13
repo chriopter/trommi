@@ -167,7 +167,17 @@ public struct CardVersion {
   public var sentAt: UInt64
   public var objectState: String
   public var urgency: String
-  public var content: JV?
+  /** Its body; of a lean card's version (`owner`), read from the client core when first asked. */
+  public var content: JV? {
+    get { if let c = ownContent, !c.isNull { return c }; return owner?.versionContent(objectVersion) ?? ownContent }
+    set { ownContent = newValue }
+  }
+  var ownContent: JV?
+  weak var owner: Card?
+  public init(objectVersion: Int, versionHash: String, previousVersionHash: String?, envelopeNumber: Int, sentAt: UInt64, objectState: String, urgency: String, content: JV?, owner: Card? = nil) {
+    self.objectVersion = objectVersion; self.versionHash = versionHash; self.previousVersionHash = previousVersionHash; self.envelopeNumber = envelopeNumber
+    self.sentAt = sentAt; self.objectState = objectState; self.urgency = urgency; self.ownContent = content; self.owner = owner
+  }
 }
 
 public struct InRevision: Equatable { public var by: String; public var envelopeNumber: Int }
@@ -177,8 +187,37 @@ public final class Card {
   public var agentDeviceId: String
   public var objectState = "open"
   public var urgency = "normal"
-  /** The card's content fields (CARD_CONTENT_FIELDS), as the agent sent them: unknown ones are kept too. */
-  public var fields: [String: JV] = [:]
+  /** The card's content fields (CARD_CONTENT_FIELDS), as the agent sent them: unknown ones are kept too. Of a lean card
+   *  (the client core's patch leaves lists and objects out, `lazy`) the rest is read from the core when first asked. */
+  public var fields: [String: JV] {
+    get { if !lazyFields.isEmpty { fill() }; return ownFields }
+    set { ownFields = newValue }
+  }
+  var ownFields: [String: JV] = [:]
+  /** The fields a lean card left out; the versions' bodies and the answers before the one in force are left out too. */
+  var lazyFields: Set<String> = []
+  var lean = false
+  /** Where a lean card reads the rest: the client core's whole card (`card_json`). */
+  var whole: (() -> JV?)?
+  /** One field, read from the core only when the lean card left it out. */
+  func field(_ name: String) -> JV? { lazyFields.contains(name) ? fields[name] : ownFields[name] }
+  /** A lean card made whole: its fields, versions with their bodies and answers, from the client core. */
+  func fill() {
+    guard lean, let v = whole?() else { lazyFields = []; lean = false; return }
+    lean = false; lazyFields = []
+    for k in CARD_CONTENT_FIELDS { let x = v[k]; if !x.isNull { ownFields[k] = x } else { ownFields.removeValue(forKey: k) } }
+    ownVersions = (v["versions"].array ?? []).map {
+      CardVersion(objectVersion: $0["object_version"].int ?? 0, versionHash: $0["version_hash"].string ?? "", previousVersionHash: $0["previous_version_hash"].string,
+                  envelopeNumber: $0["envelope_number"].int ?? 0, sentAt: $0["sent_at"].double.map { UInt64(max(0, $0)) } ?? 0, objectState: $0["object_state"].string ?? "",
+                  urgency: $0["urgency"].string ?? "", content: $0["content"].isNull ? nil : $0["content"])
+    }
+    ownAnswers = (v["answers"].array ?? []).map(answerOf)
+  }
+  /** A version's body (a lean card's are read from the core when first asked). */
+  func versionContent(_ objectVersion: Int) -> JV? {
+    if lean { fill() }
+    return ownVersions.first { $0.objectVersion == objectVersion }?.ownContent
+  }
   public var objectVersion = 0
   public var versionHash: String?
   public var envelopeNumber: Int
@@ -186,9 +225,19 @@ public final class Card {
   public var createdAt: UInt64
   public var sessionId: String?
   public var updatedAt: UInt64
-  public var versions: [CardVersion] = []
+  /** Its versions; of a lean card their headers, each body read when first asked. */
+  public var versions: [CardVersion] {
+    get { ownVersions }
+    set { ownVersions = newValue }
+  }
+  var ownVersions: [CardVersion] = []
   public var answer: Answer?
-  public var answers: [Answer] = []
+  /** Every answer it was given (the history); of a lean card read from the core when first asked. */
+  public var answers: [Answer] {
+    get { if lean { fill() }; return ownAnswers }
+    set { ownAnswers = newValue }
+  }
+  var ownAnswers: [Answer] = []
   public var closedHow: String?
   public var inRevision: InRevision?
   public var timelineKey: String
@@ -208,28 +257,28 @@ public final class Card {
     objectId = id; agentDeviceId = agent; envelopeNumber = 0; firstEnvelopeNumber = 0; createdAt = 0; sessionId = nil; updatedAt = 0
     timelineKey = timelineKeyOf("chat", "card/\(id)")
   }
-  public var cardType: String { fields["card_type"]?.string ?? "decision" }
-  public var title: String { fields["title"]?.string ?? "" }
-  public var teaser: String? { fields["teaser"]?.string }
-  public var body: String? { fields["body"]?.string }
-  public var html: String? { fields["html"]?.string }
-  public var options: [Option] { (fields["options"]?.array ?? []).map(Option.init) }
-  public var sections: [JV]? { fields["sections"]?.array }
-  public var allowsMultiple: Bool { fields["allows_multiple"] == .bool(true) }
+  public var cardType: String { field("card_type")?.string ?? "decision" }
+  public var title: String { field("title")?.string ?? "" }
+  public var teaser: String? { field("teaser")?.string }
+  public var body: String? { field("body")?.string }
+  public var html: String? { field("html")?.string }
+  public var options: [Option] { (field("options")?.array ?? []).map(Option.init) }
+  public var sections: [JV]? { field("sections")?.array }
+  public var allowsMultiple: Bool { field("allows_multiple") == .bool(true) }
   public var recommended: [String] {
-    guard let r = fields["recommended"] else { return [] }
+    guard let r = field("recommended") else { return [] }
     if let s = r.string { return [s] }
     return (r.array ?? []).compactMap { $0.string }
   }
-  public var urgencyReason: String? { fields["urgency_reason"]?.string }
-  public var attachments: [JV] { fields["attachments"]?.array ?? [] }
-  public var changeNote: String? { fields["change_note"]?.string }
-  public var closeSummary: String? { fields["close_summary"]?.string }
-  public var withdrawReason: String? { fields["withdraw_reason"]?.string }
-  public var mergedIntoObjectId: String? { fields["merged_into_object_id"]?.string }
-  public var mergedFromObjectIds: [String] { (fields["merged_from_object_ids"]?.array ?? []).compactMap { $0.string } }
+  public var urgencyReason: String? { field("urgency_reason")?.string }
+  public var attachments: [JV] { field("attachments")?.array ?? [] }
+  public var changeNote: String? { field("change_note")?.string }
+  public var closeSummary: String? { field("close_summary")?.string }
+  public var withdrawReason: String? { field("withdraw_reason")?.string }
+  public var mergedIntoObjectId: String? { field("merged_into_object_id")?.string }
+  public var mergedFromObjectIds: [String] { (field("merged_from_object_ids")?.array ?? []).compactMap { $0.string } }
   /** An info its agent is still working on (spec 9.1.3): off the Desk, under Off your mind, until a version without it. */
-  public var working: Bool { fields["working"] == .bool(true) }
+  public var working: Bool { field("working") == .bool(true) }
 }
 
 public final class Permission {
@@ -475,6 +524,7 @@ public final class Board {
 
   public init() {
     try? engine.setWindowsOpen(open: true)
+    try? engine.setLeanCards(lean: true)
   }
 
   /**
@@ -538,6 +588,7 @@ public final class Board {
     engine = ClientModel(myDeviceId: myDeviceId ?? "")
     if !presence.isEmpty { try? engine.applyPresence(reports: String(decoding: JV.arr(presence).encoded(), as: UTF8.self), nowMs: nowMs()) }
     try? engine.setWindowsOpen(open: true)
+    try? engine.setLeanCards(lean: true)
     if deskWaiting { try? engine.setDeskHold(hold: true) }
   }
 

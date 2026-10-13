@@ -297,4 +297,24 @@ mod tests {
         assert_eq!(v["timelines"][0]["meta"], Value::Null);
         assert_eq!(v["timelines"][1]["items"].as_array().map(Vec::len), Some(2));
     }
+
+    #[test]
+    fn a_lean_patch_leaves_what_a_card_view_reads_to_card_json() {
+        let mut m = filled();
+        m.lean_cards = true;
+        let mut c = crate::model::change::Change::new();
+        m.touch_all(&mut c);
+        let text = m.patch_text(&c);
+        let v = m.patch(&c);
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), v);
+        let lean = &v["cards"][0][1];
+        assert_eq!((lean["lean"].clone(), lean["title"].clone(), lean["lazy"].clone()), (json!(true), json!("Ask"), json!(["options"])));
+        assert_eq!((lean.get("options"), lean.get("answers")), (None, None));
+        assert_eq!(lean["sections"], json!([]));
+        assert_eq!(lean["versions"][0].get("content"), None);
+        assert_eq!(lean["versions"][0]["object_version"], json!(1));
+        let whole: Value = serde_json::from_str(&m.card_json("c1")).unwrap();
+        assert_eq!(whole, m.snapshot()["cards"][0][1]);
+        assert_eq!(m.card_json("none"), "");
+    }
 }

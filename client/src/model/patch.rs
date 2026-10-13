@@ -20,6 +20,110 @@ impl<V: Serialize> Serialize for Entries<'_, V> {
     }
 }
 
+/// A card as a lean patch carries it: the card without what only a card's own view reads (a list or object field, a
+/// version's body, the answers before the one in force). `lazy` names the fields left out; `lean: true` says the rest
+/// is read on demand (`Model::card_json`).
+pub struct LeanCard<'a>(pub &'a Card);
+
+/// A version's header (a lean card's `versions`).
+#[derive(Serialize)]
+struct VersionHead<'a> {
+    object_version: i64,
+    version_hash: &'a str,
+    previous_version_hash: &'a Option<String>,
+    envelope_number: u64,
+    sent_at: u64,
+    object_state: &'a str,
+    urgency: &'a str,
+}
+
+impl Serialize for LeanCard<'_> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let c = self.0;
+        let (plain, lazy) = c.fields.lean();
+        let mut m = s.serialize_map(None)?;
+        m.serialize_entry("lean", &true)?;
+        m.serialize_entry("object_id", &c.object_id)?;
+        if c.catching_up {
+            m.serialize_entry("catching_up", &true)?;
+        }
+        m.serialize_entry("agent_device_id", &c.agent_device_id)?;
+        m.serialize_entry("session_id", &c.session_id)?;
+        m.serialize_entry("object_state", &c.object_state)?;
+        m.serialize_entry("urgency", &c.urgency)?;
+        for (k, v) in plain {
+            m.serialize_entry(k, v)?;
+        }
+        m.serialize_entry("lazy", &lazy)?;
+        m.serialize_entry("object_version", &c.object_version)?;
+        m.serialize_entry("version_hash", &c.version_hash)?;
+        m.serialize_entry("envelope_number", &c.envelope_number)?;
+        m.serialize_entry("first_envelope_number", &c.first_envelope_number)?;
+        m.serialize_entry("created_at", &c.created_at)?;
+        m.serialize_entry("updated_at", &c.updated_at)?;
+        let heads: Vec<VersionHead> = c
+            .versions
+            .iter()
+            .map(|v| VersionHead {
+                object_version: v.object_version,
+                version_hash: &v.version_hash,
+                previous_version_hash: &v.previous_version_hash,
+                envelope_number: v.envelope_number,
+                sent_at: v.sent_at,
+                object_state: &v.object_state,
+                urgency: &v.urgency,
+            })
+            .collect();
+        m.serialize_entry("versions", &heads)?;
+        m.serialize_entry("answer", &c.answer)?;
+        m.serialize_entry("closed_how", &c.closed_how)?;
+        m.serialize_entry("in_revision", &c.in_revision)?;
+        if let Some(p) = c.presented_envelope_number {
+            m.serialize_entry("presented_envelope_number", &p)?;
+        }
+        m.serialize_entry("timeline_key", &c.timeline_key)?;
+        m.serialize_entry("content_state", &c.content_state)?;
+        if let Some(u) = &c.unsupported {
+            m.serialize_entry("unsupported", u)?;
+        }
+        m.serialize_entry("state_envelope_number", &c.state_envelope_number)?;
+        for (k, v) in [("snoozed_until", c.snoozed_until), ("snoozed_at", c.snoozed_at), ("unsnoozed", c.unsnoozed)] {
+            if let Some(v) = v {
+                m.serialize_entry(k, &v)?;
+            }
+        }
+        m.end()
+    }
+}
+
+/// The cards a change names, lean.
+struct LeanEntries<'a> {
+    map: &'a BTreeMap<String, Card>,
+    ids: &'a BTreeSet<String>,
+}
+
+impl Serialize for LeanEntries<'_> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.ids.iter().map(|id| (id, self.map.get(id).map(LeanCard))))
+    }
+}
+
+/// Cards whole or lean.
+enum CardEntries<'a> {
+    Whole(Entries<'a, Card>),
+    Lean(LeanEntries<'a>),
+}
+
+impl Serialize for CardEntries<'_> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            CardEntries::Whole(e) => e.serialize(s),
+            CardEntries::Lean(e) => e.serialize(s),
+        }
+    }
+}
+
 /// One timeline in a patch: its meta, the items the change names, the keys of its window.
 #[derive(Serialize)]
 struct TimelineOut<'a> {
@@ -37,7 +141,7 @@ struct PatchOut<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     sessions: Option<Entries<'a, Session>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cards: Option<Entries<'a, Card>>,
+    cards: Option<CardEntries<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     permissions: Option<Entries<'a, PermissionRequest>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -63,6 +167,11 @@ impl Model {
     /// The room facts the model keeps.
     pub fn room_json(&self) -> Value {
         json!({ "key_epoch": self.key_epoch, "recovery_key": self.recovery_key })
+    }
+
+    /// One card whole, as JSON text (a lean copy reads the rest of a card by it); empty for none.
+    pub fn card_json(&self, id: &str) -> String {
+        self.cards.get(id).and_then(|c| serde_json::to_string(c).ok()).unwrap_or_default()
     }
 
     /// The patch for one change.
@@ -168,7 +277,13 @@ impl Model {
         PatchOut {
             small: p,
             sessions: entries(&change.sessions).map(|ids| Entries { map: &this.sessions, ids }),
-            cards: entries(&change.cards).map(|ids| Entries { map: &this.cards, ids }),
+            cards: entries(&change.cards).map(|ids| {
+                if this.lean_cards {
+                    CardEntries::Lean(LeanEntries { map: &this.cards, ids })
+                } else {
+                    CardEntries::Whole(Entries { map: &this.cards, ids })
+                }
+            }),
             permissions: entries(&change.permissions).map(|ids| Entries { map: &this.permissions, ids }),
             notes: entries(&change.notes).map(|ids| Entries { map: &this.notes, ids }),
             published: entries(&change.published).map(|ids| Entries { map: &this.published, ids }),

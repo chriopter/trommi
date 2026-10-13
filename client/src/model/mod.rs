@@ -107,6 +107,8 @@ pub struct Model {
     pub presence_held: HashMap<String, groups::DeviceReport>,
     /// Every timeline's window is open (an app that keeps every item header: iOS).
     pub windows_open: bool,
+    /// The patch carries cards lean (`LeanCard`): an app that reads the rest of a card on demand (`card_json`; iOS).
+    pub lean_cards: bool,
     /// The room is still being read (a sign-in, a read back): a session whose profile has not come is "Loading …".
     pub reading: bool,
     /// The cards that carry a snooze mark (`snoozed_until`, `unsnoozed`).

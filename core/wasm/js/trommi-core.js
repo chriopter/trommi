@@ -404,6 +404,8 @@ export class ClientModel extends FileObject {
   applyCardDeeds(received) { return this[CALL]('apply_card_deeds', [received]) }
   applyReceivedJson(received, nowMs) { return this[CALL]('apply_received_json', [received, nowMs]) }
   setWindowsOpen(open) { return this[CALL]('set_windows_open', [open]) }
+  setLeanCards(lean) { return this[CALL]('set_lean_cards', [lean]) }
+  cardJson(objectId) { return this[CALL]('card_json', [objectId]) }
   applyGroups(groups, roles) { return this[CALL]('apply_groups', [groups, roles]) }
   applyCommit(facts, byRecovery, removedMe, nowMs) { return this[CALL]('apply_commit', [facts, byRecovery, removedMe, nowMs]) }
   applyPresence(reports, nowMs) { return this[CALL]('apply_presence', [reports, nowMs]) }

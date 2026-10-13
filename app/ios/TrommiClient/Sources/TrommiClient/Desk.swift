@@ -177,10 +177,18 @@ public struct DeskCard: Identifiable {
   public var title: String
   public var teaser: String
   public var body: String
-  public var options: [Option]
-  public var sections: [JV]?
+  /** Its options, sections, attachments and recommended keys: of a card of the board read from it when first asked (a
+   *  lean card reads them from the client core), so that a Desk of a thousand cards does not hold them all. */
+  public var options: [Option] { get { ownOptions ?? from?.options ?? [] } set { ownOptions = newValue } }
+  public var sections: [JV]? { get { ownSections ?? from?.sections } set { ownSections = newValue } }
   public var html: String?
-  public var attachments: [JV]
+  public var attachments: [JV] { get { ownAttachments ?? from?.attachments ?? [] } set { ownAttachments = newValue } }
+  var ownOptions: [Option]?
+  var ownSections: [JV]?
+  var ownAttachments: [JV]?
+  var ownRecommended: [String]?
+  /** The board's card it was made from (its lazy parts). */
+  var from: Card?
   public var version: Int
   public var multiple: Bool
   public var choices: [String]
@@ -189,7 +197,7 @@ public struct DeskCard: Identifiable {
   public var summary: String
   public var created: UInt64
   public var decided: UInt64?
-  public var recommended: [String]
+  public var recommended: [String] { get { ownRecommended ?? from?.recommended ?? [] } set { ownRecommended = newValue } }
   public var versionHash: String?
   public var contentState: String
   public var revised: UInt64?
@@ -213,10 +221,19 @@ public struct DeskCard: Identifiable {
   /** Its agent closed it after his answer (close_card): What?? asks about what it did. */
   public var finished = false
   public var mergedInto: String?
-  public var mergedFrom: [String] = []
+  public var mergedFrom: [String] { get { ownMergedFrom ?? from?.mergedFromObjectIds ?? [] } set { ownMergedFrom = newValue } }
+  var ownMergedFrom: [String]?
   public var noteAttachments: [JV] = []
   public var answeredVersion: Int?
   public var unsupported = false
+  init(id: String, agent: String, number: Int, kind: String, status: String, urgency: String, urgencyReason: String, title: String, teaser: String, body: String,
+       options: [Option]?, sections: [JV]?, html: String?, attachments: [JV]?, version: Int, multiple: Bool, choices: [String], note: String, summary: String,
+       created: UInt64, decided: UInt64?, recommended: [String]?, versionHash: String?, contentState: String, from: Card? = nil) {
+    self.id = id; self.agent = agent; self.number = number; self.kind = kind; self.status = status; self.urgency = urgency; self.urgencyReason = urgencyReason
+    self.title = title; self.teaser = teaser; self.body = body; self.ownOptions = options; self.ownSections = sections; self.html = html; self.ownAttachments = attachments
+    self.version = version; self.multiple = multiple; self.choices = choices; self.note = note; self.summary = summary; self.created = created; self.decided = decided
+    self.ownRecommended = recommended; self.versionHash = versionHash; self.contentState = contentState; self.from = from
+  }
   public var isKnock: Bool { kind == "permission" || urgency == "high" || urgency == "critical" }
   public var knockWord: String? { kind == "permission" ? "Knock! Permission" : urgency == "critical" ? "Knock! Blocking" : urgency == "high" ? "Knock" : nil }
   public var nr: String { "Nr. \(number)" }
@@ -494,10 +511,10 @@ public final class DeskModel {
     let turns = DeskModel.revisionsOf(c)
     let key = c.sessionId ?? c.agentDeviceId
     var d = DeskCard(id: c.objectId, agent: devToAgent[key] ?? String(key.prefix(SESSION_ID_LEN)), number: number, kind: c.cardType == "info" ? "info" : "decision", status: status,
-                     urgency: c.urgency, urgencyReason: c.urgencyReason ?? "", title: c.title, teaser: c.teaser ?? "", body: c.body ?? "", options: c.options, sections: c.sections,
-                     html: c.html, attachments: c.attachments, version: max(1, c.objectVersion), multiple: c.allowsMultiple, choices: a?.choices ?? [], note: a?.note ?? "",
+                     urgency: c.urgency, urgencyReason: c.urgencyReason ?? "", title: c.title, teaser: c.teaser ?? "", body: c.body ?? "", options: nil, sections: nil,
+                     html: c.html, attachments: nil, version: max(1, c.objectVersion), multiple: c.allowsMultiple, choices: a?.choices ?? [], note: a?.note ?? "",
                      summary: c.closeSummary ?? c.withdrawReason ?? "", created: c.createdAt, decided: a?.answeredAt ?? (status == "done" ? c.updatedAt : nil),
-                     recommended: c.recommended, versionHash: c.versionHash, contentState: c.contentState)
+                     recommended: nil, versionHash: c.versionHash, contentState: c.contentState, from: c)
     if turns.count > 1 { d.versions = Array(turns.dropLast()); d.revised = turns.last?.sentAt ?? c.updatedAt; d.revisionNote = c.changeNote ?? "" }
     if let a = a {
       d.answeredVersion = a.boundObjectVersion
@@ -523,7 +540,6 @@ public final class DeskModel {
     if status == "open" { if let u = c.snoozedUntil { d.snoozedUntil = u; d.snoozedAt = c.snoozedAt ?? 0 } else if let u = c.unsnoozed { d.unsnoozed = u } }
     if status == "done" && c.closedHow == "closed", let a = a, !a.pending, a.answerAction != "read", a.answerAction != "shred" { d.finished = true }
     d.mergedInto = c.mergedIntoObjectId
-    d.mergedFrom = c.mergedFromObjectIds
     if c.unsupported || c.contentState == "newer_schema" { d.unsupported = true }
     return d
   }

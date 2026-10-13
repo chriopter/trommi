@@ -369,6 +369,8 @@ methods!(RawClientModel {
     apply_card_deeds(received);
     apply_received_json(received, now_ms);
     set_windows_open(open);
+    set_lean_cards(lean);
+    card_json(object_id);
     apply_groups(groups, roles);
     apply_commit(facts, by_recovery, removed_me, now_ms);
     apply_presence(reports, now_ms);

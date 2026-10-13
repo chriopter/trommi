@@ -196,6 +196,20 @@ impl CardFields {
     }
 }
 
+impl CardFields {
+    /// The plain fields, and the names of the ones kept as text (a lean card names them in `lazy`).
+    pub fn lean(&self) -> (Vec<(&'static str, &Value)>, Vec<&'static str>) {
+        let (mut plain, mut lazy) = (Vec::new(), Vec::new());
+        for (name, slot) in CARD_CONTENT_FIELDS.iter().zip(self.0.iter()) {
+            match slot {
+                Slot::Plain(v) => plain.push((*name, v)),
+                Slot::Text(_) => lazy.push(*name),
+            }
+        }
+        (plain, lazy)
+    }
+}
+
 impl Serialize for CardFields {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.collect_map(CARD_CONTENT_FIELDS.iter().zip(self.0.iter()))

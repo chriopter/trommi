@@ -187,6 +187,19 @@ impl ClientModel {
         })
     }
 
+    /// The patch carries cards lean from here on (an app that reads the rest of a card on demand by `card_json`).
+    pub fn set_lean_cards(&self, lean: bool) -> Result<(), CoreError> {
+        self.with(|m, _| {
+            m.lean_cards = lean;
+            Ok(())
+        })
+    }
+
+    /// One card whole, as JSON (what a lean card leaves out); empty for none.
+    pub fn card_json(&self, object_id: String) -> Result<String, CoreError> {
+        self.with(|m, _| Ok(m.card_json(&object_id)))
+    }
+
     /// The deeds on cards (hand back, What??, present) of a page of card Chats read out of the hub's order.
     pub fn apply_card_deeds(&self, received: Vec<ReceivedEnvelope>) -> Result<(), CoreError> {
         self.with(|m, c| {

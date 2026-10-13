@@ -1089,6 +1089,9 @@ export class ClientModel {
   applyCardDeeds(received: ReceivedEnvelope[]): void
   applyReceivedJson(received: string, nowMs: number): string
   setWindowsOpen(open: boolean): void
+  /** The patch carries cards lean (`lean: true`, `lazy` names the fields left out); `cardJson` gives a card whole. */
+  setLeanCards(lean: boolean): void
+  cardJson(objectId: string): string
   applyGroups(groups: GroupSummary[], roles: RoomRoles | null): void
   applyCommit(facts: CommitSummary, byRecovery: boolean, removedMe: boolean, nowMs: number): void
   applyPresence(reports: string, nowMs: number): void

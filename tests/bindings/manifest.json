@@ -885,6 +885,24 @@
         ],
         "returns": "void"
       },
+      "setLeanCards": {
+        "arguments": [
+          {
+            "name": "lean",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "cardJson": {
+        "arguments": [
+          {
+            "name": "objectId",
+            "type": "text"
+          }
+        ],
+        "returns": "text"
+      },
       "applyCardDeeds": {
         "arguments": [
           {

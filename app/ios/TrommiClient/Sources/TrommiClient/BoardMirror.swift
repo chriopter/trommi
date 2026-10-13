@@ -41,7 +41,14 @@ extension Board {
     c.urgency = v["urgency"].string ?? "normal"
     var f: [String: JV] = [:]
     for k in CARD_CONTENT_FIELDS { let x = v[k]; if !x.isNull { f[k] = x } }
-    c.fields = f
+    c.ownFields = f
+    if v["lean"].truthy {
+      // (a lean card: what it left out is read from the client core when first asked)
+      c.lean = true
+      c.lazyFields = Set(strings(v["lazy"]))
+      let id = c.objectId
+      c.whole = { [weak self] in (try? self?.engine.cardJson(objectId: id)).flatMap { $0.isEmpty ? nil : JV.parse(Bytes($0.utf8)) } }
+    }
     c.objectVersion = int(v["object_version"])
     c.versionHash = v["version_hash"].string
     c.envelopeNumber = int(v["envelope_number"])
@@ -52,7 +59,7 @@ extension Board {
     c.versions = (v["versions"].array ?? []).map {
       CardVersion(objectVersion: int($0["object_version"]), versionHash: str($0["version_hash"]), previousVersionHash: $0["previous_version_hash"].string,
                   envelopeNumber: int($0["envelope_number"]), sentAt: u64($0["sent_at"]), objectState: str($0["object_state"]), urgency: str($0["urgency"]),
-                  content: $0["content"].isNull ? nil : $0["content"])
+                  content: $0["content"].isNull ? nil : $0["content"], owner: c)
     }
     c.answer = v["answer"].isNull ? nil : answerOf(v["answer"])
     c.answers = (v["answers"].array ?? []).map(answerOf)
