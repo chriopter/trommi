@@ -265,7 +265,7 @@ fn a_refusal_ends_an_entry_only_when_it_is_the_hubs_own_word() {
     // a proxy's page (a 403 that names no code of the protocol), then the hub's refusal with a void record
     let mut script: VecDeque<HttpResponse> = [
         HttpResponse { status: 403, headers: Vec::new(), body: b"<html>blocked</html>".to_vec().into() },
-        answer(409, json!({ "error": "forbidden", "message": "refused", "voided": true })),
+        answer(403, json!({ "error": "forbidden", "message": "refused", "voided": true })),
     ]
     .into_iter()
     .collect();
