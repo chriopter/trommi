@@ -1,9 +1,9 @@
 {
-  "answer": "{\"after\":5,\"items\":[{\"epoch\":3,\"group_id\":\"hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTg\",\"kind\":\"room\",\"leaves\":[\"PZ4Lk5KziSxl1fndGt1GFisCFaVUntwzSaMu-1JNpV8\",\"9K88N-4ode6HNdHZAE884aQayNkQ2yO_SR5ed3IhMR4\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":null,\"stale\":false},{\"epoch\":1,\"group_id\":\"hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTiG9Hvr_ZkcIf3DOxG5mRnk\",\"kind\":\"main\",\"leaves\":[\"5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOig\",\"9K88N-4ode6HNdHZAE884aQayNkQ2yO_SR5ed3IhMR4\"],\"live\":true,\"parent\":null,\"room_epoch\":1,\"session_id\":\"hvR76_2ZHCH9wzsRuZkZ5A\",\"stale\":false}],\"more\":true}",
+  "answer": "{\"after\":5,\"items\":[{\"epoch\":3,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0\",\"kind\":\"room\",\"leaves\":[\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\",\"yt9J0shQ1_xd33ewvnciAqLgTLQ886Rv9EcMmN_ymsI\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":null,\"stale\":false},{\"epoch\":1,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS3k-KibKGh-g9Goc9MM0lGw\",\"kind\":\"main\",\"leaves\":[\"ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA\",\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\"],\"live\":true,\"parent\":null,\"room_epoch\":1,\"session_id\":\"5PiomyhofoPRqHPTDNJRsA\",\"stale\":false}],\"more\":true}",
   "asked": {
     "after": 0,
     "limit": 2,
-    "room": "hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTg",
+    "room": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0",
     "route": "room_groups"
   },
   "content_range": null,
@@ -11,7 +11,7 @@
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/rooms/hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTg/groups?after=0&limit=2"
+    "path": "/v1/rooms/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0/groups?after=0&limit=2"
   },
   "status": 200
 }

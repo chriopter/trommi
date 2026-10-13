@@ -1,12 +1,12 @@
 {
-  "answer": "{\"account\":\"7c7d2642-b5b8-4bf2-91f5-8d9559dd329e\",\"created_at\":1791904998870,\"email\":\"ada-5f37d96f1ee6@example.com\",\"has_password\":true,\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"kit_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\",\"kit_form\":\"email\",\"passkeys\":[],\"password_copy\":\"AgcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw\",\"revision\":1,\"rooms\":[\"hfK5r9NrWHN8HaphvJyS95ASdgUuUsBV0JJUVIdcIAY\"],\"updated_at\":1791904998870,\"user_handle\":\"fH0mQrW4S_KR9Y2VWd0yng\"}",
+  "answer": "{\"account\":\"b3909710-0275-4714-a504-a872deaddff8\",\"created_at\":1791905314494,\"email\":\"ada-c74b4352cab7@example.com\",\"has_password\":true,\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"kit_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\",\"kit_form\":\"email\",\"passkeys\":[],\"password_copy\":\"AgcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw\",\"revision\":1,\"rooms\":[\"B4-kzSPg2pATW8roHCj5S4LBxwSNPTnY3nKvFiTOvJA\"],\"updated_at\":1791905314494,\"user_handle\":\"s5CXEAJ1RxSlBKhy3q3f-A\"}",
   "asked": {
     "route": "create_account"
   },
   "content_range": null,
   "name": "account-create",
   "request": {
-    "body": "{\"email\":\"ada-5f37d96f1ee6@example.com\",\"kit\":{\"auth_key\":\"6-R4rmkNHczC-sKQgKcJdx0vGdAqQdD7yXGWAV_Aerw\",\"sealed_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\"},\"password\":{\"auth_key\":\"6Lj0-EZSuWDvvxIe1MEjJAhxLwMQZS1V_FI0QrNU8gk\",\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"sealed_copy\":\"AgcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw\"}}",
+    "body": "{\"email\":\"ada-c74b4352cab7@example.com\",\"kit\":{\"auth_key\":\"bsnpIHBhziFc1nKpuEYuqVmhQjVNp3k7YAUEQeadZBA\",\"sealed_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\"},\"password\":{\"auth_key\":\"AC7FcK6fxE16PAsPGdbWnWXosjRdgfFjFLD0Yuhdizg\",\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"sealed_copy\":\"AgcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw\"}}",
     "method": "POST",
     "path": "/v1/account"
   },

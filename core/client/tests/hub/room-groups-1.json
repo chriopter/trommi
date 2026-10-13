@@ -1,9 +1,9 @@
 {
-  "answer": "{\"after\":15,\"items\":[{\"epoch\":1,\"group_id\":\"hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTij5ANjWHEjXL2acocmxwY1\",\"kind\":\"helper\",\"leaves\":[\"5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOig\",\"9K88N-4ode6HNdHZAE884aQayNkQ2yO_SR5ed3IhMR4\"],\"live\":true,\"parent\":\"hvR76_2ZHCH9wzsRuZkZ5A\",\"room_epoch\":1,\"session_id\":\"o-QDY1hxI1y9mnKHJscGNQ\",\"stale\":false},{\"epoch\":1,\"group_id\":\"hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTgeh4pXIxPJdxR1wmX_8oBD\",\"kind\":\"main\",\"leaves\":[\"ypLNjcIIJbrzDHkRrpiisEmqanGNxxoN3rJc50vPwes\",\"9K88N-4ode6HNdHZAE884aQayNkQ2yO_SR5ed3IhMR4\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":\"HoeKVyMTyXcUdcJl__KAQw\",\"stale\":false}],\"more\":false}",
+  "answer": "{\"after\":15,\"items\":[{\"epoch\":1,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS1FDWWmSCFGthH98_y8yQaA\",\"kind\":\"helper\",\"leaves\":[\"ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA\",\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\"],\"live\":true,\"parent\":\"5PiomyhofoPRqHPTDNJRsA\",\"room_epoch\":1,\"session_id\":\"RQ1lpkghRrYR_fP8vMkGgA\",\"stale\":false},{\"epoch\":1,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS1DcNfZAw-MY7irL0tCTQgg\",\"kind\":\"main\",\"leaves\":[\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\",\"_f4l3HBxZyz_Oshi1GbDX3URPlkgS6sWjVyA5o3Wm_Q\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":\"Q3DX2QMPjGO4qy9LQk0IIA\",\"stale\":false}],\"more\":false}",
   "asked": {
     "after": 5,
     "limit": 2,
-    "room": "hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTg",
+    "room": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0",
     "route": "room_groups"
   },
   "content_range": null,
@@ -11,7 +11,7 @@
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/rooms/hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTg/groups?after=5&limit=2"
+    "path": "/v1/rooms/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0/groups?after=5&limit=2"
   },
   "status": 200
 }

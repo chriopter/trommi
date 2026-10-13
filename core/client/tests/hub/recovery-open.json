@@ -1,7 +1,7 @@
 {
-  "answer": "{\"expires_at\":1791905601312,\"recovery_id\":\"wjJIIZpJ_YSydXx4pUuyQw\"}",
+  "answer": "{\"expires_at\":1791905916964,\"recovery_id\":\"_whgp852hSnl_LV5QecojQ\"}",
   "asked": {
-    "room": "6Bz2L6NITbaL2biTLbM_w--uuyH0jDCmARAL8ORUjwM",
+    "room": "Fq5o_PDPasqolSlmQp7Z0JVyWQAIG9VCKHItGXhMz14",
     "route": "open_recovery"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": "{}",
     "method": "POST",
-    "path": "/v1/rooms/6Bz2L6NITbaL2biTLbM_w--uuyH0jDCmARAL8ORUjwM/recovery"
+    "path": "/v1/rooms/Fq5o_PDPasqolSlmQp7Z0JVyWQAIG9VCKHItGXhMz14/recovery"
   },
   "status": 200
 }

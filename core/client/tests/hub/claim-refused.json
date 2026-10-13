@@ -1,9 +1,9 @@
 {
-  "answer": "{\"device\":\"PZ4Lk5KziSxl1fndGt1GFisCFaVUntwzSaMu-1JNpV8\",\"error\":\"not-found\",\"message\":\"no KeyPackage for a device\"}",
+  "answer": "{\"device\":\"yt9J0shQ1_xd33ewvnciAqLgTLQ886Rv9EcMmN_ymsI\",\"error\":\"not-found\",\"message\":\"no KeyPackage for a device\"}",
   "asked": {
     "devices": [
-      "5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOig",
-      "PZ4Lk5KziSxl1fndGt1GFisCFaVUntwzSaMu-1JNpV8"
+      "ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA",
+      "yt9J0shQ1_xd33ewvnciAqLgTLQ886Rv9EcMmN_ymsI"
     ],
     "partial": false,
     "route": "claim"
@@ -11,7 +11,7 @@
   "content_range": null,
   "name": "claim-refused",
   "request": {
-    "body": "{\"devices\":[\"5MW6-u9qjKaE2l6mdMVyr8q_YgghIRUllxoNEbcnOig\",\"PZ4Lk5KziSxl1fndGt1GFisCFaVUntwzSaMu-1JNpV8\"]}",
+    "body": "{\"devices\":[\"ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA\",\"yt9J0shQ1_xd33ewvnciAqLgTLQ886Rv9EcMmN_ymsI\"]}",
     "method": "POST",
     "path": "/v1/key-packages/claim"
   },

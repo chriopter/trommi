@@ -1,15 +1,15 @@
 {
-  "answer": "{\"expires_at\":1791905598870,\"role\":\"recovery\",\"token\":\"F3DKNSi2F5tQ5SaHdkL3JPR79tS1DYIk4aH17issI-w\"}",
+  "answer": "{\"expires_at\":1791905914482,\"role\":\"recovery\",\"token\":\"pxdz50zJq0A3ENvpONwPMXoZaUgO8fu1JqS-eaKoW7M\"}",
   "asked": {
-    "room": "hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTg",
+    "room": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0",
     "route": "token"
   },
   "content_range": null,
   "name": "token-recovery",
   "request": {
-    "body": "{\"auth\":\"hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTgWaHR0cDovLzEyNy4wLjAuMTo0MDIzMaVPLaO2asm9pRcvLG8pZUaEPdgsPdyHkDdWR0aSKZtf2XbyIo3y_XHIXg5IdVWKwOyI5xIbP5prcA8TswJgcqQ\",\"signature\":\"DRxleexQkEW3ONTfCS40MG9XboE-sMlDqy4q2qVmKujcG7LupzHQ5jEuMyRkYhuE6ld1Bwbo9THIDu8OVBS7AA\"}",
+    "body": "{\"auth\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0WaHR0cDovLzEyNy4wLjAuMTo0MTk4MaM__5MOudvyk2JwEydS3Y91viBogCqN7hLn0m4GeM2yq6KKpIYMOTK-LUAs5MbYWeh7N8m8SWGvTDbSPmkQh1A\",\"signature\":\"wkV3vR4volGG4U4kyWi2j3JdM69pErrkycrtlyia11xHCmjAAw-rOTa-i80ZMaYU5vI2F9cGTZgMe2ZSNCVcAQ\"}",
     "method": "POST",
-    "path": "/v1/rooms/hAae0O0pBvLVtUn-STeeCVnIM2l_EE6UXzkqONqkvTg/tokens"
+    "path": "/v1/rooms/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0/tokens"
   },
   "status": 200
 }
