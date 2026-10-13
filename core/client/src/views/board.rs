@@ -102,6 +102,8 @@ pub struct Board<'a> {
 
 /// A card that reads as an info: one that is, one of a newer Trommi, and one whose body is not read here yet (a
 /// quiet placeholder: nothing to answer and no knock until it is read).
+// (web and iPhone differ here: the iPhone counts such a card as a question. The web's rule until the owner decides:
+//  card 0b89a1c7, session "App-Kern W4"; with it, whether status.rs raises the red hand for it)
 pub fn reads_as_info(c: &Card) -> bool {
     c.field("card_type").as_str() == Some("info") || c.is_unsupported() || is_loading(c)
 }

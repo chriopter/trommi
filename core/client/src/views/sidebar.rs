@@ -142,6 +142,8 @@ pub fn sidebar(b: &Board) -> SidebarView {
             }
         })
         .collect();
+    // (web and iPhone differ here: the web counts every desk and shows red on a knock, the iPhone counts the desk
+    //  in view. The web's rule until the owner decides: card c628976b, session "App-Kern W4")
     let badge = b.all_fresh.len() as u32;
     let knocks = b.all_fresh.iter().any(|f| f.knocks);
     let all = (desks.len() > 1).then(|| DeskTab {
