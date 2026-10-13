@@ -2780,3 +2780,31 @@ fn signing_out_ends_the_token_at_once() {
     w.ada.token = Some(second);
     w.ada.get(&w.hub, "/v1/desk").ok();
 }
+
+#[test]
+fn commits_posted_together_are_each_taken_or_refused_in_their_place() {
+    let mut w = World::new();
+    let room = w.room;
+    let now = w.ada.room_now();
+    // the room group's next Commit, and one for a group that does not exist
+    let out = w.ada.commit(&room, &Change::default(), now);
+    let sealed = w.ada.sealed_key(&room, out.epoch + 1, &out.group_info, now.0, &w.recovery.hpke_public, true);
+    let mut good = commit_json(&out, &sealed, None);
+    good["group"] = json!(b64(&room));
+    let nowhere: [u8; 48] = random();
+    let mut junk = json!({ "epoch": 0, "commit": b64(&[1u8; 600]), "group_info": b64(&[2u8; 600]), "sealed_key": b64(&[3u8; 100]) });
+    junk["group"] = json!(b64(&nowhere));
+    let answers = w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [good, junk] })).ok()["answers"].clone();
+    let answers = answers.as_array().expect("answers");
+    assert_eq!(answers.len(), 2);
+    assert_eq!(answers[0]["epoch"], out.epoch + 1, "{answers:?}");
+    assert!(answers[0]["change"].as_u64().unwrap() > 0);
+    assert!(answers[1]["error"].is_string() && answers[1]["status"].as_u64().unwrap() >= 400, "{answers:?}");
+    w.ada.merge(&room);
+    assert_eq!(group_of(&groups(&w, &w.ada), &room)["epoch"], out.epoch + 1, "the good one was taken");
+    // the request's own form: none, too many, two for one group
+    w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [] })).refused(400, "bad-format");
+    let one = json!({ "group": b64(&nowhere), "epoch": 0, "commit": b64(&[1u8; 8]), "group_info": b64(&[2u8; 8]), "sealed_key": b64(&[3u8; 8]) });
+    w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": vec![one.clone(); 65] })).refused(400, "bad-format");
+    w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [one.clone(), one] })).refused(400, "bad-format");
+}

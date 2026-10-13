@@ -32,7 +32,7 @@ test('pages come in the hub\'s order, each from the cursor of the one before, to
   assert.deepEqual(commit.bytes, utf8('c1'))
   assert.ok(seen[0].envelope instanceof Uint8Array)
   assert.equal(seen[0].void_code, null)
-  assert.deepEqual(await hub.changes(cursor), { items: [], change: cursor, more: false })
+  assert.deepEqual(await hub.changes(cursor), { items: [], change: cursor, more: false, head: cursor })
 })
 
 const hostile = {

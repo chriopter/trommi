@@ -99,6 +99,8 @@ export async function startFakeHub(opts = {}) {
   if (opts.readEnvelopeHeader) readers.envelope = opts.readEnvelopeHeader
   const state = opts.state ?? newState()
   const rules = []
+  /** A test's: a Refused for a Commit of `POST /v1/commits` (by group id, base64url), or null to take it. */
+  let joinFault = null
   const faults = {
     add(rule) { const r = { times: 1, ...rule }; rules.push(r); return r },
     clear() { rules.length = 0 },
@@ -371,7 +373,7 @@ export async function startFakeHub(opts = {}) {
     const found = a.room.changes.filter(i => i.change > after && i.change <= upto && visible(a, i) && wanted(i))
     const items = found.slice(0, limit)
     const cursor = found.length > limit ? items[items.length - 1].change : upto
-    return { items: items.map(served), change: Math.max(cursor, after), more: cursor < head }
+    return { items: items.map(served), change: Math.max(cursor, after), more: cursor < head, head }
   }
 
   // ---- the account (no slow hash: a login key is compared as it is)
@@ -736,6 +738,21 @@ export async function startFakeHub(opts = {}) {
       return { group_id: g.group_id }
     }
     if (is('POST', 'groups', null, 'commits')) { const a = writer(rq); return commit(a.room, group(a.room, groupId(segs[1])), a, commitBody(body)) }
+    // several Commits of different groups, each answered in its place (hub-api.md `POST /v1/commits`); `joinFault`
+    // (a test's) refuses one of them before the hub takes it
+    if (is('POST', 'commits')) {
+      const list = body?.commits
+      if (!Array.isArray(list) || !list.length || list.length > 64) throw refuse('bad-format', 'commits: 1 to 64 Commits')
+      if (new Set(list.map(c => c?.group)).size !== list.length) throw refuse('bad-format', 'commits: one per group')
+      const parsed = list.map(c => [groupId(String(c?.group)), commitBody(c)])
+      const a = writer(rq)
+      return { answers: parsed.map(([g, c]) => {
+        try { const f = joinFault?.(g); if (f) throw f; return commit(a.room, group(a.room, g), a, c) } catch (e) {
+          if (!(e instanceof Refused)) throw e
+          return { error: e.code, message: e.message, status: statusOf(e.code), ...e.extra, ...(e.retry_after ? { retry_after: e.retry_after } : {}) }
+        }
+      }) }
+    }
     if (is('POST', 'groups', null, 'reject')) {
       const a = writer(rq), g = group(a.room, groupId(segs[1]))
       const entry = g.log.find(e => e.n === body.n && e.kind === 'commit')
@@ -1167,6 +1184,8 @@ export async function startFakeHub(opts = {}) {
   return {
     get url() { return url },
     state, faults, requests, close,
+    set joinFault(f) { joinFault = f },
+    refusal: (code, message, retry_after = null) => refuse(code, message, {}, retry_after),
     /** Kills the hub (every connection is cut, tokens and challenges are gone) and starts it again with its state. */
     async restart() { const port = server.address().port; await close(); await listen(port) },
     /** Stops the hub; `start()` brings it back on the same port with its state. */

@@ -7,7 +7,10 @@
 //                      order, one entry in flight, and tells the core the hub's answer
 //   catch-up           pages of `GET /v1/changes` after the cursor, to the core in the hub's order: a page in batches
 //                      (`feed`: the store writes a batch in one step), each item's outcome told as if it came alone
-//   the live stream    the same items as they happen, the relayed stroke pieces, Welcomes, wishes of other devices
+//   the live stream    the same items as they happen, the relayed stroke pieces, Welcomes, wishes of other devices;
+//                      opened with a catch-up's first answer at the hub's head (`head`), so presence and Welcomes do
+//                      not wait for a long catch-up: a change it brings before the order is taken up to there is left
+//                      to the catch-up's pages (`missed`), which read on until they have it
 //   upkeep             joining by Welcome, the steps of the invites this device confirmed (`inviteSteps`), adding a
 //                      human device a live session lacks (5.2.7), cleaning stale sessions (5.2.8), the own-leaf
 //                      update (5.2.9), `heads` (9.0.7), KeyPackages, the core's findings
@@ -31,7 +34,8 @@
 // 5. `epoch-taken`, `room-behind`, `wrong-epoch` and `stale-session` mean the group moved on: the refusal is
 //    reported, the log is processed, and whoever asked for the Commit or message (`land`) builds it again.
 // 6. The position in the hub's order (`position`, the model's last_envelope_number) moves only in `ingest`, item by
-//    item as each one's outcome is told, upwards. Both sources are gap-free from a point at or below the position when their first item is
+//    item as each one's outcome is told, upwards (and once by `skipTo`, before the start of a device that joined the
+//    room from outside: what lies before its join is the room's past, which the rescan reads). Both sources are gap-free from a point at or below the position when their first item is
 //    taken (a page starts after the cursor it was asked with; hub.ts's stream resumes after the last change it
 //    handed over), so an item at or below the position is one already taken and is skipped. Change numbers are not
 //    consecutive for one device (SealedKeys take numbers, other groups' items are not served), so "the next
@@ -45,7 +49,9 @@
 // WHAT THE CORE DOES NOT DO YET, and how this module is written against that (README.md):
 // - An envelope that arrived before this device joined its group, or before its key was handed over, is not taken
 //   in the hub's order. The engine then reads the room's changes once more from the start (`rescan`): what the
-//   chain could not take is taken, what it holds is read back (`receiveEnvelope(…, ordered = false)`).
+//   chain could not take is taken, what it holds is read back (`receiveEnvelope(…, ordered = false)`). A device
+//   that signed in with the code reads the room's past so, once, after its sessions were joined (room.ts): the open
+//   state (the hub's Desk) is shown before it, and the past only closes what it settled.
 import { mark, measuring, spent, timed, timedSync } from './spent.ts'
 import type {
   Core, Cut, Device, Draft, ErrorCode, Fed, FeedItem, FeedOutcome, GroupSummary, InviteStep, OutboxEntry, Processed, ReceivedEnvelope, ReceivedMessage, RoomRoles, Sealed, Store,
@@ -151,6 +157,12 @@ const HELD_KEEP_MS = 120_000
 /** After a read of the hub's Welcomes that brought nothing, how many items that wait for a group pass before the
  *  next (`repairByWelcome`): a Welcome that comes meanwhile is found that many items later at most. */
 const WELCOMES_AGAIN = 64
+/** Joins of session groups from outside posted in one request (`POST /v1/commits`): at most so many, and so many
+ *  bytes (the hub takes a JSON body of 1.5 MiB). */
+const JOINS_AT_ONCE = 32
+/** `landMany` builds so many in one job of the queue, and wakes the pump after each such job. */
+const LAND_TOGETHER = 6
+const JOINS_BYTES = 1 << 20
 /** At most this many groups are noted in `behind` (one entry each, whatever the number of their envelopes). */
 const BEHIND_GROUPS = 4096
 const same = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i])
@@ -194,6 +206,38 @@ export class Engine {
   private keepAgain = false
   private closeStream: (() => void) | null = null
   private streamLive = false
+  /** The stream is wanted (`start({ stream: true })`): it opens with the first page of the first catch-up. */
+  private streamWanted = false
+  /** Where the live stream began: the hub's head when it opened beside a catch-up. A change it brings is taken
+   *  only once the hub's order is taken up to there; before that, the catch-up's pages bring it (`missed`). */
+  private streamFrom = 0
+  /** A change the stream brought while a catch-up ran, or before the order reached `streamFrom`: the pass reads on. */
+  private missed = false
+  /** Changes of the stream waiting for their turn in the queue (`takeLive`), and the job that takes them. */
+  private readonly live: ChangeItem[] = []
+  private takingLive = false
+  private liveRun: Promise<void> | null = null
+  private takeLive(): Promise<void> {
+    return this.serial(async () => {
+      const items = this.live.splice(0).filter(i => i.change > this.position)
+      this.takingLive = true
+      try { if (items.length) await this.ingest(items, items[items.length - 1]!.change) } finally { this.takingLive = false }
+    }).catch(() => {
+      // (what was not taken is the next catch-up's: the position stands before it)
+      this.live.length = 0
+      this.missed = true
+      if (!this.catching) void this.catchUp().catch(() => {})
+    }).finally(() => {
+      this.liveRun = null
+      if (this.live.length && this.running) this.liveRun = this.takeLive()
+    })
+  }
+  /** The pages of a catch-up are being read (not its rescan, which follows them at the head). */
+  private paging = false
+  /** The room's newest change number as the last page of the hub's order said it (null: a hub that does not say). */
+  head: number | null = null
+  /** How far a running rescan (the room's past) has read: from where to where, and the change it is at. Null: none runs. */
+  past: { from: number; to: number; at: number } | null = null
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
   private readonly sleepers = new Set<() => void>()
   /** Who waits for the hub's answer to an outbox entry, and the answers of entries nobody waited for yet. */
@@ -231,6 +275,8 @@ export class Engine {
   private learnDue = false
   /** How often a rescan was asked for: one asked for while a rescan runs is not lost. */
   private rescanAsked = 0
+  /** Where the rescan asked for while one runs starts (null: none asked meanwhile). */
+  private rescanNext: number | null = null
   /** The outbox entry the pump is posting, and the entries whose own Commit came back before their POST was answered. */
   private inFlight: number | null = null
   private readonly merged = new Set<number>()
@@ -416,12 +462,72 @@ export class Engine {
       await this.catchUp().catch(() => {})
     }
   }
+  /**
+   * Several Commits that must land, built one after another (each in its own job) and posted together (the pump
+   * takes joins at the outbox's head in one request): for a sign-in's joins of its sessions. Each one's outcome in
+   * its place: null when it landed (or `build` had nothing to do), else the error `land` would have thrown for it
+   * the first time. Nothing is built again here: the caller tries a failed one again alone (`land`).
+   */
+  async landMany(builds: readonly ((d: Device) => Promise<number | null>)[]): Promise<(unknown | null)[]> {
+    // (a few in one job: the pump reads the outbox in the queue too, and finds them there together, while what
+    //  else waits in the queue, a Desk read, gets its turn in between; the pump posts what is built meanwhile)
+    const made: (number | null | { error: unknown })[] = []
+    for (let at = 0; at < builds.length; at += LAND_TOGETHER) {
+      made.push(...await this.serial(async () => {
+        const out: (number | null | { error: unknown })[] = []
+        for (const build of builds.slice(at, at + LAND_TOGETHER)) {
+          try { out.push(await this.call(build)) } catch (e) { if (this.isLocal(e)) throw e; out.push({ error: e }) }
+        }
+        return out
+      }))
+      this.kick()
+    }
+    this.kick()
+    if (!this.running) await this.drain().catch(() => {})
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const late = new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), this.running ? this.timing.land : 0) })
+    const outcomes = await Promise.all(made.map(m => (m === null || typeof m !== 'number' ? Promise.resolve(null) : Promise.race([this.outcome(m), late]))))
+    clearTimeout(timer)
+    return made.map((m, i) => {
+      if (m === null) return null
+      if (typeof m !== 'number') return m.error
+      const got = outcomes[i]
+      if (got === 'accepted') return null
+      if (got === 'timeout') { this.waiters.delete(m); return new EngineError(this.running ? 'timeout' : 'offline', 'the hub did not take it in time: it stays in the outbox and is sent again') }
+      if (got === 'stopped') return new EngineError('stopped', 'the engine stopped before the hub answered')
+      return new EngineError(String(got), `the hub refused it (${String(got)})`)
+    })
+  }
   /** Without the pump: posts the outbox in order, reports each answer, and takes the hub's order once, so that a
    *  Commit that was accepted is merged. A failure is the caller's to hear; the entry stays for the next start. */
   private async drain(): Promise<void> {
+    let drainTries = 0
     for (;;) {
-      const entry = (await this.outbox())[0]
+      const entries = await this.outbox(), entry = entries[0]
       if (!entry) break
+      // (joins at the head together, as the pump posts them)
+      const joins = this.joinsAt(entries)
+      if (joins.length > 1) {
+        let answers: (OutboxAnswer | HubError)[] | null = null
+        try { answers = await this.hub.postJoins(joins) } catch (e) { if (!(e instanceof HubError && (e.status === 404 || e.status === 405))) throw e; this.joinBatchOff = true }
+        if (answers) {
+          // (what the hub answered for good is reported; one it answered "not now" is posted again a few times,
+          //  after its wait, then its failure is the caller's)
+          let notNow: HubError | null = null
+          for (const [i, one] of joins.entries()) {
+            const got = answers[i]!
+            if (!(got instanceof HubError)) { await this.serial(() => this.accepted(one, got)); continue }
+            const verdict = this.judge(one, got)
+            if (verdict.kind !== 'refuse') { notNow ??= got; continue }
+            await this.serial(() => this.refused(one, verdict.code, verdict.voided))
+          }
+          if (notNow) {
+            if (++drainTries > 4 || !notNow.transient) throw notNow
+            await new Promise(r => setTimeout(r, notNow!.retry_after !== null ? notNow!.retry_after * 1000 : 300 * 2 ** drainTries))
+          }
+          continue
+        }
+      }
       let answer: OutboxAnswer
       try { answer = await this.post(entry) } catch (e) {
         const verdict = this.judge(entry, e)
@@ -464,8 +570,9 @@ export class Engine {
     let posted: number | null = null
     while (this.running) {
       let entry: OutboxEntry | undefined
+      let entries: OutboxEntry[] = []
       try {
-        const entries = await this.outbox()
+        entries = await this.outbox()
         entry = entries[0]
         // An entry that was posted without an answer and is gone from the outbox: the log settled it meanwhile.
         // Its own Commit came back (merged), or another took its epoch; whoever waits is told.
@@ -473,6 +580,16 @@ export class Engine {
         posted = null
       } catch { await this.sleep(backoff); continue }
       if (!entry) break
+      // Joins of session groups from outside at the head (a sign-in's, one per live session): together, in one
+      // request; each answer is reported in the outbox's order, as if posted alone
+      const joins = this.joinsAt(entries)
+      if (joins.length > 1) {
+        const r = await this.postJoinsNow(joins)
+        if (r === 'stop') break
+        if (r === null) { backoff = this.timing.backoff_first; this.setBlocked(null) }
+        else { posted = r.posted; await this.sleep(r.wait ?? backoff); backoff = Math.min(backoff * 2, this.timing.backoff_max) }
+        continue
+      }
       const head = entry
       try {
         this.inFlight = head.id
@@ -494,6 +611,51 @@ export class Engine {
         backoff = Math.min(backoff * 2, this.timing.backoff_max)
       }
     }
+  }
+  /** The joins of session groups from outside at the outbox's head, one per group, as many as go in one request. */
+  private joinsAt(entries: readonly OutboxEntry[]): OutboxEntry[] {
+    if (this.joinBatchOff) return []
+    const out: OutboxEntry[] = []
+    let bytes = 0
+    for (const e of entries) {
+      if (e.kind !== 'externalCommit' || !e.group || e.group.length === 32 || out.some(o => same(o.group!, e.group!))) break
+      const size = e.parts.reduce((n, p) => n + p.length, 0) * 4 / 3 + 200
+      if (out.length >= JOINS_AT_ONCE || (out.length && bytes + size > JOINS_BYTES)) break
+      out.push(e)
+      bytes += size
+    }
+    return out
+  }
+  /** A hub without `POST /v1/commits`: every entry goes alone, as before. */
+  private joinBatchOff = false
+  /** Posts joins together (`joinsAt`) and reports each answer in order. Null: all were answered; `stop`: the engine
+   *  stopped; else the pump waits (`wait`, or its backoff) and posts what is left again, `posted` the one in flight. */
+  private async postJoinsNow(joins: OutboxEntry[]): Promise<null | 'stop' | { wait: number | null; posted: number }> {
+    let answers: (OutboxAnswer | HubError)[]
+    this.inFlight = joins[0]!.id
+    try { answers = await timed('hub', () => this.hub.postJoins(joins)) } catch (e) {
+      if (!this.running) return 'stop'
+      // (a hub from before the route: one by one from now on)
+      if (e instanceof HubError && (e.status === 404 || e.status === 405)) { this.joinBatchOff = true; return { wait: 0, posted: joins[0]!.id } }
+      return { wait: e instanceof HubError && e.retry_after !== null ? e.retry_after * 1000 : null, posted: joins[0]!.id }
+    }
+    // Every answer the hub gave for good is reported, in order; one that means "not now" leaves its entry for the next
+    // post, after a pause (joins of different groups do not wait for each other: none builds on another)
+    let later: { wait: number | null; posted: number } | null = null
+    const taken = joins.flatMap((entry, i) => { const a = answers[i]!; return a instanceof HubError ? [] : [[entry, a] as [OutboxEntry, OutboxAnswer]] })
+    if (taken.length) try { await this.serial(() => this.acceptedAll(taken)) } catch { later ??= { wait: null, posted: taken[0]![0].id } }
+    for (const [i, entry] of joins.entries()) {
+      const answer = answers[i]!
+      if (!(answer instanceof HubError)) continue
+      const verdict = this.judge(entry, answer)
+      if (verdict.kind === 'refuse') {
+        try { await this.serial(() => this.refused(entry, verdict.code, verdict.voided)) } catch { later ??= { wait: null, posted: entry.id } }
+        continue
+      }
+      if (verdict.kind === 'block') { this.setBlocked({ entry, code: verdict.code, message: verdict.message }); later = { wait: this.timing.blocked_retry, posted: entry.id }; continue }
+      later ??= { wait: verdict.wait, posted: entry.id }
+    }
+    return later
   }
   private async post(entry: OutboxEntry): Promise<OutboxAnswer> {
     if (entry.kind !== 'roomFounding' && entry.kind !== 'recoveryCommit' && entry.kind !== 'recoveryFinish') return this.hub.postOutbox(entry)
@@ -525,14 +687,24 @@ export class Engine {
     this.emit('blocked', blocked)
     this.emit('batch', null)
   }
-  private async accepted(entry: OutboxEntry, answer: OutboxAnswer): Promise<void> {
+  /** Several answered entries in one job (joins posted together): the device's groups are read once for all. */
+  private async acceptedAll(answered: readonly [OutboxEntry, OutboxAnswer][]): Promise<void> {
+    for (const [entry, answer] of answered) await this.reportAccepted(entry, answer)
+    await this.refresh()
+    for (const [entry, answer] of answered) await this.accepted(entry, answer, false)
+  }
+  private async reportAccepted(entry: OutboxEntry, answer: OutboxAnswer): Promise<void> {
     // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the core merged
     // it and dropped the entry then)
     try { await this.call(d => d.outboxAccepted(entry.id, answer.change ?? null)) } catch (e) { if (this.core.errorCode(e) !== 'not-found') throw e }
+  }
+  /** `report`: false when `acceptedAll` told the core and read the groups already. */
+  private async accepted(entry: OutboxEntry, answer: OutboxAnswer, report = true): Promise<void> {
+    if (report) await this.reportAccepted(entry, answer)
     await this.opts.meta.delete(`outbox-extra/${entry.id}`).catch(() => {})
     if (entry.kind === 'keyPackages' && answer.unused !== undefined) { this.uploadsAnswered++; await this.opts.meta.set('key-packages', { unused: answer.unused }).catch(() => {}) }
     const commit = entry.kind !== 'message' && entry.kind !== 'relayMessage' && entry.kind !== 'envelope' && entry.kind !== 'keyPackages' && entry.kind !== 'sealedKey'
-    if (commit) await this.refresh()
+    if (commit && report) await this.refresh()
     // An accepted Commit is not merged by the hub's answer: the group stands in its old epoch until the Commit
     // comes back at its place in the hub's order (core/README.md). Whoever waits for it waits for that; the
     // position does not move here, or the Commit would be passed over when it comes.
@@ -566,11 +738,12 @@ export class Engine {
     while (this.pumping) await this.pumping
   }
   /** Posts the outbox's head once, now, without the pump: for a founding, whose failure is its caller's to hear. */
-  async postHead(): Promise<void> {
+  async postHead(): Promise<number | null> {
     const entry = (await this.outbox())[0]
-    if (!entry) return
+    if (!entry) return null
     const answer = await this.post(entry)
     await this.serial(() => this.accepted(entry, answer))
+    return answer.change ?? null
   }
 
   // ---- taking the hub's order
@@ -689,6 +862,16 @@ export class Engine {
       // a Welcome this device has not taken yet may be what it lacks
       if (await this.repairByWelcome()) { this.repairs++; received = await this.receive(item, true) }
       if (behind()) { await this.noteBehind(item, received); await this.wantRescan(); return }
+    }
+    if (received?.outcome === 'refused' && received.code === 'gap' && this.rescanDue && this.takingLive) {
+      // A live change while the room's past is still to be read (a sign-in reads it after its sessions, `skipTo`): the sender's chain
+      // comes with it, in the hub's order. Fetched here instead, chain by chain, it was most of the history once more,
+      // each envelope read again by that reading. Shown now as the core reads it out of order (provisional), taken in
+      // order by the reading of the past, which reads from here on once more if it runs already.
+      const shown = await this.receive(item, false)
+      if (shown && shown.outcome !== 'refused') this.emit('envelope', { received: await this.readBack(shown), how: 'again' })
+      await this.wantRescan(item.change - 1)
+      return
     }
     if (received?.outcome === 'refused' && received.code === 'gap') { this.repairs++; received = await this.fillGap(item, received) }
     if (batched && this.repairs !== was) await this.wantRescan(item.change)
@@ -859,6 +1042,9 @@ export class Engine {
     const pass = this.catching = this.pages().finally(() => {
       if (this.catching !== pass) return
       this.catching = null
+      // (a change the stream left to the pages that this pass did not bring, it failed or was past its pages: the
+      //  next pass soon, also when the stream brings nothing more)
+      if (this.missed && this.running) this.later(this.timing.backoff_first, () => { void this.catchUp().catch(() => {}) })
       if (this.running && this.streamLive && this.connection !== 'live') this.setConnection('live')
     })
     return pass
@@ -868,18 +1054,29 @@ export class Engine {
     mark(`catch-up from ${from}`)
     this.setConnection('catching_up')
     try {
-      // The next page is asked for while the core takes this one: the hub's cursor after a page is where the next
-      // starts, whatever the core makes of it (a page that halts throws, and the one fetched ahead is dropped).
-      let next = timed('hub', () => this.hub.changes(this.position, PAGE, ACTIVE))
-      for (;;) {
-        const page = await next
-        if (page.more) { next = timed('hub', () => this.hub.changes(page.change, PAGE, ACTIVE)); next.catch(() => {}) }
-        spent.items += page.items.length
-        for (const item of page.items) if (item.kind !== 'envelope') spent.commits++
-        await this.serial(() => this.ingest(page.items, page.change))
-        if (!page.more) break
-      }
+      // (once more while the stream brought a change during the pass: the last page may have been read before it)
+      this.paging = true
+      do {
+        this.missed = false
+        // The next page is asked for while the core takes this one: the hub's cursor after a page is where the next
+        // starts, whatever the core makes of it (a page that halts throws, and the one fetched ahead is dropped).
+        let next = timed('hub', () => this.hub.changes(this.position, PAGE, ACTIVE))
+        for (;;) {
+          const page = await next
+          if (page.more) { next = timed('hub', () => this.hub.changes(page.change, PAGE, ACTIVE)); next.catch(() => {}) }
+          if (page.head !== null) this.head = page.head
+          // The live stream opens with the first answer, at the hub's head: presence, Welcomes and new changes do
+          // not wait for a long catch-up (what it brings before the order reaches its start, the pages bring)
+          if (this.streamWanted && !this.closeStream && this.running) this.openStream(page.head ?? page.change)
+          spent.items += page.items.length
+          for (const item of page.items) if (item.kind !== 'envelope') spent.commits++
+          await this.serial(() => this.ingest(page.items, page.change))
+          if (!page.more) break
+        }
+      } while (this.missed && this.running)
+      this.paging = false
     } catch (e) {
+      this.paging = false
       if (e instanceof Halt && this.running) this.later(this.timing.halted_retry, () => { void this.catchUp().catch(() => {}) })
       if (e instanceof HubError && e.code === 'not-member') this.lost()
       // a page that breaks the hub's own order (hub.ts refuses it whole): nothing of it was taken
@@ -893,11 +1090,22 @@ export class Engine {
     if (!this.streamLive && this.position !== from) this.keepSoon(0)
     if (this.rescanDue) await this.rescan()
   }
+  /**
+   * A device that joined the room from outside (the code, 8.4) takes the hub's order from just before its own join
+   * Commit: what lies before it is the room's past, which it holds nothing of, not even a session group. Taken in
+   * the hub's order it was the whole history once over the network and through the core, all of it refused for want
+   * of the sessions' keys, before the first session could be joined. It is read once the sessions are joined, by one
+   * rescan from the start (`wantRescan`), with every key at hand. Before `start`.
+   */
+  skipTo(change: number): void { if (!this.running && change > this.position) this.position = change }
   /** A rescan is asked for or running: the room's past is still being read (the client's `room.reading`). */
   get rescanPending(): boolean { return this.rescanDue }
   /** Asks for a rescan (see the header): also the client's, when it has to build its model again from nothing. */
   async wantRescan(from = 0): Promise<void> {
     this.rescanAsked++
+    // (asked while one runs: the next one starts where this ask says, not where the running one started; what the
+    //  running one reads before that is not read twice)
+    if (this.past) this.rescanNext = Math.min(this.rescanNext ?? from, from)
     // (asked for twice: from the earlier of the two places)
     const start = this.rescanDue ? Math.min(this.rescanFrom, from) : from
     if (this.rescanDue && start === this.rescanFrom) return
@@ -909,7 +1117,8 @@ export class Engine {
   /** Reads the room's envelopes once more from the start, up to the position (see the header). */
   private rescan(): Promise<void> {
     mark(`rescan from ${this.rescanFrom} to ${this.position}`)
-    return timed('rescan', () => this.rescanNow()).finally(() => mark('rescan end'))
+    this.past = { from: this.rescanFrom, to: this.position, at: this.rescanFrom }
+    return timed('rescan', () => this.rescanNow()).finally(() => { this.past = null; mark('rescan end') })
   }
   private async rescanNow(): Promise<void> {
     const asked = this.rescanAsked
@@ -917,8 +1126,12 @@ export class Engine {
     // the envelopes this run took already, when they reach back to where the rescan starts: no page from the hub
     const held = this.held && this.held.from <= this.rescanFrom ? [...this.held.items.values()].filter(item => item.change > this.rescanFrom).sort((x, y) => x.change - y.change) : null
     if (held) mark(`rescan from memory: ${held.length} envelopes`)
+    // (the next page is asked for while the core takes this one, as a catch-up does)
+    const ask = (after: number): Promise<{ items: ChangeItem[]; change: number; more: boolean }> => { const p = timed('hub', () => this.hub.changes(after, PAGE, ACTIVE)); p.catch(() => {}); return p }
+    let next = held || this.rescanFrom >= upTo ? null : ask(this.rescanFrom)
     for (let after = this.rescanFrom; after < upTo;) {
-      const page = held ? { items: held, change: upTo, more: false } : await this.hub.changes(after, PAGE, ACTIVE)
+      const page = held ? { items: held, change: upTo, more: false } : await next!
+      if (!held && page.more && page.change > after && page.change < upTo) next = ask(page.change)
       await this.serial(async () => {
         // (what the chain could not take before is written now: in batches, like a page of a catch-up)
         // (an envelope this engine told whole in the hub's order is not read again: the chain holds it and the
@@ -934,6 +1147,7 @@ export class Engine {
             this.emit('envelope', { received, how: 'again' })
           }
         }
+        let told = this.now()
         for (let at = 0; at < due.length;) {
           const batch = due.slice(at, at + FEED)
           const fed = await this.feed(batch)
@@ -942,14 +1156,25 @@ export class Engine {
           at += outcomes.length
           // the one the core did not take in the batch (or the first of a batch it did not take): alone
           if (!fed || fed.refusedAt !== null) { await again(batch[outcomes.length]!, await this.receive(batch[outcomes.length]!, true)); at++ }
+          if (this.past && at > 0) this.past.at = due[at - 1]!.change
+          // (what is read so far is reported while it goes on, as a catch-up's page is: `progress`)
+          if (this.now() - told >= this.timing.progress) { told = this.now(); this.emit('batch', null) }
         }
+        if (this.past) this.past.at = Math.max(this.past.at, Math.min(page.change, upTo))
         this.emit('batch', null)
       })
       if (page.change <= after || !page.more) break
       after = page.change
     }
-    // asked for again meanwhile (keys that came while this one ran): it stays due, and upkeep runs the next
-    if (this.rescanAsked !== asked) { this.keepSoon(0); return }
+    // asked for again meanwhile (keys that came while this one ran): it stays due, from where it was asked, and
+    // upkeep runs the next
+    if (this.rescanAsked !== asked) {
+      if (this.rescanNext !== null) { this.rescanFrom = this.rescanNext; await this.opts.meta.set('rescan', this.rescanFrom).catch(() => {}) }
+      this.rescanNext = null
+      this.keepSoon(0)
+      return
+    }
+    this.rescanNext = null
     this.rescanDue = false
     this.rescanFrom = 0
     // (kept a while: the session groups of a sign-in are joined and learned after its first rescan, and each asks
@@ -962,8 +1187,11 @@ export class Engine {
 
   // ---- the live stream
 
-  private openStream(): void {
-    this.closeStream = this.hub.stream(() => this.position, event => this.onStream(event), state => {
+  /** Opens the live stream at `from` (the hub's head, or the position): it resumes from the position once the hub's
+   *  order is taken that far. */
+  private openStream(from: number = this.position): void {
+    this.streamFrom = Math.max(from, this.position)
+    this.closeStream = this.hub.stream(() => Math.max(this.position, this.streamFrom), event => this.onStream(event), state => {
       this.streamLive = state === 'live'
       if (state === 'live') { this.emit('opened', null); for (const wake of [...this.sleepers]) wake(); this.keepSoon(0) }
       if (!this.catching) this.setConnection(state === 'live' ? 'live' : state === 'connecting' && this.connection !== 'live' ? 'connecting' : state === 'offline' ? 'offline' : this.connection)
@@ -971,7 +1199,22 @@ export class Engine {
   }
   private async onStream(event: StreamEvent): Promise<void> {
     switch (event.event) {
-      case 'change': await this.serial(() => this.ingest([event.item], event.item.change)); return
+      case 'change':
+        // While a catch-up runs, or before the hub's order is taken up to where the stream began, a change is the
+        // pages' to bring (taken here it would move the position over what lies between): the pass reads on
+        // (`missed`: one was left to the pages before and they have not brought it yet, the pass failed: neither
+        //  is this one taken, or the position would move over that one)
+        if (this.paging || this.missed || this.position < this.streamFrom) {
+          this.missed = true
+          if (!this.catching) void this.catchUp().catch(() => {})
+          return
+        }
+        // Taken in the queue with what else came meanwhile, in one batch (`feed`: one write, the groups read once):
+        // a sign-in's joins come back one after another while the queue builds the next ones. Handed over to the
+        // stream once queued; one that does not process halts as a page's would, and the next catch-up reads it.
+        this.live.push(event.item)
+        if (!this.liveRun) this.liveRun = this.takeLive()
+        return
       case 'relay': {
         // (a piece that does not open, or a core without the call, is a piece not shown: nothing else follows)
         const message = await this.serial(() => this.call(d => d.receiveRelay(event.group, event.message, this.now()))).catch(() => null)
@@ -1461,9 +1704,11 @@ export class Engine {
     // KeyPackages first: a device back after long, or just signed in, may hold none at the hub, and every session
     // founded or joined meanwhile leaves it out until it has; a long catch-up must not keep them back
     void this.stockKeyPackages().catch(() => {})
+    // the stream opens with the catch-up's first answer (`pages`), or here when the hub gave none
+    this.streamWanted = stream
     await this.catchUp().catch(() => {})
     if (!this.running) return
-    if (stream) this.openStream()
+    if (stream && !this.closeStream) this.openStream()
     this.keepSoon(0)
   }
   /** Waits until nothing is left to do: the outbox is empty, the hub's order is taken, upkeep is through. Rejects
@@ -1538,6 +1783,7 @@ export class Engine {
     this.closeStream?.()
     this.closeStream = null
     this.streamLive = false
+    this.streamWanted = false
     for (const t of this.timers) clearTimeout(t)
     this.timers.clear()
     for (const wake of [...this.sleepers]) wake()

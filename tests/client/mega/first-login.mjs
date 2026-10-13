@@ -5,6 +5,9 @@
 //
 //   node tests/client/mega/first-login.mjs <MEGA_OUT>/full/fixture.json web|ios <out.json> [<tree>]
 //
+// TRACE_RTT_MS=40: every request of the web client waits so long first, as over a real network. A traced web login
+// runs with the product's own timing (heal delay, backoff), not the tests' short waits.
+//
 // <tree>: the checkout whose clients sign in (default: this one; it must have been prepared, prepare.sh).
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'

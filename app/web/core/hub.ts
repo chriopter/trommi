@@ -184,6 +184,8 @@ export interface RoomOnlyInSteps {
   epoch: number
   /** The live session groups, main sessions first: each read and checked after the sign-in (`sessionInSteps`). */
   later: Uint8Array[]
+  /** How many of `later` are main sessions (the first ones). */
+  mains: number
   /** The room group's Commits, ascending. */
   placed(): { next(): Promise<PlacedCommit | null> }
 }
@@ -1183,6 +1185,7 @@ export class Hub {
       end: { current: spend(current.group_info), sessions: [], rows, links },
       epoch: current.epoch,
       later,
+      mains: live.filter(g => g.kind === 'main').length,
       placed: () => {
         const commits = this.groupCommits(room, current.epoch)
         return { async next() { const c = await commits.next(); return c ? { group: room, commit: c } : null } }
@@ -1281,6 +1284,32 @@ export class Hub {
    *  `bad-commit`, `incomplete`. */
   async postCommit(group: Uint8Array, c: CommitParts): Promise<{ epoch: number; change: number }> {
     return this.committed(await this.send('POST', `/v1/groups/${own(group, 'group', ...GROUP)}/commits`, commitBody(c)), c.epoch)
+  }
+  /**
+   * `POST /v1/commits`: several outbox entries that are joins of session groups from outside (`externalCommit`, one
+   * per group), in one request; each is taken as `postOutbox` takes it and answered in its place: its answer, or the
+   * hub's refusal of it (a HubError, as a request of its own would have been refused). A refusal of the request as a
+   * whole throws, as any request's.
+   */
+  async postJoins(entries: readonly OutboxEntry[]): Promise<(OutboxAnswer | HubError)[]> {
+    const commits = entries.map(entry => {
+      const p = entry.parts
+      if (entry.kind !== 'externalCommit' || p.length !== 4 || !entry.group) wrong('postJoins: joins of groups from outside only')
+      const part = (i: number): Uint8Array => p[i]?.length ? p[i] : wrong(`outbox ${entry.kind}: part ${i} is missing`)
+      return { group: own(entry.group, 'group', ...GROUP), ...commitBody({ epoch: entry.epoch, commit: part(0), group_info: part(1), sealed_key: part(2), recovery_auth: part(3) }) }
+    })
+    const o = obj(await this.send('POST', '/v1/commits', { commits }), 'the answers to Commits')
+    const answers = list(o.answers, 'answers', entries.length)
+    if (answers.length !== entries.length) bad('one answer per Commit')
+    return answers.map((a, i) => {
+      const r = obj(a, 'an answer to a Commit')
+      if (typeof r.error !== 'string') return this.committed(r, entries[i]!.epoch)
+      const { error, message, voided, status, retry_after, ...details } = r
+      const code = String(error)
+      if (typeof message !== 'string' || !Object.hasOwn(STATUS_OF, code) || STATUS_OF[code] !== status) return new HubError(`http-${typeof status === 'number' ? status : 500}`, 'the hub answered with an error that is no refusal of this protocol', { status: typeof status === 'number' ? status : 500 })
+      const wait = typeof retry_after === 'number' && Number.isInteger(retry_after) && retry_after > 0 && retry_after <= 86_400 ? retry_after : null
+      return new HubError(code, `the hub refused: ${code}`, { status: STATUS_OF[code]!, voided: voided === true, retry_after: wait, details, hub_message: message.slice(0, 300) })
+    })
   }
   /** `POST /v1/groups/{group}/reject` (14.7): this leaf cannot merge the accepted Commit `n`. */
   async rejectCommit(group: Uint8Array, n: number): Promise<{ id: number }> {
@@ -1496,7 +1525,7 @@ export class Hub {
    * which is the cursor for the next call; an answer that breaks this is refused whole. `only.active`: no envelope of
    * an archived session (its Commits still come); `only.group`: that group's envelopes alone (point 46).
    */
-  async changes(after: number, limit = 200, only: Only = {}): Promise<{ items: ChangeItem[]; change: number; more: boolean }> {
+  async changes(after: number, limit = 200, only: Only = {}): Promise<{ items: ChangeItem[]; change: number; more: boolean; head: number | null }> {
     const from = ownInt(after, 'after'), most = Math.min(1000, Math.max(1, ownInt(limit, 'limit')))
     const o = obj(await this.get('/v1/changes', { after: from, limit: most, ...onlyQuery(only) }, CAP_LIST), 'a catch-up answer')
     const change = int(o.change, 'change'), more = bool(o.more, 'more')
@@ -1509,7 +1538,10 @@ export class Hub {
       return item
     })
     if (more && change === from) bad('more to come, and no step forward')
-    return { items, change, more }
+    // (the room's newest change: how far there is to read; a hub from before it says nothing)
+    // (a number to show, nothing to rely on: never below the cursor)
+    const head = o.head === undefined || o.head === null ? null : Math.max(int(o.head, 'head'), change)
+    return { items, change, more, head }
   }
 
   /**

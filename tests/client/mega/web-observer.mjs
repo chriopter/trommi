@@ -68,13 +68,15 @@ if (TRACING) {
 // (the body codec is the core's: it is handed the binding, as core-wasm.ts does in the app)
 await import(at('app/web/core/codec.ts')).then(m => m.useCodec?.(binding), () => {})
 const core = { ...stateless, createDevice: s => Device.create(s), openDevice: s => Device.open(s), errorCode: e => (e instanceof TrommiError ? e.code : null) }
-const R = roomsOn({ core: async () => core, store: name => new MemoryStore(name), cache: async name => memoryCache(name), destroy: async () => {}, timing: TIMING })
+// (a traced first login measures the product: its own timing, not the tests' short waits)
+const R = roomsOn({ core: async () => core, store: name => new MemoryStore(name), cache: async name => memoryCache(name), destroy: async () => {}, ...(process.env.TROMMI_TRACE === '1' ? {} : { timing: TIMING }) })
 
 // ---- the hub misbehaving, seeded
 let faults = { fail: 0, delay_ms: 0, changes_down: false, seed: 1 }
 let rng = 1
 const rand = () => { rng = (rng * 1103515245 + 12345) & 0x7fffffff; return rng / 0x7fffffff }
 const realFetch = globalThis.fetch
+const RTT_MS = Number(process.env.TRACE_RTT_MS ?? 0)
 /** Requests by route (`GET /v1/welcomes`, …), for the load rules. */
 const asked = new Map()
 const faultyFetch = async (input, init) => {
@@ -82,6 +84,8 @@ const faultyFetch = async (input, init) => {
   { const route = `${init?.method ?? 'GET'} ${new URL(url).pathname.replace(/\/[A-Za-z0-9_-]{20,}/g, '/:id')}`; asked.set(route, (asked.get(route) ?? 0) + 1) }
   if (faults.changes_down && url.includes('/v1/changes')) return new Response(JSON.stringify({ error: 'overloaded', message: 'mega: changes down' }), { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '1' } })
   if (faults.delay_ms) await new Promise(r => setTimeout(r, Math.floor(rand() * faults.delay_ms)))
+  // (a real network: TRACE_RTT_MS of round trip on every request, the stream's opening too)
+  if (RTT_MS) await new Promise(r => setTimeout(r, RTT_MS))
   if (faults.fail && rand() < faults.fail && !url.includes('/stream')) return new Response(JSON.stringify({ error: 'unavailable', message: 'mega: injected' }), { status: 502, headers: { 'content-type': 'application/json' } })
   const t = performance.now()
   const res = await realFetch(input, init)

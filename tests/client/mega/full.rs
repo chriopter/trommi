@@ -341,9 +341,24 @@ async fn full_account_held() {
     std::fs::write(out.join("fixture.json"), serde_json::to_string_pretty(&fixture).unwrap()).unwrap();
     log(format!("HELD {fixture}"));
 
-    // held: the founding device keeps up and answers key requests until released
+    // held: the founding device keeps up and answers key requests until released. A path written to
+    // MEGA_OUT/full/hub-bin restarts the hub with that binary over the same data and port (a change to the hub is
+    // measured on the same account); MEGA_OUT/full/hub-restarted says when it answers again.
     let release = out.join("release");
+    let mut hub = Some(hub);
+    let mut hub_bin = String::new();
     while !release.exists() {
+        if let Ok(bin) = std::fs::read_to_string(out.join("hub-bin")) {
+            let bin = bin.trim().to_string();
+            if !bin.is_empty() && bin != hub_bin {
+                std::env::set_var("TROMMI_HUB_BIN", &bin);
+                let (data, port) = hub.take().unwrap().stop();
+                hub = Some(HubProc::start_in(data, port).await);
+                hub_bin = bin;
+                std::fs::write(out.join("hub-restarted"), &hub_bin).unwrap();
+                log(format!("hub restarted: {hub_bin}"));
+            }
+        }
         human.sync().await;
         let _ = human.answer_key_requests().await;
         tokio::time::sleep(Duration::from_secs(2)).await;

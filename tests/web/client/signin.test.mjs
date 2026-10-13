@@ -11,26 +11,32 @@ const headOf = fake => [...fake.state.rooms.values()][0].change
  *  one below `headOf` while a Commit is the room's last word, until the next envelope or catch-up passes it. */
 const servedOf = fake => [...fake.state.rooms.values()][0].changes.at(-1)?.change ?? 0
 
-test('a first catch-up on a slow disk: the position moves while a page is taken, batch by batch, not only at its end', async t => {
+test('a sign-in takes the hub\'s order from its own join and reads the room\'s past from the start in the background; on a slow disk that reading is told batch by batch', async t => {
   const { fake, a, agent, recovery_code } = await scene(t, { agent: true })
   for (let i = 0; i < 150; i++) { await a.saveNote({ text: `note ${i}` }); await agent.say({ text: `said ${i}` }); await a.sendMessage({ session_id: agent.session_id, text: `asked ${i}` }) }
   await a.settle(); await agent.settle()
   const head = headOf(fake)
   assert.ok(head >= 450, `the room holds ${head} changes: one page, more than two batches of it`)
   // every durable step of the new device's store takes 40 ms (in a browser it is one strict transaction: 10 ms
-  // on a quiet disk, far more on a loaded one), and a page is reported at least every 20 ms
+  // on a quiet disk, far more on a loaded one), and what is read is reported at least every 20 ms
   const R = await rooms({ slow_store_ms: 40, timing: { progress: 20 } })
-  const { client: c } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
+  const before = fake.requests.length
+  const { client: c, sessions } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
   t.after(() => c.stop().catch(() => {}))
   const seen = []
-  c.on('change', change => { if (change.room && c.model.room.connection === 'catching_up') seen.push(c.model.room.last_envelope_number) })
-  const pages = fake.requests.length
+  // (the first reading: one asked for meanwhile, as keys that came, reads again from where it was asked)
+  let first = null
+  c.on('change', () => { const p = c.engine.past; if (!p) { if (first) first.done = true; return } first ??= p; if (p === first && !first.done) seen.push(p.at) })
   await c.start()
   await until(() => c.model.room.connection === 'live', 'the new device live')
-  assert.equal(fake.requests.slice(pages).filter(r => r.method === 'GET' && r.path === '/v1/changes' && Number(r.query.after) < head).length >= 1, true, 'it asked for the page')
+  assert.equal((await sessions).joined, 1)
+  await until(() => !c.engine.rescanPending, 'the room\'s past read', 30_000)
+  const asked = fake.requests.slice(before).filter(r => r.method === 'GET' && r.path === '/v1/changes' && !r.query.group).map(r => Number(r.query.after))
+  assert.ok(asked[0] >= head, `the hub's order is taken from the device's own join (${asked[0]}), not from the start of the room (head ${head})`)
+  assert.ok(asked.filter(n => n === 0).length >= 1, `the room's past is read from the start (${asked.join(', ')})`)
   const steps = [...new Set(seen)]
-  assert.deepEqual(steps, [...steps].sort((x, y) => x - y), 'the position only moves upwards')
-  assert.ok(steps.filter(n => n < head).length >= 3, `the position was told at ${steps.length} places while the page was taken (${steps.join(', ')}): a page of ${head} changes must not stand at its start until it is through`)
+  assert.deepEqual(steps, [...steps].sort((x, y) => x - y), 'the reading only moves forward')
+  assert.ok(steps.filter(n => n > 0 && n < head).length >= 2, `the reading was told at ${steps.length} places (${steps.join(', ')}): a page of ${head} changes must not stand at its start until it is through`)
   assert.ok(c.engine.position >= head)
 })
 
