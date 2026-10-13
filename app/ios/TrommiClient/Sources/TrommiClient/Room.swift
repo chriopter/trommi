@@ -739,16 +739,29 @@ public struct Store {
     // A sign-in with the code whose session another human device added this one to first (5.2.7, its Welcome won the
     // race): the code selected none of that session's keys, and what was written before the Welcome stays closed
     // until a human device hands them over. They are asked for at once, not after the grace (7.1.1): the person
-    // signed in a moment ago and waits for exactly this (web room.ts `joinSessions`, `askKeysNow`).
+    // signed in a moment ago and waits for exactly this (web room.ts `joinSessions`, `askKeysNow`). One request that
+    // names no group asks for the keys of every group: one per session met the hub's limit on requests (10 at once,
+    // then one per 5 s), and the sessions past the tenth stayed closed (their names, their cards).
+    var wanted = false
     for group in joinedGroups where group != room && (record.codeJoin == true || codeJoinMissed.contains(hex(group))) {
       codeJoinMissed.remove(hex(group))
-      await askKeysNow(group)
+      wanted = true
     }
+    if wanted { await askKeysNow(nil) }
   }
-  /** A wish for a session group's content keys now (7.1.1), without the grace `tendKeys` keeps. */
-  func askKeysNow(_ group: GroupId) async {
+  /** A wish for content keys now (7.1.1), without the grace `tendKeys` keeps; `group` nil: of every group. A request
+   *  the hub's limit holds back is made again a little later. */
+  func askKeysNow(_ group: GroupId?) async {
     guard record.role == "human" else { return }
-    _ = try? await noted { try await hub.request("POST", "/requests", body: ["kind": "handover", "group": b64u(group)]) }
+    var body: [String: Any] = ["kind": "handover"]
+    if let group { body["group"] = b64u(group) }
+    for tries in 0..<4 {
+      do { _ = try await noted { try await hub.request("POST", "/requests", body: body) }; return } catch {
+        guard tries < 3, let e = error as? HubError, e.status == 429 || e.status >= 500 else { return }
+        let wait = max(UInt64(e.retryAfter ?? 0), UInt64(1) << UInt64(tries))
+        try? await Task.sleep(nanoseconds: min(wait, 10) * 1_000_000_000)
+      }
+    }
   }
 
   /**

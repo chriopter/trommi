@@ -393,16 +393,20 @@ export function roomsOn(env: RoomEnv): Rooms {
     const ahead: Promise<{ founding: Uint8Array; current: Uint8Array; commits: ServedCommit[] }>[] = []
     const fetch = (at: number): void => { if (at < steps.later.length && !ahead[at]) { ahead[at] = read(at); ahead[at]!.catch(() => {}) } }
     for (let at = 0; at < SESSION_READS; at++) fetch(at)
+    // Another human device of the person may add this one to a session first (5.2.7, its Welcome): then the code
+    // selected none of the session's keys, and what was written before the Welcome (the helper's name, its cards)
+    // stays closed until a human device hands them over. They are asked for at the first such session, once, for
+    // every group (7.1.1, a request that names no group: the answer holds the keys of every session the answering
+    // device is in, also of those this one joins after it). One request per session met the hub's limit on requests
+    // (10 at once, then one per 5 s), and the sessions past the tenth stayed closed: their names, their cards.
+    let keysAsked = false
     for (const [at, group] of steps.later.entries()) {
       const session = { group }
       fetch(at + SESSION_READS)
       try {
         let input = await ahead[at]!
         delete ahead[at]
-        // Another human device of the person may add this one to the session first (5.2.7, its Welcome): then the
-        // code selected none of the session's keys, and what was written before the Welcome stays closed until a
-        // human device hands them over. They are asked for at once, not after the usual grace (7.1.1): the person
-        // signed in a moment ago and waits for exactly this.
+        // (welcomed: another human device added this one first, see above)
         let welcomed = false
         const join = (): Promise<void> => engine.land(async d => {
           const { founding, current, commits } = input
@@ -435,7 +439,7 @@ export function roomsOn(env: RoomEnv): Rooms {
             await sleep(Math.min(50 * 2 ** tries, 1000))
           }
         }
-        if (welcomed) await engine.askKeysNow(session.group)
+        if (welcomed && !keysAsked) { keysAsked = true; await engine.askKeysNow(null) }
         out.joined++
       } catch (e) {
         const why = engine.core.errorCode(e) ?? (e instanceof HubError ? e.code : 'failed')

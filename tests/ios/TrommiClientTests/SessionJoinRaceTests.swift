@@ -30,7 +30,7 @@ final class SessionJoinRaceTests: XCTestCase {
     }
   }
   private func handovers() -> [String] {
-    FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/requests" && $0.body["kind"] as? String == "handover" }.compactMap { $0.body["group"] as? String } }
+    FakeHub.shared.lock.withLock { FakeHub.shared.posted.filter { $0.path == "/v1/requests" && $0.body["kind"] as? String == "handover" }.map { $0.body["group"] as? String ?? "every group" } }
   }
 
   func testTheDeskIsReadAgainAfterASessionGroupWasJoined() async throws {
@@ -59,7 +59,8 @@ final class SessionJoinRaceTests: XCTestCase {
     room.record.codeJoin = true            // the code's joins of a sign-in are not through
     welcomeWaits(room)
     _ = try await room.sync()
-    XCTAssertEqual(handovers(), [b64u(FakeDevice.sessionGroup(room.roomIdHex, session))], "asked for at once, not after the grace")
+    // (one request for every group: one per session met the hub's limit on requests past the tenth)
+    XCTAssertEqual(handovers(), ["every group"], "asked for at once, not after the grace")
     room.close()
   }
 

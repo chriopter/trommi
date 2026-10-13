@@ -1122,23 +1122,6 @@ fn known_bug(what: &str) -> Option<&'static str> {
     if what.contains(" VARIANCE web@") && what.contains("/sessions/") && (what.ends_with(": {\"agent_name\":null,\"parent\":null} vs null") || what.ends_with(": null vs {\"agent_name\":null,\"parent\":null}")) {
         return Some("web: refused founding kept");
     }
-    // web: an envelope of a helper session that came before this device joined the session's Welcome, and whose
-    // rescan ran before the join, is never read again: the session shows without its name (a closed one as open)
-    let helper_name = |p: &str| {
-        p.split_once(" name: ").is_some_and(|(_, v)| {
-            v.split(" vs ").any(|x| x.starts_with("\"H") && x[2..].trim_end_matches('"').chars().all(|c| c.is_ascii_digit()))
-        })
-    };
-    if what.contains(" VARIANCE web@") && what.contains(" vs web@") && what.contains("/agent_name: ") && (what.ends_with(" vs null") || what.contains("/agent_name: null vs ")) {
-        return Some("web: helper profile lost");
-    }
-    if what.contains(" SESSIONS web@") && what.contains(" vs web@") && parts(what).iter().any(|p| helper_name(p)) && parts(what).iter().all(|p| helper_name(p) || p.starts_with("only ")) {
-        return Some("web: helper profile lost");
-    }
-    // iOS: the same for an iPhone (a helper session shown under its main session's name)
-    if what.contains(" SESSIONS web@") && what.contains(" vs ios@") && parts(what).iter().any(|p| helper_name(p)) && parts(what).iter().all(|p| helper_name(p) || p.starts_with("only second shows")) {
-        return Some("ios: helper profile lost");
-    }
     // web: a presence change missed while the stream was cut is never corrected (a new stream is told only who is
     // online)
     if what.contains(" TRUTH web@") && what.contains(" (killed ") && what.ends_with(" is shown online") {
@@ -1444,9 +1427,8 @@ mod known {
             ("seed 4: seed 4 cp00 VARIANCE web@torture vs web@torture2 /sessions/7559cd5444a053230bcb5366349cdbc9: null vs {\"agent_name\":null,\"parent\":null}", Some("web: refused founding kept")),
             ("seed 2: cp03 TRUTH web@torture: agent-1 (killed 147 s ago) is shown online", Some("web: presence after a cut stream")),
             ("seed 7: cp03 SESSIONS web@torture vs web@torture2: agent-0 (d1311720) online: true vs false", Some("web: presence after a cut stream")),
-            ("seed 103: seed 103 cp02 VARIANCE web@torture vs web@torture2 /sessions/1002976f1002976f1002976f1002976f/agent_name: \"H0\" vs null", Some("web: helper profile lost")),
-            ("seed 103: cp03 SESSIONS web@torture vs web@torture2: H0 (1002976f) name: \"H0\" vs \"agent-7\"; only first shows agent-7 (21d272fb)", Some("web: helper profile lost")),
-            ("seed 405: cp03 SESSIONS web@torture vs ios@fleet1: H8 (15468bc9) name: \"H8\" vs \"agent-5\"; H18 (1fc80363) name: \"H18\" vs \"agent-5\"", Some("ios: helper profile lost")),
+            // (fixed 2026-10-13, a sign-in's session keys asked in one request: no longer known)
+            ("seed 103: cp03 SESSIONS web@torture vs web@torture2: H0 (1002976f) name: \"H0\" vs \"agent-7\"; only first shows agent-7 (21d272fb)", None),
             // not one of them
             ("seed 109: cp04 TRUTH web@torture: agent-7 (live) is not shown", None),
             ("seed 102: cp02 AGENT agent-1: card 0d899eb9e9c29e0190d36bcf93ba772b is \"open\" for the agent, decided for the person", None),

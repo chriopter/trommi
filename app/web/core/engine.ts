@@ -1366,10 +1366,17 @@ export class Engine {
     const due = await this.do(d => d.keyRequests(this.now())).catch(() => [])
     for (const request of due) await this.hub.postRequest({ kind: 'handover', group: request.group }).catch(() => {})
   }
-  /** A wish for a session group's content keys now (7.1.1), without the grace `askForKeys` keeps: a device signed in
-   *  with the code that another human device added to the group before its own join (room.ts `joinSessions`). */
-  async askKeysNow(group: Uint8Array): Promise<void> {
-    if (this.is_human) await this.hub.postRequest({ kind: 'handover', group }).catch(() => {})
+  /** A wish for content keys now (7.1.1), without the grace `askForKeys` keeps: a device signed in with the code that
+   *  another human device added to session groups before its own joins (room.ts `joinSessions`). `group` null: of
+   *  every group, in one request. A request the hub's limit holds back is made again after the wait it names. */
+  async askKeysNow(group: Uint8Array | null): Promise<void> {
+    if (!this.is_human) return
+    for (let tries = 0; tries < 4 && !this.over; tries++) {
+      try { await this.hub.postRequest({ kind: 'handover', group }); return } catch (e) {
+        if (!(e instanceof HubError) || !e.transient) return
+        await this.sleep(Math.min(Math.max((e.retry_after ?? 0) * 1000, this.timing.backoff_first * 2 ** tries), 10_000))
+      }
+    }
   }
   /** Answers a human device's wish for content keys once (7.1.1); the core refuses one that is not a human device's,
    *  and makes nothing for a requester and group it answered within the hour. */
