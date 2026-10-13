@@ -12,6 +12,13 @@ A day may have at most one picture, a line `![what it shows](app/web/public/chan
 under its summary: a screenshot of the demo room only (`?mock=1`, never real data), webp, at most 150 KB. It shows
 small under the summary while the day is one of the newest three.
 
+## 13 October 2026
+
+The App Store listing now opens with your encrypted notes.
+
+**Better**
+- App Store listing leads with the encrypted notes screenshot (iPhone and iPad); the others follow in their old order.
+
 ## 12 October 2026
 
 Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and settings.
