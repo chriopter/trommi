@@ -33,6 +33,10 @@ pub struct Lens {
     pub utc_offset_min: i32,
     /// The room is still being read on this device (a sign-in, the past read again).
     pub reading: bool,
+    /// How far the reading of the room's past is: done, of how many.
+    pub reading_progress: Option<(u64, u64)>,
+    /// Picks the Desk's greeting, once per run of the app (from `Config.seed`).
+    pub dice: u32,
 }
 
 /// A desk of the room.

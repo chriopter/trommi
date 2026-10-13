@@ -6,7 +6,7 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use trommi_client_core::model::Model;
-use trommi_client_core::views::{demo, sidebar, Board, Lens};
+use trommi_client_core::views::{demo, desk, sidebar, Board, Lens};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -55,5 +55,15 @@ fn the_demo_rooms_sidebar() {
         let lens = lens(desk);
         let b = Board::new(&m, &lens, now);
         golden(file, &sidebar::sidebar(&b));
+    }
+}
+
+#[test]
+fn the_demo_rooms_desk() {
+    let (m, now) = demo_room();
+    for (file, desk) in [("demo-desk.json", None), ("demo-desk-platform.json", Some("platform")), ("demo-desk-all.json", Some("all"))] {
+        let lens = lens(desk);
+        let b = Board::new(&m, &lens, now);
+        golden(file, &desk::desk(&b));
     }
 }

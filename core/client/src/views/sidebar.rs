@@ -19,18 +19,18 @@ use super::words::{badge_words, hand_words, link_words, say, unheard_words, Link
 use super::{CapView, DeskTab, FoldView, HandView, HeadingView, LinkWords, SessionRowView, SidebarView, Text};
 
 /// One row before it is laid out: a session with what waits on it.
-struct Unit {
+pub(super) struct Unit {
     /// Index into `Board::agents`.
-    agent: usize,
-    parent: Option<usize>,
-    subs: Vec<usize>,
-    open: u32,
-    knocks: bool,
-    online: bool,
-    working: bool,
-    hand: Option<HandView>,
-    link: Option<LinkWords>,
-    unheard: u32,
+    pub agent: usize,
+    pub parent: Option<usize>,
+    pub subs: Vec<usize>,
+    pub open: u32,
+    pub knocks: bool,
+    pub online: bool,
+    pub working: bool,
+    pub hand: Option<HandView>,
+    pub link: Option<LinkWords>,
+    pub unheard: u32,
 }
 
 /// A session's link in words (none for an archived or removed one), with the wake noted on the board.
@@ -69,7 +69,8 @@ fn desk_name(name: &str) -> Text {
     }
 }
 
-pub fn sidebar(b: &Board) -> SidebarView {
+/// The units of the desk in view: one per session that is not archived and stands on it, in the list's order.
+pub(super) fn units_of(b: &Board) -> Vec<Unit> {
     // ---- the units: one per session that stands here ----
     let here: Vec<usize> = (0..b.agents.len()).filter(|i| !b.agents[*i].row.archived && b.agents[*i].on_desk).collect();
     let fresh_of = |i: usize| b.fresh().filter(move |f| f.agent == Some(i));
@@ -110,6 +111,11 @@ pub fn sidebar(b: &Board) -> SidebarView {
             units[u].unheard += std::mem::take(&mut units[s].unheard);
         }
     }
+    units
+}
+
+pub fn sidebar(b: &Board) -> SidebarView {
+    let units = units_of(b);
 
     // ---- the desks ----
     let desks: Vec<(String, String)> = if b.desks.is_empty() {
@@ -287,78 +293,19 @@ fn row(b: &Board, units: &[Unit], u: usize, away: bool, group: String, heading: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::views::{demo, Lens};
+    use crate::views::testroom::{dev, Room, MIN, NOW};
+    use crate::views::Lens;
     use serde_json::{json, Value};
 
-    const NOW: u64 = 1_791_900_300_000;
-    const MIN: u64 = 60_000;
-
-    /// A room written as the demo's fixture is: sessions by name, cards by id.
-    #[derive(Default)]
-    struct Room {
-        sessions: Vec<Value>,
-        cards: Vec<Value>,
-        permissions: Vec<Value>,
-        desks: Value,
-        settings: serde_json::Map<String, Value>,
-        crown: Value,
-        snoozes: Value,
+    fn view_at(r: &Room, desk: Option<&str>, now: u64) -> (SidebarView, Option<u64>) {
+        let m = r.model(now);
+        let lens = Lens { desk: desk.map(String::from), ..Default::default() };
+        let b = Board::new(&m, &lens, now);
+        let v = sidebar(&b);
+        (v, b.wake())
     }
-
-    /// A session's device id: its name, padded to an id.
-    fn dev(name: &str) -> String {
-        format!("{name:0<32}")
-    }
-
-    impl Room {
-        fn session(&mut self, name: &str, parent: Option<&str>, online: bool) -> &mut Value {
-            self.sessions.push(json!({
-                "agent_device_id": dev(name), "agent_session_id": name, "device_name": name, "is_active": true, "is_online": online,
-                "offline_since": if online { Value::Null } else { json!(NOW - 38 * MIN) },
-                "profile": { "agent_name": name, "parent_session": parent, "is_main": parent.is_none() },
-                "status_lines": [],
-            }));
-            self.sessions.last_mut().unwrap()
-        }
-        fn on_desk(&mut self, name: &str, desk: &str) {
-            self.settings.insert(dev(name), json!({ "desk": desk }));
-        }
-        fn card(&mut self, id: &str, of: &str, kind: &str, urgency: &str) -> &mut Value {
-            let n = 100 + self.cards.len() as u64;
-            self.cards.push(json!({
-                "object_id": id, "agent_device_id": dev(of), "card_type": kind, "title": id, "object_state": "open", "urgency": urgency,
-                "created_at": NOW - 10 * MIN, "updated_at": NOW - 10 * MIN, "envelope_number": n, "first_envelope_number": n,
-                "content_state": "ok", "versions": [], "answers": [], "timeline_key": format!("chat:card/{id}"),
-            }));
-            self.cards.last_mut().unwrap()
-        }
-        fn answered(&mut self, id: &str, of: &str, at: u64, number: u64) {
-            let c = self.card(id, of, "decision", "normal");
-            c["object_state"] = json!("answered");
-            c["closed_how"] = json!("answered");
-            c["answer"] = json!({ "answer_action": "answer", "choices": ["a"], "envelope_number": number, "answered_at": at });
-        }
-        fn request(&mut self, id: &str, of: &str, content_state: &str) {
-            self.permissions.push(json!({
-                "object_id": id, "agent_device_id": dev(of), "tool_name": "Bash", "permission_state": "pending", "content_state": content_state,
-                "envelope_number": 900, "sent_at": NOW - MIN, "expires_at": NOW + 30 * MIN,
-            }));
-        }
-        fn view_at(&self, desk: Option<&str>, now: u64) -> (SidebarView, Option<u64>) {
-            let fixture = json!({
-                "made_at": now, "room": { "my_device_id": "me" }, "members": [], "sessions": self.sessions, "cards": self.cards,
-                "permissions": self.permissions,
-                "human": { "desks": self.desks, "session_settings": self.settings, "crown": self.crown, "snoozes": self.snoozes },
-            });
-            let m = demo::model_of(&fixture, now).unwrap();
-            let lens = Lens { desk: desk.map(String::from), ..Default::default() };
-            let b = Board::new(&m, &lens, now);
-            let v = sidebar(&b);
-            (v, b.wake())
-        }
-        fn view(&self, desk: Option<&str>) -> SidebarView {
-            self.view_at(desk, NOW).0
-        }
+    fn view(r: &Room, desk: Option<&str>) -> SidebarView {
+        view_at(r, desk, NOW).0
     }
 
     fn slugs(v: &SidebarView) -> Vec<String> {
@@ -380,7 +327,7 @@ mod tests {
         r.session("c-deep", Some("b-help"), true);
         // (a helper whose main is not in the list has a row of its own, with its own link)
         r.session("d-lost", Some("nobody"), true);
-        let v = r.view(None);
+        let v = view(&r, None);
         assert_eq!(slugs(&v), ["a-main", "  b-help", "c-deep", "d-lost"]);
         let (main, help) = (row(&v, "a-main"), row(&v, "b-help"));
         assert_eq!(main.subs, std::slice::from_ref(&help.id));
@@ -399,7 +346,7 @@ mod tests {
         r.session("c-off", None, false);
         r.session("d-help", Some("c-off"), true);
         r.session("e-off", None, false);
-        let v = r.view(None);
+        let v = view(&r, None);
         assert_eq!(slugs(&v), ["b-on", "c-off", "  d-help", "a-off", "e-off"]);
         let heads: Vec<(&str, &str)> = v.sessions.iter().filter_map(|x| x.heading.as_ref().map(|h| (x.slug.as_str(), h.text.en.as_str()))).collect();
         assert_eq!(heads, [("a-off", "Disconnected")]);
@@ -424,7 +371,7 @@ mod tests {
         // (a desk that is gone counts as the first)
         r.on_desk("c-work", "nowhere");
         r.card("q1", "d-lab", "decision", "normal");
-        let v = r.view(Some("all"));
+        let v = view(&r, Some("all"));
         assert_eq!(slugs(&v), ["c-work", "a-work", "b-lab", "d-lab"]);
         let heads: Vec<_> = v.sessions.iter().map(|x| x.heading.as_ref().map(|h| (h.kind.as_str(), h.text.en.as_str(), h.desk_id.as_deref(), h.waiting))).collect();
         assert_eq!(heads, [Some(("desk", "Work", Some("main"), 0)), None, Some(("desk", "Lab", Some("lab"), 1)), None]);
@@ -434,26 +381,26 @@ mod tests {
         assert_eq!(row(&v, "d-lab").group, "lab:off");
 
         // one desk in view: only its sessions, the other desk's questions still count on the tab and in the menu
-        let v = r.view(Some("main"));
+        let v = view(&r, Some("main"));
         assert_eq!(slugs(&v), ["c-work", "a-work"]);
         assert_eq!((v.badge, v.waiting, v.place.en.as_str()), (1, 0, "Work"));
         assert_eq!(v.desks.iter().map(|d| (d.id.as_str(), d.waiting, d.selected)).collect::<Vec<_>>(), [("main", 0, true), ("lab", 1, false), ("empty", 0, false)]);
         // a desk that is not there: the first
-        assert_eq!(r.view(Some("nowhere")).desk, "main");
-        assert_eq!(r.view(None).desk, "main");
+        assert_eq!(view(&r, Some("nowhere")).desk, "main");
+        assert_eq!(view(&r, None).desk, "main");
     }
 
     #[test]
     fn a_room_without_desks_has_one_personal() {
         let mut r = Room::default();
         r.session("a", None, true);
-        let v = r.view(Some("all"));
+        let v = view(&r, Some("all"));
         assert_eq!(v.desks.iter().map(|d| (d.id.as_str(), d.name.en.as_str(), d.name.key.as_str(), d.selected)).collect::<Vec<_>>(), [("main", "Personal", "desk.personal", true)]);
         assert_eq!((v.all.is_none(), v.desk.as_str(), v.place.en.as_str()), (true, "main", "Personal"));
         assert_eq!(slugs(&v), ["a"]);
         // (All desks needs two)
         let one = Room { desks: json!({ "main": { "name": "Solo" } }), ..Default::default() };
-        let v = one.view(Some("all"));
+        let v = view(&one, Some("all"));
         assert_eq!((v.all.is_none(), v.desk.as_str(), v.place.en.as_str()), (true, "main", "Solo"));
     }
 
@@ -472,20 +419,20 @@ mod tests {
         r.card("q-loading", "a", "decision", "high")["content_state"] = json!("header");
         r.card("q-newer", "a", "decision", "high")["unsupported"] = json!("card_type");
         r.answered("q-done", "a", NOW - MIN, 10);
-        let v = r.view(None);
+        let v = view(&r, None);
         let a = row(&v, "a");
         assert_eq!((a.open, a.knocks, v.badge, v.knocks, v.waiting, v.knocking), (1, false, 1, false, 1, 0));
         assert_eq!(a.says.as_ref().map(|t| t.en.as_str()), Some("1 question open"));
 
         r.card("q-high", "a", "decision", "high");
-        let v = r.view(None);
+        let v = view(&r, None);
         assert_eq!((row(&v, "a").open, row(&v, "a").knocks, v.knocks, v.knocking), (2, true, true, 1));
 
         // an approval request counts and knocks, and stops its session; one not read here yet waits quietly
         r.request("p-unread", "a", "header");
-        assert_eq!(r.view(None).badge, 2);
+        assert_eq!(view(&r, None).badge, 2);
         r.request("p-read", "a", "ok");
-        let v = r.view(None);
+        let v = view(&r, None);
         let a = row(&v, "a");
         assert_eq!((a.open, v.badge, v.knocking, v.stopped), (3, 3, 2, 1));
         assert_eq!(a.hand.as_ref().map(|h| (h.why.as_str(), h.text.en.as_str())), Some(("permission", "Waiting for permission")));
@@ -500,7 +447,7 @@ mod tests {
         r.session("b-old", None, true);
         r.settings.insert(dev("b-old"), json!({ "archived": true, "parent": "a" }));
         r.card("q1", "b-old", "decision", "high");
-        let v = r.view(None);
+        let v = view(&r, None);
         assert_eq!(slugs(&v), ["a"]);
         assert_eq!((v.badge, v.knocks, row(&v, "a").folded.is_none()), (0, false, true));
     }
@@ -512,7 +459,7 @@ mod tests {
             r.session(name, None, true);
             r.on_desk(name, desk);
         }
-        let crowned = |r: &Room| -> Vec<String> { r.view(Some("all")).sessions.iter().filter(|x| x.crowned).map(|x| x.slug.clone()).collect() };
+        let crowned = |r: &Room| -> Vec<String> { view(r, Some("all")).sessions.iter().filter(|x| x.crowned).map(|x| x.slug.clone()).collect() };
         // the room's single crown shows on the desk its session stands on
         r.crown = json!({ "agent_device_id": dev("a-work") });
         assert_eq!(crowned(&r), ["a-work"]);
@@ -533,7 +480,7 @@ mod tests {
         let mut r = Room { desks: json!({ "main": { "name": "Work", "crown": { "agent_device_id": dev("b-help") } } }), ..Default::default() };
         r.session("a", None, true);
         r.session("b-help", Some("a"), true);
-        assert!(r.view(None).sessions.iter().all(|x| !x.crowned));
+        assert!(view(&r, None).sessions.iter().all(|x| !x.crowned));
     }
 
     #[test]
@@ -543,11 +490,11 @@ mod tests {
         r.session("b-help", Some("a"), true)["heard_up_to"] = json!(40);
         r.answered("heard", "a", NOW - 30 * MIN, 30);
         r.answered("fresh", "a", NOW - MIN, 50);
-        let (v, wake) = r.view_at(None, NOW);
+        let (v, wake) = view_at(&r, None, NOW);
         assert_eq!((row(&v, "a").unheard, row(&v, "a").cap.is_none(), v.unheard), (0, true, 0));
         assert_eq!(wake, Some(NOW + MIN), "it turns late two minutes after he answered");
 
-        let (v, wake) = r.view_at(None, NOW + MIN);
+        let (v, wake) = view_at(&r, None, NOW + MIN);
         let cap = row(&v, "a").cap.clone().unwrap();
         assert_eq!((cap.kind.as_str(), cap.word.en.as_str(), cap.short.en.as_str(), cap.line), ("unheard", "1 answer waits", "Not heard yet", None));
         assert_eq!((v.unheard, wake), (1, None));
@@ -556,14 +503,14 @@ mod tests {
         r.answered("helper", "b-help", NOW - 5 * MIN, 60);
         // (a hand back its session has not picked up counts too: since its card went back)
         r.card("back", "b-help", "decision", "normal")["in_revision"] = json!({ "by": "me", "envelope_number": 70 });
-        let v = r.view_at(None, NOW + MIN).0;
+        let v = view_at(&r, None, NOW + MIN).0;
         assert_eq!((row(&v, "a").unheard, row(&v, "b-help").unheard, v.unheard), (3, 0, 3));
         assert_eq!(row(&v, "a").cap.as_ref().map(|c| (c.word.en.as_str(), c.short.en.as_str())), Some(("3 answers wait", "3 not heard")));
         assert_eq!(row(&v, "b-help").cap, None);
 
         // (a session whose connector writes no receipts: nothing is known, nothing is said)
         r.sessions[0]["heard_up_to"] = Value::Null;
-        assert_eq!(row(&r.view_at(None, NOW + MIN).0, "a").unheard, 2);
+        assert_eq!(row(&view_at(&r, None, NOW + MIN).0, "a").unheard, 2);
     }
 
     #[test]
@@ -574,7 +521,7 @@ mod tests {
         s["link"] = json!({ "hears": "oncall", "attached": true, "last_call_at": NOW - 46 * MIN });
         r.session("b-help", Some("a"), true);
         r.answered("late", "a", NOW - 30 * MIN, 50);
-        let (v, wake) = r.view_at(None, NOW);
+        let (v, wake) = view_at(&r, None, NOW);
         let a = row(&v, "a");
         let cap = a.cap.clone().unwrap();
         assert_eq!((a.link.as_str(), cap.kind.as_str(), cap.word.en.as_str(), a.unheard), ("asleep", "asleep", "not listening · 46 min", 1));
@@ -593,7 +540,7 @@ mod tests {
         r.card("q1", "a", "decision", "normal");
         r.card("q2", "b-help", "decision", "normal");
         r.card("q3", "c-help", "decision", "critical");
-        let v = r.view(None);
+        let v = view(&r, None);
         let (a, c) = (row(&v, "a"), row(&v, "c-help"));
         assert_eq!((a.open, a.knocks, a.online, a.working, a.blocked), (1, false, false, false, false));
         assert_eq!(a.says.as_ref().map(|t| t.en.as_str()), Some("Disconnected, 1 question open"));
@@ -614,7 +561,7 @@ mod tests {
         r.session("b", None, true);
         r.settings.insert(dev("b"), json!({ "name": "Renamed", "icon": "draw:key" }));
         r.session("c", None, true);
-        let v = r.view(None);
+        let v = view(&r, None);
         assert_eq!(v.sessions.iter().map(|x| (x.slug.as_str(), x.name.en.as_str(), x.mark.as_str())).collect::<Vec<_>>(), [("a", "a", "draw:leaf"), ("b", "Renamed", "draw:key"), ("c", "c", "c")]);
         assert_eq!(row(&v, "a").id, dev("a"));
     }

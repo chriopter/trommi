@@ -33,6 +33,14 @@ pub fn questions(n: u32) -> String {
     }
 }
 
+/// The Desk's one big line, picked once per run of the app; a calm one when nothing waits.
+pub const GREETINGS: [&str; 20] = [
+    "Welcome back.", "There you are.", "The agents missed you.", "Desk’s all yours.", "Ring the bell.", "Decisions, decisions.",
+    "Your call.", "Back at it.", "Somebody knocked.", "Look who’s here.", "They’ve been waiting.", "The floor is yours.",
+    "Pick a card.", "Over to you.", "Right on time.", "Pull up a chair.", "Yes or no?", "The boss is in.", "What’ll it be?", "Ready when you are.",
+];
+pub const CALM: [&str; 6] = ["All quiet.", "Nothing needs you.", "Clear desk.", "Carry on.", "As you were.", "Go outside."];
+
 const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /// A moment in the person's zone: day number since 1970, year, month (1..), day, hour, minute.
