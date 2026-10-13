@@ -1,0 +1,15 @@
+{
+  "answer": "{\"epoch\":0,\"group_info\":\"AAEABAABAAMgY8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJAAAAAAAAAAACDEIwcdrGEq35HWOzLBdNBG6MZAXsh4YrkyFqFYWrJ-igBAUwADCQTwAfACAAIAAfABQEMgO-2tYTxujfZki3DkiECB5rBKApOoJMtLoeJk-iKMQpEgw5xdKuoCXkfwrMzqVartI_d5R9KoOd8clyEPPLNg7TgAQPYAAkDOQMwBASDF6JR2uk4PQAMddkIgdzXiI7PCFxC_Kgxvz4gHhMH_BiCHEAgyZ9MwtwNsnyya-qPFKxJG295iLf9xat3en7D4MwABIIcQCDJn0zC3A2yfLJr6o8UrEkbb3mIt_3Fq3d6fsPgzAgABAgADBvAB8AIACgACAAEBAAAAAGrOL78AAAAAfZpAzwBAQOlgtEpcdk7pjEk5ishKqQZ1-9LJk-X6yC_FdKfjiu6da2cEuRNfwqPRTUe99GfAJY5imZagO_okzIRBeMc7ugsABCEg2TuYGLyPKNvY_BlZQpKD4lqYrl14EgLFAsmorIeBn2wg8Lu8wTcWeXbxv0NE1PbAdOSLSPLaCsfzsP43czTXcLIAAAAAQEBRAyHwGjoajdqJRaWEL91ISQ01kDJ1hf9DyR3AKxnO-O5Sf-iFeS3AAdOQ_WXoXszayZYN1Dx746Pk3PLSmC8O\"}",
+  "asked": {
+    "epoch": 0,
+    "group": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "route": "group_info"
+  },
+  "name": "group-info-founding",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/groups/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/info?epoch=0"
+  },
+  "status": 200
+}

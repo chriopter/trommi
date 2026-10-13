@@ -1,0 +1,14 @@
+{
+  "answer": "{\"expires_at\":1791901735108,\"role\":\"human\",\"token\":\"D__1jp6II0jgcOebfoBykYMqvUEc0FhiCFhWzVc7dwc\"}",
+  "asked": {
+    "room": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "route": "token"
+  },
+  "name": "token-human",
+  "request": {
+    "body": "{\"auth\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJAWaHR0cDovLzEyNy4wLjAuMTozODc2N-rn7z8em2u63XvzPSfW9FL3ooRrMK2FBf6tjCyOpeYS7kiHenEXAud2NGP0KfDKcs6X7yd_o2DW5wtJ7Pfe_Q0\",\"signature\":\"ewPvhsFK-x3AZ5nwEESm5dlhhTGU88cPUy_xhqNvSjojbnTmeBUB4OZ2El_Ix4461BBIl5QkRPeI6RtHH2ygCg\"}",
+    "method": "POST",
+    "path": "/v1/rooms/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/tokens"
+  },
+  "status": 200
+}

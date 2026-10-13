@@ -1,0 +1,16 @@
+{
+  "answer": "{\"after\":11,\"items\":[{\"epoch\":1,\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJB7zgZdNEJC2_QPPverrJ1B\",\"kind\":\"main\",\"leaves\":[\"Ge6utoVo27V_PCFWwbdThC8hKqYqNfbdIvDVUbIzt6w\",\"hxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DM\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":\"e84GXTRCQtv0Dz73q6ydQQ\",\"stale\":false}],\"more\":false}",
+  "asked": {
+    "after": 5,
+    "limit": 2,
+    "room": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "route": "room_groups"
+  },
+  "name": "room-groups-1",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/rooms/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/groups?after=5&limit=2"
+  },
+  "status": 200
+}

@@ -1,0 +1,15 @@
+{
+  "answer": "{\"epoch\":2,\"group_info\":\"AAEABAABAAMgY8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJAAAAAAAAAAAiBj3m6bxJLGgU18NVtvqinDq7HOZOqx6PYrpTsgF0bQCiDLPFIvfn6Dt4snQ5fm7hku-D2uxci9FNJx4n2B4QijfUCUAAMJBPAB8AIAAgAB8AFAhCA77a1hPG6N9mSLcOSIQIHmsEoCk6gky0uh4mT6IoxCkSDDnF0q6gJeR_CszOpVqu0j93lH0qg53xyXIQ88s2DtOEBAGe6utoVo27V_PCFWwbdThC8hKqYqNfbdIvDVUbIzt6yIvvJI4-ZZQGCk_pzUYF8Hf1UXFfOu769IRndYxaOYEEDnAAJAv0C9AQEgNle7wjlwQpaLqJDNmRlqbhUNHA0PpEtoGjYWHbaGhEYghxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DMAASCHEAgyZ9MwtwNsnyya-qPFKxJG295iLf9xat3en7D4MwIAAQIAAwbwAfACAAoAAgABAwAAQEClBrYVmUB_4uFRBEPYvTkdGZVArIu-JhwNDgfWFCZkf74tTKHoRqQ0Oa5uinBvqQ1qoPlyq_pYk-a4l-rlk38MAAQhIAFr7gFMINXhphu33LCwAdx55cv2Snf4SXIpphgupzJhIAo1fRNMYnet094q5pDZnllR11vuHEjSXZqnw_GYymSAAAAAAEBAw2LnAuhSJF85HbO6kl5e06c2O8XKdXsOK3-PlL_s4Y8EXwFFVtKjgPeoYvzrU1HCNFXLcqZ5Ixh7NNTaJXdrCg\"}",
+  "asked": {
+    "epoch": null,
+    "group": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "route": "group_info"
+  },
+  "name": "group-info",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/groups/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/info"
+  },
+  "status": 200
+}

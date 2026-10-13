@@ -3194,6 +3194,7 @@ dependencies = [
  "sha2 0.10.9",
  "tls_codec",
  "tokio",
+ "trommi-client-core",
  "trommi-connector",
  "trommi-core",
  "trommi-core-swift",

@@ -1,0 +1,17 @@
+{
+  "answer": "{\"n\":null}",
+  "asked": {
+    "epoch": 1,
+    "group": "W7XRUtgDUbbN5l-bhvy2z4EW15wojGTjy9uSFQ8ValA",
+    "kind": "RelayMessage",
+    "parts": 1,
+    "route": "outbox"
+  },
+  "name": "outbox-relay",
+  "request": {
+    "body": "{\"epoch\":1,\"message\":\"AAEAAiBbtdFS2ANRts3mX5uG_LbPgRbXnCiMZOPL25IVDxVqUAAAAAAAAAABAQAcL54YTHrYWU86xyF4g3Lx5VtoSZhgSvzz6_9pmkBaY26RDJL6l-S5Iag3tgGThdSTz0hb8_FH1SEYYko31JOuH63n8AwPeeScuFPbDTcbTAw1jMy9NdZW5MoF_ifyfsiCPIFS5cjXQY5tqDprzKjn7STZ99atinNS\",\"relay\":true}",
+    "method": "POST",
+    "path": "/v1/groups/W7XRUtgDUbbN5l-bhvy2z4EW15wojGTjy9uSFQ8ValA/messages"
+  },
+  "status": 200
+}

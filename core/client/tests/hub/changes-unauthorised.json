@@ -1,0 +1,16 @@
+{
+  "answer": "{\"error\":\"unauthorised\",\"message\":\"sign in\"}",
+  "asked": {
+    "after": 0,
+    "limit": 6,
+    "only": "all",
+    "route": "changes"
+  },
+  "name": "changes-unauthorised",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/changes?after=0&limit=6"
+  },
+  "status": 401
+}

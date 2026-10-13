@@ -1,0 +1,17 @@
+{
+  "answer": "{\"n\":3}",
+  "asked": {
+    "epoch": 2,
+    "group": "W7XRUtgDUbbN5l-bhvy2z4EW15wojGTjy9uSFQ8ValAhLCrUSjkJ4K570_n9maLN",
+    "kind": "Message",
+    "parts": 1,
+    "route": "outbox"
+  },
+  "name": "outbox-message",
+  "request": {
+    "body": "{\"epoch\":2,\"message\":\"AAEAAjBbtdFS2ANRts3mX5uG_LbPgRbXnCiMZOPL25IVDxVqUCEsKtRKOQngrnvT-f2Zos0AAAAAAAAAAgEAHAYYp5ouqxwOL81cSWIeGWTMu7TEGqgc3JFPP2ZAWsERywSpK1NeTnXLv41ACKdkmgMTrxdC7163e5bY_bnVIGs0QVXYfp2UEIVmmzKDyiAi0lT5wd2ASmPYLAygzBZe3H0Y2a4lgXstrsU6PxaySHvtyejAYodGqg\"}",
+    "method": "POST",
+    "path": "/v1/groups/W7XRUtgDUbbN5l-bhvy2z4EW15wojGTjy9uSFQ8ValAhLCrUSjkJ4K570_n9maLN/messages"
+  },
+  "status": 200
+}

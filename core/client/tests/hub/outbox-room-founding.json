@@ -1,0 +1,17 @@
+{
+  "answer": "{\"room_id\":\"7fA6HJPKQwVLv5ETK2h3T_EfKZ6lRC_MxsgCNg9ZYuk\"}",
+  "asked": {
+    "epoch": 0,
+    "group": "7fA6HJPKQwVLv5ETK2h3T_EfKZ6lRC_MxsgCNg9ZYuk",
+    "kind": "RoomFounding",
+    "parts": 2,
+    "route": "outbox"
+  },
+  "name": "outbox-room-founding",
+  "request": {
+    "body": "{\"group_info\":\"AAEABAABAAMg7fA6HJPKQwVLv5ETK2h3T_EfKZ6lRC_MxsgCNg9ZYukAAAAAAAAAACD6El2mKbWbfBZTTkHGdb8scsxbLmmDEMflnY2Cv-f6tQBAUwADCQTwAfACAAIAAfABQEMgCj8UDwFyarLlo4K2KslKoiTxrYHG1thDIwrNoo0VUacgRI71zXM6kGzss_2A8mboUQ8ewax4ZFlexG7-4uXVw04AQPYAAkDOQMwBASB0nJNR3oVC_XdjeCRzlWgE1KMljEBd7dsUQ3r-YmmGQSAW-7jg7gmcUrxndjJL4t2IUXJwzj8Kjml8CfM13viebQABIBb7uODuCZxSvGd2Mkvi3YhRcnDOPwqOaXwJ8zXe-J5tAgABAgADBvAB8AIACgACAAEBAAAAAGrOLbYAAAAAfZo-xgBAQMJSpL4OGczV8tDb5eC_IWJCqrxCkML2VTSPEWY1U2rQYblBU_Sk-VznMDdy9VOMGe-VyhL11W5YZXv7T49B_AwABCEg7k29X-P3Yg-GflgpcCQjje3eElgbUVf3fhEaMEPPhGsgkUVSBqSxjykcf0WPAMOfgXbvdxyefDPf8DLIc39meukAAAAAQEDu0qQnj_PshcKNfBx0s7q6PvfNpqxRe2Q2L3Rf24xs1CdsLhES850hRxewAPSYZyKh3used3_41MWGHEX_ZQ0G\",\"sealed_key\":\"IO3wOhyTykMFS7-REytod0_xHymepUQvzMbIAjYPWWLpAAAAAAAAAAA0d_5QnPb2IAHR8GGjmZziuSw0uvhEwfvqXI5y5u-rPgAAAAAAAAAAIESO9c1zOpBs7LP9gPJm6FEPHsGseGRZXsRu_uLl1cNOINiGbYjoVp5jfvRGE131znZ9h8g2vUA1X6qezqa_g6njMK7zz96Y4vtsG6ZOkqmkXGsJAy6uazOF6PYYwrB7veyiS5Nf8CGDp6GLhpOuZpgkBxb7uODuCZxSvGd2Mkvi3YhRcnDOPwqOaXwJ8zXe-J5tIBdGqD5-OFoVU59zmL229NoNg4mg3K55MHxxZ806l_TN\"}",
+    "method": "POST",
+    "path": "/v1/rooms"
+  },
+  "status": 200
+}
