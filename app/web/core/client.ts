@@ -30,7 +30,7 @@ import type { ClientModel, Core, Device, Draft, FileRef, OutboxEntry, ReceivedEn
 import { Engine } from './engine.ts'
 import type { EngineEvents, EngineMeta } from './engine.ts'
 import { accountCopiesBytes, HubError } from './hub.ts'
-import type { AccountCopies, EnvelopeItem, Hub, StreamEvent } from './hub.ts'
+import type { AccountCopies, DeskBrief, DeskEntry, DeskObject, EnvelopeItem, Hub, StreamEvent } from './hub.ts'
 import { b64u, hex, unb64u, unhex } from './ids.ts'
 import { applyPatch } from './mirror.ts'
 import * as M from './model.ts'
@@ -248,9 +248,15 @@ export class Client {
    *  the content of each card is still the core's, verified on this device. */
   private desk: { open: Set<string>; versions: Map<string, number>; at: number } | null = null
   private deskTimer: ReturnType<typeof setTimeout> | null = null
+  private deskTimerAt = 0
   private deskReading: Promise<void> | null = null
   /** A reading of this run read the versions it lacked (`readDeskNow`). */
   private deskVersionsRead = false
+  /** A session group was joined: the next reading takes the hub's full Desk (its open objects' newest versions and
+   *  every register of the groups: the sessions' names and status lines), not only the list. */
+  private deskFullDue = false
+  /** The change numbers of what full readings of the Desk handed the core in this run. */
+  private readonly deskTaken = new Set<number>()
   /** Asked for while a reading ran: one more after it. */
   private deskAgain = false
   /** The next reading is of the whole list (`readDesk`); when the last whole one was. */
@@ -471,7 +477,10 @@ export class Client {
         // (a session group joined later than the hub archived it, its Welcome read after the stream's word of the
         //  archiving: held as archived too, as at the start)
         if (sessions > this.sessionGroups && this.started) this.archivedSoon()
-        this.sessionGroups = sessions; this.deskWholeDue = true; if (this.started && this.is_human) this.deskSoon()
+        if (sessions > this.sessionGroups) this.deskFullDue = true
+        // (a sign-in's joins read the Desk after each wave of them, `deskAfterJoins`: read in between, it stood in
+        //  the way of the next wave's)
+        this.sessionGroups = sessions; this.deskWholeDue = true; if (this.started && this.is_human && !this.joinsRunning) this.deskSoon(DESK_SOON_MS, true)
       }
       const role = e.is_human ? 'human' : 'agent'
       if (this.model.room.my_role !== role) { this.model.room.my_role = role; this.change.room = true }
@@ -781,16 +790,31 @@ export class Client {
     if (d) void this.cache.set(DESK_KEY, { open: [...d.open], versions: [...d.versions], at: d.at }).catch(() => {})
   }
   /** Reads the hub's Desk again shortly (several groups joined at once, several cards that came, ask once). */
-  private deskSoon(delay = DESK_SOON_MS): void {
+  private deskSoon(delay = DESK_SOON_MS, keep = false): void {
+    // (`keep`: a reading already planned is not put off; a sign-in joins its sessions one after another, and each
+    //  one joined would otherwise push the reading back until the last)
+    if (keep && this.deskTimer !== null && this.deskTimerAt <= this.now() + delay) return
     if (this.deskTimer !== null) clearTimeout(this.deskTimer)
+    this.deskTimerAt = this.now() + delay
     this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, delay)
   }
   /** The room counts as being read (`room.reading`) until `work` settles: room.ts hands it the session joins of a
    *  sign-in, which the Desk waits for. */
   readingUntil(work: Promise<unknown>): void {
     this.readingHolds++
+    this.joinsRunning++
+    void work.catch(() => {}).finally(() => { this.joinsRunning--; if (this.started && this.is_human) this.deskSoon(0) })
     this.publishSoon()
     void work.catch(() => {}).finally(() => { this.readingHolds--; this.publishSoon() })
+  }
+  /** A sign-in's session joins run (`readingUntil`): the Desk is read after each wave of them, not on each join. */
+  private joinsRunning = 0
+  /** The hub's full Desk now: after a wave of a sign-in's joins (room.ts), what those sessions hold. */
+  deskAfterJoins(): Promise<void> {
+    if (!this.is_human || !this.started) return Promise.resolve()
+    this.deskFullDue = true; this.deskWholeDue = true
+    if (this.deskTimer !== null) { clearTimeout(this.deskTimer); this.deskTimer = null }
+    return this.readDesk().catch(() => {})
   }
   private publishSoon(): void { this.change.room = true; queueMicrotask(() => this.publish()) }
   /**
@@ -813,7 +837,7 @@ export class Client {
       do { this.deskAgain = false; await this.readDeskNow() } while (this.deskAgain && this.started)
     })().finally(() => {
       this.deskReading = null
-      if (this.started && this.deskTimer === null) this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, DESK_EVERY_MS)
+      if (this.started && this.deskTimer === null) { this.deskTimerAt = this.now() + DESK_EVERY_MS; this.deskTimer = setTimeout(() => { this.deskTimer = null; void this.readDesk().catch(() => {}) }, DESK_EVERY_MS) }
     })
   }
   /**
@@ -824,8 +848,18 @@ export class Client {
   private async readDeskNow(): Promise<void> {
     const whole = this.deskWholeDue || !this.desk || this.now() - this.deskWholeAt >= DESK_WHOLE_MS
     this.deskWholeDue = false
-    let brief
-    try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at, { active: true })) } catch (e) { if (whole) this.deskWholeDue = true; this.knowDesk(); throw e }
+    // A session group joined (a sign-in's): the hub's full Desk in one answer, the list and what it lists (the open
+    // objects' newest versions, every register of the groups: names, status lines, desks), read through the core
+    // out of the hub's order. The room's past follows later; the person sees the open state now.
+    const fullDue = this.deskFullDue
+    this.deskFullDue = false
+    const full = fullDue ? await timed('desk', () => this.hub.desk({ active: true })).catch(() => null) : null
+    if (fullDue && (!full || full.truncated)) this.deskFullDue = !full
+    let brief: DeskBrief
+    if (full && !full.truncated) {
+      const entry = (o: DeskObject): DeskEntry => ({ object_id: o.object_id, version_change: o.version?.change ?? 0, head_change: o.head_change })
+      brief = { cards: full.cards.map(entry), permission_requests: full.permission_requests.map(entry), settled: null, truncated: false, change: full.change }
+    } else try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at, { active: true })) } catch (e) { if (whole) this.deskWholeDue = true; this.knowDesk(); throw e }
     if (brief.truncated) { if (!whole) { this.deskWholeDue = true; this.deskAgain = true } else this.knowDesk(); return }
     const listed = [...brief.cards.map(o => ({ ...o, route: 'cards' as const })), ...brief.permission_requests.map(o => ({ ...o, route: 'permission-requests' as const }))]
     if (whole || !this.desk) { this.desk = { open: new Set(), versions: new Map(), at: 0 }; this.deskWholeAt = this.now() }
@@ -849,7 +883,18 @@ export class Client {
     const first = !this.deskVersionsRead
     this.deskVersionsRead = true
     const reading = this.engine.position < brief.change || this.engine.rescanPending || this.readingHolds > 0
-    const versions = lacking.length > DESK_ONE_BY_ONE && !first && reading ? []
+    const fromFull = full && !full.truncated ? full : null
+    const versions = fromFull
+      ? (() => {
+          const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`))
+          const objects = [...fromFull.cards, ...fromFull.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : []))
+          // (the notes and Artifacts, and every register: what the groups just joined bring with them)
+          // (what an earlier full reading of this run handed the core already is not handed again: a sign-in reads
+          //  the full Desk after each wave of its joins, and the registers of the first wave come again each time)
+          const all = [...objects, ...fromFull.registers, ...[...fromFull.notes, ...fromFull.artifacts].flatMap(o => (o.version ? [o.version] : []))]
+          return all.filter(i => !this.deskTaken.has(i.change))
+        })()
+      : lacking.length > DESK_ONE_BY_ONE && !first && reading ? []
       : lacking.length > DESK_ONE_BY_ONE
       ? await this.hub.desk({ active: true }).then(full => { const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
       : (await inParallel(lacking, async o => {
@@ -865,6 +910,8 @@ export class Client {
       if (got && got.got.head_change > got.c.state_envelope_number) missing.push(...got.got.items)
     }
     const received = missing.length ? await this.engine.receivePage(missing.sort((x, y) => x.change - y.change)).catch(() => []) : []
+    // (what opened is not handed again by the next full reading; what did not, its group not joined yet, is)
+    if (fromFull) for (const r of received) if (r.outcome !== 'refused') this.deskTaken.add(r.change)
     // a card the hub lists as open that this device holds as handed back: the newest page of its Chat says whether
     // the agent put it before the human again since (a present this device missed, or one an older app read before
     // the hand back it answered); once per hand back and run, the few there are

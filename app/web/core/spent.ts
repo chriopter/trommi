@@ -19,15 +19,21 @@ export const spent: Spent = { core: 0, store: 0, wrap: 0, idb: 0, model: 0, cach
 ;(globalThis as { __trommiSpent?: Spent }).__trommiSpent = spent
 type Part = 'core' | 'store' | 'wrap' | 'idb' | 'model' | 'cache' | 'hub' | 'log' | 'welcome' | 'keys' | 'learn' | 'desk' | 'rescan'
 const clock = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+/** For a measurement only (tests/client/mega/first-login.mjs): while `globalThis.__trommiTrace` is an array, every
+ *  timed step and every mark is also kept there as [part, start, end] (performance.now()). Off unless set. */
+const traced = (part: string, t: number, e: number): void => {
+  const trace = (globalThis as { __trommiTrace?: [string, number, number][] }).__trommiTrace
+  if (trace && trace.length < 500_000) trace.push([part, t, e])
+}
 /** Adds the time `job` takes (until its promise settles) to `part`. */
 export async function timed<T>(part: Part, job: () => Promise<T>): Promise<T> {
   const t = clock()
-  try { return await job() } finally { spent[part] += clock() - t }
+  try { return await job() } finally { const e = clock(); spent[part] += e - t; traced(part, t, e) }
 }
 /** The same for a step that does not wait. */
 export function timedSync<T>(part: Part, job: () => T): T {
   const t = clock()
-  try { return job() } finally { spent[part] += clock() - t }
+  try { return job() } finally { const e = clock(); spent[part] += e - t; traced(part, t, e) }
 }
 /** For a measurement only: `itemByItem` makes the engine hand a catch-up to the core one item per call, as before
  *  `feed` (`globalThis.__trommiMeasure`). */
@@ -36,4 +42,4 @@ export const measuring = { itemByItem: false }
 /** Sets every sum back to zero. */
 export function resetSpent(): void { for (const k of Object.keys(spent) as (keyof Spent)[]) if (k !== 'marks') spent[k] = 0; spent.marks = [] }
 /** Notes the moment a step of a start began or ended (at most 200 are kept). */
-export function mark(what: string): void { if (spent.marks.length < 200) spent.marks.push([what, Math.round(clock())]) }
+export function mark(what: string): void { const t = clock(); traced(`mark ${what}`, t, t); if (spent.marks.length < 200) spent.marks.push([what, Math.round(t)]) }

@@ -35,6 +35,8 @@
 mod common;
 #[path = "mega/chaos.rs"]
 mod chaos;
+#[path = "mega/full.rs"]
+mod full;
 #[path = "mega/torture.rs"]
 mod torture;
 

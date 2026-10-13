@@ -91,6 +91,10 @@ fn id<const N: usize>(text: &str) -> Res<[u8; N]> {
         .ok_or_else(|| refuse("bad-format", "an id in the path is not what it must be"))
 }
 
+/// `POST /v1/commits`: at most so many Commits in one request, verified on so many threads at once.
+const MAX_COMMITS_AT_ONCE: usize = 64;
+const PREPARE_THREADS: usize = 4;
+
 fn group_id(text: &str) -> Res<Vec<u8>> {
     unb64(text)
         .filter(|g| g.len() == 32 || g.len() == 48)
@@ -775,6 +779,73 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                 let a = delivery::commit(x, &auth, &group, &body, &mut Scope::default(), fx)?;
                 Ok(json!({ "epoch": a.epoch, "change": a.change }))
             })
+        }
+        // Several Commits of different groups in one request (a sign-in's joins of every live session, 8.5): each is
+        // taken as `POST /v1/groups/{group}/commits` takes it, one after another, and answered in its place; one
+        // refused leaves the others as they are. The request fails as a whole only for its own form.
+        ("POST", ["commits"]) => {
+            let list = rq.body["commits"]
+                .as_array()
+                .filter(|l| !l.is_empty() && l.len() <= MAX_COMMITS_AT_ONCE)
+                .ok_or_else(|| refuse("bad-format", format!("commits: 1 to {MAX_COMMITS_AT_ONCE} Commits")))?;
+            let mut parsed = Vec::with_capacity(list.len());
+            for item in list {
+                let group = item["group"]
+                    .as_str()
+                    .ok_or_else(|| refuse("bad-format", "group: a group id, base64url"))
+                    .and_then(group_id)?;
+                if parsed.iter().any(|(g, _)| *g == group) {
+                    return Err(refuse("bad-format", "commits: one per group"));
+                }
+                parsed.push((group, commit_body(item)?));
+            }
+            let auth = read_auth()?;
+            // each Commit verified on its group's public state outside the write lock, several at once (they are of
+            // different groups), then taken one after another in the order sent
+            let limits: Vec<Res<()>> = parsed.iter().map(|_| heavy_limit(&auth)).collect();
+            let prepared: Vec<Res<crate::app::Entries>> = std::thread::scope(|scope| {
+                let jobs: Vec<_> = parsed
+                    .chunks(parsed.len().div_ceil(PREPARE_THREADS))
+                    .enumerate()
+                    .map(|(k, chunk)| {
+                        let (auth, limits) = (&auth, &limits);
+                        let at = k * parsed.len().div_ceil(PREPARE_THREADS);
+                        let n = chunk.len();
+                        (n, scope.spawn(move || {
+                            chunk
+                                .iter()
+                                .enumerate()
+                                .map(|(i, (group, body))| {
+                                    limits[at + i].clone()?;
+                                    app.heavy(|c, memo| crate::prepare::commit(c, memo, &auth.room, group, body)).map(|(entries, ())| entries)
+                                })
+                                .collect::<Vec<_>>()
+                        }))
+                    })
+                    .collect();
+                // (a thread that failed answers `internal` for each of its Commits: one answer per Commit always)
+                jobs.into_iter()
+                    .flat_map(|(n, j)| j.join().unwrap_or_else(|_| (0..n).map(|_| Err(refuse("internal", "the Commit was not verified"))).collect()))
+                    .collect()
+            });
+            let mut answers = Vec::with_capacity(parsed.len());
+            for ((group, body), entries) in parsed.iter().zip(prepared) {
+                let one = entries.and_then(|entries| {
+                    app.write_as_with(entries, &auth, rq.lease, |x, fx| {
+                        let a = delivery::commit(x, &auth, group, body, &mut Scope::default(), fx)?;
+                        Ok(json!({ "epoch": a.epoch, "change": a.change }))
+                    })
+                });
+                answers.push(match one {
+                    Ok(answer) => answer,
+                    Err(refused) => {
+                        let mut body = refused.body();
+                        body["status"] = json!(refused.status());
+                        body
+                    }
+                });
+            }
+            Ok(json!({ "answers": answers }))
         }
         ("POST", ["groups", group, "reject"]) => {
             let group = group_id(group)?;
