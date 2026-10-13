@@ -1,5 +1,8 @@
-# On every pull request and in the merge queue: find which parts changed and check those, fast: their tests, clippy,
-# the web app's build; no release binaries, no cross builds, no Mac. The jobs' names are the checks the ruleset of main
+# On every pull request and in the merge queue: find which parts changed and check those: clippy, their tests, the
+# web app's build; no release binaries, no cross builds, no Mac. A pull request runs the fast tier: every Rust test but
+# the slow ones (nextest profile `fast`, .config/nextest.toml); the merge queue runs them all (profile `ci`) on the very
+# commit that lands, and that is what main relies on. The giant tests, fuzzing and the torture run with 100 iPhones
+# are nightly (nightly.yml, fuzz.yml, clients_mega.yml; a failure opens an issue). The jobs' names are the checks the ruleset of main
 # requires (they do not change): Which parts changed, Core (check), Web app (check), Connector (check), Hub (check).
 # A part that did not change skips its job, which counts as passed; when finding the changed parts fails, that
 # required check fails.
@@ -99,6 +102,8 @@ jobs:
       connector: ${{ steps.find.outputs.connector }}
       hub: ${{ steps.find.outputs.hub }}
       version: ${{ steps.find.outputs.version }}
+      # fast on a pull request (every test but the slow ones), full everywhere else (the merge queue gates main)
+      tier: ${{ github.event_name == 'pull_request' && 'fast' || 'full' }}
       parts: ${{ steps.inputs.outputs.parts }}
       since: ${{ steps.inputs.outputs.since }}
       # main: the part must be delivered (what it has out there differs from this commit); its job builds it
@@ -249,6 +254,7 @@ jobs:
         env:
           CHECKED: ${{ needs.changes.outputs.checked_core }}
           HIT: ${{ steps.cache.outputs.cache-hit }}
+          TIER: ${{ needs.changes.outputs.tier }}
         run: sh .github/scripts/checked_run.sh
       # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
@@ -266,6 +272,7 @@ jobs:
         if: steps.what.outputs.compile == 'true'
         env:
           RUN: ${{ steps.what.outputs.run }}
+          NEXTEST_PROFILE: ${{ steps.what.outputs.profile }}
         run: |
           # shellcheck disable=SC2086
           cargo test --locked $RUN -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift
@@ -274,6 +281,7 @@ jobs:
         if: steps.what.outputs.compile == 'true'
         env:
           RUN: ${{ steps.what.outputs.run }}
+          NEXTEST_PROFILE: ${{ steps.what.outputs.profile }}
         run: |
           set -eu
           tests=$(sed -n 's/^name = "\(\(core\|bindings\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
@@ -473,6 +481,7 @@ jobs:
         env:
           CHECKED: ${{ needs.changes.outputs.checked_connector }}
           HIT: ${{ steps.cache.outputs.cache-hit }}
+          TIER: ${{ needs.changes.outputs.tier }}
         run: sh .github/scripts/checked_run.sh
       # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
@@ -487,6 +496,7 @@ jobs:
         if: steps.what.outputs.compile == 'true'
         env:
           RUN: ${{ steps.what.outputs.run }}
+          NEXTEST_PROFILE: ${{ steps.what.outputs.profile }}
         run: |
           set -eu
           cargo build --locked -p trommi-hub -p trommi-connector
@@ -669,6 +679,7 @@ jobs:
         env:
           CHECKED: ${{ needs.changes.outputs.checked_hub }}
           HIT: ${{ steps.cache.outputs.cache-hit }}
+          TIER: ${{ needs.changes.outputs.tier }}
         run: sh .github/scripts/checked_run.sh
       # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
@@ -683,6 +694,7 @@ jobs:
         if: steps.what.outputs.compile == 'true'
         env:
           RUN: ${{ steps.what.outputs.run }}
+          NEXTEST_PROFILE: ${{ steps.what.outputs.profile }}
         run: |
           set -eu
           tests=$(sed -n 's/^name = "\(\(hub\|deploy\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')

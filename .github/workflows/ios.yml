@@ -2,9 +2,10 @@
 # for Swift or for TestFlight.
 #
 # On every pull request: which iOS parts changed (against the pull request's base), and when they did the app's client
-# package with its tests on Linux ("iOS client (check)", the stable name a ruleset can require), the app compiled for
-# iOS and the Mac on a Mac, unsigned ("iOS app (build)", also in the merge queue), and the fast part of the mega
-# test's torture run with 10 iPhones (does not fail the run). A pull request gets no secret and delivers nothing.
+# package with its tests on Linux, compiled only ("iOS client (check)", the stable name a ruleset can require), and the
+# app compiled for iOS and the Mac on a Mac, unsigned ("iOS app (build)"). In the merge queue the same, with the
+# package's tests run. The torture run with iPhones is nightly (clients_mega.yml). A pull request gets no secret and
+# delivers nothing.
 #
 # After every run of build.yml on main (workflow_run): when that run's "Core (check)" passed (or was skipped: the core
 # did not change) and the app's inputs (.github/scripts/inputs.sh: app/ios/, demo/, the core, the client core, the
@@ -67,8 +68,6 @@ jobs:
     outputs:
       # the client check runs
       ios: ${{ steps.pr.outputs.ios || steps.main.outputs.deliver }}
-      # the torture run with iPhones runs (pull requests)
-      mega: ${{ steps.pr.outputs.mega }}
       # main: the release v<version> of the build run marks iOS changed; the app is built and delivered
       deliver: ${{ steps.main.outputs.deliver }}
       version: ${{ steps.main.outputs.version }}
@@ -106,10 +105,6 @@ jobs:
             echo "- $1: $value" >> "$GITHUB_STEP_SUMMARY"
           }
           part ios 'app/ios/|tests/ios/|\.github/scripts/(ios_(testflight\.sh|archive\.sh|entitlements\.py|release_gate\.sh)|mac_testflight\.sh)$|\.github/workflows/deploy_ios\.yml$'
-          # the torture run: every client, the hub, the connector and the tests they share
-          part mega 'app/|connector/|hub/|demo/|tests/|spec/|release/'
-      # main: the release of the build run, v<run number + RELEASE_BASE>, its signature checked. Not published (nothing
-      # changed since the newest release, or the build failed or was overtaken by a newer one): nothing to deliver.
       - name: Whether the build run delivers the app (main)
         id: main
         if: github.event_name == 'workflow_run'
@@ -191,8 +186,12 @@ jobs:
             core/swift/TrommiCoreRust/lib
             core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
             core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      # a pull request: compiled only (the package and its tests); the merge queue and main: the tests run
       - name: Test
-        run: swift test --package-path tests/ios
+        env:
+          FAST: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if [ "$FAST" = true ]; then swift build --build-tests --package-path tests/ios; else swift test --package-path tests/ios; fi
 
   # Main only, for a release that marks iOS changed: the Rust core for an iOS device and for this Mac, the core's Swift
   # binding tested on the Mac, the App Store Connect steps against fixtures; its artifact is what deploy_ios.yml
@@ -378,86 +377,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # The fast part of the mega test's torture run (tests/client/mega/torture.rs), on every pull request that touches a
-  # client, the hub or the core: the real connector joined every way, 2 web devices and 10 iPhones in one account
-  # behind a misbehaving network, two seeds of 30 steps (about 7 minutes); every device must show the same at every
-  # checkpoint. The full run (up to 100 iPhones, killed servers, 1,000 cards) is nightly (clients_mega.yml). A failure
-  # names its seed (the summary lists them): MEGA_SEEDS=<seed> with the same sizes repeats it. Failures of known open
-  # bugs are listed under the bug's name and do not fail.
-  mega_fast:
-    name: Mega torture (10 iPhones)
-    needs: changes
-    if: needs.changes.outputs.mega == 'true' && github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    # blocking once seed 403, slow joins and the connector fixes are on main
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - name: Compiler (rust-toolchain.toml), Swift
-        run: |
-          rustup toolchain install || rustup show
-          rustc --version
-          swift --version
-          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          prefix-key: v2-rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: bindgen
-        with:
-          path: ~/.cargo/bin/wasm-bindgen
-          key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}-${{ hashFiles('rust-toolchain.toml') }}
-      - name: wasm-bindgen
-        if: steps.bindgen.outputs.cache-hit != 'true'
-        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
-      - name: The core for the browser and for Swift, the iOS test runner
-        run: bash tests/client/mega/prepare.sh .
-      - name: The hub, the connector and the test
-        run: cargo build --locked -p trommi-hub -p trommi-connector -p trommi-tests --test client_mega
-      - name: Every client agrees
-        env:
-          MEGA_OUT: ${{ runner.temp }}/mega
-          MEGA_FLEET: '10'
-          MEGA_AGENTS: '5'
-          MEGA_STEPS: '30'
-          MEGA_CARDS: '60'
-          MEGA_KILLS: '0'
-          MEGA_BUDGET_SCALE: '3'
-          RUN: ${{ github.run_number }}
-        run: |
-          set -euo pipefail
-          seeds="$((RUN * 2)),$((RUN * 2 + 1))"
-          echo "seeds: $seeds"
-          MEGA_SEEDS=$seeds cargo test --locked -p trommi-tests --test client_mega torture::torture -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/torture.log"
-      - name: Failed seeds
-        if: failure()
-        run: |
-          {
-            echo '### Mega torture: failed'
-            grep -h '^TORTURE FAILED SEEDS' "$RUNNER_TEMP/torture.log" || true
-            echo 'Sizes: MEGA_FLEET=10 MEGA_AGENTS=5 MEGA_STEPS=30 MEGA_CARDS=60 MEGA_KILLS=0 MEGA_BUDGET_SCALE=3'
-            echo '```'
-            grep -h '^FAIL ' "$RUNNER_TEMP/torture.log" | head -40 || true
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: mega-torture
-          path: ${{ runner.temp }}/mega
-          retention-days: 7
-
-  # TestFlight: the app archived on the commit of the release with the core of the job ios, uploaded once the release
-  # checks out (gate: release; the build run of main is build_run).
   deploy_ios:
     name: iOS
     needs: [changes, ios, ios_client]

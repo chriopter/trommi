@@ -72,11 +72,36 @@ jobs:
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
           exit "$status"
 
+  # The connector under load: 200 joins one after another against the real hub (tests/connector/tools.rs, the stress
+  # test that is left out of every other run).
+  connector_stress:
+    name: Connector under load
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler (rust-toolchain.toml)
+        run: sh .github/scripts/rust_toolchain.sh
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust
+          save-if: false
+      - name: Test
+        run: |
+          set -eu
+          cargo build --locked -p trommi-hub -p trommi-connector
+          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" \
+            cargo test --locked -p trommi-tests --test connector_tools -- --ignored --nocapture
+
   # One open issue while the nightly full tests fail, closed by the next night that passes.
   report:
     name: Report
-    needs: full
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && (needs.full.result == 'failure' || needs.full.result == 'success') }}
+    needs: [full, connector_stress]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -88,8 +113,8 @@ jobs:
       TAG: ${{ github.sha }}
       WHAT: full tests
       LABEL: nightly-failed
-      RESULT: ${{ needs.full.result }}
-      REASON: 'failed: ${{ needs.full.outputs.failed }}'
+      RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      REASON: 'failed: ${{ needs.full.outputs.failed }}${{ needs.connector_stress.result == ''failure'' && '' connector under load'' || '''' }}'
       RUNNING: main at ${{ github.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:

@@ -106,3 +106,36 @@ jobs:
           name: fuzz-mcp
           path: ${{ runner.temp }}/fuzz-mcp
           retention-days: 14
+
+  # A night that fails opens the issue "Nightly fuzzing <commit> failed" (label nightly-failed) or comments on it; the
+  # next night that passes closes it (.github/scripts/deploy_issue.sh).
+  report:
+    name: Report
+    needs: [libfuzzer, properties]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.sha }}
+      WHAT: fuzzing
+      LABEL: nightly-failed
+      RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      NEEDS: ${{ toJSON(needs) }}
+      RUNNING: main at ${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Open, comment on or close the issue
+        run: |
+          set -eu
+          REASON="failed: $(printf '%s' "$NEEDS" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')"
+          export REASON
+          sh .github/scripts/deploy_issue.sh Nightly
