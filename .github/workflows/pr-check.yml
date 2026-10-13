@@ -110,7 +110,8 @@ jobs:
           part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connector/|tests/Cargo\.toml$|\.github/workflows/(ship-connector|sign-release)\.yml$'
           part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/(ship-hub|sign-release)\.yml$|\.github/scripts/(hub_compat|deployed|deploy_issue)\.sh$'
           part apple 'app/ios/|tests/ios/|demo/|\.github/scripts/(ios_|mac_)|\.github/workflows/ship-apple\.yml$'
-          part linux 'app/linux/|connector/|\.github/workflows/ship-linux\.yml$'
+          # (the window draws with the web app's pen and fonts)
+          part linux 'app/linux/|connector/|app/web/public/ui\.mjs$|app/web/public/fonts/|\.github/workflows/ship-linux\.yml$'
           part site 'site/|tests/site/|\.github/workflows/ship-site\.yml$'
 
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
@@ -427,6 +428,9 @@ jobs:
             qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtqml-workerscript qml6-module-qtquick-dialogs \
             libgl-dev lld
           qmake6 -query QT_VERSION
+      # the window draws with the web app's pen: qml/pen.mjs is made from app/web/public/ui.mjs and must be current
+      - name: The pen is the web's
+        run: node app/linux/dev/pen.mjs --check
       - name: Compiler (rust-toolchain.toml)
         run: sh .github/scripts/rust_toolchain.sh
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

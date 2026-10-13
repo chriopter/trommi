@@ -130,7 +130,7 @@ const NAMED = {
   branch: [straight([[9, 7.6], [9.2, 24.8]]), [[9, 4], [11, 5.8], [9, 7.6], [7, 5.8], [9.2, 3.9]], [[9.2, 25], [11.2, 26.8], [9.2, 28.6], [7.2, 26.8], [9.4, 24.9]], [[23, 9], [25, 10.8], [23, 12.6], [21, 10.8], [23.2, 8.9]], [[23, 12.8], [22, 17.6], [14.6, 19], [9.6, 22.4]]],
 }
 const KINDS = ['burst', 'spiral', 'blob', 'flower', 'waves', 'knot', 'bolt', 'hatch']   // DOODLES, in their order
-/** The drawings a session can be given: forty names. A session's mark is then "draw:<name>". */
+/** The drawings a session can be given: 52 names (connector/drawings.json is the list the agents read; a connector test keeps it equal to this). A session's mark is then "draw:<name>". */
 const DRAWINGS = [...KINDS, ...Object.keys(NAMED)]
 const drawingMark = name => `draw:${name}`
 /** The drawing a mark names ("draw:rocket" -> "rocket"), or null for a seeded scribble. */
