@@ -115,14 +115,15 @@ pub enum Action {
         board_id: String,
         stroke: Bytes,
     },
-    /// Bytes the person picked, to attach: answered with the attachment's id in the view model.
+    /// Bytes the person picked, to attach: `ViewModel.files[local_id]` shows it uploading, then ready with its
+    /// attachment id, or failed.
     Attach {
         local_id: String,
         name: String,
         media_type: String,
         bytes: Bytes,
     },
-    /// Get a file to show or save: the core fetches, decrypts and answers with `SaveFile` or a view.
+    /// Get a file to show (`Effect::FileReady`) or to save (`Effect::SaveFile`): the core fetches and decrypts.
     OpenFile {
         attachment_id: String,
         save: bool,
@@ -144,6 +145,10 @@ pub enum Action {
     // ---- the app ----
     /// Try now what waits for a retry.
     Retry,
+    /// Stop an upload or download the person started.
+    CancelFile {
+        file_id: String,
+    },
     /// A toast was closed.
     Dismiss {
         toast_id: String,

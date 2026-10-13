@@ -103,6 +103,12 @@ pub struct ViewModel {
     pub cards: BTreeMap<String, CardView>,
     pub notes: NotesView,
     pub settings: SettingsView,
+    /// Signing in, joining, the emoji to compare, the Emergency Kit to keep, self-join asks.
+    pub account: AccountView,
+    /// Files the views name (attachments, pictures), by id: uploading, ready, failed. Their bytes, when loaded,
+    /// came as `Effect::FileReady` under the same id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub files: BTreeMap<String, FileView>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub toasts: Vec<Toast>,
 }
@@ -144,6 +150,13 @@ pub enum ViewPart {
     },
     Settings {
         view: SettingsView,
+    },
+    Account {
+        view: AccountView,
+    },
+    File {
+        id: String,
+        view: Option<FileView>,
     },
     Toasts {
         toasts: Vec<Toast>,
@@ -241,6 +254,9 @@ pub struct TalkRow {
     pub heard: bool,
     /// Not confirmed by the hub yet (an echo).
     pub pending: bool,
+    /// File ids (`ViewModel.files`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -271,6 +287,9 @@ pub struct CardView {
     pub starred: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<u64>,
+    /// File ids (`ViewModel.files`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -297,6 +316,60 @@ pub struct DeviceRow {
     pub id: String,
     pub name: String,
     pub this_device: bool,
+}
+
+/// The account's flows as a screen shows them. `step` names the screen; the fields it needs are filled.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountView {
+    /// "none", "sign_in", "found", "join", "compare_emoji", "keep_kit", "invite", "recover", "working".
+    pub step: String,
+    /// The invite in progress (for `ConfirmEmoji`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite_id: Option<String>,
+    /// An invite link to show as text or QR code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    /// The six emoji to compare, with their words.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emoji: Vec<EmojiView>,
+    /// The Emergency Kit words to keep, shown once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kit: Vec<String>,
+    /// Self-join asks waiting for "Allow" or "Deny" (for `AnswerAsk`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asks: Vec<AskView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<Text>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmojiView {
+    pub emoji: String,
+    pub word: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AskView {
+    pub nonce: String,
+    /// What the vouching agent says it is: account, name, host (its word, shown as such).
+    pub says: Text,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileView {
+    pub name: String,
+    pub media_type: String,
+    pub size: u64,
+    /// "uploading", "ready", "failed", "missing".
+    pub state: String,
+    /// The attachment's id once the hub has it (an upload's local id maps to it here).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment_id: Option<String>,
+    /// 0..=100 while it moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percent: Option<u8>,
+    /// Its bytes were handed over (`Effect::FileReady`).
+    pub loaded: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -355,6 +428,15 @@ impl ViewModel {
                 },
                 ViewPart::Notes { view } => self.notes = view.clone(),
                 ViewPart::Settings { view } => self.settings = view.clone(),
+                ViewPart::Account { view } => self.account = view.clone(),
+                ViewPart::File { id, view } => match view {
+                    Some(v) => {
+                        self.files.insert(id.clone(), v.clone());
+                    }
+                    None => {
+                        self.files.remove(id);
+                    }
+                },
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
         }
@@ -423,6 +505,25 @@ impl ViewModel {
             parts.push(ViewPart::Settings {
                 view: next.settings.clone(),
             });
+        }
+        if self.account != next.account {
+            parts.push(ViewPart::Account {
+                view: next.account.clone(),
+            });
+        }
+        for id in self.files.keys().filter(|k| !next.files.contains_key(*k)) {
+            parts.push(ViewPart::File {
+                id: id.clone(),
+                view: None,
+            });
+        }
+        for (id, v) in &next.files {
+            if self.files.get(id) != Some(v) {
+                parts.push(ViewPart::File {
+                    id: id.clone(),
+                    view: Some(v.clone()),
+                });
+            }
         }
         if self.toasts != next.toasts {
             parts.push(ViewPart::Toasts {

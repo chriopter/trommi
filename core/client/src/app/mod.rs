@@ -30,7 +30,7 @@ pub use effect::{Effect, LogLevel, Notice, WidgetSnapshot};
 pub use event::{Abilities, Config, Event};
 pub use io::{
     DeviceEntry, Entry, Header, HttpClass, HttpRequest, HttpResponse, IoError, IoErrorKind, IoId,
-    IoResult, SecretOp, StoreAnswer, StoreOp, StreamItem,
+    IoResult, PlatformAnswer, PlatformOp, SecretOp, StoreAnswer, StoreOp, StreamItem,
 };
 
 use crate::engine::Jitter;
@@ -118,12 +118,13 @@ impl App {
                 },
                 None => out.push(log(LogLevel::Warn, "store: an answer to nothing asked")),
             },
-            Event::Http { id, .. } | Event::Secret { id, .. } => {
+            Event::Http { id, .. } | Event::Secret { id, .. } | Event::Platform { id, .. } => {
                 if self.pending.remove(&id).is_none() {
                     out.push(log(LogLevel::Warn, "an answer to nothing asked"));
                 }
             }
-            Event::Stream { .. } => {}
+            Event::Stream { .. } | Event::Progress { .. } | Event::Finished { .. } => {}
+            Event::PushToken { .. } | Event::Zone { .. } => {}
             Event::Action { .. } => {}
             Event::Focus { .. } => {}
             Event::Wake

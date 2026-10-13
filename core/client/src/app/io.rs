@@ -65,11 +65,18 @@ pub enum IoErrorKind {
     Failed,
 }
 
-/// One header, as written. Names are compared without case by the core.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// One header, as written. Names are compared without case by the core. `Debug` shows the name only: a value
+/// may be a token.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Header {
     pub name: String,
     pub value: String,
+}
+
+impl std::fmt::Debug for Header {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Header({}: <redacted>)", self.name)
+    }
 }
 
 /// How the platform should treat a request. Only a hint: a shell may run all of them the same way.
@@ -100,6 +107,10 @@ pub struct HttpRequest {
     pub timeout_ms: u32,
     #[serde(default)]
     pub class: HttpClass,
+    /// A transfer that may outlive this App (an iOS background upload) carries a stable key; its end then comes
+    /// as `Event::Finished { key }` to whichever App runs. Everything else: `None`, and it dies with its App.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 /// An answer with any status.
@@ -218,4 +229,61 @@ pub enum SecretOp {
     Get { name: String },
     Put { name: String, value: Bytes },
     Delete { name: String },
+}
+
+/// A platform service the core needs an answer from: what only the platform can do, asked for by the core so the
+/// decision stays here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum PlatformOp {
+    /// Make a passkey with the PRF extension, evaluated at `prf_input`.
+    PasskeyCreate {
+        rp_id: String,
+        user_handle: Bytes,
+        user_name: String,
+        prf_input: Bytes,
+    },
+    /// Use one of these passkeys, evaluating PRF at `prf_input`.
+    PasskeyGet {
+        rp_id: String,
+        credential_ids: Vec<Bytes>,
+        prf_input: Bytes,
+    },
+    /// Ask for the right to notify (the platform's prompt), then register for push; the token comes as
+    /// `PlatformAnswer::Push` and later changes as `Event::PushToken`.
+    PushRegister {
+        /// Web Push: the hub's VAPID key.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server_key: Option<Bytes>,
+    },
+    PushUnregister,
+}
+
+/// What a platform service answered.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "answer", rename_all = "snake_case")]
+pub enum PlatformAnswer {
+    /// `prf` is key material: never logged.
+    Passkey {
+        credential_id: Bytes,
+        prf: Bytes,
+    },
+    Push {
+        kind: String,
+        token: Bytes,
+    },
+    /// The person said no, or the platform cannot.
+    Refused,
+    Done,
+}
+
+impl std::fmt::Debug for PlatformAnswer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlatformAnswer::Passkey { .. } => f.write_str("Passkey(<redacted>)"),
+            PlatformAnswer::Push { kind, .. } => write!(f, "Push({kind}, <redacted>)"),
+            PlatformAnswer::Refused => f.write_str("Refused"),
+            PlatformAnswer::Done => f.write_str("Done"),
+        }
+    }
 }

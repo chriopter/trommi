@@ -7,11 +7,22 @@
 use super::{App, Effect, Event};
 use crate::app::bytes::with_blobs;
 
-/// JSON text and the blobs it refers to.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// JSON text and the blobs it refers to. `Debug` shows sizes only: an event may carry a password, a blob a key.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Packet {
     pub json: String,
     pub blobs: Vec<Vec<u8>>,
+}
+
+impl std::fmt::Debug for Packet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Packet({} bytes of JSON, {} blobs)",
+            self.json.len(),
+            self.blobs.len()
+        )
+    }
 }
 
 /// Where the JSON failed, never what it held: serde's own words can quote a value, and an event may carry a

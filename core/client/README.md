@@ -58,16 +58,20 @@ shell                                       App (core/client, no I/O, no clock, 
 
 `App::handle(now_ms, Event) -> Vec<Effect>` is the only entry. Time comes in beside each event (`now_ms`, the
 shell's clock); the core never reads a clock. The protocol's randomness is the system's, read inside
-`core/protocol`; the core's own jitter comes from `Config.seed`, so a seeded test repeats exactly.
+`core/protocol`; the core's own jitter comes from `Config.seed`, so a seeded test repeats exactly. Local-time rules
+("until tomorrow 7:00") use `Config.utc_offset_min` and `Event::Zone`; around a summer-time switch in the night
+such a time can be an hour off, as in today's apps.
 
 | Event (in) | When |
 | --- | --- |
 | `Start { config }` | once, first; the shell holds the device lock (one owner) before it |
 | `Action { action }` | the person did something (`actions::Action`, `account::AccountAction`) |
 | `Focus { focus }` | what the person looks at, and whether the window is in front |
-| `Http { id, result }`, `Stream { id, item }`, `Store { id, result }`, `Secret { id, result }` | the result of the effect with that id |
+| `Http { id, result }`, `Stream { id, item }`, `Store { id, result }`, `Secret { id, result }`, `Platform { id, result }` | the result of the effect with that id |
+| `Progress { id, done, total }` | optional: how far a transfer is |
+| `Finished { key, result }` | a transfer that outlived an earlier App (an iOS background upload) ended |
 | `Wake` | the timer of the last `Timer` effect went off |
-| `Foreground`, `Background`, `Net { online }`, `Push { payload }` | the platform's news |
+| `Foreground`, `Background`, `Net { online }`, `Push { payload }`, `PushToken { kind, token }`, `Zone { utc_offset_min }` | the platform's news |
 
 | Effect (out) | The shell |
 | --- | --- |
@@ -77,33 +81,43 @@ shell's clock); the core never reads a clock. The protocol's randomness is the s
 | `Cancel { id }` | stops that request or stream |
 | `Store { id, op }` | runs a store op (below), answers `Store` |
 | `Secret { id, op }` | Keychain or the platform's equivalent, answers `Secret` |
+| `Platform { id, op }` | a platform service: a passkey with PRF, push registration; answers `Platform` |
+| `FileReady`, `FileGone` | keeps decrypted bytes under a file id for drawing (views name files by id); drops them |
 | `Timer { at_ms }` | one timer, replacing the last; `None` clears it |
 | `Notify`, `Snapshot` | a local notification; the numbers for widgets and Live Activities |
 | `SaveFile`, `OpenUrl` | offers bytes as a file; opens a link outside |
 | `Log { level, text }` | writes a line; it never holds content, keys, addresses or tokens |
 
-Ids (`IoId`) are the core's, counting up per App. A result for an id the core does not know is logged and dropped.
+Ids (`IoId`) are the core's, counting up per App and never reused by it. Each `AppCore` has its own executor: a
+result goes only to the App that asked, and a replaced App's late results are dropped by the shell (its ids start
+at 1 again). A result for an id the core does not know (or cancelled) is dropped. Every number in the contract stays
+below 2^53, so JavaScript holds it exactly; `Config.seed` is a 53-bit number.
 
 ### Order
 
 The shell starts the effects of one answer in the order given; after that they may run at the same time. A
 `Render` comes first in an answer, so the screen is drawn before the I/O starts. One exception: a `Store` with
-`DeviceApply` is a **barrier**: nothing after it in the same answer starts before it finished, and if it failed the
-shell drops the rest of that answer and sends only its error. That is how a sealed message never leaves before the
-state that made it is durable. Events go into the App one at a time, in the order they happened (one queue per
+`DeviceApply` is a **barrier**: no effect after it, of the same answer or of a later one, starts before it
+finished; the shell keeps handling events meanwhile and queues their effects. If it failed, the shell drops every
+effect queued behind it and sends only its error. That is how a sealed message never leaves before the state that
+made it is durable. Events go into the App one at a time, in the order they happened (one queue per
 App).
 
 ### Errors and retries
 
 - An HTTP answer of any status is a result, not an error. `hub::classify` sorts it: 2xx; **refused** (4xx but 408
   and 429: not retried, an action's echo rolls back with a toast); **not now** (408, 429, 5xx: retried, never sooner
-  than `Retry-After`); a 2xx answer the route does not allow is **bad answer** (W2: never half applied).
+  than a `Retry-After` given in seconds; a date there counts as absent); a 2xx answer the route does not allow is **bad answer** (W2: never half applied).
 - An `IoError` is only "no answer": `offline`, `timeout`, `failed` count as **offline**; `cancelled` is no failure;
   `conflict` on `DeviceApply` means another owner wrote the device state: the App stops (`Phase::Stopped`) and the
   shell opens the stored state again with a new App.
 - Retries are the engine's alone (`engine::Backoff::HUB`: 1 s doubling to 60 s, jittered down by up to a quarter,
   at least `Retry-After`). A shell never retries. The outbox sends one entry at a time, in order.
-- A `bad-format` event at the edge names where the JSON failed, never what it held.
+- `Cancel { id }`: the core forgets the id first; a result already on its way is dropped. The request may still
+  have reached the hub, so every request the core cancels is safe to repeat (the outbox's entries carry their own
+  ids).
+- A `bad-format` event at the edge names where the JSON failed, never what it held. `Debug` of an event, a packet, a
+  header, an account action or a platform answer shows no secret, address, token or key.
 - A panic inside the core closes that `AppCore` (`internal` from then on); the shell starts a new one, which reads
   the stored state again. In the browser a panic stops the module, as today.
 
@@ -130,7 +144,9 @@ Rust types by W4, never written by hand twice). Outside the edge (scripts, test 
 
 Two spaces of one key-value store, each app on its own platform store (IndexedDB, files, the Linux app's journal):
 
-- **device** (`DeviceLoad`, `DeviceApply`): the protocol core's state (keys, groups, chains, the outbox) in its own
+- **device** (`DeviceLoad`, `DeviceApply`): the device state of the slot `Config.slot` names (one per room and
+  device; the shell holds that slot's lock before `Start`, and several Apps on one device use several slots): the
+  protocol core's state (keys, groups, chains, the outbox) in its own
   format (`core/protocol/src/store.rs`): all or nothing, durable on return, one revision checked against
   `expected_revision`, one owner. Losing it loses the device.
 - **cache** (`Get`, `Scan`, `Put`): string keys `c1/<room hex>/<part>[/<id>]` (`src/cache/`), values the serde JSON

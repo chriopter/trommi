@@ -16,7 +16,8 @@ impl std::fmt::Debug for Secret {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// `Debug` names the step only: e-mail addresses, links with their secret and passwords stay out of every log.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
 pub enum AccountAction {
     /// A new account and room.
@@ -35,7 +36,7 @@ pub enum AccountAction {
     },
     /// Join by an invite link (this device becomes a member once the emoji match).
     Join {
-        link: String,
+        link: Secret,
     },
     /// The six emoji match (or not) on both screens.
     ConfirmEmoji {
@@ -47,6 +48,11 @@ pub enum AccountAction {
     RemoveDevices {
         device_ids: Vec<String>,
     },
+    /// Use a passkey instead of the password (where `Config.can.passkeys`).
+    SignInWithPasskey {
+        email: String,
+    },
+    AddPasskey,
     /// A self-join ask: allow or deny.
     AnswerAsk {
         nonce: String,
@@ -57,4 +63,14 @@ pub enum AccountAction {
     DeleteAccount {
         password: Secret,
     },
+}
+
+impl std::fmt::Debug for AccountAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let step = serde_json::to_value(self)
+            .ok()
+            .and_then(|v| v.get("step").and_then(|s| s.as_str()).map(str::to_string))
+            .unwrap_or_default();
+        write!(f, "AccountAction({step})")
+    }
 }

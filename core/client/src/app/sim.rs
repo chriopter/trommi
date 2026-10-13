@@ -102,8 +102,14 @@ impl Sim {
                     id,
                     result: IoResult::Err(IoError::new(IoErrorKind::Denied)),
                 }),
+                Effect::Platform { id, .. } => self.queue.push_back(Event::Platform {
+                    id,
+                    result: IoResult::Ok(super::PlatformAnswer::Refused),
+                }),
                 Effect::Timer { at_ms } => self.timer = at_ms,
                 Effect::Cancel { .. }
+                | Effect::FileReady { .. }
+                | Effect::FileGone { .. }
                 | Effect::Notify { .. }
                 | Effect::Snapshot { .. }
                 | Effect::SaveFile { .. }
@@ -181,7 +187,8 @@ impl Sim {
                 Effect::Http { id, .. }
                 | Effect::OpenStream { id, .. }
                 | Effect::Store { id, .. }
-                | Effect::Secret { id, .. } => Some(*id),
+                | Effect::Secret { id, .. }
+                | Effect::Platform { id, .. } => Some(*id),
                 _ => None,
             })
             .collect()

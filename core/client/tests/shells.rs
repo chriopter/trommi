@@ -20,11 +20,15 @@ const FROZEN: &[(&str, &str)] = &[
 fn now(repo: &Path) -> BTreeMap<String, usize> {
     let mut files = BTreeMap::new();
     for (folder, kind) in FROZEN {
-        let Ok(entries) = std::fs::read_dir(repo.join(folder)) else { continue };
+        let Ok(entries) = std::fs::read_dir(repo.join(folder)) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if name.ends_with(kind) && !name.ends_with(".d.ts") {
-                let lines = std::fs::read_to_string(entry.path()).map(|t| t.lines().count()).unwrap_or(0);
+                let lines = std::fs::read_to_string(entry.path())
+                    .map(|t| t.lines().count())
+                    .unwrap_or(0);
                 files.insert(format!("{folder}/{name}"), lines);
             }
         }
@@ -42,7 +46,8 @@ fn the_shells_logic_only_shrinks() {
         std::fs::write(&list, serde_json::to_string_pretty(&found).unwrap() + "\n").unwrap();
         return;
     }
-    let frozen: BTreeMap<String, usize> = serde_json::from_slice(&std::fs::read(&list).unwrap()).unwrap();
+    let frozen: BTreeMap<String, usize> =
+        serde_json::from_slice(&std::fs::read(&list).unwrap()).unwrap();
     let mut problems = Vec::new();
     for (file, lines) in &found {
         match frozen.get(file) {
@@ -53,5 +58,9 @@ fn the_shells_logic_only_shrinks() {
             _ => {}
         }
     }
-    assert!(problems.is_empty(), "{}\n(an agreed exception: TROMMI_SHELLS_WRITE=1, see tests/shells.rs)", problems.join("\n"));
+    assert!(
+        problems.is_empty(),
+        "{}\n(an agreed exception: TROMMI_SHELLS_WRITE=1, see tests/shells.rs)",
+        problems.join("\n")
+    );
 }

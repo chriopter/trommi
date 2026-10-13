@@ -116,6 +116,7 @@ fn a_failed_device_write_ends_the_answer() {
         body: None,
         timeout_ms: 1,
         class: HttpClass::Background,
+        key: None,
     };
     sim.execute(vec![
         Effect::Store {
@@ -133,4 +134,33 @@ fn a_failed_device_write_ends_the_answer() {
     ]);
     assert_eq!(sim.log.len(), 1, "nothing after the failed write ran");
     assert_eq!(sim.device.0, 5);
+}
+
+#[test]
+fn debug_never_shows_secrets() {
+    use crate::account::{AccountAction, Secret};
+    let action = crate::actions::Action::Account {
+        action: AccountAction::SignIn {
+            email: "a@example.org".into(),
+            password: Secret("hunter2".into()),
+        },
+    };
+    let event = Event::Action { action };
+    let shown = format!("{event:?}");
+    assert!(
+        !shown.contains("hunter2") && !shown.contains("example.org"),
+        "{shown}"
+    );
+    let header = Header {
+        name: "Authorization".into(),
+        value: "Bearer t0ken".into(),
+    };
+    assert!(!format!("{header:?}").contains("t0ken"));
+    let packet = edge::encode_event(&event);
+    assert!(!format!("{packet:?}").contains("hunter2"));
+    let answer = PlatformAnswer::Passkey {
+        credential_id: vec![1].into(),
+        prf: vec![42; 32].into(),
+    };
+    assert_eq!(format!("{answer:?}"), "Passkey(<redacted>)");
 }
