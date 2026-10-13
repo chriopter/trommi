@@ -41,10 +41,12 @@ test('a card put off comes back on the Desk with its next version, and when its 
   assert.ok(!s.queue.includes(info), 'the info nobody touched stays put off')
 
   // the info's time passes: back without any new word
-  await a.snooze(info, Date.now() + 40)
+  // (long enough to be seen held on a busy machine: with 40 ms the time had passed before the first look)
+  const wake = Date.now() + 1500
+  await a.snooze(info, wake)
   await a.settle()
   await until(() => !deskOf(a).queue.includes(info), 'held while its time runs')
-  await new Promise(r => setTimeout(r, 250))
+  await new Promise(r => setTimeout(r, Math.max(0, wake - Date.now()) + 250))
   const board = new BoardState(a)
   assert.ok(board.update().queue.includes(info), 'a snooze past its time holds nothing on the web Desk')
 })
