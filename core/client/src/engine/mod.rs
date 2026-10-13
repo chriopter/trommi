@@ -115,7 +115,7 @@ pub mod feed;
 pub mod memstore;
 pub mod sync;
 
-pub use sync::{room_join, Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
+pub use sync::{requests, room_join, Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
 
 /// The device inside the engine: the protocol core's, over the store whose writes become barrier effects.
 pub type Device = trommi_core::device::Device<memstore::MemStore>;

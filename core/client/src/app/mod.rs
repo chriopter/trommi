@@ -107,6 +107,8 @@ pub struct App {
     signing_in: Option<(IoId, crate::account::signin::Waiting)>,
     /// A sign-in's join of the room runs: its end is shown on the account's screen.
     signed_in_join: bool,
+    /// The actions' requests answered since they were last taken.
+    answers: Vec<engine::requests::Answered>,
     /// The hub the stored room names ([`ROOM_KEY`]).
     stored_hub: Option<String>,
     /// The device state loaded, while the stored room's hub is read.
@@ -158,6 +160,7 @@ impl App {
             signing_in: None,
             signed_in_join: false,
             stored_hub: None,
+            answers: Vec::new(),
             opening: None,
             board: engine::feed::Board::default(),
             lens: Lens::default(),
@@ -327,6 +330,26 @@ impl App {
             }
             _ => {}
         }
+    /// Sends a request an action built with the codec's builder for its route, through the engine, which adds the
+    /// token, renews it and retries (`engine::requests`). `keep`: a name for a request with side effects at the hub,
+    /// sent again after a restart (the route must be idempotent). The answer comes in [`App::take_answers`] under
+    /// the id returned. `None` without a device.
+    pub fn request(
+        &mut self,
+        now_ms: u64,
+        build: impl FnOnce(&crate::hub::Site<'_>) -> Result<crate::app::io::HttpRequest, crate::hub::Failure>,
+        keep: Option<String>,
+    ) -> (Option<Result<IoId, &'static str>>, Vec<Effect>) {
+        let mut out = Vec::new();
+        let result = self.with_engine(now_ms, &mut out, |engine, ctx| engine.request(ctx, build, keep));
+        self.after_engine(now_ms, &mut out);
+        self.render(&mut out);
+        (result, out)
+    }
+
+    /// The actions' requests answered (or given up) since the last call, in the order they ended.
+    pub fn take_answers(&mut self) -> Vec<engine::requests::Answered> {
+        std::mem::take(&mut self.answers)
     }
 
     /// How the last join of the room with the code stands; none before one.
@@ -806,6 +829,7 @@ impl App {
                     }
                 }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
+                Report::Answer(answered) => self.answers.push(*answered),
                 Report::RoomJoin(status) => {
                     use engine::room_join::RoomJoinStatus;
                     match status {
