@@ -698,10 +698,10 @@ jobs:
         run: |
           set -eu
           export RUSTFLAGS="--remap-path-prefix=$PWD=/src --remap-path-prefix=$HOME/.cargo=/cargo"
-          cargo build --release --locked --target "$TARGET" -p trommi-hub -p trommi-hub-updater
+          cargo build --profile dist --locked --target "$TARGET" -p trommi-hub -p trommi-hub-updater
           mkdir out
-          cp "target/$TARGET/release/trommi-hub" "out/trommi-hub-$TARGET"
-          cp "target/$TARGET/release/trommi-hub-updater" "out/trommi-hub-updater-$TARGET"
+          cp "target/$TARGET/dist/trommi-hub" "out/trommi-hub-$TARGET"
+          cp "target/$TARGET/dist/trommi-hub-updater" "out/trommi-hub-updater-$TARGET"
           for f in "out/trommi-hub-$TARGET" "out/trommi-hub-updater-$TARGET"; do
             file "$f" | grep -Eq 'static(ally|-pie) linked' || { echo "::error::$f is not a static binary"; exit 1; }
           done
