@@ -1683,8 +1683,9 @@ pub fn changes_upto(
     // "more" by the room's head, also under a ceiling: a page read ahead up to a push's change does not tell the
     // app that it caught up
     let end = cursor.max(after);
-    // `head`: the room's newest change number, for a client's own progress (how far it still has to read)
-    Ok(json!({ "items": items, "change": end, "more": end < room_head, "head": room_head }))
+    // `head`: how far this asker may read, for a client's own progress (how far it still has to read): the room's
+    // newest change number, and under a ceiling never beyond it (a push ticket learns nothing newer than its change)
+    Ok(json!({ "items": items, "change": end, "more": end < room_head, "head": head }))
 }
 
 // ---- retention (9.4)
