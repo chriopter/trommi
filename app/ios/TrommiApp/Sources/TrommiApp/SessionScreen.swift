@@ -685,7 +685,7 @@ struct SessionStatus: View {
     // (a turn's trail says by itself that the agent works, and at which step: no second line under a running one)
     let last = messages.last { $0.from != "event" }
     let answering = last?.from == "user" && now - min(now, last!.ts) < WORKING_WINDOW && agent.online
-    // (their state as DeskModel.lineState made it: working, waiting on him, put off with its card, done for a while)
+    // (their state as the client core made it, status.rs line_state: working, waiting on him, put off with its card, done for a while)
     let lines = tasks.filter { ["working", "decision", "later"].contains($0.state ?? "") || ($0.state == "done" && now - min(now, $0.updated) < WORKING_WINDOW) }
     if answering || !lines.isEmpty {
       VStack(alignment: .leading, spacing: 8) {

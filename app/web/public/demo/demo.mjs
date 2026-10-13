@@ -53,7 +53,9 @@ function demoStatus(m, s, archived, removed) {
   const blocked = archived ? null : link?.state === 'cut' ? { why: 'cut', since: link.since }
     : !online ? (working ? { why: 'offline', since: s.offline_since ?? null } : null)
       : asks ? { why: 'permission', since: null } : mineOn.some(c => c.urgency === 'critical') ? { why: 'blocking', since: null } : null
-  return { link, blocked, working, quiet_since: null, device_active: s.last_activity_at ?? 0, recheck_at: null }
+  // (each line as its agent set it: the demo's lines name no card that moves)
+  const lines = Object.fromEntries((s.status_lines ?? []).map(t => [t.id, archived ? 'gone' : t.state ?? 'working']))
+  return { link, blocked, working, quiet_since: null, device_active: s.last_activity_at ?? 0, recheck_at: null, lines }
 }
 
 /**

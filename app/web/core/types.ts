@@ -576,6 +576,8 @@ export interface SessionRow {
    *  hand), whether a status line says working, since when it is quiet, when its agent process last said anything. */
   link: LinkView | null; blocked: Blocked | null; working: boolean; quiet_since: number | null; device_active: number
   recheck_at: number | null
+  /** What each of its status lines shows now, by line id (client/src/status.rs `line_state`). */
+  lines: Record<string, string>
 }
 /** A session's link (client/src/status.rs `LinkView`). */
 export interface LinkView { state: 'live' | 'oncall' | 'asleep' | 'cut' | 'gone'; since: number | null; reason: string }
