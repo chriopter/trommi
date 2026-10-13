@@ -33,7 +33,31 @@ pub struct CardVersion {
     pub sent_at: u64,
     pub object_state: String,
     pub urgency: String,
-    pub content: Option<Obj>,
+    pub content: Option<RawObj>,
+}
+
+/// A version's body as its JSON text: read seldom (a card's fields hold the newest one), kept small (as a `Value` a
+/// body takes several times its text).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RawObj(Box<serde_json::value::RawValue>);
+
+impl RawObj {
+    pub fn of(o: &Obj) -> RawObj {
+        RawObj(serde_json::value::to_raw_value(o).expect("an object is JSON"))
+    }
+    /// The body as an object (an empty one for what is no object).
+    pub fn obj(&self) -> Obj {
+        serde_json::from_str(self.0.get()).unwrap_or_default()
+    }
+    pub fn text(&self) -> &str {
+        self.0.get()
+    }
+}
+
+impl PartialEq for RawObj {
+    fn eq(&self, other: &RawObj) -> bool {
+        self.0.get() == other.0.get() || self.obj() == other.obj()
+    }
 }
 
 /// An answer to a card: the known fields, and whatever an echo or a newer client put beside them (`extra`:
@@ -89,6 +113,95 @@ pub const CARD_CONTENT_FIELDS: &[&str] = &[
     "merged_from_object_ids",
     "working",
 ];
+/// One content field of a card: a plain value as it is; a list or object (options, sections, attachments) as its JSON
+/// text, read only by the apps (as `Value`s they would take several times their text, a thousand cards' worth).
+#[derive(Clone, Debug)]
+pub enum Slot {
+    Plain(Value),
+    Text(Box<serde_json::value::RawValue>),
+}
+
+impl Default for Slot {
+    fn default() -> Slot {
+        Slot::Plain(Value::Null)
+    }
+}
+
+impl Slot {
+    pub fn of(v: Value) -> Slot {
+        match &v {
+            Value::Array(a) if !a.is_empty() => serde_json::value::to_raw_value(&v).map(Slot::Text).unwrap_or(Slot::Plain(v)),
+            Value::Object(o) if !o.is_empty() => serde_json::value::to_raw_value(&v).map(Slot::Text).unwrap_or(Slot::Plain(v)),
+            _ => Slot::Plain(v),
+        }
+    }
+    pub fn value(&self) -> Value {
+        match self {
+            Slot::Plain(v) => v.clone(),
+            Slot::Text(t) => serde_json::from_str(t.get()).unwrap_or(Value::Null),
+        }
+    }
+}
+
+impl PartialEq for Slot {
+    fn eq(&self, other: &Slot) -> bool {
+        match (self, other) {
+            (Slot::Plain(a), Slot::Plain(b)) => a == b,
+            (Slot::Text(a), Slot::Text(b)) if a.get() == b.get() => true,
+            _ => self.value() == other.value(),
+        }
+    }
+}
+
+impl Serialize for Slot {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Slot::Plain(v) => v.serialize(s),
+            Slot::Text(t) => t.serialize(s),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Slot {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Slot, D::Error> {
+        let raw = Box::<serde_json::value::RawValue>::deserialize(d)?;
+        let t = raw.get().trim_start();
+        if (t.starts_with('[') || t.starts_with('{')) && t.len() > 2 {
+            // (an empty list or object, with blanks in it, is kept as text: it reads the same)
+            Ok(Slot::Text(raw))
+        } else {
+            serde_json::from_str(raw.get()).map(Slot::Plain).map_err(serde::de::Error::custom)
+        }
+    }
+}
+
+/// A card's content fields, one slot per name of `CARD_CONTENT_FIELDS` (the newest version's body; a field it lacks
+/// holds its default). Slots, not a map: a thousand cards would keep a thousand maps of the same seventeen names.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CardFields([Slot; 17]);
+
+impl CardFields {
+    fn slot(name: &str) -> Option<usize> {
+        CARD_CONTENT_FIELDS.iter().position(|f| *f == name)
+    }
+    /// A content field's value (null for a name that is none).
+    pub fn get(&self, name: &str) -> Value {
+        Self::slot(name).map(|i| self.0[i].value()).unwrap_or(Value::Null)
+    }
+    /// Sets a content field; a name that is none is not kept.
+    pub fn insert(&mut self, name: &str, v: Value) {
+        if let Some(i) = Self::slot(name) {
+            self.0[i] = Slot::of(v);
+        }
+    }
+}
+
+impl Serialize for CardFields {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_map(CARD_CONTENT_FIELDS.iter().zip(self.0.iter()))
+    }
+}
+
 /// A card's card_type this version knows.
 pub const CARD_TYPES: &[&str] = &["decision", "info"];
 /// An answer's answer_action this version knows.
@@ -96,7 +209,7 @@ pub const ANSWER_ACTIONS: &[&str] = &["answer", "read", "shred"];
 
 /// A card. The fields of its newest version's body live in `fields` (every one of `CARD_CONTENT_FIELDS`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, from = "CardIn")]
 pub struct Card {
     pub object_id: String,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -106,7 +219,7 @@ pub struct Card {
     pub object_state: String,
     pub urgency: String,
     #[serde(flatten)]
-    pub fields: Obj,
+    pub fields: CardFields,
     pub object_version: i64,
     pub version_hash: Option<String>,
     pub envelope_number: u64,
@@ -135,9 +248,109 @@ pub struct Card {
     pub unsnoozed: Option<u64>,
 }
 
+/// A card as it is read: its content fields by name (no flattened map, so that its records are read straight).
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct CardIn {
+    object_id: String,
+    catching_up: bool,
+    agent_device_id: String,
+    session_id: Option<String>,
+    object_state: String,
+    urgency: String,
+    card_type: Option<Slot>,
+    title: Option<Slot>,
+    teaser: Option<Slot>,
+    body: Option<Slot>,
+    options: Option<Slot>,
+    sections: Option<Slot>,
+    html: Option<Slot>,
+    allows_multiple: Option<Slot>,
+    recommended: Option<Slot>,
+    urgency_reason: Option<Slot>,
+    attachments: Option<Slot>,
+    change_note: Option<Slot>,
+    close_summary: Option<Slot>,
+    withdraw_reason: Option<Slot>,
+    merged_into_object_id: Option<Slot>,
+    merged_from_object_ids: Option<Slot>,
+    working: Option<Slot>,
+    object_version: i64,
+    version_hash: Option<String>,
+    envelope_number: u64,
+    first_envelope_number: u64,
+    created_at: u64,
+    updated_at: u64,
+    versions: Vec<CardVersion>,
+    answer: Option<Answer>,
+    answers: Vec<Answer>,
+    closed_how: Option<String>,
+    in_revision: Option<InRevision>,
+    presented_envelope_number: Option<u64>,
+    timeline_key: String,
+    content_state: String,
+    unsupported: Option<Value>,
+    state_envelope_number: u64,
+    snoozed_until: Option<u64>,
+    snoozed_at: Option<u64>,
+    unsnoozed: Option<u64>,
+}
+
+impl From<CardIn> for Card {
+    fn from(c: CardIn) -> Card {
+        let slots = [
+            c.card_type,
+            c.title,
+            c.teaser,
+            c.body,
+            c.options,
+            c.sections,
+            c.html,
+            c.allows_multiple,
+            c.recommended,
+            c.urgency_reason,
+            c.attachments,
+            c.change_note,
+            c.close_summary,
+            c.withdraw_reason,
+            c.merged_into_object_id,
+            c.merged_from_object_ids,
+            c.working,
+        ];
+        Card {
+            object_id: c.object_id,
+            catching_up: c.catching_up,
+            agent_device_id: c.agent_device_id,
+            session_id: c.session_id,
+            object_state: c.object_state,
+            urgency: c.urgency,
+            fields: CardFields(slots.map(Option::unwrap_or_default)),
+            object_version: c.object_version,
+            version_hash: c.version_hash,
+            envelope_number: c.envelope_number,
+            first_envelope_number: c.first_envelope_number,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+            versions: c.versions,
+            answer: c.answer,
+            answers: c.answers,
+            closed_how: c.closed_how,
+            in_revision: c.in_revision,
+            presented_envelope_number: c.presented_envelope_number,
+            timeline_key: c.timeline_key,
+            content_state: c.content_state,
+            unsupported: c.unsupported,
+            state_envelope_number: c.state_envelope_number,
+            snoozed_until: c.snoozed_until,
+            snoozed_at: c.snoozed_at,
+            unsnoozed: c.unsnoozed,
+        }
+    }
+}
+
 impl Card {
-    pub fn field(&self, name: &str) -> &Value {
-        self.fields.get(name).unwrap_or(&Value::Null)
+    pub fn field(&self, name: &str) -> Value {
+        self.fields.get(name)
     }
 }
 

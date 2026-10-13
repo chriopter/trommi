@@ -26,7 +26,7 @@ fn desk_card(c: &Card) -> DeskCard {
         newest: c.state_envelope_number,
         in_revision: c.in_revision.as_ref().map(|r| r.envelope_number),
         read: c.content_state == "ok",
-        working: c.field("working") == &Value::Bool(true),
+        working: c.field("working") == Value::Bool(true),
     }
 }
 

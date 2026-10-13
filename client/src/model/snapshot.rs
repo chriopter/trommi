@@ -228,7 +228,8 @@ mod tests {
         let mut m = Model::new();
         let card: Card = serde_json::from_value(json!({
             "object_id": "c1", "agent_device_id": "a1", "object_version": 2, "catching_up": true,
-            "title": "Ask", "versions": [{ "object_version": 1, "content": { "title": "Before" } }],
+            "title": "Ask", "options": [{ "key": "a", "label": "A" }], "sections": [], "teaser": null,
+            "versions": [{ "object_version": 1, "content": { "title": "Before" } }],
         }))
         .unwrap();
         m.cards.insert("c1".into(), card);
@@ -245,6 +246,16 @@ mod tests {
         m
     }
 
+    trait Tap {
+        fn tap_catching_up(self, v: bool) -> Self;
+    }
+    impl Tap for Card {
+        fn tap_catching_up(mut self, v: bool) -> Card {
+            self.catching_up = v;
+            self
+        }
+    }
+
     #[test]
     fn the_snapshot_text_is_the_snapshot_and_loads_as_it() {
         let m = filled();
@@ -254,8 +265,17 @@ mod tests {
         a.load_text(&text).unwrap();
         b.load(&m.snapshot()).unwrap();
         assert_eq!(a.snapshot(), b.snapshot());
-        assert_eq!(a.cards["c1"].fields.get("title"), Some(&json!("Ask")));
+        assert_eq!(a.cards["c1"].fields.get("title"), json!("Ask"));
         assert!(!a.cards["c1"].catching_up);
+        // (the fields as slots and a version's body as text read and write as the values they are)
+        assert_eq!(a.cards["c1"].fields.get("options"), json!([{ "key": "a", "label": "A" }]));
+        assert_eq!(a.cards["c1"].fields.get("sections"), json!([]));
+        assert_eq!(a.cards["c1"].fields.get("nothing"), Value::Null);
+        assert_eq!(a.cards["c1"], m.cards["c1"].clone().tap_catching_up(false));
+        assert_eq!(a.cards["c1"].versions[0].content.as_ref().map(|c| c.obj()), json!({ "title": "Before" }).as_object().cloned());
+        let card = serde_json::to_value(&a.cards["c1"]).unwrap();
+        assert_eq!((card["options"].clone(), card["working"].clone(), card["versions"][0]["content"].clone()),
+            (json!([{ "key": "a", "label": "A" }]), Value::Null, json!({ "title": "Before" })));
         assert_eq!(a.timelines["chat:s1"].items.len(), 2);
         // (a pair whose value is null stands for no record; what is not a snapshot is refused)
         assert!(a.load_text(r#"{"cards":[["c2",null]]}"#).is_ok() && a.cards.is_empty());

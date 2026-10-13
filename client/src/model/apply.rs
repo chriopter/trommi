@@ -705,9 +705,9 @@ fn default_of(f: &str) -> Value {
 }
 
 fn new_card(object_id: &str, owner: &str, r: &Received) -> Card {
-    let mut fields = Map::new();
+    let mut fields = CardFields::default();
     for f in CARD_CONTENT_FIELDS {
-        fields.insert((*f).to_string(), default_of(f));
+        fields.insert(f, default_of(f));
     }
     Card {
         object_id: object_id.to_string(),
@@ -740,9 +740,9 @@ fn new_card(object_id: &str, owner: &str, r: &Received) -> Card {
 /// How a card that its current version closed was closed.
 fn version_closed_how(card: &Card) -> String {
     let action = card.answer.as_ref().map(|a| a.answer_action.as_str());
-    if truthy(card.field("merged_into_object_id")) {
+    if truthy(&card.field("merged_into_object_id")) {
         "merged"
-    } else if truthy(card.field("withdraw_reason")) {
+    } else if truthy(&card.field("withdraw_reason")) {
         "withdrawn"
     } else if action == Some("read") {
         "read"
@@ -884,7 +884,7 @@ impl Model {
                 Some(at) => {
                     let v = &mut card.versions[at];
                     if let (Some(c), None) = (&content, &v.content) {
-                        v.content = Some(c.clone());
+                        v.content = Some(RawObj::of(c));
                         v.urgency = level_of(Some(c), &v.urgency.clone());
                         if let Some(ov) = int_of(Some(c), "object_version") {
                             v.object_version = ov;
@@ -904,7 +904,7 @@ impl Model {
                         sent_at: r.time,
                         object_state: state.clone(),
                         urgency: level_of(content.as_ref(), &o.urgency),
-                        content: content.clone(),
+                        content: content.as_ref().map(RawObj::of),
                     };
                     let at = insert_by_number(&mut card.versions, v, |v| Some(v.envelope_number));
                     card.versions[at].object_version =
@@ -919,14 +919,14 @@ impl Model {
                 card.version_hash = Some(r.hash.clone());
                 card.object_version = v.object_version;
                 card.urgency = v.urgency.clone();
-                if let Some(vc) = &v.content {
+                if let Some(vc) = v.content.as_ref().map(RawObj::obj) {
                     for f in CARD_CONTENT_FIELDS {
                         let val = vc
                             .get(*f)
                             .filter(|x| !x.is_null())
                             .cloned()
                             .unwrap_or_else(|| default_of(f));
-                        card.fields.insert((*f).to_string(), val);
+                        card.fields.insert(f, val);
                     }
                     card.content_state = "ok".into();
                 } else {
@@ -944,7 +944,7 @@ impl Model {
                         card.field("card_type")
                             .as_str()
                             .map(str::to_string)
-                            .unwrap_or_else(|| js_text(card.field("card_type"))),
+                            .unwrap_or_else(|| js_text(&card.field("card_type"))),
                     );
                     json!("card_type")
                 } else {
