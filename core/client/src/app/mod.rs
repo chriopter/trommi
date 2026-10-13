@@ -221,13 +221,15 @@ impl App {
                     self.lens.home_desk = Some(desk.to_string());
                 }
                 self.lens.desk = focus.desk;
-                let (session, card) = match focus.screen {
-                    Screen::Session { session_id } => (Some(session_id), None),
-                    Screen::Card { card_id } => (None, Some(card_id)),
-                    _ => (None, None),
+                let (session, card, off) = match focus.screen {
+                    Screen::Session { session_id } => (Some(session_id), None, None),
+                    Screen::Card { card_id } => (None, Some(card_id), None),
+                    Screen::Off { query } => (None, None, Some(query)),
+                    _ => (None, None, None),
                 };
                 self.lens.session = session;
                 self.lens.card = card;
+                self.lens.off = off;
                 self.stale_views = true;
             }
             Event::Wake => {

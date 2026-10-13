@@ -41,6 +41,8 @@ pub struct Lens {
     pub session: Option<String>,
     /// The card whose page is in view: its unit is made.
     pub card: Option<String>,
+    /// The page Off your mind is in view, with the search's words: its unit is made.
+    pub off: Option<String>,
 }
 
 /// A desk of the room.
@@ -395,7 +397,9 @@ pub fn clean_goals(text: &str) -> String {
 pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
     let b = Board::new(model, lens, now);
     view.sidebar = super::sidebar::sidebar(&b);
-    view.desk = super::desk::desk(&b);
+    let off = super::off::of_board(&b);
+    view.desk = super::desk::desk_with(&b, &off);
+    view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
     // The pages in view: one session, one card. A page that is left is taken away.
     view.sessions.clear();
     if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {

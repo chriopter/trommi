@@ -24,6 +24,7 @@ pub mod board;
 pub mod card;
 pub mod demo;
 pub mod desk;
+pub mod off;
 pub mod session;
 pub mod sidebar;
 pub mod talk;
@@ -102,6 +103,11 @@ pub enum Screen {
         card_id: String,
     },
     Notes,
+    /// The page Off your mind, the complete list, with the search's words (empty: all).
+    Off {
+        #[serde(default)]
+        query: String,
+    },
     Scribble {
         board_id: String,
     },
@@ -123,6 +129,9 @@ pub struct ViewModel {
     pub sessions: BTreeMap<String, SessionView>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub cards: BTreeMap<String, CardView>,
+    /// The page Off your mind, while it is in view (`Screen::Off`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub off: Option<OffListView>,
     pub notes: NotesView,
     pub settings: SettingsView,
     /// Signing in, joining, the emoji to compare, the Emergency Kit to keep, self-join asks.
@@ -168,6 +177,10 @@ pub enum ViewPart {
     Card {
         id: String,
         view: Option<Box<CardView>>,
+    },
+    /// The page Off your mind; none when it is left.
+    Off {
+        view: Option<OffListView>,
     },
     Notes {
         view: NotesView,
@@ -429,10 +442,24 @@ pub struct FixView {
 pub struct DeskView {
     /// Card and request ids, in the Desk's order: the ids of `rows`.
     pub stack: Vec<String>,
-    /// (Placeholders until the two docked stacks land: W4 fills them from the core's `off_mind`.)
+    /// Off your mind, of the desk in view (`off.rs`, from the core's `off_mind`): the cards with their agents,
+    /// starred ones too, the one that moved last first (the complete list's top part).
     pub off_your_mind: Vec<String>,
+    /// The put-off cards, the last put off first.
     pub later: Vec<String>,
+    /// The cards closed last (done, withdrawn, shredded), the newest first: the core's window of them
+    /// (`off_mind::RECENT` for the whole room), not every closed card; the complete list has them all.
     pub done: Vec<String>,
+    /// The two stacks docked at the Desk's foot; none while a stack is empty. A card has one home: a starred card
+    /// is in `starred` only, also while it is being worked on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starred: Option<DockView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running: Option<DockView>,
+    /// The section Off your mind under the Desk: its first rows and how many; none while nothing is put off or
+    /// closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub off: Option<OffHintView>,
     /// What stands in the list's place when nothing is open at all ("Questions land here.").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<Text>,
@@ -461,6 +488,116 @@ pub struct DeskView {
     /// The sessions that are cut off, above the questions: one line each, with the step in its terminal.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slip: Vec<SlipView>,
+}
+
+/// One of the two stacks docked at the Desk's foot (the owner's pick of 13 October 2026: two small tabs, the
+/// titles shown only when a stack is fanned out).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockView {
+    /// "star" or "run".
+    pub key: String,
+    /// How many cards it holds: the number on its tab (`rows.len()`).
+    pub count: u32,
+    /// What the tab says to a screen reader ("3 starred", "1 running").
+    pub says: Text,
+    /// Its cards in order, fanned out: the first is the top card, the one the tab shows.
+    pub rows: Vec<DockRowView>,
+    /// The way on to the complete list at the end of the fan ("All running and done"); the running stack only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all: Option<Text>,
+}
+
+/// A small card of a docked stack.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockRowView {
+    /// The card (`Screen::Card`).
+    pub id: String,
+    pub title: String,
+    pub from: FromView,
+    /// The quiet line under the title: "Fernly · running" (a starred card being worked on), "Fernly", "Fernly ·
+    /// Reworking the copy" (its status line), "Fernly · on it".
+    pub line: Text,
+    /// It is being worked on (the drawing's ring turns).
+    pub running: bool,
+    /// When it last moved (its status line's update, else when it went to its agent); when it was starred, for a
+    /// starred card.
+    pub at_ms: u64,
+}
+
+/// The section Off your mind under the Desk: a short hinted list that opens the complete list (`Screen::Off`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffHintView {
+    /// The first rows, put off first, then the closed ones, the newest first (at most three; the shell fades them).
+    pub rows: Vec<OffRowView>,
+    /// "2 put off · 14 done".
+    pub says: Text,
+    pub put_off: u32,
+    /// Every closed card of the desk in view, counted (not only the ones named).
+    pub closed: u32,
+}
+
+/// A put-off or closed card, one small quiet row.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffRowView {
+    pub id: String,
+    /// "later", "done" or "trash".
+    pub place: String,
+    /// Its mark: "snooze" (put off), "shred" (shredded: the title struck through), "withdraw" (withdrawn by its
+    /// agent), "tick" (done).
+    pub mark: String,
+    pub title: String,
+    #[serde(default)]
+    pub starred: bool,
+    /// When it closed (ms); 0 for a put-off card and when no time is known (show none, never the epoch).
+    #[serde(default)]
+    pub at_ms: u64,
+    /// A put-off card: until when ("until Tue 07:00", the person's zone).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<Text>,
+    /// What it is, to a screen reader: "Later", "Done", "Shredded", "Withdrawn".
+    pub says: Text,
+}
+
+/// The page Off your mind: every card off the Desk of the desk in view. What runs as live cards, the one that moved
+/// last first; then what is put off, the last put off first; then what is closed, the newest first. Each card in its
+/// place by time, none lifted. Kept to the search's words.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffListView {
+    /// The search's words as given (`Screen::Off`).
+    #[serde(default)]
+    pub query: String,
+    /// The cards with their agents.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub works: Vec<OffWorkView>,
+    /// The put-off cards, then the closed ones.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rest: Vec<OffRowView>,
+    /// In the list's place when nothing is shown: "Nothing yet.", "Nothing here has these words.".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub none: Option<Text>,
+    /// Older closed cards are on the hub and not on this device yet (history on demand): the line under the list
+    /// that fetches the next page. Always none until the engine pages the Done list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub older: Option<Text>,
+    /// A page of older cards is being fetched: the shell shows its quiet "Loading …" line at the end.
+    #[serde(default)]
+    pub loading: bool,
+}
+
+/// A card with its agent, on the page Off your mind.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OffWorkView {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub starred: bool,
+    pub from: FromView,
+    /// Its status line's words, else "on it".
+    pub label: Text,
+    /// When it last moved (ms): the shell's "5 min".
+    pub at_ms: u64,
+    /// The whole row to a screen reader: "Fix the login, Fernly is on it".
+    pub says: Text,
 }
 
 /// A desk's goals: a note of the person's, at most twenty lines.
@@ -1225,6 +1362,7 @@ impl ViewModel {
                         self.cards.remove(id);
                     }
                 },
+                ViewPart::Off { view } => self.off = view.clone(),
                 ViewPart::Notes { view } => self.notes = view.clone(),
                 ViewPart::Settings { view } => self.settings = view.clone(),
                 ViewPart::Account { view } => self.account = view.clone(),
@@ -1294,6 +1432,11 @@ impl ViewModel {
                     view: Some(Box::new(v.clone())),
                 });
             }
+        }
+        if self.off != next.off {
+            parts.push(ViewPart::Off {
+                view: next.off.clone(),
+            });
         }
         if self.notes != next.notes {
             parts.push(ViewPart::Notes {

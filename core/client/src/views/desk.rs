@@ -19,6 +19,11 @@ use serde_json::Value;
 pub const NEEDS_NEWER: &str = "This needs a newer version of Trommi. Reload to update.";
 
 pub fn desk(b: &Board) -> DeskView {
+    desk_with(b, &super::off::of_board(b))
+}
+
+/// The Desk, with what has left it as the core's `off_mind` says (made once per render).
+pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     let m = b.model;
     let units = units_of(b);
     let agent_of = |session: &Option<String>, device: &str| b.by_key.get(key_of(session, device)).copied();
@@ -144,11 +149,8 @@ pub fn desk(b: &Board) -> DeskView {
         }
     });
     let n = walk_len.to_string();
-    DeskView {
+    let mut view = DeskView {
         stack: rows.iter().map(|r| r.id.clone()).collect(),
-        off_your_mind: Vec::new(),
-        later: Vec::new(),
-        done: Vec::new(),
         empty,
         mode: mode.into(),
         hello,
@@ -164,7 +166,10 @@ pub fn desk(b: &Board) -> DeskView {
             }
         }),
         slip: cut,
-    }
+        ..Default::default()
+    };
+    super::off::fill_desk(b, off, &mut view);
+    view
 }
 
 /// One of the greetings, the same for a whole run of the app; a calm one when nothing waits.

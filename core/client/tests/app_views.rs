@@ -77,8 +77,12 @@ fn a_decision_that_arrives_stands_on_the_desk_and_on_its_sessions_page() {
     assert!(sim.view.sessions.is_empty());
     let page = sim.view.cards.get(&card).expect("the card in view has its unit");
     assert_eq!((page.title.as_str(), page.nr.en.as_str(), page.answer.mode.as_str(), page.place.as_ref().map(|p| (p.at, p.of))), ("Ship it?", "Nr. 1", "options", Some((1, 1))));
+    // the page Off your mind, with its search: made while in view
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Off { query: "nothing like this".into() }, visible: true, desk: None } });
+    assert!(sim.view.cards.is_empty());
+    assert_eq!(sim.view.off.as_ref().and_then(|o| o.none.as_ref()).map(|t| t.en.as_str()), Some("Nothing here has these words."));
     sim.send(Event::Focus { focus: Focus::default() });
-    assert!(sim.view.sessions.is_empty() && sim.view.cards.is_empty());
+    assert!(sim.view.sessions.is_empty() && sim.view.cards.is_empty() && sim.view.off.is_none());
     assert_eq!(&sim.view, sim.app.view());
 }
 

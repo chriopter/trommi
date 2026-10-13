@@ -14,9 +14,110 @@
     "d50337f0e7318660c4d9a0062426dea5",
     "41bc4fad4b14457d7f16a660d518d474"
   ],
-  "off_your_mind": [],
+  "off_your_mind": [
+    "f35bf13aea8cdbfd193cfddc38f543fb"
+  ],
   "later": [],
-  "done": [],
+  "done": [
+    "8547d0c56048b3ffa6fba14aafcf43a1",
+    "accb659455b97459f9fd89621496696a",
+    "a7043d48862eac8c164c419182dbd0c7",
+    "d1f39fc0c47d8d8e8bbfa0a34c41269d",
+    "5c8d5717eb0331231e72aa5220774ead",
+    "aaef4af6b38e79001f510e100a5a67da",
+    "13552895ad6558b518427f8b32606e9a",
+    "246ebea0994ccda03d8cc8bbf724b2ff",
+    "ec2f5263fac9174007a1f17b148b8314"
+  ],
+  "running": {
+    "key": "run",
+    "count": 1,
+    "says": {
+      "key": "dock.run.says",
+      "args": {
+        "n": "1"
+      },
+      "en": "1 running"
+    },
+    "rows": [
+      {
+        "id": "f35bf13aea8cdbfd193cfddc38f543fb",
+        "title": "Promote the replica in a failover drill on Friday?",
+        "from": {
+          "session_id": "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
+          "name": "Database Replica",
+          "mark": "draw:database",
+          "path": [
+            "Platform",
+            "Infrastructure",
+            "Database Replica"
+          ]
+        },
+        "line": {
+          "key": "dock.line.on_it",
+          "args": {
+            "name": "Database Replica"
+          },
+          "en": "Database Replica · on it"
+        },
+        "running": true,
+        "at_ms": 1791460200000
+      }
+    ],
+    "all": {
+      "key": "dock.all",
+      "en": "All running and done"
+    }
+  },
+  "off": {
+    "rows": [
+      {
+        "id": "8547d0c56048b3ffa6fba14aafcf43a1",
+        "place": "trash",
+        "mark": "withdraw",
+        "title": "Keep the CDC sync on its old schedule?",
+        "starred": false,
+        "at_ms": 1791433800000,
+        "says": {
+          "key": "off.place.withdraw",
+          "en": "Withdrawn"
+        }
+      },
+      {
+        "id": "accb659455b97459f9fd89621496696a",
+        "place": "done",
+        "mark": "tick",
+        "title": "Search: a hosted service or an index built at deploy?",
+        "starred": false,
+        "at_ms": 1791425400000,
+        "says": {
+          "key": "off.place.tick",
+          "en": "Done"
+        }
+      },
+      {
+        "id": "a7043d48862eac8c164c419182dbd0c7",
+        "place": "done",
+        "mark": "tick",
+        "title": "Smart retries: failed renewals down from 4.1% to 1.3%",
+        "starred": false,
+        "at_ms": 1791417000000,
+        "says": {
+          "key": "off.place.tick",
+          "en": "Done"
+        }
+      }
+    ],
+    "says": {
+      "key": "off.hint.done",
+      "args": {
+        "done": "9"
+      },
+      "en": "9 done"
+    },
+    "put_off": 0,
+    "closed": 9
+  },
   "mode": "desk",
   "hello": {
     "key": "desk.hello.greeting.0",

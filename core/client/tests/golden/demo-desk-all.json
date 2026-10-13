@@ -30,9 +30,173 @@
     "d50337f0e7318660c4d9a0062426dea5",
     "41bc4fad4b14457d7f16a660d518d474"
   ],
-  "off_your_mind": [],
+  "off_your_mind": [
+    "d86df7a1fc5ebcd07e11d5e7693160eb",
+    "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+    "f35bf13aea8cdbfd193cfddc38f543fb"
+  ],
   "later": [],
-  "done": [],
+  "done": [
+    "97e50f22901b42df1695b8b83fe0b69f",
+    "8547d0c56048b3ffa6fba14aafcf43a1",
+    "accb659455b97459f9fd89621496696a",
+    "a7043d48862eac8c164c419182dbd0c7",
+    "b4df3dafbbefb36d523cf4e80f9f5402",
+    "d1f39fc0c47d8d8e8bbfa0a34c41269d",
+    "cac2dd6c8c804cbff53f50e0bf8c239e",
+    "5c8d5717eb0331231e72aa5220774ead",
+    "aaef4af6b38e79001f510e100a5a67da",
+    "b03faad45844fc7f92107d3ae1e5b9c3",
+    "fa55e71001ede5adfb858626449dd757",
+    "e43f3b8e342d703dba381ecb7317e670",
+    "13552895ad6558b518427f8b32606e9a",
+    "e3245eb6a15862875ad911755de9e171",
+    "ecf4dce02716faba82fe8b6d05c7ecf2",
+    "80365f43d5c42ae69a91233c0c7e345d",
+    "006373ba27def50d7e29577e42cdac36",
+    "246ebea0994ccda03d8cc8bbf724b2ff",
+    "ec2f5263fac9174007a1f17b148b8314"
+  ],
+  "running": {
+    "key": "run",
+    "count": 3,
+    "says": {
+      "key": "dock.run.says",
+      "args": {
+        "n": "3"
+      },
+      "en": "3 running"
+    },
+    "rows": [
+      {
+        "id": "d86df7a1fc5ebcd07e11d5e7693160eb",
+        "title": "Rename the colour “clay” to “due” in the tokens?",
+        "from": {
+          "session_id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+          "name": "Design Tokens",
+          "mark": "draw:drop",
+          "path": [
+            "Fernly",
+            "Design System",
+            "Design Tokens"
+          ],
+          "desk": "Fernly"
+        },
+        "line": {
+          "key": "dock.line.label",
+          "args": {
+            "label": "Names",
+            "name": "Design Tokens"
+          },
+          "en": "Design Tokens · Names"
+        },
+        "running": true,
+        "at_ms": 1791469200000
+      },
+      {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "title": "Social card for the launch: photo or illustration?",
+        "from": {
+          "session_id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+          "name": "Search & Social",
+          "mark": "draw:eye",
+          "path": [
+            "Fernly",
+            "Fernly Website",
+            "Search & Social"
+          ],
+          "desk": "Fernly"
+        },
+        "line": {
+          "key": "dock.line.label",
+          "args": {
+            "label": "Social card",
+            "name": "Search & Social"
+          },
+          "en": "Search & Social · Social card"
+        },
+        "running": true,
+        "at_ms": 1791468000000
+      },
+      {
+        "id": "f35bf13aea8cdbfd193cfddc38f543fb",
+        "title": "Promote the replica in a failover drill on Friday?",
+        "from": {
+          "session_id": "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
+          "name": "Database Replica",
+          "mark": "draw:database",
+          "path": [
+            "Platform",
+            "Infrastructure",
+            "Database Replica"
+          ],
+          "desk": "Platform"
+        },
+        "line": {
+          "key": "dock.line.on_it",
+          "args": {
+            "name": "Database Replica"
+          },
+          "en": "Database Replica · on it"
+        },
+        "running": true,
+        "at_ms": 1791460200000
+      }
+    ],
+    "all": {
+      "key": "dock.all",
+      "en": "All running and done"
+    }
+  },
+  "off": {
+    "rows": [
+      {
+        "id": "97e50f22901b42df1695b8b83fe0b69f",
+        "place": "done",
+        "mark": "tick",
+        "title": "TestFlight: build 418 is out to 1,240 testers",
+        "starred": false,
+        "at_ms": 1791456000000,
+        "says": {
+          "key": "off.place.tick",
+          "en": "Done"
+        }
+      },
+      {
+        "id": "8547d0c56048b3ffa6fba14aafcf43a1",
+        "place": "trash",
+        "mark": "withdraw",
+        "title": "Keep the CDC sync on its old schedule?",
+        "starred": false,
+        "at_ms": 1791433800000,
+        "says": {
+          "key": "off.place.withdraw",
+          "en": "Withdrawn"
+        }
+      },
+      {
+        "id": "accb659455b97459f9fd89621496696a",
+        "place": "done",
+        "mark": "tick",
+        "title": "Search: a hosted service or an index built at deploy?",
+        "starred": false,
+        "at_ms": 1791425400000,
+        "says": {
+          "key": "off.place.tick",
+          "en": "Done"
+        }
+      }
+    ],
+    "says": {
+      "key": "off.hint.done",
+      "args": {
+        "done": "19"
+      },
+      "en": "19 done"
+    },
+    "put_off": 0,
+    "closed": 19
+  },
   "mode": "desk",
   "hello": {
     "key": "desk.hello.greeting.0",
