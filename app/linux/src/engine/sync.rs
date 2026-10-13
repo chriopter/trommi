@@ -233,6 +233,7 @@ impl Engine {
                 listed.push(DeskListed {
                     object_id: hex(&id),
                     version_change: version,
+                    first_change: o["first_change"].as_u64().unwrap_or(0),
                 });
             }
         }

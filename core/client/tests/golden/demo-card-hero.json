@@ -55,18 +55,18 @@
   },
   "asked_ms": 1791460800000,
   "place": {
-    "at": 4,
+    "at": 10,
     "of": 16,
     "says": {
       "key": "card.place",
       "args": {
-        "at": "4",
+        "at": "10",
         "of": "16"
       },
-      "en": "4 of 16"
+      "en": "10 of 16"
     },
-    "prev": "185b315a758472a6fc1faed37e49f875",
-    "next": "e3eb869558332fec907b2752f54a608a"
+    "prev": "daa202f98097523fa1f1fe18068f8322",
+    "next": "29e26860adecd0578df14c491915b27a"
   },
   "notes": [
     {

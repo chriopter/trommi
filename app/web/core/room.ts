@@ -472,6 +472,9 @@ export function roomsOn(env: RoomEnv): Rooms {
     await wave(0, mains)
     if (mains < steps.later.length) void afterWave()
     await wave(mains, steps.later.length)
+    // (the Desk of every session joined is read and stands before the past is read behind it: the reading of the
+    //  past fills the engine's queue for as long as it takes, and a Desk handed over behind it showed late)
+    await afterWave().catch(() => {})
     // the room's past, with every session's keys at hand now: read once (also when no session was joined: the
     // room group's own past)
     await engine.wantRescan().catch(() => {})

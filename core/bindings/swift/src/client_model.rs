@@ -508,11 +508,11 @@ impl ClientModel {
     /// The hub's Desk as last read: what it lists as open, at which change.
     pub fn set_desk_listing(&self, at: u64, listed: Vec<DeskListed>) -> Result<(), CoreError> {
         self.with(|m, _| {
-            m.set_desk_listing(Some((
+            m.set_desk_rows(Some((
                 at,
                 listed
                     .into_iter()
-                    .map(|l| (l.object_id, l.version_change))
+                    .map(|l| (l.object_id, l.version_change, l.first_change))
                     .collect(),
             )));
             Ok(())

@@ -20,7 +20,7 @@ fn desk_card(c: &Card) -> DeskCard {
             _ => State::Open,
         },
         urgency: Some(c.urgency.clone()),
-        created_at: c.created_at,
+        first_change: c.first_envelope_number,
         agent_device_id: Some(c.agent_device_id.clone()),
         version_change: c.envelope_number,
         newest: c.state_envelope_number,
@@ -47,23 +47,76 @@ impl Model {
     /// The hub's Desk as last read: what it lists as open (by id, the change of its version) and at which change;
     /// none forgets it. It decides the Desk from the next projection on.
     pub fn set_desk_listing(&mut self, listing: Option<(u64, Vec<(String, u64)>)>) {
+        self.set_desk_rows(listing.map(|(at, open)| {
+            (
+                at,
+                open.into_iter()
+                    .map(|(id, version)| (id, version, 0))
+                    .collect(),
+            )
+        }));
+    }
+
+    /// [`Model::set_desk_listing`] with the change each listed object was first filed at (the hub's row; 0: not
+    /// said). A card stands on the Desk, in its session's list and in the walk by that change, so a device that
+    /// knows a card only by its newest version (a sign-in: the Desk is read, the past is not) puts it where every
+    /// other device has it, and nothing moves when the card's first version is read later.
+    #[allow(clippy::type_complexity)]
+    pub fn set_desk_rows(&mut self, listing: Option<(u64, Vec<(String, u64, u64)>)>) {
+        self.desk_first.clear();
+        if let Some((_, open)) = &listing {
+            for (id, _, first) in open {
+                if *first > 0 {
+                    self.desk_first.insert(id.clone(), *first);
+                }
+            }
+        }
+        self.desk_first_new = !self.desk_first.is_empty();
         self.desk.set_listing(listing.map(|(at, open)| {
             Listing {
                 at,
                 truncated: false,
                 open: open
                     .into_iter()
-                    .map(|(object_id, version_change)| Listed {
+                    .map(|(object_id, version_change, first_change)| Listed {
                         object_id,
                         kind: Kind::Card,
                         session_id: None,
                         version_change,
-                        first_change: 0,
+                        first_change,
                     })
                     .collect(),
             }
         }));
         self.desk_dirty = true;
+    }
+
+    /// The hub's row says a card was first filed before anything of it this device read: the card takes that
+    /// change as its first. Only ever lowered (the first envelope of an object is its lowest), and only while
+    /// the device does not hold the card's first version: once it does, that version's number stands
+    /// (apply.rs), whatever a row said before or says later. Asked of the cards a batch touched (a card made
+    /// from its newest version; one whose first number the batch moved) and of every listed card after a new
+    /// list.
+    fn first_from_desk(&mut self, change: &mut Change) {
+        if self.desk_first.is_empty() {
+            return;
+        }
+        let ids: Vec<String> = if std::mem::take(&mut self.desk_first_new) {
+            self.desk_first.keys().cloned().collect()
+        } else {
+            change.cards.iter().cloned().collect()
+        };
+        for id in ids {
+            let (Some(first), Some(card)) = (self.desk_first.get(&id), self.cards.get_mut(&id))
+            else {
+                continue;
+            };
+            if *first < card.first_envelope_number && !card.holds_first_version() {
+                card.first_envelope_number = *first;
+                change.cards.insert(id);
+                self.desk_rebuild = true;
+            }
+        }
     }
 
     /// The app waits for the hub's first list of a run: every open card and request is held meanwhile.
@@ -96,6 +149,7 @@ impl Model {
             self.status_wake = 0;
             change.status = true;
         }
+        self.first_from_desk(change);
         let relevant = !change.cards.is_empty()
             || !change.permissions.is_empty()
             || change
@@ -136,8 +190,8 @@ impl Model {
             let cards = &self.cards;
             for s in self.sessions.values_mut() {
                 s.card_ids.sort_by(|a, b| {
-                    let ca = cards.get(a).map_or(0, |c| c.created_at);
-                    let cb = cards.get(b).map_or(0, |c| c.created_at);
+                    let ca = cards.get(a).map_or(0, |c| c.first_envelope_number);
+                    let cb = cards.get(b).map_or(0, |c| c.first_envelope_number);
                     ca.cmp(&cb).then_with(|| a.cmp(b))
                 });
             }
@@ -344,5 +398,122 @@ impl Model {
                 self.snooze_marked.remove(&id);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A card as a device holds it that read only its newest version, at change `seen`.
+    fn card(id: &str, seen: u64, sent: u64) -> Card {
+        serde_json::from_value(json!({
+            "object_id": id, "agent_device_id": "a1", "session_id": "s1", "object_state": "open", "urgency": "normal",
+            "created_at": sent, "first_envelope_number": seen, "envelope_number": seen, "state_envelope_number": seen,
+            "content_state": "ok", "card_type": "decision",
+        }))
+        .unwrap()
+    }
+    fn model(cards: Vec<Card>) -> Model {
+        let mut m = Model::new();
+        m.sessions.insert(
+            "s1".into(),
+            serde_json::from_value(json!({ "session_id": "s1" })).unwrap(),
+        );
+        for c in cards {
+            m.sessions
+                .get_mut("s1")
+                .unwrap()
+                .card_ids
+                .push(c.object_id.clone());
+            m.cards.insert(c.object_id.clone(), c);
+        }
+        m
+    }
+    fn lists(m: &Model) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+        let s = &m.sessions["s1"];
+        (
+            m.stack.clone(),
+            m.desk_order.clone(),
+            s.open_card_ids.clone(),
+            s.card_ids.clone(),
+        )
+    }
+
+    /// The rule of the Desk's order: a card stands by the change it was first filed at, which the hub's row says.
+    /// A device that knows its cards only by their newest versions orders them as one that read everything, and
+    /// reading a first version later moves nothing.
+    #[test]
+    fn a_card_stands_by_the_hubs_first_change_before_its_past_is_read() {
+        // (filed in the order c, b, a; each revised later, in the order a, b, c; the senders' clocks say b, a, c)
+        let mut m = model(vec![
+            card("a", 50, 200),
+            card("b", 60, 100),
+            card("c", 70, 300),
+        ]);
+        let mut ch = Change::default();
+        m.set_desk_rows(Some((
+            70,
+            vec![
+                ("a".into(), 50, 3),
+                ("b".into(), 60, 2),
+                ("c".into(), 70, 1),
+            ],
+        )));
+        m.project(&mut ch, 1_000);
+        let want: Vec<String> = ["c", "b", "a"].map(String::from).to_vec();
+        assert_eq!(
+            lists(&m),
+            (want.clone(), want.clone(), want.clone(), want.clone())
+        );
+        assert_eq!(m.cards["a"].first_envelope_number, 3);
+        assert!(ch.cards.contains("a") && ch.stack);
+        // the past is read: every first number is the one the row said, nothing moves
+        let mut ch = Change::default();
+        for (id, first) in [("a", 3), ("b", 2), ("c", 1)] {
+            let c = m.cards.get_mut(id).unwrap();
+            c.first_envelope_number = c.first_envelope_number.min(first);
+            c.created_at = first * 10;
+            ch.cards.insert(id.into());
+        }
+        m.project(&mut ch, 1_001);
+        assert_eq!(lists(&m), (want.clone(), want.clone(), want.clone(), want));
+    }
+
+    /// The hub's word only lowers a card's first change, and one the row does not say (0) leaves it.
+    #[test]
+    fn a_first_change_is_never_raised_on_the_hubs_word() {
+        let mut m = model(vec![card("a", 5, 1), card("b", 6, 2), card("c", 7, 3)]);
+        let mut ch = Change::default();
+        m.set_desk_rows(Some((
+            9,
+            vec![("a".into(), 5, 90), ("b".into(), 6, 0), ("c".into(), 7, 4)],
+        )));
+        m.project(&mut ch, 1_000);
+        assert_eq!(m.stack, ["c", "a", "b"]);
+        assert_eq!(
+            (
+                m.cards["a"].first_envelope_number,
+                m.cards["b"].first_envelope_number,
+                m.cards["c"].first_envelope_number
+            ),
+            (5, 6, 4)
+        );
+        // a number a later batch moves up again (apply.rs: an envelope took its place in the hub's order) is
+        // lowered again by the row still in force
+        m.cards.get_mut("c").unwrap().first_envelope_number = 8;
+        let mut ch = Change::default();
+        ch.cards.insert("c".into());
+        m.project(&mut ch, 1_001);
+        assert_eq!(m.cards["c"].first_envelope_number, 4);
+        assert_eq!(m.stack, ["c", "a", "b"]);
+        // a card whose first version the device holds stands by that version's number, whatever a row says
+        let held: CardVersion = serde_json::from_value(json!({ "version_hash": "v1", "envelope_number": 6 })).unwrap();
+        m.cards.get_mut("b").unwrap().versions.push(held);
+        m.set_desk_rows(Some((10, vec![("a".into(), 5, 5), ("b".into(), 6, 1), ("c".into(), 7, 4)])));
+        m.project(&mut Change::default(), 1_002);
+        assert_eq!(m.cards["b"].first_envelope_number, 6);
+        assert_eq!(m.stack, ["c", "a", "b"]);
     }
 }

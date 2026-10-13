@@ -2,33 +2,33 @@
   "stack": [
     "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
     "0bfe44d41f866466dc1f6246fabac244",
-    "e77e5a529e1d3a4bd3046ce602a34c1e",
     "185b315a758472a6fc1faed37e49f875",
+    "e77e5a529e1d3a4bd3046ce602a34c1e",
     "6deb90374cb873045fe03e39c3ab0348",
     "a67da9b30d2f07d256c6b646e8c34f36",
     "0d9331a1172e43e9157fbd722d87bf1a",
-    "a38afef6dbdd056db8042980f2b83336",
-    "e3eb869558332fec907b2752f54a608a",
-    "177482f5593de33230dfeb8e72506993",
-    "58f19345f724a39460db70a4377995c8",
-    "daa202f98097523fa1f1fe18068f8322",
-    "76ab0cafab45f8b2011853527a3dc10e",
-    "e842d16a6c7d9a0075b0a77b5932f3bb",
-    "992640bed603743781e3241f6a2de105",
     "8b91e8761d15b3933a6412af44da7851",
+    "41bc4fad4b14457d7f16a660d518d474",
     "de6f89dc61b5db9b5ad8cd2eaf14abce",
-    "95a7444523d097bff745b891bc2166cf",
-    "29e26860adecd0578df14c491915b27a",
-    "7e86fa6e752b2ff5cf636658aa14f1f0",
-    "43a72b8f7d9de1aac4aeeae1367076c0",
-    "9abad6a52b4b6dc3d096f87bff346aa9",
-    "637adcc6eae4b4ac30b47509a3071884",
     "a2706545530be0dce3b13417c2728966",
+    "177482f5593de33230dfeb8e72506993",
     "cf5922f1d3baa4cf7dd0d9b573716bfb",
-    "9c9f4031e513b80e68c67139a12e408b",
-    "8b26d4c112fa4617ad968fe6f311704e",
+    "7e86fa6e752b2ff5cf636658aa14f1f0",
     "d50337f0e7318660c4d9a0062426dea5",
-    "41bc4fad4b14457d7f16a660d518d474"
+    "e842d16a6c7d9a0075b0a77b5932f3bb",
+    "637adcc6eae4b4ac30b47509a3071884",
+    "9abad6a52b4b6dc3d096f87bff346aa9",
+    "daa202f98097523fa1f1fe18068f8322",
+    "43a72b8f7d9de1aac4aeeae1367076c0",
+    "a38afef6dbdd056db8042980f2b83336",
+    "29e26860adecd0578df14c491915b27a",
+    "992640bed603743781e3241f6a2de105",
+    "95a7444523d097bff745b891bc2166cf",
+    "8b26d4c112fa4617ad968fe6f311704e",
+    "9c9f4031e513b80e68c67139a12e408b",
+    "e3eb869558332fec907b2752f54a608a",
+    "58f19345f724a39460db70a4377995c8",
+    "76ab0cafab45f8b2011853527a3dc10e"
   ],
   "off_your_mind": [
     "d86df7a1fc5ebcd07e11d5e7693160eb",
@@ -383,6 +383,39 @@
       ]
     },
     {
+      "id": "185b315a758472a6fc1faed37e49f875",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "Landing page: 1.4 s on a mid-range phone over 4G",
+      "words": "Was 3.1 s. The plant library now loads on the first keystroke in search.",
+      "urgency": "low",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791459000000,
+      "from": {
+        "session_id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
+        "name": "Page Speed",
+        "mark": "draw:bolt",
+        "path": [
+          "Fernly",
+          "Fernly Website",
+          "Page Speed"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    },
+    {
       "id": "e77e5a529e1d3a4bd3046ce602a34c1e",
       "kind": "info",
       "loading": false,
@@ -414,39 +447,6 @@
         "key": "row.media.one",
         "en": "Look at the picture"
       },
-      "tiles": {
-        "kind": "read",
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "shred"
-      ]
-    },
-    {
-      "id": "185b315a758472a6fc1faed37e49f875",
-      "kind": "info",
-      "loading": false,
-      "newer": false,
-      "title": "Landing page: 1.4 s on a mid-range phone over 4G",
-      "words": "Was 3.1 s. The plant library now loads on the first keystroke in search.",
-      "urgency": "low",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791459000000,
-      "from": {
-        "session_id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
-        "name": "Page Speed",
-        "mark": "draw:bolt",
-        "path": [
-          "Fernly",
-          "Fernly Website",
-          "Page Speed"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 1,
       "tiles": {
         "kind": "read",
         "others": 0
@@ -577,51 +577,48 @@
       ]
     },
     {
-      "id": "a38afef6dbdd056db8042980f2b83336",
+      "id": "8b91e8761d15b3933a6412af44da7851",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Which hero for the landing page?",
-      "words": "Same words, two layouts. The split one shows the app on a phone right away.",
-      "urgency": "normal",
-      "sign": "",
+      "title": "Dark mode: keep the plant photos at full colour?",
+      "words": "Dimming them a little is calmer at night; full colour looks better.",
+      "urgency": "low",
+      "sign": "whenever",
+      "sign_says": {
+        "key": "row.whenever",
+        "en": "Whenever"
+      },
       "starred": false,
-      "created_ms": 1791460800000,
+      "created_ms": 1791463680000,
       "from": {
-        "session_id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
-        "name": "Landing Page",
-        "mark": "draw:brush",
+        "session_id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
+        "name": "Dark Mode",
+        "mark": "draw:moon",
         "path": [
           "Fernly",
-          "Fernly Website",
-          "Landing Page"
+          "Design System",
+          "Dark Mode"
         ],
         "desk": "Fernly"
       },
       "run": 1,
       "media": [
         {
-          "file_id": "689be4d14b8c7e0929da081e6bc78714",
-          "kind": "image"
-        },
-        {
-          "file_id": "2696c38e6cc7b29aa0904b353c4d5855",
+          "file_id": "5ca5dedf9050f8b9e4680a003b3c62a2",
           "kind": "image"
         }
       ],
       "media_says": {
-        "key": "row.media",
-        "args": {
-          "n": "2"
-        },
-        "en": "Look at 2 pictures and videos"
+        "key": "row.media.one",
+        "en": "Look at the picture"
       },
       "tiles": {
         "kind": "pair",
         "tiles": [
           {
-            "key": "centered",
-            "label": "Centered",
+            "key": "dim",
+            "label": "Dim to 85%",
             "thumb": "no",
             "thumbs": false,
             "lead": false,
@@ -632,14 +629,14 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Centered"
+                "label": "Dim to 85%"
               },
-              "en": "Centered"
+              "en": "Dim to 85%"
             }
           },
           {
-            "key": "split",
-            "label": "Split",
+            "key": "full",
+            "label": "Full colour",
             "thumb": "yes",
             "thumbs": false,
             "lead": true,
@@ -654,9 +651,9 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Split"
+                "label": "Full colour"
               },
-              "en": "Split"
+              "en": "Full colour"
             }
           }
         ],
@@ -670,55 +667,191 @@
       ]
     },
     {
-      "id": "e3eb869558332fec907b2752f54a608a",
+      "id": "41bc4fad4b14457d7f16a660d518d474",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Which colour palette for the launch?",
-      "words": "Three palettes, each tried on the Today screen. One goes into the tokens for web and iOS.",
-      "urgency": "normal",
-      "sign": "",
+      "title": "Generate the API reference from the OpenAPI file?",
+      "words": "Always matches the code. The examples are written by hand next to it.",
+      "urgency": "low",
+      "sign": "whenever",
+      "sign_says": {
+        "key": "row.whenever",
+        "en": "Whenever"
+      },
       "starred": false,
-      "created_ms": 1791461160000,
+      "created_ms": 1791468360000,
       "from": {
-        "session_id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
-        "name": "Design Tokens",
-        "mark": "draw:drop",
+        "session_id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
+        "name": "API Reference",
+        "mark": "draw:terminal",
+        "path": [
+          "Platform",
+          "Docs",
+          "API Reference"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "no",
+            "label": "No",
+            "thumb": "no",
+            "thumbs": true,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
+            "says": {
+              "key": "tile.says.settles",
+              "args": {
+                "label": "No"
+              },
+              "en": "No (settles it)"
+            }
+          },
+          {
+            "key": "yes",
+            "label": "Yes",
+            "thumb": "yes",
+            "thumbs": true,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Yes"
+              },
+              "en": "Yes"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "de6f89dc61b5db9b5ad8cd2eaf14abce",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which screenshots go first in the App Store?",
+      "words": "Pick up to three. The first one is the one people see in search.",
+      "urgency": "low",
+      "sign": "whenever",
+      "sign_says": {
+        "key": "row.whenever",
+        "en": "Whenever"
+      },
+      "starred": false,
+      "created_ms": 1791464040000,
+      "from": {
+        "session_id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
+        "name": "App Store",
+        "mark": "draw:star",
         "path": [
           "Fernly",
-          "Design System",
-          "Design Tokens"
+          "Fernly App",
+          "App Store"
         ],
         "desk": "Fernly"
       },
       "run": 1,
       "media": [
         {
-          "file_id": "ee41edd7dcc3f396c12066b3aff8e0b6",
-          "kind": "image"
-        },
-        {
-          "file_id": "45bfccfbadd6f9a28cba11422b510522",
-          "kind": "image"
-        },
-        {
-          "file_id": "e75b8f4244345935c8e12073a4e871d7",
+          "file_id": "a9870901f141a7a66f944f082a3c95b9",
           "kind": "image"
         }
       ],
       "media_says": {
-        "key": "row.media",
-        "args": {
-          "n": "3"
-        },
-        "en": "Look at 3 pictures and videos"
+        "key": "row.media.one",
+        "en": "Look at the picture"
       },
       "tiles": {
-        "kind": "advised",
+        "kind": "choose",
+        "others": 0,
+        "says": {
+          "key": "tile.choose.several",
+          "args": {
+            "n": "4"
+          },
+          "en": "Choose: 4 options, several"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "a2706545530be0dce3b13417c2728966",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Show prices with VAT included everywhere?",
+      "words": "Required in the EU. In the US prices are usually shown without tax.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466560000,
+      "from": {
+        "session_id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
+        "name": "Tax & VAT",
+        "mark": "draw:key",
+        "path": [
+          "Platform",
+          "Payments",
+          "Tax & VAT"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "pair",
         "tiles": [
           {
-            "key": "meadow",
-            "label": "Meadow",
+            "key": "eu-only",
+            "label": "Only in the EU",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Only in the EU"
+              },
+              "en": "Only in the EU"
+            }
+          },
+          {
+            "key": "everywhere",
+            "label": "Included everywhere",
             "thumb": "yes",
             "thumbs": false,
             "lead": true,
@@ -727,26 +860,19 @@
             "short": false,
             "settles": false,
             "tip": {
-              "key": "tile.label",
-              "en": "Meadow"
+              "key": "tile.recommended",
+              "en": "Recommended"
             },
             "says": {
-              "key": "tile.says.advised",
+              "key": "tile.says",
               "args": {
-                "label": "Meadow"
+                "label": "Included everywhere"
               },
-              "en": "Meadow, advised"
+              "en": "Included everywhere"
             }
           }
         ],
-        "others": 2,
-        "says": {
-          "key": "tile.others",
-          "args": {
-            "n": "2"
-          },
-          "en": "2 other ways: open the card"
-        }
+        "others": 0
       },
       "ways": [
         "later",
@@ -849,16 +975,57 @@
       ]
     },
     {
-      "id": "58f19345f724a39460db70a4377995c8",
+      "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Which drawing welcomes new people?",
-      "words": "The first screen of sign-up gets one illustration. Both are drawn and ready.",
+      "title": "Which invoice details can people change themselves?",
+      "words": "Tick everything they may change in Settings. The rest goes through support.",
       "urgency": "normal",
       "sign": "",
       "starred": false,
-      "created_ms": 1791461880000,
+      "created_ms": 1791466920000,
+      "from": {
+        "session_id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
+        "name": "Invoices",
+        "mark": "draw:book",
+        "path": [
+          "Platform",
+          "Payments",
+          "Invoices"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "choose",
+        "others": 0,
+        "says": {
+          "key": "tile.choose.several",
+          "args": {
+            "n": "4"
+          },
+          "en": "Choose: 4 options, several"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Ask for notifications on step 3, or after the first watering?",
+      "words": "On step 3 more people say yes; after the first watering they know why we ask.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465120000,
       "from": {
         "session_id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
         "name": "Onboarding",
@@ -871,29 +1038,12 @@
         "desk": "Fernly"
       },
       "run": 1,
-      "media": [
-        {
-          "file_id": "574e8196f2e02ec8f2f70e688e486e9d",
-          "kind": "image"
-        },
-        {
-          "file_id": "e64cf09f6137c36798d71ba354434af1",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media",
-        "args": {
-          "n": "2"
-        },
-        "en": "Look at 2 pictures and videos"
-      },
       "tiles": {
         "kind": "pair",
         "tiles": [
           {
-            "key": "can",
-            "label": "Watering can",
+            "key": "step-3",
+            "label": "On step 3",
             "thumb": "no",
             "thumbs": false,
             "lead": false,
@@ -904,14 +1054,14 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Watering can"
+                "label": "On step 3"
               },
-              "en": "Watering can"
+              "en": "On step 3"
             }
           },
           {
-            "key": "seedling",
-            "label": "Happy seedling",
+            "key": "after",
+            "label": "After the first watering",
             "thumb": "yes",
             "thumbs": false,
             "lead": true,
@@ -926,9 +1076,9 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Happy seedling"
+                "label": "After the first watering"
               },
-              "en": "Happy seedling"
+              "en": "After the first watering"
             }
           }
         ],
@@ -942,71 +1092,58 @@
       ]
     },
     {
-      "id": "daa202f98097523fa1f1fe18068f8322",
+      "id": "d50337f0e7318660c4d9a0062426dea5",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "What should the sign-up button say?",
-      "words": "“Start free” is short and known. “Add your first plant” says what happens next.",
+      "title": "Upgrade production to Kubernetes 1.33 on Wednesday night?",
+      "words": "Staging runs 1.33 since Tuesday without a problem. Nodes roll one at a time.",
       "urgency": "normal",
       "sign": "",
       "starred": false,
-      "created_ms": 1791462240000,
+      "created_ms": 1791468000000,
       "from": {
-        "session_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
-        "name": "Copywriting",
-        "mark": "draw:pen",
+        "session_id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
+        "name": "Kubernetes",
+        "mark": "draw:boat",
         "path": [
-          "Fernly",
-          "Fernly Website",
-          "Copywriting"
+          "Platform",
+          "Infrastructure",
+          "Kubernetes"
         ],
-        "desk": "Fernly"
+        "desk": "Platform"
       },
-      "run": 2,
-      "media": [
-        {
-          "file_id": "8e7b3c0820dd6aa84a00b08e6545c8a6",
-          "kind": "image"
-        },
-        {
-          "file_id": "054e9e60c4233ff9af85d19539690062",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media",
-        "args": {
-          "n": "2"
-        },
-        "en": "Look at 2 pictures and videos"
-      },
+      "run": 1,
       "tiles": {
         "kind": "pair",
         "tiles": [
           {
-            "key": "start-free",
-            "label": "Start free",
+            "key": "no",
+            "label": "No",
             "thumb": "no",
-            "thumbs": false,
+            "thumbs": true,
             "lead": false,
             "advised": false,
             "small": false,
             "short": false,
-            "settles": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
             "says": {
-              "key": "tile.says",
+              "key": "tile.says.settles",
               "args": {
-                "label": "Start free"
+                "label": "No"
               },
-              "en": "Start free"
+              "en": "No (settles it)"
             }
           },
           {
-            "key": "first-plant",
-            "label": "Add your first plant",
+            "key": "yes",
+            "label": "Yes",
             "thumb": "yes",
-            "thumbs": false,
+            "thumbs": true,
             "lead": true,
             "advised": true,
             "small": false,
@@ -1019,102 +1156,9 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Add your first plant"
+                "label": "Yes"
               },
-              "en": "Add your first plant"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "76ab0cafab45f8b2011853527a3dc10e",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Which headline for the launch?",
-      "words": "Two lines for the landing page, the App Store and the launch post.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791462600000,
-      "from": {
-        "session_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
-        "name": "Copywriting",
-        "mark": "draw:pen",
-        "path": [
-          "Fernly",
-          "Fernly Website",
-          "Copywriting"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 0,
-      "media": [
-        {
-          "file_id": "d0251727672dc341e809f3887bd18eda",
-          "kind": "image"
-        },
-        {
-          "file_id": "4cd498ba9f1b9f007c756119b2d039f9",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media",
-        "args": {
-          "n": "2"
-        },
-        "en": "Look at 2 pictures and videos"
-      },
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "autopilot",
-            "label": "On autopilot",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "On autopilot"
-              },
-              "en": "On autopilot"
-            }
-          },
-          {
-            "key": "thirsty",
-            "label": "Thirsty plant",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Thirsty plant"
-              },
-              "en": "Thirsty plant"
+              "en": "Yes"
             }
           }
         ],
@@ -1207,6 +1251,522 @@
                 "label": "Sidebar"
               },
               "en": "Sidebar"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "637adcc6eae4b4ac30b47509a3071884",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Send a weekly summary e-mail on Sundays?",
+      "words": "Which plants did well, which are due next week. People asked for it in the beta.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466200000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "no",
+            "label": "No",
+            "thumb": "no",
+            "thumbs": true,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
+            "says": {
+              "key": "tile.says.settles",
+              "args": {
+                "label": "No"
+              },
+              "en": "No (settles it)"
+            }
+          },
+          {
+            "key": "yes",
+            "label": "Yes",
+            "thumb": "yes",
+            "thumbs": true,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Yes"
+              },
+              "en": "Yes"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "9abad6a52b4b6dc3d096f87bff346aa9",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "How long do we keep the raw events?",
+      "words": "The models need 90 days. Longer costs storage and means more personal data kept.",
+      "notes": [
+        {
+          "key": "row.replaces.one",
+          "en": "replaces 1 question"
+        }
+      ],
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465840000,
+      "from": {
+        "session_id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+        "name": "Data Pipeline",
+        "mark": "draw:database",
+        "path": [
+          "Platform",
+          "Data Pipeline"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "70d771d464c0d437ecab1f509b47e5e5",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "advised",
+        "tiles": [
+          {
+            "key": "90",
+            "label": "90 days",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.label",
+              "en": "90 days"
+            },
+            "says": {
+              "key": "tile.says.advised",
+              "args": {
+                "label": "90 days"
+              },
+              "en": "90 days, advised"
+            }
+          }
+        ],
+        "others": 2,
+        "says": {
+          "key": "tile.others",
+          "args": {
+            "n": "2"
+          },
+          "en": "2 other ways: open the card"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "daa202f98097523fa1f1fe18068f8322",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "What should the sign-up button say?",
+      "words": "“Start free” is short and known. “Add your first plant” says what happens next.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791462240000,
+      "from": {
+        "session_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+        "name": "Copywriting",
+        "mark": "draw:pen",
+        "path": [
+          "Fernly",
+          "Fernly Website",
+          "Copywriting"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "8e7b3c0820dd6aa84a00b08e6545c8a6",
+          "kind": "image"
+        },
+        {
+          "file_id": "054e9e60c4233ff9af85d19539690062",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "start-free",
+            "label": "Start free",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Start free"
+              },
+              "en": "Start free"
+            }
+          },
+          {
+            "key": "first-plant",
+            "label": "Add your first plant",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Add your first plant"
+              },
+              "en": "Add your first plant"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "43a72b8f7d9de1aac4aeeae1367076c0",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Who counts as an active user?",
+      "words": "Opening the app, or watering a plant. Watering is what we care about; opening is what others report.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465480000,
+      "from": {
+        "session_id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
+        "name": "Dashboards",
+        "mark": "draw:eye",
+        "path": [
+          "Platform",
+          "Data Pipeline",
+          "Dashboards"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "3d154a92f7b328d07c3d88cc578abd5c",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "opened",
+            "label": "Opened the app",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Opened the app"
+              },
+              "en": "Opened the app"
+            }
+          },
+          {
+            "key": "watered",
+            "label": "Watered a plant",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Watered a plant"
+              },
+              "en": "Watered a plant"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "a38afef6dbdd056db8042980f2b83336",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which hero for the landing page?",
+      "words": "Same words, two layouts. The split one shows the app on a phone right away.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791460800000,
+      "from": {
+        "session_id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+        "name": "Landing Page",
+        "mark": "draw:brush",
+        "path": [
+          "Fernly",
+          "Fernly Website",
+          "Landing Page"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "689be4d14b8c7e0929da081e6bc78714",
+          "kind": "image"
+        },
+        {
+          "file_id": "2696c38e6cc7b29aa0904b353c4d5855",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "centered",
+            "label": "Centered",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Centered"
+              },
+              "en": "Centered"
+            }
+          },
+          {
+            "key": "split",
+            "label": "Split",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Split"
+              },
+              "en": "Split"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "29e26860adecd0578df14c491915b27a",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Hold 1.2 for the widget crash fix in build 419?",
+      "words": "12 crashes in 9 days, all in the widget timeline. 419 is built and on TestFlight since noon.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791464760000,
+      "from": {
+        "session_id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+        "name": "Fernly App",
+        "mark": "draw:phone",
+        "path": [
+          "Fernly",
+          "Fernly App"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "329cc1959463d795c114da54649fc6f1",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "ship",
+            "label": "Ship 418 now",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Ship 418 now"
+              },
+              "en": "Ship 418 now"
+            }
+          },
+          {
+            "key": "hold",
+            "label": "Hold for 419",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Hold for 419"
+              },
+              "en": "Hold for 419"
             }
           }
         ],
@@ -1313,151 +1873,6 @@
       ]
     },
     {
-      "id": "8b91e8761d15b3933a6412af44da7851",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Dark mode: keep the plant photos at full colour?",
-      "words": "Dimming them a little is calmer at night; full colour looks better.",
-      "urgency": "low",
-      "sign": "whenever",
-      "sign_says": {
-        "key": "row.whenever",
-        "en": "Whenever"
-      },
-      "starred": false,
-      "created_ms": 1791463680000,
-      "from": {
-        "session_id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
-        "name": "Dark Mode",
-        "mark": "draw:moon",
-        "path": [
-          "Fernly",
-          "Design System",
-          "Dark Mode"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "5ca5dedf9050f8b9e4680a003b3c62a2",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "dim",
-            "label": "Dim to 85%",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Dim to 85%"
-              },
-              "en": "Dim to 85%"
-            }
-          },
-          {
-            "key": "full",
-            "label": "Full colour",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Full colour"
-              },
-              "en": "Full colour"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "de6f89dc61b5db9b5ad8cd2eaf14abce",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Which screenshots go first in the App Store?",
-      "words": "Pick up to three. The first one is the one people see in search.",
-      "urgency": "low",
-      "sign": "whenever",
-      "sign_says": {
-        "key": "row.whenever",
-        "en": "Whenever"
-      },
-      "starred": false,
-      "created_ms": 1791464040000,
-      "from": {
-        "session_id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
-        "name": "App Store",
-        "mark": "draw:star",
-        "path": [
-          "Fernly",
-          "Fernly App",
-          "App Store"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "a9870901f141a7a66f944f082a3c95b9",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "choose",
-        "others": 0,
-        "says": {
-          "key": "tile.choose.several",
-          "args": {
-            "n": "4"
-          },
-          "en": "Choose: 4 options, several"
-        }
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
       "id": "95a7444523d097bff745b891bc2166cf",
       "kind": "decision",
       "loading": false,
@@ -1520,605 +1935,6 @@
                 "label": "Monday 09:00"
               },
               "en": "Monday 09:00"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "29e26860adecd0578df14c491915b27a",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Hold 1.2 for the widget crash fix in build 419?",
-      "words": "12 crashes in 9 days, all in the widget timeline. 419 is built and on TestFlight since noon.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791464760000,
-      "from": {
-        "session_id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
-        "name": "Fernly App",
-        "mark": "draw:phone",
-        "path": [
-          "Fernly",
-          "Fernly App"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "329cc1959463d795c114da54649fc6f1",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "ship",
-            "label": "Ship 418 now",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Ship 418 now"
-              },
-              "en": "Ship 418 now"
-            }
-          },
-          {
-            "key": "hold",
-            "label": "Hold for 419",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Hold for 419"
-              },
-              "en": "Hold for 419"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Ask for notifications on step 3, or after the first watering?",
-      "words": "On step 3 more people say yes; after the first watering they know why we ask.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791465120000,
-      "from": {
-        "session_id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
-        "name": "Onboarding",
-        "mark": "draw:kite",
-        "path": [
-          "Fernly",
-          "Fernly Website",
-          "Onboarding"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 1,
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "step-3",
-            "label": "On step 3",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "On step 3"
-              },
-              "en": "On step 3"
-            }
-          },
-          {
-            "key": "after",
-            "label": "After the first watering",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "After the first watering"
-              },
-              "en": "After the first watering"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "43a72b8f7d9de1aac4aeeae1367076c0",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Who counts as an active user?",
-      "words": "Opening the app, or watering a plant. Watering is what we care about; opening is what others report.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791465480000,
-      "from": {
-        "session_id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
-        "name": "Dashboards",
-        "mark": "draw:eye",
-        "path": [
-          "Platform",
-          "Data Pipeline",
-          "Dashboards"
-        ],
-        "desk": "Platform"
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "3d154a92f7b328d07c3d88cc578abd5c",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "opened",
-            "label": "Opened the app",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Opened the app"
-              },
-              "en": "Opened the app"
-            }
-          },
-          {
-            "key": "watered",
-            "label": "Watered a plant",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Watered a plant"
-              },
-              "en": "Watered a plant"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "9abad6a52b4b6dc3d096f87bff346aa9",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "How long do we keep the raw events?",
-      "words": "The models need 90 days. Longer costs storage and means more personal data kept.",
-      "notes": [
-        {
-          "key": "row.replaces.one",
-          "en": "replaces 1 question"
-        }
-      ],
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791465840000,
-      "from": {
-        "session_id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
-        "name": "Data Pipeline",
-        "mark": "draw:database",
-        "path": [
-          "Platform",
-          "Data Pipeline"
-        ],
-        "desk": "Platform"
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "70d771d464c0d437ecab1f509b47e5e5",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "advised",
-        "tiles": [
-          {
-            "key": "90",
-            "label": "90 days",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.label",
-              "en": "90 days"
-            },
-            "says": {
-              "key": "tile.says.advised",
-              "args": {
-                "label": "90 days"
-              },
-              "en": "90 days, advised"
-            }
-          }
-        ],
-        "others": 2,
-        "says": {
-          "key": "tile.others",
-          "args": {
-            "n": "2"
-          },
-          "en": "2 other ways: open the card"
-        }
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "637adcc6eae4b4ac30b47509a3071884",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Send a weekly summary e-mail on Sundays?",
-      "words": "Which plants did well, which are due next week. People asked for it in the beta.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791466200000,
-      "from": {
-        "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-        "name": "Fernly Website",
-        "mark": "draw:leaf",
-        "path": [
-          "Fernly",
-          "Fernly Website"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 1,
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "no",
-            "label": "No",
-            "thumb": "no",
-            "thumbs": true,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": true,
-            "tip": {
-              "key": "tile.settles",
-              "en": "Settles it"
-            },
-            "says": {
-              "key": "tile.says.settles",
-              "args": {
-                "label": "No"
-              },
-              "en": "No (settles it)"
-            }
-          },
-          {
-            "key": "yes",
-            "label": "Yes",
-            "thumb": "yes",
-            "thumbs": true,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Yes"
-              },
-              "en": "Yes"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "a2706545530be0dce3b13417c2728966",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Show prices with VAT included everywhere?",
-      "words": "Required in the EU. In the US prices are usually shown without tax.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791466560000,
-      "from": {
-        "session_id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
-        "name": "Tax & VAT",
-        "mark": "draw:key",
-        "path": [
-          "Platform",
-          "Payments",
-          "Tax & VAT"
-        ],
-        "desk": "Platform"
-      },
-      "run": 1,
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "eu-only",
-            "label": "Only in the EU",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Only in the EU"
-              },
-              "en": "Only in the EU"
-            }
-          },
-          {
-            "key": "everywhere",
-            "label": "Included everywhere",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Included everywhere"
-              },
-              "en": "Included everywhere"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Which invoice details can people change themselves?",
-      "words": "Tick everything they may change in Settings. The rest goes through support.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791466920000,
-      "from": {
-        "session_id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
-        "name": "Invoices",
-        "mark": "draw:book",
-        "path": [
-          "Platform",
-          "Payments",
-          "Invoices"
-        ],
-        "desk": "Platform"
-      },
-      "run": 1,
-      "tiles": {
-        "kind": "choose",
-        "others": 0,
-        "says": {
-          "key": "tile.choose.several",
-          "args": {
-            "n": "4"
-          },
-          "en": "Choose: 4 options, several"
-        }
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "9c9f4031e513b80e68c67139a12e408b",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Skip the flaky Safari checkout test until after the launch?",
-      "words": "It fails 1 run in 6, only in WebKit, only on the payment iframe. The flow works by hand.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791467280000,
-      "from": {
-        "session_id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
-        "name": "Testing",
-        "mark": "draw:flask",
-        "path": [
-          "Fernly",
-          "Fernly Website",
-          "Testing"
-        ],
-        "desk": "Fernly"
-      },
-      "run": 1,
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "keep",
-            "label": "Keep it blocking",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Keep it blocking"
-              },
-              "en": "Keep it blocking"
-            }
-          },
-          {
-            "key": "skip",
-            "label": "Skip until Tuesday",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Skip until Tuesday"
-              },
-              "en": "Skip until Tuesday"
             }
           }
         ],
@@ -2218,58 +2034,54 @@
       ]
     },
     {
-      "id": "d50337f0e7318660c4d9a0062426dea5",
+      "id": "9c9f4031e513b80e68c67139a12e408b",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Upgrade production to Kubernetes 1.33 on Wednesday night?",
-      "words": "Staging runs 1.33 since Tuesday without a problem. Nodes roll one at a time.",
+      "title": "Skip the flaky Safari checkout test until after the launch?",
+      "words": "It fails 1 run in 6, only in WebKit, only on the payment iframe. The flow works by hand.",
       "urgency": "normal",
       "sign": "",
       "starred": false,
-      "created_ms": 1791468000000,
+      "created_ms": 1791467280000,
       "from": {
-        "session_id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
-        "name": "Kubernetes",
-        "mark": "draw:boat",
+        "session_id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
+        "name": "Testing",
+        "mark": "draw:flask",
         "path": [
-          "Platform",
-          "Infrastructure",
-          "Kubernetes"
+          "Fernly",
+          "Fernly Website",
+          "Testing"
         ],
-        "desk": "Platform"
+        "desk": "Fernly"
       },
       "run": 1,
       "tiles": {
         "kind": "pair",
         "tiles": [
           {
-            "key": "no",
-            "label": "No",
+            "key": "keep",
+            "label": "Keep it blocking",
             "thumb": "no",
-            "thumbs": true,
+            "thumbs": false,
             "lead": false,
             "advised": false,
             "small": false,
             "short": false,
-            "settles": true,
-            "tip": {
-              "key": "tile.settles",
-              "en": "Settles it"
-            },
+            "settles": false,
             "says": {
-              "key": "tile.says.settles",
+              "key": "tile.says",
               "args": {
-                "label": "No"
+                "label": "Keep it blocking"
               },
-              "en": "No (settles it)"
+              "en": "Keep it blocking"
             }
           },
           {
-            "key": "yes",
-            "label": "Yes",
+            "key": "skip",
+            "label": "Skip until Tuesday",
             "thumb": "yes",
-            "thumbs": true,
+            "thumbs": false,
             "lead": true,
             "advised": true,
             "small": false,
@@ -2282,9 +2094,9 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Yes"
+                "label": "Skip until Tuesday"
               },
-              "en": "Yes"
+              "en": "Skip until Tuesday"
             }
           }
         ],
@@ -2298,62 +2110,157 @@
       ]
     },
     {
-      "id": "41bc4fad4b14457d7f16a660d518d474",
+      "id": "e3eb869558332fec907b2752f54a608a",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Generate the API reference from the OpenAPI file?",
-      "words": "Always matches the code. The examples are written by hand next to it.",
-      "urgency": "low",
-      "sign": "whenever",
-      "sign_says": {
-        "key": "row.whenever",
-        "en": "Whenever"
-      },
+      "title": "Which colour palette for the launch?",
+      "words": "Three palettes, each tried on the Today screen. One goes into the tokens for web and iOS.",
+      "urgency": "normal",
+      "sign": "",
       "starred": false,
-      "created_ms": 1791468360000,
+      "created_ms": 1791461160000,
       "from": {
-        "session_id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
-        "name": "API Reference",
-        "mark": "draw:terminal",
+        "session_id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+        "name": "Design Tokens",
+        "mark": "draw:drop",
         "path": [
-          "Platform",
-          "Docs",
-          "API Reference"
+          "Fernly",
+          "Design System",
+          "Design Tokens"
         ],
-        "desk": "Platform"
+        "desk": "Fernly"
       },
       "run": 1,
+      "media": [
+        {
+          "file_id": "ee41edd7dcc3f396c12066b3aff8e0b6",
+          "kind": "image"
+        },
+        {
+          "file_id": "45bfccfbadd6f9a28cba11422b510522",
+          "kind": "image"
+        },
+        {
+          "file_id": "e75b8f4244345935c8e12073a4e871d7",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "3"
+        },
+        "en": "Look at 3 pictures and videos"
+      },
+      "tiles": {
+        "kind": "advised",
+        "tiles": [
+          {
+            "key": "meadow",
+            "label": "Meadow",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.label",
+              "en": "Meadow"
+            },
+            "says": {
+              "key": "tile.says.advised",
+              "args": {
+                "label": "Meadow"
+              },
+              "en": "Meadow, advised"
+            }
+          }
+        ],
+        "others": 2,
+        "says": {
+          "key": "tile.others",
+          "args": {
+            "n": "2"
+          },
+          "en": "2 other ways: open the card"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "58f19345f724a39460db70a4377995c8",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which drawing welcomes new people?",
+      "words": "The first screen of sign-up gets one illustration. Both are drawn and ready.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791461880000,
+      "from": {
+        "session_id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+        "name": "Onboarding",
+        "mark": "draw:kite",
+        "path": [
+          "Fernly",
+          "Fernly Website",
+          "Onboarding"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "574e8196f2e02ec8f2f70e688e486e9d",
+          "kind": "image"
+        },
+        {
+          "file_id": "e64cf09f6137c36798d71ba354434af1",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
       "tiles": {
         "kind": "pair",
         "tiles": [
           {
-            "key": "no",
-            "label": "No",
+            "key": "can",
+            "label": "Watering can",
             "thumb": "no",
-            "thumbs": true,
+            "thumbs": false,
             "lead": false,
             "advised": false,
             "small": false,
             "short": false,
-            "settles": true,
-            "tip": {
-              "key": "tile.settles",
-              "en": "Settles it"
-            },
+            "settles": false,
             "says": {
-              "key": "tile.says.settles",
+              "key": "tile.says",
               "args": {
-                "label": "No"
+                "label": "Watering can"
               },
-              "en": "No (settles it)"
+              "en": "Watering can"
             }
           },
           {
-            "key": "yes",
-            "label": "Yes",
+            "key": "seedling",
+            "label": "Happy seedling",
             "thumb": "yes",
-            "thumbs": true,
+            "thumbs": false,
             "lead": true,
             "advised": true,
             "small": false,
@@ -2366,9 +2273,102 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Yes"
+                "label": "Happy seedling"
               },
-              "en": "Yes"
+              "en": "Happy seedling"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "76ab0cafab45f8b2011853527a3dc10e",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which headline for the launch?",
+      "words": "Two lines for the landing page, the App Store and the launch post.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791462600000,
+      "from": {
+        "session_id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+        "name": "Copywriting",
+        "mark": "draw:pen",
+        "path": [
+          "Fernly",
+          "Fernly Website",
+          "Copywriting"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "d0251727672dc341e809f3887bd18eda",
+          "kind": "image"
+        },
+        {
+          "file_id": "4cd498ba9f1b9f007c756119b2d039f9",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "autopilot",
+            "label": "On autopilot",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "On autopilot"
+              },
+              "en": "On autopilot"
+            }
+          },
+          {
+            "key": "thirsty",
+            "label": "Thirsty plant",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Thirsty plant"
+              },
+              "en": "Thirsty plant"
             }
           }
         ],

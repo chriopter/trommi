@@ -11,9 +11,9 @@
 //!   A hand back older than the version the hub lists is over (`hand_back_over`): the agent answered it.
 //! - **requests run out.** A pending request whose deadline passed is expired; one whose body was not read here has
 //!   no deadline known and counts as expired [`REQUEST_LIFE_MAX_MS`] after it was sent.
-//! - **the stack**: the open cards that are not held, by urgency (critical first), then the time they were asked,
-//!   then the agent device and the id; a snoozed card and a card of an archived session are left out.
-//! - **each session's open cards** (not held), by the time they were asked; the open requests by their change number.
+//! - **the stack**: the open cards that are not held, by urgency (critical first), then the change they were first
+//!   filed at (the hub's order of arrival, not the sender's clock), then the agent device and the id; a snoozed card and a card of an archived session are left out.
+//! - **each session's open cards** (not held), by the change they were first filed at; the open requests by their change number.
 //! - **when to look again** (`next_wake`): the next snooze that ends, the next request that runs out.
 //!
 //! Incremental: the open cards are kept in the Desk's order as they change, and a projection after a few cards
@@ -72,8 +72,9 @@ pub struct DeskCard {
     /// `critical`, `high`, `normal`, `low`.
     #[serde(default)]
     pub urgency: Option<String>,
+    /// The change of its first envelope: where it stands among the others (see [`stack_key`]).
     #[serde(default)]
-    pub created_at: u64,
+    pub first_change: u64,
     #[serde(default)]
     pub agent_device_id: Option<String>,
     /// The change of its newest version known here.
@@ -133,7 +134,7 @@ pub struct Projection {
     pub expired: Vec<String>,
     /// Cards whose hand back is older than the version the hub lists.
     pub hand_back_over: Vec<String>,
-    /// Per session: its open cards that are not held, by the time they were asked.
+    /// Per session: its open cards that are not held, by the change they were first filed at.
     pub session_open: BTreeMap<String, Vec<String>>,
     /// When the Desk changes by the clock alone (a snooze ends, a request runs out), ms; 0 for never.
     pub next_wake: u64,
@@ -177,7 +178,9 @@ pub struct StackOp {
     pub ids: Vec<String>,
 }
 
-/// A card's place on the Desk: urgency (critical first), the time it was asked, its agent device, its id.
+/// A card's place on the Desk: urgency (critical first), the change it was first filed at (the hub's order of
+/// arrival, the same on every device, and known from the hub's row before any of the card's past is read; never
+/// the sender's clock), its agent device, its id.
 type StackKey = (Reverse<u8>, u64, String, String);
 
 fn rank(urgency: Option<&str>) -> u8 {
@@ -192,7 +195,7 @@ fn rank(urgency: Option<&str>) -> u8 {
 fn stack_key(c: &DeskCard) -> StackKey {
     (
         Reverse(rank(c.urgency.as_deref())),
-        c.created_at,
+        c.first_change,
         c.agent_device_id.clone().unwrap_or_default(),
         c.object_id.clone(),
     )
@@ -440,7 +443,7 @@ impl DeskState {
                     && c.session_id.as_deref() == Some(session)
                     && !self.card_held(c)
             })
-            .map(|c| (c.created_at, c.object_id.as_str()))
+            .map(|c| (c.first_change, c.object_id.as_str()))
             .collect();
         list.sort();
         list.into_iter().map(|(_, id)| id.to_string()).collect()
@@ -565,7 +568,7 @@ impl DeskState {
                 &c.session_id,
                 c.state == State::Open && !c.working && !held_now,
             ) {
-                (Some(s), true) => Some((s.clone(), c.created_at)),
+                (Some(s), true) => Some((s.clone(), c.first_change)),
                 _ => None,
             };
             let visible = self.card_visible(c, now);
@@ -582,9 +585,9 @@ impl DeskState {
             if hand_back {
                 d.hand_back_over.push(id.clone());
             }
-            if let Some((s, created_at)) = in_session {
+            if let Some((s, first)) = in_session {
                 let set = self.session_sets.entry(s.clone()).or_default();
-                let entry = (created_at, id.clone());
+                let entry = (first, id.clone());
                 let pos = set.partition_point(|e| e < &entry);
                 set.insert(pos, entry);
                 push_session_op(
@@ -595,7 +598,7 @@ impl DeskState {
                     0,
                     Some(id.clone()),
                 );
-                self.session_of_card.insert(id.clone(), (s, created_at));
+                self.session_of_card.insert(id.clone(), (s, first));
             }
             match (visible, key) {
                 ((true, _), Some(key)) => {
@@ -658,8 +661,8 @@ impl DeskState {
         self.session_of_card.clear();
         for (s, ids) in &p.session_open {
             for id in ids {
-                let at = self.cards[id].created_at;
-                // (the lists come sorted by the time each card was asked: kept as they are)
+                let at = self.cards[id].first_change;
+                // (the lists come sorted by the change each card was first filed at: kept as they are)
                 self.session_sets
                     .entry(s.clone())
                     .or_default()
@@ -705,12 +708,13 @@ pub struct WalkCard {
     /// `critical`, `high`, `normal`, `low`.
     #[serde(default)]
     pub urgency: Option<String>,
+    /// The change it was first filed at (a card's first envelope, a request's own).
     #[serde(default)]
-    pub created_at: u64,
+    pub first_change: u64,
 }
 
-/// A card's place in the walk: its band, infos before decisions, then time (an info's newest first, a decision's
-/// oldest first), then its id (as the stack: what a copy of the model holds orders it the same).
+/// A card's place in the walk: its band, infos before decisions, then the change it was first filed at (an info's
+/// newest first, a decision's oldest first), then its id (as the stack: what a copy of the model holds orders it the same).
 type WalkKey = (Reverse<u8>, bool, u64, String);
 
 /// The band of a card in the walk: what blocks its agent (critical, a permission request) first, then what knocks
@@ -725,7 +729,7 @@ fn band(c: &WalkCard) -> u8 {
 }
 
 fn walk_key(c: &WalkCard) -> WalkKey {
-    let time = if c.info { u64::MAX - c.created_at } else { c.created_at };
+    let time = if c.info { u64::MAX - c.first_change } else { c.first_change };
     (Reverse(band(c)), !c.info, time, c.object_id.clone())
 }
 
@@ -812,7 +816,7 @@ mod tests {
             session_id: Some("s".into()),
             state: State::Open,
             urgency: None,
-            created_at: change,
+            first_change: change,
             agent_device_id: None,
             version_change: change,
             newest: change,
@@ -1070,7 +1074,7 @@ mod tests {
                     state: [State::Open, State::Open, State::Answered, State::Closed]
                         [next(4) as usize],
                     urgency: Some(["low", "normal", "high", "critical"][next(4) as usize].into()),
-                    created_at: next(500),
+                    first_change: next(500),
                     agent_device_id: Some(format!("a{}", next(3))),
                     newest: next(300),
                     version_change: next(300),

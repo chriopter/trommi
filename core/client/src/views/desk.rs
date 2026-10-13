@@ -649,7 +649,7 @@ mod tests {
         r.session("a", None, true);
         r.session("b-lab", None, true);
         r.on_desk("b-lab", "lab");
-        r.card("q-old", "a", "decision", "normal")["created_at"] = json!(NOW - 30 * MIN);
+        r.card("q-old", "a", "decision", "normal")["first_envelope_number"] = json!(1);
         r.card("q-new", "a", "decision", "normal");
         r.card("q-read", "a", "info", "normal");
         r.card("q-block", "a", "decision", "critical");

@@ -98,6 +98,10 @@ pub struct Model {
     pub desk: DeskState,
     pub desk_sent: HashMap<String, String>,
     pub desk_archived: Option<String>,
+    /// The change each object of the hub's last list was first filed at (project.rs `first_from_desk`).
+    pub desk_first: HashMap<String, u64>,
+    /// That list is new: every card it names is asked once.
+    pub desk_first_new: bool,
     /// The Desk is to be built again from every card (a card took another place in the lists).
     pub desk_rebuild: bool,
     /// The Desk engine holds every card and request of the model.

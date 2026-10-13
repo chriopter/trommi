@@ -10,7 +10,7 @@ fn card(n: u64) -> DeskCard {
         session_id: Some(format!("s{}", n % 16)),
         state: State::Open,
         urgency: Some("normal".into()),
-        created_at: n,
+        first_change: n,
         agent_device_id: Some(format!("a{}", n % 8)),
         version_change: n,
         newest: n,

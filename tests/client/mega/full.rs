@@ -75,6 +75,7 @@ struct Plan {
 async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>, BTreeMap<String, usize>) {
     let mut rng = Rng(seed);
     let mut to_answer = Vec::new();
+    let mut still_open: Vec<String> = Vec::new();
     let mut n: BTreeMap<String, usize> = BTreeMap::new();
     for q in &plan.sessions {
         let (session, archived) = (&q.session, &q.archived);
@@ -130,6 +131,7 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
                     to_answer.push(id);
                 } else {
                     *n.entry("open".into()).or_default() += 1;
+                    still_open.push(id);
                 }
             } else if i % 7 == 6 {
                 client.withdraw(&id, "not needed any more").await.expect("withdrawn");
@@ -145,6 +147,18 @@ async fn write_agent(client: Arc<Client>, plan: Plan, seed: u64) -> (Vec<String>
                 }
             }
         }
+        // FULL_REVISED=1: the agent writes its open cards once more (it explained, it added something), so their
+        // newest version stands far from their first, as in an account that is used
+        if num("FULL_REVISED", 0) > 0 {
+            for id in still_open.drain(..) {
+                client
+                    .revise(&id, fields(json!({ "body": format!("Plainly: {}", words(&mut rng, 12)) })), None)
+                    .await
+                    .expect("revised");
+                *n.entry("revised".into()).or_default() += 1;
+            }
+        }
+        still_open.clear();
         if !*archived && plan.working {
             client
                 .send_card(
