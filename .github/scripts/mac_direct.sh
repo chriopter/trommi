@@ -22,7 +22,10 @@
 # Environment: RUNNER_TEMP, COMMIT (the checkout), VERSION (the release number: the app's build number), XCODEGEN;
 # build only, from the 1Password Environment: APPLE_ASC_KEY, APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_TEAM_ID
 # (as for TestFlight), APPLE_DEVID_P12 (the .p12 of the Developer ID Application certificate with its private key, in
-# base64), APPLE_DEVID_P12_PASSWORD. MAC_OUT: where the files go (default $RUNNER_TEMP/mac-direct). The Rust core
+# base64), APPLE_DEVID_P12_PASSWORD; APPLE_DEVID_PROFILE (the Developer ID provisioning profile of the app's bundle id,
+# made once by hand in the developer portal for that certificate, with push and associated domains, in base64): with it
+# the export signs manually with that profile and that certificate; without it Xcode tries to make the profile itself,
+# which needs cloud-managed Developer ID signing (only the Account Holder has it, an API key never). MAC_OUT: where the files go (default $RUNNER_TEMP/mac-direct). The Rust core
 # for the Mac must be in place (core/swift/TrommiCoreRust/lib/macos). Nothing here prints a value of a secret.
 set -euo pipefail
 
@@ -72,6 +75,7 @@ cleanup() {
   if [ "$restore_search_list" = yes ]; then security list-keychains -d user -s "${search_list[@]}" || true; fi
   [ ! -f "$keychain" ] || security delete-keychain "$keychain" || true
   rm -rf "$keys" "$RUNNER_TEMP/ExportOptionsMacDirect.plist"
+  [ -z "${profile_uuid:-}" ] || rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.provisionprofile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$profile_uuid.provisionprofile"
   [ -z "${mounted:-}" ] || hdiutil detach "$mounted" -quiet || true
 }
 trap cleanup EXIT
@@ -123,6 +127,39 @@ if [ "$mode" = build ]; then
   printf '%s' "$identity" | grep -Eq '^[0-9A-F]{40}$' || { echo "::error::no fingerprint for the Developer ID identity"; exit 1; }
   echo "Developer ID Application of team $APPLE_TEAM_ID, certificate SHA-1 $identity"
   auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$APPLE_ASC_KEY_ID" -authenticationKeyIssuerID "$APPLE_ASC_ISSUER_ID")
+  # The Developer ID profile, when given: checked (Developer ID, this team, this app's bundle id, this very certificate,
+  # not expired) and installed where Xcode looks for profiles; the export then signs manually with it.
+  profile_uuid=
+  if [ -n "${APPLE_DEVID_PROFILE:-}" ]; then
+    python3 -c 'import base64, os, sys; sys.stdout.buffer.write(base64.b64decode(os.environ["APPLE_DEVID_PROFILE"], validate=False))' > "$keys/devid.provisionprofile"
+    security cms -D -i "$keys/devid.provisionprofile" > "$keys/devid-profile.plist" || { echo "::error::APPLE_DEVID_PROFILE is not a provisioning profile"; exit 1; }
+    pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$keys/devid-profile.plist" 2>/dev/null; }
+    [ "$(pb ProvisionsAllDevices)" = true ] || { echo "::error::APPLE_DEVID_PROFILE is not a Developer ID profile (it does not provision all devices)"; exit 1; }
+    [ "$(pb TeamIdentifier:0)" = "$APPLE_TEAM_ID" ] || { echo "::error::APPLE_DEVID_PROFILE is of another team"; exit 1; }
+    [ "$(pb Entitlements:com.apple.application-identifier)" = "$APPLE_TEAM_ID.$project_id" ] \
+      || { echo "::error::APPLE_DEVID_PROFILE is for $(pb Entitlements:com.apple.application-identifier), not $APPLE_TEAM_ID.$project_id"; exit 1; }
+    expires=$(pb ExpirationDate)
+    [ "$(date -j -f '%a %b %d %T %Z %Y' "$expires" +%s 2>/dev/null || echo 0)" -gt "$(date +%s)" ] || { echo "::error::APPLE_DEVID_PROFILE expired ($expires): make a new one"; exit 1; }
+    matched=no i=0
+    while pb "DeveloperCertificates:$i" > /dev/null; do
+      sum=$(python3 - "$keys/devid-profile.plist" "$i" <<'PY'
+import hashlib, plistlib, sys
+with open(sys.argv[1], 'rb') as f:
+    print(hashlib.sha1(plistlib.load(f)['DeveloperCertificates'][int(sys.argv[2])]).hexdigest().upper())
+PY
+)
+      [ "$sum" = "$identity" ] && matched=yes
+      i=$((i + 1))
+    done
+    [ "$matched" = yes ] || { echo "::error::APPLE_DEVID_PROFILE does not name the certificate of APPLE_DEVID_P12 ($identity): make the profile for that certificate"; exit 1; }
+    profile_uuid=$(pb UUID)
+    for dir in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+      mkdir -p "$dir"
+      cp "$keys/devid.provisionprofile" "$dir/$profile_uuid.provisionprofile"
+    done
+    echo "Developer ID profile $(pb Name) ($profile_uuid), until $expires"
+    auth=()
+  fi
 fi
 
 echo "== 2. Project (XcodeGen) =="
@@ -160,8 +197,14 @@ if [ "$mode" = build ]; then
   <key>method</key><string>developer-id</string>
   <key>destination</key><string>export</string>
   <key>teamID</key><string>$APPLE_TEAM_ID</string>
-  <key>signingStyle</key><string>automatic</string>
-  <key>signingCertificate</key><string>Developer ID Application</string>
+$(if [ -n "$profile_uuid" ]; then
+  printf '  <key>signingStyle</key><string>manual</string>\n'
+  printf '  <key>signingCertificate</key><string>%s</string>\n' "$identity"
+  printf '  <key>provisioningProfiles</key><dict><key>%s</key><string>%s</string></dict>\n' "$project_id" "$profile_uuid"
+else
+  printf '  <key>signingStyle</key><string>automatic</string>\n'
+  printf '  <key>signingCertificate</key><string>Developer ID Application</string>\n'
+fi)
 </dict>
 </plist>
 EOF
