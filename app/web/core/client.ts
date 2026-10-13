@@ -179,6 +179,24 @@ export interface ClientOptions {
 interface InviteKept { public: Invite; checked_at?: number; done?: boolean; code?: number[]; request_hash?: string; committed?: boolean }
 
 /** A board's id from its timeline id (`desk/<hex>`). */
+/** Deleting a desk (client/src/desk_delete.rs): the desk's board as the app read it. */
+export interface DeskBoardKnown { shapes: string[]; files: string[]; notes: number; snapshot_empty: boolean }
+export interface DeskDeleteKnown { board?: DeskBoardKnown | null; files_gone?: string[] }
+/** What a desk holds, counted (board, pictures, notes: null while its board is not read). */
+export interface DeskCounts { sessions: number; helpers: number; archived: number; open_cards: number; done_cards: number; agents: number; board: number | null; pictures: number | null; notes: number | null; files: number; artifacts: number; goals: number }
+/** The next step of a desk's delete, how far it is (done of total) and what is left. */
+export type DeskDeletePlan = { done: number; total: number; left: DeskCounts } & (
+  | { step: 'mark'; register: string; value: unknown }
+  | { step: 'shred'; object_ids: string[] }
+  | { step: 'archive'; sessions: { key: string; session_id: string | null; group_id: string | null }[] }
+  | { step: 'remove_devices'; device_ids: string[] }
+  | { step: 'load_board'; desk_id: string }
+  | { step: 'erase_board'; shape_ids: string[] }
+  | { step: 'delete_files'; file_ids: string[] }
+  | { step: 'write_snapshot'; desk_id: string }
+  | { step: 'remove_desk'; register: string }
+  | { step: 'done' }
+  | { step: 'refused'; code: string })
 const boardOf = (timeline_id: string): Uint8Array => unhex(timeline_id.replace(/^desk\//, ''))
 /** A snapshot frontier in wire ids, or null when a head has no hash yet. */
 function frontierWire(frontier: Record<string, [number, string | null]>): Record<string, [number, Uint8Array]> | null {
@@ -1651,6 +1669,41 @@ export class Client {
     if (agents.length) await e.land(d => d.removeAgents(agents, this.now()))
     await e.healNow()
     return { key_epoch: this.model.room.key_epoch }
+  }
+  // ---- deleting a desk (client/src/desk_delete.rs): the core decides each step, this client does it ----
+  /** The desks a delete was begun on (by any device): the app finishes each on its start. */
+  desksDeleting(): string[] { return this.is_human ? JSON.parse(this.board.desksDeleting()) as string[] : [] }
+  /** What a desk holds, counted (the confirm names these). board: the desk's board as read, or null. */
+  deskContents(desk_id: string, board: DeskBoardKnown | null = null): DeskCounts { return JSON.parse(this.board.deskContents(desk_id, board ? JSON.stringify(board) : '')) as DeskCounts }
+  /** One step of deleting desk `desk_id`: the core's plan is read, the step is done, and the plan after it comes back.
+   *  The board's steps (`load_board`, `erase_board`, `write_snapshot`) are the caller's, who reads the board
+   *  (`known.board`); they come back undone. Files deleted here are added to `known.files_gone` by the caller from
+   *  the answer's `files_gone`. */
+  async deskDeleteStep(desk_id: string, known: DeskDeleteKnown = {}): Promise<DeskDeletePlan & { files_gone?: string[] }> {
+    this.needHuman()
+    const plan = (): DeskDeletePlan => JSON.parse(this.board.deskDeletePlan(desk_id, JSON.stringify({ files_gone: [], ...known }), this.my_device_id, this.now())) as DeskDeletePlan
+    const p = plan()
+    switch (p.step) {
+      case 'mark': await this.setRegisters({ [p.register]: p.value }); break
+      case 'shred': for (const id of p.object_ids) await this.shred({ object_id: id }).catch(e => { if ((e as { code?: string })?.code !== 'card-closed') throw e }); break
+      case 'archive': {
+        const sets = this.model.human.session_settings
+        await this.setRegisters(Object.fromEntries(p.sessions.map(s => [`session/${s.key}`, { ...(sets.get(s.key) ?? {}), archived: true }])))
+        break
+      }
+      case 'remove_devices': await this.removeDevices(p.device_ids); break
+      case 'delete_files': {
+        const gone: string[] = []
+        for (const id of p.file_ids) {
+          try { await this.hub.deleteFile(unhex(id)) } catch (e) { if (!(e instanceof HubError && (e.code === 'not-found' || e.status === 404))) throw e }
+          gone.push(id)
+        }
+        return { ...plan(), files_gone: gone }
+      }
+      case 'remove_desk': await this.setRegisters({ [p.register]: null }); break
+      default: return p
+    }
+    return plan()
   }
   /** Log out. The core lets no device commit its own removal, so nothing is removed here: what is still in the
    *  outbox goes out if it can, the client stops, and the caller wipes this device's storage. The device stays a

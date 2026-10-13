@@ -213,6 +213,9 @@ test('the demo room\'s client has every call the views make without asking', asy
     leaveRoom: 'auth.mjs logout: behind `client.hub`',
     pushSubscribe: 'app.mjs push: behind `client.hub?.pushKey`',
     pushStates: 'app.mjs push: behind `client.hub?.pushKey`',
+    deskDeleteStep: 'desks.mjs: behind `typeof client.deskDeleteStep` (the demo deletes no desk)',
+    desksDeleting: 'desks.mjs resumeDeskDeletes: behind its typeof, and app.mjs starts it only outside the demo',
+    deskContents: 'desks.mjs: behind its typeof; the demo shows the numbers the page counts',
     setDesk: null, storage: null, off: null, stop: null, my_device_id: null,
   }
   const missing = clientUses().filter(([k, , , guarded]) => !REQUEST.has(k) && !has.has(k) && !guarded && !(k in REAL_ONLY)).map(([k, s, at2]) => `${where(s, at2)}  client.${k}`)

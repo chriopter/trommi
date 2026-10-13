@@ -107,6 +107,11 @@ final class BoardModel: ObservableObject {
   static let hubURL = ProcessInfo.processInfo.environment["TROMMI_HUB_URL"] ?? "https://hub.trommi.com"
 
   @Published var phase: Phase = .start
+  /** Desks being deleted on this device: how far each is (0…1), DesksScreen.swift. */
+  @Published var deskDeleting: [String: Double] = [:]
+  /** Desks this device deleted in this run. */
+  var deskGone = Set<String>()
+  private var deskResumed = false
   @Published var error: String?
   /** A form of the sign-in screens is at work (Creating…, Logging in…, Setting…): it keeps its fields and waits. */
   @Published var signing = false
@@ -350,6 +355,8 @@ final class BoardModel: ObservableObject {
       if let w = report.warnings.first { error = w }
       // (after a catch-up the board is the hub's: an account without a desk gets its first one)
       ensureDesk()
+      // (a desk delete broken off, here or on another device, is finished once per run: DesksScreen.swift)
+      if !deskResumed { deskResumed = true; resumeDeskDeletes() }
       if liveTask == nil && active { startLive() }
     } catch {
       // (a confirmed removal is said on the start screen: removedHere)

@@ -440,6 +440,7 @@ ${isHuman() && !inv ? inviteTiles() : isHuman() ? html`<section class="set-group
 <form method="post" action="/pair" class="set-agent"><input type="hidden" name="role" value="agent"><button type="submit" class="set-row" id="settings-invite-agent"><span class="set-ico">${PLUS}</span><b>Invite Agent…</b><span class="set-detail">a command for Claude Code</span>${SET_CHEVRON}</button></form></section>` : ''}
 <nav class="set-group" aria-label="Settings">
 ${setRow({ href: '/settings/agents', icon: sk('terminal'), word: 'Agents', detail: agentsDetail(), id: 'settings-agents' })}
+${isHuman() ? setRow({ href: '/settings/desks', icon: sk('desk'), word: 'Desks', detail: (() => { const k = t.model().state?.desks?.length ?? 0; return k ? `${k} ${k === 1 ? 'desk' : 'desks'}` : '' })(), id: 'settings-desks' }) : ''}
 ${setRow({ href: '/settings/devices', icon: art('phone'), word: 'Devices', detail: people ? `${people} ${people === 1 ? 'device' : 'devices'}` : '', id: 'settings-devices' })}
 ${isHuman() ? setRow({ href: '/settings/account', icon: sk('key'), word: 'Account', detail: m().room.account ? m().room.account.email ?? 'Passkey' : '', id: 'settings-account' }) : ''}
 </nav>
