@@ -45,3 +45,33 @@ test('a card revised five times shows five entries under it, none folded away, t
   const talk = html.indexOf('>status<'), v3 = html.indexOf('data-version="3"'), v4 = html.indexOf('data-version="4"')
   assert.ok(talk > v3 && talk < v4, 'his reply stands where it was written, between the revisions')
 })
+
+// ---- the comments: tied to the card (its Chat, chat:card/<id>), never to a version ----
+
+test('every comment stands in one stream with the revisions, both sides, What?? and a note, in time order', async () => {
+  const { EXPLAIN_TEXT, HAND_BACK_TEXT } = await import('../../../app/web/public/ui.mjs')
+  const w = new World(); w.groups()
+  const id = id16(0xc5), hid = hex(id), OPTIONS = [{ key: 'a', label: 'Split' }, { key: 'b', label: 'Centered' }]
+  const me = w.me, say = (text, extra = {}, sender = w.agent) => w.message({ text, ...extra }, { card: id, sender })
+  let prev = w.card(id, { card_type: 'decision', title: 'Which hero?', options: OPTIONS, object_version: 1 }).hash
+  say('Background: measured at three window heights.')
+  say(EXPLAIN_TEXT, { explain: true }, me)
+  say('Explained: split shows the app at once.')
+  prev = w.card(id, { card_type: 'decision', title: 'Which hero, split or centered?', options: OPTIONS, change_note: 'clearer title', object_version: 2 }, { previous: prev }).hash
+  say('Split looks better on the phone.', {}, me)
+  say(HAND_BACK_TEXT, { hand_back: true }, me)
+  say('Too long, please shorten it.', {}, me)
+  w.card(id, { card_type: 'decision', title: 'Split hero?', options: OPTIONS, change_note: 'shortened', object_version: 3 }, { previous: prev })
+  say('Shortened as asked.')
+  say('From my notes: keep the plant photo.', { note: { written_at: w.clock } }, me)
+  w.answer(id, { answer_action: 'answer', choices: ['a'] })
+  const state = new BoardState({ model: w.model }).update()
+  const card = state.cards.find(c => c.id === hid)
+  const html = String(cardThread(card, { state, byAgent: new Map() }))
+  const order = ['Background: measured', 'You asked for an explanation', 'Explained: split', 'Version 2', 'clearer title', 'Split looks better', 'Version 3', 'shortened', 'Shortened as asked', 'From my notes', 'You chose']
+  const at = order.map(s => html.indexOf(s))
+  assert.ok(at.every(i => i >= 0), `every entry stands: ${order.filter((s, i) => at[i] < 0).join(', ')}`)
+  assert.deepEqual([...at].sort((x, y) => x - y), at, 'in time order, the revisions between the comments')
+  assert.match(html, /Too long, please shorten it\./, 'what he wrote with the hand-back')
+  assert.doesNotMatch(html, /Earlier versions|<div class="tc-earlier-group" hidden>/, 'nothing of it folded away')
+})

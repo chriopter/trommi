@@ -15,7 +15,7 @@
 // "card" adds the pencil for a note on one option, the draft kept while typing,
 // Enter that sends, files that are pasted or dropped, and the pen's arrow from the picture to its option.
 // Styles: card.css.
-import { NEEDS_NEWER, SAID, heardOf, linkOf, runsOf, stackOf, walkOf, workLine } from './app.mjs'
+import { NEEDS_NEWER, SAID, deskScope, heardOf, linkOf, runsOf, stackOf, walkOf, workLine } from './app.mjs'
 import { Controller, PLUS, avatar, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, isTyping, letterKeysOn, FINAL_TIP, LATER_TAG, SETTLED, WORDS, act, advisedKeys, advisedLabels, agoSpan, arrowStrokes, cardNote, cardNr, cardPath, controller, copyButton, deskRow, doodleSvg, el, finalSign, html, isKnock, kindOf, knockWord, linkNote, pageChip, plain, raw, rich, sideWays, sk, sketch, srcOf, thumb, sayError } from './ui.mjs'
 const icon = d => raw(`<svg viewBox="0 0 24 24" class="tc-icon" aria-hidden="true"><path d="${d}"/></svg>`)
 const ARROW_L = 'M19 12H5M11 6l-6 6 6 6', ARROW_R = 'M5 12h14M13 6l6 6-6 6', TICK = 'M5 12.5l4.5 4.5L19 7.5', PLAY = 'M9 6.5v11l9-5.5z', GROW = 'M14 5h5v5M19 5l-6 6M10 19H5v-5M5 19l6-6'
@@ -454,8 +454,6 @@ const nextOpen = (card, model, id) => {
   const at = id && waits.has(id) ? id : (model.state.desk_order ?? []).find(x => waits.has(x))
   return at ? model.byCard.get(at) ?? null : null
 }
-/** The sessions of the desk in view, by session key, for the client core's walk (null: every desk). */
-export const deskScope = m => (m.all || m.desk == null ? null : m.agents.map(a => a.device_id))
 /** The answers that settle a card on its own page: after each the page offers the next question (nextStep). */
 export const ANSWERS = ['decide', 'trust', 'close', 'shred']
 /** The whole <main> of a card's page. pic: which picture stands. walk: a step of "Next, please". version: as it was
@@ -1816,7 +1814,6 @@ export function register(t) {
   const filesOf = form => (form ? [...form.values()].filter(v => v instanceof File && v.size > 0) : [])
   async function actRoute(req, res, form, id, what, cardView) {
     const before = model(), card = before.byCard.get(id)
-    const walk0 = walkOf(before), after = card ? walk0.slice(walk0.indexOf(card) + 1).map(c => c.id) : []
     const wantsStream = t.wantsStream(req)
     const stay = form.has('stay') && wantsStream
     try {
@@ -1860,7 +1857,7 @@ export function register(t) {
     if (fromSession) return redirect(res, `${home}${said ? `?${said}` : ''}`)
     // (in the walk, and after the reverse card on a card's own page: on to the next open card)
     if (form.has('walk') || (form.has('next') && what === 'revise')) {
-      const m = model(), walk = walkOf(m), next = after.map(x => m.byCard.get(x)).find(c => c && walk.includes(c)) ?? walk.find(c => c.id !== id)
+      const nextId = await Promise.resolve(hub.nextOpenAfter?.(id, deskScope(model()))).catch(() => null), next = nextId ? model().byCard.get(nextId) : null
       return redirect(res, next ? to(next, BASE, form.has('walk') ? 'walk=1' : '', said) : `${BASE}/${said ? `?${said}` : ''}`)
     }
     return redirect(res, `${BASE}/${said ? `?${said}` : ''}`)

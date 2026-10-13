@@ -49,11 +49,19 @@ pub fn note_call_meta(meta: &serde_json::Value) -> bool {
     let Some(id) = id else { return false };
     set_codex();
     let mut t = THREAD.lock().unwrap();
-    if t.as_deref() == Some(id) {
-        return false;
+    match t.as_deref() {
+        Some(mine) if mine == id => false,
+        // The first thread named is this connector's for good: it is whose keys it uses. Another thread's call
+        // (it should never come: Codex starts a connector per thread) changes nothing.
+        Some(mine) => {
+            eprintln!("[trommi] a tool call named the Codex thread {id}, but this connector serves the thread {mine}: ignored");
+            false
+        }
+        None => {
+            *t = Some(id.to_string());
+            true
+        }
     }
-    *t = Some(id.to_string());
-    true
 }
 
 /// A thread id as Codex writes it: a UUID (hex and dashes), nothing a command line could take for an option.

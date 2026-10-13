@@ -768,3 +768,117 @@ async fn codex_app_server_threads_share_a_parent() {
     t1.start(&m).await;
     all_on_board(&mut m, &mut [&mut t1, &mut t2, &mut t3]).await;
 }
+
+// ---- ownership by the session's id (stage 1: no guessing) ------------------------------------------------------
+
+impl Session {
+    /// Who this session is to its keys' owner records.
+    fn owner(&self) -> String {
+        match self.client {
+            Client::Claude => format!("cc:{}", self.id),
+            Client::Codex => format!("codex:{}", self.id),
+        }
+    }
+}
+
+/// The owner records of the machine that name `owner`.
+fn owner_files(m: &Machine, owner: &str) -> Vec<PathBuf> {
+    let mut out = vec![];
+    for room in std::fs::read_dir(m.seat.home.path().join("keys")).into_iter().flatten().flatten() {
+        for f in std::fs::read_dir(room.path()).into_iter().flatten().flatten() {
+            let p = f.path();
+            let name = p.file_name().unwrap().to_string_lossy().to_string();
+            if name.ends_with(".owner")
+                && !name.starts_with("replaced-")
+                && std::fs::read_to_string(&p)
+                    .ok()
+                    .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                    .is_some_and(|v| v["owner"] == owner)
+            {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+both!(true, a_key_of_no_known_session_is_never_taken);
+/// A key whose owner record is missing, and one that names only a process (as keys of earlier connectors without
+/// a session id): a fresh session in that folder takes neither, says how to get in, and joins by link.
+async fn a_key_of_no_known_session_is_never_taken(client: Client) {
+    let mut m = Machine::new().await;
+    let mut s1 = Session::new(&m, "s1", client, "project", "cfg");
+    s1.start(&m).await;
+    s1.connect(&mut m, 'A').await;
+    let mut s2 = Session::new(&m, "s2", client, "project", "cfg");
+    s2.start(&m).await;
+    s2.self_join(&mut m, &s1).await;
+    s1.close().await;
+    s2.close().await;
+    // s1's key without a record; s2's naming a process that ended
+    let f1 = owner_files(&m, &s1.owner());
+    let f2 = owner_files(&m, &s2.owner());
+    assert_eq!((f1.len(), f2.len()), (1, 1));
+    std::fs::remove_file(&f1[0]).unwrap();
+    std::fs::write(&f2[0], r#"{"owner":"","claude_pid":4194300,"claude_start":"","at":0}"#).unwrap();
+    let mut s3 = Session::new(&m, "s3", client, "project", "cfg");
+    s3.start(&m).await;
+    let said = s3.refused("inbox").await;
+    says_what_to_do(client, &said);
+    s3.connect(&mut m, 'A').await;
+    let (_, d1, _) = s1.on.unwrap();
+    let (_, d2, _) = s2.on.unwrap();
+    let (_, d3, _) = s3.on.unwrap();
+    assert!(d3 != d1 && d3 != d2, "s3 has a key of its own");
+    all_on_board(&mut m, &mut [&mut s3]).await;
+}
+
+/// A Claude Code session resumed in another folder: its key is found by its id where it lies.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_resumed_in_another_folder_finds_its_key() {
+    let mut m = Machine::new().await;
+    let mut s1 = Session::new(&m, "s1", Client::Claude, "one", "cfg");
+    s1.start(&m).await;
+    s1.connect(&mut m, 'A').await;
+    s1.close().await;
+    s1.folder = m.folder("two");
+    s1.resume(&m).await;
+    all_on_board(&mut m, &mut [&mut s1]).await;
+}
+
+/// Keys of one session in two rooms (copied by hand, say): refused by name, never one picked by directory order.
+#[tokio::test(flavor = "multi_thread")]
+async fn keys_of_one_session_in_two_rooms_are_refused_by_name() {
+    let mut m = Machine::new().await;
+    let mut s1 = Session::new(&m, "s1", Client::Claude, "one", "cfg");
+    s1.start(&m).await;
+    s1.connect(&mut m, 'A').await;
+    let mut s2 = Session::new(&m, "s2", Client::Claude, "two", "cfg");
+    s2.start(&m).await;
+    s2.connect(&mut m, 'B').await;
+    s1.close().await;
+    s2.close().await;
+    let f2 = owner_files(&m, &s2.owner());
+    let text = std::fs::read_to_string(&f2[0]).unwrap().replace(&s2.owner(), &s1.owner());
+    std::fs::write(&f2[0], text).unwrap();
+    s1.resume(&m).await;
+    let said = s1.refused("inbox").await;
+    assert!(
+        said.contains("2 Trommi rooms") && said.contains("move the keys"),
+        "{said}"
+    );
+}
+
+/// A Codex connector serves the first thread that names itself; a call naming another thread changes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_connector_keeps_its_first_thread() {
+    let mut m = Machine::new().await;
+    let mut t1 = Session::new(&m, "t1", Client::Codex, "project", "cfg");
+    t1.start(&m).await;
+    t1.connect(&mut m, 'A').await;
+    let other = uuid();
+    t1.mcp().call_meta = Some(codex_meta(&other));
+    all_on_board(&mut m, &mut [&mut t1]).await;
+    assert!(owner_files(&m, &format!("codex:{other}")).is_empty());
+    assert_eq!(owner_files(&m, &t1.owner()).len(), 1);
+}

@@ -47,6 +47,8 @@ pub struct Mirror {
     open_permissions: Vec<String>,
     session_list: Vec<Value>,
     alerts: Vec<Value>,
+    /// The person's registers (desks, the crown, drafts), by name: their values.
+    human: BTreeMap<String, Value>,
     /// When the core wants to be asked again by the clock alone (ms); 0: never.
     pub wake_at: u64,
 }
@@ -89,6 +91,13 @@ impl Mirror {
         }
         if let Some(rows) = p["session_list"].as_array() {
             self.session_list = rows.clone();
+        }
+        for r in p["human"].as_array().into_iter().flatten() {
+            let Some(key) = r["key"].as_str() else { continue };
+            match r["raw"]["value"].clone() {
+                Value::Null => self.human.remove(key),
+                v => self.human.insert(key.to_string(), v),
+            };
         }
         if let Some(alerts) = p["alerts"].as_array() {
             self.alerts = alerts.clone();
@@ -155,34 +164,61 @@ impl Mirror {
         Value::Array(rows).to_string()
     }
 
-    /// The sidebar: every session that is not archived, each helper under its main session, with its link and
-    /// whether it waits for the person (`waiting`) or is stopped (`blocked`, the red hand).
+    /// The sidebar: the desks in their order, and every session that is not archived, each helper under its main
+    /// session, with what the web draws of it: its mark and board id (its drawing and hue: the pen), its link (live,
+    /// asleep, gone …), the questions it waits with, the red hand, the crown of its desk.
     pub fn sessions_json(&self) -> String {
         let live: Vec<&Value> = self
             .session_list
             .iter()
             .filter(|r| r["archived"] != json!(true) && r["removed"] != json!(true))
             .collect();
-        let row = |r: &Value, depth: u32| {
-            let link = r["link"]["state"].as_str().or(r["link"].as_str()).unwrap_or("");
+        // the desks: the registers `desk/<id>` (and the old `desks` map), by when they were made
+        let mut desks: BTreeMap<String, Value> = BTreeMap::new();
+        if let Some(map) = self.human.get("desks").and_then(Value::as_object) {
+            for (id, v) in map {
+                desks.insert(id.clone(), v.clone());
+            }
+        }
+        for (k, v) in &self.human {
+            if let Some(id) = k.strip_prefix("desk/") {
+                desks.insert(id.to_string(), v.clone());
+            }
+        }
+        let crowned = |r: &Value| {
+            let desk = r["desk"].as_str().filter(|d| !d.is_empty()).unwrap_or("main");
+            let crown = desks.get(desk).map(|d| &d["crown"]).filter(|c| c.is_object()).or_else(|| self.human.get("crown"));
+            r["starred"] == json!(true)
+                || crown.is_some_and(|c| {
+                    (c["session_id"].is_string() && c["session_id"] == r["session_id"])
+                        || (c["agent_device_id"].is_string() && c["agent_device_id"] == r["agent_device_id"])
+                })
+        };
+        let row = |r: &Value, depth: u32, helpers: Vec<Value>| {
             json!({
                 "id": r["session_id"].as_str().or(r["key"].as_str()).unwrap_or(""),
+                "board_id": r["id"],
+                "mark": r["icon"],
                 "name": r["name"],
                 "online": r["online"],
-                "link": link,
+                "link": r["link"]["state"].as_str().unwrap_or(""),
                 "waiting": r["waiting"],
-                "blocked": !r["blocked"].is_null(),
+                "blocked": r["blocked"]["why"].as_str(),
                 "working": r["working"],
-                "desk": r["desk"],
+                "desk": r["desk"].as_str().filter(|d| !d.is_empty()).unwrap_or("main"),
+                "crown": crowned(r),
                 "depth": depth,
+                "helpers": helpers,
             })
         };
-        let mut out = Vec::new();
+        let mut sessions = Vec::new();
         for main in live.iter().filter(|r| r["parent_key"].is_null()) {
-            out.push(row(main, 0));
             let key = main["key"].as_str();
-            for helper in live.iter().filter(|r| r["parent_key"].as_str() == key && key.is_some()) {
-                out.push(row(helper, 1));
+            let subs: Vec<&&Value> = live.iter().filter(|r| r["parent_key"].as_str() == key && key.is_some()).collect();
+            let edges = subs.iter().map(|h| json!({ "board_id": h["id"], "mark": h["icon"], "waiting": h["waiting"] })).collect();
+            sessions.push(row(main, 0, edges));
+            for helper in subs {
+                sessions.push(row(helper, 1, Vec::new()));
             }
         }
         // (a helper whose main session is not listed still shows)
@@ -190,9 +226,28 @@ impl Mirror {
             let parent = r["parent_key"].as_str();
             parent.is_some() && !live.iter().any(|m| m["key"].as_str() == parent)
         }) {
-            out.push(row(orphan, 0));
+            sessions.push(row(orphan, 0, Vec::new()));
         }
-        Value::Array(out).to_string()
+        let mut order: Vec<(u64, String, String)> = desks
+            .iter()
+            .map(|(id, v)| (v["created_at"].as_u64().unwrap_or(0), id.clone(), v["name"].as_str().unwrap_or("").to_string()))
+            .collect();
+        // (a session on a desk no register names: the desk still shows)
+        for s in &sessions {
+            let d = s["desk"].as_str().unwrap_or("main");
+            if !order.iter().any(|(_, id, _)| id == d) {
+                order.push((u64::MAX, d.to_string(), String::new()));
+            }
+        }
+        order.sort();
+        let desks: Vec<Value> = order
+            .into_iter()
+            .map(|(_, id, name)| {
+                let waiting: u64 = sessions.iter().filter(|s| s["desk"] == json!(id)).filter_map(|s| s["waiting"].as_u64()).sum();
+                json!({ "id": id, "name": if name.is_empty() { if id == "main" { "Personal".to_string() } else { id.clone() } } else { name }, "waiting": waiting })
+            })
+            .collect();
+        json!({ "desks": desks, "sessions": sessions }).to_string()
     }
 
     /// One session's Chat, oldest first, with who wrote each line.
@@ -205,7 +260,7 @@ impl Mirror {
         let rows: Vec<Value> = t
             .items
             .values()
-            .filter(|i| i["content_type"] == json!("message") || i["content"]["text"].is_string())
+            .filter(|i| i["content_type"] == json!("message") || i["content"]["text"].is_string() || i["content"]["attachments"].is_array())
             .map(|i| {
                 let sender = i["sender_device_id"].as_str().unwrap_or("");
                 let mine = sender == me;
@@ -222,6 +277,8 @@ impl Mirror {
                     "who": if mine { "You".to_string() } else if human { "You (other device)".to_string() } else { name.clone() },
                     "pending": i["pending"] == json!(true),
                     "ago": ago(i["sent_at"].as_u64().unwrap_or(0), now),
+                    "at": i["sent_at"],
+                    "files": files_of(&i["content"]["attachments"]),
                 })
             })
             .collect();
@@ -255,6 +312,27 @@ impl Mirror {
     pub fn counts(&self) -> (usize, usize) {
         (self.stack.len() + self.open_permissions.len(), self.session_list.len())
     }
+}
+
+/// A body's files as the window shows them: the reference (which the engine opens), its name, type and size, and
+/// whether it is a picture.
+fn files_of(list: &Value) -> Value {
+    Value::Array(
+        list.as_array()
+            .into_iter()
+            .flatten()
+            .filter(|a| a["attachment_id"].is_string() && a["file_key"].as_str().is_some_and(|k| !k.is_empty()))
+            .map(|a| {
+                let media = a["media_type"].as_str().unwrap_or("");
+                json!({
+                    "id": a["attachment_id"], "name": a["file_name"], "media_type": media,
+                    "size": a["total_size"], "width": a["width"], "height": a["height"],
+                    "image": media.starts_with("image/") && media != "image/svg+xml",
+                    "ref": { "attachment_id": a["attachment_id"], "file_key": a["file_key"], "sha256": a["sha256"], "file_name": a["file_name"] },
+                })
+            })
+            .collect(),
+    )
 }
 
 /// "5 min ago" and the like.
@@ -333,6 +411,7 @@ fn card_row(c: &Value, session: &str, now: u64) -> Value {
     row.insert("working".into(), json!(c["working"] == json!(true)));
     row.insert("handed_back".into(), json!(!c["in_revision"].is_null()));
     row.insert("attachments".into(), json!(attachments));
+    row.insert("files".into(), files_of(&c["attachments"]));
     row.insert("readable".into(), json!(c["content_state"] == json!("ok")));
     row.insert("ago".into(), json!(ago(c["updated_at"].as_u64().or(c["created_at"].as_u64()).unwrap_or(0), now)));
     Value::Object(row)

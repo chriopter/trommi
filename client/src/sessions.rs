@@ -74,6 +74,8 @@ pub struct SessionRow {
     pub device_active: u64,
     /// When its link, red hand or quiet hint may change by the clock alone.
     pub recheck_at: Option<u64>,
+    /// What each of its status lines shows now, by line id (status.rs `line_state`).
+    pub lines: BTreeMap<String, String>,
 }
 
 fn is_hex_id(s: &str) -> bool {
@@ -216,6 +218,7 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
         a.quiet_since = st.quiet_since;
         a.device_active = st.device_active;
         a.recheck_at = st.recheck_at;
+        a.lines = st.lines;
     }
     out.sort_by(|a, b| {
         a.position
