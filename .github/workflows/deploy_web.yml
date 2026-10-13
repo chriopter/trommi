@@ -135,7 +135,7 @@ jobs:
       contents: read
       actions: read
     outputs:
-      reason: ${{ steps.ask.outputs.reason }}
+      reason: ${{ steps.smoke.outputs.reason || steps.ask.outputs.reason }}
     env:
       COMMIT: ${{ needs.attest.outputs.commit }}
       VERSION: ${{ needs.attest.outputs.version }}
@@ -147,6 +147,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .github/tools/wrangler
+            .github/scripts/web_smoke.sh
             .node-version
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -268,6 +269,37 @@ jobs:
             echo "::error::app.trommi.com does not serve $short"
             exit 1
           }
+      # What a browser gets now is this release, byte for byte, and the start page can load (.github/scripts/web_smoke.sh).
+      - name: Smoke test
+        id: smoke
+        if: steps.newer.outputs.skip != 'true'
+        run: |
+          set -u
+          if reason=$(sh .github/scripts/web_smoke.sh release "$COMMIT"); then exit 0; fi
+          printf 'reason=%s\n' "the smoke test after the delivery failed: $reason; the build before was put back" >> "$GITHUB_OUTPUT"
+          echo "::error::$reason"
+          exit 1
+      # A delivery that does not pass the smoke test is taken back: Cloudflare serves the version before again
+      # (wrangler rollback: the worker's previous version, with its files). The run stays red and the issue says why.
+      - name: Put the build before back
+        if: failure() && steps.smoke.outcome == 'failure'
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          set -eu
+          wrangler="$PWD/.github/tools/wrangler/node_modules/.bin/wrangler"
+          cd release
+          op run --environment "$OP_ENVIRONMENT_ID" -- "$wrangler" rollback --yes --message "smoke test of build $VERSION ($COMMIT) failed"
+          for try in $(seq 1 30); do
+            got=$(curl -fsS --max-time 10 "https://app.trommi.com/gen/build.txt?ci=$GITHUB_RUN_ID-back-$try" | sed -n 's/^commit: //p' | head -n 1 || true)
+            echo "try $try: app.trommi.com serves ${got:-nothing}"
+            [ -n "$got" ] && [ "$got" != "$(printf '%s' "$COMMIT" | cut -c1-7)" ] && { echo "### Web app: put back, serves \`$got\` again" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+            sleep 5
+          done
+          echo "::error::after the rollback app.trommi.com still serves ${got:-nothing}"
+          exit 1
       - name: Nothing was delivered
         if: steps.newer.outputs.skip == 'true'
         env:
