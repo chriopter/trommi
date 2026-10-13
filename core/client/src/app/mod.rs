@@ -42,10 +42,15 @@ pub const DEFAULT_HUB: &str = "https://hub.trommi.com";
 /// At most so many of the engine's alerts are kept for the views.
 const ALERTS_MAX: usize = 200;
 
+/// At most so many invites with a Request wait for the invite flow.
+const INVITE_REQUESTS_MAX: usize = 64;
+
 /// What a piece of I/O in flight was for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Pending {
     DeviceLoad,
+    /// A cache entry deleted (a file the hub evicted): nothing waits for it.
+    CacheDelete,
 }
 
 pub struct App {
@@ -76,6 +81,8 @@ pub struct App {
     view_wake: Option<u64>,
     /// The device's source of randomness when it is not the system's (a seeded test).
     entropy: Option<Box<dyn trommi_core::crypto::Entropy + Send>>,
+    /// Invites of this room a newcomer sent its Request for, oldest first (the invite flow reads them: W3).
+    invite_requests: Vec<trommi_core::ids::InviteId>,
 }
 
 impl Default for App {
@@ -103,6 +110,7 @@ impl App {
             stale_views: false,
             view_wake: None,
             entropy: None,
+            invite_requests: Vec::new(),
         }
     }
 
@@ -154,6 +162,11 @@ impl App {
         self.sessions_not_joined.as_deref()
     }
 
+    /// The invites a newcomer sent its Request for since they were last taken, oldest first, each once.
+    pub fn take_invite_requests(&mut self) -> Vec<trommi_core::ids::InviteId> {
+        std::mem::take(&mut self.invite_requests)
+    }
+
     /// The engine's alerts so far, oldest first.
     pub fn alerts(&self) -> &[engine::Alert] {
         &self.alerts
@@ -199,6 +212,8 @@ impl App {
                         self.next_view.phase = Phase::Stopped;
                     }
                 },
+                // (a cache entry that stays is only a cache entry: the hub no longer serves the file)
+                Some(Pending::CacheDelete) => {}
                 None => {
                     let mine = self.with_engine(now_ms, &mut out, |engine, ctx| {
                         engine.on_store(ctx, id, &result)
@@ -325,6 +340,7 @@ impl App {
             return;
         };
         let mut fed = false;
+        let mut evicted = Vec::new();
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
@@ -338,6 +354,15 @@ impl App {
                 }
                 Report::Stopped(_) => self.next_view.phase = Phase::Stopped,
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
+                Report::InviteRequest { invite } => {
+                    if !self.invite_requests.contains(&invite) {
+                        if self.invite_requests.len() >= INVITE_REQUESTS_MAX {
+                            self.invite_requests.remove(0);
+                        }
+                        self.invite_requests.push(invite);
+                    }
+                }
+                Report::FileEvicted { file } => evicted.push(file),
                 Report::Alert(alert) => {
                     if self.alerts.len() >= ALERTS_MAX {
                         self.alerts.remove(0);
@@ -346,6 +371,15 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        if !evicted.is_empty() {
+            // the cached bytes of a file the hub deleted (11.3) go
+            let room = crate::engine::feed::hex(engine.room().as_bytes());
+            let delete = evicted.iter().map(|file| crate::cache::key(&room, crate::cache::part::FILE, Some(&crate::engine::feed::hex(file.as_bytes())))).collect();
+            let id = IoId(self.next_id);
+            self.next_id += 1;
+            self.pending.insert(id, Pending::CacheDelete);
+            out.push(Effect::Store { id, op: StoreOp::Put { put: Vec::new(), delete } });
         }
         if fed || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
             let _ = self.board.finish(now_ms);

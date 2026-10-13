@@ -93,6 +93,7 @@ fn family(method: &str, path: &str) -> Option<&'static [&'static str]> {
         ("POST", ["v1", "groups", _, "commits"]) => &["outbox-commit", "outbox-external-commit"],
         ("POST", ["v1", "groups", _, "messages"]) => &["outbox-message", "outbox-relay"],
         ("POST", ["v1", "requests"]) => &["wish"],
+        ("GET", ["v1", "requests"]) => &["wishes"],
         ("POST", ["v1", "groups", _, "reject"]) => &["reject"],
         _ => return None,
     })

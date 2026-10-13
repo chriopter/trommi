@@ -16,6 +16,8 @@ pub mod joins;
 pub mod upkeep;
 #[path = "record.rs"]
 pub mod record;
+#[path = "events.rs"]
+pub mod events;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -23,7 +25,7 @@ use trommi_core::device::{
     WelcomeExpectation,
 };
 use trommi_core::hub_auth::HubAddress;
-use trommi_core::ids::{DeviceId, GroupId, ObjectId, RoomId};
+use trommi_core::ids::{DeviceId, FileId, GroupId, InviteId, ObjectId, RoomId};
 use trommi_core::store::{OutboxEntry, OutboxKind};
 use trommi_core::Error;
 
@@ -172,6 +174,12 @@ pub enum Report {
     /// The session groups of a sign-in with the code are through: how many the hub took this device into, and the
     /// ones it is not in, each with the reason. Another human device of the person adds it to those (5.2.7).
     SessionsJoined { joined: u32, not_joined: Vec<(GroupId, &'static str)> },
+    /// A piece the hub only passed on, as the protocol core opened it (a stroke still being drawn, 7.2).
+    Relay(Box<Received>),
+    /// A newcomer sent its Request for an invite of this room (12.1): the invite flow reads it.
+    InviteRequest { invite: InviteId },
+    /// The hub deleted a file (11.3): its cached bytes go.
+    FileEvicted { file: FileId },
     Stopped(Stopped),
 }
 
@@ -226,6 +234,8 @@ enum Asked {
     Claim { expect: Expect, job: upkeep::Job },
     /// A page of the hub's list of the room's groups, for a job of tending (`upkeep`).
     RoomGroups { expect: Expect, job: upkeep::Job },
+    /// The hub's list of wishes (`events`).
+    Wishes(Expect),
     /// The engine's record, read at the start and written when it changed (`record`).
     Record,
     RecordWrite,
@@ -237,7 +247,7 @@ impl Asked {
     fn expect(&self) -> Option<&Expect> {
         match self {
             Asked::DeviceWrite | Asked::Record | Asked::RecordWrite => None,
-            Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) => Some(e),
+            Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) | Asked::Wishes(e) => Some(e),
             Asked::Post { expect, .. }
             | Asked::GroupLog { expect, .. }
             | Asked::Chain { expect, .. }
@@ -357,6 +367,9 @@ pub struct Engine {
     /// Welcomes read with nothing joined: items that waited for a group since (`WELCOMES_AGAIN`).
     welcomes_idle: Option<u32>,
     welcomes_after: u64,
+    /// A Welcome was read before the room reached its epoch (`room-behind`, `wrong-epoch`); `.1`: the groups changed
+    /// since, so it is read again once the items at hand are through.
+    welcome_waits: (bool, bool),
     /// Envelopes refused as `group-behind` for a group this device does not hold that far: per group the first such
     /// change and the lowest epoch. Read again once the group is there (`past`).
     behind: BTreeMap<GroupId, (u64, u64)>,
@@ -408,6 +421,8 @@ pub struct Engine {
     restoring: Option<IoId>,
     /// The record as it was last written.
     written: Option<record::Record>,
+    /// Wishes of other devices for keys, and the ones answered (`events`).
+    wishes: events::Wishes,
 }
 
 /// Why a stored device does not open as an engine.
@@ -472,6 +487,7 @@ impl Engine {
             order_retry: Retry::default(),
             welcomes_idle: None,
             welcomes_after: 0,
+            welcome_waits: (false, false),
             behind: BTreeMap::new(),
             keyless: BTreeMap::new(),
             withheld: BTreeMap::new(),
@@ -499,6 +515,7 @@ impl Engine {
             floor: None,
             restoring: None,
             written: None,
+            wishes: events::Wishes::default(),
         })
     }
 
@@ -731,6 +748,7 @@ impl Engine {
             Asked::JoinRead { what, .. } => self.on_join_read(ctx, what, answer, unauthorised),
             Asked::Claim { job, .. } => self.on_claimed(ctx, job, answer, unauthorised),
             Asked::RoomGroups { job, .. } => self.on_room_groups(ctx, job, answer, unauthorised),
+            Asked::Wishes(_) => self.on_wishes(ctx, answer),
         }
         self.drive(ctx);
         true
@@ -825,8 +843,11 @@ impl Engine {
                 self.report(Report::Presence(p))
             }
             StreamEvent::Here => self.report(Report::Here),
-            // (relayed pieces, wishes, invite Requests, archived, evicted files: with the parts that use them)
-            StreamEvent::Relay { .. } | StreamEvent::Wish(_) | StreamEvent::InviteRequest { .. } | StreamEvent::Archived { .. } | StreamEvent::FileEvicted { .. } => {}
+            StreamEvent::Relay { group, sender, message, .. } => self.on_relay(ctx, group, sender, &message),
+            StreamEvent::Wish(row) => self.on_wish(row),
+            StreamEvent::InviteRequest { invite } => self.report(Report::InviteRequest { invite }),
+            StreamEvent::Archived { group } => self.on_archived(ctx, group),
+            StreamEvent::FileEvicted { file } => self.report(Report::FileEvicted { file }),
         }
     }
 
@@ -859,6 +880,7 @@ impl Engine {
         self.drive_joins(ctx);
         self.drive_upkeep(ctx);
         self.drive_tending(ctx);
+        self.drive_wishes(ctx);
         self.drive_pump(ctx);
         self.flush(ctx);
         self.connect(ctx);
@@ -1201,11 +1223,17 @@ impl Engine {
         if groups_changed {
             self.groups_changed();
         }
+        // a Welcome that came before the room Commit it builds on: read again now that the room moved
+        if self.welcome_waits == (true, true) && self.repair.is_none() && self.todo.is_empty() && self.stopped.is_none() {
+            self.welcome_waits = (false, false);
+            self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+        }
     }
 
     /// The device's groups may have changed: the App is told, and what waited for a group is looked at again.
     fn groups_changed(&mut self) {
         self.report(Report::Groups);
+        self.welcome_waits.1 = self.welcome_waits.0;
         self.tending.changed();
         if self.behind.is_empty() {
             return;
@@ -1572,31 +1600,39 @@ impl Engine {
             Err(failure) => return self.repair_failed(ctx, failure, unauthorised),
         };
         self.order_retry.ok();
-        let Some(Repair::Welcomes { mut joined, .. }) = self.repair.take() else { return };
+        let Some(Repair::Welcomes { mut joined, mut after, .. }) = self.repair.take() else { return };
         let expected = WelcomeExpectation { room: self.room, committer: None };
         let more = !rows.is_empty();
+        // `welcomes_after` passes only what is settled: a Welcome read before the room Commit it builds on is read
+        // again by the next look (the stream says a Welcome before the Commits ahead of it are taken)
+        let mut settled = true;
         for row in rows {
-            self.welcomes_after = self.welcomes_after.max(row.id);
+            after = after.max(row.id);
             // (the hub keeps a Welcome until this device writes in its group: one joined before is passed over)
-            if self.device.group(&row.group).is_ok() {
-                continue;
-            }
-            match self.device.join_welcome(&row.welcome, &expected, ctx.now) {
-                Ok(j) => joined.push(j.group),
-                // (taken at its place in the log, with the Commit that made it; or not yet: the room is behind)
-                Err(Error::WrongEpoch | Error::RoomBehind) => {}
-                Err(e) => {
-                    self.local(ctx, &e);
-                    if self.stopped.is_some() {
-                        return;
+            if self.device.group(&row.group).is_err() {
+                match self.device.join_welcome(&row.welcome, &expected, ctx.now) {
+                    Ok(j) => joined.push(j.group),
+                    // (not yet: the room is behind, or this device has not reached the epoch it was made in)
+                    Err(Error::WrongEpoch | Error::RoomBehind) => settled = false,
+                    Err(e) => {
+                        self.local(ctx, &e);
+                        if self.stopped.is_some() {
+                            return;
+                        }
+                        self.report(Report::Alert(Alert::Welcome { group: row.group, code: e.code() }));
                     }
-                    self.report(Report::Alert(Alert::Welcome { group: row.group, code: e.code() }));
                 }
             }
+            if settled {
+                self.welcomes_after = self.welcomes_after.max(row.id);
+            }
+        }
+        if !settled {
+            self.welcome_waits = (true, false);
         }
         if more {
             // an answer holds a bounded stretch: asked again after its last row until one is empty
-            self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined, asked: false });
+            self.repair = Some(Repair::Welcomes { after, joined, asked: false });
             return;
         }
         if joined.is_empty() {
@@ -1605,6 +1641,7 @@ impl Engine {
         }
         self.welcomes_idle = None;
         self.desk.want = true;
+        self.tending.look_for_archived();
         self.groups_changed();
         // A group joined late: its log is handed again from its start up to the position, so the join has its
         // place in the hub's order. What lies after the position comes at its place in the one order.
@@ -1924,6 +1961,8 @@ impl Engine {
             }
             Err(e) => self.local(ctx, &e),
         }
+        // the wishes for keys that came while this device was away (the hub keeps them seven days)
+        self.ask_wishes(ctx);
     }
 
     // ---- the outbox: one entry in flight, strictly in order

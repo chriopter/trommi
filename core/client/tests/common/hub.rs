@@ -17,6 +17,9 @@
 //! - `POST /v1/key-packages/claim`: any signed-in device claims of any device (the real hub lets a human device, and
 //!   an opener for its helper session);
 //! - `GET /v1/rooms/{room}/groups`: every group to every device, `stale` always false, `room_epoch` 0;
+//! - the stream's events beside the order: a Welcome to each device added, relays to the human devices but the sender, wishes to the human
+//!   devices (a device keeps every wish, not its 16 newest), an archived session to its leaves, an evicted file
+//!   to the human devices (not to the leaves of its group);
 //! - files, pushes, accounts, invites, recovery: not there.
 
 #![allow(dead_code)]
@@ -193,8 +196,13 @@ pub struct Hub {
     /// Every request that reached the hub, as "METHOD /path?query".
     pub seen: Vec<String>,
     pub fault: Option<Fault>,
-    /// The streams that are open: the device, and the last change sent on it.
-    pub streaming: Vec<(DeviceId, u64)>,
+    /// The streams that are open: the device, the last change sent on it, and how many of `notes` it was past.
+    pub streaming: Vec<(DeviceId, u64, usize)>,
+    /// The stream's events beside the order (relays, wishes, archived sessions, evicted files): to whom, and the
+    /// event as the stream sends it. Never replayed: a stream opened later does not get them.
+    pub notes: Vec<(Vec<DeviceId>, Vec<u8>)>,
+    /// The wishes (`POST /v1/requests`): id, device, kind, group, the hub's clock.
+    pub wishes: Vec<(u64, DeviceId, String, Option<GroupId>, u64)>,
     /// The `head` a page of the hub's order names; none: the truth.
     pub head_lie: Option<u64>,
     /// The chains of these senders are served cut short before this number (a hub that withholds).
@@ -299,6 +307,8 @@ impl Hub {
                 self.counter += 1;
                 self.welcomes.push(Welcome { id: self.counter, group, bytes: welcome.to_vec(), device: *device });
             }
+            // (the stream tells each device added that a Welcome waits)
+            self.note(adds.to_vec(), "welcome", json!({ "group_id": b64(group.as_bytes()) }));
         }
         json!({ "epoch": epoch + 1, "change": change })
     }
@@ -369,6 +379,13 @@ impl Hub {
                     return Err(no(Error::WrongEpoch));
                 }
                 if entry.kind == OutboxKind::RelayMessage {
+                    // (7.2: the room group alone, to the human devices but the sender, never stored)
+                    if !group.is_room() {
+                        return Err(no(Error::Forbidden));
+                    }
+                    let to = self.humans().into_iter().filter(|d| d != from).collect();
+                    let data = json!({ "group_id": b64(group.as_bytes()), "epoch": entry.epoch, "sender": from.to_base64url(), "message": b64(part(entry, 0)) });
+                    self.note(to, "relay", data);
                     return Ok(json!({ "n": null }));
                 }
                 let (_, n) = self.append(group, false, entry.epoch, part(entry, 0), None, from);
@@ -512,6 +529,40 @@ impl Hub {
     /// The hub keeps a void record under the next number of this chain (a test's refusal with `voided: true`).
     pub fn void_next(&mut self, group: GroupId, sender: DeviceId) {
         *self.chains.entry((group, sender)).or_default() += 1;
+    }
+
+    /// The human devices of the room's newest state.
+    pub fn humans(&self) -> Vec<DeviceId> {
+        self.room.as_ref().and_then(Observer::history).map(|h| h.newest().humans.iter().copied().collect()).unwrap_or_default()
+    }
+
+    /// An event beside the order for `to`.
+    pub fn note(&mut self, to: Vec<DeviceId>, name: &str, data: Value) {
+        self.notes.push((to, format!("event: {name}\ndata: {data}\n\n").into_bytes()));
+    }
+
+    /// A device's wish to the human devices (`POST /v1/requests`), at the hub's clock `at`. Returns its id.
+    pub fn wish(&mut self, device: &DeviceId, kind: &str, group: Option<GroupId>, at: u64) -> u64 {
+        self.counter += 1;
+        let id = self.counter;
+        self.wishes.push((id, *device, kind.to_string(), group, at));
+        let to = self.humans();
+        self.note(to, "request", json!({ "id": id, "kind": kind, "device": device.to_base64url(), "group_id": group.map(|g| b64(g.as_bytes())), "n": null }));
+        id
+    }
+
+    /// The hub deletes a file (11.3): the human devices are told.
+    pub fn evict(&mut self, file: &trommi_core::ids::FileId) {
+        let to = self.humans();
+        self.note(to, "file_evicted", json!({ "file_id": file.to_base64url() }));
+    }
+
+    /// A human device archives a session (5.2.10): its leaves are told.
+    pub fn archive(&mut self, group: &GroupId) {
+        if self.archived.insert(*group) {
+            let to = self.observer(group).and_then(|o| o.leaves().ok()).unwrap_or_default().into_iter().collect();
+            self.note(to, "presence", json!({ "group_id": b64(group.as_bytes()), "archived": true }));
+        }
     }
 
     /// Ends every token: the next request of each device is `unauthorised`.
@@ -786,7 +837,30 @@ impl Hub {
                 self.post(&device, &OutboxEntry { id: 0, kind, group: Some(group_at(2)?), epoch: body["epoch"].as_u64().unwrap_or(0), parts: vec![bytes("message")] })
             }
             ("POST", ["v1", "groups", _, "reject"]) => Ok(json!({ "id": 1 })),
-            ("POST", ["v1", "requests"]) => Ok(json!({ "id": 1 })),
+            ("POST", ["v1", "requests"]) => {
+                let kind = body["kind"].as_str().filter(|k| ["readmit", "handover", "session"].contains(k)).ok_or(no(Error::BadFormat))?.to_string();
+                let group = body["group"].as_str().and_then(|g| base64url_decode(g).ok()).and_then(|b| GroupId::from_bytes(&b).ok());
+                Ok(json!({ "id": self.wish(&device, &kind, group, now) }))
+            }
+            ("GET", ["v1", "requests"]) => {
+                // (a human device sees every wish of the room, another device its own)
+                let human = self.humans().contains(&device);
+                Ok(Value::Array(
+                    self.wishes
+                        .iter()
+                        .filter(|(_, d, ..)| human || *d == device)
+                        .map(|(id, d, kind, group, at)| json!({ "id": id, "device": d.to_base64url(), "kind": kind, "group_id": group.map(|g| b64(g.as_bytes())), "key_package": null, "n": null, "at": at, "committer": null }))
+                        .collect(),
+                ))
+            }
+            ("POST", ["v1", "groups", _, "archive"]) => {
+                let group = group_at(2)?;
+                if group.is_room() || !self.sessions.contains_key(&group) {
+                    return Err(no(Error::NotFound));
+                }
+                self.archive(&group);
+                Ok(json!({ "archived": true }))
+            }
             _ => Err(no(Error::NotFound)),
         }
     }
@@ -808,20 +882,25 @@ impl Hub {
             bytes.extend(item.sse());
         }
         bytes.extend(b"event: here\ndata: {}\n\n");
-        self.streaming.retain(|(d, _)| *d != device);
-        self.streaming.push((device, self.change.max(after)));
+        self.streaming.retain(|(d, ..)| *d != device);
+        self.streaming.push((device, self.change.max(after), self.notes.len()));
         vec![StreamItem::Opened { status: 200, headers: vec![Header { name: "content-type".into(), value: "text/event-stream".into() }] }, StreamItem::Chunk { bytes: bytes.into() }]
     }
 
     /// What the open stream of `device` has not been sent yet, as one chunk; none when nothing is new.
     pub fn stream_news(&mut self, device: &DeviceId) -> Option<Vec<u8>> {
-        let at = self.streaming.iter().position(|(d, _)| d == device)?;
-        let sent = self.streaming[at].1;
+        let at = self.streaming.iter().position(|(d, ..)| d == device)?;
+        let (_, sent, noted) = self.streaming[at];
         let mut bytes = Vec::new();
         for item in self.order.iter().filter(|i| i.change() > sent && !self.hidden.contains(&i.change())) {
             bytes.extend(item.sse());
         }
-        self.streaming[at].1 = self.change.max(sent);
+        for (to, note) in &self.notes[noted..] {
+            if to.contains(device) {
+                bytes.extend(note);
+            }
+        }
+        self.streaming[at] = (*device, self.change.max(sent), self.notes.len());
         (!bytes.is_empty()).then_some(bytes)
     }
 }

@@ -291,7 +291,9 @@ fn an_agent_without_a_session_gets_one_from_whoever_is_up_once_it_waited_connect
     sim.send(start());
     let sessions = world.hub.borrow().session_groups().len();
     let groups = "GET /v1/rooms/";
-    let lists = |world: &World| world.hub.borrow().seen.iter().filter(|r| r.starts_with(groups) && r.contains("/groups")).count();
+    // (the start reads the list once, for sessions archived meanwhile)
+    let started = world.hub.borrow().seen.iter().filter(|r| r.starts_with(groups) && r.contains("/groups")).count();
+    let lists = |world: &World| world.hub.borrow().seen.iter().filter(|r| r.starts_with(groups) && r.contains("/groups")).count() - started;
     // not while it is away, however long
     sim.advance(120_000);
     assert_eq!((lists(&world), world.hub.borrow().session_groups().len()), (0, sessions));

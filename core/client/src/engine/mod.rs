@@ -93,8 +93,13 @@
 //! # Not here yet
 //!
 //! The Desk as a delta on a warm start, the reading of the room's past (one
-//! module, one entry point, behind [`Engine::reread_from`]), recovery of a closed device, relayed pieces and
-//! wishes.
+//! module, one entry point, behind [`Engine::reread_from`]), recovery of a closed device, wishes to be let in again
+//! (`readmit`) and a leaf's refusal of a Commit (`reject`).
+//!
+//! # Beside the order
+//!
+//! The stream's events that have no change number ([`sync::events`]): relayed pieces, wishes, invite Requests,
+//! archived sessions, evicted files.
 //!
 //! The contract fixes the retry rule here, so every app waits the same way.
 

@@ -215,6 +215,7 @@ impl Engine {
         if through {
             // every session's keys are at hand now: the Desk of the joined groups, and the room's past once more
             self.desk.want = true;
+            self.tending.look_for_archived();
             self.want_reread(0);
             self.report(Report::Groups);
             self.report(Report::SessionsJoined { joined: j.joined, not_joined: j.not_joined });

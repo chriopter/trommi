@@ -19,6 +19,9 @@
 //!   stored device that is another one, or older than the record (a store put back from a copy), starts without it,
 //!   from the device's own cursor, as before there was a record. One that does not parse is treated the same way.
 //!
+//! Also kept: the ids of the wishes for keys this device answered (`events`), so a restart does not hand the same
+//! keys over again for a wish the hub still lists.
+//!
 //! Not kept: the page in hand, the repair the head of the order waits for, the Welcomes read so far (all read again
 //! from the position), the stream, tokens, waits, and the keys of the code (see `joins`: a sign-in's joins that
 //! were not built yet are reported as `interrupted`, and whoever holds the code asks again).
@@ -83,6 +86,9 @@ pub(super) struct Record {
     reread_from: Option<u64>,
     #[serde(default)]
     joins: Option<JoinsRecord>,
+    /// The wishes for keys this device answered with a handover (`events`), the newest last.
+    #[serde(default)]
+    answered: Vec<u64>,
 }
 
 /// A refusal's code as this build names it, from a record.
@@ -182,6 +188,7 @@ impl Engine {
         (self.behind, self.keyless, self.withheld, self.mends) = (behind, keyless, withheld, mends);
         self.reread_from = record.reread_from;
         self.joining = joining;
+        self.wishes.restore(&record.answered);
         self.written = Some(record.clone());
         Some(())
     }
@@ -206,6 +213,7 @@ impl Engine {
                 .collect(),
             reread_from: self.reread_from,
             joins: self.joining.as_ref().map(joins::Joining::record),
+            answered: self.wishes.answered.iter().copied().collect(),
         }
     }
 
@@ -222,7 +230,7 @@ impl Engine {
                 return;
             }
             record.revision = self.writes.revision();
-        } else if record.position == self.device.cursor() && record.behind.is_empty() && record.keyless.is_empty() && record.withheld.is_empty() && record.mends.is_empty() && record.reread_from.is_none() && record.joins.is_none() && record.floor.is_none() {
+        } else if record.position == self.device.cursor() && record.behind.is_empty() && record.keyless.is_empty() && record.withheld.is_empty() && record.mends.is_empty() && record.reread_from.is_none() && record.joins.is_none() && record.floor.is_none() && record.answered.is_empty() {
             // (nothing the device's own cursor does not say)
             return;
         }

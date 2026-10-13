@@ -15,6 +15,9 @@
 //! - **Seats** (5.2.2, [`crate::seats`]): an agent device of the room that sits in no session gets its main
 //!   session from any human device, once it is connected and waited out its grace. The rule says who is due; the
 //!   hub's list of the room's groups says who sits in one already; one founding at a time.
+//! - **Sessions the hub archived** (5.2.10) while this device was away, or before it held them: the hub's list of the
+//!   room's groups is read once per run and after a session group was joined, and a held session it lists as no
+//!   longer live is archived here too (the stream says it only to who is connected then).
 //! - **The core's findings** (a Cut that names another envelope than the one shown): said once, then cleared.
 //!
 //! # How it runs
@@ -64,6 +67,8 @@ pub enum Job {
     Check { invite: InviteId, session: SessionId },
     /// The hub's list of who sits in a session, for the agents the seat rule holds due.
     Seat { candidates: Vec<String> },
+    /// The hub's list of the room's groups, for the sessions it archived before this device held them (5.2.10).
+    Archived,
     /// 5.2.8: the Commit that makes a stale session group live again.
     Clean { group: GroupId },
     /// 5.2.7: a human device of the room is added to a live session group.
@@ -91,6 +96,8 @@ pub(super) struct Tending {
     pub(super) retry: Retry,
     /// The own leaves are looked at with the next look (5.2.9): set by the timed round.
     leaves: bool,
+    /// The hub's list is read for sessions it archived before this device held them: set when one was joined.
+    pub(super) archived: bool,
     /// The hub's list of the room's groups, as far as it was read for the job in hand.
     rows: Vec<GroupRow>,
     /// The seat rule, who is connected (as the stream said), and when the rule wants to look again.
@@ -104,7 +111,9 @@ pub(super) struct Tending {
 impl Tending {
     /// The first look is wanted as soon as the order is at rest.
     pub(super) fn new() -> Self {
-        Tending { want: true, ..Default::default() }
+        // (and the hub's list is read once per run for sessions archived while this device was away: the stream
+        //  says so only to who is connected then)
+        Tending { want: true, archived: true, ..Default::default() }
     }
     /// A Commit of this device was refused for good: whatever builds it again waits first.
     pub(super) fn refused(&mut self) {
@@ -142,6 +151,12 @@ impl Tending {
     /// The stream opened again: who is here is told anew.
     pub(super) fn stream_opened(&mut self) {
         self.online.clear();
+    }
+    /// A session group was joined: the hub's list of the room's groups is read with the next look, for one it
+    /// archived before.
+    pub(super) fn look_for_archived(&mut self) {
+        self.archived = true;
+        self.want = true;
     }
     /// A device came or went: one that came may be an agent that waits for its seat.
     pub(super) fn presence(&mut self, presence: &Presence) {
@@ -196,6 +211,9 @@ impl Engine {
     /// Reads the groups and lists what is to mend.
     fn look(&mut self, ctx: &mut Ctx<'_>) {
         self.tell_findings(ctx);
+        if std::mem::take(&mut self.tending.archived) && self.device.groups().unwrap_or_default().iter().any(|g| g.session.is_some() && !g.archived) {
+            self.tending.jobs.push_back(Job::Archived);
+        }
         if self.stopped.is_some() || !self.device.is_human() {
             return;
         }
@@ -386,7 +404,7 @@ impl Engine {
                     None => vec![agent],
                 }
             }
-            Job::Check { .. } | Job::Seat { .. } => {
+            Job::Check { .. } | Job::Seat { .. } | Job::Archived => {
                 self.tending.rows.clear();
                 return self.ask_groups(ctx, job, 0);
             }
@@ -444,7 +462,7 @@ impl Engine {
                 }
                 return;
             }
-            Job::Check { .. } | Job::Seat { .. } => return,
+            Job::Check { .. } | Job::Seat { .. } | Job::Archived => return,
         };
         let Some((device, key_package)) = key_packages.into_iter().find(|(device, _)| Some(*device) == wanted) else {
             // (not the device asked for, or the group moved on meanwhile: the next look says what is left)
@@ -523,6 +541,8 @@ impl Engine {
             Ok(Answer::RoomGroups { items, more, after }) => (items, more, after),
             Err(_) if unauthorised => return self.tending.jobs.push_front(job),
             Ok(_) | Err(_) => {
+                // (the list is read again with the next look)
+                self.tending.archived |= job == Job::Archived;
                 if let Err(Failure::BadAnswer { why }) = &answer {
                     ctx.log(crate::app::LogLevel::Warn, format!("upkeep: an answer the protocol does not allow ({why})"));
                 }
@@ -541,6 +561,7 @@ impl Engine {
         let rows = std::mem::take(&mut self.tending.rows);
         if more {
             // (a list that does not end is no list to decide by)
+            self.tending.archived |= job == Job::Archived;
             self.tending.owing = true;
             return;
         }
@@ -565,6 +586,19 @@ impl Engine {
                     if let Ok(agent) = DeviceId::from_base64url(&name) {
                         self.tending.jobs.push_front(Job::Found { agent, invite: None });
                     }
+                }
+            }
+            Job::Archived => {
+                let mut any = false;
+                for row in rows.iter().filter(|g| !g.live && g.kind != GroupRowKind::Room) {
+                    any |= self.archive_held(ctx, &row.group);
+                    if self.stopped.is_some() {
+                        return;
+                    }
+                }
+                if any {
+                    self.report(Report::Groups);
+                    self.tending.want = true;
                 }
             }
             _ => {}
