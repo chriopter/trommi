@@ -1,0 +1,14 @@
+{
+  "answer": "{\"account\":\"b3909710-0275-4714-a504-a872deaddff8\",\"email\":\"ada-c74b4352cab7@example.com\",\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"rooms\":[{\"challenge\":\"JJZ77jRQVe0sizFjT2bJmW9TQJQdFSYYbkYAStnIGr8\",\"room_id\":\"B4-kzSPg2pATW8roHCj5S4LBxwSNPTnY3nKvFiTOvJA\",\"sealed_copy\":\"AgcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw\"}]}",
+  "asked": {
+    "route": "login"
+  },
+  "content_range": null,
+  "name": "account-login",
+  "request": {
+    "body": "{\"account\":\"ada-c74b4352cab7@example.com\",\"auth_key\":\"AC7FcK6fxE16PAsPGdbWnWXosjRdgfFjFLD0Yuhdizg\"}",
+    "method": "POST",
+    "path": "/v1/account/login"
+  },
+  "status": 200
+}

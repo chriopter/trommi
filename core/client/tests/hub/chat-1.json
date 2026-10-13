@@ -1,17 +1,17 @@
 {
-  "answer": "{\"items\":[{\"change\":12,\"envelope\":\"AQIBADDwgNyb49P4ZXXgmwgCtwTCLiGrirpO3VNdku6M1jDcb0iVP7CZqA2ZdHwJNdXwI2EAAAAAAAAAAbQCyMrblwEVLV5yjq8yQlVQb0wylOcn5PKhuQJ96pMGAAAAAAAAAAQeHnkx59ZIaqXXIIQKn6ypObVeHOSB0Vb-hC2mQcNqfap2EW2y_QuWXyy9LYC_ZTQqPxx0VDjuHm21rUuJ4pZ2AAABoTWqRPoBAkiVP7CZqA2ZdHwJNdXwI2EApmgxlS93sFneX44oQRCWXTvMOQp8Ip7yzt5LBMjEBUpZioX0T0wI2ZhVlBy_-UAeK4BQfE5exH-0sassYlXHppdQDKJmmEA9hv13tRNvsrZdRHIR3HdB5-l8DEMQNGoNq-hKa2Kj1F9Cbwh5IKONHOuEsVMt9wCEfiKyncbGsPu1GZRBxFLeYWrX4Hi-SdqZJCjpCLXraGe4Tob5Shm9fsTnJZQpRpoYTyBWsmDB867-vqZo4koD3T5RWQ9bMrjfKrQFm4pe0SirKShJK3YxEK7xwqPoAc5LtAzp8w0lu7escxRriMU8N_hMa5xNa06tF38Trh5n7KYrPgSqaf30sHCV2LgggVHPzFq-BkjeE_UfbQXj6SIFKXdHjqrtvEBA74aQKoEu6I-DiPsYofGaxY4sMyG--94t-Fyx9dyW6yirUc1fV4g6jPetryze4_9mLn4lfWa8lJEMnedJfpaaCg\",\"received_at\":1791901713658},{\"change\":11,\"envelope\":\"AQIBADDwgNyb49P4ZXXgmwgCtwTCLiGrirpO3VNdku6M1jDcb0iVP7CZqA2ZdHwJNdXwI2EAAAAAAAAAAbQCyMrblwEVLV5yjq8yQlVQb0wylOcn5PKhuQJ96pMGAAAAAAAAAAOw3HuugrrEAJQLmzGQJeJ-mYlAC6pdXx9mkZrmzYIkIKp2EW2y_QuWXyy9LYC_ZTQqPxx0VDjuHm21rUuJ4pZ2AAABoTWqRPoBAkiVP7CZqA2ZdHwJNdXwI2EAe3t3KSKW8fhAD2OAQRBcOshrvYM6X4zcrw68f9CLA1gkOwMn1SRiMlfhAZ_DJG4Pk1mVYV1ZMiaZ-6AyqXp1wAqaQT1UtA5iN5XZKe_LoS0Pt9yICm_TcjFydX3q0JCSQyS4aLVVLIANXYh0Dr2CLV2IpdQn6R3vVu-MdE0kPmtgrMJJ4X6VIKIeZ4r3qmH1xhxGQBn0CQKawVg0Tl4Lo4mZVuZ4PVvjaZX530kIpk460VdPCLYjXkLJlaSikvgc1TmyDD0mLudKjC6mPcBQe_vtkPekQTBwxgWQPus7MaUeUVBmRMiFM4S_Omn9mrSxxOdlztYjjHrZTTDy3TK9D8b2d6sjycH_9Nd3idFv0vjtEI8EVqu_GrsyR4XZ40BAXGPjrwR4l_sUxbkK5_d3tPeCYwgkec_ecoqefsq7fPorB39lznoWxhTkOT7s8o-MOPZewDz5F8ulf_Mqg4lkBg\",\"received_at\":1791901713658}],\"more\":true}",
+  "answer": "{\"items\":[{\"change\":12,\"envelope\":\"AQIBADAWrmj88M9qyqiVKWZCntnQlXJZAAgb1UIoci0ZeEzPXvgOOaUnI9v3mI3m0sOrqLgAAAAAAAAAAUIZVNg5MHHwJVSFvynOjR6_GHw0bRA4XS_-A7OOZKNGAAAAAAAAAAQIGOhYgwAypDQ5KJG1hVkSkcAdvRy-LV-kmkFgaA-BX9J2jf6DHxspk3VdUcnArwuCRGSHdhG6u7dnWmZD1r6hAAABoTXhNqIBAvgOOaUnI9v3mI3m0sOrqLgAPnreeiAXBtKDH2g_QRDCfVANPTWxadr1Rxtb9_K9nXABg_rFF6BQIdJO_hkaIHGrToo0YW1IUNLBKlROaAUiuyyokXlCPFbWnSYWeP7vpw3AfIl9ktK-j8Kxkph1ubQbS2_JtQ9NMJoIh1qS_fdux_WaStdbZsT3KttKj6I3Z6FpdPprAAOVsDPTLbel-iT5cNq0i6kBSdRAsQOczxI8LZ10Lna01yrAfWvQ8xSCwkFjPCRrFOCY1x2ipNiN1YhfDsXluBoSOm2OVzWUBAxn2ZoAmUmJ_wShqR9aBf4yn_KDrAkFRXRCRGz81qpt9zVpDyqJOFsUJX_rkkAgFMuCsaFXNOgqSbaRJFeKIr4mMpp9A9J2peHeEOOy9RiWhEBAMyHUFG-4Npk5FE-ZR4iADds_CV_5KvV-HnFMWlc9l5jmO6ME_MhAKLJvETEHAwfPKrKGpsfuI8ilcTzgE1irBQ\",\"received_at\":1791905314466},{\"change\":11,\"envelope\":\"AQIBADAWrmj88M9qyqiVKWZCntnQlXJZAAgb1UIoci0ZeEzPXvgOOaUnI9v3mI3m0sOrqLgAAAAAAAAAAUIZVNg5MHHwJVSFvynOjR6_GHw0bRA4XS_-A7OOZKNGAAAAAAAAAANe85PW-PeD6MM-f4pAHwkH7h5xNk-fsKD8fMouqTEYDdJ2jf6DHxspk3VdUcnArwuCRGSHdhG6u7dnWmZD1r6hAAABoTXhNqIBAvgOOaUnI9v3mI3m0sOrqLgAJtDNaxPccmez9uVcQRBKB85cKdtFgPmfucJ5rkS6G6RZmxJtYu3V4MS6nrgyZP4CfSi6wnLErAF0WKbQXeaxgiEZARHDDZK-uBAuoeDyUavRV5eAuRNW7KNP-IN1g1XEyw3OQ1oo7GXIVJtpH30N69RsnxgbHBocTRzpZuVtIzgOPqK7LMs_riEU9yFnon0eTIt7my3VM96nsJJOh2paNg_1409OapS4dE7XDZ6ASi9Z3kCk-rbiz9HJ6ttreYTCsgr_MBgqCd16H6oIUJMpuUrhhuJIR1KaxxylMDe3PwJNNl754oF-8U8qJPfr7yja3DfMilJDLTBOPG_mgA8p5n9lOgF5ZG6CZQeGWwFm2sPb30s6rZ9MLdSuzqLmF0BAePq_CVGRtUjd26YX82WnKBUQhX9sOCrT09iMROtqElV9V_zD8Xu4gyxbe1zBkUEN_xA60p4kXq1LuKd_voHcCA\",\"received_at\":1791905314466}],\"more\":true}",
   "asked": {
     "before": 13,
     "limit": 2,
     "route": "chat",
-    "session": "SJU_sJmoDZl0fAk11fAjYQ"
+    "session": "-A45pScj2_eYjebSw6uouA"
   },
   "content_range": null,
   "name": "chat-1",
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/chats/session/48953fb099a80d99747c0935d5f02361/items?before=13&limit=2"
+    "path": "/v1/chats/session/f80e39a52723dbf7988de6d2c3aba8b8/items?before=13&limit=2"
   },
   "status": 200
 }

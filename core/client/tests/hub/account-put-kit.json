@@ -1,0 +1,14 @@
+{
+  "answer": "{\"revision\":2}",
+  "asked": {
+    "route": "put_kit"
+  },
+  "content_range": null,
+  "name": "account-put-kit",
+  "request": {
+    "body": "{\"auth_key\":\"-OOg063MESZDYu0veElnB0ComUN1AJsw1-jy0STtJHk\",\"proof\":{\"password\":{\"auth_key\":\"AC7FcK6fxE16PAsPGdbWnWXosjRdgfFjFLD0Yuhdizg\"}},\"revision\":1,\"sealed_copy\":\"AgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ\"}",
+    "method": "PUT",
+    "path": "/v1/account/kit"
+  },
+  "status": 200
+}

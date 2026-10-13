@@ -1,0 +1,15 @@
+{
+  "answer": "{\"request_hash\":\"QfJEasWCu1w5wg2RZ2KzABJUSXOhfayljGbQqTRbgLs\"}",
+  "asked": {
+    "invite": "5XADjlVFxB-DDOVQOPfvmg",
+    "route": "post_invite_request"
+  },
+  "content_range": null,
+  "name": "invite-request",
+  "request": {
+    "body": "{\"mac\":\"7lnXrhU21iPkqvgeor0zbxbxFISBAeH2cm5jDZhLwiI\",\"request\":\"B4-kzSPg2pATW8roHCj5S4LBxwSNPTnY3nKvFiTOvJDlcAOOVUXEH4MM5VA49--aFmh0dHA6Ly8xMjcuMC4wLjE6NDE5ODcBQTYAAQAFAAEAAyCL5PgNwdXJUxjqyK13Sb7_wrv08LgRdR9o8UumfdlBDCDGJysZmHN-CE6ZGw-F5BBSyflWY1r607tBTwE4e6J2MiAICPagottxdwX60J3KtXTUCQ_29wt1w2IX07dA5KfUqQABIAgI9qCi23F3BfrQncq1dNQJD_b3C3XDYhfTt0Dkp9SpAgABAgADBvAB8AIACgACAAEBAAAAAGrOQBIAAAAAfZpRIgBAQFnRS9SmBwC_RgUHct_DYif_iIi8fkuIaEab-KIN0X4bP2m3Sjuf82eEVcx-j83xJBbyQ_pGJvQH0xlnKEPe5wAAQEBx4suwWQMIELg-wfs_-T8MFdbY9LamIIWeoHstp5AH6cvMBSeK2yiA1mjORR1LYqe92Ct5TboIndzJh_LD4y0D1-ie2zj-9U2KQX6ssRewtsT0pHrgjjdh1sFkKtu7sns\",\"signature\":\"PRLeWOk2PveCLjZ2aNxM_hwGuul2achWMb2gnm2r604lg0Zygg8vrc6s-7lhqMHtCnOQ7neUN2gV_DZgOkLbAA\"}",
+    "method": "POST",
+    "path": "/v1/invites/5XADjlVFxB-DDOVQOPfvmg/request"
+  },
+  "status": 200
+}
