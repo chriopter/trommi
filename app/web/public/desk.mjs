@@ -334,7 +334,10 @@ function miniRow(s, base) {
   const c = s.card
   const mark = s.g === 'later' ? sk('snooze') : s.g === 'trash' ? sk(c.status === 'shredded' ? 'shred' : 'withdraw') : sk('tick')
   const word = s.g === 'later' ? 'Later' : s.g === 'trash' ? (c.status === 'shredded' ? 'Shredded' : 'Withdrawn') : 'Done'
-  return html`<li class="oym-mini" data-g="${s.g}" data-id="${c.id}"${s.pinned ? raw(' data-pinned') : ''}${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''}><span class="oym-mini-mark" role="img" aria-label="${word}">${mark}</span><a data-nav href="${cardPath(c, base)}" title="${c.title}">${c.starred ? starMark() : ''}${c.title}</a>${agoSpan(s.at, 'ago oym-mini-ago')}</li>`
+  // (put off: until when, or nothing; else when it closed, or nothing when no time is known: never the epoch's "1 Jan")
+  const until = s.g === 'later' && c.snoozed_until ? new Date(c.snoozed_until).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+  const when = s.g === 'later' ? (until ? html`<span class="ago oym-mini-ago">until ${until}</span>` : '') : s.at > 0 ? agoSpan(s.at, 'ago oym-mini-ago') : ''
+  return html`<li class="oym-mini" data-g="${s.g}" data-id="${c.id}"${s.pinned ? raw(' data-pinned') : ''}${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''}><span class="oym-mini-mark" role="img" aria-label="${word}">${mark}</span><a data-nav href="${cardPath(c, base)}" title="${c.title}">${c.starred ? starMark() : ''}${c.title}</a>${when}</li>`
 }
 function offList({ id, full, base, works, rest, terms }) {
   const n = works.length, behind = Math.min(n - 1, 3)
