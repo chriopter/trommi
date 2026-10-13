@@ -11,3 +11,37 @@ slow-timeout = { period = "60s", terminate-after = 10 }
 retries = 0
 # the output of a failing test right where it failed, and the list of failures again at the end
 failure-output = "immediate-final"
+
+# The longest scenario tests start first (measured in CI, October 2026). Each part's test step lasts at least as long as
+# its longest test; started last, it ran on after all others had finished (a minute more per job). Started first, the
+# others run beside it. A test missing here only starts in the usual order; a name that no longer exists matches
+# nothing.
+[[profile.ci.overrides]]
+# 2-3 minutes each
+filter = """
+test(=a_device_catches_up_across_twenty_groups_in_the_hubs_order_only)
+| test(=helper_sessions_up_to_the_limit_then_close_one_to_open_another)
+| test(=a_room_of_a_thousand_human_devices)
+"""
+priority = 100
+
+[[profile.ci.overrides]]
+# 20 seconds to 1.5 minutes each
+filter = """
+test(=a_room_grows_to_a_hundred_human_devices)
+| test(=a_damaged_entry_is_a_storage_error_or_a_device_that_still_answers)
+| test(=a_server_that_answers_404_to_everything_is_asked_seldom_and_costs_no_memory)
+| test(=a_server_that_never_answers_is_asked_seldom_and_costs_no_memory)
+| test(=a_codex_session_connects_files_cards_and_is_woken_by_the_board)
+| test(=codex_with_trusted_hooks_mirrors_its_turns_and_answers_under_the_card)
+| test(=codex_is_told_how_it_hears_the_board_and_never_to_script_the_connector)
+| test(=a_removal_across_fifty_sessions_is_finished_by_another_device_after_a_crash)
+| test(=a_database_this_hub_cannot_open_fails_the_dry_run_and_is_left_alone)
+| test(=the_hub_marks_its_data_before_its_first_request_and_says_so_after_a_restart)
+| test(=a_release_is_tried_on_a_copy_while_the_live_hub_runs_and_the_live_data_is_not_written)
+| test(=sizes_and_times_for_groups_of_3_10_and_30_leaves)
+| test(=a_stream_cut_after_each_event_is_opened_again_at_once)
+| test(=a_main_session_has_at_most_a_hundred_live_helper_sessions)
+| test(=the_launcher_swaps_in_a_new_connector_mid_session)
+"""
+priority = 50
