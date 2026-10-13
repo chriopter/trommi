@@ -23,7 +23,7 @@
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
 # TESTFLIGHT_TESTER (an address kept in the group), NOTES (What to Test; default: the newest day of CHANGELOG.md),
 # APPSTORE_DEMO_PASSWORD (the demo account's password for Beta App Review),
-# TF_GATE=release (main: upload only once the release of build run RUN_ID, v$VERSION_RELEASE, is published and
+# TF_GATE=release (main: upload only once the release of build.yml run RUN_ID, v$VERSION_RELEASE, is published and
 # verified; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed, checked .ipa; the gate
 # only verifies an existing release, if any is named; the upload is checked offline and NOT sent; no wait, no group),
 # TF_UPLOADER=xcode (the fallback: a second Xcode export with destination upload instead of the API).
