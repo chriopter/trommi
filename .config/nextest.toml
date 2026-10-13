@@ -17,7 +17,7 @@ failure-output = "immediate-final"
 # others run beside it. A test missing here only starts in the usual order; a name that no longer exists matches
 # nothing.
 [[profile.ci.overrides]]
-# 2-3 minutes each
+# 2-3 minutes each at full size (nightly.yml, TROMMI_TESTS_FULL=1); seconds otherwise
 filter = """
 test(=a_device_catches_up_across_twenty_groups_in_the_hubs_order_only)
 | test(=helper_sessions_up_to_the_limit_then_close_one_to_open_another)

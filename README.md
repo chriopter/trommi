@@ -489,6 +489,10 @@ core/swift/build.sh                           # the core for Swift
 (cd tests/ios && swift test)
 ```
 
+The three scale tests (a room of 1000 human devices, a catch-up across twenty groups, 100 helper sessions) run
+small by default and at full size with `TROMMI_TESTS_FULL=1`, as CI does every night (`.github/workflows/nightly.yml`;
+a failing night opens an issue labelled nightly-failed).
+
 All clients against each other (nightly in CI, `.github/workflows/clients_mega.yml`): the web app's client layer,
 the iOS app's engine (both with the real core) and the connector, each twice, in one room on a real hub, through one
 long seeded random timeline; it fails where two devices show anything different. Then their speed with 1,000 cards.

@@ -821,13 +821,20 @@ fn expensive_requests_of_one_device() {
 /// them; a Commit of the room group at that size and the founding of a main session that adds all of them in one
 /// request (a JSON body above 1 MiB, within 1.5 MiB) are taken; the 1001st human leaf is `too-many`. What it
 /// weighs and what verifying a Commit at 1000 leaves costs is printed (`--nocapture`).
+/// Full size (2.5 minutes) only with TROMMI_TESTS_FULL=1, as the nightly run (.github/workflows/nightly.yml) has it;
+/// otherwise (pull requests, main, a local run) the same steps at 100 with HUB_LIMIT_HUMANS=100, without the
+/// size bounds of the founding, which only hold at 1000.
 #[test]
 fn a_room_of_a_thousand_human_devices() {
     use std::time::Instant;
     use trommi_hub::observer::{MlsObserver, Observer};
+    let full = std::env::var_os("TROMMI_TESTS_FULL").is_some_and(|v| v == "1");
+    let size: usize = if full { 1000 } else { 100 };
+    let limit = size.to_string();
     let mut w = world(&[
         ("HUB_LIMIT_OPEN_INVITES", "1000"),
         ("HUB_LIMIT_OPEN_REQUESTS_PER_IP_MINUTE", "100000000"),
+        ("HUB_LIMIT_HUMANS", limit.as_str()),
     ]);
     let room = w.room;
     let mut agent = w.enrol_agent();
@@ -857,16 +864,17 @@ fn a_room_of_a_thousand_human_devices() {
         (dev, out, reply)
     };
     let mut last = None;
-    for _ in 1..1000 {
+    for _ in 1..size {
         let (dev, out, reply) = add(&mut w);
         reply.ok();
         humans.push(dev);
         last = Some(out);
     }
     let last = last.unwrap();
-    assert_eq!(w.ada.members(&room).len(), 1000);
+    assert_eq!(w.ada.members(&room).len(), size);
     println!(
-        "999 human devices added one by one in {:.1} s; the last Add: Commit {} B, GroupInfo {} B, Welcome {} B",
+        "{} human devices added one by one in {:.1} s; the last Add: Commit {} B, GroupInfo {} B, Welcome {} B",
+        size - 1,
         started.elapsed().as_secs_f64(),
         last.commit.len(),
         last.group_info.len(),
@@ -876,7 +884,7 @@ fn a_room_of_a_thousand_human_devices() {
     // the 1001st human leaf
     let (_, _, refused) = add(&mut w);
     refused.refused(429, "too-many");
-    assert_eq!(w.ada.members(&room).len(), 1000);
+    assert_eq!(w.ada.members(&room).len(), size);
 
     // an own-leaf update (a Commit with a path) at 1000 leaves: verified on the public state as the pool does it
     let now = w.ada.room_now();
@@ -885,7 +893,7 @@ fn a_room_of_a_thousand_human_devices() {
     let t = Instant::now();
     let (state, before, _) = obs.open(&last.group_info).unwrap();
     let open = t.elapsed();
-    assert_eq!(before.leaves.len(), 1000);
+    assert_eq!(before.leaves.len(), size);
     let t = Instant::now();
     let (_, facts) = obs.commit(&state, &update.commit).unwrap();
     let verify = t.elapsed();
@@ -905,8 +913,9 @@ fn a_room_of_a_thousand_human_devices() {
     w.ada.post_commit(&w.hub, &update, &sealed).ok();
     let posted = t.elapsed();
     println!(
-        "at 1000 leaves: public state {} B; opening a GroupInfo {} ms; an update Commit of {} B verified in {} ms, its \
+        "at {} leaves: public state {} B; opening a GroupInfo {} ms; an update Commit of {} B verified in {} ms, its \
          GroupInfo ({} B) checked in {} ms; the whole request {} ms",
+        size,
         state.0.len(),
         open.as_millis(),
         update.commit.len(),
@@ -954,16 +963,19 @@ fn a_room_of_a_thousand_human_devices() {
         + out.commit.len()
         + out.group_info.len()
         + out.welcome.as_ref().map_or(0, Vec::len);
-    assert!(
-        json_bytes > 1 << 20 && json_bytes <= 3 << 19,
-        "{json_bytes}"
-    );
+    if full {
+        assert!(
+            json_bytes > 1 << 20 && json_bytes <= 3 << 19,
+            "{json_bytes}"
+        );
+    }
     assert!(parts <= 1 << 20, "{parts}");
     let t = Instant::now();
     w.ada.post(&w.hub, "/v1/groups", &body).ok();
     println!(
-        "founding at 1000 human devices + 1 agent device: claim of {} KeyPackages {} ms; Commit {} B, GroupInfo {} B, \
+        "founding at {} human devices + 1 agent device: claim of {} KeyPackages {} ms; Commit {} B, GroupInfo {} B, \
          Welcome {} B, {} B of the 1 MiB, {} B as JSON; taken in {} ms",
+        size,
         named.len(),
         claimed.as_millis(),
         out.commit.len(),
@@ -996,7 +1008,7 @@ fn a_room_of_a_thousand_human_devices() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|g| g["group_id"] == b64(&group) && g["leaves"].as_array().unwrap().len() == 1001));
+        .any(|g| g["group_id"] == b64(&group) && g["leaves"].as_array().unwrap().len() == size + 1));
     let _ = &mut agent;
 }
 
