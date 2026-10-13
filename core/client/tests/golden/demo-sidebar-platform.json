@@ -1,0 +1,711 @@
+{
+  "desks": [
+    {
+      "id": "main",
+      "name": {
+        "key": "desk.name",
+        "en": "Fernly"
+      },
+      "waiting": 14,
+      "selected": false,
+      "knocks": true
+    },
+    {
+      "id": "platform",
+      "name": {
+        "key": "desk.name",
+        "en": "Platform"
+      },
+      "waiting": 10,
+      "selected": true,
+      "knocks": true
+    }
+  ],
+  "sessions": [
+    {
+      "id": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "name": {
+        "key": "session.name",
+        "en": "Infrastructure"
+      },
+      "link": "live",
+      "blocked": true,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "infra",
+      "mark": "draw:mountain",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": false,
+      "subs": [
+        "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
+        "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
+        "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
+        "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
+        "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
+        "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
+        "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26"
+      ],
+      "open": 1,
+      "knocks": true,
+      "hand": {
+        "why": "blocking",
+        "text": {
+          "key": "hand.blocking",
+          "en": "Waiting for you: a blocking question"
+        }
+      },
+      "hushed": false,
+      "away": false,
+      "group": "platform:on",
+      "says": {
+        "key": "badge.stopped_open",
+        "args": {
+          "n": "1",
+          "why": "Waiting for you: a blocking question"
+        },
+        "en": "Stopped: Waiting for you: a blocking question, 1 question open"
+      },
+      "folded": {
+        "open": 3,
+        "knocks": true,
+        "online": true,
+        "working": true,
+        "hand": {
+          "why": "blocking",
+          "text": {
+            "key": "hand.blocking",
+            "en": "Waiting for you: a blocking question"
+          }
+        },
+        "says": {
+          "key": "badge.stopped_open",
+          "args": {
+            "n": "3",
+            "why": "Waiting for you: a blocking question"
+          },
+          "en": "Stopped: Waiting for you: a blocking question, 3 questions open"
+        }
+      }
+    },
+    {
+      "id": "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
+      "name": {
+        "key": "session.name",
+        "en": "Monitoring"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "observability",
+      "mark": "draw:eye",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
+      "name": {
+        "key": "session.name",
+        "en": "Kubernetes"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "k8s-upgrade",
+      "mark": "draw:boat",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
+      "name": {
+        "key": "session.name",
+        "en": "Database Replica"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "postgres-replica",
+      "mark": "draw:database",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
+      "name": {
+        "key": "session.name",
+        "en": "Terraform"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "terraform",
+      "mark": "draw:house",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
+      "name": {
+        "key": "session.name",
+        "en": "CDN"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "cdn",
+      "mark": "draw:cloud",
+      "desk_id": "platform",
+      "online": false,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
+      "name": {
+        "key": "session.name",
+        "en": "Cloud Costs"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "cost",
+      "mark": "draw:comb",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26",
+      "name": {
+        "key": "session.name",
+        "en": "Backups"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "backups",
+      "mark": "draw:anchor",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "name": {
+        "key": "session.name",
+        "en": "Payments"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "payments-service",
+      "mark": "draw:lock",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": true,
+      "subs": [
+        "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
+        "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
+        "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
+        "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
+        "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55"
+      ],
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "platform:on",
+      "folded": {
+        "open": 3,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "3"
+          },
+          "en": "Working, 3 questions open"
+        }
+      }
+    },
+    {
+      "id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
+      "name": {
+        "key": "session.name",
+        "en": "Tax & VAT"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "tax",
+      "mark": "draw:key",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
+      "name": {
+        "key": "session.name",
+        "en": "Checkout"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "checkout",
+      "mark": "draw:cup",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
+      "name": {
+        "key": "session.name",
+        "en": "Load Testing"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "load-test",
+      "mark": "draw:burst",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
+      "name": {
+        "key": "session.name",
+        "en": "Invoices"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "invoices",
+      "mark": "draw:book",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
+      "name": {
+        "key": "session.name",
+        "en": "Webhooks"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "webhooks",
+      "mark": "draw:arrow",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+      "name": {
+        "key": "session.name",
+        "en": "Docs"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "docs-site",
+      "mark": "draw:book",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": false,
+      "subs": [
+        "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
+        "761b525b4045435aea626e866242d436daf6cf2a22ea2b4ec7e20431376cbe9b"
+      ],
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "platform:on",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "1"
+        },
+        "en": "Working, 1 question open"
+      },
+      "folded": {
+        "open": 2,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "2"
+          },
+          "en": "Working, 2 questions open"
+        }
+      }
+    },
+    {
+      "id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
+      "name": {
+        "key": "session.name",
+        "en": "API Reference"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "api-reference",
+      "mark": "draw:terminal",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "761b525b4045435aea626e866242d436daf6cf2a22ea2b4ec7e20431376cbe9b",
+      "name": {
+        "key": "session.name",
+        "en": "Docs Search"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "docs-search",
+      "mark": "draw:flag",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "name": {
+        "key": "session.name",
+        "en": "Data Pipeline"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "data-pipeline",
+      "mark": "draw:database",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": false,
+      "subs": [
+        "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
+        "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
+        "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802"
+      ],
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "platform:on",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "1"
+        },
+        "en": "Working, 1 question open"
+      },
+      "folded": {
+        "open": 2,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "2"
+          },
+          "en": "Working, 2 questions open"
+        }
+      }
+    },
+    {
+      "id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
+      "name": {
+        "key": "session.name",
+        "en": "Dashboards"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "dashboard",
+      "mark": "draw:eye",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
+      "name": {
+        "key": "session.name",
+        "en": "Event Intake"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "ingest",
+      "mark": "draw:waves",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
+      "name": {
+        "key": "session.name",
+        "en": "Data Models"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "dbt-models",
+      "mark": "draw:branch",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    }
+  ],
+  "badge": 24,
+  "knocks": true,
+  "desk": "platform",
+  "all": {
+    "id": "all",
+    "name": {
+      "key": "desk.all",
+      "en": "All Desks"
+    },
+    "waiting": 24,
+    "selected": false,
+    "knocks": true
+  },
+  "place": {
+    "key": "desk.name",
+    "en": "Platform"
+  },
+  "waiting": 10,
+  "knocking": 1,
+  "stopped": 1,
+  "working": 5,
+  "unheard": 0
+}

@@ -13,6 +13,21 @@
 //! sentence itself. Fixed labels (a button's "Send") stay the shell's.
 //!
 //! W4 fills the screen types; their fields here are the contract's first cut.
+//!
+//! **Who makes it.** [`board::Board`] reads the board model once per render (the session list, the desks, what
+//! waits where), and each screen's module makes its unit from it: [`sidebar`], [`desk`]. The rules are the web app's of
+//! before (`app/web/public/app.mjs` `boardModel`), now here and nowhere else; [`words`] holds every sentence.
+//! What this device alone chooses (the desk in view, the zone) comes in as a [`Lens`].
+
+pub mod board;
+pub mod demo;
+pub mod desk;
+pub mod sidebar;
+#[cfg(test)]
+mod testroom;
+pub mod words;
+
+pub use board::{Board, Lens};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -62,6 +77,9 @@ pub struct Focus {
     /// The window (or app) is in front and visible.
     #[serde(default = "yes")]
     pub visible: bool,
+    /// The desk in view: a desk's id, "all" for every desk at once, none for the first desk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk: Option<String>,
 }
 
 fn yes() -> bool {
@@ -122,6 +140,8 @@ pub struct ViewDelta {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "part", rename_all = "snake_case")]
+// (a unit travels whole and is cloned into the model once: boxing each would only move the copy)
+#[allow(clippy::large_enum_variant)]
 pub enum ViewPart {
     /// Everything, replacing what the shell had (the first render, after a restart of the core).
     Whole {
@@ -194,43 +214,388 @@ impl<T: Clone> Rows<T> {
     }
 }
 
+/// The sidebar (the phone: the menu's desks, the list of chats, the tab pill's numbers): the desks, and one row per
+/// session of the desk in view, in the order they are drawn.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SidebarView {
+    /// The desks, in the menu's order. A room without desks has one: "Personal".
     pub desks: Vec<DeskTab>,
+    /// The sessions of the desk in view, one row each, in drawing order: a main, then its helpers.
     pub sessions: Vec<SessionRowView>,
-    /// The number on the app icon and the tab.
+    /// The number on the app icon and the tab: the open questions of every desk (no infos, nothing that is with
+    /// its agent).
     pub badge: u32,
+    /// One of the counted questions knocks (urgent, blocking, an approval): the number shows red.
+    #[serde(default)]
+    pub knocks: bool,
+    /// The desk in view: its id, or "all".
+    #[serde(default)]
+    pub desk: String,
+    /// "All Desks", the row above the desks: there with two desks or more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all: Option<DeskTab>,
+    /// Where the person is, for the head: the desk's name, or "All desks".
+    #[serde(default)]
+    pub place: Text,
+    /// The open questions of the desk in view (its lamp is lit while there are some).
+    #[serde(default)]
+    pub waiting: u32,
+    /// How many of them knock.
+    #[serde(default)]
+    pub knocking: u32,
+    /// How many rows of the desk in view are stopped (the red hand).
+    #[serde(default)]
+    pub stopped: u32,
+    /// How many of them are at work.
+    #[serde(default)]
+    pub working: u32,
+    /// How many of his answers the sessions of the desk in view have not picked up.
+    #[serde(default)]
+    pub unheard: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeskTab {
     pub id: String,
     pub name: Text,
+    /// The open questions of the desk's sessions.
     pub waiting: u32,
     pub selected: bool,
+    /// One of them knocks.
+    #[serde(default)]
+    pub knocks: bool,
 }
 
+/// One session in the sidebar.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionRowView {
+    /// The session's key in the model (`Screen::Session`, the actions' `session_id`, `ViewModel.sessions`).
     pub id: String,
     pub name: Text,
-    /// "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs).
+    /// "live", "oncall", "asleep", "cut", "gone" (core/client/src/status.rs); "" for a helper under its main (it
+    /// runs inside its main's process: the main's link says it for both).
     pub link: String,
     /// The red hand.
     pub blocked: bool,
+    /// How many of his answers it has not picked up for two minutes; a main counts its helpers' too.
     pub unheard: u32,
+    /// 0 for a row of its own, 1 for a helper under its main.
     pub depth: u32,
+    /// Its short id on the board: its address (`/chat/<slug>`).
+    #[serde(default)]
+    pub slug: String,
+    /// What draws it: the icon the person or the agent chose ("draw:leaf"), else its slug.
+    #[serde(default)]
+    pub mark: String,
+    /// The desk it stands on.
+    #[serde(default)]
+    pub desk_id: String,
+    #[serde(default)]
+    pub online: bool,
+    /// Connected and at work (a status line of it shows "working").
+    #[serde(default)]
+    pub working: bool,
+    /// A main session: one that says so, or one with helpers.
+    #[serde(default)]
+    pub main: bool,
+    /// The crowned session of its desk (the one a note goes to).
+    #[serde(default)]
+    pub crowned: bool,
+    /// Its main's id, for a helper drawn under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Its helpers' ids, in drawing order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subs: Vec<String>,
+    /// Its open questions: what waits for the person on the Desk (no infos, nothing that is with its agent).
+    #[serde(default)]
+    pub open: u32,
+    /// One of them knocks.
+    #[serde(default)]
+    pub knocks: bool,
+    /// Why it is stopped, in words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hand: Option<HandView>,
+    /// The small line under its name: its link when it does not hear at once, else the answers it has not picked up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cap: Option<CapView>,
+    /// A helper whose main is not listening, cut off or gone: drawn hushed.
+    #[serde(default)]
+    pub hushed: bool,
+    /// Not connected, and none of its helpers is: it stands under "Disconnected".
+    #[serde(default)]
+    pub away: bool,
+    /// The line drawn above this row: "Disconnected" over the first row that is away, a desk's name over its first
+    /// row on All desks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading: Option<HeadingView>,
+    /// The part of the list a main row may be dragged within (its desk, connected or not); "" for a helper.
+    #[serde(default)]
+    pub group: String,
+    /// What its badge says to a screen reader ("Working, 2 questions open"); none without a badge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<Text>,
+    /// A main with helpers, drawn folded: what the row then shows for all of them together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folded: Option<FoldView>,
 }
 
+/// A main and its helpers as one folded row.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoldView {
+    pub open: u32,
+    pub knocks: bool,
+    /// One of them is connected.
+    pub online: bool,
+    pub working: bool,
+    /// The first of them that is stopped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hand: Option<HandView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<Text>,
+    /// The helpers that are stopped: their edges show it while the row is folded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stopped: Vec<String>,
+}
+
+/// Why a session is stopped: the red hand.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandView {
+    /// "cut", "offline", "permission", "blocking".
+    pub why: String,
+    pub text: Text,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<u64>,
+}
+
+/// The small line under a session's name.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapView {
+    /// "oncall", "asleep", "cut", "gone", or "unheard" (it hears at once and has answers to pick up).
+    pub kind: String,
+    /// Two or three words: "cut off · 14:05", "1 answer waits".
+    pub word: Text,
+    /// The tooltip: "Cut off since 14:05".
+    pub short: Text,
+    /// The whole sentence about the session, for a screen reader; none for "unheard".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<Text>,
+}
+
+/// A line above a row of the sidebar.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeadingView {
+    /// "away" ("Disconnected") or "desk" (a desk's name, on All desks).
+    pub kind: String,
+    pub text: Text,
+    /// For "desk": the desk, and its open questions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk_id: Option<String>,
+    #[serde(default)]
+    pub waiting: u32,
+}
+
+/// A session's link in words: whether it hears the person, and what to do when it does not.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkWords {
+    /// "live", "oncall", "asleep", "cut", "gone".
+    pub state: String,
+    /// Since when it is cut off or gone; for "oncall" and "asleep" its last step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<u64>,
+    /// Two or three words under its name ("not listening · 12 min"); none while it hears at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word: Option<Text>,
+    /// The same as a short sentence ("Not listening for 12 min").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short: Option<Text>,
+    /// The whole sentence about the session.
+    pub line: Text,
+    /// The way out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fix: Option<FixView>,
+}
+
+/// What to do about a link: a sentence, and a line to type (empty when there is none).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FixView {
+    pub say: Text,
+    pub code: String,
+}
+
+/// The Desk of the desk in view: its head, and the stack of what waits for the person as rows.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeskView {
-    /// Card and request ids, in the Desk's order.
+    /// Card and request ids, in the Desk's order: the ids of `rows`.
     pub stack: Vec<String>,
+    /// (Placeholders until the two docked stacks land: W4 fills them from the core's `off_mind`.)
     pub off_your_mind: Vec<String>,
     pub later: Vec<String>,
     pub done: Vec<String>,
+    /// What stands in the list's place when nothing is open at all ("Questions land here.").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<Text>,
+    /// "invite" (no session stands here yet: invite the first agent), "reading" (none yet, and the room is still
+    /// being read), "desk".
+    #[serde(default)]
+    pub mode: String,
+    /// The one big line at the top; none for "invite".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hello: Option<Text>,
+    /// How far the reading of the room's past is ("Reading your history: 12,400 of 27,000"), while it is read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reading: Option<Text>,
+    /// The desk's goals; none on All desks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goals: Option<GoalsView>,
+    /// What waits, in the Desk's order: the questions and what is only to read.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rows: Vec<DeskRowView>,
+    /// The open questions (no infos): the number in the window's title.
+    #[serde(default)]
+    pub waiting: u32,
+    /// What Blitz walks through and the duck closes ("Blitz: 3 open cards"); none when nothing waits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blitz: Option<Text>,
+    /// The sessions that are cut off, above the questions: one line each, with the step in its terminal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slip: Vec<SlipView>,
+}
+
+/// A desk's goals: a note of the person's, at most twenty lines.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalsView {
+    pub desk_id: String,
+    /// The lines; empty when there are none (the shell shows its faint "Goals…").
+    pub lines: Vec<String>,
+    /// Two lines or more: one toggle folds them to the first line. Whether they are folded is this device's.
+    pub foldable: bool,
+    /// What the toggle says while they are folded ("Show all 4 goals").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_all: Option<Text>,
+}
+
+/// A session that is cut off, as the Desk says it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlipView {
+    pub session_id: String,
+    pub text: Text,
+    pub fix: FixView,
+}
+
+/// One row of the Desk: a question, a request for approval, or something to read.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeskRowView {
+    pub id: String,
+    /// "decision", "info" (to read: also a card not read here yet, and one of a newer Trommi), "request".
+    pub kind: String,
+    /// Its body is not read on this device yet: a quiet placeholder.
+    #[serde(default)]
+    pub loading: bool,
+    /// A card of a newer Trommi: its title where readable, nothing to answer.
+    #[serde(default)]
+    pub newer: bool,
+    pub title: String,
+    /// One or two lines under the title: its teaser, else its body as plain words.
+    #[serde(default)]
+    pub words: String,
+    /// Small words before them: "replaces 2 questions", "revised", "Back from Later", why it is urgent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Text>,
+    /// "low", "normal", "high", "critical".
+    pub urgency: String,
+    /// The sign before the title: "block" (blocking, or an approval), "knock" (urgent), "whenever" (low), "".
+    #[serde(default)]
+    pub sign: String,
+    /// What the sign says ("Knock! Blocking").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_says: Option<Text>,
+    #[serde(default)]
+    pub starred: bool,
+    /// When it was asked.
+    pub created_ms: u64,
+    /// Who asked; none for a session the list does not show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<FromView>,
+    /// On the first row of a run (rows of one session that follow each other): how many rows it has. Else 0.
+    #[serde(default)]
+    pub run: u32,
+    /// Its pictures and videos, for the small fan beside the title: the first three.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media: Vec<MediaView>,
+    /// What the fan says ("Look at 4 pictures and videos").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_says: Option<Text>,
+    /// The answers the row itself offers.
+    pub tiles: TilesView,
+    /// The ways to put it aside that apply, in order: "later", "reverse", "duck", "shred".
+    pub ways: Vec<String>,
+}
+
+/// Who a card comes from.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FromView {
+    pub session_id: String,
+    pub name: String,
+    /// What draws the session (`SessionRowView::mark`).
+    pub mark: String,
+    /// Where it stands, for the line above a card's title ("Desk › Main › Helper"): its desk while there are two
+    /// or more, its main for a helper, itself.
+    pub path: Vec<String>,
+    /// Its desk's name, on All desks only: the small chip before the row's words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desk: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MediaView {
+    /// The file (`ViewModel.files`, `Action::OpenFile`).
+    pub file_id: String,
+    /// "image" or "video".
+    pub kind: String,
+}
+
+/// The answers a row offers without opening the card.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TilesView {
+    /// "read" (What?? and Got it), "pair" (two answers, the lead last), "advised" (the advised answer, and
+    /// "+N other ways" that opens the card), "choose" (one tile that opens the card).
+    pub kind: String,
+    /// The answers of "pair" and "advised", in drawing order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tiles: Vec<TileView>,
+    /// "advised": how many other ways there are.
+    #[serde(default)]
+    pub others: u32,
+    /// "advised": "3 other ways: open the card"; "choose": "Choose: 4 options, several".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<Text>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TileView {
+    /// The option's key (`Action::Answer`; "allow" and "deny" of a request: `Action::Verdict`).
+    pub key: String,
+    /// The words on the tile; empty for a tile that shows its drawing alone.
+    pub label: String,
+    /// Its drawing: "yes" (the lead: thumb up, or the filled tile) or "no".
+    pub thumb: String,
+    /// A real yes or no (thumbs); else two named tiles.
+    pub thumbs: bool,
+    pub lead: bool,
+    /// Its agent advises it.
+    pub advised: bool,
+    /// Its words need the small type.
+    pub small: bool,
+    /// `label` is the option's short name (its full one fits no tile).
+    pub short: bool,
+    /// Choosing it settles the card (its agent marked it final).
+    pub settles: bool,
+    /// The tooltip ("Recommended", "Settles it", or the option's full name); none without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tip: Option<Text>,
+    /// What it says to a screen reader ("Ship it (settles it)").
+    pub says: Text,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
