@@ -1,6 +1,6 @@
 // news.browser.mjs: What's new as the page draws it (app/web/public/news.mjs), in headless Chromium from the sources:
-// the newest three days open, each picture of CHANGELOG.md small under its day's summary there and loaded, no picture
-// on a folded older day, a day without a picture drawn all the same.
+// one card per day, its lines folded behind Details, each picture of CHANGELOG.md on its day's card, small and loaded,
+// a day without a picture drawn all the same.
 //   node tests/web/views/news.browser.mjs      (needs Chromium; serves the app from its sources itself)
 import fs from 'node:fs'
 import net from 'node:net'
@@ -13,7 +13,6 @@ import { parseChangelog } from '../../../app/web/dev/build.mjs'
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const DAYS = parseChangelog(fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8'))
-const OPEN = 3
 
 const port = await new Promise((resolve, reject) => { const s = net.createServer(); s.unref(); s.on('error', reject); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)) }) })
 const server = spawn(process.execPath, [path.join(repo, 'app', 'web', 'dev', 'serve.mjs'), String(port)], { stdio: ['ignore', 'pipe', 'inherit'] })
@@ -28,9 +27,10 @@ try {
   for (let i = 0; i < 150; i++) { if (await ev("document.querySelectorAll('.news-day').length > 0").catch(() => false)) break; await sleep(100) }
   await sleep(800)
   const got = await ev(`(async () => {
+    for (const i of document.querySelectorAll('.news-pic')) i.loading = 'eager'
     await Promise.all([...document.querySelectorAll('.news-pic')].map(i => i.decode().catch(() => {})))
     return [...document.querySelectorAll('.news-day')].map(d => ({
-      open: !d.matches('details'),
+      open: Boolean(d.querySelector('.news-more')?.open),
       pics: [...d.querySelectorAll('img.news-pic')].map(i => ({ src: new URL(i.src).pathname, loaded: i.complete && i.naturalWidth > 0, width: i.getBoundingClientRect().width })),
       lines: d.querySelectorAll('.news-line').length,
     }))
@@ -40,19 +40,18 @@ try {
     const g = got[i]
     if (!g) return
     const lines = d.groups.reduce((n, p) => n + p.items.length, 0)
-    if (g.open !== i < OPEN) problems.push(`${d.day}: ${g.open ? 'open' : 'folded'}, should be ${i < OPEN ? 'open' : 'folded'}`)
+    if (g.open) problems.push(`${d.day}: its lines are open, should be behind Details`)
     if (g.lines !== lines) problems.push(`${d.day}: ${g.lines} lines drawn of ${lines}`)
-    if (i < OPEN && d.picture) {
+    if (d.picture) {
       if (g.pics.length !== 1 || g.pics[0].src !== d.picture.src) problems.push(`${d.day}: its picture ${d.picture.src} is not shown`)
       else if (!g.pics[0].loaded) problems.push(`${d.day}: its picture ${d.picture.src} did not load`)
       else if (g.pics[0].width > 400) problems.push(`${d.day}: its picture is ${Math.round(g.pics[0].width)}px wide, not small`)
-    } else if (g.pics.length) problems.push(`${d.day}: a picture on a ${i < OPEN ? 'day without one' : 'folded day'}`)
+    } else if (g.pics.length) problems.push(`${d.day}: a picture on a day without one`)
   })
-  if (!DAYS.slice(0, OPEN).some(d => !d.picture) && !DAYS.slice(OPEN).length) problems.push('no day without a picture to check')
 } finally {
   await browser.close()
   server.kill()
 }
 for (const p of problems) console.log(`FAIL ${p}`)
-console.log(problems.length ? `${problems.length} problems` : `ok: ${DAYS.length} days, the newest ${OPEN} open, ${DAYS.slice(0, OPEN).filter(d => d.picture).length} pictures shown`)
+console.log(problems.length ? `${problems.length} problems` : `ok: ${DAYS.length} day cards, ${DAYS.filter(d => d.picture).length} pictures shown`)
 process.exit(problems.length ? 1 : 0)
