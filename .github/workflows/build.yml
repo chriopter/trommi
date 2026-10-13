@@ -395,6 +395,29 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
+      # The web app's own release web-v<N> (release_part.yml, after the delivery): web.tar.gz (the same bytes for the
+      # same files: names sorted, no times, no owners) and a manifest that names it, with the web app's inputs.
+      - name: The web app's release
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.deliver_web != 'false'
+        env:
+          ALL_PARTS: ${{ needs.changes.outputs.parts }}
+        run: |
+          set -eu
+          mkdir webrel
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C out -cf - . | gzip -9n > webrel/web.tar.gz
+          PARTS=$(printf '%s\n' "$ALL_PARTS" | grep -E '^web [0-9a-f]{64} (true|false)$' || true)
+          [ -n "$PARTS" ] || { echo "::error::the web app's inputs are not known"; exit 1; }
+          PARTS="$PARTS" release/manifest.sh trommi-web "$VERSION" "$GITHUB_SHA" webrel/web.tar.gz > "$RUNNER_TEMP/manifest.json"
+          mv "$RUNNER_TEMP/manifest.json" webrel/manifest.json
+          release/sign.sh files webrel/manifest.json
+          cat webrel/manifest.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.deliver_web != 'false'
+        with:
+          name: web-part-release
+          path: webrel/
+          if-no-files-found: error
+          retention-days: 30
 
   # The web app goes to Cloudflare as soon as its own checks and the core's passed for this commit (the core's job
   # passed, or was skipped because the core did not change): it does not wait for any other part. A browser cannot
@@ -731,6 +754,26 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # The web app's signed release web-v<N> (release_part.yml), once it is delivered: the release notes of that
+  # delivery, and web.tar.gz as it was delivered (attested). A browser checks no signature; it is the record of what
+  # went out, and the build to put back.
+  release_web:
+    name: Web release
+    needs: [changes, deploy_web]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.deploy_web.result == 'success' }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/release_part.yml
+    with:
+      part: web
+      version: ${{ needs.changes.outputs.version }}
+      commit: ${{ github.sha }}
+      artifact: web-part-release
+    secrets: inherit
+
   # The hub's signed release hub-v<N> (release_part.yml), as soon as the hub's checks and the core's passed for this
   # commit; then the server takes it. The hub does not wait for any other part.
   release_hub:
@@ -797,7 +840,7 @@ jobs:
   # or comment on the open one; when all passed, close it. A failed delivery has its own issue (deploy_*.yml).
   report:
     name: Report
-    needs: [changes, core, web, deploy_web, connector, connector_build, connector_release, release_connector, hub, release_hub, deploy_hub]
+    needs: [changes, core, web, deploy_web, release_web, connector, connector_build, connector_release, release_connector, hub, release_hub, deploy_hub]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5

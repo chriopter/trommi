@@ -256,6 +256,8 @@ flowchart LR
   `manifest.json` each (each file's size and SHA-256), signed with Ed25519. Public key:
   [`release/public-key.pem`](release/public-key.pem); the private key lives in 1Password. A connector release waits
   until the server runs the hub of the same commit, when that commit delivers both.
+- **The web app** gets a release `web-v<N>` too, once it is delivered: its release notes and `web.tar.gz` as it went
+  out, signed and attested (the record of what went out and a build to put back; no browser checks it).
 - **The iOS app** has its own workflow, `ios.yml`, so nothing of web, hub or connector waits for a Mac or TestFlight:
   on a pull request it checks the iOS client; after `build.yml` on main it builds and delivers the app when that run's
   core check passed and the app's inputs differ from those last delivered to TestFlight.

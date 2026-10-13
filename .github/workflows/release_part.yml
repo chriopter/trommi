@@ -1,11 +1,13 @@
-# Makes the signed release of one part, in that part's own series: `hub-v<version>` (the hub and its updater, from
-# hub.yml) or `connector-v<version>` (the four connector binaries, from connector.yml). Each has its own manifest.json
-# (release/manifest.sh, product trommi-hub or trommi-connector), made and checked by the part's pipeline, signed here
-# with the release key. The hub's server takes only `hub-v<N>`, install.sh and `trommi-connector update` only
-# `connector-v<N>`. Never marked "latest" (that is the Mac app's series, mac-v<N>).
+# Makes the signed release of one part, in that part's own series: `web-v<version>` (web.tar.gz as delivered to
+# Cloudflare, after the delivery), `hub-v<version>` (the hub and its updater) or `connector-v<version>` (the four
+# connector binaries), all from build.yml. Each has its own manifest.json (release/manifest.sh, product trommi-web,
+# trommi-hub or trommi-connector), made and checked by the part's job, signed here with the release key, with the
+# release notes of what changed since the series' release before. The hub's server takes only `hub-v<N>`, install.sh
+# and `trommi-connector update` only `connector-v<N>`; no browser checks `web-v<N>` (it is the record of what went out
+# and the build to put back). Never marked "latest" (that is the Mac app's series, mac-v<N>).
 #
 # Interface (the part's pipeline, on main only):
-#   part      hub | connector
+#   part      web | hub | connector
 #   version   the release number of the build run (the same N as v<N>)
 #   commit    the commit that was built
 #   artifact  the run's artifact of the part: its files and manifest.json (hub-release, connector-release)
@@ -25,7 +27,7 @@ on:
   workflow_call:
     inputs:
       part:
-        description: hub or connector
+        description: web, hub or connector
         required: true
         type: string
       version:
@@ -85,7 +87,7 @@ jobs:
           COMMIT: ${{ inputs.commit }}
         run: |
           set -eu
-          case "$PART" in hub|connector) ;; *) echo "::error::not a part that is released on its own: $PART"; exit 1 ;; esac
+          case "$PART" in web|hub|connector) ;; *) echo "::error::not a part that is released on its own: $PART"; exit 1 ;; esac
           # only main signs, and only the commit this run is of
           [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::only main is released, not $GITHUB_REF"; exit 1; }
           [ "$COMMIT" = "$GITHUB_SHA" ] || { echo "::error::$COMMIT is not the commit of this run ($GITHUB_SHA)"; exit 1; }
@@ -191,9 +193,7 @@ jobs:
       - name: Attest the files
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: |
-            publish/trommi-*
-            publish/manifest.json
+          subject-path: publish/*
       # A published release is never replaced. A release of this part with a higher number: overtaken.
       - name: Publish
         id: publish

@@ -84,6 +84,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Release files and web app files carry GitHub build attestations: a public record of which build made them.
 - The web app is delivered as soon as its own checks and the core's checks passed; after each delivery CI checks from
   outside that app.trommi.com serves exactly that build, and puts the build before back when it does not.
+- Each web delivery is also published as a release `web-v<N>` (web.tar.gz, signed and attested like the others) as
+  the record of what went out; browsers do not check it.
 - The iOS app is signed by Apple and ships through TestFlight.
 - The Mac app for direct download (`Trommi-macOS.dmg`, `mac.yml`) is signed with the team's Developer ID certificate
   with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start. It is built when
