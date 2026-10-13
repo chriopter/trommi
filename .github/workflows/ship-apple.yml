@@ -656,6 +656,12 @@ jobs:
           path: ${{ runner.temp }}/mac-direct/
           if-no-files-found: error
           retention-days: 14
+      # Signing is set up, so the app must be built: a script that ended without `ready=yes` is a red job, never a green one
+      - name: The app is built
+        if: steps.setup.outputs.ready == 'yes' && steps.app.outputs.ready != 'yes'
+        run: |
+          echo "::error::mac_direct.sh ended without building the app (see the step above)"
+          exit 1
       - name: No key or keychain is left
         if: always()
         run: |
