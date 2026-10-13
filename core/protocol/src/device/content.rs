@@ -1546,6 +1546,9 @@ impl<S: Storage> Device<S> {
             return Ok(received);
         };
         let mut record = record;
+        // It is read back under the number it took its place at: the caller's number for an envelope fetched out
+        // of order is the hub's word alone, and nothing may be dated by it once the chain holds the envelope.
+        received.change = record.change;
         if record.status == Status::Taken && record.code.is_some() {
             // It took its place without its body (pruned as served then, or its key came later): the body
             // that opens now is taken, with what it says for the registers and for the gate.

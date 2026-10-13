@@ -216,3 +216,80 @@ test('the level and the answer time come from the body; headers of before still 
   const answer = w.model.cards.get(oldHex).answer
   assert.ok(answer.answered_at > 0)
 })
+
+// ---- the number of an envelope met out of order is the hub's word alone (review of 13 October 2026) ----
+// An envelope fetched out of the hub's order (`provisional`) comes with a change number nothing vouches for. The
+// card's state must not hang on it: the envelope's place is the one the chain gives it, in order.
+
+test('a version shown out of order under a wrong number: the chain gives it its place, and the answer after it counts', () => {
+  const w = new World(); w.groups()
+  const id = id16(0x71), hid = hex(id)
+  const h1 = w.hash()
+  const v1 = { kind: 'version', object: w.object(id, 'card', 'open'), payload: { schema_version: 2, title: 'Asked once', options: OPTIONS, object_version: 1 }, seq: 1, hash: h1, time: 1000 }
+  // the hub hands the open version over first, under a number far ahead of the room
+  w.take({ ...v1, outcome: 'provisional', change: 1_000_000 })
+  assert.equal(w.model.cards.get(hid).object_state, 'open')
+  // the chain, in the hub's order: the version at change 5, the answer to it at change 9
+  w.take({ ...v1, change: 5 })
+  let card = w.model.cards.get(hid)
+  assert.equal(card.envelope_number, 5, 'the version stands where the chain put it'); assert.equal(card.first_envelope_number, 5); assert.deepEqual(card.versions.map(v => v.envelope_number), [5])
+  w.answer(id, { answer_action: 'answer', choices: ['sqlite'] }, { change: 9 })
+  card = w.model.cards.get(hid)
+  assert.equal(card.object_state, 'answered', 'the answer the chain brought counts'); assert.deepEqual(card.answer.choices, ['sqlite']); assert.deepEqual(w.model.stack, [])
+})
+
+test('an old version or take back handed over again under a new number moves nothing', () => {
+  const w = new World(); w.groups()
+  const id = id16(0x72), hid = hex(id)
+  const h1 = w.hash()
+  const v1 = { kind: 'version', object: w.object(id, 'card', 'open'), payload: { schema_version: 2, title: 'Asked once', options: OPTIONS, object_version: 1 }, seq: 1, hash: h1, time: 1000 }
+  w.take({ ...v1, change: 5 })
+  const a1 = w.answer(id, { answer_action: 'answer', choices: ['sqlite'] }, { change: 9 })
+  const back = w.takeBack(id, a1.hash, { change: 12 })
+  const a2 = w.answer(id, { answer_action: 'answer', choices: ['files'] }, { change: 15 })
+  const settled = () => { const card = w.model.cards.get(hid); assert.equal(card.object_state, 'answered'); assert.equal(card.answer?.envelope_hash, hex(a2.hash)); assert.deepEqual(card.answer.choices, ['files']); assert.equal(card.envelope_number, 5); assert.deepEqual(w.model.stack, []) }
+  settled()
+  // each old, genuine envelope once more, out of order, under a number beyond everything
+  w.take({ ...v1, outcome: 'provisional', change: 2_000_000 })
+  settled()
+  w.take({ ...back.r, outcome: 'provisional', objectAfter: null, change: 2_000_001 })
+  settled()
+  assert.equal(w.model.cards.get(hid).answers[0].taken_back_at, 12, 'the take back keeps its place')
+  w.take({ ...a1.r, outcome: 'provisional', objectAfter: null, change: 2_000_002 })
+  settled()
+  assert.equal(w.model.cards.get(hid).answers[0].envelope_number, 9)
+})
+
+test('an answer shown out of order under a wrong number: the chain gives it its place, and the take back after it counts', () => {
+  const w = new World(); w.groups()
+  const id = id16(0x73), hid = hex(id)
+  w.card(id, { title: 'Asked once', options: OPTIONS, object_version: 1 }, { change: 5 })
+  const ha = w.hash()
+  const answer = { kind: 'answer', sender: w.me, recipient: w.agent, object: w.object(id, 'card', 'answered', { object_ref: w.objects.get(id).current }), payload: { schema_version: 2, answer_action: 'answer', choices: ['sqlite'] },
+    bind: { kind: 'answer', object_id: id, version_hash: w.objects.get(id).current, choices: ['sqlite'] }, seq: 1, hash: ha, time: 3000 }
+  w.take({ ...answer, outcome: 'provisional', change: 1_000_000 })
+  assert.equal(w.model.cards.get(hid).object_state, 'answered')
+  w.take({ ...answer, change: 9 })
+  assert.equal(w.model.cards.get(hid).answers[0].envelope_number, 9)
+  w.takeBack(id, ha, { change: 12 })
+  const card = w.model.cards.get(hid)
+  assert.equal(card.object_state, 'open', 'the take back the chain brought counts'); assert.equal(card.answer, null); assert.deepEqual(w.model.stack, [hid])
+})
+
+test('a take back shown out of order under a wrong number, then brought by the chain as a header alone: it gets its place, and the answer after it counts', () => {
+  const w = new World(); w.groups()
+  const id = id16(0x74), hid = hex(id)
+  w.card(id, { title: 'Asked once', options: OPTIONS, object_version: 1 }, { change: 5 })
+  const a1 = w.answer(id, { answer_action: 'answer', choices: ['sqlite'] }, { change: 9 })
+  const hb = w.hash()
+  const back = { kind: 'take_back', sender: w.me, recipient: w.agent, object: w.object(id, 'card', 'open', { object_ref: w.objects.get(id).current }), seq: 2, hash: hb, time: 4000 }
+  // in full, out of order, far ahead
+  w.take({ ...back, payload: { schema_version: 2 }, bind: { kind: 'take_back', object_id: id, previous_hash: a1.hash, version_hash: w.objects.get(id).current }, outcome: 'provisional', change: 1_000_000 })
+  assert.equal(w.model.cards.get(hid).object_state, 'open')
+  // the chain brings it pruned: its header alone, no bind
+  w.take({ ...back, outcome: 'chained', code: 'pruned', change: 12 })
+  assert.equal(w.model.cards.get(hid).answers[0].taken_back_at, 12)
+  const a2 = w.answer(id, { answer_action: 'answer', choices: ['files'] }, { change: 15 })
+  const card = w.model.cards.get(hid)
+  assert.equal(card.object_state, 'answered', 'the answer after the take back counts'); assert.equal(card.answer?.envelope_hash, hex(a2.hash))
+})
