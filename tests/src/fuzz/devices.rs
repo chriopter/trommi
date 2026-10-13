@@ -303,6 +303,7 @@ fn odd(w: &mut World, dice: &mut Dice<Bytes>, who: usize) {
         }
         b
     };
+    let room = w.room;
     let device = &mut w.devices[who];
     let cursor = device.cursor();
     // what the device has read is read again, in any order; what it has not read comes only flipped (the
@@ -319,6 +320,22 @@ fn odd(w: &mut World, dice: &mut Dice<Bytes>, who: usize) {
             }
         }
         (Change::Log(item), 1) => {
+            // The agent follows the room group without being a leaf of it (4.4) and cannot check a Commit's
+            // confirmation and membership tags (14.1). A changed membership tag changes nothing it keeps; a
+            // changed confirmation tag goes into its transcript, and it refuses the group's Commits from the
+            // one after the next on: a stall, which the hub can cause anyway by holding the log back, and no
+            // content (groups_refusals, a_confirmation_tag_changed_in_the_log). A flip in the bytes of either
+            // tag is not handed to it; their length prefixes are.
+            if who == 2 && item.group == room && item.commit {
+                let groups = device.groups().expect("the agent's groups");
+                assert!(
+                    groups.iter().all(|g| g.group != room),
+                    "the agent is a leaf of the room group"
+                );
+                if in_unchecked_tag(&item.bytes, flip_at % item.bytes.len().max(1)) {
+                    return;
+                }
+            }
             let mut item = item.clone();
             item.bytes = flipped(&item.bytes);
             match process(device, &item) {
@@ -382,4 +399,18 @@ fn odd(w: &mut World, dice: &mut Dice<Bytes>, who: usize) {
         }
         _ => {}
     }
+}
+
+/// Whether byte `i` of a Commit from a member lies in its confirmation tag or its membership tag, which only
+/// a member can check. A Commit is a PublicMessage parsed to its last byte (`version, wire_format,
+/// group_id<V>, epoch, sender, …, signature<V>, confirmation_tag<V>, membership_tag<V>`, RFC 9420 6.2), its
+/// group id 32 or 48 bytes long (one byte of length) and each tag 32 bytes (SHA-256) after one byte of length.
+/// A Commit from outside is not one: its `RecoveryAuth` covers all of its bytes.
+fn in_unchecked_tag(commit: &[u8], i: usize) -> bool {
+    const SENDER_MEMBER: u8 = 1;
+    let n = commit.len();
+    let member = commit
+        .get(4)
+        .is_some_and(|&len| commit.get(5 + usize::from(len) + 8) == Some(&SENDER_MEMBER));
+    member && n >= 66 && ((n - 65..n - 33).contains(&i) || (n - 32..n).contains(&i))
 }
