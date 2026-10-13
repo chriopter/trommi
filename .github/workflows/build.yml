@@ -19,7 +19,8 @@
 # its parts (.github/scripts/inputs.sh): an iOS-only change makes a release, and only a released app ships.
 #
 # Which jobs run: a part's tests and build run when its own folder changed, or core/ or client/, or what pins the build
-# (Cargo.toml, Cargo.lock, rust-toolchain.toml), compared with the commit before (on a pull request: with its base).
+# (Cargo.toml, Cargo.lock, rust-toolchain.toml), compared with the commit of the newest release (on a pull request:
+# with its base).
 # Whether there is a release: .github/scripts/inputs.sh hashes, per part, what its build reads (the paths of the
 # commit, by git); the release is made when one hash differs from the newest release's manifest. A part whose hash
 # differs is built (its job runs even when its folder did not change since the commit before); a part whose hash is
@@ -53,10 +54,15 @@ on:
 
 permissions: {}
 
-# A pull request: one run at a time, a newer commit cuts the older run off. On main every run is its own group:
-# each compares with the commit before it, so a run dropped while waiting would be a change never built.
+# A pull request: one run at a time, a newer commit cuts the older run off.
+# Main: one run at a time, and of the runs waiting only the newest: a run that starts is never cut off (it may be
+# releasing or delivering), a newer commit replaces the one still waiting (GitHub cancels it before it starts). Nothing
+# is lost: every check compares with the commit of the newest release, not with the commit before (`changes`), so the
+# newest run tests, builds and releases what the replaced ones would have; the release numbers still only grow (a
+# replaced run's number is never used). ios.yml and mac.yml keep a run per release: they follow the published
+# releases, and a release that is published is delivered.
 concurrency:
-  group: build-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: build-${{ github.event_name == 'pull_request' && github.ref || (github.ref == 'refs/heads/main' && 'main') || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
