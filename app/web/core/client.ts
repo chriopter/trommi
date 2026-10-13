@@ -1030,6 +1030,10 @@ export class Client {
   markRead({ object_id }: { object_id: string }): Promise<Sent> { return this.answer({ object_id, answer_action: 'read' }) }
   shred({ object_id, note }: { object_id: string; note?: string | null }): Promise<Sent> { return this.answer({ object_id, answer_action: 'shred', note }) }
 
+  /** The open question to offer after this card (decided just now): the next in the Desk's order among the sessions
+   *  `within` (by session key: the desk in view; null: every desk), else the first that waits (client/src/model/walk.rs). */
+  nextOpenAfter(cardId: string, within: string[] | null = null): string | null { return this.board.nextOpenAfter(cardId, within) }
+
   /** Takes the answer in force back: the card is open again. */
   async decideAgain({ object_id }: { object_id: string }): Promise<Sent> {
     this.needHuman()

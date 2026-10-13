@@ -531,6 +531,8 @@ export interface Model {
   /** Open cards in board order (projection). */
   stack: Hex[]
   open_permission_ids: Hex[]
+  /** The walk: every open card and request that waits for him, in the Desk's order (client/src/model/walk.rs). */
+  desk_order: Hex[]
   newer: Newer
   /** The session list every device shows, as the client core makes it (client/src/sessions.rs). */
   session_list?: SessionRow[]

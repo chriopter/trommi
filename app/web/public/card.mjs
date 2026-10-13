@@ -445,9 +445,17 @@ function placeOf(card, model) {
 /** The star beside the way back: his own mark on a card, to find it again in Off your mind. Live (t.live 'card'). */
 export const starButton = (card, base) => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, base, 'star')}"><input type="hidden" name="stay" value="1"><input type="hidden" name="on" value="${card.starred ? '' : '1'}"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(Boolean(card.starred))}" title="${card.starred ? 'Starred: take the star off' : 'Star this card'}" aria-label="${card.starred ? 'Starred' : 'Star this card'}">${sk('star')}</button></form>`
 
-/** The open question to offer after this one was decided: the one that followed it (id from the answer's redirect),
- *  else the first that waits. */
-const nextOpen = (card, model, id) => { const walk = walkOf(model).filter(c => c.id !== card.id); return walk.find(c => c.id === id) ?? walk[0] ?? null }
+/** The open question to offer after this one was decided: the client core's answer at the time (id from the answer's
+ *  redirect, client/src/model/walk.rs `next_open_after`) while it still waits, else the first that waits on this desk
+ *  in the core's order (desk_order). */
+const nextOpen = (card, model, id) => {
+  const waits = new Set(walkOf(model).map(c => c.id))
+  waits.delete(card.id)
+  const at = id && waits.has(id) ? id : (model.state.desk_order ?? []).find(x => waits.has(x))
+  return at ? model.byCard.get(at) ?? null : null
+}
+/** The sessions of the desk in view, by session key, for the client core's walk (null: every desk). */
+export const deskScope = m => (m.all || m.desk == null ? null : m.agents.map(a => a.device_id))
 /** The whole <main> of a card's page. pic: which picture stands. walk: a step of "Next, please". version: as it was
  *  then. from: the session it was opened from (/chat/<id>/card/<n>): the way back and the links lead there. */
 function cardPage(card, model, base, { pic = 1, walk = false, error = '', version = null, from = null, more: older = false, full = false, focus = false, decided = false, next = null } = {}) {
@@ -1842,8 +1850,8 @@ export function register(t) {
     if (['message', 'reopen', 'takeback', 'wake', 'star'].includes(what) && !form.has('stay')) return redirect(res, to(card, fromSession ? home : BASE, what === 'message' ? `said=${id}:message` : ''))
     // (decided on the card's own page, not in Blitz: the card stays, decided, and offers the next question)
     if (['decide', 'trust'].includes(what) && !form.has('walk') && form.has('page')) {
-      const m = model(), walk = walkOf(m), next = after.map(x => m.byCard.get(x)).find(c => c && walk.includes(c))
-      return redirect(res, to(card, fromSession ? home : BASE, said, next ? `next=${next.id}` : ''))
+      const next = await Promise.resolve(hub.nextOpenAfter?.(id, deskScope(model()))).catch(() => null)
+      return redirect(res, to(card, fromSession ? home : BASE, said, next ? `next=${next}` : ''))
     }
     if (fromSession) return redirect(res, `${home}${said ? `?${said}` : ''}`)
     // (in the walk, and after the reverse card on a card's own page: on to the next open card)

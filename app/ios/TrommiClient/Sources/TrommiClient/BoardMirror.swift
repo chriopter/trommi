@@ -273,6 +273,7 @@ extension Board {
     if let w = p["wake_at"].double { wakeAt = w > 0 ? UInt64(w) : nil }
     if let s = p["stack"].array { stack = s.compactMap { $0.string } }
     if let o = p["open_permission_ids"].array { openPermissionIds = o.compactMap { $0.string } }
+    if let o = p["desk_order"].array { deskOrder = o.compactMap { $0.string } }
     held = Set(cards.values.filter { $0.catchingUp }.map { $0.objectId } + permissions.values.filter { $0.catchingUp }.map { $0.objectId })
     let c = p["change"]
     ch.cards = Set(strings(c["cards"])); ch.sessions = Set(strings(c["sessions"])); ch.permissions = Set(strings(c["permissions"])); ch.notes = Set(strings(c["notes"]))
@@ -363,6 +364,11 @@ extension Board {
   }
   func echoRegisters(localId: String, _ values: [String: JV]) {
     try? engine.echoRegisters(localId: localId, values: String(decoding: JV.obj(values).encoded(), as: UTF8.self))
+  }
+  /** The open question to offer after this card (decided just now): the client core's (client/src/model/walk.rs), the
+   *  next in the Desk's order among the sessions `within` (by session key: the desk in view; nil: every desk). */
+  public func nextOpenAfter(_ cardId: String, within: [String]?) -> String? {
+    (try? engine.nextOpenAfter(cardId: cardId, within: within)) ?? nil
   }
   func echoAnswer(localId: String, cardId: String, answer: JV, state: String) {
     _ = try? engine.echoAnswer(localId: localId, objectId: cardId, answer: String(decoding: answer.encoded(), as: UTF8.self), objectState: state)

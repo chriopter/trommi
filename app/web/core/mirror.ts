@@ -36,6 +36,7 @@ export interface ModelPatch {
   outbox?: OutboxItem[]
   stack?: string[]
   open_permission_ids?: string[]
+  desk_order?: string[]
   /** The session list (client/src/sessions.rs), whenever it may have changed. */
   session_list?: SessionRow[]
   /** When to project again although nothing came (the core's clock: a snooze, a request, a session's status); 0: never. */
@@ -87,7 +88,7 @@ export function patchOf(model: Model, change: Change, extra?: Record<string, unk
   }
   if (change.alerts) p.alerts = model.alerts
   if (change.outbox) p.outbox = model.outbox
-  if (change.stack) { p.stack = model.stack; p.open_permission_ids = model.open_permission_ids }
+  if (change.stack) { p.stack = model.stack; p.open_permission_ids = model.open_permission_ids; p.desk_order = model.desk_order }
   // (the session list, whenever something it is made from may have changed: the core's own rule, patch.rs)
   if (model.session_list && (change.status || change.room || change.members || change.stack || change.sessions.size || change.registers.size || change.cards.size || change.permissions.size)) p.session_list = model.session_list
   if (extra) p.extra = extra
@@ -175,6 +176,7 @@ export function applyPatch(m: Model, p: ModelPatch): Change {
   if (p.outbox) m.outbox = p.outbox
   if (p.stack) m.stack = p.stack
   if (p.open_permission_ids) m.open_permission_ids = p.open_permission_ids
+  if (p.desk_order) m.desk_order = p.desk_order
   const c = emptyChange()
   const pc = p.change
   for (const k of ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites'] as const) for (const id of pc[k]) c[k].add(id)

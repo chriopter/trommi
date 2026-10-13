@@ -107,7 +107,7 @@ export class MockClient {
         drafts: toMap(f.human.drafts), snoozes: toMap(f.human.snoozes), ducks: toMap(f.human.ducks), stars: toMap(f.human.stars), crown: f.human.crown ?? null,
         desks: toMap(f.human.desks), session_settings: toMap(f.human.session_settings), scribble_snapshots: new Map(), raw: new Map(),
       },
-      invites: new Map(), alerts: [], outbox: [], stack: [], open_permission_ids: [],
+      invites: new Map(), alerts: [], outbox: [], stack: [], open_permission_ids: [], desk_order: [],
       newer: { count: 0, what: [], envelope_number: 0 },
     }
     const sessions = this.model.sessions
@@ -152,8 +152,16 @@ export class MockClient {
       const s = m.sessions.get(c.agent_device_id); if (!s) continue
       s.card_ids.push(c.object_id); if (c.object_state === 'open') s.open_card_ids.push(c.object_id)
     }
+    // (the demo has no client core: its walk is its stack, the requests first)
+    m.desk_order = [...m.open_permission_ids, ...m.stack]
     if (change && before !== m.stack.join()) change.stack = true
     m.session_list = demoSessions(m)
+  }
+
+  /** The next question after a card: the first other one that waits (no client core in the demo). */
+  nextOpenAfter(cardId, within = null) {
+    const m = this.model, mine = id => { const o = m.cards.get(id) ?? m.permissions.get(id); return !within || within.includes(o?.agent_device_id) }
+    return m.desk_order.find(id => id !== cardId && mine(id)) ?? null
   }
 
   // ---- timelines ----

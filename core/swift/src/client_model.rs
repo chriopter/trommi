@@ -738,6 +738,13 @@ impl ClientModel {
     pub fn session_list(&self, reading: bool) -> Result<String, CoreError> {
         self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::sessions::session_list(m, reading)).unwrap_or_default()))
     }
+
+    /// The open question to offer after `card_id` (decided just now, or still open): the next in the Desk's order
+    /// (client/src/desk.rs `walk_order`) among the cards of the sessions `within` (by session key: the desk in view;
+    /// none: every desk), else the first that waits; none when nothing else waits.
+    pub fn next_open_after(&self, card_id: String, within: Option<Vec<String>>) -> Result<Option<String>, CoreError> {
+        self.with(|m, _| Ok(m.next_open_after(&card_id, within.as_deref())))
+    }
 }
 
 #[cfg(test)]

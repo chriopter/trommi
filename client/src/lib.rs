@@ -35,8 +35,8 @@ pub mod store;
 
 pub use board::{Board, Fact, Kind, Object, Source, State};
 pub use desk::{
-    Delta, DeskCard, DeskRequest, DeskState, Listed, Listing, Projection, SessionOp, StackOp,
-    REQUEST_LIFE_MAX_MS,
+    next_in_walk, walk_order, Delta, DeskCard, DeskRequest, DeskState, Listed, Listing, Projection,
+    SessionOp, StackOp, WalkCard, REQUEST_LIFE_MAX_MS,
 };
 pub use plan::{CatchUp, Step};
 pub use registers::{RegisterOutcome, Registers};
