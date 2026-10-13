@@ -1882,7 +1882,7 @@ impl Bridge {
                 if present(args.get("icon")) {
                     let mark = crate::drawings::mark_of(&js_str(&args["icon"])).map_err(err)?;
                     p.insert("icon".into(), json!(mark));
-                } else if !p.get("icon").is_some_and(|v| truthy(v)) {
+                } else if !p.get("icon").is_some_and(truthy) {
                     // no symbol yet: one that fits the session's name, if any does
                     if let Some(mark) = present(args.get("session"))
                         .then(|| crate::drawings::default_for(&s(args.get("session"))))

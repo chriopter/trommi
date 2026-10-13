@@ -64,7 +64,7 @@ pub fn default_for(session_name: &str) -> Option<String> {
         .filter(|w| !w.is_empty())
         .collect();
     for d in all() {
-        if d.name == lower || d.topics.iter().any(|t| *t == lower) {
+        if d.name == lower || d.topics.contains(&lower) {
             return Some(format!("draw:{}", d.name));
         }
     }
