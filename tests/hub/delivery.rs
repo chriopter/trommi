@@ -2809,6 +2809,39 @@ fn commits_posted_together_are_each_taken_or_refused_in_their_place() {
     w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [one.clone(), one] })).refused(400, "bad-format");
 }
 
+/// A Commit posted to a session the asker may not see is answered as for a group that does not exist: the route
+/// does not say whether the session exists, which epoch it stands at or whether it is archived.
+#[test]
+fn a_commit_to_a_session_the_asker_may_not_see_tells_nothing_of_it() {
+    let mut w = World::new();
+    let mut agent = w.enrol_agent();
+    let mut other = w.enrol_agent();
+    w.found_main(&mut [], Some(&mut agent));
+    let (_, theirs) = w.found_main(&mut [], Some(&mut other));
+    let nowhere = [&w.room[..], &random::<16>()[..]].concat();
+    let ask = |dev: &Dev, group: &[u8], epoch: u64| {
+        let body = json!({ "epoch": epoch, "commit": b64(&[1u8; 600]), "group_info": b64(&[2u8; 600]), "sealed_key": b64(&[3u8; 100]) });
+        dev.post(&w.hub, &format!("/v1/groups/{}/commits", b64(group)), &body)
+    };
+    // a human device sees every session: the epoch is taken, and the answer names the current one
+    let seen = ask(&w.ada, &theirs, 0);
+    assert_eq!(seen.refused(409, "epoch-taken")["epoch"], 1);
+    // an agent that is no leaf of the session: every epoch, taken, current or ahead, is answered like no group
+    let none = ask(&agent, &nowhere, 0);
+    let none = none.refused(404, "not-found");
+    for epoch in [0, 1, 2] {
+        let got = ask(&agent, &theirs, epoch);
+        assert_eq!(got.refused(404, "not-found"), none, "epoch {epoch}");
+    }
+    // archived or not
+    w.ada.post(&w.hub, &format!("/v1/groups/{}/archive", b64(&theirs)), &json!({})).ok();
+    assert_eq!(ask(&agent, &theirs, 1).refused(404, "not-found"), none);
+    // and in a request of several
+    let many = json!({ "commits": [{ "group": b64(&theirs), "epoch": 0, "commit": b64(&[1u8; 600]), "group_info": b64(&[2u8; 600]), "sealed_key": b64(&[3u8; 100]) }] });
+    let answers = agent.post(&w.hub, "/v1/commits", &many).ok()["answers"].clone();
+    assert_eq!(answers[0]["error"], "not-found", "{answers:?}");
+}
+
 #[test]
 fn several_groups_are_read_in_one_request_each_in_its_place() {
     let w = World::new();

@@ -580,6 +580,12 @@ fn commit_in(
 ) -> Res<Accepted> {
     let room = auth.room;
     let row = store::group(x.c, &room, group_id)?;
+    // A group the asker may not see is answered as one that does not exist: the refusals below say whether it
+    // exists, which epoch it stands at and whether it is archived. (Everyone who may commit sees the group: its
+    // leaves, a human device joining from outside, the recovery key. A founding is its founder's own group.)
+    if !founding && store::sight(x.c, auth, &row)? == Sight::None {
+        return Err(refuse("not-found", "no such group"));
+    }
     check_size(
         x.cfg,
         &[
