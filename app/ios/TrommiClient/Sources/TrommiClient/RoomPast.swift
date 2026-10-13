@@ -142,6 +142,10 @@ extension Room {
     await reloadArchived(&report, &change)
     // the cache of before gives way to the board read back
     await replaceCache()
+    // (the board read back takes the hub's Desk as last read, and is projected before the views turn to it: the
+    //  Desk does not stand empty for a moment)
+    if let seen = deskSeen { board.setDeskListing(deskListed, at: Int(seen.at)) }
+    board.project(&change)
     readBackView = nil
     change.room = true; change.stack = true
     // (each further pass needs keys that came during the one before: it ends)

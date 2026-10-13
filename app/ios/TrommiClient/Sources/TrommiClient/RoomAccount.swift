@@ -157,12 +157,13 @@ extension Room {
     let made = try newDevice(base: base, roomId: roomId)
     let hub: HubClient
     do { hub = try HubClient(hubURL: hubURL, room: room, signer: try tools.recoverySigner(code: code)) } catch { abandon(made); throw error }
+    var joinedAt: UInt64?
     do {
       let started = Date()
       _ = try await hub.signIn(challenge: challenge)
       SignInWatch.log("signed in as the recovery key", since: started)
       // The core reads the room from the hub under the recovery key's token, checks it, and posts the join.
-      _ = try await tools.joinRoomWithRecoveryCode(device: made.device, code: code, hub: hub, nowMs: nowMs())
+      joinedAt = try await tools.joinRoomWithRecoveryCodeAt(device: made.device, code: code, hub: hub, nowMs: nowMs()).change
       SignInWatch.log("room joined", since: started)
     } catch {
       // No answer to a join that was posted: the hub may have taken it. The room group's log, read under the
@@ -180,7 +181,7 @@ extension Room {
         throw TrommiError("pending", "the hub did not answer the sign-in: signing in again finishes it")
       }
     }
-    return try await settleCodeJoin(made, hubURL: hubURL, roomId: roomId, code: code, recoveryHub: hub)
+    return try await settleCodeJoin(made, hubURL: hubURL, roomId: roomId, code: code, recoveryHub: hub, joinedAt: joinedAt)
   }
 
   /**
@@ -189,24 +190,38 @@ extension Room {
    * account has many, each read and checked from its founding, and the person waits for none of it. The first
    * catch-up waits for that work (`codeJoinWork`); `codeJoinSettled` waits for it too.
    */
-  private static func settleCodeJoin(_ made: (store: Store, state: DeviceStore, device: CoreDevice), hubURL: String, roomId: String, code: Bytes, recoveryHub: HubClient) async throws -> Room {
+  /**
+   * `joinedAt`: the hub's change number of the room join's own Commit. The hub's order is then taken from just before
+   * it: what lies before is the room's past, which the device holds nothing of, not even a session group. Taken in the
+   * hub's order it was the whole history over the network and through the core before the first card showed. It is
+   * read once the sessions are joined (a read back, RoomPast.swift), behind the first sync (`pastBehind`); the open
+   * state comes from the hub's Desk before it.
+   */
+  private static func settleCodeJoin(_ made: (store: Store, state: DeviceStore, device: CoreDevice), hubURL: String, roomId: String, code: Bytes, recoveryHub: HubClient, joinedAt: UInt64? = nil) async throws -> Room {
     let joined: Room
     do {
       try? LocalKey.write(joinCodeItem(made.store.dir), code, dir: made.store.dir)
-      let record = RoomRecord(hubURL: hubURL, roomId: roomId, myDeviceId: hex(made.device.id), role: "human", deviceRegisterSent: false, codeJoin: true)
+      var record = RoomRecord(hubURL: hubURL, roomId: roomId, myDeviceId: hex(made.device.id), role: "human", deviceRegisterSent: false, codeJoin: true)
+      if joinedAt != nil { var past = PastWork(); past.readBack = true; record.past = past }
       try made.store.save(record)
       made.store.markUnsureJoin(nil)
       joined = try Room(store: made.store, record: record, deviceStore: made.state, device: made.device)
+      if let joinedAt, joinedAt > 0 { joined.cursor = joinedAt - 1; joined.pastBehind = true }
     } catch { abandon(made); throw error }
-    let started = Date()
-    // (upkeep: a failure here is tried again by every catch-up)
-    try? await joined.publishKeyPackages()
-    try? await joined.flush(timeoutMs: 10_000)
-    SignInWatch.log("key packages published", since: started)
+    // The session groups first, then the KeyPackages (upkeep: a failure there is tried again by every catch-up).
+    // Without a KeyPackage of this device at the hub no other human device can add it to a session (5.2.7) while
+    // its own joins are on their way: such an Add won the race now and then, and the session then came by a Welcome
+    // without the keys of what was written before it (names, older cards closed until a key handover). A session
+    // founded meanwhile leaves this device out for those moments, and adds it once it has KeyPackages, as for any
+    // device that has none.
     joined.codeJoinWork = Task { @MainActor in
       let t = Date()
       await joined.finishCodeJoin(as: recoveryHub, code: code)
       SignInWatch.log("session groups joined", since: t)
+      let started = Date()
+      // (not waited for: the first catch-up waits for this work inside the room's queue, where the outbox is pumped)
+      if (try? await joined.publishKeyPackages()) != nil { joined.pumpOutbox() }
+      SignInWatch.log("key packages made", since: started)
     }
     return joined
   }
@@ -300,6 +315,15 @@ extension Room {
    * as an alert: another device of the person can add this one to it. (The core is called from here directly: the
    * binding lets one caller in at a time, and this runs before the first catch-up or inside it.)
    */
+  /** The main sessions of a sign-in that left the past for later are joined: the hub's full Desk into the board. */
+  func deskAfterMains() async {
+    var change = Change()
+    try? await refreshGroups(&change)
+    emit(change)
+    deskFullDue = true
+    _ = await Spent.time("desk after mains") { await deskFirst(whole: true) }
+  }
+
   func finishCodeJoin(as recoveryHub: HubClient? = nil, code given: Bytes? = nil) async {
     guard record.codeJoin == true else { return }
     let item = Room.joinCodeItem(store.dir)
@@ -307,7 +331,11 @@ extension Room {
     let stored: Bytes?
     do { stored = try LocalKey.read(item, dir: store.dir) } catch { if given == nil { return }; stored = nil }
     if let code = given ?? stored {
-      guard let left = try? await Core.tools.joinSessionsWithRecoveryCode(device: device, code: code, hub: recoveryHub ?? hub, nowMs: nowMs()), !left.again else { return }
+      // (a sign-in that left the past for later shows the main sessions' open cards once they are joined: the hub's
+      //  full Desk, read into the board, before the helper sessions are joined)
+      var afterMains: (@MainActor () async -> Void)? = nil
+      if pastBehind { afterMains = { [weak self] in await self?.deskAfterMains() } }
+      guard let left = try? await Core.tools.joinSessionsWithRecoveryCode(device: device, code: code, hub: recoveryHub ?? hub, nowMs: nowMs(), afterMains: afterMains), !left.again else { return }
       codeJoinMissed = Set(left.notJoined.map { hex($0.group) })
       var change = Change()
       for session in left.notJoined { board.pushAlert(&change, code: session.code, message: "a session could not be joined when this device signed in: another device of yours can add it") }
