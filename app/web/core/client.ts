@@ -201,7 +201,7 @@ function snapshotFiles(shapes: readonly Record<string, unknown>[]): Uint8Array[]
 export class Client {
   model: Model
   /** The client core's board model (client/src/model): it builds the model; `model` is its copy, patched once per batch. */
-  private readonly board: ClientModel
+  private board: ClientModel
   readonly core: Core
   readonly hub: Hub
   readonly engine: Engine
@@ -302,11 +302,10 @@ export class Client {
     // which is written as -1): what it holds is still true, and everything after its cursor is read back from
     // the hub through the core before the cache counts as whole again. Ahead of the device, or another device's:
     // dropped.
-    if (kept && kept.device === this.my_device_id && kept.cursor <= e.cursor) {
-      this.model = M.modelFromCache(await this.cache.range(''))
-      this.model.room.my_device_id = this.my_device_id
-      // (the core builds the model from here on; a mark of an earlier run is the past: `readDesk` sets it again)
-      this.board.load(snapshotForCore(this.model))
+    // A cache the core does not take (too large for one call, or of a shape it refuses) is dropped like one of
+    // another device: the model is read anew from the hub. A cache never keeps an account from opening.
+    const taken = kept && kept.device === this.my_device_id && kept.cursor <= e.cursor && await this.loadCache()
+    if (kept && taken) {
       // What stands open is what the hub's Desk listed when this device last read it (kept beside the cache): a card
       // it had settled stays off the Desk although this device never read its closing. The Desk of now follows
       // (`deskFirst`, `readDesk`), and only it lets anything else stand.
@@ -332,6 +331,25 @@ export class Client {
     this.fromBoard(ch)
     this.record(ch)
     return this
+  }
+  /** The model from the cache, into the page's copy and the core; false (both empty again) when the core refuses
+   *  it. A fault inside the core (`internal`) is not a refusal of the cache: it goes on to the caller. */
+  private async loadCache(): Promise<boolean> {
+    try {
+      this.model = M.modelFromCache(await this.cache.range(''))
+      this.model.room.my_device_id = this.my_device_id
+      // (the core builds the model from here on; a mark of an earlier run is the past: `readDesk` sets it again)
+      this.board.load(snapshotForCore(this.model))
+      return true
+    } catch (err) {
+      if ((err as { code?: string })?.code === 'internal') throw err
+      console.warn('the cached model was not taken, it is read anew:', err)
+      this.model = M.emptyModel()
+      const was = this.board as unknown as { close?: () => void }
+      this.board = new this.core.ClientModel(this.my_device_id)
+      was.close?.()   // (what it took of the cache is let go)
+      return false
+    }
   }
   private async dropCache(): Promise<void> {
     const gone: [string, undefined][] = []
