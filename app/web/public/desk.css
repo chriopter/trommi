@@ -1154,8 +1154,8 @@ body > main#inbox { contain: strict; }
 
 /* ---- the Desk's foot (desk.mjs offHint, deskDock; the owner's pick of 13 October 2026, "zwei Stapel wie HEY") ----
    The section Off your mind: a short hinted list, its rows fading, beside Artifacts on a wide window. */
-.oym-hint { gap: 4px; text-align: left; }
-.oym-hint-list { display: grid; gap: 3px; justify-items: start; padding: 2px 4px; color: var(--muted); text-decoration: none; text-align: left; font: 400 var(--t-xs)/1.3 var(--font); }
+.oym-hint { gap: 0; text-align: left; }
+.oym-hint-list { display: grid; gap: 3px; justify-items: start; padding: 0 4px 2px; color: var(--muted); text-decoration: none; text-align: left; font: 400 var(--t-xs)/1.3 var(--font); }
 .oym-hint-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; }
 .oym-hint-row .sketch { width: 12px; height: 12px; stroke-width: 2.2; color: var(--accent); }
 .oym-hint-row[data-g="later"] .sketch { color: var(--stamp-ink-later); }
@@ -1166,10 +1166,14 @@ body > main#inbox { contain: strict; }
 .oym-hint-more { margin-top: 3px; color: var(--fg); font-weight: 600; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
 @media (any-hover: hover) { .oym-hint-list:hover b { color: var(--fg); } }
 .oym-hint-list:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 8px; }
-:is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .oym-hint, .inbox-groups > .oym-hint + .inbox-stacks.stack-tabs { margin-top: 56px; }
+/* (the two sections stand level: the same space above each, whatever lies before them, and the same space between a
+   heading and what stands under it; tests/web/views/foot-level.browser.mjs) */
+:is(#inbox, #session) .inbox-groups > #desk-ip + .oym-hint:not([hidden]) { margin-top: 56px; }
+:is(#inbox, #session) .inbox-groups > .oym-hint .end-divider { display: flex !important; margin-bottom: 8px; }
 @container rows (min-width: 700px) {
   .inbox-groups > .oym-hint:not([hidden]) { grid-column: 1 / 3; align-self: start; }
   .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks { grid-column: 3 / -1; align-self: start; }
+  :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 56px; }
 }
 /* (the last rows scroll clear of the dock) */
 main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 104px; }
@@ -1216,6 +1220,6 @@ main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bo
   .dock-fan > .dock-card { width: min(250px, calc(100vw - 60px)); }
   .dock-stack[data-k="run"]:not(:only-child) .dock-fan { left: auto; right: -10px; }
   :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .oym-hint { margin-top: 40px; }
-  .inbox-groups > .oym-hint + .inbox-stacks.stack-tabs { margin-top: 20px; }
+  :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 20px; }
   main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 176px; }
 }
