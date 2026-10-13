@@ -1536,7 +1536,7 @@ export class Hub {
         tell('connecting')
         let stale: ReturnType<typeof setTimeout> | undefined
         const kick = (): void => { heard_at = Date.now(); clearTimeout(stale); stale = setTimeout(() => ac.abort(), this.timing.stale) }
-        let ended_by_hub = false, opened_at = 0, wait: number | null = null
+        let ended_by_hub = false, opened_at = 0, wait: number | null = null, brought = false
         try {
           kick()
           const token = await this.bearer()
@@ -1590,6 +1590,7 @@ export class Hub {
                 // what a catch-up beside the stream took meanwhile is not handed over again
                 if (item.change > ownInt(after(), 'after')) await on({ event: 'change', item })
                 last = item.change
+                brought = true
               } else {
                 const event = streamEvent(name, parsed)
                 if (event) await on(event)
@@ -1614,10 +1615,11 @@ export class Hub {
         }
         if (closed) return
         if (renew) { renew = false; continue }
-        // Only a connection that stood for a while counts as one that worked: then the count of failures starts
-        // anew, and if the hub ended it (its token ran out, the hub restarts) the next one opens at once. Every
-        // other end waits longer each time, to at most `backoff_max`; a hub cannot shorten that by what it sends.
-        const worked = opened_at > 0 && Date.now() - opened_at >= this.timing.stream_stood
+        // A connection that stood for a while, or that handed over a change of the hub's order, worked: then the
+        // count of failures starts anew. If the hub ended it (its token ran out, the hub restarts) the next one opens
+        // at once; one the network cut opens after the shortest wait. Every other end waits longer each time, to at
+        // most `backoff_max`; a hub cannot shorten that by what it sends besides its order.
+        const worked = (opened_at > 0 && Date.now() - opened_at >= this.timing.stream_stood) || brought
         if (worked) { failures = 0; signins = 0 }
         const step = worked && ended_by_hub ? 250 : Math.min(this.timing.backoff_max, this.timing.backoff_first * 2 ** Math.min(failures++, 16))
         await sleep(Math.min(this.timing.backoff_max, Math.max(wait ?? 0, step * (0.5 + Math.random() / 2))), this.wakers)

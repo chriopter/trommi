@@ -1341,7 +1341,7 @@ impl Conn {
 
             tokio::time::sleep(std::time::Duration::from_millis(env_ms(
                 "TROMMI_SELF_JOIN_POLL_MS",
-                2000,
+                500,
             )))
             .await;
         };

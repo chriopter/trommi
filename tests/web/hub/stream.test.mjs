@@ -149,6 +149,29 @@ test('a hub that opens streams and ends them at once cannot hurry the reconnects
   assert.equal(heard.events.length, tries)
 })
 
+// A network that cuts the live stream again and again (a mobile network, a proxy): a stream that handed over a change
+// worked, whatever ended it, so the next one opens after the shortest wait. Waits that doubled with each cut kept a
+// device away from its room for half a minute at a time, and a join waited that long for a Welcome or an answer.
+test('a stream that brought a change and was cut is opened again soon, also after many cuts', async t => {
+  const { fake, hub, room_id, device } = await scene(t)
+  Object.assign(hub.timing, { backoff_first: 100, backoff_max: 30_000 })
+  const writer = client(fake, room_id, device)
+  const heard = listen(t, hub)
+  await until(() => live(heard))
+  const gaps = []
+  for (let seq = 1; seq <= 7; seq++) {
+    await writer.postEnvelope(envelope(room_id, device, seq))
+    await until(() => heard.changes().length === seq)
+    const cut = Date.now(), streams = received(fake, '/v1/stream').length
+    fake.dropStreams()
+    await until(() => received(fake, '/v1/stream').length > streams && live(heard), 20_000)
+    gaps.push(Date.now() - cut)
+  }
+  assert.deepEqual(heard.changes(), [1, 2, 3, 4, 5, 6, 7])
+  // doubling waits would be 100, 200, 400, 800, 1600, 3200, 6400 ms (each at least half of it)
+  assert.ok(gaps.every(g => g < 600), `every reconnect soon: ${gaps}`)
+})
+
 test('a hub that is not there: tries with growing waits, capped; back at once when it returns', async t => {
   const { fake, hub, room_id, device } = await scene(t)
   await hub.postEnvelope(envelope(room_id, device, 1))
