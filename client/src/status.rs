@@ -20,6 +20,9 @@
 //!   What is not on the Desk raises no hand, so the hand and the Desk never disagree.
 //!
 //! Quiet (a grey hint, never a stop): connected, a status line says "working", and nothing from it for [`QUIET_MS`].
+//!
+//! A status line says "working" only while it is current: linked to an open card that is not put off, or else updated
+//! within [`LINE_STALE_MS`].
 use crate::model::types::{Link, Session};
 use crate::model::Model;
 use serde::Serialize;
@@ -31,6 +34,9 @@ pub const ASLEEP_MS: u64 = 10 * 60_000;
 pub const OFFLINE_GRACE_MS: u64 = 60_000;
 /// Nothing from a working, connected session for this long: the quiet hint.
 pub const QUIET_MS: u64 = 15 * 60_000;
+/// A status line its agent has not updated for this long, and whose card does not hold it, is stale: it no longer
+/// says that its session works (the apps hide it).
+pub const LINE_STALE_MS: u64 = 6 * 60 * 60_000;
 
 /// A session's link at a moment.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -189,12 +195,28 @@ pub fn status_of(
         recheck = earliest(recheck, at);
         Some(l)
     };
-    let working_lines: Vec<u64> = s
+    // (a working line counts while its card is open and not put off, or, without such a card, for LINE_STALE_MS
+    //  after its last update: the apps show it so, client/README.md "Status lines")
+    let mut working_lines: Vec<u64> = vec![];
+    for t in s
         .status_lines
         .iter()
         .filter(|t| t.state.as_str() == Some("working"))
-        .map(|t| t.updated_at)
-        .collect();
+    {
+        let card = t.object_id.as_str().and_then(|id| m.cards.get(id));
+        match card {
+            Some(c) if c.object_state == "open" => {
+                if c.snoozed_until.is_none() {
+                    working_lines.push(t.updated_at);
+                }
+            }
+            _ if now.saturating_sub(t.updated_at) < LINE_STALE_MS => {
+                working_lines.push(t.updated_at);
+                recheck = earliest(recheck, Some(t.updated_at + LINE_STALE_MS));
+            }
+            _ => {}
+        }
+    }
     let working = !working_lines.is_empty();
     let device_active = s
         .agent_device_id
@@ -396,6 +418,35 @@ mod tests {
         let r = session_list(&m, false).remove(0);
         assert_eq!(why(&r), Some("offline"));
         assert_eq!(r.link.unwrap().state, "gone");
+    }
+
+    /// A working line nobody updated for LINE_STALE_MS says nothing any more: no hand while disconnected; one linked to
+    /// an open card holds as long as that card is open and not put off.
+    #[test]
+    fn a_stale_line_is_no_work() {
+        let stale = super::LINE_STALE_MS + 1_000;
+        let all = |m: &mut Model, now: u64| {
+            let mut c = Change::new();
+            c.cards.insert(C0.into());
+            c.sessions.insert(S0.into());
+            m.project(&mut c, now);
+            session_list(m, false).remove(0)
+        };
+        let mut m = room(false);
+        m.sessions.get_mut(S0).unwrap().status_lines.push(StatusLine {
+            id: "t".into(),
+            state: json!("working"),
+            updated_at: 500,
+            ..Default::default()
+        });
+        // (this run started long ago: past the grace, a working line raises the hand)
+        all(&mut m, 1_000);
+        assert_eq!(why(&all(&mut m, stale)), None);
+        card(&mut m, "normal", 1);
+        m.sessions.get_mut(S0).unwrap().status_lines[0].object_id = json!(C0);
+        assert_eq!(why(&all(&mut m, stale)), Some("offline"));
+        m.cards.get_mut(C0).unwrap().snoozed_until = Some(stale * 2);
+        assert_eq!(why(&all(&mut m, stale)), None);
     }
 
     /// Hears on its next step, then asleep by the clock; a session in Codex is never asleep.

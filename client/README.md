@@ -54,6 +54,21 @@ host fetches, stores and draws; the client core decides.
 - **Words:** what a link, a red hand or a snooze says; the core decides which, the app says it.
 - **The UI:** the web's views, SwiftUI; the connector's MCP tools.
 
+## Status lines
+
+An agent sets its status lines (`set_status`); nothing but the agent changes them, so a line can say "working" or
+"waiting on you" long after its card was put off, answered or closed, or its session went. Every app therefore shows
+a line by one rule, so the line never says more than the Desk's "Off your mind" does:
+
+- a line of an archived or vanished session: not shown (`gone`);
+- linked to a card (`object_id`), the card's place decides: put off (Later) is `later`, shown quietly; open (on the
+  Desk, or with its agent) is as set; answered and still worked on is `working` at most; else (answered long ago,
+  done, shredded) `done`, which goes after ten minutes;
+- not linked, and not updated for 6 hours: `stale`, not shown, and no sign of work.
+
+The apps apply it where they read the lines (web `app.mjs` `lineState`, iOS `Desk.swift` `lineState`); the core's
+red hand and quiet hint count only the lines that are still current (`src/status.rs`, `LINE_STALE_MS`).
+
 ## The body codec across the facade
 
 `core/swift/src/codec.rs` hands the codec to both bindings as JSON text: `body_from_wire`, `bodies_from_wire`,

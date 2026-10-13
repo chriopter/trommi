@@ -18,6 +18,7 @@ The App Store listing now opens with your encrypted notes.
 
 **Better**
 - App Store listing leads with the encrypted notes screenshot (iPhone and iPad); the others follow in their old order.
+- Running agents show as one row of chips under the chat; a line follows its card (snoozed or done cards no longer show as working)
 
 ## 12 October 2026
 

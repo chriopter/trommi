@@ -669,10 +669,12 @@ struct CopyLinkButton: View {
   }
 }
 
-/** The session's running work at the end of the conversation, and that it is answering. */
+/** The session's running work at the end of the conversation, and that it is answering: one row of small chips (mark,
+ *  title, age), never two rows; it scrolls sideways. A chip with a question opens it; one without shows its detail
+ *  under the row on a tap, a second tap hides it (web session.mjs sessionStatus). */
 struct SessionStatus: View {
   @EnvironmentObject var model: BoardModel
-  @State private var open: Set<String> = []   // (the lines opened by a tap, by session and id)
+  @State private var shown: String? = nil   // (the chip whose detail stands under the row, by session and id)
   let agent: Agent
   let tasks: [Task1]
   let messages: [Message]
@@ -681,48 +683,54 @@ struct SessionStatus: View {
     // (a turn's trail says by itself that the agent works, and at which step: no second line under a running one)
     let last = messages.last { $0.from != "event" }
     let answering = last?.from == "user" && now - min(now, last!.ts) < WORKING_WINDOW && agent.online
-    let lines = tasks.filter { $0.state != "done" || now - min(now, $0.updated) < WORKING_WINDOW }
+    // (their state as DeskModel.lineState made it: working, waiting on him, put off with its card, done for a while)
+    let lines = tasks.filter { ["working", "decision", "later"].contains($0.state ?? "") || ($0.state == "done" && now - min(now, $0.updated) < WORKING_WINDOW) }
     if answering || !lines.isEmpty {
       VStack(alignment: .leading, spacing: 8) {
         if answering {
           HStack(spacing: 8) { AgentMark(agent: agent, size: 16, crown: false); Text("\(agent.name) is working").font(Face.text(14)).foregroundStyle(Ink.muted); TypingDots() }
         }
-        ForEach(lines, id: \.id) { t in
-          // (the card the line stands for, paired as on the Desk: a line with no card of its own opens the card its session works on)
-          let card = model.desk?.lineCard(t)
-          let detail = t.detail.flatMap { $0.isEmpty ? nil : $0 }
-          let key = "\(t.agent):\(t.id)", isOpen = open.contains(key)
-          // (one line: the title and the time; a tap opens the detail and the way to its question below it, a second shuts it)
-          Button {
-            withAnimation(.easeOut(duration: 0.18)) { if isOpen { open.remove(key) } else { open.insert(key) } }
-          } label: {
-            VStack(alignment: .leading, spacing: 6) {
-              HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Group {
-                  if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
-                  else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
-                  else { Sketch("tick", color: Ink.accent) }
-                }.frame(width: 18, height: 18).alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
-                Text(t.label).font(Face.text(16, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
-                Spacer(minLength: 4)
-                // (the time short, a small clock after it: "4m"; VoiceOver hears "4 min ago")
-                if t.updated > 0 {
-                  HStack(spacing: 3) { Text(agoShort(t.updated)).font(Face.text(12)).monospacedDigit(); Image(systemName: "clock").font(.system(size: 10, weight: .medium)) }
-                    .foregroundStyle(Ink.faint).accessibilityElement(children: .ignore).accessibilityLabel(agoText(t.updated))
-                }
-              }
-              if isOpen {
-                VStack(alignment: .leading, spacing: 8) {
-                  if let d = detail { Text(d).font(Face.text(15)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true) }
-                  if let c = card { Button { model.path.append(.card(c.id)) } label: { Text("Open the question →").font(Face.text(14, .semibold)).foregroundStyle(Ink.accent) }.buttonStyle(.plain) }
-                }.padding(.leading, 26)
-              }
-            }.contentShape(Rectangle())
-          }.buttonStyle(.plain).disabled(detail == nil && card == nil)
-          .accessibilityHint(detail == nil && card == nil ? "" : isOpen ? "Hides the details" : "Shows the details")
+        if !lines.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) { ForEach(lines, id: \.id) { t in chip(t) } }
+          }
+          if let key = shown, let t = lines.first(where: { "\($0.agent):\($0.id)" == key }) {
+            Text([t.label, t.detail ?? ""].filter { !$0.isEmpty }.joined(separator: ": "))
+              .font(Face.text(14)).foregroundStyle(Ink.muted).fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+          }
         }
       }.padding(.vertical, 12)
     }
+  }
+
+  @ViewBuilder private func chip(_ t: Task1) -> some View {
+    // (the card the line stands for, paired as on the Desk: a line with no card of its own opens the card its session works on)
+    let card = model.desk?.lineCard(t)
+    let key = "\(t.agent):\(t.id)", on = shown == key
+    let quiet = t.state == "later" || t.state == "done"
+    Button {
+      if let c = card { model.path.append(.card(c.id)) }
+      else { withAnimation(.easeOut(duration: 0.18)) { shown = on ? nil : key } }
+    } label: {
+      HStack(spacing: 6) {
+        Group {
+          if t.state == "working" { WorkingRing(working: true, color: Ink.accent) }
+          else if t.state == "decision" { Sketch("knock", color: Ink.urgHigh) }
+          else if t.state == "later" { Sketch("snooze", color: Ink.faint) }
+          else { Sketch("tick", color: Ink.faint) }
+        }.frame(width: 16, height: 16)
+        Text(t.label).font(Face.text(14, .semibold)).foregroundStyle(quiet ? Ink.muted : Ink.fg).lineLimit(1).frame(maxWidth: 150, alignment: .leading)
+        if t.updated > 0 {
+          Text(agoShort(t.updated)).font(Face.text(12)).monospacedDigit().foregroundStyle(Ink.faint)
+            .accessibilityLabel(agoText(t.updated))
+        }
+      }
+      .padding(.leading, 7).padding(.trailing, 10).frame(height: 30)
+      .background(Capsule().fill(Ink.sunken))
+      .overlay(Capsule().strokeBorder(t.state == "decision" ? Ink.urgHigh.opacity(0.55) : on ? Ink.lineStrong : .clear, lineWidth: 1))
+      .contentShape(Capsule())
+    }.buttonStyle(.plain)
+    .accessibilityHint(card != nil ? "Opens the question" : on ? "Hides the details" : "Shows the details")
   }
 }
 /** "now", "4m", "3h", "4 Oct": agoText short, for a time beside a small clock. */
