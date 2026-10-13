@@ -403,6 +403,41 @@ fn a_commit_that_lost_its_epoch_is_decided_by_the_log_after_a_restart() {
     }
 }
 
+/// The hub answers a Commit `not-found` (a device that no longer sees the group is answered as for no group): the
+/// refusal is final for that one Commit. The pending Commit is cleared and the entry leaves the outbox; the group
+/// and every other group stay as they were, and the device commits again there. What a client's pump does with it
+/// (the connector: `outbox_refused` for a final refusal of a Commit).
+#[test]
+fn a_commit_the_hub_answers_not_found_is_cleared_and_nothing_else_changes() {
+    let mut run = Run::start(None, None);
+    let room_group = run.room_group;
+    let before = shown(&run.device).groups;
+    run.device
+        .update(&room_group, true, now())
+        .unwrap()
+        .unwrap();
+    let own = run.device.outbox().remove(0);
+    assert_eq!(own.kind, OutboxKind::Commit);
+    assert!(run.device.group(&room_group).unwrap().pending);
+    run.device.outbox_refused(own.id, &Error::NotFound).unwrap();
+    assert!(run.device.outbox().is_empty(), "the entry is gone: nothing is posted again");
+    assert_eq!(shown(&run.device).groups, before, "the group is held as before the Commit, not dropped");
+    // the group goes on: the device follows another device's Commit and commits itself again
+    run.peer.update(&room_group, true, now()).unwrap().unwrap();
+    post_ok(&mut run.hub, &mut run.peer);
+    sync_ok(&run.hub, &mut run.device);
+    run.device
+        .update(&room_group, true, now())
+        .unwrap()
+        .unwrap();
+    post_ok(&mut run.hub, &mut run.device);
+    sync_ok(&run.hub, &mut run.peer);
+    assert_eq!(
+        run.device.content_key(&room_group, 3).unwrap(),
+        run.peer.content_key(&room_group, 3).unwrap()
+    );
+}
+
 #[test]
 fn a_founding_survives_a_crash_and_a_refusal_leaves_nothing() {
     let mut run = Run::start(Some(1), None);
