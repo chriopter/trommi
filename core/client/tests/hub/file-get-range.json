@@ -1,0 +1,17 @@
+{
+  "answer": "klmnopqrst",
+  "asked": {
+    "file": "S2SdMndyJ1rNjFUsrVgPZg",
+    "first": 10,
+    "last": 19,
+    "route": "get_file"
+  },
+  "content_range": "bytes 10-19/1000",
+  "name": "file-get-range",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/files/S2SdMndyJ1rNjFUsrVgPZg"
+  },
+  "status": 206
+}

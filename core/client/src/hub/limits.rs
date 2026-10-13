@@ -53,3 +53,25 @@ pub const MAX_GROUPS_PAGE: u32 = 1000;
 pub const MAX_LEAVES: usize = 4096;
 /// Most wishes `GET /v1/requests` lists.
 pub const MAX_WISHES: usize = 100_000;
+/// Most open objects of one kind the Desk holds (the hub cuts it short there).
+pub const MAX_DESK_OBJECTS: usize = 1000;
+/// Most register values the Desk holds.
+pub const MAX_DESK_REGISTERS: usize = 20_000;
+/// Most groups a hub lists with the Desk.
+pub const MAX_DESK_GROUPS: usize = 10_000;
+/// Most stored bytes of a file (spec/v1.md 16: 64 MiB of plaintext).
+pub const CAP_FILE: usize = 67_125_269;
+/// Most envelopes one page of a Chat may be asked for.
+pub const MAX_CHAT_PAGE: u32 = 200;
+/// Most rows one page of sealed keys may be asked for.
+pub const MAX_SEALED_KEYS: u32 = 2000;
+/// Most Commits one page of a removal holds.
+pub const MAX_REMOVAL: usize = 200;
+/// Most writers and files one board frontier names (hub-api.md "Decided" 45).
+pub const MAX_FRONTIER_WRITERS: usize = 1000;
+pub const MAX_FRONTIER_FILES: usize = 20_000;
+/// How long the shell waits for a file to go up or come down.
+pub const TRANSFER_TIMEOUT_MS: u32 = 600_000;
+/// Most the answer of `POST /v1/groups/read` may hold: the hub's one budget of 8 MiB for it, with room for a
+/// first group that exceeds it alone.
+pub const CAP_GROUPS_READ: usize = 12 * MIB;

@@ -1,0 +1,15 @@
+{
+  "answer": "{\"pruned\":0}",
+  "asked": {
+    "board": "HMRDpyy0rQECH9apWRTXlw",
+    "route": "board_frontier"
+  },
+  "content_range": null,
+  "name": "board-frontier",
+  "request": {
+    "body": "{\"files\":[],\"frontier\":{}}",
+    "method": "POST",
+    "path": "/v1/boards/HMRDpyy0rQECH9apWRTXlw/frontier"
+  },
+  "status": 200
+}

@@ -9,11 +9,13 @@
 use serde_json::Value;
 use trommi_client_core::app::{Header, HttpResponse};
 use trommi_client_core::hub::{
-    Answer, ChangeItem, Codec, EnvelopeItem, Failure, LogItem, ObjectRoute, Only, Route, Site,
-    StreamEvent, StreamReader, WishKind,
+    Answer, ByteRange, ChangeItem, Codec, DeskOnly, EnvelopeItem, Failure, LogItem, ObjectRoute,
+    Only, Route, Site, StreamEvent, StreamReader, Timeline, WishKind,
 };
+use trommi_core::envelope::Envelope;
 use trommi_core::ids::{
-    base64url_decode, base64url_encode as b64, DeviceId, GroupId, ObjectId, RoomId,
+    base64url_decode, base64url_encode as b64, BoardId, DeviceId, FileId, GroupId, ObjectId,
+    RoomId, SessionId, ShareId,
 };
 use trommi_core::store::{OutboxEntry, OutboxKind};
 
@@ -723,25 +725,315 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     );
                 }
             }
+            "desk" => {
+                let only = match asked["only"].as_str().unwrap() {
+                    "active" => DeskOnly::Active,
+                    "archived" => DeskOnly::Archived,
+                    _ => DeskOnly::All,
+                };
+                let Ok(Answer::Desk(desk)) = read(&Route::Desk { only }) else {
+                    panic!("{name} is not read")
+                };
+                let kinds = [
+                    ("cards", &desk.cards),
+                    ("notes", &desk.notes),
+                    ("permission_requests", &desk.permission_requests),
+                    ("artifacts", &desk.artifacts),
+                ];
+                for (list, rows) in kinds {
+                    let raw = raw[list].as_array().unwrap();
+                    assert_eq!(raw.len(), rows.len(), "{name}");
+                    for (raw, row) in raw.iter().zip(rows) {
+                        assert_eq!(raw["object_id"], b64(row.object.as_bytes()));
+                        assert_eq!(raw["group_id"], b64(row.group.as_bytes()));
+                        assert_eq!(raw["owner"], b64(row.owner.as_bytes()));
+                        assert_eq!(
+                            (&raw["state"], &raw["urgency"]),
+                            (&row.state.into(), &row.urgency.into())
+                        );
+                        assert_eq!(raw["answered_at"], row.answered_at);
+                        assert_eq!(
+                            (&raw["first_change"], &raw["head_change"]),
+                            (&row.first_change.into(), &row.head_change.into())
+                        );
+                        let version = row.version.as_ref().expect("an open object's version");
+                        same_envelope(&raw["version"], version);
+                        // what the codec checked the version by: its own header names the object and the group
+                        let header = Envelope::decode(&version.envelope)
+                            .expect("the hub's envelope decodes")
+                            .header;
+                        assert_eq!(header.group, row.group);
+                        assert_eq!(
+                            header.subject.object().map(|f| f.object_id),
+                            Some(row.object)
+                        );
+                    }
+                }
+                let registers = raw["registers"].as_array().unwrap();
+                assert_eq!(registers.len(), desk.registers.len(), "{name}");
+                for (raw, item) in registers.iter().zip(&desk.registers) {
+                    same_envelope(raw, item);
+                    assert!(Envelope::decode(&item.envelope).is_ok());
+                }
+                assert_eq!(
+                    raw["groups"].as_array().map(Vec::len),
+                    desk.groups.as_ref().map(Vec::len)
+                );
+                assert_eq!(
+                    (&raw["truncated"], &raw["change"]),
+                    (&desk.truncated.into(), &desk.change.into())
+                );
+            }
+            "chat" | "board" => {
+                let id: [u8; 16] = base64url_decode(
+                    asked[if route == "chat" { "session" } else { "board" }]
+                        .as_str()
+                        .unwrap(),
+                )
+                .unwrap()
+                .try_into()
+                .unwrap();
+                let (session, board) = (SessionId::new(id), BoardId::new(id));
+                let limit = asked["limit"].as_u64().unwrap() as u32;
+                let route = match route {
+                    "chat" => Route::Chat {
+                        timeline: Timeline::Session(&session),
+                        before: asked["before"].as_u64(),
+                        limit,
+                    },
+                    _ => Route::Board {
+                        board: &board,
+                        after: asked["after"].as_u64().unwrap(),
+                        limit,
+                    },
+                };
+                let Ok(Answer::Envelopes { items, more }) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                let list = raw["items"].as_array().unwrap();
+                assert_eq!(list.len(), items.len(), "{name}");
+                for (raw, item) in list.iter().zip(&items) {
+                    same_envelope(raw, item);
+                }
+                assert_eq!(raw["more"], more);
+            }
+            "board_frontier" => {
+                let board = BoardId::new(
+                    base64url_decode(asked["board"].as_str().unwrap())
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                );
+                let route = Route::BoardFrontier {
+                    board: &board,
+                    frontier: &[],
+                    files: &[],
+                    snapshot: None,
+                };
+                let Ok(Answer::Pruned { pruned }) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                assert_eq!(raw["pruned"], pruned);
+            }
+            "sealed_keys" => {
+                let route = Route::SealedKeys {
+                    after: asked["after"].as_u64().unwrap(),
+                    limit: asked["limit"].as_u64().unwrap() as u32,
+                };
+                let Ok(Answer::SealedKeys(page)) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                let rows = raw["rows"].as_array().unwrap();
+                assert_eq!(rows.len(), page.rows.len(), "{name}");
+                for (raw, (change, key)) in rows.iter().zip(&page.rows) {
+                    assert_eq!(
+                        (&raw["change"], &raw["sealed_key"]),
+                        (&(*change).into(), &b64(key).into())
+                    );
+                }
+                assert_eq!(
+                    raw["links"].as_array().unwrap().len(),
+                    page.links.len(),
+                    "{name}"
+                );
+                assert_eq!(
+                    (&raw["change"], &raw["more"]),
+                    (&page.change.into(), &page.more.into())
+                );
+            }
+            "put_file" | "get_file" | "delete_file" => {
+                let file = FileId::new(
+                    base64url_decode(asked["file"].as_str().unwrap())
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                );
+                match route {
+                    "put_file" => {
+                        let bytes = vec![0; asked["size"].as_u64().unwrap() as usize];
+                        let Ok(Answer::FileStored { size, sha256 }) = read(&Route::PutFile {
+                            file: &file,
+                            bytes: &bytes,
+                        }) else {
+                            panic!("{name} is not read")
+                        };
+                        assert_eq!(
+                            (&raw["size"], &raw["sha256"]),
+                            (&size.into(), &b64(&sha256).into())
+                        );
+                    }
+                    "delete_file" => assert_eq!(
+                        read(&Route::DeleteFile { file: &file }),
+                        Ok(Answer::Done),
+                        "{name}"
+                    ),
+                    _ => {
+                        let range = asked["first"].as_u64().map(|first| ByteRange {
+                            first,
+                            last: asked["last"].as_u64(),
+                        });
+                        let (request, expect) = Codec
+                            .request(&SITE, &Route::GetFile { file: &file, range })
+                            .unwrap();
+                        assert_eq!(
+                            request.url.strip_prefix(SITE.url),
+                            v["request"]["path"].as_str(),
+                            "{name}"
+                        );
+                        let headers = v["content_range"]
+                            .as_str()
+                            .map(|value| Header {
+                                name: "Content-Range".into(),
+                                value: value.into(),
+                            })
+                            .into_iter()
+                            .collect();
+                        let response = HttpResponse {
+                            status,
+                            headers,
+                            body: answer.as_bytes().to_vec().into(),
+                        };
+                        let got = Codec.answer(&expect, &response);
+                        if status >= 400 {
+                            assert!(
+                                matches!(got, Err(Failure::Refused { code: Some(_), .. })),
+                                "{name}"
+                            );
+                            continue;
+                        }
+                        let Ok(Answer::File(got)) = got else {
+                            panic!("{name} is not read: {got:?}")
+                        };
+                        assert_eq!(got.bytes, answer.as_bytes(), "{name}");
+                        assert_eq!(
+                            (got.size, got.first),
+                            (1000, range.map_or(0, |r| r.first)),
+                            "{name}"
+                        );
+                    }
+                }
+            }
+            "post_share" | "delete_share" => {
+                let share = ShareId::new(
+                    base64url_decode(asked["share"].as_str().unwrap())
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                );
+                if route == "delete_share" {
+                    assert_eq!(
+                        read(&Route::DeleteShare { share: &share }),
+                        Ok(Answer::Done),
+                        "{name}"
+                    );
+                    continue;
+                }
+                let file = FileId::new(
+                    base64url_decode(asked["file"].as_str().unwrap())
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                );
+                let expires_at = asked["expires_at"].as_u64().unwrap();
+                let route = Route::PostShare {
+                    share: &share,
+                    secret_hash: &[0; 32],
+                    file: &file,
+                    expires_at,
+                };
+                assert_eq!(
+                    read(&route),
+                    Ok(Answer::Shared {
+                        expires_at: raw["expires_at"].as_u64().unwrap()
+                    }),
+                    "{name}"
+                );
+            }
+            "sign_out" => assert_eq!(read(&Route::SignOut), Ok(Answer::Done), "{name}"),
+            "open_recovery" | "drop_recovery" => {
+                let room =
+                    RoomId::from_slice(&base64url_decode(asked["room"].as_str().unwrap()).unwrap())
+                        .unwrap();
+                if route == "open_recovery" {
+                    let Ok(Answer::Recovery { id, expires_at }) =
+                        read(&Route::OpenRecovery { room: &room })
+                    else {
+                        panic!("{name}")
+                    };
+                    assert_eq!(
+                        (&raw["recovery_id"], &raw["expires_at"]),
+                        (&b64(&id).into(), &expires_at.into())
+                    );
+                } else {
+                    let id: [u8; 16] = base64url_decode(asked["recovery"].as_str().unwrap())
+                        .unwrap()
+                        .try_into()
+                        .unwrap();
+                    let got = read(&Route::DropRecovery {
+                        room: &room,
+                        recovery: &id,
+                    });
+                    assert_eq!(
+                        got,
+                        Ok(Answer::Dropped {
+                            dropped: raw["dropped"].as_bool().unwrap()
+                        }),
+                        "{name}"
+                    );
+                }
+            }
             other => panic!("{name}: a route this test does not know: {other}"),
         }
     }
     // every route has a vector of the real hub
     let built = [
+        "board",
+        "board_frontier",
         "chain",
         "challenge",
         "changes",
+        "chat",
         "claim",
+        "delete_file",
+        "delete_share",
+        "desk",
         "desk_brief",
+        "drop_recovery",
+        "get_file",
         "group_info",
         "group_log",
         "groups_read",
         "joins",
         "key_packages_held",
         "object",
+        "open_recovery",
         "outbox",
+        "post_share",
+        "put_file",
         "reject",
         "room_groups",
+        "sealed_keys",
+        "sign_out",
         "stream",
         "token",
         "welcomes",
@@ -749,5 +1041,5 @@ fn what_the_real_hub_answered_is_read_without_loss() {
         "wishes",
     ];
     assert_eq!(seen.into_iter().collect::<Vec<_>>(), built);
-    assert!(all.len() >= 45, "{} vectors", all.len());
+    assert!(all.len() >= 65, "{} vectors", all.len());
 }

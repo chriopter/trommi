@@ -69,7 +69,7 @@ impl Recorder {
     fn ask(&self, name: &str, route: &Route<'_>, asked: Value) -> Result<Answer, Failure> {
         let (request, expect) = Codec.request(&self.site(), route).expect("the codec builds the route");
         let response = self.send(&request);
-        self.record(name, &request, asked, response.status, &response.body);
+        self.record(name, &request, asked, &response);
         self.read(&expect, &response)
     }
 
@@ -77,10 +77,11 @@ impl Recorder {
         Codec.answer(expect, response)
     }
 
-    fn record(&self, name: &str, request: &HttpRequest, asked: Value, status: u16, answer: &[u8]) {
-        if !self.write {
+    fn record(&self, name: &str, request: &HttpRequest, asked: Value, response: &HttpResponse) {
+        if !self.write || name.is_empty() {
             return;
         }
+        let (status, answer) = (response.status, &response.body[..]);
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/client/tests/hub");
         std::fs::create_dir_all(&dir).unwrap();
         let vector = json!({
@@ -92,6 +93,7 @@ impl Recorder {
                 "body": request.body.as_ref().map(|b| String::from_utf8(b.to_vec()).unwrap()),
             },
             "status": status,
+            "content_range": response.header("content-range"),
             "answer": String::from_utf8(answer.to_vec()).expect("the hub answers text"),
         });
         let text = serde_json::to_string_pretty(&vector).unwrap() + "\n";
@@ -208,7 +210,7 @@ fn the_codec_and_the_real_hub_agree() {
     {
         let (request, expect) = Codec.request(&rec.site(), &Route::Outbox { room: &room, entry: &gap, extra: None }).unwrap();
         let response = rec.send(&request);
-        rec.record("outbox-envelope-gap", &request, asked_entry(&gap), response.status, &response.body);
+        rec.record("outbox-envelope-gap", &request, asked_entry(&gap), &response);
         assert_eq!(rec.read(&expect, &response), Err(Failure::Refused { status: 409, code: Some("gap".into()) }));
         let refusal = Codec.refusal(&response).expect("the hub's own refusal");
         assert_eq!((refusal.code, refusal.voided, refusal.seq), ("gap", false, Some(1)));
@@ -237,7 +239,7 @@ fn the_codec_and_the_real_hub_agree() {
         let stale = entry(OutboxKind::Commit, Some(&group), out.epoch, vec![vec![1; 40], vec![2; 40], vec![], vec![3; 40]]);
         let (request, expect) = Codec.request(&rec.site(), &Route::Outbox { room: &room, entry: &stale, extra: None }).unwrap();
         let response = rec.send(&request);
-        rec.record("outbox-commit-refused", &request, asked_entry(&stale), response.status, &response.body);
+        rec.record("outbox-commit-refused", &request, asked_entry(&stale), &response);
         assert_eq!(rec.read(&expect, &response), Err(Failure::Refused { status: 409, code: Some("epoch-taken".into()) }));
         // (the group's epoch now, for building again)
         assert_eq!(Codec.refusal(&response).and_then(|r| r.epoch), Some(out.epoch + 1));
@@ -331,7 +333,8 @@ fn the_codec_and_the_real_hub_agree() {
     // ---- the live stream from the start: who is here, then every change of the catch-up, in order
     let (request, _) = Codec.request(&rec.site(), &Route::Stream { after: 0 }).unwrap();
     let (status, head, bytes) = rec.stream(&request);
-    rec.record("stream", &request, json!({ "route": "stream", "after": 0 }), status, &bytes);
+    let streamed = HttpResponse { status, headers: head.clone(), body: bytes.clone().into() };
+    rec.record("stream", &request, json!({ "route": "stream", "after": 0 }), &streamed);
     let mut reader = StreamReader::new(0);
     reader.opened(status, &head).expect("a stream of events");
     let fed = reader.chunk(&bytes);
@@ -374,7 +377,8 @@ fn the_codec_and_the_real_hub_agree() {
 /// Signs in through the codec with `key` (a device's, or the room's recovery signature key); returns the token.
 fn sign_in(rec: &Recorder, name: &str, room: &RoomId, key: &openmls_basic_credential::SignatureKeyPair) -> (String, trommi_client_core::hub::Role) {
     let asked = json!({ "route": "challenge", "room": b64(room.as_bytes()) });
-    let Ok(Answer::Challenge(challenge)) = rec.ask(&format!("challenge-{name}"), &Route::Challenge { room }, asked) else {
+    let named = |what: &str| if name.is_empty() { String::new() } else { format!("{what}-{name}") };
+    let Ok(Answer::Challenge(challenge)) = rec.ask(&named("challenge"), &Route::Challenge { room }, asked) else {
         panic!("a challenge is handed out")
     };
     let auth = wire::HubAuth {
@@ -387,7 +391,7 @@ fn sign_in(rec: &Recorder, name: &str, room: &RoomId, key: &openmls_basic_creden
     let signature = sign_with_label(key, "TrommiHubAuth", &auth);
     let asked = json!({ "route": "token", "room": b64(room.as_bytes()) });
     let route = Route::Token { room, auth: &auth, signature: &signature };
-    match rec.ask(&format!("token-{name}"), &route, asked) {
+    match rec.ask(&named("token"), &route, asked) {
         Ok(Answer::Token { token, expires_at, role }) => {
             assert!(expires_at > 1_700_000_000_000);
             (token, role)
@@ -567,4 +571,169 @@ fn signing_in_and_joining_through_the_codec() {
     let after = welcomes[0].id;
     let none = rec.ask("welcomes-none", &Route::Welcomes { after }, json!({ "route": "welcomes", "after": after }));
     assert_eq!(none.ok(), Some(Answer::Welcomes(vec![])));
+}
+
+
+#[test]
+fn the_desk_files_and_the_rest_through_the_codec() {
+    use sha2::{Digest, Sha256};
+    use trommi_client_core::hub::{ByteRange, DeskOnly, Role, Timeline};
+    use trommi_core::ids::{BoardId, FileId, SessionId, ShareId};
+
+    let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
+    let mut rec = Recorder {
+        port: w.hub.port,
+        url: w.hub.url.clone(),
+        token: w.ada.token.clone(),
+        write: std::env::var("TROMMI_HUB_VECTORS").as_deref() == Ok("write"),
+    };
+    let room = RoomId::new(w.room);
+    let mut agent = w.enrol_agent();
+    let (session, group) = w.found_main(&mut [], Some(&mut agent));
+    for text in ["one", "two", "three", "four", "five"] {
+        agent.send(&w.hub, &group, &chat(&session, w.ada.id(), text)).ok();
+    }
+    let mut cards = vec![];
+    for urgency in [0, 3] {
+        let id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
+        agent.send(&w.hub, &group, &object(wire::KIND_VERSION, id, wire::TYPE_CARD, wire::STATE_OPEN, urgency, ZERO32, ZERO32)).ok();
+        cards.push(id);
+    }
+    let register_id: [u8; 16] = random();
+    agent.send(&w.hub, &group, &register(&register_id, "an older value")).ok();
+    agent.send(&w.hub, &group, &register(&register_id, "a value")).ok();
+    agent.send(&w.hub, &group, &register(&random(), "another")).ok();
+
+    // ---- a file goes up, is named by an open Artifact, comes down whole and in ranges
+    let file_id: [u8; 16] = random();
+    let file = FileId::new(file_id);
+    let stored: Vec<u8> = (0..1000u32).map(|i| b'a' + (i % 26) as u8).collect();
+    let asked = json!({ "route": "put_file", "file": b64(&file_id), "size": stored.len() });
+    let put = rec.ask("file-put", &Route::PutFile { file: &file, bytes: &stored }, asked);
+    let Ok(Answer::FileStored { size, sha256 }) = put else { panic!("a file is stored: {put:?}") };
+    assert_eq!((size, &sha256[..]), (1000, &Sha256::digest(&stored)[..]));
+    // (a file is first named by the device that uploaded it: here by a Chat message of the human)
+    let mut note = chat(&session, agent.id(), "with a file");
+    note.file_ids = vec![file_id];
+    w.ada.send(&w.hub, &group, &note).ok();
+    // (a Share link is for a file of an open Artifact, which the session's agent writes: its own upload)
+    let shared_id: [u8; 16] = random();
+    agent.raw(&w.hub, "PUT", &format!("/v1/files/{}", b64(&shared_id)), &[], &stored).ok();
+    let artifact_id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
+    let mut artifact = object(wire::KIND_VERSION, artifact_id, wire::TYPE_ARTIFACT, wire::STATE_OPEN, 1, ZERO32, ZERO32);
+    artifact.file_ids = vec![shared_id];
+    agent.send(&w.hub, &group, &artifact).ok();
+    for (name, range) in [
+        ("file-get", None),
+        ("file-get-range", Some(ByteRange { first: 10, last: Some(19) })),
+        ("file-get-tail", Some(ByteRange { first: 990, last: None })),
+        ("file-get-beyond", Some(ByteRange { first: 900, last: Some(5000) })),
+    ] {
+        let asked = json!({ "route": "get_file", "file": b64(&file_id), "first": range.map(|r| r.first), "last": range.and_then(|r| r.last) });
+        let got = rec.ask(name, &Route::GetFile { file: &file, range }, asked);
+        let Ok(Answer::File(got)) = got else { panic!("{name} comes down: {got:?}") };
+        let first = range.map_or(0, |r| r.first) as usize;
+        let last = range.and_then(|r| r.last).map_or(999, |l| l.min(999)) as usize;
+        assert_eq!((got.size, got.first as usize, &got.bytes[..]), (1000, first, &stored[first..=last]), "{name}");
+    }
+    let asked = json!({ "route": "get_file", "file": b64(&file_id), "first": 1000, "last": null });
+    let beyond = rec.ask("file-get-refused", &Route::GetFile { file: &file, range: Some(ByteRange { first: 1000, last: None }) }, asked);
+    assert_eq!(beyond, Err(Failure::Refused { status: 416, code: Some("range".into()) }));
+
+    // ---- a Share link for it, read without a token by whoever holds the secret, then revoked
+    let (share_id, secret): ([u8; 16], [u8; 32]) = (random(), random());
+    let share = ShareId::new(share_id);
+    let hash: [u8; 32] = Sha256::digest(secret).into();
+    let expires_at = trommi_hub::util::now() + 86_400_000;
+    let shared_file = FileId::new(shared_id);
+    let asked = json!({ "route": "post_share", "share": b64(&share_id), "file": b64(&shared_id), "expires_at": expires_at });
+    let shared = rec.ask("share-post", &Route::PostShare { share: &share, secret_hash: &hash, file: &shared_file, expires_at }, asked);
+    assert_eq!(shared, Ok(Answer::Shared { expires_at }), "a link is registered");
+    let token = rec.token.take();
+    // (never recorded: the request's header is the link's secret, and the bytes are the file's)
+    let got = rec.ask("", &Route::GetShared { share: &share, secret: &secret, range: None }, json!({}));
+    assert!(matches!(&got, Ok(Answer::File(f)) if f.bytes == stored), "{got:?}");
+    let wrong = rec.ask("", &Route::GetShared { share: &share, secret: &[7; 32], range: None }, json!({}));
+    assert_eq!(wrong, Err(Failure::Refused { status: 404, code: Some("not-found".into()) }));
+    rec.token = token;
+    let asked = json!({ "route": "delete_share", "share": b64(&share_id) });
+    assert_eq!(rec.ask("share-delete", &Route::DeleteShare { share: &share }, asked), Ok(Answer::Done));
+
+    // ---- the Desk, whole: the open objects with their versions, each writer's newest register value
+    let Ok(Answer::Desk(desk)) = rec.ask("desk", &Route::Desk { only: DeskOnly::Active }, json!({ "route": "desk", "only": "active" })) else {
+        panic!("the Desk is read")
+    };
+    assert_eq!((desk.cards.len(), desk.artifacts.len(), desk.notes.len(), desk.permission_requests.len()), (2, 1, 0, 0));
+    assert_eq!(desk.cards[0].object.as_bytes(), &cards[1], "knocking first");
+    assert!(desk.cards.iter().all(|c| c.version.is_some() && c.group == group_id(&group) && c.owner.as_bytes() == &agent.id()));
+    assert_eq!(desk.registers.len(), 2, "a writer's newest value per register");
+    assert!(!desk.truncated && desk.groups.is_some());
+    let Ok(Answer::Desk(archived)) = rec.ask("desk-archived", &Route::Desk { only: DeskOnly::Archived }, json!({ "route": "desk", "only": "archived" })) else {
+        panic!("the Desk of the archived sessions is read")
+    };
+    assert!(archived.cards.is_empty() && archived.registers.is_empty());
+
+    // ---- a Chat, newest first, page by page; a board's items; a frontier that covers nothing yet
+    let timeline = SessionId::new(session);
+    let (mut before, mut seen) = (None, Vec::new());
+    for page in 0..4 {
+        let asked = json!({ "route": "chat", "session": b64(&session), "before": before, "limit": 2 });
+        let name = format!("chat-{page}");
+        let Ok(Answer::Envelopes { items, more }) = rec.ask(&name, &Route::Chat { timeline: Timeline::Session(&timeline), before, limit: 2 }, asked) else {
+            panic!("{name} is read")
+        };
+        seen.extend(items.iter().map(|i| i.change));
+        before = items.last().map(|i| i.change);
+        if !more {
+            break;
+        }
+    }
+    assert_eq!(seen.len(), 6);
+    assert!(seen.windows(2).all(|w| w[0] > w[1]), "newest first: {seen:?}");
+    let board_id: [u8; 16] = random();
+    let board = BoardId::new(board_id);
+    let room_group = w.room.to_vec();
+    for _ in 0..3 {
+        w.ada.send(&w.hub, &room_group, &board_item(&board_id)).ok();
+    }
+    let asked = json!({ "route": "board", "board": b64(&board_id), "after": 0, "limit": 2 });
+    let Ok(Answer::Envelopes { items, more }) = rec.ask("board", &Route::Board { board: &board, after: 0, limit: 2 }, asked) else {
+        panic!("a board's items are read")
+    };
+    assert!(items.len() == 2 && more && items[0].change < items[1].change);
+    let asked = json!({ "route": "board_frontier", "board": b64(&board_id) });
+    let pruned = rec.ask("board-frontier", &Route::BoardFrontier { board: &board, frontier: &[], files: &[], snapshot: None }, asked);
+    assert_eq!(pruned, Ok(Answer::Pruned { pruned: 0 }));
+
+    // ---- the sealed keys
+    let asked = json!({ "route": "sealed_keys", "after": 0, "limit": 2 });
+    let Ok(Answer::SealedKeys(keys)) = rec.ask("sealed-keys", &Route::SealedKeys { after: 0, limit: 2 }, asked) else {
+        panic!("the sealed keys are read")
+    };
+    assert!(keys.rows.len() == 2 && keys.more && keys.change == keys.rows[1].0);
+
+    // ---- a Desk that does not fit: a thousand and one open cards (run, not recorded)
+    for _ in 0..1001 {
+        let id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
+        agent.send(&w.hub, &group, &object(wire::KIND_VERSION, id, wire::TYPE_CARD, wire::STATE_OPEN, 0, ZERO32, ZERO32)).ok();
+    }
+    let Ok(Answer::Desk(full)) = rec.ask("", &Route::Desk { only: DeskOnly::All }, json!({})) else { panic!("a full Desk is read") };
+    assert!(full.truncated && full.cards.len() == 1000);
+
+    // ---- the file is deleted; the token is ended; a recovery is opened and dropped
+    let asked = json!({ "route": "delete_file", "file": b64(&file_id) });
+    assert_eq!(rec.ask("file-delete", &Route::DeleteFile { file: &file }, asked), Ok(Answer::Done));
+    assert_eq!(rec.ask("sign-out", &Route::SignOut, json!({ "route": "sign_out" })), Ok(Answer::Done));
+    let after = rec.ask("", &Route::SignOut, json!({}));
+    assert_eq!(after, Err(Failure::Refused { status: 401, code: Some("unauthorised".into()) }));
+    let (token, role) = sign_in(&rec, "", &room, &w.recovery.sign);
+    assert_eq!(role, Role::Recovery);
+    rec.token = Some(token);
+    let asked = json!({ "route": "open_recovery", "room": b64(&w.room) });
+    let Ok(Answer::Recovery { id, expires_at }) = rec.ask("recovery-open", &Route::OpenRecovery { room: &room }, asked) else {
+        panic!("a recovery is opened")
+    };
+    assert!(expires_at > trommi_hub::util::now());
+    let asked = json!({ "route": "drop_recovery", "room": b64(&w.room), "recovery": b64(&id) });
+    assert_eq!(rec.ask("recovery-drop", &Route::DropRecovery { room: &room, recovery: &id }, asked), Ok(Answer::Dropped { dropped: true }));
 }

@@ -65,3 +65,8 @@ pub(crate) fn token(body: &Json) -> Read<Answer> {
         )?,
     })
 }
+
+/// `DELETE /v1/token`: the hub answers an empty object.
+pub(crate) fn sign_out_request(site: &Site<'_>) -> Read<HttpRequest> {
+    Ok(begin(site, "DELETE", "/v1/token", true, CAP_WRITE)?.done())
+}

@@ -1,12 +1,18 @@
-//! `GET /v1/desk?brief=1[&since=][&active=1]`: the Desk's open list, the open cards and permission requests as
-//! ids and version numbers.
+//! `GET /v1/desk`: whole (the open objects with their current versions and the registers), and with `brief=1`
+//! the open list, the open cards and permission requests as ids and version numbers.
 
+use super::groups::group_row;
+use super::items::envelope_item;
 use super::json::{bad, Json, Read, MAX_NUMBER};
-use super::limits::{CAP_LIST, MAX_OPEN};
+use super::limits::{
+    CAP_DESK, CAP_LIST, MAX_DESK_GROUPS, MAX_DESK_OBJECTS, MAX_DESK_REGISTERS, MAX_OPEN,
+};
 use super::request::begin;
-use super::types::{DeskBrief, DeskEntry, Site};
+use super::types::{Desk, DeskBrief, DeskEntry, DeskObject, DeskOnly, Site};
 use crate::app::io::{HttpClass, HttpRequest};
 use std::collections::HashSet;
+use trommi_core::envelope::{Envelope, Header, Subject};
+use trommi_core::ids::DeviceId;
 use trommi_core::ids::ObjectId;
 
 pub(crate) fn request(
@@ -82,6 +88,147 @@ pub(crate) fn read(since: Option<u64>, body: &Json) -> Read<DeskBrief> {
         cards,
         permission_requests,
         settled,
+        truncated,
+        change,
+    })
+}
+
+// ---- GET /v1/desk[?active=1|?archived=1]: the whole Desk
+
+pub(crate) fn whole_request(site: &Site<'_>, only: DeskOnly) -> Read<HttpRequest> {
+    let build = begin(site, "GET", "/v1/desk", true, CAP_DESK)?;
+    Ok(match only {
+        DeskOnly::All => build,
+        DeskOnly::Active => build.query("active", 1),
+        DeskOnly::Archived => build.query("archived", 1),
+    }
+    .class(HttpClass::Background)
+    .done())
+}
+
+/// What an envelope's readable header says, when these bytes are an envelope this build reads (one of a newer
+/// format is the protocol core's to refuse, not a reason to drop the Desk).
+fn header_of(envelope: &[u8]) -> Option<Header> {
+    Envelope::decode(envelope).ok().map(|e| e.header)
+}
+
+fn objects(v: &Json, change: u64, seen: &mut HashSet<ObjectId>) -> Read<Vec<DeskObject>> {
+    let list = v.list(
+        MAX_DESK_OBJECTS,
+        "the Desk: more objects of a kind than it may hold",
+    )?;
+    let mut out = Vec::with_capacity(list.len());
+    for v in list {
+        let o = v.obj("an object of the Desk")?;
+        let small = |name: &str, why: &'static str| -> Read<u8> {
+            u8::try_from(o.need(name).int(why)?).or(bad(why))
+        };
+        let version = match o.maybe("version") {
+            None => None,
+            Some(v) => Some(envelope_item(v.obj("a version: an envelope item")?, false)?),
+        };
+        let row = DeskObject {
+            object: o.need("object_id").id(ObjectId::from_slice, "object_id")?,
+            group: o.need("group_id").group("an object's group_id")?,
+            state: small("state", "an object's state")?,
+            urgency: small("urgency", "an object's urgency")?,
+            answered_at: o.need("answered_at").int("answered_at")?,
+            owner: o
+                .need("owner")
+                .id(DeviceId::from_slice, "an object's owner")?,
+            first_change: o.need("first_change").count("first_change")?,
+            head_change: o.need("head_change").count("head_change")?,
+            version,
+        };
+        if row.state != 1 {
+            return bad("an object on the Desk that is not open");
+        }
+        if row.first_change > row.head_change || row.head_change > change {
+            return bad("an object whose change numbers do not fit the Desk's");
+        }
+        if let Some(version) = &row.version {
+            if version.change < row.first_change || version.change > row.head_change {
+                return bad("a version outside its object's changes");
+            }
+            // the version is an envelope of this object in this group, by its own (signed) header
+            if let Some(header) = header_of(&version.envelope) {
+                let of_object = header
+                    .subject
+                    .object()
+                    .is_some_and(|f| f.object_id == row.object);
+                if header.group != row.group || !of_object {
+                    return bad("a version that is another object's, or another group's");
+                }
+            }
+        }
+        if !seen.insert(row.object) {
+            return bad("an object named twice");
+        }
+        out.push(row);
+    }
+    Ok(out)
+}
+
+/// The Desk, checked: at most [`MAX_DESK_OBJECTS`] objects of a kind, each open, none twice, its change numbers
+/// in order and not above the Desk's, its version an envelope of that object and group; the registers ascending
+/// by change, each a register value, no writer's register twice.
+///
+/// What stays the hub's claim, and nothing to rely on: that the list is every open object (`truncated` says
+/// when it is not, but a hub can also just leave one out), an object's `state`, `urgency`, `owner` and its
+/// change numbers beyond their order, and that a version is the newest. The protocol core decides what an
+/// envelope is; the catch-up brings everything again in the hub's order.
+pub(crate) fn whole(body: &Json) -> Read<Desk> {
+    let o = body.obj("the Desk: an object")?;
+    let change = o.need("change").int("the Desk's change")?;
+    let truncated = o.need("truncated").bool("truncated: true or false")?;
+    let mut seen = HashSet::new();
+    let cards = objects(o.need("cards"), change, &mut seen)?;
+    let notes = objects(o.need("notes"), change, &mut seen)?;
+    let permission_requests = objects(o.need("permission_requests"), change, &mut seen)?;
+    let artifacts = objects(o.need("artifacts"), change, &mut seen)?;
+    let list = o.need("registers").list(MAX_DESK_REGISTERS, "registers")?;
+    let mut registers = Vec::with_capacity(list.len());
+    let mut values = HashSet::new();
+    let mut at = 0;
+    for v in list {
+        let item = envelope_item(v.obj("a register: an envelope item")?, false)?;
+        if item.change <= at || item.change > change {
+            return bad("registers out of order, or newer than the Desk");
+        }
+        at = item.change;
+        if let Some(header) = header_of(&item.envelope) {
+            let Subject::Register(register) = header.subject else {
+                return bad("a register that is no register value");
+            };
+            if !values.insert((header.group, header.sender, register)) {
+                return bad("two values of one writer's register");
+            }
+        }
+        registers.push(item);
+    }
+    let groups = match o.maybe("groups") {
+        None => None,
+        Some(v) => {
+            let list = v.list(MAX_DESK_GROUPS, "the Desk's groups")?;
+            let mut seen = HashSet::new();
+            let mut rows = Vec::with_capacity(list.len());
+            for v in list {
+                let row = group_row(v, None)?;
+                if !seen.insert(row.group) {
+                    return bad("a group twice");
+                }
+                rows.push(row);
+            }
+            Some(rows)
+        }
+    };
+    Ok(Desk {
+        cards,
+        notes,
+        permission_requests,
+        artifacts,
+        registers,
+        groups,
         truncated,
         change,
     })

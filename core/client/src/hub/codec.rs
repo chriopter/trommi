@@ -1,11 +1,11 @@
 //! The codec's two calls: a route to its request, an answer to its typed result.
 
 use super::json::{bad, Read};
-use super::limits::{CAP_DESK, CAP_GROUP_INFO, CAP_LIST, CAP_WRITE};
-use super::types::{Answer, Route, Site};
-use super::{answer, changes, content, desk, groups, outbox, signin, stream, Failure};
+use super::limits::{CAP_DESK, CAP_GROUPS_READ, CAP_GROUP_INFO, CAP_LIST, CAP_WRITE};
+use super::types::{Answer, ByteRange, Route, Site};
+use super::{answer, changes, content, desk, files, groups, outbox, signin, stream, Failure};
 use crate::app::io::{HttpRequest, HttpResponse};
-use trommi_core::ids::GroupId;
+use trommi_core::ids::{GroupId, ShareId};
 
 /// The codec's note of what was asked, kept by the engine beside the pending request and handed back with the
 /// answer: the answer is checked against it.
@@ -16,16 +16,26 @@ pub struct Expect(Kind);
 enum Kind {
     Changes(changes::Asked),
     Stream,
-    DeskBrief { since: Option<u64> },
+    DeskBrief {
+        since: Option<u64>,
+    },
     Outbox(outbox::Asked),
     KeyPackagesHeld,
     Challenge,
     Token,
-    Welcomes { after: u64 },
+    Welcomes {
+        after: u64,
+    },
     GroupLog(groups::LogAsked),
-    GroupInfo { epoch: Option<u64> },
-    Joins { epochs: Vec<u64> },
-    GroupsRead { groups: Vec<GroupId> },
+    GroupInfo {
+        epoch: Option<u64>,
+    },
+    Joins {
+        epochs: Vec<u64>,
+    },
+    GroupsRead {
+        groups: Vec<GroupId>,
+    },
     Claim(groups::ClaimAsked),
     RoomGroups(groups::GroupsAsked),
     Chain(content::PageAsked),
@@ -33,6 +43,26 @@ enum Kind {
     Wish,
     Wishes,
     RejectCommit,
+    /// An answer that carries nothing but an object.
+    Empty,
+    Desk,
+    Envelopes(content::EnvelopesAsked),
+    Pruned,
+    SealedKeys {
+        after: u64,
+        limit: u32,
+    },
+    Removal(groups::LogAsked),
+    OpenRecovery,
+    DropRecovery,
+    PutFile(files::PutAsked),
+    File {
+        range: Option<ByteRange>,
+    },
+    Deleted,
+    Share {
+        share: ShareId,
+    },
 }
 
 /// The hub's routes without I/O. Stateless: everything a call needs is in its arguments.
@@ -136,6 +166,77 @@ impl Codec {
             Route::RejectCommit { group, n } => {
                 (groups::reject_request(site, group, n)?, Kind::RejectCommit)
             }
+            Route::SignOut => (signin::sign_out_request(site)?, Kind::Empty),
+            Route::Desk { only } => (desk::whole_request(site, only)?, Kind::Desk),
+            Route::Chat {
+                timeline,
+                before,
+                limit,
+            } => {
+                let (request, asked) = content::chat_request(site, timeline, before, limit)?;
+                (request, Kind::Envelopes(asked))
+            }
+            Route::Board {
+                board,
+                after,
+                limit,
+            } => {
+                let (request, asked) = content::board_request(site, board, after, limit)?;
+                (request, Kind::Envelopes(asked))
+            }
+            Route::BoardFrontier {
+                board,
+                frontier,
+                files,
+                snapshot,
+            } => (
+                content::frontier_request(site, board, frontier, files, snapshot)?,
+                Kind::Pruned,
+            ),
+            Route::SealedKeys { after, limit } => {
+                let (request, (after, limit)) = groups::sealed_keys_request(site, after, limit)?;
+                (request, Kind::SealedKeys { after, limit })
+            }
+            Route::Removal { group, after } => {
+                let (request, asked) = groups::removal_request(site, group, after)?;
+                (request, Kind::Removal(asked))
+            }
+            Route::OpenRecovery { room } => (
+                groups::open_recovery_request(site, room)?,
+                Kind::OpenRecovery,
+            ),
+            Route::DropRecovery { room, recovery } => (
+                groups::drop_recovery_request(site, room, recovery)?,
+                Kind::DropRecovery,
+            ),
+            Route::PutFile { file, bytes } => {
+                let (request, asked) = files::put_request(site, file, bytes)?;
+                (request, Kind::PutFile(asked))
+            }
+            Route::GetFile { file, range } => {
+                (files::get_request(site, file, range)?, Kind::File { range })
+            }
+            Route::GetShared {
+                share,
+                secret,
+                range,
+            } => (
+                files::shared_request(site, share, secret, range)?,
+                Kind::File { range },
+            ),
+            Route::DeleteFile { file } => (files::delete_file_request(site, file)?, Kind::Deleted),
+            Route::DeleteShare { share } => {
+                (files::delete_share_request(site, share)?, Kind::Deleted)
+            }
+            Route::PostShare {
+                share,
+                secret_hash,
+                file,
+                expires_at,
+            } => (
+                files::share_request(site, share, secret_hash, file, expires_at)?,
+                Kind::Share { share: *share },
+            ),
         };
         Ok((request, Expect(kind)))
     }
@@ -166,7 +267,9 @@ impl Codec {
             Kind::GroupLog(asked) => groups::log(asked, &answer(response, CAP_LIST)?)?,
             Kind::GroupInfo { epoch } => groups::info(*epoch, &answer(response, CAP_GROUP_INFO)?)?,
             Kind::Joins { epochs } => groups::joins(epochs, &answer(response, CAP_WRITE)?)?,
-            Kind::GroupsRead { groups } => groups::read(groups, &answer(response, CAP_LIST)?)?,
+            Kind::GroupsRead { groups } => {
+                groups::read(groups, &answer(response, CAP_GROUPS_READ)?)?
+            }
             Kind::Claim(asked) => groups::claimed(asked, &answer(response, CAP_DESK)?)?,
             Kind::RoomGroups(asked) => groups::groups(asked, &answer(response, CAP_LIST)?)?,
             Kind::Chain(asked) => content::chain(asked, &answer(response, CAP_LIST)?)?,
@@ -179,6 +282,23 @@ impl Codec {
                 groups::wished(&answer(response, CAP_WRITE)?)?;
                 Answer::Done
             }
+            Kind::Empty => {
+                answer(response, CAP_WRITE)?.obj("an answer: an object")?;
+                Answer::Done
+            }
+            Kind::Desk => Answer::Desk(desk::whole(&answer(response, CAP_DESK)?)?),
+            Kind::Envelopes(asked) => content::envelopes(asked, &answer(response, CAP_LIST)?)?,
+            Kind::Pruned => content::pruned(&answer(response, CAP_WRITE)?)?,
+            Kind::SealedKeys { after, limit } => {
+                groups::sealed_keys(*after, *limit, &answer(response, CAP_LIST)?)?
+            }
+            Kind::Removal(asked) => groups::removal(asked, &answer(response, CAP_LIST)?)?,
+            Kind::OpenRecovery => groups::recovery_opened(&answer(response, CAP_WRITE)?)?,
+            Kind::DropRecovery => groups::recovery_dropped(&answer(response, CAP_WRITE)?)?,
+            Kind::PutFile(asked) => files::stored(asked, &answer(response, CAP_WRITE)?)?,
+            Kind::File { range } => files::bytes(*range, response)?,
+            Kind::Deleted => files::deleted(&answer(response, CAP_WRITE)?)?,
+            Kind::Share { share } => files::shared(share, &answer(response, CAP_WRITE)?)?,
         })
     }
 

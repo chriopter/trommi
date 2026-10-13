@@ -1,0 +1,17 @@
+{
+  "answer": "{\"error\":\"range\",\"message\":\"the range cannot be served\"}",
+  "asked": {
+    "file": "S2SdMndyJ1rNjFUsrVgPZg",
+    "first": 1000,
+    "last": null,
+    "route": "get_file"
+  },
+  "content_range": "bytes */1000",
+  "name": "file-get-refused",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/files/S2SdMndyJ1rNjFUsrVgPZg"
+  },
+  "status": 416
+}

@@ -5,7 +5,9 @@
 //! on. Byte strings are `Vec<u8>`; `Debug` of anything that holds content, a key or a token shows its kind only.
 
 use super::Failure;
-use trommi_core::ids::{DeviceId, FileId, GroupId, InviteId, ObjectId, RoomId, SessionId};
+use trommi_core::ids::{
+    BoardId, DeviceId, FileId, GroupId, Hash32, InviteId, ObjectId, RoomId, SessionId, ShareId,
+};
 use trommi_core::store::OutboxEntry;
 
 /// Where and as whom a request goes. The codec adds nothing of its own: no token it remembers, no clock.
@@ -154,6 +156,154 @@ pub enum Route<'a> {
     Wishes,
     /// `POST /v1/groups/{group}/reject` (14.7): the Commit numbered `n` in the group's log does not process.
     RejectCommit { group: &'a GroupId, n: u64 },
+    /// `DELETE /v1/token`: ends the token the site carries, at once; the hub cuts the device's streams.
+    SignOut,
+    /// `GET /v1/desk[?active=1|?archived=1]`: the open objects with their current version, every writer's
+    /// newest value per register.
+    Desk { only: DeskOnly },
+    /// `GET /v1/chats/{session|card}/{id}/items?before=&limit=`: a Chat's envelopes, newest first.
+    Chat {
+        timeline: Timeline<'a>,
+        before: Option<u64>,
+        limit: u32,
+    },
+    /// `GET /v1/boards/{board}?after_change=&limit=`: the board's items after that change, oldest first.
+    Board {
+        board: &'a BoardId,
+        after: u64,
+        limit: u32,
+    },
+    /// `POST /v1/boards/{board}/frontier` (10.9): what this device's snapshot covers, per writer the chain
+    /// number and hash, and the files its shapes still name; `snapshot`: the register value the hub took.
+    BoardFrontier {
+        board: &'a BoardId,
+        frontier: &'a [(DeviceId, u64, Hash32)],
+        files: &'a [FileId],
+        snapshot: Option<(u64, Hash32)>,
+    },
+    /// `GET /v1/sealed-keys?after=&limit=`: the SealedKeys and RecoveryLinks above a change.
+    SealedKeys { after: u64, limit: u32 },
+    /// `GET /v1/groups/{group}/removal?after=`: for a key the hub took out of the room, the Commits up to the
+    /// one that removed it (hub-api.md 42).
+    Removal { group: &'a GroupId, after: u64 },
+    /// `POST /v1/rooms/{room}/recovery` (8.7): locks the room for ten minutes; the recovery key's token.
+    OpenRecovery { room: &'a RoomId },
+    /// `DELETE /v1/rooms/{room}/recovery/{id}`: gives the room back without publishing.
+    DropRecovery {
+        room: &'a RoomId,
+        recovery: &'a [u8; 16],
+    },
+    /// `PUT /v1/files/{file}`: the stored (encrypted) bytes.
+    PutFile { file: &'a FileId, bytes: &'a [u8] },
+    /// `GET /v1/files/{file}`, whole or one inclusive range of bytes.
+    GetFile {
+        file: &'a FileId,
+        range: Option<ByteRange>,
+    },
+    /// `DELETE /v1/files/{file}`.
+    DeleteFile { file: &'a FileId },
+    /// `POST /v1/shares` (11.5): registers a Share link for a file.
+    PostShare {
+        share: &'a ShareId,
+        secret_hash: &'a [u8; 32],
+        file: &'a FileId,
+        expires_at: u64,
+    },
+    /// `DELETE /v1/shares/{share}`: revokes the link.
+    DeleteShare { share: &'a ShareId },
+    /// `GET /v1/shares/{share}`: the shared file's bytes for whoever holds the link's secret; no token. The
+    /// secret travels in a header, never in the address.
+    GetShared {
+        share: &'a ShareId,
+        secret: &'a [u8; 32],
+        range: Option<ByteRange>,
+    },
+}
+
+/// Which sessions the Desk covers (hub-api.md point 46).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeskOnly {
+    #[default]
+    All,
+    /// The live sessions: what a start loads.
+    Active,
+    /// The archived ones alone: when one is opened.
+    Archived,
+}
+
+/// A Chat's timeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Timeline<'a> {
+    Session(&'a SessionId),
+    Card(&'a ObjectId),
+}
+
+/// An inclusive range of a file's bytes; `last: None`: to the file's end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ByteRange {
+    pub first: u64,
+    pub last: Option<u64>,
+}
+
+/// An open object of the Desk.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeskObject {
+    pub object: ObjectId,
+    pub group: GroupId,
+    /// 1 open, 2 answered, 3 closed (v1.md 9).
+    pub state: u8,
+    /// The knock bit (and the level in headers of before 11 October 2026).
+    pub urgency: u8,
+    pub answered_at: u64,
+    pub owner: DeviceId,
+    pub first_change: u64,
+    pub head_change: u64,
+    /// The envelope of its current version; none when the Desk was cut short before it.
+    pub version: Option<EnvelopeItem>,
+}
+
+/// `GET /v1/desk`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Desk {
+    pub cards: Vec<DeskObject>,
+    pub notes: Vec<DeskObject>,
+    pub permission_requests: Vec<DeskObject>,
+    pub artifacts: Vec<DeskObject>,
+    /// Every writer's newest value per register.
+    pub registers: Vec<EnvelopeItem>,
+    /// The room's groups, from a hub that still sends them with the Desk.
+    pub groups: Option<Vec<GroupRow>>,
+    /// The Desk was cut short: the rest comes by the catch-up.
+    pub truncated: bool,
+    pub change: u64,
+}
+
+/// `GET /v1/sealed-keys`: both lists ascend by change number and are complete up to `change`, the cursor for
+/// the next call.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SealedKeysPage {
+    /// `(change, SealedKey)`.
+    pub rows: Vec<(u64, Vec<u8>)>,
+    pub links: Vec<RecoveryLinkRow>,
+    pub change: u64,
+    pub more: bool,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct RecoveryLinkRow {
+    pub room_epoch: u64,
+    pub change: u64,
+    pub recovery_link: Vec<u8>,
+}
+
+/// A file's bytes as one answer brought them.
+#[derive(Clone, PartialEq, Eq)]
+pub struct FileBytes {
+    pub bytes: Vec<u8>,
+    /// Where `bytes` begin in the file.
+    pub first: u64,
+    /// The whole file's size: the answer's own length, or what a range's answer says the file has.
+    pub size: u64,
 }
 
 /// An entry of the room's one order.
@@ -415,8 +565,45 @@ pub enum Answer {
         id: u64,
     },
     Wishes(Vec<WishRow>),
-    /// A route whose answer carries nothing (`RejectCommit`).
+    /// A route whose answer carries nothing (`RejectCommit`, `SignOut`, a deletion).
     Done,
+    Desk(Desk),
+    /// A page of a Chat (newest first) or of a board's items (oldest first).
+    Envelopes {
+        items: Vec<EnvelopeItem>,
+        more: bool,
+    },
+    /// `BoardFrontier`: how many item bodies the hub pruned now.
+    Pruned {
+        pruned: u64,
+    },
+    SealedKeys(SealedKeysPage),
+    /// `Removal`: the Commits up to the removing one, whose log number is `removed_at`.
+    Removal {
+        items: Vec<LogItem>,
+        more: bool,
+        removed_at: u64,
+    },
+    /// `OpenRecovery`.
+    Recovery {
+        id: [u8; 16],
+        expires_at: u64,
+    },
+    /// `DropRecovery`.
+    Dropped {
+        dropped: bool,
+    },
+    /// `PutFile`: the size and hash the hub stored (the caller compares the hash with its own).
+    FileStored {
+        size: u64,
+        sha256: [u8; 32],
+    },
+    /// `GetFile`, `GetShared`.
+    File(FileBytes),
+    /// `PostShare`: when the hub ends the link.
+    Shared {
+        expires_at: u64,
+    },
 }
 
 impl std::fmt::Debug for Answer {
@@ -441,6 +628,16 @@ impl std::fmt::Debug for Answer {
             Answer::Wished { .. } => "Wished",
             Answer::Wishes(_) => "Wishes",
             Answer::Done => "Done",
+            Answer::Desk(_) => "Desk",
+            Answer::Envelopes { .. } => "Envelopes",
+            Answer::Pruned { .. } => "Pruned",
+            Answer::SealedKeys(_) => "SealedKeys",
+            Answer::Removal { .. } => "Removal",
+            Answer::Recovery { .. } => "Recovery",
+            Answer::Dropped { .. } => "Dropped",
+            Answer::FileStored { .. } => "FileStored",
+            Answer::File(_) => "File",
+            Answer::Shared { .. } => "Shared",
         })
     }
 }

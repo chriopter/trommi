@@ -1,0 +1,15 @@
+{
+  "answer": "{\"deleted\":true}",
+  "asked": {
+    "file": "S2SdMndyJ1rNjFUsrVgPZg",
+    "route": "delete_file"
+  },
+  "content_range": null,
+  "name": "file-delete",
+  "request": {
+    "body": null,
+    "method": "DELETE",
+    "path": "/v1/files/S2SdMndyJ1rNjFUsrVgPZg"
+  },
+  "status": 200
+}
