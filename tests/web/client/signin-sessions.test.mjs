@@ -132,3 +132,27 @@ test('a session join the core answers busy (a join of the group on its way, or t
   assert.ok(busy < 2, 'the core said busy, and the join was tried again')
   assert.deepEqual([done.joined, done.not_joined.map(n => n.code)], [1, []])
 })
+
+test('joins posted together: one answered not-found in its place is that join\'s refusal, not a hub without the route', async t => {
+  const { fake, a, recovery_code } = await scene(t, { agent: true })
+  await addAgent(t, a, {}, 'agent2'); await addAgent(t, a, {}, 'agent3')
+  await a.settle()
+  const R = await rooms()
+  // (the hub answers the first session's join as for a group that does not exist; `POST /v1/commits` itself is 200)
+  const seen = []
+  fake.joinFault = g => { g = String(g); if (!seen.includes(g)) seen.push(g); return seen.indexOf(g) === 0 ? fake.refusal('not-found', 'no such group') : null }
+  const before = fake.requests.length
+  const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
+  t.after(() => c.stop().catch(() => {}))
+  await c.start()
+  const done = await joining
+  assert.equal(done.not_joined.length, 1, 'the one refused is listed')
+  assert.equal(done.not_joined[0].code, 'not-found')
+  assert.equal(done.joined, 2, 'the others are joined')
+  // no session's join was posted alone afterwards: the route was not taken for missing
+  const posts = fake.requests.slice(before).filter(r => r.method === 'POST' && (r.path === '/v1/commits' || /^\/v1\/groups\/[^/]+\/commits$/.test(r.path)))
+  assert.deepEqual(posts.map(r => r.path === '/v1/commits' ? 'together' : 'alone'), ['alone', 'together'], 'the room group\'s join alone, the sessions\' together, nothing after')
+  // the device keeps its room and the sessions it joined: nothing was dropped for the answer
+  await until(() => c.engine.groups.filter(g => g.session).length === 2, 'the two sessions joined')
+  assert.ok(c.engine.is_human)
+})
