@@ -23,7 +23,7 @@ export const boardOf = model => (model.all ? ALL_BOARD : deskBoard(model.desk))
 function whiteboardDesks(model) {
   const desks = model.desks ?? []
   if (desks.length < 2) return html`<nav id="whiteboard-desks" hidden></nav>`
-  if (!model.all) return html`<nav class="board-desks is-desk" id="whiteboard-desks" aria-label="Scribble Boards"><a class="board-back" data-nav href="/scribble-board?desk=all" data-tip="All desks: its Scribble Board and every desk's">${sk('back')}<span>All desks</span></a><b class="board-here">${sk('desk')}<span>${model.deskName}</span></b></nav>`
+  if (!model.all) return html`<nav class="board-desks is-desk" id="whiteboard-desks" aria-label="Scribble Boards"><a class="board-back" data-nav href="/scribble-board?desk=all" data-tip="All desks">${sk('back')}<span>All desks</span></a><b class="board-here">${sk('desk')}<span>${model.deskName}</span></b></nav>`
   return html`<nav class="board-desks" id="whiteboard-desks" aria-label="The desks' Scribble Boards">${desks.map(d => html`<a class="board-card" data-nav href="/scribble-board?desk=${d.id}" data-board="${deskBoard(d.id)}" aria-label="${d.name}: open its Scribble Board"><canvas class="board-card-thumb" width="264" height="156" aria-hidden="true"></canvas><span class="board-card-name">${sk('desk')}<b>${d.name}</b><small class="board-card-n"></small></span></a>`)}</nav>`
 }
 
@@ -75,8 +75,8 @@ ${whiteboardSessions(model)}${whiteboardDesks(model)}
       <button type="button" class="pad-icon-btn" id="redo" data-icon="redo" aria-label="Redo" data-tip="Redo · Ctrl+Shift+Z"></button>
       <span class="pad-sep"></span>
       <button type="button" class="pad-icon-btn pad-tool" data-tool="select" data-icon="select" aria-label="Select" data-tip="Select · V"></button>
-      <button type="button" class="pad-icon-btn pad-tool" data-tool="pen" data-icon="pen" aria-label="Pen; again: colour and width" aria-haspopup="true" aria-expanded="false" data-tip="Pen · P · again: colour"></button>
-      <button type="button" class="pad-icon-btn pad-tool" data-tool="marker" data-icon="marker" aria-label="Highlighter; again: colour and width" aria-haspopup="true" aria-expanded="false" data-tip="Highlighter · H · again: colour"></button>
+      <button type="button" class="pad-icon-btn pad-tool" data-tool="pen" data-icon="pen" aria-label="Pen; again: colour and width" aria-haspopup="true" aria-expanded="false" data-tip="Pen (P)"></button>
+      <button type="button" class="pad-icon-btn pad-tool" data-tool="marker" data-icon="marker" aria-label="Highlighter; again: colour and width" aria-haspopup="true" aria-expanded="false" data-tip="Highlighter (H)"></button>
       <button type="button" class="pad-icon-btn pad-tool" data-tool="eraser" data-icon="eraser" aria-label="Eraser" data-tip="Eraser · E"></button>
       <button type="button" class="pad-icon-btn pad-tool" data-tool="text" data-icon="text" aria-label="Text: click on the paper and type" data-tip="Text · T"></button>
       <div class="pad-style" id="style" hidden>
@@ -84,9 +84,9 @@ ${whiteboardSessions(model)}${whiteboardDesks(model)}
         <div class="pad-style-row"><span class="pad-label">Width</span><div class="pad-widths" id="widths" role="group" aria-label="Width"></div></div>
       </div>
       <span class="pad-sep"></span>
-      <button type="button" class="pad-icon-btn" id="image" data-icon="clip" aria-label="Attach a picture" data-tip="Attach a picture · I"></button>
+      <button type="button" class="pad-icon-btn" id="image" data-icon="clip" aria-label="Attach a picture" data-tip="Picture (I)"></button>
     </div>
-    <button type="button" class="pad-tool pad-cut" data-tool="area" aria-label="Cut out and send to an agent" data-tip="Cut out and send to an agent · A"><svg viewBox="0 -9 76 56" aria-hidden="true"><path class="cut-line" d="M17 4.2 Q44 3.4 71.4 4 Q72.2 23 71.6 42 Q44 42.8 17.4 42.2 Q16.6 23 17 4.2"/><g class="cut-letter"><path class="cut-paper" d="M24 11.4 L64.6 10.8 L65 35.4 L24.4 36 Z"/><path d="M24 11.4 Q44 10.6 64.6 10.8 Q65.2 23 65 35.4 Q44 36.2 24.4 36 Q23.6 23 24 11.4"/><path d="M24.4 12 Q34.6 20.6 44.2 25 Q54.4 20 64.4 11.4"/></g><g class="cut-scissors" transform="translate(-1 -8.4)"><path d="M21.4 5.2 Q16.6 9.6 11.4 13.6 Q9.8 15 8.6 16.2 Q7 15.6 5.6 16 Q3.8 16.8 3.8 18.4 Q3.8 20.4 5 21 Q6.6 21.6 7.8 21.2 Q9.2 20.4 9.2 18.8 Q9 17.4 8.2 16.6"/><path d="M21.8 19.6 Q16.4 14.8 11.6 10.6 Q10 9.2 8.8 8 Q7.2 8.6 5.8 8.4 Q4 7.8 3.6 6.2 Q3.6 4.2 4.6 3.4 Q6.2 2.6 7.6 3 Q9.2 3.8 9.2 5.4 Q9 6.8 8.4 7.8"/></g></svg></button>
+    <button type="button" class="pad-tool pad-cut" data-tool="area" aria-label="Cut out and send to an agent" data-tip="Send (A)"><svg viewBox="0 -9 76 56" aria-hidden="true"><path class="cut-line" d="M17 4.2 Q44 3.4 71.4 4 Q72.2 23 71.6 42 Q44 42.8 17.4 42.2 Q16.6 23 17 4.2"/><g class="cut-letter"><path class="cut-paper" d="M24 11.4 L64.6 10.8 L65 35.4 L24.4 36 Z"/><path d="M24 11.4 Q44 10.6 64.6 10.8 Q65.2 23 65 35.4 Q44 36.2 24.4 36 Q23.6 23 24 11.4"/><path d="M24.4 12 Q34.6 20.6 44.2 25 Q54.4 20 64.4 11.4"/></g><g class="cut-scissors" transform="translate(-1 -8.4)"><path d="M21.4 5.2 Q16.6 9.6 11.4 13.6 Q9.8 15 8.6 16.2 Q7 15.6 5.6 16 Q3.8 16.8 3.8 18.4 Q3.8 20.4 5 21 Q6.6 21.6 7.8 21.2 Q9.2 20.4 9.2 18.8 Q9 17.4 8.2 16.6"/><path d="M21.8 19.6 Q16.4 14.8 11.6 10.6 Q10 9.2 8.8 8 Q7.2 8.6 5.8 8.4 Q4 7.8 3.6 6.2 Q3.6 4.2 4.6 3.4 Q6.2 2.6 7.6 3 Q9.2 3.8 9.2 5.4 Q9 6.8 8.4 7.8"/></g></svg></button>
   </div>
   <input class="pad-file" id="file" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
 
@@ -234,7 +234,7 @@ controller('whiteboard', class extends Controller {
     if (!card || !list) return
     paintThumb(card.querySelector('canvas'), list)
     card.querySelector('.board-card-n').textContent = list.length ? String(list.length) : 'empty'
-    card.dataset.tip = `${list.length} element${list.length === 1 ? '' : 's'}: open`
+    card.dataset.tip = list.length ? `${list.length} element${list.length === 1 ? '' : 's'}` : 'Empty'
   }
   disconnect() {
     this.watch?.disconnect(); this.themed?.disconnect()

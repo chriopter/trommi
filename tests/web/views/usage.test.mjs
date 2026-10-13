@@ -38,7 +38,7 @@ test('the mark in the heading: two rings one inside the other, the week outside,
   const fills = [...html.matchAll(/<path d="M16\.00 (\d+\.\d+) A([\d.]+) [^"]*" class="use-fill( is-hot)?"/g)].map(m => [m[2], Boolean(m[3])])
   assert.deepEqual(fills, [['13', true], ['7.6', false]], 'the week (84 %, hot) on the outer ring, 5 h (62 %) inside')
   assert.match(html, /<b class="">62 %<\/b> 5 h<\/span><span><b class="is-hot">84 %<\/b> week/)
-  assert.match(html, /title="5-hour window: 62 % used, resets 13:43 · This week: 84 % used, resets Wed 14 Oct"/)
+  assert.match(html, /aria-label="[^"]*5-hour window: 62 % used, resets 13:43 · This week: 84 % used, resets Wed 14 Oct" title="Usage"/)
   assert.doesNotMatch(html, /ada@example\.org/, 'no e-mail in the heading')
   const mini = String(usageMark(claude, { mini: true, now: NOW }))
   assert.match(mini, /class="use-rings is-mini"/)

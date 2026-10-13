@@ -182,7 +182,7 @@ export function register(t) {
     const unfinished = d => d.is_active && !d.is_me && d.device_role === 'human' && !d.device_name && !d.is_online
     const devState = d => (!d.is_active ? 'removed' : d.is_me ? 'this device' : unfinished(d) ? 'never finished signing in' : d.is_online ? 'online' : 'away')
     const onlineDot = on => html`<i class="set-dot" data-online="${on ? 'yes' : 'no'}"></i>`
-    const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${devName(d)}</b><small class="room-fp" title="Key fingerprint from the signed member list">${fp(d)}</small></span><span class="set-detail">${d.is_active ? onlineDot(d.is_online || d.is_me) : ''}${devState(d)}</span>`
+    const devLine = d => html`<span class="set-ico">${devIcon(d)}</span><span class="set-two"><b>${devName(d)}</b><small class="room-fp" title="Key fingerprint">${fp(d)}</small></span><span class="set-detail">${d.is_active ? onlineDot(d.is_online || d.is_me) : ''}${devState(d)}</span>`
     // (.room-device: one per device listed, as the end-to-end runs count them)
     const member = d => (d.is_active
       ? html`<a class="set-row set-row-two room-device" id="device-${d.device_id}" href="/settings/devices/${d.device_id}" data-nav>${devLine(d)}${SET_CHEVRON}</a>`

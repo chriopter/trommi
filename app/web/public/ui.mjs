@@ -604,7 +604,7 @@ export const kindOf = a => a.kind ?? (a.image ? 'image' : 'file')
 export const advisedKeys = card => [].concat(card.recommended ?? [])
 // A final option (the agent marked it: choosing it leaves nothing to do) ends the card with the answer. Its tile says
 // so before the human chooses: a small pen tick, on a card's own page with two words beside it.
-export const FINAL_TIP = 'Settles it: nothing follows from this answer, the card goes straight to Done'
+export const FINAL_TIP = 'Settles it'
 export const SETTLED = 'Settled by your answer'
 export const finalSign = (words = false) => html`<span class="final-sign" title="${FINAL_TIP}">${sk('tick')}${words ? html`<span>settles it</span>` : ''}</span>`
 export const advisedLabels = card => card.options.filter(o => advisedKeys(card).includes(o.key)).map(o => o.label).join(', ')
@@ -791,7 +791,7 @@ export function attGone(el, why) {
 
 /** The page behind a picture (the HTML it was rendered from), as one thing to press: a sheet with the file's name.
  *  always: it stands hidden where the picture has no page (the controller shows it for one that has). */
-export const pageChip = (page, always = false, view = '') => (page || always ? html`<a class="page-chip" data-card-target="page"${view && page?.kind === 'file' ? raw(' data-nav') : raw(' target="_blank" rel="noopener noreferrer"')} href="${view && page?.kind === 'file' ? view : page?.url ?? '#'}" title="This picture has a page behind it: open the page"${page ? '' : raw(' hidden')}>${sk('page')}<b>${page?.name ?? ''}</b><i>open</i></a>` : '')
+export const pageChip = (page, always = false, view = '') => (page || always ? html`<a class="page-chip" data-card-target="page"${view && page?.kind === 'file' ? raw(' data-nav') : raw(' target="_blank" rel="noopener noreferrer"')} href="${view && page?.kind === 'file' ? view : page?.url ?? '#'}" title="Open page"${page ? '' : raw(' hidden')}>${sk('page')}<b>${page?.name ?? ''}</b><i>open</i></a>` : '')
 
 // ---- toast ----
 // The toast: one small note in the bottom-left corner of the main area (a phone: a slim bar at the foot) that says what
@@ -1203,7 +1203,7 @@ controller('says', class extends Controller {
     if (same && titles.length > 1) {
       words.replaceChildren(Object.assign(document.createElement('b'), { textContent: `${head} · ${titles.length}` }), Object.assign(document.createElement('span'), { textContent: `Last: ${line}` }))
       me.title = titles.join('\n')
-      const back = me.querySelector('.says-back'); if (back) back.title = 'Undo the last (U)'
+      const back = me.querySelector('.says-back'); if (back) back.title = 'Undo (U)'
       const n = me.querySelector('.says-n'); if (n) { n.textContent = String(titles.length); n.hidden = false }
     }
     for (const old of shown) old.remove()
@@ -1250,7 +1250,7 @@ controller('fit', class extends Controller {
 // (mounted once when the corner is first approached, kept from then on: app.mjs keepPad), on the Scribble Board the
 // Desk as it is rendered now (app.mjs peek). So a turn swaps two things that are both there, and nothing flashes.
 // Markup: curlHTML(side, to), a part of the frame on both pages (app.mjs bodyParts). Reduced motion: no peel, a fade.
-export const curlHTML = (side, to) => raw(`<div class="curl" data-controller="curl" data-curl-side-value="${side}" data-curl-to-value="${to}"><div class="curl-back" hidden inert></div><svg class="curl-svg" aria-hidden="true"><defs><clipPath id="curl-flap-clip"><path class="curl-flap-clip"/></clipPath></defs><path class="curl-under"/><path class="curl-cast"/><path class="curl-flap"/><path class="curl-hatch" clip-path="url(#curl-flap-clip)"/><path class="curl-fold"/></svg><button type="button" class="curl-grab" title="${side === 'desk' ? 'Turn to the Scribble Board (P)' : 'Turn back to the Desk (Esc)'}" aria-label="${side === 'desk' ? 'Turn to the Scribble Board' : 'Turn back to the Desk'}"></button></div>`)
+export const curlHTML = (side, to) => raw(`<div class="curl" data-controller="curl" data-curl-side-value="${side}" data-curl-to-value="${to}"><div class="curl-back" hidden inert></div><svg class="curl-svg" aria-hidden="true"><defs><clipPath id="curl-flap-clip"><path class="curl-flap-clip"/></clipPath></defs><path class="curl-under"/><path class="curl-cast"/><path class="curl-flap"/><path class="curl-hatch" clip-path="url(#curl-flap-clip)"/><path class="curl-fold"/></svg><button type="button" class="curl-grab" title="${side === 'desk' ? 'Scribble Board (P)' : 'Desk (Esc)'}" aria-label="${side === 'desk' ? 'Turn to the Scribble Board' : 'Turn back to the Desk'}"></button></div>`)
 const CURL_REST = [-38, 28], CURL_NEAR = 130   // the dog-ear's tip from the corner at rest; how near the pointer wakes it
 /** A convex polygon cut by the line through m with normal n: the part on n's side. */
 function cutPoly(poly, m, n) {
@@ -1603,7 +1603,7 @@ export function fileTile(file) {
   }
   const off = el('button', 'att-off', '×')
   off.type = 'button'
-  off.title = `${file.name}: take it off`
+  off.title = file.name
   off.setAttribute('aria-label', off.title)
   tile.append(off)
   return tile
@@ -1880,7 +1880,7 @@ function frameOf(body, source, large = false) {
   // Scripts, and nothing else: no origin, no forms, no popups, no navigation of the page around it.
   frame.setAttribute('sandbox', 'allow-scripts')
   frame.referrerPolicy = 'no-referrer'
-  frame.title = 'Layout from the agent'
+  frame.title = 'Layout'
   frame.style.colorScheme = tokens().scheme
   frame.dataset.key = keyOf(source)
   if (large) frame.dataset.large = ''
@@ -2221,7 +2221,7 @@ export function markControl(agent, base, { stay = false, back = '', cls = 'ledge
 export const sessionHeadEdit = (agent, base, { back = '', stay = false } = {}) => html`<span class="t-session-edit" data-controller="pops">${markControl(agent, base, { stay, back, cls: 't-head-mark' })}${crownControl(agent, base, { stay, back })}${renameControl(agent, base, { stay, back, cls: 't-head-name' })}</span>`
 
 /** The crown as a switch on the corner of the mark: one per desk, given by the human's hand (the hub takes it from whoever wore it). */
-const crownControl = (agent, base, { stay = false, back = '' } = {}) => html`<form class="t-crown-form" method="post" action="${sessionForms(agent, base)}/star">${answerFields({ stay, back })}<button class="crown-toggle" type="submit" name="starred" value="${agent.starred ? '0' : '1'}" aria-pressed="${String(Boolean(agent.starred))}" title="${agent.starred ? 'Wears the crown of its desk. Click to take it off' : 'Give the crown'}" aria-label="${agent.name}: ${agent.starred ? 'wears the crown of its desk, take it off' : 'give the crown'}">${raw(crownSvg())}</button></form>`
+const crownControl = (agent, base, { stay = false, back = '' } = {}) => html`<form class="t-crown-form" method="post" action="${sessionForms(agent, base)}/star">${answerFields({ stay, back })}<button class="crown-toggle" type="submit" name="starred" value="${agent.starred ? '0' : '1'}" aria-pressed="${String(Boolean(agent.starred))}" title="${agent.starred ? 'Take crown' : 'Crown'}" aria-label="${agent.name}: ${agent.starred ? 'wears the crown of its desk, take it off' : 'give the crown'}">${raw(crownSvg())}</button></form>`
 
 // ---- keys ----
 // The one table that says what the keys of the board do. Read by the controller that listens
@@ -2684,8 +2684,8 @@ const tile = (cls, drawing, label, { name = 'key', value = '', action = null, ti
  *  request. */
 const shiftPair = (card, base, inForm) => {
   const info = card.kind === 'info', way = act(card, base, info ? 'close' : 'trust')
-  const tip = info ? `${WORDS.duck}: read, close it` : `${WORDS.trust}: leave it to the agent`
-  const pair = html`<button class="inbox-answer is-thumb is-what" type="submit" tabindex="-1" formaction="${act(card, base, 'what')}" title="${WORDS.what}: ask the session to explain this; it comes back explained" aria-label="What?? — explain this to me"><span class="inbox-disc">${sk('what')}</span></button><button class="inbox-answer is-thumb inbox-shift-duck" type="submit" tabindex="-1" formaction="${way}" title="${tip}" aria-label="${tip}">${sk('duck')}<span>${WORDS.duck}</span></button>`
+  const tip = info ? WORDS.duck : 'Duck it', label = info ? `${WORDS.duck}: read, close it` : `${WORDS.trust}: leave it to the agent`
+  const pair = html`<button class="inbox-answer is-thumb is-what" type="submit" tabindex="-1" formaction="${act(card, base, 'what')}" title="${WORDS.what}" aria-label="What?? — explain this to me"><span class="inbox-disc">${sk('what')}</span></button><button class="inbox-answer is-thumb inbox-shift-duck" type="submit" tabindex="-1" formaction="${way}" title="${tip}" aria-label="${label}">${sk('duck')}<span>${WORDS.duck}</span></button>`
   return inForm ? html`<span class="inbox-shift">${pair}</span>` : html`<form class="inbox-shift" method="post" action="${way}"><input type="hidden" name="stay" value="1">${pair}</form>`
 }
 function tiles(card, base) {
@@ -2693,8 +2693,8 @@ function tiles(card, base) {
   const seen = card.revised ? html`<input type="hidden" name="revised" value="${card.revised}">` : ''
   if (card.kind === 'info') {
     return html`<form class="inbox-actions has-shift" method="post" action="${act(card, base, 'close')}">${stay}
-${tile('is-thumb is-what', 'what', '', { action: act(card, base, 'what'), title: `${WORDS.what}: ask the session to explain this; it comes back explained`, aria: 'What?? — explain this to me' })}
-${tile('is-thumb is-lead is-ack', 'tick', WORDS.ack, { title: `${WORDS.ack}: read, close it` })}${shiftPair(card, base, true)}</form>`
+${tile('is-thumb is-what', 'what', '', { action: act(card, base, 'what'), title: WORDS.what, aria: 'What?? — explain this to me' })}
+${tile('is-thumb is-lead is-ack', 'tick', WORDS.ack, { title: WORDS.ack })}${shiftPair(card, base, true)}</form>`
   }
   const bare = card.options.every(o => BARE.test(o.label.trim()))
   const size = bare ? 'none' : labelSize(card.options)
@@ -2712,7 +2712,7 @@ ${[...card.options].sort((a, b) => isYes(a) - isYes(b)).map(o => {   // (the lea
       const lead = isYes(o), advised = advisedKeys(card).includes(o.key)
       const cls = `is-thumb${thumbs ? '' : ' is-named'}${lead ? ' is-lead' : ''}${size === 'small' ? ' is-small' : ''}${worded ? ' is-short' : ''}${advised ? ' is-advised' : ''}`
       const final = o.final === true
-      const title = [advised ? 'The agent recommends this' : [size === 'none' && !bare ? o.label : '', o.detail].filter(Boolean).join(': '), final ? FINAL_TIP : ''].filter(Boolean).join(' · ')
+      const title = advised ? 'Recommended' : final ? FINAL_TIP : size === 'none' && !bare ? o.label : ''
       return tile(cls, lead ? 'yes' : 'no', worded ? shortOf(o) : size === 'none' && !bare ? '' : o.label, { value: o.key, title, aria: final ? `${o.label} (settles it)` : o.label, short: worded, final })
     })}${card.kind === 'decision' ? shiftPair(card, base, true) : ''}</form>`
   }
@@ -2721,7 +2721,7 @@ ${[...card.options].sort((a, b) => isYes(a) - isYes(b)).map(o => {   // (the lea
   const advisedOne = card.kind === 'decision' && !card.multiple ? card.options.find(o => advisedKeys(card)[0] === o.key && advisedKeys(card).length === 1) : null
   if (advisedOne) {
     const others = card.options.length - 1, final = advisedOne.final === true
-    return html`<form class="inbox-actions is-advised-pair has-shift" method="post" action="${act(card, base, 'decide')}">${stay}${seen}<a class="inbox-answer is-thumb is-others" data-nav href="${cardPath(card, base)}" title="The other ${others} ways: open the card" aria-label="${others} other ways: open the card"><b>+${others}</b><span>other ways</span></a><button class="inbox-answer is-thumb is-lead is-take is-advised" type="submit" name="key" value="${advisedOne.key}" title="${[advisedOne.label, advisedOne.detail, 'the agent recommends this', final ? FINAL_TIP : ''].filter(Boolean).join(' · ')}" aria-label="${advisedOne.label}, advised${final ? ' (settles it)' : ''}">${sk('yes')}<strong>${advisedOne.label}</strong></button>${shiftPair(card, base, true)}</form>`
+    return html`<form class="inbox-actions is-advised-pair has-shift" method="post" action="${act(card, base, 'decide')}">${stay}${seen}<a class="inbox-answer is-thumb is-others" data-nav href="${cardPath(card, base)}" title="${others} other ways" aria-label="${others} other ways: open the card"><b>+${others}</b><span>other ways</span></a><button class="inbox-answer is-thumb is-lead is-take is-advised" type="submit" name="key" value="${advisedOne.key}" title="${advisedOne.label}" aria-label="${advisedOne.label}, advised${final ? ' (settles it)' : ''}">${sk('yes')}<strong>${advisedOne.label}</strong></button>${shiftPair(card, base, true)}</form>`
   }
   // More than two ways: one tile, "Choose". It is a link to the card's own page, where every option stands.
   const count = card.multiple ? `${card.options.length} options, several` : `${card.options.length} options`
@@ -2738,7 +2738,7 @@ export const LATER_TAG = raw('<svg viewBox="0 0 44 92" aria-hidden="true"><path 
  *  before Shred (the bar's Read). */
 export const sideWays = ({ later = true, duck = true, shred = true, many = false, between = '', word = true } = {}) => {
   const it = many ? 'them' : 'it'
-  return html`${later ? html`<button type="submit" name="way" value="later" class="sel-later" title="${WORDS.later}: put ${it} off, ${many ? 'they wait' : 'it waits'} in Off the desk" aria-label="${WORDS.later}">${LATER_TAG}${word ? html`<span>${WORDS.later}</span>` : ''}</button>` : ''}${duck ? html`<button type="submit" name="way" value="duck" class="sel-duck" title="${WORDS.duck}: ${many ? 'the agents take their' : 'the agent takes its'} own advice" aria-label="${WORDS.duck}">${sk('duck')}<span>${WORDS.duck}</span></button>` : ''}${between}${shred ? html`<button type="submit" name="way" value="shred" class="sel-shred" title="${WORDS.shred}: throw ${it} away" aria-label="${WORDS.shred}">${sk('bin')}<span>${WORDS.shred}</span></button>` : ''}`
+  return html`${later ? html`<button type="submit" name="way" value="later" class="sel-later" title="${WORDS.later}" aria-label="${WORDS.later}">${LATER_TAG}${word ? html`<span>${WORDS.later}</span>` : ''}</button>` : ''}${duck ? html`<button type="submit" name="way" value="duck" class="sel-duck" title="${WORDS.duck}" aria-label="${WORDS.duck}">${sk('duck')}<span>${WORDS.duck}</span></button>` : ''}${between}${shred ? html`<button type="submit" name="way" value="shred" class="sel-shred" title="${WORDS.shred}" aria-label="${WORDS.shred}">${sk('bin')}<span>${WORDS.shred}</span></button>` : ''}`
 }
 const deskNameOf = (model, agent) => model.desks.find(d => d.id === model.deskOf?.(agent))?.name || 'Personal'
 /** One open question as a row. from: the session that asked. error: what went wrong with the last answer.
@@ -2755,21 +2755,21 @@ export function deskRow(card, model, base, { error = '', slim = false } = {}) {
   // (the pictures and videos as a small fan beside the title; no "2 pictures" line)
   const media = [...images, ...(card.attachments ?? []).filter(a => kindOf(a) === 'video')]
   const knock = isKnock(card)
-  const quiet = knock ? '' : card.kind === 'info' ? html`<span class="inbox-whenever inbox-toread" title="To read: nothing to decide" role="img" aria-label="To read">${sk('page')}</span>`
-    : card.urgency === 'low' ? html`<span class="inbox-whenever" title="Whenever: nothing waits on this" role="img" aria-label="Whenever">${sk('whenever')}</span>` : ''
-  const trustTip = `I don’t give a duck: your call (R)${advisedLabels(card) ? ` · agent takes ${advisedLabels(card)}` : ''}`
+  const quiet = knock ? '' : card.kind === 'info' ? html`<span class="inbox-whenever inbox-toread" title="To read" role="img" aria-label="To read">${sk('page')}</span>`
+    : card.urgency === 'low' ? html`<span class="inbox-whenever" title="Whenever" role="img" aria-label="Whenever">${sk('whenever')}</span>` : ''
+  const trustTip = 'Duck it (R)'
   const href = cardPath(card, base)
   return html`<article class="inbox-row" id="row-${card.id}"${knockAttr(card)} tabindex="-1" data-id="${card.id}" data-urgency="${card.urgency}"${card.kind === 'info' ? raw(' data-kind="info"') : ''}${from ? html` data-from="${from.id}" style="--hue:${from.hue}"` : ''}>
 ${from && !slim ? html`<a class="inbox-gutter" data-nav href="${base}/chat/${encodeURIComponent(from.id)}" aria-label="From ${from.name}: open the session" data-name="${from.name}" style="--hue:${from.hue}">${smallMark(from)}<span class="inbox-gutter-name" aria-hidden="true">${from.name}</span></a>` : ''}
 <div class="inbox-content">
 <header class="inbox-row-head"></header>
 ${media.length ? html`<a class="inbox-fan" data-nav href="${href}${images.length ? '/picture/1' : ''}" aria-label="${media.length === 1 ? 'Look at the picture' : `Look at ${media.length} pictures and videos`}">${media.slice(0, 3).map(a => kindOf(a) === 'image' ? html`<img${srcOf(a, 56)} alt="" loading="lazy" decoding="async" width="56" height="42">` : html`<video src="${a.url}#t=0.001" muted playsinline preload="metadata"></video>`)}</a>` : ''}
-${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select (Shift: a range)" aria-label="Select: ${card.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${cardNr(card)}${from ? ` · ${from.name}` : ''}: ${card.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, starred: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${card.urgency === 'critical' ? 'block' : 'knock'}" role="img" title="${knockWord(card)}" aria-label="${knockWord(card)}">${card.urgency === 'critical' ? raw(handSvg()) : sk('knock')}</span>` : card.kind !== 'info' && card.urgency === 'low' ? html`<span class="row-urg is-whenever" role="img" title="Whenever: nothing waits on this" aria-label="Whenever">${sk('whenever')}</span>` : ''}${card.starred ? starMark() : ''}${card.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span><span class="row-meta-dot">·</span>${agoSpan(card.created, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${model.all && from ? html`<span class="row-desk" title="Desk ${deskNameOf(model, from)}">${deskNameOf(model, from)}</span>` : ''}${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
-<span class="inbox-when" title="${cardNr(card)} · asked ${ago(card.created)}"><form class="inbox-tabs" method="post" action="${act(card, base, 'snooze')}"><input type="hidden" name="stay" value="1">
-<button class="inbox-tab-act inbox-later is-tag" type="submit" formaction="${act(card, base, 'snooze')}" aria-label="${WORDS.later}: put this question off; it waits for you below" title="${WORDS.later}: put this question off; it waits for you below">${LATER_TAG}</button>
-${card.kind !== 'permission' ? tab('inbox-revise', 'reverse', WORDS.revise, `${WORDS.revise}: hand it back to the session at once; it returns reworked`, act(card, base, 'revise'), true) : ''}
+${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${card.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${card.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, starred: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${card.urgency === 'critical' ? 'block' : 'knock'}" role="img" title="${knockWord(card)}" aria-label="${knockWord(card)}">${card.urgency === 'critical' ? raw(handSvg()) : sk('knock')}</span>` : card.kind !== 'info' && card.urgency === 'low' ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${card.starred ? starMark() : ''}${card.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span><span class="row-meta-dot">·</span>${agoSpan(card.created, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${model.all && from ? html`<span class="row-desk" title="Desk ${deskNameOf(model, from)}">${deskNameOf(model, from)}</span>` : ''}${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
+<span class="inbox-when" title="${ago(card.created)}"><form class="inbox-tabs" method="post" action="${act(card, base, 'snooze')}"><input type="hidden" name="stay" value="1">
+<button class="inbox-tab-act inbox-later is-tag" type="submit" formaction="${act(card, base, 'snooze')}" aria-label="${WORDS.later}: put this question off; it waits for you below" title="${WORDS.later}">${LATER_TAG}</button>
+${card.kind !== 'permission' ? tab('inbox-revise', 'reverse', WORDS.revise, WORDS.revise, act(card, base, 'revise'), true) : ''}
 ${card.kind === 'decision' ? tab('inbox-trust', 'duck', WORDS.trust, trustTip, act(card, base, 'trust'), true) : ''}
-${card.kind !== 'permission' ? tab('inbox-shred', 'bin', WORDS.shred, `${WORDS.shred}: throw this away unanswered. The session is told; it will not ask again`, act(card, base, 'shred')) : ''}
+${card.kind !== 'permission' ? tab('inbox-shred', 'bin', WORDS.shred, WORDS.shred, act(card, base, 'shred')) : ''}
 </form>${agoSpan(card.created, 'inbox-ago')}</span>
 ${slim ? '' : html`<p class="inbox-byline">${quiet}${from ? html`<span class="inbox-from">${smallMark(from)}<span>${from.name}</span></span><span class="inbox-sep"> · </span>` : ''}</p>`}
 </div>
@@ -2811,7 +2811,7 @@ export function badge(u, shown, base, tally = false) {
     : online ? (running ? `Working, ${questions(open)} open` : `${questions(open)} open`) : `Disconnected, ${questions(open)} open`
   const inner = blocked ? raw(handSvg()) : !tally ? html`${raw(ringSvg())}<b>${open}</b>` : open > 5 ? html`<b>${open}</b>` : raw(tallySvg(open))
   const data = html` data-state="${blocked ? 'blocked' : 'open'}"${blocked ? html` data-why="${blocked.why}"` : ''}${!online ? raw(' data-offline') : ''}${busy ? raw(' data-working') : ''}`
-  return html`<a class="agent-badge" data-nav href="${base}/chat/${encodeURIComponent(u.id)}"${data} title="${u.agent.name}: ${state}" aria-label="${u.agent.name}: ${state}">${inner}</a>`
+  return html`<a class="agent-badge" data-nav href="${base}/chat/${encodeURIComponent(u.id)}"${data} title="${blocked ? 'Stopped' : `${open} open`}" aria-label="${u.agent.name}: ${state}">${inner}</a>`
 }
 
 // ---- a session's link: whether it hears the human (app.mjs linkOf, heardOf) ----
@@ -2819,9 +2819,9 @@ export function badge(u, shown, base, tally = false) {
 // the pen; urgency is the sign and its ink, never a stripe (app.css .link-cap, .link-note, .link-slip).
 /** The small line under a session's name in the sidebar: the sign and two or three words. unheard: answers it has not picked up. */
 export const linkCap = (link, unheard = 0) => {
-  if (link && link.state !== 'live') return html`<small class="link-cap" data-link="${link.state}" title="${link.line}">${sk(link.sign)}<span>${link.word}</span></small>`
+  if (link && link.state !== 'live') return html`<small class="link-cap" data-link="${link.state}" title="${link.short || link.word}" aria-description="${link.line}">${sk(link.sign)}<span>${link.word}</span></small>`
   if (!unheard) return ''
-  return html`<small class="link-cap" data-link="unheard" title="${unheard === 1 ? 'An answer of yours has' : `${unheard} answers of yours have`} not reached this session yet">${sk('letter')}<span>${unheard === 1 ? '1 answer waits' : `${unheard} answers wait`}</span></small>`
+  return html`<small class="link-cap" data-link="unheard" title="${unheard === 1 ? 'Not heard yet' : `${unheard} not heard`}">${sk('letter')}<span>${unheard === 1 ? '1 answer waits' : `${unheard} answers wait`}</span></small>`
 }
 /** The note on a card's page and in a session: the receipt, the sentence about the session, and the way out as a line to type. */
 export const linkNote = (link, { receipt = '', sign = null, tone = null, id = '' } = {}) => html`<aside class="link-note"${id ? html` id="${id}"` : ''} data-link="${tone ?? link?.state ?? 'live'}" role="status">${sk(sign ?? link?.sign ?? 'ear')}<div>${receipt ? html`<p class="link-receipt">${receipt}</p>` : ''}${link?.line && link.state !== 'live' ? html`<p>${link.line}</p>` : ''}${link?.fix ? html`<p class="link-fix">${link.fix.say}${link.fix.code ? html` <code>${link.fix.code}</code>` : ''}</p>` : ''}</div></aside>`
@@ -3001,7 +3001,7 @@ export function usageMeters(acc, now = Date.now()) {
   })
 }
 const hot = used => (used >= 80 ? ' is-hot' : '')
-const meterTitle = m => `${m.long}: ${m.used} % used${m.reset ? `, resets ${m.reset}` : ''}`
+const meterTitle = m => `${m.used} % used`
 const bar = (m, wide = false) => html`<span class="use-bar${hot(m.used)}${wide ? ' is-wide' : ''}" title="${meterTitle(m)}"><i style="--used:${m.used}%"></i></span>`
 const credits = n => `${Number(n).toLocaleString('en-GB', { maximumFractionDigits: 0 })} ${Math.round(n) === 1 ? 'credit' : 'credits'}`
 // A whole circle (or an arc) of radius r around (16,16), from the top clockwise over `span` degrees.
@@ -3019,9 +3019,9 @@ export function usageMark(acc, { mini = false, now = Date.now() } = {}) {
   const ms = usageMeters(acc, now)
   if (!ms.length) return ''
   const five = ms.find(m => m.key === 'five_hour'), week = ms.find(m => m.key === 'weekly')
-  const words = ms.map(meterTitle).join(' · ')
+  const words = ms.map(m => `${m.long}: ${m.used} % used${m.reset ? `, resets ${m.reset}` : ''}`).join(' · ')
   const mark = raw(`<svg class="use-mark" viewBox="0 0 32 32" aria-hidden="true">${week ? useRing(week, 13) : ''}${five ? useRing(five, week ? 7.6 : 13) : ''}</svg>`)
-  return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${usagePlan(acc)}: ${words}" title="${words}">${mark}${mini ? '' : html`<span class="use-words">${ms.map(m => html`<span><b class="${hot(m.used).trim()}">${m.used} %</b> ${m.label}</span>`)}</span>`}</span>`
+  return html`<span class="use-rings${mini ? ' is-mini' : ''}" role="img" aria-label="${usagePlan(acc)}: ${words}" title="Usage">${mark}${mini ? '' : html`<span class="use-words">${ms.map(m => html`<span><b class="${hot(m.used).trim()}">${m.used} %</b> ${m.label}</span>`)}</span>`}</span>`
 }
 /** Fuller, for an agent's card on Settings · Agents: plan and e-mail, one row per meter, Codex's credits and resets. */
 export function usageFull(acc, now = Date.now()) {

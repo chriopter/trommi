@@ -23,7 +23,7 @@ const tileLine = (i, title) => html`<div class="art-line"><span class="gal-who" 
 const openIcon = (go, title) => html`<a ${go('art-act')} title="Open" aria-label="Open ${title}">${sk('go')}</a>`
 function mediaTile(i) {
   const go = cls => html`data-nav href="${i.href}" class="${cls}"`
-  return html`<li class="art-item art-card" data-kind="media"><a ${go('art-shot')} title="${i.title} · ${i.agent.name} · ${countOf(i)}">${mediaPreview(i)}${(i.more ?? 1) > 1 ? html`<b class="art-n" aria-label="${countOf(i)}">${i.more}</b>` : ''}</a>
+  return html`<li class="art-item art-card" data-kind="media"><a ${go('art-shot')} title="${i.title}">${mediaPreview(i)}${(i.more ?? 1) > 1 ? html`<b class="art-n" aria-label="${countOf(i)}">${i.more}</b>` : ''}</a>
 ${tileLine(i, html`<a ${go('art-t')}>${i.title}</a>`)}<div class="art-acts">${openIcon(go, i.title)}${shareControl(i.att, i.title, { tile: true })}</div></li>`
 }
 function pageTile(i) {
