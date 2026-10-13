@@ -23,7 +23,8 @@
 # build only, from the 1Password Environment: APPLE_ASC_KEY, APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_TEAM_ID
 # (as for TestFlight), APPLE_DEVID_P12 (the .p12 of the Developer ID Application certificate with its private key, in
 # base64), APPLE_DEVID_P12_PASSWORD. The Developer ID provisioning profile of the app's bundle id for that certificate
-# (push and associated domains need one) is fetched with the App Store Connect key (asc.py devid-profile: the one made
+# (push and associated domains need one): APPLE_DEVID_PROFILE (its base64) when set, else fetched with the App Store
+# Connect key (asc.py devid-profile: the one made
 # by hand in the developer portal, or a new one), and the export signs manually with it: Xcode's automatic export would
 # need cloud-managed Developer ID signing, which only the Account Holder has, an API key never. MAC_OUT: where the files go (default $RUNNER_TEMP/mac-direct). The Rust core
 # for the Mac must be in place (core/swift/TrommiCoreRust/lib/macos). Nothing here prints a value of a secret.
@@ -131,8 +132,13 @@ if [ "$mode" = build ]; then
   # not expired) and installed where Xcode looks for profiles; the export then signs manually with it.
   profile_uuid=
   {
-    ASC_KEY_ID=$APPLE_ASC_KEY_ID ASC_ISSUER_ID=$APPLE_ASC_ISSUER_ID ASC_KEY_PATH=$key ASC_PLATFORM=MAC_OS \
-      python3 "$appstore/asc.py" devid-profile "$project_id" "$identity" "$keys/devid.provisionprofile"
+    if [ -n "${APPLE_DEVID_PROFILE:-}" ]; then
+      # the profile from the 1Password Environment (base64 of the .provisionprofile)
+      python3 -c 'import base64, os, sys; sys.stdout.buffer.write(base64.b64decode(os.environ["APPLE_DEVID_PROFILE"], validate=False))' > "$keys/devid.provisionprofile"
+    else
+      ASC_KEY_ID=$APPLE_ASC_KEY_ID ASC_ISSUER_ID=$APPLE_ASC_ISSUER_ID ASC_KEY_PATH=$key ASC_PLATFORM=MAC_OS \
+        python3 "$appstore/asc.py" devid-profile "$project_id" "$identity" "$keys/devid.provisionprofile"
+    fi
     security cms -D -i "$keys/devid.provisionprofile" > "$keys/devid-profile.plist" || { echo "::error::the Developer ID profile is not a provisioning profile"; exit 1; }
     pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$keys/devid-profile.plist" 2>/dev/null; }
     [ "$(pb ProvisionsAllDevices)" = true ] || { echo "::error::the profile is not a Developer ID profile (it does not provision all devices)"; exit 1; }
