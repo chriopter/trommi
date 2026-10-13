@@ -434,9 +434,12 @@ pull request ─────────── fast checks of the changed parts 
    │                     build), the required checks green, auto-merge, squash
    │                     (iOS: ios.yml, beside build.yml)
    ▼
+merge queue ──────────── the same checks on the very commit that lands on main
+   │
+   ▼
 main ─────────────────── full builds; one fails: an issue, nothing delivered.
-                         (tests that passed on the pull request for the very
-                         same files are not run again)
+                         (checks that passed in the queue for the very same
+                         files are not run again)
                          All pass: signed release v<N>, then the changed parts:
                            web        app.trommi.com
                            hub        the server pulls and checks v<N>
