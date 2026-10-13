@@ -53,6 +53,8 @@ pub enum IoErrorKind {
     Offline,
     /// The request's `timeout_ms` passed.
     Timeout,
+    /// The answer's body is longer than the request's `max_answer`: the shell stopped reading there.
+    TooLarge,
     /// The core cancelled it ([`Effect::Cancel`](super::Effect::Cancel)); the shell may also just drop it silently.
     Cancelled,
     /// A store write met another owner's revision ([`StoreOp::DeviceApply`]).
@@ -105,12 +107,29 @@ pub struct HttpRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<Bytes>,
     pub timeout_ms: u32,
+    /// Most bytes the answer's body may have, set by the core for every route (the hub is not trusted with how
+    /// much it sends). The shell stops reading at the first byte beyond it, closes the connection and answers
+    /// `IoError` of kind `too_large`: it never hands over a body cut short and never buffers more than this. A
+    /// `Content-Length` above it fails before the body is read. Of a stream ([`Effect::OpenStream`](super::Effect::OpenStream))
+    /// it bounds the body of an answer that is no 200; the events of an open stream are bounded by the core,
+    /// which parses them. Left out in JSON: [`HttpRequest::MAX_ANSWER_DEFAULT`].
+    #[serde(default = "HttpRequest::max_answer_default")]
+    pub max_answer: u32,
     #[serde(default)]
     pub class: HttpClass,
     /// A transfer that may outlive this App (an iOS background upload) carries a stable key; its end then comes
     /// as `Event::Finished { key }` to whichever App runs. Everything else: `None`, and it dies with its App.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+}
+
+impl HttpRequest {
+    /// The cap of a request that names none: small, so that a route somebody forgot to cap fails closed.
+    pub const MAX_ANSWER_DEFAULT: u32 = 64 << 10;
+
+    fn max_answer_default() -> u32 {
+        Self::MAX_ANSWER_DEFAULT
+    }
 }
 
 /// An answer with any status.

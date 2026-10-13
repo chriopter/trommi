@@ -115,6 +115,7 @@ fn a_failed_device_write_ends_the_answer() {
         headers: vec![],
         body: None,
         timeout_ms: 1,
+        max_answer: HttpRequest::MAX_ANSWER_DEFAULT,
         class: HttpClass::Background,
         key: None,
     };
@@ -172,5 +173,18 @@ fn debug_never_shows_secrets() {
     assert!(
         !shown.contains("apple") && !shown.contains("s3cret"),
         "{shown}"
+    );
+}
+
+#[test]
+fn a_request_without_a_cap_gets_the_small_one() {
+    let request: HttpRequest =
+        serde_json::from_str(r#"{"method":"GET","url":"https://hub.example/x","timeout_ms":1}"#).unwrap();
+    assert_eq!(request.max_answer, 64 << 10);
+    let text = serde_json::to_string(&request).unwrap();
+    assert!(text.contains(r#""max_answer":65536"#), "{text}");
+    assert_eq!(
+        serde_json::to_string(&IoErrorKind::TooLarge).unwrap(),
+        r#""too_large""#
     );
 }
