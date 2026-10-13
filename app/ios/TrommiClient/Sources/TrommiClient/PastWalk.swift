@@ -47,6 +47,7 @@ public enum SignInWatch {
   public static func say(_ p: SignInProgress) { report?(p) }
   /** A timing line of a sign-in's step (TROMMI_SIGNIN_LOG=1, or a debug build), for finding where a sign-in waits. */
   public static func log(_ step: String, since: Date) {
+    Spent.mark("sign-in " + step)
     guard verbose else { return }
     FileHandle.standardError.write(Data("sign-in: \(step) in \(Int(Date().timeIntervalSince(since) * 1000)) ms\n".utf8))
   }

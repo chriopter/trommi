@@ -316,6 +316,18 @@ impl Human {
         human
     }
 
+    /// Publishes this device's KeyPackages (a device let in by `add_human` has none yet): session foundings claim one.
+    pub async fn publish_key_packages(&mut self) {
+        self.v(|v| {
+            v.device
+                .key_packages_to_upload(0, now_ms())
+                .expect("key packages");
+            v.commit().expect("stored");
+        })
+        .await;
+        self.post_all().await.expect("the key packages are taken");
+    }
+
     pub fn id(&self) -> DeviceId {
         self.id
     }

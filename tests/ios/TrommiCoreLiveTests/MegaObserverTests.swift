@@ -42,7 +42,10 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
   }
   /// Requests by route ("GET /v1/welcomes", …), for the load rules.
   nonisolated(unsafe) static var asked: [String: Int] = [:]
+  /** While a first login is traced: every request as (route, start, end in uptime ns, bytes in, bytes out, status, query). */
+  nonisolated(unsafe) static var net: [(String, UInt64, UInt64, Int, Int, Int, String)]?
   override func startLoading() {
+    let began = Spent.now
     let path = request.url?.path ?? ""
     let route = "\(request.httpMethod ?? "GET") " + path.replacingOccurrences(of: #"/[A-Za-z0-9_-]{20,}"#, with: "/:id", options: .regularExpression)
     MegaFaults.lock.withLock { MegaFaults.asked[route, default: 0] += 1 }
@@ -68,6 +71,8 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
         if let data { client?.urlProtocol(self, didLoad: data) }
         // (payload bytes in, as the web observer counts them; the live stream is left out)
         if counted, let n = data?.count { MegaFaults.lock.withLock { MegaFaults.asked["bytes in", default: 0] += n } }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        MegaFaults.lock.withLock { if MegaFaults.net != nil { MegaFaults.net!.append((route, began, Spent.now, data?.count ?? 0, req.httpBody?.count ?? 0, status, req.url?.query ?? "")) } }
         client?.urlProtocolDidFinishLoading(self)
       }
       state.withLock { forward = task }
@@ -85,6 +90,61 @@ final class MegaObserverTests: XCTestCase {
   private func settle() async {
     guard let room else { return }
     for _ in 0..<3 { _ = try? await room.sync() }
+  }
+
+  private var liveTask: Task<Void, Never>?
+  private var sampler: Task<Void, Never>?
+  private var samples: [[Any]] = []
+  private var t0: UInt64 = 0
+  private static func ms(_ ns: UInt64) -> Double { Double(ns) / 1e6 }
+
+  /** What the person would see now (as the web observer's `seen`): the Desk, Off your mind, Artifacts, sessions, agents online. */
+  private func seen() -> [String: Any]? {
+    guard let b = room?.board else { return nil }
+    var off = 0, closed = 0, working = 0, cards = 0
+    for c in b.cards.values { cards += 1; if c.objectState != "open" { closed += 1; off += 1 } else if c.working { working += 1; off += 1 } }
+    let snoozed = b.human.snoozes.count
+    let desk = b.stack.filter { !b.held.contains($0) }.count
+    var live = 0, archived = 0
+    for row in b.sessionList { if case .obj(let o) = row, o["archived"] == .bool(true) { archived += 1 } else { live += 1 } }
+    var agents = 0, online = 0
+    for m in b.members.values where m.deviceRole == "agent" && m.isActive { agents += 1; if m.isOnline { online += 1 } }
+    var items = 0
+    for t in b.timelines.values { items += t.itemCount }
+    let artifacts = b.published.values.filter { $0.objectState != "closed" }.count
+    return ["desk": desk, "stack": b.stack.count, "held": b.held.count, "off": off + snoozed, "closed": closed, "working": working, "snoozed": snoozed,
+            "cards": cards, "artifacts": artifacts, "sessions_live": live, "sessions_archived": archived, "agents": agents, "online": online, "items": items,
+            "reading": b.preview]
+  }
+  private func startTrace() {
+    Spent.traceStart()
+    MegaFaults.lock.withLock { MegaFaults.net = [] }
+    samples = []
+    t0 = Spent.now
+    sampler = Task { @MainActor [weak self] in
+      var last = ""
+      while !Task.isCancelled {
+        if let self, let v = self.seen() {
+          let k = (try? JSONSerialization.data(withJSONObject: v, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? ""
+          if k != last { last = k; self.samples.append([Self.ms(Spent.now), v]) }
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+      }
+    }
+  }
+  private func stopTrace() -> [String: Any] {
+    sampler?.cancel(); sampler = nil
+    var spans: [[Any]] = []
+    for (name, a, b) in Spent.traceTake() {
+      let isMark = name.hasPrefix("mark ")
+      spans.append([isMark ? "mark" : "step", isMark ? String(name.dropFirst(5)) : name, Self.ms(a), Self.ms(b)])
+    }
+    let net = MegaFaults.lock.withLock { () -> [(String, UInt64, UInt64, Int, Int, Int, String)] in let n = MegaFaults.net ?? []; MegaFaults.net = nil; return n }
+    for (route, a, b, bin, bout, status, query) in net {
+      spans.append(["net", route, Self.ms(a), Self.ms(b), ["in": bin, "out": bout, "status": status, "query": query.isEmpty ? "" : "?" + query]])
+    }
+    let requests = MegaFaults.lock.withLock { MegaFaults.asked }
+    return ["platform": "ios", "t0": Self.ms(t0), "spans": spans, "samples": samples, "final": seen() ?? [:], "requests": requests]
   }
 
   private func snapshot() -> [String: Any] {
@@ -118,9 +178,25 @@ final class MegaObserverTests: XCTestCase {
     switch op {
     case "signin":
       let code = try XCTUnwrap(cmd["code"] as? String).hexBytes()
+      if cmd["trace"] as? Bool == true {
+        startTrace()
+        room = try await Room.joinWithRecoveryCode(hubURL: cmd["hub"] as! String, roomId: cmd["room_id"] as! String, code: code, base: base)
+        Spent.mark("room joined: the app opens")
+        // as the app does after a sign-in (TrommiApp.swift scene/refresh): the live stream (which syncs first) and a sync
+        let r = room!
+        if cmd["stream"] as? Bool == true { liveTask = Task { @MainActor in await r.runLive() } }
+        _ = try? await r.sync()
+        Spent.mark("first sync done")
+        await settle()
+        Spent.mark("settled: fully live")
+        return ["device": room!.board.myDeviceId]
+      }
       room = try await Room.joinWithRecoveryCode(hubURL: cmd["hub"] as! String, roomId: cmd["room_id"] as! String, code: code, base: base)
       await settle()
       return ["device": room!.board.myDeviceId]
+    case "trace":
+      if let linger = cmd["linger_ms"] as? Int { try? await Task.sleep(nanoseconds: UInt64(linger) * 1_000_000) }
+      return stopTrace()
     case "sync": await settle(); return [:]
     case "restart":
       let id = room!.roomIdHex
@@ -155,7 +231,7 @@ final class MegaObserverTests: XCTestCase {
       }
       let requests = MegaFaults.lock.withLock { () -> [String: Int] in let a = MegaFaults.asked; if cmd["reset"] as? Bool == true { MegaFaults.asked = [:] }; return a }
       return ["rss": rss, "desk": room?.board.stack.count ?? 0, "cards": room?.board.cards.count ?? 0, "requests": requests]
-    case "quit": await room?.shutdown(); return [:]
+    case "quit": liveTask?.cancel(); await room?.shutdown(); return [:]
     default: throw TrommiError("test", "unknown op \(op)")
     }
   }
