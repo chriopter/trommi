@@ -27,7 +27,7 @@ pub mod sidebar;
 mod testroom;
 pub mod words;
 
-pub use board::{Board, Lens};
+pub use board::{render, Board, Lens};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

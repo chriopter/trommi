@@ -343,3 +343,16 @@ pub fn clean_goals(text: &str) -> String {
     let joined = lines.join("\n");
     joined.trim_matches('\n').split('\n').take(GOALS_LINES).collect::<Vec<_>>().join("\n")
 }
+
+/// Makes the board's units of `view` again from the model: the sidebar and the Desk (sessions and cards follow).
+/// What the engine and the account own (`phase`, `status`, `account`, `files`, `toasts`) is left as it is. Returns
+/// when to call again by the clock alone (a count of minutes, an answer that turns late), if ever. The App calls
+/// this after each batch and at that moment, and sends what `ViewModel::diff` finds.
+pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
+    let b = Board::new(model, lens, now);
+    view.sidebar = super::sidebar::sidebar(&b);
+    view.desk = super::desk::desk(&b);
+    // (and when a session's link, red hand or status line changes by the clock: status.rs `recheck_at`)
+    let status = b.agents.iter().filter_map(|a| a.row.recheck_at).min();
+    earliest(b.wake(), status)
+}

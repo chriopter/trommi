@@ -184,3 +184,16 @@ fn diff_then_apply_is_the_next_model() {
         }
     }
 }
+
+/// `render` fills the board's units and leaves the engine's alone.
+#[test]
+fn render_makes_the_boards_units_and_keeps_the_rest() {
+    use trommi_client_core::views::{render, Phase, ViewModel};
+    let (m, now) = demo_room();
+    let lens = lens(None);
+    let mut view = ViewModel { phase: Phase::Live, ..Default::default() };
+    let wake = render(&m, &lens, now, &mut view);
+    let b = Board::new(&m, &lens, now);
+    assert_eq!((&view.sidebar, &view.desk, view.phase), (&sidebar::sidebar(&b), &desk::desk(&b), Phase::Live));
+    assert!(wake.is_none_or(|w| w > now), "a wake lies ahead: {wake:?} at {now}");
+}
