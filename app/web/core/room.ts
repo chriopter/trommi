@@ -363,9 +363,11 @@ export function roomsOn(env: RoomEnv): Rooms {
       // the hub's order from just before the join's own Commit: the room's past is read by the rescan, once the
       // sessions are joined (engine `skipTo`)
       if (joinedAt !== null) engine.skipTo(joinedAt - 1)
-      // Its KeyPackages at once, under its own token now: a founding of a session claims one of every human device
-      // of the room, and is refused (`not-found`) while one of them has none. Upkeep: the engine's timed run tries again.
-      if (await held.keyPackagesToUpload(0, Date.now()).catch(() => null) !== null) await postAll(engine).catch(() => {})
+      // Its KeyPackages, under its own token now: a founding of a session claims one of every human device of the
+      // room, and is refused (`not-found`) while one of them has none. A sign-in with sessions to join uploads them
+      // once those joins are through (engine `holdKeyPackages`); without, at once. Upkeep: the engine's timed run
+      // tries again.
+      if (o.recover || !later?.later.length) { if (await held.keyPackagesToUpload(0, Date.now()).catch(() => null) !== null) await postAll(engine).catch(() => {}) }
       // What the room holds from before is read once the hub's order was taken: a recovery took the removed
       // devices' chains already, and their envelopes are then read back. A sign-in reads it once its sessions are
       // joined (`joinSessions`): read before, it would be read once more for each session joined meanwhile.
@@ -377,6 +379,7 @@ export function roomsOn(env: RoomEnv): Rooms {
       if (later && later.later.length) {
         const own = code.slice(), running = engine
         sessions = joinSessions(running, own, later, sessionReads, () => client.deskAfterJoins()).finally(() => own.fill(0))
+        engine.holdKeyPackages(sessions)
         sessions.catch(() => {})
         // (the Desk says "catching up" until they are joined: each brings its open cards)
         client.readingUntil(sessions)

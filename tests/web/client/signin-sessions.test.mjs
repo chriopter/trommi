@@ -9,7 +9,7 @@ import { MemoryStore, TIMING, addAgent, core, memoryCache, rooms, scene, storage
 
 const roomOf = fake => [...fake.state.rooms.values()][0]
 
-test('a sign-in with the code says how far it is, stocks its KeyPackages at once and joins the sessions behind it', async t => {
+test('a sign-in with the code says how far it is, joins the sessions behind it, and stocks its KeyPackages once they are joined', async t => {
   const { fake, a, recovery_code } = await scene(t, { agent: true })
   await addAgent(t, a, {}, 'agent2'); await addAgent(t, a, {}, 'agent3')
   await a.settle()
@@ -26,7 +26,8 @@ test('a sign-in with the code says how far it is, stocks its KeyPackages at once
   assert.ok(!steps.some(s => s.step === 'reading' && s.total), `no session is read before the join: ${JSON.stringify(steps)}`)
   assert.ok(steps.some(s => s.step === 'checking' && s.total > 0 && s.done === s.total), `the check reached its total: ${JSON.stringify(steps)}`)
   assert.deepEqual(steps.at(-1), { step: 'joining' })
-  assert.equal(roomOf(fake).key_packages.size, kpBefore + 1, 'the new device has KeyPackages at the hub as soon as it is in')
+  // (its KeyPackages wait for its own joins of the sessions: until then no other device adds it to one by Welcome)
+  assert.equal(roomOf(fake).key_packages.size, kpBefore, 'no KeyPackages at the hub while the sessions are joined')
   const done = await joining
   assert.deepEqual(done.not_joined, [])
   assert.equal(done.joined, sessions)
@@ -38,6 +39,7 @@ test('a sign-in with the code says how far it is, stocks its KeyPackages at once
   assert.equal(fake.requests.slice(before).filter(r => r.method === 'GET' && /^\/v1\/groups\/[^/]+\/log$/.test(r.path)).length, 1, 'the room group\'s log alone is read by itself')
   await c.start()
   await until(() => c.engine.groups.filter(g => g.session).length === sessions, 'the new device in every session')
+  await until(() => roomOf(fake).key_packages.size === kpBefore + 1, 'the new device has KeyPackages at the hub once its joins are through')
 })
 
 test('a session join the hub refuses leaves the device in the room and lists the session', async t => {
