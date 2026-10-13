@@ -211,6 +211,19 @@ impl Engine {
         if self.stopped.is_some() {
             return;
         }
+        // A join that left the outbox without its answer being read (the stream brought the Commit and the core
+        // merged it, then the answer was lost): settled by what the device holds, or nobody would ever say it.
+        let outbox = self.device.outbox();
+        let gone: Vec<GroupId> = j.posted.iter().filter(|g| !outbox.iter().any(|e| e.kind == OutboxKind::ExternalCommit && e.group == Some(**g))).copied().collect();
+        for group in gone {
+            j.posted.remove(&group);
+            if self.device.group(&group).is_ok() {
+                j.joined += 1;
+                self.desk.want = true;
+            } else {
+                j.not_joined.push((group, "refused"));
+            }
+        }
         let through = j.asked.is_none() && j.one.is_none() && j.rows.is_empty() && j.together.is_empty() && j.alone.is_empty() && j.posted.is_empty();
         if through {
             // every session's keys are at hand now: the Desk of the joined groups, and the room's past once more

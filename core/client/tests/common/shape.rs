@@ -69,6 +69,10 @@ fn walk(v: &Value, path: &str, shape: &mut Shape) {
 /// Commit's RecoveryAuth outside a group's log.
 const SOMETIMES: &[&str] = &["void_code", "recovery_auth"];
 
+/// Types the real hub puts at a place in cases no recording holds (hub/src/delivery.rs): a helper session's
+/// `parent` in the list of the room's groups, its main session's id.
+const ALSO: &[(&str, &str)] = &[(".items[].parent", "string")];
+
 /// The recorded family a request belongs to: the prefix of its vectors' names.
 fn family(method: &str, path: &str) -> Option<&'static [&'static str]> {
     let path = path.split('?').next().unwrap_or(path);
@@ -147,7 +151,7 @@ pub fn check(method: &str, path: &str, answer: &Value) {
             continue;
         };
         for kind in &here.types {
-            assert!(there.types.contains(kind), "{method} {path}: `{place}` is {kind} at the stand-in, at the real hub {:?}", there.types);
+            assert!(there.types.contains(kind) || ALSO.contains(&(place.as_str(), *kind)), "{method} {path}: `{place}` is {kind} at the stand-in, at the real hub {:?}", there.types);
         }
         for name in here.members.keys() {
             assert!(there.members.contains_key(name) || SOMETIMES.contains(&name.as_str()), "{method} {path}: the stand-in's `{place}.{name}` is no member at the real hub");

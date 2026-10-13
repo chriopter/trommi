@@ -330,3 +330,62 @@ fn an_agent_the_hub_lists_in_a_session_is_not_given_a_second() {
     assert_eq!(world.hub.borrow().seen.iter().filter(|r| *r == "POST /v1/groups").count(), 0, "{:?}", world.hub.borrow().seen);
     assert_eq!(count(&world, CLAIM), 0);
 }
+
+/// The App's device lets `joiner` in by link to take over `session` (5.3.1), up to "They match".
+fn app_invites_to(sim: &mut Sim, joiner: &mut Peer, session: &trommi_core::ids::SessionId) {
+    let address = HubAddress::parse(common::hub::HUB_URL).expect("an address");
+    let (opened, effects) = sim.app.act(sim.now_ms, |device, now| device.invite_open(Role::Agent, Some(session), "https://app.example", &address, now));
+    let opened = opened.expect("a device").expect("an invite");
+    sim.run(effects);
+    let link = String::from_utf8(opened.link.expose().to_vec()).expect("the link is text");
+    let request = joiner.join_request(&link, &opened.signed_offer, now()).expect("a request").signed_request;
+    let (accepted, effects) = sim.app.act(sim.now_ms, |device, now| device.invite_accept(&opened.invite_id, &request, now));
+    let accepted = accepted.expect("a device").expect("accepted");
+    sim.run(effects);
+    let code = joiner.join_reveal(&accepted.signed_reveal).expect("the code");
+    let (confirmed, effects) = sim.app.act(sim.now_ms, |device, now| device.invite_confirm(&opened.invite_id, &code, &accepted.request_hash, true, now));
+    confirmed.expect("a device").expect("confirmed").expect("a Commit");
+    sim.run(effects);
+}
+
+#[test]
+fn a_takeover_by_link_seats_the_new_agent_in_the_session_and_every_helper_session_and_checks_the_hubs_list() {
+    let mut world = World::new();
+    stock_founder(&mut world);
+    // the old agent opens a helper session under its main session, with the person's two devices in it
+    let helper = {
+        let mut hub = world.hub.borrow_mut();
+        let packages = hub.claim(&[world.founder.id(), world.me]).expect("a KeyPackage of each");
+        sync(&hub, &mut world.agent);
+        let session = world.agent.found_helper(&world.session, &packages, now()).expect("the helper session is founded");
+        assert!(post_all(&mut hub, &mut world.agent).is_empty());
+        GroupId::session(world.room.room_id(), session)
+    };
+    let mut sim = world.sim();
+    sim.send(start());
+    news(&world, &mut sim);
+    assert!(sim.app.engine().unwrap().device().group(&helper).is_ok(), "the App's device joined the helper session founded while it was away");
+    let old = world.agent.id();
+    // a new agent device takes the session over; it has KeyPackages at the hub for the helper session
+    let (mut new, _) = common::new_peer();
+    new.key_packages_to_upload(0, now()).expect("key packages");
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut new).is_empty());
+    app_invites_to(&mut sim, &mut new, &world.session);
+    for _ in 0..8 {
+        news(&world, &mut sim);
+        sim.advance(3_000);
+    }
+    news(&world, &mut sim);
+    let leaves = |group: &GroupId| world.hub.borrow().observer(group).unwrap().leaves().unwrap();
+    assert!(leaves(&world.group).contains(&new.id()) && !leaves(&world.group).contains(&old), "the main session: {:?}", world.hub.borrow().refused);
+    assert!(leaves(&helper).contains(&new.id()) && !leaves(&helper).contains(&old), "the helper session: {:?} {:?}", world.hub.borrow().seen, world.hub.borrow().refused);
+    // the hub's list of the helper sessions was held against this device's, and the invite is finished
+    assert!(world.hub.borrow().seen.iter().any(|r| r.starts_with("GET /v1/rooms/") && r.contains("/groups?")));
+    let (steps, _) = sim.app.act(sim.now_ms, |device, _| device.invite_steps());
+    assert_eq!(steps.unwrap().unwrap(), Vec::new(), "{:?}", world.hub.borrow().seen);
+    assert_eq!(commits(&world, &world.group, &world.me), 1, "one Commit takes the main session over");
+    assert_eq!(commits(&world, &helper, &world.me), 1, "one Commit takes the helper session over");
+    assert!(world.hub.borrow().refused.iter().all(|r| r.ends_with(": unauthorised")), "{:?}", world.hub.borrow().refused);
+    assert!(sim.app.engine().unwrap().device().outbox().is_empty());
+    assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
+}

@@ -378,8 +378,9 @@ pub struct Engine {
     /// Welcomes read with nothing joined: items that waited for a group since (`WELCOMES_AGAIN`).
     welcomes_idle: Option<u32>,
     welcomes_after: u64,
-    /// A Welcome was read before the room reached its epoch (`room-behind`, `wrong-epoch`); `.1`: the groups changed
-    /// since, so it is read again once the items at hand are through.
+    /// A Welcome was read before the room reached its epoch (`room-behind`, `wrong-epoch`), or a group this device
+    /// does not hold was founded; `.1`: the groups changed since (or the founding was seen), so the Welcomes are read
+    /// once the items at hand are through.
     welcome_waits: (bool, bool),
     /// Envelopes refused as `group-behind` for a group this device does not hold that far: per group the first such
     /// change and the lowest epoch. Read again once the group is there (`past`).
@@ -1536,6 +1537,11 @@ impl Engine {
         };
         match self.device.process_log_entry(&entry, ctx.now) {
             Ok(processed) => {
+                // The founding of a group this device does not hold: if it was added there, its Welcome waits (the
+                // stream says so only to who is connected then). Read once the items at hand are through.
+                if commit && item.epoch == 0 && matches!(processed, Processed::Skipped) && self.device.is_human() {
+                    self.welcome_waits = (true, true);
+                }
                 self.processed(ctx, item.change, item.group, processed, groups_changed);
                 Taken::Done
             }
@@ -2065,6 +2071,9 @@ impl Engine {
             if !self.stream.as_ref().is_some_and(|s| s.opened) {
                 self.pass = true;
             }
+        } else if kind == OutboxKind::Message {
+            // (a message of this device is a step of upkeep, a key handover say: the next step is looked for now)
+            self.tending.want = true;
         }
         self.join_answered(kind, group, None);
     }
