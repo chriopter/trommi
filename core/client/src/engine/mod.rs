@@ -66,7 +66,9 @@
 //!
 //! # Not here yet
 //!
-//! Upkeep (invite steps, 5.2.7 to 5.2.9, heads, KeyPackages, seats), the joins of a sign-in with the hub's batch
+//! Of upkeep only the timed round is here (KeyPackages stocked, `heads` written, missing keys asked for: once the
+//! order is at rest, then every [`sync::UPKEEP_EVERY_MS`]). Still to come: the invite steps, 5.2.7 to 5.2.9, the
+//! seats, the core's findings, the joins of a sign-in with the hub's batch
 //! routes, the Desk as a delta on a warm start, the reading of the room's past (one module, one entry point, behind [`Engine::reread_from`]), recovery
 //! of a closed device, relayed pieces and wishes.
 //!

@@ -7,9 +7,9 @@ use crate::app::io::{DeviceEntry, HttpResponse, IoId, IoResult, StoreAnswer, Sto
 use crate::app::{Effect, LogLevel};
 use crate::hub::{classify_io, Failure};
 use std::collections::{BTreeMap, VecDeque};
-use trommi_core::crypto::{Entropy, SystemEntropy};
+use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
-    log_finding, refusal_is_passing, Accepted, Device, EnvelopeOutcome, LogEntry, LogFinding, LogKind, Processed, Received, ReceivedEnvelope,
+    log_finding, Draft, refusal_is_passing, Accepted, Device, EnvelopeOutcome, LogEntry, LogFinding, LogKind, Processed, Received, ReceivedEnvelope,
     WelcomeExpectation,
 };
 use trommi_core::hub_auth::HubAddress;
@@ -41,6 +41,8 @@ pub const TOKEN_RENEW_BEFORE_MS: u64 = 60_000;
 pub const TOKEN_MAX_MS: u64 = 600_000;
 /// A stream that brought nothing for this long is taken for dead (the hub pings every 20 s).
 pub const STREAM_SILENT_MS: u64 = 75_000;
+/// How often the timed upkeep runs: KeyPackages, `heads`, the keys still missing.
+pub const UPKEEP_EVERY_MS: u64 = 600_000;
 /// First versions of open cards asked for at the same time.
 pub const FIRSTS_AT_ONCE: usize = 8;
 /// At most so many reports wait for the App.
@@ -194,6 +196,7 @@ enum Asked<E> {
     /// A report to the hub nothing waits for (`RejectCommit`).
     Told(E),
     Mend { expect: E, mend: Mend },
+    KeyPackagesHeld(E),
     Desk(E),
     /// The first envelope of an open object.
     First { expect: E, route: ObjectRoute, object: ObjectId, after: u64 },
@@ -340,6 +343,10 @@ pub struct Engine<H: HubCodec> {
     blocked: Option<u64>,
     /// How many unused KeyPackages the hub holds, as it last said.
     pub key_packages_at_hub: Option<u32>,
+    /// When the next round of upkeep is due (0: at once, when the order is at rest), and its question in flight.
+    upkeep_at: u64,
+    upkeep_asked: Option<IoId>,
+    upkeep_retry: Retry,
     connection: Connection,
 }
 
@@ -423,6 +430,9 @@ impl<H: HubCodec> Engine<H> {
             pump_retry: Retry::default(),
             blocked: None,
             key_packages_at_hub: None,
+            upkeep_at: 0,
+            upkeep_asked: None,
+            upkeep_retry: Retry::default(),
             connection: Connection::Offline,
         })
     }
@@ -495,6 +505,9 @@ impl<H: HubCodec> Engine<H> {
             }
             if !self.device.outbox().is_empty() {
                 want(self.pump_retry.at);
+            }
+            if self.caught_up && self.upkeep_asked.is_none() {
+                want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
             }
         }
         at
@@ -587,6 +600,7 @@ impl<H: HubCodec> Engine<H> {
                 | Asked::Chain { expect: e, .. }
                 | Asked::Mend { expect: e, .. }
                 | Asked::Desk(e)
+                | Asked::KeyPackagesHeld(e)
                 | Asked::First { expect: e, .. }
                 | Asked::Told(e),
                 IoResult::Ok(response),
@@ -628,6 +642,7 @@ impl<H: HubCodec> Engine<H> {
             Asked::Told(_) => {}
             Asked::Mend { mend, .. } => self.on_mend(ctx, mend, answer, unauthorised),
             Asked::Desk(_) => self.on_desk(ctx, answer, unauthorised),
+            Asked::KeyPackagesHeld(_) => self.on_key_packages_held(ctx, answer, unauthorised),
             Asked::First { route, object, after, .. } => self.on_first(ctx, route, object, after, answer, unauthorised),
         }
         self.drive(ctx);
@@ -745,6 +760,7 @@ impl<H: HubCodec> Engine<H> {
         self.drive_desk(ctx);
         self.drive_order(ctx);
         self.drive_stream(ctx);
+        self.drive_upkeep(ctx);
         self.drive_pump(ctx);
         self.flush(ctx);
         self.connect(ctx);
@@ -1738,6 +1754,71 @@ impl<H: HubCodec> Engine<H> {
     fn close_stream(&mut self, ctx: &mut Ctx<'_>) {
         if let Some(stream) = self.stream.take() {
             ctx.out.push(Effect::Cancel { id: stream.id });
+        }
+    }
+
+    // ---- upkeep: what a device does now and then without being asked
+
+    /// A round is due once the order is at rest, then every [`UPKEEP_EVERY_MS`]: it begins with the hub's count of
+    /// this device's unused KeyPackages.
+    fn drive_upkeep(&mut self, ctx: &mut Ctx<'_>) {
+        if !self.caught_up || self.pass || !self.todo.is_empty() || self.upkeep_asked.is_some() || ctx.now < self.upkeep_at || self.upkeep_retry.waiting(ctx.now) {
+            return;
+        }
+        self.upkeep_asked = self.ask(ctx, Route::KeyPackagesHeld, true, Asked::KeyPackagesHeld);
+        if self.upkeep_asked.is_none() {
+            self.upkeep_at = ctx.now + UPKEEP_EVERY_MS;
+        }
+    }
+
+    fn on_key_packages_held(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
+        self.upkeep_asked = None;
+        let unused = match answer {
+            Ok(Answer::KeyPackagesHeld { unused }) => unused,
+            Err(_) if unauthorised => return,
+            Ok(_) | Err(_) => {
+                let retry_after = match answer {
+                    Err(Failure::NotNow { retry_after_ms, .. }) => retry_after_ms,
+                    _ => None,
+                };
+                return self.upkeep_retry.fail(ctx.now, retry_after, &mut self.jitter);
+            }
+        };
+        self.upkeep_retry.ok();
+        self.upkeep_at = ctx.now + UPKEEP_EVERY_MS;
+        self.key_packages_at_hub = Some(unused);
+        // KeyPackages (14.2): enough single-use ones, and a last-resort one now and then
+        if let Err(e) = self.device.key_packages_to_upload(unused as usize, ctx.now) {
+            self.local(ctx, &e);
+        }
+        // `heads` (9.0.7) in each live group when the core says they are due: what a hub withholds shows there
+        for group in self.device.groups().unwrap_or_default() {
+            if group.archived || group.pending {
+                continue;
+            }
+            match self.device.heads_due(&group.group, ctx.now) {
+                Ok(Some(value)) => {
+                    let draft = Draft::Register { group: group.group, name: "heads".into(), value: Some(SecretBytes::new(value)) };
+                    if let Err(e) = self.device.seal(&draft, None, &[], ctx.now) {
+                        self.local(ctx, &e);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => self.local(ctx, &e),
+            }
+            if self.stopped.is_some() {
+                return;
+            }
+        }
+        // the content keys this device still lacks a while after an envelope did not open for them (7.1.1)
+        match self.device.key_requests(ctx.now) {
+            Ok(requests) => {
+                for request in requests {
+                    let group = request.group;
+                    self.ask(ctx, Route::Wish { kind: WishKind::Handover, group: Some(&group), key_package: None }, true, Asked::Told);
+                }
+            }
+            Err(e) => self.local(ctx, &e),
         }
     }
 

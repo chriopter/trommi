@@ -67,6 +67,8 @@ pub struct App {
     alerts: Vec<engine::Alert>,
     /// The board model, fed from the engine's reports.
     board: engine::feed::Board,
+    /// The device's source of randomness when it is not the system's (a seeded test).
+    entropy: Option<Box<dyn trommi_core::crypto::Entropy + Send>>,
 }
 
 impl Default for App {
@@ -89,6 +91,16 @@ impl App {
             timer: None,
             alerts: Vec::new(),
             board: engine::feed::Board::default(),
+            entropy: None,
+        }
+    }
+
+    /// An App whose device draws its randomness from `entropy` and not from the system: for a test that must
+    /// repeat exactly. A shipped app uses [`App::new`].
+    pub fn with_entropy(entropy: Box<dyn trommi_core::crypto::Entropy + Send>) -> Self {
+        App {
+            entropy: Some(entropy),
+            ..Self::new()
         }
     }
 
@@ -219,7 +231,11 @@ impl App {
             config.hub.as_str()
         };
         let client = format!("{}/{}", config.platform, config.version);
-        match Engine::open(Codec::default(), hub, &client, config.seed, revision, entries) {
+        let entropy = self
+            .entropy
+            .take()
+            .unwrap_or_else(|| Box::new(trommi_core::crypto::SystemEntropy));
+        match Engine::open_with(Codec::default(), hub, &client, config.seed, revision, entries, entropy) {
             Ok(engine) => {
                 self.board = engine::feed::Board::new(engine.device());
                 self.engine = Some(engine);

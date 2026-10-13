@@ -322,9 +322,13 @@ fn a_restart_mid_outbox_posts_the_stored_entries_again_unchanged_and_in_order() 
     posts.borrow_mut().clear();
     sim.send(start());
     assert_eq!(sim.view.phase, Phase::Live);
-    assert_eq!(posts.borrow().len(), 3);
+    // the stored entries first, in their order; what upkeep wrote after the restart (its `heads`) goes behind them
+    let n = posts.borrow().len();
+    assert!((3..=4).contains(&n), "{n}");
     assert_eq!(posts.borrow()[0], first, "the same bytes after the restart");
-    assert_eq!(chain_at_hub(&world, &world.me), vec![1, 2, 3]);
+    let chain = chain_at_hub(&world, &world.me);
+    assert_eq!(chain, (1..=chain.len() as u64).collect::<Vec<_>>());
+    assert!(chain.len() >= 3);
     // the device's own envelopes came back in the hub's order and the outbox is empty, durably
     assert!(world.reopen_me(&sim).outbox().is_empty());
 }
@@ -447,7 +451,9 @@ fn the_same_script_gives_the_same_effects() {
     // the first run, against the hub, recording what it answered
     let http: Rc<RefCell<Vec<Http>>> = Rc::default();
     let opens: Rc<RefCell<Vec<Vec<StreamItem>>>> = Rc::default();
+    let seeded = || trommi_client_core::app::App::with_entropy(Box::new(trommi_core::crypto::SeededEntropy::new([9; 32])));
     let mut one = Sim::new(t0);
+    one.app = seeded();
     one.device = stored.clone();
     let (hub, rec) = (world.hub.clone(), http.clone());
     one.hub = Some(Box::new(move |now, request| {
@@ -471,6 +477,7 @@ fn the_same_script_gives_the_same_effects() {
 
     // the second run, against the record
     let mut two = Sim::new(t0);
+    two.app = seeded();
     two.device = stored;
     let script: Rc<RefCell<VecDeque<Http>>> = Rc::new(RefCell::new(http.borrow().iter().cloned().collect()));
     two.hub = Some(Box::new(move |_, request| {
@@ -523,6 +530,7 @@ fn the_desk_stands_complete_before_the_order_is_read_and_no_card_moves_while_it_
         world.agent_says(&format!("line {n}"));
     }
     world.hub.borrow_mut().page_max = Some(7);
+    let end = world.hub.borrow().change;
     let mut sim = world.sim();
     sim.hold = true;
     sim.send(start());
@@ -554,7 +562,7 @@ fn the_desk_stands_complete_before_the_order_is_read_and_no_card_moves_while_it_
     }
     assert!(pages >= 4, "{pages}");
     assert_eq!(sim.view.phase, Phase::Live);
-    assert_eq!(position(&sim), world.hub.borrow().change);
+    assert_eq!(position(&sim), end);
     assert_eq!(stack(&sim), first);
     assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
 }
@@ -618,4 +626,28 @@ fn where_the_time_goes() {
         sim.answer(id, got);
         eprintln!("page {page} taken: {:?}", t.elapsed());
     }
+}
+
+#[test]
+fn upkeep_stocks_key_packages_and_writes_heads_once_at_rest_then_every_ten_minutes() {
+    let mut world = World::new();
+    assert_eq!(world.hub.borrow().unused(&world.me), 99, "one was claimed for the session's founding");
+    world.agent_says("something to have a head of");
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(world.hub.borrow().unused(&world.me), 100, "stocked up to the full number");
+    // the device said which heads it holds (9.0.7), once
+    assert_eq!(chain_at_hub(&world, &world.me).len(), 1);
+    let rounds = |world: &World| requests(world).iter().filter(|r| r.starts_with("PUT /v1/key-packages")).count();
+    assert_eq!(rounds(&world), 2, "the count, then the upload");
+    // nothing more until the time is up, whatever happens meanwhile
+    world.agent_says("more");
+    world.stream(&mut sim);
+    sim.advance(60_000);
+    assert_eq!(rounds(&world), 2);
+    sim.advance(trommi_client_core::engine::sync::UPKEEP_EVERY_MS);
+    assert!(rounds(&world) >= 3, "{:?}", requests(&world));
+    assert_eq!(chain_at_hub(&world, &world.me).len(), 2, "heads again: another sender's head moved");
+    assert!(sim.app.engine().unwrap().device().outbox().is_empty());
 }

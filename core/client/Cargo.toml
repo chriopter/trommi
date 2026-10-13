@@ -11,3 +11,7 @@ trommi-core = { path = "../protocol" }
 serde = { version = "=1.0.229", features = ["derive"] }
 # raw_value: a body is read without building its values (codec.rs)
 serde_json = { version = "=1.0.151", features = ["raw_value", "float_roundtrip"] }
+
+[dev-dependencies]
+# The seeded random source, for the test that runs one script twice (tests/engine.rs). Never in a shipped build.
+trommi-core = { path = "../protocol", features = ["vectors"] }
