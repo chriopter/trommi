@@ -107,7 +107,8 @@ extension Room {
     let head = Head(records: restoredCount + log.count, cursor: cursor, lamport: lamport)
     var snap: [UInt8]? = nil
     if wantSnap {
-      snap = JV.obj(["v": 1, "cursor": .num(Double(cursor)), "lamport": .num(Double(lamport)), "records": .num(Double(head.records)), "model": .str(board.modelSnapshot())]).encoded()
+      // (a small head line, then the client core's model as the JSON text it gave: never escaped into a string)
+      snap = JV.obj(["v": 2, "cursor": .num(Double(cursor)), "lamport": .num(Double(lamport)), "records": .num(Double(head.records))]).encoded() + [0x0A] + Array(board.modelSnapshot().utf8)
       sinceSnapshot = 0
     }
     let prev = saveTail
@@ -142,7 +143,8 @@ extension Room {
       guard let h = rs.readSmall(Head.self, from: rs.headURL, aad: "trommi ios head"), h.v == 5 else { return nil }
       var snap: Snap? = nil
       // (the client core's model as a whole, and the cursor, lamport and record count it stands at)
-      if let plain = rs.readBoard(), let v = JV.parse(plain), v["v"].int == 1, let c = v["cursor"].int, c <= h.cursor, let m = v["model"].string {
+      if let plain = rs.readBoard(), let nl = plain.firstIndex(of: 0x0A), let v = JV.parse(Array(plain[..<nl])), v["v"].int == 2,
+         let c = v["cursor"].int, c <= h.cursor, let m = String(bytes: plain[(nl + 1)...], encoding: .utf8) {
         snap = (UInt64(c), v["lamport"].int ?? 0, v["records"].int ?? 0, m)
       }
       guard let ix = rs.index(after: snap.map { Int($0.cursor) }) else { return nil }
