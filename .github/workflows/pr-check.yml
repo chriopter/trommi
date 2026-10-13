@@ -61,6 +61,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # a crate, a test target or a browser test that no workflow runs fails here (.github/scripts/ci_coverage.mjs)
+      - name: Every test is run by a workflow
+        run: node .github/scripts/ci_coverage.mjs
       - name: Find the changed parts
         id: find
         env:
@@ -138,11 +141,14 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
-        run: cargo clippy --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift --all-targets -- -D warnings
+        run: cargo clippy --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io --all-targets -- -D warnings
       - name: THIRD-PARTY.md is current
         run: node .github/scripts/third_party.mjs --check
+      # the Rust facade, the wasm exports, the JavaScript layer and the typings offer the same calls (Node only, under a second)
+      - name: The bindings manifest
+        run: node tests/bindings/manifest.mjs
       - name: The crates' own tests
-        run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift
+        run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped -p trommi-tests-shipped
       # One test that fails must not hide the others: every target runs, the step fails at the end.
       - name: The scenario tests (tests/core, tests/bindings) and the test library
         run: |
@@ -207,6 +213,21 @@ jobs:
         run: npm test
       - name: Build
         run: node app/web/dev/build.mjs --write
+      - name: The demo data
+        run: node demo/check.mjs
+      # The browser tests (headless Chrome of the runner), one after the other so that a failing one does not hide the others.
+      # (tests/web/build/wasm-load.mjs is not among them: it fails on main, see the pull request.)
+      - name: Browser tests
+        env:
+          CHROMIUM: google-chrome
+        run: |
+          status=0
+          for t in store/run.mjs proof/proof.mjs views/overflow.browser.mjs views/att-gone.browser.mjs views/foot-level.browser.mjs views/dock.browser.mjs views/security.browser.mjs views/news.browser.mjs views/tips.browser.mjs; do
+            echo "== $t"
+            node "tests/web/$t" || { echo "::error::tests/web/$t failed"; status=1; }
+          done
+          node --test tests/web/build/build.test.mjs || status=1
+          exit "$status"
 
   connector:
     name: Connector (check)
@@ -234,6 +255,8 @@ jobs:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
         run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
+      - name: The connector's own tests
+        run: cargo test --locked -p trommi-connector
       # The scenario tests start the hub of this repository and the built connector (tests/connector/common/mod.rs).
       - name: Test
         run: |
@@ -458,11 +481,23 @@ jobs:
           test -s smoke.png || { echo "the window drew nothing"; exit 1; }
           # (a QML error would leave the window empty: the picture must not be one plain colour)
           test "$(stat -c %s smoke.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
+      - name: Smoke test (Qt offscreen), on the app core
+        working-directory: app/linux
+        run: |
+          data=$(mktemp -d)
+          TROMMI_LINUX_APP_CORE=1 QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 TROMMI_LINUX_DIR="$data" \
+            TROMMI_LINUX_SHOT="$PWD/smoke-core.png" TROMMI_LINUX_SHOT_AFTER_MS=500 \
+            timeout 60 target/debug/trommi-linux 2>&1 | grep -v '^qt\.' || true
+          test -s smoke-core.png || { echo "the window drew nothing"; exit 1; }
+          # (a QML error would leave the window empty: the picture must not be one plain colour)
+          test "$(stat -c %s smoke-core.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: linux-smoke
-          path: app/linux/smoke.png
+          path: |
+            app/linux/smoke.png
+            app/linux/smoke-core.png
           if-no-files-found: ignore
           retention-days: 7
 
