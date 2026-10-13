@@ -189,6 +189,14 @@ pub struct Hub {
     pub desk_truncated: bool,
     /// The `first_change` the Desk names for every object; none: the truth.
     pub first_change_lie: Option<u64>,
+    /// Every SealedKey the hub was posted, in order (8.3).
+    pub rows: Vec<Vec<u8>>,
+    /// `POST /v1/groups/read` holds at most so many groups in one answer; the rest are `too-large` rows.
+    pub read_fits: Option<usize>,
+    /// A page of a group's log holds at most so many entries, whatever was asked.
+    pub log_max: Option<usize>,
+    /// Groups the hub says it does not know (`not-found`) on the read routes.
+    pub unseen: BTreeSet<GroupId>,
 }
 
 fn part(entry: &OutboxEntry, at: usize) -> &[u8] {
@@ -208,6 +216,24 @@ impl Hub {
         } else {
             self.sessions.get(group)
         }
+    }
+    /// A group as the hub serves it to a device that joins with the code: its founding GroupInfo, its Commits (the
+    /// change, the Commit, its RecoveryAuth) and its current GroupInfo.
+    #[allow(clippy::type_complexity)]
+    pub fn served(&self, group: &GroupId) -> (Vec<u8>, Vec<(u64, Vec<u8>, Option<Vec<u8>>)>, Vec<u8>) {
+        let epoch = self.epochs[group];
+        let commits = self
+            .order
+            .iter()
+            .filter_map(|i| match i {
+                Item::Log { change, group: g, commit: true, bytes, recovery_auth, .. } if g == group => Some((*change, bytes.clone(), recovery_auth.clone())),
+                _ => None,
+            })
+            .collect();
+        (self.group_infos[&(*group, 0)].clone(), commits, self.group_infos[&(*group, epoch)].clone())
+    }
+    pub fn session_groups(&self) -> Vec<GroupId> {
+        self.sessions.keys().copied().collect()
     }
     pub fn unused(&self, device: &DeviceId) -> usize {
         self.pools.get(device).map_or(0, |p| p.single_use.len())
@@ -239,6 +265,9 @@ impl Hub {
     fn accept_commit(&mut self, group: GroupId, epoch: u64, posted: &PostedCommit<'_>, from: &DeviceId, adds: &[DeviceId]) -> Value {
         self.epochs.insert(group, epoch + 1);
         self.group_infos.insert((group, epoch + 1), posted.group_info.to_vec());
+        if !posted.sealed_key.is_empty() {
+            self.rows.push(posted.sealed_key.to_vec());
+        }
         let (change, _) = self.append(group, true, epoch, posted.commit, posted.recovery_auth, from);
         if let Some(welcome) = posted.welcome {
             for device in adds {
@@ -332,6 +361,7 @@ impl Hub {
                 self.room = Some(observer);
                 self.epochs.insert(group, 0);
                 self.group_infos.insert((group, 0), part(entry, 0).to_vec());
+                self.rows.push(part(entry, 1).to_vec());
                 self.change += 1;
                 Ok(json!({ "room_id": group.room_id().to_base64url() }))
             }
@@ -349,6 +379,7 @@ impl Hub {
                 }
                 self.sessions.insert(group, observer);
                 self.group_infos.insert((group, 0), part(entry, 0).to_vec());
+                self.rows.push(part(entry, 1).to_vec());
                 self.epochs.insert(group, 0);
                 self.accept_commit(group, 0, &posted, from, &facts.adds);
                 Ok(json!({ "group_id": b64(group.as_bytes()) }))
@@ -412,7 +443,10 @@ impl Hub {
                 self.order.push(Item::Envelope { change: self.change, group, sender, seq, bytes: bytes.to_vec(), void_code: None });
                 Ok(json!({ "change": self.change }))
             }
-            OutboxKind::SealedKey => Ok(Value::Null),
+            OutboxKind::SealedKey => {
+                self.rows.push(part(entry, 0).to_vec());
+                Ok(Value::Null)
+            }
             _ => Err(no(Error::BadFormat)),
         }
     }
@@ -422,6 +456,28 @@ impl Hub {
     fn device_of(&self, now: u64, request: &HttpRequest) -> Option<DeviceId> {
         let value = request.headers.iter().find(|h| h.name.eq_ignore_ascii_case("authorization"))?.value.strip_prefix("Bearer ")?.to_string();
         self.tokens.get(&value).filter(|(_, until)| now < *until).map(|(device, _)| *device)
+    }
+
+    fn log_page(&self, group: &GroupId, after: u64, limit: usize, commits_only: bool) -> Value {
+        let limit = limit.min(self.log_max.unwrap_or(usize::MAX));
+        let mut items: Vec<Value> = self
+            .order
+            .iter()
+            .filter(|i| matches!(i, Item::Log { group: g, n, commit, .. } if g == group && *n > after && (*commit || !commits_only)))
+            .map(Item::json)
+            .collect();
+        let more = items.len() > limit;
+        items.truncate(limit);
+        json!({ "items": items, "more": more })
+    }
+
+    fn info(&self, group: &GroupId, epoch: Option<u64>) -> Result<Value, No> {
+        if self.unseen.contains(group) {
+            return Err(no(Error::NotFound));
+        }
+        let epoch = epoch.or(self.epochs.get(group).copied()).ok_or(no(Error::NotFound))?;
+        let info = self.group_infos.get(&(*group, epoch)).ok_or(no(Error::NotFound))?;
+        Ok(json!({ "epoch": epoch, "group_info": b64(info) }))
     }
 
     /// The hub keeps a void record under the next number of this chain (a test's refusal with `voided: true`).
@@ -516,10 +572,58 @@ impl Hub {
             ("GET", ["v1", "groups", _, "log"]) => {
                 let group = group_at(2)?;
                 let (after, limit) = (num("after"), num("limit").clamp(1, 1000) as usize);
-                let mut items: Vec<Value> = self.order.iter().filter(|i| matches!(i, Item::Log { group: g, n, .. } if *g == group && *n > after)).map(Item::json).collect();
-                let more = items.len() > limit;
-                items.truncate(limit);
-                Ok(json!({ "items": items, "more": more }))
+                if self.unseen.contains(&group) {
+                    return Err(no(Error::NotFound));
+                }
+                Ok(self.log_page(&group, after, limit, q("kind") == Some("commit")))
+            }
+            ("GET", ["v1", "groups", _, "info"]) => self.info(&group_at(2)?, q("epoch").and_then(|e| e.parse().ok())),
+            ("POST", ["v1", "groups", "read"]) => {
+                let asked: Vec<GroupId> = body["groups"].as_array().into_iter().flatten().filter_map(|g| g.as_str().and_then(|s| base64url_decode(s).ok()).and_then(|b| GroupId::from_bytes(&b).ok())).collect();
+                let distinct: BTreeSet<&GroupId> = asked.iter().collect();
+                if asked.is_empty() || asked.len() > 64 || distinct.len() != asked.len() {
+                    return Err(no(Error::BadFormat));
+                }
+                let fits = self.read_fits.unwrap_or(usize::MAX).max(1);
+                let rows: Vec<Value> = asked
+                    .iter()
+                    .enumerate()
+                    .map(|(at, group)| {
+                        let name = b64(group.as_bytes());
+                        if at >= fits {
+                            return json!({ "group": name, "error": "too-large", "message": "refused", "status": 413 });
+                        }
+                        match (self.info(group, None), self.epochs.get(group)) {
+                            (Ok(info), Some(epoch)) => json!({ "group": name, "info": info,
+                                "founding": if *epoch == 0 { Value::Null } else { self.info(group, Some(0)).unwrap_or(Value::Null) },
+                                "log": self.log_page(group, 0, 256, true) }),
+                            _ => json!({ "group": name, "error": "not-found", "message": "refused", "status": 404 }),
+                        }
+                    })
+                    .collect();
+                Ok(json!({ "groups": rows }))
+            }
+            ("POST", ["v1", "commits"]) => {
+                let commits = body["commits"].as_array().cloned().unwrap_or_default();
+                if commits.is_empty() || commits.len() > 64 {
+                    return Err(no(Error::BadFormat));
+                }
+                let b = |v: &Value, name: &str| v.get(name).and_then(Value::as_str).and_then(|s| base64url_decode(s).ok()).unwrap_or_default();
+                let answers: Vec<Value> = commits
+                    .iter()
+                    .map(|c| {
+                        let Some(group) = GroupId::from_bytes(&b(c, "group")).ok() else {
+                            return json!({ "error": "bad-format", "message": "refused", "status": 400 });
+                        };
+                        let entry = OutboxEntry { id: 0, kind: OutboxKind::ExternalCommit, group: Some(group), epoch: c["epoch"].as_u64().unwrap_or(0),
+                            parts: vec![b(c, "commit"), b(c, "group_info"), b(c, "sealed_key"), b(c, "recovery_auth")] };
+                        match self.post(&device, &entry) {
+                            Ok(v) => v,
+                            Err(n) => json!({ "error": n.code, "message": "refused", "status": n.status }),
+                        }
+                    })
+                    .collect();
+                Ok(json!({ "answers": answers }))
             }
             ("GET", ["v1", "groups", _, "chains", sender]) => {
                 let group = group_at(2)?;
