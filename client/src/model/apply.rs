@@ -724,6 +724,7 @@ fn new_card(object_id: &str, owner: &str, r: &Received) -> Card {
         created_at: r.time,
         updated_at: r.time,
         versions: Vec::new(),
+        history: Vec::new(),
         answer: None,
         answers: Vec::new(),
         closed_how: None,
@@ -912,6 +913,7 @@ impl Model {
                     at
                 }
             };
+            card.history = history_of(&card.versions);
             if n >= card.envelope_number {
                 // the newest version this device knows: the card's own fields
                 let v = card.versions[v_at].clone();

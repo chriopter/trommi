@@ -26,7 +26,9 @@ const sessionOf = s => ({
 })
 const memberOf = ({ agent_session_id: _, ...m }) => ({ platform: null, folder: null, host: null, offline_since: null, link: null, fingerprint: m.device_id.slice(0, 16).match(/.{4}/g).join(' '), ...m })
 const answerOf = a => Object.assign(a, { envelope_hash: a.envelope_hash ?? null, by_device_id: a.by_device_id ?? null, taken_back_at: a.taken_back_at ?? null, taken_back_sent_at: a.taken_back_sent_at ?? null, pending: false })
-const cardOf = c => { for (const a of [c.answer, ...c.answers]) if (a) answerOf(a); return Object.assign(c, { session_id: c.session_id ?? c.agent_device_id, state_envelope_number: c.state_envelope_number ?? c.envelope_number ?? 0, unsupported: c.unsupported ?? null }) }
+// A card's history as the client core keeps it (client/src/model/types.rs history_of): the demo has no core.
+const historyOf = versions => versions.filter(v => v.object_version === 1 || v.object_state === 'open').map(v => ({ object_version: v.object_version, envelope_number: v.envelope_number, sent_at: v.sent_at, note: String(v.content?.change_note ?? '').trim(), title: String(v.content?.title ?? '').trim() }))
+const cardOf = c => { for (const a of [c.answer, ...c.answers]) if (a) answerOf(a); return Object.assign(c, { history: historyOf(c.versions ?? []), session_id: c.session_id ?? c.agent_device_id, state_envelope_number: c.state_envelope_number ?? c.envelope_number ?? 0, unsupported: c.unsupported ?? null }) }
 const requestOf = p => Object.assign(p, { session_id: p.session_id ?? p.agent_device_id, content_state: p.content_state ?? 'ok' })
 const publishedOf = p => Object.assign(p, { session_id: p.session_id ?? p.agent_device_id, artifact_type: p.artifact_type ?? null, content_state: p.content_state ?? 'ok' })
 const noteOf = n => Object.assign(n, { version_hashes: n.version_hashes ?? (n.version_hash ? [n.version_hash] : []), causal: n.causal ?? null, pending: false, unsupported: false })
@@ -341,7 +343,7 @@ export class MockClient {
       const n = this.next(), hash = hex(64)
       const content = { ...card.versions.at(-1).content, change_note: `Reworked: ${String(why ?? '').slice(0, 80)}`, body: `${card.body}\n\n(Reworked after you handed it back.)` }
       card.versions.push({ object_version: card.object_version + 1, version_hash: hash, previous_version_hash: card.version_hash, envelope_number: n, sent_at: Date.now(), object_state: 'open', urgency: card.urgency, content })
-      Object.assign(card, content, { object_version: card.object_version + 1, version_hash: hash, envelope_number: n, updated_at: Date.now(), in_revision: null })
+      Object.assign(card, content, { object_version: card.object_version + 1, version_hash: hash, envelope_number: n, updated_at: Date.now(), in_revision: null, history: historyOf(card.versions) })
       c.cards.add(card.object_id); c.stack = true
     })
   }

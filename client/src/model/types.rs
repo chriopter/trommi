@@ -241,6 +241,9 @@ pub struct Card {
     pub created_at: u64,
     pub updated_at: u64,
     pub versions: Vec<CardVersion>,
+    /// What the card went through, the oldest first: every version a human reads as the card (`history_of`). Kept
+    /// with the versions (the apps list it under the card, the newest version stands on top).
+    pub history: Vec<Revision>,
     pub answer: Option<Answer>,
     pub answers: Vec<Answer>,
     pub closed_how: Option<String>,
@@ -345,6 +348,7 @@ impl From<CardIn> for Card {
             first_envelope_number: c.first_envelope_number,
             created_at: c.created_at,
             updated_at: c.updated_at,
+            history: history_of(&c.versions),
             versions: c.versions,
             answer: c.answer,
             answers: c.answers,
@@ -360,6 +364,40 @@ impl From<CardIn> for Card {
             unsnoozed: c.unsnoozed,
         }
     }
+}
+
+/// One entry of a card's history: a version a human reads as the card, with what its agent said changed.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Revision {
+    pub object_version: i64,
+    pub envelope_number: u64,
+    pub sent_at: u64,
+    /// The version's `change_note` (revise_card's note), "" without one.
+    pub note: String,
+    /// The version's title, "" where its body is not read.
+    pub title: String,
+}
+
+/// A card's history from its versions (oldest first): the first version, and every later one that leaves the card
+/// open (a revision). A version that closes it (close, withdraw, merge) is no revision: the apps show it as the end.
+/// Every revision stays: a newer one never replaces the ones before it.
+pub fn history_of(versions: &[CardVersion]) -> Vec<Revision> {
+    versions
+        .iter()
+        .filter(|v| v.object_version == 1 || v.object_state == "open")
+        .map(|v| {
+            let body = v.content.as_ref().map(RawObj::obj).unwrap_or_default();
+            let text = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+            Revision {
+                object_version: v.object_version,
+                envelope_number: v.envelope_number,
+                sent_at: v.sent_at,
+                note: text("change_note"),
+                title: text("title"),
+            }
+        })
+        .collect()
 }
 
 impl Card {
@@ -628,5 +666,48 @@ pub mod pairs {
     ) -> Result<BTreeMap<String, V>, D::Error> {
         let list: Vec<(String, V)> = Vec::deserialize(d)?;
         Ok(list.into_iter().collect())
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A card asked once, revised five times (each with its note), then closed: the version that closes it is no revision.
+    fn revised_five_times() -> Card {
+        let mut versions = vec![json!({ "object_version": 1, "envelope_number": 10, "sent_at": 1000, "object_state": "open", "content": { "title": "Working on: the history" } })];
+        for n in 2..=6 {
+            versions.push(json!({ "object_version": n, "envelope_number": 10 * n, "sent_at": 1000 * n, "object_state": "open",
+                "content": { "title": format!("Step {n}"), "change_note": format!("step {n} done") } }));
+        }
+        versions.push(json!({ "object_version": 7, "envelope_number": 70, "sent_at": 7000, "object_state": "closed", "content": { "title": "Step 6", "close_summary": "done" } }));
+        serde_json::from_value(json!({ "object_id": "c1", "agent_device_id": "a1", "object_state": "closed", "versions": versions })).unwrap()
+    }
+
+    #[test]
+    fn a_card_revised_five_times_keeps_five_revisions_under_its_first_version() {
+        let card = revised_five_times();
+        let h = &card.history;
+        assert_eq!(h.len(), 6, "the first version and every revision; the closing version is none");
+        assert_eq!(h.iter().filter(|r| r.object_version > 1).count(), 5);
+        assert_eq!(h.iter().map(|r| r.object_version).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(h[0].title, "Working on: the history");
+        assert_eq!(h[0].note, "");
+        assert_eq!((h[3].note.as_str(), h[3].title.as_str(), h[3].sent_at, h[3].envelope_number), ("step 4 done", "Step 4", 4000, 40));
+        // (written and read again, the history is the same: worked out from the versions)
+        let again: Card = serde_json::from_value(serde_json::to_value(&card).unwrap()).unwrap();
+        assert_eq!(again.history, card.history);
+    }
+
+    #[test]
+    fn a_version_whose_body_is_not_read_is_still_an_entry() {
+        let card: Card = serde_json::from_value(json!({ "object_id": "c1", "versions": [
+            { "object_version": 1, "envelope_number": 1, "object_state": "open", "content": { "title": "Q" } },
+            { "object_version": 2, "envelope_number": 2, "object_state": "open" },
+        ] }))
+        .unwrap();
+        assert_eq!(card.history.len(), 2);
+        assert_eq!((card.history[1].note.as_str(), card.history[1].title.as_str()), ("", ""));
     }
 }
