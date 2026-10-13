@@ -53,25 +53,31 @@ Updates come by themselves: a running connector installs a new signed release an
 - **Connector:** one signed program that joins a Claude Code or Codex session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
-```mermaid
-flowchart TB
-    core["<b>core/</b> (Rust, OpenMLS)<br/>all cryptography"]
-    client["<b>client/</b> (Rust)<br/>board, Desk, sessions,<br/>status, presence, seats"]
-    web["<b>app/web</b><br/>WebAssembly"]
-    ios["<b>app/ios</b><br/>iPhone, iPad, Mac<br/>UniFFI, Swift"]
-    conn["<b>connector/</b><br/>native"]
-    hub["<b>hub/</b> (native)<br/>stores ciphertext,<br/>checks MLS changes"]
-
-    core --> client
-    core --> conn
-    client --> web
-    client --> ios
-    web <-->|MLS| hub
-    ios <-->|MLS| hub
-    conn <-->|MLS| hub
+```
+┌─────────────┐  ┌───────────────────┐
+│ app/web     │  │ app/ios           │
+│ WebAssembly │  │ iPhone, iPad, Mac │
+└─────────────┘  └───────────────────┘
+       │                   │
+┌─────────────────────────────┐  ┌─────────────────────────────┐
+│ client/ (Rust)              │  │ connector/                  │
+│ board, Desk, sessions,      │  │ Claude Code and Codex       │
+│ status, presence, seats     │  │ (native)                    │
+└─────────────────────────────┘  └─────────────────────────────┘
+               │                    │
+┌──────────────────────────────────────┐  ┌────────────────────┐
+│ core/ (Rust)                         │  │ hub/ (server)      │
+│ all cryptography                     │  │ stores ciphertext, │
+│                                      │  │ checks MLS changes │
+└──────────────────────────────────────┘  └────────────────────┘
+                    │                                │
+┌──────────────────────────────────────────────────────────────┐
+│                           OpenMLS                            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-Everything between the devices and the hub is MLS, end-to-end encrypted: the hub sees sealed messages only, and keys stay on devices.
+Each box is built on the one below it. The hub shares no code with `core/` or `client/`: both sit on OpenMLS. All
+devices talk to the hub with sealed MLS messages, and keys stay on devices.
 
 Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `client/`
 (the client core) is what every app decides the same way above it: the board model, the Desk (which cards stand on
