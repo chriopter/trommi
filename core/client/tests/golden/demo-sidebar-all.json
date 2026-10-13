@@ -23,6 +23,238 @@
   ],
   "sessions": [
     {
+      "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "name": {
+        "key": "session.name",
+        "en": "Fernly Website"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "fernly-web",
+      "mark": "draw:leaf",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": true,
+      "subs": [
+        "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+        "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+        "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+        "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
+        "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
+        "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7"
+      ],
+      "open": 2,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "heading": {
+        "kind": "desk",
+        "text": {
+          "key": "desk.name",
+          "en": "Fernly"
+        },
+        "desk_id": "main",
+        "waiting": 14
+      },
+      "group": "main:on",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "2"
+        },
+        "en": "Working, 2 questions open"
+      },
+      "folded": {
+        "open": 8,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "8"
+          },
+          "en": "Working, 8 questions open"
+        }
+      }
+    },
+    {
+      "id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+      "name": {
+        "key": "session.name",
+        "en": "Landing Page"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "landing-page",
+      "mark": "draw:brush",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+      "name": {
+        "key": "session.name",
+        "en": "Copywriting"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "copy",
+      "mark": "draw:pen",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 2,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "2"
+        },
+        "en": "2 questions open"
+      }
+    },
+    {
+      "id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+      "name": {
+        "key": "session.name",
+        "en": "Onboarding"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "onboarding",
+      "mark": "draw:kite",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 2,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "2"
+        },
+        "en": "2 questions open"
+      }
+    },
+    {
+      "id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
+      "name": {
+        "key": "session.name",
+        "en": "Page Speed"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "web-perf",
+      "mark": "draw:bolt",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
+      "name": {
+        "key": "session.name",
+        "en": "Testing"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "e2e-tests",
+      "mark": "draw:flask",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "1"
+        },
+        "en": "Working, 1 question open"
+      }
+    },
+    {
+      "id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+      "name": {
+        "key": "session.name",
+        "en": "Search & Social"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "seo",
+      "mark": "draw:eye",
+      "desk_id": "main",
+      "online": false,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
       "id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
       "name": {
         "key": "session.name",
@@ -49,15 +281,6 @@
       "knocks": false,
       "hushed": false,
       "away": false,
-      "heading": {
-        "kind": "desk",
-        "text": {
-          "key": "desk.name",
-          "en": "Fernly"
-        },
-        "desk_id": "main",
-        "waiting": 14
-      },
       "group": "main:on",
       "says": {
         "key": "badge.working_open",
@@ -191,229 +414,6 @@
       "group": ""
     },
     {
-      "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-      "name": {
-        "key": "session.name",
-        "en": "Fernly Website"
-      },
-      "link": "live",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 0,
-      "slug": "fernly-web",
-      "mark": "draw:leaf",
-      "desk_id": "main",
-      "online": true,
-      "working": true,
-      "main": true,
-      "crowned": true,
-      "subs": [
-        "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
-        "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
-        "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
-        "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
-        "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
-        "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1"
-      ],
-      "open": 2,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "main:on",
-      "says": {
-        "key": "badge.working_open",
-        "args": {
-          "n": "2"
-        },
-        "en": "Working, 2 questions open"
-      },
-      "folded": {
-        "open": 8,
-        "knocks": false,
-        "online": true,
-        "working": true,
-        "says": {
-          "key": "badge.working_open",
-          "args": {
-            "n": "8"
-          },
-          "en": "Working, 8 questions open"
-        }
-      }
-    },
-    {
-      "id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
-      "name": {
-        "key": "session.name",
-        "en": "Search & Social"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "seo",
-      "mark": "draw:eye",
-      "desk_id": "main",
-      "online": false,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": ""
-    },
-    {
-      "id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
-      "name": {
-        "key": "session.name",
-        "en": "Page Speed"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "web-perf",
-      "mark": "draw:bolt",
-      "desk_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": ""
-    },
-    {
-      "id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
-      "name": {
-        "key": "session.name",
-        "en": "Testing"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "e2e-tests",
-      "mark": "draw:flask",
-      "desk_id": "main",
-      "online": true,
-      "working": true,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.working_open",
-        "args": {
-          "n": "1"
-        },
-        "en": "Working, 1 question open"
-      }
-    },
-    {
-      "id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
-      "name": {
-        "key": "session.name",
-        "en": "Onboarding"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "onboarding",
-      "mark": "draw:kite",
-      "desk_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-      "open": 2,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "2"
-        },
-        "en": "2 questions open"
-      }
-    },
-    {
-      "id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
-      "name": {
-        "key": "session.name",
-        "en": "Copywriting"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "copy",
-      "mark": "draw:pen",
-      "desk_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-      "open": 2,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "2"
-        },
-        "en": "2 questions open"
-      }
-    },
-    {
-      "id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
-      "name": {
-        "key": "session.name",
-        "en": "Landing Page"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "landing-page",
-      "mark": "draw:brush",
-      "desk_id": "main",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      }
-    },
-    {
       "id": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
       "name": {
         "key": "session.name",
@@ -431,9 +431,9 @@
       "main": true,
       "crowned": false,
       "subs": [
+        "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
         "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
-        "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
-        "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad"
+        "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc"
       ],
       "open": 0,
       "knocks": false,
@@ -452,6 +452,37 @@
           },
           "en": "Working, 3 questions open"
         }
+      }
+    },
+    {
+      "id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+      "name": {
+        "key": "session.name",
+        "en": "Design Tokens"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "tokens",
+      "mark": "draw:drop",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "1"
+        },
+        "en": "Working, 1 question open"
       }
     },
     {
@@ -517,34 +548,323 @@
       }
     },
     {
-      "id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+      "id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
       "name": {
         "key": "session.name",
-        "en": "Design Tokens"
+        "en": "Payments"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "payments-service",
+      "mark": "draw:lock",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": true,
+      "subs": [
+        "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
+        "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
+        "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
+        "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
+        "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8"
+      ],
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "heading": {
+        "kind": "desk",
+        "text": {
+          "key": "desk.name",
+          "en": "Platform"
+        },
+        "desk_id": "platform",
+        "waiting": 10
+      },
+      "group": "platform:on",
+      "folded": {
+        "open": 3,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "3"
+          },
+          "en": "Working, 3 questions open"
+        }
+      }
+    },
+    {
+      "id": "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
+      "name": {
+        "key": "session.name",
+        "en": "Webhooks"
       },
       "link": "",
       "blocked": false,
       "unheard": 0,
       "depth": 1,
-      "slug": "tokens",
-      "mark": "draw:drop",
-      "desk_id": "main",
+      "slug": "webhooks",
+      "mark": "draw:arrow",
+      "desk_id": "platform",
       "online": true,
-      "working": true,
+      "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
+      "name": {
+        "key": "session.name",
+        "en": "Checkout"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "checkout",
+      "mark": "draw:cup",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
       "open": 1,
       "knocks": false,
       "hushed": false,
       "away": false,
       "group": "",
       "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
+      "name": {
+        "key": "session.name",
+        "en": "Invoices"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "invoices",
+      "mark": "draw:book",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
+      "name": {
+        "key": "session.name",
+        "en": "Tax & VAT"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "tax",
+      "mark": "draw:key",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
+      "name": {
+        "key": "session.name",
+        "en": "Load Testing"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "load-test",
+      "mark": "draw:burst",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "name": {
+        "key": "session.name",
+        "en": "Data Pipeline"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "data-pipeline",
+      "mark": "draw:database",
+      "desk_id": "platform",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": false,
+      "subs": [
+        "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
+        "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
+        "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374"
+      ],
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "platform:on",
+      "says": {
         "key": "badge.working_open",
         "args": {
           "n": "1"
         },
         "en": "Working, 1 question open"
+      },
+      "folded": {
+        "open": 2,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "2"
+          },
+          "en": "Working, 2 questions open"
+        }
+      }
+    },
+    {
+      "id": "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
+      "name": {
+        "key": "session.name",
+        "en": "Event Intake"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "ingest",
+      "mark": "draw:waves",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
+      "name": {
+        "key": "session.name",
+        "en": "Data Models"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "dbt-models",
+      "mark": "draw:branch",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
+      "name": {
+        "key": "session.name",
+        "en": "Dashboards"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "dashboard",
+      "mark": "draw:eye",
+      "desk_id": "platform",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
       }
     },
     {
@@ -565,13 +885,13 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
+        "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
         "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
         "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
-        "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
         "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
-        "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
-        "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26"
+        "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26",
+        "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
+        "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa"
       ],
       "open": 1,
       "knocks": true,
@@ -584,15 +904,6 @@
       },
       "hushed": false,
       "away": false,
-      "heading": {
-        "kind": "desk",
-        "text": {
-          "key": "desk.name",
-          "en": "Platform"
-        },
-        "desk_id": "platform",
-        "waiting": 10
-      },
       "group": "platform:on",
       "says": {
         "key": "badge.stopped_open",
@@ -625,28 +936,35 @@
       }
     },
     {
-      "id": "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
+      "id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
       "name": {
         "key": "session.name",
-        "en": "Monitoring"
+        "en": "Terraform"
       },
       "link": "",
       "blocked": false,
       "unheard": 0,
       "depth": 1,
-      "slug": "observability",
-      "mark": "draw:eye",
+      "slug": "terraform",
+      "mark": "draw:house",
       "desk_id": "platform",
       "online": true,
       "working": false,
       "main": false,
       "crowned": false,
       "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
-      "open": 0,
+      "open": 1,
       "knocks": false,
       "hushed": false,
       "away": false,
-      "group": ""
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
     },
     {
       "id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
@@ -704,37 +1022,6 @@
       "group": ""
     },
     {
-      "id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
-      "name": {
-        "key": "session.name",
-        "en": "Terraform"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "terraform",
-      "mark": "draw:house",
-      "desk_id": "platform",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      }
-    },
-    {
       "id": "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
       "name": {
         "key": "session.name",
@@ -748,30 +1035,6 @@
       "mark": "draw:cloud",
       "desk_id": "platform",
       "online": false,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": ""
-    },
-    {
-      "id": "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
-      "name": {
-        "key": "session.name",
-        "en": "Cloud Costs"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "cost",
-      "mark": "draw:comb",
-      "desk_id": "platform",
-      "online": true,
       "working": false,
       "main": false,
       "crowned": false,
@@ -807,128 +1070,23 @@
       "group": ""
     },
     {
-      "id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "id": "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
       "name": {
         "key": "session.name",
-        "en": "Payments"
-      },
-      "link": "live",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 0,
-      "slug": "payments-service",
-      "mark": "draw:lock",
-      "desk_id": "platform",
-      "online": true,
-      "working": true,
-      "main": true,
-      "crowned": true,
-      "subs": [
-        "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
-        "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
-        "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
-        "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
-        "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55"
-      ],
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "platform:on",
-      "folded": {
-        "open": 3,
-        "knocks": false,
-        "online": true,
-        "working": true,
-        "says": {
-          "key": "badge.working_open",
-          "args": {
-            "n": "3"
-          },
-          "en": "Working, 3 questions open"
-        }
-      }
-    },
-    {
-      "id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
-      "name": {
-        "key": "session.name",
-        "en": "Tax & VAT"
+        "en": "Monitoring"
       },
       "link": "",
       "blocked": false,
       "unheard": 0,
       "depth": 1,
-      "slug": "tax",
-      "mark": "draw:key",
+      "slug": "observability",
+      "mark": "draw:eye",
       "desk_id": "platform",
       "online": true,
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      }
-    },
-    {
-      "id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
-      "name": {
-        "key": "session.name",
-        "en": "Checkout"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "checkout",
-      "mark": "draw:cup",
-      "desk_id": "platform",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      }
-    },
-    {
-      "id": "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
-      "name": {
-        "key": "session.name",
-        "en": "Load Testing"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "load-test",
-      "mark": "draw:burst",
-      "desk_id": "platform",
-      "online": true,
-      "working": true,
-      "main": false,
-      "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -936,54 +1094,23 @@
       "group": ""
     },
     {
-      "id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
+      "id": "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
       "name": {
         "key": "session.name",
-        "en": "Invoices"
+        "en": "Cloud Costs"
       },
       "link": "",
       "blocked": false,
       "unheard": 0,
       "depth": 1,
-      "slug": "invoices",
-      "mark": "draw:book",
+      "slug": "cost",
+      "mark": "draw:comb",
       "desk_id": "platform",
       "online": true,
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      }
-    },
-    {
-      "id": "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
-      "name": {
-        "key": "session.name",
-        "en": "Webhooks"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "webhooks",
-      "mark": "draw:arrow",
-      "desk_id": "platform",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -1091,137 +1218,9 @@
       "hushed": false,
       "away": false,
       "group": ""
-    },
-    {
-      "id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
-      "name": {
-        "key": "session.name",
-        "en": "Data Pipeline"
-      },
-      "link": "live",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 0,
-      "slug": "data-pipeline",
-      "mark": "draw:database",
-      "desk_id": "platform",
-      "online": true,
-      "working": true,
-      "main": true,
-      "crowned": false,
-      "subs": [
-        "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
-        "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
-        "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802"
-      ],
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "platform:on",
-      "says": {
-        "key": "badge.working_open",
-        "args": {
-          "n": "1"
-        },
-        "en": "Working, 1 question open"
-      },
-      "folded": {
-        "open": 2,
-        "knocks": false,
-        "online": true,
-        "working": true,
-        "says": {
-          "key": "badge.working_open",
-          "args": {
-            "n": "2"
-          },
-          "en": "Working, 2 questions open"
-        }
-      }
-    },
-    {
-      "id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
-      "name": {
-        "key": "session.name",
-        "en": "Dashboards"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "dashboard",
-      "mark": "draw:eye",
-      "desk_id": "platform",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
-      "open": 1,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": "",
-      "says": {
-        "key": "badge.open",
-        "args": {
-          "n": "1"
-        },
-        "en": "1 question open"
-      }
-    },
-    {
-      "id": "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
-      "name": {
-        "key": "session.name",
-        "en": "Event Intake"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "ingest",
-      "mark": "draw:waves",
-      "desk_id": "platform",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": ""
-    },
-    {
-      "id": "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
-      "name": {
-        "key": "session.name",
-        "en": "Data Models"
-      },
-      "link": "",
-      "blocked": false,
-      "unheard": 0,
-      "depth": 1,
-      "slug": "dbt-models",
-      "mark": "draw:branch",
-      "desk_id": "platform",
-      "online": true,
-      "working": false,
-      "main": false,
-      "crowned": false,
-      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
-      "open": 0,
-      "knocks": false,
-      "hushed": false,
-      "away": false,
-      "group": ""
     }
   ],
   "badge": 24,
-  "knocks": true,
   "desk": "all",
   "all": {
     "id": "all",

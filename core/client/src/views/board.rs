@@ -102,6 +102,8 @@ pub struct Board<'a> {
 
 /// A card that reads as an info: one that is, one of a newer Trommi, and one whose body is not read here yet (a
 /// quiet placeholder: nothing to answer and no knock until it is read).
+// (the owner, 13 October 2026, card 0b89a1c7: what is not read here yet waits quietly everywhere: no question, no
+//  knock, no red hand (status.rs), no answers on its row)
 pub fn reads_as_info(c: &Card) -> bool {
     c.field("card_type").as_str() == Some("info") || c.is_unsupported() || is_loading(c)
 }
@@ -342,4 +344,17 @@ pub fn clean_goals(text: &str) -> String {
         .collect();
     let joined = lines.join("\n");
     joined.trim_matches('\n').split('\n').take(GOALS_LINES).collect::<Vec<_>>().join("\n")
+}
+
+/// Makes the board's units of `view` again from the model: the sidebar and the Desk (sessions and cards follow).
+/// What the engine and the account own (`phase`, `status`, `account`, `files`, `toasts`) is left as it is. Returns
+/// when to call again by the clock alone (a count of minutes, an answer that turns late), if ever. The App calls
+/// this after each batch and at that moment, and sends what `ViewModel::diff` finds.
+pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
+    let b = Board::new(model, lens, now);
+    view.sidebar = super::sidebar::sidebar(&b);
+    view.desk = super::desk::desk(&b);
+    // (and when a session's link, red hand or status line changes by the clock: status.rs `recheck_at`)
+    let status = b.agents.iter().filter_map(|a| a.row.recheck_at).min();
+    earliest(b.wake(), status)
 }
