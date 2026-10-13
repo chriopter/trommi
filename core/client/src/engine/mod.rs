@@ -93,7 +93,7 @@
 //! # Not here yet
 //!
 //! The Desk as a delta on a warm start, the reading of the room's past (one
-//! module, one entry point, behind [`Engine::reread_from`]), recovery of a closed device, wishes to be let in again
+//! module, one entry point, behind [`Engine::reread_from`]), wishes to be let in again
 //! (`readmit`) and a leaf's refusal of a Commit (`reject`).
 //!
 //! # Beside the order

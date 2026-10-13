@@ -112,10 +112,21 @@ pub enum Connection {
 pub enum Stopped {
     /// A Commit of the room group removed this device.
     Removed,
-    /// Another owner wrote the device state, or a write failed: memory is ahead of what is stored.
+    /// Another owner wrote the device state: this App is no owner of it any more (the shell opens it again).
     Store,
-    /// The device itself failed (its store's contents, its entropy).
+    /// A write of the device state failed otherwise (the store is full, refused): memory is ahead of what is stored.
+    /// The App opens the stored state again in place.
+    Write,
+    /// The device itself failed (its store's contents, its entropy). The App opens the stored state again in place.
     Device,
+}
+
+impl Stopped {
+    /// Whether the App opens the stored state again in place: the stored state is the last good one, and nobody
+    /// else holds it.
+    pub fn reopens(self) -> bool {
+        matches!(self, Stopped::Write | Stopped::Device)
+    }
 }
 
 /// An alert for the person. The words are the App's (`views`); the engine names what happened.
@@ -665,7 +676,8 @@ impl Engine {
             Some(Asked::DeviceWrite) => {
                 if let IoResult::Err(e) = result {
                     ctx.log(LogLevel::Error, format!("device write: {:?}", e.kind));
-                    self.stop(ctx, Stopped::Store);
+                    let why = if e.kind == crate::app::io::IoErrorKind::Conflict { Stopped::Store } else { Stopped::Write };
+                    self.stop(ctx, why);
                 }
                 true
             }

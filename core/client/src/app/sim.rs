@@ -40,6 +40,9 @@ pub struct Sim {
     pub die_in: Option<usize>,
     pub dead: bool,
     pub held: VecDeque<(IoId, HttpRequest)>,
+    /// So many of the next device writes fail as a full store does (`full`), and so many device loads (`failed`).
+    pub device_full: u32,
+    pub load_fails: u32,
     /// Every effect the App asked for, in order (for assertions).
     pub log: Vec<Effect>,
     queue: VecDeque<Event>,
@@ -61,6 +64,8 @@ impl Sim {
             die_in: None,
             dead: false,
             held: VecDeque::new(),
+            device_full: 0,
+            load_fails: 0,
             log: Vec::new(),
             queue: VecDeque::new(),
         }
@@ -244,6 +249,10 @@ impl Sim {
                 }
                 IoResult::Ok(StoreAnswer::Done)
             }
+            StoreOp::DeviceLoad if self.load_fails > 0 => {
+                self.load_fails -= 1;
+                IoResult::Err(IoError::new(IoErrorKind::Failed))
+            }
             StoreOp::DeviceLoad => IoResult::Ok(StoreAnswer::Device {
                 revision: self.device.0,
                 entries: self
@@ -263,6 +272,10 @@ impl Sim {
             } => {
                 if expected_revision != self.device.0 {
                     return IoResult::Err(IoError::new(IoErrorKind::Conflict));
+                }
+                if self.device_full > 0 {
+                    self.device_full -= 1;
+                    return IoResult::Err(IoError::new(IoErrorKind::Full));
                 }
                 for k in delete {
                     self.device.1.remove(&k.0);
