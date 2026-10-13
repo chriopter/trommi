@@ -24,6 +24,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | **Groups (MLS delivery service)** | | |
 | `POST /v1/groups` | `{ group_info_0, sealed_key_0, commit, group_info, welcome?, sealed_key }` → `{ group_id }` | founding of a session group (5.2.5); `incomplete` when it leaves out a human device the hub holds a KeyPackage of (claim again) |
 | `POST /v1/groups/{group}/commits` | `{ epoch, commit, group_info, welcome?, sealed_key, recovery_auth? }` → `{ epoch, change }` | `epoch` = the epoch it builds on; `epoch-taken`, `room-behind`, `bad-commit`, `incomplete` |
+| `POST /v1/commits` | `{ commits: [ { group, epoch, commit, group_info, welcome?, sealed_key, recovery_auth? } ] }` (1 to 64, one per group) → `{ answers: [ { epoch, change } \| { error, message, status, … } ] }` | each Commit taken as `POST /v1/groups/{group}/commits` takes it, in the order sent, and answered in its place (a sign-in posts the joins of its sessions so, 8.5); one refused leaves the others as they are; only the request's own form refuses it whole |
 | `POST /v1/rooms/{room}/recovery` → `{ recovery_id, expires_at }` · `POST …/recovery/{id}/commits` (`{ group_id, epoch, commit, group_info, welcome?, sealed_key, recovery_auth? }`, one per call) → `{ epoch, kept }` · `POST …/recovery/{id}/finish` (`{ recovery_link, account }`) → `{ published, first_change, change, device }` · `DELETE` | recovery key's token | 8.7: the room is locked for ten minutes; nothing is visible to others until `finish`, which publishes all or nothing |
 | `POST /v1/rooms/{room}/recovery-code` | `{ commit: { epoch, commit, group_info, sealed_key }, recovery_link, account }` → `{ epoch, change }` | 8.6: one room Commit, all or nothing; a human device |
 | `POST /v1/groups/{group}/reject` | `{ n }` | 14.7 |
@@ -46,7 +47,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `POST /v1/boards/{board}/frontier` | `{ frontier: { <writer>: [seq, hash] }, files: [file_id], snapshot?: [seq, hash] }` → `{ pruned }` | human devices: without `snapshot` before writing `board_snapshot/<board>`, with it once the value is taken (v1.md 10.9); `pruned`: item bodies pruned now |
 | `GET /v1/cards/{object}?after=&limit=` (and `/notes/`, `/permission-requests/`, `/artifacts/`) | → `{ items, more, state, owner, … }`: every envelope of the object | pruned ones in pruned form |
 | `GET /v1/groups/{group}/chains/{sender}?after=&limit=` | → envelopes in pruned form, by `seq` | chain checks (9.0.5, 10.3) |
-| `GET /v1/changes?after=&limit=[&active=1\|&group=]` | → `{ items, change, more }` | catch-up: everything the asker may see with a change number above `after`; `active=1` without the envelopes of archived groups, `group=` one group's envelopes alone (point 46) |
+| `GET /v1/changes?after=&limit=[&active=1\|&group=]` | → `{ items, change, more, head }` | catch-up: everything the asker may see with a change number above `after`; `active=1` without the envelopes of archived groups, `group=` one group's envelopes alone (point 46) |
 | `GET /v1/stream?after=` | server-sent events: `envelope`, `log`, `relay`, `welcome`, `request`, `presence`, `here`, `file_evicted`, `ping` | live; resumes by change number (`after`, or `Last-Event-ID`) |
 | **Files, shares, push, presence** | | |
 | `PUT /v1/files/{file_id}` · `GET` (with `Range`) · `DELETE` | bytes | 11; at most 67 125 269 stored bytes, which is 64 MiB of plaintext (`too-large`); `quota-exceeded` |
@@ -346,7 +347,8 @@ encrypted.
 
 19. `GET /v1/changes` items: `{ change, kind: "commit" | "message", group_id, n, epoch, at, bytes, sender,
     recovery_auth? }` and `{ change, kind: "envelope", envelope, received_at, void_code? }`, ascending by
-    `change`; the answer's `change` is the cursor for the next call. Change numbers are given to Commits,
+    `change`; the answer's `change` is the cursor for the next call, `head` the room's newest change number (a
+    client's progress: how far it still has to read; it opens its live stream there while it reads). Change numbers are given to Commits,
     messages, envelopes, SealedKeys and RecoveryLinks; sealed keys are read on their own route; invites, requests,
     Welcomes, files and shares are read by their own routes and announced live.
 20. `GET /v1/stream` events: `envelope` and `log` carry the item of `/v1/changes` and its change number as the
