@@ -1566,3 +1566,149 @@ async fn speed_of_every_client() {
     agent.stop().await;
     drop(hub);
 }
+
+// ---- helper names after a fresh sign-in ----------------------------------------------------------------------------
+
+/// The names of an agent's helper sessions on a device that signs in fresh, with the code, long after the helpers
+/// were opened (the person's report of 2026-10-13: after a new login on the web every helper showed its folder's name
+/// instead of its own, CI, Mac, Web …). The helpers write cards and status lines after their founding, and a first web
+/// device and the iPhones (when built) are in before the second web device signs in. Each device must show every
+/// helper under the name it was opened with, at once and after a sync.
+///
+/// ```text
+/// tests/client/mega/prepare.sh .     # (core/wasm/build.sh is enough with MEGA_IOS=0)
+/// cargo test -p trommi-tests --test client_mega helper_names -- --ignored --nocapture
+/// ```
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn helper_names_after_a_fresh_signin() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let helpers_n: usize = num_env("MEGA_HELPERS", 12);
+    let out = std::env::temp_dir().join("trommi-mega-helper-names");
+    let _ = std::fs::remove_dir_all(&out);
+    std::fs::create_dir_all(&out).unwrap();
+    let hub = start_hub().await;
+    let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+    let keep = code.clone();
+    let mut human = Human::found_with(&hub.url, move |_, c| {
+        *keep.lock().unwrap() = Some(c.expose().to_vec());
+        None
+    })
+    .await;
+    let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().expect("the code"));
+    let room_hex = trommi_connector::util::hex(human.room.as_bytes());
+    let (client, _drain, _dir, admitted) = join_agent(&mut human).await;
+    let group = human.found_session(&admitted).await;
+    let main = trommi_connector::util::hex(group.session_id().unwrap().as_bytes());
+    let c = client.clone();
+    common::eventually("the agent is in its session", || async {
+        c.core.lock().await.session_id().is_some()
+    })
+    .await;
+    client
+        .set_status(
+            fields(json!({ "profile": { "agent_name": "trommi", "task": "lead" } })),
+            Some(main.clone()),
+        )
+        .await
+        .expect("the main session's profile");
+    let mut want: BTreeMap<String, String> = BTreeMap::new();
+    want.insert(main.clone(), "trommi".into());
+    for i in 0..helpers_n {
+        let name = format!("Helper{i}");
+        let sid = client
+            .open_child_session(fields(json!({ "agent_name": name, "task": "work" })))
+            .await
+            .expect("a helper session");
+        // what a helper does after its founding: a status line, a card
+        let _ = client
+            .set_status(
+                fields(
+                    json!({ format!("status_line/{i}"): { "label": "work", "state": "working" } }),
+                ),
+                Some(sid.clone()),
+            )
+            .await;
+        want.insert(sid, name);
+    }
+    human.sync().await;
+    let _ = client.settle(60_000).await;
+
+    let shown_names = |list: &Value| -> BTreeMap<String, String> {
+        list.as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|e| {
+                (
+                    e["session"].as_str().unwrap_or("").to_string(),
+                    e["name"].as_str().unwrap_or("").to_string(),
+                )
+            })
+            .collect()
+    };
+    let mut observers = vec![Observer::spawn("web", "first", &root, &out, 1)];
+    let ios = root
+        .join("tests/ios/.build/out/Products/Debug-linux-x86_64/TrommiCoreLiveTests-test-runner")
+        .exists()
+        && env("MEGA_IOS").as_deref() != Some("0");
+    if ios {
+        observers.push(Observer::spawn("ios", "phone", &root, &out, 1));
+    }
+    observers.push(Observer::spawn("web", "second", &root, &out, 1));
+    let mut failures = Vec::new();
+    for o in observers.iter_mut() {
+        // the last device's requests are slow: the devices that are in add it to the helper sessions (5.2.7)
+        // before its own joins with the code reach them
+        if o.name.ends_with("@second") {
+            let delay: u64 = num_env("MEGA_SLOW_MS", 400) as u64;
+            let _ = o
+                .call(json!({ "op": "faults", "delay_ms": delay, "seed": 1 }))
+                .await;
+        }
+        o.call(json!({ "op": "signin", "hub": hub.url, "room_id": room_hex, "code": code_hex, "stream": true }))
+            .await
+            .unwrap_or_else(|e| panic!("{} signs in: {e}", o.name));
+        o.signed_in = true;
+        // the helpers go on working while the device is in
+        for (n, sid) in want.keys().filter(|s| **s != main).enumerate().take(3) {
+            let _ = client
+                .set_status(
+                    fields(
+                        json!({ format!("status_line/{n}"): { "label": "work", "state": "done" } }),
+                    ),
+                    Some(sid.clone()),
+                )
+                .await;
+        }
+    }
+    for o in observers.iter_mut() {
+        let _ = o.call(json!({ "op": "sync" })).await;
+        let got = shown_names(&o.call(json!({ "op": "shown" })).await.expect("shown"));
+        for (sid, name) in &want {
+            match got.get(sid) {
+                Some(n) if n == name => {}
+                other => failures.push(format!(
+                    "{}: {} shows as {:?}, want {name:?}",
+                    o.name,
+                    &sid[..8],
+                    other
+                )),
+            }
+        }
+    }
+    for o in observers.iter_mut() {
+        let _ = o.call(json!({ "op": "quit" })).await;
+    }
+    client.stop().await;
+    drop(hub);
+    assert!(
+        failures.is_empty(),
+        "helper names lost:\n{}",
+        failures.join("\n")
+    );
+}
+
+fn num_env(name: &str, default: usize) -> usize {
+    env(name).and_then(|s| s.parse().ok()).unwrap_or(default)
+}

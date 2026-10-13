@@ -23,6 +23,7 @@ The App Store listing now opens with your encrypted notes.
 - Running agents show as one row of chips under the chat; a line follows its card (snoozed or done cards no longer show as working)
 
 **Fixed**
+- Helper names after a new login: with more than ten sessions, the ones past the tenth showed the folder's name ("trommi-hub") and lost their older cards; a new device now asks for every session's keys at once (web and iPhone).
 - Pointing at an option on a card no longer scrolls the picture away (web).
 - A large account opens on the web again: it showed "Not opened" with "too-large: a text" when its saved board was above one megabyte. A saved board the app cannot read is now read anew from the hub instead of stopping the account, and the error line names its code once.
 
