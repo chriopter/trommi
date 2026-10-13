@@ -16,7 +16,7 @@ fn walk_card(c: &Card) -> WalkCard {
         info: loading || newer || c.field("card_type").as_str() == Some("info"),
         permission: false,
         urgency: Some(if loading { "normal".into() } else { c.urgency.clone() }),
-        created_at: c.created_at,
+        first_change: c.first_envelope_number,
     }
 }
 
@@ -27,7 +27,7 @@ fn walk_request(p: &PermissionRequest) -> WalkCard {
         info: false,
         permission: true,
         urgency: Some("critical".into()),
-        created_at: p.sent_at,
+        first_change: p.envelope_number,
     }
 }
 
@@ -194,7 +194,7 @@ mod tests {
         m.cards.get_mut("d").unwrap().unsupported = Some(Value::from("card_type"));
         assert_eq!(m.walk(None), ["i", "d"]);
         m.cards.get_mut("i").unwrap().unsupported = Some(Value::Null);
-        m.cards.get_mut("d").unwrap().created_at = 9;
+        m.cards.get_mut("d").unwrap().first_envelope_number = 9;
         assert_eq!(m.walk(None), ["d", "i"]);
     }
 

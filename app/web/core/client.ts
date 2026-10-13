@@ -264,7 +264,7 @@ export class Client {
   /** The hub's Desk as last read (`readDesk`): what it lists as open, and its cursor. The hub's list decides what
    *  stands on the Desk (an open card it does not list is settled at the hub: `catching_up`, off the Desk), while
    *  the content of each card is still the core's, verified on this device. */
-  private desk: { open: Set<string>; versions: Map<string, number>; at: number } | null = null
+  private desk: { open: Set<string>; versions: Map<string, number>; firsts: Map<string, number>; at: number } | null = null
   private deskTimer: ReturnType<typeof setTimeout> | null = null
   private deskTimerAt = 0
   private deskReading: Promise<void> | null = null
@@ -334,8 +334,8 @@ export class Client {
       // it had settled stays off the Desk although this device never read its closing. The Desk of now follows
       // (`deskFirst`, `readDesk`), and only it lets anything else stand.
       if (e.is_human) {
-        const last = (await this.cache.get(DESK_KEY).catch(() => null)) as { open?: string[]; versions?: [string, number][]; at?: number } | null
-        if (last && Array.isArray(last.open)) this.desk = { open: new Set(last.open), versions: new Map(last.versions ?? []), at: Number(last.at) || 0 }
+        const last = (await this.cache.get(DESK_KEY).catch(() => null)) as { open?: string[]; versions?: [string, number][]; firsts?: [string, number][]; at?: number } | null
+        if (last && Array.isArray(last.open)) this.desk = { open: new Set(last.open), versions: new Map(last.versions ?? []), firsts: new Map(last.firsts ?? []), at: Number(last.at) || 0 }
         this.deskKnown = false
       }
       if (kept.cursor === e.cursor) this.stamped = this.written = kept.cursor
@@ -764,7 +764,7 @@ export class Client {
     //  rebuild below never stands on the Desk because its answer comes later in the history)
     if (!desk.truncated) {
       const listed = [...desk.cards, ...desk.permission_requests]
-      this.desk = { open: new Set(listed.map(o => hex(o.object_id))), versions: new Map(listed.map(o => [hex(o.object_id), o.version?.change ?? 0])), at: desk.change }
+      this.desk = { open: new Set(listed.map(o => hex(o.object_id))), versions: new Map(listed.map(o => [hex(o.object_id), o.version?.change ?? 0])), firsts: new Map(listed.map(o => [hex(o.object_id), o.first_change])), at: desk.change }
       this.keepDesk()
       this.deskToModel()
     }
@@ -809,7 +809,7 @@ export class Client {
   /** Keeps the hub's Desk as read, for the next start (`open`). */
   private keepDesk(): void {
     const d = this.desk
-    if (d) void this.cache.set(DESK_KEY, { open: [...d.open], versions: [...d.versions], at: d.at }).catch(() => {})
+    if (d) void this.cache.set(DESK_KEY, { open: [...d.open], versions: [...d.versions], firsts: [...d.firsts], at: d.at }).catch(() => {})
   }
   /** Reads the hub's Desk again shortly (several groups joined at once, several cards that came, ask once). */
   private deskSoon(delay = DESK_SOON_MS, keep = false): void {
@@ -884,9 +884,11 @@ export class Client {
     } else try { brief = await timed('desk', () => this.hub.deskBrief(whole ? null : this.desk!.at, { active: true })) } catch (e) { if (whole) this.deskWholeDue = true; this.knowDesk(); throw e }
     if (brief.truncated) { if (!whole) { this.deskWholeDue = true; this.deskAgain = true } else this.knowDesk(); return }
     const listed = [...brief.cards.map(o => ({ ...o, route: 'cards' as const })), ...brief.permission_requests.map(o => ({ ...o, route: 'permission-requests' as const }))]
-    if (whole || !this.desk) { this.desk = { open: new Set(), versions: new Map(), at: 0 }; this.deskWholeAt = this.now() }
+    // (the change an object was first filed at never changes: kept over a whole list, which a brief one does not say it in)
+    if (whole || !this.desk) { this.desk = { open: new Set(), versions: new Map(), firsts: this.desk?.firsts ?? new Map(), at: 0 }; this.deskWholeAt = this.now() }
     const d = this.desk
-    for (const gone of brief.settled ?? []) { d.open.delete(hex(gone)); d.versions.delete(hex(gone)) }
+    if (full && !full.truncated) for (const o of [...full.cards, ...full.permission_requests]) d.firsts.set(hex(o.object_id), o.first_change)
+    for (const gone of brief.settled ?? []) { d.open.delete(hex(gone)); d.versions.delete(hex(gone)); d.firsts.delete(hex(gone)) }
     for (const o of listed) { d.open.add(hex(o.object_id)); d.versions.set(hex(o.object_id), o.version_change) }
     d.at = brief.change
     this.keepDesk()
@@ -918,12 +920,14 @@ export class Client {
         })()
       : lacking.length > DESK_ONE_BY_ONE && !first && reading ? []
       : lacking.length > DESK_ONE_BY_ONE
-      ? await this.hub.desk({ active: true }).then(full => { const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
+      ? await this.hub.desk({ active: true }).then(full => { for (const o of [...full.cards, ...full.permission_requests]) d.firsts.set(hex(o.object_id), o.first_change); const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
       : (await inParallel(lacking, async o => {
           const got = await this.hub.objectEnvelopes(o.route, o.object_id, { after: o.version_change - 1, limit: 1 }).catch(() => null)
+          if (got) d.firsts.set(hex(o.object_id), got.first_change)
           return got?.items.filter(i => i.change === o.version_change) ?? []
         })).flat()
     const missing: EnvelopeItem[] = [...versions]
+    if (!fromFull && lacking.length) this.keepDesk()
     // a card answered here and not yet closed by its agent (it counts as "an answer waits"): the hub's state of it,
     // and what came after this device's last word on it (its closing, a newer version), the few there are; a
     // reading of what changed asks only of those that changed
@@ -984,7 +988,8 @@ export class Client {
   private deskToModel(): void {
     const d = this.desk
     if (!d) return
-    this.board.setDeskListing(d.at, [...d.open].map(id => ({ objectId: id, versionChange: d.versions.get(id) ?? 0 })))
+    // (with the change each was first filed at, the hub's row: a card stands by it, core/client model/project.rs)
+    this.board.setDeskListing(d.at, [...d.open].map(id => ({ objectId: id, versionChange: d.versions.get(id) ?? 0, firstChange: d.firsts.get(id) ?? 0 })))
   }
   private async nameDevice(): Promise<void> {
     const name = this.opts.device_name

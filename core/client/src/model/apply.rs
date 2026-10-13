@@ -850,25 +850,31 @@ impl Model {
                 .map(|a| a.owner.clone())
                 .unwrap_or_else(|| r.sender.clone());
             let card = new_card(&object_id, &owner, r);
-            let (sid, created) = (card.session_id.clone(), card.created_at);
+            let (sid, first) = (card.session_id.clone(), card.first_envelope_number);
             self.cards.insert(object_id.clone(), card);
             if let Some(sid) = sid {
-                // (kept sorted by created_at)
+                // (kept sorted by the change each card was first filed at)
                 let cards = &self.cards;
                 let s = self
                     .sessions
                     .entry(sid.clone())
                     .or_insert_with(|| placeholder_session(&sid));
                 let mut at = s.card_ids.len();
-                while at > 0 && cards.get(&s.card_ids[at - 1]).map_or(0, |c| c.created_at) > created
+                while at > 0
+                    && cards
+                        .get(&s.card_ids[at - 1])
+                        .map_or(0, |c| c.first_envelope_number)
+                        > first
                 {
                     at -= 1;
                 }
                 s.card_ids.insert(at, object_id.clone());
             }
         }
-        let mut rebuild = false;
         let mut newer_type: Option<String> = None;
+        // (the change the card was first filed at orders every list: whatever moves it below, the lists are
+        //  worked out again)
+        let first_before = self.cards[&object_id].first_envelope_number;
         {
             let card = self.cards.get_mut(&object_id).expect("the card");
             if let Some(a) = &r.object_after {
@@ -890,11 +896,12 @@ impl Model {
                 }
             }
             let first = is_zero_hash(o.object_ref.as_deref());
-            // Its first version came after a later one (out of order): its place in every list is worked out again.
-            if first && (n < card.first_envelope_number || card.created_at != r.time) {
-                card.first_envelope_number = card.first_envelope_number.min(n);
+            // Its first version says where the card stands and when it was asked: its number takes the place of
+            // the one the card stood by until now (a later version's, or the hub's row, project.rs
+            // `first_from_desk`). The time is shown with the card; no list goes by it.
+            if first {
                 card.created_at = r.time;
-                rebuild = true;
+                card.first_envelope_number = n;
             }
             let v_at = match card.versions.iter().position(|v| v.version_hash == r.hash) {
                 Some(at) => {
@@ -1005,7 +1012,7 @@ impl Model {
         if let Some(t) = newer_type {
             self.note_newer(change, &format!("card_type {t}"), Some(n));
         }
-        if rebuild {
+        if self.cards[&object_id].first_envelope_number != first_before {
             self.desk_rebuild = true;
         }
         self.card_touched(&object_id, change);
@@ -1026,6 +1033,13 @@ impl Card {
                 *number = n;
             }
         }
+    }
+
+    /// The card holds its first version: the change it was first filed at is that version's, not the hub's word.
+    pub(super) fn holds_first_version(&self) -> bool {
+        self.versions
+            .iter()
+            .any(|v| is_zero_hash(v.previous_version_hash.as_deref()))
     }
 }
 
@@ -1055,6 +1069,8 @@ impl Model {
         if !self.cards.contains_key(&object_id) {
             return Applied::no();
         }
+        // (a renumbering below may move the change the card was first filed at: the lists go by it)
+        let first_before = self.cards[&object_id].first_envelope_number;
         let state = state_after(r);
         match r.kind {
             EnvelopeKind::Answer => {
@@ -1253,6 +1269,9 @@ impl Model {
                 }
             }
             _ => return Applied::no(),
+        }
+        if self.cards[&object_id].first_envelope_number != first_before {
+            self.desk_rebuild = true;
         }
         self.card_touched(&object_id, change);
         Applied::yes()

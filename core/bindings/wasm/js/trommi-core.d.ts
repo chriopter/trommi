@@ -1001,7 +1001,8 @@ export interface DeskCardIn {
   sessionId: string | null
   state: number
   urgency: number
-  createdAt: number
+  /** The change of its first envelope: where it stands among the others. */
+  firstChange: number
   agentDeviceId: string
   versionChange: number
   newest: number
@@ -1026,10 +1027,12 @@ export interface AppPacket {
   json: string
   blobs: Uint8Array[]
 }
-/** One object the hub's Desk lists as open, with the change of its current version. */
+/** One object the hub's Desk lists as open, with the change of its current version and the change it was first
+ *  filed at (the hub's row, `first_change`; 0: not said): a card stands on the Desk by that change. */
 export interface DeskListed {
   objectId: string
   versionChange: number
+  firstChange: number
 }
 /** One edit of the stack: at `at`, `gone` ids leave and `ids` come. */
 export interface DeskStackOp {

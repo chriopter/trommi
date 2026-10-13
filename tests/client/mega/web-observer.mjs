@@ -187,7 +187,10 @@ function seen() {
   for (const t of m.timelines.values()) items += t.item_count ?? t.items?.length ?? 0
   let artifacts = 0
   for (const p of m.published.values()) if (p.object_state !== 'closed') artifacts++
-  return { desk, stack: m.stack.length, held, off: off + snoozed, closed, working, snoozed, cards: m.cards.size, artifacts, sessions_live: live, sessions_named: named, sessions_archived: archived, agents, online, items, reading: !!(client.reading ?? client.model.room?.reading) }
+  // (`order`: the Desk's order as one short number, so that a trace shows every time a card moved)
+  let order = 0
+  for (const id of m.stack) for (let i = 0; i < 8; i++) order = (Math.imul(order, 31) + id.charCodeAt(i)) >>> 0
+  return { desk, stack: m.stack.length, order, held, off: off + snoozed, closed, working, snoozed, cards: m.cards.size, artifacts, sessions_live: live, sessions_named: named, sessions_archived: archived, agents, online, items, reading: !!(client.reading ?? client.model.room?.reading) }
 }
 /** Every envelope, log entry and stream event as the engine reports it, for the order and the kinds of data. */
 function listenTrace(c) {

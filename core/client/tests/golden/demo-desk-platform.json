@@ -4,15 +4,15 @@
     "6deb90374cb873045fe03e39c3ab0348",
     "a67da9b30d2f07d256c6b646e8c34f36",
     "0d9331a1172e43e9157fbd722d87bf1a",
-    "e842d16a6c7d9a0075b0a77b5932f3bb",
-    "992640bed603743781e3241f6a2de105",
-    "43a72b8f7d9de1aac4aeeae1367076c0",
-    "9abad6a52b4b6dc3d096f87bff346aa9",
+    "41bc4fad4b14457d7f16a660d518d474",
     "a2706545530be0dce3b13417c2728966",
     "cf5922f1d3baa4cf7dd0d9b573716bfb",
-    "8b26d4c112fa4617ad968fe6f311704e",
     "d50337f0e7318660c4d9a0062426dea5",
-    "41bc4fad4b14457d7f16a660d518d474"
+    "e842d16a6c7d9a0075b0a77b5932f3bb",
+    "9abad6a52b4b6dc3d096f87bff346aa9",
+    "43a72b8f7d9de1aac4aeeae1367076c0",
+    "992640bed603743781e3241f6a2de105",
+    "8b26d4c112fa4617ad968fe6f311704e"
   ],
   "off_your_mind": [
     "f35bf13aea8cdbfd193cfddc38f543fb"
@@ -346,69 +346,61 @@
       ]
     },
     {
-      "id": "e842d16a6c7d9a0075b0a77b5932f3bb",
+      "id": "41bc4fad4b14457d7f16a660d518d474",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Docs layout: a sidebar, or tabs on top?",
-      "words": "The sidebar shows every page; tabs keep guides and the API apart.",
-      "urgency": "normal",
-      "sign": "",
+      "title": "Generate the API reference from the OpenAPI file?",
+      "words": "Always matches the code. The examples are written by hand next to it.",
+      "urgency": "low",
+      "sign": "whenever",
+      "sign_says": {
+        "key": "row.whenever",
+        "en": "Whenever"
+      },
       "starred": false,
-      "created_ms": 1791462960000,
+      "created_ms": 1791468360000,
       "from": {
-        "session_id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
-        "name": "Docs",
-        "mark": "draw:book",
+        "session_id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
+        "name": "API Reference",
+        "mark": "draw:terminal",
         "path": [
           "Platform",
-          "Docs"
+          "Docs",
+          "API Reference"
         ]
       },
       "run": 1,
-      "media": [
-        {
-          "file_id": "98a54f675570449c8836f202ae2a3b80",
-          "kind": "image"
-        },
-        {
-          "file_id": "66e0a82f2a0f3b117446faeb1238d2cc",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media",
-        "args": {
-          "n": "2"
-        },
-        "en": "Look at 2 pictures and videos"
-      },
       "tiles": {
         "kind": "pair",
         "tiles": [
           {
-            "key": "tabs",
-            "label": "Tabs on top",
+            "key": "no",
+            "label": "No",
             "thumb": "no",
-            "thumbs": false,
+            "thumbs": true,
             "lead": false,
             "advised": false,
             "small": false,
             "short": false,
-            "settles": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
             "says": {
-              "key": "tile.says",
+              "key": "tile.says.settles",
               "args": {
-                "label": "Tabs on top"
+                "label": "No"
               },
-              "en": "Tabs on top"
+              "en": "No (settles it)"
             }
           },
           {
-            "key": "sidebar",
-            "label": "Sidebar",
+            "key": "yes",
+            "label": "Yes",
             "thumb": "yes",
-            "thumbs": false,
+            "thumbs": true,
             "lead": true,
             "advised": true,
             "small": false,
@@ -421,269 +413,13 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Sidebar"
+                "label": "Yes"
               },
-              "en": "Sidebar"
+              "en": "Yes"
             }
           }
         ],
         "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "992640bed603743781e3241f6a2de105",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Checkout: a sheet over the app, or its own page?",
-      "words": "Both are built with Stripe Elements. The sheet keeps people where they were.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791463320000,
-      "from": {
-        "session_id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
-        "name": "Checkout",
-        "mark": "draw:cup",
-        "path": [
-          "Platform",
-          "Payments",
-          "Checkout"
-        ]
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "4d062f8ab1e0e84eef827262aa82a3bd",
-          "kind": "image"
-        },
-        {
-          "file_id": "2b2a46347d88b1572eb48367c50a40a6",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media",
-        "args": {
-          "n": "2"
-        },
-        "en": "Look at 2 pictures and videos"
-      },
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "page",
-            "label": "Its own page",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Its own page"
-              },
-              "en": "Its own page"
-            }
-          },
-          {
-            "key": "sheet",
-            "label": "Sheet over the app",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Sheet over the app"
-              },
-              "en": "Sheet over the app"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "43a72b8f7d9de1aac4aeeae1367076c0",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Who counts as an active user?",
-      "words": "Opening the app, or watering a plant. Watering is what we care about; opening is what others report.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791465480000,
-      "from": {
-        "session_id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
-        "name": "Dashboards",
-        "mark": "draw:eye",
-        "path": [
-          "Platform",
-          "Data Pipeline",
-          "Dashboards"
-        ]
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "3d154a92f7b328d07c3d88cc578abd5c",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "opened",
-            "label": "Opened the app",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Opened the app"
-              },
-              "en": "Opened the app"
-            }
-          },
-          {
-            "key": "watered",
-            "label": "Watered a plant",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Watered a plant"
-              },
-              "en": "Watered a plant"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
-      "id": "9abad6a52b4b6dc3d096f87bff346aa9",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "How long do we keep the raw events?",
-      "words": "The models need 90 days. Longer costs storage and means more personal data kept.",
-      "notes": [
-        {
-          "key": "row.replaces.one",
-          "en": "replaces 1 question"
-        }
-      ],
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791465840000,
-      "from": {
-        "session_id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
-        "name": "Data Pipeline",
-        "mark": "draw:database",
-        "path": [
-          "Platform",
-          "Data Pipeline"
-        ]
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "70d771d464c0d437ecab1f509b47e5e5",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "advised",
-        "tiles": [
-          {
-            "key": "90",
-            "label": "90 days",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.label",
-              "en": "90 days"
-            },
-            "says": {
-              "key": "tile.says.advised",
-              "args": {
-                "label": "90 days"
-              },
-              "en": "90 days, advised"
-            }
-          }
-        ],
-        "others": 2,
-        "says": {
-          "key": "tile.others",
-          "args": {
-            "n": "2"
-          },
-          "en": "2 other ways: open the card"
-        }
       },
       "ways": [
         "later",
@@ -808,91 +544,6 @@
       ]
     },
     {
-      "id": "8b26d4c112fa4617ad968fe6f311704e",
-      "kind": "decision",
-      "loading": false,
-      "newer": false,
-      "title": "Apply the us-east plan? 23 to add, 2 to change, 1 to destroy",
-      "words": "The one destroyed is the second NAT gateway in eu-west, which we planned to drop.",
-      "urgency": "normal",
-      "sign": "",
-      "starred": false,
-      "created_ms": 1791467640000,
-      "from": {
-        "session_id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
-        "name": "Terraform",
-        "mark": "draw:house",
-        "path": [
-          "Platform",
-          "Infrastructure",
-          "Terraform"
-        ]
-      },
-      "run": 1,
-      "media": [
-        {
-          "file_id": "14ee0604905a1e2a022f2b67708f8abd",
-          "kind": "image"
-        }
-      ],
-      "media_says": {
-        "key": "row.media.one",
-        "en": "Look at the picture"
-      },
-      "tiles": {
-        "kind": "pair",
-        "tiles": [
-          {
-            "key": "wait",
-            "label": "Wait until Monday",
-            "thumb": "no",
-            "thumbs": false,
-            "lead": false,
-            "advised": false,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Wait until Monday"
-              },
-              "en": "Wait until Monday"
-            }
-          },
-          {
-            "key": "apply",
-            "label": "Apply",
-            "thumb": "yes",
-            "thumbs": false,
-            "lead": true,
-            "advised": true,
-            "small": false,
-            "short": false,
-            "settles": false,
-            "tip": {
-              "key": "tile.recommended",
-              "en": "Recommended"
-            },
-            "says": {
-              "key": "tile.says",
-              "args": {
-                "label": "Apply"
-              },
-              "en": "Apply"
-            }
-          }
-        ],
-        "others": 0
-      },
-      "ways": [
-        "later",
-        "reverse",
-        "duck",
-        "shred"
-      ]
-    },
-    {
       "id": "d50337f0e7318660c4d9a0062426dea5",
       "kind": "decision",
       "loading": false,
@@ -972,61 +623,69 @@
       ]
     },
     {
-      "id": "41bc4fad4b14457d7f16a660d518d474",
+      "id": "e842d16a6c7d9a0075b0a77b5932f3bb",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Generate the API reference from the OpenAPI file?",
-      "words": "Always matches the code. The examples are written by hand next to it.",
-      "urgency": "low",
-      "sign": "whenever",
-      "sign_says": {
-        "key": "row.whenever",
-        "en": "Whenever"
-      },
+      "title": "Docs layout: a sidebar, or tabs on top?",
+      "words": "The sidebar shows every page; tabs keep guides and the API apart.",
+      "urgency": "normal",
+      "sign": "",
       "starred": false,
-      "created_ms": 1791468360000,
+      "created_ms": 1791462960000,
       "from": {
-        "session_id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
-        "name": "API Reference",
-        "mark": "draw:terminal",
+        "session_id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+        "name": "Docs",
+        "mark": "draw:book",
         "path": [
           "Platform",
-          "Docs",
-          "API Reference"
+          "Docs"
         ]
       },
       "run": 1,
+      "media": [
+        {
+          "file_id": "98a54f675570449c8836f202ae2a3b80",
+          "kind": "image"
+        },
+        {
+          "file_id": "66e0a82f2a0f3b117446faeb1238d2cc",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
       "tiles": {
         "kind": "pair",
         "tiles": [
           {
-            "key": "no",
-            "label": "No",
+            "key": "tabs",
+            "label": "Tabs on top",
             "thumb": "no",
-            "thumbs": true,
+            "thumbs": false,
             "lead": false,
             "advised": false,
             "small": false,
             "short": false,
-            "settles": true,
-            "tip": {
-              "key": "tile.settles",
-              "en": "Settles it"
-            },
+            "settles": false,
             "says": {
-              "key": "tile.says.settles",
+              "key": "tile.says",
               "args": {
-                "label": "No"
+                "label": "Tabs on top"
               },
-              "en": "No (settles it)"
+              "en": "Tabs on top"
             }
           },
           {
-            "key": "yes",
-            "label": "Yes",
+            "key": "sidebar",
+            "label": "Sidebar",
             "thumb": "yes",
-            "thumbs": true,
+            "thumbs": false,
             "lead": true,
             "advised": true,
             "small": false,
@@ -1039,9 +698,350 @@
             "says": {
               "key": "tile.says",
               "args": {
-                "label": "Yes"
+                "label": "Sidebar"
               },
-              "en": "Yes"
+              "en": "Sidebar"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "9abad6a52b4b6dc3d096f87bff346aa9",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "How long do we keep the raw events?",
+      "words": "The models need 90 days. Longer costs storage and means more personal data kept.",
+      "notes": [
+        {
+          "key": "row.replaces.one",
+          "en": "replaces 1 question"
+        }
+      ],
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465840000,
+      "from": {
+        "session_id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+        "name": "Data Pipeline",
+        "mark": "draw:database",
+        "path": [
+          "Platform",
+          "Data Pipeline"
+        ]
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "70d771d464c0d437ecab1f509b47e5e5",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "advised",
+        "tiles": [
+          {
+            "key": "90",
+            "label": "90 days",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.label",
+              "en": "90 days"
+            },
+            "says": {
+              "key": "tile.says.advised",
+              "args": {
+                "label": "90 days"
+              },
+              "en": "90 days, advised"
+            }
+          }
+        ],
+        "others": 2,
+        "says": {
+          "key": "tile.others",
+          "args": {
+            "n": "2"
+          },
+          "en": "2 other ways: open the card"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "43a72b8f7d9de1aac4aeeae1367076c0",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Who counts as an active user?",
+      "words": "Opening the app, or watering a plant. Watering is what we care about; opening is what others report.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465480000,
+      "from": {
+        "session_id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
+        "name": "Dashboards",
+        "mark": "draw:eye",
+        "path": [
+          "Platform",
+          "Data Pipeline",
+          "Dashboards"
+        ]
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "3d154a92f7b328d07c3d88cc578abd5c",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "opened",
+            "label": "Opened the app",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Opened the app"
+              },
+              "en": "Opened the app"
+            }
+          },
+          {
+            "key": "watered",
+            "label": "Watered a plant",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Watered a plant"
+              },
+              "en": "Watered a plant"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "992640bed603743781e3241f6a2de105",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Checkout: a sheet over the app, or its own page?",
+      "words": "Both are built with Stripe Elements. The sheet keeps people where they were.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791463320000,
+      "from": {
+        "session_id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
+        "name": "Checkout",
+        "mark": "draw:cup",
+        "path": [
+          "Platform",
+          "Payments",
+          "Checkout"
+        ]
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "4d062f8ab1e0e84eef827262aa82a3bd",
+          "kind": "image"
+        },
+        {
+          "file_id": "2b2a46347d88b1572eb48367c50a40a6",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "page",
+            "label": "Its own page",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Its own page"
+              },
+              "en": "Its own page"
+            }
+          },
+          {
+            "key": "sheet",
+            "label": "Sheet over the app",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Sheet over the app"
+              },
+              "en": "Sheet over the app"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "8b26d4c112fa4617ad968fe6f311704e",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Apply the us-east plan? 23 to add, 2 to change, 1 to destroy",
+      "words": "The one destroyed is the second NAT gateway in eu-west, which we planned to drop.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791467640000,
+      "from": {
+        "session_id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
+        "name": "Terraform",
+        "mark": "draw:house",
+        "path": [
+          "Platform",
+          "Infrastructure",
+          "Terraform"
+        ]
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "14ee0604905a1e2a022f2b67708f8abd",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "wait",
+            "label": "Wait until Monday",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Wait until Monday"
+              },
+              "en": "Wait until Monday"
+            }
+          },
+          {
+            "key": "apply",
+            "label": "Apply",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Apply"
+              },
+              "en": "Apply"
             }
           }
         ],
