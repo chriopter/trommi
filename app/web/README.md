@@ -187,8 +187,9 @@ instead); files come network first, the cache only offline. On the dev server (`
   with a final option (a small pen tick on its tile) never lies here: the answer settles it, it goes to "Off the desk"
   at once ("settled by your answer"), and Take back opens it again.
 - **Foot:** two stacks docked at the bottom of the Desk (`desk.mjs deskDock`, in the Desk's layer, so not on a card's
-  page): the starred cards and the cards still running, each its top card with the edges of two more behind it and
-  its count; a tap fans it upward as small cards, the running one ends in the way to the complete list. The section
+  page): the starred cards and the cards still running, each a small tab at the window's lower edge (a phone: a pill
+  above the tab pill) with its sign, its word and its count, no card at rest; a tap fans it upward as small cards,
+  the running one ends in the way to the complete list. The section
   Off your mind (`offHint`) is a short hinted list of what is put off and closed, beside Artifacts on a wide window;
   its heading opens `/stacks/off`, every card with a search. Which card lies where is the client core's (the
   patch's `off_mind`, `core/client/src/off_mind.rs`): a card has one home, a starred card lies in the starred stack
