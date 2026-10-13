@@ -546,6 +546,12 @@ The three scale tests (a room of 1000 human devices, a catch-up across twenty gr
 small by default and at full size with `TROMMI_TESTS_FULL=1`, as CI does every night (`.github/workflows/nightly.yml`;
 a failing night opens an issue labelled nightly-failed).
 
+The session matrix (`tests/connector/sessions.rs`, test `connector_sessions`): many Claude Code and Codex sessions on
+one machine, two Trommi accounts, one folder and several, resume, /mcp restart, a killed connector, a stale key, a
+self-join beside a link join. Each case ends with every session on its account's board with a key of its own. Pull
+requests run its fast cases, `TROMMI_TESTS_FULL=1` (nightly) all; `TROMMI_MATRIX_LOGS=<folder>` keeps each
+connector's log.
+
 All clients against each other (nightly in CI, `.github/workflows/clients_mega.yml`): the web app's client layer,
 the iOS app's engine (both with the real core) and the connector, each twice, in one room on a real hub, through one
 long seeded random timeline; it fails where two devices show anything different. Then their speed with 1,000 cards.

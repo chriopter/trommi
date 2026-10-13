@@ -27,6 +27,7 @@ The App Store listing now opens with your encrypted notes.
 - Running agents show as one row of chips under the chat; a line follows its card (snoozed or done cards no longer show as working)
 
 **Fixed**
+- Many agent sessions on one computer: a resumed session finds its own key also when the folder has sessions of another Trommi account, two Codex chats never share a key, connect no longer answers "Connecting…" at the start, and a link of the other account says what to do with it.
 - Helper names after a new login: with more than ten sessions, the ones past the tenth showed the folder's name ("trommi-hub") and lost their older cards; a new device now asks for every session's keys at once (web and iPhone).
 - A card's history is whole again: every revision stays under the card with its time, what changed and the version before it to open, and the talk stays in between; a new revision no longer folds the ones before it away (web and iPhone)
 - Pointing at an option on a card no longer scrolls the picture away (web).
