@@ -4,26 +4,19 @@
 import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
 import { lastUndo, undoLast } from './ui.mjs'
 import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, avatar, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
-// ---- the infos: reports, notes, nothing to decide ----
-// An info is a card of the stack like any other, among the decisions by
-// its time (a knock first): the drawn page where a decision has its pictures, the title, and at the right What?? and
-// the tick (ui.mjs deskRow, tiles). Inserted into the hub's order of the decisions without changing it: each info
-// stands after the knocks, before the first decision that is older.
-// Blocking first, then the knocks, then the rest; stable, so the hub's order holds within each.
-const urgRank = c => (c.urgency === 'critical' ? 2 : isKnock(c) ? 1 : 0)
-const byUrgency = cards => cards.map((c, i) => [c, i]).sort(([a, i], [b, j]) => urgRank(b) - urgRank(a) || i - j).map(([c]) => c)
+// ---- the rows: the questions and the infos (reports, notes, nothing to decide) ----
+// An info is a card of the stack like any other: the drawn page where a decision has its pictures, the title, and at
+// the right What?? and the tick (ui.mjs deskRow, tiles). The order is the client core's (client/src/desk.rs
+// walk_order, the patch's desk_order), the same on every device: what blocks an agent first, then what knocks, then
+// the rest; in each the infos first, newest first, then the decisions, oldest first.
 // (What the agents finished stands in the end list, endList below, not among these rows.)
 function deskCards(model) {
-  const r = model.reads ?? []
-  if (!r.length) return byUrgency(model.fresh)
-  const out = [...model.fresh]
-  for (const info of [...r].sort((a, b) => (a.created ?? 0) - (b.created ?? 0))) {
-    // (after every knock unless it knocks itself; then before the first older card)
-    const from = isKnock(info) ? 0 : out.findLastIndex(c => isKnock(c)) + 1
-    const at = out.findIndex((c, i) => i >= from && (c.created ?? 0) < (info.created ?? 0))
-    out.splice(at < 0 ? out.length : at, 0, info)
-  }
-  return byUrgency(out)
+  const here = new Set([...model.fresh, ...(model.reads ?? [])])
+  if (!here.size) return []
+  const out = []
+  for (const id of model.state.desk_order ?? []) { const c = model.byCard.get(id); if (c && here.delete(c)) out.push(c) }
+  // (a card the core's order does not name yet, between two patches: at the end, until it does)
+  return here.size ? out.concat([...here]) : out
 }
 /** The Desk's top is where one arrives: one big line in the display face, its last word underlined with the pen, and
  *  at the right, on the list's right edge, the tools for what waits (the duck for all, Blitz: the count stands

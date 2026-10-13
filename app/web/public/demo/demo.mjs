@@ -152,8 +152,11 @@ export class MockClient {
       const s = m.sessions.get(c.agent_device_id); if (!s) continue
       s.card_ids.push(c.object_id); if (c.object_state === 'open') s.open_card_ids.push(c.object_id)
     }
-    // (the demo has no client core: its walk is its stack, the requests first)
-    m.desk_order = [...m.open_permission_ids, ...m.stack]
+    // (the demo has no client core: its walk by the core's rule, client/src/desk.rs walk_order)
+    const band = o => (o.permission_state || o.urgency === 'critical' ? 2 : o.urgency === 'high' ? 1 : 0)
+    const walk = [...m.open_permission_ids.map(id => m.permissions.get(id)), ...m.stack.map(id => m.cards.get(id)).filter(c => !c.in_revision)]
+    const at = o => o.created_at ?? o.sent_at ?? 0, info = o => o.card_type === 'info'
+    m.desk_order = walk.sort((a, b) => band(b) - band(a) || info(b) - info(a) || (info(a) ? at(b) - at(a) : at(a) - at(b))).map(o => o.object_id)
     if (change && before !== m.stack.join()) change.stack = true
     m.session_list = demoSessions(m)
   }

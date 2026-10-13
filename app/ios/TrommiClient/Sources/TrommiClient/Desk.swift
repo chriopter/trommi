@@ -580,19 +580,20 @@ public final class DeskModel {
     public var working: Int
     public var allFreshCount: Int
     public var goals: String = ""            // this desk's goals; none on All desks
+    /** The client core's order of every card that waits (client/src/desk.rs walk_order, the patch's desk_order). */
+    public var order: [String] = []
     /** What the Desk's two tools act on: every open card that waits for him (fresh and reads). */
     public var tools: DeskTools { DeskTools((fresh + reads).map { (id: $0.id, kind: $0.kind) }) }
     /** The Scribble Board of this view: All desks' own, else the desk's (a room without desks: the board of 'main'). */
     public var board: String { all ? ALL_BOARD : deskBoard(deskId) }
+    /** The Desk's rows (questions and infos) in the client core's order, the same on every device: what blocks an
+     *  agent first, then what knocks, then the rest; in each the infos first, newest first, then the decisions. */
     public func deskCards() -> [DeskCard] {
-      func rank(_ c: DeskCard) -> Int { c.urgency == "critical" ? 2 : c.isKnock ? 1 : 0 }
-      var out = fresh
-      for info in reads.sorted(by: { $0.created < $1.created }) {
-        let from = info.isKnock ? 0 : (out.lastIndex { $0.isKnock }.map { $0 + 1 } ?? 0)
-        let at = out.indices.first { $0 >= from && out[$0].created < info.created }
-        out.insert(info, at: at ?? out.count)
-      }
-      return out.enumerated().sorted { (rank($1.element), $0.offset) < (rank($0.element), $1.offset) }.map { $0.element }
+      var here = Dictionary((fresh + reads).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+      var out = [DeskCard]()
+      for id in order { if let c = here.removeValue(forKey: id) { out.append(c) } }
+      // (a card the core's order does not name yet, between two patches: at the end, until it does)
+      return out + (fresh + reads).filter { here[$0.id] != nil }
     }
   }
 
@@ -668,7 +669,7 @@ public final class DeskModel {
     let name = all ? "All desks" : desks.first { $0.id == deskId }?.name ?? "Personal"
     return View(deskId: deskId, all: all, deskName: name, here: here, fresh: fresh, reads: reads, revising: revising, snoozed: snoozed, done: done, units: units, cut: cut,
                 unheard: units.reduce(0) { $0 + $1.unheard }, knocking: fresh.filter { $0.isKnock }.count, working: units.filter { $0.online && $0.running }.count, allFreshCount: allFresh.count,
-                goals: all ? "" : desks.first { $0.id == deskId }?.goals ?? "")
+                goals: all ? "" : desks.first { $0.id == deskId }?.goals ?? "", order: board.deskOrder)
   }
 
   /** agent: why the session is stopped, or nil (app.mjs blockedOf): the client core's decision (Agent.blocked), in words. */
