@@ -58,6 +58,17 @@ function demoStatus(m, s, archived, removed) {
   return { link, blocked, working, quiet_since: null, device_active: s.last_activity_at ?? 0, recheck_at: null, lines }
 }
 
+/** A model's id as a heading shows it: the client core's rule (client/src/sessions.rs model_label), for the demo room. */
+const demoModelLabel = id => {
+  const t = String(id ?? '').trim(), l = t.toLowerCase()
+  if (!t) return ''
+  if (l.startsWith('claude-')) {
+    const parts = l.slice(7).split('[')[0].split('-').filter(p => !/^\d{8}$/.test(p)), fam = parts.find(p => /^[a-z]+$/.test(p))
+    if (fam) { const v = parts.filter(p => /^\d+$/.test(p)); return `${fam[0].toUpperCase()}${fam.slice(1)}${v.length ? ` ${v.join('.')}` : ''}` }
+  }
+  if (l.startsWith('gpt-')) { const [first, ...rest] = l.slice(4).split('-'); return [`GPT-${first}`, ...rest.map(w => w[0].toUpperCase() + w.slice(1))].join(' ') }
+  return t
+}
 /**
  * The session list of the mock room, in the shape of the client core's (client/src/sessions.rs `SessionRow`): the demo
  * has no core, and its sessions are a fixture's, so the plain reading of it is enough here: the person's label, else
@@ -78,7 +89,7 @@ export function demoSessions(m) {
       id, key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id ?? null, name: label || given, given, label, icon: set.icon || p.icon || '',
       online: Boolean(s.is_online), offline_since: s.offline_since ?? null, parent: parentKey && ids.has(parentKey) ? ids.get(parentKey) : null, parent_key: parentKey && ids.has(parentKey) ? parentKey : null,
       archived: chosen && !(s.is_online && !parentKey), replaced: false, removed: s.is_active === false, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position),
-      desk: set.desk ?? 'main', starred: crown === key || crown === s.agent_device_id, main: Boolean(p.is_main), own: m.members.get(s.agent_device_id)?.device_role === 'human',
+      desk: set.desk ?? 'main', model_label: demoModelLabel(p.model), starred: crown === key || crown === s.agent_device_id, main: Boolean(p.is_main), own: m.members.get(s.agent_device_id)?.device_role === 'human',
       waiting: s.open_card_ids?.length ?? 0, fetched: 'archived' in set && !set.archived, last_activity_at: s.last_activity_at ?? 0,
       ...demoStatus(m, s, chosen && !(s.is_online && !parentKey), s.is_active === false),
     }

@@ -54,6 +54,8 @@ public struct Agent: Identifiable, Equatable {
   /** Where it stands, as a card's page names its sender: desk (two or more), main session (a helper), itself; the
    *  client core's (client/src/sessions.rs `path`). */
   public var path: [String] = []
+  /** The model it runs on as its heading says it ("Opus 5.5"): the client core's (client/src/sessions.rs model_label). */
+  public var modelLabel: String = ""
   /** Archived because a newer pairing in the same folder took its place (the client core's session list). */
   public var replaced: Bool = false
   /** At the client core's clock (client/src/status.rs): its link (nil when archived or removed), why it is stopped
@@ -503,6 +505,7 @@ public final class DeskModel {
       a.hue = Pen.hueFor(id: a.id, mark: a.mark)
       a.placed = r["placed"].truthy
       a.path = r["path"].array?.compactMap(\.string) ?? []
+      a.modelLabel = r["model_label"].string ?? ""
       a.replaced = r["replaced"].truthy
       let lv = r["link"]
       if lv.object != nil { a.linkState = CoreLink(state: lv["state"].string ?? "live", since: lv["since"].double.map { UInt64(max(0, $0)) }, reason: lv["reason"].string ?? "") }

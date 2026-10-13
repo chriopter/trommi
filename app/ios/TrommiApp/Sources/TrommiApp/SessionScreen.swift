@@ -246,6 +246,8 @@ struct SessionScreen: View {
       HStack(spacing: 7) {
         ZStack { if working { WorkingRing(working: true, color: Tone.color(hue: a.hue, .mid)).frame(width: 30, height: 30) }; AgentMark(agent: a, size: 22) }
         Text(a.name).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle)
+        // the model it runs on, quiet beside the name (the client core's short label: "Opus 5.5")
+        if !a.modelLabel.isEmpty { Text(a.modelLabel).font(Face.text(13, .medium)).foregroundStyle(Ink.muted).lineLimit(1).layoutPriority(-1) }
         if stopped != nil { Circle().fill(Ink.urgCritical).frame(width: 7, height: 7) }
         Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).foregroundStyle(Ink.muted)
       }
@@ -254,7 +256,7 @@ struct SessionScreen: View {
       .contentShape(Capsule())
     }
     .accessibilityShowsLargeContentViewer { Label(a.name, systemImage: "bubble.left") }
-    .accessibilityLabel(stopped.map { "\(a.name), stopped: \($0.1). Switch chat" } ?? "\(a.name): switch chat")
+    .accessibilityLabel(stopped.map { "\(a.name)\(a.modelLabel.isEmpty ? "" : ", \(a.modelLabel)"), stopped: \($0.1). Switch chat" } ?? "\(a.name)\(a.modelLabel.isEmpty ? "" : ", \(a.modelLabel)"): switch chat")
     .accessibilityHint(quiet ?? "")
   }
   private func more(_ a: Agent, _ d: DeskModel, freshCount: Int) -> some View {

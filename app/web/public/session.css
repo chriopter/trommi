@@ -250,6 +250,8 @@ body[data-filter] .jump { display: none; }
   .agent-row:hover .crown-toggle[aria-pressed="false"], .pane-who:hover .crown-toggle[aria-pressed="false"] { opacity: .5; }
 }
 .pane-who { position: relative; }
+/* the model it runs on, quiet beside the dot (client core model_label: "Opus 5.5") */
+.head-model { flex: none; color: var(--muted); font: 500 var(--t-sm)/1 var(--font); white-space: nowrap; }
 .pane-who .crown-toggle { left: 4px; top: calc(50% - 32px); }
 
 /* ---- a question inside the conversation: the same row as in the inbox, where it was asked ---- */
@@ -783,6 +785,7 @@ a.files-where:hover span { text-decoration: underline; }
   #session .pane-title .t-blocked { flex: 0 1 auto; min-width: 28px; }
   #session .pane-title .head-dot, #session .pane-title :is(.t-blocked, .t-quiet) { order: 2; }
   #session .pane-title .head-dot { margin-left: -4px; }
+  #session .pane-title .head-model { order: 2; }
   #session .pane-title > .session-mode { order: 3; margin-left: var(--s-2); }
   #session .pane-title .session-seg a { height: 28px; padding: 0 12px; }
   #session .pane-title > .head-use:not(:empty) { order: 4; display: flex; margin-left: auto; }
@@ -793,6 +796,7 @@ a.files-where:hover span { text-decoration: underline; }
   #session .head-use-mini:not(:empty) { display: inline-flex; align-items: center; order: 2; margin-left: auto; pointer-events: auto; }
   body[data-t-view="session"]:not([data-pair]) #session .pane-who .head-use-mini:not(:empty) + .t-pick-desk { margin-left: 2px; }
   #session .pane-who .head-dot { display: none; }
+  #session .pane-who .head-model { order: 1; font-size: var(--t-xs); }
 }
 
 /* empty conversation (session.mjs empty): a quiet card from the agent that joined, the starters as rows */

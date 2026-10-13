@@ -79,6 +79,8 @@ pub struct SessionRow {
     /// Where it stands, as a card's page names its sender: its desk (when there are two or more), its main session
     /// (for a helper), itself. `session_path`.
     pub path: Vec<String>,
+    /// The model it runs on as its heading says it (`model_label`: "Opus 5.5", "GPT-6.1"); empty when it named none.
+    pub model_label: String,
 }
 
 fn is_hex_id(s: &str) -> bool {
@@ -205,6 +207,42 @@ fn parent_claim<'a>(m: &'a Model, s: &'a Session) -> Option<&'a str> {
         s.creator_device_id.as_deref() == Some(a.as_str()) || s.agent_device_ids.contains(a)
     });
     ok.then_some(want)
+}
+
+/// A model's id as a session's heading shows it, short and quiet: "claude-opus-5-5" is "Opus 5.5",
+/// "claude-sonnet-4-5-20250929" "Sonnet 4.5", "gpt-6.1" "GPT-6.1", "gpt-5.1-codex" "GPT-5.1 Codex". An id of another
+/// form stays as it is; none is "".
+pub fn model_label(id: &str) -> String {
+    let id = id.trim();
+    if id.is_empty() {
+        return String::new();
+    }
+    let lower = id.to_ascii_lowercase();
+    // (Claude: family and version; a date and a context tag such as "[1m]" are left out)
+    if let Some(rest) = lower.strip_prefix("claude-") {
+        let rest = rest.split('[').next().unwrap_or(rest);
+        let parts: Vec<&str> = rest.split('-').filter(|p| !(p.len() == 8 && p.bytes().all(|b| b.is_ascii_digit()))).collect();
+        if let Some(fam) = parts.iter().position(|p| p.chars().all(|c| c.is_ascii_alphabetic())) {
+            let name = parts[fam];
+            let version: Vec<&str> = parts.iter().filter(|p| p.chars().all(|c| c.is_ascii_digit())).copied().collect();
+            let mut out = name[..1].to_ascii_uppercase() + &name[1..];
+            if !version.is_empty() {
+                out.push(' ');
+                out.push_str(&version.join("."));
+            }
+            return out;
+        }
+    }
+    if let Some(rest) = lower.strip_prefix("gpt-") {
+        let mut words = rest.split('-');
+        let mut out = format!("GPT-{}", words.next().unwrap_or(""));
+        for w in words {
+            out.push(' ');
+            out.push_str(&(w[..1].to_ascii_uppercase() + &w[1..]));
+        }
+        return out;
+    }
+    id.to_string()
 }
 
 /// The session list. `reading`: the room is still being read (a session whose profile has not come shows
@@ -408,6 +446,7 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>) {
             position: position.unwrap_or(i as f64),
             placed: position.is_some(),
             desk: text(set.get("desk")).unwrap_or("").to_string(),
+            model_label: model_label(text(p.get("model")).unwrap_or("")),
             starred: crown.as_deref() == Some(key.as_str())
                 || (crown.is_some() && crown == s.agent_device_id),
             main: truthy(p.get("is_main")),
@@ -584,6 +623,18 @@ mod tests {
         assert_eq!(row(&m, S1).path[..2], ["Lab".to_string(), "Core".to_string()]);
         m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "gone", "name": "Core" }), ..Default::default() });
         assert_eq!(row(&m, S0).path, vec!["Work".to_string(), "Core".to_string()]);
+    }
+
+    #[test]
+    fn model_labels_are_short() {
+        assert_eq!(model_label("claude-opus-5-5"), "Opus 5.5");
+        assert_eq!(model_label("claude-sonnet-4-5-20250929"), "Sonnet 4.5");
+        assert_eq!(model_label("claude-opus-5-5[1m]"), "Opus 5.5");
+        assert_eq!(model_label("claude-haiku-4-5"), "Haiku 4.5");
+        assert_eq!(model_label("gpt-6.1"), "GPT-6.1");
+        assert_eq!(model_label("gpt-5.1-codex"), "GPT-5.1 Codex");
+        assert_eq!(model_label("o4-mini"), "o4-mini");
+        assert_eq!(model_label("  "), "");
     }
 
     fn shown(m: &Model) -> Vec<String> {

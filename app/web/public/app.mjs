@@ -732,7 +732,7 @@ export class BoardState {
       return {
         id: r.id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: r.given, label: r.label, icon: r.icon, icon_by: set.icon ? 'human' : 'agent',
         online: r.online, offline_since: r.offline_since ?? null, account: accountOf.get(s.agent_device_id) ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: r.starred, parent: r.parent ?? null, main: r.main,
-        desk: r.desk, path: r.path ?? [], archived: r.archived, replaced: r.replaced, group: set.group ?? null, position: r.position, placed: r.placed, seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: r.device_active ?? 0,
+        desk: r.desk, path: r.path ?? [], model_label: r.model_label ?? '', archived: r.archived, replaced: r.replaced, group: set.group ?? null, position: r.position, placed: r.placed, seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: r.device_active ?? 0,
         removed: r.removed, own: r.own,
         link: s.link ?? null, heard_up_to: s.heard_up_to ?? null,
         slot: !s.parent_session_id && dev?.folder ? `${dev.host ?? ''}\n${dev.folder}` : null, born: dev?.added_entry_number ?? 0,

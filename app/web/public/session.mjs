@@ -341,14 +341,15 @@ function sessionWho(s, base) {
   // The mark opens the drawings, the name renames (ui.mjs); the live stream brings what was changed.
   // The raised red hand when the session is really stopped (app.mjs blockedOf), with the cause in words.
   const stopped = blockedOf(a, s.model.state), quiet = stopped ? null : quietOf(a, s.model.state)
-  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}${sessionDot(a)}<span class="head-use-mini">${usageMark(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Quiet">${quiet.text}</span>` : ''}</div>`
+  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}${sessionDot(a)}${a.model_label ? html`<span class="head-model" title="${a.model}">${a.model_label}</span>` : ''}<span class="head-use-mini">${usageMark(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Quiet">${quiet.text}</span>` : ''}</div>`
 }
 /** The connection beside the name, as a dot: green while the session is connected (else grey, or how it hears when it
- *  does not hear at once). The tip is that one word; what it is at, its model and machine are its label. */
+ *  does not hear at once). The tip is that one word; what it is at and its machine are its label; its model stands
+ *  beside it (head-model). */
 function sessionDot(a) {
   const link = linkOf(a), late = link && link.state !== 'live'
   const words = late ? link.word : a.online ? 'connected' : 'disconnected'
-  const tip = words, said = [words, a.online && !late ? a.task : '', a.model, a.host].filter(Boolean).join(' · ')
+  const tip = words, said = [words, a.online && !late ? a.task : '', a.host].filter(Boolean).join(' · ')
   return html`<span class="head-dot${a.online ? ' is-on' : ''}"${late ? html` data-link="${link.state}"` : ''} role="img" aria-label="${said}" title="${tip}"><i></i></span>`
 }
 /** The usage at the heading's right end (a wide window): one mark of two rings, the week outside, 5 h inside
