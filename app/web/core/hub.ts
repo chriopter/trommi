@@ -1165,8 +1165,9 @@ export class Hub {
     if (!this.signer) wrong('this hub client has no signer: useSigner first')
     const room = this.signer.room_id, budget = { bytes: CAP_SERVED }
     const spend = (b: Uint8Array): Uint8Array => { if ((budget.bytes -= b.length) < 0) bad('a room larger than a device takes'); return b }
-    const current = await this.groupInfo(room)
-    const founding = current.epoch === 0 ? current : await this.groupInfo(room, 0)
+    // (what does not build on another answer is asked at once: a round trip each saved on a slow network)
+    const asked = [this.groupInfo(room), this.groupInfo(room, 0), this.roomGroups()] as const
+    for (const p of asked) p.catch(() => {})
     const rows: Uint8Array[] = [], links: Uint8Array[] = []
     for (let after = 0, more = true; more;) {
       const page = await this.sealedKeys(after, 2000)
@@ -1175,10 +1176,12 @@ export class Hub {
       after = page.change
       more = page.more
     }
+    const [current, zero, groups] = await Promise.all(asked)
+    const founding = current.epoch === 0 ? current : zero
     const anchor = opts.anchorOf(rows)
     if (!same(anchor.group, this.signer.room)) wrong('the anchor is an epoch of the room group')
     const anchored = spend((await this.groupInfo(room, ownInt(anchor.epoch, 'the anchor\'s epoch'))).group_info)
-    const live = (await this.roomGroups()).filter(g => g.live && g.kind !== 'room')
+    const live = groups.filter(g => g.live && g.kind !== 'room')
     const later = (['main', 'helper'] as const).flatMap(kind => live.filter(g => g.kind === kind).map(g => g.group))
     return {
       start: { room, founding: spend(founding.group_info), anchor: anchored, rows, sessions: [] },
@@ -1193,6 +1196,44 @@ export class Hub {
     }
   }
   /** One live session group for its check after the sign-in: its founding and current GroupInfos, the current epoch. */
+  /**
+   * `POST /v1/groups/read`: what joining several session groups from outside needs, in one request: per group its
+   * current and founding GroupInfos and its Commits, checked as `sessionInSteps` and `groupCommits` check them. Null
+   * for a group whose Commits do not fit the first page, or that the hub refused: it is read alone (`sessionInSteps`).
+   * A hub without the route: `not-found` (404), thrown.
+   */
+  async readGroups(groups: readonly Uint8Array[]): Promise<({ founding: Uint8Array; current: Uint8Array; epoch: number; commits: ServedCommit[] } | null)[]> {
+    const o = obj(await this.send('POST', '/v1/groups/read', { groups: groups.map(g => own(g, 'group', ...GROUP)) }), 'groups read')
+    const rows = list(o.groups, 'groups', groups.length)
+    if (rows.length !== groups.length) bad('one answer per group')
+    return rows.map((x, i) => {
+      const r = obj(x, 'a group read'), group = groups[i]!
+      if (r.group !== own(group, 'group', ...GROUP)) bad('the groups in another order')
+      if (typeof r.error === 'string') return null
+      const info = obj(r.info, 'a GroupInfo answer'), epoch = int(info.epoch, 'epoch')
+      const current = bytes(info.group_info, 'group_info', 1, MAX_MLS)
+      let founding = current
+      if (epoch !== 0) {
+        const f = obj(r.founding, 'a GroupInfo answer')
+        if (int(f.epoch, 'epoch') !== 0) bad('another epoch than the one asked for')
+        founding = bytes(f.group_info, 'group_info', 1, MAX_MLS)
+      }
+      const log = obj(r.log, 'a log page')
+      const commits: ServedCommit[] = []
+      let n = 0
+      for (const y of list(log.items, 'items', 256)) {
+        const item = logItem(obj(y, 'a log entry'))
+        if (!same(item.group, own(group, 'group', ...GROUP)) || item.n <= n || item.kind !== 'commit') bad('a log entry out of place')
+        n = item.n
+        if (commits.length >= epoch) break
+        if (item.epoch !== commits.length) bad('a log that is not one Commit per epoch')
+        commits.push({ change: item.change, commit: item.bytes, recoveryAuth: item.recovery_auth })
+      }
+      // (the Commits up to the current epoch did not fit the first page: read alone)
+      if (commits.length !== epoch) return null
+      return { founding, current, epoch, commits }
+    })
+  }
   async sessionInSteps(group: Uint8Array): Promise<{ founding: Uint8Array; current: Uint8Array; epoch: number }> {
     const current = await this.groupInfo(group)
     const founding = current.epoch === 0 ? current : await this.groupInfo(group, 0)

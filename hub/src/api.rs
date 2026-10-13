@@ -886,6 +886,41 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             }
             app.write_as(&auth, rq.lease, |x, fx| delivery::message(x, &auth, &group, epoch, &message, relay, fx))
         }
+        // What joining several groups from outside needs, in one request (a sign-in's sessions, 8.5): per group its
+        // current GroupInfo, its founding one and the first page of its Commits, as `GET /v1/groups/{group}/info`,
+        // `…/info?epoch=0` and `…/log?kind=commit&limit=256` answer them; a group the asker may not see is answered
+        // with its refusal in its place.
+        ("POST", ["groups", "read"]) => {
+            let list = rq.body["groups"]
+                .as_array()
+                .filter(|l| !l.is_empty() && l.len() <= MAX_COMMITS_AT_ONCE)
+                .ok_or_else(|| refuse("bad-format", format!("groups: 1 to {MAX_COMMITS_AT_ONCE} group ids")))?;
+            let groups = list
+                .iter()
+                .map(|g| g.as_str().ok_or_else(|| refuse("bad-format", "a group id, base64url")).and_then(group_id))
+                .collect::<Res<Vec<_>>>()?;
+            app.read(|x| {
+                let auth = rq.auth(app, x.c)?;
+                let out: Vec<Value> = groups
+                    .iter()
+                    .map(|group| {
+                        let one = (|| -> Res<Value> {
+                            let info = delivery::info(x.c, &auth, group, None)?;
+                            let founding = if info["epoch"].as_u64() == Some(0) { Value::Null } else { delivery::info(x.c, &auth, group, Some(0))? };
+                            let log = delivery::log(x.c, &auth, group, 0, 256, true)?;
+                            Ok(json!({ "group": b64(group), "info": info, "founding": founding, "log": log }))
+                        })();
+                        one.unwrap_or_else(|refused| {
+                            let mut body = refused.body();
+                            body["status"] = json!(refused.status());
+                            body["group"] = json!(b64(group));
+                            body
+                        })
+                    })
+                    .collect();
+                Ok(json!({ "groups": out }))
+            })
+        }
         ("GET", ["groups", group, "info"]) => {
             let group = group_id(group)?;
             let epoch = rq.q_int("epoch")?.map(|e| e as u64);

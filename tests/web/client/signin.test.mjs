@@ -26,6 +26,8 @@ test('a sign-in takes the hub\'s order from its own join and reads the room\'s p
   const seen = []
   // (the first reading: one asked for meanwhile, as keys that came, reads again from where it was asked)
   let first = null
+  const counted = []
+  c.on('change', () => { const r = c.model.room.reading_progress; if (r) counted.push([r.done, r.total]) })
   c.on('change', () => { const p = c.engine.past; if (!p) { if (first) first.done = true; return } first ??= p; if (p === first && !first.done) seen.push(p.at) })
   await c.start()
   await until(() => c.model.room.connection === 'live', 'the new device live')
@@ -37,6 +39,8 @@ test('a sign-in takes the hub\'s order from its own join and reads the room\'s p
   const steps = [...new Set(seen)]
   assert.deepEqual(steps, [...steps].sort((x, y) => x - y), 'the reading only moves forward')
   assert.ok(steps.filter(n => n > 0 && n < head).length >= 2, `the reading was told at ${steps.length} places (${steps.join(', ')}): a page of ${head} changes must not stand at its start until it is through`)
+  assert.ok(counted.some(([done, total]) => done > 0 && done < total), `the model counts the reading: ${JSON.stringify(counted.slice(0, 5))}`)
+  assert.equal(c.model.room.reading_progress ?? null, null, 'and no count once it is through')
   assert.ok(c.engine.position >= head)
 })
 

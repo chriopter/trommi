@@ -399,6 +399,10 @@ export class Client {
     if (this.model.room.last_envelope_number !== this.engine.position) { this.model.room.last_envelope_number = this.engine.position; ch.room = true }
     const reading = this.readingHolds > 0 || this.rebuild !== null || this.engine.rescanPending
     if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true; this.board.setReading(reading) }
+    // (the reading of the room's past as a count: the changes read of those it reads, engine.past)
+    const p = this.engine.past, progress = reading && p && p.to > p.from ? { done: Math.max(0, Math.min(p.at, p.to) - p.from), total: p.to - p.from } : null
+    const was = this.model.room.reading_progress ?? null
+    if (progress?.done !== was?.done || progress?.total !== was?.total) { this.model.room.reading_progress = progress; ch.room = true }
     this.fromBoard(ch)
     // (the engine moves its cursor only after an item's effects were reported: at any publish the model holds
     // everything up to it, and this change carries what the cache lacks of it)

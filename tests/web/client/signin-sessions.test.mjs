@@ -9,7 +9,7 @@ import { MemoryStore, TIMING, addAgent, core, memoryCache, rooms, scene, storage
 
 const roomOf = fake => [...fake.state.rooms.values()][0]
 
-test('a sign-in with the code says how far it is, stocks its KeyPackages at once and joins the sessions behind it', async t => {
+test('a sign-in with the code says how far it is, joins the sessions behind it, and stocks its KeyPackages once they are joined', async t => {
   const { fake, a, recovery_code } = await scene(t, { agent: true })
   await addAgent(t, a, {}, 'agent2'); await addAgent(t, a, {}, 'agent3')
   await a.settle()
@@ -26,15 +26,20 @@ test('a sign-in with the code says how far it is, stocks its KeyPackages at once
   assert.ok(!steps.some(s => s.step === 'reading' && s.total), `no session is read before the join: ${JSON.stringify(steps)}`)
   assert.ok(steps.some(s => s.step === 'checking' && s.total > 0 && s.done === s.total), `the check reached its total: ${JSON.stringify(steps)}`)
   assert.deepEqual(steps.at(-1), { step: 'joining' })
-  assert.equal(roomOf(fake).key_packages.size, kpBefore + 1, 'the new device has KeyPackages at the hub as soon as it is in')
+  // (its KeyPackages wait for its own joins of the sessions: until then no other device adds it to one by Welcome)
+  assert.equal(roomOf(fake).key_packages.size, kpBefore, 'no KeyPackages at the hub while the sessions are joined')
   const done = await joining
   assert.deepEqual(done.not_joined, [])
   assert.equal(done.joined, sessions)
   // (the three main sessions' joins in one request, `POST /v1/commits`, not one each)
   const posts = fake.requests.slice(before).filter(r => r.method === 'POST' && (r.path === '/v1/commits' || /^\/v1\/groups\/[^/]+\/commits$/.test(r.path)))
   assert.deepEqual(posts.map(r => r.path === '/v1/commits' ? 'together' : 'alone'), ['alone', 'together'], 'the room group\'s join alone, then the sessions\' together')
+  // (and what the joins are built from is read in one request too, while the room group is joined)
+  assert.equal(fake.requests.slice(before).filter(r => r.method === 'POST' && r.path === '/v1/groups/read').length, 1)
+  assert.equal(fake.requests.slice(before).filter(r => r.method === 'GET' && /^\/v1\/groups\/[^/]+\/log$/.test(r.path)).length, 1, 'the room group\'s log alone is read by itself')
   await c.start()
   await until(() => c.engine.groups.filter(g => g.session).length === sessions, 'the new device in every session')
+  await until(() => roomOf(fake).key_packages.size === kpBefore + 1, 'the new device has KeyPackages at the hub once its joins are through')
 })
 
 test('a session join the hub refuses leaves the device in the room and lists the session', async t => {
@@ -76,12 +81,13 @@ test('joins posted together: one refused for good, one the hub throttles, the ot
   assert.equal(done.joined, 2, 'the throttled one went through on its next post, the third at once')
 })
 
-test('a hub without POST /v1/commits (from before it): the joins go one by one, as before', async t => {
+test('a hub without POST /v1/commits and POST /v1/groups/read (from before them): the sessions are read and joined one by one, as before', async t => {
   const { fake, a, recovery_code } = await scene(t, { agent: true })
   await addAgent(t, a, {}, 'agent2')
   await a.settle()
   const R = await rooms()
   fake.faults.add({ method: 'POST', path: '/v1/commits', refuse: { error: 'not-found', status: 404 }, times: 100 })
+  fake.faults.add({ method: 'POST', path: '/v1/groups/read', refuse: { error: 'not-found', status: 404 }, times: 100 })
   const before = fake.requests.length
   const { client: c, sessions: joining } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
   t.after(() => c.stop().catch(() => {}))

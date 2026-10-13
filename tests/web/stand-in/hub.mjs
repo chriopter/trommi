@@ -805,6 +805,23 @@ export async function startFakeHub(opts = {}) {
       record(a.room, entry, g.group_id)
       return { n: entry.n }
     }
+    // several groups' GroupInfos (current, founding) and first page of Commits at once (hub-api.md `POST /v1/groups/read`)
+    if (is('POST', 'groups', 'read')) {
+      const list = body?.groups
+      if (!Array.isArray(list) || !list.length || list.length > 64) throw refuse('bad-format', 'groups: 1 to 64 group ids')
+      const a = auth(rq)
+      return { groups: list.map(id => {
+        try {
+          const g = group(a.room, groupId(String(id)))
+          const info = (epoch) => { if (!g.infos.has(epoch)) throw refuse('not-found', 'the group has not reached this epoch'); return { epoch, group_info: b64(g.infos.get(epoch)) } }
+          const found = g.log.filter(e => e.kind === 'commit')
+          return { group: id, info: info(g.epoch), founding: g.epoch === 0 ? null : info(0), log: { items: found.slice(0, 256), more: found.length > 256 } }
+        } catch (e) {
+          if (!(e instanceof Refused)) throw e
+          return { group: id, error: e.code, message: e.message, status: statusOf(e.code) }
+        }
+      }) }
+    }
     if (is('GET', 'groups', null, 'info')) {
       const a = auth(rq), g = group(a.room, groupId(segs[1])), epoch = number(rq, 'epoch') ?? g.epoch
       if (!g.infos.has(epoch)) throw refuse('not-found', 'the group has not reached this epoch')

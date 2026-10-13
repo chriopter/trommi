@@ -2808,3 +2808,20 @@ fn commits_posted_together_are_each_taken_or_refused_in_their_place() {
     w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": vec![one.clone(); 65] })).refused(400, "bad-format");
     w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [one.clone(), one] })).refused(400, "bad-format");
 }
+
+#[test]
+fn several_groups_are_read_in_one_request_each_in_its_place() {
+    let w = World::new();
+    let nowhere: [u8; 48] = random();
+    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&w.room), b64(&nowhere)] })).ok();
+    let groups = got["groups"].as_array().expect("groups");
+    assert_eq!(groups.len(), 2);
+    let one = w.ada.get(&w.hub, &format!("/v1/groups/{}/info", b64(&w.room))).ok();
+    assert_eq!(groups[0]["group"], b64(&w.room));
+    assert_eq!(groups[0]["info"], one, "as GET …/info answers it");
+    let log = w.ada.get(&w.hub, &format!("/v1/groups/{}/log?after=0&limit=256&kind=commit", b64(&w.room))).ok();
+    assert_eq!(groups[0]["log"], log, "as GET …/log?kind=commit answers it");
+    assert_eq!(groups[1]["group"], b64(&nowhere));
+    assert_eq!(groups[1]["error"], "not-found", "{groups:?}");
+    w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [] })).refused(400, "bad-format");
+}
