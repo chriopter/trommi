@@ -689,3 +689,21 @@ extension Board {
     return j.array?.compactMap { $0["object_id"].string } ?? []
   }
 }
+
+/** Off your mind laid out as one pile (the owner's pick of 13 October 2026, "untereinander"): the first running cards
+ *  on top, the rest on one pile; the client core's rule (client/src/off_pile.rs off_pile), from the real totals. */
+public struct Pile: Equatable {
+  public let top: Int, moreRunning: Int, putOff: Int, closed: Int
+  public let pile: Bool
+  public let behind: Int, restShown: Int
+  public let open: Bool
+}
+public func offPile(running: UInt64, putOff: UInt64, closed: UInt64, full: Bool) -> Pile {
+  let p = TrommiCoreRust.offPile(running: running, putOff: putOff, closed: closed, full: full)
+  return Pile(top: Int(p.top), moreRunning: Int(p.moreRunning), putOff: Int(p.putOff), closed: Int(p.closed), pile: p.pile,
+              behind: Int(p.behind), restShown: Int(p.restShown), open: p.open)
+}
+/** What lies on the pile, in words: "+2 running · 1 put off · 14 done" (web desk.mjs pileWords). */
+public func pileWords(_ p: Pile) -> String {
+  [p.moreRunning > 0 ? "+\(p.moreRunning) running" : "", p.putOff > 0 ? "\(p.putOff) put off" : "", p.closed > 0 ? "\(p.closed) done" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+}

@@ -43,7 +43,7 @@ pub mod wipe;
 pub use account::*;
 pub use client::{
     ClientDesk, DeskCardIn, DeskDelta, DeskListed, DeskRequestIn, DeskSessionOp, DeskSessionOpen,
-    DeskStackOp,
+    DeskStackOp, OffPile, off_pile,
 };
 pub use client_model::ClientModel;
 pub use codec::*;
