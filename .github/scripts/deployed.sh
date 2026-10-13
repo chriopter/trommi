@@ -7,10 +7,12 @@
 #
 # A part is delivered when what it has out there was built from other inputs than this commit's:
 #   web        the commit app.trommi.com names (/gen/build.txt), its web inputs (inputs.sh of that commit)
-#   hub        the commit hub.trommi.com runs (/healthz), its hub inputs; and the updater inputs of the newest hub-v<N>
-#              (its signature checked; before the first one: the newest v<N>, the series before)
+#   hub        the commit of the newest delivery to the server that went through (GitHub's deployments of the
+#              environment `hub`: deploy_hub.yml fails when the hub or its updater was not taken), its hub and updater
+#              inputs; and the commit hub.trommi.com runs (/healthz), its hub inputs (an updater-only delivery leaves
+#              the hub's commit as it was, so /healthz alone cannot say whether the updater is out there)
 #   connector  the newest connector-v<N> (its signature checked; before the first one: the newest v<N>), its connector
-#              inputs
+#              inputs (a published connector release is out there: installers and updates take it at once)
 # So a part that went back (a revert) is delivered again, and a delivery that failed is tried again by the next run. Anything not known (no answer, a commit this
 # repository does not know, a manifest whose signature does not hold): the part is delivered.
 #
@@ -57,18 +59,22 @@ say "app.trommi.com serves ${served:-nothing known}"
 decide web "$(inputs_at web "$served")" "$(want web)"
 ;;
 hub)
-# the hub that runs, and the updater of the newest release that holds them
+# the newest delivery to the server that went through, and the hub that runs
+delivered=
+for id in $(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=hub&per_page=30" --jq '.[].id' 2>/dev/null); do
+  state=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state // ""' 2>/dev/null) || state=
+  case "$state" in
+    success) delivered=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id" --jq .sha 2>/dev/null) || delivered=; break ;;
+  esac
+done
 running=$(curl -fsS --max-time 10 https://hub.trommi.com/healthz 2>/dev/null | jq -r '.commit // ""' 2>/dev/null) || running=
-say "hub.trommi.com runs ${running:-nothing known}"
-hub_out=$(inputs_at hub "$running")
-manifest=$(newest_manifest hub)
-updater_out=
-[ -z "$manifest" ] || updater_out=$(jq -r '.inputs.updater // ""' "$manifest")
-if [ -n "$hub_out" ] && [ "$hub_out" = "$(want hub)" ] && [ -n "$updater_out" ] && [ "$updater_out" = "$(want updater)" ]; then
+say "the newest delivery to the hub's server that went through: ${delivered:-none known}; hub.trommi.com runs ${running:-nothing known}"
+hub_out=$(inputs_at hub "$delivered") updater_out=$(inputs_at updater "$delivered") hub_runs=$(inputs_at hub "$running")
+if [ -n "$hub_out" ] && [ "$hub_out" = "$(want hub)" ] && [ "$hub_runs" = "$(want hub)" ] && [ -n "$updater_out" ] && [ "$updater_out" = "$(want updater)" ]; then
   echo "hub=false"
 else
   echo "hub=true"
-  say "hub: runs ${hub_out:-unknown} (this commit $(want hub)), updater released ${updater_out:-unknown} (this commit $(want updater)): delivered"
+  say "hub: delivered ${hub_out:-unknown}, runs ${hub_runs:-unknown} (this commit $(want hub)); updater delivered ${updater_out:-unknown} (this commit $(want updater)): delivered"
 fi
 ;;
 connector)
