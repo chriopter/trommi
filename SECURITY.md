@@ -102,6 +102,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - Every hub build checks that the release before still runs on data the new one migrated; a change that cannot
   keep that is marked in the signed release, and then the program is never put back over data the new hub served.
 - A failed hub or web delivery opens a GitHub issue; the next good one closes it.
+- After each web delivery CI asks app.trommi.com from outside whether it serves exactly that build (the start page and
+  every file it loads, by SHA-256, with its security headers); when not, the version before is put back at once.
 - Hub and updater run as their own users (`trommi`, `trommi-updater`), neither with root rights.
 - Root runs only a tiny helper (`hub-ctl`) that starts or stops the hub, or its dry run or data restore (two fixed
   units that run as the hub's user), when the updater asks; nothing else.
