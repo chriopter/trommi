@@ -127,6 +127,11 @@ jobs:
             exit 0
           fi
           [ "$(jq -r .ok answer.json)" = true ] || fail "the server reports $(jq -r .result answer.json): $(jq -r .message answer.json)"
+          # The hub went in, but the release's updater did not (hub/updater: the deploy stays ok and only says so): the
+          # server keeps an updater older than the release it was told to take. That is a failed delivery too.
+          if jq -r '.message // ""' answer.json | grep -q 'its updater was not taken'; then
+            fail "$TAG: the hub runs, but its updater was not taken: $(jq -r .message answer.json)"
+          fi
           jq -r '.commit // ""' answer.json > commit.txt
 
           # The updater replaces itself after it has answered. Wait until the new one answers, or the old one says
@@ -157,8 +162,13 @@ jobs:
           [ -n "$want" ] || exit 0
           got=''
           for _ in $(seq 1 36); do
-            got=$(curl -fsS --max-time 10 https://hub.trommi.com/healthz 2>/dev/null | jq -r '.commit // ""' 2>/dev/null) || got=''
-            [ "$got" = "$want" ] && { echo "https://hub.trommi.com answers as $want"; exit 0; }
+            page=$(curl -fsS --max-time 10 https://hub.trommi.com/healthz 2>/dev/null) || page=''
+            got=$(printf '%s' "$page" | jq -r '.commit // ""' 2>/dev/null) || got=''
+            # well, serving, and naming its protocol version (what clients are checked against: 426 client-too-old)
+            if [ "$got" = "$want" ] && printf '%s' "$page" | jq -e '.ok == true and (.protocol_version | type) == "number"' > /dev/null 2>&1; then
+              echo "https://hub.trommi.com answers as $want, well, protocol $(printf '%s' "$page" | jq -r .protocol_version)"
+              exit 0
+            fi
             sleep 5
           done
           reason="https://hub.trommi.com/healthz does not answer as $want after three minutes (it answers as ${got:-nothing})"
