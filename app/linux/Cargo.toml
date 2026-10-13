@@ -40,6 +40,10 @@ cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
 
+[dev-dependencies]
+# the real hub's tests drive the room through the connector's stand-ins (tests/hub.rs, tests/connector/common)
+tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
+
 [build-dependencies]
 cxx-qt-build = "0.10"
 
