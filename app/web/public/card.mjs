@@ -347,7 +347,7 @@ export function cardThread(card, model, base = '', { more = false } = {}) {
   const files = list => { const rest = (list ?? []).filter(a => kindOf(a) !== 'image' && kindOf(a) !== 'video'); return rest.length ? html`<p class="tc-files">${rest.map(fileChip)}</p>` : '' }
   // A video in the talk (the clip an agent makes after What??) plays where it is said, never by itself.
   const vids = list => { const v = (list ?? []).filter(a => kindOf(a) === 'video'); return v.length ? html`<div class="tc-vids">${v.map(a => html`<figure class="tc-vid"><video src="${a.url}#t=0.001" controls playsinline preload="metadata" aria-label="Video: ${a.name}"></video></figure>`)}</div>` : '' }
-  const shots = list => { const pics = (list ?? []).filter(a => kindOf(a) === 'image'); return pics.length ? html`<div class="shots">${pics.map(a => html`<a href="${a.url}" target="_blank" rel="noopener"><img${srcOf(a, 320)} alt="${a.name}" loading="lazy" decoding="async"></a>`)}</div>` : '' }
+  const shots = list => { const pics = (list ?? []).filter(a => kindOf(a) === 'image'); return pics.length ? html`<div class="shots">${pics.map(a => html`<a class="tc-shot" href="${a.url}" target="_blank" rel="noopener" title="Open full size" aria-label="Open ${a.name} full size"><img${srcOf(a, 320)} alt="${a.name}" loading="lazy" decoding="async" width="220" height="165"></a>`)}</div>` : '' }
   // One column, every piece in the same two places: at the left who (the session's small drawing, the pen for you),
   // beside it the name, when, and the words. A line that only says where things stand (waiting for the explanation)
   // is one quiet line on the words' line, without a who.
