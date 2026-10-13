@@ -1,0 +1,20 @@
+{
+  "answer": "{\"before\":0,\"change\":22,\"items\":[{\"answered_at\":0,\"first_change\":15,\"group_id\":\"facVAIAI06kwLA7fg5rhNheOKJmeSKWLR-qZY9UAcMGrHzGchhzIudG7WrlxjRYo\",\"head_change\":22,\"kind\":\"cards\",\"object_id\":\"JDu2SoIrnknQkvaLZE45BA\",\"owner\":\"eWxwq_JqO2lFtvLDgCtTEzuqWdyZfdAmqvIiStziQjQ\",\"state\":3,\"urgency\":3,\"version\":{\"change\":22,\"envelope\":\"AQICADB9pxUAgAjTqTAsDt-DmuE2F44omZ5IpYtH6plj1QBwwasfMZyGHMi50btauXGNFigAAAAAAAAAAXlscKvyajtpRbbyw4ArUxM7qlncmX3QJqryIkrc4kI0AAAAAAAAAAz5TAmya39R8Ab85AUx6f69rYSTXNZIufscC-Qcu_8m8wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABoTYeXUUkO7ZKgiueSdCS9otkTjkEAQMDAAAAAAAAAACXu4vQvyKi-1tionkl_LidK_VlaXeZyzzZx_kPRfaVDABfVR5znRvMPunaTTFBELs5ZZeKmQs9H8fy2cNdo_UKpGb6H8C7M_bTe2vwNlq_yTvw1Wb47npruuoh0cKPWd7Y8WzBCAJtW_KtDBTT_QYhspnH6pigmsLG_XCHrngUJLcWHpf-gey3JyCVYCccWa58PduQ02C3IyS9sNoGi7QO_NcV4qvKEpUtMVOXRCLt7GDudEMx3bFmjrpBHeM1zwnP4SMci1zAiRfAgtldcS30okjzuyNY1XtSN1QzINixAmMAtB6NrkkeCmoRrVKb-kU2SrsH9obwhdijY5iW6JJmgusfYu7fhpPSn7oEKKCjX8aQhKNXa7CYbhlvvTByFFKihbjarlXNq7wZ7Imbd9EilSmDlRgsOnEN7Fni-4jwQEB_Ah1E6kDiR96d-3_O8neZA6XsVYeGEmYEyUGMj5Adhs0VvAYlDRbLHVtAxTRzr87totgBDAZyOnkmdTNIFwgN\",\"received_at\":1791909322054}},{\"answered_at\":0,\"first_change\":14,\"group_id\":\"facVAIAI06kwLA7fg5rhNheOKJmeSKWLR-qZY9UAcMGrHzGchhzIudG7WrlxjRYo\",\"head_change\":21,\"kind\":\"cards\",\"object_id\":\"GZhEgzyh8T6l4kn1MMBEAA\",\"owner\":\"eWxwq_JqO2lFtvLDgCtTEzuqWdyZfdAmqvIiStziQjQ\",\"state\":2,\"urgency\":0,\"version\":{\"change\":14,\"envelope\":\"AQICADB9pxUAgAjTqTAsDt-DmuE2F44omZ5IpYtH6plj1QBwwasfMZyGHMi50btauXGNFigAAAAAAAAAAXlscKvyajtpRbbyw4ArUxM7qlncmX3QJqryIkrc4kI0AAAAAAAAAAYTXEVW56iPzIgSzb-4Bdb6AFAY2NefNxbkom6KbNuPnwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABoTYeXTsZmESDPKHxPqXiSfUwwEQAAQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACqynHj5thofQmAlMBBEA1PLLNTT3vymuEbaMy-V7O02zh1aupmTuIOO-H0mu4VFy6aAR4x904iqrlQEHNc3UZJHUbA-t3xkxSltHNyUPOlJNz1Ep8xoOkCcyGTaeSQxlrhhqkohCXP438_l6dPcG_z5Al52CWySt14IC6salv2xlWYv-4JLM96MfqNoG4ROGg-sFoCFiKxzNj2aPFaKLMLZmv4UaunUu-koL-7Q_H642ltYWqWEwemyHkBkizm5WMknJWieomoD_I0sZpeQ0sv-WSKewHtzA2bAgYNant9Cko8tcFDmCrpWQsmJV9ehtlQZ76T5A9rSitvzO83Gq0u2soHoxDS5wVgYE0ZxkXZFzAS8W4Os7uIZQk6Y8KAQEAU1K9o348yzPTmJLcPuJArGzN_8diqljQw1Lcdo2AlQKw8cunlscTqEY8igGO5eBo53l3p7TZ4qxx94Ga4JywK\",\"received_at\":1791909322043}}],\"more\":false}",
+  "asked": {
+    "before": null,
+    "kind": null,
+    "limit": 10,
+    "only": {
+      "group": "facVAIAI06kwLA7fg5rhNheOKJmeSKWLR-qZY9UAcMGrHzGchhzIudG7WrlxjRYo"
+    },
+    "route": "settled"
+  },
+  "content_range": null,
+  "name": "objects-settled-group",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/objects?state=settled&limit=10&group=facVAIAI06kwLA7fg5rhNheOKJmeSKWLR-qZY9UAcMGrHzGchhzIudG7WrlxjRYo"
+  },
+  "status": 200
+}

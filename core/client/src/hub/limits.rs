@@ -55,6 +55,8 @@ pub const MAX_LEAVES: usize = 4096;
 pub const MAX_WISHES: usize = 100_000;
 /// Most open objects of one kind the Desk holds (the hub cuts it short there).
 pub const MAX_DESK_OBJECTS: usize = 1000;
+/// Most rows one page of the settled objects may be asked for (hub-api.md point 47).
+pub const MAX_SETTLED_PAGE: u32 = 500;
 /// Most register values the Desk holds.
 pub const MAX_DESK_REGISTERS: usize = 20_000;
 /// Most groups a hub lists with the Desk.

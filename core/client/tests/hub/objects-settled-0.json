@@ -1,0 +1,18 @@
+{
+  "answer": "{\"before\":22,\"change\":22,\"items\":[{\"answered_at\":0,\"first_change\":15,\"group_id\":\"facVAIAI06kwLA7fg5rhNheOKJmeSKWLR-qZY9UAcMGrHzGchhzIudG7WrlxjRYo\",\"head_change\":22,\"kind\":\"cards\",\"object_id\":\"JDu2SoIrnknQkvaLZE45BA\",\"owner\":\"eWxwq_JqO2lFtvLDgCtTEzuqWdyZfdAmqvIiStziQjQ\",\"state\":3,\"urgency\":3,\"version\":{\"change\":22,\"envelope\":\"AQICADB9pxUAgAjTqTAsDt-DmuE2F44omZ5IpYtH6plj1QBwwasfMZyGHMi50btauXGNFigAAAAAAAAAAXlscKvyajtpRbbyw4ArUxM7qlncmX3QJqryIkrc4kI0AAAAAAAAAAz5TAmya39R8Ab85AUx6f69rYSTXNZIufscC-Qcu_8m8wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABoTYeXUUkO7ZKgiueSdCS9otkTjkEAQMDAAAAAAAAAACXu4vQvyKi-1tionkl_LidK_VlaXeZyzzZx_kPRfaVDABfVR5znRvMPunaTTFBELs5ZZeKmQs9H8fy2cNdo_UKpGb6H8C7M_bTe2vwNlq_yTvw1Wb47npruuoh0cKPWd7Y8WzBCAJtW_KtDBTT_QYhspnH6pigmsLG_XCHrngUJLcWHpf-gey3JyCVYCccWa58PduQ02C3IyS9sNoGi7QO_NcV4qvKEpUtMVOXRCLt7GDudEMx3bFmjrpBHeM1zwnP4SMci1zAiRfAgtldcS30okjzuyNY1XtSN1QzINixAmMAtB6NrkkeCmoRrVKb-kU2SrsH9obwhdijY5iW6JJmgusfYu7fhpPSn7oEKKCjX8aQhKNXa7CYbhlvvTByFFKihbjarlXNq7wZ7Imbd9EilSmDlRgsOnEN7Fni-4jwQEB_Ah1E6kDiR96d-3_O8neZA6XsVYeGEmYEyUGMj5Adhs0VvAYlDRbLHVtAxTRzr87totgBDAZyOnkmdTNIFwgN\",\"received_at\":1791909322054}}],\"more\":true}",
+  "asked": {
+    "before": null,
+    "kind": "cards",
+    "limit": 1,
+    "only": "all",
+    "route": "settled"
+  },
+  "content_range": null,
+  "name": "objects-settled-0",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/objects?state=settled&limit=1&kind=cards"
+  },
+  "status": 200
+}

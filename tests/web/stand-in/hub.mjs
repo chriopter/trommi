@@ -350,7 +350,35 @@ export async function startFakeHub(opts = {}) {
     }
     const registers = new Map()
     for (const e of a.room.envelopes) if (e.header.register_id && !e.void_code && sees(a, a.room.groups.get(e.group)) && takes(o, a.room.groups.get(e.group))) registers.set(`${e.group} ${e.header.sender} ${e.header.register_id}`, e)
-    return { ...out, registers: [...registers.values()].sort((x, y) => x.change - y.change).map(paged), truncated: false, groups: groupList(a, o), change: a.room.change }
+    return { ...out, registers: [...registers.values()].sort((x, y) => x.change - y.change).map(paged), counts: counts(a, o), truncated: false, groups: groupList(a, o), change: a.room.change }
+  }
+  // the Desk's `counts` (hub content.rs counts, hub-api.md point 47): per group the asker sees, how many objects of
+  // each kind are open, answered and closed, ascending by group id
+  function counts(a, o = {}) {
+    const by = new Map(), zero = () => ({ open: 0, answered: 0, closed: 0 }), word = ['', 'open', 'answered', 'closed']
+    for (const x of objectsOf(a.room, a).values()) {
+      if (!takes(o, a.room.groups.get(x.group_id))) continue
+      const row = by.get(x.group_id) ?? by.set(x.group_id, { group_id: x.group_id, cards: zero(), permission_requests: zero(), notes: zero(), artifacts: zero() }).get(x.group_id)
+      row[OBJECT_TABLES[x.type] ?? 'cards'][word[x.state]]++
+    }
+    return [...by.values()].sort((x, y) => Buffer.compare(Buffer.from(x.group_id, 'base64url'), Buffer.from(y.group_id, 'base64url')))
+  }
+  // `GET /v1/objects?state=settled` (hub content.rs settled_objects): the objects no longer open, newest first by
+  // their head change, below `before`; `kind`, `group` or `active` narrow them
+  function settledObjects(a, rq) {
+    if (rq.query.get('state') !== 'settled') throw refuse('bad-format', 'state: settled')
+    const kind = rq.query.get('kind')
+    if (kind !== null && !['cards', 'notes', 'permission_requests', 'artifacts'].includes(kind)) throw refuse('bad-format', 'kind: cards, notes, permission_requests or artifacts')
+    const o = only(rq, true), one = o.group === null ? null : groupId(o.group), before = number(rq, 'before') ?? Infinity, limit = clamp(number(rq, 'limit'), 100, 500)
+    const found = [...objectsOf(a.room, a).values()]
+      .filter(x => x.state !== 1 && x.head_change < before && (kind === null || (OBJECT_TABLES[x.type] ?? 'cards') === kind) && (one === null || x.group_id === one) && takes(o, a.room.groups.get(x.group_id)))
+      .sort((x, y) => y.head_change - x.head_change)
+    const items = found.slice(0, limit).map(x => ({
+      object_id: x.object_id, group_id: x.group_id, kind: OBJECT_TABLES[x.type] ?? 'cards', state: x.state, urgency: x.urgency, answered_at: x.answered_at, owner: x.owner,
+      first_change: x.first_change, head_change: x.head_change, version: x.version ? paged(x.version) : null,
+    }))
+    const more = found.length > limit
+    return { items, more, before: more ? items[items.length - 1].head_change : 0, change: a.room.change }
   }
   // `GET /v1/desk?brief=1&since=` (hub content.rs desk_brief): ids and versions of the open cards and requests;
   // with `since`, the rows changed after it, the ones no longer open in `settled`
@@ -360,7 +388,7 @@ export async function startFakeHub(opts = {}) {
       .sort((x, y) => y.urgency - x.urgency || x.first_change - y.first_change)
     for (const o of objects) {
       if (o.state !== 1) { settled.push(o.object_id); continue }
-      out[OBJECT_TABLES[o.type] ?? 'cards'].push({ object_id: o.object_id, version_change: o.version?.change ?? o.first_change, head_change: o.head_change })
+      out[OBJECT_TABLES[o.type] ?? 'cards'].push({ object_id: o.object_id, version_change: o.version?.change ?? o.first_change, head_change: o.head_change, first_change: o.first_change })
     }
     return { ...out, ...(since === null ? {} : { settled }), truncated: false, change: a.room.change }
   }
@@ -959,6 +987,7 @@ export async function startFakeHub(opts = {}) {
       if (brief !== '1') throw refuse('bad-format', 'the Desk is read whole, or with brief=1 (and since=)')
       return deskBrief(member(auth(rq)), since, o)
     }
+    if (is('GET', 'objects')) return settledObjects(member(auth(rq)), rq)
     if (is('GET', 'chats', null, null, 'items')) {
       const a = member(auth(rq))
       if (!['session', 'card'].includes(segs[1]) || !/^[0-9a-f]{32}$/.test(segs[2])) throw refuse('bad-format', 'a Chat is session/<id> or card/<id>, named by 32 hex digits')

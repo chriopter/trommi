@@ -1,5 +1,5 @@
 {
-  "answer": "{\"cards\":[{\"head_change\":13,\"object_id\":\"_qOZ6urH5C9blBvwKzjEZw\",\"version_change\":13}],\"change\":28,\"permission_requests\":[],\"settled\":[\"0ygDDEueGeiQIBzG2D2iRw\"],\"truncated\":false}",
+  "answer": "{\"cards\":[{\"first_change\":13,\"head_change\":13,\"object_id\":\"BeW8JN8gh9VrUdydZJNSIA\",\"version_change\":13}],\"change\":28,\"permission_requests\":[],\"settled\":[\"Th_n0EtUXnB1zdNiBd9XjA\"],\"truncated\":false}",
   "asked": {
     "active": false,
     "route": "desk_brief",

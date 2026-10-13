@@ -196,12 +196,23 @@ export interface DeskObject {
 export interface Desk {
   cards: DeskObject[]; notes: DeskObject[]; permission_requests: DeskObject[]; artifacts: DeskObject[]
   registers: EnvelopeItem[]; groups?: GroupRow[]
+  /** Per group how many objects of each kind are open, answered and closed, ascending by group id; null from a hub
+   *  before them (hub-api.md point 47). The hub's word, like the list: shown, nothing follows from it. */
+  counts: GroupCounts[] | null
   /** The Desk was cut short: the rest comes by `changes`. */
   truncated: boolean
   change: number
 }
-/** `GET /v1/desk?brief=1&since=`: the open cards and permission requests by id and version only. */
-export interface DeskEntry { object_id: Uint8Array; version_change: number; head_change: number }
+export interface StateCounts { open: number; answered: number; closed: number }
+export interface GroupCounts { group: Uint8Array; cards: StateCounts; permission_requests: StateCounts; notes: StateCounts; artifacts: StateCounts }
+/** The kinds of object, as the Desk's lists and the settled objects name them. */
+export type ObjectKind = 'cards' | 'notes' | 'permission_requests' | 'artifacts'
+/** `GET /v1/objects?state=settled`: a page of the objects no longer open, newest first by `head_change`. With
+ *  `more`, the next page is asked below `before` (it can come with fewer rows than asked, even none). */
+export interface SettledPage { items: (DeskObject & { kind: ObjectKind })[]; more: boolean; before: number; change: number }
+/** `GET /v1/desk?brief=1&since=`: the open cards and permission requests by id and change numbers only;
+  *  `first_change` null from a hub before it (left out where a row is made from the whole Desk). */
+export interface DeskEntry { object_id: Uint8Array; version_change: number; head_change: number; first_change?: number | null }
 export interface DeskBrief {
   cards: DeskEntry[]; permission_requests: DeskEntry[]
   /** With `since`: the objects that changed after it and are no longer open. Null for a whole list. */
@@ -420,6 +431,30 @@ function envelopePage(v: unknown, limit: number, from: number, direction: 1 | -1
 export interface Only { active?: boolean; archived?: boolean; group?: Uint8Array }
 function onlyQuery(only: Only): Record<string, string | number> {
   return { ...(only.active ? { active: 1 } : {}), ...(only.archived ? { archived: 1 } : {}), ...(only.group ? { group: enc(only.group) } : {}) }
+}
+const KINDS: ObjectKind[] = ['cards', 'permission_requests', 'notes', 'artifacts']
+function deskObject(x: unknown): DeskObject {
+  const d = obj(x, 'an object')
+  return {
+    object_id: id(d.object_id, 'object_id', 16), group: id(d.group_id, 'group_id', ...GROUP), state: int(d.state, 'state', 1), urgency: int(d.urgency, 'urgency'),
+    answered_at: int(d.answered_at, 'answered_at'), owner: id(d.owner, 'owner', 32), first_change: int(d.first_change, 'first_change', 1),
+    head_change: int(d.head_change, 'head_change', 1), version: maybe(d.version, envelopeItem),
+  }
+}
+/** The Desk's `counts`: at most 10 000 groups, strictly ascending by group id (so none twice), each kind's numbers. */
+function groupCounts(v: unknown): GroupCounts[] {
+  const state = (v: unknown): StateCounts => { const o = obj(v, 'a kind\'s counts'); return { open: int(o.open, 'open'), answered: int(o.answered, 'answered'), closed: int(o.closed, 'closed') } }
+  let last: Uint8Array | null = null
+  return list(v, 'counts', 10_000).map(x => {
+    const o = obj(x, 'a group\'s counts'), group = id(o.group_id, 'group_id', ...GROUP)
+    if (last && compareBytes(last, group) >= 0) bad('counts out of order, or a group twice')
+    last = group
+    return { group, cards: state(o.cards), permission_requests: state(o.permission_requests), notes: state(o.notes), artifacts: state(o.artifacts) }
+  })
+}
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i]
+  return a.length - b.length
 }
 function groupRow(v: unknown): GroupRow {
   const o = obj(v, 'a group')
@@ -1476,19 +1511,57 @@ export class Hub {
    *  `only`: of the live sessions alone (what a start loads), or of the archived ones (when one is opened). */
   async desk(only: Only = {}): Promise<Desk> {
     const o = obj(await this.get('/v1/desk', onlyQuery(only), CAP_DESK), 'the Desk')
-    const objects = (v: unknown): DeskObject[] => list(v, 'objects', 1000).map(x => {
-      const d = obj(x, 'an object')
-      return {
-        object_id: id(d.object_id, 'object_id', 16), group: id(d.group_id, 'group_id', ...GROUP), state: int(d.state, 'state', 1), urgency: int(d.urgency, 'urgency'),
-        answered_at: int(d.answered_at, 'answered_at'), owner: id(d.owner, 'owner', 32), first_change: int(d.first_change, 'first_change', 1),
-        head_change: int(d.head_change, 'head_change', 1), version: maybe(d.version, envelopeItem),
-      }
-    })
-    return {
+    const objects = (v: unknown): DeskObject[] => list(v, 'objects', 1000).map(deskObject)
+    const desk: Desk = {
       cards: objects(o.cards), notes: objects(o.notes), permission_requests: objects(o.permission_requests), artifacts: objects(o.artifacts),
       registers: list(o.registers, 'registers', 20_000).map(envelopeItem), ...(o.groups === undefined ? {} : { groups: list(o.groups, 'groups', 10_000).map(groupRow) }),
-      truncated: bool(o.truncated, 'truncated'), change: int(o.change, 'change'),
+      counts: maybe(o.counts, groupCounts), truncated: bool(o.truncated, 'truncated'), change: int(o.change, 'change'),
     }
+    // a whole Desk lists every open object it counts, group by group (cut short, it lists fewer)
+    if (desk.counts && !desk.truncated) {
+      const listed = new Map<string, number[]>()
+      KINDS.forEach((kind, k) => { for (const row of desk[kind]) { const key = b64u(row.group); (listed.get(key) ?? listed.set(key, [0, 0, 0, 0]).get(key)!)[k]++ } })
+      for (const row of desk.counts) {
+        const key = b64u(row.group), have = listed.get(key) ?? [0, 0, 0, 0]
+        if (KINDS.some((kind, k) => row[kind].open !== have[k])) bad('counts that do not match the open objects listed')
+        listed.delete(key)
+      }
+      if (listed.size) bad('counts that do not match the open objects listed')
+    }
+    return desk
+  }
+  /**
+   * `GET /v1/objects?state=settled`: the objects no longer open (answered or closed), newest first by `head_change`,
+   * below `before`; `kind` one kind, `group` one group or `active` the live ones (hub-api.md point 47). Checked: at
+   * most `limit` rows, each answered or closed, of the kind and group asked, strictly newest first below `before`,
+   * none twice, its change numbers in order and not above the answer's; with `more` the next `before` lies below the
+   * one asked and not above the last row, without it is 0.
+   */
+  async settledObjects(opts: { kind?: ObjectKind; group?: Uint8Array; active?: boolean; before?: number; limit?: number } = {}): Promise<SettledPage> {
+    if (opts.kind !== undefined && !KINDS.includes(opts.kind)) wrong('no such kind of object')
+    if (opts.group && opts.active) wrong('a group or the live ones, not both')
+    const limit = Math.min(500, Math.max(1, ownInt(opts.limit ?? 100, 'limit')))
+    const before = opts.before === undefined ? undefined : ownInt(opts.before, 'before')
+    if (before === 0) wrong('before: a change number')
+    const group = opts.group === undefined ? undefined : own(opts.group, 'group', ...GROUP)
+    const o = obj(await this.get('/v1/objects', { state: 'settled', limit, kind: opts.kind, before, group, ...(opts.active ? { active: 1 } : {}) }, CAP_LIST), 'the settled objects')
+    const change = int(o.change, 'change'), more = bool(o.more, 'more'), next = int(o.before, 'before')
+    const seen = new Set<string>()
+    let below = before ?? Number.MAX_SAFE_INTEGER
+    const items = list(o.items, 'items', limit).map(x => {
+      const row = { ...deskObject(x), kind: oneOf(obj(x, 'an object').kind, 'kind', ...KINDS) }
+      if (row.state !== 2 && row.state !== 3) bad('a settled object that is not answered or closed')
+      if ((opts.kind && row.kind !== opts.kind) || (group && b64u(row.group) !== group)) bad('a settled object of another kind or group than asked')
+      if (row.head_change >= below || row.head_change > change || row.first_change > row.head_change) bad('settled objects out of order')
+      if (row.version && (row.version.change < row.first_change || row.version.change > row.head_change)) bad('a version outside its object\'s changes')
+      below = row.head_change
+      const key = b64u(row.object_id)
+      if (seen.has(key)) bad('an object named twice')
+      seen.add(key)
+      return row
+    })
+    if (more ? next < 1 || next > below || (before !== undefined && next >= before) : next !== 0) bad('a cursor that does not lie where the page ends')
+    return { items, more, before: next, change }
   }
   /** `GET /v1/desk?brief=1[&since=]`: the Desk's open cards and permission requests as ids and versions; with
    *  `since`, only what changed after it (and what of that is no longer open). */
@@ -1496,7 +1569,12 @@ export class Hub {
     const o = obj(await this.get('/v1/desk', { ...(since === null ? { brief: 1 } : { brief: 1, since: ownInt(since, 'since') }), ...onlyQuery(only) }, CAP_DESK), 'the Desk')
     const entries = (v: unknown): DeskEntry[] => list(v, 'objects', 10_000).map(x => {
       const d = obj(x, 'an object')
-      return { object_id: id(d.object_id, 'object_id', 16), version_change: int(d.version_change, 'version_change', 1), head_change: int(d.head_change, 'head_change', 1) }
+      const row = {
+        object_id: id(d.object_id, 'object_id', 16), version_change: int(d.version_change, 'version_change', 1), head_change: int(d.head_change, 'head_change', 1),
+        first_change: maybe(d.first_change, f => int(f, 'first_change', 1)),
+      }
+      if (row.version_change > row.head_change || (row.first_change !== null && row.first_change > row.version_change)) bad('an open object whose change numbers are out of order')
+      return row
     })
     return {
       cards: entries(o.cards), permission_requests: entries(o.permission_requests),
