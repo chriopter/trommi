@@ -194,5 +194,13 @@
       "scribble": false
     }
   ],
-  "has_more": false
+  "has_more": false,
+  "pictures": [
+    {
+      "file_id": "14ae48930f6f2048127e9103e88db787",
+      "name": "style-tiles.png",
+      "width": 2560,
+      "height": 1160
+    }
+  ]
 }

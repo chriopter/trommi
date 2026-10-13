@@ -46,6 +46,51 @@ pub struct Lens {
     /// The desks whose goals are folded to their first line on this device (web localStorage
     /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
     pub goals_folded: Vec<String>,
+    /// How many pages of a session's talk show ([`TALK_PAGE`] rows each), for that session (its key or short id);
+    /// none, or another session: one page.
+    pub talk_window: Option<(String, u32)>,
+    /// How many pages of the complete list Off your mind show ([`OFF_PAGE`] rows each), for that search's words.
+    pub off_window: Option<(String, u32)>,
+}
+
+/// Rows of a session's talk in one page of its window (the web's PAGE).
+pub const TALK_PAGE: usize = 40;
+/// Rows of the complete list Off your mind in one page of its window.
+pub const OFF_PAGE: usize = 100;
+
+/// What the person asks to see more of.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MoreOf {
+    /// The talk of a session (its key, or its short id).
+    Talk { session: String },
+    /// The complete list Off your mind, under these search words.
+    Off { query: String },
+}
+
+impl Lens {
+    /// THE HOOK for the action "show more" (W3 wires it; where the older part is not on this device, the engine's
+    /// past reading follows the same action): the window of that list grows by one page. The page a `MoreView`
+    /// names (`pages`) is what this sets.
+    pub fn show_more(&mut self, of: MoreOf) {
+        let grow = |w: &mut Option<(String, u32)>, key: String| {
+            let now = match w {
+                Some((k, n)) if *k == key => *n,
+                _ => 1,
+            };
+            *w = Some((key, now.max(1) + 1));
+        };
+        match of {
+            MoreOf::Talk { session } => grow(&mut self.talk_window, session),
+            MoreOf::Off { query } => grow(&mut self.off_window, query),
+        }
+    }
+    /// How many pages of this list show.
+    pub fn pages(window: &Option<(String, u32)>, key: &str) -> u32 {
+        match window {
+            Some((k, n)) if k == key => (*n).max(1),
+            _ => 1,
+        }
+    }
 }
 
 /// A desk of the room.

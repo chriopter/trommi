@@ -183,5 +183,27 @@
       "scribble": false
     }
   ],
-  "has_more": false
+  "has_more": false,
+  "pictures": [
+    {
+      "file_id": "689be4d14b8c7e0929da081e6bc78714",
+      "name": "hero-centered.png",
+      "width": 2560,
+      "height": 1600,
+      "key": "centered",
+      "keys": [
+        "centered"
+      ]
+    },
+    {
+      "file_id": "2696c38e6cc7b29aa0904b353c4d5855",
+      "name": "hero-split.png",
+      "width": 2560,
+      "height": 1600,
+      "key": "split",
+      "keys": [
+        "split"
+      ]
+    }
+  ]
 }

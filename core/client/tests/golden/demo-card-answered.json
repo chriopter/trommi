@@ -146,5 +146,16 @@
       "scribble": false
     }
   ],
-  "has_more": false
+  "has_more": false,
+  "after": {
+    "next": {
+      "id": "a38afef6dbdd056db8042980f2b83336",
+      "number": 43,
+      "title": "Which hero for the landing page?"
+    },
+    "says": {
+      "key": "card.next",
+      "en": "Next question"
+    }
+  }
 }

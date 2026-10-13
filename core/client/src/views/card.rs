@@ -21,7 +21,7 @@ use super::session::{link_note, unheard_fix};
 use super::sidebar::link_of;
 use super::talk::{card_ref, choices_of, events_of, file_ids, in_order, items_of, Entry, Side};
 use super::words::{minutes, minutes_tick, say};
-use super::{AnswerView, CardView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, Text, VersionView};
+use super::{AfterView, AnswerView, CardRefView, CardView, PictureView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, Text, VersionView};
 use crate::model::types::{Card, PermissionRequest, StatusLine};
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -214,6 +214,124 @@ fn place_of(id: &str, walk: &[String]) -> Option<PlaceView> {
     })
 }
 
+fn slug(text: &str) -> String {
+    let lower = text.to_lowercase();
+    let mut out = String::new();
+    let mut dash = false;
+    for ch in lower.chars() {
+        if ch.is_ascii_lowercase() || ch.is_ascii_digit() {
+            if dash && !out.is_empty() {
+                out.push('-');
+            }
+            dash = false;
+            out.push(ch);
+        } else {
+            dash = true;
+        }
+    }
+    out
+}
+
+/// A card's pictures and the option each shows (the web's `pictureKeys`).
+pub fn pictures_of(attachments: &[Value], sections: &[Value], options: &[super::desk::Opt]) -> Vec<PictureView> {
+    let s = |a: &Value, k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let images: Vec<(usize, &Value)> = attachments
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.get("media_type").and_then(Value::as_str).unwrap_or("").starts_with("image/"))
+        .collect();
+    let index_of = |raw: usize| images.iter().position(|(i, _)| *i == raw);
+    // (a section names its picture by its place among the attachments)
+    let section_pics: Vec<(usize, String)> = sections
+        .iter()
+        .filter_map(|x| {
+            let key = x.get("key").and_then(Value::as_str)?;
+            let raw = x.get("picture").and_then(Value::as_u64)? as usize;
+            Some((index_of(raw)?, key.to_string()))
+        })
+        .collect();
+    let mut keys: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    for (at, key) in &section_pics {
+        keys.entry(*at).or_insert_with(|| key.clone());
+    }
+    if keys.is_empty() && images.len() >= 2 && options.len() >= 2 {
+        let mut unclear = false;
+        let mut owners = std::collections::BTreeSet::new();
+        for (i, (_, img)) in images.iter().enumerate() {
+            let file = s(img, "file_name");
+            let stem = match file.rfind('.') {
+                Some(dot) if dot + 1 < file.len() && file[dot + 1..].chars().all(|c| c.is_ascii_alphanumeric()) => &file[..dot],
+                _ => file.as_str(),
+            };
+            let name = format!("-{}-", slug(stem));
+            let mut hits: Vec<&super::desk::Opt> = options
+                .iter()
+                .filter(|o| [slug(&o.key), slug(&o.label)].iter().any(|w| !w.is_empty() && name.contains(&format!("-{w}-"))))
+                .collect();
+            hits.sort_by_key(|o| std::cmp::Reverse(slug(&o.key).len()));
+            let Some(first) = hits.first() else { continue };
+            if hits.len() > 1 && slug(&hits[1].key).len() == slug(&first.key).len() {
+                unclear = true;
+                continue;
+            }
+            keys.insert(i, first.key.clone());
+            owners.insert(first.key.clone());
+        }
+        if unclear || owners.len() < 2 {
+            keys = if images.len() == options.len() && options.len() >= 3 {
+                options.iter().enumerate().map(|(i, o)| (i, o.key.clone())).collect()
+            } else {
+                Default::default()
+            };
+        }
+    }
+    images
+        .iter()
+        .enumerate()
+        .map(|(i, (_, a))| {
+            let name = s(a, "file_name");
+            let title = s(a, "title");
+            let key = keys.get(&i).cloned();
+            let shared: Vec<String> = section_pics.iter().filter(|(at, _)| *at == i).map(|(_, k)| k.clone()).collect();
+            PictureView {
+                file_id: s(a, "attachment_id"),
+                title: if title != name { title } else { String::new() },
+                name,
+                width: a.get("width").and_then(Value::as_u64).filter(|w| *w > 0),
+                height: a.get("height").and_then(Value::as_u64).filter(|h| *h > 0),
+                page: a.get("page").and_then(Value::as_str).and_then(|p| p.strip_prefix("attachment:")).map(String::from),
+                keys: if shared.is_empty() { key.iter().cloned().collect() } else { shared },
+                key,
+            }
+        })
+        .collect()
+}
+
+/// The way on once a card is settled: the next open question in the Desk's order after the place it had (the core's
+/// walk, `next_open_after`, kept to the desk in view), else the first that waits (the web's `nextOpen`).
+fn after_of(b: &Board, v: &CardView, walk: &[String]) -> Option<AfterView> {
+    if v.status == "open" || v.status == "catching" || v.status.is_empty() {
+        return None;
+    }
+    let here: Vec<String> = b.agents.iter().filter(|a| a.on_desk).map(|a| a.row.key.clone()).collect();
+    let next = b
+        .model
+        .next_open_after(&v.id, Some(&here))
+        .filter(|n| walk.contains(n))
+        .or_else(|| walk.iter().find(|x| **x != v.id).cloned())
+        .filter(|n| *n != v.id);
+    let next = next.map(|id| {
+        let title = match (b.model.cards.get(&id), b.model.permissions.get(&id)) {
+            (Some(c), _) => shown_title(c),
+            (None, Some(p)) => format!("Approval: {}", p.tool_name),
+            _ => String::new(),
+        };
+        CardRefView { number: b.number_of(&id), id, title }
+    });
+    let says = if next.is_some() { say("card.next", "Next question", &[]) } else { say("card.next.none", "That was the last open question.", &[]) };
+    Some(AfterView { next, says })
+}
+
 /// The page of the card or request `id` (its id, or its number of the address); none when this device does not
 /// hold it. `walk`: what waits on the Desk in view, in its order (`DeskView::stack`).
 pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
@@ -225,6 +343,7 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
     for x in &mut v.sections {
         x.text = titled(&x.text, assets);
     }
+    v.after = after_of(b, &v, walk);
     Some(v)
 }
 
@@ -471,6 +590,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         starred,
         snoozed_until: c.snoozed_until.filter(|_| status == "open"),
         files: if loading || newer { Vec::new() } else { file_ids(&c.field("attachments")) },
+        pictures: if loading || newer { Vec::new() } else { pictures_of(c.field("attachments").as_array().map(Vec::as_slice).unwrap_or(&[]), &sections, &super::desk::options_of(&c.field("options"))) },
         number,
         nr,
         status: status.into(),
@@ -495,6 +615,7 @@ fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         has_more: chat.is_some_and(|t| t.has_more),
         merged_from: merged.iter().map(|x| other(x)).collect(),
         merged_into: (!into.is_empty()).then(|| other(&into)),
+        after: None,
         id,
     })
 }
@@ -585,6 +706,51 @@ mod tests {
     }
     fn notes(v: &CardView) -> Vec<&str> {
         v.notes.iter().map(|n| n.en.as_str()).collect()
+    }
+
+    /// The web's `pictureKeys`, case by case.
+    #[test]
+    fn pictures_find_their_options() {
+        let opt = |k: &str, l: &str| crate::views::desk::Opt { key: k.into(), label: l.into(), ..Default::default() };
+        let img = |id: &str, name: &str| json!({ "attachment_id": id, "file_name": name, "media_type": "image/png" });
+        let keys = |p: &[PictureView]| p.iter().map(|x| x.key.clone().unwrap_or_default()).collect::<Vec<_>>();
+        let two = [opt("centered", "Centered"), opt("split", "Split view")];
+        // by file name: the option's key or label in it
+        let atts = [img("a", "hero-split-view.png"), img("b", "Hero_Centered.PNG"), json!({ "attachment_id": "d", "file_name": "notes.pdf", "media_type": "application/pdf" })];
+        assert_eq!(keys(&pictures_of(&atts, &[], &two)), ["split", "centered"]);
+        // one owner only: none
+        let atts = [img("a", "split.png"), img("b", "other.png")];
+        assert_eq!(keys(&pictures_of(&atts, &[], &two)), ["", ""]);
+        // as many as options, three or more: in order
+        let three = [opt("a", "One"), opt("b", "Two"), opt("c", "Three")];
+        let atts = [img("1", "x.png"), img("2", "y.png"), img("3", "z.png")];
+        assert_eq!(keys(&pictures_of(&atts, &[], &three)), ["a", "b", "c"]);
+        // two options of the same key length in one name: unclear, then in order only with three
+        let atts = [img("1", "a-b.png"), img("2", "c.png"), img("3", "z.png")];
+        assert_eq!(keys(&pictures_of(&atts, &[], &three)), ["a", "b", "c"]);
+        // a section decides, by its place among the attachments; two sections may share one picture
+        let atts = [json!({ "attachment_id": "doc", "media_type": "text/html" }), img("p", "anything.png")];
+        let sections = [json!({ "key": "centered", "picture": 1 }), json!({ "key": "split", "picture": 1 })];
+        let p = pictures_of(&atts, &sections, &two);
+        assert_eq!((p[0].key.as_deref(), p[0].keys.clone()), (Some("centered"), vec!["centered".to_string(), "split".into()]));
+    }
+
+    /// Settled, a card's page offers the next open question of the desk in view, else says none is left.
+    #[test]
+    fn after_an_answer_the_next_question() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.answered("done", "a", NOW - MIN, 300);
+        r.card("q1", "a", "decision", "normal");
+        r.card("q2", "a", "decision", "normal");
+        let v = view(&r, "done");
+        let after = v.after.unwrap();
+        assert_eq!((after.next.as_ref().map(|n| n.id.as_str()), after.says.en.as_str()), (Some("q1"), "Next question"));
+        // an open card offers none: the shell shows it right after an answer only
+        assert!(view(&r, "q1").after.is_none());
+        r.cards.retain(|c| c["object_id"] == "done");
+        let after = view(&r, "done").after.unwrap();
+        assert_eq!((after.next, after.says.en.as_str()), (None, "That was the last open question."));
     }
 
     /// An Artifact link on the card's page is named by its title (markdown the shell draws); on the Desk's row too,
