@@ -17,7 +17,7 @@ Schreib mit jeder Session, sieh, woran sie arbeitet, gib eine Karte mit einer No
 Mac, iPhone und die Web-App zeigen denselben Desk. Was du auf einem Gerät beantwortest, ist auf allen beantwortet.
 
 ENDE-ZU-ENDE VERSCHLÜSSELT
-Karten, Antworten, Chats, Notizen und Dateien werden auf deinen Geräten mit MLS verschlüsselt, dem IETF-Standard für Gruppennachrichten. Der Server stellt versiegelte Umschläge zu und hat keinen Schlüssel, der sie öffnet. App, Connector und Server sind Open Source.
+Karten, Antworten, Chats, Notizen und Dateien werden auf deinen Geräten mit MLS verschlüsselt, dem IETF-Standard für Gruppennachrichten. Der Server stellt versiegelte Umschläge zu und hat keinen Schlüssel, der sie öffnet. App, Connector und Server sind offener Code unter der O'Saasy-Lizenz: lesen, ändern, selbst betreiben.
 
 SO VERBINDET ES SICH
 Trommi arbeitet mit Agenten, die du selbst betreibst. Installiere auf einem Linux- oder macOS-Rechner mit Claude Code oder Codex einmal den Trommi-Connector und verbinde eine Session mit dem Einladungslink aus „Invite Agent…“ in der App. Sechs Emoji vergleichen, bestätigen, und die nächste Frage der Session landet auf deinem Desk. Anleitung: trommi.com
