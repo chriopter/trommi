@@ -1448,7 +1448,6 @@ export class Engine {
     })
   }
   private async keep(): Promise<void> {
-    this.watchAhead()
     // (not waited for: the hub may hold the answer back while this device is not in yet)
     if (!this.stockAsked && !this.stocking && this.now() - this.timedAt < this.timing.upkeep_every) void this.stockKeyPackages().catch(() => {})
     await this.serial(async () => { await this.joinWelcomes(null); await this.tellFindings(); this.emit('batch', null) })
@@ -1833,6 +1832,7 @@ export class Engine {
   async start({ stream = true }: { stream?: boolean } = {}): Promise<void> {
     if (this.running || this.over) return
     this.running = true
+    this.watchAhead()   // (what waited ahead of its chain before a restart: its time runs from now, whatever the hub serves)
     this.halted = false
     this.kick()
     this.setConnection('connecting')
