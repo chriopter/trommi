@@ -16,6 +16,7 @@
 //!   or 8 MiB); every writer's newest value per register is served; every device is served every group's objects;
 //! - `POST /v1/key-packages/claim`: any signed-in device claims of any device (the real hub lets a human device, and
 //!   an opener for its helper session);
+//! - `GET /v1/rooms/{room}/groups`: every group to every device, `stale` always false, `room_epoch` 0;
 //! - files, pushes, accounts, invites, recovery: not there.
 
 #![allow(dead_code)]
@@ -215,6 +216,8 @@ pub struct Hub {
     pub read_fits: Option<usize>,
     /// A page of a group's log holds at most so many entries, whatever was asked.
     pub log_max: Option<usize>,
+    /// A page of the room's groups holds at most so many, whatever was asked.
+    pub groups_max: Option<usize>,
     /// Every refusal the hub answered, as "METHOD /path: code".
     pub refused: Vec<String>,
     /// Groups the hub says it does not know (`not-found`) on the read routes.
@@ -388,16 +391,17 @@ impl Hub {
                 Ok(json!({ "room_id": group.room_id().to_base64url() }))
             }
             OutboxKind::GroupFounding => {
-                let group = entry.group.ok_or(no(Error::BadFormat))?;
-                if self.epochs.contains_key(&group) {
-                    return Err(no(Error::RoomExists));
-                }
                 let posted = PostedCommit { commit: part(entry, 2), group_info: part(entry, 3), welcome: optional(part(entry, 4)), sealed_key: part(entry, 5), recovery_auth: None, base_group_info: None };
                 let room = self.room.as_ref().ok_or(no(Error::NoRoom))?;
                 let context = Context { room: room.history(), sessions: &Sessions { sessions: &self.sessions, archived: &self.archived }, recovery: &PublicRules, max_human_devices: MAX_HUMAN_DEVICES };
                 let (observer, facts) = Observer::found_session(part(entry, 0), part(entry, 1), &posted, &context).map_err(no)?;
-                if facts.committer != *from || observer.group() != group {
+                // (over HTTP the group is the founding's own: the request does not name it)
+                let group = observer.group();
+                if facts.committer != *from || entry.group.is_some_and(|named| named != group) {
                     return Err(no(Error::WrongSender));
+                }
+                if self.epochs.contains_key(&group) {
+                    return Err(no(Error::RoomExists));
                 }
                 self.sessions.insert(group, observer);
                 self.group_infos.insert((group, 0), part(entry, 0).to_vec());
@@ -718,6 +722,23 @@ impl Hub {
                 }
                 self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::KeyPackages, group: None, epoch: 0, parts })
             }
+            ("GET", ["v1", "rooms", _, "groups"]) => {
+                // (every group in one list, numbered from 1 in a fixed order; `stale` is not told)
+                let (after, limit) = (num("after") as usize, num("limit").clamp(1, 1000) as usize);
+                let limit = limit.min(self.groups_max.unwrap_or(usize::MAX));
+                let row = |o: &Observer, kind: &str| {
+                    let session = o.session();
+                    let parent = session.filter(|s| s.parent != SessionId::ZERO).map(|s| s.parent.to_base64url());
+                    json!({ "group_id": b64(o.group().as_bytes()), "kind": kind, "epoch": o.epoch().unwrap_or(0), "room_epoch": 0,
+                        "leaves": o.leaves().unwrap_or_default().iter().map(DeviceId::to_base64url).collect::<Vec<_>>(),
+                        "live": !self.archived.contains(&o.group()), "stale": false, "parent": parent, "session_id": session.map(|s| s.session_id.to_base64url()) })
+                };
+                let mut rows: Vec<Value> = self.room.iter().map(|o| row(o, "room")).collect();
+                rows.extend(self.sessions.values().map(|o| row(o, if o.session().is_some_and(|s| s.parent != SessionId::ZERO) { "helper" } else { "main" })));
+                let page: Vec<Value> = rows.iter().skip(after).take(limit).cloned().collect();
+                let end = after + page.len();
+                Ok(json!({ "items": page, "more": end < rows.len(), "after": end }))
+            }
             ("POST", ["v1", "key-packages", "claim"]) => {
                 let asked: Vec<DeviceId> = body["devices"].as_array().into_iter().flatten().filter_map(|d| d.as_str().and_then(|s| DeviceId::from_base64url(s).ok())).collect();
                 let has = |p: &Pool| !p.single_use.is_empty() || p.last_resort.is_some();
@@ -729,15 +750,27 @@ impl Hub {
                     return Err(no(Error::NotFound));
                 }
                 let mut claimed = serde_json::Map::new();
+                let mut missing = Vec::new();
                 for device in asked {
-                    if let Some(pool) = self.pools.get_mut(&device).filter(|p| has(p)) {
-                        let package = pool.single_use.pop().or_else(|| pool.last_resort.clone()).expect("checked");
-                        claimed.insert(device.to_base64url(), json!(b64(&package)));
+                    match self.pools.get_mut(&device).filter(|p| has(p)) {
+                        Some(pool) => {
+                            let package = pool.single_use.pop().or_else(|| pool.last_resort.clone()).expect("checked");
+                            claimed.insert(device.to_base64url(), json!(b64(&package)));
+                        }
+                        None => missing.push(device.to_base64url()),
                     }
                 }
-                Ok(json!({ "key_packages": claimed }))
+                let mut answer = json!({ "key_packages": claimed });
+                if body["partial"] == json!(true) {
+                    answer["missing"] = json!(missing);
+                }
+                Ok(answer)
             }
             ("POST", ["v1", "envelopes"]) => self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::Envelope, group: None, epoch: 0, parts: vec![bytes("envelope")] }),
+            ("POST", ["v1", "groups"]) => {
+                let parts = vec![bytes("group_info_0"), bytes("sealed_key_0"), bytes("commit"), bytes("group_info"), bytes("welcome"), bytes("sealed_key")];
+                self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::GroupFounding, group: None, epoch: 0, parts })
+            }
             ("POST", ["v1", "groups", _, "commits"]) => {
                 let external = body.get("recovery_auth").is_some_and(Value::is_string);
                 let parts = if external {

@@ -128,7 +128,7 @@ pub fn post_all(hub: &mut Hub, device: &mut Peer) -> Vec<String> {
     refused
 }
 
-fn invite(inviter: &mut Peer, joiner: &mut Peer, role: Role) -> u64 {
+pub fn invite(inviter: &mut Peer, joiner: &mut Peer, role: Role) -> u64 {
     let address = HubAddress::parse(HUB_URL).expect("an address");
     let opened = inviter.invite_open(role, None, "https://app.example", &address, now()).expect("an invite");
     let link = String::from_utf8(opened.link.expose().to_vec()).expect("the link is text");

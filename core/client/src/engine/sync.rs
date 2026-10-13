@@ -222,6 +222,8 @@ enum Asked {
     First { expect: Expect, route: ObjectRoute, object: ObjectId, after: u64 },
     /// A KeyPackage claimed for a job of tending the groups (`upkeep`).
     Claim { expect: Expect, job: upkeep::Job },
+    /// A page of the hub's list of the room's groups, for a job of tending (`upkeep`).
+    RoomGroups { expect: Expect, job: upkeep::Job },
     DeviceWrite,
 }
 
@@ -238,7 +240,8 @@ impl Asked {
             | Asked::Joins { expect, .. }
             | Asked::JoinRead { expect, .. }
             | Asked::First { expect, .. }
-            | Asked::Claim { expect, .. } => Some(expect),
+            | Asked::Claim { expect, .. }
+            | Asked::RoomGroups { expect, .. } => Some(expect),
         }
     }
 }
@@ -691,6 +694,7 @@ impl Engine {
             Asked::Joins { entries, .. } => self.on_joins_posted(ctx, entries, answer, unauthorised),
             Asked::JoinRead { what, .. } => self.on_join_read(ctx, what, answer, unauthorised),
             Asked::Claim { job, .. } => self.on_claimed(ctx, job, answer, unauthorised),
+            Asked::RoomGroups { job, .. } => self.on_room_groups(ctx, job, answer, unauthorised),
         }
         self.drive(ctx);
         true
@@ -711,6 +715,7 @@ impl Engine {
                 if conn.reader.opened(status, &headers).is_ok() {
                     conn.opened = true;
                     self.stream_retry.ok();
+                    self.tending.stream_opened();
                     self.report(Report::StreamOpened);
                 }
             }
@@ -779,7 +784,10 @@ impl Engine {
                     self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
                 }
             }
-            StreamEvent::Presence(p) => self.report(Report::Presence(p)),
+            StreamEvent::Presence(p) => {
+                self.tending.presence(&p);
+                self.report(Report::Presence(p))
+            }
             StreamEvent::Here => self.report(Report::Here),
             // (relayed pieces, wishes, invite Requests, archived, evicted files: with the parts that use them)
             StreamEvent::Relay { .. } | StreamEvent::Wish(_) | StreamEvent::InviteRequest { .. } | StreamEvent::Archived { .. } | StreamEvent::FileEvicted { .. } => {}
@@ -1948,10 +1956,11 @@ impl Engine {
         }
         // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the
         //  core merged it and dropped the entry then)
-        match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
-            Ok(()) | Err(Error::NotFound) => {}
+        let merged = match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
+            Ok(()) => false,
+            Err(Error::NotFound) => true,
             Err(e) => return self.local(ctx, &e),
-        }
+        };
         if kind == OutboxKind::KeyPackages {
             self.key_packages_at_hub = taken.unused.or(self.key_packages_at_hub);
         }
@@ -1960,7 +1969,7 @@ impl Engine {
             // An accepted Commit is merged where the hub's order shows it. Without a stream that is the
             // next page.
             self.report(Report::Groups);
-            self.tending.want = true;
+            self.tending.sent(merged);
             if !self.stream.as_ref().is_some_and(|s| s.opened) {
                 self.pass = true;
             }

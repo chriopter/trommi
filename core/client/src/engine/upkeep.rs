@@ -6,6 +6,15 @@
 //!   finished here.
 //! - **5.2.7, a human device a live session lacks.** One left out of a founding (it had no KeyPackage at the hub),
 //!   or let into the room since: one KeyPackage of it is claimed and one Commit adds it.
+//! - **The invite steps** (12.1.5, 12.1.6, 5.3): what is left to do for a device this one let in by link, as the
+//!   core lists it from the state of the groups: the Commit built again after it lost its epoch, the key handover,
+//!   the newcomer added to each live session, an agent's main session founded, a takeover's sessions cleaned with
+//!   the new agent in the seat, and at a takeover's end the hub's list of helper sessions held against this device's.
+//!   What an open invite still has to do is the invite's: those groups and devices are left out of the two rules
+//!   above.
+//! - **Seats** (5.2.2, [`crate::seats`]): an agent device of the room that sits in no session gets its main
+//!   session from any human device, once it is connected and waited out its grace. The rule says who is due; the
+//!   hub's list of the room's groups says who sits in one already; one founding at a time.
 //! - **The core's findings** (a Cut that names another envelope than the one shown): said once, then cleared.
 //!
 //! # How it runs
@@ -27,18 +36,34 @@
 
 use super::{Alert, Asked, Ctx, Engine, Report, Retry};
 use crate::app::io::IoId;
-use crate::hub::{Answer, Failure, Route};
+use crate::hub::{Answer, Failure, GroupRow, GroupRowKind, Presence, Route};
+use crate::seats::{Known, Plan, SeatPlanner};
 use std::collections::{BTreeSet, VecDeque};
-use trommi_core::ids::{DeviceId, GroupId};
+use trommi_core::device::InviteStep;
+use trommi_core::ids::{DeviceId, GroupId, InviteId, SessionId};
 use trommi_core::mls::profile::Cut;
 use trommi_core::Error;
 
+/// At most so many devices are held as connected.
+const ONLINE_MAX: usize = 4096;
+/// Groups asked for in one page of the hub's list, and the most that are read for one job.
+const GROUPS_PAGE: u32 = 1000;
+const GROUPS_MAX: usize = 8 * GROUPS_PAGE as usize;
 /// At most so many repairs that failed are remembered as said (a group and a reason each).
 const SAID_MAX: usize = 1024;
 
 /// One thing to mend in a group, as a look found it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Job {
+    /// 12.1.6, 5.2.2: an agent device's main session is founded. `invite`: a step of that invite, whose KeyPackage
+    /// of the agent is used; none: a seat, and one is claimed.
+    Found { agent: DeviceId, invite: Option<InviteId> },
+    /// 5.3.1: a session is taken over in this group (the invite's step says with which Cuts and which agent).
+    TakeOver { invite: InviteId, group: GroupId },
+    /// 5.3.1 (c): the hub's list of the helper sessions under a session that was taken over.
+    Check { invite: InviteId, session: SessionId },
+    /// The hub's list of who sits in a session, for the agents the seat rule holds due.
+    Seat { candidates: Vec<String> },
     /// 5.2.8: the Commit that makes a stale session group live again.
     Clean { group: GroupId },
     /// 5.2.7: a human device of the room is added to a live session group.
@@ -55,6 +80,8 @@ pub(super) struct Tending {
     looking: bool,
     /// The claim in flight for the job being done.
     asked: Option<IoId>,
+    /// A Commit of this device was taken by the hub and has not come back in the log yet.
+    unmerged: bool,
     /// The look in hand found something to do.
     did: bool,
     /// Something of the look in hand failed or could not be done yet: the next one waits.
@@ -64,6 +91,12 @@ pub(super) struct Tending {
     pub(super) retry: Retry,
     /// The own leaves are looked at with the next look (5.2.9): set by the timed round.
     leaves: bool,
+    /// The hub's list of the room's groups, as far as it was read for the job in hand.
+    rows: Vec<GroupRow>,
+    /// The seat rule, who is connected (as the stream said), and when the rule wants to look again.
+    seats: SeatPlanner,
+    online: BTreeSet<DeviceId>,
+    recheck: Option<u64>,
     /// Repairs that failed and were said: a group and the reason, once each.
     said: BTreeSet<(GroupId, &'static str)>,
 }
@@ -79,18 +112,44 @@ impl Tending {
         self.want = true;
         self.looking = true;
     }
+    /// The hub took a Commit of this device. Until it has its place in the log (`merged`: it has), the groups are
+    /// not looked at: between the hub's answer and the log the core lists what that Commit does as still to do (a
+    /// founding that was taken shows as a session to found), and a look then would build it a second time.
+    pub(super) fn sent(&mut self, merged: bool) {
+        self.want = true;
+        self.unmerged = !merged;
+    }
     /// The groups changed: looked at now, whatever waited.
     pub(super) fn changed(&mut self) {
+        self.unmerged = false;
         self.want = true;
         self.retry.hurry();
     }
     /// The timed round: a look, and the own leaves with it.
     pub(super) fn timed(&mut self) {
+        // (a Commit of this device that never showed in the log does not hold the looks back for good)
+        self.unmerged = false;
         self.want = true;
         self.leaves = true;
     }
     pub(super) fn wake(&self) -> Option<u64> {
-        self.retry.at.filter(|_| self.want)
+        let retry = self.retry.at.filter(|_| self.want);
+        match (retry, self.recheck) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+    /// The stream opened again: who is here is told anew.
+    pub(super) fn stream_opened(&mut self) {
+        self.online.clear();
+    }
+    /// A device came or went: one that came may be an agent that waits for its seat.
+    pub(super) fn presence(&mut self, presence: &Presence) {
+        if !presence.online {
+            self.online.remove(&presence.device);
+        } else if self.online.len() < ONLINE_MAX && self.online.insert(presence.device) {
+            self.want = true;
+        }
     }
 }
 
@@ -98,8 +157,12 @@ impl Engine {
     pub(super) fn drive_tending(&mut self, ctx: &mut Ctx<'_>) {
         // (the core judges a session against the room states this device holds: the order first; and a sign-in's
         //  own joins of its sessions come before anybody adds it by Welcome)
-        if self.joining.is_some() || !self.caught_up || self.pass || !self.todo.is_empty() || self.repair.is_some() || self.tending.asked.is_some() {
+        if self.joining.is_some() || !self.caught_up || self.pass || !self.todo.is_empty() || self.repair.is_some() || self.tending.asked.is_some() || self.tending.unmerged {
             return;
+        }
+        if self.tending.recheck.is_some_and(|at| ctx.now >= at) {
+            self.tending.recheck = None;
+            self.tending.want = true;
         }
         if self.tending.jobs.is_empty() && !self.tending.looking {
             if !self.tending.want || self.tending.retry.waiting(ctx.now) {
@@ -149,18 +212,101 @@ impl Engine {
         if self.stopped.is_some() {
             return;
         }
+        // what is left to do for the devices this one let in by link
+        let steps = match self.device.invite_steps() {
+            Ok(steps) => steps,
+            Err(e) => return self.failed(ctx, &e),
+        };
+        let mut taken: Vec<GroupId> = Vec::new();
+        let mut coming: BTreeSet<DeviceId> = BTreeSet::new();
+        for (invite, step) in steps {
+            let made = match step {
+                InviteStep::Wait => Ok(()),
+                InviteStep::Commit => self.device.invite_recommit(&invite, ctx.now).map(drop),
+                InviteStep::Handover { device, .. } => {
+                    coming.insert(device);
+                    self.device.invite_handover(&invite).map(drop)
+                }
+                InviteStep::AddToSession { group, device } => {
+                    coming.insert(device);
+                    self.tending.jobs.push_back(Job::Add { group, device });
+                    Ok(())
+                }
+                InviteStep::FoundSession { agent, .. } => {
+                    coming.insert(agent);
+                    self.tending.jobs.push_back(Job::Found { agent, invite: Some(invite) });
+                    Ok(())
+                }
+                InviteStep::TakeOver { group, agent, .. } => {
+                    coming.insert(agent);
+                    taken.push(group);
+                    self.tending.jobs.push_back(Job::TakeOver { invite, group });
+                    Ok(())
+                }
+                InviteStep::CheckHelpers { session } => {
+                    self.tending.jobs.push_back(Job::Check { invite, session });
+                    Ok(())
+                }
+            };
+            if let Err(e) = made {
+                self.failed(ctx, &e);
+            }
+            if self.stopped.is_some() {
+                return;
+            }
+        }
+        // (a takeover's session and its helper sessions keep the old leaf until the new one takes the seat)
+        let covered = |group: &trommi_core::device::GroupSummary| {
+            taken.contains(&group.group) || group.session.is_some_and(|s| s.parent != SessionId::ZERO && taken.contains(&GroupId::session(s.room_id, s.parent)))
+        };
+        let mut seated: BTreeSet<String> = BTreeSet::new();
+        let mut founding_pending = false;
         for group in groups {
-            if group.session.is_none() || group.archived || !group.leaves.contains(&me) {
+            let Some(session) = group.session else { continue };
+            seated.extend(group.leaves.iter().map(DeviceId::to_base64url));
+            founding_pending |= session.parent == SessionId::ZERO && group.pending && group.epoch == 0;
+            if group.archived || !group.leaves.contains(&me) || covered(&group) {
                 continue;
             }
             if group.is_stale() {
                 self.tending.jobs.push_back(Job::Clean { group: group.group });
                 continue;
             }
-            for device in humans.iter().filter(|device| **device != me && !group.leaves.contains(device)) {
+            for device in humans.iter().filter(|device| **device != me && !coming.contains(device) && !group.leaves.contains(device)) {
                 self.tending.jobs.push_back(Job::Add { group: group.group, device: *device });
             }
         }
+        // the agents without a session: who is due is the seat rule's
+        let agents = self.device.room_history().map(|history| history.newest().room.agents.clone()).unwrap_or_default();
+        let known = Known {
+            agents: agents.iter().map(DeviceId::to_base64url).collect(),
+            seated,
+            coming: coming.iter().map(DeviceId::to_base64url).collect(),
+            founding_pending,
+            online: self.tending.online.iter().map(DeviceId::to_base64url).collect(),
+            now_ms: ctx.now,
+        };
+        match self.tending.seats.plan(&known) {
+            Plan::Idle { recheck_at } => self.tending.recheck = recheck_at,
+            Plan::AskHub { candidates } => self.tending.jobs.push_back(Job::Seat { candidates }),
+        }
+    }
+
+    /// A step the core does not take now (`busy`, an epoch that was lost), or cannot: with the next look.
+    fn failed(&mut self, ctx: &mut Ctx<'_>, error: &Error) {
+        ctx.log(crate::app::LogLevel::Info, format!("upkeep: a step waits ({})", error.code()));
+        self.local(ctx, error);
+        self.tending.owing = true;
+    }
+
+    /// The step of an invite that a job was listed for, as it stands now.
+    fn step(&mut self, invite: &InviteId, which: impl Fn(&InviteStep) -> bool) -> Option<InviteStep> {
+        self.device.invite_steps().ok()?.into_iter().find(|(of, step)| of == invite && which(step)).map(|(_, step)| step)
+    }
+
+    /// Whether a founding of this device with `agent` in it waits for the hub's answer or its place in the log.
+    fn founding(&self, agent: &DeviceId) -> bool {
+        self.device.groups().unwrap_or_default().iter().any(|g| g.session.is_some_and(|s| s.parent == SessionId::ZERO) && g.pending && g.epoch == 0 && g.leaves.contains(agent))
     }
 
     /// 5.2.9: a human device renews its leaf where the core says it is due (an empty Commit). The room group first
@@ -192,23 +338,60 @@ impl Engine {
     /// Does one job as far as it goes without the hub; a KeyPackage it needs is claimed, and the job goes on with
     /// the answer.
     fn tend(&mut self, ctx: &mut Ctx<'_>, job: Job) {
-        let wanted = match job {
+        let mut partial = false;
+        let devices: Vec<DeviceId> = match &job {
             Job::Clean { group } => {
-                let Some(opener) = self.to_clean(&group) else { return };
+                let Some(opener) = self.to_clean(group) else { return };
                 match opener {
-                    Some(opener) => opener,
-                    None => return self.clean(ctx, group, None),
+                    Some(opener) => vec![opener],
+                    None => return self.clean(ctx, *group, None),
                 }
             }
             Job::Add { group, device } => {
-                if !self.to_add(&group, &device) {
+                if !self.to_add(group, device) {
                     return;
                 }
-                device
+                vec![*device]
+            }
+            Job::Found { agent, invite } => {
+                // (one that went out is not built a second time: the hub refuses it, and the step shows again
+                //  once the first is through)
+                if self.founding(agent) {
+                    return;
+                }
+                // One of every other human device the hub has one of (a partial claim: one left out is added
+                // later, 5.2.7); for a seat, the agent's own with them.
+                let me = self.device.id();
+                let mut devices: Vec<DeviceId> = self.device.room_history().map(|h| h.newest().humans.iter().copied().filter(|d| *d != me).collect()).unwrap_or_default();
+                if invite.is_none() {
+                    devices.insert(0, *agent);
+                }
+                if devices.is_empty() {
+                    return self.found(ctx, *agent, *invite, Vec::new());
+                }
+                partial = true;
+                devices
+            }
+            Job::TakeOver { invite, group } => {
+                let Some(InviteStep::TakeOver { cuts, agent, key_package, .. }) = self.step(invite, |s| matches!(s, InviteStep::TakeOver { group: of, .. } if of == group)) else { return };
+                match key_package {
+                    // (the main session: with the KeyPackage of the confirmed Request)
+                    Some(key_package) => {
+                        if let Err(e) = self.device.clean_session(group, &cuts, Some((&agent, &key_package)), ctx.now) {
+                            self.failed(ctx, &e);
+                        }
+                        return;
+                    }
+                    // (a helper session's new opener: with one claimed at the hub)
+                    None => vec![agent],
+                }
+            }
+            Job::Check { .. } | Job::Seat { .. } => {
+                self.tending.rows.clear();
+                return self.ask_groups(ctx, job, 0);
             }
         };
-        let devices = [wanted];
-        self.tending.asked = self.ask(ctx, Route::ClaimKeyPackages { devices: &devices, partial: false }, true, |expect| Asked::Claim { expect, job });
+        self.tending.asked = self.ask(ctx, Route::ClaimKeyPackages { devices: &devices, partial }, true, |expect| Asked::Claim { expect, job });
         if self.tending.asked.is_none() {
             self.tending.owing = true;
         }
@@ -235,6 +418,9 @@ impl Engine {
             Err(_) if unauthorised => return self.tending.jobs.push_front(job),
             // none at the hub yet (a device let in a moment ago), or the hub was not reached: with the next look
             Ok(_) | Err(_) => {
+                if let Err(Failure::BadAnswer { why }) = &answer {
+                    ctx.log(crate::app::LogLevel::Warn, format!("upkeep: an answer the protocol does not allow ({why})"));
+                }
                 if let Err(Failure::NotNow { retry_after_ms, .. }) = answer {
                     self.tending.retry_after = self.tending.retry_after.max(retry_after_ms);
                 }
@@ -242,9 +428,23 @@ impl Engine {
                 return;
             }
         };
-        let wanted = match job {
-            Job::Add { device, .. } => Some(device),
-            Job::Clean { group } => self.to_clean(&group).flatten(),
+        let wanted = match &job {
+            Job::Add { device, .. } => Some(*device),
+            Job::Clean { group } => self.to_clean(group).flatten(),
+            Job::Found { agent, invite } => return self.found(ctx, *agent, *invite, key_packages),
+            Job::TakeOver { invite, group } => {
+                let step = self.step(invite, |s| matches!(s, InviteStep::TakeOver { group: of, key_package: None, .. } if of == group));
+                let Some(InviteStep::TakeOver { cuts, agent, .. }) = step else { return };
+                let made = match key_packages.iter().find(|(device, _)| *device == agent) {
+                    Some((_, key_package)) => self.device.clean_session(group, &cuts, Some((&agent, key_package)), ctx.now).map(drop),
+                    None => Err(Error::NotFound),
+                };
+                if let Err(e) = made {
+                    self.failed(ctx, &e);
+                }
+                return;
+            }
+            Job::Check { .. } | Job::Seat { .. } => return,
         };
         let Some((device, key_package)) = key_packages.into_iter().find(|(device, _)| Some(*device) == wanted) else {
             // (not the device asked for, or the group moved on meanwhile: the next look says what is left)
@@ -263,6 +463,111 @@ impl Engine {
                 }
             }
             Job::Clean { group } => self.clean(ctx, group, Some((device, key_package))),
+            _ => {}
+        }
+    }
+
+    /// Founds the main session of `agent` with the KeyPackages claimed: the agent's own from the invite's step, or
+    /// (a seat) from the claim.
+    fn found(&mut self, ctx: &mut Ctx<'_>, agent: DeviceId, invite: Option<InviteId>, claimed: Vec<(DeviceId, Vec<u8>)>) {
+        let name = agent.to_base64url();
+        let mut own = None;
+        let mut packages = Vec::new();
+        for (device, key_package) in claimed {
+            if device == agent {
+                own = Some(key_package);
+            } else {
+                packages.push(key_package);
+            }
+        }
+        if let Some(invite) = &invite {
+            own = match self.step(invite, |s| matches!(s, InviteStep::FoundSession { agent: of, .. } if *of == agent)) {
+                Some(InviteStep::FoundSession { key_package, .. }) => Some(key_package),
+                _ => return, // (the step is gone: founded meanwhile)
+            };
+        }
+        let made = match own {
+            Some(own) if !self.founding(&agent) => {
+                packages.push(own);
+                self.device.found_session(&agent, &packages, ctx.now).map(drop)
+            }
+            Some(_) => return,
+            None => Err(Error::NotFound), // (the agent has no KeyPackage at the hub yet)
+        };
+        match made {
+            Ok(()) if invite.is_none() => self.tending.seats.founded(&name),
+            Ok(()) => {}
+            Err(e) => {
+                self.failed(ctx, &e);
+                if invite.is_none() {
+                    // (tried again soon: a pause that grows, the seat rule's)
+                    let at = self.tending.seats.failed(&name, ctx.now);
+                    self.tending.recheck = Some(self.tending.recheck.map_or(at, |r| r.min(at)));
+                }
+            }
+        }
+    }
+
+    fn ask_groups(&mut self, ctx: &mut Ctx<'_>, job: Job, after: u64) {
+        let room = self.room;
+        self.tending.asked = self.ask(ctx, Route::RoomGroups { room: &room, after, limit: GROUPS_PAGE }, true, |expect| Asked::RoomGroups { expect, job });
+        if self.tending.asked.is_none() {
+            self.tending.owing = true;
+        }
+    }
+
+    /// A page of the hub's list of the room's groups, for a takeover's check or a seat.
+    pub(super) fn on_room_groups(&mut self, ctx: &mut Ctx<'_>, job: Job, answer: Result<Answer, Failure>, unauthorised: bool) {
+        self.tending.asked = None;
+        let (items, more, after) = match answer {
+            Ok(Answer::RoomGroups { items, more, after }) => (items, more, after),
+            Err(_) if unauthorised => return self.tending.jobs.push_front(job),
+            Ok(_) | Err(_) => {
+                if let Err(Failure::BadAnswer { why }) = &answer {
+                    ctx.log(crate::app::LogLevel::Warn, format!("upkeep: an answer the protocol does not allow ({why})"));
+                }
+                if let Err(Failure::NotNow { retry_after_ms, .. }) = answer {
+                    self.tending.retry_after = self.tending.retry_after.max(retry_after_ms);
+                }
+                self.tending.owing = true;
+                return;
+            }
+        };
+        let any = !items.is_empty();
+        self.tending.rows.extend(items);
+        if more && any && self.tending.rows.len() < GROUPS_MAX {
+            return self.ask_groups(ctx, job, after);
+        }
+        let rows = std::mem::take(&mut self.tending.rows);
+        if more {
+            // (a list that does not end is no list to decide by)
+            self.tending.owing = true;
+            return;
+        }
+        match job {
+            Job::Check { invite, session } => {
+                let helpers: Vec<GroupId> = rows.iter().filter(|g| g.live && g.kind == GroupRowKind::Helper && g.parent == Some(session)).map(|g| g.group).collect();
+                match self.device.invite_checked(&invite, &helpers) {
+                    Ok(()) => self.tending.want = true, // (the next look finishes the invite)
+                    Err(e) => {
+                        // a helper session this device does not hold yet: its Welcome waits, and is read now
+                        if e == Error::GroupBehind && self.repair.is_none() {
+                            self.welcomes_idle = None;
+                            self.repair = Some(super::Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                        }
+                        self.failed(ctx, &e);
+                    }
+                }
+            }
+            Job::Seat { candidates } => {
+                let seated: BTreeSet<String> = rows.iter().filter(|g| g.kind != GroupRowKind::Room).flat_map(|g| g.leaves.iter().map(DeviceId::to_base64url)).collect();
+                if let Some(name) = self.tending.seats.after_hub(&candidates, &seated) {
+                    if let Ok(agent) = DeviceId::from_base64url(&name) {
+                        self.tending.jobs.push_front(Job::Found { agent, invite: None });
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

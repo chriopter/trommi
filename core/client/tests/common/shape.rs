@@ -87,6 +87,8 @@ fn family(method: &str, path: &str) -> Option<&'static [&'static str]> {
         ("POST", ["v1", "commits"]) => &["joins"],
         ("PUT", ["v1", "key-packages"]) => &["key-packages-held", "outbox-key-packages"],
         ("POST", ["v1", "key-packages", "claim"]) => &["claim"],
+        ("POST", ["v1", "groups"]) => &["outbox-group-founding"],
+        ("GET", ["v1", "rooms", _, "groups"]) => &["room-groups"],
         ("POST", ["v1", "envelopes"]) => &["outbox-envelope"],
         ("POST", ["v1", "groups", _, "commits"]) => &["outbox-commit", "outbox-external-commit"],
         ("POST", ["v1", "groups", _, "messages"]) => &["outbox-message", "outbox-relay"],

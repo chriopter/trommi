@@ -177,3 +177,154 @@ fn an_epoch_that_is_full_is_moved_on_by_an_update() {
     let device = sim.app.engine().unwrap().device();
     assert!(device.outbox().is_empty() && !device.group(&world.group).unwrap().pending);
 }
+
+use trommi_core::hub_auth::HubAddress;
+use trommi_core::invite::Role;
+
+/// The App's device lets `joiner` in by link, up to "They match": the Commit is in its outbox, and is posted.
+fn app_invites(sim: &mut Sim, joiner: &mut Peer, role: Role) {
+    let address = HubAddress::parse(common::hub::HUB_URL).expect("an address");
+    let (opened, effects) = sim.app.act(sim.now_ms, |device, now| device.invite_open(role, None, "https://app.example", &address, now));
+    let opened = opened.expect("a device").expect("an invite");
+    sim.run(effects);
+    let link = String::from_utf8(opened.link.expose().to_vec()).expect("the link is text");
+    let request = joiner.join_request(&link, &opened.signed_offer, now()).expect("a request").signed_request;
+    let (accepted, effects) = sim.app.act(sim.now_ms, |device, now| device.invite_accept(&opened.invite_id, &request, now));
+    let accepted = accepted.expect("a device").expect("accepted");
+    sim.run(effects);
+    let code = joiner.join_reveal(&accepted.signed_reveal).expect("the code");
+    let (confirmed, effects) = sim.app.act(sim.now_ms, |device, now| device.invite_confirm(&opened.invite_id, &code, &accepted.request_hash, true, now));
+    confirmed.expect("a device").expect("confirmed").expect("a Commit");
+    sim.run(effects);
+}
+
+#[test]
+fn a_human_device_let_in_by_link_gets_the_handover_and_its_place_in_every_session() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    let (mut joiner, _) = common::new_peer();
+    app_invites(&mut sim, &mut joiner, Role::Human);
+    assert_eq!(commits(&world, &world.room, &world.me), 1, "the Commit that lets it in");
+    // the Commit comes back; the newcomer joins and stocks its KeyPackages
+    news(&world, &mut sim);
+    let welcome = world.hub.borrow().welcomes.last().expect("a Welcome").bytes.clone();
+    joiner.join_invited(&welcome, now()).expect("the newcomer joins the room");
+    sync(&world.hub.borrow(), &mut joiner);
+    joiner.key_packages_to_upload(0, now()).expect("key packages");
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut joiner).is_empty());
+    // the steps go on by themselves: the handover in the room group, then the Add into the session
+    for _ in 0..6 {
+        sim.advance(3_000);
+        news(&world, &mut sim);
+    }
+    assert_eq!(commits(&world, &world.group, &world.me), 1, "one Commit adds it to the session: {:?} {:?}", world.hub.borrow().seen, world.hub.borrow().refused);
+    let me = sim.app.engine().unwrap().device();
+    assert!(me.group(&world.group).unwrap().leaves.contains(&joiner.id()));
+    assert!(me.outbox().is_empty());
+    assert!(world.hub.borrow().order.iter().any(|i| matches!(i, common::hub::Item::Log { commit: false, from, .. } if *from == world.me)), "the handover went out");
+    // (the only refusals: a claim before the newcomer had stocked)
+    assert!(world.hub.borrow().refused.iter().all(|r| r == "POST /v1/key-packages/claim: not-found"), "{:?}", world.hub.borrow().refused);
+    // the invite is finished: nothing is left, and nothing more is asked or committed
+    let (steps, _) = sim.app.act(sim.now_ms, |device, _| device.invite_steps());
+    assert!(steps.unwrap().unwrap().is_empty());
+    let claims = count(&world, CLAIM);
+    sim.advance(UPKEEP_EVERY_MS + 1);
+    news(&world, &mut sim);
+    assert_eq!((count(&world, CLAIM), commits(&world, &world.group, &world.me)), (claims, 1));
+    assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
+}
+
+#[test]
+fn an_agent_let_in_by_link_gets_its_main_session() {
+    let mut world = World::new();
+    stock_founder(&mut world);
+    let mut sim = world.sim();
+    sim.send(start());
+    let (mut agent, _) = common::new_peer();
+    let sessions = world.hub.borrow().session_groups().len();
+    app_invites(&mut sim, &mut agent, Role::Agent);
+    for _ in 0..4 {
+        news(&world, &mut sim);
+        sim.advance(3_000);
+    }
+    let groups = world.hub.borrow().session_groups();
+    assert_eq!(groups.len(), sessions + 1, "one session is founded: {:?}", sim.log.iter().filter(|e| matches!(e, trommi_client_core::app::Effect::Log { .. })).collect::<Vec<_>>());
+    let founded = groups.iter().find(|g| **g != world.group).unwrap();
+    let leaves = world.hub.borrow().observer(founded).unwrap().leaves().unwrap();
+    assert!(leaves.contains(&agent.id()) && leaves.contains(&world.me) && leaves.contains(&world.founder.id()), "the agent, and every human device with a KeyPackage");
+    assert_eq!(world.hub.borrow().seen.iter().filter(|r| *r == "POST /v1/groups").count(), 1, "{:?} {:?}", world.hub.borrow().refused, sim.log.iter().filter(|e| matches!(e, trommi_client_core::app::Effect::Log { .. })).collect::<Vec<_>>());
+    let (steps, _) = sim.app.act(sim.now_ms, |device, _| device.invite_steps());
+    assert!(steps.unwrap().unwrap().is_empty());
+    assert!(world.hub.borrow().refused.is_empty(), "{:?}", world.hub.borrow().refused);
+}
+
+/// The person's other device has KeyPackages at the hub.
+fn stock_founder(world: &mut World) {
+    world.peers_sync();
+    world.founder.key_packages_to_upload(0, now()).expect("key packages");
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+}
+
+/// An agent device another human device let into the room, without a session: its inviter went away.
+fn seatless(world: &mut World) -> Peer {
+    stock_founder(world);
+    let (mut agent, _) = common::new_peer();
+    agent.key_packages_to_upload(0, now()).expect("key packages");
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut agent).is_empty());
+    world.peers_sync();
+    common::invite(&mut world.founder, &mut agent, Role::Agent);
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+    agent
+}
+
+fn online(sim: &mut Sim, device: &DeviceId) {
+    let event = format!("event: presence\ndata: {{\"device\":\"{}\",\"online\":true}}\n\n", device.to_base64url());
+    sim.stream(StreamItem::Chunk { bytes: event.into_bytes().into() });
+}
+
+#[test]
+fn an_agent_without_a_session_gets_one_from_whoever_is_up_once_it_waited_connected() {
+    let mut world = World::new();
+    let agent = seatless(&mut world);
+    let mut sim = world.sim();
+    sim.send(start());
+    let sessions = world.hub.borrow().session_groups().len();
+    let groups = "GET /v1/rooms/";
+    let lists = |world: &World| world.hub.borrow().seen.iter().filter(|r| r.starts_with(groups) && r.contains("/groups")).count();
+    // not while it is away, however long
+    sim.advance(120_000);
+    assert_eq!((lists(&world), world.hub.borrow().session_groups().len()), (0, sessions));
+    // connected, and its grace was waited out (it counts from when this device first saw it without a session)
+    online(&mut sim, &agent.id());
+    assert_eq!(lists(&world), 1, "the hub's list is asked: {:?}", world.hub.borrow().seen);
+    assert_eq!(world.hub.borrow().session_groups().len(), sessions + 1, "{:?} {:?}", world.hub.borrow().seen, world.hub.borrow().refused);
+    let founded = *world.hub.borrow().session_groups().iter().find(|g| **g != world.group).unwrap();
+    assert!(world.hub.borrow().observer(&founded).unwrap().leaves().unwrap().contains(&agent.id()));
+    // never a second
+    news(&world, &mut sim);
+    sim.advance(UPKEEP_EVERY_MS + 1);
+    news(&world, &mut sim);
+    assert_eq!(world.hub.borrow().session_groups().len(), sessions + 1);
+    // (the only refusal: a token that ended over the ten minutes)
+    assert!(world.hub.borrow().refused.iter().all(|r| r.ends_with(": unauthorised")), "{:?}", world.hub.borrow().refused);
+}
+
+#[test]
+fn an_agent_the_hub_lists_in_a_session_is_not_given_a_second() {
+    let mut world = World::new();
+    let agent = seatless(&mut world);
+    let mut sim = world.sim();
+    sim.send(start());
+    let sessions = world.hub.borrow().session_groups().len();
+    sim.advance(60_000);
+    // its inviter founds the session after all, and this device has not read that yet; the list comes page by page
+    world.hub.borrow_mut().groups_max = Some(1);
+    let packages = world.hub.borrow_mut().claim(&[agent.id()]).expect("a KeyPackage");
+    world.founder.found_session(&agent.id(), &packages, now()).expect("the founding is built");
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+    online(&mut sim, &agent.id());
+    assert_eq!(world.hub.borrow().session_groups().len(), sessions + 1, "only the inviter's");
+    assert_eq!(world.hub.borrow().seen.iter().filter(|r| *r == "POST /v1/groups").count(), 0, "{:?}", world.hub.borrow().seen);
+    assert_eq!(count(&world, CLAIM), 0);
+}

@@ -79,12 +79,13 @@
 //!
 //! The timed round (once the order is at rest, then every [`sync::UPKEEP_EVERY_MS`]): KeyPackages stocked, `heads`
 //! written, missing keys asked for. Tending the groups ([`sync::upkeep`]): a stale session cleaned (5.2.8), a human
-//! device a live session lacks added (5.2.7), the own leaf renewed (5.2.9), the core's findings said. An envelope
+//! device a live session lacks added (5.2.7), the own leaf renewed (5.2.9), the steps of this device's invites
+//! taken, an agent without a session seated ([`crate::seats`]), the core's findings said. An envelope
 //! the hub voids as `epoch-full` leads to an update of the own leaf at once, which moves the group on.
 //!
 //! # Not here yet
 //!
-//! The invite steps and the seats, the Desk as a delta on a warm start, the reading of the room's past (one
+//! The Desk as a delta on a warm start, the reading of the room's past (one
 //! module, one entry point, behind [`Engine::reread_from`]), recovery of a closed device, relayed pieces and
 //! wishes.
 //!
