@@ -774,7 +774,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             heavy_limit(&auth)?;
             // the Commit is verified on the group's public state outside the write lock; the transaction takes
             // the result only if the group still stands where it stood
-            let (entries, ()) = app.heavy(|c, memo| crate::prepare::commit(c, memo, &auth.room, &group, &body))?;
+            let (entries, ()) = app.heavy(|c, memo| crate::prepare::commit(c, memo, &auth, &group, &body))?;
             app.write_as_with(entries, &auth, rq.lease, |x, fx| {
                 let a = delivery::commit(x, &auth, &group, &body, &mut Scope::default(), fx)?;
                 Ok(json!({ "epoch": a.epoch, "change": a.change }))
@@ -817,7 +817,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                                 .enumerate()
                                 .map(|(i, (group, body))| {
                                     limits[at + i].clone()?;
-                                    app.heavy(|c, memo| crate::prepare::commit(c, memo, &auth.room, group, body)).map(|(entries, ())| entries)
+                                    app.heavy(|c, memo| crate::prepare::commit(c, memo, auth, group, body)).map(|(entries, ())| entries)
                                 })
                                 .collect::<Vec<_>>()
                         }))
@@ -895,20 +895,50 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                 .as_array()
                 .filter(|l| !l.is_empty() && l.len() <= MAX_COMMITS_AT_ONCE)
                 .ok_or_else(|| refuse("bad-format", format!("groups: 1 to {MAX_COMMITS_AT_ONCE} group ids")))?;
-            let groups = list
-                .iter()
-                .map(|g| g.as_str().ok_or_else(|| refuse("bad-format", "a group id, base64url")).and_then(group_id))
-                .collect::<Res<Vec<_>>>()?;
+            let mut groups: Vec<Vec<u8>> = Vec::with_capacity(list.len());
+            for g in list {
+                let group = g.as_str().ok_or_else(|| refuse("bad-format", "a group id, base64url")).and_then(group_id)?;
+                if groups.contains(&group) {
+                    return Err(refuse("bad-format", "groups: each group once"));
+                }
+                groups.push(group);
+            }
             app.read(|x| {
                 let auth = rq.auth(app, x.c)?;
+                // One budget for the whole answer, as every other answer has it (8 MiB; the first group always goes
+                // in), counted on each group's answer as it is sent. Once a group does not fit, it and every group
+                // after it are answered `too-large` in their place: the asker reads them alone. Its log is not read
+                // for that: the size of its Commits is asked of the database first.
+                let (mut bytes, mut full) = (0usize, false);
                 let out: Vec<Value> = groups
                     .iter()
-                    .map(|group| {
+                    .enumerate()
+                    .map(|(i, group)| {
                         let one = (|| -> Res<Value> {
+                            let too_large = || refuse("too-large", "the answer is full: read this group alone");
+                            // (first: a group the asker may not see is `not-found`, whatever the budget)
+                            let row = store::group(x.c, &auth.room, group)?;
+                            if store::sight(x.c, &auth, &row)? == store::Sight::None {
+                                return Err(refuse("not-found", "no such group"));
+                            }
+                            if full {
+                                return Err(too_large());
+                            }
                             let info = delivery::info(x.c, &auth, group, None)?;
+                            if i > 0 && bytes + info.to_string().len() + delivery::read_size(x.c, group, 256)? > content::ANSWER_BYTES {
+                                full = true;
+                                return Err(too_large());
+                            }
                             let founding = if info["epoch"].as_u64() == Some(0) { Value::Null } else { delivery::info(x.c, &auth, group, Some(0))? };
                             let log = delivery::log(x.c, &auth, group, 0, 256, true)?;
-                            Ok(json!({ "group": b64(group), "info": info, "founding": founding, "log": log }))
+                            let one = json!({ "group": b64(group), "info": info, "founding": founding, "log": log });
+                            let size = one.to_string().len() + 1;
+                            if bytes + size > content::ANSWER_BYTES && i > 0 {
+                                full = true;
+                                return Err(too_large());
+                            }
+                            bytes += size;
+                            Ok(one)
                         })();
                         one.unwrap_or_else(|refused| {
                             let mut body = refused.body();
@@ -1070,7 +1100,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             // 8.6: the room Commit with new recovery keys, its RecoveryLink and the account's new copies: whole or not at all
             heavy_limit(&auth)?;
             let (entries, pre) = app.heavy(|c, memo| {
-                crate::prepare::commit(c, memo, &auth.room, &auth.room, &body);
+                crate::prepare::commit(c, memo, &auth, &auth.room, &body);
                 accounts::Prehashed::of(&[&rq.body["account"]["kit"], &rq.body["account"]["password"]])
             })?;
             app.write_as_with(entries, &auth, rq.lease, |x, fx| {

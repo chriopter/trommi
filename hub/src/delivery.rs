@@ -580,6 +580,12 @@ fn commit_in(
 ) -> Res<Accepted> {
     let room = auth.room;
     let row = store::group(x.c, &room, group_id)?;
+    // A group the asker may not see is answered as one that does not exist: the refusals below say whether it
+    // exists, which epoch it stands at and whether it is archived. (Everyone who may commit sees the group: its
+    // leaves, a human device joining from outside, the recovery key. A founding is its founder's own group.)
+    if !founding && store::sight(x.c, auth, &row)? == Sight::None {
+        return Err(refuse("not-found", "no such group"));
+    }
     check_size(
         x.cfg,
         &[
@@ -1158,6 +1164,25 @@ pub fn log(
         items.push(item);
     }
     Ok(json!({ "items": items, "more": more }))
+}
+
+/// About how many bytes a group takes in an answer of several (`POST /v1/groups/read`): its founding GroupInfo
+/// and the first `limit` Commits of its log with their RecoveryAuths, as base64 with each entry's other members,
+/// from the lengths alone (no blob is read). Never less than they take; what an answer asks before it reads a
+/// log it may have no room for.
+pub fn read_size(c: &Connection, group_id: &[u8], limit: i64) -> Res<usize> {
+    let (bytes, entries): (i64, i64) = c
+        .prepare_cached(
+            "SELECT coalesce(sum(size), 0), count(*) FROM
+               (SELECT length(bytes) + coalesce(length(recovery_auth), 0) AS size FROM group_log
+                WHERE group_id = ?1 AND kind = 'commit' ORDER BY n LIMIT ?2)",
+        )?
+        .query_row(params![group_id, limit], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let founding: i64 = c
+        .prepare_cached("SELECT coalesce(sum(length(bytes)), 0) FROM group_infos WHERE group_id = ?1 AND epoch = 0")?
+        .query_row(params![group_id], |r| r.get(0))?;
+    // base64 makes four bytes of three (rounded up per blob); an entry's numbers and names are under 300 bytes
+    Ok(((bytes + founding) as usize).div_ceil(3) * 4 + (entries as usize + 1) * 300)
 }
 
 /// The log entry at a change number, for the stream.

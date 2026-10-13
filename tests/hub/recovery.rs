@@ -184,7 +184,10 @@ fn a_device_with_the_code_joins_from_outside_and_nobody_else_does() {
             &session_path,
             &commit_json(&agent_out, &agent_key, Some(&agent_auth)),
         )
-        .refused(400, "bad-commit");
+        // (refused before the Commit is looked at: the agent is no leaf of this session, so the route answers it as
+        //  for a group that does not exist. The rule itself, only a human device joins a session from outside, is
+        //  held by units.rs on `check_session_commit`.)
+        .refused(404, "not-found");
     let out = dana.external_join(&base, now);
     let auth = recovery_auth(&w.recovery.sign, &out, &base, now, &dana.id());
     let key = dana.sealed_key(
