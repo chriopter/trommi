@@ -918,7 +918,7 @@ export const MenuController = class extends Controller {
   }
   // ---- the desks' order: a row is picked up and dragged up or down (a mouse: as soon as it moves; a finger: held a
   // moment first, so a swipe still scrolls). The others make room; let go, the order is written (POST /desk { order }:
-  // each desk's register holds its place, on every device) and the number keys 1…9 follow it. ----
+  // each desk's register holds its place, on every device) and the number keys 1…9 follow it (0 is All desks). ----
   grab(event) {
     const row = event.target.closest?.('.menu-desk-row')
     if (!row || event.button > 0 || row.classList.contains('is-renaming') || event.target.closest('.menu-desk-pen, input')) return
@@ -994,7 +994,7 @@ export const MenuController = class extends Controller {
   chosen(event) {
     const t = event.target
     if (t.closest('#push-toggle, #theme-toggle, #desk-add, .menu-desk-pen, .menu-desk-form')) return
-    // (only a desk picked in the open menu keeps it open: the number keys 1…9 click the same entry in the closed
+    // (only a desk picked in the open menu keeps it open: the number keys 0…9 click the same entry in the closed
     // menu, and that switch must leave it shut, or the menu comes up and takes the next key)
     if (t.closest('.menu-desk[data-desk]')) { if (!this.element.hidden) try { sessionStorage.setItem('trommi-menu-keep', '1') } catch {} return }
     if (t.closest('[role="menuitem"]:not([data-menu-body-param]), [role="menuitemradio"], [role="option"]')) this.close()
