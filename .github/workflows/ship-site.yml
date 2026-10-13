@@ -1,31 +1,46 @@
-# Delivers the website to https://trommi.com (the Cloudflare worker trommi-com, site/). Nothing is built: site/public/
-# goes out as it is, with site/worker.js in front of it.
+# The website trommi.com (site/), from a push to main that changed it to the Cloudflare worker trommi-com, on its own.
+# Nothing is built: site/public/ goes out as it is, with site/worker.js in front of it.
 #
-# Interface (site.yml calls it after the site's checks, on a push to main that changed site/, or by hand):
-#   commit   the commit site.yml checked (named in the log; what is delivered is the head of main, see below)
-#
+#   checks   the site's checks (tests/site/check.mjs; pr-check.yml, called)
 #   deliver  asks GitHub for the head of main, runs the site's checks on it, `wrangler deploy --config
 #            site/wrangler.jsonc`, then asks trommi.com for its front page and compares it with site/public/index.html
 #            byte for byte (SHA-256)
+# By hand (Actions -> ship-site -> Run workflow, on main): the site of the head of main is delivered again.
 #
 # Secrets: the environment `site` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; CLOUDFLARE_API_TOKEN
 # and CLOUDFLARE_ACCOUNT_ID come from the 1Password Environment and are seen by the wrangler command only.
 # Cloudflare's Workers Builds is disconnected from trommi-com: this workflow is the only way the site is delivered.
-name: deploy_site
+name: ship-site
 
 on:
-  workflow_call:
-    inputs:
-      commit:
-        description: The commit site.yml checked
-        required: true
-        type: string
+  push:
+    branches: [main]
+    paths: ['site/**', 'tests/site/**', '.github/workflows/ship-site.yml']
+  workflow_dispatch:
 
 permissions: {}
 
+# One run at a time; of the runs waiting only the newest (each delivers the head of main, see the job deliver).
+concurrency:
+  group: ship-site
+  cancel-in-progress: false
+
 jobs:
+  checks:
+    name: Checks
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/pr-check.yml
+    with:
+      parts: site
+      workflow: ship-site.yml
+
   deliver:
     name: Deliver to Cloudflare
+    needs: checks
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.checks.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
@@ -38,7 +53,7 @@ jobs:
     permissions:
       contents: read
     env:
-      CALLER: ${{ inputs.commit }}
+      CALLER: ${{ github.sha }}
     steps:
       # Deliveries may be called out of order, and a waiting one is replaced by the next. So each delivers the site of
       # the head of main as it is now, asked inside this job's concurrency group, and checks it once more: whichever
@@ -71,7 +86,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
-      # the head may be newer than the commit site.yml checked
+      # the head may be newer than the commit this run checked
       - name: The site's checks
         run: node tests/site/check.mjs
       - name: wrangler (pinned in .github/tools/wrangler)

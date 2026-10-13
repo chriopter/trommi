@@ -1,78 +1,53 @@
 #!/bin/bash
-# On main the iOS app is archived after a build run of main (ios.yml starts deploy_ios.yml once build.yml's run ended);
-# the upload checks that run's release here. Only a released app ships:
-#   ios_release_gate.sh wait     waits until the build run's job "Release / Publish the release" is done (it is, when
-#                                ios.yml starts; the wait stays for a run started while it is not), then `verify`
-#   ios_release_gate.sh verify   the release v$VERSION is published, its manifest's signature holds
-#                                (release/public-key.pem), it is v$VERSION of $COMMIT in this repository, and its iOS
-#                                inputs are this commit's (.github/scripts/inputs.sh) and marked changed, or differ
-#                                from those last delivered (.github/scripts/ios_delivered.sh: an earlier release's
-#                                delivery did not happen)
-# Exit 0: upload. Anything else: nothing is uploaded (a release that failed, was skipped or refused its tag).
-# Environment: GH_TOKEN (actions: read, contents: read), GITHUB_REPOSITORY, RUN_ID (the build.yml run; wait only),
-# VERSION, COMMIT, RUNNER_TEMP. Needs gh, jq, openssl and a checkout of COMMIT (release/sign.sh, inputs.sh).
+# Whether the iPhone and Mac apps of a commit may go to TestFlight (ship-apple.yml decides with it, ios_testflight.sh and
+# mac_testflight.sh check it again on the Mac right before the upload):
+#   ios_release_gate.sh decide         prints deliver=true|false (for GITHUB_OUTPUT); exit 1 when the gate does not hold
+#   ios_release_gate.sh wait|verify    exit 0: upload; anything else: nothing is uploaded
+# The gate:
+#   - the run RUN_ID is ship-apple.yml of this repository on main (a push), of COMMIT
+#   - its job "Checks / iOS client (check)" passed, and "Checks / Core (check)" passed or was skipped (the core did not
+#     change): the apps build on the core
+#   - the iOS inputs of COMMIT (.github/scripts/inputs.sh) differ from those last delivered to TestFlight
+#     (.github/scripts/ios_delivered.sh; not known: they differ). SAME_OK=1 (a delivery by hand) skips this one.
+# Environment: GH_TOKEN (actions: read), GITHUB_REPOSITORY, RUN_ID, COMMIT, RUNNER_TEMP; a checkout of COMMIT.
 set -euo pipefail
 
 mode=${1:-}
-case "$mode" in wait|verify) ;; *) echo "usage: ios_release_gate.sh wait|verify" >&2; exit 2 ;; esac
-for name in GH_TOKEN GITHUB_REPOSITORY VERSION COMMIT RUNNER_TEMP; do
+case "$mode" in decide|wait|verify) ;; *) echo "usage: ios_release_gate.sh decide|wait|verify" >&2; exit 2 ;; esac
+for name in GH_TOKEN GITHUB_REPOSITORY RUN_ID COMMIT RUNNER_TEMP; do
   [ -n "${!name:-}" ] || { echo "::error::$name is not set"; exit 1; }
 done
-printf '%s' "$VERSION" | grep -Eq '^[1-9][0-9]{0,11}$' || { echo "::error::not a release number: $VERSION"; exit 1; }
+printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
 printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $COMMIT"; exit 1; }
-# release/sign.sh checks Ed25519 with `openssl pkeyutl -rawin`: OpenSSL 3. macOS's own openssl is LibreSSL, so on a
-# Mac the Homebrew OpenSSL of the runner image goes first.
-for dir in /opt/homebrew/opt/openssl@3/bin /usr/local/opt/openssl@3/bin; do
-  if [ -x "$dir/openssl" ]; then PATH=$dir:$PATH; break; fi
-done
-openssl version | grep -q '^OpenSSL 3' || { echo "::error::release/sign.sh needs OpenSSL 3, this is $(openssl version)"; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
-repo=$(cd "$here/../.." && pwd)
 
-if [ "$mode" = wait ]; then
-  [ -n "${RUN_ID:-}" ] || { echo "::error::RUN_ID is not set"; exit 1; }
-  # The release's jobs show up when it starts: "Release" alone when it is skipped, "Release / <job>" when it runs.
-  # 90 rounds of 20 s: the release waits for every part's build (the connector's is the longest, about 15 minutes).
-  for i in $(seq 1 90); do
-    gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" \
-      --jq '.jobs[] | select(.name == "Release" or (.name | startswith("Release / "))) | "\(.name)\t\(.status)\t\(.conclusion)"' \
-      > "$RUNNER_TEMP/release-jobs.txt"
-    if awk -F'\t' '$2 == "completed" && $3 != "success" && $3 != "skipped"' "$RUNNER_TEMP/release-jobs.txt" | grep -q .; then
-      cat "$RUNNER_TEMP/release-jobs.txt"
-      echo "::error::the release of this run did not succeed: nothing is uploaded"; exit 1
-    fi
-    if grep -Eq $'^Release\tcompleted\tskipped$' "$RUNNER_TEMP/release-jobs.txt"; then
-      echo "::error::the release of this run was skipped: nothing is uploaded"; exit 1
-    fi
-    if grep -Eq $'^Release / Publish the release\tcompleted\tsuccess$' "$RUNNER_TEMP/release-jobs.txt"; then
-      echo "the release job is done (round $i)"
-      break
-    fi
-    [ "$i" -lt 90 ] || { echo "::error::no finished release after 30 minutes: nothing is uploaded"; exit 1; }
-    echo "round $i: waiting for the release ($(cut -f1,2 "$RUNNER_TEMP/release-jobs.txt" | tr '\t\n' ' '))"
-    sleep 20
-  done
-fi
+gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/gate-run.json"
+jq -e --arg r "$GITHUB_REPOSITORY" --arg c "$COMMIT" \
+  '.path == ".github/workflows/ship-apple.yml" and .head_branch == "main" and .event == "push"
+   and .repository.full_name == $r and .head_repository.full_name == $r and .head_sha == $c' \
+  "$RUNNER_TEMP/gate-run.json" > /dev/null || { echo "::error::run $RUN_ID is not a run of ship-apple.yml for $COMMIT on main of this repository: nothing is uploaded"; exit 1; }
+gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" \
+  --jq '.jobs[] | "\(.name)\t\(.conclusion)"' > "$RUNNER_TEMP/gate-jobs.txt"
+conclusion() { awk -F'\t' -v n="$1" '$1 == n { print $2; exit }' "$RUNNER_TEMP/gate-jobs.txt"; }
+client=$(conclusion 'Checks / iOS client (check)') core=$(conclusion 'Checks / Core (check)')
+[ "$client" = success ] || { echo "::error::iOS client (check) of run $RUN_ID: ${client:-not there}: nothing is uploaded"; exit 1; }
+case "$core" in
+  success|skipped) echo "the checks of run $RUN_ID: iOS client $client, core $core" >&2 ;;
+  *) echo "::error::Core (check) of run $RUN_ID: ${core:-not there}: nothing is uploaded"; exit 1 ;;
+esac
 
-tag=v$VERSION
-dir=$RUNNER_TEMP/release-gate
-rm -rf "$dir"
-mkdir -p "$dir"
-gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --pattern manifest.json.sig --dir "$dir" \
-  || { echo "::error::release $tag is not published (or has no manifest): nothing is uploaded"; exit 1; }
-sh "$repo/release/sign.sh" verify "$dir/manifest.json" || { echo "::error::the manifest of $tag is not signed by the release key"; exit 1; }
-jq -e --arg r "$GITHUB_REPOSITORY" --arg t "$tag" --arg v "$VERSION" --arg c "$COMMIT" \
-  '.product == "trommi" and .repository == $r and .tag == $t and (.version | tostring) == $v and .commit == $c' \
-  "$dir/manifest.json" > /dev/null || { echo "::error::the manifest of $tag is not $tag of $COMMIT in this repository"; exit 1; }
 sum=$(sh "$here/inputs.sh" "$COMMIT" | sed -n 's/^ios //p')
 [ -n "$sum" ] || { echo "::error::no iOS inputs for $COMMIT"; exit 1; }
-jq -e --arg s "$sum" '.inputs.ios == $s' "$dir/manifest.json" > /dev/null \
-  || { echo "::error::$tag does not release this iOS app (its iOS inputs differ): nothing is uploaded"; exit 1; }
-# marked changed, or (an earlier release's delivery did not happen) other iOS inputs than those last delivered
-if ! jq -e '.changed.ios == true' "$dir/manifest.json" > /dev/null; then
-  delivered=$(sh "$here/ios_delivered.sh")
-  [ -n "$delivered" ] && [ "$delivered" != "$sum" ] \
-    || { echo "::error::$tag leaves iOS unchanged and TestFlight has these iOS inputs already: nothing is uploaded"; exit 1; }
-  echo "$tag leaves iOS unchanged, but TestFlight has older iOS inputs ($delivered): this app catches up"
+delivered=$(sh "$here/ios_delivered.sh") || delivered=
+if [ -n "$delivered" ] && [ "$delivered" = "$sum" ]; then
+  if [ "$mode" = decide ]; then
+    echo "deliver=false"
+    exit 0
+  fi
+  if [ "${SAME_OK:-}" != 1 ]; then
+    echo "::error::TestFlight has the iOS inputs of $COMMIT already ($sum): nothing is uploaded"
+    exit 1
+  fi
 fi
-echo "release $tag: signed, of $COMMIT, iOS inputs $sum: the upload may go"
+[ "$mode" != decide ] || echo "deliver=true"
+echo "iOS inputs of $COMMIT: $sum, last delivered: ${delivered:-not known}: the upload may go" >&2

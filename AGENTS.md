@@ -4,7 +4,7 @@
 - No push without asking first.
 - Prepare everything in branches first. Finished work, alone or bundled per topic, goes onto a frozen
   `release/<date>-<n>` branch; never commit to `main`.
-- `main` changes only by a pull request from that branch: auto-merge, all checks green, merge queue, squash merge.
+- `main` changes only by a pull request from that branch: auto-merge, all checks green, squash merge.
 - Before handing over: tests green, and `git diff --stat origin/main...HEAD` lists only your files.
 - Commit messages are lists: `New: …` / `Updated: …` / `Fixed: …`. No AI attribution anywhere.
 - A change people can see gets one line in CHANGELOG.md.

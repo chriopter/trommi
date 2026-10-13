@@ -1,5 +1,5 @@
 #!/bin/bash
-# The TestFlight crash reports of the iOS app, read through the App Store Connect API; ios_crashes.yml runs it under
+# The TestFlight crash reports of the iOS app, read through the App Store Connect API; nightly.yml (job ios_crashes) runs it under
 # `op run`, which is where the App Store Connect key comes from. Read only: nothing on App Store Connect is changed.
 #
 #   ios_crashes.sh      asc.py crashes into CRASH_OUT for the last CRASH_DAYS days: each crash log as a file, the

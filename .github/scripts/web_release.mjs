@@ -15,7 +15,7 @@
 //   manifest.json    what this release is (product, repository, version, commit, hub) and every file
 //                    above with its size and SHA-256
 //   checksums.txt    the same hashes and manifest.json's, in the form of sha256sum: `sha256sum -c checksums.txt`
-// deploy_web.yml checks the files against checksums.txt, attests them and runs `wrangler deploy` in OUT_DIR.
+// ship-web.yml checks the files against checksums.txt, attests them and runs `wrangler deploy` in OUT_DIR.
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'

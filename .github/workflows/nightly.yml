@@ -1,26 +1,51 @@
-# Every night, the scale tests at full size. On pull requests and on main they run small (each test reads
-# TROMMI_TESTS_FULL; without it the same steps at a fraction of the size), so that no check waits 2-3 minutes for one
-# test. Here, with TROMMI_TESTS_FULL=1:
-#   hub_limits               a_room_of_a_thousand_human_devices (1000 human devices, the founding above 1 MiB)
-#   core_groups_concurrency  a_device_catches_up_across_twenty_groups_in_the_hubs_order_only (78 rounds)
-#   connector_paths          helper_sessions_up_to_the_limit_then_close_one_to_open_another (100 helpers, the 101st)
-#   connector_sessions       the whole session matrix (Claude Code and Codex, two accounts, folders, resume, restart,
-#                            killed connector, stale key, self-join beside a link join); pull requests run its fast cases
-# On the newest commit of main. When one fails, the job `report` opens the issue "Nightly full tests <commit> failed"
-# (label nightly-failed) naming the tests that failed, or comments on the open one; the next night that passes
-# closes it. It deploys nothing and reads no secret.
+# Every night, on main, what is too long or too slow for a change: each a job of its own, a failure opens the issue
+# "Nightly <what> <commit> failed" (label nightly-failed), the next good night closes it.
+#   full             the three scale tests at full size (TROMMI_TESTS_FULL=1: a room of 1000 human devices, a catch-up
+#                    across twenty groups in 78 rounds, 100 helper sessions); on changes they run small; and the
+#                    whole session matrix (tests/connector/sessions.rs; pull requests run its fast cases)
+#   connector_stress the connector under load: 200 joins one after another against the real hub
+#   fuzz             each libFuzzer target of tests/fuzz for `minutes`, on the corpus of the nights before (kept in the
+#                    cache, never in git); fuzz_properties: the property tests with many cases, the hub over HTTP and the
+#                    built connector over MCP with random calls (README "Fuzzing")
+#   clients_mega     every client against each other (web, iOS, the connector, each twice) in one room on a real hub,
+#                    through long seeded random timelines; torture: the connector, web and a fleet of up to `fleet`
+#                    iPhones behind a misbehaving network (README "Build and tests")
+#   advisories       the Rust dependencies against RustSec (cargo-deny, .github/tools/deny.toml)
+#   secrets          the 1Password Environments can be read and hold every secret the deliveries need (names only)
+#   ios_crashes      TestFlight's crash reports of the last `days` days onto their issue
+# By hand: Actions -> nightly -> Run workflow on main. None of it delivers anything.
 name: nightly
 
 on:
   schedule:
-    - cron: '23 3 * * *'
+    - cron: '23 2 * * *'
   workflow_dispatch:
+    inputs:
+      minutes:
+        description: fuzz - minutes per target
+        default: '15'
+      seeds:
+        description: clients_mega - seeds, comma separated (empty - five from the run number)
+        required: false
+        default: ''
+      steps:
+        description: clients_mega and torture - steps per seed
+        required: false
+        default: ''
+      fleet:
+        description: torture - iPhones
+        required: false
+        default: '100'
+      days:
+        description: ios_crashes - crash reports of the last N days (1 to 90)
+        required: false
+        default: '1'
 
 permissions: {}
 
 concurrency:
   group: nightly
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CARGO_INCREMENTAL: '0'
@@ -72,11 +97,428 @@ jobs:
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-  # One open issue while the nightly full tests fail, closed by the next night that passes.
+  # The connector under load: 200 joins one after another against the real hub (tests/connector/tools.rs, the stress
+  # test that is left out of every other run).
+  connector_stress:
+    name: Connector under load
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler (rust-toolchain.toml)
+        run: sh .github/scripts/rust_toolchain.sh
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust
+          save-if: false
+      - name: Test
+        run: |
+          set -eu
+          cargo build --locked -p trommi-hub -p trommi-connector
+          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" \
+            cargo test --locked -p trommi-tests --test connector_tools -- --ignored --nocapture
+
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [core_decode, board_merge, content_flow, mls_devices, hub_api, connector_text]
+    env:
+      FUZZ_VERSION: 0.13.2
+      FUZZ_MINUTES: ${{ inputs.minutes || '15' }}
+      RUSTC_BOOTSTRAP: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler (rust-toolchain.toml)
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: tool
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-${{ runner.os }}-${{ env.FUZZ_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: cargo-fuzz
+        if: steps.tool.outputs.cache-hit != 'true'
+        run: cargo install cargo-fuzz --version "$FUZZ_VERSION" --locked
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tests/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: Build
+        working-directory: tests/fuzz
+        run: cargo fuzz build -O -s none ${{ matrix.target }}
+      - name: Fuzz
+        run: |
+          dev/fuzz/campaign.sh "$((FUZZ_MINUTES * 60))" 3 ${{ matrix.target }} || true
+          cat tests/fuzz/artifacts/execs.txt
+          if find tests/fuzz/artifacts/${{ matrix.target }}/ -maxdepth 1 \( -name 'crash*' -o -name 'oom*' -o -name 'leak*' \) | grep -q .; then
+            tail -n 80 tests/fuzz/artifacts/${{ matrix.target }}.*.log
+            exit 1
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: tests/fuzz/artifacts/
+          retention-days: 14
+
+  fuzz_properties:
+    name: property tests, hub over HTTP, connector over MCP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler (rust-toolchain.toml)
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+      - name: Property tests
+        env:
+          FUZZ_CASES: '3000'
+        run: cargo test --locked -p trommi-tests --test core_fuzz_props
+      - name: Hub over HTTP
+        env:
+          FUZZ_HTTP_CASES: '5000'
+        run: cargo test --locked -p trommi-tests --test hub_fuzz_http -- --nocapture
+      - name: Connector over MCP
+        env:
+          FUZZ_MCP_CASES: '5000'
+          FUZZ_ARTIFACTS: ${{ runner.temp }}/fuzz-mcp
+        run: cargo test --locked -p trommi-tests --test connector_fuzz_mcp -- --nocapture
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fuzz-mcp
+          path: ${{ runner.temp }}/fuzz-mcp
+          retention-days: 14
+
+  clients_mega:
+    name: Clients mega test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Compiler (rust-toolchain.toml), Swift
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+          swift --version
+          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bindgen
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: wasm-bindgen
+        if: steps.bindgen.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
+      - name: The core for the browser and for Swift, the iOS test runner
+        run: bash tests/client/mega/prepare.sh .
+      - name: The hub and the test
+        run: cargo build --locked -p trommi-hub -p trommi-tests --test client_mega
+      - name: Every client shows the same
+        env:
+          MEGA_STEPS: ${{ inputs.steps || '50' }}
+          MEGA_SEEDS_GIVEN: ${{ inputs.seeds }}
+          MEGA_OUT: ${{ runner.temp }}/mega
+          RUN: ${{ github.run_number }}
+        run: |
+          set -eu
+          if [ -n "$MEGA_SEEDS_GIVEN" ]; then seeds=$MEGA_SEEDS_GIVEN; else seeds=$(for i in 0 1 2 3 4; do printf '%s,' $((RUN * 5 + i)); done); seeds=${seeds%,}; fi
+          echo "seeds: $seeds"
+          MEGA_SEEDS=$seeds cargo test --locked -p trommi-tests --test client_mega every_client_shows_the_same -- --ignored --exact --nocapture
+      - name: Speed with 1,000 cards, both sign-in orders
+        if: always()
+        env:
+          MEGA_OUT: ${{ runner.temp }}/mega
+          MEGA_SPEED_AGENTS: '8'
+          MEGA_SPEED_CARDS: '1000'
+        run: |
+          set -eu
+          MEGA_OUT=$MEGA_OUT/speed-a cargo test --locked -p trommi-tests --test client_mega speed_of_every_client -- --ignored --exact --nocapture
+          MEGA_SPEED_REVERSE=1 MEGA_OUT=$MEGA_OUT/speed-b cargo test --locked -p trommi-tests --test client_mega speed_of_every_client -- --ignored --exact --nocapture
+          {
+            echo '### Speed (1,000 cards, 8 agents)'
+            for f in "$MEGA_OUT"/speed-*/speed.json; do echo '```json'; cat "$f"; echo '```'; done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: clients-mega
+          path: ${{ runner.temp }}/mega
+          retention-days: 14
+
+  # The torture run (tests/client/mega/torture.rs): the real connector joined every way, presence, a misbehaving
+  # network and a restarting hub, web devices and a fleet of iPhones in one account; every device must show the same
+  # at every checkpoint. The fleet grows step by step, a seed each: 10, 25, 50, then the full fleet (100) with 1,000
+  # cards. Every size runs even when one before failed; the summary names the failed seeds (MEGA_SEEDS=<seed> with
+  # the same sizes repeats one). Failures of known open bugs are listed under the bug's name and do not fail.
+  torture:
+    name: Torture (up to ${{ inputs.fleet || '100' }} iPhones)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Compiler (rust-toolchain.toml), Swift
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+          swift --version
+          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bindgen
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: wasm-bindgen
+        if: steps.bindgen.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
+      - name: The core for the browser and for Swift, the iOS test runner
+        run: bash tests/client/mega/prepare.sh .
+      - name: The hub, the connector and the test
+        run: cargo build --locked -p trommi-hub -p trommi-connector -p trommi-tests --test client_mega
+      - name: Torture, the fleet growing to ${{ inputs.fleet || '100' }} iPhones
+        env:
+          MEGA_OUT: ${{ runner.temp }}/mega/torture
+          FLEET: ${{ inputs.fleet || '100' }}
+          RUN: ${{ github.run_number }}
+          MEGA_AGENTS: '8'
+          MEGA_STEPS: ${{ inputs.steps || '60' }}
+          MEGA_BUDGET_SCALE: '2'
+        run: |
+          set -u
+          failed=0
+          for n in 10 25 50 "$FLEET"; do
+            [ "$n" -le "$FLEET" ] || continue
+            cards=200; [ "$n" -lt "$FLEET" ] || cards=1000
+            seed=$((RUN * 7 + n))
+            echo "== $n iPhones, $cards cards, seed $seed"
+            MEGA_FLEET=$n MEGA_CARDS=$cards MEGA_SEEDS=$seed \
+              cargo test --locked -p trommi-tests --test client_mega torture::torture -- --ignored --exact --nocapture \
+              > "$RUNNER_TEMP/torture-$n.log" 2>&1 || { failed=1; echo "seed $seed ($n iPhones, $cards cards) failed"; }
+            grep -h '^FAIL \|^KNOWN \|^TORTURE ' "$RUNNER_TEMP/torture-$n.log" | head -80
+            [ "$n" != "$FLEET" ] || break
+          done
+          exit $failed
+      - name: Summary
+        if: always()
+        env:
+          MEGA_OUT: ${{ runner.temp }}/mega/torture
+          STEPS: ${{ inputs.steps || '60' }}
+        run: |
+          {
+            echo '### Torture'
+            echo "Sizes: MEGA_AGENTS=8 MEGA_STEPS=$STEPS MEGA_BUDGET_SCALE=2; MEGA_FLEET and MEGA_CARDS per run below"
+            for f in "$RUNNER_TEMP"/torture-*.log; do
+              [ -f "$f" ] || continue
+              echo "#### $(basename "$f" .log | sed 's/torture-//') iPhones"
+              grep -h '^== torture seed\|^TORTURE FAILED SEEDS\|^TORTURE known' "$f" || true
+            done
+            echo '#### Per seed: timings, per-device bytes'
+            for f in "$MEGA_OUT"/torture-*/summary.json; do [ -f "$f" ] || continue; echo '```json'; jq '{seed, phones, web, metrics, network, known: (.known | length)}' "$f"; echo '```'; done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: clients-mega-torture
+          path: |
+            ${{ runner.temp }}/mega/torture
+            ${{ runner.temp }}/torture-*.log
+          retention-days: 14
+
+  advisories:
+    name: Rust dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      DENY_VERSION: 0.20.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compiler (rust-toolchain.toml)
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: deny
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: cargo-deny-${{ runner.os }}-${{ env.DENY_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: cargo-deny
+        if: steps.deny.outputs.cache-hit != 'true'
+        run: cargo install cargo-deny --version "$DENY_VERSION" --locked
+      - name: Check
+        run: cargo deny --locked --all-features --config .github/tools/deny.toml check advisories
+
+  secrets:
+    runs-on: ubuntu-latest
+    # reads the secrets of an environment without counting as a deployment of it
+    environment:
+      name: web
+      deployment: false
+    timeout-minutes: 5
+    steps:
+      - name: Install the 1Password CLI
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
+      - name: Read the 1Password Environment
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+        run: |
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          test -n "$OP_ENVIRONMENT_ID" || { echo "OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+          cat > "$RUNNER_TEMP/check.sh" <<'CHECK'
+          set -u
+          bad=0
+          # which values are there (never their content)
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID APPLE_ASC_KEY APPLE_ASC_KEY_ID APPLE_ASC_ISSUER_ID APPLE_TEAM_ID SIGN_RELEASE_KEY; do
+            eval "value=\${$name:-}"
+            if [ -n "$value" ]; then echo "$name: there"; else echo "$name: EMPTY"; fi
+          done
+          # are the two keys whole: a key may arrive with its line breaks turned into spaces (the 1Password form does
+          # that when a value is edited by hand), so it is put back into PEM form from its base64 body before it is read
+          pem() {
+            body=$(printf '%s' "$1" | sed -e 's/-----[A-Z ]*-----//g' | tr -d ' \n\r\t')
+            printf -- '-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----\n' "$(printf '%s' "$body" | fold -w 64)"
+          }
+          for name in APPLE_ASC_KEY SIGN_RELEASE_KEY; do
+            eval "value=\${$name:-}"
+            [ -n "$value" ] || continue
+            lines=$(printf '%s\n' "$value" | wc -l)
+            if pem "$value" | openssl pkey -noout 2>/dev/null; then
+              echo "$name: a readable private key (stored in $lines lines)"
+            else
+              echo "$name: NOT readable as a private key (stored in $lines lines)"; bad=1
+            fi
+          done
+          # the public half of the release signing key: not a secret, it goes into the repository
+          if [ -n "${SIGN_RELEASE_KEY:-}" ]; then
+            echo "SIGN_RELEASE_KEY, public half:"
+            pem "$SIGN_RELEASE_KEY" | openssl pkey -pubout 2>/dev/null || true
+          fi
+          exit $bad
+          CHECK
+          op run --environment "$OP_ENVIRONMENT_ID" -- sh "$RUNNER_TEMP/check.sh"
+
+  ios_crashes:
+    name: TestFlight crash reports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the 1Password CLI
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
+      - name: Read the crash reports
+        id: read
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          CRASH_OUT: ${{ runner.temp }}/ios-crashes
+          # the nightly run reads the last day, so a crash is reported once; by hand the input's days
+          CRASH_DAYS: ${{ inputs.days || '1' }}
+        run: |
+          set -eu
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_crashes.sh
+      - name: No key file is left
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ios-crashes
+          path: ${{ runner.temp }}/ios-crashes
+          retention-days: 30
+          if-no-files-found: ignore
+      # one open issue collects the crashes; issue.md holds no tester data (see the head of this file)
+      - name: Report on the issue
+        if: steps.read.outputs.crashes != '' && steps.read.outputs.crashes != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CRASHES: ${{ steps.read.outputs.crashes }}
+          CRASH_OUT: ${{ runner.temp }}/ios-crashes
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          label=ios-crash
+          gh label create "$label" --color D93F0B --description "Crash reports of TestFlight builds (nightly.yml, job ios_crashes)" 2>/dev/null || true
+          {
+            head -c 60000 "$CRASH_OUT/issue.md"
+            printf '\n\n%s crash report(s). Logs: artifact ios-crashes of %s\n' "$CRASHES" "$RUN_URL"
+          } > "$RUNNER_TEMP/comment.md"
+          open=$(gh issue list --state open --label "$label" --limit 1 --json number --jq '.[0].number // empty')
+          if [ -z "$open" ]; then
+            url=$(gh issue create --title "TestFlight crashes" --label "$label" \
+              --body "Crash reports of the iOS app's TestFlight builds, one comment per night (nightly.yml, job ios_crashes). Close this issue once they are dealt with; the next crash opens a new one.")
+            open=${url##*/}
+          fi
+          gh issue comment "$open" --body-file "$RUNNER_TEMP/comment.md"
+          echo "### iOS: $CRASHES TestFlight crash report(s), issue #$open" >> "$GITHUB_STEP_SUMMARY"
+
+  # One issue per failing kind of night, closed by the next good one (.github/scripts/deploy_issue.sh). The giant tests'
+  # names come from the job full.
   report:
     name: Report
-    needs: full
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && (needs.full.result == 'failure' || needs.full.result == 'success') }}
+    needs: [full, connector_stress, fuzz, fuzz_properties, clients_mega, torture, advisories, secrets, ios_crashes]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -86,11 +528,12 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       TAG: ${{ github.sha }}
-      WHAT: full tests
+      WHAT: tests
       LABEL: nightly-failed
-      RESULT: ${{ needs.full.result }}
-      REASON: 'failed: ${{ needs.full.outputs.failed }}'
       RUNNING: main at ${{ github.sha }}
+      RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      NEEDS: ${{ toJSON(needs) }}
+      FULL_FAILED: ${{ needs.full.outputs.failed }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,4 +541,8 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/scripts
       - name: Open, comment on or close the issue
-        run: sh .github/scripts/deploy_issue.sh Nightly
+        run: |
+          set -eu
+          REASON="failed: $(printf '%s' "$NEEDS" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')${FULL_FAILED:+ ($FULL_FAILED)}"
+          export REASON
+          sh .github/scripts/deploy_issue.sh Nightly

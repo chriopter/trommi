@@ -2,7 +2,7 @@
 # The Mac app for direct download (README.md "Mac app (direct download)"), outside the App Store and TestFlight:
 # built on a macOS runner from the commit of a release, signed with the team's "Developer ID Application" certificate
 # and the hardened runtime, notarized by Apple and stapled, packed as Trommi-macOS.dmg (signed, notarized and stapled
-# as well) with its SHA-256. mac.yml runs it under `op run`; attaching it to the release is mac_release.sh's (Linux).
+# as well) with its SHA-256. ship-apple.yml (job mac_direct) runs it under `op run`; attaching it to the release is mac_release.sh's (Linux).
 #   mac_direct.sh build    CI: everything above; writes ready (yes|no), version and build to GITHUB_OUTPUT
 #   mac_direct.sh adhoc    on any Mac without secrets: the same archive, signed ad hoc, as a .dmg, with the checks
 #                          that hold for an ad hoc signature (Gatekeeper must refuse it); nothing is sent anywhere

@@ -1,0 +1,817 @@
+# The iPhone app and the Mac app (app/ios), from a push to main to TestFlight and to the Mac app for direct download,
+# on their own: they wait for no other part.
+#
+#   decide       whether the apps must be delivered: their inputs (.github/scripts/inputs.sh, line ios) differ from
+#                those last delivered to TestFlight (.github/scripts/ios_release_gate.sh decide), and whether the Mac app
+#                for direct download is built (its inputs differ from the newest mac-v<N>'s; mac_release.sh check);
+#                the number N (this workflow's run number plus RELEASE_BASE)
+#   checks       the iOS client's checks with its tests and, when the core changed, the core's (pr-check.yml, called)
+#   ios          on a Mac: the Rust core for iOS devices and the Mac, the core's Swift binding tests, the App Store
+#                Connect steps against fixtures; its artifact is what the archives are made with
+#   testflight   the iPhone app archived, signed and uploaded (.github/scripts/ios_testflight.sh; the upload checks the
+#                gate again: this run's checks passed); processed: the groups, What to Test, Beta App Review
+#   mac          the same for TestFlight's Mac build (.github/scripts/mac_testflight.sh); mac_processed
+#   ios_notes    ios-v<N>: a release with the notes of what changed for the apps since the one before and the TestFlight
+#                build number; no file, never latest (the record the changelog reads)
+#   mac_direct   the Mac app for direct download: Developer ID, notarized, stapled (.github/scripts/mac_direct.sh), then
+#                released as mac-v<N>, marked latest (mac_release.sh); without the certificate it ends green with a
+#                notice and nothing is released, never an unsigned app
+#   report       a failed delivery opens the issue "iOS build <N> failed" (label build-failed); the next good one closes it
+# By hand (Actions -> ship-apple -> Run workflow, on main), `action`:
+#   testflight-again   `run_id`, an earlier run of this workflow on main: its build goes to TestFlight once more (its
+#                      checks must have passed); `dry_run` signs and checks but uploads nothing
+#   store-check|store-upload|store-submit|store-release|store-status   the App Store steps of
+#                      app/ios/TrommiApp/AppStore/store.py (app/ios/README.md "App Store release") for `platform`
+#
+# Secrets: the environment `ios` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID (App Store Connect key, team,
+# demo password in the 1Password Environment); the environment `mac` the Developer ID certificate. Only the jobs that
+# need them see them.
+name: ship-apple
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - app/ios/**
+      - tests/ios/**
+      - tests/bindings/**
+      - demo/**
+      - core/**
+      - client/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - CHANGELOG.md
+      - .github/scripts/ios_**
+      - .github/scripts/mac_**
+      - .github/scripts/inputs.sh
+      - .github/scripts/release_notes.mjs
+      - .github/workflows/ship-apple.yml
+      - .github/workflows/pr-check.yml
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        required: true
+        type: choice
+        options: [testflight-again, store-check, store-upload, store-submit, store-release, store-status]
+        default: store-check
+      run_id:
+        description: testflight-again - the id of an earlier run of ship-apple on main
+        required: false
+        type: string
+      dry_run:
+        description: testflight-again - sign and check only; upload nothing
+        required: false
+        type: boolean
+        default: false
+      platform:
+        description: store - which app
+        required: false
+        type: choice
+        options: [ios, mac]
+        default: ios
+      build:
+        description: store-upload - the build number to attach (empty = the newest VALID build of the version)
+        required: false
+        type: string
+
+permissions: {}
+
+# One run at a time; of the runs waiting only the newest (a started run, and so an upload, is never cut off). The
+# newest delivers when its inputs differ from those last delivered, so a replaced run's change is not lost.
+concurrency:
+  group: ship-apple
+  cancel-in-progress: false
+
+env:
+  # ios-v<N> and mac-v<N>: N is this workflow's run number plus this base (above every release number before)
+  RELEASE_BASE: 1000
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  decide:
+    name: Must they be delivered
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      deliver: ${{ steps.decide.outputs.deliver }}
+      mac: ${{ steps.mac.outputs.mode }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: What TestFlight has
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -eu
+          echo "version=$((RUN_NUMBER + RELEASE_BASE))" >> "$GITHUB_OUTPUT"
+          sum=$(sh .github/scripts/inputs.sh | sed -n 's/^ios //p')
+          delivered=$(sh .github/scripts/ios_delivered.sh) || delivered=
+          if [ -n "$delivered" ] && [ "$delivered" = "$sum" ]; then deliver=false; else deliver=true; fi
+          echo "deliver=$deliver" | tee -a "$GITHUB_OUTPUT"
+      - name: What the newest Mac app is
+        id: mac
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.decide.outputs.version }}
+          COMMIT: ${{ github.sha }}
+        run: bash .github/scripts/mac_release.sh check
+
+  checks:
+    name: Checks
+    needs: decide
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/pr-check.yml
+    with:
+      parts: apple
+      workflow: ship-apple.yml
+
+  ios:
+    name: iOS core for devices (main)
+    needs: [decide, checks]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push' && needs.decide.outputs.deliver == 'true'
+      && needs.checks.result == 'success' }}
+    # macOS with Xcode 27 (the app's deployment target is iOS 27)
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      COMMIT: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The core for Swift is what core/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
+      # what the iOS library is checked against). When they are the same as in an earlier run of main, that
+      # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone).
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      # llvm-tools: core/swift/build.sh takes the compiler runtime's helpers out of the iOS library with llvm-ar
+      - name: Compiler (rust-toolchain.toml)
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          rustup toolchain install || rustup show
+          rustup component add llvm-tools
+          rustc --version
+          xcodebuild -version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The Rust core for this Mac (for the tests) and for an iOS device (the archive); the helpers it removes from the
+      # iOS library are checked against Apple's runtime of this Xcode. No simulator library: nothing here runs one.
+      - name: The Rust core for Swift
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        env:
+          TROMMI_SIMULATOR: "0"
+        run: |
+          set -eu
+          DARWIN_CLANG_RT="$(xcrun --sdk iphoneos clang -print-resource-dir)/lib/darwin"
+          export DARWIN_CLANG_RT
+          sh core/swift/build.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      # The core's Swift binding on this Mac. The app's own package (app/ios/TrommiClient) is tested on Linux only: it
+      # does not compile for macOS (ActivityKit), and the archive (job testflight) is its build for iOS.
+      - name: Test
+        run: swift test --package-path tests/bindings/swift
+      # The App Store Connect steps of the public beta (asc.py external, beta-review, whats-new) against fixtures:
+      # nothing goes to the network, no key is needed.
+      - name: App Store Connect steps (fixtures)
+        run: python3 -B -m unittest discover -s tests/ios/asc -v
+      # What the archives (jobs testflight and mac) take: the iOS library, the Mac's (this runner's host build, Apple silicon) and UniFFI's two
+      # files, with their hashes and the commit.
+      - name: Put the release together
+        run: |
+          set -eu
+          package=core/swift/TrommiCoreRust
+          mkdir -p out/lib/ios out/lib/macos out/Sources/TrommiCoreFFI/include out/Sources/TrommiCoreRust
+          cp "$package/lib/ios/libtrommi_core_ffi.a" out/lib/ios/
+          cp "$package/lib/macos/libtrommi_core_ffi.a" out/lib/macos/
+          cp "$package/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" out/Sources/TrommiCoreFFI/include/
+          cp "$package/Sources/TrommiCoreRust/TrommiCoreRust.swift" out/Sources/TrommiCoreRust/
+          printf 'commit: %s\n' "$COMMIT" > out/build.txt
+          (cd out && find . -type f | sed 's|^\./||' | sort | xargs shasum -a 256 > "$RUNNER_TEMP/checksums.txt")
+          mv "$RUNNER_TEMP/checksums.txt" out/checksums.txt
+          cat out/checksums.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-release
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
+
+  testflight:
+    name: TestFlight
+    needs: [decide, checks, ios]
+    # a push: the app must be delivered and its checks and core passed; by hand: an earlier run's build again
+    if: >-
+      ${{ !cancelled() && ((github.event_name == 'push' && needs.ios.result == 'success')
+      || (github.event_name == 'workflow_dispatch' && inputs.action == 'testflight-again')) }}
+    # macOS with Xcode 27 (the app's deployment target is iOS 27)
+    runs-on: xcode-27
+    timeout-minutes: 90
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit: ${{ steps.core.outputs.commit }}
+      version: ${{ steps.upload.outputs.version }}
+      build: ${{ steps.upload.outputs.build }}
+    env:
+      # XcodeGen, by the SHA-256 of its release archive
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+    steps:
+      # A run named by hand must be a run of ship-apple.yml on the main branch of this repository (only those build the
+      # artifact): a pull request's run also has artifacts, and nothing of such a run may be signed,
+      # attested or delivered. Its commit is the one the artifact names, checked to be on main below.
+      - name: The run that is delivered again
+        id: source
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -eu
+          printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
+          jq -e --arg r "$GITHUB_REPOSITORY" \
+            '.path == ".github/workflows/ship-apple.yml" and .head_branch == "main" and .event == "push" and .repository.full_name == $r and .head_repository.full_name == $r' \
+            "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a run of ship-apple.yml on the main branch of this repository"; exit 1; }
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
+          grep -Fq "iOS core for devices (main)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job iOS core for devices (main) of run $RUN_ID did not succeed"; exit 1; }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-release
+          path: ${{ runner.temp }}/core
+          run-id: ${{ inputs.run_id || github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Which commit the core was built from
+        id: core
+        env:
+          COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/core"
+          shasum -a 256 -c checksums.txt
+          commit=$(sed -n 's/^commit: //p' build.txt)
+          printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::the artifact names no commit"; exit 1; }
+          if [ -n "$COMMIT" ]; then
+            [ "$commit" = "$COMMIT" ] || { echo "::error::the core is of $commit, the run built $COMMIT"; exit 1; }
+          else
+            # by hand: the commit must be on main (main is it or ahead of it)
+            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq .status) || status=
+            case "$status" in identical|ahead) ;; *) echo "::error::the core is of $commit, which is not on main"; exit 1 ;; esac
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.core.outputs.commit }}
+          persist-credentials: false
+      # the tested library and its bindings go where core/swift/build.sh would have written them
+      - name: Put the Rust core in place
+        run: |
+          set -eu
+          package=core/swift/TrommiCoreRust
+          mkdir -p "$package/lib/ios" "$package/Sources/TrommiCoreFFI/include"
+          cp "$RUNNER_TEMP/core/lib/ios/libtrommi_core_ffi.a" "$package/lib/ios/"
+          cp "$RUNNER_TEMP/core/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" "$package/Sources/TrommiCoreFFI/include/"
+          cp "$RUNNER_TEMP/core/Sources/TrommiCoreRust/TrommiCoreRust.swift" "$package/Sources/TrommiCoreRust/"
+      - name: XcodeGen
+        run: |
+          set -eu
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "XCODEGEN=$RUNNER_TEMP/xcodegen/bin/xcodegen" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/xcodegen/bin/xcodegen" --version
+      - name: Install the 1Password CLI
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
+      - name: Build, sign, upload
+        id: upload
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          COMMIT: ${{ steps.core.outputs.commit }}
+          ITS_NON_EXEMPT_ENCRYPTION: ${{ vars.IOS_NON_EXEMPT_ENCRYPTION || 'NO' }}
+          ITS_EXPORT_COMPLIANCE_CODE: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
+          # gated: that run's checks passed, and (unless by hand) the app is not out there yet (ios_release_gate.sh)
+          TF_GATE: release
+          SAME_OK: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          TF_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          TF_UPLOADER: ${{ vars.IOS_UPLOADER || 'api' }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id || github.run_id }}
+          VERSION_RELEASE: ${{ needs.decide.outputs.version || '1' }}
+        run: |
+          set -eu
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh upload
+      - name: No key file is left
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc" "$RUNNER_TEMP/ExportOptions.plist"
+
+  # App Store Connect processes the uploaded build (minutes); then the group "Intern" holds it, What to Test is set,
+  # the group "Trommi" gets it and, when Apple asks for it, Beta App Review.
+  processed:
+    name: TestFlight (processed, groups, What to Test, review)
+    needs: testflight
+    # nothing was uploaded in a dry run
+    if: needs.testflight.outputs.build != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.testflight.outputs.commit }}
+          persist-credentials: false
+      - name: Install the 1Password CLI
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
+      - name: Wait until processed, hand to the group
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          COMMIT: ${{ needs.testflight.outputs.commit }}
+          TF_VERSION: ${{ needs.testflight.outputs.version }}
+          TF_BUILD: ${{ needs.testflight.outputs.build }}
+          TESTFLIGHT_TESTER: ${{ vars.IOS_TESTFLIGHT_TESTER }}
+        run: |
+          set -eu
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/ios_testflight.sh after
+      - name: No key file is left
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+
+  # The Mac app, beside the iOS one: the same artifact (its lib/macos), the same key, its own build numbers.
+  mac:
+    name: TestFlight (Mac)
+    needs: [decide, checks, ios]
+    if: >-
+      ${{ !cancelled() && ((github.event_name == 'push' && needs.ios.result == 'success')
+      || (github.event_name == 'workflow_dispatch' && inputs.action == 'testflight-again')) }}
+    runs-on: xcode-27
+    timeout-minutes: 90
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit: ${{ steps.core.outputs.commit }}
+      version: ${{ steps.upload.outputs.version }}
+      build: ${{ steps.upload.outputs.build }}
+    env:
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+    steps:
+      - name: The run that is delivered again
+        id: source
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -eu
+          printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
+          jq -e --arg r "$GITHUB_REPOSITORY" \
+            '.path == ".github/workflows/ship-apple.yml" and .head_branch == "main" and .event == "push" and .repository.full_name == $r and .head_repository.full_name == $r' \
+            "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a run of ship-apple.yml on the main branch of this repository"; exit 1; }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ios-release
+          path: ${{ runner.temp }}/core
+          run-id: ${{ inputs.run_id || github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Which commit the core was built from
+        id: core
+        env:
+          COMMIT: ${{ github.event_name == 'push' && github.sha || '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP/core"
+          shasum -a 256 -c checksums.txt
+          commit=$(sed -n 's/^commit: //p' build.txt)
+          printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::the artifact names no commit"; exit 1; }
+          if [ -n "$COMMIT" ]; then
+            [ "$commit" = "$COMMIT" ] || { echo "::error::the core is of $commit, the run built $COMMIT"; exit 1; }
+          else
+            # by hand: the commit must be on main (main is it or ahead of it)
+            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq .status) || status=
+            case "$status" in identical|ahead) ;; *) echo "::error::the core is of $commit, which is not on main"; exit 1 ;; esac
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          # an artifact of before the Mac app carries no lib/macos: then there is nothing to build
+          if [ -f lib/macos/libtrommi_core_ffi.a ]; then echo "mac=yes" >> "$GITHUB_OUTPUT"; else
+            echo "::notice::the artifact holds no Rust core for the Mac (lib/macos): no Mac build"; echo "mac=no" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.core.outputs.mac == 'yes'
+        with:
+          ref: ${{ steps.core.outputs.commit }}
+          persist-credentials: false
+      - name: Put the Rust core in place
+        if: steps.core.outputs.mac == 'yes'
+        run: |
+          set -eu
+          package=core/swift/TrommiCoreRust
+          mkdir -p "$package/lib/macos" "$package/Sources/TrommiCoreFFI/include"
+          cp "$RUNNER_TEMP/core/lib/macos/libtrommi_core_ffi.a" "$package/lib/macos/"
+          cp "$RUNNER_TEMP/core/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" "$package/Sources/TrommiCoreFFI/include/"
+          cp "$RUNNER_TEMP/core/Sources/TrommiCoreRust/TrommiCoreRust.swift" "$package/Sources/TrommiCoreRust/"
+      - name: XcodeGen
+        if: steps.core.outputs.mac == 'yes'
+        run: |
+          set -eu
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "XCODEGEN=$RUNNER_TEMP/xcodegen/bin/xcodegen" >> "$GITHUB_ENV"
+      - name: Install the 1Password CLI
+        if: steps.core.outputs.mac == 'yes'
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          version: 2.42.0-beta.01
+      - name: Build, sign, upload (Mac)
+        id: upload
+        if: steps.core.outputs.mac == 'yes'
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          COMMIT: ${{ steps.core.outputs.commit }}
+          # gated: that run's checks passed, and (unless by hand) the app is not out there yet (ios_release_gate.sh)
+          TF_GATE: release
+          SAME_OK: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+          TF_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+          TF_UPLOADER: ${{ vars.MAC_UPLOADER || 'api' }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run_id || github.run_id }}
+          VERSION_RELEASE: ${{ needs.decide.outputs.version || '1' }}
+        run: |
+          set -eu
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          test -n "$OP_ENVIRONMENT_ID" || { echo "::error::OP_ENVIRONMENT_ID is not set for this run"; exit 1; }
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/mac_testflight.sh upload
+      - name: No key file is left
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc-mac" "$RUNNER_TEMP/ExportOptionsMac.plist"
+
+  mac_processed:
+    name: TestFlight (Mac processed, group, What to Test)
+    needs: mac
+    if: needs.mac.outputs.build != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.mac.outputs.commit }}
+          persist-credentials: false
+      - name: Install the 1Password CLI
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          version: 2.42.0-beta.01
+      - name: Wait until processed, hand to the group
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          COMMIT: ${{ needs.mac.outputs.commit }}
+          TF_VERSION: ${{ needs.mac.outputs.version }}
+          TF_BUILD: ${{ needs.mac.outputs.build }}
+          TESTFLIGHT_TESTER: ${{ vars.IOS_TESTFLIGHT_TESTER }}
+        run: |
+          set -eu
+          test -n "$OP_SERVICE_ACCOUNT_TOKEN" || { echo "::error::OP_SERVICE_ACCOUNT_TOKEN is not set for this run"; exit 1; }
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/mac_testflight.sh after
+      - name: No key file is left
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc-mac"
+
+  mac_direct:
+    name: Build, sign, notarize (Mac, direct download)
+    needs: [decide, checks]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push' && needs.decide.outputs.mac == 'build'
+      && needs.checks.result == 'success' }}
+    # macOS with Xcode 27, Apple silicon (the app is arm64 only)
+    runs-on: xcode-27
+    timeout-minutes: 120
+    # reads the secrets of the environment without counting as a deployment of it
+    environment:
+      name: mac
+      deployment: false
+    permissions:
+      contents: read
+    outputs:
+      ready: ${{ steps.app.outputs.ready }}
+      version: ${{ steps.app.outputs.version }}
+    env:
+      COMMIT: ${{ github.sha }}
+      VERSION: ${{ needs.decide.outputs.version }}
+      # XcodeGen, by the SHA-256 of its release archive (as in the job testflight)
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+    steps:
+      # Fails closed: an environment without 1Password access builds nothing and says so
+      - name: Is signing set up
+        id: setup
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+        run: |
+          if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ] && [ -n "$OP_ENVIRONMENT_ID" ]; then
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the environment mac has no OP_SERVICE_ACCOUNT_TOKEN or OP_ENVIRONMENT_ID: the Mac app for direct download is not built (README.md \"Mac app (direct download)\")"
+            echo "### Mac (direct download): not built, the environment mac is not set up" >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.setup.outputs.ready == 'yes'
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      # The Rust core for the Mac (core/swift/build.sh macos), taken from an earlier run when built from the same paths
+      - name: What the core for the Mac is built from
+        id: core_inputs
+        if: steps.setup.outputs.ready == 'yes'
+        run: |
+          set -eu
+          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          echo "key=mac-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        if: steps.setup.outputs.ready == 'yes'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib/macos
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      - name: Compiler (rust-toolchain.toml)
+        if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          rustup toolchain install || rustup show
+          rustc --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: The Rust core for the Mac
+        if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+        run: sh core/swift/build.sh macos
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib/macos
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      - name: XcodeGen
+        if: steps.setup.outputs.ready == 'yes'
+        run: |
+          set -eu
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "XCODEGEN=$RUNNER_TEMP/xcodegen/bin/xcodegen" >> "$GITHUB_ENV"
+      - name: Install the 1Password CLI
+        if: steps.setup.outputs.ready == 'yes'
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
+      - name: Build, sign, notarize
+        id: app
+        if: steps.setup.outputs.ready == 'yes'
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+        run: op run --environment "$OP_ENVIRONMENT_ID" -- bash .github/scripts/mac_direct.sh build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.app.outputs.ready == 'yes'
+        with:
+          name: mac-direct
+          path: ${{ runner.temp }}/mac-direct/
+          if-no-files-found: error
+          retention-days: 14
+      - name: No key or keychain is left
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/mac-direct.keychain-db" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/mac-direct-keys" "$RUNNER_TEMP/ExportOptionsMacDirect.plist"
+
+  mac_release:
+    name: Release mac-v<N>
+    needs: [decide, mac_direct]
+    if: needs.mac_direct.outputs.ready == 'yes'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.decide.outputs.version }}
+      COMMIT: ${{ github.sha }}
+      MAC_VERSION: ${{ needs.mac_direct.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mac-direct
+          path: ${{ runner.temp }}/mac
+      - name: Check, describe
+        run: bash .github/scripts/mac_release.sh prepare "$RUNNER_TEMP/mac"
+      - name: Attest the files
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/mac/Trommi-macOS.dmg
+            ${{ runner.temp }}/mac/Trommi-macOS.dmg.sha256
+            ${{ runner.temp }}/mac/Trommi-macOS.json
+      - name: Release
+        run: bash .github/scripts/mac_release.sh upload "$RUNNER_TEMP/mac"
+
+  # ios-v<N>: once Apple processed the iPhone build and it is in its groups, a release that says what changed for the
+  # apps since the ios-v<N> before (the "What's new" lines of the merged pull requests that touch them,
+  # .github/scripts/release_notes.mjs) and which TestFlight build it is. No file; never latest.
+  ios_notes:
+    name: iOS release notes (ios-v<N>)
+    needs: [decide, testflight, processed]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.processed.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ios-v${{ needs.decide.outputs.version }}
+      APP_VERSION: ${{ needs.testflight.outputs.version }}
+      APP_BUILD: ${{ needs.testflight.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Publish
+        run: |
+          set -eu
+          if gh release view "$TAG" > /dev/null 2>&1; then echo "$TAG is published already"; exit 0; fi
+          newest=$(gh release list --exclude-drafts --limit 1000 --json tagName --jq '.[].tagName' | sed -n 's/^ios-v\([1-9][0-9]*\)$/\1/p' | sort -n | tail -n 1)
+          before=''
+          if [ -n "$newest" ]; then before=$(gh api "repos/$GH_REPO/commits/ios-v$newest" --jq .sha 2>/dev/null) || before=''; fi
+          {
+            node .github/scripts/release_notes.mjs mac "$before" "$GITHUB_SHA" || true
+            printf '\n---\n\nThe iPhone and Mac apps of commit %s: TestFlight %s (%s), in the groups "Intern" and "Trommi".\n' "$GITHUB_SHA" "$APP_VERSION" "$APP_BUILD"
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --target "$GITHUB_SHA" --latest=false --title "Trommi for iPhone $APP_VERSION ($APP_BUILD)" --notes-file "$RUNNER_TEMP/notes.md"
+
+  # A delivery: when a job failed, open the issue "iOS build <N> failed" (label build-failed) or comment on the open
+  # one; when all passed, close it.
+  report:
+    name: Report
+    needs: [decide, checks, ios, testflight, processed, mac, mac_processed, ios_notes, mac_direct, mac_release]
+    if: ${{ !cancelled() && github.event_name == 'push' && (needs.decide.outputs.deliver == 'true' || needs.decide.outputs.mac == 'build') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.decide.outputs.version }}
+      WHAT: build
+      RUNNING: the commit built, ${{ github.sha }}
+      LABEL: build-failed
+      RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      NEEDS: ${{ toJSON(needs) }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Open, comment on or close the issue
+        run: |
+          set -eu
+          REASON="failed: $(printf '%s' "$NEEDS" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')"
+          export REASON
+          sh .github/scripts/deploy_issue.sh iOS
+
+  store:
+    name: App Store (${{ inputs.platform }}, ${{ inputs.action }})
+    if: github.event_name == 'workflow_dispatch' && startsWith(inputs.action, 'store-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment:
+      name: ios
+      url: https://appstoreconnect.apple.com/apps
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check (offline)
+        env:
+          ASC_PLATFORM: ${{ inputs.platform == 'mac' && 'MAC_OS' || 'IOS' }}
+        run: python3 app/ios/TrommiApp/AppStore/store.py check
+      - name: Install the 1Password CLI
+        if: inputs.action != 'store-check'
+        uses: 1password/install-cli-action@1a3160d5e9de1ae0803eaa08a88746f5ae3daa50 # v4.1.0
+        with:
+          # a fixed release, never a moving channel: `op run --environment` is in the 2.42 betas, not yet in stable 2.40.0
+          version: 2.42.0-beta.01
+      - name: ${{ inputs.action }}
+        if: inputs.action != 'store-check'
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
+          STEP: ${{ inputs.action }}
+          BUILD: ${{ inputs.build }}
+          ASC_PLATFORM: ${{ inputs.platform == 'mac' && 'MAC_OS' || 'IOS' }}
+        run: |
+          set -eu
+          printf '%s' "$BUILD" | grep -Eq '^[0-9]*$' || { echo "::error::not a build number: $BUILD"; exit 1; }
+          STEP=${STEP#store-}
+          case "$STEP" in
+            upload) args=(upload ${BUILD:+"$BUILD"}) ;;
+            submit|release) args=("$STEP" --yes) ;;
+            status) args=(status) ;;
+            *) echo "::error::unknown step $STEP"; exit 1 ;;
+          esac
+          op run --environment "$OP_ENVIRONMENT_ID" -- bash app/ios/TrommiApp/AppStore/store.sh "${args[@]}"
+
