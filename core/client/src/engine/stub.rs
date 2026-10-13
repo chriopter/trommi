@@ -30,6 +30,8 @@ pub enum Expect {
     GroupLog { group: GroupId, limit: u32 },
     Chain { after: u64, limit: u32 },
     DeskBrief { delta: bool },
+    Desk,
+    Object { object: ObjectId, after: u64, limit: u32 },
     Outbox { kind: OutboxKind },
     Joins { count: usize },
     KeyPackagesHeld,
@@ -246,6 +248,16 @@ impl HubCodec for StubCodec {
                 )),
                 Expect::DeskBrief { delta: since.is_some() },
             ),
+            Route::Desk { active } => (get(format!("/v1/desk{}", if active { "?active=1" } else { "" })), Expect::Desk),
+            Route::Object { route, object, after, limit } => {
+                let kind = match route {
+                    ObjectRoute::Cards => "cards",
+                    ObjectRoute::Notes => "notes",
+                    ObjectRoute::PermissionRequests => "permission-requests",
+                    ObjectRoute::Artifacts => "artifacts",
+                };
+                (get(format!("/v1/{kind}/{}?after={after}&limit={limit}", object.to_base64url())), Expect::Object { object: *object, after, limit })
+            }
             Route::Outbox { room, entry, extra: _ } => {
                 let part = |i: usize| entry.parts.get(i).filter(|p| !p.is_empty()).map(|p| b64(p));
                 let group = entry.group.map(|g| b64(g.as_bytes())).unwrap_or_default();
@@ -318,7 +330,7 @@ impl HubCodec for StubCodec {
                 (send("POST", "/v1/requests".into(), body), Expect::Wished)
             }
             Route::RejectCommit { group, n } => (send("POST", format!("/v1/groups/{}/reject", b64(group.as_bytes())), json!({ "n": n })), Expect::Done),
-            Route::Object { .. } | Route::GroupsRead { .. } | Route::ClaimKeyPackages { .. } | Route::RoomGroups { .. } | Route::GroupInfo { .. } | Route::Wishes => {
+            Route::GroupsRead { .. } | Route::ClaimKeyPackages { .. } | Route::RoomGroups { .. } | Route::GroupInfo { .. } | Route::Wishes => {
                 return Err(BAD("the stand-in codec does not know this route"))
             }
         })
@@ -476,6 +488,64 @@ impl HubCodec for StubCodec {
                     settled,
                     truncated: v.get("truncated").and_then(Value::as_bool).ok_or(BAD("truncated"))?,
                     change: number(&v, "change")?,
+                })
+            }
+            Expect::Desk => {
+                let objects = |field: &'static str| -> Result<Vec<DeskObject>, Failure> {
+                    let Some(raw) = v.get(field) else { return Ok(Vec::new()) };
+                    raw.as_array()
+                        .filter(|a| a.len() <= 10_000)
+                        .ok_or(BAD(field))?
+                        .iter()
+                        .map(|one| {
+                            Ok(DeskObject {
+                                object: ObjectId::from_slice(&bytes_of(one, "object_id")?).map_err(|_| BAD("object_id"))?,
+                                group: group_of(one, "group_id")?,
+                                first_change: number(one, "first_change")?,
+                                head_change: number(one, "head_change")?,
+                                version: match one.get("version") {
+                                    None | Some(Value::Null) => None,
+                                    Some(version) => Some(envelope_item(version)?),
+                                },
+                            })
+                        })
+                        .collect()
+                };
+                let registers = match v.get("registers").and_then(Value::as_array) {
+                    Some(raw) if raw.len() <= 20_000 => raw.iter().map(envelope_item).collect::<Result<Vec<_>, _>>()?,
+                    Some(_) => return Err(BAD("registers")),
+                    None => Vec::new(),
+                };
+                Answer::Desk(Desk {
+                    cards: objects("cards")?,
+                    permission_requests: objects("permission_requests")?,
+                    notes: objects("notes")?,
+                    artifacts: objects("artifacts")?,
+                    registers,
+                    truncated: v.get("truncated").and_then(Value::as_bool).unwrap_or(false),
+                    change: number(&v, "change")?,
+                })
+            }
+            Expect::Object { object, after, limit } => {
+                if bytes_of(&v, "object_id")? != object.as_bytes() {
+                    return Err(BAD("another object than the one asked for"));
+                }
+                let raw = v.get("items").and_then(Value::as_array).filter(|a| a.len() <= *limit as usize).ok_or(BAD("items"))?;
+                let mut at = *after;
+                let mut items = Vec::with_capacity(raw.len());
+                for one in raw {
+                    let item = envelope_item(one)?;
+                    if item.change <= at {
+                        return Err(BAD("envelopes out of order"));
+                    }
+                    at = item.change;
+                    items.push(item);
+                }
+                Answer::Object(ObjectEnvelopes {
+                    object: *object,
+                    group: group_of(&v, "group_id")?,
+                    items,
+                    more: v.get("more").and_then(Value::as_bool).ok_or(BAD("more"))?,
                 })
             }
             Expect::Outbox { kind } => Answer::Outbox(outbox_answer(*kind, &v)?),

@@ -40,6 +40,19 @@
 //!   from the first of them. A withheld chain: that sender's chain from what the device holds. None of them reads
 //!   the room's order again; [`Engine::reread_from`] is set only when one of those tables overflowed.
 //!
+//! # The Desk first
+//!
+//! Before the first page of the order the engine asks for the hub's Desk (`GET /v1/desk`): the open cards and
+//! permission requests with their newest version. Each version is read by the protocol core out of the order
+//! (shown as provisional until its chain reaches it), and for a card revised since it was asked the first version
+//! is read as well (one small request each, [`sync::FIRSTS_AT_ONCE`] at a time), because the Desk orders cards by
+//! when they were asked: no card moves when the order is read afterwards. Then [`Report::DeskComplete`]. The Desk
+//! is read again only when a session group was joined. What the hub says there (`first_change`, the list itself)
+//! is a hint for what to read: every envelope is checked like any other, and the list only ever HOLDS a card back
+//! ([`crate::desk`]), it cannot make one.
+//!
+//! [`feed::Board`] turns the reports into the board model (`crate::model`), which the views are made from.
+//!
 //! # Which order the model is handed
 //!
 //! The engine hands the model each envelope as the protocol core took it. What is authenticated in that:
@@ -53,12 +66,13 @@
 //!
 //! # Not here yet
 //!
-//! Upkeep (invite steps, 5.2.7 to 5.2.9, heads, KeyPackages, seats), the Desk-first sign-in with the hub's batch
-//! routes, the reading of the room's past (one module, one entry point, behind [`Engine::reread_from`]), recovery
+//! Upkeep (invite steps, 5.2.7 to 5.2.9, heads, KeyPackages, seats), the joins of a sign-in with the hub's batch
+//! routes, the Desk as a delta on a warm start, the reading of the room's past (one module, one entry point, behind [`Engine::reread_from`]), recovery
 //! of a closed device, relayed pieces and wishes.
 //!
 //! The contract fixes the retry rule here, so every app waits the same way.
 
+pub mod feed;
 pub mod hubapi;
 pub mod memstore;
 pub mod stub;

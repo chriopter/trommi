@@ -86,6 +86,9 @@ pub enum Route<'a> {
     Chain { group: &'a GroupId, sender: &'a DeviceId, after: u64, limit: u32 },
     /// `GET /v1/desk?brief=1[&since=][&active=1]`.
     DeskBrief { since: Option<u64>, active: bool },
+    /// `GET /v1/desk[?active=1]`: the open objects with their newest version, and every writer's newest value per
+    /// register.
+    Desk { active: bool },
     /// `GET /v1/cards/{object}?after=&limit=` and its siblings: every envelope of one object.
     Object { route: ObjectRoute, object: &'a ObjectId, after: u64, limit: u32 },
     /// One outbox entry exactly as the protocol core made it, to the route of its kind.
@@ -216,6 +219,31 @@ pub struct DeskBrief {
     pub change: u64,
 }
 
+/// An open object of the Desk.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DeskObject {
+    pub object: ObjectId,
+    pub group: GroupId,
+    /// The change of its first envelope and of its newest, as the hub says: hints for what to read.
+    pub first_change: u64,
+    pub head_change: u64,
+    /// Its newest version; none when the hub holds none to serve.
+    pub version: Option<EnvelopeItem>,
+}
+
+/// `GET /v1/desk`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Desk {
+    pub cards: Vec<DeskObject>,
+    pub permission_requests: Vec<DeskObject>,
+    pub notes: Vec<DeskObject>,
+    pub artifacts: Vec<DeskObject>,
+    pub registers: Vec<EnvelopeItem>,
+    /// The Desk was cut short: it decides nothing, the rest comes in the hub's order.
+    pub truncated: bool,
+    pub change: u64,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct ObjectEnvelopes {
     pub object: ObjectId,
@@ -313,6 +341,7 @@ pub enum Answer {
     GroupLog { items: Vec<ChangeItem>, more: bool },
     Chain { items: Vec<ChainItem>, more: bool },
     DeskBrief(DeskBrief),
+    Desk(Desk),
     Object(ObjectEnvelopes),
     Outbox(OutboxAnswer),
     /// One per entry asked, in order.
@@ -340,6 +369,7 @@ impl std::fmt::Debug for Answer {
             Answer::GroupLog { .. } => "GroupLog",
             Answer::Chain { .. } => "Chain",
             Answer::DeskBrief(_) => "DeskBrief",
+            Answer::Desk(_) => "Desk",
             Answer::Object(_) => "Object",
             Answer::Outbox(_) => "Outbox",
             Answer::Joins(_) => "Joins",

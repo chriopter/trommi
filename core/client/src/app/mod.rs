@@ -65,6 +65,8 @@ pub struct App {
     timer: Option<u64>,
     /// What the engine reported for the person (until the views show them: W4).
     alerts: Vec<engine::Alert>,
+    /// The board model, fed from the engine's reports.
+    board: engine::feed::Board,
 }
 
 impl Default for App {
@@ -86,7 +88,13 @@ impl App {
             engine: None,
             timer: None,
             alerts: Vec::new(),
+            board: engine::feed::Board::default(),
         }
+    }
+
+    /// The board model as the engine's reports left it (the views are made from it: W4).
+    pub fn board(&self) -> &engine::feed::Board {
+        &self.board
     }
 
     /// The sync engine, once the stored device opened.
@@ -103,7 +111,7 @@ impl App {
     ) -> (Option<Result<T, trommi_core::Error>>, Vec<Effect>) {
         let mut out = Vec::new();
         let result = self.with_engine(now_ms, &mut out, |engine, ctx| engine.act(ctx, action));
-        self.after_engine(&mut out);
+        self.after_engine(now_ms, &mut out);
         self.render(&mut out);
         (result, out)
     }
@@ -195,7 +203,7 @@ impl App {
             }
             Event::Push { .. } => {}
         }
-        self.after_engine(&mut out);
+        self.after_engine(now_ms, &mut out);
         self.render(&mut out);
         out
     }
@@ -213,6 +221,7 @@ impl App {
         let client = format!("{}/{}", config.platform, config.version);
         match Engine::open(Codec::default(), hub, &client, config.seed, revision, entries) {
             Ok(engine) => {
+                self.board = engine::feed::Board::new(engine.device());
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;
                 self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
@@ -245,11 +254,14 @@ impl App {
     }
 
     /// What the engine reported since the last event: the phase, the alerts, the timer.
-    fn after_engine(&mut self, out: &mut Vec<Effect>) {
+    fn after_engine(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         let Some(engine) = self.engine.as_mut() else {
             return;
         };
+        let mut fed = false;
         while let Some(report) = engine.next_report() {
+            self.board.take(&report, engine.device(), now_ms);
+            fed = true;
             match report {
                 Report::Connection(Connection::Live) => self.next_view.phase = Phase::Live,
                 Report::Connection(Connection::Offline) => self.next_view.phase = Phase::Offline,
@@ -265,11 +277,18 @@ impl App {
                     }
                     self.alerts.push(alert);
                 }
-                // (W1's next head: the model is fed from these)
                 _ => {}
             }
         }
-        let wake = engine.next_wake();
+        if fed || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
+            // (W4: the views are made from what this says changed)
+            let _ = self.board.finish(now_ms);
+        }
+        let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
+        let wake = match (engine.next_wake(), model_wake) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });

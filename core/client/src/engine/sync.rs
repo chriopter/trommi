@@ -13,7 +13,7 @@ use trommi_core::device::{
     WelcomeExpectation,
 };
 use trommi_core::hub_auth::HubAddress;
-use trommi_core::ids::{DeviceId, GroupId, RoomId};
+use trommi_core::ids::{DeviceId, GroupId, ObjectId, RoomId};
 use trommi_core::store::{OutboxEntry, OutboxKind};
 use trommi_core::Error;
 
@@ -41,6 +41,8 @@ pub const TOKEN_RENEW_BEFORE_MS: u64 = 60_000;
 pub const TOKEN_MAX_MS: u64 = 600_000;
 /// A stream that brought nothing for this long is taken for dead (the hub pings every 20 s).
 pub const STREAM_SILENT_MS: u64 = 75_000;
+/// First versions of open cards asked for at the same time.
+pub const FIRSTS_AT_ONCE: usize = 8;
 /// At most so many reports wait for the App.
 const REPORTS_MAX: usize = 4 * PAGE as usize;
 
@@ -133,6 +135,12 @@ pub enum Report {
     /// The device's groups may have changed: read `Engine::device().groups()` again.
     Groups,
     Alert(Alert),
+    /// The hub's Desk: what it lists as open (the object, the change of its version) at which change. `truncated`:
+    /// cut short, it decides nothing. The listed versions came before it as `Envelope`s (not ordered).
+    Desk { at: u64, open: Vec<(ObjectId, u64)>, truncated: bool },
+    /// The Desk is complete: every listed card's version, and the first version of each card revised since it was
+    /// asked, was read.
+    DeskComplete,
     Presence(Presence),
     /// The stream opened (again): the hub's list of who is here comes first, ended by `Here`.
     StreamOpened,
@@ -186,7 +194,24 @@ enum Asked<E> {
     /// A report to the hub nothing waits for (`RejectCommit`).
     Told(E),
     Mend { expect: E, mend: Mend },
+    Desk(E),
+    /// The first envelope of an open object.
+    First { expect: E, route: ObjectRoute, object: ObjectId, after: u64 },
     DeviceWrite,
+}
+
+/// The reading of the hub's Desk: once per run, and again when a session group was joined (the hub lists only what
+/// lies in the asker's groups).
+#[derive(Default)]
+struct DeskRead {
+    want: bool,
+    asked: Option<IoId>,
+    /// The first versions still to read: the object and the change just before its first envelope (a hint).
+    firsts: VecDeque<(ObjectRoute, ObjectId, u64)>,
+    flying: usize,
+    /// A list was read and its first versions are through.
+    complete: bool,
+    retry: Retry,
 }
 
 /// A bounded read of what is actually missing, made when the order is at rest.
@@ -297,6 +322,8 @@ pub struct Engine<H: HubCodec> {
     /// had no room for one more group, or reports were lost.
     reread_from: Option<u64>,
 
+    desk: DeskRead,
+
     // the stream
     stream: Option<StreamConn<H::Stream>>,
     stream_retry: Retry,
@@ -385,6 +412,7 @@ impl<H: HubCodec> Engine<H> {
             mends: VecDeque::new(),
             mending: None,
             reread_from: None,
+            desk: DeskRead { want: true, ..DeskRead::default() },
             stream: None,
             stream_retry: Retry::default(),
             head_hint: None,
@@ -455,6 +483,9 @@ impl<H: HubCodec> Engine<H> {
         };
         want(self.auth_retry.at);
         if self.token.is_some() {
+            if self.desk.want || !self.desk.firsts.is_empty() {
+                want(self.desk.retry.at);
+            }
             if self.pass || !self.todo.is_empty() {
                 want(self.order_retry.at);
             }
@@ -512,6 +543,7 @@ impl<H: HubCodec> Engine<H> {
 
     fn hurry(&mut self) {
         self.auth_retry.hurry();
+        self.desk.retry.hurry();
         self.order_retry.hurry();
         self.stream_retry.hurry();
         self.pump_retry.hurry();
@@ -554,6 +586,8 @@ impl<H: HubCodec> Engine<H> {
                 | Asked::GroupLog { expect: e, .. }
                 | Asked::Chain { expect: e, .. }
                 | Asked::Mend { expect: e, .. }
+                | Asked::Desk(e)
+                | Asked::First { expect: e, .. }
                 | Asked::Told(e),
                 IoResult::Ok(response),
             ) => (Some(e), Some(response)),
@@ -593,6 +627,8 @@ impl<H: HubCodec> Engine<H> {
             Asked::Chain { group, sender, before, .. } => self.on_chain(ctx, group, sender, before, answer, unauthorised),
             Asked::Told(_) => {}
             Asked::Mend { mend, .. } => self.on_mend(ctx, mend, answer, unauthorised),
+            Asked::Desk(_) => self.on_desk(ctx, answer, unauthorised),
+            Asked::First { route, object, after, .. } => self.on_first(ctx, route, object, after, answer, unauthorised),
         }
         self.drive(ctx);
         true
@@ -705,6 +741,8 @@ impl<H: HubCodec> Engine<H> {
             self.connect(ctx);
             return;
         }
+        // the Desk before the order: what is open now is asked for before the first page
+        self.drive_desk(ctx);
         self.drive_order(ctx);
         self.drive_stream(ctx);
         self.drive_pump(ctx);
@@ -1450,6 +1488,7 @@ impl<H: HubCodec> Engine<H> {
             return;
         }
         self.welcomes_idle = None;
+        self.desk.want = true;
         self.groups_changed();
         // A group joined late: its log is handed again from its start up to the position, so the join has its
         // place in the hub's order. What lies after the position comes at its place in the one order.
@@ -1558,6 +1597,116 @@ impl<H: HubCodec> Engine<H> {
             }
         }
         // (else the head is tried again: taken now, or still a gap, which is then said)
+    }
+
+    // ---- the Desk: what is open now, before the order is read
+
+    fn drive_desk(&mut self, ctx: &mut Ctx<'_>) {
+        if self.desk.retry.waiting(ctx.now) {
+            return;
+        }
+        if self.desk.want && self.desk.asked.is_none() {
+            self.desk.asked = self.ask(ctx, Route::Desk { active: true }, true, Asked::Desk);
+            if self.desk.asked.is_none() {
+                self.desk.want = false;
+            }
+        }
+        while self.desk.flying < FIRSTS_AT_ONCE {
+            let Some((route, object, after)) = self.desk.firsts.pop_front() else { break };
+            let asked = self.ask(ctx, Route::Object { route, object: &object, after, limit: 1 }, true, |expect| Asked::First { expect, route, object, after });
+            if asked.is_some() {
+                self.desk.flying += 1;
+            }
+        }
+    }
+
+    /// An envelope read out of the hub's order to be shown (a Desk's version): as the core reads it there, marked
+    /// provisional until its chain reaches it. Nothing of the chain moves.
+    fn show(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) {
+        let void = Self::void_code(item);
+        match self.device.receive_envelope(&item.envelope, item.change, false, void.as_ref(), ctx.now) {
+            Ok(received) if received.outcome != EnvelopeOutcome::Refused => self.report(Report::Envelope { received: Box::new(received), ordered: false }),
+            Ok(_) => {}
+            Err(e) => self.local(ctx, &e),
+        }
+    }
+
+    fn on_desk(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
+        self.desk.asked = None;
+        let desk = match answer {
+            Ok(Answer::Desk(desk)) => desk,
+            Err(_) if unauthorised => return,
+            Ok(_) | Err(_) => {
+                let retry_after = match answer {
+                    Err(Failure::NotNow { retry_after_ms, .. }) => retry_after_ms,
+                    Err(Failure::BadAnswer { why }) => {
+                        self.report(Report::Alert(Alert::BadAnswer { why }));
+                        None
+                    }
+                    _ => None,
+                };
+                return self.desk.retry.fail(ctx.now, retry_after, &mut self.jitter);
+            }
+        };
+        self.desk.retry.ok();
+        self.desk.want = false;
+        self.desk.complete = false;
+        self.desk.firsts.clear();
+        for register in &desk.registers {
+            self.show(ctx, register);
+        }
+        let mut open = Vec::new();
+        for (route, objects) in [(ObjectRoute::Cards, &desk.cards), (ObjectRoute::PermissionRequests, &desk.permission_requests)] {
+            for object in objects {
+                let Some(version) = &object.version else { continue };
+                self.show(ctx, version);
+                open.push((object.object, version.change));
+                // A card revised since it was asked: its first version says when it was asked, which the Desk's
+                // order goes by. Read now, so no card moves when the past is read. (`first_change` is the hub's
+                // word: a wrong one costs this read, the envelope is checked like any other.)
+                if route == ObjectRoute::Cards && object.first_change < version.change {
+                    self.desk.firsts.push_back((route, object.object, object.first_change.saturating_sub(1)));
+                }
+                if self.stopped.is_some() {
+                    return;
+                }
+            }
+        }
+        self.report(Report::Desk { at: desk.change, open, truncated: desk.truncated });
+        self.desk_through();
+    }
+
+    fn on_first(&mut self, ctx: &mut Ctx<'_>, route: ObjectRoute, object: ObjectId, after: u64, answer: Result<Answer, Failure>, unauthorised: bool) {
+        self.desk.flying = self.desk.flying.saturating_sub(1);
+        match answer {
+            Ok(Answer::Object(got)) => {
+                self.desk.retry.ok();
+                if let Some(first) = got.items.first() {
+                    self.show(ctx, first);
+                }
+            }
+            // asked again once signed in, or after a wait; a refusal ends it (the past brings the version)
+            Err(Failure::Refused { .. }) if !unauthorised => {}
+            Ok(_) => {}
+            Err(failure) => {
+                self.desk.firsts.push_back((route, object, after));
+                if !unauthorised {
+                    let retry_after = match failure {
+                        Failure::NotNow { retry_after_ms, .. } => retry_after_ms,
+                        _ => None,
+                    };
+                    self.desk.retry.fail(ctx.now, retry_after, &mut self.jitter);
+                }
+            }
+        }
+        self.desk_through();
+    }
+
+    fn desk_through(&mut self) {
+        if !self.desk.complete && !self.desk.want && self.desk.asked.is_none() && self.desk.firsts.is_empty() && self.desk.flying == 0 {
+            self.desk.complete = true;
+            self.report(Report::DeskComplete);
+        }
     }
 
     // ---- the stream

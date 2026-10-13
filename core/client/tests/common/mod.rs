@@ -153,6 +153,7 @@ pub struct World {
     /// The App's device state: copied into a `Sim` (`sim`), and read back from one (`reopen_me`).
     pub me_store: TestStore,
     cards: u32,
+    ticks: u64,
 }
 
 impl World {
@@ -195,7 +196,7 @@ impl World {
         assert!(agent.group(&group).is_ok(), "the agent is in its session");
         let id = me.id();
         drop(me);
-        World { hub: Rc::new(RefCell::new(hub)), founder, agent, room, session, group, me: id, me_store, cards: 0 }
+        World { hub: Rc::new(RefCell::new(hub)), founder, agent, room, session, group, me: id, me_store, cards: 0, ticks: 0 }
     }
 
     /// A Sim whose device store holds the App's device as it stands, whose hub is the stand-in.
@@ -236,6 +237,27 @@ impl World {
         self.write(false, &draft)
     }
 
+    /// The agent asks a Decision card. Returns the card, the hash of this version (as a later version names it) and
+    /// the change the hub gave it.
+    pub fn agent_card(&mut self, title: &str) -> (trommi_core::ids::ObjectId, String, u64) {
+        let payload = format!(
+            r#"{{"card_type":"decision","title":"{title}","options":[{{"key":"yes"}},{{"key":"no"}}],"object_version":1,"previous_version_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#
+        );
+        let draft = Draft::CardFirst { session: self.session, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        let (sealed, change) = self.seal(false, &draft);
+        (sealed.object_id.expect("a card"), trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)
+    }
+
+    /// The agent writes a later version of a card. Returns that version's hash and its change.
+    pub fn agent_revises(&mut self, card: trommi_core::ids::ObjectId, previous: &str, title: &str, version: u32) -> (String, u64) {
+        let payload = format!(
+            r#"{{"card_type":"decision","title":"{title}","options":[{{"key":"yes"}},{{"key":"no"}}],"object_version":{version},"previous_version_hash":"{previous}"}}"#
+        );
+        let draft = Draft::CardVersion { session: self.session, object_id: card, closed: false, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        let (sealed, change) = self.seal(false, &draft);
+        (trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)
+    }
+
     /// The founder (the person's other device) says a line.
     pub fn founder_says(&mut self, line: &str) -> u64 {
         let draft = Draft::SessionChat { session: self.session, payload: text(&format!(r#"{{"content_type":"message","text":"{line}"}}"#)) };
@@ -243,12 +265,18 @@ impl World {
     }
 
     fn write(&mut self, founder: bool, draft: &Draft) -> u64 {
+        self.seal(founder, draft).1
+    }
+
+    /// Seals and posts. Every write is a little later by the writer's clock than the one before.
+    fn seal(&mut self, founder: bool, draft: &Draft) -> (trommi_core::device::Sealed, u64) {
+        self.ticks += 10;
         let mut hub = self.hub.borrow_mut();
         let device = if founder { &mut self.founder } else { &mut self.agent };
         sync(&hub, device);
-        device.seal(draft, None, &[], now()).expect("the item seals");
+        let sealed = device.seal(draft, None, &[], now() + self.ticks).expect("the item seals");
         assert_eq!(post_all(&mut hub, device), Vec::<String>::new());
-        hub.change
+        (sealed, hub.change)
     }
 
     /// The peers take the hub's order up to its end.

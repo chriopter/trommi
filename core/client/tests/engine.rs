@@ -23,7 +23,8 @@ fn a_stored_device_signs_in_catches_up_and_goes_live() {
     assert_eq!(world.reopen_me(&sim).cursor(), last);
     let seen = world.hub.borrow().seen.clone();
     assert!(seen[0].ends_with("/challenge") && seen[1].ends_with("/tokens"), "{seen:?}");
-    assert!(seen[2].starts_with(&format!("GET /v1/changes?after={before}")), "{seen:?}");
+    assert!(seen[2].starts_with("GET /v1/desk"), "the Desk before the order: {seen:?}");
+    assert!(seen[3].starts_with(&format!("GET /v1/changes?after={before}")), "{seen:?}");
     assert!(seen.iter().any(|s| s.starts_with("STREAM /v1/stream?after=")), "{seen:?}");
     assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
     // nothing waits for the clock but the stream's silence
@@ -489,4 +490,132 @@ fn the_same_script_gives_the_same_effects() {
     assert_eq!(log(&one), log(&two));
     assert_eq!(one.device, two.device, "and the same stored state");
     let _ = OutboxKind::Envelope;
+}
+
+/// Answers the held requests that `which` picks, one after another, as the hub answers them. Returns how many.
+fn serve(world: &World, sim: &mut Sim, which: impl Fn(&HttpRequest) -> bool) -> usize {
+    serve_some(world, sim, usize::MAX, which)
+}
+
+fn serve_some(world: &World, sim: &mut Sim, most: usize, which: impl Fn(&HttpRequest) -> bool) -> usize {
+    let mut served = 0;
+    while let Some((id, request)) = sim.held.iter().find(|(_, r)| served < most && which(r)).cloned() {
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        sim.answer(id, got);
+        served += 1;
+    }
+    served
+}
+
+fn stack(sim: &Sim) -> Vec<String> {
+    sim.app.board().model.stack.clone()
+}
+
+#[test]
+fn the_desk_stands_complete_before_the_order_is_read_and_no_card_moves_while_it_is() {
+    let mut world = World::new();
+    let cards: Vec<_> = (0..6).map(|n| world.agent_card(&format!("card {n}"))).collect();
+    // two cards are revised after they were asked: their newest version is younger than every other card
+    world.agent_revises(cards[0].0, &cards[0].1, "card 0, said better", 2);
+    let (again, _) = world.agent_revises(cards[1].0, &cards[1].1, "card 1, said better", 2);
+    world.agent_revises(cards[1].0, &again, "card 1, said best", 3);
+    for n in 0..20 {
+        world.agent_says(&format!("line {n}"));
+    }
+    world.hub.borrow_mut().page_max = Some(7);
+    let mut sim = world.sim();
+    sim.hold = true;
+    sim.send(start());
+    serve(&world, &mut sim, |r| r.url.contains("/rooms/"));
+    // the Desk is asked for before the first page of the order
+    let asked: Vec<String> = sim.log.iter().filter_map(|e| if let Effect::Http { request, .. } = e { Some(request.url.clone()) } else { None }).collect();
+    let (desk, page) = (asked.iter().position(|u| u.contains("/v1/desk")).unwrap(), asked.iter().position(|u| u.contains("/v1/changes")).unwrap());
+    assert!(desk < page, "{asked:?}");
+    assert!(stack(&sim).is_empty(), "nothing stands before the hub's list");
+    assert_eq!(serve(&world, &mut sim, |r| r.url.contains("/v1/desk")), 1);
+    assert!(!sim.app.board().desk_complete, "the revised cards' first versions are still to come");
+    assert_eq!(serve(&world, &mut sim, |r| r.url.contains("/v1/cards/")), 2, "one read per card revised since it was asked");
+    assert!(sim.app.board().desk_complete);
+    // complete, with not one page of the order read
+    let first = stack(&sim);
+    assert_eq!(first.len(), 6);
+    assert_eq!(position(&sim), world.reopen_me(&sim).cursor());
+    assert_ne!(sim.view.phase, Phase::Live);
+    // in the order the cards were asked, whatever was revised since
+    let ids: Vec<String> = cards.iter().map(|(id, ..)| trommi_client_core::engine::feed::hex(id.as_bytes())).collect();
+    let places: Vec<usize> = ids.iter().map(|id| first.iter().position(|s| s == id).expect("on the Desk")).collect();
+    assert!(places.windows(2).all(|w| w[0] < w[1]) || places.windows(2).all(|w| w[0] > w[1]), "by the time asked: {places:?}");
+    // the order is read page by page: the Desk never changes
+    let mut pages = 0;
+    while serve_some(&world, &mut sim, 1, |r| r.url.contains("/v1/changes")) > 0 {
+        pages += 1;
+        assert_eq!(stack(&sim), first, "after page {pages}");
+        serve(&world, &mut sim, |r| !r.url.contains("/v1/changes"));
+    }
+    assert!(pages >= 4, "{pages}");
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(position(&sim), world.hub.borrow().change);
+    assert_eq!(stack(&sim), first);
+    assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
+}
+
+#[test]
+fn a_first_change_that_lies_costs_a_read_and_moves_nothing() {
+    let mut world = World::new();
+    let cards: Vec<_> = (0..3).map(|n| world.agent_card(&format!("card {n}"))).collect();
+    world.agent_revises(cards[0].0, &cards[0].1, "again", 2);
+    world.hub.borrow_mut().first_change_lie = Some(1);
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert!(sim.app.board().desk_complete);
+    assert_eq!(stack(&sim).len(), 3);
+    assert!(sim.app.alerts().is_empty());
+}
+
+#[test]
+fn a_sign_in_with_a_thousand_open_cards_goes_live_with_the_whole_desk() {
+    let mut world = World::new();
+    for n in 0..1000 {
+        world.agent_card(&format!("card {n}"));
+    }
+    let mut sim = world.sim();
+    let began = std::time::Instant::now();
+    sim.send(start());
+    let took = began.elapsed();
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert!(sim.app.board().desk_complete);
+    assert_eq!(stack(&sim).len(), 1000);
+    let asked = requests(&world);
+    let (desk, page) = (asked.iter().position(|u| u.contains("/v1/desk")).unwrap(), asked.iter().position(|u| u.contains("/v1/changes")).unwrap());
+    assert!(desk < page);
+    assert_eq!(asked.iter().filter(|u| u.contains("/v1/changes")).count(), 2, "1000 changes in pages of 500");
+    eprintln!("a thousand cards: {took:?} of this machine's time, {} requests", asked.len());
+}
+
+#[test]
+#[ignore = "a measurement: where a thousand-card sign-in spends its time"]
+fn where_the_time_goes() {
+    let mut world = World::new();
+    for n in 0..1000 {
+        world.agent_card(&format!("card {n}"));
+    }
+    let mut sim = world.sim();
+    sim.hold = true;
+    sim.send(start());
+    serve(&world, &mut sim, |r| r.url.contains("/rooms/"));
+    let t = std::time::Instant::now();
+    let (id, request) = sim.held.iter().find(|(_, r)| r.url.contains("/v1/desk")).cloned().unwrap();
+    let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+    eprintln!("the stand-in hub's Desk answer: {:?}", t.elapsed());
+    let t = std::time::Instant::now();
+    sim.answer(id, got);
+    eprintln!("the Desk taken (1000 versions shown): {:?}", t.elapsed());
+    for page in 0..2 {
+        let (id, request) = sim.held.iter().find(|(_, r)| r.url.contains("/v1/changes")).cloned().unwrap();
+        let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+        let t = std::time::Instant::now();
+        sim.answer(id, got);
+        eprintln!("page {page} taken: {:?}", t.elapsed());
+    }
 }

@@ -11,7 +11,9 @@
 //!   (no epoch, no membership, no void records unless a test makes one);
 //! - `GET /v1/changes`: `head` is the room's newest change; `active=1` is not told apart from all;
 //! - Welcomes: kept until the test drops them (the real hub deletes one when its device writes in the group);
-//! - the Desk, files, pushes, accounts, invites, recovery: not there.
+//! - the Desk: an object is open while the header of its newest envelope says so (the real hub replays 9.2);
+//!   `active=1` is not told apart; never truncated unless a test says so; registers are not served;
+//! - files, pushes, accounts, invites, recovery: not there.
 
 #![allow(dead_code)]
 
@@ -68,6 +70,20 @@ impl Item {
         let name = if matches!(self, Item::Envelope { .. }) { "envelope" } else { "log" };
         format!("id: {}\nevent: {name}\ndata: {}\n\n", self.change(), self.json()).into_bytes()
     }
+}
+
+/// An object as its envelopes' headers leave it.
+#[derive(Clone)]
+pub struct Obj {
+    pub group: GroupId,
+    pub request: bool,
+    pub card: bool,
+    pub open: bool,
+    pub first_change: u64,
+    pub head_change: u64,
+    /// The change of its newest version (of a permission request: the request).
+    pub version: u64,
+    pub envelopes: Vec<u64>,
 }
 
 pub struct Welcome {
@@ -168,6 +184,11 @@ pub struct Hub {
     pub page_max: Option<usize>,
     /// Changes the pages and the stream leave out (their chain still serves them): a hub that skips.
     pub hidden: BTreeSet<u64>,
+    pub objects: BTreeMap<trommi_core::ids::ObjectId, Obj>,
+    /// The Desk says it was cut short.
+    pub desk_truncated: bool,
+    /// The `first_change` the Desk names for every object; none: the truth.
+    pub first_change_lie: Option<u64>,
 }
 
 fn part(entry: &OutboxEntry, at: usize) -> &[u8] {
@@ -368,6 +389,26 @@ impl Hub {
                 }
                 *head = seq;
                 self.change += 1;
+                if let Some(fields) = header.subject.object() {
+                    use trommi_core::envelope::{ObjectState, ObjectType, Subject};
+                    let change = self.change;
+                    let object = self.objects.entry(fields.object_id).or_insert(Obj {
+                        group,
+                        request: fields.object_type == ObjectType::Request,
+                        card: fields.object_type == ObjectType::Card,
+                        open: true,
+                        first_change: change,
+                        head_change: change,
+                        version: change,
+                        envelopes: Vec::new(),
+                    });
+                    object.head_change = change;
+                    object.open = fields.state == ObjectState::Open;
+                    if matches!(header.subject, Subject::Version(_) | Subject::Request(_)) {
+                        object.version = change;
+                    }
+                    object.envelopes.push(change);
+                }
                 self.order.push(Item::Envelope { change: self.change, group, sender, seq, bytes: bytes.to_vec(), void_code: None });
                 Ok(json!({ "change": self.change }))
             }
@@ -494,6 +535,32 @@ impl Hub {
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "items": items, "more": more }))
+            }
+            ("GET", ["v1", "desk"]) => {
+                let item = |change: u64| self.order.iter().find(|i| i.change() == change).map(Item::json);
+                let list = |request: bool| -> Vec<Value> {
+                    self.objects
+                        .iter()
+                        .filter(|(_, o)| o.open && (o.card || o.request) && o.request == request)
+                        .map(|(id, o)| {
+                            json!({ "object_id": id.to_base64url(), "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "answered_at": 0,
+                                "owner": DeviceId::new([0; 32]).to_base64url(), "first_change": self.first_change_lie.unwrap_or(o.first_change), "head_change": o.head_change,
+                                "version": item(o.version), "version_change": o.version })
+                        })
+                        .collect()
+                };
+                Ok(json!({ "cards": list(false), "permission_requests": list(true), "notes": [], "artifacts": [], "registers": [], "truncated": self.desk_truncated, "change": self.change }))
+            }
+            ("GET", ["v1", kind @ ("cards" | "permission-requests"), object]) => {
+                let _ = kind;
+                let id = trommi_core::ids::ObjectId::from_base64url(object).map_err(no)?;
+                let o = self.objects.get(&id).ok_or(no(Error::NotFound))?;
+                let (after, limit) = (num("after"), num("limit").clamp(1, 2000) as usize);
+                let mut items: Vec<Value> = o.envelopes.iter().filter(|c| **c > after).filter_map(|c| self.order.iter().find(|i| i.change() == *c).map(Item::json)).collect();
+                let more = items.len() > limit;
+                items.truncate(limit);
+                Ok(json!({ "object_id": object, "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "owner": DeviceId::new([0; 32]).to_base64url(),
+                    "first_change": o.first_change, "head_change": o.head_change, "items": items, "more": more }))
             }
             ("PUT", ["v1", "key-packages"]) => {
                 let list = |name: &str| -> Vec<Vec<u8>> {
