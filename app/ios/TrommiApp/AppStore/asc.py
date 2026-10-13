@@ -23,7 +23,8 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     the build goes to Beta App Review when Apple asks for it (READY_FOR_BETA_SUBMISSION
                                     and no submission yet; later builds of a reviewed version usually need none).
                                     The demo account's password comes from APPSTORE_DEMO_PASSWORD
-  asc.py whats-new CHANGELOG        offline: the newest day of CHANGELOG.md as plain text for "What to Test"
+  asc.py whats-new JSON             offline: the newest day with changes of What's new (whats-new.json, as
+                                    https://app.trommi.com/whats-new.json serves it) as plain text for "What to Test"
   asc.py upload IPA VERSION BUILD [--dry-run]
                                     uploads the signed .ipa through the Build Uploads API (no second Xcode export),
                                     after checking it is BUNDLE_ID VERSION (BUILD); waits until the upload is COMPLETE.
@@ -541,26 +542,24 @@ def builds_in_review(aid):
     return ", ".join(str((b.get("attributes") or {}).get("version")) for b in got.get("data") or []) or "another"
 
 
-def whats_new(changelog):
-    """The newest day of CHANGELOG.md as plain text: "New:", "Better:", "Fixed:", one line per entry."""
-    lines, out, inside = open(changelog, encoding="utf-8").read().splitlines(), [], False
-    for line in lines:
-        if line.startswith("## "):
-            if inside:
-                break
-            inside = True
-            continue
-        if not inside or not line.strip():
-            continue
-        m = re.fullmatch(r"\*\*(.+?)\*\*\s*", line.strip())
-        if m:
-            out.append(f"{m.group(1)}:")
-        elif line.startswith("- "):
-            out.append("- " + line[2:].strip())
-        elif out and out[-1].startswith("- "):
-            out[-1] += " " + line.strip()
+def whats_new(path):
+    """The newest day with changes of What's new (whats-new.json: {"days": [{"groups": [{"kind", "items": [{"text"}]}]}]})
+    as plain text: "New:", "Better:", "Fixed:", one line per entry."""
+    try:
+        days = json.load(open(path, encoding="utf-8")).get("days") or []
+    except (OSError, ValueError, AttributeError) as e:
+        die(f"{path}: not What's new ({e})")
+    out = []
+    for day in days:
+        for group in day.get("groups") or []:
+            items = [str(i.get("text", "")).strip() for i in group.get("items") or [] if str(i.get("text", "")).strip()]
+            if items:
+                out.append(f"{group.get('kind') or 'Changes'}:")
+                out.extend("- " + " ".join(t.split()) for t in items)
+        if out:
+            break
     if not out:
-        die(f"{changelog}: no day with entries")
+        die(f"{path}: no day with entries")
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", "\n".join(out)).replace("**", "").replace("`", "")
     # (room for the "Build N (commit)." in front, within What to Test's 4000 characters)
     if len(text) > 3900:
