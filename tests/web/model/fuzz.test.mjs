@@ -1,4 +1,4 @@
-// fuzz.test.mjs: the web model (app/web/core/model.ts) under random stories of hand-made core results
+// fuzz.test.mjs: the web model (the client core's, factory.mjs) under random stories of hand-made core results
 // (factory.mjs): cards and their versions, answers, take backs, Chat lines, registers, requests, notes, clock jumps,
 // odd payloads and refused envelopes, in any order. README "Fuzzing".
 // Properties, after every step: nothing throws; the page's copy (mirror.ts: a snapshot, then one patch per change)
@@ -8,8 +8,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { applyPatch, mirrorOf, patchOf, snapshotOf } from '../../../app/web/core/mirror.ts'
-import { cacheRecords, emptyChange, modelFromCache, project } from '../../../app/web/core/model.ts'
-import { World, canon, hex, id16 } from './factory.mjs'
+import { cacheRecords, emptyChange, modelFromCache } from '../../../app/web/core/model.ts'
+import { World, canon, hex, id16, project, withDesk } from './factory.mjs'
 
 /** mulberry32: a small seeded source. */
 function rng(seed) {
@@ -49,7 +49,11 @@ function oneStory(seed) {
         break
       }
       case 2: case 3:
-        if (known) answers.set(card, w.answer(card, { answer_action: r.pick(['answer', 'read', odd()]), choices: r.oneIn(4) ? [odd()] : [r.pick(['a', 'b'])], note: r.oneIn(3) ? odd() : 'ok' }, { state: r.pick(['answered', 'closed']) }))
+        if (known) {
+          // (odd choices in the body; the core's binding holds strings only, as it reads them from a decoded body)
+          const choices = r.oneIn(4) ? [odd()] : [r.pick(['a', 'b'])]
+          answers.set(card, w.answer(card, { answer_action: r.pick(['answer', 'read', odd()]), choices, note: r.oneIn(3) ? odd() : 'ok' }, { state: r.pick(['answered', 'closed']), bind_choices: choices.map(String) }))
+        }
         break
       case 4:
         if (known && answers.has(card)) w.takeBack(card, answers.get(card).hash)
@@ -70,10 +74,12 @@ function oneStory(seed) {
     assert.equal(d, null, `seed ${seed}, after ${steps.join(' ')}: the page's copy is not the model:\n${d}`)
   }
   const warm = modelFromCache([...store].filter(([key]) => !key.startsWith('tl/')))
+  withDesk(warm)
   project(warm, emptyChange(), w.clock)
   const expected = structuredClone({ ...w.model, _builder: undefined })
   for (const t of expected.timelines.values()) { t.items = new Map(); t.loaded_down_to = Infinity; t.window_open = false }
-  const d = firstDiff(warm, expected)
+  // (the session list is no record the cache keeps: each run's core makes it anew, by that run's clock and presence)
+  const d = firstDiff({ ...warm, session_list: undefined }, { ...expected, session_list: undefined })
   assert.equal(d, null, `seed ${seed}, after ${steps.join(' ')}: the model from the cache differs:\n${d}`)
 }
 

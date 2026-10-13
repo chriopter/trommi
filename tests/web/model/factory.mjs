@@ -31,6 +31,7 @@ export function project(model, ch = emptyChange(), now = NOW) {
   for (const k of ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites']) for (const id of got[k]) ch[k].add(id)
   for (const [k, list] of got.items) { let l = ch.items.get(k); if (!l) ch.items.set(k, l = []); l.push(...list) }
   ch.members ||= got.members; ch.alerts ||= got.alerts; ch.stack ||= got.stack; ch.room ||= got.room
+  if (got.status || patch.session_list) ch.status = true
   return ch
 }
 // The builder's calls of before, on the core's model (what a test calls directly).
@@ -196,9 +197,9 @@ export class World {
     return this.take({ kind: 'version', object: this.object(object_id, 'card', state, { urgency, object_ref: previous }), payload: { schema_version: 2, ...fields, ...(previous ? { previous_version_hash: previous } : {}) }, ...rest })
   }
   /** An answer of this device to the card's current version. */
-  answer(object_id, fields, { state = 'answered', sender = this.me, version, ...rest } = {}) {
+  answer(object_id, fields, { state = 'answered', sender = this.me, version, bind_choices, ...rest } = {}) {
     const version_hash = version ?? this.objects.get(object_id).current
-    const choices = fields.choices ?? []
+    const choices = bind_choices ?? fields.choices ?? []
     return this.take({ kind: 'answer', sender, recipient: this.agent, object: this.object(object_id, 'card', state, { answered_at: this.clock + 1000, object_ref: version_hash }),
       payload: { schema_version: 2, ...fields }, bind: { kind: 'answer', object_id, version_hash, choices }, ...rest })
   }
