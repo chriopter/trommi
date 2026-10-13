@@ -1238,11 +1238,12 @@ body > main#inbox { contain: strict; }
 /* the stack: the top card, the edges of the others behind it; open, every card one under the other and Fold */
 .oym-stackwrap > summary { list-style: none; cursor: pointer; }
 .oym-stackwrap > summary::-webkit-details-marker { display: none; }
-.oym-stack { position: relative; display: block; margin-bottom: calc(var(--behind) * 8px + 8px); }
-.oym-sheet { position: absolute; inset: 0; border: 1.5px solid color-mix(in srgb, var(--fg) 40%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); transform: translate(calc(var(--k) * 4px), calc(var(--k) * 8px)) rotate(calc(var(--k) * .7deg)); }
-.oym-sheet:nth-child(2) { transform: translate(calc(var(--k) * -2px), calc(var(--k) * 6px)) rotate(calc(var(--k) * -.5deg)); }
+.oym-stack { position: relative; display: block; margin-bottom: calc(var(--behind) * 7px + 6px); }
+/* the cards behind: the front card's size, each a little narrower and lower, so their bottom edges show; no rotation
+   (a card as wide as the Desk turned even half a degree runs askew across the whole width) */
+.oym-sheet { position: absolute; top: 0; bottom: 0; left: calc(var(--k) * 12px); right: calc(var(--k) * 12px); border: 1.5px solid color-mix(in srgb, var(--fg) 30%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); transform: translateY(calc(var(--k) * 7px)); opacity: calc(1 - var(--k) * .22); }
 .oym-card.is-top { z-index: 1; }
-.oym-more { position: absolute; z-index: 2; right: 14px; bottom: -10px; padding: 4px 10px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 600 var(--t-xs)/1 var(--font); }
+.oym-more { position: absolute; z-index: 2; right: 40px; bottom: -11px; padding: 4px 10px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 600 var(--t-xs)/1 var(--font); }
 .oym-stackwrap[open] > .oym-stack { display: none; }
 .oym-fan { display: grid; gap: var(--s-2); }
 .oym-fold { justify-self: start; margin: 2px 0 0; padding: 6px 2px; border: 0; background: none; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
