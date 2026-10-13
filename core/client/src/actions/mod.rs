@@ -71,10 +71,6 @@ pub enum Action {
         card_id: String,
         on: bool,
     },
-    /// Done with it: off the Desk.
-    Archive {
-        card_id: String,
-    },
 
     // ---- talk ----
     /// A line to a session's agent (or to a card's chat).
