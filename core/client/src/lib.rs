@@ -15,15 +15,26 @@
 //!   placeholder. An unread permission request older than [`desk::REQUEST_LIFE_MAX_MS`] counts as expired.
 //! - **Session names are registers. A register never creates a session** ([`registers::Registers`]).
 //!
+//! # The app core
+//!
+//! [`app::App`] is the whole app's logic for one room: events in, effects out, no I/O ([`app`], and
+//! core/client/README.md "The app core" for the contract every shell is written against).
+//!
 //! # Bindings
 //!
 //! The facade in `core/bindings/swift` (`client.rs`) exports [`desk::DeskState`] as `ClientDesk` through UniFFI and
 //! wasm-bindgen, with plain records. A host written in Rust (the Linux app) uses the types directly.
 
+pub mod account;
+pub mod actions;
+pub mod app;
 pub mod board;
+pub mod cache;
 pub mod codec;
 pub mod desk;
 pub mod desk_delete;
+pub mod engine;
+pub mod hub;
 pub mod model;
 pub mod off_pile;
 pub mod plan;
@@ -35,6 +46,7 @@ pub mod sessions;
 pub mod stars;
 pub mod status;
 pub mod store;
+pub mod views;
 
 pub use board::{Board, Fact, Kind, Object, Source, State};
 pub use desk::{

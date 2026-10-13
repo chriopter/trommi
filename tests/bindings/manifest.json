@@ -697,6 +697,33 @@
     }
   },
   "objects": {
+    "AppCore": {
+      "new": {
+        "arguments": [],
+        "returns": "self"
+      },
+      "handle": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          },
+          {
+            "name": "event",
+            "type": "AppPacket"
+          }
+        ],
+        "returns": "AppPacket"
+      },
+      "viewJson": {
+        "arguments": [],
+        "returns": "text"
+      },
+      "close": {
+        "arguments": [],
+        "returns": "void"
+      }
+    },
     "ClientDesk": {
       "new": {
         "arguments": [],
@@ -946,19 +973,6 @@
         ],
         "returns": "void"
       },
-      "applyPresence": {
-        "arguments": [
-          {
-            "name": "reports",
-            "type": "text"
-          },
-          {
-            "name": "nowMs",
-            "type": "number"
-          }
-        ],
-        "returns": "void"
-      },
       "streamOpened": {
         "arguments": [],
         "returns": "void"
@@ -1011,6 +1025,15 @@
         ],
         "returns": "optional<text>"
       },
+      "seatFounded": {
+        "arguments": [
+          {
+            "name": "agent",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
       "seatFailed": {
         "arguments": [
           {
@@ -1023,15 +1046,6 @@
           }
         ],
         "returns": "number"
-      },
-      "seatFounded": {
-        "arguments": [
-          {
-            "name": "agent",
-            "type": "text"
-          }
-        ],
-        "returns": "void"
       },
       "setSeatGrace": {
         "arguments": [
@@ -1084,6 +1098,19 @@
           }
         ],
         "returns": "text"
+      },
+      "applyPresence": {
+        "arguments": [
+          {
+            "name": "reports",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
       },
       "applyWorkTrail": {
         "arguments": [
@@ -1474,6 +1501,15 @@
         "arguments": [],
         "returns": "text"
       },
+      "setReading": {
+        "arguments": [
+          {
+            "name": "reading",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
       "sessionList": {
         "arguments": [
           {
@@ -1483,14 +1519,18 @@
         ],
         "returns": "text"
       },
-      "setReading": {
+      "nextOpenAfter": {
         "arguments": [
           {
-            "name": "reading",
-            "type": "bool"
+            "name": "cardId",
+            "type": "text"
+          },
+          {
+            "name": "within",
+            "type": "optional<list<text>>"
           }
         ],
-        "returns": "void"
+        "returns": "optional<text>"
       }
     },
     "CoreDevice": {
@@ -2893,6 +2933,10 @@
       "email": "optional<text>",
       "id": "optional<text>"
     },
+    "AppPacket": {
+      "json": "text",
+      "blobs": "list<bytes>"
+    },
     "DeskCardIn": {
       "objectId": "text",
       "sessionId": "optional<text>",
@@ -3041,7 +3085,6 @@
       "code": "optional<ErrorCode>",
       "finding": "optional<ErrorCode>",
       "payload": "optional<bytes>",
-      "body": "optional<text>",
       "bind": "optional<Bind>",
       "objectAfter": "optional<ObjectView>",
       "register": "optional<RegisterChange>",

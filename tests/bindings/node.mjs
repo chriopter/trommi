@@ -40,6 +40,19 @@ console.log(`scenario: ${ran} steps`)
 // ---- what holds at this binding's own edge -----------------------------------------------------------------------
 
 // Arguments of another type or range than a call takes are refused, and nothing is rounded.
+// The app core: one event in as JSON with its bytes beside it, the effects out the same way.
+{
+  const app = new core.AppCore()
+  const out = app.handle(1000, { json: JSON.stringify({ type: 'start', config: { platform: 'test', version: '0', seed: 1 } }), blobs: [] })
+  const effects = JSON.parse(out.json)
+  check(effects[0].type === 'render' && effects[1].op?.op === 'device_load', 'the app core did not ask for the device state')
+  const pushed = app.handle(1001, { json: JSON.stringify({ type: 'push', payload: 0 }), blobs: [new Uint8Array([1, 2])] })
+  check(Array.isArray(pushed.blobs), 'the app core gave no blobs list')
+  check(await refusal(() => app.handle(1002, { json: '{"type":"push","payload":5}', blobs: [] })) === 'bad-format', 'a missing blob was taken')
+  check(JSON.parse(app.viewJson()).phase === 'starting', 'the app core showed another phase')
+  app.close()
+}
+
 check(await refusal(() => core.fileLayout(1.5)) === 'bad-format', 'a fraction was taken as a count')
 check(await refusal(() => core.fileLayout(2 ** 53)) === 'bad-format', 'a number above 2^53 - 1 was taken')
 check(await refusal(() => core.fileLayout(-1)) === 'bad-format', 'a negative number was taken')

@@ -377,6 +377,14 @@ export class FileDecryptor extends FileObject {
   finish() { return this[CALL]('finish', [], true) }
 }
 
+/** The app core (core/client/src/app): one event in as JSON with its bytes, every effect out the same way
+ *  (core/client/README.md, "The app core"). */
+export class AppCore extends FileObject {
+  constructor() { super(call(raw.RawAppCore, 'create', [])) }
+  handle(nowMs, event) { return this[CALL]('handle', [nowMs, event]) }
+  viewJson() { return this[CALL]('view_json', []) }
+}
+
 /** The client core's Desk (core/client/src/desk.rs): the app tells it what changed and asks what changed of the Desk. */
 export class ClientDesk extends FileObject {
   constructor() { super(call(raw.RawClientDesk, 'create', [])) }
