@@ -433,7 +433,13 @@ function logWindow(s, base, before = null) {
 
 // (The three starters are links: each brings the page again with its words in the field, ready to send or change.)
 const STARTERS = ['Where do we stand?', 'What do you need from me?', 'Sum up what you did last.']
-const empty = (s, base) => html`<div class="empty-chat"><span class="agent-mark agent-mark-lg">${ico('spark')}</span><h2>What should the agent start with?</h2><p>Tell it what to work on. When it needs something from you, it puts a question in front of you.</p><div class="empty-picks">${STARTERS.map(text => html`<a class="empty-pick" data-nav href="${sessionPath(s.id, base)}?say=${encodeURIComponent(text)}">${text}</a>`)}</div></div>`
+const meta = a => [a.host, a.model?.replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2')].filter(Boolean).join(' · ')
+/** An empty conversation: a quiet card from the agent that joined (its own drawing, name, where it runs), and the
+ *  starters as rows; a tap sends one. */
+const empty = (s, base) => {
+  const a = s.agent
+  return html`<div class="empty-card"><div class="empty-card-who">${agentMark(a)}<div><b>${a.name}</b>${meta(a) ? html`<small>${meta(a)}</small>` : ''}</div></div><p>Joined and waiting for its first task. Write below, or start with:</p><div class="empty-rows">${STARTERS.map(t => html`<a class="empty-row" data-nav href="${sessionPath(s.id, base)}?say=${encodeURIComponent(t)}"><span>${t}</span>${ico('send')}</a>`)}</div></div>`
+}
 
 /** What the field says: when the session will read it, if not at once. */
 function composeWords(s) {

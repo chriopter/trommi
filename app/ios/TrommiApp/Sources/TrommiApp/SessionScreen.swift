@@ -766,21 +766,46 @@ struct SessionLinkNote: View {
   }
 }
 
-/** A new conversation: what to start with. */
+/** A new conversation: a quiet card from the agent that joined (its own drawing, name, where it runs) and the starters
+ *  as rows; a tap sends one (web session.mjs empty). */
 struct EmptyChat: View {
   let agent: Agent
   @EnvironmentObject var model: BoardModel
+  private var meta: String {
+    let m = agent.model.replacingOccurrences(of: "^claude-", with: "", options: .regularExpression)
+      .replacingOccurrences(of: "-(\\d+)-(\\d+)$", with: " $1.$2", options: .regularExpression)
+    return m
+  }
   var body: some View {
-    VStack(spacing: 14) {
-      AgentMark(agent: agent, size: 56)
-      Text("What should the agent start with?").font(Face.display(24, .heavy)).multilineTextAlignment(.center)
-      Text("Tell it what to work on. When it needs something from you, it puts a question in front of you.").font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
-      ForEach(["Where do we stand?", "What do you need from me?", "Sum up what you did last."], id: \.self) { s in
-        Button { Task { try? await model.send(agent: agent.id, text: s) } } label: {
-          Text(s).font(Face.text(15, .medium)).foregroundStyle(Ink.fg).padding(.horizontal, 14).padding(.vertical, 9).background(Capsule().strokeBorder(Ink.lineStrong))
-        }.buttonStyle(.plain)
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 12) {
+        AgentMark(agent: agent, size: 40, crown: false)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(agent.name).font(Face.display(17, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
+          if !meta.isEmpty { Text(meta).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1) }
+        }
       }
-    }.frame(maxWidth: .infinity).padding(.vertical, 50)
+      Text("Joined and waiting for its first task. Write below, or start with:").font(Face.text(14)).foregroundStyle(Ink.muted)
+        .fixedSize(horizontal: false, vertical: true)
+      VStack(spacing: 0) {
+        Rectangle().fill(Ink.line).frame(height: 1)
+        ForEach(["Where do we stand?", "What do you need from me?", "Sum up what you did last."], id: \.self) { s in
+          Button { Task { try? await model.send(agent: agent.id, text: s) } } label: {
+            HStack {
+              Text(s).font(Face.text(15, .medium)).foregroundStyle(Ink.fg)
+              Spacer(minLength: 8)
+              Image(systemName: "arrow.up").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.faint)
+            }.frame(minHeight: 44).contentShape(Rectangle())
+          }.buttonStyle(.plain).accessibilityHint("Sends it to \(agent.name)")
+          Rectangle().fill(Ink.line).frame(height: 1)
+        }
+      }
+    }
+    .padding(20)
+    .frame(maxWidth: 420, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.lineStrong))
+    .frame(maxWidth: .infinity).padding(.vertical, 40).padding(.horizontal, 4)
   }
 }
 

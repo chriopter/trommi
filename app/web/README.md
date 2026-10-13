@@ -32,7 +32,7 @@ Not shown anywhere in the app; all are kept for the tab only (sessionStorage).
 | `?hub=<url>` | another hub than the default, for self-hosting and local work. Default: `https://hub.trommi.com`; on localhost `http://127.0.0.1:8890`. The deployed app's CSP (`public/_headers`, `connect-src`) names only the default hub: an app served for another hub names that hub there. The dev server also lets `http://127.0.0.1:*` and `http://localhost:*` through |
 | `?found_code=<code>` | a founding token, for a hub that asks for one when an account is created |
 | `?core=page` | run the client core in the page instead of its worker (for debugging) |
-| `?mock=<name>` | the demo room. `1` is the room as it is; `crazy` generates a very big room (`dev/perf.mjs`); `side`, `quiet`, `fresh`, `first`, `many`, `foot`, `reads`, `link` are variants built from the room's own sessions and cards, so on the empty room they show it as it is |
+| `?mock=<name>` | the demo room. `1` is the room as it is; `crazy` generates a very big room (`dev/perf.mjs`); `side`, `quiet`, `fresh`, `first`, `many`, `foot`, `reads`, `link`, `new` (an agent that just joined: the empty conversation) are variants built from the room's own sessions and cards, so on the empty room they show it as it is |
 | `?state=<name>`, `?onboard=<name>` | demo only: the click a state of `/screens` needs, an account screen |
 
 ## Checks
