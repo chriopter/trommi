@@ -374,6 +374,9 @@ fading out over 44 points.
   `MAC_UPLOADER=xcode` switches to Xcode's own upload. Build numbers are the highest build of the app record plus one (any platform, so an iOS and a Mac build never share one). Then the group
   "Intern" and What to Test; the public group and Beta App Review stay with iOS for now.
 
+**Direct download** (outside the store, Developer ID, notarized): `.github/workflows/mac.yml` with
+`.github/scripts/mac_direct.sh`, attached to every release as `Trommi-macOS.dmg`; README.md "Mac app (direct download)".
+
 **Once by hand in App Store Connect** (the API cannot create an app record or add a platform to one). A universal
 purchase (one App Store page, one name, the TestFlight groups of both) needs the iOS bundle id `com.trommi.ios` for
 `TrommiMac`: Apps → Trommi → the **+** beside "iOS App" in the sidebar → macOS. A Mac app of its own
