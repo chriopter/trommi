@@ -173,7 +173,11 @@ jobs:
           ref: ${{ github.sha }}
           path: repo
           persist-credentials: false
-          sparse-checkout: release
+          # release/ for the scripts and the key, release_notes.mjs for the notes
+          sparse-checkout: |
+            /release/
+            /.github/scripts/release_notes.mjs
+          sparse-checkout-cone-mode: false
       # What is published is what was signed: checked again against the manifest whose hash the signing job passed on.
       - name: Check the signature and the files
         run: |
@@ -225,7 +229,24 @@ jobs:
             if tagged=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha 2>/dev/null); then
               [ "$tagged" = "$COMMIT" ] || { echo "::error::the tag $TAG is there already and names $tagged, not $COMMIT"; exit 1; }
             fi
-            printf '%s\n\n%s\n' "The $PART of commit $COMMIT." "Signed: manifest.json and manifest.json.sig (release/public-key.pem)." > "$RUNNER_TEMP/notes.md"
+            # the notes: what CHANGELOG.md added since this series' release before, one line per change; the commit
+            # subjects since then when it added nothing; empty notes never stop a release
+            gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$COMMIT" > "$RUNNER_TEMP/changelog.md" 2>/dev/null || : > "$RUNNER_TEMP/changelog.md"
+            gh release list --exclude-drafts --limit 400 --json tagName,createdAt --jq '.[] | "\(.tagName) \(.createdAt)"' | grep "^$PART-v" > "$RUNNER_TEMP/releases.txt" 2>/dev/null || : > "$RUNNER_TEMP/releases.txt"
+            prev='' since=''
+            : > "$RUNNER_TEMP/subjects.txt"
+            if [ -n "$newest" ] && before=$(gh api "repos/$GH_REPO/commits/$PART-v$newest" --jq .sha 2>/dev/null) \
+              && gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$before" > "$RUNNER_TEMP/changelog-before.md" 2>/dev/null; then
+              prev="$RUNNER_TEMP/changelog-before.md" since="$PART-v$newest"
+              gh api "repos/$GH_REPO/compare/$before...$COMMIT" --jq '.commits[].commit.message | split("\n")[0]' > "$RUNNER_TEMP/subjects.txt" 2>/dev/null || : > "$RUNNER_TEMP/subjects.txt"
+            fi
+            {
+              NOTES_BASE="https://raw.githubusercontent.com/$GH_REPO/$COMMIT/" node repo/.github/scripts/release_notes.mjs "$RUNNER_TEMP/changelog.md" "$TAG" "$RUNNER_TEMP/releases.txt" "$prev" "$since" "$RUNNER_TEMP/subjects.txt" || true
+              echo
+              echo "---"
+              echo
+              echo "The $PART of commit $COMMIT. Signed: manifest.json and manifest.json.sig (release/public-key.pem)."
+            } > "$RUNNER_TEMP/notes.md"
             gh release create "$TAG" --target "$COMMIT" --latest=false --title "Trommi $TAG" --notes-file "$RUNNER_TEMP/notes.md" \
               publish/* 2> "$RUNNER_TEMP/create.err" && code=0 || code=$?
             cat "$RUNNER_TEMP/create.err" >&2
