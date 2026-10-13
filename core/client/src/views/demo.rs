@@ -101,7 +101,6 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
         }
     };
     for (group, name) in [
-        ("session_settings", "session"),
         ("desks", "desk"),
         ("snoozes", "snooze"),
         ("drafts", "draft"),
@@ -111,6 +110,17 @@ pub fn model_of(fixture: &Value, now_ms: u64) -> Result<Model, String> {
         for (id, v) in h.get(group).and_then(Value::as_object).into_iter().flatten() {
             put(format!("{name}/{id}"), v);
         }
+    }
+    // (the demo's sessions stand in the order the fixture lists them, as the web's demo shows them: a session the
+    //  person never placed gets its place in that list)
+    let settings = h.get("session_settings").and_then(Value::as_object);
+    for (i, s) in list(&f, "sessions").enumerate() {
+        let id = text(s, "agent_device_id");
+        let mut set = settings.and_then(|all| all.get(id)).or(s.get("settings")).and_then(Value::as_object).cloned().unwrap_or_default();
+        if !set.get("position").is_some_and(Value::is_number) {
+            set.insert("position".into(), json!(i));
+        }
+        put(format!("session/{id}"), &Value::Object(set));
     }
     if let Some(c) = h.get("crown") {
         put("crown".into(), c);
