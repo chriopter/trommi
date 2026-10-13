@@ -543,14 +543,6 @@ label.tc-opt:has(> input:checked) .tc-tick { background: var(--accent); color: v
 #cardpage .rich :not(pre) > code { padding: .1em .35em; border-radius: 5px; background: var(--sunken); font: .9em var(--mono, monospace); }
 #cardpage .rich pre { overflow-x: auto; padding: 10px var(--s-3); border-radius: var(--r-md); background: var(--sunken); }
 #cardpage .rich .rich-point { font-weight: 600; }
-.tc-fold { margin: 6px 0 6px calc(var(--who, 0px) + var(--who-gap, 0px)); border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line); }
-.tc-fold > summary { cursor: pointer; padding: 10px 14px; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); list-style: none; }
-.tc-fold > summary::after { content: " ▸"; }
-.tc-fold[open] > summary::after { content: " ▾"; }
-.tc-fold > summary::-webkit-details-marker { display: none; }
-.tc-fold[open] { padding-bottom: var(--s-4); }
-.tc-fold[open] > :not(summary) { margin: var(--s-3) var(--s-4) 0; }
-.tc-earlier[open] { display: grid; gap: var(--s-4); }
 
 /* the agent's advice on a card tile: a stronger marker than in running text, so it reads at a glance */
 .tc-opt.is-advised { --marker: .42; }
@@ -683,7 +675,6 @@ a.focus-stage-step { display: grid; place-items: center; }
 .tc-pad :is(.tc-did, .tc-deed) { color: var(--tone-pen); }
 .tc-pad .tc-feed .msg-time { color: color-mix(in srgb, var(--tone-pen) 70%, var(--tone-wash)); }
 .tc-pad .tc-c-who, .tc-pad .tc-c-who.is-you { background: var(--surface); }
-.tc-pad .tc-fold { background: color-mix(in srgb, var(--surface) 55%, transparent); box-shadow: inset 0 0 0 1px var(--tone-edge); }
 .tc-pad .tc-ask { box-shadow: inset 0 0 0 1px var(--tone-edge); }
 .tc-pad .tc-ask:focus-within { box-shadow: inset 0 0 0 2px var(--tone-pen); }
 .tc-pad .rich :not(pre) > code, .tc-pad .rich pre { background: color-mix(in srgb, var(--surface) 70%, transparent); }

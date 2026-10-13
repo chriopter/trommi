@@ -509,8 +509,8 @@ public final class DeskModel {
     }
   }
 
-  /** The versions a human reads as the question: the first, and every later one that leaves it open. */
-  static func revisionsOf(_ c: Card) -> [CardVersion] { c.versions.filter { $0.objectVersion == 1 || $0.objectState == "open" } }
+  /** The versions a human reads as the card: those of its history (the client core's `history`, every revision). */
+  static func revisionsOf(_ c: Card) -> [CardVersion] { let keep = Set(c.history.map { $0.envelopeNumber }); return c.versions.filter { keep.contains($0.envelopeNumber) } }
 
   private func boardCard(_ c: Card, _ number: Int, now: UInt64) -> DeskCard {
     let m = board, a = c.answer, h = m.human
@@ -916,9 +916,11 @@ public final class DeskModel {
       return m
     }
     var out = [Message]()
-    for v in DeskModel.revisionsOf(c) {
-      if v.objectVersion == 1 { out.append(ev(Double(v.envelopeNumber), card.kind == "info" ? "info" : "asked", v.content?["title"].string ?? card.title, v.sentAt)) }
-      else { var e = ev(Double(v.envelopeNumber), "revised", v.content?["change_note"].string ?? v.content?["title"].string ?? card.title, v.sentAt); e.version = v.objectVersion; out.append(e) }
+    // (the card's history from the client core: every revision, each with what its agent said changed)
+    for v in c.history {
+      let title = v.title.isEmpty ? card.title : v.title
+      if v.objectVersion == 1 { out.append(ev(Double(v.envelopeNumber), card.kind == "info" ? "info" : "asked", title, v.sentAt)) }
+      else { var e = ev(Double(v.envelopeNumber), "revised", v.note.isEmpty ? title : v.note, v.sentAt); e.version = v.objectVersion; out.append(e) }
     }
     func label(_ keys: [String]) -> String { keys.map { k in card.options.first { $0.key == k }?.label ?? k }.joined(separator: ", ") }
     for a in c.answers {
