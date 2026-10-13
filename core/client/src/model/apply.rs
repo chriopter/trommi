@@ -839,7 +839,7 @@ impl Model {
 impl Model {
     fn apply_card_version(&mut self, r: &Received, change: &mut Change, ordered: bool) -> Applied {
         let o = r.object.as_ref().expect("an object");
-        let n = r.change;
+        let mut n = r.change;
         let object_id = o.object_id.clone();
         let state = state_after(r);
         let (content, content_state) = body_of(r, BodyKind::Card);
@@ -873,6 +873,19 @@ impl Model {
             let card = self.cards.get_mut(&object_id).expect("the card");
             if let Some(a) = &r.object_after {
                 card.agent_device_id = a.owner.clone();
+            }
+            // A version the card holds already has its number. Met again out of the hub's order it keeps it,
+            // whatever number it comes under (nothing vouches for that one); taken in the hub's order it gets the
+            // place the chain gives it, and what hung on the number it was first shown under moves with it.
+            if let Some(at) = card.versions.iter().position(|v| v.version_hash == r.hash) {
+                let held = card.versions[at].envelope_number;
+                if r.object_after.is_none() {
+                    n = held;
+                } else if held != n {
+                    card.versions[at].envelope_number = n;
+                    card.versions.sort_by_key(|v| v.envelope_number);
+                    card.renumbered(held, n);
+                }
             }
             let first = is_zero_hash(o.object_ref.as_deref());
             // Its first version came after a later one (out of order): its place in every list is worked out again.
@@ -998,6 +1011,22 @@ impl Model {
     }
 }
 
+impl Card {
+    /// An envelope of this card that was first met out of the hub's order under the number `held` took its place
+    /// in that order at `n`: what the card dated by `held` is dated by `n`.
+    fn renumbered(&mut self, held: u64, n: u64) {
+        for number in [
+            &mut self.envelope_number,
+            &mut self.state_envelope_number,
+            &mut self.first_envelope_number,
+        ] {
+            if *number == held {
+                *number = n;
+            }
+        }
+    }
+}
+
 /// A session record before its group is known (what `session_of` makes).
 fn placeholder_session(session_id: &str) -> Session {
     let mut m = Model::default();
@@ -1017,7 +1046,9 @@ impl Model {
         }
         let o = r.object.as_ref().expect("an object");
         let object_id = o.object_id.clone();
-        let n = r.change;
+        // (the number of an answer or a take back the card holds already: as for a version, `apply_card_version`)
+        let mut n = r.change;
+        let in_order = r.object_after.is_some();
         // an answer or a take back of a card this device holds no version of
         if !self.cards.contains_key(&object_id) {
             return Applied::no();
@@ -1067,7 +1098,22 @@ impl Model {
                     .iter()
                     .position(|a| a.envelope_hash.as_deref() == Some(r.hash.as_str()))
                 {
-                    Some(at) => {
+                    Some(mut at) => {
+                        match card.answers[at].envelope_number {
+                            Some(held) if !in_order => n = held,
+                            Some(held) if held != n => {
+                                card.answers[at].envelope_number = Some(n);
+                                card.answers
+                                    .sort_by_key(|a| a.envelope_number.unwrap_or(u64::MAX));
+                                card.renumbered(held, n);
+                                at = card
+                                    .answers
+                                    .iter()
+                                    .position(|a| a.envelope_hash.as_deref() == Some(r.hash.as_str()))
+                                    .expect("the answer");
+                            }
+                            _ => {}
+                        }
                         let a = &mut card.answers[at];
                         if content.is_some() && a.extra.contains_key("no_body") {
                             a.answer_action = action.clone();
@@ -1163,7 +1209,21 @@ impl Model {
                         x.envelope_number.unwrap_or(0) < n && x.taken_back_at.is_none()
                     }),
                 };
+                // Out of the hub's order a take back counts only with the answer it names: without one (a header
+                // alone) it would take back whichever answer stands, under a number nothing vouches for.
+                if !in_order && previous.is_none() {
+                    return Applied::no();
+                }
                 if let Some(at) = at {
+                    // (taken back already: this take back has its number, as a version has)
+                    match card.answers[at].taken_back_at {
+                        Some(held) if !in_order => n = held,
+                        Some(held) if held != n => {
+                            card.answers[at].taken_back_at = Some(n);
+                            card.renumbered(held, n);
+                        }
+                        _ => {}
+                    }
                     let a = &mut card.answers[at];
                     if a.taken_back_at.is_none() {
                         a.taken_back_at = Some(n);
