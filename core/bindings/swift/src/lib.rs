@@ -45,7 +45,7 @@ pub use account::*;
 pub use app::{AppCore, AppPacket};
 pub use client::{
     ClientDesk, DeskCardIn, DeskDelta, DeskListed, DeskRequestIn, DeskSessionOp, DeskSessionOpen,
-    DeskStackOp, OffPile, off_pile,
+    DeskStackOp,
 };
 pub use client_model::ClientModel;
 pub use codec::*;

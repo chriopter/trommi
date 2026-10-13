@@ -270,6 +270,7 @@ extension Board {
     }
     // the session list every device shows, as the client core makes it (core/client/src/sessions.rs)
     if let l = p["session_list"].array { sessionList = l }
+    if p["off_mind"].object != nil { offMind = p["off_mind"] }
     if let w = p["wake_at"].double { wakeAt = w > 0 ? UInt64(w) : nil }
     if let s = p["stack"].array { stack = s.compactMap { $0.string } }
     if let o = p["open_permission_ids"].array { openPermissionIds = o.compactMap { $0.string } }

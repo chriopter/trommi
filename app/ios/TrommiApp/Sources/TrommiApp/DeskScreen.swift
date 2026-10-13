@@ -32,9 +32,11 @@ struct DeskScreen: View {
     // iPhone (his word, 9 October): at rest the Desk is the stack alone; Off your mind is only hinted at the bottom (its
     // heading above the tab pill) and comes up with a decided pull (DeskSnap). An iPad keeps one flowing page.
     let tucked = hSize != .regular
+    // (the dock stands over the page's foot: the fold's hint and the last rows keep clear of it)
+    let docked: CGFloat = v.flatMap { model.desk?.offMind($0) }.map { $0.starred.isEmpty && $0.running.isEmpty ? 0 : DeskDock.height + 10 } ?? 0
     GeometryReader { geo in
     // (where the page rests with the heading of Off your mind just above the tab pill: the top, unless the stack is taller)
-    let rest = max(0, pageHeight - (geo.size.height - DeskScreen.foldHint))
+    let rest = max(0, pageHeight - (geo.size.height - DeskScreen.foldHint - docked))
     ScrollViewReader { scroller in
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 12) {
@@ -64,9 +66,9 @@ struct DeskScreen: View {
               Text("Questions land here.").font(Face.text(15)).foregroundStyle(Ink.muted).multilineTextAlignment(.center)
             }.frame(maxWidth: .infinity).padding(.vertical, 28)
           }
-          let minStack = tucked ? max(0, geo.size.height - DeskScreen.foldHint) : 0
+          let minStack = tucked ? max(0, geo.size.height - DeskScreen.foldHint - docked) : 0
           let fill = max(0, minStack - stackHeight)
-          VStack(spacing: 0) { OffList(view: v, full: false, chevron: tucked ? (revealed ? "chevron.down" : "chevron.up") : nil) }
+          VStack(spacing: 0) { OffHint(view: v, chevron: tucked ? (revealed ? "chevron.down" : "chevron.up") : nil) }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, fill)
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(DeskScreen.space)).minY } action: { y in
@@ -82,7 +84,7 @@ struct DeskScreen: View {
       }
       .coordinateSpace(.named(DeskScreen.space))
       // the last row scrolls clear of the floating tab bar
-      .padding(.horizontal, 16).padding(.bottom, 120)
+      .padding(.horizontal, 16).padding(.bottom, 120 + docked)
       .frame(maxWidth: 760).frame(maxWidth: .infinity)
       Color.clear.frame(height: 0).id("desk-end")
     }
@@ -111,8 +113,8 @@ struct DeskScreen: View {
       }.opacity(0).accessibilityHidden(true)
     }
     .modifier(DeskTop(regular: hSize == .regular))
-    // his starred cards as a small stack at the bottom right, above the tab pill (StarStack, MoreScreens.swift)
-    .overlay(alignment: .bottomTrailing) { StarStack().padding(.trailing, 16).padding(.bottom, hSize == .regular ? 24 : 84) }
+    // the two docked stacks, his starred cards and the cards still running, above the tab pill (DeskDock, MoreScreens.swift)
+    .overlay(alignment: .bottom) { if let v { DeskDock(view: v).padding(.bottom, hSize == .regular ? 20 : 84) } }
   }
 
   @ViewBuilder private func head(_ v: DeskModel.View) -> some View {
@@ -555,74 +557,7 @@ private struct TileBody: View {
   }
 }
 
-// ---- with the agents, the end list ---------------------------------------------------------------------------
-
-struct WithAgents: View {
-  @EnvironmentObject var model: BoardModel
-  let view: DeskModel.View
-  // (no Desk: the room was just left, a log out; the view is on its way out and draws nothing)
-  var body: some View { if let d = model.desk { content(d) } }
-  @ViewBuilder private func content(_ d: DeskModel) -> some View {
-    let working = d.tasks.filter { $0.state == "working" }
-    let decidedHere = d.cards.filter { c in c.status == "decided" && d.stackOf(c) == "works" && view.here.contains { $0.id == c.agent } }
-    let items = (view.revising.filter { d.stackOf($0) == "works" } + decidedHere.sorted { ($0.decided ?? 0) > ($1.decided ?? 0) }).compactMap { c -> (DeskCard, Agent, Task1?, UInt64)? in
-      guard let a = d.byAgent[c.agent] else { return nil }
-      let line = d.workLine(c, working: working)
-      return (c, a, line, (c.status == "open" ? c.withAgent : c.decided) ?? 0)
-    }.sorted { ($0.2?.updated ?? $0.3) > ($1.2?.updated ?? $1.3) }
-    if !items.isEmpty {
-      VStack(alignment: .leading, spacing: 8) {
-        EndDivider(title: "Off your mind")
-        ForEach(items, id: \.0.id) { item in
-          Button { model.path.append(.card(item.0.id)) } label: {
-            HStack(spacing: 10) {
-              AgentMark(agent: { var a = item.1; a.starred = false; return a }(), size: 22)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(item.0.title).font(Face.display(16, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
-                TailWho(card: item.0, agent: item.1)
-              }
-              Spacer(minLength: 6)
-              PulseDot()
-            }
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Ink.surface))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Ink.lineStrong))
-          }.buttonStyle(.plain)
-        }
-      }.padding(.top, 10)
-    }
-  }
-}
-
-/** Who has the card: whether the session has his answer, and whether it can hear (desk.mjs tailWho). */
-struct TailWho: View {
-  @EnvironmentObject var model: BoardModel
-  let card: DeskCard
-  let agent: Agent
-  var body: some View {
-    let name = agent.name, doing = card.status == "open" ? "is reworking it" : "is on it"
-    let final = card.settled || card.options.contains { $0.final && card.choices.contains($0.key) }
-    let link = linkOf(agent), h = model.desk?.heardOf(card)
-    let (sign, words, tint): (String, String, Color) = {
-      if final { return ("ring", "with \(name)", Ink.muted) }
-      guard let link = link, let h = h else { return ("ring", "\(name) \(doing)", Ink.muted) }
-      if h.heard == true {
-        return link.state == "cut" ? ("ear-off", "\(name) has it, but is cut off", Ink.urgHigh) : link.state == "gone" ? ("plug", "\(name) had it, and is gone", Ink.muted) : ("tick", "\(name) has it, \(doing)", Ink.accent)
-      }
-      if link.state == "cut" { return ("ear-off", "\(name) cannot hear you", Ink.urgHigh) }
-      if link.state == "gone" { return ("plug", h.heard == false ? "\(name) is gone, has not picked it up" : "\(name) is gone", Ink.muted) }
-      if link.state == "asleep" { return ("ear-later", "\(name) is not listening", Ink.urgHigh) }
-      if h.heard == nil { return link.state == "oncall" ? ("ear-later", "\(name) hears it on its next step", Ink.muted) : ("ring", "\(name) \(doing)", Ink.muted) }
-      if h.late { return ("letter", "\(name) has not picked it up", Ink.urgHigh) }
-      return link.state == "oncall" ? ("ear-later", "\(name) hears it on its next step", Ink.muted) : ("letter", "\(name) gets it", Ink.muted)
-    }()
-    HStack(spacing: 5) {
-      if sign == "ring" { WorkingRing(working: card.status != "decided" || !final, color: Ink.accent).frame(width: 13, height: 13) }
-      else { Sketch(sign, color: tint).frame(width: 14, height: 14) }
-      Text(words).font(Face.text(13)).foregroundStyle(Ink.muted).lineLimit(1)
-    }
-  }
-}
+// ---- the end list ---------------------------------------------------------------------------------------------
 
 struct EndDivider: View {
   let title: String
@@ -654,8 +589,8 @@ struct EndDivider: View {
   }
 }
 
-/** The order of the end of the Desk's list (desk.mjs endList): Later, then what is closed, the newest first. The rows
- *  themselves are OffList's (MoreScreens.swift). */
+/** The order of the page Off your mind after its running cards (desk.mjs endList): Later, then what is closed, the
+ *  newest first. The rows themselves are OffList's (MoreScreens.swift). */
 struct EndList {
   struct Item { var card: DeskCard; var g: String; var at: UInt64; var said: String }
   func endItems(_ v: DeskModel.View, _ d: DeskModel) -> [Item] {

@@ -696,6 +696,36 @@ public final class DeskModel {
     guard !a.archived, a.online, let q = a.quietSince else { return nil }
     return "quiet for \(minutes(now > q ? now - q : 0)) min"
   }
+  /** What has left the desk in view (web desk.mjs offMind): the client core's lists (core/client/src/off_mind.rs, the
+   *  patch's off_mind), their cards looked up and kept to this desk. A card has one home: a starred card is in
+   *  `starred` only, also while it runs. Nothing is ordered or counted here. */
+  public struct OffMind {
+    public struct Entry: Identifiable {
+      public var card: DeskCard; public var agent: Agent
+      /** A starred card: it is being worked on. A running card: its status line's words. A closed one: `done` or `trash`. */
+      public var running = false; public var label = ""; public var place = ""
+      public var id: String { card.id }
+    }
+    public var starred: [Entry] = [], running: [Entry] = [], putOff: [Entry] = [], recent: [Entry] = []
+    /** The closed cards of this desk's sessions, counted by the core. */
+    public var closed = 0
+  }
+  public func offMind(_ v: View) -> OffMind {
+    let o = board.offMind
+    let onDesk: (Agent) -> Bool = { a in v.all || self.desks.isEmpty || self.deskOf(a) == v.deskId }
+    let entry: (JV) -> OffMind.Entry? = { e in
+      guard let c = self.byCard[e["object_id"].string ?? e.string ?? ""], let a = self.byAgent[c.agent], onDesk(a) else { return nil }
+      return OffMind.Entry(card: c, agent: a, running: e["running"].truthy, label: e["label"].string ?? "", place: e["place"].string ?? "")
+    }
+    var out = OffMind()
+    out.starred = o["starred"].array?.compactMap(entry) ?? []
+    out.running = o["running"].array?.compactMap(entry) ?? []
+    out.putOff = o["put_off"].array?.compactMap(entry) ?? []
+    out.recent = o["recent"].array?.compactMap(entry) ?? []
+    for a in agents where onDesk(a) { out.closed += Int(o["closed"][a.deviceId].double ?? 0) }
+    return out
+  }
+
   /** Whether the card's session has his last word on it (heardOf). */
   public func heardOf(_ c: DeskCard, now: UInt64 = nowMs()) -> (heard: Bool?, waiting: UInt64, late: Bool)? {
     let at: UInt64? = c.status == "open" ? c.withAgent : c.status == "decided" && !c.settled ? c.decided : nil

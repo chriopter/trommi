@@ -200,8 +200,10 @@ impl Model {
             || !change.permissions.is_empty())
         .then(|| {
             let rows = crate::sessions::session_list(self, self.reading);
-            self.status_wake = rows.iter().filter_map(|r| r.recheck_at).min().unwrap_or(0);
-            rows
+            // What has left the Desk (off_mind.rs): made from the same things, and from the list itself.
+            let off = crate::off_mind::off_mind(self, &rows, self.clock);
+            self.status_wake = rows.iter().filter_map(|r| r.recheck_at).chain(off.wake.map(|w| w + 1)).min().unwrap_or(0);
+            (rows, off)
         });
         let this: &'a Model = self;
         let mut p = Map::new();
@@ -238,8 +240,9 @@ impl Model {
             p.insert("open_permission_ids".into(), json!(this.open_permission_ids));
             p.insert("desk_order".into(), json!(this.desk_order));
         }
-        if let Some(rows) = rows {
+        if let Some((rows, off)) = rows {
             p.insert("session_list".into(), serde_json::to_value(rows).unwrap_or(Value::Null));
+            p.insert("off_mind".into(), serde_json::to_value(off).unwrap_or(Value::Null));
         }
         // When the app is to project again although nothing came: the next snooze or request to run out, the next
         // change of a session's status by the clock (0: none).
