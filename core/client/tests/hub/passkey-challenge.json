@@ -1,0 +1,14 @@
+{
+  "answer": "{\"account\":\"bf848798-cf78-49c3-a1ff-104b08761a77\",\"challenge\":\"qAn3EDvV-_rtgh2uCnwXxsgzEiXNWSBs3X3DKcTKybQ\",\"user_handle\":\"v4SHmM94ScOh_xBLCHYadw\"}",
+  "asked": {
+    "route": "passkey_challenge"
+  },
+  "content_range": null,
+  "name": "passkey-challenge",
+  "request": {
+    "body": "{}",
+    "method": "POST",
+    "path": "/v1/account/passkey/challenge"
+  },
+  "status": 200
+}

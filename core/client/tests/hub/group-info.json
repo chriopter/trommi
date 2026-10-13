@@ -1,15 +1,16 @@
 {
-  "answer": "{\"epoch\":2,\"group_info\":\"AAEABAABAAMgY8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJAAAAAAAAAAAiBj3m6bxJLGgU18NVtvqinDq7HOZOqx6PYrpTsgF0bQCiDLPFIvfn6Dt4snQ5fm7hku-D2uxci9FNJx4n2B4QijfUCUAAMJBPAB8AIAAgAB8AFAhCA77a1hPG6N9mSLcOSIQIHmsEoCk6gky0uh4mT6IoxCkSDDnF0q6gJeR_CszOpVqu0j93lH0qg53xyXIQ88s2DtOEBAGe6utoVo27V_PCFWwbdThC8hKqYqNfbdIvDVUbIzt6yIvvJI4-ZZQGCk_pzUYF8Hf1UXFfOu769IRndYxaOYEEDnAAJAv0C9AQEgNle7wjlwQpaLqJDNmRlqbhUNHA0PpEtoGjYWHbaGhEYghxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DMAASCHEAgyZ9MwtwNsnyya-qPFKxJG295iLf9xat3en7D4MwIAAQIAAwbwAfACAAoAAgABAwAAQEClBrYVmUB_4uFRBEPYvTkdGZVArIu-JhwNDgfWFCZkf74tTKHoRqQ0Oa5uinBvqQ1qoPlyq_pYk-a4l-rlk38MAAQhIAFr7gFMINXhphu33LCwAdx55cv2Snf4SXIpphgupzJhIAo1fRNMYnet094q5pDZnllR11vuHEjSXZqnw_GYymSAAAAAAEBAw2LnAuhSJF85HbO6kl5e06c2O8XKdXsOK3-PlL_s4Y8EXwFFVtKjgPeoYvzrU1HCNFXLcqZ5Ixh7NNTaJXdrCg\"}",
+  "answer": "{\"epoch\":2,\"group_info\":\"AAEABAABAAMgbQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0AAAAAAAAAAiAZ50tA-POJtk2pU-QvJ1OUpMc3rEnPpqxY5cd4I0y-jiBFuOlSgRmh5iPxO2wPf0pRbn2sjQtUqcphV13PqFmijECUAAMJBPAB8AIAAgAB8AFAhCCjP_-TDrnb8pNicBMnUt2Pdb4gaIAqje4S59JuBnjNsiASydqkCz2ZfiYhuYoA5jDqUbKWKgDYq5ZnuqV5ep6KjkBAceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhD9_iXccHFnLP86yGLUZsNfdRE-WSBLqxaNXIDmjdab9EDnAAJAv0C9AQEgzqJetw1hF_zGh1eX_viQQlczE9S4wzp4rC4zttWr7Csgv3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-UAASC_dZhXOHmV3_kDZMDEqecRss8GlTz8Nka-xghON3l35QIAAQIAAwbwAfACAAoAAgABAwAAQEBRUNzBuSpVy5S1-EJ14-GBcRDTPXMOl8iwCby3hIOHFM2zesqx_GPCM5tySd7-7vlhDHMWCRAckw00tJKY1GYDAAQhIAafnL0MsSHWLi3vzm3QTVG443osFqlW7m9GfK-05dpbIJHFsqcu9bH3k7uPszutS2XlVWIYXM64-B46JfSOujanAAAAAEBAtVLablYpVeJu5a-gdbxfIvCtQaI9OoPNCANSXdJnK4VFivcV5u8459yFTXuAcu5xSpuD-S8BHEDxoALkvKabBQ\"}",
   "asked": {
     "epoch": null,
-    "group": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "group": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0",
     "route": "group_info"
   },
+  "content_range": null,
   "name": "group-info",
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/groups/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/info"
+    "path": "/v1/groups/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0/info"
   },
   "status": 200
 }

@@ -1,9 +1,12 @@
 //! The codec's two calls: a route to its request, an answer to its typed result.
 
 use super::json::{bad, Read};
-use super::limits::{CAP_DESK, CAP_GROUPS_READ, CAP_GROUP_INFO, CAP_LIST, CAP_WRITE};
+use super::limits::{CAP_DESK, CAP_GROUPS_READ, CAP_GROUP_INFO, CAP_LIST, CAP_SMALL, CAP_WRITE};
 use super::types::{Answer, ByteRange, Route, Site};
-use super::{answer, changes, content, desk, files, groups, outbox, signin, stream, Failure};
+use super::{
+    account, answer, changes, content, desk, files, groups, invites, outbox, push, signin, stream,
+    Failure,
+};
 use crate::app::io::{HttpRequest, HttpResponse};
 use trommi_core::ids::{GroupId, ShareId};
 
@@ -63,6 +66,22 @@ enum Kind {
     Share {
         share: ShareId,
     },
+    Invite,
+    Requested,
+    Reveal,
+    Invited,
+    /// `{ "<name>": true }`.
+    Said(&'static str),
+    Login,
+    PasskeyChallenge {
+        of_account: bool,
+    },
+    Account,
+    Usage,
+    Revision,
+    PasskeyAdded,
+    PushState,
+    Removed,
 }
 
 /// The hub's routes without I/O. Stateless: everything a call needs is in its arguments.
@@ -237,6 +256,112 @@ impl Codec {
                 files::share_request(site, share, secret_hash, file, expires_at)?,
                 Kind::Share { share: *share },
             ),
+            Route::GetInvite { invite } => (invites::get_request(site, invite)?, Kind::Invite),
+            Route::PostInviteRequest {
+                invite,
+                request,
+                mac,
+                signature,
+            } => (
+                invites::request_request(site, invite, request, mac, signature)?,
+                Kind::Requested,
+            ),
+            Route::GetReveal { invite } => (invites::reveal_request(site, invite)?, Kind::Reveal),
+            Route::PostInvite {
+                offer,
+                signature,
+                mac,
+            } => (
+                invites::post_request(site, offer, signature, mac)?,
+                Kind::Invited,
+            ),
+            Route::PutReveal {
+                invite,
+                reveal,
+                signature,
+            } => (
+                invites::put_reveal_request(site, invite, reveal, signature)?,
+                Kind::Said("revealed"),
+            ),
+            Route::DeleteInvite { invite } => {
+                (invites::delete_request(site, invite)?, Kind::Said("burned"))
+            }
+            Route::Login { account, auth_key } => (
+                account::login_request(site, false, account, auth_key)?,
+                Kind::Login,
+            ),
+            Route::Recover { account, auth_key } => (
+                account::login_request(site, true, account, auth_key)?,
+                Kind::Login,
+            ),
+            Route::PasskeyChallenge => (
+                account::passkey_challenge_request(site, false)?,
+                Kind::PasskeyChallenge { of_account: false },
+            ),
+            Route::AccountPasskeyChallenge => (
+                account::passkey_challenge_request(site, true)?,
+                Kind::PasskeyChallenge { of_account: true },
+            ),
+            Route::PasskeyLogin { assertion } => (
+                account::passkey_login_request(site, assertion)?,
+                Kind::Login,
+            ),
+            Route::CreateAccount { account } => {
+                (account::create_request(site, account)?, Kind::Account)
+            }
+            Route::Account => (account::view_request(site)?, Kind::Account),
+            Route::AccountUsage => (account::usage_request(site)?, Kind::Usage),
+            Route::PutPassword {
+                password,
+                revision,
+                proof,
+            } => (
+                account::put_password_request(site, password, revision, proof)?,
+                Kind::Revision,
+            ),
+            Route::PutKit {
+                kit,
+                revision,
+                proof,
+            } => (
+                account::put_kit_request(site, kit, revision, proof)?,
+                Kind::Revision,
+            ),
+            Route::PutEmail {
+                email,
+                kit,
+                revision,
+                proof,
+            } => (
+                account::put_email_request(site, email, kit, revision, proof)?,
+                Kind::Revision,
+            ),
+            Route::AddPasskey { passkey, proof } => (
+                account::add_passkey_request(site, passkey, proof)?,
+                Kind::PasskeyAdded,
+            ),
+            Route::RemovePasskey {
+                credential_id,
+                proof,
+            } => (
+                account::remove_passkey_request(site, credential_id, proof)?,
+                Kind::Said("deleted"),
+            ),
+            Route::DeleteAccount { proof } => {
+                (account::delete_request(site, proof)?, Kind::Said("deleted"))
+            }
+            Route::PushRegister { registration } => (
+                push::register_request(site, registration)?,
+                Kind::Said("registered"),
+            ),
+            Route::PushState => (push::state_request(site)?, Kind::PushState),
+            Route::PushRemove { endpoint } => {
+                (push::remove_request(site, endpoint)?, Kind::Removed)
+            }
+            Route::LiveActivity { activity } => (
+                push::live_activity_request(site, activity)?,
+                Kind::Said("registered"),
+            ),
         };
         Ok((request, Expect(kind)))
     }
@@ -299,6 +424,21 @@ impl Codec {
             Kind::File { range } => files::bytes(*range, response)?,
             Kind::Deleted => files::deleted(&answer(response, CAP_WRITE)?)?,
             Kind::Share { share } => files::shared(share, &answer(response, CAP_WRITE)?)?,
+            Kind::Invite => invites::offer(&answer(response, CAP_SMALL)?)?,
+            Kind::Requested => invites::requested(&answer(response, CAP_WRITE)?)?,
+            Kind::Reveal => invites::reveal(&answer(response, CAP_SMALL)?)?,
+            Kind::Invited => invites::invited(&answer(response, CAP_WRITE)?)?,
+            Kind::Said(name) => invites::said(name, &answer(response, CAP_WRITE)?)?,
+            Kind::Login => account::login(&answer(response, CAP_SMALL)?)?,
+            Kind::PasskeyChallenge { of_account } => {
+                account::passkey_challenge(*of_account, &answer(response, CAP_SMALL)?)?
+            }
+            Kind::Account => account::view(&answer(response, CAP_SMALL)?)?,
+            Kind::Usage => account::usage(&answer(response, CAP_WRITE)?)?,
+            Kind::Revision => account::revised(&answer(response, CAP_WRITE)?)?,
+            Kind::PasskeyAdded => account::passkey_added(&answer(response, CAP_WRITE)?)?,
+            Kind::PushState => push::state(&answer(response, CAP_SMALL)?)?,
+            Kind::Removed => push::removed(&answer(response, CAP_WRITE)?)?,
         })
     }
 

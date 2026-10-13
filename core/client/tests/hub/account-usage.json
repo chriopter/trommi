@@ -1,0 +1,14 @@
+{
+  "answer": "{\"cards\":0,\"commits\":0,\"devices\":1,\"envelope_bytes\":0,\"envelopes\":0,\"file_bytes\":0,\"files\":0,\"groups\":1,\"live_groups\":1,\"log_bytes\":0,\"messages\":0,\"open_cards\":0,\"rooms\":1,\"total_bytes\":0}",
+  "asked": {
+    "route": "account_usage"
+  },
+  "content_range": null,
+  "name": "account-usage",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/account/usage"
+  },
+  "status": 200
+}

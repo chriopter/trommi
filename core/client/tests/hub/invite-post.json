@@ -1,0 +1,14 @@
+{
+  "answer": "{\"invite_id\":\"5XADjlVFxB-DDOVQOPfvmg\"}",
+  "asked": {
+    "route": "post_invite"
+  },
+  "content_range": null,
+  "name": "invite-post",
+  "request": {
+    "body": "{\"mac\":\"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk\",\"offer\":\"B4-kzSPg2pATW8roHCj5S4LBxwSNPTnY3nKvFiTOvJDlcAOOVUXEH4MM5VA49--aAQAAAAAAAAAAAAAAAAAAAAAAAAGhNepe66Ulxv7UhHaMwAM6-JjXkq0NtBwQ9n_x65WfePfh7Lum7JtZvHRQ-dqCiUrGOCSzUJkzvwrgypozMIA9woLUVNIAAAAAAAAAAKzVV5waedL0uIZBBVYX2lR6cnjEuqphIwTa5HfJxqxG\",\"signature\":\"4gnl43Sepw1rAwTiZAq-eq5IfIxFKSxG8BqSsfEYxoy-sXHBQqgLZuCrAoI_28cWKM6HL6-wYtYngq0GW_n6DQ\"}",
+    "method": "POST",
+    "path": "/v1/invites"
+  },
+  "status": 200
+}

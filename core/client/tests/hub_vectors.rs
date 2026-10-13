@@ -9,13 +9,15 @@
 use serde_json::Value;
 use trommi_client_core::app::{Header, HttpResponse};
 use trommi_client_core::hub::{
-    Answer, ByteRange, ChangeItem, Codec, DeskOnly, EnvelopeItem, Failure, LogItem, ObjectRoute,
-    Only, Route, Site, StreamEvent, StreamReader, Timeline, WishKind,
+    AccountProof, Answer, ByteRange, ChangeItem, Codec, DeskOnly, EnvelopeItem, Failure, Kdf,
+    KdfValue, KitPart, LiveActivity, LogItem, NewAccount, NewPassword, ObjectRoute, Only,
+    PasskeyAssertion, PasskeyRegistration, PushLevel, PushRegistration, PushTarget, Route, Site,
+    StreamEvent, StreamReader, Timeline, WishKind,
 };
 use trommi_core::envelope::Envelope;
 use trommi_core::ids::{
-    base64url_decode, base64url_encode as b64, BoardId, DeviceId, FileId, GroupId, ObjectId,
-    RoomId, SessionId, ShareId,
+    base64url_decode, base64url_encode as b64, BoardId, DeviceId, FileId, GroupId, Hash32,
+    InviteId, ObjectId, RoomId, SessionId, ShareId,
 };
 use trommi_core::store::{OutboxEntry, OutboxKind};
 
@@ -222,6 +224,7 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     "RelayMessage" => OutboxKind::RelayMessage,
                     "Envelope" => OutboxKind::Envelope,
                     "KeyPackages" => OutboxKind::KeyPackages,
+                    "SealedKey" => OutboxKind::SealedKey,
                     other => panic!("{name}: a kind this test does not know: {other}"),
                 };
                 let entry = OutboxEntry {
@@ -501,6 +504,14 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                             .and_then(Value::as_str)
                             .map(str::to_owned),
                         row.group.session_id().map(|s| b64(s.as_bytes()))
+                    );
+                    // (a session that is no helper's names no parent, or one of zeros)
+                    assert_eq!(
+                        raw.get("parent")
+                            .and_then(Value::as_str)
+                            .filter(|p| *p != b64(&[0; 16]))
+                            .map(str::to_owned),
+                        row.parent.map(|p| b64(p.as_bytes()))
                     );
                 }
                 assert_eq!((&raw["more"], &raw["after"]), (&more.into(), &after.into()));
@@ -785,19 +796,26 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                 );
             }
             "chat" | "board" => {
-                let id: [u8; 16] = base64url_decode(
-                    asked[if route == "chat" { "session" } else { "board" }]
-                        .as_str()
-                        .unwrap(),
-                )
-                .unwrap()
-                .try_into()
-                .unwrap();
-                let (session, board) = (SessionId::new(id), BoardId::new(id));
+                // (a Chat is a session's, or a card's)
+                let of_card = asked.get("card").is_some();
+                let named = match route {
+                    "chat" if of_card => "card",
+                    "chat" => "session",
+                    _ => "board",
+                };
+                let id: [u8; 16] = base64url_decode(asked[named].as_str().unwrap())
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
+                let (session, board, card) =
+                    (SessionId::new(id), BoardId::new(id), ObjectId::new(id));
                 let limit = asked["limit"].as_u64().unwrap() as u32;
                 let route = match route {
                     "chat" => Route::Chat {
-                        timeline: Timeline::Session(&session),
+                        timeline: match of_card {
+                            true => Timeline::Card(&card),
+                            false => Timeline::Session(&session),
+                        },
                         before: asked["before"].as_u64(),
                         limit,
                     },
@@ -824,12 +842,41 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                         .try_into()
                         .unwrap(),
                 );
+                let bytes = |v: &Value| base64url_decode(v.as_str().unwrap()).unwrap();
+                let head = |v: &Value| {
+                    (
+                        v[0].as_u64().unwrap(),
+                        Hash32::from_slice(&bytes(&v[1])).unwrap(),
+                    )
+                };
+                let frontier: Vec<(DeviceId, u64, Hash32)> = asked
+                    .get("frontier")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .map(|w| {
+                        (
+                            DeviceId::from_slice(&bytes(&w[0])).unwrap(),
+                            w[1].as_u64().unwrap(),
+                            Hash32::from_slice(&bytes(&w[2])).unwrap(),
+                        )
+                    })
+                    .collect();
                 let route = Route::BoardFrontier {
                     board: &board,
-                    frontier: &[],
+                    frontier: &frontier,
                     files: &[],
-                    snapshot: None,
+                    snapshot: asked.get("snapshot").filter(|s| !s.is_null()).map(head),
                 };
+                // (the body recorded names the writers and the snapshot the codec writes)
+                if !frontier.is_empty() {
+                    let (request, _) = Codec.request(&SITE, &route).unwrap();
+                    let (ours, theirs): (Value, Value) = (
+                        serde_json::from_slice(request.body.as_ref().unwrap()).unwrap(),
+                        serde_json::from_str(v["request"]["body"].as_str().unwrap()).unwrap(),
+                    );
+                    assert_eq!(ours, theirs, "{name}");
+                }
                 let Ok(Answer::Pruned { pruned }) = read(&route) else {
                     panic!("{name} is not read")
                 };
@@ -1002,11 +1049,397 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     );
                 }
             }
+            "create_account"
+            | "account"
+            | "account_usage"
+            | "login"
+            | "recover"
+            | "passkey_challenge"
+            | "account_passkey_challenge"
+            | "put_kit"
+            | "put_password"
+            | "put_email"
+            | "passkey_login"
+            | "add_passkey"
+            | "remove_passkey"
+            | "delete_account" => {
+                let kit = KitPart {
+                    auth_key: [1; 32],
+                    sealed_copy: [2; 61],
+                };
+                let kdf = Kdf(vec![("alg".into(), KdfValue::Text("argon2id".into()))]);
+                let password = NewPassword {
+                    auth_key: [3; 32],
+                    sealed_copy: [2; 61],
+                    kdf,
+                };
+                let proof = AccountProof::Kit { auth_key: [1; 32] };
+                let new = NewAccount {
+                    email: None,
+                    kit: kit.clone(),
+                    password: Some(password.clone()),
+                    passkey: None,
+                };
+                let nobody = Site {
+                    token: None,
+                    ..SITE
+                };
+                let assertion = PasskeyAssertion {
+                    credential_id: vec![4; 20],
+                    authenticator_data: vec![5; 37],
+                    client_data_json: vec![6; 80],
+                    signature: vec![7; 70],
+                    user_handle: None,
+                };
+                let passkey = PasskeyRegistration {
+                    attestation_object: vec![8; 120],
+                    client_data_json: vec![6; 80],
+                    sealed_copy: [2; 61],
+                    transports: None,
+                };
+                let credential = asked
+                    .get("credential_id")
+                    .map(|c| base64url_decode(c.as_str().unwrap()).unwrap())
+                    .unwrap_or_default();
+                let (site, route) = match route {
+                    "create_account" => (&SITE, Route::CreateAccount { account: &new }),
+                    "put_email" => (
+                        &SITE,
+                        Route::PutEmail {
+                            email: "a@b.example",
+                            kit: &kit,
+                            revision: 1,
+                            proof: &proof,
+                        },
+                    ),
+                    "passkey_login" => (
+                        &nobody,
+                        Route::PasskeyLogin {
+                            assertion: &assertion,
+                        },
+                    ),
+                    "add_passkey" => (
+                        &SITE,
+                        Route::AddPasskey {
+                            passkey: &passkey,
+                            proof: &proof,
+                        },
+                    ),
+                    "remove_passkey" => (
+                        &SITE,
+                        Route::RemovePasskey {
+                            credential_id: &credential,
+                            proof: &proof,
+                        },
+                    ),
+                    "account" => (&SITE, Route::Account),
+                    "account_usage" => (&SITE, Route::AccountUsage),
+                    "login" => (
+                        &nobody,
+                        Route::Login {
+                            account: "a@b.example",
+                            auth_key: &[1; 32],
+                        },
+                    ),
+                    "recover" => (
+                        &nobody,
+                        Route::Recover {
+                            account: "a@b.example",
+                            auth_key: &[1; 32],
+                        },
+                    ),
+                    "passkey_challenge" => (&nobody, Route::PasskeyChallenge),
+                    "account_passkey_challenge" => (&SITE, Route::AccountPasskeyChallenge),
+                    "put_kit" => (
+                        &SITE,
+                        Route::PutKit {
+                            kit: &kit,
+                            revision: 1,
+                            proof: &proof,
+                        },
+                    ),
+                    "put_password" => (
+                        &SITE,
+                        Route::PutPassword {
+                            password: &password,
+                            revision: 1,
+                            proof: &proof,
+                        },
+                    ),
+                    _ => (&SITE, Route::DeleteAccount { proof: &proof }),
+                };
+                let (request, expect) = Codec.request(site, &route).unwrap();
+                assert_eq!(
+                    request.url.strip_prefix(SITE.url),
+                    v["request"]["path"].as_str(),
+                    "{name}"
+                );
+                assert_eq!(request.method, v["request"]["method"], "{name}");
+                let got = Codec.answer(&expect, &response);
+                if status >= 400 {
+                    let refusal = Codec.refusal(&response).expect("the hub's own refusal");
+                    match got {
+                        Err(Failure::Refused { code, .. }) => {
+                            assert_eq!(code.as_deref(), Some(refusal.code), "{name}")
+                        }
+                        Err(Failure::NotNow { retry_after_ms, .. }) => {
+                            assert_eq!(retry_after_ms, refusal.retry_after_ms, "{name}")
+                        }
+                        other => panic!("{name}: {other:?}"),
+                    }
+                    continue;
+                }
+                match got {
+                    Ok(Answer::Account(view)) => {
+                        assert_eq!(raw["account"], view.account);
+                        assert_eq!(raw["email"].as_str(), view.email.as_deref());
+                        assert_eq!(raw["revision"], view.revision);
+                        assert_eq!(raw["has_password"], view.has_password);
+                        assert_eq!(raw["kit_copy"], b64(&view.kit_copy));
+                        assert_eq!(
+                            raw["password_copy"].as_str().map(str::to_owned),
+                            view.password_copy.map(|c| b64(&c))
+                        );
+                        assert_eq!(raw["user_handle"], b64(&view.user_handle));
+                        assert_eq!(
+                            raw["kit_form"],
+                            format!("{:?}", view.kit_form).to_lowercase()
+                        );
+                        assert_eq!(
+                            raw["kdf"].as_object().map(|k| k.len()),
+                            view.kdf.as_ref().map(|k| k.0.len())
+                        );
+                        for (key, value) in view.kdf.iter().flat_map(|k| &k.0) {
+                            match value {
+                                KdfValue::Text(text) => assert_eq!(raw["kdf"][key], text.as_str()),
+                                KdfValue::Number(n) => assert_eq!(raw["kdf"][key], *n),
+                            }
+                        }
+                        let passkeys = raw["passkeys"].as_array().unwrap();
+                        assert_eq!(passkeys.len(), view.passkeys.len());
+                        for (raw, row) in passkeys.iter().zip(&view.passkeys) {
+                            assert_eq!(raw["credential_id"], b64(&row.credential_id));
+                            assert_eq!(raw["sealed_copy"], b64(&row.sealed_copy));
+                            assert_eq!(raw["created_at"], row.created_at);
+                            assert_eq!(raw["last_used_at"].as_u64(), row.last_used_at);
+                            let transports: Vec<Value> =
+                                row.transports.iter().map(|t| t.as_str().into()).collect();
+                            assert_eq!(
+                                raw.get("transports")
+                                    .cloned()
+                                    .unwrap_or(Value::Array(vec![])),
+                                Value::Array(transports)
+                            );
+                        }
+                        let rooms: Vec<Value> = view
+                            .rooms
+                            .iter()
+                            .map(|r| b64(r.as_bytes()).into())
+                            .collect();
+                        assert_eq!(raw["rooms"], Value::Array(rooms));
+                    }
+                    Ok(Answer::Usage(usage)) => {
+                        assert_eq!(raw["rooms"], usage.rooms);
+                        assert_eq!(raw["devices"], usage.devices);
+                        assert_eq!(raw["envelopes"], usage.envelopes);
+                        assert_eq!(raw["log_bytes"], usage.log_bytes);
+                        assert_eq!(raw["total_bytes"], usage.total_bytes);
+                        assert_eq!(raw.as_object().unwrap().len(), 14, "every count is read");
+                    }
+                    Ok(Answer::Login(login)) => {
+                        assert_eq!(raw["account"], login.account);
+                        assert_eq!(raw["email"].as_str(), login.email.as_deref());
+                        let rooms = raw["rooms"].as_array().unwrap();
+                        assert_eq!(rooms.len(), login.rooms.len());
+                        for (raw, room) in rooms.iter().zip(&login.rooms) {
+                            assert_eq!(raw["room_id"], b64(room.room.as_bytes()));
+                            assert_eq!(raw["sealed_copy"], b64(&room.sealed_copy));
+                            assert_eq!(raw["challenge"], b64(&room.challenge));
+                        }
+                    }
+                    Ok(Answer::PasskeyChallenge(challenge)) => {
+                        assert_eq!(raw["challenge"], b64(&challenge.challenge));
+                        assert_eq!(raw["account"], challenge.account);
+                        assert_eq!(raw["user_handle"], b64(&challenge.user_handle));
+                        assert_eq!(raw.get("kit_form").is_some(), challenge.kit_form.is_some());
+                    }
+                    Ok(Answer::Revision { revision }) => assert_eq!(raw["revision"], revision),
+                    Ok(Answer::PasskeyAdded {
+                        credential_id,
+                        created_at,
+                    }) => {
+                        assert_eq!(raw["credential_id"], b64(&credential_id));
+                        assert_eq!(raw["created_at"], created_at);
+                    }
+                    Ok(Answer::Done) => assert_eq!(raw["deleted"], true),
+                    other => panic!("{name} is not read: {other:?}"),
+                }
+            }
+            "post_invite"
+            | "get_invite"
+            | "post_invite_request"
+            | "get_reveal"
+            | "put_reveal"
+            | "delete_invite" => {
+                let invite = asked
+                    .get("invite")
+                    .map(|i| {
+                        InviteId::new(
+                            base64url_decode(i.as_str().unwrap())
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                        )
+                    })
+                    .unwrap_or(InviteId::new([0; 16]));
+                let nobody = Site {
+                    token: None,
+                    ..SITE
+                };
+                // (an invite read with a token also lists its Requests)
+                let signed_in = raw.get("requests").is_some_and(|r| !r.is_null());
+                let (site, route) = match route {
+                    "post_invite" => (
+                        &SITE,
+                        Route::PostInvite {
+                            offer: &[1],
+                            signature: &[2],
+                            mac: &[3],
+                        },
+                    ),
+                    "get_invite" => (
+                        if signed_in { &SITE } else { &nobody },
+                        Route::GetInvite { invite: &invite },
+                    ),
+                    "post_invite_request" => (
+                        &nobody,
+                        Route::PostInviteRequest {
+                            invite: &invite,
+                            request: &[1],
+                            mac: &[2],
+                            signature: &[3],
+                        },
+                    ),
+                    "get_reveal" => (&nobody, Route::GetReveal { invite: &invite }),
+                    "put_reveal" => (
+                        &SITE,
+                        Route::PutReveal {
+                            invite: &invite,
+                            reveal: &[1],
+                            signature: &[2],
+                        },
+                    ),
+                    _ => (&SITE, Route::DeleteInvite { invite: &invite }),
+                };
+                let (request, expect) = Codec.request(site, &route).unwrap();
+                assert_eq!(
+                    request.url.strip_prefix(SITE.url),
+                    v["request"]["path"].as_str(),
+                    "{name}"
+                );
+                assert_eq!(request.method, v["request"]["method"], "{name}");
+                match Codec.answer(&expect, &response) {
+                    Ok(Answer::Invited { invite }) => {
+                        assert_eq!(raw["invite_id"], b64(invite.as_bytes()))
+                    }
+                    Ok(Answer::Invite(offer)) => {
+                        assert_eq!(raw["offer"], b64(&offer.offer));
+                        assert_eq!(raw["signature"], b64(&offer.signature));
+                        assert_eq!(
+                            raw["mac"].as_str().map(str::to_owned),
+                            offer.mac.as_deref().map(b64)
+                        );
+                        assert_eq!(raw["expires_at"], offer.expires_at);
+                        let requests = offer.requests.unwrap_or_default();
+                        assert_eq!(
+                            raw["requests"].as_array().map_or(0, Vec::len),
+                            requests.len(),
+                            "{name}"
+                        );
+                        for (raw, request) in raw["requests"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .zip(&requests)
+                        {
+                            assert_eq!(raw["request"], b64(&request.request));
+                            assert_eq!(raw["mac"], b64(&request.mac));
+                            assert_eq!(raw["signature"], b64(&request.signature));
+                        }
+                    }
+                    Ok(Answer::Requested { request_hash }) => {
+                        assert_eq!(raw["request_hash"], b64(&request_hash))
+                    }
+                    Ok(Answer::Reveal { reveal, signature }) => {
+                        assert_eq!(
+                            (&raw["reveal"], &raw["signature"]),
+                            (&b64(&reveal).into(), &b64(&signature).into())
+                        );
+                    }
+                    Ok(Answer::Done) => assert!(raw["revealed"] == true || raw["burned"] == true),
+                    Err(Failure::Refused {
+                        code: Some(code), ..
+                    }) => assert_eq!(raw["error"], code),
+                    other => panic!("{name} is not read: {other:?}"),
+                }
+            }
+            "push_register" | "push_state" | "push_remove" | "live_activity" => {
+                let registration = PushRegistration {
+                    target: PushTarget::WebPush {
+                        endpoint: "https://push.example/1".into(),
+                        p256dh: vec![4; 65],
+                        auth: vec![1; 16],
+                    },
+                    level: PushLevel::All,
+                };
+                let activity = LiveActivity {
+                    start: true,
+                    token: "ab".into(),
+                    tag: "t".into(),
+                    environment: "development".into(),
+                    topic: "x".into(),
+                };
+                let route = match route {
+                    "push_register" => Route::PushRegister {
+                        registration: &registration,
+                    },
+                    "push_state" => Route::PushState,
+                    "push_remove" => Route::PushRemove {
+                        endpoint: Some("https://push.example/1"),
+                    },
+                    _ => Route::LiveActivity {
+                        activity: &activity,
+                    },
+                };
+                match read(&route) {
+                    Ok(Answer::Push(state)) => {
+                        let rows = raw["subscriptions"].as_array().unwrap();
+                        assert_eq!(rows.len(), state.subscriptions.len());
+                        for (raw, row) in rows.iter().zip(&state.subscriptions) {
+                            assert_eq!(raw["endpoint"], row.endpoint);
+                            assert_eq!(raw["created_at"], row.created_at);
+                            assert_eq!(raw["level"], format!("{:?}", row.level).to_lowercase());
+                        }
+                        assert_eq!(raw["vapid_public_key"], b64(&state.vapid_public_key));
+                        assert_eq!(raw["apns"], state.apns);
+                    }
+                    Ok(Answer::Removed { deleted }) => assert_eq!(raw["deleted"], deleted),
+                    Ok(Answer::Done) => assert_eq!(raw["registered"], true),
+                    Err(Failure::Refused {
+                        code: Some(code), ..
+                    }) => assert_eq!(raw["error"], code),
+                    other => panic!("{name} is not read: {other:?}"),
+                }
+            }
             other => panic!("{name}: a route this test does not know: {other}"),
         }
     }
     // every route has a vector of the real hub
     let built = [
+        "account",
+        "account_passkey_challenge",
+        "account_usage",
+        "add_passkey",
         "board",
         "board_frontier",
         "chain",
@@ -1014,23 +1447,43 @@ fn what_the_real_hub_answered_is_read_without_loss() {
         "changes",
         "chat",
         "claim",
+        "create_account",
+        "delete_account",
         "delete_file",
+        "delete_invite",
         "delete_share",
         "desk",
         "desk_brief",
         "drop_recovery",
         "get_file",
+        "get_invite",
+        "get_reveal",
         "group_info",
         "group_log",
         "groups_read",
         "joins",
         "key_packages_held",
+        "live_activity",
+        "login",
         "object",
         "open_recovery",
         "outbox",
+        "passkey_challenge",
+        "passkey_login",
+        "post_invite",
+        "post_invite_request",
         "post_share",
+        "push_register",
+        "push_remove",
+        "push_state",
+        "put_email",
         "put_file",
+        "put_kit",
+        "put_password",
+        "put_reveal",
+        "recover",
         "reject",
+        "remove_passkey",
         "room_groups",
         "sealed_keys",
         "sign_out",
@@ -1041,5 +1494,5 @@ fn what_the_real_hub_answered_is_read_without_loss() {
         "wishes",
     ];
     assert_eq!(seen.into_iter().collect::<Vec<_>>(), built);
-    assert!(all.len() >= 65, "{} vectors", all.len());
+    assert!(all.len() >= 105, "{} vectors", all.len());
 }

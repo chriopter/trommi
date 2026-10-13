@@ -1,0 +1,14 @@
+{
+  "answer": "{\"account\":\"b3909710-0275-4714-a504-a872deaddff8\",\"created_at\":1791905314494,\"email\":\"ada-c74b4352cab7@example.com\",\"has_password\":true,\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"kit_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\",\"kit_form\":\"email\",\"passkeys\":[],\"password_copy\":\"AgcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw\",\"revision\":1,\"rooms\":[\"B4-kzSPg2pATW8roHCj5S4LBxwSNPTnY3nKvFiTOvJA\"],\"updated_at\":1791905314494,\"user_handle\":\"s5CXEAJ1RxSlBKhy3q3f-A\"}",
+  "asked": {
+    "route": "account"
+  },
+  "content_range": null,
+  "name": "account",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/account"
+  },
+  "status": 200
+}

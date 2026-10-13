@@ -1,16 +1,17 @@
 {
-  "answer": "{\"after\":5,\"items\":[{\"epoch\":3,\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA\",\"kind\":\"room\",\"leaves\":[\"hxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DM\",\"6ufvPx6ba7rde_M9J9b0UveihGswrYUF_q2MLI6l5hI\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":null,\"stale\":false},{\"epoch\":1,\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us\",\"kind\":\"main\",\"leaves\":[\"hxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DM\",\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\"],\"live\":true,\"parent\":null,\"room_epoch\":1,\"session_id\":\"ElC7OuQGEEX0u-c2_xPLrA\",\"stale\":false}],\"more\":true}",
+  "answer": "{\"after\":5,\"items\":[{\"epoch\":3,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0\",\"kind\":\"room\",\"leaves\":[\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\",\"yt9J0shQ1_xd33ewvnciAqLgTLQ886Rv9EcMmN_ymsI\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":null,\"stale\":false},{\"epoch\":1,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS3k-KibKGh-g9Goc9MM0lGw\",\"kind\":\"main\",\"leaves\":[\"ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA\",\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\"],\"live\":true,\"parent\":null,\"room_epoch\":1,\"session_id\":\"5PiomyhofoPRqHPTDNJRsA\",\"stale\":false}],\"more\":true}",
   "asked": {
     "after": 0,
     "limit": 2,
-    "room": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "room": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0",
     "route": "room_groups"
   },
+  "content_range": null,
   "name": "room-groups-0",
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/rooms/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/groups?after=0&limit=2"
+    "path": "/v1/rooms/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0/groups?after=0&limit=2"
   },
   "status": 200
 }

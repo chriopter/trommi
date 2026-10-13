@@ -1,0 +1,14 @@
+{
+  "answer": "{\"account\":\"b3909710-0275-4714-a504-a872deaddff8\",\"challenge\":\"WvfpYKeU2qEjhL__Uu66nDbD56jrMg5slYzFledai7Q\",\"email\":\"ada-c74b4352cab7@example.com\",\"kit_form\":\"email\",\"user_handle\":\"s5CXEAJ1RxSlBKhy3q3f-A\"}",
+  "asked": {
+    "route": "account_passkey_challenge"
+  },
+  "content_range": null,
+  "name": "account-passkey-challenge",
+  "request": {
+    "body": "{}",
+    "method": "POST",
+    "path": "/v1/account/passkeys/challenge"
+  },
+  "status": 200
+}

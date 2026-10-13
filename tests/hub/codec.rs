@@ -188,12 +188,13 @@ fn the_codec_and_the_real_hub_agree() {
     for text in ["one", "two", "three"] {
         agent.send(&w.hub, &group, &chat(&session, w.ada.id(), text)).ok();
     }
-    let mut cards = vec![];
+    let (mut cards, mut versions) = (vec![], vec![]);
     for urgency in [0, 3] {
         let id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
         let card = object(wire::KIND_VERSION, id, wire::TYPE_CARD, wire::STATE_OPEN, urgency, ZERO32, ZERO32);
         agent.send(&w.hub, &group, &card).ok();
         cards.push(id);
+        versions.push(agent.chain(&group).1);
     }
     agent.send(&w.hub, &group, &register(&random(), "a value")).ok();
 
@@ -229,7 +230,7 @@ fn the_codec_and_the_real_hub_agree() {
         OutboxKind::Commit,
         Some(&group),
         out.epoch,
-        vec![out.commit.clone(), out.group_info.clone(), out.welcome.clone().unwrap_or_default(), key],
+        vec![out.commit.clone(), out.group_info.clone(), out.welcome.clone().unwrap_or_default(), key.clone()],
     );
     let Ok(Answer::Outbox(committed)) = outbox(&rec, "outbox-commit", &e, None) else { panic!("a Commit is taken") };
     assert_eq!(committed.epoch, Some(out.epoch + 1));
@@ -244,6 +245,10 @@ fn the_codec_and_the_real_hub_agree() {
         // (the group's epoch now, for building again)
         assert_eq!(Codec.refusal(&response).and_then(|r| r.epoch), Some(out.epoch + 1));
     }
+    // ---- the SealedKey of the group's epoch again, on its own (the same bytes: another one would be a replay)
+    let e = entry(OutboxKind::SealedKey, Some(&group), out.epoch + 1, vec![key]);
+    let alone = outbox(&rec, "outbox-sealed-key", &e, None);
+    assert!(matches!(alone, Ok(Answer::Outbox(_))), "a SealedKey on its own is stored: {alone:?}");
     // (only the room group relays)
     let room_group = w.room.to_vec();
     for (kind, name, to) in [(OutboxKind::Message, "outbox-message", &group), (OutboxKind::RelayMessage, "outbox-relay", &room_group)] {
@@ -351,6 +356,31 @@ fn the_codec_and_the_real_hub_agree() {
         .collect();
     assert_eq!(streamed, total, "the stream replays what the catch-up of the live sessions reads");
 
+    // ---- an envelope the hub refuses and voids (a human's Chat to nobody): its chain number is used up
+    let (to_nobody, _) = w.ada.envelope(&group, &chat(&session, ZERO32, "to nobody"));
+    let void = entry(OutboxKind::Envelope, Some(&group), w.ada.epoch(&group), vec![to_nobody]);
+    {
+        let (request, expect) = Codec.request(&rec.site(), &Route::Outbox { room: &room, entry: &void, extra: None }).unwrap();
+        let response = rec.send(&request);
+        rec.record("outbox-envelope-voided", &request, asked_entry(&void), &response);
+        assert_eq!(rec.read(&expect, &response), Err(Failure::Refused { status: 403, code: Some("forbidden".into()) }));
+        assert!(Codec.voided(&response));
+        assert!(Codec.refusal(&response).is_some_and(|r| r.voided));
+    }
+
+    // ---- a card is closed: the open list since then names it as settled
+    let closed = object(wire::KIND_VERSION, cards[0], wire::TYPE_CARD, wire::STATE_CLOSED, 0, versions[0], ZERO32);
+    agent.send(&w.hub, &group, &closed).ok();
+    let Ok(Answer::DeskBrief(later)) = rec.ask(
+        "desk-brief-settled",
+        &Route::DeskBrief { since: Some(since), active: false },
+        json!({ "route": "desk_brief", "since": since, "active": false }),
+    ) else {
+        panic!("the open list with a settled card is read")
+    };
+    assert_eq!(later.cards.len(), 1);
+    assert!(matches!(later.settled.as_deref(), Some([one]) if one.as_bytes() == &cards[0]), "{:?}", later.settled);
+
     // ---- without a token: the hub's refusal on a route and on the stream
     rec.token = Some("a-token-the-hub-never-gave".to_owned());
     let refused = rec.ask("changes-unauthorised", &Route::Changes { after: 0, limit: 6, only: Only::All }, json!({ "route": "changes", "after": 0, "limit": 6, "only": "all" }));
@@ -418,6 +448,8 @@ fn signing_in_and_joining_through_the_codec() {
     // ---- a room with two main sessions, some content, and an agent that has not read its Welcome
     let mut agent = w.enrol_agent();
     let (session, group) = w.found_main(&mut [], Some(&mut agent));
+    let (helper, founded, _) = w.found_helper(&mut agent, &session, &[w.ada.id()], &[]);
+    founded.ok();
     let mut other = w.enrol_agent();
     let (_, group2) = w.found_main(&mut [], Some(&mut other));
     for text in ["one", "two", "three", "four"] {
@@ -476,10 +508,14 @@ fn signing_in_and_joining_through_the_codec() {
             break;
         }
     }
-    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.len(), 4);
     assert_eq!(rows[0].kind, GroupRowKind::Room);
     assert_eq!(rows[0].leaves.len(), 2, "the founder and the device that joined");
-    assert!(rows[1..].iter().all(|r| r.kind == GroupRowKind::Main && r.live && r.parent.is_none()));
+    let mains: Vec<_> = rows.iter().filter(|r| r.kind == GroupRowKind::Main).collect();
+    assert!(mains.len() == 2 && mains.iter().all(|r| r.live && r.parent.is_none()));
+    // the helper session names the session it was opened under
+    let helpers: Vec<_> = rows.iter().filter(|r| r.kind == GroupRowKind::Helper).collect();
+    assert!(matches!(&helpers[..], [h] if h.group == group_id(&helper) && h.parent.is_some_and(|p| p.as_bytes() == &session)), "{helpers:?}");
 
     let nowhere: [u8; 48] = [&w.room[..], &random::<16>()[..]].concat().try_into().unwrap();
     let sessions = [group_id(&group), group_id(&group2), group_id(&nowhere)];
@@ -489,6 +525,16 @@ fn signing_in_and_joining_through_the_codec() {
     };
     assert_eq!(read.len(), 3);
     assert_eq!(read[2], Err(Failure::Refused { status: 404, code: Some("not-found".into()) }));
+    // the most one request takes: 64 groups, the two sessions first and 62 that are nowhere
+    let mut many = vec![group_id(&group), group_id(&group2)];
+    many.extend((0..62).map(|_| group_id(&[&w.room[..], &random::<16>()[..]].concat())));
+    let asked = json!({ "route": "groups_read", "groups": many.iter().map(|g| b64(g.as_bytes())).collect::<Vec<_>>() });
+    let Ok(Answer::GroupsRead(full)) = rec.ask("groups-read-64", &Route::GroupsRead { groups: &many }, asked) else {
+        panic!("64 groups are read in one request")
+    };
+    assert_eq!(full.len(), 64);
+    assert!(full[..2].iter().all(Result::is_ok));
+    assert!(full[2..].iter().all(|r| r == &Err(Failure::Refused { status: 404, code: Some("not-found".into()) })));
     let now = dana.room_now();
     let mut joins = Vec::new();
     for (bytes, one) in [&group, &group2].into_iter().zip(&read) {
@@ -578,7 +624,7 @@ fn signing_in_and_joining_through_the_codec() {
 fn the_desk_files_and_the_rest_through_the_codec() {
     use sha2::{Digest, Sha256};
     use trommi_client_core::hub::{ByteRange, DeskOnly, Role, Timeline};
-    use trommi_core::ids::{BoardId, FileId, SessionId, ShareId};
+    use trommi_core::ids::{BoardId, DeviceId, FileId, Hash32, ObjectId, SessionId, ShareId};
 
     let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
     let mut rec = Recorder {
@@ -690,6 +736,18 @@ fn the_desk_files_and_the_rest_through_the_codec() {
     }
     assert_eq!(seen.len(), 6);
     assert!(seen.windows(2).all(|w| w[0] > w[1]), "newest first: {seen:?}");
+    // ---- the Chat of a card
+    let mut about = chat(&session, w.ada.id(), "about the card");
+    about.subject = wire::Subject::Item { timeline_kind: wire::TIMELINE_CHAT, timeline_scope: wire::SCOPE_CARD, timeline_ref: cards[0] };
+    for _ in 0..3 {
+        agent.send(&w.hub, &group, &about).ok();
+    }
+    let card = ObjectId::new(cards[0]);
+    let asked = json!({ "route": "chat", "card": b64(&cards[0]), "before": null, "limit": 2 });
+    let Ok(Answer::Envelopes { items, more }) = rec.ask("chat-card", &Route::Chat { timeline: Timeline::Card(&card), before: None, limit: 2 }, asked) else {
+        panic!("a card's Chat is read")
+    };
+    assert!(items.len() == 2 && more && items[0].change > items[1].change);
     let board_id: [u8; 16] = random();
     let board = BoardId::new(board_id);
     let room_group = w.room.to_vec();
@@ -704,6 +762,26 @@ fn the_desk_files_and_the_rest_through_the_codec() {
     let asked = json!({ "route": "board_frontier", "board": b64(&board_id) });
     let pruned = rec.ask("board-frontier", &Route::BoardFrontier { board: &board, frontier: &[], files: &[], snapshot: None }, asked);
     assert_eq!(pruned, Ok(Answer::Pruned { pruned: 0 }));
+    // a frontier that names the writer's head, declared; then bound to the register value written after it
+    let writer = DeviceId::new(w.ada.id());
+    let head = w.ada.chain(&room_group);
+    let frontier = [(writer, head.0, Hash32::new(head.1))];
+    let writer_id = w.ada.id();
+    let asked_frontier = |snapshot: Option<(u64, [u8; 32])>| {
+        json!({
+            "route": "board_frontier",
+            "board": b64(&board_id),
+            "frontier": [[b64(&writer_id), head.0, b64(&head.1)]],
+            "snapshot": snapshot.map(|(seq, hash)| json!([seq, b64(&hash)])),
+        })
+    };
+    let declared = rec.ask("board-frontier-declared", &Route::BoardFrontier { board: &board, frontier: &frontier, files: &[], snapshot: None }, asked_frontier(None));
+    assert!(matches!(declared, Ok(Answer::Pruned { .. })), "{declared:?}");
+    w.ada.send(&w.hub, &room_group, &register(&random(), "snapshot")).ok();
+    let value = w.ada.chain(&room_group);
+    let route = Route::BoardFrontier { board: &board, frontier: &frontier, files: &[], snapshot: Some((value.0, Hash32::new(value.1))) };
+    let bound = rec.ask("board-frontier-snapshot", &route, asked_frontier(Some(value)));
+    assert!(matches!(bound, Ok(Answer::Pruned { .. })), "{bound:?}");
 
     // ---- the sealed keys
     let asked = json!({ "route": "sealed_keys", "after": 0, "limit": 2 });
@@ -736,4 +814,264 @@ fn the_desk_files_and_the_rest_through_the_codec() {
     assert!(expires_at > trommi_hub::util::now());
     let asked = json!({ "route": "drop_recovery", "room": b64(&w.room), "recovery": b64(&id) });
     assert_eq!(rec.ask("recovery-drop", &Route::DropRecovery { room: &room, recovery: &id }, asked), Ok(Answer::Dropped { dropped: true }));
+}
+
+#[test]
+fn the_account_invites_and_push_through_the_codec() {
+    use sha2::{Digest, Sha256};
+    use trommi_client_core::hub::{
+        AccountProof, Kdf, KdfValue, KitForm, KitPart, LiveActivity, NewAccount, NewPassword, PushLevel, PushRegistration, PushTarget,
+    };
+    use trommi_core::ids::InviteId;
+
+    let w = World::new();
+    let mut rec = Recorder {
+        port: w.hub.port,
+        url: w.hub.url.clone(),
+        token: w.ada.token.clone(),
+        write: std::env::var("TROMMI_HUB_VECTORS").as_deref() == Ok("write"),
+    };
+    let token = rec.token.clone();
+    let copy = |mark: u8| {
+        let mut c = [mark; 61];
+        c[0] = 2;
+        c
+    };
+    let kdf = || {
+        Kdf(vec![
+            ("alg".into(), KdfValue::Text("argon2id".into())),
+            ("m".into(), KdfValue::Number(65536)),
+            ("p".into(), KdfValue::Number(1)),
+            ("t".into(), KdfValue::Number(3)),
+            ("v".into(), KdfValue::Number(1)),
+        ])
+    };
+    let route = |name: &str| json!({ "route": name });
+
+    // ---- sign-up with an e-mail and a password, the account's view and usage
+    let email = format!("ada-{}@example.com", trommi_hub::util::hex(&random::<6>()));
+    let (auth, kit_auth): ([u8; 32], [u8; 32]) = (random(), random());
+    let account = NewAccount {
+        email: Some(email.clone()),
+        kit: KitPart { auth_key: kit_auth, sealed_copy: copy(9) },
+        password: Some(NewPassword { auth_key: auth, sealed_copy: copy(7), kdf: kdf() }),
+        passkey: None,
+    };
+    let created = rec.ask("account-create", &Route::CreateAccount { account: &account }, route("create_account"));
+    let Ok(Answer::Account(view)) = created else { panic!("an account is made: {created:?}") };
+    assert_eq!((view.email.as_deref(), view.kit_form, view.has_password, view.revision), (Some(email.as_str()), KitForm::Email, true, 1));
+    assert_eq!((view.kit_copy, view.password_copy, view.kdf.clone(), view.rooms.len()), (copy(9), Some(copy(7)), Some(kdf()), 1));
+    let Ok(Answer::Account(again)) = rec.ask("account", &Route::Account, route("account")) else { panic!("the account is read") };
+    assert_eq!(again, view);
+    let Ok(Answer::Usage(usage)) = rec.ask("account-usage", &Route::AccountUsage, route("account_usage")) else {
+        panic!("the usage is read")
+    };
+    assert_eq!((usage.rooms, usage.devices), (1, 1));
+
+    // ---- logging in (no token): by e-mail and by id, with a wrong key, with the kit
+    rec.token = None;
+    let asked = |name: &str| json!({ "route": name });
+    let Ok(Answer::Login(login)) = rec.ask("account-login", &Route::Login { account: &email, auth_key: &auth }, asked("login")) else {
+        panic!("a login is answered")
+    };
+    assert_eq!((login.rooms.len(), login.rooms[0].room.as_bytes(), login.rooms[0].sealed_copy), (1, &w.room, copy(7)));
+    assert_eq!((login.account.as_str(), login.email.as_deref(), login.kdf), (view.account.as_str(), Some(email.as_str()), Some(kdf())));
+    let by_id = rec.ask("", &Route::Login { account: &view.account, auth_key: &auth }, json!({}));
+    assert!(matches!(by_id, Ok(Answer::Login(_))));
+    let wrong = rec.ask("account-login-wrong", &Route::Login { account: &email, auth_key: &[1; 32] }, asked("login"));
+    assert_eq!(wrong, Err(Failure::Refused { status: 401, code: Some("wrong-login".into()) }));
+    let Ok(Answer::Login(recovered)) = rec.ask("account-recover", &Route::Recover { account: &email, auth_key: &kit_auth }, asked("recover")) else {
+        panic!("a recovery login is answered")
+    };
+    assert_eq!(recovered.rooms[0].sealed_copy, copy(9));
+    let Ok(Answer::PasskeyChallenge(open)) = rec.ask("passkey-challenge", &Route::PasskeyChallenge, asked("passkey_challenge")) else {
+        panic!("a passkey challenge is handed out")
+    };
+    assert!(open.kit_form.is_none() && open.account != view.account);
+
+    // ---- a new kit and a new password, each with the way in of now proved
+    rec.token = token.clone();
+    let Ok(Answer::PasskeyChallenge(own)) =
+        rec.ask("account-passkey-challenge", &Route::AccountPasskeyChallenge, asked("account_passkey_challenge"))
+    else {
+        panic!("the account's passkey challenge is handed out")
+    };
+    assert_eq!((own.account.as_str(), own.user_handle, own.kit_form), (view.account.as_str(), view.user_handle, Some(KitForm::Email)));
+    let new_kit: [u8; 32] = random();
+    let proof = AccountProof::Password { auth_key: auth };
+    let kit = KitPart { auth_key: new_kit, sealed_copy: copy(5) };
+    let revised = rec.ask("account-put-kit", &Route::PutKit { kit: &kit, revision: 1, proof: &proof }, asked("put_kit"));
+    assert_eq!(revised, Ok(Answer::Revision { revision: 2 }));
+    let stale = rec.ask("account-put-kit-stale", &Route::PutKit { kit: &kit, revision: 1, proof: &proof }, asked("put_kit"));
+    assert_eq!(stale, Err(Failure::Refused { status: 409, code: Some("account-changed".into()) }));
+    let new_auth: [u8; 32] = random();
+    let password = NewPassword { auth_key: new_auth, sealed_copy: copy(6), kdf: kdf() };
+    let by_kit = AccountProof::Kit { auth_key: new_kit };
+    let revised = rec.ask("account-put-password", &Route::PutPassword { password: &password, revision: 2, proof: &by_kit }, asked("put_password"));
+    assert_eq!(revised, Ok(Answer::Revision { revision: 3 }));
+
+    // ---- an invite: the Offer, a Request without a token, the Reveal; and one that is burned
+    let newcomer = Dev::new();
+    let post_offer = |rec: &Recorder, name: &str| -> (InviteId, Vec<u8>, [u8; 32]) {
+        let (nonce, invite_id): ([u8; 32], [u8; 16]) = (random(), random());
+        let (room_epoch, room_state) = w.ada.room_now();
+        let offer = wire::Offer {
+            room_id: w.room,
+            invite_id,
+            role: 1,
+            session_id: ZERO16,
+            expires_at: trommi_hub::util::now() + 600_000,
+            commitment: enc::ref_hash("Trommi Invite Commitment", &[&invite_id[..], &nonce[..]].concat()),
+            inviter: w.ada.id(),
+            room_epoch,
+            room_state,
+        }
+        .bytes();
+        let signature = w.ada.sign("TrommiInviteOffer", &offer);
+        let posted = rec.ask(name, &Route::PostInvite { offer: &offer, signature: &signature, mac: &[9; 32] }, json!({ "route": "post_invite" }));
+        assert_eq!(posted, Ok(Answer::Invited { invite: InviteId::new(invite_id) }), "an Offer is published");
+        (InviteId::new(invite_id), offer, nonce)
+    };
+    let (invite, offer, nonce) = post_offer(&rec, "invite-post");
+    let asked_invite = |name: &str, invite: &InviteId| json!({ "route": name, "invite": b64(invite.as_bytes()) });
+    rec.token = None;
+    let Ok(Answer::Invite(seen)) = rec.ask("invite-get", &Route::GetInvite { invite: &invite }, asked_invite("get_invite", &invite)) else {
+        panic!("an invite is read")
+    };
+    assert_eq!((&seen.offer, seen.mac.as_deref(), seen.requests.is_none()), (&offer, Some(&[9u8; 32][..]), true));
+    let request = wire::InviteRequest {
+        room_id: w.room,
+        invite_id: *invite.as_bytes(),
+        hub: w.hub.url.as_bytes().to_vec(),
+        role: 1,
+        key_package: newcomer.key_package(false),
+        offer_hash: enc::ref_hash("Trommi Invite Offer", &offer),
+    }
+    .bytes();
+    let mac = Sha256::digest([&random::<32>()[..], &request[..]].concat()).to_vec();
+    let signed = [&request[..], &mac[..]].concat();
+    let signature = newcomer.sign("TrommiInviteRequest", &signed);
+    let route_request = Route::PostInviteRequest { invite: &invite, request: &request, mac: &mac, signature: &signature };
+    let Ok(Answer::Requested { request_hash }) = rec.ask("invite-request", &route_request, asked_invite("post_invite_request", &invite)) else {
+        panic!("a Request is taken")
+    };
+    assert_eq!(request_hash, enc::ref_hash("Trommi Invite Request", &signed));
+    let early = rec.ask("invite-reveal-early", &Route::GetReveal { invite: &invite }, asked_invite("get_reveal", &invite));
+    assert_eq!(early, Err(Failure::Refused { status: 404, code: Some("not-found".into()) }));
+    rec.token = token.clone();
+    let Ok(Answer::Invite(seen)) = rec.ask("invite-get-requests", &Route::GetInvite { invite: &invite }, asked_invite("get_invite", &invite)) else {
+        panic!("the inviter reads the Requests")
+    };
+    assert!(matches!(seen.requests.as_deref(), Some([one]) if one.request == request && one.mac == mac));
+    let reveal = wire::Reveal { invite_id: *invite.as_bytes(), nonce, request_hash }.bytes();
+    let signature = w.ada.sign("TrommiInviteReveal", &reveal);
+    let put = rec.ask("invite-put-reveal", &Route::PutReveal { invite: &invite, reveal: &reveal, signature: &signature }, asked_invite("put_reveal", &invite));
+    assert_eq!(put, Ok(Answer::Done));
+    rec.token = None;
+    let got = rec.ask("invite-reveal", &Route::GetReveal { invite: &invite }, asked_invite("get_reveal", &invite));
+    assert_eq!(got, Ok(Answer::Reveal { reveal, signature }));
+    rec.token = token.clone();
+    let (burned, _, _) = post_offer(&rec, "");
+    assert_eq!(rec.ask("invite-delete", &Route::DeleteInvite { invite: &burned }, asked_invite("delete_invite", &burned)), Ok(Answer::Done));
+
+    // ---- push: a registration, the list, its removal
+    let key = p256::SecretKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    let point = p256::elliptic_curve::sec1::ToEncodedPoint::to_encoded_point(&key.public_key(), false);
+    let endpoint = "http://127.0.0.1:9/push/1".to_owned();
+    let registration = PushRegistration {
+        target: PushTarget::WebPush { endpoint: endpoint.clone(), p256dh: point.as_bytes().to_vec(), auth: vec![1; 16] },
+        level: PushLevel::Knocking,
+    };
+    assert_eq!(rec.ask("push-register", &Route::PushRegister { registration: &registration }, asked("push_register")), Ok(Answer::Done));
+    let Ok(Answer::Push(state)) = rec.ask("push-state", &Route::PushState, asked("push_state")) else { panic!("the registrations are listed") };
+    assert_eq!((state.subscriptions.len(), state.vapid_public_key.len()), (1, 65));
+    assert_eq!((state.subscriptions[0].endpoint.as_str(), state.subscriptions[0].level), (endpoint.as_str(), PushLevel::Knocking));
+    let activity = LiveActivity {
+        start: true,
+        token: "ab".repeat(32),
+        tag: "desk".into(),
+        environment: "development".into(),
+        topic: "com.trommi.app.push-type.liveactivity".into(),
+    };
+    let live = rec.ask("live-activity", &Route::LiveActivity { activity: &activity }, asked("live_activity"));
+    assert!(matches!(live, Ok(Answer::Done) | Err(Failure::Refused { code: Some(_), .. })), "{live:?}");
+    assert_eq!(rec.ask("push-remove", &Route::PushRemove { endpoint: Some(&endpoint) }, asked("push_remove")), Ok(Answer::Removed { deleted: 1 }));
+    assert_eq!(rec.ask("", &Route::PushRemove { endpoint: None }, json!({})), Ok(Answer::Removed { deleted: 0 }));
+
+    // ---- the account is deleted, with the password of now
+    let wrong = rec.ask("account-delete-wrong", &Route::DeleteAccount { proof: &proof }, asked("delete_account"));
+    assert_eq!(wrong, Err(Failure::Refused { status: 401, code: Some("wrong-login".into()) }));
+    // (a wrong proof makes its source wait: told as "not now" with the wait, then the hub's clock moves on)
+    let proof = AccountProof::Password { auth_key: new_auth };
+    let early = rec.ask("account-delete-wait", &Route::DeleteAccount { proof: &proof }, asked("delete_account"));
+    assert_eq!(early, Err(Failure::NotNow { status: 429, retry_after_ms: Some(1000) }));
+    w.hub.clock(2000);
+    assert_eq!(rec.ask("account-delete", &Route::DeleteAccount { proof: &proof }, asked("delete_account")), Ok(Answer::Done));
+
+    // ---- an account whose only way in is a passkey, made without an e-mail; signing in with the passkey
+    use common::passkey::{Authenticator, ORIGIN, RP, UP_UV};
+    use trommi_client_core::hub::{PasskeyAssertion, PasskeyRegistration};
+    let w = World::new();
+    rec = Recorder { port: w.hub.port, url: w.hub.url.clone(), token: None, write: rec.write };
+    let token = w.ada.token.clone();
+    let registration = |a: &Authenticator, challenge: &[u8], mark: u8| PasskeyRegistration {
+        attestation_object: a.attestation(RP, UP_UV),
+        client_data_json: Authenticator::client_data("webauthn.create", challenge, ORIGIN),
+        sealed_copy: copy(mark),
+        transports: Some(vec!["internal".into()]),
+    };
+    let key = Authenticator::new();
+    let Ok(Answer::PasskeyChallenge(start)) = rec.ask("", &Route::PasskeyChallenge, json!({})) else { panic!("a passkey challenge is handed out") };
+    let kit_auth: [u8; 32] = random();
+    let account = NewAccount {
+        email: None,
+        kit: KitPart { auth_key: kit_auth, sealed_copy: copy(9) },
+        password: None,
+        passkey: Some(registration(&key, &start.challenge, 3)),
+    };
+    rec.token = token.clone();
+    let created = rec.ask("account-create-passkey", &Route::CreateAccount { account: &account }, route("create_account"));
+    let Ok(Answer::Account(view)) = created else { panic!("an account with a passkey is made: {created:?}") };
+    assert_eq!((view.email.as_deref(), view.kit_form, view.has_password, view.account.as_str()), (None, KitForm::Id, false, start.account.as_str()));
+    assert!(matches!(&view.passkeys[..], [one] if one.credential_id == key.credential_id && one.sealed_copy == copy(3)));
+    rec.token = None;
+    let Ok(Answer::PasskeyChallenge(open)) = rec.ask("", &Route::PasskeyChallenge, json!({})) else { panic!("a passkey challenge is handed out") };
+    let client = Authenticator::client_data("webauthn.get", &open.challenge, ORIGIN);
+    let (data, signature) = key.assertion(RP, UP_UV, &client);
+    let assertion = PasskeyAssertion {
+        credential_id: key.credential_id.clone(),
+        authenticator_data: data,
+        client_data_json: client,
+        signature,
+        user_handle: Some(view.user_handle.to_vec()),
+    };
+    let login = rec.ask("account-passkey-login", &Route::PasskeyLogin { assertion: &assertion }, asked("passkey_login"));
+    let Ok(Answer::Login(login)) = login else { panic!("a passkey signs in: {login:?}") };
+    assert_eq!((login.rooms.len(), login.rooms[0].sealed_copy, login.account.as_str()), (1, copy(3), view.account.as_str()));
+
+    // ---- the account gets its e-mail (once), with the kit made anew under it
+    rec.token = token.clone();
+    let email = format!("ada-{}@example.org", trommi_hub::util::hex(&random::<6>()));
+    let kit = KitPart { auth_key: random(), sealed_copy: copy(4) };
+    let by_kit = AccountProof::Kit { auth_key: kit_auth };
+    let put = Route::PutEmail { email: &email, kit: &kit, revision: view.revision, proof: &by_kit };
+    assert_eq!(rec.ask("account-put-email", &put, asked("put_email")), Ok(Answer::Revision { revision: view.revision + 1 }));
+    let by_kit = AccountProof::Kit { auth_key: kit.auth_key };
+    let again = Route::PutEmail { email: &email, kit: &kit, revision: view.revision + 1, proof: &by_kit };
+    assert_eq!(rec.ask("account-put-email-again", &again, asked("put_email")), Err(Failure::Refused { status: 403, code: Some("forbidden".into()) }));
+
+    // ---- a second passkey, added with a challenge of this account, and removed
+    let second = Authenticator::new();
+    let Ok(Answer::PasskeyChallenge(own)) = rec.ask("", &Route::AccountPasskeyChallenge, json!({})) else {
+        panic!("the account's passkey challenge is handed out")
+    };
+    assert_eq!((own.email.as_deref(), own.kit_form), (Some(email.as_str()), Some(KitForm::Email)));
+    let passkey = registration(&second, &own.challenge, 6);
+    let added = rec.ask("account-passkey-add", &Route::AddPasskey { passkey: &passkey, proof: &by_kit }, asked("add_passkey"));
+    assert!(matches!(&added, Ok(Answer::PasskeyAdded { credential_id, .. }) if credential_id == &second.credential_id), "a passkey is added");
+    let Ok(Answer::Account(both)) = rec.ask("account-passkeys", &Route::Account, route("account")) else { panic!("the account is read") };
+    assert_eq!((both.passkeys.len(), both.email.as_deref()), (2, Some(email.as_str())));
+    let asked_remove = json!({ "route": "remove_passkey", "credential_id": b64(&second.credential_id) });
+    let removed = rec.ask("account-passkey-remove", &Route::RemovePasskey { credential_id: &second.credential_id, proof: &by_kit }, asked_remove);
+    assert_eq!(removed, Ok(Answer::Done));
 }

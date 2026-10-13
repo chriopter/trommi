@@ -1,0 +1,14 @@
+{
+  "answer": "{\"deleted\":1}",
+  "asked": {
+    "route": "push_remove"
+  },
+  "content_range": null,
+  "name": "push-remove",
+  "request": {
+    "body": "{\"endpoint\":\"http://127.0.0.1:9/push/1\"}",
+    "method": "DELETE",
+    "path": "/v1/push"
+  },
+  "status": 200
+}

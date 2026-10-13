@@ -26,25 +26,31 @@
 //!   characters, an outbox entry without its parts) is also [`Failure::BadAnswer`], its text beginning
 //!   "the request:"; nothing is sent.
 //!
-//! Every [`Route`] is built: sign-in, catch-up, the live stream, the Desk's open list, the outbox, the delivery
-//! service's reads and joins. The account, file, share, invite and push routes follow as further variants.
+//! Every route a human device's app uses is a [`Route`]: sign-in, catch-up, the live stream, the Desk, the
+//! outbox, the delivery service's reads and joins, content, files and Share links, invites, the account, push.
+//! Not here, because the app core never asks them: an agent's lease (`POST /v1/link`) and the two routes of the
+//! notification extension that go by a push ticket (`GET /v1/push-envelope`, `GET /v1/push-changes`).
 
+mod account;
 mod changes;
 mod codec;
 mod content;
 mod desk;
 mod files;
 mod groups;
+mod invites;
 mod items;
 mod json;
 pub mod limits;
 mod outbox;
+mod push;
 mod refusal;
 mod request;
 mod signin;
 pub mod stream;
 mod types;
 
+pub use account::{account_copies_body, new_account_body};
 pub use codec::{Codec, Expect};
 pub use refusal::{refusal, status_of, Refusal};
 pub use request::TIMEOUT_MS;
@@ -69,7 +75,8 @@ pub enum Failure {
     BadAnswer { why: &'static str },
 }
 
-/// Sorts an HTTP answer: `Ok` for 2xx, else its failure. Reads `Retry-After` in seconds (an HTTP date is ignored).
+/// Sorts an HTTP answer: `Ok` for 2xx, else its failure. Reads `Retry-After` in seconds (an HTTP date is ignored);
+/// an answer without that header may name the wait as `retry_after` in the hub's own refusal.
 pub fn classify(response: &HttpResponse) -> Result<(), Failure> {
     let status = response.status;
     if (200..300).contains(&status) {
@@ -80,11 +87,12 @@ pub fn classify(response: &HttpResponse) -> Result<(), Failure> {
             why: "a redirect, or a status that is no answer",
         });
     }
-    let retry_after_ms = response
-        .header("retry-after")
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .map(|s| s.saturating_mul(1000));
     if status == 408 || status == 429 || status >= 500 {
+        // (the header; without one, the wait the hub's own refusal names in its body)
+        let retry_after_ms = match response.header("retry-after") {
+            Some(v) => v.trim().parse::<u64>().ok().map(|s| s.saturating_mul(1000)),
+            None => refusal(response).and_then(|r| r.retry_after_ms),
+        };
         return Err(Failure::NotNow {
             status,
             retry_after_ms,
@@ -139,6 +147,17 @@ mod tests {
             Err(Failure::NotNow {
                 status: 429,
                 retry_after_ms: Some(7000)
+            })
+        );
+        assert_eq!(
+            classify(&answer(
+                429,
+                &[],
+                r#"{"error":"rate-limited","message":"x","retry_after":3}"#
+            )),
+            Err(Failure::NotNow {
+                status: 429,
+                retry_after_ms: Some(3000)
             })
         );
         assert_eq!(
