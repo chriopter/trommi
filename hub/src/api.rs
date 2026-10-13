@@ -895,19 +895,38 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                 .as_array()
                 .filter(|l| !l.is_empty() && l.len() <= MAX_COMMITS_AT_ONCE)
                 .ok_or_else(|| refuse("bad-format", format!("groups: 1 to {MAX_COMMITS_AT_ONCE} group ids")))?;
-            let groups = list
-                .iter()
-                .map(|g| g.as_str().ok_or_else(|| refuse("bad-format", "a group id, base64url")).and_then(group_id))
-                .collect::<Res<Vec<_>>>()?;
+            let mut groups: Vec<Vec<u8>> = Vec::with_capacity(list.len());
+            for g in list {
+                let group = g.as_str().ok_or_else(|| refuse("bad-format", "a group id, base64url")).and_then(group_id)?;
+                if groups.contains(&group) {
+                    return Err(refuse("bad-format", "groups: each group once"));
+                }
+                groups.push(group);
+            }
             app.read(|x| {
                 let auth = rq.auth(app, x.c)?;
+                // One budget for the whole answer, as every other answer has it (8 MiB; the first group always goes
+                // in). Once a group does not fit, it and every group after it are answered `too-large` in their
+                // place, unread: the asker reads them alone.
+                let (mut bytes, mut full) = (0usize, false);
                 let out: Vec<Value> = groups
                     .iter()
-                    .map(|group| {
+                    .enumerate()
+                    .map(|(i, group)| {
                         let one = (|| -> Res<Value> {
+                            if full {
+                                return Err(refuse("too-large", "the answer is full: read this group alone"));
+                            }
                             let info = delivery::info(x.c, &auth, group, None)?;
                             let founding = if info["epoch"].as_u64() == Some(0) { Value::Null } else { delivery::info(x.c, &auth, group, Some(0))? };
                             let log = delivery::log(x.c, &auth, group, 0, 256, true)?;
+                            let size = [&info["group_info"], &founding["group_info"]].iter().map(|v| v.as_str().map_or(0, str::len)).sum::<usize>()
+                                + log["items"].as_array().map_or(0, |items| items.iter().map(|item| item["bytes"].as_str().map_or(0, str::len) + 200).sum());
+                            if bytes + size > content::ANSWER_BYTES && i > 0 {
+                                full = true;
+                                return Err(refuse("too-large", "the answer is full: read this group alone"));
+                            }
+                            bytes += size;
                             Ok(json!({ "group": b64(group), "info": info, "founding": founding, "log": log }))
                         })();
                         one.unwrap_or_else(|refused| {

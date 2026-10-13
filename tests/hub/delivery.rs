@@ -2824,4 +2824,56 @@ fn several_groups_are_read_in_one_request_each_in_its_place() {
     assert_eq!(groups[1]["group"], b64(&nowhere));
     assert_eq!(groups[1]["error"], "not-found", "{groups:?}");
     w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [] })).refused(400, "bad-format");
+    // each group once: 64 times the same group is not 64 answers
+    w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&w.room), b64(&w.room)] })).refused(400, "bad-format");
+}
+
+/// The whole answer of `POST /v1/groups/read` has one budget (8 MiB, the first group always goes in): a group that
+/// no longer fits and those after it are answered `too-large` in their place, for a reading of their own.
+#[test]
+fn groups_read_together_share_one_answer_budget() {
+    let mut w = World::new();
+    let room = w.room;
+    // three sessions, each with one Commit of 2 MiB in its log (written into the hub's database: no real Commit is
+    // that large with a handful of devices)
+    let sessions: Vec<Vec<u8>> = (0..3)
+        .map(|_| {
+            let mut agent = w.enrol_agent();
+            w.found_main(&mut [], Some(&mut agent)).1
+        })
+        .collect();
+    {
+        let db = rusqlite::Connection::open(w.hub.dir.join("hub.db")).unwrap();
+        db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+        for group in &sessions {
+            let fat = db.execute("UPDATE group_log SET bytes = zeroblob(2 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&group[..]]).unwrap();
+            assert_eq!(fat, 1);
+        }
+    }
+    let ids: Vec<String> = sessions.iter().map(|g| b64(g)).chain([b64(&room)]).collect();
+    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": ids })).ok();
+    let groups = got["groups"].as_array().expect("groups");
+    assert_eq!(groups.len(), 4);
+    // 2 MiB are 2.7 MiB of base64: two fit, the third does not, and nothing after it is read into this answer
+    assert!(groups[0]["log"].is_object() && groups[1]["log"].is_object(), "the first two fit: {:?} {:?}", groups[0]["error"], groups[1]["error"]);
+    for (i, late) in groups[2..].iter().enumerate() {
+        assert_eq!(late["error"], "too-large", "group {} of an answer that is full", i + 2);
+        assert_eq!(late["status"], 413);
+        assert_eq!(late["group"], ids[i + 2], "in its place");
+        assert!(late.get("log").is_none());
+    }
+    let sent: usize = groups.iter().map(|g| g.to_string().len()).sum();
+    assert!(sent <= trommi_hub::content::ANSWER_BYTES + (64 << 10), "{sent} bytes in one answer");
+    // a group left out is read alone, whole
+    let alone = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[2]] })).ok();
+    assert!(alone["groups"][0]["log"]["items"].as_array().is_some_and(|l| !l.is_empty()));
+    // the first group always goes in, however large
+    {
+        let db = rusqlite::Connection::open(w.hub.dir.join("hub.db")).unwrap();
+        db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+        db.execute("UPDATE group_log SET bytes = zeroblob(7 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&sessions[0][..]]).unwrap();
+    }
+    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[3]] })).ok();
+    assert!(got["groups"][0]["log"].is_object());
+    assert_eq!(got["groups"][1]["error"], "too-large");
 }
