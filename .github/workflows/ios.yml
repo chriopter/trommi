@@ -30,10 +30,12 @@ on:
 
 permissions: {}
 
-# A pull request: one run at a time, a newer commit cuts the older run off. A delivery is its own group (deploy_ios.yml
-# keeps its uploads one after another).
+# A pull request: one run at a time, a newer commit cuts the older run off.
+# Main (after build.yml): one run at a time, and of the runs waiting only the newest; a started run is never cut off.
+# A replaced run's delivery is not lost: the newest run delivers when its release's iOS inputs differ from those last
+# delivered to TestFlight (.github/scripts/ios_delivered.sh), also when its release itself leaves iOS unchanged.
 concurrency:
-  group: ios-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: ios-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -55,6 +57,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      # main: the runs of ios.yml, for the iOS inputs last delivered (ios_delivered.sh)
+      actions: read
     outputs:
       # the client check runs
       ios: ${{ steps.pr.outputs.ios || steps.main.outputs.deliver }}
@@ -133,6 +137,11 @@ jobs:
           if jq -e '.changed.ios == true' "$dir/manifest.json" > /dev/null; then
             echo "deliver=true" >> "$GITHUB_OUTPUT"
             echo "- v$version marks iOS changed: built and delivered to TestFlight" >> "$GITHUB_STEP_SUMMARY"
+          elif delivered=$(sh .github/scripts/ios_delivered.sh) && [ -n "$delivered" ] \
+            && ! jq -e --arg s "$delivered" '.inputs.ios == $s' "$dir/manifest.json" > /dev/null; then
+            # an earlier release's iOS change was not delivered (its run was replaced while waiting, or failed)
+            echo "deliver=true" >> "$GITHUB_OUTPUT"
+            echo "- v$version leaves iOS unchanged, but TestFlight has older iOS inputs: built and delivered" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "- v$version leaves iOS unchanged: nothing to deliver" >> "$GITHUB_STEP_SUMMARY"
           fi

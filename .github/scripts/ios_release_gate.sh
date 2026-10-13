@@ -5,7 +5,9 @@
 #                                ios.yml starts; the wait stays for a run started while it is not), then `verify`
 #   ios_release_gate.sh verify   the release v$VERSION is published, its manifest's signature holds
 #                                (release/public-key.pem), it is v$VERSION of $COMMIT in this repository, and its iOS
-#                                inputs are this commit's (.github/scripts/inputs.sh) and marked changed
+#                                inputs are this commit's (.github/scripts/inputs.sh) and marked changed, or differ
+#                                from those last delivered (.github/scripts/ios_delivered.sh: an earlier release's
+#                                delivery did not happen)
 # Exit 0: upload. Anything else: nothing is uploaded (a release that failed, was skipped or refused its tag).
 # Environment: GH_TOKEN (actions: read, contents: read), GITHUB_REPOSITORY, RUN_ID (the build.yml run; wait only),
 # VERSION, COMMIT, RUNNER_TEMP. Needs gh, jq, openssl and a checkout of COMMIT (release/sign.sh, inputs.sh).
@@ -64,6 +66,13 @@ jq -e --arg r "$GITHUB_REPOSITORY" --arg t "$tag" --arg v "$VERSION" --arg c "$C
   "$dir/manifest.json" > /dev/null || { echo "::error::the manifest of $tag is not $tag of $COMMIT in this repository"; exit 1; }
 sum=$(sh "$here/inputs.sh" "$COMMIT" | sed -n 's/^ios //p')
 [ -n "$sum" ] || { echo "::error::no iOS inputs for $COMMIT"; exit 1; }
-jq -e --arg s "$sum" '.inputs.ios == $s and .changed.ios == true' "$dir/manifest.json" > /dev/null \
-  || { echo "::error::$tag does not release this iOS app (inputs or changed differ): nothing is uploaded"; exit 1; }
+jq -e --arg s "$sum" '.inputs.ios == $s' "$dir/manifest.json" > /dev/null \
+  || { echo "::error::$tag does not release this iOS app (its iOS inputs differ): nothing is uploaded"; exit 1; }
+# marked changed, or (an earlier release's delivery did not happen) other iOS inputs than those last delivered
+if ! jq -e '.changed.ios == true' "$dir/manifest.json" > /dev/null; then
+  delivered=$(sh "$here/ios_delivered.sh")
+  [ -n "$delivered" ] && [ "$delivered" != "$sum" ] \
+    || { echo "::error::$tag leaves iOS unchanged and TestFlight has these iOS inputs already: nothing is uploaded"; exit 1; }
+  echo "$tag leaves iOS unchanged, but TestFlight has older iOS inputs ($delivered): this app catches up"
+fi
 echo "release $tag: signed, of $COMMIT, iOS inputs $sum: the upload may go"

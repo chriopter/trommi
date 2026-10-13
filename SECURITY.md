@@ -83,7 +83,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - The iOS app is signed by Apple and ships through TestFlight.
 - The Mac app for direct download (`Trommi-macOS.dmg` on the release, `mac.yml`) is signed with the team's Developer
   ID certificate with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start.
-  It is built only for a published release whose signature checks out and which marks the app changed, and never
+  It is built only for a published release whose signature checks out and which marks the app changed (or brings a
+  change an earlier release's Mac build did not deliver), and never
   without the certificate and notarization (the job is skipped instead). It is added to the release after the release
   is published, so it is not in the signed manifest; it carries a GitHub build attestation instead. Only the job that
   builds it sees the certificate, in an environment of its own (`mac`).
@@ -126,7 +127,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - A pull request runs quick checks only (tests, clippy, the web app's build), without secrets. `main` runs the full
   builds; when one fails, an issue is opened and nothing is released or delivered. The iOS app is checked and built in
   a workflow of its own (`ios.yml`) after the release, so it never holds the others back; when that fails, an issue is
-  opened and the app is not delivered, and it ships only a published release that marks it changed.
+  opened and the app is not delivered, and it ships only a published release that marks it changed (or that brings a
+  change an earlier release did not deliver: a waiting delivery is replaced by the newest one).
 - `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
   The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.

@@ -5,7 +5,8 @@
 #                                  (release/public-key.pem), v$VERSION of this repository (and of $COMMIT when set),
 #                                  its iOS inputs those of its commit (.github/scripts/inputs.sh: the Mac app is built
 #                                  from the same paths). Writes to GITHUB_OUTPUT: mode (build: the release marks the
-#                                  app changed; carry: it does not; none: no such release), commit, inputs_ios
+#                                  app changed, or the newest Mac app on a release is of other iOS inputs, so an
+#                                  earlier change got none; carry: neither; none: no such release), commit, inputs_ios
 #   mac_release.sh prepare <dir>   <dir> holds Trommi-macOS.dmg and its .sha256 from the Mac: checked, `check` again
 #                                  (mode build, of $COMMIT), and Trommi-macOS.json written beside them (the release,
 #                                  the commit, the iOS inputs, the file's SHA-256 and size)
@@ -60,7 +61,38 @@ check() {
   [ -n "$release_inputs" ] || { echo "::error::no iOS inputs for $release_commit"; exit 1; }
   jq -e --arg s "$release_inputs" '.inputs.ios == $s' "$gate/manifest.json" > /dev/null \
     || { echo "::error::$tag does not name the iOS inputs of its commit"; exit 1; }
-  if jq -e '.changed.ios == true' "$gate/manifest.json" > /dev/null; then release_mode=build; else release_mode=carry; fi
+  if jq -e '.changed.ios == true' "$gate/manifest.json" > /dev/null; then
+    release_mode=build
+  else
+    release_mode=carry
+    # An earlier release's change of the app that got no Mac app (its run was replaced while it waited, or failed):
+    # the newest Mac app on a release is of other iOS inputs. Then this release builds it.
+    newest_mac
+    if [ -n "$mac_from" ] && [ "$mac_inputs" != "$release_inputs" ]; then
+      echo "the newest Mac app ($mac_from) is of other iOS inputs than $tag's: $tag builds the app"
+      release_mode=build
+    fi
+  fi
+}
+
+# newest_mac: sets mac_from (the newest release before v$VERSION that holds a Mac app, or empty) and mac_inputs (the
+# iOS inputs its Trommi-macOS.json names)
+newest_mac() {
+  local earlier meta=$RUNNER_TEMP/mac-newest
+  mac_from='' mac_inputs=''
+  while read -r earlier; do
+    [ "$earlier" -lt "$VERSION" ] || continue
+    if gh release view "v$earlier" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "$name.json"; then
+      mac_from=v$earlier
+      break
+    fi
+  done < <(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' \
+    | sed -n 's/^v\([1-9][0-9]*\)$/\1/p' | sort -rn)
+  [ -n "$mac_from" ] || return 0
+  rm -rf "$meta"
+  mkdir -p "$meta"
+  gh release download "$mac_from" --repo "$GITHUB_REPOSITORY" --pattern "$name.json" --dir "$meta"
+  mac_inputs=$(jq -r '.inputs_ios // ""' "$meta/$name.json")
 }
 
 upload() {
@@ -129,15 +161,8 @@ case "$mode" in
     check
     [ "$release_mode" = carry ] || { echo "::error::$tag is not a release that leaves the app unchanged ($release_mode)"; exit 1; }
     # the newest earlier release with a Mac app
-    from=
-    while read -r earlier; do
-      [ "$earlier" -lt "$VERSION" ] || continue
-      if gh release view "v$earlier" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "$name.json"; then
-        from=v$earlier
-        break
-      fi
-    done < <(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' \
-      | sed -n 's/^v\([1-9][0-9]*\)$/\1/p' | sort -rn)
+    newest_mac
+    from=$mac_from
     if [ -z "$from" ]; then
       echo "::notice::no earlier release holds a Mac app: $tag gets none"
       summary "- no earlier release holds a Mac app: $tag gets none"
