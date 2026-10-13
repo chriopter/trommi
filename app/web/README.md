@@ -55,7 +55,7 @@ repository yet; these scripts wait for them.
 worker.js              http -> https, the universal links' file, /whats-new.json (whats-new.mjs: What's new from the releases' notes)
 wrangler.jsonc  THIRD-PARTY.md   fonts, Argon2, the QR reader, the word list: whose they are
 core/                  the client layer (TypeScript): the room, sync, storage, the worker; crypto and the Desk's rules
-                       come from Rust (core/, core/client/) as WebAssembly. core/protocol/README.md
+                       come from Rust (core/protocol/, core/client/) as WebAssembly. core/protocol/README.md
 dev/                   serve, build, check, verify; look, perf and the browser tests (cdp.mjs drives Chromium)
 public/
   index.html  sw.js  manifest.webmanifest  _headers  robots.txt  frame.html (the sandbox a published page runs in)

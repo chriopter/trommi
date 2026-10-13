@@ -1,7 +1,7 @@
 # trommi-client-core
 
 The client core: what every Trommi client decides the same way, written once in Rust. It sits above the protocol
-core ([`core/`](../protocol/README.md): MLS, envelopes, chains, the command gate) and below the apps. It does no IO: the
+core ([`core/protocol/`](../protocol/README.md): MLS, envelopes, chains, the command gate) and below the apps. It does no IO: the
 host fetches, stores and draws; the client core decides.
 
 ```
