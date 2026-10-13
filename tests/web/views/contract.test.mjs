@@ -111,7 +111,6 @@ function vendorReads() {
     for (const m of s.text.matchAll(/import\('\.\/gen\/vendor\/([\w-]+\.mjs)'\)/g)) {
       const file = VENDOR[m[1]] ?? null, { code } = s, after = code.slice(m.index + m[0].length)
       if (m[1] === 'core-worker.mjs' || m[1] === 'proof-worker.mjs') continue
-      if (m[1].startsWith('changelog')) continue   // (CHANGELOG.md as data, made by the build: not the core)
       if (!file) { reads.push([m[1], null, s, m.index]); continue }
       // (await import(…)).a   and   import(…).then(m => { x = m.a })   and   .then(m => { x = m }) with x.a anywhere
       const direct = /^\)\.([A-Za-z_$][\w$]*)/.exec(after)

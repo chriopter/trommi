@@ -72,7 +72,12 @@ if [ "$mode" = after ]; then
   asc internal "$build_id" Intern "${TESTFLIGHT_TESTER:-}"
   echo "== 9. What to Test =="
   notes=${NOTES:-}
-  [ -n "$notes" ] || notes="Mac build $TF_BUILD ($(printf '%s' "$COMMIT" | cut -c1-7)). $(asc whats-new "$repo/CHANGELOG.md")"
+  if [ -z "$notes" ]; then
+    # the newest day of What's new, as the web app serves it
+    changes=$(curl -fsS --max-time 20 https://app.trommi.com/whats-new.json -o "$RUNNER_TEMP/whats-new.json" && asc whats-new "$RUNNER_TEMP/whats-new.json") \
+      || changes="What changed: What's new in the app's menu."
+    notes="Mac build $TF_BUILD ($(printf '%s' "$COMMIT" | cut -c1-7)). $changes"
+  fi
   asc notes "$build_id" "$notes" en-US
   summary "### Mac: TestFlight build $TF_BUILD"
   summary ""

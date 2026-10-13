@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { generate } from './build.mjs'
 import { SITE_ASSOCIATION, isFilePath, FAVICON } from '../worker.js'
 import { movedPath } from '../public/paths.mjs'
+import { WHATS_NEW, whatsNew } from '../whats-new.mjs'
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const port = Number(process.argv.slice(2).find(a => /^\d+$/.test(a)) || 8900)
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain', '.sh': 'text/plain; charset=utf-8', '.webm': 'video/webm', '.wasm': 'application/wasm' }
@@ -50,6 +51,15 @@ http.createServer((req, res) => {
 }).listen(port, '127.0.0.1', () => console.log(`app on http://127.0.0.1:${port}`))
 async function serve(req, res) {
   const url = new URL(req.url, 'http://x')
+  // What's new as data (whats-new.mjs), the summaries and the history from public/; GitHub's releases only with
+  // TROMMI_GITHUB=1 (else none: the tests and an offline machine get the same answer every time)
+  if (url.pathname === WHATS_NEW) {
+    const ASSETS = { fetch: async r => { const f = path.join(root, new URL(r.url).pathname); return fs.existsSync(f) ? new Response(fs.readFileSync(f)) : new Response('', { status: 404 }) } }
+    const offline = async () => { throw new Error('offline') }
+    const r = await whatsNew(new Request(`http://127.0.0.1${WHATS_NEW}`), { ASSETS }, process.env.TROMMI_GITHUB === '1' ? {} : { fetch: offline })
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache' })
+    return res.end(await r.text())
+  }
   if (url.pathname === SITE_ASSOCIATION.address) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }); return res.end(fs.readFileSync(path.join(root, SITE_ASSOCIATION.file))) }
   let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
   if (rel.split('/').includes('..')) { res.writeHead(403); return res.end() }

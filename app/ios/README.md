@@ -288,7 +288,7 @@ read in App Store Connect (TestFlight → Feedback). Test offline: `python3 -B -
 TestFlight's public link is the rolling channel; the App Store gets reviewed versions less often, by hand ("App Store
 release"). `ship-apple.yml` delivers builds of main only: to the internal group "Intern" and, once App
 Store Connect has processed it (VALID), to the external group "Trommi"
-(`asc.py external`), with "What to Test" from the newest day of `CHANGELOG.md` (`asc.py whats-new`), and to Beta App
+(`asc.py external`), with "What to Test" from the newest day of What's new (`https://app.trommi.com/whats-new.json`, `asc.py whats-new`), and to Beta App
 Review when Apple asks for it (`asc.py beta-review`: the build's external state is `READY_FOR_BETA_SUBMISSION` and it
 has no `betaAppReviewSubmissions` yet; the first build of a new version is reviewed, later builds of it usually go
 without). Before that it fills in the test information: Beta App Review's contact and demo account from

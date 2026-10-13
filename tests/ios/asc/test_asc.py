@@ -263,8 +263,8 @@ class Crashes(Base):
 
 
 class WhatsNew(Base):
-    def test_the_newest_day_as_plain_text(self):
-        code, out, _ = self.run_with(None, asc.whats_new, str(HERE / "fixtures/CHANGELOG.md"))
+    def test_the_newest_day_with_changes_as_plain_text(self):
+        code, out, _ = self.run_with(None, asc.whats_new, str(HERE / "fixtures/whats-new.json"))
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "New:\n"
                          "- The iPhone app as a public beta: join on TestFlight.\n"
@@ -272,11 +272,9 @@ class WhatsNew(Base):
                          "Fixed:\n"
                          "- Log in no longer hangs.")
 
-    def test_the_real_changelog_fits_what_to_test(self):
-        code, out, _ = self.run_with(None, asc.whats_new, str(ROOT / "CHANGELOG.md"))
-        self.assertEqual(code, 0)
-        self.assertLessEqual(len(out.strip()), 3900)
-        self.assertTrue(out.startswith(("New:", "Better:", "Fixed:")))
+    def test_not_whats_new(self):
+        code, _, _ = self.run_with(None, asc.whats_new, str(HERE / "fixtures/crash.txt"))
+        self.assertNotEqual(code, 0)
 
 
 if __name__ == "__main__":

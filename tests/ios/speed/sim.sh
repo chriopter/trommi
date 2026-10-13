@@ -24,10 +24,10 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 # Swift package (the library: MAC_CORE_LIB, a core/swift/TrommiCoreRust on the Mac that core/swift/build.sh filled), the demo
 mkdir -p "$tmp/src"
 if [ -n "${BEFORE:-}" ]; then
-  git -C "$repo" archive "$BEFORE" app/ios core/swift demo CHANGELOG.md | tar xf - -C "$tmp/src"
+  git -C "$repo" archive "$BEFORE" app/ios core/swift demo | tar xf - -C "$tmp/src"
   for c in ${HARNESS:?HARNESS=<the harness commits, oldest first>}; do git -C "$repo" diff "$c~1" "$c" -- app/ios | (cd "$tmp/src" && git apply); done
 else
-  git -C "$repo" ls-files -z app/ios core/swift demo CHANGELOG.md | (cd "$repo" && xargs -0 tar cf -) | tar xf - -C "$tmp/src"
+  git -C "$repo" ls-files -z app/ios core/swift demo | (cd "$repo" && xargs -0 tar cf -) | tar xf - -C "$tmp/src"
 fi
 node "$repo/tests/tools/mega-fixture.mjs" "$tmp/mega.json" ${FIXTURE_ARGS:-} > /dev/null   # (FIXTURE_ARGS: "COPIES CHAT CARD_X PICTURE_EVERY")
 on_mac "rm -rf ~/$dir && mkdir -p ~/$dir"

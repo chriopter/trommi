@@ -31,7 +31,7 @@ let package = Package(
       ],
       // The privacy manifest belongs at the bundle's root, not in the package's resource bundle: xtool.yml copies it.
       exclude: ["Resources/PrivacyInfo.xcprivacy"],
-      resources: [.copy("Resources/pen.json"), .copy("Resources/Fonts"), .copy("Resources/Demo"), .copy("Resources/CHANGELOG.md")]
+      resources: [.copy("Resources/pen.json"), .copy("Resources/Fonts"), .copy("Resources/Demo")]
     ),
     .target(
       name: "TrommiShare",

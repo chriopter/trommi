@@ -296,7 +296,7 @@ struct MenuPill: View {
         // What's new (WhatsNew.swift): its second line says so while the newest day is unseen on this phone
         Button { go(.settings("whats-new")) } label: {
           Text("What's New")
-          if !Changelog.seen { Text("Something new since you last looked") }
+          if !WhatsNew.shared.seen { Text("Something new since you last looked") }
           Image(systemName: "sparkles")
         }
       }
