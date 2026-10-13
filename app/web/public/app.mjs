@@ -1045,8 +1045,8 @@ const loadShares = async () => { try { shares = await sharing.myShares() } catch
 export const sharesLoaded = () => (sharesAsked ??= sharing ? loadShares() : Promise.resolve())
 const shareOf = att => (att ? shares.find(x => x.attachment_id === att && x.link && x.expires_at > Date.now()) ?? null : null)
 const sharedWord = sh => { const n = Math.max(1, Math.ceil((sh.expires_at - Date.now()) / 86400_000)); return `Shared · ${n} ${n === 1 ? 'day' : 'days'}` }
-const COPY_TIP = `Copy link: anyone with the link can open it, for ${SHARE_DAYS} days`
-const tipOf = sh => (sh ? `${sharedWord(sh)} left. Copies the same link again` : COPY_TIP)
+const COPY_TIP = 'Copy link'
+const tipOf = sh => (sh ? `${sharedWord(sh).replace(/^Shared · /, '')} left` : COPY_TIP)
 /** The button (and Stop sharing) for the file `att` (its attachment id); tile: the round icons on an Artifacts tile. */
 export function shareControl(att, title, { tile = false, cls = '' } = {}) {
   if (!att) return ''
@@ -1562,7 +1562,7 @@ function bodyParts({ view, model, base = '', main, sidebar = true, current = nul
   else parts.push({ key: 'main', html: String(main) })
   if (FRONT.has(view) && padKept && model && loaded.whiteboard) parts.push({ key: 'pad', html: String(loaded.whiteboard.whiteboardMain(model)) })
   if (FRONT.has(view) || view === 'whiteboard') parts.push({ key: 'curl', html: String(curlHTML(FRONT.has(view) ? 'desk' : 'pad', FRONT.has(view) ? `${base}/scribble-board` : `${base}${padFrom}`)) })
-  if (mock) parts.push({ key: 'demo', html: '<span class="demo-band">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="Every screen of the app in the demo, for review">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave the demo: back to your desks">leave</a></span>' })
+  if (mock) parts.push({ key: 'demo', html: '<span class="demo-band">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>' })
   parts.push({ key: 'says', html: `<div class="says-host says-page" id="says-host" data-turbo-permanent>${says}</div>` })
   parts.push({ key: 'sheets', html: String(html`${keySheet()}${view === 'desk' ? rowSheet(base) : ''}`) })
   return parts
@@ -1951,7 +1951,7 @@ function startPush(client) {
   const shown = async () => ((await subscription().catch(() => null)) ? levelNow() : 'off')
   const paintAll = v => {
     const bell = document.getElementById('push-toggle')
-    if (bell) { bell.dataset.level = v; bell.setAttribute('aria-checked', String(v !== 'off')); const say = `Push on this device: ${words[v]}`; bell.title = `${say} (click: ${words[v === 'off' ? 'knocking' : v === 'knocking' ? 'all' : 'off']})`; bell.setAttribute('aria-label', say) }
+    if (bell) { bell.dataset.level = v; bell.setAttribute('aria-checked', String(v !== 'off')); const say = `Push on this device: ${words[v]}`; bell.title = `Push: ${words[v]}`; bell.setAttribute('aria-label', say) }
     for (const r of document.querySelectorAll('#push-level input')) r.checked = r.value === v
   }
   const say = text => { const n = document.getElementById('push-level-note'); if (n) n.textContent = text; const m = document.getElementById('menu-push-note'); if (m) { m.textContent = text; m.hidden = !text } }

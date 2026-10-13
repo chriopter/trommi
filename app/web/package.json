@@ -10,7 +10,7 @@
   },
   "//": [
     "test: everything that needs no browser and no hub binary: types, the app's layout, the model, the hub client and the account against a fake hub, the client against a stand-in for what the core's binding lacks. Needs the Rust core built once: npm run build:core.",
-    "test:browser: the same layers in headless Chromium (the store and tabs, the build with the core, the MLS proof screen, every demo screen at 360 px without sideways overflow, a picture that did not come keeping its place, Settings → Security).",
+    "test:browser: the same layers in headless Chromium (the store and tabs, the build with the core, the MLS proof screen, every demo screen at 360 px without sideways overflow, a picture that did not come keeping its place, Settings → Security, every hover hint one to three words).",
     "With TROMMI_HUB_BIN set to a hub binary, the hub and account tests also run against the real hub.",
     "WEB_TEST_CONCURRENCY: how many test files test:web runs at once (default: the cores less one). CI sets 6 on its 4 cores: most files wait on timers and a fake hub, not on the processor."
   ],
@@ -20,7 +20,7 @@
     "test:app": "node dev/check.mjs",
     "test:demo": "node ../../demo/check.mjs",
     "test:web": "node --test ${WEB_TEST_CONCURRENCY:+--test-concurrency=$WEB_TEST_CONCURRENCY} ../../tests/web/model/ ../../tests/web/views/ ../../tests/web/hub/ ../../tests/web/account/ ../../tests/web/client/ ../../tests/web/worker/",
-    "test:browser": "node ../../tests/web/store/run.mjs && node --test ../../tests/web/build/build.test.mjs && node ../../tests/web/build/wasm-load.mjs && node ../../tests/web/proof/proof.mjs && node ../../tests/web/views/overflow.browser.mjs && node ../../tests/web/views/att-gone.browser.mjs && node ../../tests/web/views/security.browser.mjs && node ../../tests/web/views/news.browser.mjs",
+    "test:browser": "node ../../tests/web/store/run.mjs && node --test ../../tests/web/build/build.test.mjs && node ../../tests/web/build/wasm-load.mjs && node ../../tests/web/proof/proof.mjs && node ../../tests/web/views/overflow.browser.mjs && node ../../tests/web/views/att-gone.browser.mjs && node ../../tests/web/views/security.browser.mjs && node ../../tests/web/views/news.browser.mjs && node ../../tests/web/views/tips.browser.mjs",
     "build:core": "../../core/wasm/build.sh",
     "build": "node dev/build.mjs",
     "serve": "node dev/serve.mjs"

@@ -52,7 +52,8 @@ const agentMark = a => avatar({ ...a, online: true })
 
 const two = n => String(n).padStart(2, '0')
 const clock = ts => { const d = new Date(ts); return `${two(d.getHours())}:${two(d.getMinutes())}` }
-const FULL = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeStyle: 'short' })
+// (a hover hint: short, day and time)
+const FULL = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
 const dayKey = ts => { const d = new Date(ts); return d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate() }
 function dayLabel(ts, now = Date.now()) {
@@ -109,7 +110,7 @@ const EVENT_LABEL = { asked: 'New question', decided: 'Answered', done: 'Done', 
 ICONS.took_back = ICONS.handed_back = ICONS.reopened
 /** Under a message he typed into the session's terminal (the terminal mirror): where it came from. The agent's
  *  connector sent it for him; none of his devices signed it, and the mark says so. */
-const VIA_TERMINAL = html`<span class="msg-via" title="Typed in the session's terminal and passed on by the agent's connector. None of your devices signed it."><span class="msg-via-sign" aria-hidden="true">&gt;_</span>from the terminal</span>`
+const VIA_TERMINAL = html`<span class="msg-via" title="From the terminal"><span class="msg-via-sign" aria-hidden="true">&gt;_</span>from the terminal</span>`
 // ---- a turn's trail: what the agent did between his prompt and its answer, folded away ----
 /** A time as a trail says it: "0.3 s", "12 s", "2 min", "1 h 5 min". */
 function span(ms) {
@@ -122,7 +123,7 @@ function span(ms) {
 }
 const count = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`
 const STEP_SIGN = { running: '', ok: '✓', failed: '✕', interrupted: '■' }
-const STEP_SAYS = { running: 'running', ok: 'done', failed: 'ended with an error', interrupted: 'interrupted' }
+const STEP_SAYS = { running: 'running', ok: 'done', failed: 'failed', interrupted: 'interrupted' }
 /** One line of a trail: a step (its state, the tool, what it is about, how long it took), a helper, or the agent's
  *  words between two steps. A step with an input or an output (the level `full`) opens to show them. */
 function workLine(x, s) {
@@ -163,7 +164,7 @@ function eventLine({ id, kind, text, ts }, card, base, { cont = false, echo = fa
   const cls = `event event-${/^[a-z_]+$/.test(kind ?? '') ? kind : 'board'}${cont ? ' cont' : ''}${echo ? ' event-echo' : ''}`
   const inner = html`<span class="event-ico">${ico(ICONS[kind] ? kind : 'asked')}</span><span class="event-body"><span class="event-kind">${EVENT_LABEL[kind] ?? 'Board'}</span>${card && (card.title !== text || !text) ? html`<span class="event-about">${card.title}</span>` : ''}${text ? html`<span class="event-text">${text}</span>` : ''}</span>${timeNode(ts, 'event-time')}`
   const at = wrap ? '' : html` id="msg-${id}"`
-  return card ? html`<a class="${cls}"${at} data-nav href="${questionPath(card, base)}" title="Nr. ${card.number}: open it">${inner}</a>` : html`<div class="${cls}"${at}>${inner}</div>`
+  return card ? html`<a class="${cls}"${at} data-nav href="${questionPath(card, base)}" title="Nr. ${card.number}">${inner}</a>` : html`<div class="${cls}"${at}>${inner}</div>`
 }
 
 // A question where it was asked. Open and waiting for the human: its Desk row (the tiles answer, the text links to
@@ -340,15 +341,15 @@ function sessionWho(s, base) {
   // The mark opens the drawings, the name renames (ui.mjs); the live stream brings what was changed.
   // The raised red hand when the session is really stopped (app.mjs blockedOf), with the cause in words.
   const stopped = blockedOf(a, s.model.state), quiet = stopped ? null : quietOf(a, s.model.state)
-  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}${sessionDot(a)}<span class="head-use-mini">${usageMark(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status" title="Stopped: ${stopped.text}">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Connected and working, nothing new for a while">${quiet.text}</span>` : ''}</div>`
+  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}${sessionDot(a)}<span class="head-use-mini">${usageMark(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Quiet">${quiet.text}</span>` : ''}</div>`
 }
 /** The connection beside the name, as a dot: green while the session is connected (else grey, or how it hears when it
- *  does not hear at once). What it is at, its model and machine are its tip: the heading is one line. */
+ *  does not hear at once). The tip is that one word; what it is at, its model and machine are its label. */
 function sessionDot(a) {
   const link = linkOf(a), late = link && link.state !== 'live'
   const words = late ? link.word : a.online ? 'connected' : 'disconnected'
-  const tip = [words, a.online && !late ? a.task : '', a.model, a.host].filter(Boolean).join(' · ')
-  return html`<span class="head-dot${a.online ? ' is-on' : ''}"${late ? html` data-link="${link.state}"` : ''} role="img" aria-label="${tip}" title="${tip}"><i></i></span>`
+  const tip = words, said = [words, a.online && !late ? a.task : '', a.model, a.host].filter(Boolean).join(' · ')
+  return html`<span class="head-dot${a.online ? ' is-on' : ''}"${late ? html` data-link="${link.state}"` : ''} role="img" aria-label="${said}" title="${tip}"><i></i></span>`
 }
 /** The usage at the heading's right end (a wide window): one mark of two rings, the week outside, 5 h inside
  *  (ui.mjs usageMark). (always there, empty without an account: the live stream replaces it when the numbers change) */
@@ -375,8 +376,8 @@ function sessionStatus(s, base, now = Date.now()) {
   return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.length ? html`<div class="status-chips" role="list">${lines.map(t => {
     const card = lineCard(t, s.model, s.cards, s.tasks), tip = [t.label, t.detail].filter(Boolean).join(': ')
     const inner = html`${lineMark(t)}<b>${t.label}</b>${t.updated ? html`<span class="status-age" aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${agoSpan(t.updated, 'offscreen')}` : ''}`
-    if (card) return html`<a class="status-chip" role="listitem" data-state="${t.state}" data-nav href="${questionPath(card, base)}" title="${tip}">${inner}</a>`
-    return html`<button type="button" class="status-chip" role="listitem" data-state="${t.state}" data-key="${t.agent}:${t.id}" data-detail="${tip}" title="${tip}" aria-expanded="false" data-action="status-lines#toggle">${inner}</button>`
+    if (card) return html`<a class="status-chip" role="listitem" data-state="${t.state}" data-nav href="${questionPath(card, base)}" title="${t.label}">${inner}</a>`
+    return html`<button type="button" class="status-chip" role="listitem" data-state="${t.state}" data-key="${t.agent}:${t.id}" data-detail="${tip}" title="${t.label}" aria-expanded="false" data-action="status-lines#toggle">${inner}</button>`
   })}</div><p class="status-detail-line" hidden></p>` : ''}</div>`
 }
 // A chip without a question: a tap shows its title and detail under the row, a second tap hides it; the one shown stays
@@ -507,7 +508,7 @@ function composer(s, base, { text = '', focus = false } = {}) {
   return html`<form class="composer" id="composer-${s.id}" method="post" action="${sessionPath(s.id, base)}/message" enctype="multipart/form-data" data-controller="composer" data-composer-agent-value="${s.id}"${focus ? raw(' data-composer-focus-value="true"') : ''} data-action="turbo:submit-start->composer#start turbo:submit-end->composer#sent click->composer#aim dragover@window->composer#over dragleave@window->composer#left drop@window->composer#drop">
 <input type="hidden" name="stay" value="1">
 <div class="composer-files" data-composer-target="chips"></div>
-<label class="mic composer-clip" title="Attach a picture or a file">${sk('clip')}<input class="offscreen" type="file" name="files" multiple data-composer-target="picker" data-action="change->composer#paint" aria-label="Attach pictures or files (at most ${MAX_FILES})"></label>
+<label class="mic composer-clip" title="Attach">${sk('clip')}<input class="offscreen" type="file" name="files" multiple data-composer-target="picker" data-action="change->composer#paint" aria-label="Attach pictures or files (at most ${MAX_FILES})"></label>
 <textarea name="text" id="composer-field-${s.id}" rows="1" data-composer-target="field" data-action="input->composer#typed keydown->composer#keys paste->composer#paste focus->composer#paint" autocomplete="off" enterkeyhint="enter" placeholder="${composeWords(s)}" aria-label="Message to ${s.agent.name}">${text}</textarea>
 <button class="send" type="submit" aria-label="Send" data-composer-target="send">${ico('send')}</button>
 </form>`
@@ -567,13 +568,13 @@ const fileCount = s => looseFiles(s).reduce((n, g) => n + g.items.length, 0)
 /** "Files" at the top of the session's More menu: opens the drawer (controller "files"); without scripts, the page with it open. */
 function filesItem(s, base) {
   const n = fileCount(s)
-  return n ? html`<a role="menuitem" class="desk-move-files" href="${sessionPath(s.id, base)}/files" data-turbo-frame="files-frame-${s.id}" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="What was sent and published here, without the questions' own pictures">${ico('clip')}<span>Files</span><b>${n}</b></a>` : ''
+  return n ? html`<a role="menuitem" class="desk-move-files" href="${sessionPath(s.id, base)}/files" data-turbo-frame="files-frame-${s.id}" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="Files">${ico('clip')}<span>Files</span><b>${n}</b></a>` : ''
 }
 
 const FILE_GLYPH = { video: 'video', audio: 'audio', image: 'image', scribble: 'image' }
 function fileThumb(item, s, base, msg) {
   if (item.kind === 'asset') {
-    if (!item.url) return html`<span class="files-thumb asset-preview is-gone" data-kind="${item.type}" title="${item.name}: no longer available">${assetGlyph(item.type)}</span>`
+    if (!item.url) return html`<span class="files-thumb asset-preview is-gone" data-kind="${item.type}" title="${item.name}">${assetGlyph(item.type)}</span>`
     return html`<a class="files-thumb asset-preview${item.type === 'image' ? ' is-shown' : ''}" data-kind="${item.type}" data-nav href="${assetPath(s, item.asset.id, base)}" title="${item.name}"${thumbAttrs(item.asset, item.type)}>${preview(item.asset, item.type)}</a>`
   }
   if (item.kind === 'image' || item.kind === 'scribble') {
@@ -989,7 +990,7 @@ controller('composer', class extends Controller {
     if (c && !this.cards.some(x => x.id === c.id) && this.cards.length < MAX_CARDS) {
       const offer = el('span', 'cardclip-offer')
       const take = el('button', 'cardclip-paste', `Paste Nr. ${c.number}`)
-      take.type = 'button'; take.title = `Attach the copied card: ${c.title}`; take.dataset.action = 'composer#takeCard'
+      take.type = 'button'; take.title = c.title; take.dataset.action = 'composer#takeCard'
       const drop = el('button', 'cardclip-off', '×')
       drop.type = 'button'; drop.setAttribute('aria-label', 'Forget the copied card'); drop.dataset.action = 'composer#dropOffer'
       offer.append(take, drop)

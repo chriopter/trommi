@@ -43,13 +43,13 @@ const ALT_WORD = CTRL_WORD === '⌘' ? '⌥' : 'Alt'
 /** Send; where the card can go back (an open decision or info) it wears the reverse card while Shift is held. */
 function sendButton(canReverse, asker) {
   const to = asker || 'the agent'
-  return html`<button class="tc-send" type="submit" name="stay" value="1" title="Send to the agent (Enter); the question stays with you${canReverse ? `. Shift+Enter, or Shift held and Send: send and reverse, back to ${to}` : ''}. ${ALT_WORD}+Enter: a new line" aria-label="Send to the agent" data-action="click->card#sendClick">${sk('send')}${canReverse ? html`<span class="tc-send-uno" aria-hidden="true">${sk('reverse')}</span>` : ''}</button>`
+  return html`<button class="tc-send" type="submit" name="stay" value="1" title="Send (Enter)" aria-label="Send to the agent" data-action="click->card#sendClick">${sk('send')}${canReverse ? html`<span class="tc-send-uno" aria-hidden="true">${sk('reverse')}</span>` : ''}</button>`
 }
 /** The "+" at the field's left: a small menu with Attach (files or pictures; also paste or drop them on the card) and,
  *  where the card can be drawn on, Draw on the card. A dot on the "+" while a drawing waits to be sent. */
 function plusMenu(canDraw) {
   return html`<details class="tc-plus" data-controller="pops"><summary class="tc-plus-open" title="Attach or draw" aria-label="Attach or draw">${PLUS}</summary><div class="tc-plus-pop" role="menu">
-<label class="tc-plus-item tc-clip" role="menuitem" title="Attach files or pictures (or paste, or drop them on the card)">${sk('clip')}<span>Attach files or pictures</span><input type="file" name="files" multiple hidden data-card-target="files" data-action="change->card#files"></label>${canDraw ? html`<button type="button" role="menuitem" class="tc-plus-item tc-draw tc-draw-pen" data-action="card#trace" data-pop-close aria-pressed="false" title="Draw on the card: lay a tracing sheet over it">${sk('pen')}<span>Draw on the card</span></button>` : ''}</div></details>`
+<label class="tc-plus-item tc-clip" role="menuitem" title="Attach">${sk('clip')}<span>Attach files or pictures</span><input type="file" name="files" multiple hidden data-card-target="files" data-action="change->card#files"></label>${canDraw ? html`<button type="button" role="menuitem" class="tc-plus-item tc-draw tc-draw-pen" data-action="card#trace" data-pop-close aria-pressed="false" title="Draw">${sk('pen')}<span>Draw on the card</span></button>` : ''}</div></details>`
 }
 const imagesOf = card => (card.attachments ?? []).filter(a => kindOf(a) === 'image')
 const videosOf = card => (card.attachments ?? []).filter(a => kindOf(a) === 'video')
@@ -207,7 +207,7 @@ function cardLead(card, model, base, { version = null } = {}) {
   return html`<div class="tc-lead focus-lead" id="card-lead-${card.id}">
 ${isKnock(card) && card.status === 'open' ? html`<span class="inbox-tab tc-knock">${sk('knock')}${knockWord(card)}</span>` : ''}
 ${old ? '' : workStrip(card, model)}<h1 class="tc-title" id="card-title-${card.id}">${shown.title}</h1>
-<p class="tc-meta">${from ? html`<a class="tc-from" data-nav href="${base}/chat/${encodeURIComponent(from.id)}" style="--hue:${from.hue}">${raw(doodleSvg(from.mark))}${from.name}</a><span aria-hidden="true">·</span>` : ''}${agoSpan(card.revised ?? card.created, 'tc-ago')}<span aria-hidden="true">·</span><span>${cardNr(card)}</span>${place ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Where this question stands on the Desk">${place.at} of ${place.of}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
+<p class="tc-meta">${from ? html`<a class="tc-from" data-nav href="${base}/chat/${encodeURIComponent(from.id)}" style="--hue:${from.hue}">${raw(doodleSvg(from.mark))}${from.name}</a><span aria-hidden="true">·</span>` : ''}${agoSpan(card.revised ?? card.created, 'tc-ago')}<span aria-hidden="true">·</span><span>${cardNr(card)}</span>${place ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Its place">${place.at} of ${place.of}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
 ${text ? html`<div class="tc-text">${rich(text, { assets: model.state.assets })}</div>` : ''}${more ? html`<a class="tc-more-text" href="#card-whole-${card.id}">More in the comments ↓</a>` : ''}
 </div>`
 }
@@ -215,7 +215,7 @@ ${text ? html`<div class="tc-text">${rich(text, { assets: model.state.assets })}
 // The reverse card: one press hands the card back at once, "put this before me again". Nothing opens and nothing is
 // asked: the session reworks the card with the comments under it in mind (what should change is written there first).
 // A button of the card's form: what stands unsent in the field and what is drawn on the card go along.
-const reviseTile = (card, model, base) => { const to = model.byAgent.get(card.agent)?.name ?? 'the agent', tip = `Reverse: back to ${to} for rework, with the comments`; return html`<button class="tc-tile tc-reverse" type="submit" form="card-form-${card.id}" formaction="${act(card, base, 'revise')}" name="next" value="1" title="${tip} (B)" aria-label="${tip}">${sk('reverse')}</button>` }
+const reviseTile = (card, model, base) => { const to = model.byAgent.get(card.agent)?.name ?? 'the agent', tip = WORDS.revise; return html`<button class="tc-tile tc-reverse" type="submit" form="card-form-${card.id}" formaction="${act(card, base, 'revise')}" name="next" value="1" title="${tip} (B)" aria-label="${tip}">${sk('reverse')}</button>` }
 const still = (label, detail = '', cls = '') => html`<div class="tc-opt is-still ${cls}"><span class="tc-opt-words"><span class="tc-opt-label">${label}</span>${detail ? html`<span class="tc-opt-detail">${detail}</span>` : ''}</span></div>`
 const BACK_ARROW = raw('<svg viewBox="0 0 24 24" class="sketch tc-undo-ico" aria-hidden="true"><path d="M9.8 5.6 Q6.8 8.4 4.3 11.2 Q7.1 13.8 10 16.6"/><path d="M4.9 11.1 Q10.4 10.4 14.9 11.2 Q19.8 12.5 19.5 16.4 Q19 19.5 15 19.7"/></svg>')
 /** The way back from what was said: a quiet link with the pen's return arrow, at the end of the answer's own line. */
@@ -268,7 +268,7 @@ export function optionsSaid(card, assets, version = null) {
  *  answer goes straight on to the next card instead (actRoute). */
 function nextStep({ next, self, home, focus }) {
   const go = next ? focusAt(cardPath(next, self), focus) : ''
-  return html`<nav class="tc-next" aria-label="What next">${next ? html`<a class="tc-next-go" data-nav href="${go}" title="The next open question: ${next.title}"><span>Next question</span><small>${next.title}</small>${FORTH}</a>` : html`<p class="tc-next-none">${sk('tick')}<span>That was the last open question.</span></p>`}<a class="tc-next-close" data-nav href="${home}">Close</a></nav>`
+  return html`<nav class="tc-next" aria-label="What next">${next ? html`<a class="tc-next-go" data-nav href="${go}" title="${next.title}"><span>Next question</span><small>${next.title}</small>${FORTH}</a>` : html`<p class="tc-next-none">${sk('tick')}<span>That was the last open question.</span></p>`}<a class="tc-next-close" data-nav href="${home}">Close</a></nav>`
 }
 function cardAnswer(card, model, base, { error = '', version = null, pic = 1, after = null } = {}) {
   const form = `card-form-${card.id}`
@@ -285,7 +285,7 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1, af
     const said = card.status === 'shredded' ? 'Shredded' : card.kind === 'info' ? 'Read' : card.trusted ? `${WORDS.trust}${advisedLabels(card) ? `: ${advisedLabels(card)}` : ''}` : card.options.filter(o => picked.includes(o.key)).map(o => o.label).join(', ') || 'Withdrawn by the agent'
     const can = card.status === 'shredded' || card.choice != null || card.trusted || (card.kind === 'info' && card.read)
     const did = card.status === 'shredded' ? 'You shredded it' : card.kind === 'info' ? 'You read it' : card.trusted ? 'You left it to the agent' : can ? 'You chose' : ''
-    return box(html`<div class="tc-opts">${stood(said, card.note ? `Your note: ${card.note}` : '')}${did ? saidFoot(did, card.decided, can ? back(card, base, 'reopen') : '') : ''}${card.options.filter(o => card.option_notes?.[o.key]).map(o => still(o.label, `Your note: ${card.option_notes[o.key]}`))}${card.settled ? still(html`${sk('tick')}${SETTLED}`, `${model.byAgent.get(card.agent)?.name ?? 'The agent'} marked this answer as final: nothing follows from it.`, 'is-settled') : ''}${card.summary ? still('Done by the agent', card.summary) : ''}</div>${after ? nextStep(after) : ''}${card.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}: ask the session about what it did">${sk('what')}</button>` : ''}`)
+    return box(html`<div class="tc-opts">${stood(said, card.note ? `Your note: ${card.note}` : '')}${did ? saidFoot(did, card.decided, can ? back(card, base, 'reopen') : '') : ''}${card.options.filter(o => card.option_notes?.[o.key]).map(o => still(o.label, `Your note: ${card.option_notes[o.key]}`))}${card.settled ? still(html`${sk('tick')}${SETTLED}`, `${model.byAgent.get(card.agent)?.name ?? 'The agent'} marked this answer as final: nothing follows from it.`, 'is-settled') : ''}${card.summary ? still('Done by the agent', card.summary) : ''}</div>${after ? nextStep(after) : ''}${card.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}`)
   }
   // Open, but not read on this device yet: what it asks follows once its keys are here.
   if (card.loading) return box(html`<p class="tc-quiet">Loading … this question is still being decrypted on this device.</p>`)
@@ -295,7 +295,7 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1, af
   if (card.with_agent) return box(html`<div class="tc-opts">${still(WORDS.revising, 'It is with its session and comes back reworked.')}${saidFoot('You handed it back', card.with_agent, back(card, base, 'takeback'))}</div>`)
   // An info: Got it is its answer; at the column's foot What?? and the reverse card, as on a decision (the reverse
   // card hands it back for rework with the comments; Ctrl+Enter does the same from the field).
-  if (card.kind === 'info') return box(html`<div class="tc-or tc-info-ways"><button class="tc-tile is-ack" type="submit" form="${form}" formaction="${act(card, base, 'close')}" title="${WORDS.ack}: read, close it">${sk('tick')}<span>${WORDS.ack}</span></button><div class="tc-or-pair"><button class="tc-tile tc-wtf is-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}: ask the session to explain this; it comes back explained" aria-label="What?? — explain this to me">${sk('what')}</button>${reviseTile(card, model, base)}</div></div>`)
+  if (card.kind === 'info') return box(html`<div class="tc-or tc-info-ways"><button class="tc-tile is-ack" type="submit" form="${form}" formaction="${act(card, base, 'close')}" title="${WORDS.ack}">${sk('tick')}<span>${WORDS.ack}</span></button><div class="tc-or-pair"><button class="tc-tile tc-wtf is-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}" aria-label="What?? — explain this to me">${sk('what')}</button>${reviseTile(card, model, base)}</div></div>`)
   const advised = advisedKeys(card)
   const shownKey = pictureKeys(card).get(pic - 1)
   const draft = card.draft ?? {}
@@ -303,16 +303,16 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1, af
     const is = advised.includes(o.key), noted = String(draft.notes?.[o.key] ?? ''), final = o.final === true
     // (A link written into an option is not on its tile: the tile says it in plain words, the link stands in the comments.)
     const words = html`<span class="tc-opt-words"><span class="tc-opt-label"${is ? raw(' data-controller="advice"') : ''}>${o.label}</span>${o.detail ? html`<span class="tc-opt-detail">${plain(o.detail)}</span>` : ''}${is ? raw('<span class="tc-sr">, recommended by the agent</span>') : ''}</span>${final ? finalSign(true) : ''}`
-    const pen = card.kind === 'decision' ? html`<span class="tc-opt-pen" data-key="${o.key}" data-action="click->card#note" title="A note on this option"${noted ? raw(' data-noted') : ''}>${sk('pen')}</span>` : ''
-    const marks = html`${is || final ? html` title="${[is ? 'The agent recommends this' : '', final ? FINAL_TIP : ''].filter(Boolean).join(' · ')}"` : ''}${shownKey === o.key ? raw(' data-match') : ''}`
+    const pen = card.kind === 'decision' ? html`<span class="tc-opt-pen" data-key="${o.key}" data-action="click->card#note" title="Note"${noted ? raw(' data-noted') : ''}>${sk('pen')}</span>` : ''
+    const marks = html`${is || final ? html` title="${[is ? 'Recommended' : '', final ? FINAL_TIP : ''].filter(Boolean).join(' · ')}"` : ''}${shownKey === o.key ? raw(' data-match') : ''}`
     const tile = card.multiple
       ? html`<label class="tc-opt${is ? ' is-advised' : ''}" data-key="${o.key}"${marks}><input type="checkbox" id="tick-${card.id}-${o.key}" name="keys" value="${o.key}" form="${form}" data-action="change->card#keep"${draft.keys?.includes(o.key) ? raw(' checked') : ''}><span class="tc-tick" aria-hidden="true">${icon(TICK)}</span>${words}${pen}</label>`
       : html`<button class="tc-opt${is ? ' is-advised' : ''}" type="submit" form="${form}" formaction="${act(card, base, 'decide')}" name="key" value="${o.key}" data-key="${o.key}"${marks}>${words}${pen}</button>`
     return card.kind === 'decision' ? html`${tile}<label class="tc-opt-note" data-note="${o.key}"${noted ? '' : raw(' hidden')}>${sk('pen')}<input type="text" name="note-${o.key}" form="${form}" value="${noted}" maxlength="2000" placeholder="A note on ${o.label}" aria-label="A note on ${o.label}" autocomplete="off" data-action="input->card#keep blur->card#noteLeft keydown->card#noteKey"></label>` : tile
   }
-  const trustTip = `I don’t give a duck: your call (R)${advisedLabels(card) ? ` · agent takes ${advisedLabels(card)}` : ''}`
+  const trustTip = 'Duck it (R)'
   return box(html`<div class="tc-opts" data-action="pointerover->card#preview focusin->card#preview pointerleave->card#unpreview focusout->card#unpreview" role="group" aria-label="${card.multiple ? 'Your answer. Tick what applies, then send.' : 'Your answer. One tap answers.'}">${[...card.options].sort((a, b) => Number(advised.includes(a.key)) - Number(advised.includes(b.key))).map(option)}${card.multiple ? html`<button class="tc-opt tc-send-many" type="submit" form="${form}" formaction="${act(card, base, 'decide')}"><span class="tc-opt-words"><span class="tc-opt-label">Send the answer</span></span></button>` : ''}</div>
-${card.kind === 'decision' ? html`<div class="tc-or"><i>or</i><button class="tc-opt tc-whatever" type="submit" form="${form}" formaction="${act(card, base, 'trust')}" title="${trustTip}" aria-label="${trustTip}">${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">I don’t give a duck</span></span></button><div class="tc-or-pair"><button class="tc-tile tc-wtf" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="What?? — explain this to me (E)" aria-label="What?? Explain this to me: the session explains it, and it comes back explained">${sk('what')}</button>${reviseTile(card, model, base)}</div></div>` : ''}`)
+${card.kind === 'decision' ? html`<div class="tc-or"><i>or</i><button class="tc-opt tc-whatever" type="submit" form="${form}" formaction="${act(card, base, 'trust')}" title="${trustTip}" aria-label="${trustTip}">${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">I don’t give a duck</span></span></button><div class="tc-or-pair"><button class="tc-tile tc-wtf" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="What?? (E)" aria-label="What?? Explain this to me: the session explains it, and it comes back explained">${sk('what')}</button>${reviseTile(card, model, base)}</div></div>` : ''}`)
 }
 
 // Links an agent wrote into an option (its label or its line of detail): they stand here, under the card, named by their option.
@@ -443,7 +443,7 @@ function placeOf(card, model) {
 }
 
 /** The star beside the way back: his own mark on a card, to find it again in Off your mind. Live (t.live 'card'). */
-export const starButton = (card, base) => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, base, 'star')}"><input type="hidden" name="stay" value="1"><input type="hidden" name="on" value="${card.starred ? '' : '1'}"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(Boolean(card.starred))}" title="${card.starred ? 'Starred: take the star off' : 'Star this card'}" aria-label="${card.starred ? 'Starred' : 'Star this card'}">${sk('star')}</button></form>`
+export const starButton = (card, base) => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, base, 'star')}"><input type="hidden" name="stay" value="1"><input type="hidden" name="on" value="${card.starred ? '' : '1'}"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(Boolean(card.starred))}" title="${card.starred ? 'Unstar' : 'Star'}" aria-label="${card.starred ? 'Starred' : 'Star'}">${sk('star')}</button></form>`
 
 /** The open question to offer after this one was decided: the client core's answer at the time (id from the answer's
  *  redirect, client/src/model/walk.rs `next_open_after`) while it still waits, else the first that waits on this desk
@@ -475,7 +475,7 @@ function cardPage(card, model, base, { pic = 1, walk = false, error = '', versio
   const large = Boolean(full && media)
   const keep = focus ? raw(FOCUS_FIELD) : ''
   const shownPic = Math.min(Math.max(1, pic), Math.max(1, media))
-  const step = (to, cls, label, art) => (to ? html`<a class="tc-rail ${cls}" data-nav href="${cardPath(to, self)}${walk ? '?walk=1' : ''}" aria-label="${label}: ${to.title}" title="${label}: ${to.title}">${art}</a>` : '')
+  const step = (to, cls, label, art) => (to ? html`<a class="tc-rail ${cls}" data-nav href="${cardPath(to, self)}${walk ? '?walk=1' : ''}" aria-label="${label}: ${to.title}" title="${to.title}">${art}</a>` : '')
   const form = `card-form-${card.id}`
   const asker = model.byAgent.get(card.agent)?.name ?? ''
   // The tray: card and talk lie on one drawn desk pad in the session's pale tone (four hatched corners; the round
@@ -488,8 +488,8 @@ function cardPage(card, model, base, { pic = 1, walk = false, error = '', versio
   const jump = html`<button class="tc-chip is-jump" type="button" data-action="card#toAnswers">To the answers ↑</button>`
   const few = open && card.kind === 'decision' && !card.multiple && card.options.length <= 4
   const strip = html`<div class="tc-bar" aria-label="This question, in short"><div class="tc-bar-in"><b class="tc-bar-title">${card.title}</b>
-${few ? html`<span class="tc-bar-chips">${card.options.map(o => html`<button class="tc-chip" type="submit" form="${form}" formaction="${act(card, base, 'decide')}" name="key" value="${o.key}" title="${o.final === true ? `${o.label} · ${FINAL_TIP}` : o.label}">${o.label}${o.final === true ? finalSign() : ''}</button>`)}</span>` : ''}${jump}
-${open && card.kind === 'decision' ? html`<i class="tc-bar-sep"></i>${mini('is-duck', 'trust', 'I don’t give a duck', sk('duck'))}${mini('is-what', 'what', 'What?? Explain this to me', sk('what'))}${mini('is-reverse', 'revise', `Reverse: back to ${asker || 'the agent'} for rework, with the comments`, sk('reverse'))}` : open && card.kind === 'info' ? html`<i class="tc-bar-sep"></i>${mini('is-what', 'what', 'What?? Explain this to me', sk('what'))}${mini('is-reverse', 'revise', `Reverse: back to ${asker || 'the agent'} for rework, with the comments`, sk('reverse'))}${mini('is-ack', 'close', `${WORDS.ack}: read, close it`, sk('tick'))}` : ''}
+${few ? html`<span class="tc-bar-chips">${card.options.map(o => html`<button class="tc-chip" type="submit" form="${form}" formaction="${act(card, base, 'decide')}" name="key" value="${o.key}" title="${o.label}">${o.label}${o.final === true ? finalSign() : ''}</button>`)}</span>` : ''}${jump}
+${open && card.kind === 'decision' ? html`<i class="tc-bar-sep"></i>${mini('is-duck', 'trust', 'Duck it', sk('duck'))}${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}` : open && card.kind === 'info' ? html`<i class="tc-bar-sep"></i>${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}${mini('is-ack', 'close', WORDS.ack, sk('tick'))}` : ''}
 ${open && card.kind !== 'permission' && !card.snoozed_until ? html`<form class="tc-bar-later" method="post" action="${base}/cards/batch"><input type="hidden" name="ids" value="${card.id}"><input type="hidden" name="from" value="${card.id}">${keep}${session ? html`<input type="hidden" name="back" value="${home}">` : ''}${sideWays({ duck: false, shred: false, word: false })}</form>` : ''}
 </div></div>`
   const tone = model.byAgent.get(card.agent)?.hue
@@ -502,16 +502,16 @@ ${open && card.kind !== 'permission' && !card.snoozed_until ? html`<form class="
   return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, base, 'draft') : ''}" data-card-pictures-value="${JSON.stringify(picturesOf(old ? { ...card, attachments: old.attachments ?? card.attachments } : card, self))}" data-action="turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
 ${pad}<div class="tc-frame">
 <nav class="tc-rails" aria-label="Around this question">
-<a class="tc-rail tc-back" data-nav href="${home}" aria-keyshortcuts="Escape" title="Back to ${session ? session.name : WORDS.desk} · Esc" aria-label="Back to ${session ? session.name : WORDS.desk}">${CROSS}</a>
+<a class="tc-rail tc-back" data-nav href="${home}" aria-keyshortcuts="Escape" title="Back (Esc)" aria-label="Back to ${session ? session.name : WORDS.desk}">${CROSS}</a>
 ${old ? '' : starButton(card, base)}
 ${place ? html`${step(place.prev, 'is-prev', 'The question before', BACK)}${step(place.next, 'is-next', 'The next question', FORTH)}` : ''}
-${large ? html`<a class="tc-rail tc-full is-leave" data-nav href="${cardPath(card, self)}?pic=${shownPic}${focus ? '&focus=1' : ''}" data-card-target="gallery" data-back data-turbo-action="replace" title="Back to the card · Esc" aria-label="Back to the card">${CROSS}</a>`
+${large ? html`<a class="tc-rail tc-full is-leave" data-nav href="${cardPath(card, self)}?pic=${shownPic}${focus ? '&focus=1' : ''}" data-card-target="gallery" data-back data-turbo-action="replace" title="Back (Esc)" aria-label="Back to the card">${CROSS}</a>`
     : html`<a class="tc-rail tc-full${focus ? ' is-leave' : ''}" data-nav href="${focusAt(`${cardPath(card, self)}?${shownPic > 1 ? `pic=${shownPic}` : ''}${query}`, !focus)}" data-turbo-action="replace" data-action="card#focus" role="button" aria-pressed="${String(focus)}" title="${FOCUS_WORDS[focus]}" aria-label="${FOCUS_WORDS[focus]}">${FULL}${LESS}</a>`}
-${drafting || (open && card.kind === 'info') ? html`<button type="button" class="tc-rail tc-draw" data-action="card#trace" aria-pressed="false" title="Draw on the card: lay a tracing sheet over it" aria-label="Draw on the card">${DRAW}</button>` : ''}
+${drafting || (open && card.kind === 'info') ? html`<button type="button" class="tc-rail tc-draw" data-action="card#trace" aria-pressed="false" title="Draw" aria-label="Draw on the card">${DRAW}</button>` : ''}
 <details class="tc-more" data-controller="pops"><summary class="tc-rail tc-more-open" title="More" aria-label="More for this question">${DOTS}</summary><div class="tc-more-list" role="menu">
 ${open && card.kind !== 'permission' && card.snoozed_until ? more('', 'wake', WORDS.wake, `${WORDS.wake}: back on the Desk now`, act(card, base, 'wake')) : ''}
 ${copyButton(card)}
-${open && card.kind !== 'permission' ? more('is-shred', 'bin', WORDS.shred, `${WORDS.shred}: throw it away unanswered`, act(card, base, 'shred')) : ''}
+${open && card.kind !== 'permission' ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, act(card, base, 'shred')) : ''}
 </div></details>
 </nav>
 <article class="tc-card" id="card-${card.id}" style="--hue:162" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${card.urgency}" aria-labelledby="card-title-${card.id}"${media ? raw(' data-pictures') : ''}${card.status === 'open' && !card.with_agent ? '' : raw(' data-settled')}>
@@ -621,7 +621,7 @@ function cardMarks({ scroll, blocks, labelOf, onChange }) {
   // paragraph shows the same pencil.
   const quill = el('button', 'focus-mark-quill')
   quill.type = 'button'
-  quill.title = 'Write a note on this paragraph'
+  quill.title = 'Note'
   quill.setAttribute('aria-label', 'Write a note on this paragraph')
   quill.append(sketch('pen'))
   quill.hidden = true
@@ -841,7 +841,7 @@ function traceSheet({ card, marks, id, anchor, left, dock, onSend, onClose }) {
   const clear = button('is-clear', 'Clear the sheet', 'trash', () => { if (!mark) return; const before = snap(); mark.strokes = []; mark.words = []; changed(before) })
   const send = el('button', 'tc-trace-send')
   send.type = 'button'
-  send.title = 'Send the drawing with the card, and what is written in the field'
+  send.title = 'Send'
   send.append(toolIcon('send'), el('span', '', 'Send with the card'))
   send.addEventListener('click', () => { close(); onSend() })
   const off = button('is-off', 'Take the sheet off · Esc (the drawing stays)', 'close', () => close())
@@ -855,7 +855,7 @@ function traceSheet({ card, marks, id, anchor, left, dock, onSend, onClose }) {
     bar.append(off)
     dock.prepend(bar)
     page?.classList.add('is-docked')
-    if (fieldSend) { fieldSend.title = 'Send with the card: the drawing and what is written (Enter)'; fieldSend.setAttribute('aria-label', 'Send with the card') }
+    if (fieldSend) { fieldSend.title = 'Send (Enter)'; fieldSend.setAttribute('aria-label', 'Send with the card') }
   } else { bar.append(send, off); document.body.append(bar) }
   function step(from, to) {
     if (!from.length) return
@@ -1628,7 +1628,7 @@ controller('card', class extends Controller {
     }))
     if (drawn) {
       const chip = document.createElement('button')
-      chip.type = 'button'; chip.className = 'focus-chip is-drawing'; chip.textContent = 'Drawing on the card'; chip.title = 'It goes along with what you send. Open the sheet again'
+      chip.type = 'button'; chip.className = 'focus-chip is-drawing'; chip.textContent = 'Drawing on the card'; chip.title = 'Open drawing'
       chip.addEventListener('click', () => this.trace())
       this.chipsTarget.prepend(chip)
     }

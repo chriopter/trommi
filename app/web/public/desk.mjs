@@ -69,7 +69,7 @@ function goalsWords(text) {
   const lines = text ? text.split('\n') : [], more = lines.length - GOALS_SHOWN
   const fold = text ? html`<button type="button" class="desk-goals-fold" data-action="goals#collapse" aria-expanded="true">Hide goals</button><button type="button" class="desk-goals-unfold" data-action="goals#collapse" aria-expanded="false" aria-label="Show goals">${sk('unfold')}<span>Goals · ${lines.length}</span></button>` : ''
   const line = l => { const m = GOAL_SIGN.exec(l); return m ? html`<span class="dg-line has-sign"><span class="dg-sign">${m[1]}</span><span>${m[2]}</span></span>` : html`<span class="dg-line">${l}</span>` }
-  return html`<button type="button" class="desk-goals-show${text ? '' : ' is-empty'}" data-action="goals#edit" title="This desk’s goals (click to write)">${text ? lines.map(line) : 'Goals…'}</button>${more > 0 ? html`<button type="button" class="desk-goals-more" data-action="goals#toggle" data-more="${more}" aria-expanded="false">+${more} more</button>` : ''}${fold}`
+  return html`<button type="button" class="desk-goals-show${text ? '' : ' is-empty'}" data-action="goals#edit" title="Goals">${text ? lines.map(line) : 'Goals…'}</button>${more > 0 ? html`<button type="button" class="desk-goals-more" data-action="goals#toggle" data-more="${more}" aria-expanded="false">+${more} more</button>` : ''}${fold}`
 }
 
 /** The Desk of a new account (no session yet): a calm note with one way on, inviting the first agent. The button sends
@@ -111,7 +111,7 @@ ${deskHead(model, base)}
 <div class="inbox-news-at"><button class="inbox-news" type="button" data-desk-target="news" data-action="desk#toNew" hidden></button></div>
 <div class="inbox-groups" id="desk-list" data-desk-target="list">${deskList(model, base, opts)}</div>
 </main>
-<div class="desk-layer" id="desk-layer"><form class="sel-bar" id="sel-bar" method="post" action="${base}/cards/batch" hidden aria-label="Selected cards"><input type="hidden" name="stay" value="1"><input type="hidden" name="ids" value=""><span class="sel-n"></span>${sideWays({ many: true, between: html`<button type="submit" name="way" value="read" class="sel-read" hidden>${sk('tick')}<span>Read</span></button>` })}<button type="button" class="sel-clear" title="Clear the selection (Esc)" aria-label="Clear the selection"><svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M6.8 7.2 Q12 12.4 17.4 17.6"/><path d="M17.2 6.8 Q12.2 12 6.6 17.4"/></svg></button></form>
+<div class="desk-layer" id="desk-layer"><form class="sel-bar" id="sel-bar" method="post" action="${base}/cards/batch" hidden aria-label="Selected cards"><input type="hidden" name="stay" value="1"><input type="hidden" name="ids" value=""><span class="sel-n"></span>${sideWays({ many: true, between: html`<button type="submit" name="way" value="read" class="sel-read" hidden>${sk('tick')}<span>Read</span></button>` })}<button type="button" class="sel-clear" title="Clear (Esc)" aria-label="Clear the selection"><svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M6.8 7.2 Q12 12.4 17.4 17.6"/><path d="M17.2 6.8 Q12.2 12 6.6 17.4"/></svg></button></form>
 <div class="inbox-edge is-up"><button class="inbox-edge-knock" type="button" id="knock-up" data-dir="up" hidden>↑ ${sk('knock')}<span></span></button></div>
 <div class="inbox-edge is-down"><button class="inbox-edge-knock" type="button" id="knock-down" data-dir="down" hidden>↓ ${sk('knock')}<span></span></button></div>
 </div>`
@@ -125,7 +125,7 @@ const BOLT = raw('<svg class="blitz-bolt" viewBox="0 0 24 24" aria-hidden="true"
 /** The button for n > 0 open cards (app.mjs walkOf: the questions, then what is to read): a link to the walk. */
 function nextPlease(model, base) {
   const n = walkOf(model).length
-  return html`<a class="desk-blitz" data-nav href="${base}/blitz" title="${WORDS.walk}: every open card, one after the other (G B)" aria-label="${WORDS.walk}: ${n === 1 ? '1 open card' : `${n} open cards`}" aria-keyshortcuts="G B">${BOLT}<span>${WORDS.walk}</span><b class="desk-blitz-n">${n}</b></a>`
+  return html`<a class="desk-blitz" data-nav href="${base}/blitz" title="${WORDS.walk} (G B)" aria-label="${WORDS.walk}: ${n === 1 ? '1 open card' : `${n} open cards`}" aria-keyshortcuts="G B">${BOLT}<span>${WORDS.walk}</span><b class="desk-blitz-n">${n}</b></a>`
 }
 
 // ---- the duck for all ----
@@ -143,10 +143,10 @@ function duckAll(model, base) {
   const ask = asks ? (n === 1 ? 'Duck it?' : `Duck all ${n}?`) : n === 1 ? 'Close it as read?' : `Close all ${n} as read?`
   const yes = asks ? (n === 1 ? 'Yes, duck it' : 'Yes, duck them all') : n === 1 ? 'Yes, read' : 'Yes, all read'
   const what = !reads ? `${asks === 1 ? '1 decision goes' : `${asks} decisions go`} to the agents` : !asks ? `${reads === 1 ? '1 card to read is' : `${reads} cards to read are`} closed` : `${asks === 1 ? '1 decision goes' : `${asks} decisions go`} to the agents, ${reads === 1 ? '1 card to read is' : `${reads} cards to read are`} closed`
-  return html`<details class="t-pick desk-duck" data-controller="pops"><summary class="desk-duck-open" title="${tip}" aria-label="${tip}">${sk('duck')}</summary>
+  return html`<details class="t-pick desk-duck" data-controller="pops"><summary class="desk-duck-open" title="${n === 1 ? 'Duck it' : `Duck all ${n}`}" aria-label="${tip}">${sk('duck')}</summary>
 <form class="desk-duck-ask" method="post" action="${base}/cards/batch" aria-label="Clear everything open"><input type="hidden" name="way" value="sweep"><input type="hidden" name="ids" value="${cards.map(c => c.id).join(',')}">
 <p>${ask}</p>
-<div class="desk-duck-ways"><button type="button" class="desk-duck-no" data-pop-close>Cancel</button><button type="submit" class="desk-duck-yes" data-pop-focus title="${what}" aria-description="${what}">${sk('duck')}<span>${yes}</span></button></div>
+<div class="desk-duck-ways"><button type="button" class="desk-duck-no" data-pop-close>Cancel</button><button type="submit" class="desk-duck-yes" data-pop-focus aria-description="${what}">${sk('duck')}<span>${yes}</span></button></div>
 </form></details>`
 }
 
@@ -157,7 +157,7 @@ export function rowSheet(base) {
   return html`<dialog class="rowmenu" id="row-sheet" data-controller="sheet" data-sheet-cards-value="${base}/cards" data-action="click->sheet#tapped turbo:submit-start->sheet#sent" aria-labelledby="row-sheet-title"><div class="rowmenu-in">
 <h3 id="row-sheet-title"></h3>
 <form method="post" id="row-sheet-form"><input type="hidden" name="stay" value="1">
-${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}${way('trust', 'duck', WORDS.trust)}${way('what', 'what', WORDS.what, '', 'What?? — explain this to me')}${way('shred', 'bin', WORDS.shred, 'is-shred')}</form>
+${way('snooze', 'snooze', WORDS.later)}${way('revise', 'reverse', WORDS.revise)}${way('trust', 'duck', WORDS.trust)}${way('what', 'what', WORDS.what, '', 'What??')}${way('shred', 'bin', WORDS.shred, 'is-shred')}</form>
 <a class="rowmenu-open" data-nav draggable="false" href="${base}/">${sk('page')}<span>Open</span></a>
 <button type="button" class="rowmenu-undo" data-action="click->sheet#undo" hidden>${sk('back')}<span>Undo</span></button>
 </div></dialog>`
