@@ -23,6 +23,8 @@ name: ios
 
 on:
   pull_request:
+  # the merge queue: the same checks as a pull request, on the commit that will land on main (no torture run)
+  merge_group:
   workflow_run:
     workflows: [build]
     types: [completed]
@@ -48,7 +50,7 @@ jobs:
     # workflow_run: only a build of main of this repository, by a push or by hand (a fork's pull request from a branch
     # called main also ends a run of build.yml "on main")
     if: >-
-      ${{ github.event_name == 'pull_request' || (github.event.workflow_run.head_branch == 'main'
+      ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event.workflow_run.head_branch == 'main'
       && github.event.workflow_run.head_repository.full_name == github.repository
       && contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event)) }}
     runs-on: ubuntu-24.04
@@ -74,9 +76,9 @@ jobs:
       # the same paths as build.yml's parts, for iOS: the app, its tests, its delivery, and what every part shares
       - name: Find the changed parts (pull request)
         id: pr
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: |
           set -eu
           base=$(git merge-base "$PR_BASE" HEAD || true)
@@ -145,7 +147,7 @@ jobs:
     needs: changes
     if: >-
       ${{ !cancelled() && (needs.changes.outputs.ios == 'true'
-      || (github.event_name == 'pull_request' && needs.changes.result != 'success')) }}
+      || (contains(fromJSON('["pull_request","merge_group"]'), github.event_name) && needs.changes.result != 'success')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -188,7 +190,7 @@ jobs:
         if: steps.core_cache.outputs.cache-hit != 'true'
         run: sh core/swift/build.sh host
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.core_cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        if: steps.core_cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
@@ -306,7 +308,7 @@ jobs:
   mega_fast:
     name: Mega torture (10 iPhones)
     needs: changes
-    if: needs.changes.outputs.mega == 'true'
+    if: needs.changes.outputs.mega == 'true' && github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # blocking once seed 403, slow joins and the connector fixes are on main
