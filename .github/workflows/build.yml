@@ -376,9 +376,13 @@ jobs:
               || { echo "::error::core/wasm/pkg/$f is not the file its build.json names"; exit 1; }
           done
       # (main: not again when it passed on the pull request for this very tree, see `changes`)
+      # six test files at once on the runner's four cores (package.json: WEB_TEST_CONCURRENCY; the default, three,
+      # took about 64 s, six about 39 s: most files wait on timers and a fake hub)
       - name: Test
         if: needs.changes.outputs.checked_web != 'true'
         working-directory: app/web
+        env:
+          WEB_TEST_CONCURRENCY: '6'
         run: npm test
       # The build: on a pull request as a check; on main the build of the release, only when the web's inputs differ
       # from the newest release's (otherwise release.yml takes web.tar.gz from that release).
