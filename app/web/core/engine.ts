@@ -127,6 +127,9 @@ export interface EngineTiming {
   /** How long a live envelope may stay shown ahead of its chain while the room's past is read (`ahead`). */
   ahead_wait: number
 }
+/** How many live envelopes wait ahead of their chain at once (`ahead`). */
+const AHEAD = 32
+const sameBytes = (x: Uint8Array, y: Uint8Array): boolean => x.length === y.length && x.every((b, i) => b === y[i])
 const TIMING: EngineTiming = { backoff_first: 300, backoff_max: 30_000, blocked_retry: 30_000, heal_delay: 3000, upkeep_every: 600_000, halted_retry: 15_000, land: 60_000, progress: 500, ahead_wait: 120_000 }
 
 export interface EngineOptions {
@@ -932,15 +935,16 @@ export class Engine {
       if (await this.repairByWelcome()) { this.repairs++; received = await this.receive(item, true) }
       if (behind()) { await this.noteBehind(item, received); await this.wantRescan(); return }
     }
-    if (received?.outcome === 'refused' && received.code === 'gap' && this.rescanDue && this.takingLive) {
+    // (at most AHEAD envelopes wait so, each once: beyond that a gap is filled from its chain at once, as below)
+    const known = (): boolean => this.ahead.some(x => sameBytes(x.envelope, item.envelope))
+    if (received?.outcome === 'refused' && received.code === 'gap' && this.rescanDue && this.takingLive && (this.ahead.length < AHEAD || known())) {
       // A live change while the room's past is still to be read (a sign-in reads it after its sessions, `skipTo`): the sender's chain
       // comes with it, in the hub's order. Fetched here instead, chain by chain, it was most of the history once more,
       // each envelope read again by that reading. Shown now as the core reads it out of order (provisional), taken in
       // order by the reading of the past, which reads from here on once more if it runs already.
       const shown = await this.receive(item, false)
       if (shown && shown.outcome !== 'refused') this.emit('envelope', { received: await this.readBack(shown), how: 'again' })
-      this.ahead.push({ envelope: item.envelope, change: item.change, void_code: item.void_code })
-      await this.keepAhead()
+      if (!known()) { this.ahead.push({ envelope: item.envelope, change: item.change, void_code: item.void_code }); await this.keepAhead() }
       this.watchAhead()
       await this.wantRescan(item.change - 1)
       return
@@ -1062,7 +1066,7 @@ export class Engine {
     for (const item of this.ahead.splice(0)) {
       let r = await this.receive(item, true)
       if (r?.outcome === 'refused' && r.code === 'gap') r = await this.fillGap(item, r, false)
-      if (r && r.outcome !== 'refused') { if (r.payload) this.whole.add(item.change); this.emit('envelope', { received: r, how: 'again' }) }
+      if (r && r.outcome !== 'refused') { if (r.payload && r.change === item.change) this.whole.add(item.change); this.emit('envelope', { received: r, how: 'again' }) }
     }
     await this.keepAhead()
     this.emit('batch', null)
@@ -1231,19 +1235,25 @@ export class Engine {
           // is said once per reading, and what follows it stays out
           const chain = (): string => `${hex(received!.header.group)}/${hex(received!.header.sender)}`
           if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) received = await this.receive(item, true)
-          if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) { received = await this.fillGap(item, received, false); if (received?.outcome === 'refused' && received.code === 'gap') gaps.add(chain()) }
+          if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) {
+            received = await this.fillGap(item, received, false)
+            // (filled: what followed it in the batch was judged without it and is read once more, from here on)
+            if (received?.outcome === 'refused' && received.code === 'gap') gaps.add(chain()); else repaired = Math.min(repaired ?? item.change, item.change)
+          }
           // (this very envelope, taken in order or its gap said: no longer ahead; one the core still waits with stays)
           if (this.ahead.length && (!received || received.outcome !== 'refused' || received.code === 'replay' || received.code === 'gap')) {
-            const left = this.ahead.filter(x => !(x.change === item.change && x.envelope.length === item.envelope.length && x.envelope.every((b, i) => b === item.envelope[i])))
+            const left = this.ahead.filter(x => !(x.change === item.change && sameBytes(x.envelope, item.envelope)))
             if (left.length !== this.ahead.length) { this.ahead = left; await this.keepAhead() }
           }
           await this.noteBehind(item, received)
           if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
           if (received && received.outcome !== 'refused') {
-            if (received.payload) this.whole.add(item.change)
+            // (whole under the number the core names for it: one read back from another place is not this change)
+            if (received.payload && received.change === item.change) this.whole.add(item.change)
             this.emit('envelope', { received, how: 'again' })
           }
         }
+        let repaired: number | null = null
         let told = this.now()
         for (let at = 0; at < due.length;) {
           const batch = due.slice(at, at + FEED)
@@ -1258,6 +1268,7 @@ export class Engine {
           if (this.now() - told >= this.timing.progress) { told = this.now(); this.emit('batch', null) }
         }
         if (this.past) this.past.at = Math.max(this.past.at, Math.min(page.change, upTo))
+        if (repaired !== null) await this.wantRescan(repaired)
         this.emit('batch', null)
       })
       if (page.change <= after || !page.more) break

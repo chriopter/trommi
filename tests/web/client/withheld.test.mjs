@@ -126,3 +126,25 @@ test('a restart while a live envelope is ahead of its chain: it is still settled
   await again.start().catch(() => {})
   await until(() => withheldSaid(again), 'the gap before the live note is said after the restart')
 })
+
+test('the same envelope served live again and again, and many of them: what waits ahead of its chain stays small', async t => {
+  const { a, past, signIn } = await hidden(t, { ahead_wait: 60_000 })
+  const c = await signIn()
+  past.how = 'never'
+  await c.start()
+  const live = await a.saveNote({ text: 'written while the past is read' })
+  await until(() => c.model.notes.get(live)?.text === 'written while the past is read', 'the live note is shown ahead of its chain')
+  assert.equal(c.engine.ahead.length, 1, 'it waits ahead of its chain')
+  // more of them than may wait: the ones beyond are settled by their chain at once, and the gap is said
+  for (let i = 0; i < 40; i++) await a.saveNote({ text: `one more ${i}` })
+  await until(() => withheldSaid(c), 'the gap is said once more wait than may')
+  await a.settle()
+  await until(() => c.engine.position >= a.engine.position, 'the stream is taken')
+  const waiting = c.engine.ahead.length
+  assert.ok(waiting >= 1 && waiting <= 32, `${waiting} wait`)
+  // the hub's stream brings one of them 100 times more, each under a new change number: it waits once
+  const first = c.engine.ahead[0], from = c.engine.position
+  for (let i = 1; i <= 100; i++) await c.engine.onStream({ event: 'change', item: { kind: 'envelope', envelope: first.envelope, change: from + i, received_at: 0, void_code: null } })
+  await until(() => c.engine.position >= from + 100, 'the repeated envelope is taken')
+  assert.equal(c.engine.ahead.length, waiting, 'each once')
+})
