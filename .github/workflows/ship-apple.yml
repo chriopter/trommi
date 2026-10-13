@@ -76,11 +76,10 @@ on:
 
 permissions: {}
 
-# One run at a time; of the runs waiting only the newest (a started run, and so an upload, is never cut off). The
-# newest delivers when its inputs differ from those last delivered, so a replaced run's change is not lost.
-concurrency:
-  group: ship-apple
-  cancel-in-progress: false
+# No lock on the whole run: a run that waits 55 minutes for App Store Connect to process its build must not hold back the
+# Mac app for direct download (which needs no Apple processing). Each part that uploads or releases has its own lock (a
+# concurrency group on its job): one at a time, of the waiting ones only the newest, a started job is never cut off.
+# The newest run delivers when its inputs differ from those last delivered, so a replaced run's change is not lost.
 
 env:
   # ios-v<N> and mac-v<N>: N is this workflow's run number plus this base (above every release number before)
@@ -241,6 +240,9 @@ jobs:
     if: >-
       ${{ !cancelled() && ((github.event_name == 'push' && needs.ios.result == 'success')
       || (github.event_name == 'workflow_dispatch' && inputs.action == 'testflight-again')) }}
+    concurrency:
+      group: ship-apple-ios
+      cancel-in-progress: false
     # macOS with Xcode 27 (the app's deployment target is iOS 27)
     runs-on: xcode-27
     timeout-minutes: 90
@@ -401,6 +403,9 @@ jobs:
     if: >-
       ${{ !cancelled() && ((github.event_name == 'push' && needs.ios.result == 'success')
       || (github.event_name == 'workflow_dispatch' && inputs.action == 'testflight-again')) }}
+    concurrency:
+      group: ship-apple-mac
+      cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 90
     environment:
@@ -551,6 +556,9 @@ jobs:
     if: >-
       ${{ !cancelled() && github.event_name == 'push' && needs.decide.outputs.mac == 'build'
       && needs.checks.result == 'success' }}
+    concurrency:
+      group: ship-apple-mac-direct
+      cancel-in-progress: false
     # macOS with Xcode 27, Apple silicon (the app is arm64 only)
     runs-on: xcode-27
     timeout-minutes: 120
@@ -666,6 +674,9 @@ jobs:
     name: Release mac-v<N>
     needs: [decide, mac_direct]
     if: needs.mac_direct.outputs.ready == 'yes'
+    concurrency:
+      group: ship-apple-mac-direct
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -772,6 +783,9 @@ jobs:
   store:
     name: App Store (${{ inputs.platform }}, ${{ inputs.action }})
     if: github.event_name == 'workflow_dispatch' && startsWith(inputs.action, 'store-')
+    concurrency:
+      group: ship-apple-store
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment:
