@@ -7,6 +7,9 @@
 //! Ids are the model's spelling (hex). Bytes the person picked (a file, a picture) come inside the action: picking
 //! is the shell's (a platform dialog), deciding what to do with it is the core's.
 
+pub mod run;
+pub mod sent;
+
 use crate::account::AccountAction;
 use crate::app::bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -23,6 +26,22 @@ pub enum Action {
         note: Option<String>,
         #[serde(default)]
         attachments: Vec<String>,
+        /// A note per option, by its key.
+        #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+        option_notes: serde_json::Map<String, serde_json::Value>,
+        /// "Do what you think best": the agent still chooses (the choices are its recommendation).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        trusted: bool,
+    },
+    /// An info card read: closed.
+    Read {
+        card_id: String,
+    },
+    /// Thrown away: closed without a choice.
+    Shred {
+        card_id: String,
+        #[serde(default)]
+        note: Option<String>,
     },
     /// "What??": hand the card back for an explanation.
     HandBack {

@@ -33,7 +33,11 @@ pub use io::{
     IoResult, PlatformAnswer, PlatformOp, SecretOp, StoreAnswer, StoreOp, StreamItem,
 };
 
+use crate::actions::run::{Doing, NotDone};
+use crate::actions::sent::Sent;
+use crate::actions::{self, Action};
 use crate::engine::{self, Connection, Engine, Jitter, OpenError, Report};
+use crate::model::change::Change;
 use crate::views::{Lens, Phase, Screen, ViewModel};
 use std::collections::BTreeMap;
 
@@ -90,6 +94,8 @@ pub struct App {
     /// how often it was in a row.
     reopen_at: Option<u64>,
     reopen_tries: u32,
+    /// The actions in flight: their outbox entries and echoes (`actions::sent`).
+    sent: Sent,
 }
 
 impl Default for App {
@@ -120,6 +126,7 @@ impl App {
             invite_requests: Vec::new(),
             reopen_at: None,
             reopen_tries: 0,
+            sent: Sent::default(),
         }
     }
 
@@ -255,7 +262,7 @@ impl App {
                 self.lens.utc_offset_min = utc_offset_min;
                 self.stale_views = true;
             }
-            Event::Action { .. } => {}
+            Event::Action { action } => self.action(now_ms, action, &mut out),
             Event::Focus { focus } => {
                 // (the single desk chosen last keeps the note and the Scribble Board on All desks)
                 if let Some(desk) = focus.desk.as_deref().filter(|d| *d != crate::views::board::ALL_DESKS) {
@@ -268,6 +275,12 @@ impl App {
                     Screen::Off { query } => (None, None, Some(query)),
                     _ => (None, None, None),
                 };
+                // The seam to the reading of the past: a card or a session opened is where old history is read
+                // (after a sign-in only the open cards and what is new are loaded). `Engine::read_past` is to be
+                // called here, once it exists, for a page whose past this device has not read.
+                if session != self.lens.session || card != self.lens.card {
+                    self.opened(session.as_deref(), card.as_deref());
+                }
                 self.lens.session = session;
                 self.lens.card = card;
                 self.lens.off = off;
@@ -299,6 +312,90 @@ impl App {
         self.after_engine(now_ms, &mut out);
         self.render(&mut out);
         out
+    }
+
+    /// The person did something: the actions of `actions::run`, the toasts, a retry.
+    fn action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        match &action {
+            Action::Dismiss { toast_id } => {
+                self.next_view.toasts.retain(|t| &t.id != toast_id);
+                return;
+            }
+            Action::Retry => {
+                self.with_engine(now_ms, out, |engine, ctx| engine.on_net(ctx, true));
+                return;
+            }
+            _ => {}
+        }
+        let utc_offset_min = self.lens.utc_offset_min;
+        let Some(engine) = self.engine.as_mut() else {
+            let text = crate::views::Text::new("action.no_room", "Sign in first.");
+            self.sent.toast(&mut self.next_view.toasts, text, None);
+            return;
+        };
+        let room = engine.room();
+        let mut ctx = engine::Ctx {
+            now: now_ms,
+            next_id: &mut self.next_id,
+            out,
+        };
+        let mut seal = |draft: &trommi_core::device::Draft,
+                        to: Option<&trommi_core::ids::DeviceId>,
+                        files: &[trommi_core::ids::FileId]| {
+            engine.act(&mut ctx, |device, now| device.seal(draft, to, files, now))
+        };
+        let mut doing = Doing {
+            model: &mut self.board.model,
+            sent: &mut self.sent,
+            room,
+            now: now_ms,
+            utc_offset_min,
+            seal: &mut seal,
+            change: Change::default(),
+        };
+        let result = doing.run(&action);
+        let mut change = std::mem::take(&mut doing.change);
+        if let Err(NotDone { text, again }) = result {
+            self.sent
+                .toast(&mut self.next_view.toasts, text, again.then_some(action));
+        }
+        self.board.model.project(&mut change, now_ms);
+        self.stale_views = true;
+    }
+
+    /// A card or a session came into view (or left it): the hook for reading its past.
+    fn opened(&mut self, _session: Option<&str>, _card: Option<&str>) {}
+
+    /// What the hub said of the actions in flight, and the ones whose entry is gone without a word: each echo of
+    /// a refused or lost entry is rolled back, with a toast that offers the action again.
+    fn settle_actions(&mut self, now_ms: u64, refused: Vec<(u64, &'static str)>) {
+        let mut back = Vec::new();
+        for (id, code) in refused {
+            back.extend(self.sent.take(id).into_iter().map(|o| (o, actions::run::refused(code))));
+        }
+        if !self.sent.is_empty() {
+            if let Some(engine) = self.engine.as_ref() {
+                let held = engine.device().outbox().iter().map(|e| e.id).collect();
+                back.extend(self.sent.lost(&held).into_iter().map(|o| (o, actions::run::lost())));
+            }
+        }
+        if back.is_empty() {
+            return;
+        }
+        let mut change = Change::default();
+        let mut offered: Vec<Action> = Vec::new();
+        for (out, text) in back {
+            if let Some(local_id) = &out.local_id {
+                self.board.model.rollback_echo(local_id, &mut change);
+            }
+            // (one toast per action, however many entries it made)
+            if !offered.contains(&out.action) {
+                offered.push(out.action.clone());
+                self.sent.toast(&mut self.next_view.toasts, text, Some(out.action));
+            }
+        }
+        self.board.model.project(&mut change, now_ms);
+        self.stale_views = true;
     }
 
     /// The stored device as the shell loaded it: an engine over it, or the sign-in screens.
@@ -402,6 +499,7 @@ impl App {
         let mut fed = false;
         let mut evicted = Vec::new();
         let mut stopped = false;
+        let mut refused = Vec::new();
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
@@ -428,6 +526,10 @@ impl App {
                     }
                 }
                 Report::FileEvicted { file } => evicted.push(file),
+                Report::Accepted { id, .. } => {
+                    self.sent.take(id);
+                }
+                Report::Refused { id, code, .. } => refused.push((id, code)),
                 Report::Alert(alert) => {
                     if self.alerts.len() >= ALERTS_MAX {
                         self.alerts.remove(0);
@@ -450,6 +552,10 @@ impl App {
             let _ = self.board.finish(now_ms);
             self.stale_views = true;
         }
+        self.settle_actions(now_ms, refused);
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
         if self.stale_views || self.view_wake.is_some_and(|at| now_ms >= at) {
