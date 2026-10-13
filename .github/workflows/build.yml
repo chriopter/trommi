@@ -5,6 +5,9 @@
 # On every commit on main: the same checks, and the full builds of the changed parts (release binaries). When one of
 # them fails, the job `report` opens the issue "Main build v<N> failed" (label build-failed) and nothing is released
 # or delivered; the next run on main that passes closes it.
+# A part whose check job passed on the pull request the commit was merged from, for the very same tree of files (the
+# usual case: nothing else merged in between), does not run its tests and clippy again on main; its job still builds
+# what main releases (.github/scripts/checked_tree.sh says which parts, and on what evidence).
 # On main also:
 # when what a part is built from changed since the newest release, make one release v<N> of every part
 # (release.yml) and deliver each part whose inputs changed (web, hub; the connector is delivered by the release
@@ -84,6 +87,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      # main: the runs, jobs and artifacts of the pull request this commit came from (checked_tree.sh)
+      actions: read
     outputs:
       core: ${{ steps.find.outputs.core }}
       web: ${{ steps.find.outputs.web }}
@@ -97,6 +102,11 @@ jobs:
       changed_web: ${{ steps.inputs.outputs.web }}
       changed_connector: ${{ steps.inputs.outputs.connector }}
       changed_hub: ${{ steps.inputs.outputs.hub }}
+      # main: the part's check passed on the pull request for this very tree; its tests and clippy are not run again
+      checked_core: ${{ steps.checked.outputs.core }}
+      checked_web: ${{ steps.checked.outputs.web }}
+      checked_connector: ${{ steps.checked.outputs.connector }}
+      checked_hub: ${{ steps.checked.outputs.hub }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -197,6 +207,31 @@ jobs:
           part web 'app/web/|tests/web/|connector/tools\.json$|connector/prompt\.md$|demo/|\.node-version$|\.github/scripts/web_release\.mjs$|\.github/scripts/release_notes\.mjs$|\.github/tools/wrangler/|\.github/workflows/deploy_web\.yml$' web
           part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connector/|tests/Cargo\.toml$|\.github/workflows/release\.yml$' connector
           part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/deploy_hub\.yml$|\.github/scripts/hub_compat\.sh$' 'hub|updater'
+      # A pull request: the tree it checked (the merge GitHub made), named by an artifact, for checked_tree.sh on main.
+      # The name is the claim; checked_tree.sh takes the jobs' results from GitHub, not from this file.
+      - name: The tree this run checks
+        if: github.event_name == 'pull_request'
+        run: git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/tree" && echo "TREE=$(cat "$RUNNER_TEMP/tree")" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'pull_request'
+        with:
+          name: checked-tree-${{ env.TREE }}
+          path: ${{ runner.temp }}/tree
+          if-no-files-found: error
+          retention-days: 3
+          overwrite: true
+      # Main (a push): which parts' checks passed on the pull request this commit came from, for this very tree.
+      # Those parts' jobs still build what main releases, but do not run their tests and clippy again.
+      - name: Checks passed on the pull request for this tree
+        id: checked
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          sh .github/scripts/checked_tree.sh > "$RUNNER_TEMP/checked"
+          cat "$RUNNER_TEMP/checked" >> "$GITHUB_OUTPUT"
+          { echo "checked on the pull request, not run again:"; sed 's/^/- /' "$RUNNER_TEMP/checked"; } >> "$GITHUB_STEP_SUMMARY"
 
   # The shared core's own tests: the crates' unit tests and the scenario tests under tests/core and tests/bindings.
   # Every other part builds on the core, and none of their jobs runs these. It builds and delivers nothing.
@@ -212,36 +247,55 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # (only the targets and components this job needs: .github/scripts/rust_toolchain.sh)
       - name: Compiler (rust-toolchain.toml), clippy
-        run: |
-          rustup toolchain install || rustup show
-          rustup component add clippy
-          rustc --version
+        run: sh .github/scripts/rust_toolchain.sh --component clippy
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        id: cache
         with:
           prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Checked on the pull request for this very tree (main, see `changes`): nothing runs again, except that the
+      # tests and clippy are still compiled (not run) when this job's cache missed, so that what main saves for the
+      # pull requests holds them. RUN is --no-run then.
+      - name: What runs
+        id: what
+        env:
+          CHECKED: ${{ needs.changes.outputs.checked_core }}
+          HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: sh .github/scripts/checked_run.sh
       # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        if: steps.what.outputs.compile == 'true'
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
+        if: steps.what.outputs.compile == 'true'
         run: cargo clippy --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift --all-targets -- -D warnings
       # the licence tables are what cargo reports for this Cargo.lock (.github/scripts/third_party.mjs)
       - name: THIRD-PARTY.md is current
+        if: steps.what.outputs.compile == 'true'
         run: node .github/scripts/third_party.mjs --check
       - name: The crates' own tests
-        run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift
+        if: steps.what.outputs.compile == 'true'
+        env:
+          RUN: ${{ steps.what.outputs.run }}
+        run: |
+          # shellcheck disable=SC2086
+          cargo test --locked $RUN -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift
       # One test that fails must not hide the others: every target runs, the step fails at the end.
       - name: The scenario tests (tests/core, tests/bindings) and the test library
+        if: steps.what.outputs.compile == 'true'
+        env:
+          RUN: ${{ steps.what.outputs.run }}
         run: |
           set -eu
           tests=$(sed -n 's/^name = "\(\(core\|bindings\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
           [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no core test"; exit 1; }
           # shellcheck disable=SC2086
-          cargo nextest run --locked -p trommi-tests --no-fail-fast --lib $tests
+          cargo nextest run --locked $RUN -p trommi-tests --no-fail-fast --lib $tests
 
   web:
     name: Web app (check)
@@ -264,32 +318,66 @@ jobs:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: app/web/package-lock.json
+      # The Rust core for the browser (core/wasm/pkg) as core/wasm/build.sh made it on main from the very same inputs:
+      # the committed files of the core, the client core, the workspace's pins and this file (the build is
+      # reproducible: the same sources give the same bytes). Only main saves it; a pull request reads main's. A change
+      # of the web app alone then compiles no Rust. The compiler is still installed: the build's manifest names it.
+      - name: The core's inputs
+        id: core
+        run: echo "key=wasm-pkg-v1-$(git ls-tree -r HEAD -- core client Cargo.toml Cargo.lock rust-toolchain.toml .github/workflows/build.yml | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pkg
+        with:
+          path: core/wasm/pkg
+          key: ${{ steps.core.outputs.key }}
       - name: Compiler (rust-toolchain.toml)
         run: |
-          rustup toolchain install || rustup show
-          rustc --version
+          set -eu
+          sh .github/scripts/rust_toolchain.sh wasm32-unknown-unknown
           echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.pkg.outputs.cache-hit != 'true'
         with:
           prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.pkg.outputs.cache-hit != 'true'
         id: bindgen
         with:
           path: ~/.cargo/bin/wasm-bindgen
           key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}-${{ hashFiles('rust-toolchain.toml') }}
       # the command must be the version of the crate in Cargo.lock (core/wasm/build.sh checks it)
       - name: wasm-bindgen
-        if: steps.bindgen.outputs.cache-hit != 'true'
+        if: steps.pkg.outputs.cache-hit != 'true' && steps.bindgen.outputs.cache-hit != 'true'
         run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
       - name: Packages
         working-directory: app/web
         run: npm ci --no-audit --no-fund
       - name: The Rust core for the browser
+        if: steps.pkg.outputs.cache-hit != 'true'
         run: sh core/wasm/build.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.pkg.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        with:
+          path: core/wasm/pkg
+          key: ${{ steps.core.outputs.key }}
+      # Taken from the cache: its files are older than this checkout's, and the web app's build makes the core anew
+      # when they look older than its sources (app/web/dev/build.mjs): they are marked as made now, and checked.
+      - name: The Rust core for the browser, as made before
+        if: steps.pkg.outputs.cache-hit == 'true'
+        run: |
+          set -eu
+          touch core/wasm/pkg/*
+          cat core/wasm/pkg/build.json
+          for f in trommi_core_wasm_bg.wasm trommi_core_wasm.js trommi-core.js idb-store.js; do
+            [ "$(sha256sum "core/wasm/pkg/$f" | cut -d' ' -f1)" = "$(jq -r --arg f "$f" '.[$f].sha256' core/wasm/pkg/build.json)" ] \
+              || { echo "::error::core/wasm/pkg/$f is not the file its build.json names"; exit 1; }
+          done
+      # (main: not again when it passed on the pull request for this very tree, see `changes`)
       - name: Test
+        if: needs.changes.outputs.checked_web != 'true'
         working-directory: app/web
         run: npm test
       # The build: on a pull request as a check; on main the build of the release, only when the web's inputs differ
@@ -354,25 +442,34 @@ jobs:
         with:
           node-version-file: .node-version
       - name: Compiler (rust-toolchain.toml), clippy
-        run: |
-          set -eu
-          rustup toolchain install || rustup show
-          rustup component add clippy
-          rustc --version
+        run: sh .github/scripts/rust_toolchain.sh --component clippy
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        id: cache
         with:
           prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # (main: as in the job core)
+      - name: What runs
+        id: what
+        env:
+          CHECKED: ${{ needs.changes.outputs.checked_connector }}
+          HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: sh .github/scripts/checked_run.sh
       # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        if: steps.what.outputs.compile == 'true'
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
+        if: steps.what.outputs.compile == 'true'
         run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
       # The scenario tests start the hub of this repository and the built connector (tests/connector/common/mod.rs).
       - name: Test
+        if: steps.what.outputs.compile == 'true'
+        env:
+          RUN: ${{ steps.what.outputs.run }}
         run: |
           set -eu
           cargo build --locked -p trommi-hub -p trommi-connector
@@ -381,7 +478,7 @@ jobs:
           # shellcheck disable=SC2086
           # TROMMI_HUB_SERVES_REMOVAL: this repository's hub has the removal route, so a removed connector must verify
           # its removal there (without it the test accepts a connector that only keeps its state)
-          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked -p trommi-tests --no-fail-fast $tests
+          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked $RUN -p trommi-tests --no-fail-fast $tests
 
   # Main only, and only when the connector's inputs differ from the newest release's (otherwise release.yml takes the
   # binaries from it): the four release binaries, as connector/build-plugin.mjs makes them, one machine per target at
@@ -419,8 +516,7 @@ jobs:
       - name: Compiler (rust-toolchain.toml), clang, zig
         run: |
           set -eu
-          rustup toolchain install || rustup show
-          rustc --version
+          sh .github/scripts/rust_toolchain.sh "$TARGET"
           clang --version | head -n 1
           case "$TARGET" in *-apple-darwin) ;; *) exit 0 ;; esac
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
@@ -524,38 +620,54 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compiler (rust-toolchain.toml), clippy
+      # and, for the release build (main), the static target and the C compiler for it, fetched beside the compiler
+      - name: Compiler (rust-toolchain.toml), clippy, the C compiler for static builds
+        env:
+          STATIC: ${{ github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false' }}
         run: |
           set -eu
-          rustup toolchain install || rustup show
-          rustup component add clippy
-          rustc --version
-      - name: The C compiler for static builds
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
-        run: |
-          set -eu
-          sudo apt-get update -q
-          sudo apt-get install -y -q musl-tools
+          if [ "$STATIC" = true ]; then
+            { sudo apt-get update -q && sudo apt-get install -y -q musl-tools; } > "$RUNNER_TEMP/apt.log" 2>&1 &
+            apt=$!
+            sh .github/scripts/rust_toolchain.sh --component clippy "$TARGET"
+            wait "$apt" || { cat "$RUNNER_TEMP/apt.log"; echo "::error::musl-tools could not be installed"; exit 1; }
+            tail -n 3 "$RUNNER_TEMP/apt.log"
+          else
+            sh .github/scripts/rust_toolchain.sh --component clippy
+          fi
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        id: cache
         with:
           prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # (main: as in the job core)
+      - name: What runs
+        id: what
+        env:
+          CHECKED: ${{ needs.changes.outputs.checked_hub }}
+          HIT: ${{ steps.cache.outputs.cache-hit }}
+        run: sh .github/scripts/checked_run.sh
       # cargo-nextest, the prebuilt binary of the pinned version (its checksum checked by the action)
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        if: steps.what.outputs.compile == 'true'
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
+        if: steps.what.outputs.compile == 'true'
         run: cargo clippy --locked -p trommi-hub -p trommi-hub-updater --all-targets -- -D warnings
       # the hub's tests and the deploy path's (updater, release form, settings)
       - name: Test
+        if: steps.what.outputs.compile == 'true'
+        env:
+          RUN: ${{ steps.what.outputs.run }}
         run: |
           set -eu
           tests=$(sed -n 's/^name = "\(\(hub\|deploy\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
           [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no hub test"; exit 1; }
           # shellcheck disable=SC2086
-          cargo nextest run --locked -p trommi-tests --no-fail-fast $tests
+          cargo nextest run --locked $RUN -p trommi-tests --no-fail-fast $tests
       - name: Scripts of the deploy path
         run: |
           set -eu
