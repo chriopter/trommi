@@ -2,7 +2,7 @@
 // the Desk ----": the drawings, the sketches, the session marks, the crown, the hand, the ring, the hues, a sub's card
 // edge) for the Linux window, unchanged. The window draws the paths these functions write.
 //   node app/linux/dev/pen.mjs          write it
-//   node app/linux/dev/pen.mjs --check  exit 1 when qml/pen.mjs is not what ui.mjs gives (CI: linux.yml)
+//   node app/linux/dev/pen.mjs --check  exit 1 when qml/pen.mjs is not what ui.mjs gives (CI: pr-check.yml, Linux app (check))
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
