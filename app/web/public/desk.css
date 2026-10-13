@@ -1211,3 +1211,67 @@ body > main#inbox { contain: strict; }
 
 /* His starred rows pinned at the top of Off your mind: a firmer rule under the last of them */
 .end-row[data-pinned]:not(:has(+ [data-pinned])) { border-bottom: 1.5px solid var(--line-strong); }
+
+/* ---- proposals for Off your mind (desk.mjs oymList, localStorage trommi-oym a…f): what runs as live cards, what is
+   done as a very compact list ---- */
+.oym { gap: var(--s-3); text-align: left; }
+.oym :is(.oym-card, .oym-mini, summary) { text-align: left; }
+.oym-card { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: 12px 14px; border: 1.5px solid color-mix(in srgb, var(--fg) 55%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); color: var(--fg); text-decoration: none; box-shadow: 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent); }
+@media (any-hover: hover) { .oym-card:hover { border-color: var(--fg); } }
+.oym-card .agent-avatar { width: 30px; height: 30px; }
+.oym-card-words { display: grid; gap: 3px; min-width: 0; }
+.oym-card-words b { font: 600 var(--t-md)/1.3 var(--font); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.oym-card-words small { color: var(--muted); font-size: var(--t-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.oym-who { color: var(--fg); font-weight: 600; }
+.oym-ago { align-self: start; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
+.oym-label { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--muted); font: 600 var(--t-xs)/1 var(--font); letter-spacing: .06em; text-transform: uppercase; }
+.oym-label span { color: var(--faint); font-variant-numeric: tabular-nums; }
+.oym-label .sketch { width: 14px; height: 14px; color: var(--accent); }
+/* the compact list: one short line each */
+.oym-minis { display: grid; margin: 4px 0 0; padding: 0; list-style: none; }
+.oym-mini { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 28px; color: var(--muted); font: 400 var(--t-sm)/1.25 var(--font); }
+.oym-mini a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
+.oym-mini a:hover { color: var(--fg); text-decoration: underline; }
+.oym-mini-mark { display: grid; place-items: center; color: var(--accent); }
+.oym-mini-mark .sketch { width: 14px; height: 14px; stroke-width: 2.2; }
+.oym-mini[data-g="later"] .oym-mini-mark { color: var(--stamp-ink-later); }
+.oym-mini[data-g="trash"] .oym-mini-mark { color: var(--faint); }
+.oym-mini[data-shredded] a { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
+.oym-mini-ago { color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
+.oym-minis.is-two { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--s-5); }
+@media (max-width: 640px) { .oym-minis.is-two { grid-template-columns: minmax(0, 1fr); } }
+/* a: one stack, More fans it out */
+.oym-stackwrap > summary { list-style: none; cursor: pointer; }
+.oym-stackwrap > summary::-webkit-details-marker { display: none; }
+.oym-stack, .oym-pile { position: relative; display: block; margin-bottom: calc(var(--behind) * 8px + 8px); }
+.oym-sheet { position: absolute; inset: 0; border: 1.5px solid color-mix(in srgb, var(--fg) 40%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); transform: translate(calc(var(--k) * 4px), calc(var(--k) * 8px)) rotate(calc(var(--k) * .7deg)); }
+.oym-sheet:nth-child(2) { transform: translate(calc(var(--k) * -2px), calc(var(--k) * 6px)) rotate(calc(var(--k) * -.5deg)); }
+.oym-card.is-top { z-index: 1; }
+.oym-more { position: absolute; z-index: 2; right: 14px; bottom: -10px; padding: 4px 10px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 600 var(--t-xs)/1 var(--font); }
+.oym-stackwrap[open] > .oym-stack { display: none; }
+.oym-fan { display: grid; gap: var(--s-2); }
+.oym-stackwrap:not([open]) > .oym-fan { display: none; }
+/* b: small tiles side by side */
+.oym-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-2); }
+.oym-card.is-tile { grid-template-columns: 26px minmax(0, 1fr); grid-template-rows: auto auto; align-items: start; padding: 10px 12px; }
+.oym-card.is-tile .oym-ago { grid-column: 2; }
+.oym-card.is-tile .agent-avatar { width: 26px; height: 26px; }
+/* c, d, e: cards one under the other */
+.oym-cards { display: grid; gap: var(--s-2); }
+.oym-card.is-wide { padding: 16px 18px; }
+.oym-morelink { color: var(--muted); font: 600 var(--t-sm)/1 var(--font); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
+.oym-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--s-5); align-items: start; }
+.oym-split > div { display: grid; gap: var(--s-2); }
+@media (max-width: 760px) { .oym-split { grid-template-columns: minmax(0, 1fr); } }
+/* e: who is at work, in one line */
+.oym-crowd > summary { list-style: none; display: flex; align-items: center; gap: 4px; padding: 10px 14px; border: 1.5px solid color-mix(in srgb, var(--fg) 55%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); cursor: pointer; }
+.oym-crowd > summary::-webkit-details-marker { display: none; }
+.oym-crowd > summary .agent-avatar { width: 28px; height: 28px; margin-right: -6px; }
+.oym-crowd > summary b { margin-left: 14px; font: 600 var(--t-md)/1 var(--font); }
+.oym-crowd-more { margin-left: auto; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
+.oym-crowd[open] > summary .oym-crowd-more { visibility: hidden; }
+.oym-crowd > .oym-cards { margin-top: var(--s-2); }
+/* f: a pile per session */
+.oym-piles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-4) var(--s-3); }
+.oym .oym-mini > a { text-align: left; justify-self: stretch; }
+.oym .oym-card-words, .oym .oym-card-words > * { text-align: left; justify-self: start; }

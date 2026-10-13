@@ -3,7 +3,7 @@
 // the card's own page, its tiles are forms that answer with one tap.
 import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
 import { lastUndo, undoLast } from './ui.mjs'
-import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
+import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, avatar, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
 // ---- the infos: reports, notes, nothing to decide ----
 // An info is a card of the stack like any other, among the decisions by
 // its time (a knock first): the drawn page where a decision has its pictures, the title, and at the right What?? and
@@ -326,10 +326,58 @@ function endList(model, base, { full = false, q = '' } = {}) {
           : html`<span class="end-tick is-done" title="Done" role="img" aria-label="Done">${sk('tick')}</span>`
     return html`<li class="end-row" data-g="${s.g}"${s.pinned ? raw(' data-pinned') : ''}${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''} data-id="${c.id}">${box}<a class="end-title" data-nav href="${href}" title="${c.title} · ${s.said}">${c.starred ? starMark() : ''}${c.title}</a><span class="end-said">${s.said}</span>${agoSpan(s.at, 'ago end-ago')}</li>`
   }
+  const look = oymLook()
+  if (look) return oymList(look, { id, full, model, base, works: workItems(model), rest: items.filter(s => s.g !== 'works'), row, terms })
   return html`<section id="${id}" class="endlist${full ? ' is-full' : ''}" aria-label="Off your mind">
 ${divider('Off your mind', '', full ? {} : { href: `${base}/stacks/off` })}
 <ol class="end-rows">${(full ? items : items.slice(0, END_STEP)).map(row)}</ol>${full && !items.length ? html`<p class="end-none">${terms.length ? 'Nothing here has these words.' : 'Nothing yet.'}</p>` : ''}
 </section>`
+}
+
+// ---- proposals for Off your mind (the owner, 13 October 2026: what runs should read as live cards, a stack that opens
+// with More; what is done a very compact list). Chosen by localStorage trommi-oym (a…f) while he decides. ----
+const OYM = ['a', 'b', 'c', 'd', 'e', 'f']
+const oymLook = () => { try { const v = localStorage.getItem('trommi-oym'); return OYM.includes(v) ? v : '' } catch { return '' } }
+/** A running card: who is on it (drawing), the card's title, its status line, how long. */
+const liveCard = (i, base, cls = '') => html`<a class="oym-card${cls}" data-nav href="${cardPath(i.card, base)}" style="--hue:${i.sender.hue}">${avatar(i.sender, { crown: false, working: true })}<span class="oym-card-words"><b>${i.card.title}</b><small><span class="oym-who">${i.sender.name}</span>${i.line?.label ? html` · ${i.line.label}` : ' · on it'}</small></span>${agoSpan(i.line?.updated ?? i.at, 'ago oym-ago')}</a>`
+/** A done or put-off line, as small as it gets: a mark, the title, when. */
+function miniRow(s, base) {
+  const c = s.card
+  const mark = s.g === 'later' ? sk('snooze') : s.g === 'trash' ? sk(c.status === 'shredded' ? 'shred' : 'withdraw') : sk('tick')
+  return html`<li class="oym-mini" data-g="${s.g}"${c.status === 'shredded' ? raw(' data-shredded') : ''}><span class="oym-mini-mark" aria-hidden="true">${mark}</span><a data-nav href="${cardPath(c, base)}" title="${c.title}">${c.title}</a>${agoSpan(s.at, 'ago oym-mini-ago')}</li>`
+}
+const miniList = (rest, base, n = 8) => (rest.length ? html`<ol class="oym-minis">${rest.slice(0, n).map(s => miniRow(s, base))}</ol>` : '')
+const runHead = (n, words = 'Running') => html`<h3 class="oym-label"><i class="work-dot"></i>${words}<span>${n}</span></h3>`
+function oymList(look, { id, full, model, base, works, rest }) {
+  const n = works.length, more = full ? Infinity : 8
+  const shell = (inner, cls = '') => html`<section id="${id}" class="endlist oym is-${look}${cls}${full ? ' is-full' : ''}" aria-label="Off your mind">${divider('Off your mind', '', full ? {} : { href: `${base}/stacks/off` })}${inner}</section>`
+  if (look === 'a') {
+    // a stack of the running cards; More fans it out into all of them
+    if (!n) return shell(miniList(rest, base, more))
+    const behind = Math.min(n - 1, 3)
+    return shell(html`<details class="oym-stackwrap"><summary class="oym-stack" style="--behind:${behind}">${Array.from({ length: behind }, (_, k) => html`<i class="oym-sheet" style="--k:${k + 1}"></i>`)}${liveCard(works[0], base, ' is-top')}${n > 1 ? html`<span class="oym-more">+${n - 1} running</span>` : ''}</summary><div class="oym-fan">${works.map(i => liveCard(i, base))}</div></details>${miniList(rest, base, more)}`)
+  }
+  if (look === 'b') {
+    // the running cards side by side as small tiles, wrapping; done under them
+    return shell(html`${n ? html`${runHead(n)}<div class="oym-tiles">${works.slice(0, full ? n : 6).map(i => liveCard(i, base, ' is-tile'))}</div>` : ''}${miniList(rest, base, more)}`)
+  }
+  if (look === 'c') {
+    // the running cards as cards of the Desk, one under the other; done in two columns of small lines
+    return shell(html`${n ? html`${runHead(n)}<div class="oym-cards">${works.slice(0, full ? n : 4).map(i => liveCard(i, base, ' is-wide'))}</div>${n > 4 && !full ? html`<a class="oym-morelink" data-nav href="${base}/stacks/off">+${n - 4} running</a>` : ''}` : ''}${rest.length ? html`<ol class="oym-minis is-two">${rest.slice(0, full ? Infinity : 10).map(s => miniRow(s, base))}</ol>` : ''}`)
+  }
+  if (look === 'd') {
+    // two columns: running cards on the left, done on the right (one under the other on a phone)
+    return shell(html`<div class="oym-split"><div>${runHead(n)}<div class="oym-cards">${works.slice(0, full ? n : 4).map(i => liveCard(i, base))}</div></div><div>${html`<h3 class="oym-label is-done">${sk('tick')}Done<span>${rest.length}</span></h3>`}${miniList(rest, base, full ? Infinity : 8)}</div></div>`)
+  }
+  if (look === 'e') {
+    // one line of who is at work (their drawings, how many); a tap opens the cards; done under it
+    const who = [...new Map(works.map(i => [i.sender.id, i.sender])).values()]
+    return shell(html`${n ? html`<details class="oym-crowd"><summary>${who.slice(0, 6).map(a => avatar(a, { crown: false, working: true }))}<b>${n} running</b><span class="oym-crowd-more">More</span></summary><div class="oym-cards">${works.map(i => liveCard(i, base))}</div></details>` : ''}${miniList(rest, base, more)}`)
+  }
+  // f: a small stack per session, its newest card on top
+  const by = new Map()
+  for (const i of works) { if (!by.has(i.sender.id)) by.set(i.sender.id, []); by.get(i.sender.id).push(i) }
+  return shell(html`${n ? html`${runHead(n)}<div class="oym-piles">${[...by.values()].map(list => html`<div class="oym-pile" style="--behind:${Math.min(list.length - 1, 2)}">${Array.from({ length: Math.min(list.length - 1, 2) }, (_, k) => html`<i class="oym-sheet" style="--k:${k + 1}"></i>`)}${liveCard(list[0], base, ' is-top')}${list.length > 1 ? html`<span class="oym-more">+${list.length - 1}</span>` : ''}</div>`)}</div>` : ''}${miniList(rest, base, more)}`)
 }
 
 /** The page /stacks/off: the whole list, the work with the agents first, then every row of the end list, with a search. */
