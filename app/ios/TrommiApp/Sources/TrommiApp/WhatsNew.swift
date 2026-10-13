@@ -183,7 +183,7 @@ struct WhatsNewDay: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Ink.line))
         .accessibilityLabel(pic.alt)
       }
-      DashedRule()
+      DayDashedRule()
       Button { withAnimation(.snappy) { open.toggle() } } label: {
         HStack(alignment: .center, spacing: 12) {
           HStack(spacing: 12) {
@@ -223,7 +223,7 @@ struct WhatsNewDay: View {
 }
 
 /** The dashed line between a card's words and its counts. */
-private struct DashedRule: View {
+private struct DayDashedRule: View {
   private struct Across: Shape {
     func path(in r: CGRect) -> Path { Path { p in p.move(to: CGPoint(x: r.minX, y: r.midY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY)) } }
   }
