@@ -160,6 +160,8 @@ const WELCOMES_AGAIN = 64
 /** Joins of session groups from outside posted in one request (`POST /v1/commits`): at most so many, and so many
  *  bytes (the hub takes a JSON body of 1.5 MiB). */
 const JOINS_AT_ONCE = 32
+/** At most so many envelopes the stream left to the pages are kept to be looked at after the pass (`passedOver`). */
+const PASSED_OVER = 4096
 /** `landMany` builds so many in one job of the queue, and wakes the pump after each such job. */
 const LAND_TOGETHER = 6
 const JOINS_BYTES = 1 << 20
@@ -217,6 +219,19 @@ export class Engine {
   private readonly live: ChangeItem[] = []
   private takingLive = false
   private liveRun: Promise<void> | null = null
+  /** The envelopes the stream left to the pages that the pages did not bring (`passedOver`): an archived session's,
+   *  which a catch-up of the live sessions leaves out. Each is taken in its chain's order; one the chain holds
+   *  already (brought by an earlier pass) is refused as a replay and nothing follows. Inside a job. */
+  private async takePassedOver(): Promise<void> {
+    const items = this.passedOver.splice(0).filter(i => i.change <= this.position && !this.pageSeen.has(i.change)).sort((x, y) => x.change - y.change)
+    this.pageSeen.clear()
+    let told = false
+    for (const item of items) {
+      const received = await this.receive(item, true)
+      if (received && received.outcome !== 'refused') { this.emit('envelope', { received, how: 'again' }); told = true }
+    }
+    if (told) this.emit('batch', null)
+  }
   private takeLive(): Promise<void> {
     return this.serial(async () => {
       const items = this.live.splice(0).filter(i => i.change > this.position)
@@ -232,6 +247,11 @@ export class Engine {
       if (this.live.length && this.running) this.liveRun = this.takeLive()
     })
   }
+  /** Envelopes the stream brought and left to the pages (`missed`), and the changes the pages of this pass brought:
+   *  what the pages leave out of those (an envelope of a session archived meanwhile: they read the live sessions
+   *  alone) is taken after the pass, in its chain's order, as the stream would have taken it. */
+  private passedOver: Extract<ChangeItem, { kind: 'envelope' }>[] = []
+  private pageSeen = new Set<number>()
   /** The pages of a catch-up are being read (not its rescan, which follows them at the head). */
   private paging = false
   /** The room's newest change number as the last page of the hub's order said it (null: a hub that does not say). */
@@ -397,17 +417,50 @@ export class Engine {
   /** The groups of `behind` this device now holds up to the epoch noted: their envelopes from the change noted on are
    *  read once more (a rescan from just before it). */
   private async behindMet(): Promise<void> {
-    let from: number | null = null
+    const met: [Uint8Array, number][] = []
     for (const [key, b] of this.behind) {
       const g = this.groups.find(x => hex(x.group) === key)
       if (!g || g.epoch < b.epoch) continue
       this.behind.delete(key)
-      from = Math.min(from ?? b.change, b.change)
+      met.push([g.group, b.change])
     }
-    if (from === null) return
-    mark(`behind met: rescan from ${from - 1}`)
+    if (!met.length) return
+    mark(`behind met: ${met.length} groups read again`)
     await this.opts.meta.set('behind', [...this.behind].map(([k, v]) => [k, v.change, v.epoch])).catch(() => {})
-    await this.wantRescan(Math.max(0, from - 1))
+    // (outside the job that found them: each group's own envelopes from the hub)
+    void this.readBehind(met).catch(() => {})
+  }
+  /**
+   * The envelopes of groups this device now holds far enough (`behindMet`), each group's own from the change noted
+   * on (`GET /v1/changes?group=`, point 46): what it could not take before is taken, what it holds is read back. One
+   * group's alone, not the room's changes from there: an archived group's too (a session joined late and closed at
+   * once, its name written in between), which a reading of the live sessions leaves out. A group whose reading fails
+   * is read by a rescan from there, as before.
+   */
+  private async readBehind(met: [Uint8Array, number][]): Promise<void> {
+    for (const [group, change] of met) {
+      try {
+        const upTo = this.position, items: Extract<ChangeItem, { kind: 'envelope' }>[] = []
+        for (let after = Math.max(0, change - 1); after < upTo;) {
+          const page = await timed('hub', () => this.hub.changes(after, PAGE, { group }))
+          for (const item of page.items) if (item.kind === 'envelope' && item.change <= upTo) items.push(item)
+          if (!page.more || page.change <= after) break
+          after = page.change
+        }
+        await this.serial(async () => {
+          for (const item of items) {
+            let received = await this.receive(item, true)
+            await this.noteBehind(item, received)
+            if (received?.outcome === 'refused' && received.code === 'replay') { received = await this.receive(item, false); if (received) received = await this.readBack(received) }
+            if (received && received.outcome !== 'refused') this.emit('envelope', { received, how: 'again' })
+          }
+          this.emit('batch', null)
+        })
+      } catch (e) {
+        if (this.isLocal(e)) throw e
+        await this.wantRescan(Math.max(0, change - 1))
+      }
+    }
   }
   private group(group: Uint8Array): GroupSummary | undefined { return this.groups.find(g => same(g.group, group)) }
 
@@ -1056,6 +1109,7 @@ export class Engine {
     try {
       // (once more while the stream brought a change during the pass: the last page may have been read before it)
       this.paging = true
+      this.pageSeen.clear()
       do {
         this.missed = false
         // The next page is asked for while the core takes this one: the hub's cursor after a page is where the next
@@ -1069,12 +1123,13 @@ export class Engine {
           // not wait for a long catch-up (what it brings before the order reaches its start, the pages bring)
           if (this.streamWanted && !this.closeStream && this.running) this.openStream(page.head ?? page.change)
           spent.items += page.items.length
-          for (const item of page.items) if (item.kind !== 'envelope') spent.commits++
+          for (const item of page.items) { if (item.kind !== 'envelope') spent.commits++; this.pageSeen.add(item.change) }
           await this.serial(() => this.ingest(page.items, page.change))
           if (!page.more) break
         }
       } while (this.missed && this.running)
       this.paging = false
+      if (this.passedOver.length) await this.serial(() => this.takePassedOver())
     } catch (e) {
       this.paging = false
       if (e instanceof Halt && this.running) this.later(this.timing.halted_retry, () => { void this.catchUp().catch(() => {}) })
@@ -1206,6 +1261,7 @@ export class Engine {
         //  is this one taken, or the position would move over that one)
         if (this.paging || this.missed || this.position < this.streamFrom) {
           this.missed = true
+          if (event.item.kind === 'envelope' && this.passedOver.length < PASSED_OVER) this.passedOver.push(event.item)
           if (!this.catching) void this.catchUp().catch(() => {})
           return
         }
