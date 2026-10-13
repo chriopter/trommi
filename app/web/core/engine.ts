@@ -1236,13 +1236,16 @@ export class Engine {
           // taken by now), then filled from the sender's chain as a live one is; a chain the hub does not serve whole
           // is said once per reading, and what follows it stays out
           const chain = (): string => `${hex(received!.header.group)}/${hex(received!.header.sender)}`
-          if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) received = await this.receive(item, true)
-          if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) {
+          const gap = (): boolean => received?.outcome === 'refused' && received.code === 'gap'
+          // (taken after all, or links taken from its chain, also in part: what follows in the batch was judged without
+          //  it, and what was read from here on is read once more)
+          const mended = (): void => { stale = true; repaired = Math.min(repaired ?? item.change, item.change) }
+          if (gap() && !gaps.has(chain())) { received = await this.receive(item, true); if (!gap()) mended() }
+          if (gap() && !gaps.has(chain())) {
             const was = this.filled
-            received = await this.fillGap(item, received, false)
-            if (received?.outcome === 'refused' && received.code === 'gap') gaps.add(chain())
-            // (filled, also in part: what followed in the batch was judged without it and is read once more, from here on)
-            if (this.filled !== was || !(received?.outcome === 'refused' && received.code === 'gap')) repaired = Math.min(repaired ?? item.change, item.change)
+            received = await this.fillGap(item, received!, false)
+            if (gap()) gaps.add(chain())
+            if (this.filled !== was || !gap()) mended()
           }
           // (this very envelope, taken in order or its gap said: no longer ahead; one the core still waits with stays)
           if (this.ahead.length && (!received || received.outcome !== 'refused' || received.code === 'replay' || received.code === 'gap')) {
@@ -1257,17 +1260,18 @@ export class Engine {
             this.emit('envelope', { received, how: 'again' })
           }
         }
-        let repaired: number | null = null
+        let repaired: number | null = null, stale = false
         let told = this.now()
         for (let at = 0; at < due.length;) {
           const batch = due.slice(at, at + FEED)
           const fed = await this.feed(batch)
           const outcomes = fed?.outcomes ?? []
+          stale = false
           // (after a gap was filled, what the batch said of the envelopes behind it is stale: the core judged them
           //  without what was filled in, so each is asked of the core again, alone. One that does not read back then,
           //  as a pruned one does not, is not told: the core has no call yet that names its verdict without its body,
           //  and the batch's word for it may be what the core forbids now.)
-          for (const [i, outcome] of outcomes.entries()) await again(batch[i]!, repaired !== null ? await this.receive(batch[i]!, true) : outcome.envelope)
+          for (const [i, outcome] of outcomes.entries()) await again(batch[i]!, stale ? await this.receive(batch[i]!, true) : outcome.envelope)
           at += outcomes.length
           // the one the core did not take in the batch (or the first of a batch it did not take): alone
           if (!fed || fed.refusedAt !== null) { await again(batch[outcomes.length]!, await this.receive(batch[outcomes.length]!, true)); at++ }
