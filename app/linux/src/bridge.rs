@@ -324,11 +324,22 @@ fn run(engine: Arc<Engine>) {
 }
 
 impl qobject::Trommi {
-    fn start(self: Pin<&mut Self>) {
+    fn start(mut self: Pin<&mut Self>) {
         let thread = self.qt_thread();
         // The app core (core/client) behind this window instead of `engine/`: the switch of the series that moves
         // this app onto it, gone with `engine/` at its end.
         if std::env::var("TROMMI_LINUX_APP_CORE").is_ok_and(|v| v == "1") {
+            // (TROMMI_LINUX_GOLDEN=<sidebar.json>,<desk.json>: the drawing alone, from the core's golden views)
+            if let Ok(files) = std::env::var("TROMMI_LINUX_GOLDEN") {
+                let read = |name: Option<&str>| name.and_then(|n| std::fs::read_to_string(n).ok()).unwrap_or_default();
+                let mut names = files.split(',');
+                let (sidebar, desk) = (read(names.next()), read(names.next()));
+                match crate::shell::golden(&sidebar, &desk) {
+                    Ok(json) => self.set_view_json(QString::from(json.as_str())),
+                    Err(why) => eprintln!("[trommi] TROMMI_LINUX_GOLDEN: {why}"),
+                }
+                return;
+            }
             let offset = cxx_qt_lib::QDateTime::current_date_time().offset_from_utc() / 60;
             let draw_on = thread.clone();
             let started = crate::shell::start(runtime(), crate::shell::config(offset), move |json| {

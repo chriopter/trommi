@@ -88,6 +88,27 @@ impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
     }
 }
 
+/// A view model for pictures and tests of the drawing alone: the sidebar and the Desk as the core's golden
+/// files give them (core/client/tests/golden), folded like any render. The window's JSON, or why not.
+pub fn golden(sidebar_json: &str, desk_json: &str) -> Result<String, String> {
+    use trommi_client_core::views::{Phase, ViewPart};
+    let model = ViewModel {
+        phase: Phase::Live,
+        sidebar: serde_json::from_str(sidebar_json).map_err(|e| format!("the sidebar: {e}"))?,
+        desk: serde_json::from_str(desk_json).map_err(|e| format!("the Desk: {e}"))?,
+        ..ViewModel::default()
+    };
+    let mut view = View::default();
+    let whole = ViewDelta {
+        base: 0,
+        parts: vec![ViewPart::Whole { model: Box::new(model) }],
+    };
+    if !view.fold(&whole) {
+        return Err("the fold refused it".into());
+    }
+    Ok(view.json())
+}
+
 /// Where the app keeps its slots.
 pub fn base_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("TROMMI_LINUX_DIR") {

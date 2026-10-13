@@ -67,3 +67,20 @@ fn the_config_is_this_platforms() {
     assert!(config.seed < 1 << 53);
     assert!(!config.locale.contains('.') && !config.locale.contains('_'));
 }
+
+#[test]
+fn the_golden_views_fold_into_what_the_window_reads() {
+    let golden = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../core/client/tests/golden");
+    for (sidebar, desk) in [("demo-sidebar.json", "demo-desk.json"), ("demo-sidebar-all.json", "demo-desk-all.json"), ("demo-sidebar-platform.json", "demo-desk-platform.json")] {
+        let read = |name: &str| std::fs::read_to_string(golden.join(name)).unwrap();
+        let json = shell::golden(&read(sidebar), &read(desk)).unwrap();
+        let view: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // what the window reads is what the core gave: nothing is added, dropped or reordered on the way
+        let given: serde_json::Value = serde_json::from_str(&read(sidebar)).unwrap();
+        assert_eq!(view["sidebar"], given, "{sidebar}");
+        let given: serde_json::Value = serde_json::from_str(&read(desk)).unwrap();
+        assert_eq!(view["desk"], given, "{desk}");
+        assert_eq!(view["phase"], "live");
+    }
+    assert!(shell::golden("{", "{}").is_err());
+}

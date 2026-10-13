@@ -96,7 +96,7 @@ ApplicationWindow {
     Timer {
         id: shotTimer
         interval: Math.max(200, trommi.shot_after_ms)
-        running: trommi.shot_path !== "" && (window.signedIn ? window.desk.length > 0 || trommi.scene === "empty" : !window.starting)
+        running: trommi.shot_path !== "" && (window.signedIn ? window.core || window.desk.length > 0 || trommi.scene === "empty" : !window.starting)
         // a scene's steps, one per tick: `chat` opens a session (TROMMI_LINUX_SESSION names it), `say` also writes
         // to its agent, `answer` answers the first decision card with its first option; then the picture
         property int step: 0
@@ -193,7 +193,17 @@ ApplicationWindow {
             spacing: 0
             visible: window.signedIn
 
+            // the app core behind the window: the sidebar and the Desk are drawn from its view model
+            ViewSidebar {
+                visible: window.core
+                Layout.preferredWidth: 272
+                Layout.fillHeight: true
+                theme: theme
+                sidebar: window.view.sidebar || ({})
+                onTheme_toggled: trommi.set_theme(theme.dark ? "light" : "dark")
+            }
             Sidebar {
+                visible: !window.core
                 Layout.preferredWidth: 272
                 Layout.fillHeight: true
                 trommi: trommi
@@ -207,9 +217,16 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 color: theme.surface
 
+                ViewDesk {
+                    anchors.fill: parent
+                    visible: window.core
+                    theme: theme
+                    desk: window.view.desk || ({})
+                    sidebar: window.view.sidebar || ({})
+                }
                 Desk {
                     anchors.fill: parent
-                    visible: trommi.selected === "" && !window.openCardData
+                    visible: !window.core && trommi.selected === "" && !window.openCardData
                     trommi: trommi
                     theme: theme
                     cards: window.desk
@@ -219,7 +236,7 @@ ApplicationWindow {
                 }
                 CardView {
                     anchors.fill: parent
-                    visible: trommi.selected === "" && !!window.openCardData
+                    visible: !window.core && trommi.selected === "" && !!window.openCardData
                     trommi: trommi
                     theme: theme
                     card: window.openCardData || ({})
@@ -229,7 +246,7 @@ ApplicationWindow {
                 }
                 Chat {
                     anchors.fill: parent
-                    visible: trommi.selected !== ""
+                    visible: !window.core && trommi.selected !== ""
                     trommi: trommi
                     theme: theme
                     items: window.chat
