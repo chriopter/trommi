@@ -1,7 +1,7 @@
 //! `Effect::Store` on disk: the two spaces of the contract (core/client/README.md, "What is stored").
 //!
 //! ```text
-//! <device dir>/   the device space: the connector's journal (lock, state.snap, state.log), mode 0700. Opening it
+//! <device dir>/   the device space: the journal (journal.rs: lock, state.snap, state.log), mode 0700. Opening it
 //!                 takes the lock: one owner. A write is one record, synced before it is answered; the revision
 //!                 is kept beside the entries and compared on every `DeviceApply`.
 //! <cache dir>/    the cache space: one file per key, mode 0600, written beside its place and renamed onto it.
@@ -11,6 +11,7 @@
 //! A cache key becomes a file name by escaping every byte that is not a letter, a digit, `-` or `_` as `%XX`
 //! (so `/` and `.` are escaped and no key leaves the folder); a key whose name would pass 255 bytes is refused.
 
+use crate::journal::{CoreStore, Journal, StoreError};
 use std::collections::BTreeSet;
 use std::io::ErrorKind;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
@@ -18,7 +19,6 @@ use std::path::{Path, PathBuf};
 use trommi_client_core::app::{
     Bytes, DeviceEntry, Entry, IoError, IoErrorKind, IoResult, StoreAnswer, StoreOp,
 };
-use trommi_connector::store::{CoreStore, Journal, StoreError};
 use trommi_core::store::{Batch, Storage, StorageError};
 
 /// Why the stores of a slot could not be opened.

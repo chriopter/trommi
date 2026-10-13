@@ -6,7 +6,7 @@
 //!   Handle::send(Event)   ──▶  one task owns the App, one queue of events ──▶   App::handle(now, event)
 //!   Shell::show(effect)   ◀──  Render, Notify, FileReady, SaveFile, …      ◀──  [Effect, …]
 //!                              Http, OpenStream, Cancel   http.rs (reqwest)
-//!                              Store                      store.rs (the journal, the cache folder)
+//!                              Store                      store.rs (journal.rs, the cache folder)
 //!                              Timer                      one tokio timer
 //! ```
 //!
@@ -19,9 +19,13 @@
 //! - a cancelled request's or stream's results are dropped;
 //! - one timer, replacing the last.
 //!
+//! `journal.rs` is the state on disk of one device, whole and durable per write; the connector keeps its own state
+//! in the same journal.
+//!
 //! tokio and reqwest stay in this crate: the wasm and iOS builds of the core never see them.
 
 pub mod http;
+pub mod journal;
 pub mod run;
 pub mod store;
 

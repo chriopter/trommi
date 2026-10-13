@@ -3074,6 +3074,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "trommi-core",
+ "trommi-io",
  "zeroize",
 ]
 
@@ -3180,10 +3181,11 @@ name = "trommi-io"
 version = "0.0.0"
 dependencies = [
  "reqwest",
+ "rustix",
  "tokio",
  "trommi-client-core",
- "trommi-connector",
  "trommi-core",
+ "zeroize",
 ]
 
 [[package]]
