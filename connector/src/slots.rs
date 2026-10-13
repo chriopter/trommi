@@ -523,18 +523,26 @@ pub fn owned_by(record: Option<&Value>, owner: &str, claude_pid: u32) -> bool {
     !r.get("owner").is_some_and(crate::util::truthy)
         && r.get("claude_pid").and_then(|v| v.as_u64()) == Some(claude_pid as u64)
 }
-/// Whether a connector of this session may use a keyed slot with this owner record: its own; one nobody owns yet
-/// (no record, or one `join` wrote in a terminal: the first session that uses it adopts it); one of a process
-/// without a session id that has ended. Never one that names another session (`cc:<Claude Code session id>`,
+/// Whether a connector of this session may use a keyed slot with this owner record. A session with an id
+/// (`owner`): its own, or one `join` wrote in a terminal (the first session that uses it adopts it). A client
+/// without an id: also one without a record, and one of a process without an id that has ended. Never one that names another session (`cc:<Claude Code session id>`,
 /// `key:<TROMMI_SESSION_KEY>`), nor one of another process without a session id that still runs: each agent
 /// session is its own member with its own board session, and only a resume of that session continues it.
 pub fn may_take(record: Option<&Value>, owner: &str, claude_pid: u32) -> bool {
-    let Some(r) = record else { return true };
+    // A session with an id takes only its own key, or the key a terminal's join made for whichever session
+    // uses it first (no owner, no process); never one without an owner record, nor one of a process without an
+    // id: which session that was cannot be known, and guessing gave sessions each other's keys.
+    let Some(r) = record else {
+        return owner.is_empty();
+    };
     if owned_by(Some(r), owner, claude_pid) {
         return true;
     }
     if r.get("owner").is_some_and(crate::util::truthy) {
         return false;
+    }
+    if !owner.is_empty() {
+        return r.get("claude_pid").is_none_or(|v| v.is_null());
     }
     let Some(pid) = r.get("claude_pid").and_then(|v| v.as_u64()) else {
         return true;

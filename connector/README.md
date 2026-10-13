@@ -196,9 +196,15 @@ that does not read, or that is older than what the device already sent, is said 
 the human reconnects the session in the app.
 
 A key belongs to one agent session: its `.owner` file names it (`cc:<Claude Code session id>` from
-`CLAUDE_CODE_SESSION_ID`, `key:<TROMMI_SESSION_KEY>`, or, for a client without a session id such as Codex, its
-process). A key `join` made in a terminal belongs to nobody until the first session that uses it adopts it. A
-connector only takes its own session's key or one nobody owns; another session's key it never takes, also not
+`CLAUDE_CODE_SESSION_ID`, `codex:<thread id>` from the first Codex tool call's `_meta`, `key:<TROMMI_SESSION_KEY>`,
+or, for a client without any id, its process). A session with an id finds its key by that exact owner, in every
+room and every folder's slots (`member::own_slots`): the room of that key is its room, whatever the folder's other
+keys or its note `.trommi/room` say; keys of one session in two rooms are refused by name; when the session joins
+a room by a new link, its keys in other rooms are left there marked `left:<owner>`. It never takes a key without an
+owner record, nor one of a process without an id: which session that was cannot be known. Codex names its thread
+only with its first tool call, so a Codex connector takes no key and asks for nothing before that call, and keeps
+the first thread for good. A key `join` made in a terminal belongs to nobody until the first session that uses it
+adopts it. A connector only takes its own session's key or one nobody owns; another session's key it never takes, also not
 while it is free, an idle holder hands its key over only to a connector of its own session, and `say` goes through
 a running connector only for its own session. So a second session in the same folder never writes into the
 first one's board session: it is a member of its own, which joins by itself (below) or by an invite. `claude --resume` keeps the session id and with it the
