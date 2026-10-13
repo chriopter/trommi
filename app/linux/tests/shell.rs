@@ -84,3 +84,16 @@ fn the_golden_views_fold_into_what_the_window_reads() {
     }
     assert!(shell::golden("{", "{}").is_err());
 }
+
+#[test]
+fn the_window_sends_only_the_persons_events() {
+    let ok = |json: &str| shell::person_event(json).is_ok();
+    assert!(ok(r#"{"type":"focus","focus":{"screen":{"screen":"card","card_id":"ab"}}}"#));
+    assert!(ok(r#"{"type":"action","action":{"do":"star","card_id":"ab","on":true}}"#));
+    assert!(ok(r#"{"type":"foreground"}"#) && ok(r#"{"type":"background"}"#) && ok(r#"{"type":"zone","utc_offset_min":60}"#));
+    // what the loop alone sends
+    assert!(!ok(r#"{"type":"wake"}"#));
+    assert!(!ok(r#"{"type":"start","config":{"platform":"linux","version":"0","seed":1}}"#));
+    assert!(!ok(r#"{"type":"store","id":1,"result":{"ok":{"kind":"done"}}}"#));
+    assert!(!ok("{"));
+}

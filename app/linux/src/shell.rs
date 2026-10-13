@@ -109,6 +109,17 @@ pub fn golden(sidebar_json: &str, desk_json: &str) -> Result<String, String> {
     Ok(view.json())
 }
 
+/// What the window may send, as JSON in the contract's spelling (`Event`): what the person did (`action`), what
+/// they look at (`focus`), the window coming to the front or going to the back, the time zone. Anything else (an
+/// I/O result, a start) is the loop's alone and refused here.
+pub fn person_event(json: &str) -> Result<Event, String> {
+    let event: Event = serde_json::from_str(json).map_err(|e| format!("not an event: {e}"))?;
+    match event {
+        Event::Action { .. } | Event::Focus { .. } | Event::Foreground | Event::Background | Event::Zone { .. } => Ok(event),
+        _ => Err("not the person's event".into()),
+    }
+}
+
 /// Where the app keeps its slots.
 pub fn base_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("TROMMI_LINUX_DIR") {

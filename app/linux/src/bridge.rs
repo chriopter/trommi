@@ -81,6 +81,9 @@ pub mod qobject {
         /// Writes a picture of the window to `shot_path` was done (QML): ends a scene run.
         #[qinvokable]
         fn shot_taken(self: Pin<&mut Trommi>);
+
+        #[qinvokable]
+        fn send_event(self: Pin<&mut Trommi>, json: &QString);
     }
 
     impl cxx_qt::Threading for Trommi {}
@@ -601,6 +604,19 @@ impl qobject::Trommi {
         let _ = crate::store::private_dir(&crate::store::base_dir());
         let _ = std::fs::write(crate::store::base_dir().join("theme"), mode);
         self.as_mut().set_theme_mode(QString::from(mode));
+    }
+
+    /// The window's word for the app core (`shell::person_event`): a tap as an `Event::Action`, a page as an
+    /// `Event::Focus`. Only while the app core runs.
+    fn send_event(self: Pin<&mut Self>, json: &QString) {
+        match crate::shell::person_event(&json.to_string()) {
+            Ok(event) => {
+                if let Some(handle) = core_slot().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                    handle.send(event);
+                }
+            }
+            Err(why) => eprintln!("[trommi] the window sent {why}"),
+        }
     }
 
     fn shot_taken(self: Pin<&mut Self>) {
