@@ -446,13 +446,16 @@ impl App {
             self.pending.insert(id, Pending::CacheDelete);
             out.push(Effect::Store { id, op: StoreOp::Put { put: Vec::new(), delete } });
         }
-        if fed || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
+        // (a view's moment by the clock, a link that falls asleep: the model's statuses are worked out at its clock,
+        //  so the board is brought to now first)
+        let view_due = self.view_wake.is_some_and(|at| now_ms >= at);
+        if fed || view_due || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
             let _ = self.board.finish(now_ms);
             self.stale_views = true;
         }
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
-        if self.stale_views || self.view_wake.is_some_and(|at| now_ms >= at) {
+        if self.stale_views || view_due {
             self.stale_views = false;
             self.lens.reading = self.board.model.reading;
             self.view_wake = crate::views::render(&self.board.model, &self.lens, now_ms, &mut self.next_view);
