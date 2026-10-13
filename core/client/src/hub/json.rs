@@ -3,9 +3,12 @@
 //! The hub is not trusted, so the text is not read into whatever it describes:
 //!
 //! - **Size first.** A body over the route's cap is refused before a byte of it is parsed.
-//! - **A bound on what is built.** A body may hold one value per 8 bytes and 64 more (a member's name counts as
-//!   one): the densest the hub really sends is a row of the open list, a value per 10 bytes, and a body made of
-//!   `0,0,0,…` cannot make the parser build many times its own size.
+//! - **A bound on what is built.** A body may hold one value per 8 bytes, and never fewer than [`SMALL_VALUES`]
+//!   (a member's name counts as one). Up to 64 KiB that is every value JSON can put in a body (one per 2 bytes at
+//!   the most), so no small answer is refused for being dense: the answer to 32 joins, `{"change":N,"epoch":2}` a
+//!   row, holds a value per 5 bytes. A long answer is one of the lists, whose densest rows are a value per 9 to 10
+//!   bytes (a row of the open list, a wish, a group's row; see the tests), and a long body made of `0,0,0,…`
+//!   cannot make the parser build many times its own size.
 //! - **One member per name.** An object that names a member twice is refused: two readers could take different ones.
 //! - **No more members than the protocol has.** An object's 4097th member ends the reading where it stands.
 //! - **Work by the byte.** Every bound holds while the text is read, not after: no answer costs more than a few
@@ -179,6 +182,10 @@ thread_local! {
     static NAMES: Cell<u64> = const { Cell::new(0) };
 }
 
+/// The values any answer may hold, however short: as many as JSON can put in 64 KiB (the most of a write's
+/// answer), at about 50 bytes of memory each.
+const SMALL_VALUES: usize = 32 << 10;
+
 /// Most members an object may have: no object of the protocol has more than the 1024 devices of a claim's
 /// `key_packages`. The parser stops at the member beyond it.
 const MAX_MEMBERS: usize = 4096;
@@ -189,7 +196,7 @@ impl Json {
         if body.len() > cap {
             return bad("an answer larger than its route allows");
         }
-        let left = Cell::new(body.len() / 8 + 64);
+        let left = Cell::new((body.len() / 8).max(SMALL_VALUES) + 64);
         let mut de = serde_json::Deserializer::from_slice(body);
         let value = match (Seed { left: &left }).deserialize(&mut de) {
             Ok(value) => value,
@@ -351,9 +358,16 @@ mod tests {
     fn size_values_depth_and_trailing_bytes_are_bounded() {
         assert!(Json::parse(b"[1,2,3]", 6).is_err());
         assert!(Json::parse(b"[1,2,3]", 7).is_ok());
-        // more values than a body of this size may hold: 2 bytes each
-        let many = format!("[{}0]", "0,".repeat(4000));
+        // more values than a body of this size may hold: 2 bytes each, beyond the floor of small answers
+        let many = format!("[{}0]", "0,".repeat(200_000));
         assert!(parse(&many).is_err());
+        let one_too_many = format!("[{}0]", "0,".repeat(SMALL_VALUES + 64 - 1));
+        assert!(parse(&one_too_many).is_err());
+        let all = format!("[{}0]", "0,".repeat(SMALL_VALUES + 64 - 2));
+        assert!(parse(&all).is_ok());
+        // any body of up to 64 KiB, however dense
+        let small = format!("[{}0]", "0,".repeat((64 << 10) / 2 - 2));
+        assert!(small.len() <= 64 << 10 && parse(&small).is_ok());
         let deep = format!("{}{}", "[".repeat(200), "]".repeat(200));
         assert!(parse(&deep).is_err());
         assert!(parse("{} x").is_err());
@@ -451,6 +465,49 @@ mod tests {
         COMPARED.with(|c| c.set(0));
         o.need(&name(5));
         assert!(COMPARED.with(Cell::get) <= 13);
+    }
+
+    /// The densest rows of the real answers, at their shortest (numbers of one digit), many of them: never refused
+    /// by the bound on values. A row of the open list, of `GET /v1/requests`, of the room's groups (the room's own
+    /// row, the shortest), of `POST /v1/commits`; the long lists fill 4 MiB.
+    #[test]
+    fn the_densest_real_answers_are_within_the_bound() {
+        let id = |n: usize| "A".repeat(n);
+        let open = format!(
+            r#"{{"object_id":"{}","version_change":1,"head_change":1}}"#,
+            id(22)
+        );
+        let wish = format!(
+            r#"{{"id":1,"device":"{}","kind":"session","at":1}}"#,
+            id(43)
+        );
+        let group = format!(
+            r#"{{"group_id":"{}","kind":"room","epoch":0,"room_epoch":0,"live":true,"stale":false,"leaves":[]}}"#,
+            id(43)
+        );
+        for (row, at_least) in [(&open, 9), (&wish, 9), (&group, 8)] {
+            let rows = (4 << 20) / (row.len() + 1);
+            let body = format!(
+                r#"{{"change":1,"more":false,"items":[{}]}}"#,
+                vec![row.as_str(); rows].join(",")
+            );
+            let v = parse_big(&body).unwrap_or_else(|_| panic!("{row}"));
+            let values = 1 + 6 + rows * row.matches(':').count() * 2 + rows;
+            assert!(
+                body.len() / values >= at_least,
+                "{row}: {} bytes a value",
+                body.len() / values
+            );
+            drop(v);
+        }
+        let joins: Vec<String> = (0..64)
+            .map(|i| format!(r#"{{"change":{i},"epoch":2}}"#))
+            .collect();
+        assert!(parse(&format!(r#"{{"answers":[{}]}}"#, joins.join(","))).is_ok());
+    }
+
+    fn parse_big(text: &str) -> Read<Json> {
+        Json::parse(text.as_bytes(), 16 << 20)
     }
 
     #[test]

@@ -1,8 +1,8 @@
 {
-  "answer": "{\"room_id\":\"f59dbmrwf3ZYFipEoT6FMPV2FtPoY1_lF3bvElW0P_4\"}",
+  "answer": "{\"room_id\":\"-3veyHDGYlYeCAtBROPIkGcjrHoHXFAMyKHlgNica7Y\"}",
   "asked": {
     "epoch": 0,
-    "group": "f59dbmrwf3ZYFipEoT6FMPV2FtPoY1_lF3bvElW0P_4",
+    "group": "-3veyHDGYlYeCAtBROPIkGcjrHoHXFAMyKHlgNica7Y",
     "kind": "RoomFounding",
     "parts": 2,
     "route": "outbox"
@@ -10,7 +10,7 @@
   "content_range": null,
   "name": "outbox-room-founding",
   "request": {
-    "body": "{\"group_info\":\"AAEABAABAAMgf59dbmrwf3ZYFipEoT6FMPV2FtPoY1_lF3bvElW0P_4AAAAAAAAAACB_NU4XfrCyvLFrTkoGcy_PQ0xBnhkoBjYyHK2JkD-p-gBAUwADCQTwAfACAAIAAfABQEMgWhX8pNyVu80h8yTsByKQ0xFu1zwT7Xn23G199BATFTAgwbwg4WlVhWq6usn8WJ3Dk5uB1MZv02SkuaU-qDpz5b4AQPYAAkDOQMwBASCQOAGhJjAiGIr3MdgoDA5u8nMZTvxAK2Adg-d7YctAPSAMDbJyY2mzymonoSqFr4_qJPaMWwSbuV9Sy2slQZs8OgABIAwNsnJjabPKaiehKoWvj-ok9oxbBJu5X1LLayVBmzw6AgABAgADBvAB8AIACgACAAEBAAAAAGrOQBQAAAAAfZpRJABAQChfcSB0DNAYEAp0fPyrch_ZBtoJX968w1RyrcmaQHTznOudztJtL8WB9AH1sSnsXZ3CwpMoJ4xguFvIJijc8wUABCEgWMCEYqkdau_ix2UicPCxRWtWm_2gazSYDLaZrKyouBMglIw_PR0iz8Cir3jsi8cOgmWZscM5dM-cBE0EII5lRjUAAAAAQECXwpWDNJbXc1ZSobMaD4-6vxG0CWhH_Rnfri-U2HVejuT3WkLYMgPBeDfwNIHkLhXKQ2iVkSb5DWIyIzHQoE0J\",\"sealed_key\":\"IH-fXW5q8H92WBYqRKE-hTD1dhbT6GNf5Rd27xJVtD_-AAAAAAAAAACR8R2ZJG5mycdoOCieW7iQ3c-pF6AbISxhvJda6OBangAAAAAAAAAAIMG8IOFpVYVqurrJ_Fidw5ObgdTGb9NkpLmlPqg6c-W-IHx8qeVTqdaU9qT_Rr4yBdhX9A1hutXvb4GKS3ccWTCDMB-JJl9RPyLSEllmnL25JiFALkhBOj0ew132CE8F817oIojTh0WAEoU_TczGBpl_yAwNsnJjabPKaiehKoWvj-ok9oxbBJu5X1LLayVBmzw6IK8-k9dKoy6we_xJdRX5eR_r6fRurdGbSSei_GNEXEpc\"}",
+    "body": "{\"group_info\":\"AAEABAABAAMg-3veyHDGYlYeCAtBROPIkGcjrHoHXFAMyKHlgNica7YAAAAAAAAAACAheTR2rqJKqGDlT1R9_XCISBOiFTpUhfjFwRtbGZ8f5QBAUwADCQTwAfACAAIAAfABQEMghA6ExUMSkEE0_jjuhb2Ah4MPfuMee878uk7TpQ_nSwsgFZUeYhoW5hXlLaFnST4y21sLu_iYnMw-d49ULby5kFcAQPYAAkDOQMwBASAvQzkSJn6DSTAxUiRig1uTJrzkPDjY5DZ7WcwNYOylciAMXqvz2R8jFnm1xGgDvVWwZ8lxY7ozuK-2e4wkFs_zrAABIAxeq_PZHyMWebXEaAO9VbBnyXFjujO4r7Z7jCQWz_OsAgABAgADBvAB8AIACgACAAEBAAAAAGrORskAAAAAfZpX2QBAQB5ncbHWoC12RD52f_6CxjSPk2RyP4YM8RiKdS8C8QHevvKHi5jPB5Xylkn3Z5LgNGnOcrTwbN8EXD_Tc-ZQnAUABCEgILz2cMIOsus9bdN7i5lnqGYJYtHOCsNuOisSHsZeVFcgknS6R__H3FMQ2Jpw27v2CoWfrkomKuoWSOzOx6E_y9oAAAAAQEAr9VVup_nKBqLfeCCv9596N1t4cInZozrPnfSOkqrjGxXzXepdG8kwErhAdgmyVLIo1F-rMbfsQN5OMXn80asL\",\"sealed_key\":\"IPt73shwxmJWHggLQUTjyJBnI6x6B1xQDMih5YDYnGu2AAAAAAAAAADmL4qrYH24vmTgubiAv2k9JbqepQtJ90eiZU0_Mdzg8gAAAAAAAAAAIBWVHmIaFuYV5S2hZ0k-MttbC7v4mJzMPnePVC28uZBXIFOWpVWQQjvPvbiiudYbZFOZx6z7NM6rVs3gmBAMhPlYMNYNuVJ8kqkaP2uK4hMBjL4tle__JZp6E2R0XkZU-0ebjCzfXa0fEwC4GeHuH5g_3Qxeq_PZHyMWebXEaAO9VbBnyXFjujO4r7Z7jCQWz_OsII1fXrL_xMB3p6S5pJ2Aio-mNM-tUbA_vIICGdizIeQk\"}",
     "method": "POST",
     "path": "/v1/rooms"
   },
