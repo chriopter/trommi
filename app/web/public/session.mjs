@@ -381,8 +381,65 @@ function sessionStatus(s, base, now = Date.now()) {
 // A chip without a question: a tap shows its title and detail under the row, a second tap hides it; the one shown stays
 // shown when the live piece is drawn anew.
 const statusOpen = new Set()
+// Proposals while he chooses (localStorage trommi-chips): instead of scrolling sideways, what does not fit lies on a
+// stack. a: the chips that fit, the rest on a stack "+N"; b: one stack, its most urgent chip on top; c: two rows, then
+// the stack. A tap on the stack opens what lies on it, one under the other.
+const CHIP_LOOKS = ['a', 'b', 'c']
+const chipLook = () => { try { const v = localStorage.getItem('trommi-chips'); return CHIP_LOOKS.includes(v) ? v : '' } catch { return '' } }
 controller('status-lines', class extends Controller {
-  connect() { const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip) }
+  connect() {
+    const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip)
+    this.look = chipLook()
+    const row = this.element.querySelector('.status-chips')
+    if (!this.look || !row) return
+    row.dataset.look = this.look
+    this.pile = Object.assign(document.createElement('button'), { type: 'button', className: 'status-pile' })
+    this.pile.setAttribute('aria-expanded', 'false')
+    this.pile.addEventListener('click', () => this.openPile())
+    row.append(this.pile)
+    this.more = Object.assign(document.createElement('div'), { className: 'status-more', role: 'list', hidden: true })
+    row.after(this.more)
+    this.fit = () => this.place()
+    this.watch = new ResizeObserver(this.fit); this.watch.observe(row)
+    this.place()
+  }
+  disconnect() { this.watch?.disconnect(); this.pile?.remove(); this.more?.remove() }
+  /** Which chips stand in the row and which lie on the stack. */
+  place() {
+    const row = this.element.querySelector('.status-chips'), chips = [...row.querySelectorAll(':scope > .status-chip')]
+    for (const c of chips) c.hidden = false
+    let over = []
+    if (this.look === 'b') {
+      // one stack: the most urgent chip on top (a question that waits on him), the count beside it
+      const top = chips.find(c => c.dataset.state === 'decision') ?? chips[0]
+      if (chips.length > 1) {
+        over = chips
+        this.pile.innerHTML = `<span class="status-pile-top">${top.innerHTML}</span><i class="status-pile-n">${chips.length}</i>`
+        this.pile.dataset.state = top.dataset.state ?? ''
+      }
+    } else {
+      // what fits in one row (c: two), the stack at its end
+      this.pile.hidden = false
+      this.pile.innerHTML = '<span class="status-pile-n">+9</span>'
+      const pileW = this.pile.getBoundingClientRect().width + 14, right = row.getBoundingClientRect().right
+      const rows = [...new Set(chips.map(c => c.offsetTop))].sort((x, y) => x - y), last = rows[(this.look === 'c' ? 2 : 1) - 1] ?? 0
+      for (const c of chips) if (c.offsetTop > last || (c.offsetTop === last && c.getBoundingClientRect().right > right - pileW)) over.push(c)
+      if (over.length) this.pile.innerHTML = `<span class="status-pile-n">+${over.length}</span>`
+    }
+    for (const c of over) c.hidden = true
+    this.pile.hidden = !over.length
+    this.pile.setAttribute('aria-label', `${over.length} more`)
+    this.pile.style.setProperty('--behind', String(Math.min(over.length, 2)))
+    this.over = over
+    if (!this.more.hidden) this.fill()
+  }
+  fill() { this.more.replaceChildren(...this.over.map(c => { const k = c.cloneNode(true); k.hidden = false; return k })) }
+  openPile() {
+    if (!this.over?.length) return
+    const open = this.more.hidden
+    this.more.hidden = !open; this.pile.setAttribute('aria-expanded', String(open))
+    if (open) this.fill()
+  }
   toggle(e) {
     const chip = e.currentTarget, on = chip.getAttribute('aria-expanded') === 'true'
     for (const c of this.element.querySelectorAll('.status-chip[data-key]')) { c.setAttribute('aria-expanded', 'false'); statusOpen.delete(c.dataset.key) }
