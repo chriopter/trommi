@@ -411,7 +411,8 @@ struct CardScreen: View {
       let can = c.status == "shredded" || !c.choices.isEmpty || c.trusted || (c.kind == "info" && c.read != nil)
       let did = c.status == "shredded" ? "You shredded it" : c.kind == "info" ? "You read it" : c.trusted ? "You left it to the agent" : can ? "You chose" : ""
       if !did.isEmpty { saidFoot(did, c.status == "shredded" ? c.shredded ?? c.decided : c.kind == "info" ? c.read ?? c.decided : c.decided, back: can ? "Take back your answer" : nil) { model.reopen(c.id) } }
-      if answeredHere && !walk && c.kind == "decision" { nextStep(c) }
+      // (after every kind of answer: a decision, several options, Got it, Allow or Deny, Shred, Duck it, a final option)
+      if answeredHere && !walk { nextStep(c) }
       MarksLine(marks: model.board?.cards[c.id]?.answer?.marks ?? [])
       if c.settled { still("✓ \(Words.settled)", "\(a?.name ?? "The agent") marked this answer as final: nothing follows from it.") }
       if let w = model.board?.cards[c.id]?.withdrawReason, !w.isEmpty { still("Why it was withdrawn", w) }
