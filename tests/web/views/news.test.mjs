@@ -100,6 +100,11 @@ test('release notes since the release before: only the lines added since, its pi
   assert.equal(releaseNotes(now, { previous: now, since: 'v290', subjects }), '## 12 October 2026 (since v290)\n\n**Better**\n- Start page offers Try the demo\n\n**Fixed**\n- Connector keys per folder\n')
   assert.equal(releaseNotes(now, { previous: now, since: 'v290', subjects: [subjects[1]] }), '## 12 October 2026 (since v290)\n\nNothing you can see changed: internal work only.\n')
   assert.equal(subjectLine('Merge branch x'), null)
+  // a day filled in later, older than the release before's newest, is not this release's
+  assert.equal(releaseNotes(now + '\n## 10 October 2026\n\nBackfilled.\n\n**New**\n- Old news.\n', { previous: before, since: 'v284' }).includes('Old news'), false)
+  // no CHANGELOG.md yet: the PR titles since the release before
+  assert.equal(releaseNotes('', { previous: '', since: 'v49', subjects: [subjects[0]] }), '## Since v49\n\n**Fixed**\n- Connector keys per folder\n')
+  assert.equal(releaseNotes('', {}), '')
 })
 
 test('release notes: a line\'s short form is What\'s new\'s (changelogHead), only cut later', () => {

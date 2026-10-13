@@ -4,7 +4,8 @@
 //     [<CHANGELOG.md of the release before> <its tag> [<commit subjects since it>]]]
 // With the release before: the lines CHANGELOG.md added since then (a line counts as there before when its text, its
 // text without a bold start or tag, that text's first 60 characters, or its short form was), under the heading of the
-// newest day with new lines and "(since v<N>)"; the day's summary and picture only when they are new too. When
+// newest day with new lines and "(since v<N>)"; the day's summary and picture only when they are new too. Days older
+// than the newest day of the release before are left out (history filled in later is not news). When
 // CHANGELOG.md added nothing: the commit subjects (PR titles) since, by their New:/Fixed:/Updated: start, internal ones
 // (tests, CI, refactors) left out; none left: a line saying so.
 // Without it: the whole newest day, its heading with the day's releases in brackets, counted from <published
@@ -16,7 +17,8 @@
 // "<", ">" and "&" outside `code` are escaped, or GitHub drops "<…>" as HTML.
 // NOTES_BASE (e.g. https://raw.githubusercontent.com/<repo>/<commit>/): put in front of the picture's path, which
 // CHANGELOG.md gives from the repository's root.
-// Prints nothing when there is no such day; never fails, so the notes can never stop a release.
+// Without a day (no CHANGELOG.md yet) but with the release before: "## Since v<N>" and the commit subjects.
+// Prints nothing when there is no such day otherwise; never fails, so the notes can never stop a release.
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -127,7 +129,8 @@ export function subjectLine(subject) {
  *  it, the whole newest day. subjects: the commit subjects since that release, listed when CHANGELOG.md added nothing. */
 export function releaseNotes(changelog, { tag = '', list = '', base = '', previous = null, since = '', subjects = [] } = {}) {
   const days = readDays(changelog)
-  if (!days.length) return ''
+  if (!days.length && (previous == null || !since)) return ''
+  if (!days.length) days.push({ day: '', summary: '', picture: null, parts: [] })
   const before = previous == null ? null : readDays(previous)
   const oldText = new Set(), oldHead = new Set(), oldPics = new Set(), oldSummary = new Set()
   for (const d of before || []) {
@@ -135,9 +138,13 @@ export function releaseNotes(changelog, { tag = '', list = '', base = '', previo
     if (d.summary) oldSummary.add(norm(d.summary))
     for (const [, lines] of d.parts) for (const l of lines) { const h = noteHead(l); oldText.add(norm(l)); oldText.add(norm(h.text)); oldText.add(norm(h.text).slice(0, 60)); oldHead.add(norm(h.head)) }
   }
+  // a day older than the newest one of the release before is not this release's (a backfilled or restored history)
+  const dateOf = d => { const t = new Date(`${d.day} 12:00 UTC`).getTime(); return Number.isNaN(t) ? null : t }
+  const latest = Math.max(-Infinity, ...(before || []).map(dateOf).filter(t => t != null))
   const parts = new Map(), seen = new Set()
   let day = null, summary = '', picture = null
   for (const d of before ? days : days.slice(0, 1)) {
+    if (before && dateOf(d) != null && dateOf(d) < latest) continue
     let any = false
     for (const [name, lines] of d.parts) {
       for (const l of lines) {
@@ -168,7 +175,7 @@ export function releaseNotes(changelog, { tag = '', list = '', base = '', previo
   }
   const when = new Date(`${day.day} 12:00 UTC`)
   const iso = Number.isNaN(when.getTime()) ? '' : when.toISOString().slice(0, 10)
-  const out = [`## ${day.day}${since ? ` (since ${since})` : iso ? range(iso, tag, list) : ''}`, '']
+  const out = [day.day ? `## ${day.day}${since ? ` (since ${since})` : iso ? range(iso, tag, list) : ''}` : `## Since ${since}`, '']
   if (summary) out.push(esc(summary), '')
   if (picture) out.push(`![${picture.alt}](${base}${picture.path})`, '')
   for (const [name, lines] of [...parts].sort(([a], [b]) => byOrder(a, b))) out.push(`**${name}**`, ...lines.map(l => `- ${esc(l)}`), '')
