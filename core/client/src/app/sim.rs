@@ -4,17 +4,23 @@
 //! - **Stores** are maps, kept across a restart of the App (`restart` makes a new App over the same stores).
 //! - **HTTP and streams** go to a function the test gives (`hub`): the stand-in hub. Without one every request
 //!   is `offline`.
+//!   An answer longer than the request's `max_answer` is cut off as a shell must: `too_large`, no body. With
+//!   `hold` the requests wait in `held` for the test to answer by hand (`answer`).
+//! - **Streams**: with `stream_hub` an `OpenStream` stays open (`streams`) and gets what that function answers at
+//!   once; the test sends what follows (`stream`). Without one a stream fails `offline`.
 //! - **Timers**: one, as the contract says; `advance` moves the clock and fires it when due.
 //! - **Renders** are folded into `view`, exactly as a shell does.
 
 use super::{
     App, DeviceEntry, Effect, Entry, Event, HttpRequest, HttpResponse, IoError, IoErrorKind, IoId,
-    IoResult, StoreAnswer, StoreOp,
+    IoResult, StoreAnswer, StoreOp, StreamItem,
 };
 use crate::views::ViewModel;
 use std::collections::{BTreeMap, VecDeque};
 
 pub type Hub = Box<dyn FnMut(u64, &HttpRequest) -> Result<HttpResponse, IoError>>;
+/// What a stream brings the moment it is opened (its head, what the hub replays).
+pub type StreamHub = Box<dyn FnMut(u64, &HttpRequest) -> Vec<StreamItem>>;
 
 pub struct Sim {
     pub app: App,
@@ -24,6 +30,12 @@ pub struct Sim {
     pub device: (u64, BTreeMap<Vec<u8>, Vec<u8>>),
     pub timer: Option<u64>,
     pub hub: Option<Hub>,
+    pub stream_hub: Option<StreamHub>,
+    /// The streams that are open, oldest first.
+    pub streams: Vec<(IoId, HttpRequest)>,
+    /// Requests wait in `held` to be answered by hand.
+    pub hold: bool,
+    pub held: VecDeque<(IoId, HttpRequest)>,
     /// Every effect the App asked for, in order (for assertions).
     pub log: Vec<Effect>,
     queue: VecDeque<Event>,
@@ -39,6 +51,10 @@ impl Sim {
             device: (0, BTreeMap::new()),
             timer: None,
             hub: None,
+            stream_hub: None,
+            streams: Vec::new(),
+            hold: false,
+            held: VecDeque::new(),
             log: Vec::new(),
             queue: VecDeque::new(),
         }
@@ -51,6 +67,36 @@ impl Sim {
             let effects = self.app.handle(self.now_ms, event);
             self.execute(effects);
         }
+    }
+
+    /// Runs effects the test got from the App by hand (`App::act`), and everything that follows from them.
+    pub fn run(&mut self, effects: Vec<Effect>) {
+        self.execute(effects);
+        while let Some(event) = self.queue.pop_front() {
+            let effects = self.app.handle(self.now_ms, event);
+            self.execute(effects);
+        }
+    }
+
+    /// Answers a held request.
+    pub fn answer(&mut self, id: IoId, result: Result<HttpResponse, IoError>) {
+        self.held.retain(|(held, _)| *held != id);
+        self.send(Event::Http {
+            id,
+            result: result.into(),
+        });
+    }
+
+    /// Sends an item on the newest open stream; `ended` and `failed` close it. False: no stream is open.
+    pub fn stream(&mut self, item: StreamItem) -> bool {
+        let Some((id, _)) = self.streams.last().cloned() else {
+            return false;
+        };
+        if matches!(item, StreamItem::Ended | StreamItem::Failed { .. }) {
+            self.streams.pop();
+        }
+        self.send(Event::Stream { id, item });
+        true
     }
 
     /// Moves the clock; fires the timer when it is due.
@@ -68,6 +114,8 @@ impl Sim {
         self.view = ViewModel::default();
         self.timer = None;
         self.queue.clear();
+        self.streams.clear();
+        self.held.clear();
     }
 
     /// Runs effects as a shell does: in order, a failed device write ending the rest. Results are queued.
@@ -86,18 +134,46 @@ impl Sim {
                     }
                 }
                 Effect::Http { id, request } => {
+                    if self.hold {
+                        self.held.push_back((id, request));
+                        continue;
+                    }
                     let result = match self.hub.as_mut() {
-                        Some(hub) => hub(self.now_ms, &request).into(),
+                        // (a shell stops reading at the cap and hands over no body cut short)
+                        Some(hub) => match hub(self.now_ms, &request) {
+                            Ok(answer) if answer.body.len() > request.max_answer as usize => {
+                                IoResult::Err(IoError::new(IoErrorKind::TooLarge))
+                            }
+                            other => other.into(),
+                        },
                         None => IoResult::Err(IoError::new(IoErrorKind::Offline)),
                     };
                     self.queue.push_back(Event::Http { id, result });
                 }
-                Effect::OpenStream { id, .. } => self.queue.push_back(Event::Stream {
-                    id,
-                    item: super::StreamItem::Failed {
-                        error: IoError::new(IoErrorKind::Offline),
-                    },
-                }),
+                Effect::OpenStream { id, request } => match self.stream_hub.as_mut() {
+                    Some(open) => {
+                        let items = open(self.now_ms, &request);
+                        let closed = items
+                            .iter()
+                            .any(|i| matches!(i, StreamItem::Ended | StreamItem::Failed { .. }));
+                        if !closed {
+                            self.streams.push((id, request));
+                        }
+                        for item in items {
+                            self.queue.push_back(Event::Stream { id, item });
+                        }
+                    }
+                    None => self.queue.push_back(Event::Stream {
+                        id,
+                        item: StreamItem::Failed {
+                            error: IoError::new(IoErrorKind::Offline),
+                        },
+                    }),
+                },
+                Effect::Cancel { id } => {
+                    self.streams.retain(|(open, _)| *open != id);
+                    self.held.retain(|(held, _)| *held != id);
+                }
                 Effect::Secret { id, .. } => self.queue.push_back(Event::Secret {
                     id,
                     result: IoResult::Err(IoError::new(IoErrorKind::Denied)),
@@ -107,8 +183,7 @@ impl Sim {
                     result: IoResult::Ok(super::PlatformAnswer::Refused),
                 }),
                 Effect::Timer { at_ms } => self.timer = at_ms,
-                Effect::Cancel { .. }
-                | Effect::FileReady { .. }
+                Effect::FileReady { .. }
                 | Effect::FileGone { .. }
                 | Effect::Notify { .. }
                 | Effect::Snapshot { .. }

@@ -34,14 +34,13 @@ fn an_empty_device_starts_signed_out() {
 }
 
 #[test]
-fn a_device_with_state_opens_and_survives_a_restart() {
+fn a_stored_state_that_is_no_device_stops() {
+    // (a real device's start and restart: tests/engine.rs)
     let mut sim = Sim::new(1_000);
     sim.device = (3, [(b"k".to_vec(), b"v".to_vec())].into_iter().collect());
     sim.send(start());
-    assert_eq!(sim.view.phase, Phase::Opening);
-    sim.restart();
-    sim.send(start());
-    assert_eq!(sim.view.phase, Phase::Opening);
+    assert_eq!(sim.view.phase, Phase::Stopped);
+    assert!(!sim.log.iter().any(|e| matches!(e, Effect::Http { .. } | Effect::OpenStream { .. })));
 }
 
 #[test]
