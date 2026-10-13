@@ -208,3 +208,117 @@ fn no_debug_of_an_action_shows_a_secret() {
         assert!(!shown.contains(secret) && !shown.contains("example.org"), "{shown}");
     }
 }
+
+fn human(sim: &Sim, key: &str) -> Option<(serde_json::Value, bool)> {
+    sim.app.board().model.human.get(key).map(|r| (r.value.clone(), r.pending))
+}
+
+#[test]
+fn a_star_shows_at_once_and_is_taken_off_again() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    act(&mut sim, Action::Star { card_id: card.clone(), on: true });
+    let key = format!("star/{card}");
+    assert_eq!(human(&sim, &key).map(|h| h.1), Some(true), "at once");
+    world.stream(&mut sim);
+    assert_eq!(human(&sim, &key).map(|h| h.1), Some(false), "the hub's copy");
+    act(&mut sim, Action::Star { card_id: card.clone(), on: false });
+    world.stream(&mut sim);
+    assert!(human(&sim, &key).is_none_or(|h| h.0.is_null()));
+}
+
+#[test]
+fn deciding_again_opens_the_card_and_keeps_what_was_taken_back_as_its_draft() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    act(&mut sim, yes(&card));
+    world.stream(&mut sim);
+    act(&mut sim, Action::DecideAgain { card_id: card.clone() });
+    world.stream(&mut sim);
+    assert_eq!(sim.app.board().model.cards[&card].object_state, "open");
+    assert_eq!(sim.view.desk.rows.len(), 1, "back on the Desk");
+    let draft = human(&sim, &format!("draft/{card}")).expect("the draft").0;
+    assert_eq!(draft["keys"], json!(["yes"]));
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+    act(&mut sim, Action::DecideAgain { card_id: card.clone() });
+    assert_eq!(sim.view.toasts.last().map(|t| t.text.key.as_str()), Some("action.nothing_to_take_back"));
+}
+
+#[test]
+fn a_line_and_a_hand_back_show_at_once_in_their_chats() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    sim.hold = true;
+    act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "hello agent".into(), attachments: vec![] });
+    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("what do you mean?".into()) });
+    let model = &sim.app.board().model;
+    let pending = |key: &str| model.timelines.get(key).map(|t| t.items.values().filter(|i| i.get("pending") == Some(&json!(true))).count());
+    assert_eq!(pending(&format!("chat:session/{session}")), Some(1));
+    assert_eq!(pending(&format!("chat:card/{card}")), Some(1));
+    sim.hold = false;
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    let model = &sim.app.board().model;
+    let line = model.timelines[&format!("chat:session/{session}")].items.values().find(|i| i["content"]["text"] == json!("hello agent")).cloned().expect("the line");
+    assert_ne!(line.get("pending"), Some(&json!(true)), "the hub's copy in its place");
+    assert!(sim.view.toasts.is_empty());
+}
+
+#[test]
+fn desks_are_made_renamed_given_goals_and_the_last_one_stays() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    let desks = |sim: &Sim| sim.app.board().model.human.iter().filter(|(k, r)| k.starts_with("desk/") && !r.value.is_null()).map(|(k, r)| (k.clone(), r.value.clone())).collect::<Vec<_>>();
+    act(&mut sim, Action::AddDesk { name: "  Work  ".into() });
+    let made = desks(&sim);
+    assert_eq!(made.len(), 2, "the first desk and the new one: {made:?}");
+    assert_eq!(made.iter().find(|(k, _)| k == "desk/main").map(|d| d.1.clone()), Some(json!({ "name": "Personal", "created_at": 0 })));
+    let (work, _) = made.iter().find(|(k, _)| k != "desk/main").cloned().unwrap();
+    let work = work.trim_start_matches("desk/").to_string();
+    assert_eq!(work.len(), 32);
+    world.stream(&mut sim);
+    act(&mut sim, Action::RenameDesk { desk_id: work.clone(), name: "Job".into() });
+    act(&mut sim, Action::SetGoal { desk_id: work.clone(), text: "ship\n\n  launch \n".into() });
+    let v = desks(&sim).into_iter().find(|(k, _)| k.ends_with(&work)).unwrap().1;
+    assert_eq!((v["name"].clone(), v["goals"].clone()), (json!("Job"), json!("ship\nlaunch")));
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), desk_id: work.clone() });
+    act(&mut sim, Action::RenameSession { session_id: session.clone(), name: "Builder".into() });
+    let s = human(&sim, &format!("session/{session}")).unwrap().0;
+    assert_eq!((s["desk"].clone(), s["name"].clone()), (json!(work.clone()), json!("Builder")));
+    world.stream(&mut sim);
+    act(&mut sim, Action::RemoveDesk { desk_id: "main".into() });
+    assert_eq!(desks(&sim).len(), 1);
+    act(&mut sim, Action::RemoveDesk { desk_id: work.clone() });
+    assert_eq!(sim.view.toasts.last().map(|t| t.text.key.as_str()), Some("action.last_desk"));
+    assert_eq!(desks(&sim).len(), 1);
+}
+
+#[test]
+fn a_verdict_closes_the_request() {
+    use trommi_core::device::Draft;
+    use trommi_core::envelope::Urgency;
+    let mut world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    {
+        let mut hub = world.hub.borrow_mut();
+        common::sync(&hub, &mut world.agent);
+        let payload = common::text(r#"{"tool_name":"Bash","description":"list","input_preview":"ls"}"#);
+        let draft = Draft::PermissionRequest { session: world.session, urgency: Urgency::Normal, expires_at: common::now() + 3_600_000, push: false, payload };
+        world.agent.seal(&draft, None, &[], common::now()).expect("the request seals");
+        assert!(common::post_all(&mut hub, &mut world.agent).is_empty());
+    }
+    world.stream(&mut sim);
+    let request = sim.app.board().model.permissions.keys().next().cloned().expect("the request");
+    act(&mut sim, Action::Verdict { request_id: request.clone(), allow: true });
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+    world.stream(&mut sim);
+    assert!(sim.app.engine().unwrap().device().outbox().is_empty());
+    assert_ne!(sim.app.board().model.permissions.get(&request).map(|p| p.envelope_number), None);
+}

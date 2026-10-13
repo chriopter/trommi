@@ -26,6 +26,8 @@ pub struct Out {
 /// The bookkeeping of the actions in flight.
 #[derive(Debug, Default)]
 pub struct Sent {
+    /// Seeds the ids this device makes (a desk's): `Config.seed`, random in a shipped app.
+    pub seed: u64,
     next_local: u64,
     next_toast: u64,
     /// By outbox entry id.
@@ -33,6 +35,23 @@ pub struct Sent {
 }
 
 impl Sent {
+    /// A new id of 16 bytes as hex (a desk's), from the seed, the clock and a count: never the same twice in an App,
+    /// and two devices' ids differ by their seeds.
+    pub fn new_id(&mut self, now: u64) -> String {
+        self.next_local += 1;
+        let mut x = self.seed ^ now.rotate_left(17) ^ self.next_local.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let mut out = String::with_capacity(32);
+        for _ in 0..2 {
+            // splitmix64
+            x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = x;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            out.push_str(&format!("{:016x}", z ^ (z >> 31)));
+        }
+        out
+    }
+
     /// A local id for an echo: counted up per App, never reused by it.
     pub fn local_id(&mut self) -> String {
         self.next_local += 1;

@@ -202,6 +202,7 @@ impl App {
                     out.push(log(LogLevel::Warn, "start: already started"));
                 } else {
                     self.jitter = Jitter::new(config.seed);
+                    self.sent.seed = config.seed;
                     self.lens.utc_offset_min = config.utc_offset_min;
                     // (the Desk's greeting: one for the whole run)
                     self.lens.dice = (config.seed ^ (config.seed >> 32)) as u32;

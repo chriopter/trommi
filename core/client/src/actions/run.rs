@@ -21,6 +21,32 @@ use trommi_core::Error;
 pub const SNOOZE_HOUR: u64 = 7;
 
 const DAY_MS: u64 = 86_400_000;
+/// A name of a desk or a session: at most so many characters.
+pub const NAME_MAX: usize = 40;
+/// A desk's goals: at most so many lines of at most `GOAL_LINE_MAX` characters, no blank lines.
+pub const GOAL_LINES: usize = 20;
+pub const GOAL_LINE_MAX: usize = 200;
+/// Every account's first desk: the same id and value from every device, so two that write it at once write one.
+pub const FIRST_DESK_ID: &str = "main";
+
+fn first_desk() -> Value {
+    json!({ "name": "Personal", "created_at": 0 })
+}
+
+fn desk_name(name: &str) -> String {
+    let name: String = name.trim().chars().take(NAME_MAX).collect();
+    if name.is_empty() { "Personal".into() } else { name }
+}
+
+/// A desk's goals as they are kept (web `cleanGoals`, iOS `deskRegister`).
+pub fn clean_goals(text: &str) -> String {
+    text.lines()
+        .map(|l| l.trim().chars().take(GOAL_LINE_MAX).collect::<String>())
+        .filter(|l| !l.is_empty())
+        .take(GOAL_LINES)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// Seals one draft through the device and pumps the outbox.
 pub type Seal<'a> = dyn FnMut(&Draft, Option<&DeviceId>, &[FileId]) -> Result<Sealed, Error> + 'a;
@@ -108,6 +134,88 @@ impl Doing<'_> {
             Action::Unsnooze { card_id } => {
                 self.card_of(card_id)?;
                 self.registers(action, &[(format!("snooze/{card_id}"), json!({ "until": self.now }))])
+            }
+            Action::Star { card_id, on } => {
+                self.card_of(card_id)?;
+                let value = if *on { json!({ "at": self.now }) } else { Value::Null };
+                self.registers(action, &[(format!("star/{card_id}"), value)])
+            }
+            Action::DecideAgain { card_id } => self.decide_again(action, card_id),
+            Action::Verdict { request_id, allow } => self.verdict(action, request_id, *allow),
+            Action::Write { session_id, card_id, text, attachments } => {
+                if !attachments.is_empty() {
+                    return Err(not_done("action.attachments", "Attachments cannot be sent from here yet."));
+                }
+                let mut content = Map::new();
+                content.insert("text".into(), json!(text));
+                self.write(action, Some(session_id), card_id.as_deref(), content)
+            }
+            // "What??": the card goes back to its agent with the question, and comes back up awake
+            Action::HandBack { card_id, note } => {
+                let mut content = Map::new();
+                content.insert("text".into(), json!(note.clone().unwrap_or_default()));
+                content.insert("explain".into(), json!(true));
+                self.write(action, None, Some(card_id), content)?;
+                self.wake(card_id);
+                Ok(())
+            }
+            Action::Draft { place, text } => {
+                let value = if text.trim().is_empty() { Value::Null } else { json!({ "note": text, "ts": self.now }) };
+                self.registers(action, &[(format!("draft/{place}"), value)])
+            }
+            Action::RenameSession { session_id, name } => {
+                let name: String = name.trim().chars().take(NAME_MAX).collect();
+                self.edit_session(action, session_id, "name", json!(name))
+            }
+            Action::ArchiveSession { session_id, on } => self.edit_session(action, session_id, "archived", json!(on)),
+            Action::MoveSession { session_id, desk_id } => {
+                if !self.desks().contains(desk_id) {
+                    return Err(not_done("action.no_desk", "That desk is no longer there."));
+                }
+                self.edit_session(action, session_id, "desk", json!(desk_id))
+            }
+            Action::AddDesk { name } => {
+                let mut values = Vec::new();
+                // every account has its first desk, the same value from every device
+                if self.desks().is_empty() {
+                    values.push((format!("desk/{FIRST_DESK_ID}"), first_desk()));
+                }
+                let id = self.sent.new_id(self.now);
+                values.push((format!("desk/{id}"), json!({ "name": desk_name(name), "created_at": self.now })));
+                self.registers(action, &values)
+            }
+            Action::RenameDesk { desk_id, name } => {
+                let mut desk = self.desk(desk_id)?;
+                desk.insert("name".into(), json!(desk_name(name)));
+                self.registers(action, &[(format!("desk/{desk_id}"), Value::Object(desk))])
+            }
+            Action::RemoveDesk { desk_id } => {
+                let live = self.desks();
+                if !live.contains(desk_id) {
+                    return Err(not_done("action.no_desk", "That desk is no longer there."));
+                }
+                if live.len() <= 1 {
+                    return Err(not_done("action.last_desk", "The last desk stays."));
+                }
+                self.registers(action, &[(format!("desk/{desk_id}"), Value::Null)])
+            }
+            // a field of the desk's register like its name; with no desk yet the first one is made for them
+            Action::SetGoal { desk_id, text } => {
+                let live = self.desks();
+                let (id, mut desk) = if live.contains(desk_id) {
+                    (desk_id.clone(), self.desk(desk_id)?)
+                } else if live.is_empty() {
+                    (FIRST_DESK_ID.to_string(), first_desk().as_object().cloned().unwrap_or_default())
+                } else {
+                    return Err(not_done("action.no_desk", "That desk is no longer there."));
+                };
+                let goals = clean_goals(text);
+                if goals.is_empty() {
+                    desk.remove("goals");
+                } else {
+                    desk.insert("goals".into(), json!(goals));
+                }
+                self.registers(action, &[(format!("desk/{id}"), Value::Object(desk))])
             }
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
         }
@@ -198,6 +306,138 @@ impl Doing<'_> {
         // answered while put off: awake, so a reworked or reopened card is back on the Desk
         self.wake(card_id);
         Ok(())
+    }
+
+    /// Takes the answer in force back: the card is open again, and what was taken back becomes its draft (the ticks
+    /// and notes where they were). A card put off is woken instead.
+    fn decide_again(&mut self, action: &Action, card_id: &str) -> Result<(), NotDone> {
+        let card = self.card_of(card_id)?;
+        let snoozed = self.model.human.get(&format!("snooze/{card_id}")).and_then(|r| r.value.get("until")).and_then(Value::as_u64);
+        if card.object_state == "open" && snoozed.is_some_and(|u| u > self.now) {
+            return self.registers(action, &[(format!("snooze/{card_id}"), json!({ "until": self.now }))]);
+        }
+        let Some(answer) = card.answer.clone().filter(|a| a.envelope_hash.is_some() && !a.pending) else {
+            return Err(not_done("action.nothing_to_take_back", "There is no answer to take back."));
+        };
+        let Some(session_id) = card.session_id.clone() else {
+            return Err(not_done("action.not_found", "That card has no session."));
+        };
+        let recipient = self.model.holder_of(&card.agent_device_id, Some(&session_id));
+        let decision = card.fields.get("card_type") == json!("decision");
+        let payload = codec::encode_body(BodyKind::TakeBack, &Map::new()).map_err(|_| bad_id())?;
+        let draft = Draft::TakeBack {
+            session: id(&session_id).map(SessionId::new).ok_or_else(bad_id)?,
+            object_id: id(card_id).map(ObjectId::new).ok_or_else(bad_id)?,
+            payload: SecretBytes::new(payload.into_bytes()),
+        };
+        let to = recipient.as_deref().and_then(hex32).map(DeviceId::new);
+        self.seal_plain(action, &draft, to.as_ref())?;
+        let keys = answer.choices.as_array().cloned().unwrap_or_default();
+        let note = answer.note.as_str().unwrap_or("").to_string();
+        let notes = answer.option_notes.as_object().cloned().unwrap_or_default();
+        if decision && (!keys.is_empty() || !note.is_empty() || !notes.is_empty()) {
+            let was = json!({ "keys": keys, "note": note, "notes": notes, "ts": self.now });
+            let _ = self.registers(action, &[(format!("draft/{card_id}"), was)]);
+        }
+        Ok(())
+    }
+
+    /// Allow or deny a permission request, addressed to its holder.
+    fn verdict(&mut self, action: &Action, request_id: &str, allow: bool) -> Result<(), NotDone> {
+        let Some(p) = self.model.permissions.get(request_id) else {
+            return Err(not_done("action.not_found", "That request is no longer there."));
+        };
+        let Some(session_id) = p.session_id.clone() else {
+            return Err(not_done("action.not_found", "That request has no session."));
+        };
+        let recipient = self.model.holder_of(&p.agent_device_id, Some(&session_id));
+        let payload = codec::encode_body(BodyKind::Verdict, &Map::new()).map_err(|_| bad_id())?;
+        let draft = Draft::Verdict {
+            session: id(&session_id).map(SessionId::new).ok_or_else(bad_id)?,
+            request_id: id(request_id).map(ObjectId::new).ok_or_else(bad_id)?,
+            allow,
+            payload: SecretBytes::new(payload.into_bytes()),
+        };
+        let to = recipient.as_deref().and_then(hex32).map(DeviceId::new);
+        self.seal_plain(action, &draft, to.as_ref())
+    }
+
+    /// A Chat line to a session's agent, or on a card: shown at once in its timeline.
+    fn write(&mut self, action: &Action, session_id: Option<&String>, card_id: Option<&str>, mut content: Map<String, Value>) -> Result<(), NotDone> {
+        let card = match card_id {
+            Some(c) => Some(self.card_of(c)?),
+            None => None,
+        };
+        let Some(sid) = card.and_then(|c| c.session_id.clone()).or_else(|| session_id.cloned()) else {
+            return Err(not_done("action.not_found", "That has no session to write to."));
+        };
+        if !self.model.sessions.contains_key(&sid) {
+            return Err(not_done("action.not_found", "That session is no longer there."));
+        }
+        let recipient = match card {
+            Some(c) => self.model.holder_of(&c.agent_device_id, Some(&sid)),
+            None => self.model.recipient_of(&sid),
+        };
+        content.insert("content_type".into(), json!("message"));
+        let payload = codec::encode_body(BodyKind::Message, &content).map_err(|_| not_done("action.bad", "That line cannot be sent."))?;
+        let files = file_ids(BodyKind::Message, &content);
+        let session = id(&sid).map(SessionId::new).ok_or_else(bad_id)?;
+        let payload = SecretBytes::new(payload.into_bytes());
+        let (draft, timeline) = match card_id {
+            Some(c) => (Draft::CardChat { session, card: id(c).map(ObjectId::new).ok_or_else(bad_id)?, payload }, format!("chat:card/{c}")),
+            None => (Draft::SessionChat { session, payload }, format!("chat:session/{sid}")),
+        };
+        let to = recipient.as_deref().and_then(hex32).map(DeviceId::new);
+        let local_id = self.sent.local_id();
+        self.model.echo_timeline_item(&local_id, &timeline, content, recipient, card_id.map(str::to_string), self.now, &mut self.change);
+        self.change.sessions.insert(sid);
+        self.seal_echoed(action, &local_id, &draft, to.as_ref(), &files)
+    }
+
+    /// A session's settings (its register `session/<id>`: name, icon, desk, archived), one field changed and every
+    /// other kept.
+    fn edit_session(&mut self, action: &Action, session_id: &str, field: &str, value: Value) -> Result<(), NotDone> {
+        let Some(s) = self.model.sessions.get(session_id) else {
+            return Err(not_done("action.not_found", "That session is no longer there."));
+        };
+        let mut settings = s
+            .settings
+            .clone()
+            .or_else(|| self.model.human.get(&format!("session/{session_id}")).map(|r| r.value.clone()))
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        settings.insert(field.into(), value);
+        self.change.sessions.insert(session_id.to_string());
+        self.registers(action, &[(format!("session/{session_id}"), Value::Object(settings))])
+    }
+
+    /// The desks that are there, by id.
+    fn desks(&self) -> Vec<String> {
+        self.model
+            .human
+            .iter()
+            .filter(|(_, r)| !r.value.is_null())
+            .filter_map(|(k, _)| k.strip_prefix("desk/").map(str::to_string))
+            .collect()
+    }
+
+    fn desk(&self, desk_id: &str) -> Result<Map<String, Value>, NotDone> {
+        self.model
+            .human
+            .get(&format!("desk/{desk_id}"))
+            .and_then(|r| r.value.as_object().cloned())
+            .ok_or_else(|| not_done("action.no_desk", "That desk is no longer there."))
+    }
+
+    /// Seals a draft that shows no echo (a take back, a verdict: the hub's copy shows them).
+    fn seal_plain(&mut self, action: &Action, draft: &Draft, to: Option<&DeviceId>) -> Result<(), NotDone> {
+        match (self.seal)(draft, to, &[]) {
+            Ok(sealed) => {
+                self.sent.put(sealed.outbox_id, Out { local_id: None, action: action.clone() });
+                Ok(())
+            }
+            Err(e) => Err(NotDone { text: refused(e.code()), again: true }),
+        }
     }
 
     /// A card put off that the person acts on is woken: its snooze ends now. A failure here is not the action's.
@@ -304,6 +544,14 @@ mod tests {
         assert_eq!(next_morning(day + 7 * 3_600_000, 0), day + DAY_MS + 7 * 3_600_000);
         // west of UTC (New York, -4 h): 14:05 UTC is 10:05 local, so tomorrow 07:00 local = 11:00 UTC
         assert_eq!(next_morning(now, -240), day + DAY_MS + 11 * 3_600_000);
+    }
+
+    #[test]
+    fn goals_are_kept_clean() {
+        assert_eq!(clean_goals("  one \r\n\n two\n"), "one\ntwo");
+        assert_eq!(clean_goals(&"x\n".repeat(30)).lines().count(), GOAL_LINES);
+        assert_eq!(clean_goals(&"y".repeat(300)).len(), GOAL_LINE_MAX);
+        assert_eq!((desk_name("   "), desk_name(&"d".repeat(50)).len()), ("Personal".to_string(), NAME_MAX));
     }
 
     #[test]
