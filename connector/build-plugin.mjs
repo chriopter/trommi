@@ -42,10 +42,10 @@ function build(target) {
   if (target.endsWith('-apple-darwin')) {
     env.MACOSX_DEPLOYMENT_TARGET = MACOS_MIN
     env.CARGO_ZIGBUILD_ZIG_PATH = zigShim()
-    execFileSync(CARGO, ['zigbuild', '--release', '--locked', '-p', 'trommi-connector', '--target', target], { cwd: here, env, stdio: 'inherit' })
+    execFileSync(CARGO, ['zigbuild', '--profile', 'dist', '--locked', '-p', 'trommi-connector', '--target', target], { cwd: here, env, stdio: 'inherit' })
     return
   }
-  execFileSync(CARGO, ['build', '--release', '--locked', '-p', 'trommi-connector', '--target', target], { cwd: here, env, stdio: 'inherit' })
+  execFileSync(CARGO, ['build', '--profile', 'dist', '--locked', '-p', 'trommi-connector', '--target', target], { cwd: here, env, stdio: 'inherit' })
 }
 
 /** zig for macOS links: ZIG, a `zig` on PATH that answers, or the newest zig mise installed. */
@@ -83,7 +83,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const built = {}
   for (const t of TARGETS) {
     try { build(t) } catch (e) { console.error(`skipped ${t}: the build failed (${e.message.split('\n')[0]})`); continue }
-    const bin = path.join(TARGET_DIR, t, 'release', 'trommi-connector')
+    const bin = path.join(TARGET_DIR, t, 'dist', 'trommi-connector')
     if (!fs.existsSync(bin)) { console.error(`skipped ${t}: no ${path.relative(process.cwd(), bin)}`); continue }
     built[t] = fs.readFileSync(bin)
     console.log(`trommi-connector-${t}: ${(built[t].length / 1048576).toFixed(1)} MiB, sha256 ${sha256(built[t]).slice(0, 12)}`)
