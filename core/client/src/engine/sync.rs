@@ -1844,6 +1844,10 @@ impl Engine {
             let void = Self::void_code(&link.item);
             match self.device.receive_envelope(&link.item.envelope, link.item.change, true, void.as_ref(), ctx.now) {
                 Ok(received) if received.outcome != EnvelopeOutcome::Refused => {
+                    if received.code == Some(Error::NoKey) {
+                        // (chained without its body, as on the order: read back once the key was handed over)
+                        self.note_keyless(received.header.group, link.item.change);
+                    }
                     self.report(Report::Envelope { received: Box::new(received), ordered: false })
                 }
                 Ok(_) => {}
