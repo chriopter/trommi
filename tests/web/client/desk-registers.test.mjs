@@ -33,7 +33,7 @@ test('a sign-in shows names, desks, settings and snoozes with the Desk, before t
     const m = c.model
     if (first || !m.cards.has(waiting)) return
     first = {
-      read: m.room.reading_progress?.done ?? 0, total: m.room.reading_progress?.total ?? 0, pending: c.engine.rescanPending, stack: [...m.stack],
+      read: m.room.reading_progress?.done ?? 0, total: m.room.reading_progress?.total ?? 0, oldest: [...(m.timelines.get(`chat:session/${sid}`)?.items.values() ?? [])].some(i => i.content?.text === 'before 0'), stack: [...m.stack],
       profile: m.sessions.get(sid)?.profile?.agent_name ?? null, name: m.sessions.get(sid)?.settings?.name ?? null,
       desks: [...m.human.desks.keys()].sort(), snoozed: m.cards.get(snoozed)?.snoozed_until ?? null,
       named_a: m.members.get(a.my_device_id)?.device_name ?? null,
@@ -43,7 +43,8 @@ test('a sign-in shows names, desks, settings and snoozes with the Desk, before t
   await c.start()
   await sessions
   await until(() => first, 'the Desk shows')
-  assert.ok(first.pending && (first.read < first.total || first.total === 0), `the Desk showed before the past was read (${first.read} of ${first.total}, read still due: ${first.pending})`)
+  // (the agent's oldest line, 400 lines before the registers in the hub's order, comes only with the past)
+  assert.ok(!first.oldest, 'the Desk showed before the past was read')
   assert.deepEqual(first.stack, [waiting], 'the snoozed card is off the Desk from the first showing on')
   assert.ok(first.snoozed, 'the snooze stands')
   assert.equal(first.profile, 'Probe Agent', 'the session\'s profile stands')
@@ -52,5 +53,6 @@ test('a sign-in shows names, desks, settings and snoozes with the Desk, before t
   assert.equal(first.named_a, 'a', 'the other device has its name')
   await until(() => c.model.room.connection === 'live' && !c.engine.rescanPending && !c.model.room.reading, 'the past read', 60_000)
   assert.deepEqual([...c.model.stack], [waiting])
+  assert.ok([...(c.model.timelines.get(`chat:session/${sid}`)?.items.values() ?? [])].some(i => i.content?.text === 'before 0'), 'the past brings the oldest line (what the first showing lacked)')
   assert.equal(c.model.sessions.get(sid)?.settings?.name, 'Named By Human')
 })

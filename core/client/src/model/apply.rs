@@ -127,6 +127,13 @@ impl Model {
     pub fn apply_envelope(&mut self, r: &Received, change: &mut Change, now: u64) -> Applied {
         let applied = self.apply_one(r, change, now);
         for shown in &r.shown {
+            // (a receipt's mark only rises as it comes; one that stood out of the hub's order and went is taken
+            //  back, and the value that stands now sets it again)
+            if let (Some(sid), "heard") = (&r.session_id, shown.name.as_str()) {
+                let s = self.session_of(sid);
+                s.heard_up_to = None;
+                s.heard_at = None;
+            }
             match &shown.now {
                 Some(now_r) => {
                     self.apply_one(now_r, change, now);

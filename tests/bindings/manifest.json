@@ -3150,6 +3150,18 @@
       "of": "optional<bytes>",
       "current": "bool"
     },
+    "ShownValue": {
+      "change": "number",
+      "envelopeHash": "bytes",
+      "header": "EnvelopeHeader",
+      "provisional": "bool",
+      "payload": "bytes"
+    },
+    "RegisterShown": {
+      "name": "text",
+      "of": "optional<bytes>",
+      "now": "optional<ShownValue>"
+    },
     "ReceivedEnvelope": {
       "change": "number",
       "envelopeHash": "bytes",
@@ -3164,6 +3176,7 @@
       "confirmed": "optional<bool>",
       "dropped": "optional<ErrorCode>",
       "replayed": "bool",
+      "shown": "list<RegisterShown>",
       "command": "bool"
     },
     "ChainHead": {

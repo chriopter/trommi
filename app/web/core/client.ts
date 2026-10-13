@@ -270,7 +270,7 @@ export class Client {
   private deskReading: Promise<void> | null = null
   /** A reading of this run read the versions it lacked (`readDeskNow`). */
   private deskVersionsRead = false
-  private deskRegistersRead = false // (the Desk's registers got to the core in this run; until then: the full Desk, 9.3.6)
+  private deskRegistersRead = false // (the Desk's registers got to the core in this run; until then each reading takes the full Desk, 9.3.6)
   /** A session group was joined: the next reading takes the hub's full Desk (its open objects' newest versions and
    *  every register of the groups: the sessions' names and status lines), not only the list. */
   private deskFullDue = false
@@ -909,7 +909,7 @@ export class Client {
     this.deskVersionsRead = true
     const reading = this.engine.position < brief.change || this.engine.rescanPending || this.readingHolds > 0
     const fromFull = full && !full.truncated ? full : null
-    const registersDue = !fromFull && !this.deskRegistersRead && (first || this.engine.rescanPending); let withRegisters = !!fromFull
+    const registersDue = !fromFull && !this.deskRegistersRead; let withRegisters = !!fromFull
     const versions = fromFull
       ? (() => {
           const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`))

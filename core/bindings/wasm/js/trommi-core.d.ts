@@ -604,7 +604,18 @@ export interface RegisterShown {
   name: string
   of: Uint8Array | null
   /** The envelope whose value stands for the name now; null: the name has no value. */
-  now: { change: number; envelopeHash: Uint8Array; header: EnvelopeHeader; provisional: boolean; payload: Uint8Array } | null
+  now: ShownValue | null
+}
+
+/** The envelope whose register value stands for a name again (spec 9.3.6). */
+export interface ShownValue {
+  change: number
+  envelopeHash: Uint8Array
+  header: EnvelopeHeader
+  /** A value read out of the hub's order, not yet confirmed by its chain. */
+  provisional: boolean
+  /** The register's payload, as JSON. */
+  payload: Uint8Array
 }
 
 export interface ChainHead {

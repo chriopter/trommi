@@ -372,6 +372,12 @@ impl Registers {
             .and_then(|held| held.value.as_deref())
     }
 
+    /// Whether `sender` has used the register id `register` for a name here already: then an envelope of it
+    /// binds nothing new.
+    pub fn binds(&self, sender: &DeviceId, register: &RegisterId) -> bool {
+        self.names.contains_key(&(*sender, *register))
+    }
+
     /// The stamp of the value held for a name (`of`: the sender, for a name each device writes for itself);
     /// none if it was never written.
     pub fn held(&self, name: &str, of: Option<DeviceId>) -> Option<Stamp> {

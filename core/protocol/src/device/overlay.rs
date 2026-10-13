@@ -105,7 +105,8 @@ pub(super) fn check_entry(rest: &[u8], value: &[u8]) -> Result<(), Error> {
     let mut reader = Reader::new(rest);
     let len = reader.u8()? as usize;
     let group = reader.take(len)?.to_vec();
-    let fits = match reader.u8()? {
+    let fits = GroupId::from_bytes(&group).is_ok()
+        && match reader.u8()? {
         AT => {
             let record = codec::decode::<Record>(value, value.len())?;
             let sender = reader.take(DeviceId::LEN)?;
@@ -176,6 +177,11 @@ impl<S: Storage> Device<S> {
                     .map_err(|_| damaged("an overlay value"))
             })
             .collect()
+    }
+
+    /// Whether the overlay holds a value of a name: read from its index alone.
+    fn overlay_has(&self, group: &GroupId, name: &Name) -> bool {
+        !self.stored_under(&name_prefix(group, name)).is_empty()
     }
 
     /// The overlay values of one name.
@@ -298,8 +304,9 @@ impl<S: Storage> Device<S> {
 
     /// Before an envelope of the chain is taken: what stands for the names it may change. Those are the name
     /// its body writes, the name of the overlay value under its number, the names of the overlay values of its
-    /// sender (a register id the chain now binds to a name), and every name when the group's registers are
-    /// built again (`all`). Nothing on an agent or helper device, which keeps no overlay.
+    /// sender when it uses a register id for the first time (the chain binds it to a name then), and every
+    /// name when the group's registers are built again (`all`). Nothing on an agent or helper device, which
+    /// keeps no overlay.
     pub(super) fn overlay_watch(
         &self,
         header: &Header,
@@ -318,23 +325,32 @@ impl<S: Storage> Device<S> {
                 .into_iter()
                 .collect()
         };
-        if matches!(header.subject, Subject::Register(_)) {
-            if !all {
+        let mut registers = None;
+        if let Subject::Register(register) = &header.subject {
+            let held = self.registers(&group)?;
+            // (a register id its sender uses for the first time binds a name: its other overlay values may no
+            //  longer pass)
+            if !all && !held.binds(&header.sender, register) {
                 records.extend(self.overlay_under(&at_prefix(&group, Some(&header.sender)))?);
             }
             if let Some(name) = payload.and_then(|payload| name_of(header, payload)) {
                 names.insert(name, None);
             }
+            registers = Some(held);
         }
         for record in &records {
             if let Some(name) = name_of(&record.header, &record.extra) {
                 names.insert(name, None);
             }
         }
+        names.retain(|name, _| self.overlay_has(&group, name));
         if names.is_empty() {
             return Ok(Watched(names));
         }
-        let registers = self.registers(&group)?;
+        let registers = match registers {
+            Some(registers) => registers,
+            None => self.registers(&group)?,
+        };
         for (name, standing) in names.iter_mut() {
             *standing = self
                 .overlay_standing(&group, &registers, name)?
@@ -369,10 +385,11 @@ impl<S: Storage> Device<S> {
         let Some(mut change) = change else {
             return Ok(None);
         };
-        if change.current && self.is_human() {
+        let name = (change.name.clone(), change.of);
+        if change.current && self.is_human() && self.overlay_has(group, &name) {
             let registers = self.registers(group)?;
             change.current = self
-                .overlay_standing(group, &registers, &(change.name.clone(), change.of))?
+                .overlay_standing(group, &registers, &name)?
                 .is_none();
         }
         Ok(Some(change))
@@ -447,16 +464,18 @@ impl<S: Storage> Device<S> {
         })
     }
 
-    /// A Cut ended `device`'s chain at `seq` (9.0.10): its overlay values beyond go.
+    /// A Cut ended `device`'s chain at `seq` with the envelope `hash` (9.0.10): its overlay values beyond go,
+    /// and another envelope under the Cut's own number.
     pub(super) fn overlay_cut(
         &mut self,
         batch: &mut Batch,
         group: &GroupId,
         device: &DeviceId,
         seq: u64,
+        hash: &Hash32,
     ) -> Result<(), Error> {
         for record in self.overlay_under(&at_prefix(group, Some(device)))? {
-            if record.header.seq > seq {
+            if record.header.seq > seq || (record.header.seq == seq && record.hash != *hash) {
                 self.delete_overlay(batch, &record);
             }
         }

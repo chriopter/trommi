@@ -1417,7 +1417,7 @@ impl<S: Storage> Device<S> {
             return Ok(());
         }
         self.end_chain(batch, group, cut, epoch, epoch)?;
-        self.overlay_cut(batch, group, &cut.device, cut.seq)?;
+        self.overlay_cut(batch, group, &cut.device, cut.seq, &cut.hash)?;
         // This device's own chain ends there too: whatever it signed beyond the Cut is void, and if its key
         // is added again, its next envelope is the one after the Cut (3.7).
         if cut.device == self.id {

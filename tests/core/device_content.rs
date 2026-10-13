@@ -1940,3 +1940,108 @@ fn an_agent_device_takes_a_register_only_from_its_chain() {
     }
     assert!(w.agent.register(&session, "goals").unwrap().is_some());
 }
+
+/// Codex review, round 1: a Cut drops an overlay value under its own number that is another envelope than the one
+/// the Cut names.
+#[test]
+fn a_cut_drops_another_envelope_under_its_own_number() {
+    let mut a = new_device();
+    let mut b = new_device();
+    let (mut hub, room) = found_room(&mut a);
+    add_human(&mut hub, &mut a, &mut b);
+    let forger = Forger::new();
+    add_forger(&mut hub, &mut a, &forger);
+    sync_all(&hub, &mut a);
+    sync_all(&hub, &mut b);
+    let mut pen = Pen::new(&forger.key);
+    let mut fork = pen.fork();
+    let epoch = a.group(&room).unwrap().epoch;
+    let claim = Claim {
+        group: room,
+        epoch,
+        role: Role::Human,
+        seat: None,
+        key: a.content_key(&room, epoch).unwrap(),
+    };
+    // a accepts one envelope at number 1; b is shown another one there, out of the order
+    let accepted = pen.sign(&claim, &board_item(), &Objects::new(), now());
+    hub.post(&pen.id(), &posting(&accepted)).unwrap();
+    let accepted = hub.content.envelopes.last().unwrap().clone();
+    take_envelope(&mut a, &accepted);
+    let forked = fork.sign(&claim, &register_draft(1, NAME, Some("fork"), 5), &Objects::new(), now());
+    let got = b
+        .receive_envelope(&forked.encode().unwrap(), accepted.change, false, None, now())
+        .unwrap();
+    assert!(got.register.as_ref().unwrap().current);
+    // a removes the pen's device with its Cut at 1, naming the envelope it accepted
+    let cut = a.cut_of(&room, &pen.id()).unwrap();
+    assert_eq!(cut.seq, 1);
+    a.remove_human_devices(&[cut], now()).unwrap();
+    post_ok(&mut hub, &mut a);
+    // b merges the removal without having read number 1 in the order
+    for change in hub.changes_after(b.cursor()) {
+        match change {
+            Change::Log(item) => {
+                trommi_tests::process(&mut b, &item).unwrap();
+                trommi_tests::take_welcomes(&hub, &mut b, item.change);
+            }
+            Change::Envelope(stored) if stored.hash != accepted.hash => {
+                take_envelope(&mut b, &stored);
+            }
+            Change::Envelope(_) => {}
+        }
+    }
+    // a writes the name with a lower lamport than the fork's: it stands on b, nothing masks it
+    write(
+        &mut hub,
+        &mut a,
+        &Draft::Register {
+            group: room,
+            name: NAME.into(),
+            value: Some(json(r#"{"name":"a"}"#)),
+        },
+    );
+    let mut seen = false;
+    for got in sync_all(&hub, &mut b) {
+        if let Some(r) = got.register.as_ref().filter(|r| r.name == NAME) {
+            assert!(r.current, "the fork under the Cut's number is gone from the overlay");
+            seen = true;
+        }
+    }
+    assert!(seen);
+}
+
+/// Codex review, round 1: a receipt (`heard`) read out of the order that is dropped takes its mark back.
+#[test]
+fn a_dropped_receipt_takes_its_mark_back() {
+    let (mut w, mut other) = world_of_two();
+    sync_all(&w.hub, &mut w.agent);
+    sync_all(&w.hub, &mut other);
+    write(
+        &mut w.hub,
+        &mut w.agent,
+        &Draft::Register {
+            group: w.group,
+            name: "heard".into(),
+            value: Some(json(r#"{"up_to":100,"at":123}"#)),
+        },
+    );
+    let heard = w.hub.chain_of(&w.group, &w.agent.id(), 0).pop().unwrap();
+    let mut shown = Shown::new();
+    let got = other
+        .receive_envelope(&heard.bytes, heard.change, false, None, now())
+        .unwrap();
+    assert!(got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    let session = hex(w.session.as_bytes());
+    assert_eq!(shown.0.sessions.get(&session).and_then(|s| s.heard_up_to), Some(100));
+    // the chain reaches its number as a void record
+    let pruned = Envelope::decode(&heard.bytes).unwrap().prune().unwrap().encode().unwrap();
+    let got = other
+        .receive_envelope(&pruned, heard.change, true, Some(&Error::TooLarge), now())
+        .unwrap();
+    assert_eq!(got.outcome, EnvelopeOutcome::Void);
+    assert_eq!(got.shown.len(), 1);
+    shown.take(&got);
+    assert_eq!(shown.0.sessions.get(&session).and_then(|s| s.heard_up_to), None);
+}
