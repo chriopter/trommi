@@ -428,7 +428,6 @@ export class ClientModel extends FileObject {
   desksDeleting() { return this[CALL]('desks_deleting', []) }
   deskContents(deskId, board) { return this[CALL]('desk_contents', [deskId, board]) }
   deskDeletePlan(deskId, known, by, nowMs) { return this[CALL]('desk_delete_plan', [deskId, known, by, nowMs]) }
-  starredCards() { return this[CALL]('starred_cards', []) }
   selfJoinAsks(answered, pending) { return this[CALL]('self_join_asks', [answered, pending]) }
   selfJoinVerdict(sessionId, nonce, requestHash) { return this[CALL]('self_join_verdict', [sessionId, nonce, requestHash]) }
   selfJoinRetire() { return this[CALL]('self_join_retire', []) }
@@ -467,7 +466,6 @@ export class ClientModel extends FileObject {
 const plain = name => (...args) => callWith(raw, name, args)
 
 export const versions = plain('versions')
-export const offPile = plain('off_pile')
 export const selfTest = plain('self_test')
 export const logFinding = plain('log_finding')
 export const errorCodeText = plain('error_code_text')

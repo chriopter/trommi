@@ -527,6 +527,9 @@ public final class Board {
   /** The session list every device of the person shows (core/client/src/sessions.rs, one entry per session, in order):
    *  which sessions, their names, online or gone, archived, their parents. DeskModel draws it as it comes. */
   public internal(set) var sessionList: [JV] = []
+  /** What has left the Desk, as the client core makes it (core/client/src/off_mind.rs, the patch's off_mind): the
+   *  starred and the running stack, the put-off cards, the closed ones counted. DeskModel reads it as it comes. */
+  public internal(set) var offMind: JV = .null
   /** Open here, settled at the hub (or held while the app waits for the hub's first list): off the Desk. */
   public internal(set) var held: Set<String> = []
   /** What a newer client wrote that this version cannot show: how many, what, the newest. */
@@ -555,7 +558,7 @@ public final class Board {
     b.lastEnvelopeNumber = lastEnvelopeNumber; b.connection = connection; b.recoveryKey = recoveryKey
     b.members = members; b.sessions = sessions; b.cards = cards; b.permissions = permissions; b.notes = notes
     b.published = published; b.timelines = timelines; b.human = human; b.alerts = alerts
-    b.stack = stack; b.openPermissionIds = openPermissionIds; b.deskOrder = deskOrder; b.held = held; b.sessionList = sessionList
+    b.stack = stack; b.openPermissionIds = openPermissionIds; b.deskOrder = deskOrder; b.held = held; b.sessionList = sessionList; b.offMind = offMind
     b.newerCount = newerCount; b.newerWhat = newerWhat; b.newerEnvelope = newerEnvelope; b.deviceRegisters = deviceRegisters
     b.deskWaiting = deskWaiting
     return b
@@ -600,7 +603,7 @@ public final class Board {
     }
     lastEnvelopeNumber = 0
     sessions = [:]; cards = [:]; permissions = [:]; notes = [:]; published = [:]; timelines = [:]; members = [:]
-    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; deskOrder = []; held = []; sessionList = []
+    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; deskOrder = []; held = []; sessionList = []; offMind = .null
     newerCount = 0; newerWhat = []; newerEnvelope = 0; deviceRegisters = [:]
     engine = ClientModel(myDeviceId: myDeviceId ?? "")
     if !presence.isEmpty { try? engine.applyPresence(reports: String(decoding: JV.arr(presence).encoded(), as: UTF8.self), nowMs: nowMs()) }
@@ -680,30 +683,4 @@ public final class Board {
   }
   /** A key only an agent writes in its session group. */
   public static func isAgentKey(_ k: String) -> Bool { k == "profile" || k == "heard" || k.hasPrefix("status_line/") || k.hasPrefix("alert/") }
-}
-
-extension Board {
-  /** His starred cards, the last starred first: the client core's rule (core/client/src/stars.rs). Card ids. */
-  public func starredCards() -> [String] {
-    guard let t = try? engine.starredCards(), let j = JV.parse(Bytes(t.utf8)) else { return [] }
-    return j.array?.compactMap { $0["object_id"].string } ?? []
-  }
-}
-
-/** Off your mind laid out as one pile (the owner's pick of 13 October 2026, "untereinander"): the first running cards
- *  on top, the rest on one pile; the client core's rule (core/client/src/off_pile.rs off_pile), from the real totals. */
-public struct Pile: Equatable {
-  public let top: Int, moreRunning: Int, putOff: Int, closed: Int
-  public let pile: Bool
-  public let behind: Int, restShown: Int
-  public let open: Bool
-}
-public func offPile(running: UInt64, putOff: UInt64, closed: UInt64, full: Bool) -> Pile {
-  let p = TrommiCoreRust.offPile(running: running, putOff: putOff, closed: closed, full: full)
-  return Pile(top: Int(p.top), moreRunning: Int(p.moreRunning), putOff: Int(p.putOff), closed: Int(p.closed), pile: p.pile,
-              behind: Int(p.behind), restShown: Int(p.restShown), open: p.open)
-}
-/** What lies on the pile, in words: "+2 running · 1 put off · 14 done" (web desk.mjs pileWords). */
-public func pileWords(_ p: Pile) -> String {
-  [p.moreRunning > 0 ? "+\(p.moreRunning) running" : "", p.putOff > 0 ? "\(p.putOff) put off" : "", p.closed > 0 ? "\(p.closed) done" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
 }

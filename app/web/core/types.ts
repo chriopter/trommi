@@ -538,6 +538,8 @@ export interface Model {
   newer: Newer
   /** The session list every device shows, as the client core makes it (core/client/src/sessions.rs). */
   session_list?: SessionRow[]
+  /** What has left the Desk, as the client core makes it (core/client/src/off_mind.rs): the starred and the running stack, the rest. */
+  off_mind?: OffMind
   /** What model.ts keeps for itself (echoes, the projection's sort state, device names): never travels, never rendered. */
   _builder?: unknown
 }
@@ -566,6 +568,14 @@ export interface Change {
 }
 
 /** One entry of the session list (core/client/src/sessions.rs `SessionRow`). */
+/** What has left the Desk (core/client/src/off_mind.rs `OffMind`). A card has one home: a starred card is in `starred` only. */
+export interface OffMind {
+  starred: { object_id: Hex; at: number; running: boolean }[]
+  running: { object_id: Hex; at: number; label: string }[]
+  put_off: Hex[]
+  closed: Record<string, number>
+  recent: { object_id: Hex; place: 'done' | 'trash'; at: number }[]
+}
 export interface SessionRow {
   id: string; key: string; session_id: string | null; agent_device_id: string | null
   name: string; given: string; label: string; icon: string

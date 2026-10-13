@@ -68,42 +68,6 @@ const deskNotesOf = model => (model.state.notes ?? []).filter(m => !m.held).sort
 // stand half outside the note.)
 const MAC = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? '')
 const SEND_KEYS = MAC ? 'Meta+Enter' : 'Control+Enter', SEND_WORD = MAC ? '⌘ Enter' : 'Ctrl+Enter'
-// ---- his starred cards as a small stack beside the note (the owner, 13 October 2026): a pile of tilted cards with the
-// star and their count; a tap fans them up into a column (title, session), a tap beside it or Escape lays them back.
-// Which cards and in what order is the client core's (core/client/src/stars.rs, client.starredCards): drawn here only.
-// The stack stands in the note's box (#corner-note-box), which the live stream draws anew; the controller fills it.
-const starStack = base => html`<div class="star-stack" data-controller="star-stack" data-star-stack-base-value="${base}" hidden><button type="button" class="ss-toggle" data-action="star-stack#toggle" aria-expanded="false"><span class="ss-pile" aria-hidden="true"><i style="--k:0"></i><i style="--k:1"></i><i style="--k:2"></i></span><span class="ss-badge">${sk('star')}<b></b></span></button><div class="ss-open" role="list"></div></div>`
-controller('star-stack', class extends Controller {
-  static values = { base: String }
-  connect() {
-    this.out = e => { if (!this.element.contains(e.target)) this.set(false) }
-    this.esc = e => { if (e.key === 'Escape' && this.element.classList.contains('is-open')) { e.stopPropagation(); this.set(false); this.element.querySelector('.ss-toggle')?.focus() } }
-    document.addEventListener('pointerdown', this.out); document.addEventListener('keydown', this.esc, true)
-    // (a star set or taken away, a card that came or went: drawn again, a moment later)
-    this.off = window.trommi?.client?.on?.('change', () => { clearTimeout(this.soon); this.soon = setTimeout(() => this.fill(), 150) })
-    this.fill()
-  }
-  disconnect() { document.removeEventListener('pointerdown', this.out); document.removeEventListener('keydown', this.esc, true); this.off?.(); clearTimeout(this.soon) }
-  async fill() {
-    const client = window.trommi?.client, m = window.trommi?.model?.()
-    if (!client?.starredCards || !m) return
-    let list = []
-    try { list = await client.starredCards() } catch (e) { console.warn('starred', e); return }
-    const cards = list.map(s => m.byCard?.get(s.object_id)).filter(Boolean)
-    const box = this.element.closest('.corner-note-box')
-    this.element.hidden = !cards.length
-    box?.classList.toggle('has-stars', cards.length > 0)
-    if (!cards.length) return
-    const n = cards.length, base = this.baseValue
-    this.element.querySelector('.ss-badge b').textContent = String(n)
-    this.element.querySelector('.ss-toggle').setAttribute('aria-label', `${n} starred`)
-    for (const [i, p] of [...this.element.querySelectorAll('.ss-pile i')].entries()) p.hidden = i >= n
-    const who = c => m.byAgent?.get(c.agent)
-    this.element.querySelector('.ss-open').innerHTML = String(html`${cards.map(c => html`<a class="ss-card" role="listitem" data-nav href="${base}/card/${encodeURIComponent(c.number ?? c.id)}" title="${c.title}">${sk('star')}<b>${c.title}</b><small>${who(c)?.name ?? ''}</small></a>`)}`)
-  }
-  toggle() { this.set(!this.element.classList.contains('is-open')) }
-  set(on) { this.element.classList.toggle('is-open', on); this.element.querySelector('.ss-toggle')?.setAttribute('aria-expanded', String(on)) }
-})
 
 export function cornerNote(model, base) {
   const note = deskNotesOf(model)[0] ?? null
@@ -116,7 +80,7 @@ export function cornerNote(model, base) {
   // (whom it goes to, never an empty word: a session without a name yet is the desk's Main Session)
   const who = crown?.name?.trim() || 'Main Session'
   return html`<section class="corner-note-box${text || files.length ? ' has-words' : ''}" id="corner-note-box" aria-label="Your note" data-controller="corner-note" data-corner-note-id-value="${note?.id ?? ''}" data-corner-note-base-value="${base}">
-${starStack(base)}<button type="button" class="corner-note-head" data-action="corner-note#open" data-tip="${text || files.length ? 'Note (N)' : 'New note (N)'}" aria-label="${text || files.length ? 'Your note: open it' : 'New note'}" aria-expanded="false">${NOTE_ICON}</button>
+<button type="button" class="corner-note-head" data-action="corner-note#open" data-tip="${text || files.length ? 'Note (N)' : 'New note (N)'}" aria-label="${text || files.length ? 'Your note: open it' : 'New note'}" aria-expanded="false">${NOTE_ICON}</button>
 <div class="corner-note-body" hidden data-action="paste->corner-note#paste dragover->corner-note#over dragleave->corner-note#out drop->corner-note#drop keydown->corner-note#key">${crown ? html`<span class="corner-note-to">${avatar(crown, { crown: false })}<b>${who}</b></span>` : ''}<textarea class="corner-note-field" rows="2" aria-label="Your note${crown ? ` to ${who}` : ''}" aria-keyshortcuts="${SEND_KEYS}" data-action="input->corner-note#typed">${text}</textarea><div class="corner-note-files">${raw(noteFiles(files))}</div>
 <footer class="corner-note-foot"><button type="button" class="corner-note-clip" data-action="corner-note#pick" title="Attach" aria-label="Attach a picture or a file">${CLIP}</button><button type="button" class="corner-note-bin" data-action="corner-note#bin" title="Throw away" aria-label="Throw the note away">${BIN}</button><span class="corner-note-park" data-tip="To the board" aria-hidden="true">${raw(sketchSvg('go'))}<b>onto the board</b></span><i></i>${crown ? html`<span class="corner-note-sending">${chooser}<button type="button" class="note-send corner-note-send" data-action="corner-note#send"${far ? html` data-to="${crown.id}"` : ''} data-name="${who}" aria-label="Send to ${who}" aria-keyshortcuts="${SEND_KEYS}">${raw(crownSvg())}</button><kbd class="corner-note-keys" aria-hidden="true">${SEND_WORD}</kbd></span>` : html`<a class="corner-note-nocrown" data-nav href="${base}/settings/sessions">Give a session the crown to send</a>`}</footer></div>
 </section>`

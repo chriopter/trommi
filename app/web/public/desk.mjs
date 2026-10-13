@@ -3,7 +3,7 @@
 // the card's own page, its tiles are forms that answer with one tap.
 import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, cleanGoals, closedMemo, deskScope, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
 import { lastUndo, undoLast } from './ui.mjs'
-import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, avatar, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
+import { Controller, PLUS, SETTLED, ringSvg, starMark, WORDS, advisedLabels, agoSpan, avatar, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
 // ---- the rows: the questions and the infos (reports, notes, nothing to decide) ----
 // An info is a card of the stack like any other: the drawn page where a decision has its pictures, the title, and at
 // the right What?? and the tick (ui.mjs deskRow, tiles). The order is the client core's (core/client/src/desk.rs
@@ -92,7 +92,7 @@ function deskList(model, base, { rowOf = card => deskRow(card, model, base, { sl
   // (The slip for the sessions that are cut off stands above the questions: #link-slip, hidden while there is none.)
   return html`${linkSlip(model.cut ?? [], base)}${runs(model).map(({ sender, cards }) => runSection(sender, cards.map(rowOf), cards.length))}
 ${model.open.length || (model.reads ?? []).length ? '' : model.reading ? html`<div class="inbox-empty is-reading" role="status">${sk('desk')}<p>Catching up: reading your sessions on this device. Their open questions show here as they are read.</p></div>` : html`<div class="inbox-empty">${sk('desk')}<p>Questions land here.</p></div>`}
-${withAgents(model, base)}${endList(model, base)}${deskStacks(model, base)}`
+${withAgents(model, base)}${offHint(model, base)}${deskStacks(model, base)}`
 }
 
 /** The Desk's <main>. */
@@ -105,7 +105,7 @@ ${deskHead(model, base)}
 <div class="inbox-news-at"><button class="inbox-news" type="button" data-desk-target="news" data-action="desk#toNew" hidden></button></div>
 <div class="inbox-groups" id="desk-list" data-desk-target="list">${deskList(model, base, opts)}</div>
 </main>
-<div class="desk-layer" id="desk-layer"><form class="sel-bar" id="sel-bar" method="post" action="${base}/cards/batch" hidden aria-label="Selected cards"><input type="hidden" name="stay" value="1"><input type="hidden" name="ids" value=""><span class="sel-n"></span>${sideWays({ many: true, between: html`<button type="submit" name="way" value="read" class="sel-read" hidden>${sk('tick')}<span>Read</span></button>` })}<button type="button" class="sel-clear" title="Clear (Esc)" aria-label="Clear the selection"><svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M6.8 7.2 Q12 12.4 17.4 17.6"/><path d="M17.2 6.8 Q12.2 12 6.6 17.4"/></svg></button></form>
+<div class="desk-layer" id="desk-layer">${deskDock(model, base)}<form class="sel-bar" id="sel-bar" method="post" action="${base}/cards/batch" hidden aria-label="Selected cards"><input type="hidden" name="stay" value="1"><input type="hidden" name="ids" value=""><span class="sel-n"></span>${sideWays({ many: true, between: html`<button type="submit" name="way" value="read" class="sel-read" hidden>${sk('tick')}<span>Read</span></button>` })}<button type="button" class="sel-clear" title="Clear (Esc)" aria-label="Clear the selection"><svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M6.8 7.2 Q12 12.4 17.4 17.6"/><path d="M17.2 6.8 Q12.2 12 6.6 17.4"/></svg></button></form>
 <div class="inbox-edge is-up"><button class="inbox-edge-knock" type="button" id="knock-up" data-dir="up" hidden>↑ ${sk('knock')}<span></span></button></div>
 <div class="inbox-edge is-down"><button class="inbox-edge-knock" type="button" id="knock-down" data-dir="down" hidden>↓ ${sk('knock')}<span></span></button></div>
 </div>`
@@ -270,104 +270,102 @@ function offParts(model) {
       }
       return made.slice(0, n)
     }
-    // (his starred closed cards: a sheet each, made from the two lists without making the thousands of others)
-    const starred = [...d.filter(c => c.starred).map(c => Object.assign(answered(c), { g: 'done' })), ...tr.filter(c => c.starred).map(c => Object.assign(thrown(c), { g: 'trash' }))]
-    closed = { trash: cards.trash, upTo, size: d.length + tr.length, starred }
+    closed = { trash: cards.trash, upTo }
     closedSheets.set(cards.done, closed)
   }
-  return { later, get closed() { return closed.upTo(Infinity) }, closedTop: n => closed.upTo(n), closedSize: closed.size, closedStarred: closed.starred }
+  return { later, get closed() { return closed.upTo(Infinity) } }
 }
 const closedSheets = new WeakMap()
 /** The foot of the Desk (#desk-stacks): Artifacts. */
 const deskStacks = (model, base) => html`<div class="inbox-stacks stack-tabs is-straight is-two" id="desk-stacks">${artifactsPile(model, base)}</div>`
 
-// ---- the end of the Desk's list: Off your mind as ONE pile (the owner, 13 October 2026: "nicht zwei Stapel", his
-// pick "untereinander") ----
-// After the open questions: the first three cards the agents are working on, as live cards one under the other; then
-// one pile with everything else, which says how much lies on it ("+2 running · 1 put off · 14 done"). A tap on the
-// pile opens it in place: the other running cards, then what is put off (Later: the three Z), then what is closed, the
-// newest first, small and quiet at the bottom (answered, done by its agent or read with a green tick; shredded with
-// the shredder and struck through, withdrawn by its agent with the return arrow). Fold lays it together again. Its
-// heading, a link, opens the page /stacks/off: every card, the pile open, with its search. A title opens its card.
-// How the pile is laid out from the counts (how many on top, the real totals, how many rows the Desk shows) is the
-// client core's rule (core/client/src/off_pile.rs off_pile), mirrored here by offPile.
+// ---- the foot of the Desk: Off your mind (the owner's pick of 13 October 2026, "zwei Stapel wie HEY") ----
+// Two stacks are docked at the bottom of the Desk (#desk-dock, in the Desk's layer): his starred cards and the cards
+// still running. Each shows its top card with the edges of the others behind it; a tap fans it upward as small cards,
+// and the running one leads on to the complete list. The section Off your mind itself is a short hinted list of what
+// is put off and closed, beside Artifacts on a wide window; its heading opens the page /stacks/off, every card with a
+// search. Which card lies in which stack, in what order, and how many are closed is the client core's
+// (core/client/src/off_mind.rs, the patch's off_mind): a card has one home, a starred card lies in the starred stack
+// only. Here they are only read, kept to the desk in view, and drawn.
 /** A section's heading at the Desk's foot: a pen rule with its small label. With href the label itself is the link to
  *  the section's whole page, underlined and with an arrow (Off your mind; Artifacts, with its count). */
 const divider = (label, link = '', { href = '', count = null } = {}) => html`<div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg>${href ? html`<a class="end-head" data-nav href="${href}" aria-label="All ${label}${count == null ? '' : `, ${count}`}"><span class="end-head-words">${label}</span>${count == null ? '' : html` <span class="off-count">${count}</span>`}${sk('go')}</a>` : html`<span aria-hidden="true">${label}</span>`}${link}</div>`
-/** His starred cards pinned at the top of the end list, the last starred first (card.starred: when he set the star);
- *  the other rows below in their order, without them. starred: the sheets of every starred card off the Desk. */
-export function pinStarred(items, starred) {
-  if (!starred.length) return items
-  const ids = new Set(starred.map(s => s.card.id))
-  const pinned = [...starred].sort((x, y) => y.card.starred - x.card.starred).map(s => ({ card: s.card, g: s.g, at: s.at, said: s.said, pinned: true }))
-  return [...pinned, ...items.filter(s => !ids.has(s.card.id))]
+/** What has left the desk in view: the client core's off_mind, its cards looked up and kept to this desk. */
+export function offMind(model) {
+  const o = model.state.off_mind ?? { starred: [], running: [], put_off: [], closed: {}, recent: [] }
+  const here = e => { const card = model.byCard.get(e.object_id ?? e), sender = card && model.byAgent.get(card.agent); return card && sender && model.onDesk(sender) ? [{ ...(typeof e === 'object' ? e : {}), card, sender }] : [] }
+  const closed = model.everyone.reduce((n, a) => n + (model.onDesk(a) ? o.closed[a.device_id] ?? 0 : 0), 0)
+  return { starred: o.starred.flatMap(here), running: o.running.flatMap(here), putOff: o.put_off.flatMap(here), recent: o.recent.flatMap(here), closed }
 }
-/** Off your mind as one pile, from the real totals: the client core's rule (core/client/src/off_pile.rs off_pile), the same
- *  numbers on every app (the page draws without the core: tests/web/views/off-pile.test.mjs holds the two equal). */
-export const PILE_TOP = 3, PILE_REST = 12, PILE_SHEETS = 3
-export function offPile(running, putOff, closed, full) {
-  const top = Math.min(running, PILE_TOP), moreRunning = running - top, rest = putOff + closed, pile = moreRunning > 0 || rest > 0
-  return { top, moreRunning, putOff, closed, pile, behind: pile ? Math.min(Math.max(moreRunning + (rest > 0 ? 1 : 0), 1), PILE_SHEETS) : 0, restShown: full ? rest : Math.min(rest, PILE_REST), open: Boolean(full) }
+const HINT_ROWS = 3
+/** The section Off your mind on the Desk: the first rows of what is put off and closed, fading, and how many there are. */
+export function offHint(model, base) {
+  const off = offMind(model)
+  if (!off.putOff.length && !off.closed) return html`<section id="desk-end" class="endlist" hidden></section>`
+  const rows = [...off.putOff.map(e => ({ ...e, place: 'later' })), ...off.recent].slice(0, HINT_ROWS)
+  const words = [off.putOff.length ? `${off.putOff.length} put off` : '', off.closed ? `${off.closed} done` : ''].filter(Boolean).join(' · ')
+  return html`<section id="desk-end" class="endlist oym-hint" aria-label="Off your mind">
+${divider('Off your mind', '', { href: `${base}/stacks/off` })}
+<a class="oym-hint-list" data-nav href="${base}/stacks/off">${rows.map(e => html`<span class="oym-hint-row" data-g="${e.place}">${placeMark(e.place, e.card)}<b>${e.card.title}</b></span>`)}<span class="oym-hint-more">${words}</span></a>
+</section>`
 }
-/** What lies on the pile, in words: "+2 running · 1 put off · 14 done". */
-export const pileWords = p => [p.moreRunning ? `+${p.moreRunning} running` : '', p.putOff ? `${p.putOff} put off` : '', p.closed ? `${p.closed} done` : ''].filter(Boolean).join(' · ')
-/** The end list: Off your mind as one pile. On the Desk the first three running cards and the pile; full (the page
- *  /stacks/off): every card, the pile open, with its search. */
-function endList(model, base, { full = false, q = '' } = {}) {
-  const { later, closed, closedTop, closedSize, closedStarred } = offParts(model)
-  const id = full ? 'off-end' : 'desk-end'
+/** The two docked stacks (#desk-dock): starred and running. Empty while there is neither. */
+export function deskDock(model, base) {
+  const off = offMind(model)
+  const mini = (e, sub) => html`<a class="dock-card" data-nav href="${cardPath(e.card, base)}" style="--hue:${e.sender.hue}">${avatar(e.sender, { crown: false, working: Boolean(e.running ?? true) })}<span><b>${e.card.title}</b><small>${sub}</small></span></a>`
+  const stack = (key, icon, word, cards, all = '') => !cards.length ? '' : html`<details class="dock-stack" name="desk-dock" data-k="${key}" data-action="toggle->oym-dock#toggled"><summary aria-label="${cards.length} ${word}: show them"><span class="dock-icon" aria-hidden="true">${icon}</span><span class="dock-top">${cards.length > 1 ? html`<i style="--k:1"></i>` : ''}${cards.length > 2 ? html`<i style="--k:2"></i>` : ''}${cards[0]}<em>${cards.length}</em></span></summary><div class="dock-fan">${cards}${all}</div></details>`
+  const starred = off.starred.map(e => mini(e, `${e.sender.name}${e.running ? ' · running' : ''}`))
+  const running = off.running.map(e => mini(e, `${e.sender.name} · ${e.label || 'on it'}`))
+  return html`<div class="oym-dock" id="desk-dock" data-controller="oym-dock"${starred.length || running.length ? '' : raw(' hidden')}>${stack('star', sk('star'), 'starred', starred)}${stack('run', raw(ringSvg({ drop: true })), 'running', running, html`<a class="dock-all" data-nav href="${base}/stacks/off">All running and done${sk('go')}</a>`)}</div>`
+}
+/** The mark of a card off the Desk: put off the three Z, shredded the shredder, withdrawn the return arrow, else the tick. */
+const placeMark = (place, c) => (place === 'later' ? sk('snooze') : place === 'trash' ? sk(c.status === 'shredded' ? 'shred' : 'withdraw') : sk('tick'))
+
+// ---- the page /stacks/off: the complete list ----
+/** Every card off the desk: what runs as live cards, the one that moved last first; then what is put off, then what
+ *  is closed, the newest first, one small row each; with its search. Each card in its place by time, none lifted. */
+function endList(model, base, { q = '' } = {}) {
+  const { later, closed } = offParts(model)
   const terms = String(q ?? '').toLowerCase().split(/\s+/).filter(Boolean)
   const said = i => `${i.sender.name}${i.line?.label ? ` · ${i.line.label}` : ' is on it'}`
   const has = (title, agent, words) => terms.every(w => `${title} ${model.byAgent.get(agent)?.name ?? ''} ${words}`.toLowerCase().includes(w))
-  // (what runs: live cards, his starred ones first; the rest: put off first, then closed, his starred ones pinned on top)
-  let works = workItems(model)
-  let laterRows = later, closedRows = null
-  if (terms.length) {
-    works = works.filter(i => has(i.card.title, i.card.agent, said(i)))
-    laterRows = later.filter(s => has(s.card.title, s.card.agent, s.said))
-    closedRows = closed.filter(s => has(s.card.title, s.card.agent, s.said))
-  }
-  works = [...works.filter(i => i.card.starred).sort((a, b) => b.card.starred - a.card.starred), ...works.filter(i => !i.card.starred)]
-  // (the real totals: every closed card counts, not only the rows drawn)
-  const pile = offPile(works.length, laterRows.length, closedRows ? closedRows.length : closedSize, full)
-  if (!works.length && !pile.pile && !full) return html`<section id="${id}" class="endlist" hidden></section>`
-  const closedShown = closedRows ? closedRows.slice(0, Math.max(0, pile.restShown - laterRows.length)) : closedTop(Math.max(0, pile.restShown - laterRows.length))
-  const starredOff = terms.length ? [] : [...laterRows.filter(s => s.card.starred), ...closedStarred].map(s => ({ ...s, said: s.said }))
-  const rest = pinStarred([...laterRows, ...closedShown], starredOff).slice(0, Math.max(pile.restShown, starredOff.length))
-  return offList({ id, full, base, works, rest, pile, terms })
+  const works = workItems(model).filter(i => has(i.card.title, i.card.agent, said(i)))
+  const rest = [...later, ...closed].filter(s => has(s.card.title, s.card.agent, s.said))
+  return html`<section id="off-end" class="endlist oym is-full" aria-label="Off your mind">
+${divider('Off your mind')}
+${works.length ? html`<div class="pile-cards">${works.map(i => liveCard(i, base))}</div>` : ''}${rest.length ? html`<div class="pile-rests">${rest.map(s => restRow(s, base))}</div>` : ''}${!works.length && !rest.length ? html`<p class="end-none">${terms.length ? 'Nothing here has these words.' : 'Nothing yet.'}</p>` : ''}
+</section>`
 }
-
-// ---- Off your mind (desk.mjs endList): the first running cards on top, the rest on one pile that opens in place ----
 /** A running card: who is on it (drawing), the card's title, its status line, how long. */
-const liveCard = (i, base, cls = '') => html`<a class="oym-card${cls}" data-nav href="${cardPath(i.card, base)}" style="--hue:${i.sender.hue}">${avatar(i.sender, { crown: false, working: true })}<span class="oym-card-words"><b>${i.card.starred ? starMark() : ''}${i.card.title}</b><small><span class="oym-who">${i.sender.name}</span>${i.line?.label ? html` · ${i.line.label}` : ' · on it'}</small></span>${agoSpan(i.line?.updated ?? i.at, 'ago oym-ago')}</a>`
+const liveCard = (i, base) => html`<a class="oym-card" data-nav href="${cardPath(i.card, base)}" style="--hue:${i.sender.hue}">${avatar(i.sender, { crown: false, working: true })}<span class="oym-card-words"><b>${i.card.starred ? starMark() : ''}${i.card.title}</b><small><span class="oym-who">${i.sender.name}</span>${i.line?.label ? html` · ${i.line.label}` : ' · on it'}</small></span>${agoSpan(i.line?.updated ?? i.at, 'ago oym-ago')}</a>`
 /** A put-off or closed card at the bottom of the pile, small and quiet: a mark, the title, when. */
 function restRow(s, base) {
   const c = s.card
-  const mark = s.g === 'later' ? sk('snooze') : s.g === 'trash' ? sk(c.status === 'shredded' ? 'shred' : 'withdraw') : sk('tick')
+  const mark = placeMark(s.g, c)
   const word = s.g === 'later' ? 'Later' : s.g === 'trash' ? (c.status === 'shredded' ? 'Shredded' : 'Withdrawn') : 'Done'
   // (put off: until when, or nothing; else when it closed, or nothing when no time is known: never the epoch's "1 Jan")
   const until = s.g === 'later' && c.snoozed_until ? new Date(c.snoozed_until).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : ''
   const when = s.g === 'later' ? (until ? html`<span class="ago pile-rest-ago">until ${until}</span>` : '') : s.at > 0 ? agoSpan(s.at, 'ago pile-rest-ago') : ''
-  return html`<a class="pile-rest" data-nav href="${cardPath(c, base)}" data-g="${s.g}" data-id="${c.id}"${s.pinned ? raw(' data-pinned') : ''}${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''} title="${c.title}"><span class="pile-rest-mark" role="img" aria-label="${word}">${mark}</span><b>${c.starred ? starMark() : ''}${c.title}</b>${when}</a>`
+  return html`<a class="pile-rest" data-nav href="${cardPath(c, base)}" data-g="${s.g}" data-id="${c.id}"${s.g === 'trash' && c.status === 'shredded' ? raw(' data-shredded') : ''} title="${c.title}"><span class="pile-rest-mark" role="img" aria-label="${word}">${mark}</span><b>${c.starred ? starMark() : ''}${c.title}</b>${when}</a>`
 }
-function offList({ id, full, base, works, rest, pile, terms }) {
-  const card = i => liveCard(i, base, ' is-slim')
-  const words = pileWords(pile), more = pile.putOff + pile.closed - pile.restShown
-  const sheets = html`<summary class="pile-pile" style="--behind:${pile.behind}" aria-label="${words}: show them">${Array.from({ length: pile.behind }, (_, k) => html`<i class="oym-sheet" style="--k:${k + 1}"></i>`)}<span class="pile-pile-top"><b>${words}</b><small>Show all</small></span></summary>`
-  const opened = html`<div class="pile-open">${works.slice(pile.top).map(card)}${rest.length ? html`<div class="pile-rests">${rest.map(s => restRow(s, base))}</div>` : ''}${!full && more > 0 ? html`<a class="pile-all" data-nav href="${base}/stacks/off">All ${pile.putOff + pile.closed} put off and done</a>` : ''}${full ? '' : html`<button type="button" class="oym-fold" data-action="oym#fold">Fold</button>`}</div>`
-  return html`<section id="${id}" class="endlist oym pile${full ? ' is-full' : ''}" aria-label="Off your mind">
-${divider('Off your mind', '', full ? {} : { href: `${base}/stacks/off` })}
-${pile.top ? html`<div class="pile-cards">${works.slice(0, pile.top).map(card)}</div>` : ''}${pile.pile ? html`<details class="pile-wrap" data-controller="oym"${pile.open ? raw(' open') : ''}>${sheets}${opened}</details>` : ''}${full && !works.length && !pile.pile ? html`<p class="end-none">${terms.length ? 'Nothing here has these words.' : 'Nothing yet.'}</p>` : ''}
-</section>`
-}
-// The pile: a tap on it opens it in place (details); Fold lays it together again.
-controller('oym', class extends Controller {
-  fold() { this.element.open = false; this.element.querySelector('summary')?.focus() }
+// The dock: one stack open at a time (details of one name); the one he opened stays open when the live piece is drawn
+// anew; a press outside or Escape lays it together.
+let dockOpen = ''
+controller('oym-dock', class extends Controller {
+  connect() {
+    const d = dockOpen && this.element.querySelector(`.dock-stack[data-k="${dockOpen}"]`)
+    if (d) d.open = true
+    this.out = e => { if (e.type === 'keydown' ? e.key === 'Escape' : !this.element.contains(e.target)) this.close() }
+    document.addEventListener('pointerdown', this.out); document.addEventListener('keydown', this.out)
+  }
+  disconnect() { document.removeEventListener('pointerdown', this.out); document.removeEventListener('keydown', this.out) }
+  toggled(e) { const d = e.currentTarget; if (d.open) dockOpen = d.dataset.k; else if (dockOpen === d.dataset.k) dockOpen = '' }
+  close() { for (const d of this.element.querySelectorAll('.dock-stack[open]')) d.open = false; dockOpen = '' }
 })
 
 /** The page /stacks/off: the whole list, the work with the agents first, then every row of the end list, with a search. */
 const offMain = (model, base, q) => html`<main id="inbox" class="off-page" aria-label="Off your mind"><header class="inbox-head desk-top"><h2 class="desk-hello"><a class="off-back" data-nav href="${base}/" aria-label="Back to the Desk">←</a> Off your <em>mind</em></h2><form class="end-search" method="get" action="${base}/stacks/off" role="search"><label><span class="offscreen">Search</span><input type="search" name="q" value="${q}" placeholder="Search the list" autocomplete="off"></label></form></header>
-<div class="inbox-groups" id="off-list">${withAgents(model, base)}${endList(model, base, { full: true, q })}</div></main>`
+<div class="inbox-groups" id="off-list">${withAgents(model, base)}${endList(model, base, { q })}</div></main>`
 
 
 
@@ -805,7 +803,7 @@ export function register(t) {
   })
   // (the whole list stays current: a card that comes or goes)
   t.live('off', {
-    take: m => ({ list: String(html`${withAgents(m, BASE)}${endList(m, BASE, { full: true, q: new URLSearchParams(location.search).get('q') ?? '' })}`) }),
+    take: m => ({ list: String(html`${withAgents(m, BASE)}${endList(m, BASE, { q: new URLSearchParams(location.search).get('q') ?? '' })}`) }),
     diff: (was, now) => (was.list !== now.list ? stream('update', 'off-list', raw(now.list)) : ''),
   })
   // ---- the Desk ----
@@ -878,7 +876,7 @@ export function register(t) {
       redirect(res, next ? `${cardPath(next, BASE)}?walk=1` : `${BASE}/${said ? `?said=${encodeURIComponent(said)}` : ''}`)
     })
     t.live('desk', {
-      take: m => { const all = deskCards(m); return { order: all.map(c => c.id), agents: new Map(all.map(c => [c.id, c.agent])), rows: new Map(all.map(c => [c.id, rowOf(c, m)])), head: deskHead(m, BASE), slip: linkSlip(m.cut ?? [], BASE), ip: withAgents(m, BASE), end: endList(m, BASE), stacks: deskStacks(m, BASE) } },
+      take: m => { const all = deskCards(m); return { order: all.map(c => c.id), agents: new Map(all.map(c => [c.id, c.agent])), rows: new Map(all.map(c => [c.id, rowOf(c, m)])), head: deskHead(m, BASE), slip: linkSlip(m.cut ?? [], BASE), ip: withAgents(m, BASE), end: offHint(m, BASE), dock: deskDock(m, BASE), stacks: deskStacks(m, BASE) } },
       diff(was, now, client, m) {
         const out = []
         if (t.differs(was.head, now.head)) out.push(stream('replace', 'desk-head', now.head))
@@ -909,6 +907,7 @@ export function register(t) {
         }
         if (t.differs(was.ip, now.ip)) out.push(stream('replace', 'desk-ip', now.ip))
         if (t.differs(was.end, now.end)) out.push(stream('replace', 'desk-end', now.end))
+        if (t.differs(was.dock, now.dock)) out.push(stream('replace', 'desk-dock', now.dock))
         if (t.differs(was.stacks, now.stacks)) out.push(stream('replace', 'desk-stacks', now.stacks))
         return out.join('')
       },

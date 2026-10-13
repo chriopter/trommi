@@ -58,6 +58,42 @@ function demoStatus(m, s, archived, removed) {
   return { link, blocked, working, quiet_since: null, device_active: s.last_activity_at ?? 0, recheck_at: null, lines }
 }
 
+/** What has left the Desk, in the shape of the client core's (core/client/src/off_mind.rs `OffMind`): the demo has no
+ *  core, so its own plain reading: his starred cards, the last starred first; the cards with their agents, the one
+ *  that moved last first, without the starred ones (a card has one home); the put-off ones; the closed ones counted
+ *  per session, the last closed named. */
+const ACTING = 6 * 60 * 60 * 1000
+export function demoOffMind(m, rows) {
+  const now = Date.now(), byKey = new Map(rows.map(r => [r.key, r]))
+  const stars = m.human.stars ?? new Map(), starred = id => { const v = stars.get(id); return v != null && v !== false }
+  const out = { starred: [], running: [], put_off: [], closed: {}, recent: [] }, runs = new Set(), later = []
+  for (const c of m.cards.values()) {
+    const row = byKey.get(c.session_id ?? c.agent_device_id), a = c.answer
+    if (!row || row.archived) continue
+    const info = c.card_type === 'info', by = a && (info ? a.answer_action === 'read' : a.trusted || a.choices?.length > 0)
+    const place = c.object_state === 'open' ? (c.snoozed_until ? 'later' : c.in_revision || (info && c.working === true) ? 'works' : null)
+      : c.closed_how === 'shredded' ? 'trash'
+        : c.object_state === 'answered' ? (!by ? null : now - (a.answered_at ?? 0) < ACTING && (row.online || row.link?.state === 'cut') ? 'works' : 'done')
+          : by ? 'done' : 'trash'
+    if (place === 'later') later.push([c.snoozed_at ?? 0, c.object_id])
+    else if (place === 'works') {
+      runs.add(c.object_id)
+      if (starred(c.object_id)) continue
+      const lines = (m.sessions.get(row.key)?.status_lines ?? []).filter(t => row.lines[t.id] === 'working')
+      const line = lines.find(t => t.object_id === c.object_id) ?? lines.filter(t => !t.object_id).sort((x, y) => (y.updated_at ?? 0) - (x.updated_at ?? 0))[0]
+      out.running.push({ object_id: c.object_id, at: line?.updated_at ?? (c.object_state === 'open' ? (c.in_revision ? c.updated_at : c.created_at) : a?.answered_at) ?? 0, label: String(line?.label ?? '') })
+    } else if (place) {
+      out.closed[row.key] = (out.closed[row.key] ?? 0) + 1
+      out.recent.push({ object_id: c.object_id, place, at: a?.answered_at || (place === 'done' ? c.updated_at : c.created_at) || 0 })
+    }
+  }
+  const byAt = (x, y) => y.at - x.at || (x.object_id < y.object_id ? -1 : 1)
+  out.running.sort(byAt); out.recent.sort(byAt); out.recent.length = Math.min(out.recent.length, 120)
+  out.put_off = later.sort((x, y) => y[0] - x[0]).map(x => x[1])
+  out.starred = [...stars].filter(([id, v]) => v != null && v !== false && m.cards.has(id)).map(([object_id, v]) => ({ object_id, at: Number(v?.at) || 0, running: runs.has(object_id) })).sort(byAt)
+  return out
+}
+
 /** A model's id as a heading shows it: the client core's rule (core/client/src/sessions.rs model_label), for the demo room. */
 const demoModelLabel = id => {
   const t = String(id ?? '').trim(), l = t.toLowerCase()
@@ -178,6 +214,7 @@ export class MockClient {
     m.desk_order = walk.sort((a, b) => band(b) - band(a) || info(b) - info(a) || (info(a) ? at(b) - at(a) : at(a) - at(b))).map(o => o.object_id)
     if (change && before !== m.stack.join()) change.stack = true
     m.session_list = demoSessions(m)
+    m.off_mind = demoOffMind(m, m.session_list)
   }
 
   /** The next question after a card: the first other one that waits (no client core in the demo). */
@@ -283,8 +320,6 @@ export class MockClient {
   snooze(id, until) { return this.setRegisters({ [`snooze/${id}`]: until == null ? null : { until, at: Date.now() } }) }
   duck(id, v) { return this.setRegisters({ [`duck/${id}`]: v }) }
   star(id, on) { return this.setRegisters({ [`star/${id}`]: on ? { at: Date.now() } : null }) }
-  /** His starred cards, the last starred first: the client core's rule (core/client/src/stars.rs), for the demo's own room. */
-  starredCards() { return [...(this.model.human.stars ?? new Map())].filter(([id, v]) => v && v !== false && this.model.cards.has(id)).map(([object_id, v]) => ({ object_id, at: Number(v?.at) || 0 })).sort((a, b) => b.at - a.at || (a.object_id < b.object_id ? -1 : 1)) }
   setCrown(v) { return this.setRegisters({ crown: v }) }
   setDesk(id, v) { return this.setRegisters({ [`desk/${id}`]: v }) }
   async saveNote({ object_id = hex(32), ...fields }) {

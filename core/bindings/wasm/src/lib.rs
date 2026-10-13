@@ -142,7 +142,6 @@ functions! {
     plain shape_id_from_wire(id);
     plain shape_id_to_wire(id);
     plain piece_from_wire(piece);
-    plain off_pile(running, put_off, closed, full);
     fallible piece_to_wire(piece_json);
 }
 
@@ -408,7 +407,6 @@ methods!(RawClientModel {
     desks_deleting();
     desk_contents(desk_id, board);
     desk_delete_plan(desk_id, known, by, now_ms);
-    starred_cards();
     self_join_asks(answered, pending);
     self_join_verdict(session_id, nonce, request_hash);
     self_join_retire();

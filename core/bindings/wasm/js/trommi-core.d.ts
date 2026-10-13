@@ -317,17 +317,6 @@ export interface NotifyOpened {
   payload: Uint8Array
 }
 
-/** Off your mind laid out as one pile (core/client/src/off_pile.rs `OffPile`). */
-export interface OffPile {
-  top: number
-  moreRunning: number
-  putOff: number
-  closed: number
-  pile: boolean
-  behind: number
-  restShown: number
-  open: boolean
-}
 export interface Versions {
   core: string
   openmls: string
@@ -1143,8 +1132,6 @@ export class ClientModel {
   deskContents(deskId: string, board: string): string
   /** The next step of deleting a desk, JSON `{step, …, done, total, left}`; `known` JSON `{board?, files_gone}`. */
   deskDeletePlan(deskId: string, known: string, by: string, nowMs: number): string
-  /** His starred cards (core/client/src/stars.rs), the last starred first: JSON `[{object_id, at}]`. */
-  starredCards(): string
   /** Self-join (core/client/src/selfjoin.rs): the asks to act on, JSON `[{session_id, nonce, ask, refused}]`. */
   selfJoinAsks(answered: string, pending: string): string
   /** Whether a vouched Request is let in; null while the ask names no hash. */
@@ -1198,9 +1185,6 @@ export class FileDecryptor {
 // ---- everything without state -------------------------------------------------------------------------------------
 
 export function versions(): Versions
-/** Off your mind as one pile (core/client/src/off_pile.rs): `running` worked on, `putOff`, `closed`: real totals; `full` on
- *  the page Off your mind. */
-export function offPile(running: number, putOff: number, closed: number, full: boolean): OffPile
 /** Runs the core's self-test. Its last step derives password keys (Argon2id over 64 MiB): call it in a worker. */
 export function selfTest(nowMs: number): SelfTestReport
 export function logFinding(code: ErrorCode): LogFinding

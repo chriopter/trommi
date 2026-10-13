@@ -1709,8 +1709,6 @@ export class Client {
     }
     return plan()
   }
-  /** His starred cards, the last starred first (core/client/src/stars.rs): `[{ object_id, at }]`. */
-  starredCards(): { object_id: string; at: number }[] { return JSON.parse(this.board.starredCards()) as { object_id: string; at: number }[] }
   /** Log out. The core lets no device commit its own removal, so nothing is removed here: what is still in the
    *  outbox goes out if it can, the client stops, and the caller wipes this device's storage. The device stays a
    *  member (it shows under Devices) until another human device removes it; `removed` says so. */

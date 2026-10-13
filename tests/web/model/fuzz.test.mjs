@@ -78,8 +78,9 @@ function oneStory(seed) {
   project(warm, emptyChange(), w.clock)
   const expected = structuredClone({ ...w.model, _builder: undefined })
   for (const t of expected.timelines.values()) { t.items = new Map(); t.loaded_down_to = Infinity; t.window_open = false }
-  // (the session list is no record the cache keeps: each run's core makes it anew, by that run's clock and presence)
-  const d = firstDiff({ ...warm, session_list: undefined }, { ...expected, session_list: undefined })
+  // (the session list and what has left the Desk are no records the cache keeps: each run's core makes them anew, by
+  //  that run's clock and presence)
+  const d = firstDiff({ ...warm, session_list: undefined, off_mind: undefined }, { ...expected, session_list: undefined, off_mind: undefined })
   assert.equal(d, null, `seed ${seed}, after ${steps.join(' ')}: the model from the cache differs:\n${d}`)
 }
 

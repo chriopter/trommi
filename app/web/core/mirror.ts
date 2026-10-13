@@ -10,7 +10,7 @@
 // Every record the core changes is named in its change (that is the contract the app renders by); what the builder
 // keeps for itself (model._builder: echoes, the projection's sort state) does not travel.
 import { emptyChange, emptyModel } from './model-shape.ts'
-import type { Alert, Card, Change, HumanRegister, Invite, Member, Model, Newer, Note, OutboxItem, PermissionRequest, Published, Room, Session, SessionRow, Timeline, TimelineItem } from './types.ts'
+import type { Alert, Card, Change, HumanRegister, Invite, Member, Model, Newer, Note, OffMind, OutboxItem, PermissionRequest, Published, Room, Session, SessionRow, Timeline, TimelineItem } from './types.ts'
 
 type Entries<V> = [string, V | null][]
 type ItemKey = number | string
@@ -39,6 +39,7 @@ export interface ModelPatch {
   desk_order?: string[]
   /** The session list (core/client/src/sessions.rs), whenever it may have changed. */
   session_list?: SessionRow[]
+  off_mind?: OffMind
   /** When to project again although nothing came (the core's clock: a snooze, a request, a session's status); 0: never. */
   wake_at?: number
   change: PlainChange
@@ -90,7 +91,7 @@ export function patchOf(model: Model, change: Change, extra?: Record<string, unk
   if (change.outbox) p.outbox = model.outbox
   if (change.stack) { p.stack = model.stack; p.open_permission_ids = model.open_permission_ids; p.desk_order = model.desk_order }
   // (the session list, whenever something it is made from may have changed: the core's own rule, patch.rs)
-  if (model.session_list && (change.status || change.room || change.members || change.stack || change.sessions.size || change.registers.size || change.cards.size || change.permissions.size)) p.session_list = model.session_list
+  if (model.session_list && (change.status || change.room || change.members || change.stack || change.sessions.size || change.registers.size || change.cards.size || change.permissions.size)) { p.session_list = model.session_list; if (model.off_mind) p.off_mind = model.off_mind }
   if (extra) p.extra = extra
   return p
 }
@@ -144,6 +145,7 @@ export function applyPatch(m: Model, p: ModelPatch): Change {
   assignInPlace(m.room, { ...m.room, ...p.room })   // (fields the page set on its own, the account's, stay)
   if (p.newer) m.newer = p.newer
   if (p.session_list) m.session_list = p.session_list
+  if (p.off_mind) m.off_mind = p.off_mind
   if (p.members) {
     const keep = new Set(p.members.map(([id]) => id))
     for (const id of [...m.members.keys()]) if (!keep.has(id)) m.members.delete(id)
