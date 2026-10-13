@@ -784,7 +784,7 @@ jobs:
           sh .github/scripts/deploy_issue.sh iOS
 
   store:
-    name: App Store (${{ inputs.platform }}, ${{ inputs.action }})
+    name: App Store (by hand)
     if: github.event_name == 'workflow_dispatch' && startsWith(inputs.action, 'store-')
     concurrency:
       group: ship-apple-store
