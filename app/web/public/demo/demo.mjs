@@ -266,6 +266,8 @@ export class MockClient {
   snooze(id, until) { return this.setRegisters({ [`snooze/${id}`]: until == null ? null : { until, at: Date.now() } }) }
   duck(id, v) { return this.setRegisters({ [`duck/${id}`]: v }) }
   star(id, on) { return this.setRegisters({ [`star/${id}`]: on ? { at: Date.now() } : null }) }
+  /** His starred cards, the last starred first: the client core's rule (client/src/stars.rs), for the demo's own room. */
+  starredCards() { return [...(this.model.human.stars ?? new Map())].filter(([id, v]) => v && v !== false && this.model.cards.has(id)).map(([object_id, v]) => ({ object_id, at: Number(v?.at) || 0 })).sort((a, b) => b.at - a.at || (a.object_id < b.object_id ? -1 : 1)) }
   setCrown(v) { return this.setRegisters({ crown: v }) }
   setDesk(id, v) { return this.setRegisters({ [`desk/${id}`]: v }) }
   async saveNote({ object_id = hex(32), ...fields }) {

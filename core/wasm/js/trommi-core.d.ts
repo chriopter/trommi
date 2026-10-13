@@ -1116,6 +1116,8 @@ export class ClientModel {
   deskContents(deskId: string, board: string): string
   /** The next step of deleting a desk, JSON `{step, …, done, total, left}`; `known` JSON `{board?, files_gone}`. */
   deskDeletePlan(deskId: string, known: string, by: string, nowMs: number): string
+  /** His starred cards (client/src/stars.rs), the last starred first: JSON `[{object_id, at}]`. */
+  starredCards(): string
   /** Self-join (client/src/selfjoin.rs): the asks to act on, JSON `[{session_id, nonce, ask, refused}]`. */
   selfJoinAsks(answered: string, pending: string): string
   /** Whether a vouched Request is let in; null while the ask names no hash. */

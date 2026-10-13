@@ -373,6 +373,62 @@ struct NoteButton: View {
       .onReceive(NotificationCenter.default.publisher(for: .trommiNoteOpen)) { _ in open = true }
   }
 }
+/**
+ * His starred cards as a small stack (the web's sidebar.mjs starStack, his pick of 13 October): three tilted cards
+ * with the star and the count; a tap fans them up into a column (title, session), a tap on the stack lays them back.
+ * Which cards and in what order is the client core's (client/src/stars.rs, Board.starredCards); drawn here only.
+ */
+struct StarStack: View {
+  @EnvironmentObject var model: BoardModel
+  @State private var open = false
+  var body: some View {
+    let _ = model.version
+    let cards = (model.board?.starredCards() ?? []).compactMap { id in model.desk?.byCard[id] }
+    if !cards.isEmpty {
+      VStack(alignment: .trailing, spacing: 10) {
+        if open {
+          ScrollView {
+            VStack(alignment: .trailing, spacing: 6) { ForEach(cards, id: \.id) { c in row(c) } }.padding(2)
+          }
+          .frame(maxHeight: 420).fixedSize(horizontal: true, vertical: true)
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        Button { withAnimation(.easeOut(duration: 0.18)) { open.toggle() } } label: { pile(cards.count) }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(cards.count) starred")
+          .accessibilityHint(open ? "Lays them together" : "Shows them")
+      }
+    }
+  }
+  private func pile(_ n: Int) -> some View {
+    ZStack {
+      ForEach((0..<min(n, 3)).reversed(), id: \.self) { k in
+        RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Ink.surface)
+          .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Ink.fg.opacity(0.7), lineWidth: 1.5))
+          .frame(width: 46, height: 58)
+          .rotationEffect(.degrees(-6 + Double(k) * 5)).offset(x: CGFloat(-3 * k), y: CGFloat(-3 * k))
+      }
+      HStack(spacing: 2) { Image(systemName: "star.fill").font(.system(size: 11)).foregroundStyle(Color(hex: 0xc99a13)); Text("\(n)").font(Face.text(13, .bold)).foregroundStyle(Ink.fg) }
+    }
+    .frame(width: 56, height: 66).contentShape(Rectangle())
+  }
+  private func row(_ c: DeskCard) -> some View {
+    Button { open = false; model.path.append(.card(c.id)) } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "star.fill").font(.system(size: 12)).foregroundStyle(Color(hex: 0xc99a13))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(c.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+          Text(model.desk?.byAgent[c.agent]?.name ?? "").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
+        }
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 11).padding(.vertical, 9).frame(width: 270, alignment: .leading)
+      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.surface))
+      .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Ink.fg.opacity(0.65), lineWidth: 1.5))
+    }.buttonStyle(.plain).accessibilityLabel("Starred: \(c.title)")
+  }
+}
+
 /** The note as a sheet (the iPad's corner button). */
 struct NoteSheet: View {
   @Environment(\.dismiss) private var dismiss

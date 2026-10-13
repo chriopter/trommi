@@ -31,6 +31,7 @@ pub mod registers;
 pub mod seats;
 pub mod selfjoin;
 pub mod sessions;
+pub mod stars;
 pub mod status;
 pub mod store;
 
