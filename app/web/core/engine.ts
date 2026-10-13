@@ -1298,7 +1298,8 @@ export class Engine {
     this.rescanNext = null
     this.rescanDue = false
     this.rescanFrom = 0
-    if (this.ahead.length) await this.serial(() => this.settleAhead())
+    // (one that fails to settle waits for its watchdog: the reading of the past is through all the same)
+    if (this.ahead.length) await this.serial(() => this.settleAhead()).catch(() => {})
     // (kept a while: the session groups of a sign-in are joined and learned after its first rescan, and each asks
     //  for one more)
     if (this.held) this.later(HELD_KEEP_MS, () => { if (!this.rescanDue && !this.learnDue) { this.held = null; this.heldDone = true } })
