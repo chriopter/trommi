@@ -81,6 +81,34 @@ final class RoomTests: XCTestCase {
     room.close()
   }
 
+  /** A device that left while the stream was cut is offline once a new stream's list of who is here (ended by
+   *  `here`) did not name it: its `online: false` was missed, and presence is not replayed. */
+  func testADeviceThatLeftWhileTheStreamWasCutIsOfflineOnceTheStreamIsBack() async throws {
+    let room = try await founded()
+    let gone = String(repeating: "11", count: 32), stays = String(repeating: "22", count: 32), never = String(repeating: "33", count: 32)
+    for id in [gone, stays, never] { room.board.members[id] = RoomMember(deviceId: id, role: "agent") }
+    func presence(_ id: String) throws -> JV { JV.parse(utf8(#"{"device":"\#(b64u(try unhex(id)))","online":true}"#))! }
+    // the first stream: both agents are here
+    room.streamOpened()
+    await room.handleStreamEvent("presence", try presence(gone))
+    await room.handleStreamEvent("presence", try presence(stays))
+    await room.handleStreamEvent("here", .obj([:]))
+    XCTAssertEqual(room.board.members[gone]?.isOnline, true)
+    XCTAssertEqual(room.board.members[stays]?.isOnline, true)
+    // the stream was cut and `gone` left meanwhile: the new stream names only `stays`
+    let back = nowMs()
+    room.streamOpened()
+    await room.handleStreamEvent("presence", try presence(stays))
+    XCTAssertEqual(room.board.members[gone]?.isOnline, true, "not before the list is whole")
+    await room.handleStreamEvent("here", .obj([:]))
+    XCTAssertEqual(room.board.members[gone]?.isOnline, false)
+    XCTAssertGreaterThanOrEqual(room.board.members[gone]?.offlineSince ?? 0, back, "gone since the stream came back")
+    XCTAssertEqual(room.board.members[stays]?.isOnline, true)
+    XCTAssertEqual(room.board.members[never]?.isOnline, false)
+    XCTAssertNil(room.board.members[never]?.offlineSince, "a device never seen online keeps its state")
+    room.close()
+  }
+
   func testOneOwner() async throws {
     let room = try await founded()
     XCTAssertThrowsError(try Room.open(base: base, roomId: room.roomIdHex)) { XCTAssertEqual($0 as? StoreError, .failed("busy")) }

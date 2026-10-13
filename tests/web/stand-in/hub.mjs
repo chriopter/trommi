@@ -211,9 +211,12 @@ export async function startFakeHub(opts = {}) {
     }
     s.catching_up = false
     // presence as the real hub tells it: the device is here (to the human devices), and a human device's new stream
-    // first hears who else is here now (without link reports: this hub keeps no lease)
+    // first hears who else is here now (without link reports: this hub keeps no lease), and `here` at its end
     if (a.who !== 'recovery') emit(a.room, 'presence', null, { device: a.device, online: true }, null, a.device)
-    if (a.who === 'human') for (const d of new Set([...streams].filter(x => x.room === a.room && x.device !== a.device && open(x)).map(x => x.device))) res.write(`event: presence\ndata: ${JSON.stringify({ device: d, online: true })}\n\n`)
+    if (a.who === 'human') {
+      for (const d of new Set([...streams].filter(x => x.room === a.room && x.device !== a.device && open(x)).map(x => x.device))) res.write(`event: presence\ndata: ${JSON.stringify({ device: d, online: true })}\n\n`)
+      res.write('event: here\ndata: {}\n\n')
+    }
     // a stream lives as long as the token it was opened with
     s.end = setTimeout(() => endStream(s), Math.max(0, a.expires_at - now()))
     s.end.unref()

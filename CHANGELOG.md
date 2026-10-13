@@ -112,6 +112,8 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - iPhone: the Live Activity no longer shows a bare "0" when everything is answered: it says so, and shows how
   many agents are still at work.
 - "The connector needs an update" now says to run `trommi-connector update` (the swap happens by itself), not to update the plugin or run a connect script that no longer exist.
+- An agent that went away while your board had lost its connection now shows as gone once the connection is
+  back, instead of staying online.
 
 ## 11 October 2026
 

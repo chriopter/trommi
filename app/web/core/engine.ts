@@ -83,8 +83,10 @@ export interface EngineEvents {
   /** The pump halts on this entry (invariant 4), or goes on again (null). */
   blocked: { entry: OutboxEntry; code: string; message: string } | null
   connection: Connection
-  /** Stream events that are not the engine's to act on: presence, wishes, invite Requests, archived, evicted files. */
+  /** Stream events that are not the engine's to act on: presence and its `here`, wishes, invite Requests, archived, evicted files. */
   stream: StreamEvent
+  /** The live stream opened (again): the hub's list of who is here comes first, ended by a `here` stream event. */
+  opened: null
   /** After each look at the invites' steps: the invites (hex ids) whose device is not let in to the end yet. A
    *  human device counts as in once it was handed the keys: it is added to the live sessions after that, as its
    *  KeyPackages reach the hub, which they do only once it is in. */
@@ -921,7 +923,7 @@ export class Engine {
   private openStream(): void {
     this.closeStream = this.hub.stream(() => this.position, event => this.onStream(event), state => {
       this.streamLive = state === 'live'
-      if (state === 'live') { for (const wake of [...this.sleepers]) wake(); this.keepSoon(0) }
+      if (state === 'live') { this.emit('opened', null); for (const wake of [...this.sleepers]) wake(); this.keepSoon(0) }
       if (!this.catching) this.setConnection(state === 'live' ? 'live' : state === 'connecting' && this.connection !== 'live' ? 'connecting' : state === 'offline' ? 'offline' : this.connection)
     }, e => { if (e instanceof HubError && e.code === 'not-member') this.lost() })
   }

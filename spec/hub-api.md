@@ -47,7 +47,7 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `GET /v1/cards/{object}?after=&limit=` (and `/notes/`, `/permission-requests/`, `/artifacts/`) | → `{ items, more, state, owner, … }`: every envelope of the object | pruned ones in pruned form |
 | `GET /v1/groups/{group}/chains/{sender}?after=&limit=` | → envelopes in pruned form, by `seq` | chain checks (9.0.5, 10.3) |
 | `GET /v1/changes?after=&limit=[&active=1\|&group=]` | → `{ items, change, more }` | catch-up: everything the asker may see with a change number above `after`; `active=1` without the envelopes of archived groups, `group=` one group's envelopes alone (point 46) |
-| `GET /v1/stream?after=` | server-sent events: `envelope`, `log`, `relay`, `welcome`, `request`, `presence`, `file_evicted`, `ping` | live; resumes by change number (`after`, or `Last-Event-ID`) |
+| `GET /v1/stream?after=` | server-sent events: `envelope`, `log`, `relay`, `welcome`, `request`, `presence`, `here`, `file_evicted`, `ping` | live; resumes by change number (`after`, or `Last-Event-ID`) |
 | **Files, shares, push, presence** | | |
 | `PUT /v1/files/{file_id}` · `GET` (with `Range`) · `DELETE` | bytes | 11; at most 67 125 269 stored bytes, which is 64 MiB of plaintext (`too-large`); `quota-exceeded` |
 | `POST /v1/shares` · `DELETE /v1/shares/{share_id}` | `{ share_id, secret_hash, file_id, expires_at }` | 11.5; `expires_at` at most 180 days ahead |
@@ -353,7 +353,9 @@ encrypted.
     event id; `relay` `{ group_id, epoch, sender, message }`; `welcome` `{ group_id }`; `request`; `presence`
     `{ device, online, hears?, working?, last_call_at? }`; `file_evicted` `{ file_id }`. Events without a change
     number are not replayed. A human device's new stream is first told who is here now: one `presence` per other
-    device with a stream open or an agent lease that runs, with `hears`, `working` and `last_call_at` while its agent lease runs. A `presence`
+    device with a stream open or an agent lease that runs, with `hears`, `working` and `last_call_at` while its agent lease runs,
+    then one `here` `{}`: the list is whole, and every device it did not name is offline (a stream that was cut missed
+    the `online: false` of a device that left meanwhile; the client sets such a device offline as of the `here`). A `presence`
     without `hears` says nothing of the link: the report a client holds stands while the device is online.
 21. A void record and an envelope beyond a Cut are served in pruned form; the latter only on the chain route,
     marked `cut` (not by a push ticket either). What a Cut cannot bring back stays as it is: the files of an
