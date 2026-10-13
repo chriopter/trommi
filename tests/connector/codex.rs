@@ -584,3 +584,296 @@ async fn codex_with_trusted_hooks_mirrors_its_turns_and_answers_under_the_card()
     );
     mcp.close().await;
 }
+
+/// A stand-in for one Codex process: a process that lives as long as the test needs it, whose pid the connector
+/// takes for its parent (`TROMMI_PARENT_PID`, as under the launcher). Two Codex sessions are two Codex processes;
+/// in a test every connector is a child of the test itself.
+fn codex_process() -> tokio::process::Child {
+    tokio::process::Command::new("sleep")
+        .arg("600")
+        .kill_on_drop(true)
+        .spawn()
+        .expect("sleep runs")
+}
+
+/// The connector as Codex starts it after `trommi-connector setup codex`: Codex's `initialize`, no channel events,
+/// `CODEX_HOME` of the account, and no session key (Codex names no session in the environment of its MCP servers).
+async fn serve_bare_codex(
+    seat: &Seat,
+    codex: &Path,
+    codex_home: &Path,
+    parent: u32,
+    thread: &str,
+) -> common::process::Mcp {
+    let mut command = seat.command(&[]);
+    command
+        .env_remove("TROMMI_SESSION_KEY")
+        .env("TROMMI_CHANNEL_EVENTS", "off")
+        .env("TROMMI_CODEX_BIN", codex)
+        .env("TROMMI_CODEX_WAKE_MS", "300")
+        .env("TROMMI_SELF_JOIN_POLL_MS", "200")
+        .env("CODEX_HOME", codex_home)
+        .env("TROMMI_PARENT_PID", parent.to_string());
+    let mut mcp = common::process::Mcp::start_as(command, common::process::codex_hello()).await;
+    mcp.call_meta = Some(common::process::codex_meta(thread));
+    mcp
+}
+
+/// Two Claude Code sessions joined in one folder (the first by a terminal's `join`, the second by self-join),
+/// both running. Returns the seat, the first session's group and both servers.
+async fn two_claude_sessions(
+    human: &mut Human,
+    seat: &Seat,
+) -> (
+    trommi_core::ids::GroupId,
+    common::process::Mcp,
+    common::process::Mcp,
+) {
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let join = seat.join(&link);
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((joined, log), group) = tokio::join!(join, admit);
+    assert!(joined, "the join failed:\n{log}");
+    let mut first = seat.serve().await;
+    first.ready().await;
+    let mut second = seat
+        .serve_with(&[
+            ("TROMMI_SESSION_KEY", "test-second"),
+            ("TROMMI_SELF_JOIN_POLL_MS", "200"),
+        ])
+        .await;
+    let (said, failed) = second.call("reply", json!({ "text": "too early" })).await;
+    assert!(failed, "{said}");
+    human.admit_self_join(&group).await;
+    second.ready().await;
+    (group, first, second)
+}
+
+/// A new Codex session in a folder whose two keys belong to two running Claude Code sessions (the owner's case of
+/// 2026-10-13): its very first Trommi call is connect with a fresh invite link, and it joins with a key of its own,
+/// next to theirs. Before, connect answered "Not connected to Trommi. Call the tool again." on every try: a
+/// connector that starts beside other sessions waits ("asleep") until its session is used, and connect never woke
+/// it. Before a link is there, what the tools say sends the human to the one step that works: an invite, its link
+/// typed into Codex, connect.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_codex_session_connects_by_link_in_a_folder_with_other_sessions_keys() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let (_group, mut first, mut second) = two_claude_sessions(&mut human, &seat).await;
+    let (codex, _calls) = fake_codex(seat.home.path());
+    let codex_home = seat.home.path().join("codex-home");
+    std::fs::create_dir_all(&codex_home).unwrap();
+    let parent = codex_process();
+    let thread = "01a129c9-b755-7380-8769-c46a0f75a6b2";
+    let mut mcp = serve_bare_codex(&seat, &codex, &codex_home, parent.id().unwrap(), thread).await;
+    let listed = mcp.request("tools/list", json!({})).await;
+    assert!(tool_names(&listed).iter().any(|n| n == "connect"));
+
+    // connect before any link: it says what to do, and never "call the tool again"
+    let (said, failed) = mcp.call("connect", json!({})).await;
+    assert!(failed, "{said}");
+    assert!(!said.contains("Call the tool again"), "{said}");
+    assert!(
+        said.contains("link") && said.contains("Invite an agent"),
+        "it asks for the link of an invite: {said}"
+    );
+
+    // the very first call with a link joins (the case of a fresh Codex: connect is its first Trommi call)
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = mcp.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        let group = human.found_session(&admitted).await;
+        (admitted, group)
+    };
+    let ((said, failed), (admitted, codex_group)) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    mcp.ready().await;
+    mcp.ok("reply", json!({ "text": "from Codex" })).await;
+    human.sync().await;
+    let codex_session = trommi_connector::util::hex(codex_group.session_id().unwrap().as_bytes());
+    assert!(
+        human.items.iter().any(|(s, sender, p)| *s == codex_session
+            && *sender == admitted.device
+            && p["text"] == "from Codex"),
+        "Codex speaks in its own session"
+    );
+    // the Claude Code sessions keep their keys
+    first
+        .ok("reply", json!({ "text": "first still here" }))
+        .await;
+    second
+        .ok("reply", json!({ "text": "second still here" }))
+        .await;
+    mcp.close().await;
+    first.close().await;
+    second.close().await;
+    drop(parent);
+}
+
+/// Self-join for Codex (spec/v1.md 12.4.1): a Codex account is invited once by link; a later Codex session of the
+/// same account (`CODEX_HOME`) joins by itself, vouched by the running one, also in a folder whose keys belong to
+/// other sessions. The Claude Code sessions there do not vouch for it (another account), and before a link is
+/// there the first Codex session is told so in words that lead to an invite and connect.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_codex_session_joins_by_itself_vouched_by_the_first_codex() {
+    let hub = HubProc::start().await;
+    let mut human = Human::found(&hub.url).await;
+    let seat = Seat::new(&hub.url);
+    let (_group, mut first, mut second) = two_claude_sessions(&mut human, &seat).await;
+    let (codex, _calls) = fake_codex(seat.home.path());
+    let codex_home = seat.home.path().join("codex-home");
+    std::fs::create_dir_all(&codex_home).unwrap();
+    // the asks made so far (each written once with a value, later taken back with null)
+    let asks = |human: &Human| {
+        human
+            .items
+            .iter()
+            .filter(|(_, _, p)| !p["value"].is_null())
+            .filter_map(|(_, _, p)| p["name"].as_str().filter(|n| n.starts_with("join_ask/")))
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    };
+    human.sync().await;
+    let asks_before = asks(&human);
+
+    // The first Codex: no Claude Code session vouches for it, and what it is told leads to an invite and connect.
+    let parent_a = codex_process();
+    let thread_a = "01a129c9-b755-7380-8769-c46a0f75a6c3";
+    let mut a =
+        serve_bare_codex(&seat, &codex, &codex_home, parent_a.id().unwrap(), thread_a).await;
+    let mut said = String::new();
+    for _ in 0..100 {
+        let (text, failed) = a.call("inbox", json!({})).await;
+        assert!(failed, "{text}");
+        said = text;
+        if !said.contains("joining by itself") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(
+        said.contains("Invite an agent") && said.contains("call connect"),
+        "it says how this Codex gets in: {said}"
+    );
+    assert!(!said.contains("Call the tool again"), "{said}");
+    human.sync().await;
+    assert_eq!(
+        asks(&human),
+        asks_before,
+        "no Claude Code session asked the human for a Codex session"
+    );
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = a.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await
+    };
+    let ((said, failed), group_a) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    a.ready().await;
+
+    // The second Codex of the same account, in the same folder: vouched by the first Codex, one tap.
+    let parent_b = codex_process();
+    let thread_b = "01a129c9-b755-7380-8769-c46a0f75a6d4";
+    let mut b =
+        serve_bare_codex(&seat, &codex, &codex_home, parent_b.id().unwrap(), thread_b).await;
+    let (said, failed) = b.call("inbox", json!({})).await;
+    assert!(failed, "{said}");
+    let (admitted_b, _group_b, ask) = human.admit_self_join(&group_a).await;
+    assert!(
+        ask["account_label"]
+            .as_str()
+            .is_some_and(|l| l.starts_with("codex")),
+        "{ask}"
+    );
+    b.ready().await;
+    b.ok("reply", json!({ "text": "second Codex" })).await;
+    human.sync().await;
+    assert!(human
+        .items
+        .iter()
+        .any(|(_, sender, p)| *sender == admitted_b.device && p["text"] == "second Codex"));
+
+    // A third Codex whose self-join waits for the app, and the human gives it an invite link meanwhile: the link
+    // wins, and the waiting self-join gives up instead of joining a second time.
+    let parent_c = codex_process();
+    let thread_c = "01a129c9-b755-7380-8769-c46a0f75a6e5";
+    let mut c =
+        serve_bare_codex(&seat, &codex, &codex_home, parent_c.id().unwrap(), thread_c).await;
+    let (said, failed) = c.call("inbox", json!({})).await;
+    assert!(failed, "{said}");
+    let (said, failed) = c.call("connect", json!({})).await;
+    assert!(
+        failed && said.contains("Invite an agent") && said.contains("connect"),
+        "{said}"
+    );
+    let mut invite = human.invite(None).await;
+    let link = invite.link.clone();
+    let connect = c.call("connect", json!({ "link": link }));
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.found_session(&admitted).await;
+        admitted
+    };
+    let ((said, failed), admitted_c) = tokio::join!(connect, admit);
+    assert!(!failed && said.starts_with("Check code:"), "{said}");
+    c.ready().await;
+    c.ok("reply", json!({ "text": "third Codex" })).await;
+    // its ask is taken back
+    let session_a = trommi_connector::util::hex(group_a.session_id().unwrap().as_bytes());
+    let mut open = vec![];
+    for _ in 0..100 {
+        human.sync().await;
+        let names: Vec<String> = human
+            .items
+            .iter()
+            .filter(|(s, _, _)| *s == session_a)
+            .filter_map(|(_, _, p)| p["name"].as_str().map(String::from))
+            .filter(|n| n.starts_with("join_ask/"))
+            .collect();
+        open.clear();
+        for name in names {
+            if human
+                .register(&group_a, &name)
+                .await
+                .is_some_and(|v| !v.is_null())
+            {
+                open.push(name);
+            }
+        }
+        if open.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    assert!(open.is_empty(), "asks still open: {open:?}");
+    human.sync().await;
+    assert!(human
+        .items
+        .iter()
+        .any(|(_, sender, p)| *sender == admitted_c.device && p["text"] == "third Codex"));
+    c.close().await;
+    drop(parent_c);
+
+    // every session keeps its own key
+    a.ok("reply", json!({ "text": "first Codex still here" }))
+        .await;
+    first
+        .ok("reply", json!({ "text": "first still here" }))
+        .await;
+    second
+        .ok("reply", json!({ "text": "second still here" }))
+        .await;
+    for m in [a, b, first, second] {
+        m.close().await;
+    }
+    drop((parent_a, parent_b));
+}
