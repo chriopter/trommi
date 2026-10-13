@@ -456,10 +456,11 @@ struct ServedByHub {
     guard mine <= Self.heldPerSession, await held.take(mine) else { return nil }
     var pages = GroupLogPages(hub: hub, group: id, below: current.epoch), all = [[PastCommit]]()
     while let page = try await pages.next() {
-      let size = page.reduce(0) { $0 + $1.commit.count + ($1.recoveryAuth?.count ?? 0) + 64 }
+      // (every page read counts, also one without a Commit: a log of pages that hold none does not grow for free)
+      let size = page.reduce(1024) { $0 + $1.commit.count + ($1.recoveryAuth?.count ?? 0) + 64 }
       mine += size
       guard mine <= Self.heldPerSession, await held.take(size) else { return nil }
-      all.append(page)
+      if !page.isEmpty { all.append(page) }
     }
     return (current.bytes, founding, all)
   }

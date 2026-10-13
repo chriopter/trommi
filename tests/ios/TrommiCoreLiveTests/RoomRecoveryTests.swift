@@ -311,9 +311,9 @@ final class RoomRecoveryTests: XCTestCase {
     let infos = try XCTUnwrap(hub.infos[session]), newest = try XCTUnwrap(infos.keys.max())
     let logBytes = hub.log.reduce(0) { sum, entry in if case .commit(let commit, _) = entry.kind, entry.group == session { return sum + commit.count } else { return sum } }
     let was = ServedByHub.heldPerSession
-    ServedByHub.heldPerSession = (infos[newest]?.count ?? 0) + (infos[0]?.count ?? 0) + 512
+    ServedByHub.heldPerSession = (infos[newest]?.count ?? 0) + (infos[0]?.count ?? 0) + 1024 + 512
     addTeardownBlock { ServedByHub.heldPerSession = was }
-    XCTAssertGreaterThan(logBytes, 4 * 512, "the log is more than the limit leaves")
+    XCTAssertGreaterThan(logBytes, 4 * 1536, "the log is more than the limit leaves")
 
     // the budget itself: what is taken is gone, and more than is left is refused whole
     let held = ServedByHub.Held(100)
