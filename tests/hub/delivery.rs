@@ -2919,4 +2919,16 @@ fn groups_read_together_share_one_answer_budget() {
     let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[3]] })).ok();
     assert!(got["groups"][0]["log"].is_object());
     assert_eq!(got["groups"][1]["error"], "too-large");
+    // a group that does not exist, or that the asker may not see, is `not-found` also in an answer that is full:
+    // it is not told to read it alone
+    let nowhere: [u8; 48] = random();
+    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[1], b64(&nowhere)] })).ok();
+    assert_eq!(got["groups"][1]["error"], "too-large");
+    assert_eq!(got["groups"][2]["error"], "not-found", "{:?}", got["groups"][2]);
+    let mut outsider = w.enrol_agent();
+    w.found_main(&mut [], Some(&mut outsider));
+    let got = outsider.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&room), ids[0], ids[1]] })).ok();
+    assert!(got["groups"][0]["log"].is_object(), "an agent follows the room group");
+    assert_eq!(got["groups"][1]["error"], "not-found", "another agent's session");
+    assert_eq!(got["groups"][2]["error"], "not-found");
 }

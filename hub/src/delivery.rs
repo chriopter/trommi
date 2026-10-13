@@ -1166,16 +1166,23 @@ pub fn log(
     Ok(json!({ "items": items, "more": more }))
 }
 
-/// How many bytes the first `limit` Commits of a group's log hold together (with their RecoveryAuths), without
-/// reading them: what an answer of several groups asks before it reads a log it may have no room for.
-pub fn commits_size(c: &Connection, group_id: &[u8], limit: i64) -> Res<usize> {
-    let size: i64 = c
+/// About how many bytes a group takes in an answer of several (`POST /v1/groups/read`): its founding GroupInfo
+/// and the first `limit` Commits of its log with their RecoveryAuths, as base64 with each entry's other members,
+/// from the lengths alone (no blob is read). Never less than they take; what an answer asks before it reads a
+/// log it may have no room for.
+pub fn read_size(c: &Connection, group_id: &[u8], limit: i64) -> Res<usize> {
+    let (bytes, entries): (i64, i64) = c
         .prepare_cached(
-            "SELECT coalesce(sum(length(bytes) + coalesce(length(recovery_auth), 0)), 0) FROM
-               (SELECT bytes, recovery_auth FROM group_log WHERE group_id = ?1 AND kind = 'commit' ORDER BY n LIMIT ?2)",
+            "SELECT coalesce(sum(size), 0), count(*) FROM
+               (SELECT length(bytes) + coalesce(length(recovery_auth), 0) AS size FROM group_log
+                WHERE group_id = ?1 AND kind = 'commit' ORDER BY n LIMIT ?2)",
         )?
-        .query_row(params![group_id, limit], |r| r.get(0))?;
-    Ok(size as usize)
+        .query_row(params![group_id, limit], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let founding: i64 = c
+        .prepare_cached("SELECT coalesce(sum(length(bytes)), 0) FROM group_infos WHERE group_id = ?1 AND epoch = 0")?
+        .query_row(params![group_id], |r| r.get(0))?;
+    // base64 makes four bytes of three (rounded up per blob); an entry's numbers and names are under 300 bytes
+    Ok(((bytes + founding) as usize).div_ceil(3) * 4 + (entries as usize + 1) * 300)
 }
 
 /// The log entry at a change number, for the stream.

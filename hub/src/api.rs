@@ -915,13 +915,17 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                     .enumerate()
                     .map(|(i, group)| {
                         let one = (|| -> Res<Value> {
-                            if full {
-                                return Err(refuse("too-large", "the answer is full: read this group alone"));
-                            }
                             let too_large = || refuse("too-large", "the answer is full: read this group alone");
                             // (first: a group the asker may not see is `not-found`, whatever the budget)
+                            let row = store::group(x.c, &auth.room, group)?;
+                            if store::sight(x.c, &auth, &row)? == store::Sight::None {
+                                return Err(refuse("not-found", "no such group"));
+                            }
+                            if full {
+                                return Err(too_large());
+                            }
                             let info = delivery::info(x.c, &auth, group, None)?;
-                            if i > 0 && bytes + info.to_string().len() + delivery::commits_size(x.c, group, 256)? * 4 / 3 > content::ANSWER_BYTES {
+                            if i > 0 && bytes + info.to_string().len() + delivery::read_size(x.c, group, 256)? > content::ANSWER_BYTES {
                                 full = true;
                                 return Err(too_large());
                             }
