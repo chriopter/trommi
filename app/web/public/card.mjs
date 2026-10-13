@@ -456,6 +456,8 @@ const nextOpen = (card, model, id) => {
 }
 /** The sessions of the desk in view, by session key, for the client core's walk (null: every desk). */
 export const deskScope = m => (m.all || m.desk == null ? null : m.agents.map(a => a.device_id))
+/** The answers that settle a card on its own page: after each the page offers the next question (nextStep). */
+export const ANSWERS = ['decide', 'trust', 'close', 'shred']
 /** The whole <main> of a card's page. pic: which picture stands. walk: a step of "Next, please". version: as it was
  *  then. from: the session it was opened from (/chat/<id>/card/<n>): the way back and the links lead there. */
 function cardPage(card, model, base, { pic = 1, walk = false, error = '', version = null, from = null, more: older = false, full = false, focus = false, decided = false, next = null } = {}) {
@@ -1848,10 +1850,12 @@ export function register(t) {
     // (the focus mode goes along to the card that comes next: name="focus" in the card's forms)
     const to = (c, under, ...query) => focusAt(`${cardPath(c, under)}?${query.filter(Boolean).join('&')}`, form.has('focus'))
     if (['message', 'reopen', 'takeback', 'wake', 'star'].includes(what) && !form.has('stay')) return redirect(res, to(card, fromSession ? home : BASE, what === 'message' ? `said=${id}:message` : ''))
-    // (decided on the card's own page, not in Blitz: the card stays, decided, and offers the next question)
-    if (['decide', 'trust'].includes(what) && !form.has('walk') && form.has('page')) {
+    // (answered on the card's own page, not in Blitz, in any way that settles it here: the card stays, answered, and
+    //  offers the next question (the client core's, nextOpenAfter) or says there is none; decided=1 says so to the
+    //  page and its live updates)
+    if (ANSWERS.includes(what) && !form.has('walk') && form.has('page')) {
       const next = await Promise.resolve(hub.nextOpenAfter?.(id, deskScope(model()))).catch(() => null)
-      return redirect(res, to(card, fromSession ? home : BASE, said, next ? `next=${next}` : ''))
+      return redirect(res, to(card, fromSession ? home : BASE, said, 'decided=1', next ? `next=${next}` : ''))
     }
     if (fromSession) return redirect(res, `${home}${said ? `?${said}` : ''}`)
     // (in the walk, and after the reverse card on a card's own page: on to the next open card)
@@ -1865,11 +1869,11 @@ export function register(t) {
   // ---- a card's page ----
     const cardView = (req, res, card, m, { said = '', ...opts } = {}, code = 200) => {
       const [saidId, saidWhat] = said.split(':')
-      // (just decided here: the card stays and offers the next question, cardPage)
-      if (saidId === card.id && ['decide', 'trust'].includes(saidWhat)) opts = { ...opts, decided: true }
+      // (just answered here: the card stays and offers the next question, cardPage)
+      if (opts.decided || (saidId === card.id && ANSWERS.includes(saidWhat))) opts = { ...opts, decided: true }
       const old = versionOf(card, opts.version)
       const from = opts.from && m.byAgent.has(opts.from) ? opts.from : null
-      t.page(req, res, { model: m, title: `${card.title} · Trommi`, view: 'card', css: 'card', current: from, stream: `&card=${card.id}${from ? `&from=${encodeURIComponent(from)}` : ''}${old ? `&old=${old.n}` : ''}`, main: cardPage(card, m, BASE, { ...opts, from }), says: says(m.byCard.get(saidId), saidWhat) }, code)
+      t.page(req, res, { model: m, title: `${card.title} · Trommi`, view: 'card', css: 'card', current: from, stream: `&card=${card.id}${from ? `&from=${encodeURIComponent(from)}` : ''}${old ? `&old=${old.n}` : ''}${opts.decided && !old ? `&decided=1${opts.next ? `&next=${encodeURIComponent(opts.next)}` : ''}${opts.focus ? '&focus=1' : ''}` : ''}`, main: cardPage(card, m, BASE, { ...opts, from }), says: says(m.byCard.get(saidId), saidWhat) }, code)
     }
     // The comments are a timeline loaded newest page first; ?older=1 loads the page before, then the card is shown.
     const threadOf = card => `chat:card/${card.id}`
@@ -1881,7 +1885,7 @@ export function register(t) {
         try { await hub.loadOlder(threadOf(card)) } catch (err) { console.warn('older comments', err) }
         m = model(); card = m.byCard.get(card.id) ?? card
       }
-      cardView(req, res, card, m, { more: moreOf(card), said: String(url.searchParams.get('said') ?? ''), next: url.searchParams.get('next'), pic: Number(url.searchParams.get('pic')) || 1, walk: url.searchParams.has('walk'), focus: url.searchParams.has('focus'), version: Number(url.searchParams.get('v')) || null, from: match[1] ? decodeURIComponent(match[1]) : null })
+      cardView(req, res, card, m, { more: moreOf(card), said: String(url.searchParams.get('said') ?? ''), next: url.searchParams.get('next'), decided: url.searchParams.has('decided') && !url.searchParams.has('walk'), pic: Number(url.searchParams.get('pic')) || 1, walk: url.searchParams.has('walk'), focus: url.searchParams.has('focus'), version: Number(url.searchParams.get('v')) || null, from: match[1] ? decodeURIComponent(match[1]) : null })
     })
     t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)\/picture\/(\d+)$/, ({ req, res, url, match: [, from, ref, at] }) => {
       const m = model(), card = m.cardByRef(ref)
@@ -1911,13 +1915,18 @@ export function register(t) {
       if (!Object.hasOwn(WAYS, match[2])) return false
       return actRoute(req, res, form, match[1], match[2], cardView)
     })
+    // (one rendering per card, session it was opened from, and next step of a page just answered there)
+    const liveKey = c => `${c.params.get('card')}|${c.params.get('from') ?? ''}${c.params.has('decided') ? `|decided|${c.params.get('next') ?? ''}|${c.params.has('focus') ? 'f' : ''}` : ''}`
     t.live('card', {
-      take: (m, clients) => new Map([...new Set(clients.filter(c => c.params.get('card')).map(c => `${c.params.get('card')}|${c.params.get('from') ?? ''}`))].map(k => {
+      take: (m, clients) => new Map([...new Set(clients.filter(c => c.params.get('card')).map(liveKey))].map(k => {
         const [id, from] = k.split('|'), card = m.byCard.get(id), self = from ? `${BASE}/chat/${encodeURIComponent(from)}` : BASE
-        return [k, card ? { star: String(starButton(card, BASE)), face: cardLead(card, m, self), say: String(optionsSaid(card, m.state.assets)), answer: cardAnswer(card, m, BASE), answerSig: cardAnswer({ ...card, draft: undefined }, m, BASE), thread: cardThread(card, m, self, { more: moreOf(card) }) } : null]
+        // (a page just answered keeps its next step through every live update: decided=1, next, focus of its address)
+        const p = clients.find(c => liveKey(c) === k)?.params
+        const after = p?.has('decided') && card && card.status !== 'open' ? { next: nextOpen(card, m, p.get('next')), self, home: from ? self : `${BASE}/`, focus: p.has('focus') } : null
+        return [k, card ? { star: String(starButton(card, BASE)), face: cardLead(card, m, self), say: String(optionsSaid(card, m.state.assets)), answer: cardAnswer(card, m, BASE, { after }), answerSig: cardAnswer({ ...card, draft: undefined }, m, BASE, { after }), thread: cardThread(card, m, self, { more: moreOf(card) }) } : null]
       })),
       diff(was, now, client) {
-        const id = client.params.get('card'), k = `${id}|${client.params.get('from') ?? ''}`, a = was.get(k), b = now.get(k)
+        const id = client.params.get('card'), k = liveKey(client), a = was.get(k), b = now.get(k)
         if (!b) return a ? String(stream('refresh')) : ''
         if (!a) return ''
         const star = a.star !== b.star ? String(stream('replace', `card-star-${id}`, raw(b.star))) : ''
