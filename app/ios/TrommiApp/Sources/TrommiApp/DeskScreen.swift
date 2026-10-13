@@ -113,7 +113,7 @@ struct DeskScreen: View {
       }.opacity(0).accessibilityHidden(true)
     }
     .modifier(DeskTop(regular: hSize == .regular))
-    // the two docked stacks, his starred cards and the cards still running, above the tab pill (DeskDock, MoreScreens.swift)
+    // the two docked stacks, his starred cards and the cards still running, as two tabs above the tab pill (DeskDock, MoreScreens.swift)
     .overlay(alignment: .bottom) { if let v { DeskDock(view: v).padding(.bottom, hSize == .regular ? 20 : 84) } }
   }
 

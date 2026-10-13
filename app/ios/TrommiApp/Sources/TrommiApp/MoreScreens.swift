@@ -203,62 +203,50 @@ struct OffHint: View {
 }
 
 /**
- * The dock at the bottom of the Desk (web desk.mjs deskDock; the owner's pick of 13 October 2026, "zwei Stapel wie
- * HEY"): two stacks, his starred cards and the cards still running. Each shows its top card, the straight edges of two
- * more behind it and how many; a tap fans it upward as small cards, a little askew; the running one leads on to the
- * complete list. Which card lies in which stack and in what order is the client core's (DeskModel.offMind): a starred
- * card lies in the starred stack only. Above the tab pill on an iPhone; not on a card's page (it is the Desk's).
+ * The dock at the bottom of the Desk (web desk.mjs deskDock; the owner's picks of 13 October 2026, "zwei Stapel wie
+ * HEY", drawn as "nur zwei Reiter"): two stacks, his starred cards and the cards still running. At rest each is a small
+ * tab, its sign, its word and how many, and no card; a tap fans the cards upward, small and a little askew; the
+ * running one leads on to the complete list. Which card lies in which stack and in what order is the client core's
+ * (DeskModel.offMind): a starred card lies in the starred stack only. Above the tab pill on an iPhone; not on a card's
+ * page (it is the Desk's).
  */
 struct DeskDock: View {
   @EnvironmentObject var model: BoardModel
   let view: DeskModel.View
   /** The dock's height at rest, for the Desk's fold and its last rows. */
-  static let height: CGFloat = 74
+  static let height: CGFloat = 44
   @State private var open: String? = nil
   var body: some View {
     if let off = model.desk?.offMind(view), !off.starred.isEmpty || !off.running.isEmpty {
       let both = !off.starred.isEmpty && !off.running.isEmpty
-      VStack(alignment: open == "run" && both ? .trailing : .leading, spacing: 8) {
+      VStack(alignment: open == "run" && both ? .trailing : .leading, spacing: 4) {
         if open == "star" { fan(off.starred, all: false) }
         if open == "run" { fan(off.running, all: true) }
-        HStack(alignment: .bottom, spacing: 10) {
-          if !off.starred.isEmpty { stack("star", off.starred, word: "starred") }
-          if !off.running.isEmpty { stack("run", off.running, word: "running") }
+        HStack(spacing: 10) {
+          if !off.starred.isEmpty { tab("star", off.starred, word: "starred") }
+          if !off.running.isEmpty { tab("run", off.running, word: "running") }
         }
-        .padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 8)
-        .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(.ultraThinMaterial))
-        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).strokeBorder(Ink.lineStrong, lineWidth: 1.5))
       }
       .padding(.horizontal, 8)
       .frame(maxWidth: 640)
     }
   }
-  /** A stack at rest: its top card, the edges of two more behind it, how many. */
-  private func stack(_ key: String, _ cards: [DeskModel.OffMind.Entry], word: String) -> some View {
-    let on = open == key, behind = min(cards.count - 1, 2)
+  /** A stack at rest: a tab with its sign, its word and how many. */
+  private func tab(_ key: String, _ cards: [DeskModel.OffMind.Entry], word: String) -> some View {
+    let on = open == key
     return Button { withAnimation(.easeOut(duration: 0.2)) { open = on ? nil : key } } label: {
       HStack(spacing: 8) {
-        if key == "star" { Image(systemName: "star.fill").font(.system(size: 13)).foregroundStyle(Color(hex: 0xc99a13)) }
-        else { WorkingRing(working: true, color: Ink.accent).frame(width: 14, height: 14) }
-        mini(cards[0], key)
-          .opacity(on ? 0.45 : 1)
-          .background(alignment: .top) {
-            if !on && behind > 0 {
-              ForEach(1...behind, id: \.self) { k in
-                UnevenRoundedRectangle(topLeadingRadius: 11, topTrailingRadius: 11, style: .continuous).fill(Ink.surface)
-                  .overlay(UnevenRoundedRectangle(topLeadingRadius: 11, topTrailingRadius: 11, style: .continuous).strokeBorder(Ink.fg.opacity(0.3), lineWidth: 1.5))
-                  .frame(height: 20).padding(.horizontal, CGFloat(k) * 9).offset(y: CGFloat(-6 * k))
-                  .opacity(1 - Double(k) * 0.22)
-              }
-            }
-          }
-          .overlay(alignment: .topTrailing) {
-            if !on {
-              Text("\(cards.count)").font(Face.text(11, .bold)).foregroundStyle(Ink.bg)
-                .padding(.horizontal, 6).padding(.vertical, 3).background(Capsule().fill(Ink.fg)).offset(x: 8, y: -9)
-            }
-          }
-      }.contentShape(Rectangle())
+        if key == "star" { StarMark().frame(width: 15, height: 15) }
+        else { WorkingRing(working: true, color: Ink.muted).frame(width: 15, height: 15) }
+        Text(word.capitalized).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg)
+        Text("\(cards.count)").font(Face.text(11, .bold)).monospacedDigit().foregroundStyle(Ink.bg)
+          .padding(.horizontal, 6).padding(.vertical, 3).frame(minWidth: 18).background(Capsule().fill(Ink.fg))
+      }
+      .padding(.horizontal, 14).frame(height: 36)
+      .background(Capsule().fill(on ? Ink.sunken : Ink.surface))
+      .overlay(Capsule().strokeBorder(Ink.lineStrong, lineWidth: 1))
+      .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
+      .frame(minHeight: DeskDock.height).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel("\(cards.count) \(word)")
@@ -270,7 +258,7 @@ struct DeskDock: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 7) {
           ForEach(Array(cards.enumerated()), id: \.element.id) { i, e in
-            Button { open = nil; model.path.append(.card(e.card.id)) } label: { mini(e, all ? "run" : "star").frame(width: 250) }
+            Button { open = nil; model.path.append(.card(e.card.id)) } label: { mini(e, all ? "run" : "star").frame(width: 300) }
               .buttonStyle(.plain)
               .rotationEffect(.degrees(i % 2 == 0 ? -1.4 : 1.1)).offset(x: i % 2 == 0 ? 0 : 5)
               .shadow(color: .black.opacity(0.16), radius: 7, y: 4)
@@ -290,20 +278,20 @@ struct DeskDock: View {
     }
     .transition(.move(edge: .bottom).combined(with: .opacity))
   }
-  /** A small card: who it comes from (drawing), its title, one quiet line. */
+  /** A small card of the fan: who it comes from (drawing), its title on up to two lines, one quiet line. */
   private func mini(_ e: DeskModel.OffMind.Entry, _ key: String) -> some View {
     let sub = key == "star" ? "\(e.agent.name)\(e.running ? " · running" : "")" : "\(e.agent.name) · \(e.label.isEmpty ? "on it" : e.label)"
-    return HStack(spacing: 8) {
-      AgentMark(agent: { var x = e.agent; x.starred = false; return x }(), size: 22)
+    return HStack(spacing: 10) {
+      AgentMark(agent: { var x = e.agent; x.starred = false; return x }(), size: 24)
       VStack(alignment: .leading, spacing: 2) {
-        Text(e.card.title).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+        Text(e.card.title).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
         Text(sub).font(Face.text(11)).foregroundStyle(Ink.muted).lineLimit(1)
       }
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 10).padding(.vertical, 7)
+    .padding(.horizontal, 14).padding(.vertical, 10)
     .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface))
-    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.fg.opacity(0.55), lineWidth: 1.5))
+    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.lineStrong, lineWidth: 1))
     .contentShape(RoundedRectangle(cornerRadius: 12))
   }
 }

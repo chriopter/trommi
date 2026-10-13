@@ -1,5 +1,6 @@
-// off-mind.test.mjs: the Desk's foot (the owner's pick of 13 October 2026, "zwei Stapel wie HEY"): two stacks docked at
-// the bottom, his starred cards and the cards still running, and the section Off your mind as a short hinted list.
+// off-mind.test.mjs: the Desk's foot (the owner's picks of 13 October 2026, "zwei Stapel wie HEY", drawn as "nur zwei
+// Reiter"): two stacks docked at the bottom, his starred cards and the cards still running, each a small tab with its
+// count that fans its cards upward, and the section Off your mind as a short hinted list.
 // Which card lies where is the client core's (core/client/src/off_mind.rs, the patch's off_mind; its rules are tested
 // there): the page only reads it, keeps the desk in view, and draws (desk.mjs offMind, deskDock, offHint).
 //   node --test tests/web/views/
@@ -39,19 +40,27 @@ test('the page reads the core\'s lists in their order and keeps the desk in view
   assert.doesNotMatch(src.slice(src.indexOf('export function offMind'), src.indexOf('// ---- the page /stacks/off')), /\.sort\(/)
 })
 
-test('the dock: two stacks, each its top card, its count and a fan; the running one leads to the complete list', () => {
+test('the dock: two tabs, each its sign, word and count, no card at rest; the fan holds the cards, the running one leads to the complete list', () => {
   const out = String(deskDock(page(OFF), ''))
   assert.match(out, /<div class="oym-dock" id="desk-dock" data-controller="oym-dock">/)
   const [star, run] = out.split('<details class="dock-stack"').slice(1)
-  assert.match(star, /data-k="star".*?><summary aria-label="2 starred: show them">/)
-  assert.match(star, /<em>2<\/em>/)
-  assert.match(star, /Card s1<\/b><small>A · running<\/small>/, 'a starred card that runs says so, in the starred stack')
-  assert.match(run, /data-k="run".*?><summary aria-label="3 running: show them">/)
-  assert.match(run, /<em>3<\/em>/, 'the count is what the fan shows')
-  assert.equal(run.split('<div class="dock-fan">')[1].match(/class="dock-card"/g).length, 3)
-  assert.match(run, /Card r1<\/b><small>A · Reworking<\/small>/)
-  assert.match(run, /Card r2<\/b><small>B · on it<\/small>/)
-  assert.match(run, /<a class="dock-all" data-nav href="\/stacks\/off">All running and done/)
+  // closed: the tab is the whole summary, a sign, the word, the count
+  const tab = part => part.match(/<summary class="dock-tab" aria-label="([^"]*)">(.*?)<\/summary>/s)
+  assert.match(star, /^ name="desk-dock" data-k="star" data-action="toggle->oym-dock#toggled">/, 'one stack open at a time (details of one name)')
+  assert.equal(tab(star)[1], '2 starred: show them')
+  assert.match(tab(star)[2], /^<svg[^>]*class="sketch[^>]*>.*<\/svg><b>Starred<\/b><em>2<\/em>$/s)
+  assert.equal(tab(run)[1], '3 running: show them')
+  assert.match(tab(run)[2], /^<svg[^>]*agent-ring.*<\/svg><b>Running<\/b><em>3<\/em>$/s)
+  for (const part of [star, run]) assert.doesNotMatch(tab(part)[2], /dock-card|Card /, 'no card and no title on a tab')
+  // fanned: every card of the stack, in the core's order, each a link to its card
+  const fan = part => part.split('<div class="dock-fan">')[1]
+  assert.deepEqual([...fan(star).matchAll(/<a class="dock-card" data-nav href="([^"]*)"/g)].map(m => m[1].split('/').pop()), ['s1', 's2'])
+  assert.deepEqual([...fan(run).matchAll(/<a class="dock-card" data-nav href="([^"]*)"/g)].map(m => m[1].split('/').pop()), ['r1', 'r2', 'r3'], 'the count is what the fan shows')
+  assert.match(fan(star), /Card s1<\/b><small>A · running<\/small>/, 'a starred card that runs says so, in the starred stack')
+  assert.match(fan(run), /Card r1<\/b><small>A · Reworking<\/small>/)
+  assert.match(fan(run), /Card r2<\/b><small>B · on it<\/small>/)
+  assert.match(fan(run), /<a class="dock-all" data-nav href="\/stacks\/off">All running and done/)
+  assert.doesNotMatch(fan(star), /dock-all/, 'only the running stack leads to the complete list')
   assert.doesNotMatch(run, /Card s1/, 'a starred card is not in the running stack')
   // one stack alone, and none
   assert.equal(String(deskDock(page({ ...OFF, starred: [] }), '')).split('<details').length - 1, 1)
@@ -73,7 +82,10 @@ test('the dock stands in the Desk\'s layer, so not on a card\'s page; a window-w
   assert.match(src, /stream\('replace', 'desk-dock', now\.dock\)/)
   const tilted = css.split('}').filter(r => /\brotate:/.test(r) && /dock|oym|pile/.test(r)).map(r => r.slice(0, r.lastIndexOf('{')).split('{').pop().trim())
   assert.deepEqual(tilted.filter(sel => !/^\.dock-fan > \.dock-card/.test(sel)), [], 'only the small fan cards of a fixed width tilt')
-  assert.match(css, /\.dock-card \{[^}]*width: 250px;/)
+  assert.match(css, /\.dock-card \{[^}]*width: min\(300px, calc\(100vw - 60px\)\);/)
+  // the look before the tabs is gone: no container, no loose sign beside a card, no top card with edges behind it
+  assert.doesNotMatch(css + src, /dock-icon|dock-top|dock-label|data-look|trommi-dock/)
+  assert.doesNotMatch(css.match(/\n\.oym-dock \{[^}]*\}/)[0], /padding|border|background|backdrop-filter|box-shadow/)
   assert.doesNotMatch(css, /oym-sheet|pile-pile|pile-wrap|is-slim|oym-fold|star-stack/)
   assert.doesNotMatch(read('app/web/public/sidebar.mjs') + read('app/web/public/sidebar.css'), /star-stack|starStack|ss-card/, 'the corner star stack is gone: the starred cards are the dock\'s')
 })
@@ -95,5 +107,7 @@ test('the iPhone reads the same lists and draws the same dock', () => {
   assert.match(read('app/ios/TrommiClient/Sources/TrommiClient/BoardMirror.swift'), /if p\["off_mind"\]\.object != nil \{ offMind = p\["off_mind"\] \}/)
   assert.match(desk, /public func offMind\(_ v: View\) -> OffMind/)
   assert.match(view, /struct DeskDock: View/)
+  assert.match(view, /private func tab\(_ key: String, _ cards: \[DeskModel\.OffMind\.Entry\], word: String\)/, 'a tab per stack: sign, word, count')
+  assert.doesNotMatch(view.slice(view.indexOf('struct DeskDock'), view.indexOf('// ---- Artifacts')), /ultraThinMaterial|behind/, 'no container, no top card with edges behind it')
   assert.doesNotMatch(view + desk, /pinStarred|OffPileView|RunningStack|StarStack\b|offPile/)
 })

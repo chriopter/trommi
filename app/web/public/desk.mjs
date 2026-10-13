@@ -281,8 +281,8 @@ const deskStacks = (model, base) => html`<div class="inbox-stacks stack-tabs is-
 
 // ---- the foot of the Desk: Off your mind (the owner's pick of 13 October 2026, "zwei Stapel wie HEY") ----
 // Two stacks are docked at the bottom of the Desk (#desk-dock, in the Desk's layer): his starred cards and the cards
-// still running. Each shows its top card with the edges of the others behind it; a tap fans it upward as small cards,
-// and the running one leads on to the complete list. The section Off your mind itself is a short hinted list of what
+// still running. At rest each is a small tab, its sign, its word and how many (his pick of 13 October 2026, "nur zwei
+// Reiter"); a tap fans it upward as small cards, and the running one leads on to the complete list. The section Off your mind itself is a short hinted list of what
 // is put off and closed, beside Artifacts on a wide window; its heading opens the page /stacks/off, every card with a
 // search. Which card lies in which stack, in what order, and how many are closed is the client core's
 // (core/client/src/off_mind.rs, the patch's off_mind): a card has one home, a starred card lies in the starred stack
@@ -309,11 +309,11 @@ ${divider('Off your mind', '', { href: `${base}/stacks/off` })}
 <a class="oym-hint-list" data-nav href="${base}/stacks/off">${rows.map(e => html`<span class="oym-hint-row" data-g="${e.place}">${placeMark(e.place, e.card)}<b>${e.card.title}</b></span>`)}<span class="oym-hint-more">${words}</span></a>
 </section>`
 }
-/** The two docked stacks (#desk-dock): starred and running. Empty while there is neither. */
+/** The two docked stacks (#desk-dock): starred and running, each a tab with its count and its fan. Empty while there is neither. */
 export function deskDock(model, base) {
   const off = offMind(model)
   const mini = (e, sub) => html`<a class="dock-card" data-nav href="${cardPath(e.card, base)}" style="--hue:${e.sender.hue}">${avatar(e.sender, { crown: false, working: Boolean(e.running ?? true) })}<span><b>${e.card.title}</b><small>${sub}</small></span></a>`
-  const stack = (key, icon, word, cards, all = '') => !cards.length ? '' : html`<details class="dock-stack" name="desk-dock" data-k="${key}" data-action="toggle->oym-dock#toggled"><summary aria-label="${cards.length} ${word}: show them"><span class="dock-icon" aria-hidden="true">${icon}</span><span class="dock-top">${cards.length > 1 ? html`<i style="--k:1"></i>` : ''}${cards.length > 2 ? html`<i style="--k:2"></i>` : ''}${cards[0]}<em>${cards.length}</em></span></summary><div class="dock-fan">${cards}${all}</div></details>`
+  const stack = (key, icon, word, cards, all = '') => !cards.length ? '' : html`<details class="dock-stack" name="desk-dock" data-k="${key}" data-action="toggle->oym-dock#toggled"><summary class="dock-tab" aria-label="${cards.length} ${word}: show them">${icon}<b>${word[0].toUpperCase()}${word.slice(1)}</b><em>${cards.length}</em></summary><div class="dock-fan">${cards}${all}</div></details>`
   const starred = off.starred.map(e => mini(e, `${e.sender.name}${e.running ? ' · running' : ''}`))
   const running = off.running.map(e => mini(e, `${e.sender.name} · ${e.label || 'on it'}`))
   return html`<div class="oym-dock" id="desk-dock" data-controller="oym-dock"${starred.length || running.length ? '' : raw(' hidden')}>${stack('star', sk('star'), 'starred', starred)}${stack('run', raw(ringSvg({ drop: true })), 'running', running, html`<a class="dock-all" data-nav href="${base}/stacks/off">All running and done${sk('go')}</a>`)}</div>`
