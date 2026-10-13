@@ -1,0 +1,370 @@
+{
+  "id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+  "name": {
+    "key": "session.name",
+    "en": "Payments"
+  },
+  "link": "live",
+  "blocked": false,
+  "talk": [
+    {
+      "id": "e271000",
+      "from_me": true,
+      "text": "Renewals are failing? I got an e-mail from Stripe.",
+      "time_ms": 1790863200000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 271000,
+      "day": {
+        "key": "day.date",
+        "args": {
+          "day": "1",
+          "month": "October",
+          "weekday": "Thursday"
+        },
+        "en": "Thursday 1 October"
+      },
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e271120",
+      "from_me": false,
+      "text": "Yes: since the 14:02 deploy every webhook gets a 400. Stripe retries, nothing is lost yet. Rollback question on your Desk, critical.",
+      "time_ms": 1790863320000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 271120,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "v271600a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1790863800000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 271600,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "ec2f5263fac9174007a1f17b148b8314",
+        "number": 1,
+        "title": "Renewal webhooks fail since 14:02: roll back to 2.13.2?"
+      },
+      "event": {
+        "kind": "done",
+        "label": {
+          "key": "event.done",
+          "en": "Done"
+        },
+        "about": "Renewal webhooks fail since 14:02: roll back to 2.13.2?",
+        "text": "Rolled back at 14:38; 212 events replayed, all renewals reconciled. Report in Artifacts.",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "v271600.5d",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1790865240000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 271600,
+      "cont": true,
+      "terminal": false,
+      "card": {
+        "id": "ec2f5263fac9174007a1f17b148b8314",
+        "number": 1,
+        "title": "Renewal webhooks fail since 14:02: roll back to 2.13.2?"
+      },
+      "event": {
+        "kind": "done",
+        "label": {
+          "key": "event.done",
+          "en": "Done"
+        },
+        "about": "Renewal webhooks fail since 14:02: roll back to 2.13.2?",
+        "text": "Rolled back at 14:38; 212 events replayed, all renewals reconciled. Report in Artifacts.",
+        "echo": true
+      },
+      "scribble": false
+    },
+    {
+      "id": "v271840d",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1790864040000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 271840,
+      "cont": true,
+      "terminal": false,
+      "card": {
+        "id": "ec2f5263fac9174007a1f17b148b8314",
+        "number": 1,
+        "title": "Renewal webhooks fail since 14:02: roll back to 2.13.2?"
+      },
+      "event": {
+        "kind": "decided",
+        "label": {
+          "key": "event.decided",
+          "en": "Answered"
+        },
+        "about": "Renewal webhooks fail since 14:02: roll back to 2.13.2?",
+        "text": "Roll back now",
+        "echo": true
+      },
+      "scribble": false
+    },
+    {
+      "id": "e272200",
+      "from_me": false,
+      "text": "Rolled back. 212 events replayed, every renewal reconciled. The report:",
+      "time_ms": 1790864400000,
+      "heard": false,
+      "pending": false,
+      "kind": "artifact",
+      "number": 272200,
+      "cont": false,
+      "terminal": false,
+      "published": "49e68640bbf63514a2207642008daba3",
+      "scribble": false
+    },
+    {
+      "id": "e823300",
+      "from_me": false,
+      "text": "Smart retries for two weeks now: failed renewals 4.1% → 1.3%.",
+      "time_ms": 1791415500000,
+      "heard": false,
+      "pending": false,
+      "files": [
+        "e8b85d437cf6d2790a969bd273f02f95"
+      ],
+      "kind": "agent",
+      "number": 823300,
+      "day": {
+        "key": "day.today",
+        "en": "Today"
+      },
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "v823600i",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791415800000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 823600,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "a7043d48862eac8c164c419182dbd0c7",
+        "number": 17,
+        "title": "Smart retries: failed renewals down from 4.1% to 1.3%"
+      },
+      "event": {
+        "kind": "info",
+        "label": {
+          "key": "event.board",
+          "en": "Board"
+        },
+        "text": "Smart retries: failed renewals down from 4.1% to 1.3%",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "v824800r",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791417000000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 824800,
+      "cont": true,
+      "terminal": false,
+      "card": {
+        "id": "a7043d48862eac8c164c419182dbd0c7",
+        "number": 17,
+        "title": "Smart retries: failed renewals down from 4.1% to 1.3%"
+      },
+      "event": {
+        "kind": "read",
+        "label": {
+          "key": "event.board",
+          "en": "Board"
+        },
+        "text": "Smart retries: failed renewals down from 4.1% to 1.3%",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e865601",
+      "from_me": true,
+      "text": "Checkout must be ready for the web launch on Monday.",
+      "time_ms": 1791457800000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 865601,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e865720",
+      "from_me": false,
+      "text": "It is built twice, as a sheet and as a page; **Checkout** put both on your Desk. **Load Testing** runs k6 against staging once you allow it.",
+      "time_ms": 1791457920000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 865720,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e877362",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791469561000,
+      "heard": false,
+      "pending": false,
+      "kind": "work",
+      "number": 877362,
+      "cont": false,
+      "terminal": false,
+      "work": {
+        "turn": "pay-1",
+        "state": "running",
+        "head": {
+          "key": "work.running",
+          "en": "Working"
+        },
+        "sum": {
+          "key": "work.sum",
+          "args": {
+            "failed": "0",
+            "helpers": "0",
+            "steps": "2"
+          },
+          "en": "2 steps"
+        },
+        "now": "Bash · k6 run --vus 400 --duration 10m checkout.js",
+        "lines": [
+          {
+            "id": "say:pay-1:0",
+            "kind": "text",
+            "state": "",
+            "text": "Load test against staging, then the VAT rules."
+          },
+          {
+            "id": "toolu_f0d3833ba1cb",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Read",
+            "what": "load/checkout.js",
+            "took": "1 s"
+          },
+          {
+            "id": "toolu_e8c24506827a",
+            "kind": "step",
+            "state": "running",
+            "says": {
+              "key": "work.step.running",
+              "en": "running"
+            },
+            "tool": "Bash",
+            "what": "k6 run --vus 400 --duration 10m checkout.js",
+            "input": "k6 run --vus 400 --duration 10m load/checkout.js"
+          }
+        ]
+      },
+      "scribble": false
+    }
+  ],
+  "status_lines": [
+    {
+      "id": "checkout",
+      "label": "Checkout",
+      "detail": "Sheet or page? Needed by Thursday",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791468600000,
+      "card": {
+        "id": "992640bed603743781e3241f6a2de105",
+        "number": 45,
+        "title": "Checkout: a sheet over the app, or its own page?"
+      }
+    },
+    {
+      "id": "load",
+      "label": "Load test",
+      "detail": "Waiting for your OK to run k6",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469620000
+    }
+  ],
+  "has_more": false,
+  "slug": "payments-service",
+  "mark": "draw:lock",
+  "desk_id": "platform",
+  "main": true,
+  "crowned": true,
+  "online": true,
+  "path": [
+    "Platform",
+    "Payments"
+  ],
+  "model_label": "Opus 5.5",
+  "model": "claude-opus-5-5",
+  "dot": {
+    "on": true,
+    "link": "",
+    "word": {
+      "key": "session.connected",
+      "en": "connected"
+    },
+    "says": {
+      "key": "session.dot",
+      "args": {
+        "task": "Subscriptions with Stripe: checkout, renewals, invoices",
+        "word": "connected"
+      },
+      "en": "connected · Subscriptions with Stripe: checkout, renewals, invoices"
+    }
+  },
+  "compose": {
+    "key": "compose",
+    "en": "Message to the agent"
+  },
+  "open": 0
+}

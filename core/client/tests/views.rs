@@ -6,7 +6,7 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use trommi_client_core::model::Model;
-use trommi_client_core::views::{demo, desk, sidebar, Board, Lens};
+use trommi_client_core::views::{demo, desk, session, sidebar, Board, Lens};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -65,6 +65,18 @@ fn the_demo_rooms_desk() {
         let lens = lens(desk);
         let b = Board::new(&m, &lens, now);
         golden(file, &desk::desk(&b));
+    }
+}
+
+/// A session's page: the main with the longest conversation, and one of the other desk.
+#[test]
+fn the_demo_rooms_sessions() {
+    let (m, now) = demo_room();
+    let lens = lens(None);
+    let b = Board::new(&m, &lens, now);
+    for slug in ["fernly-web", "payments-service"] {
+        let view = session::session(&b, slug).unwrap_or_else(|| panic!("no session {slug}"));
+        golden(&format!("demo-session-{slug}.json"), &view);
     }
 }
 
@@ -195,5 +207,15 @@ fn render_makes_the_boards_units_and_keeps_the_rest() {
     let wake = render(&m, &lens, now, &mut view);
     let b = Board::new(&m, &lens, now);
     assert_eq!((&view.sidebar, &view.desk, view.phase), (&sidebar::sidebar(&b), &desk::desk(&b), Phase::Live));
+    assert!(view.sessions.is_empty(), "no page in view: no session's unit");
+    // the session in view (by the short id of its address) is the one unit made; leaving it takes it away
+    let on = Lens { session: Some("fernly-web".into()), ..lens.clone() };
+    render(&m, &on, now, &mut view);
+    let b = Board::new(&m, &on, now);
+    let page = session::session(&b, "fernly-web").unwrap();
+    assert_eq!(view.sessions.get(&page.id), Some(&page));
+    assert_eq!(view.sessions.len(), 1);
+    render(&m, &lens, now, &mut view);
+    assert!(view.sessions.is_empty());
     assert!(wake.is_none_or(|w| w > now), "a wake lies ahead: {wake:?} at {now}");
 }

@@ -75,7 +75,7 @@ fn star_at(v: &Value) -> Option<u64> {
 }
 
 /// When a card went to its agent: the hand-back's message, an info's start, his answer.
-fn went_at(m: &Model, c: &Card) -> u64 {
+pub fn went_at(m: &Model, c: &Card) -> u64 {
     if c.object_state == "open" {
         if let Some(r) = &c.in_revision {
             let said = m.timelines.get(&c.timeline_key).and_then(|t| {

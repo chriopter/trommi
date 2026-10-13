@@ -1,0 +1,821 @@
+{
+  "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+  "name": {
+    "key": "session.name",
+    "en": "Fernly Website"
+  },
+  "link": "live",
+  "blocked": false,
+  "talk": [
+    {
+      "id": "e784000",
+      "from_me": true,
+      "text": "Morning. Plan for the week: pricing on staging, onboarding, then the launch on Monday.",
+      "time_ms": 1791376200000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 784000,
+      "day": {
+        "key": "day.yesterday",
+        "en": "Yesterday"
+      },
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e784060",
+      "from_me": false,
+      "text": "On it. I split it up:\n\n- **Landing Page**: the hero and the sections\n- **Copywriting**: plan names, buttons, the e-mails\n- **Onboarding**: sign-up in three steps\n- **Page Speed** and **Testing** in parallel\n- **Search & Social** last\n\nQuestions come to your Desk as cards.",
+      "time_ms": 1791376260000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 784060,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "v787600a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791379800000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 787600,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
+        "number": 14,
+        "title": "Remind in the morning or in the evening?"
+      },
+      "event": {
+        "kind": "decided",
+        "label": {
+          "key": "event.decided",
+          "en": "Answered"
+        },
+        "about": "Remind in the morning or in the evening?",
+        "text": "Morning, 8:00",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e787900",
+      "from_me": false,
+      "text": "Morning reminders at 8:00 are the default now, in the browser’s time zone.",
+      "time_ms": 1791380100000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 787900,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "v788200d",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791380400000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 788200,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
+        "number": 14,
+        "title": "Remind in the morning or in the evening?"
+      },
+      "event": {
+        "kind": "decided",
+        "label": {
+          "key": "event.decided",
+          "en": "Answered"
+        },
+        "about": "Remind in the morning or in the evening?",
+        "text": "Morning, 8:00",
+        "echo": true
+      },
+      "scribble": false
+    },
+    {
+      "id": "e811600",
+      "from_me": false,
+      "text": "Pricing is on staging with the three plans.",
+      "time_ms": 1791403800000,
+      "heard": false,
+      "pending": false,
+      "files": [
+        "32411e6dafa3269067bac5b4f8837ef3"
+      ],
+      "kind": "agent",
+      "number": 811600,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e841601",
+      "from_me": true,
+      "text": "Nice. Where is the checklist?",
+      "time_ms": 1791433800000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 841601,
+      "day": {
+        "key": "day.today",
+        "en": "Today"
+      },
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e841720",
+      "from_me": false,
+      "text": "A page with all 19 items; I tick them off as helpers finish.",
+      "time_ms": 1791433920000,
+      "heard": false,
+      "pending": false,
+      "kind": "artifact",
+      "number": 841720,
+      "cont": false,
+      "terminal": false,
+      "published": "308b09b5ec295aea43082f237e3a896c",
+      "scribble": false
+    },
+    {
+      "id": "v871900i",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791460200000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 871900,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "e77e5a529e1d3a4bd3046ce602a34c1e",
+        "number": 26,
+        "title": "Done: onboarding in three steps is on staging"
+      },
+      "event": {
+        "kind": "info",
+        "label": {
+          "key": "event.board",
+          "en": "Board"
+        },
+        "text": "Done: onboarding in three steps is on staging",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e871901",
+      "from_me": false,
+      "text": "Onboarding is on staging: name, first plant, reminder time. 48 seconds on average.",
+      "time_ms": 1791464100000,
+      "heard": false,
+      "pending": false,
+      "files": [
+        "7251fba1c16a29dc90d9fd4f706daf11"
+      ],
+      "kind": "agent",
+      "number": 871901,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e873880",
+      "from_me": true,
+      "text": "how fast is the landing page on a phone now? and is the plant library in the first load?",
+      "time_ms": 1791466080000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 873880,
+      "cont": false,
+      "terminal": true,
+      "scribble": false
+    },
+    {
+      "id": "e873941",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791466141000,
+      "heard": false,
+      "pending": false,
+      "kind": "work",
+      "number": 873941,
+      "cont": false,
+      "terminal": false,
+      "work": {
+        "turn": "web-1",
+        "state": "done",
+        "head": {
+          "key": "work.done_took",
+          "args": {
+            "took": "42 s"
+          },
+          "en": "Worked 42 s"
+        },
+        "sum": {
+          "key": "work.sum",
+          "args": {
+            "failed": "1",
+            "helpers": "1",
+            "steps": "7"
+          },
+          "en": "7 steps · 1 helper · 1 with an error"
+        },
+        "lines": [
+          {
+            "id": "say:web-1:0",
+            "kind": "text",
+            "state": "",
+            "text": "I build it as it ships, then measure it on a throttled phone."
+          },
+          {
+            "id": "toolu_c212cfaa558f",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Read",
+            "what": "web/vite.config.ts",
+            "took": "1 s"
+          },
+          {
+            "id": "toolu_4779dccee674",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Grep",
+            "what": "plant-library in web/src",
+            "took": "2 s"
+          },
+          {
+            "id": "toolu_49df68951484",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Bash",
+            "what": "Build the site for production",
+            "took": "8 s"
+          },
+          {
+            "id": "toolu_e4cdb8bfc212",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Agent",
+            "what": "Find what the landing page loads first · Explore",
+            "took": "15 s"
+          },
+          {
+            "id": "agent:web-1:5",
+            "kind": "helper",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Helper Explore",
+            "what": "Find what the landing page loads first",
+            "count": {
+              "key": "work.step.steps",
+              "args": {
+                "n": "9"
+              },
+              "en": "9 steps"
+            },
+            "took": "49 s"
+          },
+          {
+            "id": "say:web-1:6",
+            "kind": "text",
+            "state": "",
+            "text": "The library comes in through the search box in the header. I load it on the first keystroke instead."
+          },
+          {
+            "id": "toolu_955a83238b6b",
+            "kind": "step",
+            "state": "failed",
+            "says": {
+              "key": "work.step.failed",
+              "en": "failed"
+            },
+            "tool": "Bash",
+            "what": "Measure the landing page on a slow phone",
+            "took": "2 s"
+          },
+          {
+            "id": "toolu_fa83cc8a7fa8",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Edit",
+            "what": "web/src/lib/Search.svelte",
+            "took": "8 s"
+          },
+          {
+            "id": "toolu_c8c8dd2578a6",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Bash",
+            "what": "Measure the landing page on a slow phone",
+            "took": "20 s"
+          }
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e874121",
+      "from_me": false,
+      "text": "About **1.4 seconds** on a mid-range phone over 4G.\n\n- first load: 312 kB before, **98 kB** now\n- the library: 214 kB, fetched once on the first keystroke, then cached",
+      "time_ms": 1791466320000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 874121,
+      "cont": false,
+      "terminal": true,
+      "scribble": false
+    },
+    {
+      "id": "e874901",
+      "from_me": true,
+      "text": "People keep asking for a summary by mail, by the way.",
+      "time_ms": 1791467100000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 874901,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "v875200a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791466200000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 875200,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "637adcc6eae4b4ac30b47509a3071884",
+        "number": 38,
+        "title": "Send a weekly summary e-mail on Sundays?"
+      },
+      "row": {
+        "id": "637adcc6eae4b4ac30b47509a3071884",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Send a weekly summary e-mail on Sundays?",
+        "words": "Which plants did well, which are due next week. People asked for it in the beta.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791466200000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ]
+        },
+        "run": 0,
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "no",
+              "label": "No",
+              "thumb": "no",
+              "thumbs": true,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": true,
+              "tip": {
+                "key": "tile.settles",
+                "en": "Settles it"
+              },
+              "says": {
+                "key": "tile.says.settles",
+                "args": {
+                  "label": "No"
+                },
+                "en": "No (settles it)"
+              }
+            },
+            {
+              "key": "yes",
+              "label": "Yes",
+              "thumb": "yes",
+              "thumbs": true,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Yes"
+                },
+                "en": "Yes"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e875201",
+      "from_me": false,
+      "text": "Then I would send one on Sunday evening. The question is on your Desk.",
+      "time_ms": 1791467400000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 875201,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e876340",
+      "from_me": true,
+      "text": "What blocks Monday?",
+      "time_ms": 1791468540000,
+      "heard": false,
+      "pending": false,
+      "kind": "note",
+      "number": 876340,
+      "cont": false,
+      "terminal": false,
+      "scribble": false,
+      "written_ms": 1791468000000
+    },
+    {
+      "id": "v876520a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791464400000,
+      "heard": false,
+      "pending": false,
+      "kind": "ask",
+      "number": 876520,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "95a7444523d097bff745b891bc2166cf",
+        "number": 46,
+        "title": "Launch on Monday at 09:00, or on Tuesday?"
+      },
+      "row": {
+        "id": "95a7444523d097bff745b891bc2166cf",
+        "kind": "decision",
+        "loading": false,
+        "newer": false,
+        "title": "Launch on Monday at 09:00, or on Tuesday?",
+        "words": "Everything for Monday is green except the Safari test. Tuesday gives one more day for the App Store review.",
+        "urgency": "normal",
+        "sign": "",
+        "starred": false,
+        "created_ms": 1791464400000,
+        "from": {
+          "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+          "name": "Fernly Website",
+          "mark": "draw:leaf",
+          "path": [
+            "Fernly",
+            "Fernly Website"
+          ]
+        },
+        "run": 0,
+        "tiles": {
+          "kind": "pair",
+          "tiles": [
+            {
+              "key": "tuesday",
+              "label": "Tuesday 09:00",
+              "thumb": "no",
+              "thumbs": false,
+              "lead": false,
+              "advised": false,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Tuesday 09:00"
+                },
+                "en": "Tuesday 09:00"
+              }
+            },
+            {
+              "key": "monday",
+              "label": "Monday 09:00",
+              "thumb": "yes",
+              "thumbs": false,
+              "lead": true,
+              "advised": true,
+              "small": false,
+              "short": false,
+              "settles": false,
+              "tip": {
+                "key": "tile.recommended",
+                "en": "Recommended"
+              },
+              "says": {
+                "key": "tile.says",
+                "args": {
+                  "label": "Monday 09:00"
+                },
+                "en": "Monday 09:00"
+              }
+            }
+          ],
+          "others": 0
+        },
+        "ways": [
+          "later",
+          "reverse",
+          "duck",
+          "shred"
+        ]
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876521",
+      "from_me": false,
+      "text": "Only the Safari test, and it is a test problem, not a checkout problem. Monday or Tuesday is on your Desk, with the reasons.",
+      "time_ms": 1791468720000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876521,
+      "cont": false,
+      "terminal": false,
+      "scribble": false
+    },
+    {
+      "id": "e876880",
+      "from_me": true,
+      "text": "What are the five that are left?",
+      "time_ms": 1791469080000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 876880,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "95a7444523d097bff745b891bc2166cf",
+        "number": 46,
+        "title": "Launch on Monday at 09:00, or on Tuesday?"
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876940",
+      "from_me": false,
+      "text": "Status page link in the footer, the 404 page, two redirects from the beta domain, and the Safari test. All under an hour except the test.",
+      "time_ms": 1791469140000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876940,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "95a7444523d097bff745b891bc2166cf",
+        "number": 46,
+        "title": "Launch on Monday at 09:00, or on Tuesday?"
+      },
+      "scribble": false
+    },
+    {
+      "id": "e877361",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791469561000,
+      "heard": false,
+      "pending": false,
+      "kind": "work",
+      "number": 877361,
+      "cont": false,
+      "terminal": false,
+      "work": {
+        "turn": "web-2",
+        "state": "running",
+        "head": {
+          "key": "work.running",
+          "en": "Working"
+        },
+        "sum": {
+          "key": "work.sum",
+          "args": {
+            "failed": "0",
+            "helpers": "0",
+            "steps": "3"
+          },
+          "en": "3 steps"
+        },
+        "now": "Bash · Run the link checker over staging",
+        "lines": [
+          {
+            "id": "say:web-2:0",
+            "kind": "text",
+            "state": "",
+            "text": "Working through the last checklist items."
+          },
+          {
+            "id": "toolu_a140e0237d70",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Edit",
+            "what": "web/src/routes/+error.svelte",
+            "took": "1 s"
+          },
+          {
+            "id": "toolu_9fa1aa2c5f0c",
+            "kind": "step",
+            "state": "ok",
+            "says": {
+              "key": "work.step.ok",
+              "en": "done"
+            },
+            "tool": "Edit",
+            "what": "web/static/_redirects",
+            "took": "2 s"
+          },
+          {
+            "id": "toolu_a4a340a9fd76",
+            "kind": "step",
+            "state": "running",
+            "says": {
+              "key": "work.step.running",
+              "en": "running"
+            },
+            "tool": "Bash",
+            "what": "Run the link checker over staging"
+          }
+        ]
+      },
+      "scribble": false
+    }
+  ],
+  "status_lines": [
+    {
+      "id": "launch",
+      "label": "Launch Monday",
+      "detail": "Monday 09:00 or Tuesday? On your Desk",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791468720000,
+      "card": {
+        "id": "95a7444523d097bff745b891bc2166cf",
+        "number": 46,
+        "title": "Launch on Monday at 09:00, or on Tuesday?"
+      }
+    },
+    {
+      "id": "checklist",
+      "label": "Launch checklist",
+      "detail": "14 of 19 done",
+      "state": "working",
+      "says": {
+        "key": "line.working",
+        "en": "working"
+      },
+      "updated_ms": 1791469560000
+    },
+    {
+      "id": "email",
+      "label": "Sunday e-mail",
+      "detail": "Waiting for your yes",
+      "state": "decision",
+      "says": {
+        "key": "line.decision",
+        "en": "waits on you"
+      },
+      "updated_ms": 1791467400000,
+      "card": {
+        "id": "637adcc6eae4b4ac30b47509a3071884",
+        "number": 38,
+        "title": "Send a weekly summary e-mail on Sundays?"
+      }
+    }
+  ],
+  "has_more": false,
+  "slug": "fernly-web",
+  "mark": "draw:leaf",
+  "desk_id": "main",
+  "main": true,
+  "crowned": true,
+  "online": true,
+  "path": [
+    "Fernly",
+    "Fernly Website"
+  ],
+  "model_label": "Opus 5.5",
+  "model": "claude-opus-5-5",
+  "dot": {
+    "on": true,
+    "link": "",
+    "word": {
+      "key": "session.connected",
+      "en": "connected"
+    },
+    "says": {
+      "key": "session.dot",
+      "args": {
+        "task": "Fernly web app: launch on Monday",
+        "word": "connected"
+      },
+      "en": "connected · Fernly web app: launch on Monday"
+    }
+  },
+  "compose": {
+    "key": "compose",
+    "en": "Message to the agent"
+  },
+  "open": 3,
+  "open_word": {
+    "key": "session.open",
+    "args": {
+      "n": "3"
+    },
+    "en": "3 open"
+  },
+  "open_says": {
+    "key": "session.open.some",
+    "args": {
+      "n": "3"
+    },
+    "en": "3 open questions: go to the first one"
+  },
+  "first_open": "v875200a"
+}
