@@ -284,8 +284,9 @@ extension Board {
 extension Board {
   /** The end of a batch: the Desk projected at `now`, and what changed taken into the copy; `change` gets it too. */
   public func project(_ change: inout Change, now: UInt64 = nowMs()) {
-    let text = (try? engine.finish(nowMs: now)) ?? ""
-    change.merge(take(patch: text))
+    // (in parts of a few hundred cards: the whole board's patch at once, as text and as values, was the peak of a
+    // sign-in's memory)
+    while let text = try? engine.finishPart(nowMs: now, maxCards: 200), !text.isEmpty { change.merge(take(patch: text)) }
   }
   /** As `project(_:)`, for a caller that has no change of its own. */
   @discardableResult public func project(now: UInt64 = nowMs()) -> Change { var c = Change(); project(&c, now: now); return c }

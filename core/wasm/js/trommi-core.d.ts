@@ -1135,6 +1135,8 @@ export class ClientModel {
   pushAlert(code: string, message: string, envelopeNumber: number | null, senderDeviceId: string | null, nowMs: number): string
   noteNewer(what: string, envelopeNumber: number | null): void
   finish(nowMs: number): string
+  /** As `finish`, in parts of at most `maxCards` cards: called again until it gives "". */
+  finishPart(nowMs: number, maxCards: number): string
   snapshot(): string
   /** The session list every app shows (client/src/sessions.rs), JSON: `SessionRow[]` in order. */
   sessionList(reading: boolean): string

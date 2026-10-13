@@ -623,6 +623,37 @@ impl ClientModel {
         })
     }
 
+    /// As `finish`, the patch in parts of at most `max_cards` cards each: called again until it gives "" (no other
+    /// call between), so that an app never holds the whole board's patch at once (a sign-in, a warm open).
+    pub fn finish_part(&self, now_ms: u64, max_cards: u32) -> Result<String, CoreError> {
+        let max = (max_cards as usize).max(1);
+        self.with(|m, c| {
+            if m.patch_rest.is_empty() {
+                m.project(c, now_ms);
+                if c.is_empty() {
+                    return Ok(String::new());
+                }
+                if c.cards.len() > max {
+                    let keep: Vec<String> = c.cards.iter().take(max).cloned().collect();
+                    m.patch_rest = std::mem::take(&mut c.cards);
+                    for id in keep {
+                        m.patch_rest.remove(&id);
+                        c.cards.insert(id);
+                    }
+                }
+                let p = m.patch_text(c);
+                *c = Change::new();
+                return Ok(p);
+            }
+            let mut part = Change::new();
+            while part.cards.len() < max {
+                let Some(id) = m.patch_rest.pop_first() else { break };
+                part.cards.insert(id);
+            }
+            Ok(m.patch_text(&part))
+        })
+    }
+
     /// The deeds on cards of a page of card Chats read out of the hub's order, as JSON (`Received` list).
     pub fn apply_card_deeds_json(&self, received: String) -> Result<(), CoreError> {
         let list: Vec<rx::Received> = serde_json::from_str(&received).map_err(json_err)?;
@@ -706,5 +737,48 @@ impl ClientModel {
     /// name, online or gone, archived, parent. `reading`: the room is still being read.
     pub fn session_list(&self, reading: bool) -> Result<String, CoreError> {
         self.with(|m, _| Ok(serde_json::to_string(&trommi_client_core::sessions::session_list(m, reading)).unwrap_or_default()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A model of `n` cards, every one of them changed.
+    fn cards(n: usize) -> ClientModel {
+        let mut cards = Vec::new();
+        for i in 0..n {
+            cards.push(serde_json::json!([format!("c{i:03}"), { "object_id": format!("c{i:03}"), "title": format!("card {i}"), "object_state": "open" }]));
+        }
+        let m = ClientModel::new(String::new());
+        m.load(serde_json::json!({ "cards": cards }).to_string()).unwrap();
+        m.touch_all().unwrap();
+        m
+    }
+
+    #[test]
+    fn a_patch_in_parts_gives_every_card_once() {
+        let m = cards(7);
+        let mut seen = Vec::new();
+        let mut parts = 0;
+        loop {
+            let text = m.finish_part(1_000, 3).unwrap();
+            if text.is_empty() {
+                break;
+            }
+            parts += 1;
+            let p: serde_json::Value = serde_json::from_str(&text).unwrap();
+            let got = p["cards"].as_array().map(Vec::len).unwrap_or(0);
+            assert!(got <= 3, "a part holds at most 3 cards");
+            assert_eq!(p["change"]["cards"].as_array().map(Vec::len).unwrap_or(0), got);
+            seen.extend(p["cards"].as_array().into_iter().flatten().map(|e| e[0].as_str().unwrap().to_string()));
+        }
+        assert_eq!(parts, 3);
+        seen.sort();
+        assert_eq!(seen, (0..7).map(|i| format!("c{i:03}")).collect::<Vec<_>>());
+        // (and as one patch, as before)
+        let m = cards(7);
+        let p: serde_json::Value = serde_json::from_str(&m.finish(1_000).unwrap()).unwrap();
+        assert_eq!(p["cards"].as_array().map(Vec::len), Some(7));
     }
 }

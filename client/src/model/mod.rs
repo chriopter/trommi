@@ -109,6 +109,8 @@ pub struct Model {
     pub windows_open: bool,
     /// The patch carries cards lean (`LeanCard`): an app that reads the rest of a card on demand (`card_json`; iOS).
     pub lean_cards: bool,
+    /// The cards a patch in parts has still to give (`finish_part`).
+    pub patch_rest: std::collections::BTreeSet<String>,
     /// The room is still being read (a sign-in, a read back): a session whose profile has not come is "Loading …".
     pub reading: bool,
     /// The cards that carry a snooze mark (`snoozed_until`, `unsnoozed`).

@@ -1389,6 +1389,19 @@
         ],
         "returns": "text"
       },
+      "finishPart": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          },
+          {
+            "name": "maxCards",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
       "applyCardDeedsJson": {
         "arguments": [
           {

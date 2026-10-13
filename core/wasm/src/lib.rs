@@ -403,6 +403,7 @@ methods!(RawClientModel {
     push_alert(code, message, envelope_number, sender_device_id, now_ms);
     note_newer(what, envelope_number);
     finish(now_ms);
+    finish_part(now_ms, max_cards);
     snapshot();
     session_list(reading);
     set_reading(reading);

@@ -438,6 +438,7 @@ export class ClientModel extends FileObject {
   pushAlert(code, message, envelopeNumber, senderDeviceId, nowMs) { return this[CALL]('push_alert', [code, message, envelopeNumber, senderDeviceId, nowMs]) }
   noteNewer(what, envelopeNumber) { return this[CALL]('note_newer', [what, envelopeNumber]) }
   finish(nowMs) { return this[CALL]('finish', [nowMs]) }
+  finishPart(nowMs, maxCards) { return this[CALL]('finish_part', [nowMs, maxCards]) }
   snapshot() { return this[CALL]('snapshot', []) }
   sessionList(reading) { return this[CALL]('session_list', [reading]) }
   setReading(reading) { return this[CALL]('set_reading', [reading]) }
