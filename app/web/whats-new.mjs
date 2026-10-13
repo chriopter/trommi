@@ -1,6 +1,6 @@
 // What's new as data, served by the worker at /whats-new.json (worker.js) for the web app's page (public/news.mjs)
 // and the iPhone's (WhatsNew.swift). Three sources, newest day first:
-//   - the GitHub releases of every part (web-v, hub-v, connector-v, mac-v): their notes list the merged pull requests'
+//   - the GitHub releases of every part (web-v, hub-v, connector-v, ios-v, mac-v): their notes list the merged pull requests'
 //     "What's new" lines (.github/scripts/release_notes.mjs writes them, parseNotes reads them back). A line counts on
 //     the day (Europe/Berlin) of the first release that lists it; later releases of other parts only add their tag.
 //   - public/changelog/CHANGELOG.md: one short summary per day and at most one picture (written by hand, once a day).
@@ -25,8 +25,8 @@ const TTL = 600_000        // how long the releases are kept (ms)
 const PAGES = 10           // at most 1000 releases are read
 const KINDS = ['New', 'Better', 'Fixed']
 /** A part's release series and the name its lines are tagged with. */
-export const PARTS = { web: 'Web', hub: 'Hub', connector: 'Connector', mac: 'Mac' }
-const SERIES = /^(web|hub|connector|mac)-v([1-9][0-9]*)$/
+export const PARTS = { web: 'Web', hub: 'Hub', connector: 'Connector', ios: 'iPhone', mac: 'Mac' }
+const SERIES = /^(web|hub|connector|ios|mac)-v([1-9][0-9]*)$/
 
 /** A line and its short form: { text, tag, head }. A bold start ("**Readable addresses**: …") is the head; else a
  *  leading "Web:", "iPhone:" (iPad, Mac, Desk, Codex, Connector) becomes the tag, and the head is the line up to its
@@ -161,7 +161,7 @@ async function toCache(cache, entry) {
   try { if (cache) await cache.put(RELEASES_KEY, new Response(JSON.stringify(entry), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${STALE}` } })) } catch {}
 }
 
-/** The releases of the four series, newest first, read from GitHub (fresh for ten minutes, in the isolate and in
+/** The releases of the five series, newest first, read from GitHub (fresh for ten minutes, in the isolate and in
  *  `cache`, Cloudflare's); the old v<N> series and everything after it is not read. On any failure the last good
  *  list, however old (`{ stale: true }` on the answer); throws only when there is none. */
 export async function readReleases(env, { fetch: get = fetch, now = Date.now(), cache = globalThis.caches?.default } = {}) {

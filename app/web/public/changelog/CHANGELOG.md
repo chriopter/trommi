@@ -1,20 +1,27 @@
-# What's new: one line a day
+# What's new: one summary a day
 
-The summary of each day for What's new (web and iPhone), newest first; the day's changes themselves come from the
-GitHub releases' notes (each pull request's "What's new" section), so nothing else goes here.
+The summary of each day for What's new (web and iPhone), newest first: one to three short sentences that name the
+day's real highlights, the way you would tell a friend. Nothing else goes here: the day's changes themselves come
+from the GitHub releases of each part (web-v, hub-v, connector-v, ios-v, mac-v), whose notes are the merged pull
+requests' "What's new" sections; app.trommi.com/whats-new.json puts both together. Pull requests add nothing to this
+file.
 
-A day is a heading `## 13 October 2026`, then one short summary in headline style ("Star the cards you want to keep.
-…"), then at most one picture, a line `![what it shows](<YYYY-MM-DD>.webp)`: a file in this folder, a screenshot of
-the demo room only (`?mock=1`, never real data), webp, at most 150 KB. Written once a day, in its own small pull
-request. The days before the releases had notes are in history.json (frozen).
+Written or updated once a day by whoever ships last that day, in its own small pull request: read the day's release
+notes, pick the two to four things people will notice most. A day may have at most one picture, a line
+`![what it shows](<YYYY-MM-DD>.webp)` under its summary: a file in this folder, a screenshot of the demo room only
+(`?mock=1`, never real data), webp, at most 150 KB. The days before the releases had notes are in history.json
+(frozen).
 
 ## 13 October 2026
 
-The App Store listing now opens with your encrypted notes.
+Signing in takes under a second, and every helper keeps its name and cards afterwards. Running work lies as a stack
+of live cards with chips under the chat, and every card keeps its whole history. A first Linux app, and each part of
+Trommi now ships on its own.
 
 ## 12 October 2026
 
-Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and settings.
+Star the cards you want to keep, and a new agent session joins with one tap. Web and iPhone now agree on snoozes,
+drafts and settings.
 
 ![Starred cards on top of Off your mind, in the demo room](2026-10-12.webp)
 
@@ -58,7 +65,7 @@ End-to-end encryption. Accounts, QR pairing, the Scribble Board and a new Desk.
 
 ## 3 October 2026
 
-Push notifications.
+Push notifications: a new question reaches your phone at once.
 
 ## 2 October 2026
 

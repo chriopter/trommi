@@ -6,9 +6,13 @@
    {
     "kind": "Better",
     "items": [
+     "Off your mind: what the agents are working on lies as live cards on one stack that fans out (+N running) and folds back; what is done is a compact list (web and iPhone)",
+     "The running work under a chat no longer scrolls sideways: what does not fit lies on a small stack \"+N\" at the end of the row, a tap lists it (web and iPhone)",
      "Desk goals fold to one line and open again; each device remembers it per desk (web and iPhone)",
      "Deciding on a card's own page keeps it open as decided and offers the next question; in Blitz the next card still comes at once (web and iPhone)",
+     "Helpers get fitting symbols by name: the tools list all 52 drawings, a name without prefix works, an unknown one says which exist, and a helper without a symbol gets one from its name (CI, Web, iOS, Design …)",
      "What's new shows each day as a card with its summary and picture; open it for the details (web and iPhone)",
+     "A new session opens with a card from its agent instead of an empty page (web and iPhone)",
      "App Store listing leads with the encrypted notes screenshot (iPhone and iPad); the others follow in their old order.",
      "Running agents show as one row of chips under the chat; a line follows its card (snoozed or done cards no longer show as working)"
     ]
@@ -16,7 +20,9 @@
    {
     "kind": "Fixed",
     "items": [
+     "Many agent sessions on one computer: a resumed session finds its own key also when the folder has sessions of another Trommi account, two Codex chats never share a key, connect no longer answers \"Connecting…\" at the start, and a link of the other account says what to do with it.",
      "Helper names after a new login: with more than ten sessions, the ones past the tenth showed the folder's name (\"trommi-hub\") and lost their older cards; a new device now asks for every session's keys at once (web and iPhone).",
+     "A card's history is whole again: every revision stays under the card with its time, what changed and the version before it to open, and the talk stays in between; a new revision no longer folds the ones before it away (web and iPhone)",
      "Pointing at an option on a card no longer scrolls the picture away (web).",
      "A large account opens on the web again: it showed \"Not opened\" with \"too-large: a text\" when its saved board was above one megabyte. A saved board the app cannot read is now read anew from the hub instead of stopping the account, and the error line names its code once."
     ]

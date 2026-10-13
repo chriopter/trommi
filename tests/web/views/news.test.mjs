@@ -1,5 +1,5 @@
 // news.test.mjs: what What's new (app/web/public/news.mjs, from /whats-new.json: app/web/whats-new.mjs) is made of
-// besides the releases' notes: public/changelog/CHANGELOG.md, one short summary a day and at most one picture of the
+// besides the releases' notes: public/changelog/CHANGELOG.md, one summary of one to three sentences a day and at most one picture of the
 // demo room (webp, at most 150 KB), and history.json, the days of the old CHANGELOG.md with New, Better and Fixed;
 // every line with its short form (changelogHead).
 //   node --test tests/web/views/
@@ -19,7 +19,9 @@ test('the day summaries: a date heading, one short line, at most one picture tha
   const isos = heads.map(isoOf)
   assert.deepEqual(isos, [...isos].sort().reverse(), 'newest first')
   for (const [iso, d] of Object.entries(parseSummaries(TEXT))) {
-    assert.ok(d.summary.length > 10 && d.summary.length <= 110, `${iso} has a summary of one short line: ${d.summary}`)
+    const sentences = d.summary.split(/(?<=[.!?])\s+/).filter(Boolean)
+    assert.ok(d.summary.length > 10 && d.summary.length <= 320 && sentences.length <= 3, `${iso} has a summary of one to three short sentences: ${d.summary}`)
+    assert.ok(!/^\s*[-*] /m.test(d.summary) && !/\*\*(New|Better|Fixed)\*\*/.test(d.summary), `${iso}: a summary only, no lists`)
     if (d.picture) {
       const file = new URL(`../../../app/web/public${d.picture.src}`, import.meta.url)
       assert.ok(fs.existsSync(file), `${iso}: its picture ${d.picture.src} is in app/web/public/changelog/`)
