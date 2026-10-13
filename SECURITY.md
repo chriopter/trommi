@@ -122,8 +122,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - How a change reaches `main`:
   1. Any feature branch: no rules, anything goes.
   2. A frozen `release/<date>-<n>` branch: one finished change, or a bundle per topic.
-  3. Its pull request into `main`: CI tests it, and it merges by auto-merge with "Squash and merge" once all required
-     checks are green. Builds, TestFlight and deliveries come only from `main`.
+  3. Its pull request into `main`: CI tests it; with auto-merge it joins main's merge queue once all required checks
+     are green, the queue checks the very squashed commit that will land on `main` again, and only then merges it.
+     Builds, TestFlight and deliveries come only from `main`.
 - A pull request runs quick checks only (tests, clippy, the web app's build), without secrets. `main` runs the full
   builds; when one fails, an issue is opened and nothing is released or delivered. The iOS app is checked and built in
   a workflow of its own (`ios.yml`) after the release, so it never holds the others back; when that fails, an issue is
