@@ -142,7 +142,8 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
   The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.
-- Only `main` and `v*` tags can deploy the web app, the website and the hub.
+- Only `main` can deploy: the environments of the web app, the website, the hub, the connector, the iOS and the Mac
+  app allow the branch `main` and nothing else.
 - Workflows start with no permissions, outside actions are pinned to exact commits, and the 1Password CLI they
   install to an exact version.
 - Toolchain and dependency versions are pinned (lockfiles).
