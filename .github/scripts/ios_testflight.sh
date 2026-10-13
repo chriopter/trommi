@@ -21,7 +21,7 @@
 # ITS_NON_EXEMPT_ENCRYPTION (YES or NO, default NO: standard algorithms only, exempt), ITS_EXPORT_COMPLIANCE_CODE
 # (only with YES: the code of the app's export compliance documentation in App Store Connect; when empty, the code of
 # the APPROVED documentation is read from App Store Connect, `asc.py export-code`; with NO neither is used),
-# TESTFLIGHT_TESTER (an address kept in the group), NOTES (What to Test; default: the newest day of CHANGELOG.md),
+# TESTFLIGHT_TESTER (an address kept in the group), NOTES (What to Test; default: the newest day of What's new, app.trommi.com/whats-new.json),
 # APPSTORE_DEMO_PASSWORD (the demo account's password for Beta App Review),
 # TF_GATE=release (main: upload only when the checks of the ship-apple.yml run RUN_ID passed and the app is not out
 # there yet, ios_release_gate.sh; with GH_TOKEN and GITHUB_REPOSITORY), TF_DRY_RUN=1 (everything up to the signed,
@@ -69,6 +69,10 @@ umask 022
 # asc.py reads these three
 export ASC_KEY_ID=$APPLE_ASC_KEY_ID ASC_ISSUER_ID=$APPLE_ASC_ISSUER_ID ASC_KEY_PATH=$key
 asc() { python3 "$appstore/asc.py" "$@"; }
+# What to Test: the newest day of What's new as https://app.trommi.com/whats-new.json serves it
+whats_new() {
+  curl -fsS --max-time 20 https://app.trommi.com/whats-new.json -o "$RUNNER_TEMP/whats-new.json" && asc whats-new "$RUNNER_TEMP/whats-new.json"
+}
 auth=(-allowProvisioningUpdates -authenticationKeyPath "$key" -authenticationKeyID "$APPLE_ASC_KEY_ID" -authenticationKeyIssuerID "$APPLE_ASC_ISSUER_ID")
 
 # 7. to 9.: the uploaded build is processed, the group holds it, What to Test
@@ -82,10 +86,11 @@ after() {   # after <version> <build> <short commit>
   asc internal "$build_id" Intern "${TESTFLIGHT_TESTER:-}"
 
   echo "== 9. What to Test =="
-  # the public beta: what changed for people, the newest day of the changelog
+  # the public beta: what changed for people, the newest day of What's new (the releases' notes, as the web app serves
+  # them); without it a line saying where to look
   notes=${NOTES:-}
   if [ -z "$notes" ]; then
-    changes=$(asc whats-new "$repo/CHANGELOG.md")
+    changes=$(whats_new) || changes="What changed: What's new in the app's menu."
     notes="Build $2 ($3). $changes"
   fi
   # external testers see What to Test, and Beta App Review asks for it: here it must be set
@@ -227,7 +232,7 @@ if [ "${TF_DRY_RUN:-}" = 1 ]; then
   asc upload "$ipa" "$version" "$build" --dry-run
   # offline: what the public beta would get; the groups and Beta App Review are not touched
   echo "dry run: would add the build to the groups Intern and Trommi and ask Beta App Review if Apple asks for it; What to Test:"
-  asc whats-new "$repo/CHANGELOG.md"
+  whats_new || echo "(What's new could not be read)"
   echo "dry run: build $version ($build) was NOT uploaded; nothing waits for it"
   [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "### iOS: dry run, build $version ($build) signed and checked, not uploaded" >> "$GITHUB_STEP_SUMMARY"
   exit 0

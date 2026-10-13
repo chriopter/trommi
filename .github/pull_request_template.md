@@ -9,6 +9,8 @@ of every part this change touches). Start each line with New:, Better: or Fixed:
 
 - New: Star the cards you want to keep (web and iPhone)
 - Fixed: Logging out no longer hangs on a slow connection
+
+Do not edit app/web/public/changelog/CHANGELOG.md here: it holds one summary a day, written once a day on its own.
 -->
 
 ## Notes

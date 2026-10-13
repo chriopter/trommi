@@ -7,11 +7,13 @@
 //   - an address of before (/s/…, /a/…: public/paths.mjs) moves to its new form (/chat/…, /artifact/…) with a 301; the
 //     browser keeps the part after # (a share link's secret) across it;
 //   - /favicon.ico (asked for by what does not read the page's <link rel="icon">) goes to the PNG icon;
+//   - /whats-new.json is What's new as data, from the GitHub releases' notes (whats-new.mjs);
 //   - everything else is the static app. Its single-page fallback answers every unknown address with the app's page:
 //     right for a page (the app routes in the page), wrong for a file, so a file that does not exist is a 404.
 // dev/serve.mjs answers the same addresses, the association file from public/.
 
 import { movedPath } from './public/paths.mjs'
+import { WHATS_NEW, whatsNew } from './whats-new.mjs'
 
 /** The address Apple fetches for the iOS app's universal links, and the file of public/ that answers it. */
 export const SITE_ASSOCIATION = { address: '/.well-known/apple-app-site-association', file: '/apple-app-site-association.json' }
@@ -38,6 +40,7 @@ export default {
     }
     const moved = movedPath(url.pathname)
     if (moved) { url.pathname = moved; return Response.redirect(url.toString(), 301) }
+    if (url.pathname === WHATS_NEW && (request.method === 'GET' || request.method === 'HEAD')) return whatsNew(request, env)
     if (url.pathname === '/favicon.ico') return Response.redirect(new URL(FAVICON, url).toString(), 301)
     const r = await env.ASSETS.fetch(request)
     if (isFilePath(url.pathname) && r.status === 200 && (r.headers.get('Content-Type') ?? '').startsWith('text/html')) return new Response(request.method === 'HEAD' ? null : 'not found\n', { status: 404, headers: NOT_FOUND })

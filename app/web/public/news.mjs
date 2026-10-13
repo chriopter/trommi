@@ -1,10 +1,10 @@
-// What's new (/whats-new, a row of the Trommi menu): CHANGELOG.md at the repository's root, as the build read it
-// (gen/vendor/changelog.mjs; never fetched), newest first. Each day is one card: the date, the summary line, the day's
+// What's new (/whats-new, a row of the Trommi menu): /whats-new.json (app.mjs changelog: the worker's days from the
+// GitHub releases' notes, app/web/whats-new.mjs), newest first. Each day is one card: the date, the summary line, the day's
 // picture (public/changelog/, a shot of the demo room; at the right on a wide screen, under the summary on a phone),
 // its counts ("6 new · 18 better · 39 fixed") and Details, which opens New, Better and Fixed with their first three
-// lines by their short form (dev/build.mjs changelogHead), the rest under "+N more"; a line opens to its whole text.
+// lines by their short form (whats-new.mjs changelogHead), the rest under "+N more"; a line opens to its whole text.
 // Opening it marks the newest day as seen on this device: the menu row's dot (sidebar.mjs) goes. The iOS app shows
-// the same file in its menu, the same way (WhatsNew.swift).
+// the same days in its menu, the same way (WhatsNew.swift).
 import { changelog, runningLine } from './app.mjs'
 import { Controller, controller, html, raw, settingsPage, sk, SET_CHEVRON } from './ui.mjs'
 

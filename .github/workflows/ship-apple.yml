@@ -41,7 +41,6 @@ on:
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml
-      - CHANGELOG.md
       - .github/scripts/ios_**
       - .github/scripts/mac_**
       - .github/scripts/inputs.sh

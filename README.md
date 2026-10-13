@@ -262,7 +262,11 @@ flowchart LR
 - **Release notes** come from the pull requests: each PR's section "What's new" (`.github/pull_request_template.md`,
   lines starting `New:`, `Better:` or `Fixed:`; empty for internal work), else its title. A part's release lists the
   PRs merged since its release before that touch its paths (`.github/scripts/release_notes.mjs`,
-  `inputs.sh paths <part>`). What's new on the web and the iPhone is read from these notes.
+  `inputs.sh paths <part>`). What's new on the web and the iPhone is read from these notes: the web app's worker
+  serves `/whats-new.json` (`app/web/whats-new.mjs`) from GitHub's public releases API, unauthenticated (a token
+  only if the secret `GITHUB_RELEASES_TOKEN` happens to be set), fresh for ten minutes in Cloudflare's cache and the
+  last good list served on any GitHub error or rate limit; beside it the one summary a day (and at most one picture)
+  in `app/web/public/changelog/CHANGELOG.md`, and the days before in `history.json` there (frozen).
 - **The iPhone and Mac apps** (`ship-apple.yml`) go to TestFlight when their checks passed and their inputs differ
   from those last delivered there; then `ios-v<N>` records what changed for them (notes and the TestFlight build, no
   file). The Mac app for direct download is `mac-v<N>`.

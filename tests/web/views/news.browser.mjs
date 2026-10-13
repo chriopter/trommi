@@ -1,22 +1,20 @@
 // news.browser.mjs: What's new as the page draws it (app/web/public/news.mjs), in headless Chromium from the sources:
-// one card per day, its lines folded behind Details, each picture of CHANGELOG.md on its day's card, small and loaded,
-// a day without a picture drawn all the same.
+// one card per day of /whats-new.json (the dev server's: the summaries and the history, no releases), its lines folded
+// behind Details, each day's picture on its card, small and loaded, a day without a picture drawn all the same.
 //   node tests/web/views/news.browser.mjs      (needs Chromium; serves the app from its sources itself)
-import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { launchChromium } from '../../../app/web/dev/cdp.mjs'
-import { parseChangelog } from '../../../app/web/dev/build.mjs'
 
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
-const DAYS = parseChangelog(fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8'))
 
 const port = await new Promise((resolve, reject) => { const s = net.createServer(); s.unref(); s.on('error', reject); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)) }) })
 const server = spawn(process.execPath, [path.join(repo, 'app', 'web', 'dev', 'serve.mjs'), String(port)], { stdio: ['ignore', 'pipe', 'inherit'] })
 await new Promise((resolve, reject) => { server.stdout.on('data', d => { if (String(d).includes('http://')) resolve() }); server.on('exit', c => reject(new Error(`the app server ended (${c})`))) })
+const { days: DAYS } = await (await fetch(`http://127.0.0.1:${port}/whats-new.json`)).json()
 const browser = await launchChromium({ width: 1200, height: 900 })
 const problems = []
 try {
@@ -35,7 +33,7 @@ try {
       lines: d.querySelectorAll('.news-line').length,
     }))
   })()`)
-  if (got.length !== DAYS.length) problems.push(`${got.length} days drawn, CHANGELOG.md has ${DAYS.length}`)
+  if (got.length !== DAYS.length) problems.push(`${got.length} days drawn, /whats-new.json has ${DAYS.length}`)
   DAYS.forEach((d, i) => {
     const g = got[i]
     if (!g) return

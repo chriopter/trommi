@@ -1,0 +1,69 @@
+{
+ "days": [
+  {
+   "day": "12 October 2026",
+   "iso": "2026-10-12",
+   "releases": "",
+   "summary": "Only a summary.",
+   "picture": null,
+   "groups": []
+  },
+  {
+   "day": "11 October 2026",
+   "iso": "2026-10-11",
+   "releases": "web-v109 \u2013 120",
+   "summary": "",
+   "picture": null,
+   "groups": [
+    {
+     "kind": "New",
+     "items": [
+      {
+       "text": "The iPhone app as a public beta: [join on TestFlight](https://trommi.com/beta).",
+       "tag": "",
+       "head": "x",
+       "pr": 1
+      },
+      {
+       "text": "Drag sessions in the sidebar into your own order;\n  the iPhone shows the same order.",
+       "tag": "",
+       "head": "x",
+       "pr": 2
+      }
+     ]
+    },
+    {
+     "kind": "Fixed",
+     "items": [
+      {
+       "text": "`Log in` no longer hangs.",
+       "tag": "",
+       "head": "x",
+       "pr": null
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "day": "10 October 2026",
+   "iso": "2026-10-10",
+   "releases": "",
+   "summary": "",
+   "picture": null,
+   "groups": [
+    {
+     "kind": "New",
+     "items": [
+      {
+       "text": "Something older.",
+       "tag": "",
+       "head": "x",
+       "pr": null
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

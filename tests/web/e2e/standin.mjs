@@ -332,7 +332,7 @@ export const steps = [
     await ui.openDesk(A)
   }],
 
-  ['What\'s new: the menu\'s row has a dot until the page is opened; the page shows CHANGELOG.md, newest day first', async ctx => {
+  ['What\'s new: the menu\'s row has a dot until the page is opened; the page shows /whats-new.json, newest day first', async ctx => {
     const { check } = ctx.run
     const A = await ctx.profile('A')
     await ui.openDesk(A)
@@ -344,9 +344,8 @@ export const steps = [
     await A.click('#menu-news')
     await A.until("location.pathname === '/whats-new' && document.querySelectorAll('.news-day').length", 'the What\'s new page')
     const shown = await A.js("return { first: document.querySelector('.news-date')?.firstChild.textContent.trim(), kinds: [...(document.querySelector('.news-day')?.querySelectorAll('.news-kind b') ?? [])].map(b => b.textContent), seen: localStorage.getItem('trommi-news-seen'), dot: document.getElementById('menu-news-dot')?.hidden }")
-    const file = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../../CHANGELOG.md'), 'utf8')
-    const newest = /^## +(.+?)(?: +\(|$)/m.exec(file)?.[1]
-    check(shown.first === newest && shown.kinds.length > 0 && shown.kinds.every(k => ['New', 'Better', 'Fixed'].includes(k)), 'the newest day of CHANGELOG.md first, with its parts', shown)
+    const newest = await A.js("return fetch('/whats-new.json').then(r => r.json()).then(j => j.days[0]?.day)")
+    check(shown.first === newest && shown.kinds.length > 0 && shown.kinds.every(k => ['New', 'Better', 'Fixed'].includes(k)), 'the newest day of /whats-new.json first, with its parts', shown)
     check(shown.seen === newest && shown.dot === true, 'opened: the newest day is seen here, the dot is gone', shown)
     await A.shot('standin-09f-whats-new')
     await ui.openDesk(A)
