@@ -16,3 +16,8 @@ app/web/public/demo/files/
 
 # Python byte code (the iOS tools and their tests).
 __pycache__/
+
+# The Linux app (its own workspace): build output and the smoke test's picture.
+/app/linux/target/
+/app/linux/smoke.png
+/app/linux/.qmlls.ini

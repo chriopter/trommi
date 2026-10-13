@@ -1,0 +1,43 @@
+# Trommi for Linux: a Qt/QML window over the shared Rust client core, bound by cxx-qt. A workspace of its own, so that
+# the main workspace's `cargo test --workspace` needs no Qt; its versions follow the main Cargo.lock (copied, then
+# extended by the Qt crates only).
+[workspace]
+
+[package]
+name = "trommi-linux"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license-file = "../../LICENSE.md"
+description = "Trommi for Linux: sign in, the Desk, answer cards, the sessions and their Chats, live."
+
+[[bin]]
+name = "trommi-linux"
+path = "src/main.rs"
+
+[lib]
+name = "trommi_linux"
+path = "src/lib.rs"
+
+[dependencies]
+# The protocol core, the client core, and the facade over both that the iOS and web apps use (here as a Rust library,
+# without UniFFI or wasm-bindgen): the same records and the same calls.
+trommi-core = { path = "../../core" }
+trommi-client-core = { path = "../../client" }
+trommi-core-swift = { path = "../../core/swift", default-features = false }
+# The hub client (routes, sign-in, the live stream) and the journal on disk, as the connector has them.
+trommi-connector = { path = "../../connector" }
+tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "sync", "time"] }
+reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls"] }
+serde_json = "=1.0.151"
+zeroize = "=1.9.1"
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
+
+[build-dependencies]
+cxx-qt-build = "0.10"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug-assertions = false
