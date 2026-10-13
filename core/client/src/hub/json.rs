@@ -7,6 +7,9 @@
 //!   one): the densest the hub really sends is a row of the open list, a value per 10 bytes, and a body made of
 //!   `0,0,0,…` cannot make the parser build many times its own size.
 //! - **One member per name.** An object that names a member twice is refused: two readers could take different ones.
+//! - **No more members than the protocol has.** An object's 4097th member ends the reading where it stands.
+//! - **Work by the byte.** Every bound holds while the text is read, not after: no answer costs more than a few
+//!   steps per byte of it (an object's names are sorted once; none is compared with every other).
 //! - **Whole numbers only**, from 0 to 2^53 − 1 (what every number of the protocol's JSON is, and what JavaScript
 //!   holds exactly). A fraction, a negative number, an exponent form or anything larger is no number here.
 //! - **Byte strings in their one spelling**: base64url without padding and without a set bit behind the last byte.
@@ -41,6 +44,7 @@ pub(crate) enum Json {
     OtherNumber,
     Text(String),
     List(Vec<Json>),
+    /// At most [`MAX_MEMBERS`] members, sorted by name, each name once.
     Map(Vec<(String, Json)>),
 }
 
@@ -123,19 +127,38 @@ impl<'de> Visitor<'de> for Seed<'_> {
         self.spend()?;
         let mut out: Vec<(String, Json)> = Vec::new();
         while let Some(name) = map.next_key::<String>()? {
-            self.spend()?;
-            if out.iter().any(|(n, _)| *n == name) {
-                return Err(de::Error::custom("a member named twice"));
+            // (before the member is read or kept: an object beyond the cap costs nothing past this point)
+            if out.len() == MAX_MEMBERS {
+                return Err(de::Error::custom("more members than any object has"));
             }
+            self.spend()?;
             let value = map.next_value_seed(Seed { left: self.left })?;
             out.push((name, value));
+        }
+        // sorted by name: a name twice then stands side by side, and a reader finds a member in a few steps
+        out.sort_unstable_by(|a, b| order(&a.0, &b.0));
+        if out.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return Err(de::Error::custom("a member named twice"));
         }
         Ok(Json::Map(out))
     }
 }
 
-/// How many members an object may have before its names are compared pairwise no more: no object of the protocol
-/// has more than the 1024 devices of a claim's `key_packages`.
+/// The order of two member names. Every comparison of names goes through here, so that a test can count them.
+fn order(a: &str, b: &str) -> std::cmp::Ordering {
+    #[cfg(test)]
+    COMPARED.with(|c| c.set(c.get() + 1));
+    a.cmp(b)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many names this thread compared.
+    static COMPARED: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Most members an object may have: no object of the protocol has more than the 1024 devices of a claim's
+/// `key_packages`. The parser stops at the member beyond it.
 const MAX_MEMBERS: usize = 4096;
 
 impl Json {
@@ -153,20 +176,7 @@ impl Json {
         if de.end().is_err() {
             return bad("an answer with bytes behind its JSON");
         }
-        if !value.members_bounded() {
-            return bad("an object with more members than any of the protocol");
-        }
         Ok(value)
-    }
-
-    fn members_bounded(&self) -> bool {
-        match self {
-            Json::List(items) => items.iter().all(Json::members_bounded),
-            Json::Map(members) => {
-                members.len() <= MAX_MEMBERS && members.iter().all(|(_, v)| v.members_bounded())
-            }
-            _ => true,
-        }
     }
 
     pub(crate) fn is_null(&self) -> bool {
@@ -257,17 +267,19 @@ impl Json {
     }
 }
 
-/// An object's members.
+/// An object's members, sorted by name.
 #[derive(Clone, Copy)]
 pub(crate) struct Obj<'a>(&'a [(String, Json)]);
 
 impl<'a> Obj<'a> {
+    fn find(&self, name: &str) -> Option<&'a Json> {
+        let at = self.0.binary_search_by(|(n, _)| order(n, name)).ok()?;
+        Some(&self.0[at].1)
+    }
+
     /// The member, or null when the object has none of this name: a reader that needs it then fails on its type.
     pub(crate) fn need(&self, name: &str) -> &'a Json {
-        self.0
-            .iter()
-            .find(|(n, _)| n == name)
-            .map_or(&NULL, |(_, v)| v)
+        self.find(name).unwrap_or(&NULL)
     }
 
     /// The member when it is there and not null.
@@ -276,7 +288,7 @@ impl<'a> Obj<'a> {
     }
 
     pub(crate) fn has(&self, name: &str) -> bool {
-        self.0.iter().any(|(n, _)| n == name)
+        self.find(name).is_some()
     }
 
     pub(crate) fn members(&self) -> &'a [(String, Json)] {
@@ -326,6 +338,89 @@ mod tests {
         assert!(parse("{}{}").is_err());
         assert!(parse("").is_err());
         assert!(Json::parse(b"\"\xff\"", 16).is_err());
+    }
+
+    /// The names compared while `text` was read.
+    fn compared(text: &str) -> (bool, u64) {
+        COMPARED.with(|c| c.set(0));
+        let good = parse(text).is_ok();
+        (good, COMPARED.with(Cell::get))
+    }
+
+    /// The `i`th of the names below: distinct, and in no order.
+    fn name(i: usize) -> String {
+        format!("member{:08x}", (i as u32).wrapping_mul(2_654_435_761))
+    }
+
+    /// An object of distinct members, 19 bytes each: inside the bound on values (two per member, 8 bytes each).
+    fn object_of(members: usize) -> String {
+        let list: Vec<String> = (0..members).map(|i| format!("\"{}\":0", name(i))).collect();
+        format!("{{{}}}", list.join(","))
+    }
+
+    /// Most comparisons of names per member that reading an object may take: a sort of [`MAX_MEMBERS`] names.
+    /// (Comparing each name with all before it takes 2 047 per member there, and 15 000 at 30 000 members.)
+    const PER_MEMBER: u64 = 32;
+
+    #[test]
+    fn reading_an_object_costs_no_more_than_its_size() {
+        // the work is counted, not timed
+        for members in [16, 256, 1024, MAX_MEMBERS] {
+            let (good, work) = compared(&object_of(members));
+            assert!(good, "{members} members");
+            assert!(
+                work <= PER_MEMBER * members as u64,
+                "{members} members: {work}"
+            );
+        }
+        // one member more than any object of the protocol: refused where it stands, before a name is compared
+        let (good, work) = compared(&object_of(MAX_MEMBERS + 1));
+        assert!(!good);
+        assert_eq!(work, 0);
+        // 30 000 distinct members fit 1 MiB (and 800 000 fit the 16 MiB of a list): the same
+        let many = object_of(30_000);
+        assert!(many.len() < 1 << 20);
+        assert_eq!(compared(&many), (false, 0));
+        // many full objects in one answer, side by side and one in the other: still per member
+        let full = object_of(MAX_MEMBERS);
+        let list = format!("[{}]", [full.as_str(); 8].join(","));
+        let (good, work) = compared(&list);
+        assert!(good);
+        assert!(work <= 8 * PER_MEMBER * MAX_MEMBERS as u64, "{work}");
+        let nested = full.replacen(":0", &format!(":{full}"), 1);
+        let (good, work) = compared(&nested);
+        assert!(good);
+        assert!(work <= 2 * PER_MEMBER * MAX_MEMBERS as u64, "{work}");
+    }
+
+    #[test]
+    fn a_name_twice_is_found_among_many() {
+        let most = object_of(MAX_MEMBERS - 1);
+        for twice in [0, 2047, MAX_MEMBERS - 2] {
+            let again = format!("\"{}\":1", name(twice));
+            let first = most.replacen('{', &format!("{{{again},"), 1);
+            let last = most.replacen('}', &format!(",{again}}}"), 1);
+            assert!(parse(&first).is_err() && parse(&last).is_err(), "{twice}");
+        }
+        assert!(parse(&most).is_ok());
+    }
+
+    #[test]
+    fn a_member_is_found_whatever_the_order_of_the_text() {
+        let text = object_of(MAX_MEMBERS).replacen(":0", ":7", 1);
+        let v = parse(&text).unwrap();
+        let o = v.obj("o").unwrap();
+        assert_eq!(o.members().len(), MAX_MEMBERS);
+        assert_eq!(o.need(&name(0)).int("n"), Ok(7));
+        for i in [1, 2047, MAX_MEMBERS - 1] {
+            assert_eq!(o.need(&name(i)).int("n"), Ok(0), "{i}");
+            assert!(o.has(&name(i)));
+        }
+        assert!(!o.has(&name(MAX_MEMBERS)) && o.need("member").is_null() && !o.has(""));
+        // a reader's look for one member: a few steps, not one per member
+        COMPARED.with(|c| c.set(0));
+        o.need(&name(5));
+        assert!(COMPARED.with(Cell::get) <= 13);
     }
 
     #[test]
