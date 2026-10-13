@@ -47,7 +47,10 @@ struct DeskScreen: View {
           // stack, one spacing below it, pushed down by `fill` so that a short stack still reaches the fold.
           head(v)
           // a long catch-up says how far it is (what was settled elsewhere meanwhile is already off the Desk)
-          if let r = model.room, r.behind {
+          // (the room's past read behind the open cards, a sign-in's: as a count, as on the web)
+          if let r = model.room, let p = r.readingProgress {
+            Text("Reading your history: \(p.done.formatted()) of \(p.total.formatted())").font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("reading-history")
+          } else if let r = model.room, r.behind {
             Text(r.catchUpShare.map { "Catching up… \(Int($0 * 100))%" } ?? "Catching up…").font(Face.text(14)).foregroundStyle(Ink.muted).accessibilityIdentifier("catching-up")
           }
           if !v.cut.isEmpty { CutSlip(units: v.cut) }

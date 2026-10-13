@@ -169,6 +169,12 @@ public struct Store {
     guard let c = catchingUp, c.to > c.from else { return nil }
     return min(1, Double(cursor > c.from ? cursor - c.from : 0) / Double(c.to - c.from))
   }
+  /** How far the reading back of the room's past is (RoomPast.swift): change numbers read of all it reads; nil while
+   *  none runs. A sign-in reads it behind the open cards, and the Desk says so: "Reading your history: 12,400 of 27,000". */
+  public var readingProgress: (done: UInt64, total: UInt64)? {
+    guard readBackView != nil, let c = catchingUp, c.to > c.from else { return nil }
+    return (min(max(cursor, c.from), c.to) - c.from, c.to - c.from)
+  }
   /** Not caught up yet: no catch-up went through in this run, or one is behind the hub's Desk. */
   public var behind: Bool { !synced || catchingUp != nil }
   /** Whether the board came from the cache (shown before the first catch-up). */
@@ -249,6 +255,13 @@ public struct Store {
   var readBackWhole: [UInt64: Rec] = [:]
   /** Something came that the past waits for (a Welcome, keys): `tendPast` is due after what is being processed. */
   var pastDue = false
+  /** A fresh sign-in with the code that took the hub's order from its own join (RoomAccount.swift settleCodeJoin):
+   *  its first sync shows the open state, the stream opens beside it, and the room's past is read after it, in a
+   *  job of its own (`readPastBehind`). */
+  var pastBehind = false
+  /** Session groups were joined while the past waits (`pastBehind`): the next Desk reading is the full one, read into
+   *  the board (their open cards' versions, their names), not the brief list. */
+  var deskFullDue = false
   /**
    * While the changes are read back (RoomPast.swift tendPast): the board as it stood before, which the views show
    * until the read is through, so that the Desk never stands empty meanwhile. nil: the views show the board.
@@ -561,7 +574,10 @@ public struct Store {
     // The hub's Desk lists only what lies in the groups this device is in: one read before a session group was joined
     // (a sign-in's joins, a Welcome) would hold that session's open cards back as settled elsewhere. Read it again
     // (the web client's `deskSoon` on `groups`).
-    if sessionGroupIds != groupsAtDesk { until = await Spent.time("desk again") { await deskFirst(whole: true) } }
+    if sessionGroupIds != groupsAtDesk {
+      if record.past?.readBack == true && cursor > 0 { deskFullDue = true }
+      until = await Spent.time("desk again") { await deskFirst(whole: true) }
+    }
     // KeyPackages before the catch-up: a device back after long, or just signed in, may hold none at the hub, and
     // every session founded meanwhile leaves it out until it has (5.2.5); a long catch-up must not keep them back.
     // (upkeep: a failure here does not keep the board from showing; the end of this sync tries again)
@@ -572,8 +588,10 @@ public struct Store {
     await learnArchived(&change)
     // (the log said that this device was removed: nothing more is written or read)
     if removedAt != nil { emit(change); throw TrommiError("removed", "this device was removed from the room") }
-    // (what was written before this device came is upkeep too: what is left of it is noted and goes on next time)
-    try? await Spent.time("past") { try await tendPast(&report, &change) }
+    // (what was written before this device came is upkeep too: what is left of it is noted and goes on next time;
+    //  a fresh sign-in reads it after this sync, in a job of its own: the Desk stands meanwhile)
+    if pastBehind { pastBehind = false; Task { @MainActor [weak self] in await self?.readPastBehind() } }
+    else { try? await Spent.time("past") { try await tendPast(&report, &change) } }
     // (stocking KeyPackages and writing `heads` are upkeep: a failure there does not keep the board from showing;
     // the next sync tries again. The KeyPackages again: what the catch-up's Welcomes used up)
     let upkeep = Spent.now
@@ -609,7 +627,7 @@ public struct Store {
     // A device that holds nothing yet reads the full Desk (its versions make the preview); any other reads the
     // brief list: whole at the first reading of a run, after its groups changed and every 30 minutes, else only
     // what changed since the last (the web client's `readDesk`). A hub without the brief list: the full Desk.
-    let full = cursor == 0 && board.cards.isEmpty
+    let full = holdsNothingYet || deskFullDue
     let base = whole || deskWholeAt.map { nowMs() >= $0 + 30 * 60_000 } != false ? nil : deskSeen
     var desk: JSON? = nil
     if !full {
@@ -640,7 +658,7 @@ public struct Store {
     keepDesk(Set(listed.keys), at: at)
     board.deskWaiting = false
     // (a device that holds nothing yet: the Desk from the hub's list, before any of the history is read)
-    if cursor == 0 && board.cards.isEmpty { await Spent.time("desk preview") { await deskPreview(desk) } }
+    if holdsNothingYet || deskFullDue { deskFullDue = false; await Spent.time("desk preview") { await deskPreview(desk) } }
     var change = Change()
     // The hub's list decides the Desk (the client core's rule, the same on every app): what it leaves out, with
     // nothing newer here than its change, was settled elsewhere and is held back; a hand back older than the version
@@ -660,11 +678,16 @@ public struct Store {
    * device was not in) is left out. The views show it until the first catch-up is through (`preview`).
    */
   func deskPreview(_ desk: JSON) async {
-    let p = Board()
-    p.preview = true
-    p.roomId = record.roomId; p.hubURL = record.hubURL; p.myDeviceId = record.myDeviceId; p.myRole = record.role
+    // (a device that took the hub's order from its join: into the board itself, which its read back of the past
+    //  shows as it stood until that is through; a preview board would go with the first sync, before the past)
+    let into = cursor > 0 && record.past?.readBack == true
+    let p = into ? board : Board()
+    if !into {
+      p.preview = true
+      p.roomId = record.roomId; p.hubURL = record.hubURL; p.myDeviceId = record.myDeviceId; p.myRole = record.role
+    }
     var change = Change()
-    try? applyGroups(Array(groups.values), &change, into: p)
+    if !into { try? applyGroups(Array(groups.values), &change, into: p) }
     var items = [(UInt64, Bytes)]()
     func take(_ j: JSON?) { if let j, let n = Wire.uint(j["change"]), let b = (j["envelope"] as? String).flatMap({ try? unb64u($0) }) { items.append((n, b)) } }
     for r in desk["registers"] as? [JSON] ?? [] { take(r) }
@@ -686,10 +709,22 @@ public struct Store {
     p.project(&change)
     Spent.count("desk preview items", shown)
     PerfLog.line("desk preview: \(shown) of \(items.count) taken, \(p.stack.count) cards on the Desk")
+    if into { var ch = Change(); ch.room = true; ch.stack = true; emit(ch); return }
     guard !p.stack.isEmpty else { return }
     preview = p
     var ch = Change(); ch.room = true; ch.stack = true
     emit(ch)
+  }
+  /** A device that holds nothing of the room yet: a fresh sign-in, before its first catch-up or before the read back
+   *  of the past that its sign-in left for later (`pastBehind`). The hub's Desk is read whole for it. */
+  var holdsNothingYet: Bool { board.cards.isEmpty && (cursor == 0 || record.past?.readBack == true) }
+  /** The past of a fresh sign-in (`pastBehind`): read back after its first sync, in a job of its own. */
+  func readPastBehind() async {
+    _ = try? await serial { [self] in
+      var report = SyncReport(), change = Change()
+      defer { self.board.project(&change); self.emit(change) }
+      try await Spent.time("past") { try await self.tendPast(&report, &change) }
+    }
   }
   /** The Desk the views show until the first catch-up of a fresh sign-in is through (`deskPreview`); nil: the board. */
   public internal(set) var preview: Board?
@@ -1442,7 +1477,12 @@ public struct Store {
       let reader = SSEReader()
       var unauthorised = false, refused = false
       do {
-        if !synced { _ = try await sync() }
+        // (a fresh sign-in that took the hub's order from its join: the stream opens beside the first sync, at once,
+        //  for presence; what it brings waits in the queue behind that sync and is passed over once it is read)
+        if !synced {
+          if pastBehind || record.codeJoin == true { Task { @MainActor [weak self] in _ = try? await self?.sync() } }
+          else { _ = try await sync() }
+        }
         let req = try await hub.streamRequest(after: cursor)
         for await ev in reader.start(req) {
           if Task.isCancelled { break }
@@ -1452,6 +1492,7 @@ public struct Store {
             if status == 401 { unauthorised = true; reader.stop(); break }
             if status != 200 { refused = true; reader.stop(); break }
             live = true; board.connection = "live"
+            Spent.mark("stream open at \(cursor)")
             board.streamOpened()
             var ch = Change(); ch.room = true; emit(ch)
           case .event(let name, let data):
