@@ -603,7 +603,7 @@ function renderRect(list, rect, env, { max = 2000 } = {}) {
 
 /** A board small, for its card on "All desks": everything on it fitted into the card's canvas, on the paper of
  *  the theme. Pictures show as their place (a card is a hint of the board, not the board). */
-function paintThumb(cv, list) {
+export function paintThumb(cv, list) {
   const c = cv.getContext('2d'), css = getComputedStyle(document.documentElement), dark = document.documentElement.dataset.theme === 'dark'
   c.setTransform(1, 0, 0, 1, 0, 0)
   c.fillStyle = css.getPropertyValue('--surface').trim() || '#fff'

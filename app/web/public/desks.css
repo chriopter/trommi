@@ -1,0 +1,86 @@
+/* Settings · Desks (desks.mjs): every desk counted, and Delete with its confirm. Three looks while he chooses
+   (rows, cards, table); the page's frame is auth.css "Settings". */
+.dk-looks { display: flex; gap: 6px; margin: 0 0 var(--s-4); }
+.dk-looks a { padding: 5px 10px; border-radius: var(--r-pill); color: var(--muted); font: 600 var(--t-xs)/1 var(--font); text-decoration: none; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.dk-looks a[aria-current] { background: var(--fg); color: var(--surface); box-shadow: none; }
+
+/* rows: the list and a desk's page */
+.dk-row .set-two small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-page .dk-count { grid-template-columns: 30px auto minmax(0, 1fr) minmax(2.5ch, auto); cursor: default; }
+.set-page .dk-count:hover { background: none; }
+.dk-num { justify-self: end; font: 700 var(--t-md)/1 var(--font); font-variant-numeric: tabular-nums; }
+.set-page .dk-danger-row { color: var(--deny); }
+.set-page .dk-danger-row .set-ico svg { stroke: var(--deny); }
+.set-page .dk-danger-row:disabled { color: var(--muted); cursor: default; }
+.set-page .dk-danger-row:disabled .set-ico svg { stroke: var(--muted); }
+
+/* cards: a card per desk, its board small on top */
+.dk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--s-4); margin-bottom: var(--s-5); }
+.dk-card { display: grid; border: 1.5px solid color-mix(in srgb, var(--fg) 70%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); overflow: hidden; }
+.dk-thumb { display: block; width: 100%; height: auto; aspect-ratio: 520 / 200; border-bottom: 1.2px dashed color-mix(in srgb, var(--fg) 26%, transparent); background: var(--surface); }
+.dk-card-head { display: grid; grid-template-columns: 30px minmax(0, 1fr) 36px; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-3) 0 var(--s-4); }
+.dk-card-head b { font: 800 var(--t-md)/1.2 var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-card-del, .dk-tdel { width: 36px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 9px; background: none; color: var(--muted); cursor: pointer; }
+.dk-card-del:hover, .dk-tdel:hover { background: color-mix(in srgb, var(--deny) 12%, transparent); color: var(--deny); }
+.dk-card-del:disabled, .dk-tdel:disabled { opacity: .35; pointer-events: none; }
+.dk-card-del .sketch, .dk-tdel .sketch { width: 20px; height: 20px; }
+.dk-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-3) var(--s-2); padding: var(--s-3) var(--s-4) var(--s-4); }
+.dk-n { display: grid; gap: 2px; }
+.dk-n b { font: 700 22px/1 var(--font); font-variant-numeric: tabular-nums; }
+.dk-n small { color: var(--muted); font-size: var(--t-xs); }
+
+/* table: one table */
+.dk-table-wrap { overflow-x: auto; }
+.dk-table { width: 100%; border-collapse: collapse; font: 400 var(--t-sm)/1.2 var(--font); font-variant-numeric: tabular-nums; }
+.dk-table th, .dk-table td { padding: 10px 8px; text-align: right; white-space: nowrap; }
+.dk-table th:first-child { padding-left: var(--s-4); text-align: left; }
+.dk-table td:last-child { padding: 4px var(--s-2) 4px 0; width: 40px; }
+.dk-table thead th { color: var(--muted); font: 600 var(--t-xs)/1 var(--font); letter-spacing: .04em; text-transform: uppercase; border-bottom: 1.2px dashed color-mix(in srgb, var(--fg) 26%, transparent); }
+.dk-table tbody tr + tr > * { border-top: 1.2px dashed color-mix(in srgb, var(--fg) 26%, transparent); }
+.dk-table tbody td { font-size: var(--t-md); font-weight: 600; }
+.dk-table tfoot > tr > * { color: var(--muted); border-top: 1.2px solid color-mix(in srgb, var(--fg) 40%, transparent); font-weight: 600; }
+.dk-tname { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--t-md); }
+.dk-tname .sketch { width: 22px; height: 22px; }
+@media (max-width: 600px) {
+  .dk-table thead { display: none; }
+  .dk-table, .dk-table tbody, .dk-table tfoot { display: block; }
+  .dk-table tr { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: var(--s-2) 0; }
+  .dk-table tbody tr > th { grid-column: 1 / -1; padding-bottom: 4px; }
+  .dk-table tbody tr > td:last-child { position: absolute; top: var(--s-2); right: var(--s-2); width: auto; padding: 4px 0; }
+  .dk-table tbody tr > *, .dk-table tbody tr + tr > * { border-top: 0; }
+  .dk-table tbody tr + tr { border-top: 1.2px dashed color-mix(in srgb, var(--fg) 26%, transparent); }
+  .dk-table td { text-align: left; padding: 4px 0 4px var(--s-4); }
+  .dk-table td[data-l]::after { content: " " attr(data-l); color: var(--muted); font-size: var(--t-xs); font-weight: 400; }
+  .dk-table tfoot { display: none; }
+}
+
+/* the confirm */
+.dk-dialog { width: min(480px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: var(--r-lg); background: var(--surface); color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-lg); }
+.dk-dialog::backdrop { background: rgb(15 20 18 / .35); }
+.dk-dialog-in { display: grid; gap: var(--s-3); margin: 0; padding: var(--s-5); }
+.dk-dialog h3 { margin: 0; font: 800 22px/1.2 var(--display); }
+.dk-dialog-lead { margin: 0; font: 500 var(--t-md)/1.4 var(--font); }
+.dk-dialog-small { margin: 0; color: var(--muted); font: 400 var(--t-sm)/1.45 var(--font); }
+.dk-list { list-style: none; margin: 0; padding: 0; border: 1.2px solid var(--line-strong); border-radius: 12px; }
+.dk-list li { display: grid; grid-template-columns: 4ch minmax(0, 1fr); align-items: baseline; gap: var(--s-3); padding: 9px var(--s-4); }
+.dk-list li + li { border-top: 1.2px dashed color-mix(in srgb, var(--fg) 22%, transparent); }
+.dk-list b { justify-self: end; font: 700 var(--t-md)/1.2 var(--font); font-variant-numeric: tabular-nums; }
+.dk-list small { color: var(--muted); font-size: var(--t-sm); }
+.dk-type { display: grid; gap: 6px; font-size: var(--t-sm); }
+.dk-type input { min-height: 42px; padding: 0 var(--s-3); border: 1.5px solid var(--line-strong); border-radius: 10px; background: var(--bg); color: var(--fg); font: 500 var(--t-md)/1 var(--font); }
+.dk-type input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.dk-dialog-foot { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-2); }
+.dk-cancel, .dk-delete { position: relative; min-height: 42px; padding: 0 var(--s-4); border-radius: var(--r-pill); font: 600 var(--t-md)/1 var(--font); cursor: pointer; overflow: hidden; }
+.dk-cancel { border: 1.5px solid var(--line-strong); background: none; color: var(--fg); }
+.dk-delete { border: 1.5px solid var(--deny); background: var(--deny); color: var(--surface); }
+.dk-delete:disabled { background: none; color: var(--deny); opacity: .5; cursor: default; }
+.dk-hold { background: none; color: var(--deny); touch-action: none; user-select: none; -webkit-user-select: none; }
+.dk-hold-fill { position: absolute; inset: 0; background: var(--deny); transform-origin: left; scale: 0 1; }
+.dk-hold.is-holding .dk-hold-fill { scale: 1 1; transition: scale 1.6s linear; }
+.dk-hold-word { position: relative; }
+.dk-hold.is-holding .dk-hold-word { color: var(--surface); transition: color 0s .8s; }
+@media (max-width: 600px) {
+  .dk-dialog { margin: auto auto 0; width: 100vw; max-width: 100vw; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+  .dk-dialog-in { padding: var(--s-5) var(--s-4) max(var(--s-5), env(safe-area-inset-bottom)); }
+  .dk-dialog-foot > * { flex: 1; }
+}

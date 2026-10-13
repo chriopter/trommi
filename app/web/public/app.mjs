@@ -21,6 +21,7 @@ const PROOF_PATH = /^\/settings\/proof$/
 const LAZY = {
   auth: { load: () => import('./auth.mjs'), paths: /^\/(?:settings(?:\/(?:devices|account|theme|keys|kit|password|security))?|devices\/|pair|logout|join|login)(?:\/|$)/ },
   agents: { load: () => import('./agents.mjs'), paths: /^\/(?:settings\/(?:sessions|agents)$|sessions\/)/ },
+  desks: { load: () => import('./desks.mjs'), paths: /^\/settings\/desks(?:\/|$)/ },
   card: { load: () => import('./card.mjs'), paths: /^(?:\/chat\/[^/]+)?\/card\/|^\/cards\/[0-9a-f]+\// },
   session: { load: () => import('./session.mjs'), paths: /^\/chat\// },
   media: { load: () => import('./media.mjs'), paths: /^\/artifacts(?:\/|$)/ },
