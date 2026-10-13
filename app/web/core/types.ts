@@ -187,6 +187,8 @@ export interface Room {
   /** This device is still reading what the room holds (a sign-in, a cache that was lost): the session groups it is
    *  joining, the room's past read again. The Desk says "catching up" meanwhile instead of "all quiet". */
   reading: boolean
+  /** How far the reading of the room's past is, in the hub's change numbers: `done` of `total` (null: none runs). */
+  reading_progress?: { done: number; total: number } | null
   /** A start from this device's cache waits for the hub's Desk past a moment: no open card stands meanwhile, the Desk
    *  says "catching up" (client.ts deskFirst). */
   desk_waiting?: boolean

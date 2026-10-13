@@ -39,13 +39,20 @@ const dice = Math.random()
 const greeting = calm => { const set = calm ? CALM : GREETINGS; return set[Math.floor(dice * set.length)] }
 /** No question waits, but it is not quiet: a session cannot hear him, an answer of his was not picked up, or Done rows wait to be seen. */
 const unquiet = model => (model.cut?.length ? (model.cut.length === 1 ? 'One can’t hear you.' : 'Some can’t hear you.') : model.unheard ? (model.unheard === 1 ? 'An answer waits.' : 'Answers wait.') : '')
+/** How far the reading of the room's past is (a sign-in reads it behind the open cards): "12,400 of 27,000". */
+function readingCount(model) {
+  const p = model.readingProgress
+  if (!p || !p.total) return ''
+  const f = n => n.toLocaleString('en-US')
+  return html`<p class="desk-reading" role="status">Reading your history: ${f(p.done)} of ${f(p.total)}</p>`
+}
 function deskHead(model, base) {
   const n = model.fresh.length
-  if (!model.units.length) return model.reading ? html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="0"><h2 class="desk-hello">Catching <em>up…</em></h2></header>` : deskInvite()
+  if (!model.units.length) return model.reading ? html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="0"><h2 class="desk-hello">Catching <em>up…</em></h2>${readingCount(model)}</header>` : deskInvite()
   const waits = walkOf(model).length   // (the tools stand for what is only to read too: Blitz reads card by card, the duck closes all)
   // (still reading the room, a sign-in: no "all quiet" while questions may yet come in)
   const words = ((!n && model.reading && 'Catching up…') || (!n && unquiet(model)) || greeting(!waits)).split(' '), last = words.pop()
-  return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${n}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${deskGoals(model)}${waits ? html`<div class="desk-tools">${duckAll(model, base)}${nextPlease(model, base)}</div>` : ''}</header>`
+  return html`<header class="inbox-head desk-top" id="desk-head" data-controller="title" data-title-count-value="${n}"><h2 class="desk-hello">${words.join(' ')} <em>${last}</em></h2>${model.reading ? readingCount(model) : ''}${deskGoals(model)}${waits ? html`<div class="desk-tools">${duckAll(model, base)}${nextPlease(model, base)}</div>` : ''}</header>`
 }
 
 /** The desk's goals: a note of his own right under the greeting, a checklist of at most

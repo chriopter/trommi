@@ -829,6 +829,8 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 #inbox .desk-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px var(--s-5); flex-wrap: nowrap; margin-top: var(--s-6); margin-bottom: var(--s-8); padding: 0 var(--s-1); box-sizing: border-box; }
 .desk-hello { grid-column: 1; margin: 0; font: 800 clamp(2.1rem, 3.6vw, 2.9rem)/1.08 var(--display); letter-spacing: -.028em; color: var(--fg); }
 .desk-hello em { font-style: normal; padding-bottom: 5px; background: var(--under-ink) left bottom / 100% 9px no-repeat; }
+/* how far the reading of the room's past is (desk.mjs readingCount): one quiet line under the greeting */
+.desk-reading { grid-column: 1; margin: 0; font: 400 var(--t-sm) var(--font); color: var(--muted); font-variant-numeric: tabular-nums; }
 .desk-tools { grid-column: 2; grid-row: 1; flex: none; display: flex; align-items: center; gap: 10px; padding-bottom: 2px; }
 /* the desk's goals (desk.mjs deskGoals): a quiet checklist under the greeting, in the text face; empty only a faint
    "Goals…"; the first five lines, more behind "+N more" (.is-open: all of them); a click writes in place, the field
