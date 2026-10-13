@@ -12,6 +12,8 @@ on:
       - app/web/public/fonts/**
       - core/**
       - connector/**
+      - hub/**
+      - tests/connector/common/**
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml

@@ -43,5 +43,5 @@ part connector 'connector/|release/|install\.sh$|\.claude-plugin/|tests/connecto
 part hub 'hub/|release/|tests/hub/|tests/deploy/|tests/Cargo\.toml$|\.github/workflows/(ship-hub|sign-release)\.yml$|\.github/scripts/(hub_compat|deployed|deploy_issue)\.sh$'
 part apple 'app/ios/|tests/ios/|demo/|\.github/scripts/(ios_|mac_)|\.github/workflows/ship-apple\.yml$'
 # (the window draws with the web app's pen and fonts)
-part linux 'app/linux/|connector/|app/web/public/ui\.mjs$|app/web/public/fonts/|\.github/workflows/ship-linux\.yml$'
+part linux 'app/linux/|connector/|hub/|tests/connector/common/|app/web/public/ui\.mjs$|app/web/public/fonts/|\.github/workflows/ship-linux\.yml$'
 part site 'site/|tests/site/|\.github/workflows/ship-site\.yml$'
