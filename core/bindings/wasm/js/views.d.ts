@@ -386,6 +386,12 @@ export interface GoalsView {
   foldable: boolean
   /** What the toggle says while they are folded ("Show all 4 goals"). */
   show_all?: Text
+  /** Folded to the first line on this device (`Lens::goals_folded`; the owner's pick of 13 October 2026: one
+   *  toggle, folded shows the first line). Only while `foldable`. */
+  folded: boolean
+  /** What the toggle says: "Show all 4 goals" while folded, "Show the first goal only" while open; none while not
+   *  foldable. */
+  toggle?: Text
 }
 
 /** A session that is cut off, as the Desk says it. */

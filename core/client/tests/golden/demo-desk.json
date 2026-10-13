@@ -168,6 +168,11 @@
         "n": "4"
       },
       "en": "Show all 4 goals"
+    },
+    "folded": false,
+    "toggle": {
+      "key": "desk.goals.fold",
+      "en": "Show the first goal only"
     }
   },
   "rows": [

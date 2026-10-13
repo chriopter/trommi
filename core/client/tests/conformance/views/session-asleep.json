@@ -224,6 +224,7 @@
             "goals": {
               "desk_id": "main",
               "foldable": false,
+              "folded": false,
               "lines": []
             },
             "hello": {
@@ -398,6 +399,7 @@
             "goals": {
               "desk_id": "main",
               "foldable": false,
+              "folded": false,
               "lines": []
             },
             "hello": {
@@ -1214,6 +1216,7 @@
       "goals": {
         "desk_id": "main",
         "foldable": false,
+        "folded": false,
         "lines": []
       },
       "hello": {

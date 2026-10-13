@@ -43,6 +43,9 @@ pub struct Lens {
     pub card: Option<String>,
     /// The page Off your mind is in view, with the search's words: its unit is made.
     pub off: Option<String>,
+    /// The desks whose goals are folded to their first line on this device (web localStorage
+    /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
+    pub goals_folded: Vec<String>,
 }
 
 /// A desk of the room.
@@ -105,6 +108,7 @@ pub struct Board<'a> {
     pub unheard: HashMap<usize, u32>,
     wake: Cell<Option<u64>>,
     numbers: OnceCell<HashMap<String, u32>>,
+    assets: OnceCell<super::links::Assets>,
 }
 
 /// A card that reads as an info: one that is, one of a newer Trommi, and one whose body is not read here yet (a
@@ -227,6 +231,7 @@ impl<'a> Board<'a> {
             unheard: HashMap::new(),
             wake: Cell::new(None),
             numbers: OnceCell::new(),
+            assets: OnceCell::new(),
         };
         board.unheard = board.count_unheard();
         board
@@ -261,6 +266,11 @@ impl<'a> Board<'a> {
             filed.into_iter().enumerate().map(|(i, (_, id))| (id.to_string(), i as u32 + 1)).collect()
         });
         all.get(id).copied().unwrap_or(0)
+    }
+
+    /// The board's Artifacts, for naming the links to them.
+    pub fn assets(&self) -> &super::links::Assets {
+        self.assets.get_or_init(|| super::links::Assets::of(self.model))
     }
 
     /// Where a card stands: "catching" (settled elsewhere, its outcome on the way), "open", "shredded", "decided"
@@ -345,6 +355,12 @@ impl<'a> Board<'a> {
     fn count_unheard(&self) -> HashMap<usize, u32> {
         let mut out: HashMap<usize, u32> = HashMap::new();
         for c in self.model.cards.values() {
+            // (only a card with his word on it can wait to be heard: one handed back, or decided; the rest, most of a
+            //  large room, are passed over before any lookup)
+            let decided = c.object_state == "answered" && c.closed_how.as_deref() == Some("answered");
+            if c.catching_up || !(decided || (c.object_state == "open" && c.in_revision.is_some())) {
+                continue;
+            }
             let agent = self.by_key.get(key_of(&c.session_id, &c.agent_device_id)).copied();
             if !self.in_view(agent) {
                 continue;

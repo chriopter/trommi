@@ -15,7 +15,8 @@
 //!   the receipt of his answer: on its way, with the session, or not picked up for two minutes.
 
 use super::board::{is_loading, key_of, reads_as_info, Board};
-use super::desk::{from_of, plain, shown_title, NEEDS_NEWER};
+use super::desk::{from_of, shown_title, NEEDS_NEWER};
+use super::links::{plain, titled};
 use super::session::{link_note, unheard_fix};
 use super::sidebar::link_of;
 use super::talk::{card_ref, choices_of, events_of, file_ids, in_order, items_of, Entry, Side};
@@ -216,6 +217,18 @@ fn place_of(id: &str, walk: &[String]) -> Option<PlaceView> {
 /// The page of the card or request `id` (its id, or its number of the address); none when this device does not
 /// hold it. `walk`: what waits on the Desk in view, in its order (`DeskView::stack`).
 pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
+    let mut v = page(b, id, walk)?;
+    // (the words as the page draws them: an Artifact link by its title)
+    let assets = b.assets();
+    v.body = titled(&v.body, assets);
+    v.text = titled(&v.text, assets);
+    for x in &mut v.sections {
+        x.text = titled(&x.text, assets);
+    }
+    Some(v)
+}
+
+fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
     let m = b.model;
     let by_number = || {
         let n: u32 = id.parse().ok().filter(|n| *n > 0)?;
@@ -290,7 +303,7 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
                 label: s(o, "label").into(),
                 recommended: is,
                 chosen: if status == "open" { ticked.contains(&key) } else { chosen.contains(&key) },
-                detail: plain(s(o, "detail")),
+                detail: plain(s(o, "detail"), b.assets()),
                 settles,
                 note: noted.into(),
                 tip: match (is, settles) {
@@ -572,6 +585,23 @@ mod tests {
     }
     fn notes(v: &CardView) -> Vec<&str> {
         v.notes.iter().map(|n| n.en.as_str()).collect()
+    }
+
+    /// An Artifact link on the card's page is named by its title (markdown the shell draws); on the Desk's row too,
+    /// where the agent's layout and a table stand in no line.
+    #[test]
+    fn artifact_links_are_named_by_their_titles() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let url = format!("https://app.trommi.com/artifact/0123456789abcdef#{}", "k".repeat(43));
+        r.published.push(json!({ "object_id": "0123456789abcdef", "title": "Launch plan", "object_state": "open", "attachments": [{ "media_type": "text/html" }] }));
+        r.card("q", "a", "decision", "normal")["body"] = json!(format!("The plan: {url}\n```html\n<b>tiles</b>\n```\n| a | b |\n|---|---|"));
+        let v = view(&r, "q");
+        assert!(v.body.starts_with(&format!("The plan: [Launch plan]({url})")), "{}", v.body);
+        let m = r.model(NOW);
+        let lens = Lens::default();
+        let row = desk::desk(&Board::new(&m, &lens, NOW)).rows.into_iter().find(|x| x.id == "q").unwrap();
+        assert_eq!(row.words, "The plan: [Launch plan]");
     }
 
     /// The web's `fitText` (app/web/public/card.mjs).

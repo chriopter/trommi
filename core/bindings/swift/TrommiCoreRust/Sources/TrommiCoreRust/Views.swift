@@ -1423,12 +1423,20 @@ public enum CoreView {
     public var foldable: Bool
     /// What the toggle says while they are folded ("Show all 4 goals").
     public var showAll: Text?
+    /// Folded to the first line on this device (`Lens::goals_folded`; the owner's pick of 13 October 2026: one
+    /// toggle, folded shows the first line). Only while `foldable`.
+    public var folded: Bool
+    /// What the toggle says: "Show all 4 goals" while folded, "Show the first goal only" while open; none while not
+    /// foldable.
+    public var toggle: Text?
 
-    public init(deskId: String = "", lines: [String] = [], foldable: Bool = false, showAll: Text? = nil) {
+    public init(deskId: String = "", lines: [String] = [], foldable: Bool = false, showAll: Text? = nil, folded: Bool = false, toggle: Text? = nil) {
       self.deskId = deskId
       self.lines = lines
       self.foldable = foldable
       self.showAll = showAll
+      self.folded = folded
+      self.toggle = toggle
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1436,6 +1444,8 @@ public enum CoreView {
       case lines = "lines"
       case foldable = "foldable"
       case showAll = "show_all"
+      case folded = "folded"
+      case toggle = "toggle"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -1444,6 +1454,8 @@ public enum CoreView {
       self.lines = try c.decode([String].self, forKey: .lines)
       self.foldable = try c.decode(Bool.self, forKey: .foldable)
       self.showAll = try c.decodeIfPresent(Text.self, forKey: .showAll)
+      self.folded = try c.decodeIfPresent(Bool.self, forKey: .folded) ?? false
+      self.toggle = try c.decodeIfPresent(Text.self, forKey: .toggle)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -1452,6 +1464,8 @@ public enum CoreView {
       try c.encode(lines, forKey: .lines)
       try c.encode(foldable, forKey: .foldable)
       try c.encodeIfPresent(showAll, forKey: .showAll)
+      try c.encode(folded, forKey: .folded)
+      try c.encodeIfPresent(toggle, forKey: .toggle)
     }
   }
 

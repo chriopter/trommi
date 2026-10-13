@@ -24,6 +24,7 @@ pub mod board;
 pub mod card;
 pub mod demo;
 pub mod desk;
+pub mod links;
 pub mod notes;
 pub mod off;
 pub mod session;
@@ -613,6 +614,14 @@ pub struct GoalsView {
     /// What the toggle says while they are folded ("Show all 4 goals").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_all: Option<Text>,
+    /// Folded to the first line on this device (`Lens::goals_folded`; the owner's pick of 13 October 2026: one
+    /// toggle, folded shows the first line). Only while `foldable`.
+    #[serde(default)]
+    pub folded: bool,
+    /// What the toggle says: "Show all 4 goals" while folded, "Show the first goal only" while open; none while not
+    /// foldable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toggle: Option<Text>,
 }
 
 /// A session that is cut off, as the Desk says it.

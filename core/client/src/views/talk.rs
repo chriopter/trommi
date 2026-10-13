@@ -18,6 +18,7 @@
 
 use super::board::Board;
 use super::desk::{shown_title, NEEDS_NEWER};
+use super::links::titled;
 use super::words::say;
 use super::{CardRefView, EventView, TalkRow, Text, WorkLineView, WorkView};
 use crate::model::types::{Card, Timeline};
@@ -251,14 +252,14 @@ pub fn items_of(b: &Board, t: &Timeline, card: Option<&Card>, heard_up_to: Optio
             continue;
         }
         row.text = match state {
-            "" | "loaded" => str_of(c, "text").to_string(),
+            "" | "loaded" => titled(str_of(c, "text"), b.assets()),
             "pruned" => "(removed after 30 days)".into(),
             _ => String::new(),
         };
         row.files = file_ids(c.get("attachments").unwrap_or(&null));
         let list = c.get("attachments").and_then(Value::as_array);
         row.scribble = from_human && list.is_some_and(|l| l.len() == 1 && str_of(&l[0], "file_name") == SCRIBBLE_FILE);
-        row.details = str_of(c, "details").to_string();
+        row.details = titled(str_of(c, "details"), b.assets());
         row.html = str_of(c, "html").to_string();
         let published = str_of(c, "published_object_id");
         if !published.is_empty() {

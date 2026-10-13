@@ -259,3 +259,106 @@ fn render_makes_the_boards_units_and_keeps_the_rest() {
     assert!(view.sessions.is_empty() && view.cards.is_empty());
     assert!(wake.is_none_or(|w| w > now), "a wake lies ahead: {wake:?} at {now}");
 }
+
+/// What one render costs on a large room: the demo grown to the mega account's size (21,500 cards, most of them
+/// closed; 150 sessions; a talk of 3,000 messages), with a session's page and a card's page in view. Prints the
+/// median of 15 renders. Not a gate: run when a rule's cost is in question, in release:
+/// `cargo test -p trommi-client-core --release --test views -- --ignored --nocapture render_cost`.
+#[test]
+#[ignore]
+fn render_cost_on_a_large_room() {
+    use serde_json::{json, Value};
+    use trommi_client_core::views::{render, ViewModel};
+    let text = std::fs::read_to_string(root().join("demo/data/fixture.json")).unwrap();
+    let mut f: Value = serde_json::from_str(&text).unwrap();
+    let now = f["made_at"].as_u64().unwrap();
+    let cards: Vec<Value> = f["cards"].as_array().unwrap().clone();
+    let sessions: Vec<Value> = f["sessions"].as_array().unwrap().clone();
+    let id = |n: usize| format!("{n:032x}");
+    // (more sessions: copies of the demo's, archived, as the mega account's 120 archived ones)
+    let mut grown_sessions = sessions.clone();
+    let mut settings = f["human"]["session_settings"].as_object().cloned().unwrap_or_default();
+    for n in 0..(150 - sessions.len()) {
+        let mut s = sessions[n % sessions.len()].clone();
+        let dev = format!("{:064x}", 0xdead_0000_u64 + n as u64);
+        s["agent_device_id"] = json!(dev);
+        s["agent_session_id"] = json!(format!("copy-{n}"));
+        s["is_online"] = json!(false);
+        settings.insert(dev, json!({ "archived": true }));
+        grown_sessions.push(s);
+    }
+    f["human"]["session_settings"] = Value::Object(settings);
+    f["sessions"] = json!(grown_sessions);
+    // (more cards: copies of the demo's, closed, each its own id and number)
+    let mut grown = cards.clone();
+    for n in 0..(21_500 - cards.len()) {
+        let mut c = cards[n % cards.len()].clone();
+        c["object_id"] = json!(id(n + 1));
+        c["object_state"] = json!("closed");
+        c["closed_how"] = json!(if n % 3 == 0 { "answered" } else { "done" });
+        c["first_envelope_number"] = json!(10_000 + n);
+        c["envelope_number"] = json!(10_000 + n);
+        c["created_at"] = json!(now - 1000 * n as u64);
+        c["updated_at"] = json!(now - 1000 * n as u64);
+        grown.push(c);
+    }
+    f["cards"] = json!(grown);
+    // (a long talk in the main's session)
+    let dev = "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8";
+    let key = format!("chat:session/{dev}");
+    let talk: Vec<Value> = (0..3_000u64)
+        .map(|n| json!({ "envelope_number": 900_000 + n, "local_id": null, "pending": false, "sender_device_id": if n % 2 == 0 { dev } else { "me" },
+            "sent_at": now - (3_000 - n) * 60_000, "item_state": "loaded", "content_type": "message", "content": { "text": format!("Message {n}: see https://example.com/page/{n} and **this**.") } }))
+        .collect();
+    f["timelines"][&key] = json!(talk);
+    let t = std::time::Instant::now();
+    let m = demo::model_of(&f, now).unwrap();
+    let built = t.elapsed();
+    let median = |lens: &Lens, view: &mut ViewModel| {
+        let mut times = Vec::new();
+        for _ in 0..15 {
+            let t = std::time::Instant::now();
+            render(&m, lens, now, view);
+            times.push(t.elapsed());
+        }
+        times.sort();
+        times
+    };
+    {
+        let lens = Lens { utc_offset_min: 120, ..Default::default() };
+        let t = std::time::Instant::now();
+        let b = Board::new(&m, &lens, now);
+        let t_board = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = sidebar::sidebar(&b);
+        let t_side = t.elapsed();
+        let t = std::time::Instant::now();
+        let off = trommi_client_core::views::off::of_board(&b);
+        let t_off = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = desk::desk_with(&b, &off);
+        let t_desk = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = notes::notes(&b);
+        let _ = settings::settings(&b);
+        println!("render_cost: board {t_board:?}, sidebar {t_side:?}, off_mind {t_off:?}, desk {t_desk:?}, notes+settings {:?}", t.elapsed());
+    }
+    let mut view = ViewModel::default();
+    let desk_only = median(&Lens { utc_offset_min: 120, ..Default::default() }, &mut view);
+    let off = median(&Lens { utc_offset_min: 120, off: Some(String::new()), ..Default::default() }, &mut view);
+    println!("render_cost: the Desk alone {:?}; with the page Off your mind {:?} ({} KB)", desk_only[7], off[7], serde_json::to_string(&view.off).unwrap().len() / 1024);
+    let lens = Lens { utc_offset_min: 120, session: Some("fernly-web".into()), card: Some("a38afef6dbdd056db8042980f2b83336".into()), ..Default::default() };
+    let times = median(&lens, &mut view);
+    let talk_len = view.sessions.values().next().map(|s| s.talk.len()).unwrap_or(0);
+    let json = serde_json::to_string(&view).unwrap().len();
+    println!(
+        "render_cost: {} cards, {} sessions, talk {talk_len} rows; model built in {built:?}; render median {:?} (min {:?}, max {:?}); view {} KB as JSON",
+        m.cards.len(),
+        m.sessions.len(),
+        times[times.len() / 2],
+        times[0],
+        times[times.len() - 1],
+        json / 1024
+    );
+    assert!(m.cards.len() >= 21_500);
+}
