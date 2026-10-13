@@ -117,6 +117,8 @@ pub struct App {
     /// how often it was in a row.
     reopen_at: Option<u64>,
     reopen_tries: u32,
+    /// The room's cache: read before the engine starts, written behind the board (`cache::keeper`).
+    cache: Option<crate::cache::Keeper>,
 }
 
 impl Default for App {
@@ -151,6 +153,7 @@ impl App {
             invite_requests: Vec::new(),
             reopen_at: None,
             reopen_tries: 0,
+            cache: None,
         }
     }
 
@@ -350,6 +353,7 @@ impl App {
                 },
                 // (a cache entry that stays is only a cache entry: the hub no longer serves the file)
                 Some(Pending::CacheDelete) => {}
+                None if self.cache.is_some() && self.cached(now_ms, id, &result, &mut out) => {}
                 None => {
                     let mine = self.with_engine(now_ms, &mut out, |engine, ctx| {
                         engine.on_store(ctx, id, &result)
@@ -455,9 +459,12 @@ impl App {
                     self.board = engine::feed::Board::new(engine.device());
                 }
                 self.stale_views = true;
+                // the cache first: the board it holds is drawn before the engine asks the hub anything
+                let room = engine::feed::hex(engine.room().as_bytes());
+                let device = engine::feed::hex(engine.device().id().as_bytes());
+                self.cache = Some(crate::cache::Keeper::open(&room, &device, revision, &mut self.next_id, out));
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;
-                self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
             }
             Err(OpenError::NoRoom) if !again => self.next_view.phase = Phase::SignedOut,
             Err(OpenError::Interrupted) if !again => {
@@ -514,6 +521,40 @@ impl App {
         out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
     }
 
+    /// An answer to one of the cache's store ops; false when it was none. Once the start's read is through, the board
+    /// holds what it gave and the engine starts.
+    fn cached(&mut self, now_ms: u64, id: IoId, result: &IoResult<StoreAnswer>, out: &mut Vec<Effect>) -> bool {
+        let Some(cache) = self.cache.as_mut() else {
+            return false;
+        };
+        let read = match cache.on_store(id, result, &mut self.board.model, now_ms, &mut self.next_id, out) {
+            crate::cache::Took::No => return false,
+            crate::cache::Took::Mine => return true,
+            crate::cache::Took::Read(read) => read,
+        };
+        match read {
+            crate::cache::Read::Loaded { listing, .. } => {
+                // the Desk the hub listed last stands until it lists anew
+                if let Some(listing) = listing {
+                    self.board.model.set_desk_listing(Some((listing.at, listing.open)));
+                    self.board.model.set_desk_hold(false);
+                }
+                let change = self.board.finish(now_ms);
+                cache.note(&change);
+            }
+            crate::cache::Read::Dropped => {
+                if let Some(engine) = self.engine.as_ref() {
+                    self.board = engine::feed::Board::new(engine.device());
+                }
+                out.push(log(LogLevel::Warn, "the cache was not whole or not this device's: dropped"));
+            }
+            crate::cache::Read::Empty => {}
+        }
+        self.stale_views = true;
+        self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
+        true
+    }
+
     fn with_engine<T>(
         &mut self,
         now_ms: u64,
@@ -543,6 +584,12 @@ impl App {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
             match report {
+                Report::Desk { at, open, truncated: false } => {
+                    if let Some(cache) = self.cache.as_mut() {
+                        let open = open.iter().map(|(id, version)| (engine::feed::hex(id.as_bytes()), *version)).collect();
+                        cache.listed(crate::cache::Listing { at, open });
+                    }
+                }
                 Report::Connection(Connection::Live) => {
                     self.next_view.phase = Phase::Live;
                     self.reopen_tries = 0;
@@ -559,7 +606,12 @@ impl App {
                     self.room_join = Some(engine::room_join::RoomJoinStatus::Failed(engine::room_join::RoomJoinError::Device("storage")));
                 }
                 Report::Stopped(why) if why.reopens() => stopped = true,
-                Report::Stopped(_) => self.next_view.phase = Phase::Stopped,
+                Report::Stopped(_) => {
+                    self.next_view.phase = Phase::Stopped;
+                    if let Some(cache) = self.cache.as_mut() {
+                        cache.stop();
+                    }
+                }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
                 Report::RoomJoin(status) => {
                     use engine::room_join::RoomJoinStatus;
@@ -611,8 +663,18 @@ impl App {
             engine.next_wake()
         };
         if fed || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
-            let _ = self.board.finish(now_ms);
+            let change = self.board.finish(now_ms);
+            if let Some(cache) = self.cache.as_mut() {
+                cache.note(&change);
+            }
             self.stale_views = true;
+        }
+        // (the cache's writes go behind every device write handed out so far: the shell holds them at its barrier)
+        let mut cache_wake = None;
+        if let Some(cache) = self.cache.as_mut() {
+            cache.saw(out);
+            cache.step(now_ms, &mut self.next_id, out);
+            cache_wake = cache.next_wake();
         }
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
@@ -625,7 +687,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, self.reopen_at].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
