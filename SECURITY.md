@@ -118,7 +118,9 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   3. Its pull request into `main`: CI tests it, and it merges by auto-merge with "Squash and merge" once all required
      checks are green. Builds, TestFlight and deliveries come only from `main`.
 - A pull request runs quick checks only (tests, clippy, the web app's build), without secrets. `main` runs the full
-  builds; when one fails, an issue is opened and nothing is released or delivered.
+  builds; when one fails, an issue is opened and nothing is released or delivered. The iOS app is checked and built in
+  a workflow of its own (`ios.yml`) after the release, so it never holds the others back; when that fails, an issue is
+  opened and the app is not delivered, and it ships only a published release that marks it changed.
 - `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
   The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.

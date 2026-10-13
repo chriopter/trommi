@@ -1,12 +1,13 @@
 #!/bin/bash
-# On main the iOS app is archived while the release of the same build run is made (build.yml starts deploy_ios.yml
-# without waiting for it); only the upload waits here. Only a released app ships:
-#   ios_release_gate.sh wait     waits until the run's job "Release / Publish the release" is done, then `verify`
+# On main the iOS app is archived after a build run of main (ios.yml starts deploy_ios.yml once build.yml's run ended);
+# the upload checks that run's release here. Only a released app ships:
+#   ios_release_gate.sh wait     waits until the build run's job "Release / Publish the release" is done (it is, when
+#                                ios.yml starts; the wait stays for a run started while it is not), then `verify`
 #   ios_release_gate.sh verify   the release v$VERSION is published, its manifest's signature holds
 #                                (release/public-key.pem), it is v$VERSION of $COMMIT in this repository, and its iOS
 #                                inputs are this commit's (.github/scripts/inputs.sh) and marked changed
 # Exit 0: upload. Anything else: nothing is uploaded (a release that failed, was skipped or refused its tag).
-# Environment: GH_TOKEN (actions: read, contents: read), GITHUB_REPOSITORY, RUN_ID (the build run; wait only),
+# Environment: GH_TOKEN (actions: read, contents: read), GITHUB_REPOSITORY, RUN_ID (the build.yml run; wait only),
 # VERSION, COMMIT, RUNNER_TEMP. Needs gh, jq, openssl and a checkout of COMMIT (release/sign.sh, inputs.sh).
 set -euo pipefail
 

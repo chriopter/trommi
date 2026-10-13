@@ -235,13 +235,17 @@ flowchart LR
   build --> rel["Release vN<br/>manifest.json<br/>signed with Ed25519"]
   rel --> web["Web app<br/>Cloudflare worker,<br/>build attestations"]
   rel --> conn["Connector<br/>install.sh and update<br/>check the signature"]
-  rel --> ios["iOS app<br/>TestFlight,<br/>signed by Apple"]
+  rel --> iosci["ios.yml<br/>after build.yml,<br/>when vN marks iOS"]
+  iosci --> ios["iOS app<br/>TestFlight,<br/>signed by Apple"]
   rel --> hub["Hub<br/>the server pulls,<br/>checks, swaps"]
 ```
 
 - A change makes **one release `v<N>`** with every part and one `manifest.json` (each file's size and SHA-256),
   signed with Ed25519. Public key: [`release/public-key.pem`](release/public-key.pem); the private key lives in
   1Password. Each part is delivered only when it changed.
+- **The iOS app** has its own workflow, `ios.yml`, so nothing of web, hub or connector waits for a Mac or TestFlight:
+  on a pull request it checks the iOS client; after `build.yml` on main it builds and delivers the app when that run's
+  release marks iOS changed, and the upload checks that release first.
 - **The hub:** CI sends no code and has no SSH, only "take `v<N>`" over the private network. The server's updater
   (its own user, no root) fetches the release itself, checks it against the pinned key, refuses anything older,
   swaps, and puts the release before back if the new hub is not well within 60 s.
@@ -356,13 +360,15 @@ release/<date>-<n>       frozen; each one is its own pull request
    │
    ▼
 pull request ─────────── fast checks of the changed parts (tests, clippy, web
-   │                     build), 6 required checks green, auto-merge, squash
+   │                     build), the required checks green, auto-merge, squash
+   │                     (iOS: ios.yml, beside build.yml)
    ▼
 main ─────────────────── full builds; one fails: an issue, nothing delivered.
                          All pass: signed release v<N>, then the changed parts:
                            web        app.trommi.com
                            hub        the server pulls and checks v<N>
-                           iOS        TestFlight "Intern" + "Trommi" (public)
+                           iOS        ios.yml after build.yml: TestFlight
+                                      "Intern" + "Trommi" (public)
                            site       trommi.com, when site/ changed
                            connector  updates itself from the release
 ```

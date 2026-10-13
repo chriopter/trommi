@@ -1,0 +1,429 @@
+# The iOS app, apart from build.yml, so that no check, release or delivery of web, hub and connector waits for a Mac,
+# for Swift or for TestFlight.
+#
+# On every pull request: which iOS parts changed (against the pull request's base), and when they did the app's client
+# package with its tests on Linux ("iOS client (check)", the stable name a ruleset can require) and the fast part of
+# the mega test's torture run with 10 iPhones (does not fail the run). A pull request gets no secret, uses no Mac and
+# delivers nothing.
+#
+# After every run of build.yml on main (workflow_run): when that run published its release v<N> and the release's
+# signed manifest marks iOS changed (.github/scripts/inputs.sh: app/ios/, the core, the Rust workspace, build.yml,
+# this file, ...), the client check again on that very commit, the Rust core for iOS devices and the Mac with the
+# core's Swift binding tests on the Mac ("iOS core for devices (main)"), then deploy_ios.yml delivers it to
+# TestFlight. Its upload still waits on the release (ios_release_gate.sh: published, signed, this commit, these iOS
+# inputs), so only a released app ships. No release, or iOS unchanged in it: nothing runs.
+# Why workflow_run and not a push on main: the release of the build run is the one thing that says whether iOS ships,
+# and by the time this starts it is published; a push trigger would have to repeat the path list and wait on the
+# build run itself.
+#
+# When a job of a delivery fails, the job `report` opens the issue "iOS build v<N> failed" (label build-failed); the
+# next delivery that passes closes it. A release whose iOS delivery failed is not tried again by itself: re-run the
+# failed jobs of that run of ios.yml, or the next change of the app's inputs delivers.
+name: ios
+
+on:
+  pull_request:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+# A pull request: one run at a time, a newer commit cuts the older run off. A delivery is its own group (deploy_ios.yml
+# keeps its uploads one after another).
+concurrency:
+  group: ios-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # the build run of main this run follows (workflow_run); empty on a pull request
+  BUILD_SHA: ${{ github.event.workflow_run.head_sha }}
+  # as in build.yml: incremental compilation is not worth caching in CI (and the Rust caches stay the same)
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  changes:
+    name: Which iOS parts changed
+    # workflow_run: only a build of main of this repository, by a push or by hand (a fork's pull request from a branch
+    # called main also ends a run of build.yml "on main")
+    if: >-
+      ${{ github.event_name == 'pull_request' || (github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && contains(fromJSON('["push","workflow_dispatch"]'), github.event.workflow_run.event)) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      # the client check runs
+      ios: ${{ steps.pr.outputs.ios || steps.main.outputs.deliver }}
+      # the torture run with iPhones runs (pull requests)
+      mega: ${{ steps.pr.outputs.mega }}
+      # main: the release v<version> of the build run marks iOS changed; the app is built and delivered
+      deliver: ${{ steps.main.outputs.deliver }}
+      version: ${{ steps.main.outputs.version }}
+      commit: ${{ steps.main.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.BUILD_SHA || github.sha }}
+          # a pull request compares with its base
+          fetch-depth: 0
+          persist-credentials: false
+      # the same paths as build.yml's parts, for iOS: the app, its tests, its delivery, and what every part shares
+      - name: Find the changed parts (pull request)
+        id: pr
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          base=$(git merge-base "$PR_BASE" HEAD || true)
+          if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            all=0
+            git diff --name-only "$base" HEAD > "$RUNNER_TEMP/files"
+            echo "compared with $base: $(wc -l < "$RUNNER_TEMP/files") file(s) changed"
+          else
+            all=1
+            : > "$RUNNER_TEMP/files"
+            echo "nothing to compare with: every part counts as changed"
+          fi
+          shared='core/|client/|Cargo\.toml$|\.config/nextest\.toml$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ios\.yml$'
+          part() {
+            if [ "$all" = 1 ] || grep -Eq "^($2|$shared)" "$RUNNER_TEMP/files"; then value=true; else value=false; fi
+            echo "$1=$value" >> "$GITHUB_OUTPUT"
+            echo "$1: $value"
+            echo "- $1: $value" >> "$GITHUB_STEP_SUMMARY"
+          }
+          part ios 'app/ios/|tests/ios/|\.github/scripts/(ios_(testflight\.sh|archive\.sh|entitlements\.py|release_gate\.sh)|mac_testflight\.sh)$|\.github/workflows/deploy_ios\.yml$'
+          # the torture run: every client, the hub, the connector and the tests they share
+          part mega 'app/|connector/|hub/|demo/|tests/|spec/|release/'
+      # main: the release of the build run, v<run number + RELEASE_BASE>, its signature checked. Not published (nothing
+      # changed since the newest release, or the build failed or was overtaken by a newer one): nothing to deliver.
+      - name: The release of the build run (main)
+        id: main
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -eu
+          printf '%s' "$BUILD_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $BUILD_SHA"; exit 1; }
+          echo "commit=$BUILD_SHA" >> "$GITHUB_OUTPUT"
+          echo "deliver=false" >> "$GITHUB_OUTPUT"
+          base=$(sed -n 's/^  RELEASE_BASE: \([0-9][0-9]*\)$/\1/p' .github/workflows/build.yml)
+          [ "$(printf '%s' "$base" | grep -c .)" = 1 ] || { echo "::error::build.yml names no single RELEASE_BASE"; exit 1; }
+          version=$((RUN_NUMBER + base))
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          dir=$RUNNER_TEMP/release
+          mkdir "$dir"
+          if ! gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --pattern manifest.json.sig --dir "$dir" 2> "$RUNNER_TEMP/err"; then
+            cat "$RUNNER_TEMP/err" >&2
+            grep -qi 'release not found' "$RUNNER_TEMP/err" || { echo "::error::the release v$version could not be read"; exit 1; }
+            echo "::notice::build run $RUN_URL published no release v$version: nothing to deliver"
+            echo "- no release v$version: nothing to deliver" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          sh release/sign.sh verify "$dir/manifest.json"
+          jq -e --arg r "$GITHUB_REPOSITORY" --arg t "v$version" --arg v "$version" --arg c "$BUILD_SHA" \
+            '.product == "trommi" and .repository == $r and .tag == $t and (.version | tostring) == $v and .commit == $c' \
+            "$dir/manifest.json" > /dev/null || { echo "::error::the manifest of v$version is not v$version of $BUILD_SHA in this repository"; exit 1; }
+          if jq -e '.changed.ios == true' "$dir/manifest.json" > /dev/null; then
+            echo "deliver=true" >> "$GITHUB_OUTPUT"
+            echo "- v$version marks iOS changed: built and delivered to TestFlight" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- v$version leaves iOS unchanged: nothing to deliver" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # The app's client package (app/ios/TrommiClient) with its tests (tests/ios), on Linux: the package does not compile
+  # for macOS (ActivityKit). The iOS check of a pull request (also when finding the changed parts failed); on main the
+  # check of the delivered commit.
+  ios_client:
+    name: iOS client (check)
+    needs: changes
+    if: >-
+      ${{ !cancelled() && (needs.changes.outputs.ios == 'true'
+      || (github.event_name == 'pull_request' && needs.changes.result != 'success')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.BUILD_SHA || github.sha }}
+          persist-credentials: false
+      # the core for Swift on this machine, taken from an earlier run of main when built from the same paths
+      # (as in the job ios)
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$(git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+          echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      - name: Compiler (rust-toolchain.toml), Swift
+        run: |
+          if [ "$HIT" != true ]; then rustup toolchain install || rustup show; rustc --version; fi
+          swift --version
+        env:
+          HIT: ${{ steps.core_cache.outputs.cache-hit }}
+      # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
+      # request reads main's (as in build.yml)
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: The Rust core for Swift on this machine
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        run: sh core/swift/build.sh host
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.core_cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      - name: Test
+        run: swift test --package-path tests/ios
+
+  # Main only, for a release that marks iOS changed: the Rust core for an iOS device and for this Mac, the core's Swift
+  # binding tested on the Mac, the App Store Connect steps against fixtures; its artifact is what deploy_ios.yml
+  # archives the app with. A pull request uses no Mac.
+  ios:
+    name: iOS core for devices (main)
+    needs: changes
+    if: needs.changes.outputs.deliver == 'true'
+    # macOS with Xcode 27 (the app's deployment target is iOS 27)
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      COMMIT: ${{ needs.changes.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.changes.outputs.commit }}
+          persist-credentials: false
+      # The core for Swift is what core/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
+      # what the iOS library is checked against). When they are the same as in an earlier run of main, that
+      # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone).
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      # llvm-tools: core/swift/build.sh takes the compiler runtime's helpers out of the iOS library with llvm-ar
+      - name: Compiler (rust-toolchain.toml)
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          rustup toolchain install || rustup show
+          rustup component add llvm-tools
+          rustc --version
+          xcodebuild -version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The Rust core for this Mac (for the tests) and for an iOS device (the archive); the helpers it removes from the
+      # iOS library are checked against Apple's runtime of this Xcode. No simulator library: nothing here runs one.
+      - name: The Rust core for Swift
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        env:
+          TROMMI_SIMULATOR: "0"
+        run: |
+          set -eu
+          DARWIN_CLANG_RT="$(xcrun --sdk iphoneos clang -print-resource-dir)/lib/darwin"
+          export DARWIN_CLANG_RT
+          sh core/swift/build.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      # The core's Swift binding on this Mac. The app's own package (app/ios/TrommiClient) is tested on Linux only: it
+      # does not compile for macOS (ActivityKit), and the archive in deploy_ios.yml is its build for iOS.
+      - name: Test
+        run: swift test --package-path tests/bindings/swift
+      # The App Store Connect steps of the public beta (asc.py external, beta-review, whats-new) against fixtures:
+      # nothing goes to the network, no key is needed.
+      - name: App Store Connect steps (fixtures)
+        run: python3 -B -m unittest discover -s tests/ios/asc -v
+      # What deploy_ios.yml takes: the iOS library, the Mac's (this runner's host build, Apple silicon) and UniFFI's two
+      # files, with their hashes and the commit.
+      - name: Put the release together
+        run: |
+          set -eu
+          package=core/swift/TrommiCoreRust
+          mkdir -p out/lib/ios out/lib/macos out/Sources/TrommiCoreFFI/include out/Sources/TrommiCoreRust
+          cp "$package/lib/ios/libtrommi_core_ffi.a" out/lib/ios/
+          cp "$package/lib/macos/libtrommi_core_ffi.a" out/lib/macos/
+          cp "$package/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" out/Sources/TrommiCoreFFI/include/
+          cp "$package/Sources/TrommiCoreRust/TrommiCoreRust.swift" out/Sources/TrommiCoreRust/
+          printf 'commit: %s\n' "$COMMIT" > out/build.txt
+          (cd out && find . -type f | sed 's|^\./||' | sort | xargs shasum -a 256 > "$RUNNER_TEMP/checksums.txt")
+          mv "$RUNNER_TEMP/checksums.txt" out/checksums.txt
+          cat out/checksums.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-release
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
+
+  # The fast part of the mega test's torture run (tests/client/mega/torture.rs), on every pull request that touches a
+  # client, the hub or the core: the real connector joined every way, 2 web devices and 10 iPhones in one account
+  # behind a misbehaving network, two seeds of 30 steps (about 7 minutes); every device must show the same at every
+  # checkpoint. The full run (up to 100 iPhones, killed servers, 1,000 cards) is nightly (clients_mega.yml). A failure
+  # names its seed (the summary lists them): MEGA_SEEDS=<seed> with the same sizes repeats it. Failures of known open
+  # bugs are listed under the bug's name and do not fail.
+  mega_fast:
+    name: Mega torture (10 iPhones)
+    needs: changes
+    if: needs.changes.outputs.mega == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # blocking once seed 403, slow joins and the connector fixes are on main
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Compiler (rust-toolchain.toml), Swift
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+          swift --version
+          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bindgen
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: wasm-bindgen
+        if: steps.bindgen.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
+      - name: The core for the browser and for Swift, the iOS test runner
+        run: bash tests/client/mega/prepare.sh .
+      - name: The hub, the connector and the test
+        run: cargo build --locked -p trommi-hub -p trommi-connector -p trommi-tests --test client_mega
+      - name: Every client agrees
+        env:
+          MEGA_OUT: ${{ runner.temp }}/mega
+          MEGA_FLEET: '10'
+          MEGA_AGENTS: '5'
+          MEGA_STEPS: '30'
+          MEGA_CARDS: '60'
+          MEGA_KILLS: '0'
+          MEGA_BUDGET_SCALE: '3'
+          RUN: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          seeds="$((RUN * 2)),$((RUN * 2 + 1))"
+          echo "seeds: $seeds"
+          MEGA_SEEDS=$seeds cargo test --locked -p trommi-tests --test client_mega torture::torture -- --ignored --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/torture.log"
+      - name: Failed seeds
+        if: failure()
+        run: |
+          {
+            echo '### Mega torture: failed'
+            grep -h '^TORTURE FAILED SEEDS' "$RUNNER_TEMP/torture.log" || true
+            echo 'Sizes: MEGA_FLEET=10 MEGA_AGENTS=5 MEGA_STEPS=30 MEGA_CARDS=60 MEGA_KILLS=0 MEGA_BUDGET_SCALE=3'
+            echo '```'
+            grep -h '^FAIL ' "$RUNNER_TEMP/torture.log" | head -40 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: mega-torture
+          path: ${{ runner.temp }}/mega
+          retention-days: 7
+
+  # TestFlight: the app archived on the commit of the release with the core of the job ios, uploaded once the release
+  # checks out (gate: release; the build run of main is build_run).
+  deploy_ios:
+    name: iOS
+    needs: [changes, ios, ios_client]
+    if: >-
+      ${{ !cancelled() && needs.changes.outputs.deliver == 'true'
+      && needs.ios.result == 'success' && needs.ios_client.result == 'success' }}
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/deploy_ios.yml
+    with:
+      version: ${{ needs.changes.outputs.version }}
+      commit: ${{ needs.changes.outputs.commit }}
+      artifact: ios-release
+      gate: release
+      build_run: ${{ github.event.workflow_run.id }}
+    secrets: inherit
+
+  # A delivery: when a job failed, open the issue "iOS build v<N> failed" (label build-failed) or comment on the open
+  # one; when all passed, close it.
+  report:
+    name: Report
+    needs: [changes, ios_client, ios, deploy_ios]
+    if: ${{ !cancelled() && needs.changes.outputs.deliver == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ needs.changes.outputs.version }}
+      WHAT: build
+      RUNNING: the commit built, ${{ needs.changes.outputs.commit }}
+      LABEL: build-failed
+      RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+      NEEDS: ${{ toJSON(needs) }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Open, comment on or close the issue
+        run: |
+          set -eu
+          REASON="failed: $(printf '%s' "$NEEDS" | jq -r '[to_entries[] | select(.value.result == "failure") | .key] | join(", ")')"
+          export REASON
+          sh .github/scripts/deploy_issue.sh iOS
