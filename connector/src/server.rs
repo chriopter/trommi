@@ -1273,6 +1273,7 @@ impl Conn {
     /// it, once at a time; meanwhile and afterwards the tools say where it stands (`self_join_note`).
     fn self_join_soon(&self) {
         if !vouch::enabled()
+            || (crate::host::is_codex() && self.cfg.owner().is_empty())
             || self.spare
             || now_ms() < self.self_join_after.load(Ordering::SeqCst)
             || self.self_joining.swap(true, Ordering::SeqCst)
@@ -1309,8 +1310,9 @@ impl Conn {
         vouch::enabled()
             && !self.spare
             && now_ms() >= self.self_join_after.load(Ordering::SeqCst)
-            && vouch::room_for(&self.cfg)
-                .is_some_and(|room| !vouch::held_slots(&self.cfg.keys_dir.join(room)).is_empty())
+            // (a Codex that has not named its thread yet does not know who it is: it asks once it has)
+            && !(crate::host::is_codex() && self.cfg.owner().is_empty())
+            && !vouch::vouchers(&self.cfg).is_empty()
     }
     /// A client that was offered the tools of a session off the board lists them again (their notes changed).
     async fn relist(&self) {
@@ -1322,14 +1324,12 @@ impl Conn {
         }
     }
     async fn self_join(&self) -> std::result::Result<(), String> {
-        let room = vouch::room_for(&self.cfg).ok_or("this machine is in no Trommi room yet")?;
-        let dir = self.cfg.keys_dir.join(&room);
         let (account, account_label) = vouch::account();
         let name = vouch::session_name(&self.cfg);
         let ask = json!({ "op": "vouch", "owner": self.cfg.owner(), "account": account, "account_label": account_label,
             "name": name, "folder": self.cfg.shown, "host": self.cfg.host, "pid": pid() });
         let mut found = None;
-        for p in vouch::held_slots(&dir) {
+        for p in vouch::vouchers(&self.cfg) {
             if let Ok(r) = door::knock(&p, &ask, 10_000).await {
                 if r["ok"] == Value::Bool(true) {
                     found = Some((p, js_string(&r["nonce"]), js_string(&r["by"])));
