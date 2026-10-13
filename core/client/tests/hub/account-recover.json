@@ -1,0 +1,14 @@
+{
+  "answer": "{\"account\":\"88de01a9-38cd-4b98-ad06-4b54d9ca8123\",\"email\":\"ada-259477fa6180@example.com\",\"kdf\":{\"alg\":\"argon2id\",\"m\":65536,\"p\":1,\"t\":3,\"v\":1},\"rooms\":[{\"challenge\":\"zweSH5-fP6xKO4qJs7zQfTWLcIqMeg6xCHNMNfccoeo\",\"room_id\":\"kPJUA_ldrtizweHIN9-2Xm6lFGq1e7r2Mc7OilMegHU\",\"sealed_copy\":\"AgkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQ\"}]}",
+  "asked": {
+    "route": "recover"
+  },
+  "content_range": null,
+  "name": "account-recover",
+  "request": {
+    "body": "{\"account\":\"ada-259477fa6180@example.com\",\"auth_key\":\"rX8LQqQRyLzKWHrY1624ScjEaqzCZVeYmxw7nWgNrmw\"}",
+    "method": "POST",
+    "path": "/v1/account/recover"
+  },
+  "status": 200
+}

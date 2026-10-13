@@ -1,0 +1,14 @@
+{
+  "answer": "{\"error\":\"rate-limited\",\"message\":\"too many requests\",\"retry_after\":1}",
+  "asked": {
+    "route": "delete_account"
+  },
+  "content_range": null,
+  "name": "account-delete-wait",
+  "request": {
+    "body": "{\"password\":{\"auth_key\":\"VSXNmZuMMpwEp-jBdIeZL7m7t78moCfsIeaNUuklhVY\"}}",
+    "method": "DELETE",
+    "path": "/v1/account"
+  },
+  "status": 429
+}

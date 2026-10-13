@@ -75,3 +75,17 @@ pub const TRANSFER_TIMEOUT_MS: u32 = 600_000;
 /// Most the answer of `POST /v1/groups/read` may hold: the hub's one budget of 8 MiB for it, with room for a
 /// first group that exceeds it alone.
 pub const CAP_GROUPS_READ: usize = 12 * MIB;
+/// Most a small answer that is more than a few numbers may hold (an account, a login, an invite).
+pub const CAP_SMALL: usize = MIB;
+/// A sealed copy of the recovery code.
+pub const SEALED_COPY: usize = 61;
+/// A passkey's credential id.
+pub const MAX_CREDENTIAL_ID: usize = 1023;
+/// An e-mail address, and the one field that names an account.
+pub const MAX_EMAIL: usize = 254;
+/// Most rooms an account's answers list, and most passkeys.
+pub const MAX_ROOMS: usize = 16;
+pub const MAX_PASSKEYS: usize = 64;
+/// Most push registrations `GET /v1/push` lists, and the longest endpoint.
+pub const MAX_PUSH: usize = 64;
+pub const MAX_ENDPOINT: usize = 2048;

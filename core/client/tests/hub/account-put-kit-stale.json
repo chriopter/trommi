@@ -1,0 +1,14 @@
+{
+  "answer": "{\"error\":\"account-changed\",\"message\":\"the account changed meanwhile: read it again\"}",
+  "asked": {
+    "route": "put_kit"
+  },
+  "content_range": null,
+  "name": "account-put-kit-stale",
+  "request": {
+    "body": "{\"auth_key\":\"lUmXjxw0cF3fnGC3m3D6X7qkkwos3DrPNtWRou6Cjbk\",\"proof\":{\"password\":{\"auth_key\":\"9cMHHeLtpB_Cr-2RnPY4sHcqdivC7JbrYlAHgbmdkFM\"}},\"revision\":1,\"sealed_copy\":\"AgUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQ\"}",
+    "method": "PUT",
+    "path": "/v1/account/kit"
+  },
+  "status": 409
+}

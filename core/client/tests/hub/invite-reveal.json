@@ -1,0 +1,15 @@
+{
+  "answer": "{\"reveal\":\"Dyb9Zodq3sjQIBl0z346uO35eXyZGTZdPUpp8YoeYU0UreXR77xE3p_kiTum73XauL-F-vwmqyVt4wxOGao3wdHcWNy2jr_vh-xzGDwfhy4\",\"signature\":\"aRTfkNZ_lmMhD3dfDCCYKm97D-jfFgaypOyZ4PvH6hJ3-sGf_52GoixZYS5Ivem7j_ebnTDVq_TcVDCZpc0gCw\"}",
+  "asked": {
+    "invite": "Dyb9Zodq3sjQIBl0z346uA",
+    "route": "get_reveal"
+  },
+  "content_range": null,
+  "name": "invite-reveal",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/invites/Dyb9Zodq3sjQIBl0z346uA/reveal"
+  },
+  "status": 200
+}

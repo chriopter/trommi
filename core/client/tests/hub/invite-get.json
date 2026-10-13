@@ -1,0 +1,15 @@
+{
+  "answer": "{\"expires_at\":1791903174623,\"mac\":\"CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk\",\"offer\":\"kPJUA_ldrtizweHIN9-2Xm6lFGq1e7r2Mc7OilMegHUPJv1mh2reyNAgGXTPfjq4AQAAAAAAAAAAAAAAAAAAAAAAAAGhNcCP3xxQEVjmMO1fNSREXe4hUmfxZelKgH3_1VAQSYiPviQZSBIMTc9hDQlmXojq4vAKfVrQ3pbR8bs7NmFdatTXlA8AAAAAAAAAAP1ppWsv7bxtwyevwhuVvUV2wz8ChFRcFrZfCEiuLJac\",\"signature\":\"ajdxebGZXGWVGt5xmxqjwDb730Php3rGO4H-yI35zRuR5GCLUu-Sz_unHcsKxLuw14k2_pyWJrBw0PLNuwEVBA\"}",
+  "asked": {
+    "invite": "Dyb9Zodq3sjQIBl0z346uA",
+    "route": "get_invite"
+  },
+  "content_range": null,
+  "name": "invite-get",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/invites/Dyb9Zodq3sjQIBl0z346uA"
+  },
+  "status": 200
+}

@@ -1,0 +1,14 @@
+{
+  "answer": "{\"registered\":true}",
+  "asked": {
+    "route": "push_register"
+  },
+  "content_range": null,
+  "name": "push-register",
+  "request": {
+    "body": "{\"level\":\"knocking\",\"web_push\":{\"endpoint\":\"http://127.0.0.1:9/push/1\",\"keys\":{\"auth\":\"AQEBAQEBAQEBAQEBAQEBAQ\",\"p256dh\":\"BD8agniehZFMVvbsvHJ1OKpjsqseioxmUBz3uEVkwDutBSBjGgt-zju3kn73BfFWNNlnvM0H-8BDZMEi3gSbxeY\"}}}",
+    "method": "POST",
+    "path": "/v1/push"
+  },
+  "status": 200
+}

@@ -1,0 +1,14 @@
+{
+  "answer": "{\"apns\":false,\"subscriptions\":[{\"created_at\":1791902574628,\"endpoint\":\"http://127.0.0.1:9/push/1\",\"kind\":\"web_push\",\"level\":\"knocking\"}],\"vapid_public_key\":\"BD5R3QGbEm-Ij5vcIuwyuyt92BjHqCtAcLhaRTW6Ap9pusY2rCihKr_9gMYuYAgzS9wSLM517gbxRCQW-psvyH4\"}",
+  "asked": {
+    "route": "push_state"
+  },
+  "content_range": null,
+  "name": "push-state",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/push"
+  },
+  "status": 200
+}

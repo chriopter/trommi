@@ -1,0 +1,15 @@
+{
+  "answer": "{\"burned\":true}",
+  "asked": {
+    "invite": "56P47ITi8D1jDU9E2Sqd8Q",
+    "route": "delete_invite"
+  },
+  "content_range": null,
+  "name": "invite-delete",
+  "request": {
+    "body": null,
+    "method": "DELETE",
+    "path": "/v1/invites/56P47ITi8D1jDU9E2Sqd8Q"
+  },
+  "status": 200
+}

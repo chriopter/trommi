@@ -1,0 +1,14 @@
+{
+  "answer": "{\"error\":\"wrong-login\",\"message\":\"the password, kit or passkey is wrong\"}",
+  "asked": {
+    "route": "delete_account"
+  },
+  "content_range": null,
+  "name": "account-delete-wrong",
+  "request": {
+    "body": "{\"password\":{\"auth_key\":\"9cMHHeLtpB_Cr-2RnPY4sHcqdivC7JbrYlAHgbmdkFM\"}}",
+    "method": "DELETE",
+    "path": "/v1/account"
+  },
+  "status": 401
+}
