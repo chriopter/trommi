@@ -221,7 +221,9 @@ Distribution certificate through the App Store Connect key. The IPA's entitlemen
 `.entitlements` files (`ios_entitlements.py`), and that very file is uploaded through the App Store Connect Build
 Uploads API (`asc.py upload`; no second Xcode export; the repository variable `IOS_UPLOADER=xcode` goes back to the
 export with destination upload). The iOS app has its own workflow, `.github/workflows/ios.yml`, so `build.yml` never
-waits for it: after a run of `build.yml` on main whose release marks iOS changed, it checks the client, builds the core
+waits for it: after a run of `build.yml` on main whose release marks iOS changed (or whose iOS inputs differ from those
+last delivered, `.github/scripts/ios_delivered.sh`: a waiting run is replaced by the newest), it checks the client,
+builds the core
 on the Mac and calls `deploy_ios.yml`; the upload checks that release first (`.github/scripts/ios_release_gate.sh`:
 signature, tag, commit, iOS inputs), so only a released app ships. By hand, Actions -> deploy_ios with `dry_run` signs and checks everything and
 uploads nothing. The Mac job ends with the upload; waiting for App Store Connect to

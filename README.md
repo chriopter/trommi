@@ -253,7 +253,8 @@ flowchart LR
   1Password. Each part is delivered only when it changed.
 - **The iOS app** has its own workflow, `ios.yml`, so nothing of web, hub or connector waits for a Mac or TestFlight:
   on a pull request it checks the iOS client; after `build.yml` on main it builds and delivers the app when that run's
-  release marks iOS changed, and the upload checks that release first.
+  release marks iOS changed, or when TestFlight still has older iOS inputs (a waiting delivery is replaced by the
+  newest), and the upload checks that release first.
 - **The hub:** CI sends no code and has no SSH, only "take `v<N>`" over the private network. The server's updater
   (its own user, no root) fetches the release itself, checks it against the pinned key, refuses anything older,
   swaps, and puts the release before back if the new hub is not well within 60 s.
@@ -287,7 +288,8 @@ store. The newest is always at
 
 1. **The release:** published, its manifest signed by the release key, of this repository, with its commit's iOS
    inputs (the Mac app is built from the same paths as the iOS app; `.github/scripts/mac_release.sh check`).
-2. **The release marks the app changed** (`changed.ios`): on a Mac runner the Rust core for the Mac, then
+2. **The release marks the app changed** (`changed.ios`), or the newest Mac app on a release is of older iOS inputs
+   (a waiting build was replaced by the newest): on a Mac runner the Rust core for the Mac, then
    [`.github/scripts/mac_direct.sh`](.github/scripts/mac_direct.sh): archive (build number = the release number),
    export with method `developer-id` (the team's Developer ID Application certificate, hardened runtime, Xcode's
    Developer ID profile for push and associated domains), checked (authority, the very certificate, runtime, secure
