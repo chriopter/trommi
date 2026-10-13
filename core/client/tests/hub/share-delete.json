@@ -1,0 +1,15 @@
+{
+  "answer": "{\"deleted\":true}",
+  "asked": {
+    "route": "delete_share",
+    "share": "CakKfUk58ZSOClR-eGqPbQ"
+  },
+  "content_range": null,
+  "name": "share-delete",
+  "request": {
+    "body": null,
+    "method": "DELETE",
+    "path": "/v1/shares/CakKfUk58ZSOClR-eGqPbQ"
+  },
+  "status": 200
+}

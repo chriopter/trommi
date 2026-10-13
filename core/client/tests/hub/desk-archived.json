@@ -1,0 +1,15 @@
+{
+  "answer": "{\"artifacts\":[],\"cards\":[],\"change\":20,\"groups\":[],\"notes\":[],\"permission_requests\":[],\"registers\":[],\"truncated\":false}",
+  "asked": {
+    "only": "archived",
+    "route": "desk"
+  },
+  "content_range": null,
+  "name": "desk-archived",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/desk?archived=1"
+  },
+  "status": 200
+}

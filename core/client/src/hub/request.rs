@@ -36,6 +36,8 @@ pub(crate) struct Build {
     body: Option<Bytes>,
     class: HttpClass,
     max_answer: usize,
+    timeout_ms: u32,
+    key: Option<String>,
 }
 
 /// Starts a request at `site`. `path` is made of fixed words and ids only. `token`: whether the route takes one.
@@ -76,6 +78,8 @@ pub(crate) fn begin(
         body: None,
         class: HttpClass::Interactive,
         max_answer,
+        timeout_ms: TIMEOUT_MS,
+        key: None,
     })
 }
 
@@ -105,6 +109,20 @@ impl Build {
         self.header("content-type", "application/json".to_owned())
     }
 
+    /// A body of bytes as they are (a file).
+    pub(crate) fn bytes(mut self, body: &[u8]) -> Self {
+        self.body = Some(Bytes(body.to_vec()));
+        self.header("content-type", "application/octet-stream".to_owned())
+    }
+
+    /// A transfer: its class, a longer wait, and for one that may outlive the App its stable key.
+    pub(crate) fn transfer(mut self, class: HttpClass, key: Option<String>) -> Self {
+        self.class = class;
+        self.timeout_ms = super::limits::TRANSFER_TIMEOUT_MS;
+        self.key = key;
+        self
+    }
+
     pub(crate) fn class(mut self, class: HttpClass) -> Self {
         self.class = class;
         self
@@ -116,10 +134,10 @@ impl Build {
             url: self.url,
             headers: self.headers,
             body: self.body,
-            timeout_ms: TIMEOUT_MS,
+            timeout_ms: self.timeout_ms,
             max_answer: u32::try_from(self.max_answer).unwrap_or(u32::MAX),
             class: self.class,
-            key: None,
+            key: self.key,
         }
     }
 }
