@@ -18,10 +18,16 @@ import Foundation
  *  a step of a work trail (`work`). `opened`: its body opened here. */
 public struct Rec {
   public var envelopeNumber: Int
-  public var json: JV
+  /** What it keeps, as the JSON value; held as its text (`text`): a room's thousands of records waiting for the next
+   *  save took several times their size as values. */
+  public var json: JV {
+    get { JV.parse(text) ?? .null }
+    set { text = newValue.encoded() }
+  }
+  private(set) var text: Bytes
   public var opened: Bool
-  public init(envelopeNumber: Int, json: JV, opened: Bool) { self.envelopeNumber = envelopeNumber; self.json = json; self.opened = opened }
-  static func encode(_ r: Rec) -> Bytes { JV.obj(["n": .num(Double(r.envelopeNumber)), "o": .bool(r.opened), "r": r.json]).encoded() }
+  public init(envelopeNumber: Int, json: JV, opened: Bool) { self.envelopeNumber = envelopeNumber; self.text = json.encoded(); self.opened = opened }
+  static func encode(_ r: Rec) -> Bytes { Array("{\"n\":\(r.envelopeNumber),\"o\":\(r.opened),\"r\":".utf8) + r.text + [0x7D] }
   static func decode(_ b: Bytes) -> Rec? {
     guard let v = JV.parse(b), let n = v["n"].int else { return nil }
     return Rec(envelopeNumber: n, json: v["r"], opened: v["o"].truthy)

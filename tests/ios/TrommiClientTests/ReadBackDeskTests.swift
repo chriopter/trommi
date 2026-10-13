@@ -40,6 +40,7 @@ final class ReadBackDeskTests: XCTestCase {
     XCTAssertEqual(room.record.past?.passedOver, true)
     XCTAssertEqual(shown(room), [card])
     await room.saveCacheAndWait(snapshot: true)
+    XCTAssertTrue(room.log.isEmpty, "what the cache holds is not kept in memory as well")
     return (room, group)
   }
 

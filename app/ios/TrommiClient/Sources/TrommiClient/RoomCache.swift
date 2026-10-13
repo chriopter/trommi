@@ -125,7 +125,11 @@ extension Room {
     }
     saveTail = Task { _ = await t.value }
     // What could not be written is written with the next save.
-    if !(await t.value) { dirtyRecs.formUnion(numbers); cacheDirty = true }
+    if !(await t.value) { dirtyRecs.formUnion(numbers); cacheDirty = true; return }
+    // What is in the cache now (appended, or in the board written) is not kept in memory as well: the log holds
+    // what is still to be written (a room of thousands of envelopes kept each one's JSON while the app ran). The head
+    // counts them still (`restoredCount`).
+    for n in numbers where !dirtyRecs.contains(n) && log.removeValue(forKey: n) != nil { restoredCount += 1 }
   }
 
   /**
