@@ -6,6 +6,7 @@
 //   public/          the files the worker serves: PUBLIC_DIR as it is (its _headers must carry Strict-Transport-Security,
 //                    COOP and CORP for every address, or nothing is put together)
 //   worker.js        app/web/worker.js
+//   whats-new.mjs    app/web/whats-new.mjs (worker.js imports it)
 //   entry.js         what the worker runtime loads: worker.js's default export alone. worker.js also exports
 //                    constants for the dev server and the tests, and the runtime refuses a module whose named
 //                    exports are not handlers ("Incorrect type for map entry 'FAVICON'")
@@ -77,6 +78,7 @@ fs.cpSync(from, path.join(out, 'public'), { recursive: true })
 // Not in the build's own manifest (gen/manifest.json): the same source built anywhere stays the same bytes.
 fs.writeFileSync(path.join(out, 'public', 'gen', 'release.json'), `${JSON.stringify({ version, commit, released: new Date().toISOString() })}\n`)
 fs.copyFileSync(path.join(REPO, 'app/web/worker.js'), path.join(out, 'worker.js'))
+fs.copyFileSync(path.join(REPO, 'app/web/whats-new.mjs'), path.join(out, 'whats-new.mjs'))
 fs.writeFileSync(path.join(out, 'entry.js'), "import worker from './worker.js'\nexport default worker\n")
 fs.writeFileSync(path.join(out, 'wrangler.jsonc'), `${JSON.stringify(config, null, 2)}\n`)
 
