@@ -31,6 +31,8 @@ fn an_empty_device_starts_signed_out() {
             ..
         }
     ));
+    // (an empty slot needs no hub: nothing more is read)
+    assert!(!sim.log.iter().any(|e| matches!(e, Effect::Store { op: StoreOp::Get { .. }, .. })));
 }
 
 #[test]

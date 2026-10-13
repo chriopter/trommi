@@ -56,6 +56,18 @@ shell                                       App (core/client, no I/O, no clock, 
   Event::Action { action }           ──▶   …   (a tap, a typed line)
 ```
 
+With `Config.hub` empty, a start that loaded a stored device reads the app store's key `room` (`Store{Get}`) before it opens it: the hub of the room this
+slot holds, written by a join with the code before the device's first write.
+
+**Signing in with the recovery code.** `App::join_room(now, RoomJoin { hub, room, keys })` on a slot without a device
+in a room (`Phase::SignedOut`) makes the device, reads and checks the room (its sealed keys, the room group's
+GroupInfos, live sessions and Commits; no content), posts the join, and then joins the live session groups with the
+same keys (`App::sessions_not_joined`). `App::room_join()` says where it stands: `Step(Reading | Checking | Joining)`,
+`Waiting { retry_at }`, `Joined`, `Failed(error)` with `error.code()` one of `wrong-recovery`, `not-found`,
+`too-many`, `room-exists`, `interrupted` (a join was posted and its answer never read: the code is asked for again,
+and the join goes on from it), `busy`, the core's code of a room that does not verify, or the hub's refusal. A join
+that fails before it was posted leaves nothing stored; the keys of the code are never stored.
+
 `App::handle(now_ms, Event) -> Vec<Effect>` is the only entry. Time comes in beside each event (`now_ms`, the
 shell's clock); the core never reads a clock. The protocol's randomness is the system's, read inside
 `core/protocol`; the core's own jitter comes from `Config.seed`, so a seeded test repeats exactly. Local-time rules
