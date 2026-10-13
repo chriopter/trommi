@@ -604,9 +604,9 @@ impl ClientModel {
             if c.is_empty() {
                 return Ok(String::new());
             }
-            let p = m.patch(c);
+            let p = m.patch_text(c);
             *c = Change::new();
-            Ok(p.to_string())
+            Ok(p)
         })
     }
 

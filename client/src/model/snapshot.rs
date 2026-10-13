@@ -262,4 +262,19 @@ mod tests {
         assert!(a.load_text(r#"{"cards":[["c2"]]}"#).is_err());
         assert!(a.load_text("[").is_err());
     }
+
+    #[test]
+    fn the_patch_text_is_the_patch() {
+        let mut m = filled();
+        let mut c = crate::model::change::Change::new();
+        m.touch_all(&mut c);
+        c.cards.insert("gone".into());
+        c.items.entry("chat:gone".into()).or_default();
+        let text = m.patch_text(&c);
+        let v = m.patch(&c);
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), v);
+        assert_eq!(v["cards"], json!([["c1", m.snapshot()["cards"][0][1]], ["gone", null]]));
+        assert_eq!(v["timelines"][0]["meta"], Value::Null);
+        assert_eq!(v["timelines"][1]["items"].as_array().map(Vec::len), Some(2));
+    }
 }
