@@ -405,6 +405,10 @@ name = "connector_codex"
 path = "connector/codex.rs"
 
 [[test]]
+name = "connector_sessions"
+path = "connector/sessions.rs"
+
+[[test]]
 name = "connector_codex_real"
 path = "connector/codex_real.rs"
 

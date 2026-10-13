@@ -1412,8 +1412,21 @@ async fn an_unconnected_session_connects_by_the_connect_tool_without_a_restart()
     mcp.close().await;
 
     std::fs::remove_file(seat.folder.join(".trommi/room")).expect("removed");
+    // the session whose own key is in one of the rooms is in that room, whatever else the folder holds
     let output = seat
         .command(&["whoami"])
+        .output()
+        .await
+        .expect("whoami runs");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // another session, with no key of its own here, is told which rooms there are
+    let output = seat
+        .command(&["whoami"])
+        .env("TROMMI_SESSION_KEY", "test-another")
         .output()
         .await
         .expect("whoami runs");

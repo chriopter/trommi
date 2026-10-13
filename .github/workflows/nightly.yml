@@ -4,6 +4,8 @@
 #   hub_limits               a_room_of_a_thousand_human_devices (1000 human devices, the founding above 1 MiB)
 #   core_groups_concurrency  a_device_catches_up_across_twenty_groups_in_the_hubs_order_only (78 rounds)
 #   connector_paths          helper_sessions_up_to_the_limit_then_close_one_to_open_another (100 helpers, the 101st)
+#   connector_sessions       the whole session matrix (Claude Code and Codex, two accounts, folders, resume, restart,
+#                            killed connector, stale key, self-join beside a link join); pull requests run its fast cases
 # On the newest commit of main. When one fails, the job `report` opens the issue "Nightly full tests <commit> failed"
 # (label nightly-failed) naming the tests that failed, or comments on the open one; the next night that passes
 # closes it. It deploys nothing and reads no secret.
@@ -62,7 +64,10 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/nextest.log" || status=$?
           # all three ran: a filter that matches fewer (a test renamed) is a failure too
           grep -Eq 'Starting 3 tests' "$RUNNER_TEMP/nextest.log" || { echo "::error::not the three full-size tests"; status=1; }
-          failed=$(sed -n 's/^ *\(FAIL\|TIMEOUT\|SIGSEGV\|SIGABRT\) \[[^]]*\] ([^)]*) trommi-tests::\([a-z0-9_]*\) \([a-z0-9_]*\)$/\2::\3/p' "$RUNNER_TEMP/nextest.log" | sort -u | tr '\n' ' ')
+          # the session matrix, every case (tests/connector/sessions.rs)
+          TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked -p trommi-tests --no-fail-fast \
+            --test connector_sessions 2>&1 | tee -a "$RUNNER_TEMP/nextest.log" || status=$?
+          failed=$(sed -n 's/^ *\(FAIL\|TIMEOUT\|SIGSEGV\|SIGABRT\) \[[^]]*\] ([^)]*) trommi-tests::\([a-z0-9_]*\) \([a-z0-9_:]*\)$/\2::\3/p' "$RUNNER_TEMP/nextest.log" | sort -u | tr '\n' ' ')
           [ "$status" = 0 ] || [ -n "$failed" ] || failed='the run did not finish (see the log)'
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
           exit "$status"

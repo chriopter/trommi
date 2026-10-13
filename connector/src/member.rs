@@ -103,6 +103,26 @@ pub struct Cfg {
     pub invite: String,
     pub room: String,
 }
+/// The Codex thread this process serves, as the owner of its slots (`codex:<thread>`), once a tool call named it.
+static THREAD_OWNER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+/// Names the Codex thread this process serves: from now on its slots are that thread's. Codex names nothing of
+/// its session in the environment, and its app server starts every thread's connector under one process: by
+/// the parent alone, two threads would be one session. Set once; a later thread is not taken.
+pub fn set_thread_owner(thread: &str) {
+    let _ = THREAD_OWNER.set(format!("codex:{thread}"));
+}
+impl Cfg {
+    /// Who this session is, for the slots it owns: `cc:<Claude Code session id>`, `key:<TROMMI_SESSION_KEY>`,
+    /// `codex:<thread>` once a Codex tool call named it, else empty (the parent process stands for the session).
+    pub fn owner(&self) -> String {
+        if self.owner.is_empty() {
+            if let Some(t) = THREAD_OWNER.get() {
+                return t.clone();
+            }
+        }
+        self.owner.clone()
+    }
+}
 pub fn env(k: &str) -> Option<String> {
     std::env::var(k).ok().filter(|v| !v.is_empty())
 }
@@ -287,6 +307,19 @@ pub fn resolve_room(cfg: &Cfg) -> Result<Option<String>> {
     }
     rooms.sort();
     if rooms.len() > 1 {
+        // A session whose own key is in one of the rooms is in that room (another session of this folder may
+        // have joined another account's room after it).
+        let own: Vec<&String> = rooms
+            .iter()
+            .filter(|r| {
+                slots_in(cfg, &cfg.keys_dir.join(r)).into_iter().any(|n| {
+                    owned_by(owner_of(&paths_of(cfg, r, n)).as_ref(), &cfg.owner(), ppid())
+                })
+            })
+            .collect();
+        if own.len() == 1 {
+            return Ok(Some(own[0].clone()));
+        }
         if let Some(joined) = joined_room(cfg).filter(|r| rooms.contains(r)) {
             return Ok(Some(joined));
         }
@@ -311,7 +344,7 @@ pub fn key_waiting(cfg: &Cfg) -> bool {
         .into_iter()
         .any(|n| {
             let p = paths_of(cfg, &room_id, n);
-            holders_of(&p).is_empty() && may_take(owner_of(&p).as_ref(), &cfg.owner, ppid())
+            holders_of(&p).is_empty() && may_take(owner_of(&p).as_ref(), &cfg.owner(), ppid())
         })
 }
 
@@ -351,7 +384,7 @@ pub fn last_out(cfg: &Cfg, room_id: &str) -> Option<Value> {
     marks.sort_by_key(|m| m.get("at").and_then(|v| v.as_u64()).unwrap_or(0));
     let own = marks
         .iter()
-        .rfind(|m| owned_by(m.get("owner"), &cfg.owner, ppid()))
+        .rfind(|m| owned_by(m.get("owner"), &cfg.owner(), ppid()))
         .cloned();
     own.or_else(|| marks.last().cloned())
 }
@@ -433,7 +466,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
     let (usable, foreign): (Vec<u32>, Vec<u32>) = keyed_raw.iter().partition(|n| {
         may_take(
             owner_of(&paths_of(cfg, room_id, **n)).as_ref(),
-            &cfg.owner,
+            &cfg.owner(),
             ppid(),
         )
     });
@@ -442,7 +475,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
         |n| {
             owned_by(
                 owner_of(&paths_of(cfg, room_id, n)).as_ref(),
-                &cfg.owner,
+                &cfg.owner(),
                 ppid(),
             )
         },
@@ -472,7 +505,7 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
         let mut handed = false;
         if !r.ok && ask {
             let was = r.holders.clone();
-            match ask_yield(&p, &cfg.session, &cfg.owner).await {
+            match ask_yield(&p, &cfg.session, &cfg.owner()).await {
                 Ok(()) => {
                     r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
                     if r.ok {
@@ -499,8 +532,8 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
         }
         if r.ok {
             // A slot nobody owned yet becomes this session's.
-            if !owned_by(owner_of(&p).as_ref(), &cfg.owner, ppid()) {
-                write_owner(&p, &owner_record(&cfg.owner, Some(ppid())));
+            if !owned_by(owner_of(&p).as_ref(), &cfg.owner(), ppid()) {
+                write_owner(&p, &owner_record(&cfg.owner(), Some(ppid())));
             }
             return SlotPaths {
                 has_key: true,
@@ -979,7 +1012,7 @@ impl Member {
                         // (with keys of other sessions here, only this session's own mark speaks for it)
                         .filter(|m| {
                             p.foreign.is_empty()
-                                || owned_by(m.get("owner"), &self.cfg.owner, ppid())
+                                || owned_by(m.get("owner"), &self.cfg.owner(), ppid())
                         })
                 } else {
                     None
@@ -1142,7 +1175,7 @@ impl Member {
         } else {
             own_held_slot(&self.cfg, &room_id).await
         };
-        let rec = if cur.has_key && !self.cfg.owner.is_empty() {
+        let rec = if cur.has_key && !self.cfg.owner().is_empty() {
             owner_of(&cur)
         } else {
             None
@@ -1150,7 +1183,7 @@ impl Member {
         if rec
             .as_ref()
             .and_then(|r| r["owner"].as_str())
-            .is_some_and(|o| !o.is_empty() && o != self.cfg.owner)
+            .is_some_and(|o| !o.is_empty() && o != self.cfg.owner())
         {
             eprintln!("[trommi] slot {} belongs to another Claude Code session: it stays as it is, and this join goes into a free slot", cur.slot);
             unlock_slot(&cur);
@@ -1235,7 +1268,7 @@ impl Member {
         let p = self.paths().unwrap();
         write_owner(
             &p,
-            &owner_record(&self.cfg.owner, if cli { None } else { Some(ppid()) }),
+            &owner_record(&self.cfg.owner(), if cli { None } else { Some(ppid()) }),
         );
         note_joined_room(&self.cfg, &room_id);
         if let Some(before) = old.clone().or(held.clone()) {
@@ -1282,8 +1315,8 @@ impl Member {
                 let owner = owner_of(&before).and_then(|r| r["owner"].as_str().map(String::from));
                 let foreign = old.is_none()
                     && owner.as_ref().is_some_and(|o| !o.is_empty())
-                    && !self.cfg.owner.is_empty()
-                    && owner.as_deref() != Some(self.cfg.owner.as_str());
+                    && !self.cfg.owner().is_empty()
+                    && owner.as_deref() != Some(self.cfg.owner().as_str());
                 let aside = if free && !foreign {
                     Some(set_slot_aside(&before, None))
                 } else {

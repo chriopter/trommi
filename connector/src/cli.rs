@@ -138,7 +138,7 @@ pub async fn say(argv: &[String]) -> Result<String> {
     let until = now_ms() + env_ms("TROMMI_SAY_MS", 30_000).max(1);
     // (the owner: a running connector of another agent session in this folder refuses, so that these words never
     // go into that session's chat)
-    let request = json!({ "op": "say", "text": text, "session": session, "urgent": urgent, "owner": cfg.owner });
+    let request = json!({ "op": "say", "text": text, "session": session, "urgent": urgent, "owner": cfg.owner() });
     let mut last: Option<Fault>;
     loop {
         let mut silent = vec![];
@@ -429,7 +429,7 @@ pub fn allow_tools() -> std::io::Result<()> {
 pub async fn claim_key() -> Result<String> {
     let mut cfg = connector_config(None, false);
     cfg.invite = String::new();
-    if cfg.owner.is_empty() {
+    if cfg.owner().is_empty() {
         return Err(Fault::plain(
             "no agent session here: run it from the Claude Code session whose key it is (CLAUDE_CODE_SESSION_ID) or with TROMMI_SESSION_KEY",
         ));
@@ -446,7 +446,7 @@ pub async fn claim_key() -> Result<String> {
         ));
     };
     let record = owner_of(&p);
-    if owned_by(record.as_ref(), &cfg.owner, 0) {
+    if owned_by(record.as_ref(), &cfg.owner(), 0) {
         return Ok(format!("slot {} is this session's already", p.slot));
     }
     let unowned = record.as_ref().is_none_or(|r| {
@@ -459,7 +459,7 @@ pub async fn claim_key() -> Result<String> {
             p.slot
         )));
     }
-    write_owner(&p, &owner_record(&cfg.owner, None));
+    write_owner(&p, &owner_record(&cfg.owner(), None));
     Ok(format!(
         "slot {} belongs to this session now ({})",
         p.slot,

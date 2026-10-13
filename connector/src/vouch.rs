@@ -108,3 +108,32 @@ pub fn room_for(cfg: &Cfg) -> Option<String> {
         .collect();
     (rooms.len() == 1).then(|| rooms[0].clone())
 }
+
+/// The rooms a keyless session may self-join, in the order it asks: the room of its folder first, then every
+/// other room this folder has keys in (a folder of sessions of two accounts: a running session of this program
+/// and account may be in either), else the only room under the keys folder.
+pub fn rooms_for(cfg: &Cfg) -> Vec<String> {
+    let mut rooms: Vec<String> = room_for(cfg).into_iter().collect();
+    let names: Vec<String> = std::fs::read_dir(&cfg.keys_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| trommi_core::ids::RoomId::from_base64url(n).is_ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    for n in names {
+        if !rooms.contains(&n) && !crate::member::slots_in(cfg, &cfg.keys_dir.join(&n)).is_empty() {
+            rooms.push(n);
+        }
+    }
+    rooms
+}
+
+/// Who could vouch for a keyless session: the held slots of its rooms (`rooms_for`), in that order.
+pub fn vouchers(cfg: &Cfg) -> Vec<SlotPaths> {
+    rooms_for(cfg)
+        .iter()
+        .flat_map(|room| held_slots(&cfg.keys_dir.join(room)))
+        .collect()
+}
