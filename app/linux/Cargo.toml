@@ -25,6 +25,8 @@ path = "src/lib.rs"
 trommi-core = { path = "../../core/protocol" }
 trommi-client-core = { path = "../../core/client" }
 trommi-core-swift = { path = "../../core/bindings/swift", default-features = false }
+# The native executor of the app core: HTTP, the event stream, the stores, the loop (shell.rs).
+trommi-io = { path = "../../core/io" }
 # The hub client (routes, sign-in, the live stream) and the journal on disk, as the connector has them.
 trommi-connector = { path = "../../connector" }
 tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "sync", "time"] }

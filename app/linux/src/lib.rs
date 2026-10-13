@@ -3,6 +3,7 @@
 //! The window is `qml/`; `main.rs` only opens it.
 pub mod engine;
 pub mod notify;
+pub mod shell;
 pub mod store;
 pub mod view;
 mod bridge;
