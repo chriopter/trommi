@@ -1,11 +1,11 @@
-// Core.swift: trommi-core as Swift sees it. One file, one call for one call of core/README.md ("API at a glance"):
+// Core.swift: trommi-core as Swift sees it. One file, one call for one call of core/protocol/README.md ("API at a glance"):
 // `CoreDevice` is `Device`, `CoreStorage` is `Storage`, `CoreTools` is the stateless modules (account, invite, files,
 // hub_auth, push, envelope reading). Bytes, ids and plain structs cross the edge, as in the core.
 //
 // Nothing here computes. The implementation is TrommiCoreLive (UniFFI over the Rust library); the tests use a core
 // that seals nothing (Tests/TrommiClientTests/FakeCore.swift). Every call that needs time takes `nowMs`.
 //
-// The shapes are the binding's (core/swift/src/*.rs, branch v2-bindings at b2e5b98): records and calls keep its
+// The shapes are the binding's (core/bindings/swift/src/*.rs, branch v2-bindings at b2e5b98): records and calls keep its
 // names in Swift's spelling, and a record with a `kind` and optional fields there is an enum with values here. What
 // the app never does as a human device (an agent's drafts, the command gate, helper sessions) is left out.
 import Foundation
@@ -61,7 +61,7 @@ public protocol CoreStorage: AnyObject {
   func apply(expectedRevision: UInt64, batch: StoreBatch) throws
 }
 
-/** What an outbox entry asks the hub for; the parts of each kind in the order core/src/store.rs names. */
+/** What an outbox entry asks the hub for; the parts of each kind in the order core/protocol/src/store.rs names. */
 public enum OutboxKind: UInt8 {
   case roomFounding = 1, groupFounding, commit, externalCommit, message, relayMessage, envelope, keyPackages, sealedKey, recoveryCode
   case recoveryCommit, recoveryFinish
@@ -178,7 +178,7 @@ public struct Joined: Equatable {
   public init(group: GroupId, epoch: UInt64, addedBy: DeviceId, offending: [DeviceId] = []) { self.group = group; self.epoch = epoch; self.addedBy = addedBy; self.offending = offending }
 }
 
-// ---- stored content (sections 9 and 10): the binding's records of core/swift/src/content.rs ----------------
+// ---- stored content (sections 9 and 10): the binding's records of core/bindings/swift/src/content.rs ----------------
 
 /** The kind of an envelope. `reserved`: a kind a newer Trommi defines (its number, 8 or above): chained, never applied. */
 public enum EnvelopeKind: Equatable { case item, version, answer, request, verdict, register, takeBack, reserved(UInt8) }
@@ -366,7 +366,7 @@ public struct BoardLoaded: Equatable {
   public init(frontier: [WriterHead], fresh: [Int], covered: [Int]) { self.frontier = frontier; self.fresh = fresh; self.covered = covered }
 }
 
-// ---- joining by link (12.1): the binding's records of core/swift/src/invite.rs ----------------------------
+// ---- joining by link (12.1): the binding's records of core/bindings/swift/src/invite.rs ----------------------------
 
 public enum InviteRole: Equatable { case human, agent }
 /** The check code both sides show: six of the core's 64 emoji. The person compares them. */
@@ -729,7 +729,7 @@ public struct SelfTestStep: Equatable {
 public protocol CoreTools: AnyObject {
   /** The version of the core this library was built from (core `VERSION`). */
   var version: String { get }
-  /** The core's check of itself through this binding, both cipher suites (core/swift `self_test()`). */
+  /** The core's check of itself through this binding, both cipher suites (core/bindings/swift `self_test()`). */
   func selfTest() -> [SelfTestStep]
 
   /** A new device over an empty store (core `Device::create`), and an existing one (`Device::open`). */

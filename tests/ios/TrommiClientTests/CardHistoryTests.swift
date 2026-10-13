@@ -1,4 +1,4 @@
-// CardHistoryTests: a card's whole history under it (client/src/model/types.rs `history_of`, Desk.swift eventsOf,
+// CardHistoryTests: a card's whole history under it (core/client/src/model/types.rs `history_of`, Desk.swift eventsOf,
 // CardScreen.swift RevisionRow). Every revision stays, with when and what changed: a newer one never replaces those
 // before it. The history comes from the client core whole, also on a lean card (no version body read for it).
 import Foundation

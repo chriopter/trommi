@@ -1,4 +1,4 @@
-// A store for the tests of the Swift binding, with the core's contract (core/swift/src/store.rs).
+// A store for the tests of the Swift binding, with the core's contract (core/bindings/swift/src/store.rs).
 import Foundation
 import TrommiCoreRust
 

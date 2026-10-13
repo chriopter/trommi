@@ -2,7 +2,7 @@
 // binding's interface: every other module of the client layer imports the core's types from here, and only
 // core-wasm.ts touches the binding's module.
 //
-// Part 1 is the binding itself: the typings of core/wasm/js/trommi-core.d.ts, re-exported unchanged. Their
+// Part 1 is the binding itself: the typings of core/bindings/wasm/js/trommi-core.d.ts, re-exported unchanged. Their
 // conventions hold for everything here: bytes are a Uint8Array of their own; ids are bytes (a device 32, a room 32,
 // a session 16, a group 32 or 48, a hash 32; ids.ts turns them into the model's lowercase hex and back); counts and
 // times are whole numbers below 2^53; an absent value is null; every refusal is a TrommiError whose `code` is the
@@ -12,7 +12,7 @@
 // Part 2 is PROVISIONAL: what the web app needs and the binding does not have yet. Today it is EMPTY: stored
 // content, joining by link and recovery are all the binding's own, in the binding's shapes. A call the binding lacks
 // is named there (and in core-wasm.ts' table, which answers it with the refusal `core-missing`) until it is bound.
-import type * as Binding from '../../../core/wasm/js/trommi-core.js'
+import type * as Binding from '../../../core/bindings/wasm/js/trommi-core.js'
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Part 1: the binding
@@ -28,7 +28,7 @@ export type {
   Urgency, ObjectType, ObjectState, DraftKind, Draft, Sealed, EnvelopeKind, TimelineKind, TimelineRef, ObjectHeader,
   EnvelopeHeader, BindKind, Bind, ObjectView, RegisterChange, EnvelopeOutcome, ReceivedEnvelope, ChainHead, WriterHead,
   AccountName, Standing, ClientDesk, ClientModel, DeskCardIn, DeskRequestIn, DeskListed, DeskStackOp, DeskSessionOpen, DeskSessionOp, DeskDelta, HeadStanding, ServedItem, BoardLoaded, Gate, CommandKind, AnswerKind, CommandDecision, Finding, BoardItem,
-} from '../../../core/wasm/js/trommi-core.js'
+} from '../../../core/bindings/wasm/js/trommi-core.js'
 
 /** Everything of the binding's module that has no state: versions, the self test, the account, files, share links,
  *  ids, push, invite links, the check code's emoji, the hub's address, the board's merge. (`init` and the `Device`

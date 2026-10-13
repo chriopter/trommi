@@ -25,8 +25,8 @@ users**: the model the views read and the calls they make. Names are snake_case,
 | `engine.ts` | Owns the `Device`: outbox pump, catch-up in the hub's order, live stream, upkeep ("Engine invariants") |
 | `client.ts` | The `Client`: the model, the human actions, timelines, files, invites, sessions, push, the local cache |
 | `room.ts` | How a device comes to hold a room: `foundRoom`, `openRoom`, `joinRoom`, `joinWithCode` |
-| `model.ts`, `model-shape.ts`, `types.ts` | The model's builder (no rules of its own), an empty model, the shapes. The Desk (stack, session lists, open requests, held, expired) comes from the client core's `ClientDesk` ([`client/`](../../../client/README.md)): `project()` hands it what a batch touched and applies what changed |
-| `codec.ts` | Bodies: the JSON of spec/v1.md 9.1 and 10.5 ↔ the model's fields, register names, attachment references. A thin wrapper: the rules are the client core's codec ([`client/src/codec.rs`](../../../client/src/codec.rs)), reached through the binding (`useCodec`). A received envelope brings its body already read (`ReceivedEnvelope.body`, JSON text): the model only parses it |
+| `model.ts`, `model-shape.ts`, `types.ts` | The model's builder (no rules of its own), an empty model, the shapes. The Desk (stack, session lists, open requests, held, expired) comes from the client core's `ClientDesk` ([`core/client/`](../../../core/client/README.md)): `project()` hands it what a batch touched and applies what changed |
+| `codec.ts` | Bodies: the JSON of spec/v1.md 9.1 and 10.5 ↔ the model's fields, register names, attachment references. A thin wrapper: the rules are the client core's codec ([`core/client/src/codec.rs`](../../../core/client/src/codec.rs)), reached through the binding (`useCodec`). A received envelope brings its body already read (`ReceivedEnvelope.body`, JSON text): the model only parses it |
 | `scribble.ts`, `ink.ts`, `palette.ts` | The Scribble Board: merge of items, snapshot file, packed points, colour tokens. It runs in the page, which has no core, so it keeps a board item's wire rules for itself (the client core's `codec.rs` again, until the merge runs in the core) |
 | `work.ts` | A turn's work trail as the views fold it |
 | `store-idb.ts`, `tabs.ts` | The device's store and the cache on IndexedDB; one owner per browser profile ("Storage and tabs") |
@@ -47,7 +47,7 @@ says "real hub".
 | --- | --- | --- |
 | `model/` | `node --test` | hand-made core results (`factory.mjs`): the builder, codec, board merge, cache and mirror |
 | `hub/` | `node --test` | `hub.ts` against the fake hub; `real-hub.test.mjs` against the real hub binary (`TROMMI_HUB_BIN`), as far as that goes without a room |
-| `client/` | `node --test` | engine, client and room on the STAND-IN core (real binding for devices, groups, recovery, files; plain JSON content and invites) and the fake hub |
+| `core/client/` | `node --test` | engine, client and room on the STAND-IN core (real binding for devices, groups, recovery, files; plain JSON content and invites) and the fake hub |
 | `account/` | `node --test` | `account.ts` with the real binding and the fake hub; `real-hub.test.mjs` with the real hub binary |
 | `store/` | `node run.mjs`, Chromium | `store-idb.ts` and `tabs.ts` on real IndexedDB, Web Locks, BroadcastChannel, with the real binding |
 | `build/`, `proof/` | Chromium | the build with the real `.wasm` under the app's CSP; the self test in a worker |
@@ -124,7 +124,7 @@ What the fields mean under protocol v1:
   change number (hand back, What??, present: `presented_envelope_number`), whatever order they are read in. `content_state` other than
   `ok` means the body is not readable here (pruned, no key, a newer schema). `catching_up`: open here, but the hub's Desk does
   not list it and this device holds nothing of it newer than that Desk (client.ts `readDesk`, at the start, after
-  every catch-up and every minute; the rule is the client core's, `client/src/desk.rs`): settled elsewhere, off the stack. A card the Desk lists whose newest version
+  every catch-up and every minute; the rule is the client core's, `core/client/src/desk.rs`): settled elsewhere, off the stack. A card the Desk lists whose newest version
   this device lacks is read from the Desk's copy of that version. The Desk lists only the groups this device is
   in, so it is read again as soon as a session group was joined; a listed card not read yet stands as a quiet
   "Loading …" placeholder.

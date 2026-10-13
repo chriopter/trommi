@@ -68,7 +68,7 @@ export function register(t) {
 }
 
 // ---- note store ----
-// Notes as end-to-end objects (core/README.md, "note"): every human device may write a new version,
+// Notes as end-to-end objects (core/protocol/README.md, "note"): every human device may write a new version,
 // concurrent versions are settled by the core's causal order (R2). Writing one is done here with the core,
 // behind a { code, text } answer.
 //

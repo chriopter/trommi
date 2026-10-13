@@ -1578,7 +1578,7 @@ async fn speed_of_every_client() {
 /// helper under the name it was opened with, at once and after a sync.
 ///
 /// ```text
-/// tests/client/mega/prepare.sh .     # (core/wasm/build.sh is enough with MEGA_IOS=0)
+/// tests/client/mega/prepare.sh .     # (core/bindings/wasm/build.sh is enough with MEGA_IOS=0)
 /// cargo test -p trommi-tests --test client_mega helper_names -- --ignored --nocapture
 /// ```
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

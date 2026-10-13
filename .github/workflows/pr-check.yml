@@ -171,7 +171,7 @@ jobs:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: app/web/package-lock.json
-      # the Rust core for the browser: core/wasm/build.sh, or the same bytes from main's cache (.github/scripts/wasm_core.sh)
+      # the Rust core for the browser: core/bindings/wasm/build.sh, or the same bytes from main's cache (.github/scripts/wasm_core.sh)
       - name: Compiler (rust-toolchain.toml)
         run: sh .github/scripts/rust_toolchain.sh wasm32-unknown-unknown
       - name: The core's inputs
@@ -180,7 +180,7 @@ jobs:
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: pkg
         with:
-          path: core/wasm/pkg
+          path: core/bindings/wasm/pkg
           key: ${{ steps.core.outputs.key }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.pkg.outputs.cache-hit != 'true'
@@ -194,7 +194,7 @@ jobs:
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: steps.pkg.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         with:
-          path: core/wasm/pkg
+          path: core/bindings/wasm/pkg
           key: ${{ steps.core.outputs.key }}
       - name: Packages
         working-directory: app/web
@@ -303,16 +303,16 @@ jobs:
         id: core_inputs
         run: |
           set -eu
-          sum=$(git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+          sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
           echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
-            core/swift/TrommiCoreRust/lib
-            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+            core/bindings/swift/TrommiCoreRust/lib
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Compiler (rust-toolchain.toml), Swift
         env:
           HIT: ${{ steps.core_cache.outputs.cache-hit }}
@@ -326,15 +326,15 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: The Rust core for Swift on this machine
         if: steps.core_cache.outputs.cache-hit != 'true'
-        run: sh core/swift/build.sh host
+        run: sh core/bindings/swift/build.sh host
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: steps.core_cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
-            core/swift/TrommiCoreRust/lib
-            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+            core/bindings/swift/TrommiCoreRust/lib
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Test
         env:
           FAST: ${{ github.event_name == 'pull_request' }}
@@ -363,16 +363,16 @@ jobs:
         id: core_inputs
         run: |
           set -eu
-          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
           echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
-            core/swift/TrommiCoreRust/lib
-            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+            core/bindings/swift/TrommiCoreRust/lib
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Compiler (rust-toolchain.toml)
         if: steps.core_cache.outputs.cache-hit != 'true'
         run: |
@@ -387,7 +387,7 @@ jobs:
           set -eu
           DARWIN_CLANG_RT="$(xcrun --sdk iphoneos clang -print-resource-dir)/lib/darwin"
           export DARWIN_CLANG_RT
-          sh core/swift/build.sh
+          sh core/bindings/swift/build.sh
       - name: XcodeGen
         run: |
           set -eu

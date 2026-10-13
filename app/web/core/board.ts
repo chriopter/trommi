@@ -1,4 +1,4 @@
-// board.ts: the seam between the client core's board model (client/src/model, the binding's `ClientModel`) and the
+// board.ts: the seam between the client core's board model (core/client/src/model, the binding's `ClientModel`) and the
 // page's copy of it. The core builds the model; it hands, once per batch, the patch of what changed (JSON in the
 // shape of mirror.ts `ModelPatch`), which this module turns into the copy's own objects, and the copy back into the
 // core's snapshot for a start from the cache.

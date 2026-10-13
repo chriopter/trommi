@@ -362,7 +362,7 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
   const here = sessionPath(s.id, base), on = mode === 'questions', n = s.fresh.length
   return html`<nav class="session-mode${phone ? ' is-phone' : ''}" id="session-filters-${phone ? 'phone-' : ''}${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${here}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${here}?only=questions"${on ? raw(' aria-current="page"') : ''}${phone ? '' : raw(` data-controller="title" data-title-count-value="${n}"`)}>Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
 }
-/** The lines a session's page shows (their state as the client core made it, client/src/status.rs line_state): the working ones, those that wait on
+/** The lines a session's page shows (their state as the client core made it, core/client/src/status.rs line_state): the working ones, those that wait on
  *  him, those put off with their card, a done one for a while, and a stale one (nobody updated it for LINE_STALE_MS)
  *  greyed and still for a day; not those of a gone session. */
 const STALE_SHOWN_MS = 24 * 60 * 60_000

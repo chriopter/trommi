@@ -2,7 +2,7 @@
 
 The Trommi connector: one static binary through which a Claude Code session talks to the human's board. It is an
 **agent device** of a room on protocol v1 ([`spec/v1.md`](../spec/v1.md)): every key, every check and every byte on
-the wire comes from [`trommi-core`](../core); nothing of the first protocol is in it.
+the wire comes from [`trommi-core`](../core/protocol); nothing of the first protocol is in it.
 
 ```
 trommi-connector                     MCP stdio server "trommi" (what Claude Code starts): the launcher, which runs `serve`
@@ -173,7 +173,7 @@ as a quiet info, with a push) and every line linked to it turns `done` with that
 | `src/client.rs` | the device at work: the hub's order (one cursor for log and envelopes), Welcomes (once per batch), the command gate's answers, the outbox, lease, removal, the rollback guard, and when to stop asking a hub that is none |
 | `src/agent.rs` | what an agent writes: Chat, cards, registers, permission requests, Artifacts and files, helper sessions, the work trail |
 | `src/join.rs` | joining by link with the six emoji |
-| `src/model.rs` | what this agent knows of the board (an agent has no Desk: the client core's Desk, [`client/`](../client/README.md), is the human devices') |
+| `src/model.rs` | what this agent knows of the board (an agent has no Desk: the client core's Desk, [`core/client/`](../core/client/README.md), is the human devices') |
 | `src/bridge.rs`, `src/html.rs` | every tool, and a human's command as a channel event |
 | `src/server.rs`, `src/mcp.rs`, `src/member.rs`, `src/slots.rs`, `src/slotstore.rs`, `src/door.rs` | the MCP server, this process as a member, key slots per folder, the sockets hooks reach it through |
 | `src/line.rs`, `src/mirror.rs`, `src/trail.rs`, `src/hooks.rs` | the monitor's line, the terminal mirror, the work trail, the permission hooks |

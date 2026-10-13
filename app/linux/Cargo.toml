@@ -22,9 +22,9 @@ path = "src/lib.rs"
 [dependencies]
 # The protocol core, the client core, and the facade over both that the iOS and web apps use (here as a Rust library,
 # without UniFFI or wasm-bindgen): the same records and the same calls.
-trommi-core = { path = "../../core" }
-trommi-client-core = { path = "../../client" }
-trommi-core-swift = { path = "../../core/swift", default-features = false }
+trommi-core = { path = "../../core/protocol" }
+trommi-client-core = { path = "../../core/client" }
+trommi-core-swift = { path = "../../core/bindings/swift", default-features = false }
 # The hub client (routes, sign-in, the live stream) and the journal on disk, as the connector has them.
 trommi-connector = { path = "../../connector" }
 tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "sync", "time"] }

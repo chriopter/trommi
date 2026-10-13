@@ -1,4 +1,4 @@
-// Board.swift: the board as the views read it. The model and its rules are the client core's (client/src/model, the
+// Board.swift: the board as the views read it. The model and its rules are the client core's (core/client/src/model, the
 // binding's `ClientModel`, the same for the web app); this is its copy in Swift classes, filled from the core's patch
 // once per batch (BoardMirror.swift). The names follow the model's (snake_case fields become camelCase).
 import Foundation
@@ -180,7 +180,7 @@ public struct CardVersion {
   }
 }
 
-/** One entry of a card's history (client/src/model/types.rs `Revision`): a version a human reads as the card, the
+/** One entry of a card's history (core/client/src/model/types.rs `Revision`): a version a human reads as the card, the
  *  oldest first, with what its agent said changed. The client core keeps every one: a newer never replaces them. */
 public struct Revision: Equatable {
   public var objectVersion: Int
@@ -262,7 +262,7 @@ public final class Card {
   public var unsupported = false
   /** Settled at the hub after this device's cursor, not taken yet: off the Desk (the client core's Desk). */
   public var catchingUp = false
-  /** His "Later" as the client core holds it (client/src/desk.rs `snooze_holds`: until its time, only for the version he
+  /** His "Later" as the client core holds it (core/client/src/desk.rs `snooze_holds`: until its time, only for the version he
    *  put off): until when, and when he put it off; `unsnoozed`: an open card whose snooze ended. */
   public var snoozedUntil: UInt64?
   public var snoozedAt: UInt64?
@@ -491,7 +491,7 @@ public func keyFingerprint(_ key: Bytes) -> String {
 }
 
 /**
- * The board the views read. It is a copy: the model is the client core's (client/src/model, `ClientModel`), which
+ * The board the views read. It is a copy: the model is the client core's (core/client/src/model, `ClientModel`), which
  * takes what the protocol core accepted and hands back, once per batch, what changed (`project`, BoardMirror.swift).
  * Nothing here decides a rule of the model.
  */
@@ -522,9 +522,9 @@ public final class Board {
    *  app projects again then (Room `wakeLater`); nil: never. */
   public internal(set) var wakeAt: UInt64?
   public var openPermissionIds: [String] = []
-  /** The walk: every open card and request that waits for him, in the Desk's order (client/src/model/walk.rs). */
+  /** The walk: every open card and request that waits for him, in the Desk's order (core/client/src/model/walk.rs). */
   public internal(set) var deskOrder: [String] = []
-  /** The session list every device of the person shows (client/src/sessions.rs, one entry per session, in order):
+  /** The session list every device of the person shows (core/client/src/sessions.rs, one entry per session, in order):
    *  which sessions, their names, online or gone, archived, their parents. DeskModel draws it as it comes. */
   public internal(set) var sessionList: [JV] = []
   /** Open here, settled at the hub (or held while the app waits for the hub's first list): off the Desk. */
@@ -683,7 +683,7 @@ public final class Board {
 }
 
 extension Board {
-  /** His starred cards, the last starred first: the client core's rule (client/src/stars.rs). Card ids. */
+  /** His starred cards, the last starred first: the client core's rule (core/client/src/stars.rs). Card ids. */
   public func starredCards() -> [String] {
     guard let t = try? engine.starredCards(), let j = JV.parse(Bytes(t.utf8)) else { return [] }
     return j.array?.compactMap { $0["object_id"].string } ?? []
@@ -691,7 +691,7 @@ extension Board {
 }
 
 /** Off your mind laid out as one pile (the owner's pick of 13 October 2026, "untereinander"): the first running cards
- *  on top, the rest on one pile; the client core's rule (client/src/off_pile.rs off_pile), from the real totals. */
+ *  on top, the rest on one pile; the client core's rule (core/client/src/off_pile.rs off_pile), from the real totals. */
 public struct Pile: Equatable {
   public let top: Int, moreRunning: Int, putOff: Int, closed: Int
   public let pile: Bool

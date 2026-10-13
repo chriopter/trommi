@@ -1,6 +1,6 @@
 // A new agent let in by "They match" gets its main session at once, with its device as the session's seat (spec
 // 5.2.2, 5.2.5), against the REAL hub and the REAL core (the WASM binding), in a room that already has a second
-// human device and an agent. Runs when TROMMI_HUB_BIN names the hub's binary and core/wasm/pkg is built.
+// human device and an agent. Runs when TROMMI_HUB_BIN names the hub's binary and core/bindings/wasm/pkg is built.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -12,12 +12,12 @@ import { hex } from '../../../app/web/core/ids.ts'
 import { MemoryStore, memoryCache, storage, TIMING, until } from './helpers.mjs'
 
 const BIN = process.env.TROMMI_HUB_BIN
-const PKG = new URL('../../../core/wasm/pkg/trommi-core.js', import.meta.url)
-const skip = !BIN ? 'TROMMI_HUB_BIN is not set' : !fs.existsSync(PKG) ? 'core/wasm/pkg is not built' : false
+const PKG = new URL('../../../core/bindings/wasm/pkg/trommi-core.js', import.meta.url)
+const skip = !BIN ? 'TROMMI_HUB_BIN is not set' : !fs.existsSync(PKG) ? 'core/bindings/wasm/pkg is not built' : false
 
 async function realRooms() {
   const binding = await import(PKG.href)
-  await binding.init(fs.readFileSync(new URL('../../../core/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
+  await binding.init(fs.readFileSync(new URL('../../../core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
   const { init: _i, Device, TrommiError, StoreConflict: _s, ...stateless } = binding
   const core = { ...stateless, createDevice: store => Device.create(store), openDevice: store => Device.open(store), errorCode: e => (e instanceof TrommiError ? e.code : null) }
   return roomsOn({ core: async () => core, store: name => new MemoryStore(name), cache: async name => memoryCache(name), destroy: async () => {}, timing: TIMING })

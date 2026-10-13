@@ -3,7 +3,7 @@
 // the app on the MLS core still opens the copies an account already holds. Then the page's own light checks
 // (app/web/core/passwords.ts, passkey.ts, wordlist.ts) against the core, so that the two cannot drift apart.
 //
-//   node --test tests/web/account/vectors.test.mjs        (the binding built: core/wasm/build.sh)
+//   node --test tests/web/account/vectors.test.mjs        (the binding built: core/bindings/wasm/build.sh)
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'

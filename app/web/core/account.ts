@@ -9,7 +9,7 @@
 // a login and hands out the sealed copy; it never sees the password, the kit's words, a passkey's prf output or the
 // code.
 //
-// This module holds no cryptography of its own. Every key and every sealed copy is the core's (core/src/account.rs,
+// This module holds no cryptography of its own. Every key and every sealed copy is the core's (core/protocol/src/account.rs,
 // through `Core`: passwordKeys, kitKeys, passkeyWrapKey, sealRecoveryCode, openRecoveryCode, …), the hub's routes
 // are hub.ts's, and founding or joining a room is room.ts's. What is here is the order of those steps:
 //

@@ -37,7 +37,6 @@ on:
       - tests/src/**
       - tests/Cargo.toml
       - core/**
-      - client/**
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml

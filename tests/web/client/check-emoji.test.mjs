@@ -1,12 +1,12 @@
 // The 64 emoji of the check code: check-emoji.ts (what the views draw) must be the core's list, index by index
-// (core/src/invite.rs CHECK_EMOJI). The binding does not export the list yet, so the Rust source is read.
+// (core/protocol/src/invite.rs CHECK_EMOJI). The binding does not export the list yet, so the Rust source is read.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { CHECK_EMOJI, checkEmoji, checkEmojiLine } from '../../../app/web/core/check-emoji.ts'
 
 test('check-emoji.ts is the core\'s list', () => {
-  const source = fs.readFileSync(new URL('../../../core/src/invite.rs', import.meta.url), 'utf8')
+  const source = fs.readFileSync(new URL('../../../core/protocol/src/invite.rs', import.meta.url), 'utf8')
   const table = source.slice(source.indexOf('pub const CHECK_EMOJI'), source.indexOf('];', source.indexOf('pub const CHECK_EMOJI')))
   const core = [...table.matchAll(/\("([^"]+)",\s*"([^"]+)"\)/g)].map(m => [m[1], m[2]])
   assert.equal(core.length, 64)

@@ -4,7 +4,7 @@
 //   Starts that binary on a free port with an empty data directory (under TROMMI_HUB_TMP), the login throttle off
 //   and a minimum client, and runs everything: the refusals that need no cryptography (each also against the fake
 //   hub with the same expectations, so the fake cannot drift from the real one in what they share), and, with the
-//   real core (core/wasm/pkg), a room with its account, a second device by the code, a new code, a recovery, with
+//   real core (core/bindings/wasm/pkg), a room with its account, a second device by the code, a new code, a recovery, with
 //   every refusal on the way. Without TROMMI_HUB_BIN the real hub's half is SKIPPED, and says so.
 //
 // REMOTE  TROMMI_HUB_URL=https://<hub> [TROMMI_CLIENT=app/<version>] node --test tests/web/hub/real-hub.test.mjs
@@ -227,7 +227,7 @@ else if (REMOTE) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// With the real core (the WASM binding, core/wasm/build.sh → core/wasm/pkg/) the client goes behind the sign-in of the
+// With the real core (the WASM binding, core/bindings/wasm/build.sh → core/bindings/wasm/pkg/) the client goes behind the sign-in of the
 // REAL hub with REAL cryptography, nothing put in its place: a device founds a room with its account through its
 // outbox and uses the routes a human device has; a second device signs in with the recovery code and joins; the code
 // is replaced; a third device recovers the room. Skipped, and says so, when the hub's binary or the binding's build
@@ -235,8 +235,8 @@ else if (REMOTE) {
 // `local` below is not asked there. The binding has no stored content and no invite handshake yet (core-api.ts part 2), so accepted
 // envelopes, the Desk's objects and invites are not reached here.
 
-const PKG = here('../../../core/wasm/pkg/trommi-core.js')
-const no_core = !existsSync(PKG) ? 'the core\'s WASM binding is not built (core/wasm/build.sh)' : null
+const PKG = here('../../../core/bindings/wasm/pkg/trommi-core.js')
+const no_core = !existsSync(PKG) ? 'the core\'s WASM binding is not built (core/bindings/wasm/build.sh)' : null
 if (!both && !missing && no_core) console.warn(`\nSKIPPED: nothing ran behind the real hub's sign-in: ${no_core}.\n`)
 /** Local: a fixed password. A deployed hub: a random one that only this process ever holds. */
 const PASSWORD = REMOTE ? randomBytes(24).toString('base64url') : 'correct horse battery staple 42'
@@ -253,7 +253,7 @@ test(`${REMOTE ? 'deployed' : 'real'} hub, real core: a room with its account, a
   const core = await import(PKG)
   const { MemoryStore } = await import(here('../../bindings/stores.mjs'))
   const { readFile } = await import('node:fs/promises')
-  await core.init(await readFile(here('../../../core/wasm/pkg/trommi_core_wasm_bg.wasm')))
+  await core.init(await readFile(here('../../../core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm')))
   const real = REMOTE ? { url: REMOTE_URL, close() {} } : await startRealHub()
   t.after(() => real.close())
   const newDevice = async name => { const d = await core.Device.create(new MemoryStore(`hub-test-${name}-${Date.now()}`)); t.after(() => d.close()); return d }

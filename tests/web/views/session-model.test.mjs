@@ -1,5 +1,5 @@
 // session-model.test.mjs: a session's heading says the model it runs on, quiet beside the dot (the owner, 13 October
-// 2026): "Opus 5.5", "GPT-6.1". The short label is the client core's (client/src/sessions.rs model_label, tested
+// 2026): "Opus 5.5", "GPT-6.1". The short label is the client core's (core/client/src/sessions.rs model_label, tested
 // there); web and iPhone only draw it. The demo room makes the same label.
 //   node --test tests/web/views/
 import test from 'node:test'

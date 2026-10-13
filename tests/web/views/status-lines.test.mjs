@@ -42,8 +42,8 @@ test('what still runs shows, a done one for a while, a stale one greyed for a da
 })
 
 test('a line nobody updated for two hours is stale: greyed, a still ring, shown for a day', async () => {
-  // (the core decides stale, client/src/status.rs line_state)
-  assert.match(fs.readFileSync(new URL('../../../client/src/status.rs', import.meta.url), 'utf8'), /pub const LINE_STALE_MS: u64 = 2 \* 60 \* 60_000;/)
+  // (the core decides stale, core/client/src/status.rs line_state)
+  assert.match(fs.readFileSync(new URL('../../../core/client/src/status.rs', import.meta.url), 'utf8'), /pub const LINE_STALE_MS: u64 = 2 \* 60 \* 60_000;/)
   const src = read('session.mjs'), css = read('session.css')
   assert.match(src, /\(t\.state === 'stale' && now - \(t\.updated \?\? 0\) < STALE_SHOWN_MS\)/)
   assert.match(src, /t\.state === 'stale' \? html`<i class="status-still"/)

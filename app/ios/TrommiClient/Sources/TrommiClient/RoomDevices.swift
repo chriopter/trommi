@@ -166,7 +166,7 @@ extension Room {
       default: break
       }
     }
-    // Who waits and who is due is the client core's rule (client/src/seats.rs); here the hub is asked and the
+    // Who waits and who is due is the client core's rule (core/client/src/seats.rs); here the hub is asked and the
     // session founded.
     let seated = Set(groups.values.filter { $0.session != nil }.flatMap { $0.leaves.map(hex) })
     let pendingFounding = groups.values.contains(where: { $0.session != nil && $0.session?.parent == nil && $0.pending && $0.epoch == 0 })

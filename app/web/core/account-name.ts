@@ -1,7 +1,7 @@
 // account-name.ts: how an account is named outside the hub, in public texts. Used on the page (the screens'
 // own checks, the QR code on the Emergency Kit) and in the core worker (account.ts) alike; no key, no core.
 //
-// - An e-mail address as the account keeps it: the core's rule (core/src/account.rs normaliseEmail), written out
+// - An e-mail address as the account keeps it: the core's rule (core/protocol/src/account.rs normaliseEmail), written out
 //   again for the page, which never loads the core; tests/web/account runs both over the same cases.
 // - The one field "E-mail or account ID": told apart by its form alone, exactly as the hub tells it apart
 //   (hub/src/accounts.rs `name_of`, `parse_id`; spec/hub-api.md "One field names an account").

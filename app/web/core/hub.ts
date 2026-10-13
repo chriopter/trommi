@@ -957,8 +957,8 @@ export class Hub {
   // ---- the outbox
 
   /**
-   * One outbox entry to its route (hub-api.md), by kind; `parts` in the order core/swift/src/records.rs `OutboxKind`
-   * (and core/src/store.rs) names.
+   * One outbox entry to its route (hub-api.md), by kind; `parts` in the order core/bindings/swift/src/records.rs `OutboxKind`
+   * (and core/protocol/src/store.rs) names.
    * Resolves with the hub's answer; a refusal throws HubError. A repeated post of the same bytes gets the first
    * answer again, so an entry whose answer was lost is simply posted again. (`relayMessage` is the exception: the
    * hub passes it on each time, hub delivery.rs `message`; a stroke piece must be harmless when it arrives twice.)

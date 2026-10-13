@@ -1,4 +1,4 @@
-// LeanCardTests.swift: the client core hands the app its cards lean (client/src/model/patch.rs `LeanCard`): lists and
+// LeanCardTests.swift: the client core hands the app its cards lean (core/client/src/model/patch.rs `LeanCard`): lists and
 // objects, the versions' bodies and the answers before the one in force are read from the core when first asked.
 import XCTest
 @testable import TrommiClient

@@ -1,5 +1,5 @@
 // tabs.ts: one device in several tabs of one browser profile. A device's stored state has exactly one owner
-// (core/src/store.rs "One owner"; two owners would sign two different items under one number), so exactly one tab
+// (core/protocol/src/store.rs "One owner"; two owners would sign two different items under one number), so exactly one tab
 // runs the real client: the OWNER ('leader'). There is ONE mechanism for that, and it is not here: the device
 // store's own Web Lock (the binding's IdbStore takes it in `load()` and holds it until `close()`). This module only
 // asks the store: `load()` without waiting either gives the state, and this tab owns it, or throws StoreConflict,

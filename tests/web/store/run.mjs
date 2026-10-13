@@ -8,7 +8,7 @@
 // It needs:
 // - Chromium: `chromium` on the PATH or the program CHROMIUM names (as app/web/dev/e2e.mjs finds it).
 // - esbuild: the web app's devDependency (`npm ci` in app/web).
-// - The core's WASM build: core/wasm/pkg/, or the folder TROMMI_CORE_PKG names. `core/wasm/build.sh` makes it.
+// - The core's WASM build: core/bindings/wasm/pkg/, or the folder TROMMI_CORE_PKG names. `core/bindings/wasm/build.sh` makes it.
 // The bundle and the browser's profile are written under TROMMI_TEST_TMP (default: `trommi-store-test` in the
 // system's temporary folder) and removed at the end.
 //
@@ -27,7 +27,7 @@ import { launchChromium } from '../../../app/web/dev/cdp.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repo = path.join(here, '../../..')
 const tmp = process.env.TROMMI_TEST_TMP || path.join(os.tmpdir(), 'trommi-store-test')
-const pkg = process.env.TROMMI_CORE_PKG || path.join(repo, 'core/wasm/pkg')
+const pkg = process.env.TROMMI_CORE_PKG || path.join(repo, 'core/bindings/wasm/pkg')
 const out = path.join(tmp, 'page'), profile = path.join(tmp, 'profile')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -38,7 +38,7 @@ if (spawnSync(chromium, ['--version'], { stdio: 'ignore' }).error) cannotRun(`Ch
 let esbuild
 try { esbuild = await loadEsbuild() } catch { cannotRun('esbuild is missing (npm ci in app/web)') }
 const PKG_FILES = { 'trommi-core.js': 'text/javascript', 'idb-store.js': 'text/javascript', 'trommi_core_wasm.js': 'text/javascript', 'trommi_core_wasm_bg.wasm': 'application/wasm' }
-for (const file of Object.keys(PKG_FILES)) if (!fs.existsSync(path.join(pkg, file))) cannotRun(`the core's WASM build is missing or old (${path.join(pkg, file)}): run core/wasm/build.sh, or name a built folder in TROMMI_CORE_PKG`)
+for (const file of Object.keys(PKG_FILES)) if (!fs.existsSync(path.join(pkg, file))) cannotRun(`the core's WASM build is missing or old (${path.join(pkg, file)}): run core/bindings/wasm/build.sh, or name a built folder in TROMMI_CORE_PKG`)
 
 // ---- the page: one bundle and one html from the temp folder, the binding's files as they are -------------------------
 fs.rmSync(tmp, { recursive: true, force: true })

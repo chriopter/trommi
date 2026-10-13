@@ -17,7 +17,7 @@
 # 1Password Environment; RUNNER_TEMP, COMMIT, XCODEGEN; TF_GATE, TF_DRY_RUN, TF_UPLOADER, TESTFLIGHT_TESTER, NOTES),
 # and MAC_BUNDLE_ID (default: the PRODUCT_BUNDLE_IDENTIFIER of TrommiMac in project.yml). TF_UPLOADER=xcode: a
 # second Xcode export with destination upload instead of the API. The Rust core for the Mac must be in place
-# (core/swift/TrommiCoreRust/lib/macos, from the job ios's artifact). Nothing here prints a value of the key.
+# (core/bindings/swift/TrommiCoreRust/lib/macos, from the job ios's artifact). Nothing here prints a value of the key.
 set -euo pipefail
 
 mode=${1:-upload}
@@ -101,8 +101,8 @@ build=$(asc next-build)
 printf '%s' "$build" | grep -Eq '^[1-9][0-9]*$' || { echo "::error::no build number from App Store Connect"; exit 1; }
 short=$(printf '%s' "$COMMIT" | cut -c1-7)
 echo "building $BUNDLE_ID $version ($build) for macOS from $short"
-lib=$repo/core/swift/TrommiCoreRust/lib/macos/libtrommi_core_ffi.a
-[ -f "$lib" ] || { echo "::error::no Rust core for the Mac at core/swift/TrommiCoreRust/lib/macos"; exit 1; }
+lib=$repo/core/bindings/swift/TrommiCoreRust/lib/macos/libtrommi_core_ffi.a
+[ -f "$lib" ] || { echo "::error::no Rust core for the Mac at core/bindings/swift/TrommiCoreRust/lib/macos"; exit 1; }
 
 echo "== 3. Project (XcodeGen) =="
 xcodebuild -version

@@ -227,7 +227,7 @@ jobs:
           rustup toolchain install || rustup show
           rustc --version
           swift --version
-          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
+          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/bindings/wasm/Cargo.toml)" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: v2-rust
@@ -299,7 +299,7 @@ jobs:
           rustup toolchain install || rustup show
           rustc --version
           swift --version
-          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
+          echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/bindings/wasm/Cargo.toml)" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           prefix-key: v2-rust

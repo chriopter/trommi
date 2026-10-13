@@ -1,6 +1,6 @@
 // card-from.test.mjs: who a card comes from stands above its title, on its page and in Blitz (the owner, 13 October
 // 2026): the session's drawing and its path, desk › main session › itself. The path is the client core's
-// (client/src/sessions.rs `path`, tested there); the page only draws it. The demo room makes the same path.
+// (core/client/src/sessions.rs `path`, tested there); the page only draws it. The demo room makes the same path.
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'

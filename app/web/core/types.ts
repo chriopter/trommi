@@ -1,5 +1,5 @@
 // types.ts: the shapes of the board model, as types only (nothing here exists at run time).
-// The model is core/README.md "The model": what the views render from. model.ts builds it from what the Rust core
+// The model is core/protocol/README.md "The model": what the views render from. model.ts builds it from what the Rust core
 // accepted (core-api.ts); codec.ts turns the bodies of spec/v1.md section 9.1 into the fields named here. Names are
 // snake_case, ids lowercase hex (the wire and the core speak base64url; ids.ts and codec.ts convert at the edge),
 // times in ms since the epoch, envelope numbers are the hub's change numbers.
@@ -151,7 +151,7 @@ export interface AnswerBody extends BodyBase {
 /** Any decoded body (open: a newer client's fields are kept). */
 export type Body = TimelineBody | CardBody | AnswerBody | BodyBase
 
-// ---- the model (core/README.md "The model") ------------------------------------------------------------------
+// ---- the model (core/protocol/README.md "The model") ------------------------------------------------------------------
 
 /** The signed facts of a register or note write (spec 9.3.2). Kept for display and for the cache; which write is
  *  the current one is the core's word, never worked out from these. */
@@ -167,7 +167,7 @@ export interface Link {
   cut_since: Ms | null
   exit: { reason: string; claude: 'alive' | 'gone' | 'checking' } | null
 }
-/** What a link's state is read from (client/src/status.rs): a member or a session. */
+/** What a link's state is read from (core/client/src/status.rs): a member or a session. */
 export interface Linked { is_online?: boolean; offline_since?: Ms | null; link?: Link | null }
 
 export interface Room {
@@ -278,7 +278,7 @@ export interface CardVersion {
   content: Body | null
 }
 
-/** One entry of a card's history (client/src/model/types.rs `Revision`): a version a human reads as the card. */
+/** One entry of a card's history (core/client/src/model/types.rs `Revision`): a version a human reads as the card. */
 export interface Revision {
   object_version: number
   envelope_number: EnvelopeNumber
@@ -317,7 +317,7 @@ export interface Card {
   /** The hub closed this card after this device's cursor, and this device has not taken the closing yet (a start
    *  after a long time away: client.ts `deskFirst`). It stays off the Desk until the catch-up reaches it. */
   catching_up?: boolean
-  /** The person's "Later" that holds it off the Desk now (client/src/desk.rs `snooze_holds`): until when, and when he
+  /** The person's "Later" that holds it off the Desk now (core/client/src/desk.rs `snooze_holds`): until when, and when he
    *  put it off; `unsnoozed`: an open card whose snooze ended (the clock, by hand, a newer version). */
   snoozed_until?: number
   snoozed_at?: number
@@ -533,10 +533,10 @@ export interface Model {
   /** Open cards in board order (projection). */
   stack: Hex[]
   open_permission_ids: Hex[]
-  /** The walk: every open card and request that waits for him, in the Desk's order (client/src/model/walk.rs). */
+  /** The walk: every open card and request that waits for him, in the Desk's order (core/client/src/model/walk.rs). */
   desk_order: Hex[]
   newer: Newer
-  /** The session list every device shows, as the client core makes it (client/src/sessions.rs). */
+  /** The session list every device shows, as the client core makes it (core/client/src/sessions.rs). */
   session_list?: SessionRow[]
   /** What model.ts keeps for itself (echoes, the projection's sort state, device names): never travels, never rendered. */
   _builder?: unknown
@@ -565,7 +565,7 @@ export interface Change {
   items: Map<string, TimelineItem[]>
 }
 
-/** One entry of the session list (client/src/sessions.rs `SessionRow`). */
+/** One entry of the session list (core/client/src/sessions.rs `SessionRow`). */
 export interface SessionRow {
   id: string; key: string; session_id: string | null; agent_device_id: string | null
   name: string; given: string; label: string; icon: string
@@ -574,14 +574,14 @@ export interface SessionRow {
   archived: boolean; replaced: boolean; removed: boolean
   position: number; placed: boolean; desk: string; starred: boolean; main: boolean; own: boolean
   waiting: number; fetched: boolean; last_activity_at: number
-  /** At the core's clock (client/src/status.rs): its link (none when archived or removed), why it is stopped (the red
+  /** At the core's clock (core/client/src/status.rs): its link (none when archived or removed), why it is stopped (the red
    *  hand), whether a status line says working, since when it is quiet, when its agent process last said anything. */
   link: LinkView | null; blocked: Blocked | null; working: boolean; quiet_since: number | null; device_active: number
   recheck_at: number | null
-  /** What each of its status lines shows now, by line id (client/src/status.rs `line_state`). */
+  /** What each of its status lines shows now, by line id (core/client/src/status.rs `line_state`). */
   lines: Record<string, string>
 }
-/** A session's link (client/src/status.rs `LinkView`). */
+/** A session's link (core/client/src/status.rs `LinkView`). */
 export interface LinkView { state: 'live' | 'oncall' | 'asleep' | 'cut' | 'gone'; since: number | null; reason: string }
-/** Why a session is stopped (client/src/status.rs `Blocked`). */
+/** Why a session is stopped (core/client/src/status.rs `Blocked`). */
 export interface Blocked { why: 'cut' | 'offline' | 'permission' | 'blocking'; since: number | null }

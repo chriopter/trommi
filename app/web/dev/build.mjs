@@ -24,7 +24,7 @@
 // it is a signed GitHub release of its own (install.sh at the repository root installs it). The build reads two of the
 // connector's files, connector/tools.json and connector/prompt.md, for the help page's list of tools.
 // The Rust core is not compiled here either, as long as its output is there and current: the build takes
-// core/wasm/pkg/ (core/wasm/build.sh writes it, never committed) and runs that script only when the output is missing
+// core/bindings/wasm/pkg/ (core/bindings/wasm/build.sh writes it, never committed) and runs that script only when the output is missing
 // or older than the core's sources. Then it needs Rust (rust-toolchain.toml) and the pinned wasm-bindgen.
 //
 //   node dev/build.mjs            check only: generate in memory, print what it would write and the cold start's size
@@ -51,7 +51,7 @@ const sha = data => crypto.createHash('sha256').update(data).digest('hex').slice
 // The build is reproducible (README "Verifying the build"): the same commit gives the same bytes, wherever it is built.
 // That needs the same Node (type stripping) and the same esbuild: both pinned
 // (.node-version, package.json engines and the exact esbuild of app/web/package-lock.json), and for the Rust core's .wasm the
-// same Rust (rust-toolchain.toml) and the same wasm-bindgen (core/wasm/Cargo.toml; the command must be the crate's
+// same Rust (rust-toolchain.toml) and the same wasm-bindgen (core/bindings/wasm/Cargo.toml; the command must be the crate's
 // version). In Cloudflare's build a mismatch
 // fails the build; anywhere else it is said, and the manifest names the toolchain, so verify.mjs can tell why it differs.
 function toolchain(repo = REPO) {
@@ -77,10 +77,10 @@ async function checkToolchain(repo) {
 }
 
 // ---- the Rust core (WASM) ----
-// core/wasm/build.sh makes core/wasm/pkg/ (never committed): trommi_core_wasm_bg.wasm (the core),
+// core/bindings/wasm/build.sh makes core/bindings/wasm/pkg/ (never committed): trommi_core_wasm_bg.wasm (the core),
 // trommi_core_wasm.js (wasm-bindgen's glue), trommi-core.js (the binding's own layer over the glue: what an app
 // imports) and idb-store.js (a device's store on IndexedDB). The app's core-wasm.ts is the only module that imports
-// them (by their source address, core/wasm/js/…, where their types are; the build gives it pkg/'s copies).
+// them (by their source address, core/bindings/wasm/js/…, where their types are; the build gives it pkg/'s copies).
 //
 // The three scripts are plain JavaScript and are treated like the app's own core: they go into gen/vendor/ beside it
 // (trommi-core.mjs, trommi_core_wasm.mjs, idb-store.mjs) and so into the worker's bundle. ONLY the .wasm is a file of
@@ -96,16 +96,16 @@ async function checkToolchain(repo) {
 // .wasm by import.meta.url (the glue's own default address is never used: init() always gets the response).
 //
 // The build does not compile Rust as long as pkg/ is there and not older than the core's sources (CORE_SOURCES);
-// else it runs core/wasm/build.sh, with this process's environment (CARGO_TARGET_DIR).
-const CORE_SOURCES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'core/Cargo.toml', 'core/src', 'core/swift/Cargo.toml', 'core/swift/src', 'core/wasm/Cargo.toml', 'core/wasm/build.sh', 'core/wasm/src', 'core/wasm/js']
+// else it runs core/bindings/wasm/build.sh, with this process's environment (CARGO_TARGET_DIR).
+const CORE_SOURCES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'core/protocol/Cargo.toml', 'core/protocol/src', 'core/client/Cargo.toml', 'core/client/src', 'core/bindings/swift/Cargo.toml', 'core/bindings/swift/src', 'core/bindings/wasm/Cargo.toml', 'core/bindings/wasm/build.sh', 'core/bindings/wasm/src', 'core/bindings/wasm/js']
 const CORE_WASM = 'trommi_core_wasm_bg.wasm'
 const CORE_MODULES = ['trommi-core', 'trommi_core_wasm', 'idb-store']   // pkg/<name>.js, in gen/vendor/ as <name>.mjs
-/** An import of the binding (…/core/wasm/js/<name>.js or …/pkg/<name>.js) as gen/vendor/ has it: './<name>.mjs'. */
-const fromBinding = js => js.replace(/(['"])(?:\.\.\/)+core\/wasm\/(?:js|pkg)\/([\w-]+)\.js\1/g, '$1./$2.mjs$1')
-/** The pinned versions: Rust (rust-toolchain.toml) and wasm-bindgen (core/wasm/Cargo.toml). */
+/** An import of the binding (…/core/bindings/wasm/js/<name>.js or …/pkg/<name>.js) as gen/vendor/ has it: './<name>.mjs'. */
+const fromBinding = js => js.replace(/(['"])(?:\.\.\/)+core\/bindings\/wasm\/(?:js|pkg)\/([\w-]+)\.js\1/g, '$1./$2.mjs$1')
+/** The pinned versions: Rust (rust-toolchain.toml) and wasm-bindgen (core/bindings/wasm/Cargo.toml). */
 function corePins(repo) {
   const pin = (file, re) => re.exec(fs.readFileSync(path.join(repo, file), 'utf8'))?.[1] ?? (() => { throw new Error(`build: ${file} does not name the version (${re})`) })()
-  return { rust: pin('rust-toolchain.toml', /^channel = "([^"]+)"$/m), wasmBindgen: pin('core/wasm/Cargo.toml', /^wasm-bindgen = "=([^"]+)"$/m) }
+  return { rust: pin('rust-toolchain.toml', /^channel = "([^"]+)"$/m), wasmBindgen: pin('core/bindings/wasm/Cargo.toml', /^wasm-bindgen = "=([^"]+)"$/m) }
 }
 /** The environment Rust's commands run in: rustup's folder is on the PATH even when the caller's shell left it out. */
 function rustEnv() {
@@ -118,35 +118,35 @@ function newest(file) {
   const stat = fs.statSync(file)
   return stat.isDirectory() ? Math.max(0, ...fs.readdirSync(file).map(f => newest(path.join(file, f)))) : stat.mtimeMs
 }
-/** Runs core/wasm/build.sh. Says plainly what is absent before cargo is started for nothing. */
+/** Runs core/bindings/wasm/build.sh. Says plainly what is absent before cargo is started for nothing. */
 function buildCoreWasm(repo, why) {
   const { rust, wasmBindgen } = corePins(repo)
-  const install = `Install Rust ${rust} (rustup; rust-toolchain.toml selects it and its wasm32 target) and wasm-bindgen ${wasmBindgen} (cargo install wasm-bindgen-cli --version ${wasmBindgen} --locked), or run core/wasm/build.sh where they are.`
+  const install = `Install Rust ${rust} (rustup; rust-toolchain.toml selects it and its wasm32 target) and wasm-bindgen ${wasmBindgen} (cargo install wasm-bindgen-cli --version ${wasmBindgen} --locked), or run core/bindings/wasm/build.sh where they are.`
   if (!said('cargo', ['--version'], repo)) throw new Error(`build: the Rust core's WASM output is ${why}, and cargo is not installed. ${install}`)
   const have = said('wasm-bindgen', ['--version'], repo)?.replace(/^wasm-bindgen /, '') ?? null
   if (have !== wasmBindgen) throw new Error(`build: the Rust core's WASM output is ${why}, and wasm-bindgen is ${have ?? 'not installed'} (pinned: ${wasmBindgen}). ${install}`)
-  console.warn(`build: the Rust core's WASM output is ${why}: running core/wasm/build.sh`)
-  try { execFileSync('sh', [path.join(repo, 'core/wasm/build.sh')], { cwd: repo, env: rustEnv(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
-  catch (err) { throw new Error(`build: core/wasm/build.sh failed\n${String(err.stderr ?? err.message).trim().split('\n').slice(-30).join('\n')}`) }
+  console.warn(`build: the Rust core's WASM output is ${why}: running core/bindings/wasm/build.sh`)
+  try { execFileSync('sh', [path.join(repo, 'core/bindings/wasm/build.sh')], { cwd: repo, env: rustEnv(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }
+  catch (err) { throw new Error(`build: core/bindings/wasm/build.sh failed\n${String(err.stderr ?? err.message).trim().split('\n').slice(-30).join('\n')}`) }
 }
 /** What the binding in pkg/ says of itself (versions(): core, openmls, provider, binding, recovery), asked in a
  *  process of its own: it also shows that the scripts and the .wasm fit together. */
 function coreVersions(repo, pkg) {
   const script = `import fs from 'node:fs'; import * as core from ${JSON.stringify(pathToFileURL(path.join(pkg, 'trommi-core.js')).href)}; await core.init(fs.readFileSync(${JSON.stringify(path.join(pkg, CORE_WASM))})); process.stdout.write(JSON.stringify(core.versions()))`
   try { return JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })) }
-  catch (err) { throw new Error(`build: the binding in core/wasm/pkg/ does not load (run core/wasm/build.sh)\n${String(err.stderr ?? err.message).trim().split('\n').slice(-10).join('\n')}`) }
+  catch (err) { throw new Error(`build: the binding in core/bindings/wasm/pkg/ does not load (run core/bindings/wasm/build.sh)\n${String(err.stderr ?? err.message).trim().split('\n').slice(-10).join('\n')}`) }
 }
 let coreMade = null
 /** The binding's output, made first when it is missing or stale: { modules: { '<name>.mjs': text }, wasm (bytes),
  *  madeBy (the wasm-bindgen version the .wasm names), versions (the binding's own) }.
  *  Read again only when the files changed. */
 export function coreWasm(repo = REPO) {
-  const pkg = path.join(repo, 'core/wasm/pkg')
+  const pkg = path.join(repo, 'core/bindings/wasm/pkg')
   const files = [CORE_WASM, ...CORE_MODULES.map(m => `${m}.js`)].map(f => path.join(pkg, f))
   const age = () => (files.every(f => fs.existsSync(f)) ? Math.min(...files.map(f => fs.statSync(f).mtimeMs)) : null)
   const read = () => {
     const made = age()
-    if (made == null) throw new Error(`build: core/wasm/build.sh ran and left no ${files.map(f => path.basename(f)).join(', ')} in core/wasm/pkg/`)
+    if (made == null) throw new Error(`build: core/bindings/wasm/build.sh ran and left no ${files.map(f => path.basename(f)).join(', ')} in core/bindings/wasm/pkg/`)
     if (coreMade?.key !== `${repo}:${made}`) {
       const wasm = fs.readFileSync(files[0])
       // (./x.js inside pkg/ is ./x.mjs in gen/vendor/)
@@ -159,7 +159,7 @@ export function coreWasm(repo = REPO) {
     return coreMade
   }
   const made = age()
-  if (made == null || made < Math.max(...CORE_SOURCES.map(f => newest(path.join(repo, f))))) buildCoreWasm(repo, made == null ? 'missing (core/wasm/pkg/)' : "older than the core's sources")
+  if (made == null || made < Math.max(...CORE_SOURCES.map(f => newest(path.join(repo, f))))) buildCoreWasm(repo, made == null ? 'missing (core/bindings/wasm/pkg/)' : "older than the core's sources")
   return read()
 }
 /** The .wasm as the build serves it under `dir` ('gen/app' named by its content, 'gen/vendor' under the binding's
@@ -172,8 +172,8 @@ export function coreFiles(repo = REPO, { dir = 'gen/app', hashed = true } = {}) 
   return { files: { [wasm]: core.wasm }, wasm, define: Object.fromEntries(Object.entries(define).map(([k, v]) => [k, JSON.stringify(v)])) }
 }
 /** For esbuild bundling straight from the repository's files (not from gen/vendor/): the binding's scripts are
- *  pkg/'s, wherever an import names them (core/wasm/js/ holds no glue). */
-export const coreFromPkg = (repo = REPO) => ({ name: 'core-from-pkg', setup(b) { b.onResolve({ filter: /(^|\/)core\/wasm\/js\/[\w-]+\.js$/ }, a => ({ path: path.join(repo, 'core/wasm/pkg', path.basename(a.path)) })) } })
+ *  pkg/'s, wherever an import names them (core/bindings/wasm/js/ holds no glue). */
+export const coreFromPkg = (repo = REPO) => ({ name: 'core-from-pkg', setup(b) { b.onResolve({ filter: /(^|\/)core\/bindings\/wasm\/js\/[\w-]+\.js$/ }, a => ({ path: path.join(repo, 'core/bindings/wasm/pkg', path.basename(a.path)) })) } })
 
 // ---- the core ----
 const NOT_VENDORED = /\.d\.m?ts$/   // declarations

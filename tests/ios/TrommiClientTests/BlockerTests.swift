@@ -1,4 +1,4 @@
-// BlockerTests: the red hand and the Desk are one rule, the client core's (client/src/status.rs): a blocking question
+// BlockerTests: the red hand and the Desk are one rule, the client core's (core/client/src/status.rs): a blocking question
 // raises its session's hand exactly while it stands on the Desk. Put off (Later), both go; a newer version of it brings
 // both back ("Back from snooze"). The same test runs on the web (tests/web/model/stack-echoes.test.mjs).
 import Foundation

@@ -2,7 +2,7 @@
 // fixed order. It knows the core and the hub and nothing of the model or the views: client.ts listens to what it
 // reports and builds the model from that.
 //
-// What it does (spec/v1.md 5, 7, 9, 13.2 to 13.4; core/README.md "How a client uses it"):
+// What it does (spec/v1.md 5, 7, 9, 13.2 to 13.4; core/protocol/README.md "How a client uses it"):
 //   write, then send   an action seals into the core's outbox and returns; the PUMP posts the outbox, strictly in its
 //                      order, one entry in flight, and tells the core the hub's answer
 //   catch-up           pages of `GET /v1/changes` after the cursor, to the core in the hub's order: a page in batches
@@ -706,7 +706,7 @@ export class Engine {
     const commit = entry.kind !== 'message' && entry.kind !== 'relayMessage' && entry.kind !== 'envelope' && entry.kind !== 'keyPackages' && entry.kind !== 'sealedKey'
     if (commit && report) await this.refresh()
     // An accepted Commit is not merged by the hub's answer: the group stands in its old epoch until the Commit
-    // comes back at its place in the hub's order (core/README.md). Whoever waits for it waits for that; the
+    // comes back at its place in the hub's order (core/protocol/README.md). Whoever waits for it waits for that; the
     // position does not move here, or the Commit would be passed over when it comes.
     if (commit && entry.group && this.group(entry.group)?.pending) {
       this.awaiting.set(entry.id, hex(entry.group))
@@ -1293,7 +1293,7 @@ export class Engine {
       } catch (e) {
         if (this.isLocal(e)) throw e
         const code = this.core.errorCode(e)
-        // behind: the Welcome is taken again after the log (core/README.md); anything else is no Welcome for this device
+        // behind: the Welcome is taken again after the log (core/protocol/README.md); anything else is no Welcome for this device
         if (code !== 'room-behind' && code !== 'group-behind') { this.badWelcomes.add(id); this.alert(String(code ?? 'bad-format'), 'a Welcome was not taken', row.group) }
         else later = true
       }
@@ -1423,7 +1423,7 @@ export class Engine {
       }
     }
   }
-  /** The seat rule (client/src/seats.rs), as the client's core model holds it: who waits, since when, who is
+  /** The seat rule (core/client/src/seats.rs), as the client's core model holds it: who waits, since when, who is
    *  connected (the engine does not follow presence). Null: no rule here (a device that is no human's). */
   seats: { plan: (known: string, now: number) => string; afterHub: (candidates: string, hubSeated: string) => string | null; founded: (agent: string) => void; failed: (agent: string, now: number) => number; grace: (ms: number) => void } | null = null
   /**
@@ -1431,7 +1431,7 @@ export class Engine {
    * the agent as its seat). Its inviter founds it right after "They match" (`invited`); when that inviter cannot
    * (an iPhone sent away in the middle, a tab closed before the founding went out), any human device does it here,
    * once the agent is connected and has waited `heal_delay * 10` without a session. Who waits and who is due is the
-   * client core's rule (client/src/seats.rs); here the hub is asked and the session founded. An agent this device saw
+   * client core's rule (core/client/src/seats.rs); here the hub is asked and the session founded. An agent this device saw
    * in a session, archived ones too, or that the hub lists in one, is never given a second: the hub refuses a second
    * live main session for the same agent anyway (5.2.2), so two human devices at once found one.
    */

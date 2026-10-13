@@ -1,7 +1,7 @@
 # Third-party material in the Rust workspace
 
 Every crate of `Cargo.lock` that is a dependency of a client library on a target it ships for: the web app
-(`core/wasm`, wasm32-unknown-unknown), the iOS app (`core/swift`, aarch64-apple-ios and its simulator) and the
+(`core/bindings/wasm`, wasm32-unknown-unknown), the iOS app (`core/bindings/swift`, aarch64-apple-ios and its simulator) and the
 connector (`core`, Linux musl and macOS, both architectures). The tables are what `cargo tree` reports per package
 and target (`-e normal,no-proc-macro` for what is linked; `-e normal,build` minus that for what only runs at build
 time), with the licence each crate declares. The tables are written by `node .github/scripts/third_party.mjs`; the
@@ -216,5 +216,5 @@ Procedural macros, build scripts and what they need: compiled for the build mach
 | winnow | 1.0.4 | MIT |
 | zeroize_derive | 1.5.0 | Apache-2.0 OR MIT |
 
-The binding generator (`core/swift/bindgen`, a tool of the build machine that writes the Swift file and the C header)
+The binding generator (`core/bindings/swift/bindgen`, a tool of the build machine that writes the Swift file and the C header)
 adds: anstyle 1.0.14 (MIT OR Apache-2.0), askama 0.16.1 (MIT OR Apache-2.0), askama_derive 0.16.1 (MIT OR Apache-2.0), askama_macros 0.16.1 (MIT OR Apache-2.0), askama_parser 0.16.1 (MIT OR Apache-2.0), basic-toml 0.1.10 (MIT OR Apache-2.0), clap 4.6.7 (MIT OR Apache-2.0), clap_builder 4.6.7 (MIT OR Apache-2.0), clap_derive 4.6.7 (MIT OR Apache-2.0), clap_lex 1.1.1 (MIT OR Apache-2.0), glob 0.3.4 (MIT OR Apache-2.0), goblin 0.8.2 (MIT), minimal-lexical 0.2.1 (MIT/Apache-2.0), nom 7.1.3 (MIT), plain 0.2.3 (MIT/Apache-2.0), rustc-hash 2.1.3 (Apache-2.0 OR MIT), scroll 0.12.0 (MIT), scroll_derive 0.12.1 (MIT), smawk 0.3.3 (MIT), strsim 0.11.1 (MIT), textwrap 0.16.4 (MIT), uniffi_bindgen 0.32.2 (MPL-2.0), uniffi_udl 0.32.2 (MPL-2.0), weedle2 5.0.0 (MIT).

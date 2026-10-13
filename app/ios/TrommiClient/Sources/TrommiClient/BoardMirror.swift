@@ -1,4 +1,4 @@
-// BoardMirror.swift: the board model is the client core's (client/src/model, TrommiCoreRust's `ClientModel`); this
+// BoardMirror.swift: the board model is the client core's (core/client/src/model, TrommiCoreRust's `ClientModel`); this
 // is its copy in the app's classes. The core hands, once per batch, the patch of what changed (JSON in the web model's
 // shape: snake_case, ids hex); `Board.take(patch:)` puts it into the classes the views read and says what changed.
 import Foundation
@@ -167,7 +167,7 @@ extension Board {
   }
 }
 
-/** An envelope as the client core's model reads it (client/src/model/received.rs `Received`): ids hex, the body as
+/** An envelope as the client core's model reads it (core/client/src/model/received.rs `Received`): ids hex, the body as
  *  its JSON text. Also what the warm-start log keeps of it. */
 func receivedJSON(_ e: ReceivedEnvelope) -> JV {
   let h = e.header
@@ -268,7 +268,7 @@ extension Board {
       alerts = a.map { BoardAlert(alertId: str($0["alert_id"]), code: str($0["code"]), message: str($0["message"]), envelopeNumber: optInt($0["envelope_number"]),
                                    senderDeviceId: $0["sender_device_id"].string, at: u64($0["at"]), source: $0["source"].string ?? "local") }
     }
-    // the session list every device shows, as the client core makes it (client/src/sessions.rs)
+    // the session list every device shows, as the client core makes it (core/client/src/sessions.rs)
     if let l = p["session_list"].array { sessionList = l }
     if let w = p["wake_at"].double { wakeAt = w > 0 ? UInt64(w) : nil }
     if let s = p["stack"].array { stack = s.compactMap { $0.string } }
@@ -335,7 +335,7 @@ extension Board {
                       "agents": .arr((f.agents ?? []).map { .str(hex($0)) }), "time": f.time.map { .num(Double($0)) } ?? .null])
     try? engine.applyCommitJson(facts: String(decoding: j.encoded(), as: UTF8.self), byRecovery: byRecovery, removedMe: removedMe, nowMs: nowMs())
   }
-  /** A `presence` event of the live stream, as the hub sent it (client/src/presence.rs). */
+  /** A `presence` event of the live stream, as the hub sent it (core/client/src/presence.rs). */
   func applyPresenceEvent(_ data: JV, now: UInt64 = nowMs()) {
     _ = try? engine.applyPresenceEvent(event: String(decoding: data.encoded(), as: UTF8.self), nowMs: now)
   }
@@ -365,7 +365,7 @@ extension Board {
   func echoRegisters(localId: String, _ values: [String: JV]) {
     try? engine.echoRegisters(localId: localId, values: String(decoding: JV.obj(values).encoded(), as: UTF8.self))
   }
-  /** The open question to offer after this card (decided just now): the client core's (client/src/model/walk.rs), the
+  /** The open question to offer after this card (decided just now): the client core's (core/client/src/model/walk.rs), the
    *  next in the Desk's order among the sessions `within` (by session key: the desk in view; nil: every desk). */
   public func nextOpenAfter(_ cardId: String, within: [String]?) -> String? {
     (try? engine.nextOpenAfter(cardId: cardId, within: within)) ?? nil

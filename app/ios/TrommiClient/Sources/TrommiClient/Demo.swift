@@ -26,7 +26,7 @@ public enum DemoFixture {
   }
 
   /**
-   * The fixture as the client core's model reads a snapshot (client/src/model/snapshot.rs): every map as `[key,
+   * The fixture as the client core's model reads a snapshot (core/client/src/model/snapshot.rs): every map as `[key,
    * value]` pairs, a timeline's items with it, the room registers as their raw entries; the core fills in what the
    * fixture leaves out, and the board is the copy of that model, as for a real room.
    */

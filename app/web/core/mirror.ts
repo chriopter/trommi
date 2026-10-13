@@ -37,7 +37,7 @@ export interface ModelPatch {
   stack?: string[]
   open_permission_ids?: string[]
   desk_order?: string[]
-  /** The session list (client/src/sessions.rs), whenever it may have changed. */
+  /** The session list (core/client/src/sessions.rs), whenever it may have changed. */
   session_list?: SessionRow[]
   /** When to project again although nothing came (the core's clock: a snooze, a request, a session's status); 0: never. */
   wake_at?: number

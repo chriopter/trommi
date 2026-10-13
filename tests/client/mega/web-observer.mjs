@@ -1,10 +1,10 @@
-// The web app's client layer (app/web/core: room.ts, engine.ts, client.ts, model.ts) with the REAL core (core/wasm/pkg)
+// The web app's client layer (app/web/core: room.ts, engine.ts, client.ts, model.ts) with the REAL core (core/bindings/wasm/pkg)
 // as one human device of the mega test (tests/client/mega.rs). It takes commands from files in a folder and answers
 // each in a file beside it, so that the orchestrator drives every client the same way:
 //
 //   node tests/client/mega/web-observer.mjs <folder> <tree>
 //
-// <tree> is the repository whose app/web/core and core/wasm/pkg are used: this branch, or a worktree of origin/main
+// <tree> is the repository whose app/web/core and core/bindings/wasm/pkg are used: this branch, or a worktree of origin/main
 // (the baseline). Commands: cmd-<n>.json → res-<n>.json, in order of n:
 //   { op: "signin", hub, room_id, code }      a fresh device signs in with the recovery code (spec 8.4), with history
 //   { op: "sync" }                            catch up, read the hub's Desk, settle
@@ -33,8 +33,8 @@ const [dir, tree] = process.argv.slice(2)
 const at = p => pathToFileURL(path.join(tree, p)).href
 const { roomsOn } = await import(at('app/web/core/room.ts'))
 const { MemoryStore, memoryCache, TIMING } = await import(at('tests/web/client/helpers.mjs'))
-const binding = await import(at('core/wasm/pkg/trommi-core.js'))
-await binding.init(fs.readFileSync(path.join(tree, 'core/wasm/pkg/trommi_core_wasm_bg.wasm')))
+const binding = await import(at('core/bindings/wasm/pkg/trommi-core.js'))
+await binding.init(fs.readFileSync(path.join(tree, 'core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm')))
 // (a tree whose web core takes the binding through codec.ts, e.g. the shared client core: given it here too)
 await import(at('app/web/core/codec.ts')).then(m => m.useCodec?.(binding), () => {})
 const { init: _i, Device, TrommiError, StoreConflict: _s, ...stateless } = binding
@@ -178,7 +178,7 @@ function seen() {
   const snoozed = m.human?.snoozes?.size ?? 0
   let desk = 0
   for (const id of m.stack) { const c = m.cards.get(id); if (c && !c.catching_up) desk++ }
-  // (the sidebar's rows, client/src/sessions.rs: archived or not, named once its profile came)
+  // (the sidebar's rows, core/client/src/sessions.rs: archived or not, named once its profile came)
   let live = 0, archived = 0, named = 0
   for (const r of m.session_list ?? []) { if (r.removed) continue; if (r.archived) archived++; else { live++; if (r.given) named++ } }
   let online = 0, agents = 0

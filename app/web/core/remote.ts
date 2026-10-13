@@ -1,5 +1,5 @@
 // remote.ts: the page's side of the client core in a Web Worker (core-worker.ts). openRemote() starts the worker,
-// which opens the stored room; it returns a RemoteClient with the Client's interface (core/README.md): `model` (an
+// which opens the stored room; it returns a RemoteClient with the Client's interface (core/protocol/README.md): `model` (an
 // exact copy, mirror.ts, updated before each `change` event), `on`/`off`, and every action as a call into the worker
 // (they return Promises already). The page's thread thus never verifies, decrypts, reduces or reads the room's storage.
 //

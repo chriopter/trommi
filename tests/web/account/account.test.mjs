@@ -1,5 +1,5 @@
 // app/web/core/account.ts, every flow of the account screens, with:
-// - the REAL core's binding for every key, sealed copy, word and code (core/wasm/pkg, loaded by core-node.mjs),
+// - the REAL core's binding for every key, sealed copy, word and code (core/bindings/wasm/pkg, loaded by core-node.mjs),
 // - the app's own hub client (hub.ts) against the FAKE hub (tests/web/stand-in/hub.mjs: the account's routes with
 //   their codes and the revision, no slow hash, no WebAuthn check, no cryptography),
 // - a FAKE of room.ts's contract (room-fake.mjs): founding a room, joining with the code, a recovery and replacing
@@ -8,7 +8,7 @@
 // copies with the right keys, and tells no secret. It does not show that a device really joins a room with a code:
 // that is room.ts's and the core's.
 //
-//   node --test tests/web/account/account.test.mjs        (the binding built: core/wasm/build.sh)
+//   node --test tests/web/account/account.test.mjs        (the binding built: core/bindings/wasm/build.sh)
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { startFakeHub } from '../stand-in/hub.mjs'

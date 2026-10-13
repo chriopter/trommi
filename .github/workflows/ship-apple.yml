@@ -37,7 +37,6 @@ on:
       - tests/bindings/**
       - demo/**
       - core/**
-      - client/**
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml
@@ -155,24 +154,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The core for Swift is what core/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
+      # The core for Swift is what core/bindings/swift/build.sh makes from the paths below, on this Xcode (its compiler runtime is
       # what the iOS library is checked against). When they are the same as in an earlier run of main, that
       # run's output is taken and nothing of Rust is built here (most iOS commits leave the core alone).
       - name: What the core for Swift is built from
         id: core_inputs
         run: |
           set -eu
-          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
           echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
-            core/swift/TrommiCoreRust/lib
-            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
-      # llvm-tools: core/swift/build.sh takes the compiler runtime's helpers out of the iOS library with llvm-ar
+            core/bindings/swift/TrommiCoreRust/lib
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      # llvm-tools: core/bindings/swift/build.sh takes the compiler runtime's helpers out of the iOS library with llvm-ar
       - name: Compiler (rust-toolchain.toml)
         if: steps.core_cache.outputs.cache-hit != 'true'
         run: |
@@ -196,15 +195,15 @@ jobs:
           set -eu
           DARWIN_CLANG_RT="$(xcrun --sdk iphoneos clang -print-resource-dir)/lib/darwin"
           export DARWIN_CLANG_RT
-          sh core/swift/build.sh
+          sh core/bindings/swift/build.sh
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: steps.core_cache.outputs.cache-hit != 'true'
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
-            core/swift/TrommiCoreRust/lib
-            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+            core/bindings/swift/TrommiCoreRust/lib
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       # The core's Swift binding on this Mac. The app's own package (app/ios/TrommiClient) is tested on Linux only: it
       # does not compile for macOS (ActivityKit), and the archive (job testflight) is its build for iOS.
       - name: Test
@@ -218,7 +217,7 @@ jobs:
       - name: Put the release together
         run: |
           set -eu
-          package=core/swift/TrommiCoreRust
+          package=core/bindings/swift/TrommiCoreRust
           mkdir -p out/lib/ios out/lib/macos out/Sources/TrommiCoreFFI/include out/Sources/TrommiCoreRust
           cp "$package/lib/ios/libtrommi_core_ffi.a" out/lib/ios/
           cp "$package/lib/macos/libtrommi_core_ffi.a" out/lib/macos/
@@ -307,11 +306,11 @@ jobs:
         with:
           ref: ${{ steps.core.outputs.commit }}
           persist-credentials: false
-      # the tested library and its bindings go where core/swift/build.sh would have written them
+      # the tested library and its bindings go where core/bindings/swift/build.sh would have written them
       - name: Put the Rust core in place
         run: |
           set -eu
-          package=core/swift/TrommiCoreRust
+          package=core/bindings/swift/TrommiCoreRust
           mkdir -p "$package/lib/ios" "$package/Sources/TrommiCoreFFI/include"
           cp "$RUNNER_TEMP/core/lib/ios/libtrommi_core_ffi.a" "$package/lib/ios/"
           cp "$RUNNER_TEMP/core/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" "$package/Sources/TrommiCoreFFI/include/"
@@ -468,7 +467,7 @@ jobs:
         if: steps.core.outputs.mac == 'yes'
         run: |
           set -eu
-          package=core/swift/TrommiCoreRust
+          package=core/bindings/swift/TrommiCoreRust
           mkdir -p "$package/lib/macos" "$package/Sources/TrommiCoreFFI/include"
           cp "$RUNNER_TEMP/core/lib/macos/libtrommi_core_ffi.a" "$package/lib/macos/"
           cp "$RUNNER_TEMP/core/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h" "$package/Sources/TrommiCoreFFI/include/"
@@ -590,13 +589,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      # The Rust core for the Mac (core/swift/build.sh macos), taken from an earlier run when built from the same paths
+      # The Rust core for the Mac (core/bindings/swift/build.sh macos), taken from an earlier run when built from the same paths
       - name: What the core for the Mac is built from
         id: core_inputs
         if: steps.setup.outputs.ready == 'yes'
         run: |
           set -eu
-          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          sum=$( { git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
           echo "key=mac-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: core_cache
@@ -604,9 +603,9 @@ jobs:
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
-            core/swift/TrommiCoreRust/lib/macos
-            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+            core/bindings/swift/TrommiCoreRust/lib/macos
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: Compiler (rust-toolchain.toml)
         if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
         run: |
@@ -620,15 +619,15 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: The Rust core for the Mac
         if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
-        run: sh core/swift/build.sh macos
+        run: sh core/bindings/swift/build.sh macos
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: steps.setup.outputs.ready == 'yes' && steps.core_cache.outputs.cache-hit != 'true'
         with:
           key: ${{ steps.core_inputs.outputs.key }}
           path: |
-            core/swift/TrommiCoreRust/lib/macos
-            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
-            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+            core/bindings/swift/TrommiCoreRust/lib/macos
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
       - name: XcodeGen
         if: steps.setup.outputs.ready == 'yes'
         run: |

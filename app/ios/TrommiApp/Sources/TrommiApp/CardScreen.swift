@@ -375,7 +375,7 @@ struct CardScreen: View {
   /** Just decided here: the next open question (or that there is none) and Close, as the web's card page (card.mjs
    *  nextStep). In Blitz the next card comes by itself (BlitzScreen). */
   @ViewBuilder private func nextStep(_ c: DeskCard) -> some View {
-    // (which one: the client core's, the next in the Desk's order on the desk in view, client/src/model/walk.rs)
+    // (which one: the client core's, the next in the Desk's order on the desk in view, core/client/src/model/walk.rs)
     let v = model.view
     let next = model.board?.nextOpenAfter(c.id, within: v.flatMap { $0.all || $0.deskId == nil ? nil : $0.here.map { $0.deviceId } }).flatMap { model.card($0) }
     VStack(spacing: 8) {

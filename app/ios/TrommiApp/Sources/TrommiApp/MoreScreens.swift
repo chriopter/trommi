@@ -19,7 +19,7 @@ struct BlitzScreen: View {
     let v = model.view
     let walk = v?.deskCards() ?? []
     // (the card answered, put off or handed back leaves the walk: the next is the client core's, the one after it in the
-    //  Desk's order, client/src/model/walk.rs; as on the web)
+    //  Desk's order, core/client/src/model/walk.rs; as on the web)
     let within = v.flatMap { $0.all || $0.deskId == nil ? nil : $0.here.map { $0.deviceId } }
     let id = current.flatMap { c in walk.contains { $0.id == c } ? c : model.board?.nextOpenAfter(c, within: within) } ?? walk.first?.id
     Group {
@@ -77,7 +77,7 @@ struct OffScreen: View {
  * three cards the agents are working on as live cards, one under the other; then one pile with everything else, which
  * says how much lies on it ("+2 running · 1 put off · 14 done"). A tap opens it in place: the other running cards,
  * then what is put off, then what is closed, the newest first, small and quiet at the bottom (shredded ones struck
- * through). How it is laid out from the real totals is the client core's (offPile, client/src/off_pile.rs). Its
+ * through). How it is laid out from the real totals is the client core's (offPile, core/client/src/off_pile.rs). Its
  * heading, a link, opens the page Off your mind: every card, the pile open, with its search.
  */
 struct OffList: View {
@@ -402,7 +402,7 @@ struct NoteButton: View {
 /**
  * His starred cards as a small stack (the web's sidebar.mjs starStack, his pick of 13 October): three tilted cards
  * with the star and the count; a tap fans them up into a column (title, session), a tap on the stack lays them back.
- * Which cards and in what order is the client core's (client/src/stars.rs, Board.starredCards); drawn here only.
+ * Which cards and in what order is the client core's (core/client/src/stars.rs, Board.starredCards); drawn here only.
  */
 struct StarStack: View {
   @EnvironmentObject var model: BoardModel

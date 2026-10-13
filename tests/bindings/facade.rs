@@ -1,4 +1,4 @@
-//! The facade both bindings share (`core/swift/src`), called from Rust as a host would call it: what holds at
+//! The facade both bindings share (`core/bindings/swift/src`), called from Rust as a host would call it: what holds at
 //! the edge whatever the binding, and what a scenario through a binding cannot provoke (a panicking store, a
 //! store that calls back, a second owner).
 
@@ -50,10 +50,10 @@ fn the_versions_are_the_workspace_pins() {
     let (provider, version) = reported.provider.split_once(' ').expect("name and version");
     assert!(manifest.contains(&format!("{provider} = \"={version}\"")));
     assert_eq!(reported.core, trommi_core::VERSION);
-    let swift = include_str!("../../core/swift/Cargo.toml");
+    let swift = include_str!("../../core/bindings/swift/Cargo.toml");
     assert!(swift.contains("uniffi = { version = \"=0.32.2\""));
     assert!(reported.binding.contains("UniFFI 0.32.2"));
-    assert!(include_str!("../../core/wasm/Cargo.toml").contains("wasm-bindgen = \"=0.2.129\""));
+    assert!(include_str!("../../core/bindings/wasm/Cargo.toml").contains("wasm-bindgen = \"=0.2.129\""));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 // swift-tools-version:6.0
 // TrommiClient: everything of the iOS app that is not a view. The protocol itself (spec/v1.md) is not here: it is
-// trommi-core (Rust, OpenMLS), reached through `Core.swift`, a Swift protocol that mirrors core/README.md, and bound
-// to the real library by the target TrommiCoreLive (UniFFI, core/swift/TrommiCoreRust).
+// trommi-core (Rust, OpenMLS), reached through `Core.swift`, a Swift protocol that mirrors core/protocol/README.md, and bound
+// to the real library by the target TrommiCoreLive (UniFFI, core/bindings/swift/TrommiCoreRust).
 //
 //   TrommiClient     model (Board, Desk, …), the device store, the hub client, the engine `Room`. No crypto of its
 //                    own; the Desk's rules are the client core's (Rust, TrommiCoreRust's ClientDesk).
@@ -11,7 +11,7 @@
 //   ShareInbox       the Share Extension's sealed inbox in the App Group (local storage, Apple's CryptoKit).
 //   PushNotify       what the Notification Service Extension and the Live Activity widget need.
 //
-// Build the Rust library first: core/swift/build.sh (app/ios/README.md). The tests are a package of their own in the
+// Build the Rust library first: core/bindings/swift/build.sh (app/ios/README.md). The tests are a package of their own in the
 // repository's one tests folder: tests/ios (SwiftPM takes no target outside its package).
 import PackageDescription
 
@@ -27,7 +27,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2"),
-    .package(path: "../../../core/swift/TrommiCoreRust"),
+    .package(path: "../../../core/bindings/swift/TrommiCoreRust"),
   ],
   targets: [
     .target(name: "TrommiClient", dependencies: [.product(name: "Crypto", package: "swift-crypto"), .product(name: "TrommiCoreRust", package: "TrommiCoreRust")]),

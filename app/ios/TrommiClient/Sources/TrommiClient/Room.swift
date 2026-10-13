@@ -801,7 +801,7 @@ public struct Store {
 
   /**
    * Hands a group's log to the core again from its start up to the change `upTo`: for a Welcome taken after the
-   * device read past its Add (core/README.md). The core takes the group's next Commits and the messages behind the
+   * device read past its Add (core/protocol/README.md). The core takes the group's next Commits and the messages behind the
    * Add (a handover of the earlier keys) also below its cursor, and passes over what it has (`duplicate`). Entries
    * after `upTo` come at their place in the hub's order with the changes. An entry that came early ends the
    * reading; one that does not process is shown, a Commit of it reported (14.7), and ends it too. The hub not
@@ -1435,7 +1435,7 @@ public struct Store {
         if self.pastDue { try await self.tendPast(&report, &ch) }
       }
     case "presence":
-      // (the client core reads it: client/src/presence.rs, the same on every app)
+      // (the client core reads it: core/client/src/presence.rs, the same on every app)
       board.applyPresenceEvent(data)
       emit(Change())
     case "here":

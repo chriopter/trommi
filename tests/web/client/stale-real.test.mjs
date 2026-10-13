@@ -1,7 +1,7 @@
 // The stale session of 5.2.8 against the REAL hub and the REAL core (the WASM binding): a device signs in with the
 // code, joins the sessions and never comes (a login that hung); it is removed from the room; the session it was in
 // waits for a Remove, and a human device must commit it so that a message goes out. Runs when TROMMI_HUB_BIN names
-// the hub's binary and core/wasm/pkg is built; skipped and said otherwise.
+// the hub's binary and core/bindings/wasm/pkg is built; skipped and said otherwise.
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -13,12 +13,12 @@ import { AgentStandIn } from '../stand-in/agent.ts'
 import { MemoryStore, memoryCache, storage, TIMING, until } from './helpers.mjs'
 
 const BIN = process.env.TROMMI_HUB_BIN
-const PKG = new URL('../../../core/wasm/pkg/trommi-core.js', import.meta.url)
-const skip = !BIN ? 'TROMMI_HUB_BIN is not set' : !fs.existsSync(PKG) ? 'core/wasm/pkg is not built' : false
+const PKG = new URL('../../../core/bindings/wasm/pkg/trommi-core.js', import.meta.url)
+const skip = !BIN ? 'TROMMI_HUB_BIN is not set' : !fs.existsSync(PKG) ? 'core/bindings/wasm/pkg is not built' : false
 
 async function realRooms() {
   const binding = await import(PKG.href)
-  await binding.init(fs.readFileSync(new URL('../../../core/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
+  await binding.init(fs.readFileSync(new URL('../../../core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
   const { init: _i, Device, TrommiError, StoreConflict: _s, ...stateless } = binding
   const core = { ...stateless, createDevice: store => Device.create(store), openDevice: store => Device.open(store), errorCode: e => (e instanceof TrommiError ? e.code : null) }
   return roomsOn({ core: async () => core, store: name => new MemoryStore(name), cache: async name => memoryCache(name), destroy: async () => {}, timing: TIMING })

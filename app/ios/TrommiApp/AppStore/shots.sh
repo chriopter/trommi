@@ -7,7 +7,7 @@
 #   shots.sh                     build, then all shots on both devices
 #   shots.sh --no-build          the shots only, from the app of the last build
 #
-# Before it: the Rust core for the simulator in core/swift/TrommiCoreRust (`core/swift/build.sh ios`; on Linux too,
+# Before it: the Rust core for the simulator in core/bindings/swift/TrommiCoreRust (`core/bindings/swift/build.sh ios`; on Linux too,
 # then copy lib/ios-simulator, Sources/TrommiCoreFFI/include and Sources/TrommiCoreRust over: all three from the same
 # commit as this checkout).
 #
@@ -42,10 +42,10 @@ shots_phone=${SHOTS_PHONE:-$default_shots}
 shots_ipad=${SHOTS_IPAD:-$default_shots}
 
 if [ "${1:-}" != --no-build ]; then
-  [ -f "$here/../../../../core/swift/TrommiCoreRust/lib/ios-simulator/libtrommi_core_ffi.a" ] \
-    || { echo "no Rust core for the simulator: run core/swift/build.sh ios first" >&2; exit 1; }
+  [ -f "$here/../../../../core/bindings/swift/TrommiCoreRust/lib/ios-simulator/libtrommi_core_ffi.a" ] \
+    || { echo "no Rust core for the simulator: run core/bindings/swift/build.sh ios first" >&2; exit 1; }
   (cd "$here" && "$xcodegen" generate --spec project.yml --quiet)
-  # TROMMI_IOS_SIMULATOR=1: the package links lib/ios-simulator (core/swift/TrommiCoreRust/Package.swift)
+  # TROMMI_IOS_SIMULATOR=1: the package links lib/ios-simulator (core/bindings/swift/TrommiCoreRust/Package.swift)
   TROMMI_IOS_SIMULATOR=1 xcodebuild build -project "$here/Trommi.xcodeproj" -scheme Trommi \
     -destination "generic/platform=iOS Simulator" -derivedDataPath "$derived" \
     CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \

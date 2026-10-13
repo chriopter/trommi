@@ -1,5 +1,5 @@
 // blitz-order.test.mjs: Blitz walks the Desk's rows in the client core's order, and after a card leaves the walk the
-// next one is the client core's (client/src/model/walk.rs next_open_after), as on the iPhone.
+// next one is the client core's (core/client/src/model/walk.rs next_open_after), as on the iPhone.
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'

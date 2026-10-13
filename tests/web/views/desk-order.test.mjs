@@ -1,4 +1,4 @@
-// desk-order.test.mjs: the Desk's rows stand in the client core's order (client/src/desk.rs walk_order, the patch's
+// desk-order.test.mjs: the Desk's rows stand in the client core's order (core/client/src/desk.rs walk_order, the patch's
 // desk_order); the page sorts nothing of its own.
 //   node --test tests/web/views/
 import test from 'node:test'

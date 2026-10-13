@@ -2,7 +2,7 @@
 // version from its agent (revised, its urgency raised) brings it back, in the core's stack and on the web's Desk
 // (app.mjs BoardState: the queue the Desk shows, from the client core's stack). A snooze whose time passed holds nothing
 // either. A session whose only critical card is put off is not shown as waiting on him (the red hand: the core's
-// client/src/status.rs, which reads the Desk). The client projects again when the next snooze ends (the core's wake_at).
+// core/client/src/status.rs, which reads the Desk). The client projects again when the next snooze ends (the core's wake_at).
 // STAND-IN core, FAKE hub.
 import test from 'node:test'
 import assert from 'node:assert/strict'

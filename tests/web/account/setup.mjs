@@ -2,7 +2,7 @@
 //
 // account.ts imports two modules that cannot run in Node as they are: core-wasm.ts (it fetches the .wasm the app's
 // build names) and room.ts (the engine, which needs a browser's store, and whose joining with the code the core's
-// binding does not have yet). A resolve hook puts core-node.mjs (the REAL binding, loaded from core/wasm/pkg) and
+// binding does not have yet). A resolve hook puts core-node.mjs (the REAL binding, loaded from core/bindings/wasm/pkg) and
 // room-fake.mjs (a fake of exactly room.ts's contract) in their places, for account.ts and nothing else. hub.ts,
 // ids.ts, account-name.ts, passwords.ts and passkey.ts are the app's own files, unchanged.
 import { registerHooks } from 'node:module'
@@ -23,8 +23,8 @@ registerHooks({
   },
 })
 
-/** Why nothing can run, or null: the binding is built by core/wasm/build.sh (for now with TROMMI_STAND_IN_RECOVERY=1). */
-export const no_core = existsSync(new URL('../../../core/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)) ? null : 'the core\'s WASM binding is not built (core/wasm/build.sh)'
+/** Why nothing can run, or null: the binding is built by core/bindings/wasm/build.sh (for now with TROMMI_STAND_IN_RECOVERY=1). */
+export const no_core = existsSync(new URL('../../../core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)) ? null : 'the core\'s WASM binding is not built (core/bindings/wasm/build.sh)'
 if (no_core) console.warn(`\nSKIPPED: the account's tests need the real core: ${no_core}.\n`)
 
 export const { loadCore } = no_core ? { loadCore: null } : await import('./core-node.mjs')
