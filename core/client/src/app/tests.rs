@@ -165,4 +165,12 @@ fn debug_never_shows_secrets() {
         prf: vec![42; 32].into(),
     };
     assert_eq!(format!("{answer:?}"), "PasskeyCreated(<redacted>)");
+    let mut view = crate::views::ViewModel::default();
+    view.account.kit = vec!["apple".into(), "brave".into()];
+    view.account.link = Some("https://app.trommi.com/join#s3cret".into());
+    let shown = format!("{view:?}");
+    assert!(
+        !shown.contains("apple") && !shown.contains("s3cret"),
+        "{shown}"
+    );
 }

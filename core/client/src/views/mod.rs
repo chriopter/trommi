@@ -319,7 +319,8 @@ pub struct DeviceRow {
 }
 
 /// The account's flows as a screen shows them. `step` names the screen; the fields it needs are filled.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// `Debug` leaves out the invite link and the Kit words: they open the account.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccountView {
     /// "none", "sign_in", "found", "join", "compare_emoji", "keep_kit", "invite", "recover", "working".
     pub step: String,
@@ -340,6 +341,20 @@ pub struct AccountView {
     pub asks: Vec<AskView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub problem: Option<Text>,
+}
+
+impl std::fmt::Debug for AccountView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccountView")
+            .field("step", &self.step)
+            .field("invite_id", &self.invite_id)
+            .field("link", &self.link.as_ref().map(|_| "<redacted>"))
+            .field("emoji", &self.emoji)
+            .field("kit", &format_args!("<{} words redacted>", self.kit.len()))
+            .field("asks", &self.asks)
+            .field("problem", &self.problem)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
