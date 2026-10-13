@@ -229,6 +229,69 @@ fn a_line_and_an_event_are_bounded() {
     assert_eq!(reader.chunk(envelope(1).as_bytes()).events.len(), 1);
 }
 
+/// A `here` event of exactly `size` bytes, from its first line to its empty one, lines ended by `end`: the room
+/// is filled with lines of a field that is none of the protocol's, `line` bytes each (the last one shorter).
+fn event_of(size: usize, end: &str, line: usize) -> Vec<u8> {
+    let mut out = format!("event: here{end}data: {{}}{end}").into_bytes();
+    let last = size - end.len();
+    while out.len() < last {
+        let room = last - out.len();
+        // (never a rest too short for a line of one byte and its end)
+        let take = match room.saturating_sub(line + end.len()) {
+            rest if rest > end.len() || rest == 0 => line.min(room - end.len()),
+            _ => room - end.len(),
+        };
+        out.extend(std::iter::repeat_n(b'x', take));
+        out.extend_from_slice(end.as_bytes());
+    }
+    out.extend_from_slice(end.as_bytes());
+    assert_eq!(out.len(), size);
+    out
+}
+
+#[test]
+fn every_byte_of_an_event_counts() {
+    // an event may hold CAP_EVENT bytes and not one more, whatever its lines end in and however short they are
+    // (a line of one byte is half or two thirds line end: those bytes count as the others do)
+    for end in ["\n", "\r\n", "\r"] {
+        for line in [1, 61, CAP_EVENT] {
+            let whole = event_of(CAP_EVENT, end, line);
+            for cut in [whole.len(), 1 << 16, 4099] {
+                let mut reader = StreamReader::new(0);
+                let mut events = Vec::new();
+                for chunk in whole.chunks(cut) {
+                    let got = reader.chunk(chunk);
+                    assert_eq!(got.failure, None, "{end:?} {line} {cut}");
+                    events.extend(got.events);
+                }
+                assert_eq!(events, [StreamEvent::Here], "{end:?} {line} {cut}");
+                // the stream goes on: the next event has its own room
+                let next = reader.chunk(&whole);
+                assert_eq!((next.events.len(), next.failure), (1, None));
+            }
+            // (the LF of a CRLF that ends an event is read when the event is over: the one byte not counted)
+            let more = event_of(CAP_EVENT + end.len(), end, line);
+            for cut in [more.len(), 1 << 16, 4099] {
+                let mut reader = StreamReader::new(0);
+                let mut failed = false;
+                for chunk in more.chunks(cut) {
+                    let got = reader.chunk(chunk);
+                    assert!(got.events.is_empty(), "{end:?} {line} {cut}");
+                    failed |= got.failure.is_some();
+                }
+                assert!(failed, "{end:?} {line} {cut}");
+            }
+        }
+    }
+    // one chunk far beyond an event, with and without a line's end in it
+    for tail in ["", "\n\n"] {
+        let mut chunk = vec![b'x'; 3 * CAP_EVENT];
+        chunk.extend_from_slice(tail.as_bytes());
+        let got = StreamReader::new(0).chunk(&chunk);
+        assert!(got.events.is_empty() && got.failure.is_some());
+    }
+}
+
 #[test]
 fn what_a_catch_up_took_is_not_handed_over_twice() {
     let mut reader = StreamReader::new(10);

@@ -2,7 +2,8 @@
 //!
 //! The shell passes the bytes as they arrive, cut anywhere; [`StreamReader`] is the one parser for every app. It
 //! keeps the unfinished line and event of one connection and nothing else, and it is bounded: a line or an event
-//! above [`CAP_EVENT`] ends the stream, as does anything the protocol does not allow. What it checks:
+//! above [`CAP_EVENT`] ends the stream (every byte counts, line ends too, and no byte beyond the cap is looked
+//! at), as does anything the protocol does not allow. What it checks:
 //!
 //! - the framing of server-sent events: lines end in LF, CRLF or CR; `event:`, `data:` and `id:` fields, one
 //!   space after the colon dropped; a comment or an unknown field is passed over; an empty line ends an event;
@@ -206,24 +207,40 @@ impl StreamReader {
         self.id = None;
     }
 
+    /// Counts `bytes` more of the event being read.
+    fn grow(&mut self, bytes: usize) -> Read<()> {
+        self.size = self.size.saturating_add(bytes);
+        if self.size > CAP_EVENT {
+            return bad("an event larger than the protocol allows");
+        }
+        Ok(())
+    }
+
     fn read(&mut self, mut bytes: &[u8], events: &mut Vec<StreamEvent>) -> Read<()> {
         while !bytes.is_empty() {
             if self.after_cr {
                 self.after_cr = false;
                 if let [b'\n', rest @ ..] = bytes {
+                    // (the second byte of a line's end: a byte of the event that line belongs to, if it goes
+                    // on; behind the empty line that ended an event it is no event's)
+                    if self.size > 0 {
+                        self.grow(1)?;
+                    }
                     bytes = rest;
                     continue;
                 }
             }
-            let end = bytes.iter().position(|b| *b == b'\n' || *b == b'\r');
+            // a line's end is looked for no further than the event may still grow: what lies beyond that is
+            // refused unread
+            let room = CAP_EVENT.saturating_sub(self.size);
+            let near = &bytes[..bytes.len().min(room.saturating_add(1))];
+            let end = near.iter().position(|b| *b == b'\n' || *b == b'\r');
             let (part, rest) = match end {
                 Some(end) => (&bytes[..end], &bytes[end + 1..]),
-                None => (bytes, &[][..]),
+                None => (near, &bytes[near.len()..]),
             };
-            self.size = self.size.saturating_add(part.len());
-            if self.size > CAP_EVENT {
-                return bad("an event larger than the protocol allows");
-            }
+            // (the line's end counts too: every byte of an event does, from its first line to its empty one)
+            self.grow(part.len() + usize::from(end.is_some()))?;
             self.line.extend_from_slice(part);
             if let Some(end) = end {
                 self.after_cr = bytes[end] == b'\r';
@@ -248,8 +265,6 @@ impl StreamReader {
             (self.data_lines, self.size) = (0, 0);
             return self.event(&name, &data, id.as_deref());
         }
-        // (the line's end counts too, so that an event of empty lines' worth of fields is bounded as well)
-        self.size = self.size.saturating_add(1);
         let (field, value) = match line.iter().position(|b| *b == b':') {
             // a comment; between events it belongs to none (a proxy's keep-alive may never send an empty line)
             Some(0) => {

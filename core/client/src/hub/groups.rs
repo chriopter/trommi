@@ -385,14 +385,15 @@ pub(crate) fn claimed(asked: &ClaimAsked, body: &Json) -> Read<Answer> {
     let o = body.obj("a claim answer: an object")?;
     let got = o.need("key_packages").obj("key_packages: an object")?;
     let mut missing = Vec::new();
+    let mut gone = HashSet::new();
     if asked.partial {
-        let mut seen = HashSet::new();
+        let of_asked: HashSet<&DeviceId> = asked.devices.iter().collect();
         for v in o
             .need("missing")
             .list(asked.devices.len(), "missing: device ids")?
         {
             let device = v.id(DeviceId::from_slice, "missing: device ids")?;
-            if !asked.devices.contains(&device) || !seen.insert(device) {
+            if !of_asked.contains(&device) || !gone.insert(device) {
                 return bad("missing: a device that was not asked for, or twice");
             }
             missing.push(device);
@@ -407,7 +408,7 @@ pub(crate) fn claimed(asked: &ClaimAsked, body: &Json) -> Read<Answer> {
     for device in &asked.devices {
         // (the name is the device's id in its one spelling: any other name is no device asked for)
         let name = b64(device.as_bytes());
-        match (got.has(&name), missing.contains(device)) {
+        match (got.has(&name), gone.contains(device)) {
             (true, false) => {
                 let bytes = got.need(&name).bytes(1, MAX_KEY_PACKAGE, "a KeyPackage")?.0;
                 key_packages.push((*device, bytes));
