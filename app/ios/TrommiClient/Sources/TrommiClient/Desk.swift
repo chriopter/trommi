@@ -51,6 +51,9 @@ public struct Agent: Identifiable, Equatable {
   public var hue: Int = 162
   /** Whether the human gave it a place in the order (its register's position; the sidebar's drag on the web). */
   public var placed: Bool = false
+  /** Where it stands, as a card's page names its sender: desk (two or more), main session (a helper), itself; the
+   *  client core's (client/src/sessions.rs `path`). */
+  public var path: [String] = []
   /** Archived because a newer pairing in the same folder took its place (the client core's session list). */
   public var replaced: Bool = false
   /** At the client core's clock (client/src/status.rs): its link (nil when archived or removed), why it is stopped
@@ -499,6 +502,7 @@ public final class DeskModel {
                     deviceActive: s.agentDeviceId.flatMap { lastOfDevice[$0] } ?? 0, removed: r["removed"].truthy, own: r["own"].truthy, link: s.link, heardUpTo: s.heardUpTo)
       a.hue = Pen.hueFor(id: a.id, mark: a.mark)
       a.placed = r["placed"].truthy
+      a.path = r["path"].array?.compactMap(\.string) ?? []
       a.replaced = r["replaced"].truthy
       let lv = r["link"]
       if lv.object != nil { a.linkState = CoreLink(state: lv["state"].string ?? "live", since: lv["since"].double.map { UInt64(max(0, $0)) }, reason: lv["reason"].string ?? "") }

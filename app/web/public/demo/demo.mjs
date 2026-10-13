@@ -63,7 +63,7 @@ function demoStatus(m, s, archived, removed) {
  * has no core, and its sessions are a fixture's, so the plain reading of it is enough here: the person's label, else
  * the agent's name; archived as the person set it; in the person's order, else the fixture's; the parent named.
  */
-function demoSessions(m) {
+export function demoSessions(m) {
   const list = [...m.sessions.values()]
   const idOf = s => (s.agent_session_id && !/^[0-9a-f]{12,}$/.test(s.agent_session_id) ? s.agent_session_id : (s.session_id ?? s.agent_device_id).slice(0, 12))
   const ids = new Map(list.map(s => [s.session_id ?? s.agent_device_id, idOf(s)]))
@@ -85,6 +85,12 @@ function demoSessions(m) {
   })
   const byId = new Map(rows.map(r => [r.id, r]))
   for (const r of rows) if (r.parent && byId.has(r.parent)) r.desk = byId.get(r.parent).desk
+  // (each row's path, as the client core makes it: client/src/sessions.rs session_paths)
+  const desks = Object.entries(m.human.desks instanceof Map ? Object.fromEntries(m.human.desks) : m.human.desks ?? {}).filter(([, v]) => v && typeof v === 'object')
+    .map(([id, v]) => ({ id, name: String(v.name ?? '').trim() || 'Personal', order: Number.isFinite(v.order) ? v.order : null, created: v.created_at ?? 0 }))
+  const ordered = desks.some(d => d.order != null)
+  desks.sort((a, b) => (ordered ? (a.order ?? Infinity) - (b.order ?? Infinity) || a.created - b.created : (a.id !== 'main') - (b.id !== 'main') || a.created - b.created))
+  for (const r of rows) r.path = [...(desks.length > 1 ? [(desks.find(d => d.id === r.desk) ?? desks[0]).name] : []), ...(r.parent && byId.has(r.parent) ? [byId.get(r.parent).name] : []), r.name]
   return rows.sort((a, b) => a.position - b.position)
 }
 

@@ -196,6 +196,13 @@ ${optionsSaid(card, model.state.assets, version)}
 </div>`
 }
 /** The words of the left column (#card-lead-<id>): what the live stream replaces (the picture keeps its place). */
+/** Who a card comes from, above its title, on its page and in Blitz (the owner, 13 October 2026): the session's drawing
+ *  and where it stands, desk › main session › itself, its name in bold; a link to the session. The path is the
+ *  client core's (client/src/sessions.rs `path`), drawn here only. */
+function fromLine(a, base) {
+  const path = a.path?.length ? a.path : [a.name], name = path.at(-1)
+  return html`<a class="tc-fromline" data-nav href="${base}/chat/${encodeURIComponent(a.id)}" style="--hue:${a.hue}" aria-label="From ${path.join(', ')}">${raw(doodleSvg(a.mark))}${path.slice(0, -1).map(p => html`<span>${p}</span><i aria-hidden="true">›</i>`)}<b>${name}</b></a>`
+}
 function cardLead(card, model, base, { version = null } = {}) {
   const from = model.byAgent.get(card.agent)
   const old = versionOf(card, version)
@@ -206,8 +213,8 @@ function cardLead(card, model, base, { version = null } = {}) {
   const notes = [cardNote(card), old ? `version ${old.n}, as it was` : '', said ? (said === 1 ? '1 message below' : `${said} messages below`) : ''].filter(Boolean)
   return html`<div class="tc-lead focus-lead" id="card-lead-${card.id}">
 ${isKnock(card) && card.status === 'open' ? html`<span class="inbox-tab tc-knock">${sk('knock')}${knockWord(card)}</span>` : ''}
-${old ? '' : workStrip(card, model)}<h1 class="tc-title" id="card-title-${card.id}">${shown.title}</h1>
-<p class="tc-meta">${from ? html`<a class="tc-from" data-nav href="${base}/chat/${encodeURIComponent(from.id)}" style="--hue:${from.hue}">${raw(doodleSvg(from.mark))}${from.name}</a><span aria-hidden="true">·</span>` : ''}${agoSpan(card.revised ?? card.created, 'tc-ago')}<span aria-hidden="true">·</span><span>${cardNr(card)}</span>${place ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Its place">${place.at} of ${place.of}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
+${old ? '' : workStrip(card, model)}${from ? fromLine(from, base) : ''}<h1 class="tc-title" id="card-title-${card.id}">${shown.title}</h1>
+<p class="tc-meta">${agoSpan(card.revised ?? card.created, 'tc-ago')}<span aria-hidden="true">·</span><span>${cardNr(card)}</span>${place ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Its place">${place.at} of ${place.of}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
 ${text ? html`<div class="tc-text">${rich(text, { assets: model.state.assets })}</div>` : ''}${more ? html`<a class="tc-more-text" href="#card-whole-${card.id}">More in the comments ↓</a>` : ''}
 </div>`
 }
