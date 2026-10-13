@@ -83,7 +83,7 @@ export interface EngineEvents {
   /** The pump halts on this entry (invariant 4), or goes on again (null). */
   blocked: { entry: OutboxEntry; code: string; message: string } | null
   connection: Connection
-  /** Stream events that are not the engine's to act on: presence, wishes, invite Requests, archived, evicted files. */
+  /** Stream events that are not the engine's to act on: presence and its `here`, wishes, invite Requests, archived, evicted files. */
   stream: StreamEvent
   /** The live stream opened (again): the hub's list of who is here comes first, ended by a `here` stream event. */
   opened: null
