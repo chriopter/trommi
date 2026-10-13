@@ -144,7 +144,8 @@
           "en": "New question"
         },
         "text": "Social card for the launch: photo or illustration?",
-        "echo": false
+        "echo": false,
+        "asked": false
       },
       "scribble": false
     },
@@ -171,7 +172,8 @@
           "en": "You handed it back"
         },
         "about": "Social card for the launch: photo or illustration?",
-        "echo": false
+        "echo": false,
+        "asked": false
       },
       "scribble": false
     },

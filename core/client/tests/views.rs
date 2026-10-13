@@ -106,6 +106,33 @@ fn the_demo_rooms_notes_and_settings() {
     golden("demo-settings.json", &settings::settings(&Board::new(&m, &lens, now)));
 }
 
+/// Every text of one in the demo's views carries its number (`args.n`), as the texts of many do.
+#[test]
+fn texts_of_one_carry_their_number() {
+    fn walk(v: &serde_json::Value, bad: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(o) => {
+                if let (Some(key), Some(_)) = (o.get("key").and_then(|k| k.as_str()), o.get("en")) {
+                    let one = key.ends_with(".one") || key.ends_with("_one");
+                    // (not a count: "One tap answers")
+                    if one && key != "card.answer.one" && o.get("args").and_then(|a| a.get("n")).and_then(|n| n.as_str()) != Some("1") {
+                        bad.push(key.to_string());
+                    }
+                }
+                o.values().for_each(|x| walk(x, bad));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, bad)),
+            _ => {}
+        }
+    }
+    let mut bad = Vec::new();
+    for e in std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")).unwrap() {
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(e.unwrap().path()).unwrap()).unwrap();
+        walk(&v, &mut bad);
+    }
+    assert!(bad.is_empty(), "texts of one without args.n: {bad:?}");
+}
+
 /// A small generator for the property test below (xorshift: the same edits for the same seed).
 struct Rng(u64);
 impl Rng {

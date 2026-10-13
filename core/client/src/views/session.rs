@@ -243,6 +243,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
                     about: if title.is_empty() { asked_as } else { title.clone() },
                     text: if text == title { String::new() } else { text },
                     echo: false,
+                    ..Default::default()
                 });
             }
         } else if side == Side::Event {
@@ -411,7 +412,7 @@ fn page(b: &Board, id: &str) -> Option<SessionView> {
         open_word: (open > 0).then(|| say("session.open", format!("{n} open"), &[("n", &n)])),
         open_says: (open > 0).then(|| {
             if open == 1 {
-                say("session.open.one", "One open question: go to it", &[])
+                say("session.open.one", "One open question: go to it", &[("n", "1")])
             } else {
                 say("session.open.some", format!("{n} open questions: go to the first one"), &[("n", &n)])
             }

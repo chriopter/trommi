@@ -123,7 +123,8 @@
           "en": "New question"
         },
         "text": "Which hero for the landing page?",
-        "echo": false
+        "echo": false,
+        "asked": false
       },
       "scribble": false
     },

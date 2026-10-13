@@ -2215,8 +2215,12 @@ public enum CoreView {
     public var scribble: Bool
     /// A note: when it was written.
     public var writtenMs: UInt64?
+    /// On a card's page, the agent's words that answer his What??: that row's id (drawn as one block with it).
+    public var answers: String?
+    /// On a card's page, his What?? that has no answer yet: "Waiting for the explanation."
+    public var waits: Text?
 
-    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], scribble: Bool = false, writtenMs: UInt64? = nil) {
+    public init(id: String = "", fromMe: Bool = false, text: String = "", timeMs: UInt64 = 0, heard: Bool = false, pending: Bool = false, files: [String] = [], kind: String = "", number: UInt64 = 0, day: Text? = nil, cont: Bool = false, terminal: Bool = false, card: CardRefView? = nil, event: EventView? = nil, deed: EventView? = nil, row: DeskRowView? = nil, work: WorkView? = nil, published: String? = nil, details: String = "", html: String = "", chips: [CardRefView] = [], scribble: Bool = false, writtenMs: UInt64? = nil, answers: String? = nil, waits: Text? = nil) {
       self.id = id
       self.fromMe = fromMe
       self.text = text
@@ -2240,6 +2244,8 @@ public enum CoreView {
       self.chips = chips
       self.scribble = scribble
       self.writtenMs = writtenMs
+      self.answers = answers
+      self.waits = waits
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2266,6 +2272,8 @@ public enum CoreView {
       case chips = "chips"
       case scribble = "scribble"
       case writtenMs = "written_ms"
+      case answers = "answers"
+      case waits = "waits"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2293,6 +2301,8 @@ public enum CoreView {
       self.chips = try c.decodeIfPresent([CardRefView].self, forKey: .chips) ?? []
       self.scribble = try c.decodeIfPresent(Bool.self, forKey: .scribble) ?? false
       self.writtenMs = try c.decodeIfPresent(UInt64.self, forKey: .writtenMs)
+      self.answers = try c.decodeIfPresent(String.self, forKey: .answers)
+      self.waits = try c.decodeIfPresent(Text.self, forKey: .waits)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2320,6 +2330,8 @@ public enum CoreView {
       if !chips.isEmpty { try c.encode(chips, forKey: .chips) }
       try c.encode(scribble, forKey: .scribble)
       try c.encodeIfPresent(writtenMs, forKey: .writtenMs)
+      try c.encodeIfPresent(answers, forKey: .answers)
+      try c.encodeIfPresent(waits, forKey: .waits)
     }
   }
 
@@ -2369,13 +2381,20 @@ public enum CoreView {
     public var text: String
     /// What became of the question is said where it was asked: this line only repeats it.
     public var echo: Bool
+    /// On a card's page: "revised", the version it brought ("Version 3"); "decided", the version he answered when it
+    /// was not the newest ("You chose in version 2").
+    public var version: UInt32?
+    /// "revised" on a card's page: it came after his hand-back ("Version 3, as you asked").
+    public var asked: Bool
 
-    public init(kind: String = "", label: Text = Text(), about: String = "", text: String = "", echo: Bool = false) {
+    public init(kind: String = "", label: Text = Text(), about: String = "", text: String = "", echo: Bool = false, version: UInt32? = nil, asked: Bool = false) {
       self.kind = kind
       self.label = label
       self.about = about
       self.text = text
       self.echo = echo
+      self.version = version
+      self.asked = asked
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2384,6 +2403,8 @@ public enum CoreView {
       case about = "about"
       case text = "text"
       case echo = "echo"
+      case version = "version"
+      case asked = "asked"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2393,6 +2414,8 @@ public enum CoreView {
       self.about = try c.decodeIfPresent(String.self, forKey: .about) ?? ""
       self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
       self.echo = try c.decodeIfPresent(Bool.self, forKey: .echo) ?? false
+      self.version = try c.decodeIfPresent(UInt32.self, forKey: .version)
+      self.asked = try c.decodeIfPresent(Bool.self, forKey: .asked) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2402,6 +2425,8 @@ public enum CoreView {
       if !about.isEmpty { try c.encode(about, forKey: .about) }
       if !text.isEmpty { try c.encode(text, forKey: .text) }
       try c.encode(echo, forKey: .echo)
+      try c.encodeIfPresent(version, forKey: .version)
+      try c.encode(asked, forKey: .asked)
     }
   }
 
@@ -3260,12 +3285,21 @@ public enum CoreView {
     public var title: String
     /// What its agent said changed with the version after it; "" without a word.
     public var note: String
+    /// The version as it was, read only ("See version 2", "Open version 2 as it was"): its text as the card shows it
+    /// (markdown), and its options. Empty while its body is not on this device (`loaded`).
+    public var text: String
+    public var options: [OptionView]
+    /// Its body is on this device (history on demand: an old version may be read from the hub when asked for).
+    public var loaded: Bool
 
-    public init(n: UInt32 = 0, atMs: UInt64 = 0, title: String = "", note: String = "") {
+    public init(n: UInt32 = 0, atMs: UInt64 = 0, title: String = "", note: String = "", text: String = "", options: [OptionView] = [], loaded: Bool = false) {
       self.n = n
       self.atMs = atMs
       self.title = title
       self.note = note
+      self.text = text
+      self.options = options
+      self.loaded = loaded
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3273,6 +3307,9 @@ public enum CoreView {
       case atMs = "at_ms"
       case title = "title"
       case note = "note"
+      case text = "text"
+      case options = "options"
+      case loaded = "loaded"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -3281,6 +3318,9 @@ public enum CoreView {
       self.atMs = try c.decode(UInt64.self, forKey: .atMs)
       self.title = try c.decode(String.self, forKey: .title)
       self.note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+      self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+      self.options = try c.decodeIfPresent([OptionView].self, forKey: .options) ?? []
+      self.loaded = try c.decodeIfPresent(Bool.self, forKey: .loaded) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -3289,6 +3329,9 @@ public enum CoreView {
       try c.encode(atMs, forKey: .atMs)
       try c.encode(title, forKey: .title)
       if !note.isEmpty { try c.encode(note, forKey: .note) }
+      if !text.isEmpty { try c.encode(text, forKey: .text) }
+      if !options.isEmpty { try c.encode(options, forKey: .options) }
+      try c.encode(loaded, forKey: .loaded)
     }
   }
 

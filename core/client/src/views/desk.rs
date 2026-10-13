@@ -107,9 +107,9 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     } else {
         // (still reading the room: no "all quiet" while questions may yet come in)
         let unquiet = match (cut.len(), unheard) {
-            (1, _) => Some(say("desk.hello.cut_one", "One can’t hear you.", &[])),
+            (1, _) => Some(say("desk.hello.cut_one", "One can’t hear you.", &[("n", "1")])),
             (n, _) if n > 1 => Some(say("desk.hello.cut_some", "Some can’t hear you.", &[])),
-            (_, 1) => Some(say("desk.hello.unheard_one", "An answer waits.", &[])),
+            (_, 1) => Some(say("desk.hello.unheard_one", "An answer waits.", &[("n", "1")])),
             (_, n) if n > 1 => Some(say("desk.hello.unheard_some", "Answers wait.", &[])),
             _ => None,
         };
@@ -166,7 +166,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         waiting: questions,
         blitz: (walk_len > 0 && !units.is_empty()).then(|| {
             if walk_len == 1 {
-                say("desk.blitz.one", "Blitz: 1 open card", &[])
+                say("desk.blitz.one", "Blitz: 1 open card", &[("n", "1")])
             } else {
                 say("desk.blitz", format!("Blitz: {n} open cards"), &[("n", &n)])
             }
@@ -260,7 +260,7 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
     if !loading {
         let merged = c.field("merged_from_object_ids").as_array().map_or(0, Vec::len);
         if merged == 1 {
-            notes.push(say("row.replaces.one", "replaces 1 question", &[]));
+            notes.push(say("row.replaces.one", "replaces 1 question", &[("n", "1")]));
         } else if merged > 1 {
             let n = merged.to_string();
             notes.push(say("row.replaces", format!("replaces {n} questions"), &[("n", &n)]));
@@ -294,7 +294,7 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
         .collect();
     let media_says = match media.len() {
         0 => None,
-        1 => Some(say("row.media.one", "Look at the picture", &[])),
+        1 => Some(say("row.media.one", "Look at the picture", &[("n", "1")])),
         n => Some(say("row.media", format!("Look at {n} pictures and videos"), &[("n", &n.to_string())])),
     };
     let starred = b.model.human.get(&format!("star/{}", c.object_id)).is_some_and(|r| !r.value.is_null() && r.value != Value::Bool(false));
@@ -789,6 +789,16 @@ mod tests {
         r.card("q-later", "a", "decision", "normal");
         r.snoozes = json!({ "q-later": { "until": NOW + 60 * MIN } });
         assert_eq!(en(&view(&r, None).empty), "Questions land here.");
+    }
+
+    /// A count of one is a count too: the shell draws the number from `args.n` (the Linux shell's empty bubble).
+    #[test]
+    fn a_count_of_one_names_its_number() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("q", "a", "decision", "normal");
+        let blitz = view(&r, None).blitz.unwrap();
+        assert_eq!((blitz.key.as_str(), blitz.args.get("n").map(String::as_str)), ("desk.blitz.one", Some("1")));
     }
 
     #[test]

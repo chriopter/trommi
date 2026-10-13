@@ -133,6 +133,7 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
                 about: if text.is_empty() || text != title { title.clone() } else { String::new() },
                 text,
                 echo: false,
+                ..Default::default()
             }),
             ..Default::default()
         },
@@ -342,6 +343,7 @@ pub fn items_of(b: &Board, t: &Timeline, card: Option<&Card>, heard_up_to: Optio
                     about: card.map(shown_title).unwrap_or_default(),
                     text: String::new(),
                     echo: false,
+                    ..Default::default()
                 };
                 if !own && row.files.is_empty() && row.chips.is_empty() {
                     row.kind = "event".into();

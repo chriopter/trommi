@@ -322,7 +322,7 @@ pub fn badge_words(hand: Option<&HandView>, open: u32, online: bool, working: bo
 pub fn unheard_words(n: u32) -> (Text, Text) {
     let s = n.to_string();
     if n == 1 {
-        (say("unheard.word_one", "1 answer waits", &[]), say("unheard.short_one", "Not heard yet", &[]))
+        (say("unheard.word_one", "1 answer waits", &[("n", "1")]), say("unheard.short_one", "Not heard yet", &[]))
     } else {
         (
             say("unheard.word", format!("{n} answers wait"), &[("n", &s)]),

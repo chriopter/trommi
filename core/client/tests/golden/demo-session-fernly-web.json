@@ -61,7 +61,8 @@
         },
         "about": "Remind in the morning or in the evening?",
         "text": "Morning, 8:00",
-        "echo": false
+        "echo": false,
+        "asked": false
       },
       "scribble": false
     },
@@ -102,7 +103,8 @@
         },
         "about": "Remind in the morning or in the evening?",
         "text": "Morning, 8:00",
-        "echo": true
+        "echo": true,
+        "asked": false
       },
       "scribble": false
     },
@@ -176,7 +178,8 @@
           "en": "Board"
         },
         "text": "Done: onboarding in three steps is on staging",
-        "echo": false
+        "echo": false,
+        "asked": false
       },
       "scribble": false
     },

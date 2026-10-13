@@ -638,6 +638,10 @@ export interface TalkRow {
   scribble: boolean
   /** A note: when it was written. */
   written_ms?: number
+  /** On a card's page, the agent's words that answer his What??: that row's id (drawn as one block with it). */
+  answers?: string
+  /** On a card's page, his What?? that has no answer yet: "Waiting for the explanation." */
+  waits?: Text
 }
 
 /** A card as a row of a conversation names it. */
@@ -660,6 +664,11 @@ export interface EventView {
   text?: string
   /** What became of the question is said where it was asked: this line only repeats it. */
   echo: boolean
+  /** On a card's page: "revised", the version it brought ("Version 3"); "decided", the version he answered when it
+   *  was not the newest ("You chose in version 2"). */
+  version?: number
+  /** "revised" on a card's page: it came after his hand-back ("Version 3, as you asked"). */
+  asked: boolean
 }
 
 /** A turn's trail: what the agent did between his prompt and its answer, as one block. */
@@ -909,6 +918,12 @@ export interface VersionView {
   title: string
   /** What its agent said changed with the version after it; "" without a word. */
   note?: string
+  /** The version as it was, read only ("See version 2", "Open version 2 as it was"): its text as the card shows it
+   *  (markdown), and its options. Empty while its body is not on this device (`loaded`). */
+  text?: string
+  options?: OptionView[]
+  /** Its body is on this device (history on demand: an old version may be read from the hub when asked for). */
+  loaded: boolean
 }
 
 /** The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`). */

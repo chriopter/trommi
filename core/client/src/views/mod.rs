@@ -939,6 +939,12 @@ pub struct TalkRow {
     /// A note: when it was written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub written_ms: Option<u64>,
+    /// On a card's page, the agent's words that answer his What??: that row's id (drawn as one block with it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<String>,
+    /// On a card's page, his What?? that has no answer yet: "Waiting for the explanation."
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waits: Option<Text>,
 }
 
 /// A card as a row of a conversation names it.
@@ -966,6 +972,13 @@ pub struct EventView {
     /// What became of the question is said where it was asked: this line only repeats it.
     #[serde(default)]
     pub echo: bool,
+    /// On a card's page: "revised", the version it brought ("Version 3"); "decided", the version he answered when it
+    /// was not the newest ("You chose in version 2").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u32>,
+    /// "revised" on a card's page: it came after his hand-back ("Version 3, as you asked").
+    #[serde(default)]
+    pub asked: bool,
 }
 
 /// A turn's trail: what the agent did between his prompt and its answer, as one block.
@@ -1297,6 +1310,15 @@ pub struct VersionView {
     /// What its agent said changed with the version after it; "" without a word.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
+    /// The version as it was, read only ("See version 2", "Open version 2 as it was"): its text as the card shows it
+    /// (markdown), and its options. Empty while its body is not on this device (`loaded`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<OptionView>,
+    /// Its body is on this device (history on demand: an old version may be read from the hub when asked for).
+    #[serde(default)]
+    pub loaded: bool,
 }
 
 /// The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`).

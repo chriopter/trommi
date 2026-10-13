@@ -291,6 +291,9 @@
             },
             "key_epoch": 2,
             "remove_unfinished": {
+              "args": {
+                "n": "1"
+              },
               "en": "Remove the device that never finished signing in",
               "key": "settings.remove_unfinished.one"
             },
@@ -519,6 +522,9 @@
       },
       "key_epoch": 2,
       "remove_unfinished": {
+        "args": {
+          "n": "1"
+        },
         "en": "Remove the device that never finished signing in",
         "key": "settings.remove_unfinished.one"
       },
