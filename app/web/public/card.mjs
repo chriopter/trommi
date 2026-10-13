@@ -331,8 +331,9 @@ function optionLinks(card) {
  *  - What was done with the card, each act as the thing itself at its moment: the session's sheet (asked), a version's
  *    sheet with its number, the reverse card (handed back), the answer's tile in the pen's circle, the duck, the tick
  *    (read), the shredder, Later's tag, the sheet with a tick (closed). A thing taken back lies there again, faded.
- *  - Everything before the version that stands now folds away behind "Earlier versions (n)". */
-function cardThread(card, model, base = '', { more = false } = {}) {
+ *  - The history is whole: every version stands in its place with when, what changed (the agent's note) and the
+ *    version before it to open; a newer version never folds away or replaces the ones before it. */
+export function cardThread(card, model, base = '', { more = false } = {}) {
   const all = talkOf(model, card)
   const assets = model.state.assets
   const who = model.byAgent.get(card.agent)
@@ -418,14 +419,8 @@ function cardThread(card, model, base = '', { more = false } = {}) {
     items.push({ html: agentMsg(m, items.at(-1)?.agent === true), agent: true })
     items.at(-1).agent = true
   }
-  // ---- before the version that stands now: folded ----
-  let lastTurn = items.findLastIndex(x => x.turn != null && x.turn > 1)
-  const brought = lastTurn > 0 ? items.findIndex(x => x.brought === items[lastTurn].turn) : -1
-  if (brought >= 0) lastTurn = brought   // the hand-back (and what was said after it) stays with the version it brought
-  const earlier = lastTurn > 0 ? items.slice(0, lastTurn) : []
-  const now = lastTurn > 0 ? items.slice(lastTurn) : items
-  const turns = earlier.filter(x => x.turn != null).length
-  const folded = earlier.length ? html`<details class="tc-fold tc-earlier"><summary>Earlier versions (${turns + 1})</summary>${earlier.map(x => x.html)}</details>` : ''
+  // ---- the whole history stands: every version in its place, the talk around it (the newest version is the card) ----
+  const now = items
   // The talk is loaded newest page first: older comments come on request, at the top of the talk.
   const older = more ? html`<a class="tc-older" data-nav href="${cardPath(card, base)}?older=1#card-thread-${card.id}" data-turbo-action="replace">Earlier comments</a>` : ''
   // Between the card and the talk, one quiet centred line, only when it says something: why the card is urgent.
@@ -438,7 +433,7 @@ function cardThread(card, model, base = '', { more = false } = {}) {
   for (let end = cut; end > 0; end -= SHOW) groups.unshift(now.slice(Math.max(0, end - SHOW), end))
   const hidden = groups.map(g => html`<div class="tc-earlier-group" hidden>${g.map(x => x.html)}</div>`)
   const loadEarlier = cut ? html`<button type="button" class="tc-load-earlier" data-action="card#earlier">Load earlier (${cut})</button>` : ''
-  return html`<section class="tc-feed" id="card-thread-${card.id}" aria-label="Comments"${why || any ? '' : raw(' hidden')}>${why}${loadEarlier}${any ? deed(sheet(who ? raw(doodleSvg(who.mark)) : ''), `${name} ${card.kind === 'info' ? 'sent this to read' : 'asked'}`, card.created, { cls: 'is-asked' }) : ''}${lead}${older}${folded}${hidden}${now.slice(cut).map(x => x.html)}</section>`
+  return html`<section class="tc-feed" id="card-thread-${card.id}" aria-label="Comments"${why || any ? '' : raw(' hidden')}>${why}${loadEarlier}${any ? deed(sheet(who ? raw(doodleSvg(who.mark)) : ''), `${name} ${card.kind === 'info' ? 'sent this to read' : 'asked'}`, card.created, { cls: 'is-asked' }) : ''}${lead}${older}${hidden}${now.slice(cut).map(x => x.html)}</section>`
 }
 
 /** Where the card stands in the stack, for the walk: { at, of, prev, next } (cards), or null when it is not waiting. */

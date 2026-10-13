@@ -313,6 +313,8 @@ mod tests {
         assert_eq!(lean["sections"], json!([]));
         assert_eq!(lean["versions"][0].get("content"), None);
         assert_eq!(lean["versions"][0]["object_version"], json!(1));
+        // (the history goes whole: a lean card's view lists every revision without reading the versions' bodies)
+        assert_eq!(lean["history"], json!([{ "object_version": 1, "envelope_number": 0, "sent_at": 0, "note": "", "title": "Before" }]));
         let whole: Value = serde_json::from_str(&m.card_json("c1")).unwrap();
         assert_eq!(whole, m.snapshot()["cards"][0][1]);
         assert_eq!(m.card_json("none"), "");

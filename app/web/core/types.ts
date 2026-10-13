@@ -276,6 +276,17 @@ export interface CardVersion {
   content: Body | null
 }
 
+/** One entry of a card's history (client/src/model/types.rs `Revision`): a version a human reads as the card. */
+export interface Revision {
+  object_version: number
+  envelope_number: EnvelopeNumber
+  sent_at: Ms
+  /** The version's change_note (revise_card's note), '' without one. */
+  note: string
+  /** The version's title, '' where its body is not read. */
+  title: string
+}
+
 export interface Answer {
   answer_action: AnswerAction | string
   choices: string[]
@@ -340,6 +351,8 @@ export interface Card {
   created_at: Ms
   updated_at: Ms
   versions: CardVersion[]
+  /** What the card went through, the oldest first: every revision, kept by the client core (`history_of`). */
+  history: Revision[]
   answer: Answer | null
   answers: Answer[]
   closed_how: ClosedHow | null

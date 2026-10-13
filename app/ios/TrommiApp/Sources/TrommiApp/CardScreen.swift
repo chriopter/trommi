@@ -36,7 +36,6 @@ struct CardScreen: View {
             }
             answers(c, a)
             if c.status == "open" && c.withAgent == nil { optionsSaid(c) }
-            if !c.versions.isEmpty { versions(c) }
             CardLink(card: c)
             CardThread(card: c)
           }
@@ -113,28 +112,6 @@ struct CardScreen: View {
       if c.multiple { if picked.contains(o.key) { picked.remove(o.key) } else { picked.insert(o.key) }; saveDraft(c) }
       else { model.decide(c, keys: [o.key], note: note, notes: notes) }
     }
-  }
-
-  /** The question as it was before the agent revised it (card.mjs: "version n, as it was"). */
-  private func versions(_ c: DeskCard) -> some View {
-    DisclosureGroup("Earlier versions (\(c.versions.count))") {
-      VStack(alignment: .leading, spacing: 14) {
-        ForEach(c.versions.reversed(), id: \.objectVersion) { v in
-          VStack(alignment: .leading, spacing: 6) {
-            Text("Version \(v.objectVersion) · \(agoText(v.sentAt))").font(Face.text(12, .semibold)).foregroundStyle(Ink.faint)
-            Text(v.content?["title"].string ?? "").font(Face.display(18, .bold))
-            if let b = v.content?["body"].string, !b.isEmpty { RichText(text: b, size: 15, color: Ink.muted) }
-            ForEach(Array((v.content?["options"].array ?? []).map(Option.init).enumerated()), id: \.offset) { _, o in
-              Text("· \(o.label)").font(Face.text(15)).foregroundStyle(Ink.muted)
-            }
-            if let n = v.content?["change_note"].string, !n.isEmpty { Text(n).font(Face.text(14)).italic().foregroundStyle(Ink.muted) }
-          }
-          .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-          .background(RoundedRectangle(cornerRadius: 12).strokeBorder(Ink.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-        }
-      }.padding(.top, 8)
-    }
-    .font(Face.text(15, .medium)).tint(Ink.fg)
   }
 
   private func loadDraft(_ c: DeskCard) {
@@ -554,10 +531,49 @@ struct CardThread: View {
         if older {
           Button("Show Earlier Messages") { Task { await model.loadOlder(card: card.id) } }.font(Face.text(14, .semibold)).foregroundStyle(Ink.accent)
         }
-        ForEach(msgs) { m in MessageView(message: m, inCard: true) }
+        ForEach(msgs) { m in
+          // a revision: its own entry with its number, when, what changed and the version before it to open
+          if m.from == "event" && m.kind == "revised", let n = m.version { RevisionRow(card: card, message: m, version: n) }
+          else { MessageView(message: m, inCard: true) }
+        }
       }
     }
     .task(id: card.id) { if older { await model.loadOlder(card: card.id) } }
+  }
+}
+
+/** One revision in the card's history (card.mjs: "Version n"): its number, when, what changed (the agent's note), and
+ *  the version before it, folded, to read as it was. Every revision stands: the newest is the card on top. */
+struct RevisionRow: View {
+  let card: DeskCard
+  let message: Message
+  let version: Int
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Image(systemName: "pencil.circle").font(.system(size: 13, weight: .medium)).foregroundStyle(Ink.muted).frame(width: 18)
+        Text("Version \(version)").font(Face.text(14, .semibold)).foregroundStyle(Ink.fg)
+        Spacer(minLength: 4)
+        Text(agoText(message.ts)).font(Face.text(11)).foregroundStyle(Ink.faint)
+      }
+      if !message.text.isEmpty && message.text != card.title { Text(message.text).font(Face.text(15)).foregroundStyle(Ink.fg).padding(.leading, 26) }
+      if let before = card.versions.first(where: { $0.objectVersion == version - 1 }) {
+        DisclosureGroup("See version \(before.objectVersion)") {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(before.content?["title"].string ?? card.title).font(Face.display(17, .bold))
+            if let b = before.content?["body"].string, !b.isEmpty { RichText(text: b, size: 15, color: Ink.muted) }
+            ForEach(Array((before.content?["options"].array ?? []).map(Option.init).enumerated()), id: \.offset) { _, o in
+              Text("· \(o.label)").font(Face.text(15)).foregroundStyle(Ink.muted)
+            }
+          }
+          .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+          .background(RoundedRectangle(cornerRadius: 12).strokeBorder(Ink.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+          .padding(.top, 6)
+        }
+        .font(Face.text(14, .medium)).tint(Ink.muted).padding(.leading, 26)
+      }
+    }
+    .padding(.vertical, 4)
   }
 }
 

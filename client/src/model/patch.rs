@@ -21,7 +21,7 @@ impl<V: Serialize> Serialize for Entries<'_, V> {
 }
 
 /// A card as a lean patch carries it: the card without what only a card's own view reads (a list or object field, a
-/// version's body, the answers before the one in force). `lazy` names the fields left out; `lean: true` says the rest
+/// version's body, the answers before the one in force). Its history goes whole (each entry's note and title). `lazy` names the fields left out; `lean: true` says the rest
 /// is read on demand (`Model::card_json`).
 pub struct LeanCard<'a>(pub &'a Card);
 
@@ -76,6 +76,7 @@ impl Serialize for LeanCard<'_> {
             })
             .collect();
         m.serialize_entry("versions", &heads)?;
+        m.serialize_entry("history", &c.history)?;
         m.serialize_entry("answer", &c.answer)?;
         m.serialize_entry("closed_how", &c.closed_how)?;
         m.serialize_entry("in_revision", &c.in_revision)?;

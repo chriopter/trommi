@@ -448,10 +448,10 @@ const sessionsOf = m => {
 }
 // What belongs to a session (a card, a request, a published object) names it by session_id or by its agent.
 const keyOf = o => o.session_id ?? o.agent_device_id
-// The versions a human reads as the question: the first, and every later one that leaves it open. A version that
-// closes the card (close_card, withdraw, merge; also a second close) ends it and is no revision: the card's "Done"
-// line says what became of it, so it never shows as "Question revised" or as a new "Version n".
-const revisionsOf = c => (c?.versions ?? []).filter(v => v.object_version === 1 || v.object_state === 'open')
+// The versions a human reads as the card: those of its history, as the client core keeps it (types.rs `history_of`:
+// the first, and every later one that leaves it open, each revision kept). A version that closes the card ends it and
+// is no revision: the card's "Done" line says what became of it.
+const revisionsOf = c => { const keep = new Set((c?.history ?? []).map(h => h.envelope_number)); return (c?.versions ?? []).filter(v => keep.has(v.envelope_number)) }
 /** The name of the picture a selection of the Scribble Board is sent under (whiteboard.mjs): a Chat message of a
  *  person whose one picture has it stands in the conversation as a scribble card. */
 export const SCRIBBLE_FILE = 'selection.png'
@@ -981,9 +981,10 @@ export class BoardState {
     if (!c) return []
     const ev = (n, kind, text, ts, extra = {}) => ({ id: `v${n}${kind[0]}`, seq: n, agent: card.agent, from: 'event', kind, card_id: card.id, text, ts, ...extra })
     const out = []
-    for (const v of revisionsOf(c)) {
-      if (v.object_version === 1) out.push(ev(v.envelope_number, card.kind === 'info' ? 'info' : 'asked', v.content?.title ?? card.title, v.sent_at))
-      else out.push(ev(v.envelope_number, 'revised', v.content?.change_note || v.content?.title || card.title, v.sent_at, { version: v.object_version }))
+    // (the card's history from the client core: every revision, each with what its agent said changed)
+    for (const h of c.history ?? []) {
+      if (h.object_version === 1) out.push(ev(h.envelope_number, card.kind === 'info' ? 'info' : 'asked', h.title || card.title, h.sent_at))
+      else out.push(ev(h.envelope_number, 'revised', h.note || h.title || card.title, h.sent_at, { version: h.object_version }))
     }
     const label = keys => keys.map(k => card.options.find(o => o.key === k)?.label ?? k).join(', ')
     // What the card's talk shows of an answer (card.mjs cardThread): each choice by the name it had in the version

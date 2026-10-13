@@ -180,6 +180,19 @@ public struct CardVersion {
   }
 }
 
+/** One entry of a card's history (client/src/model/types.rs `Revision`): a version a human reads as the card, the
+ *  oldest first, with what its agent said changed. The client core keeps every one: a newer never replaces them. */
+public struct Revision: Equatable {
+  public var objectVersion: Int
+  public var envelopeNumber: Int
+  public var sentAt: UInt64
+  public var note: String
+  public var title: String
+  public init(objectVersion: Int, envelopeNumber: Int, sentAt: UInt64, note: String, title: String) {
+    self.objectVersion = objectVersion; self.envelopeNumber = envelopeNumber; self.sentAt = sentAt; self.note = note; self.title = title
+  }
+}
+
 public struct InRevision: Equatable { public var by: String; public var envelopeNumber: Int }
 
 public final class Card {
@@ -231,6 +244,8 @@ public final class Card {
     set { ownVersions = newValue }
   }
   var ownVersions: [CardVersion] = []
+  /** Its history from the client core, the oldest first (lean cards carry it whole). */
+  public var history: [Revision] = []
   public var answer: Answer?
   /** Every answer it was given (the history); of a lean card read from the core when first asked. */
   public var answers: [Answer] {

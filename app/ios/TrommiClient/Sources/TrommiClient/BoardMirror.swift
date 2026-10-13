@@ -61,6 +61,9 @@ extension Board {
                   envelopeNumber: int($0["envelope_number"]), sentAt: u64($0["sent_at"]), objectState: str($0["object_state"]), urgency: str($0["urgency"]),
                   content: $0["content"].isNull ? nil : $0["content"], owner: c)
     }
+    c.history = (v["history"].array ?? []).map {
+      Revision(objectVersion: int($0["object_version"]), envelopeNumber: int($0["envelope_number"]), sentAt: u64($0["sent_at"]), note: str($0["note"]), title: str($0["title"]))
+    }
     c.answer = v["answer"].isNull ? nil : answerOf(v["answer"])
     c.answers = (v["answers"].array ?? []).map(answerOf)
     c.closedHow = v["closed_how"].string
