@@ -354,10 +354,14 @@ fn a_device_catches_up_on_two_hundred_commits() {
     );
 }
 
+/// Full size (78 rounds, over 1000 changes, handovers of several messages; 2-3 minutes) only with
+/// TROMMI_TESTS_FULL=1, as the nightly run (.github/workflows/nightly.yml) has it; otherwise (pull requests, main, a
+/// local run) the same steps for 12 rounds.
 #[test]
 fn a_device_catches_up_across_twenty_groups_in_the_hubs_order_only() {
     const SESSIONS: usize = 19;
-    const ROUNDS: usize = 78;
+    let full = std::env::var_os("TROMMI_TESTS_FULL").is_some_and(|v| v == "1");
+    let rounds: usize = if full { 78 } else { 12 };
     let store = MemoryStorage::new();
     let handle = store.handle();
     let (mut a, mut b) = (new_device(), new_device_on(store));
@@ -386,7 +390,7 @@ fn a_device_catches_up_across_twenty_groups_in_the_hubs_order_only() {
     // sessions and is handed the history, three other sessions are updated, every other round a session is
     // taken over by a new agent device, and the human device is removed again from the room and its sessions.
     let mut handovers = 0;
-    for round in 0..ROUNDS {
+    for round in 0..rounds {
         let mut guest = new_device();
         add_human(&mut hub, &mut a, &mut guest);
         // The handover grows with the history: beyond 400 keys it takes several messages.
@@ -429,8 +433,12 @@ fn a_device_catches_up_across_twenty_groups_in_the_hubs_order_only() {
     let changes = (hub.change() - start) as usize;
     // Per round: the Add with the recovery_mac behind it, three session Adds each with the session's handover
     // behind it (one message: no session has 400 epochs), three updates, the removal with its three clean-ups.
-    assert_eq!(changes, ROUNDS * 15 + ROUNDS / 2 * 2 + handovers);
-    assert!(changes >= 1000 && handovers > ROUNDS);
+    assert_eq!(changes, rounds * 15 + rounds / 2 * 2 + handovers);
+    if full {
+        assert!(changes >= 1000 && handovers > rounds);
+    } else {
+        assert!(handovers >= rounds);
+    }
     let log = hub.log_after(start);
     assert_eq!(log.len(), changes);
 
@@ -499,7 +507,7 @@ fn a_device_catches_up_across_twenty_groups_in_the_hubs_order_only() {
         .count();
     // The handovers (the room's, and the three sessions' behind their Adds) and the recovery_mac of each
     // round were for the guest.
-    let for_guests = handovers + ROUNDS * 3 + ROUNDS;
+    let for_guests = handovers + rounds * 3 + rounds;
     assert_eq!((commits, dropped), (changes - for_guests, for_guests));
     assert_eq!(b.cursor(), hub.change());
 
