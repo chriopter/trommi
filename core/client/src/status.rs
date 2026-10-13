@@ -16,7 +16,8 @@
 //! - it is disconnected while a status line of its says "working", for longer than [`OFFLINE_GRACE_MS`] (and longer
 //!   than that since this app started: every session is away until it links again);
 //! - it is connected and waits for the person: an open approval request of it, or an open card of it marked as
-//!   blocking (urgency critical), that stands on the Desk now (the stack: not held, not put off, not with its agent).
+//!   blocking (urgency critical), that stands on the Desk now (the stack: not held, not put off, not with its agent)
+//!   and is read on this device (one whose body has not come yet waits quietly, on the Desk and here).
 //!   What is not on the Desk raises no hand, so the hand and the Desk never disagree.
 //!
 //! Quiet (a grey hint, never a stop): connected, a status line says "working", and nothing from it for [`QUIET_MS`].
@@ -216,6 +217,8 @@ impl<'a> Context<'a> {
             .open_permission_ids
             .iter()
             .filter_map(|id| m.permissions.get(id))
+            // (one not read on this device yet waits quietly, as on the Desk: no hand points at what he cannot see)
+            .filter(|p| p.content_state.is_empty() || p.content_state == "ok")
             .filter_map(|p| p.session_id.as_deref())
             .collect();
         let mut device_active: HashMap<&str, u64> = HashMap::new();
@@ -345,7 +348,9 @@ pub fn status_of(
                 });
             } else if waiting
                 .iter()
-                .any(|id| m.cards.get(*id).is_some_and(|c| c.urgency == "critical"))
+                // (a card whose body is not read here yet stands on the Desk as a quiet "Loading …": no hand for it
+                //  until it is read; the owner, 13 October 2026: "Still, ohne Hand und Knöpfe")
+                .any(|id| m.cards.get(*id).is_some_and(|c| c.urgency == "critical" && !matches!(c.content_state.as_str(), "undecryptable" | "header")))
             {
                 blocked = Some(Blocked {
                     why: "blocking".into(),

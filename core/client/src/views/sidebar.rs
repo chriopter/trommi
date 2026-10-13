@@ -142,14 +142,16 @@ pub fn sidebar(b: &Board) -> SidebarView {
             }
         })
         .collect();
-    // (web and iPhone differ here: the web counts every desk and shows red on a knock, the iPhone counts the desk
-    //  in view. The web's rule until the owner decides: card c628976b, session "App-Kern W4")
-    let badge = b.all_fresh.len() as u32;
+    // The tab's number: the open questions of the desk in view, never red (the owner, 13 October 2026, card
+    // c628976b: "Nur der Desk im Blick"; the web counted every desk and showed red on a knock). What waits on the
+    // other desks stands in the menu, desk by desk.
+    let badge = b.fresh().count() as u32;
+    let everywhere = b.all_fresh.len() as u32;
     let knocks = b.all_fresh.iter().any(|f| f.knocks);
     let all = (desks.len() > 1).then(|| DeskTab {
         id: ALL_DESKS.into(),
         name: say("desk.all", "All Desks", &[]),
-        waiting: badge,
+        waiting: everywhere,
         selected: b.all,
         knocks,
     });
@@ -205,7 +207,6 @@ pub fn sidebar(b: &Board) -> SidebarView {
         desks: tabs,
         sessions: rows,
         badge,
-        knocks,
         desk: in_view,
         all,
         place,
@@ -382,10 +383,12 @@ mod tests {
         assert!(v.desks.iter().all(|d| !d.selected));
         assert_eq!(row(&v, "d-lab").group, "lab:off");
 
-        // one desk in view: only its sessions, the other desk's questions still count on the tab and in the menu
+        // one desk in view: only its sessions; the tab counts this desk alone, the menu says what waits on the other
         let v = view(&r, Some("main"));
         assert_eq!(slugs(&v), ["c-work", "a-work"]);
-        assert_eq!((v.badge, v.waiting, v.place.en.as_str()), (1, 0, "Work"));
+        assert_eq!((v.badge, v.waiting, v.place.en.as_str()), (0, 0, "Work"));
+        assert_eq!(view(&r, Some("lab")).badge, 1);
+        assert_eq!(view(&r, Some("all")).badge, 1);
         assert_eq!(v.desks.iter().map(|d| (d.id.as_str(), d.waiting, d.selected)).collect::<Vec<_>>(), [("main", 0, true), ("lab", 1, false), ("empty", 0, false)]);
         // a desk that is not there: the first
         assert_eq!(view(&r, Some("nowhere")).desk, "main");
@@ -416,23 +419,24 @@ mod tests {
         r.card("q-later", "a", "decision", "normal");
         r.snoozes = json!({ "q-later": { "until": NOW + 60 * MIN } });
         // (not read on this device yet: a quiet placeholder, no question and no knock)
-        // (urgent here, not blocking: status.rs still raises the red hand for a blocking card it cannot read yet,
-        //  though the Desk shows it as a quiet placeholder; reported, not this module's to decide)
-        r.card("q-loading", "a", "decision", "high")["content_state"] = json!("header");
+        // (blocking, even: no knock and no red hand until it is read. This fails without the rule in status.rs)
+        r.card("q-loading", "a", "decision", "critical")["content_state"] = json!("header");
         r.card("q-newer", "a", "decision", "high")["unsupported"] = json!("card_type");
         r.answered("q-done", "a", NOW - MIN, 10);
         let v = view(&r, None);
         let a = row(&v, "a");
-        assert_eq!((a.open, a.knocks, v.badge, v.knocks, v.waiting, v.knocking), (1, false, 1, false, 1, 0));
+        assert_eq!((a.open, a.knocks, v.badge, v.waiting, v.knocking), (1, false, 1, 1, 0));
         assert_eq!(a.says.as_ref().map(|t| t.en.as_str()), Some("1 question open"));
+        assert!(!a.blocked && a.hand.is_none() && v.stopped == 0);
 
         r.card("q-high", "a", "decision", "high");
         let v = view(&r, None);
-        assert_eq!((row(&v, "a").open, row(&v, "a").knocks, v.knocks, v.knocking), (2, true, true, 1));
+        assert_eq!((row(&v, "a").open, row(&v, "a").knocks, v.knocking), (2, true, 1));
 
         // an approval request counts and knocks, and stops its session; one not read here yet waits quietly
         r.request("p-unread", "a", "header");
-        assert_eq!(view(&r, None).badge, 2);
+        let v = view(&r, None);
+        assert_eq!((v.badge, v.stopped, row(&v, "a").blocked), (2, 0, false), "an unread request stops nobody yet");
         r.request("p-read", "a", "ok");
         let v = view(&r, None);
         let a = row(&v, "a");
@@ -451,7 +455,7 @@ mod tests {
         r.card("q1", "b-old", "decision", "high");
         let v = view(&r, None);
         assert_eq!(slugs(&v), ["a"]);
-        assert_eq!((v.badge, v.knocks, row(&v, "a").folded.is_none()), (0, false, true));
+        assert_eq!((v.badge, v.knocking, row(&v, "a").folded.is_none()), (0, 0, true));
     }
 
     #[test]
