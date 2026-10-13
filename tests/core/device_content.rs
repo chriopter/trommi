@@ -810,6 +810,13 @@ fn what_fails_checks_seven_to_nine_is_chained_and_never_applied() {
         (EnvelopeOutcome::Applied, None)
     );
     assert!(full.body.is_some() && full.object_after.is_some());
+    // An envelope the chain holds is read back under the number of its place there, whatever number the fetch
+    // names: that one is the hub's word alone.
+    let ahead = f
+        .reader
+        .receive_envelope(&note.encode().unwrap(), got.change + 1_000_000, false, None, now())
+        .unwrap();
+    assert_eq!((full.change, ahead.change), (got.change, got.change));
     // A kind of a newer Trommi is chained and nothing else.
     let mut newer = f.pen.sign(&claim, &note_draft(), &Objects::new(), now());
     newer.header.subject = Subject::Reserved {

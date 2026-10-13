@@ -877,6 +877,8 @@ impl Model {
             // A version the card holds already has its number. Met again out of the hub's order it keeps it,
             // whatever number it comes under (nothing vouches for that one); taken in the hub's order it gets the
             // place the chain gives it, and what hung on the number it was first shown under moves with it.
+            // (`object_after` comes only with an envelope the chain holds, and the core hands such an envelope
+            //  over under the number of its place there, also when it is read back out of order.)
             if let Some(at) = card.versions.iter().position(|v| v.version_hash == r.hash) {
                 let held = card.versions[at].envelope_number;
                 if r.object_after.is_none() {
@@ -1205,8 +1207,11 @@ impl Model {
                         .answers
                         .iter()
                         .position(|x| x.envelope_hash.as_deref() == Some(p.as_str())),
+                    // (in the hub's order also an answer whose take back was first shown out of order, under a
+                    //  number beyond this one: it is this take back, an answer is taken back once)
                     None => card.answers.iter().rposition(|x| {
-                        x.envelope_number.unwrap_or(0) < n && x.taken_back_at.is_none()
+                        x.envelope_number.unwrap_or(0) < n
+                            && x.taken_back_at.is_none_or(|at| in_order && at > n)
                     }),
                 };
                 // Out of the hub's order a take back counts only with the answer it names: without one (a header
