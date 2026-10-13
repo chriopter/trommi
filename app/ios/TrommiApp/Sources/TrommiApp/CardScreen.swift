@@ -19,6 +19,8 @@ struct CardScreen: View {
   /** Which picture or video stands on the stage (CardGallery), and the room the page has (the stage's cap). */
   @State private var stageAt = 0
   @State private var room = CGSize.zero
+  /** Decided on this page just now (not in Blitz): the card stays, decided, and offers the next question (nextStep). */
+  @State private var answeredHere = false
   var body: some View {
     let _ = model.version
     if let c = model.card(cardId), let d = model.desk {
@@ -72,6 +74,7 @@ struct CardScreen: View {
       }
       .background(Ink.bg.ignoresSafeArea())
       .onAppear { if !loadedDraft { loadDraft(c); loadedDraft = true } }
+      .onChange(of: c.status) { was, now in if was == "open" && now != "open" { answeredHere = true } else if now == "open" { answeredHere = false } }
       .background { CardKeys(card: c) }
       .fullScreenCover(item: Binding(get: { picture.map { PicAt(at: $0) } }, set: { picture = $0?.at })) { p in
         let g = gallery(c)
@@ -377,6 +380,39 @@ struct CardScreen: View {
     }
     .padding(.horizontal, 4).padding(.top, -6)
   }
+  /** Just decided here: the next open question (or that there is none) and Close, as the web's card page (card.mjs
+   *  nextStep). In Blitz the next card comes by itself (BlitzScreen). */
+  @ViewBuilder private func nextStep(_ c: DeskCard) -> some View {
+    let next = model.view?.deskCards().first { $0.id != c.id }
+    VStack(spacing: 8) {
+      if let n = next {
+        Button {
+          if !model.path.isEmpty { model.path.removeLast() }
+          model.path.append(.card(n.id))
+        } label: {
+          HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Next question").font(Face.text(17, .bold))
+              Text(n.title).font(Face.text(13)).opacity(0.7).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "arrow.right").font(.system(size: 17, weight: .semibold))
+          }
+          .foregroundStyle(Ink.bg).padding(.horizontal, 16).padding(.vertical, 12)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.fg))
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityHint("Opens \(n.title)")
+      } else {
+        HStack(spacing: 8) { Sketch("tick", color: Ink.accent).frame(width: 18, height: 18); Text("That was the last open question.").font(Face.text(15, .semibold)).foregroundStyle(Ink.muted) }
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      Button("Close") { if !model.path.isEmpty { model.path.removeLast() } }
+        .font(Face.text(15, .semibold)).foregroundStyle(Ink.muted).underline().frame(minHeight: 44)
+    }
+    .padding(.top, 6)
+  }
   @ViewBuilder private func done(_ c: DeskCard, _ a: Agent?) -> some View {
     let pickedLabels = c.options.filter { c.choices.contains($0.key) }.map { $0.label }.joined(separator: ", ")
     Group {
@@ -396,6 +432,7 @@ struct CardScreen: View {
       let can = c.status == "shredded" || !c.choices.isEmpty || c.trusted || (c.kind == "info" && c.read != nil)
       let did = c.status == "shredded" ? "You shredded it" : c.kind == "info" ? "You read it" : c.trusted ? "You left it to the agent" : can ? "You chose" : ""
       if !did.isEmpty { saidFoot(did, c.status == "shredded" ? c.shredded ?? c.decided : c.kind == "info" ? c.read ?? c.decided : c.decided, back: can ? "Take back your answer" : nil) { model.reopen(c.id) } }
+      if answeredHere && !walk && c.kind == "decision" { nextStep(c) }
       MarksLine(marks: model.board?.cards[c.id]?.answer?.marks ?? [])
       if c.settled { still("✓ \(Words.settled)", "\(a?.name ?? "The agent") marked this answer as final: nothing follows from it.") }
       if let w = model.board?.cards[c.id]?.withdrawReason, !w.isEmpty { still("Why it was withdrawn", w) }

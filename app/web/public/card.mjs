@@ -263,7 +263,14 @@ export function optionsSaid(card, assets, version = null) {
 }
 /** The right column's answers (#card-answer-<id>): every option a button of the card's form, with its line for a note;
  *  then "or" Whatever. Or, once answered or handed back, what was said and the way back. */
-function cardAnswer(card, model, base, { error = '', version = null, pic = 1 } = {}) {
+/** Just decided on its own page: the card stays, decided (its answer and Take back above), and offers the next open
+ *  question, or says there is none, and a way out. after: { next, self, home, focus } (cardPage). In Blitz (?walk=1) the
+ *  answer goes straight on to the next card instead (actRoute). */
+function nextStep({ next, self, home, focus }) {
+  const go = next ? focusAt(cardPath(next, self), focus) : ''
+  return html`<nav class="tc-next" aria-label="What next">${next ? html`<a class="tc-next-go" data-nav href="${go}" title="The next open question: ${next.title}"><span>Next question</span><small>${next.title}</small>${FORTH}</a>` : html`<p class="tc-next-none">${sk('tick')}<span>That was the last open question.</span></p>`}<a class="tc-next-close" data-nav href="${home}">Close</a></nav>`
+}
+function cardAnswer(card, model, base, { error = '', version = null, pic = 1, after = null } = {}) {
   const form = `card-form-${card.id}`
   const err = html`<p class="tc-error" role="alert"${error ? '' : raw(' hidden')}>${error}</p>`
   const old = versionOf(card, version)
@@ -278,7 +285,7 @@ function cardAnswer(card, model, base, { error = '', version = null, pic = 1 } =
     const said = card.status === 'shredded' ? 'Shredded' : card.kind === 'info' ? 'Read' : card.trusted ? `${WORDS.trust}${advisedLabels(card) ? `: ${advisedLabels(card)}` : ''}` : card.options.filter(o => picked.includes(o.key)).map(o => o.label).join(', ') || 'Withdrawn by the agent'
     const can = card.status === 'shredded' || card.choice != null || card.trusted || (card.kind === 'info' && card.read)
     const did = card.status === 'shredded' ? 'You shredded it' : card.kind === 'info' ? 'You read it' : card.trusted ? 'You left it to the agent' : can ? 'You chose' : ''
-    return box(html`<div class="tc-opts">${stood(said, card.note ? `Your note: ${card.note}` : '')}${did ? saidFoot(did, card.decided, can ? back(card, base, 'reopen') : '') : ''}${card.options.filter(o => card.option_notes?.[o.key]).map(o => still(o.label, `Your note: ${card.option_notes[o.key]}`))}${card.settled ? still(html`${sk('tick')}${SETTLED}`, `${model.byAgent.get(card.agent)?.name ?? 'The agent'} marked this answer as final: nothing follows from it.`, 'is-settled') : ''}${card.summary ? still('Done by the agent', card.summary) : ''}</div>${card.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}: ask the session about what it did">${sk('what')}</button>` : ''}`)
+    return box(html`<div class="tc-opts">${stood(said, card.note ? `Your note: ${card.note}` : '')}${did ? saidFoot(did, card.decided, can ? back(card, base, 'reopen') : '') : ''}${card.options.filter(o => card.option_notes?.[o.key]).map(o => still(o.label, `Your note: ${card.option_notes[o.key]}`))}${card.settled ? still(html`${sk('tick')}${SETTLED}`, `${model.byAgent.get(card.agent)?.name ?? 'The agent'} marked this answer as final: nothing follows from it.`, 'is-settled') : ''}${card.summary ? still('Done by the agent', card.summary) : ''}</div>${after ? nextStep(after) : ''}${card.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}: ask the session about what it did">${sk('what')}</button>` : ''}`)
   }
   // Open, but not read on this device yet: what it asks follows once its keys are here.
   if (card.loading) return box(html`<p class="tc-quiet">Loading … this question is still being decrypted on this device.</p>`)
@@ -443,9 +450,12 @@ function placeOf(card, model) {
 /** The star beside the way back: his own mark on a card, to find it again in Off your mind. Live (t.live 'card'). */
 export const starButton = (card, base) => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, base, 'star')}"><input type="hidden" name="stay" value="1"><input type="hidden" name="on" value="${card.starred ? '' : '1'}"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(Boolean(card.starred))}" title="${card.starred ? 'Starred: take the star off' : 'Star this card'}" aria-label="${card.starred ? 'Starred' : 'Star this card'}">${sk('star')}</button></form>`
 
+/** The open question to offer after this one was decided: the one that followed it (id from the answer's redirect),
+ *  else the first that waits. */
+const nextOpen = (card, model, id) => { const walk = walkOf(model).filter(c => c.id !== card.id); return walk.find(c => c.id === id) ?? walk[0] ?? null }
 /** The whole <main> of a card's page. pic: which picture stands. walk: a step of "Next, please". version: as it was
  *  then. from: the session it was opened from (/chat/<id>/card/<n>): the way back and the links lead there. */
-function cardPage(card, model, base, { pic = 1, walk = false, error = '', version = null, from = null, more: older = false, full = false, focus = false } = {}) {
+function cardPage(card, model, base, { pic = 1, walk = false, error = '', version = null, from = null, more: older = false, full = false, focus = false, decided = false, next = null } = {}) {
   const old = versionOf(card, version)
   const open = card.status === 'open' && !card.with_agent && !old
   // The draft and the pen stay while the card is with its session too: the reworked card comes back live into a page
@@ -504,14 +514,14 @@ ${open && card.kind !== 'permission' ? more('is-shred', 'bin', WORDS.shred, `${W
 <article class="tc-card" id="card-${card.id}" style="--hue:162" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${card.urgency}" aria-labelledby="card-title-${card.id}"${media ? raw(' data-pictures') : ''}${card.status === 'open' && !card.with_agent ? '' : raw(' data-settled')}>
 ${cardLeft(card, model, self, { version, pic: shownPic, query })}
 <div class="tc-right">
-${cardAnswer(card, model, base, { error, version, pic: shownPic })}
+${cardAnswer(card, model, base, { error, version, pic: shownPic, after: decided && !old && card.status !== 'open' ? { next: nextOpen(card, model, next), self, home, focus } : null })}
 </div>
 </article>
 ${open && card.kind !== 'permission' && !card.snoozed_until ? html`<form class="tc-later" data-action="pointerdown->card#pullStart click->card#pullClick" method="post" action="${base}/cards/batch" aria-label="Put this question off"><input type="hidden" name="ids" value="${card.id}"><input type="hidden" name="from" value="${card.id}">${keep}${session ? html`<input type="hidden" name="back" value="${home}">` : ''}${sideWays({ duck: false, shred: false, word: false })}</form>` : ''}
 </div>
 ${notesOpen}${cardThread(card, model, self, { more: older })}
 <form class="tc-chat" id="${form}" aria-label="Write to the agent" method="post" action="${act(card, base, 'message')}" enctype="multipart/form-data" data-card-target="form">
-${walk ? raw('<input type="hidden" name="walk" value="1">') : ''}${keep}${session ? html`<input type="hidden" name="back" value="${home}">` : ''}
+<input type="hidden" name="page" value="1">${walk ? raw('<input type="hidden" name="walk" value="1">') : ''}${keep}${session ? html`<input type="hidden" name="back" value="${home}">` : ''}
 ${drafting || (open && card.kind === 'info') ? html`<input type="hidden" name="marks" value="${JSON.stringify(card.draft?.marks ?? [])}" data-card-target="marks">` : ''}
 <span class="tc-c-who is-you" aria-hidden="true">${sk('pen')}</span>
 <div class="tc-ask"><div class="tc-chips" data-card-target="chips" hidden></div>
@@ -1835,6 +1845,11 @@ export function register(t) {
     // (the focus mode goes along to the card that comes next: name="focus" in the card's forms)
     const to = (c, under, ...query) => focusAt(`${cardPath(c, under)}?${query.filter(Boolean).join('&')}`, form.has('focus'))
     if (['message', 'reopen', 'takeback', 'wake', 'star'].includes(what) && !form.has('stay')) return redirect(res, to(card, fromSession ? home : BASE, what === 'message' ? `said=${id}:message` : ''))
+    // (decided on the card's own page, not in Blitz: the card stays, decided, and offers the next question)
+    if (['decide', 'trust'].includes(what) && !form.has('walk') && form.has('page')) {
+      const m = model(), walk = walkOf(m), next = after.map(x => m.byCard.get(x)).find(c => c && walk.includes(c))
+      return redirect(res, to(card, fromSession ? home : BASE, said, next ? `next=${next.id}` : ''))
+    }
     if (fromSession) return redirect(res, `${home}${said ? `?${said}` : ''}`)
     // (in the walk, and after the reverse card on a card's own page: on to the next open card)
     if (form.has('walk') || (form.has('next') && what === 'revise')) {
@@ -1847,6 +1862,8 @@ export function register(t) {
   // ---- a card's page ----
     const cardView = (req, res, card, m, { said = '', ...opts } = {}, code = 200) => {
       const [saidId, saidWhat] = said.split(':')
+      // (just decided here: the card stays and offers the next question, cardPage)
+      if (saidId === card.id && ['decide', 'trust'].includes(saidWhat)) opts = { ...opts, decided: true }
       const old = versionOf(card, opts.version)
       const from = opts.from && m.byAgent.has(opts.from) ? opts.from : null
       t.page(req, res, { model: m, title: `${card.title} · Trommi`, view: 'card', css: 'card', current: from, stream: `&card=${card.id}${from ? `&from=${encodeURIComponent(from)}` : ''}${old ? `&old=${old.n}` : ''}`, main: cardPage(card, m, BASE, { ...opts, from }), says: says(m.byCard.get(saidId), saidWhat) }, code)
@@ -1861,7 +1878,7 @@ export function register(t) {
         try { await hub.loadOlder(threadOf(card)) } catch (err) { console.warn('older comments', err) }
         m = model(); card = m.byCard.get(card.id) ?? card
       }
-      cardView(req, res, card, m, { more: moreOf(card), said: String(url.searchParams.get('said') ?? ''), pic: Number(url.searchParams.get('pic')) || 1, walk: url.searchParams.has('walk'), focus: url.searchParams.has('focus'), version: Number(url.searchParams.get('v')) || null, from: match[1] ? decodeURIComponent(match[1]) : null })
+      cardView(req, res, card, m, { more: moreOf(card), said: String(url.searchParams.get('said') ?? ''), next: url.searchParams.get('next'), pic: Number(url.searchParams.get('pic')) || 1, walk: url.searchParams.has('walk'), focus: url.searchParams.has('focus'), version: Number(url.searchParams.get('v')) || null, from: match[1] ? decodeURIComponent(match[1]) : null })
     })
     t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)\/picture\/(\d+)$/, ({ req, res, url, match: [, from, ref, at] }) => {
       const m = model(), card = m.cardByRef(ref)

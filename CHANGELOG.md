@@ -17,6 +17,7 @@ small under the summary while the day is one of the newest three.
 The App Store listing now opens with your encrypted notes.
 
 **Better**
+- Deciding on a card's own page keeps it open as decided and offers the next question; in Blitz the next card still comes at once (web and iPhone)
 - What's new shows each day as a card with its summary and picture; open it for the details (web and iPhone)
 - App Store listing leads with the encrypted notes screenshot (iPhone and iPad); the others follow in their old order.
 - Running agents show as one row of chips under the chat; a line follows its card (snoozed or done cards no longer show as working)
