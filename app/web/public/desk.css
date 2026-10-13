@@ -843,6 +843,15 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 .desk-goals:not(.is-open) .dg-line:nth-child(n+6) { display: none; }
 .desk-goals.is-writing > .desk-goals-show, .desk-goals.is-writing > .desk-goals-more { display: none; }
 .desk-goals-more { display: block; margin: 1px 0 0; padding: 5px 0; border: 0; background: none; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; text-decoration-color: var(--accent); }
+/* folding the goals (desk.mjs goals#collapse): "Hide goals" under them, quiet, shown with the pointer over them or on a
+   touch screen; folded only "Goals · N" with its chevron, which opens them again */
+.desk-goals-fold, .desk-goals-unfold { display: none; margin: 1px 0 0; padding: 5px 0; border: 0; background: none; color: var(--faint); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; }
+.desk-goals:not(.is-folded):not(.is-writing) > .desk-goals-fold { display: block; }
+@media (any-hover: hover) { .desk-goals:not(:hover):not(:focus-within) > .desk-goals-fold { visibility: hidden; } .desk-goals-fold:hover, .desk-goals-unfold:hover { color: var(--fg); } }
+.desk-goals.is-folded > :is(.desk-goals-show, .desk-goals-more) { display: none; }
+.desk-goals.is-folded:not(.is-writing) > .desk-goals-unfold { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--t-md); font-weight: 500; }
+.desk-goals-unfold .sketch { width: 16px; height: 16px; transform: rotate(-90deg); }
+.desk-goals-fold:focus-visible, .desk-goals-unfold:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
 .desk-goals-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
 @media (any-hover: hover) { .desk-goals-show:hover { background: var(--sunken); color: var(--fg); } .desk-goals-more:hover { color: var(--accent); } }
 .desk-goals-show:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
