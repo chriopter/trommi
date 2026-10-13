@@ -86,10 +86,13 @@ final class RoomTests: XCTestCase {
   func testADeviceThatLeftWhileTheStreamWasCutIsOfflineOnceTheStreamIsBack() async throws {
     let room = try await founded()
     let gone = String(repeating: "11", count: 32), stays = String(repeating: "22", count: 32), never = String(repeating: "33", count: 32)
-    for id in [gone, stays, never] { room.board.members[id] = RoomMember(deviceId: id, role: "agent") }
+    // (three agents of the room, each in a session of its own: members as the client core knows them)
+    for (k, id) in [gone, stays, never].enumerated() { FakeHub.shared.commit(group: room.roomId, ["session": String(repeating: "e\(k)", count: 16), "agent": id]) }
+    _ = try await room.sync()
+    XCTAssertNotNil(room.board.members[gone]); XCTAssertNotNil(room.board.members[never])
     func presence(_ id: String) throws -> JV { JV.parse(utf8(#"{"device":"\#(b64u(try unhex(id)))","online":true}"#))! }
-    // the first stream: both agents are here
-    room.streamOpened()
+    // the first stream: both agents are here (the client core's rule, client/src/presence.rs)
+    room.board.streamOpened()
     await room.handleStreamEvent("presence", try presence(gone))
     await room.handleStreamEvent("presence", try presence(stays))
     await room.handleStreamEvent("here", .obj([:]))
@@ -97,7 +100,7 @@ final class RoomTests: XCTestCase {
     XCTAssertEqual(room.board.members[stays]?.isOnline, true)
     // the stream was cut and `gone` left meanwhile: the new stream names only `stays`
     let back = nowMs()
-    room.streamOpened()
+    room.board.streamOpened()
     await room.handleStreamEvent("presence", try presence(stays))
     XCTAssertEqual(room.board.members[gone]?.isOnline, true, "not before the list is whole")
     await room.handleStreamEvent("here", .obj([:]))
