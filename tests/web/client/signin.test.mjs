@@ -6,6 +6,10 @@ import assert from 'node:assert/strict'
 import { addHuman, rooms, scene, sleep, storage, until } from './helpers.mjs'
 
 const headOf = fake => [...fake.state.rooms.values()][0].change
+/** The last change of the hub's order that a page or the stream serves. A Commit's SealedKey takes the number after
+ *  the Commit's (hub delivery.rs `commit_in`) and is served by neither, so a device that holds everything stands
+ *  one below `headOf` while a Commit is the room's last word, until the next envelope or catch-up passes it. */
+const servedOf = fake => [...fake.state.rooms.values()][0].changes.at(-1)?.change ?? 0
 
 test('a first catch-up on a slow disk: the position moves while a page is taken, batch by batch, not only at its end', async t => {
   const { fake, a, agent, recovery_code } = await scene(t, { agent: true })
@@ -64,16 +68,37 @@ test('twelve devices sign in with the code, one after another, into a room that 
       await c.start()
       // the writes go on until it reached the hub's change of its sign-in; then they stop, so that it can be seen
       // live: a writer that outpaces a loaded machine keeps every device in a catch-up pass, whatever the code does
-      await until(() => c.engine.position >= head, `device ${n} at the hub's change ${head} (it holds ${c.model.room.connection} at ${c.engine.position}, alerts: ${alerts.join(', ') || 'none'})`, 30_000)
+      await until(() => c.engine.position >= head, () => `device ${n} at the hub's change ${head} (it holds ${c.model.room.connection} at ${c.engine.position}, alerts: ${alerts.join(', ') || 'none'})`, 30_000)
       writing = false
       await writer
-      await until(() => c.model.room.connection === 'live' && c.engine.position >= headOf(fake), `device ${n} live and at the hub's change ${headOf(fake)} (it holds ${c.model.room.connection} at ${c.engine.position}, alerts: ${alerts.join(', ') || 'none'})`, 20_000)
+      // (live, and holding all of the hub's order it can be served: not the room's last number, which may be a SealedKey)
+      await until(() => c.model.room.connection === 'live' && c.engine.position >= servedOf(fake), () => `device ${n} live and at the hub's change ${servedOf(fake)} (the room's last number ${headOf(fake)}; it holds ${c.model.room.connection} at ${c.engine.position}, alerts: ${alerts.join(', ') || 'none'})`, 20_000)
       await c.stop()
     } finally { writing = false; await writer }
   }
   fake.faults.clear()
   await a.settle()
   assert.equal([...a.model.members.values()].filter(m => m.device_role === 'human' && m.is_active).length, 13, 'the founder sees all twelve')
+})
+
+test('a live device after a Commit that is the room\'s last word: it holds all the hub serves, one below the SealedKey\'s number, and stays live', async t => {
+  const { fake, R, a } = await scene(t)
+  const b = await addHuman(t, R, a, 'b')
+  const x = await addHuman(t, R, a, 'x')
+  await a.saveNote({ text: 'before' })
+  await a.settle(); await b.settle()
+  await until(() => b.engine.position >= servedOf(fake), 'b holds the room')
+  await a.removeDevices([x.my_device_id])
+  await a.settle()
+  // the Commit came on the stream; its SealedKey took the room's last number, which no stream event carries
+  await until(() => b.engine.position >= servedOf(fake), () => `b at the Commit ${servedOf(fake)} (it holds ${b.engine.position})`)
+  assert.equal(headOf(fake), servedOf(fake) + 1, 'the room\'s last number is the SealedKey\'s')
+  await sleep(300)
+  assert.equal(b.model.room.connection, 'live')
+  assert.equal(b.engine.position, servedOf(fake), 'nothing more to take: no catch-up is due for a number nothing is served under')
+  // the next envelope passes it
+  await a.saveNote({ text: 'after' })
+  await until(() => b.engine.position === headOf(fake), 'b at the next envelope')
 })
 
 test('a device back after long stocks its KeyPackages before its catch-up is through, though the count it kept says the hub holds enough', async t => {
