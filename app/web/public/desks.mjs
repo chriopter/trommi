@@ -53,7 +53,7 @@ ${li(c.open + c.done, (c.open + c.done) === 1 ? 'card' : 'cards', [c.open && `${
 ${li(c.files, c.files === 1 ? 'file' : 'files', 'Artifacts and share links')}
 ${li(c.goals, c.goals === 1 ? 'goal' : 'goals')}
 </ul>`}
-<p class="dk-dialog-small">Your agents' computers keep nothing of it they can still open. The hub deletes its sealed copies within 30 days. This cannot be undone.</p>
+<p class="dk-dialog-small">Your agents' computers keep nothing of it they can still open. The server drops the encrypted data within 30 days. This cannot be undone.</p>
 ${how === 'type' ? html`<label class="dk-type"><span>Type <b>${d.name}</b> to confirm</span><input type="text" autocomplete="off" spellcheck="false" data-desk-del-target="field" data-action="input->desk-del#typed" aria-label="The desk's name"></label>` : ''}`}
 <div class="dk-dialog-foot"><button type="button" class="dk-cancel" data-action="desk-del#cancel">Cancel</button>${last ? '' : how === 'hold'
     ? html`<button type="button" class="dk-delete dk-hold" data-action="pointerdown->desk-del#hold pointerup->desk-del#release pointerleave->desk-del#release keydown->desk-del#holdKey keyup->desk-del#release"><span class="dk-hold-fill" aria-hidden="true"></span><span class="dk-hold-word">Hold to Delete</span></button>`
