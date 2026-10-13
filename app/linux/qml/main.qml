@@ -70,6 +70,12 @@ ApplicationWindow {
         function onOpen_requestChanged() {
             const id = trommi.open_request
             if (id === "") return
+            // on the app core: a notification names a card (or nothing: the Desk)
+            if (window.core) {
+                window.go(id === "desk" ? { screen: "desk" } : { screen: "card", card_id: id })
+                window.show(); window.raise(); window.requestActivate()
+                return
+            }
             if (trommi.selected !== "") trommi.select_session("")
             window.openCard = id === "desk" ? "" : id
             window.show(); window.raise(); window.requestActivate()
@@ -89,6 +95,18 @@ ApplicationWindow {
     function go(screen) {
         window.place = screen
         trommi.send_event(JSON.stringify({ type: "focus", focus: { screen: screen, visible: window.active } }))
+    }
+    // the time zone: the core is told when it changes (travel, summer time)
+    property int zone: -new Date().getTimezoneOffset()
+    Timer {
+        interval: 60000; repeat: true; running: window.core
+        onTriggered: {
+            const now = -new Date().getTimezoneOffset()
+            if (now !== window.zone) {
+                window.zone = now
+                trommi.send_event(JSON.stringify({ type: "zone", utc_offset_min: now }))
+            }
+        }
     }
     /** A tap on the core's view: an `Action`, in the contract's spelling. */
     function act(action) { trommi.send_event(JSON.stringify({ type: "action", action: action })) }
@@ -253,6 +271,8 @@ ApplicationWindow {
                     anchors.fill: parent
                     visible: window.core && !!window.placeSession
                     theme: theme
+                    trommi: trommi
+                    files: window.view.files || ({})
                     session: window.placeSession || ({})
                     onAct: (action) => window.act(action)
                     onGo: (screen) => window.go(screen)

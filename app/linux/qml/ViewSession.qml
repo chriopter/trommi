@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "pen.mjs" as Pen
 
 // One session's page, drawn from the app core's view model alone (ViewModel.sessions[id]): its heading, its
@@ -11,6 +12,12 @@ Item {
     required property var theme
     /** ViewModel.sessions[id] */
     required property var session
+    /** The bridge: a picked file is read there (`attach_file`). */
+    required property var trommi
+    /** ViewModel.files: a picked file's state, under the window's id for it. */
+    property var files: ({})
+    /** The window's ids of the files picked for the next line. */
+    property var picked: []
     /** An `Action` (contract spelling). */
     signal act(var action)
     /** Another page: an `Event::Focus` screen. */
@@ -21,7 +28,8 @@ Item {
 
     function write(text) {
         if (text.trim() === "") return
-        root.act({ do: "write", session_id: root.session.id, text: text })
+        root.act({ do: "write", session_id: root.session.id, text: text, attachments: root.picked })
+        root.picked = []
     }
 
     ColumnLayout {
@@ -179,13 +187,53 @@ Item {
                 Label { text: parent.parent.note.fix ? parent.parent.note.fix.code : ""; color: theme.fg; font.family: theme.mono; font.pixelSize: 13 }
             }
         }
-        TextField {
-            id: field
+        // the files picked for the next line, as the core shows them
+        Flow {
+            visible: root.picked.length > 0
+            Layout.fillWidth: true
+            Layout.leftMargin: 40; Layout.rightMargin: 40; Layout.topMargin: 8
+            spacing: 6
+            Repeater {
+                model: root.picked
+                delegate: Rectangle {
+                    required property var modelData
+                    readonly property var f: root.files[modelData] || ({})
+                    width: chip.implicitWidth + 16; height: 24; radius: 12
+                    color: theme.sunken
+                    Label { id: chip; anchors.centerIn: parent; text: (f.name || "…") + (f.state && f.state !== "ready" ? " · " + f.state : ""); color: theme.fg; font.pixelSize: 12 }
+                }
+            }
+        }
+        RowLayout {
             Layout.fillWidth: true
             Layout.margins: 24
             Layout.leftMargin: 40; Layout.rightMargin: 40
-            placeholderText: root.session.compose ? root.session.compose.en : ""
-            onAccepted: { root.write(text); text = "" }
+            spacing: 8
+            Label {
+                text: "+"
+                color: theme.muted; font.pixelSize: 22
+                Accessible.name: "Attach a file"
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: picker.open() }
+            }
+            TextField {
+                id: field
+                Layout.fillWidth: true
+                placeholderText: root.session.compose ? root.session.compose.en : ""
+                onAccepted: { root.write(text); text = "" }
+            }
+        }
+        FileDialog {
+            id: picker
+            fileMode: FileDialog.OpenFiles
+            onAccepted: {
+                const ids = root.picked.slice()
+                for (const url of selectedFiles) {
+                    const id = "local-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 1e9).toString(36)
+                    root.trommi.attach_file(url.toString(), id)
+                    ids.push(id)
+                }
+                root.picked = ids
+            }
         }
     }
 }

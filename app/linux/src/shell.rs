@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use trommi_client_core::app::{Abilities, App, Config, Effect, Event, LogLevel};
 use trommi_client_core::views::{ViewDelta, ViewModel};
 use trommi_io::{Handle, Shell, Stores};
+use crate::platform::Desktop;
 
 /// The view model as this app holds it.
 #[derive(Default)]
@@ -39,17 +40,24 @@ impl View {
     }
 }
 
-/// The window's side of the loop: `draw` is given the view's JSON after every render.
+/// The window's side of the loop: `draw` is given the view's JSON after every render; the desktop's services
+/// (`platform::Desktop`) do the files, notifications and links.
 pub struct Window<F> {
     view: View,
     draw: F,
+    desktop: Desktop,
 }
 
 impl<F: FnMut(String) + Send + 'static> Window<F> {
     pub fn new(draw: F) -> Self {
+        Self::with_desktop(draw, Desktop::new())
+    }
+
+    pub fn with_desktop(draw: F, desktop: Desktop) -> Self {
         Self {
             view: View::default(),
             draw,
+            desktop,
         }
     }
 }
@@ -69,13 +77,25 @@ impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
                     eprintln!("[trommi] {text}");
                 }
             }
-            // (the files, notifications and links of the views: with the screens that show them)
-            Effect::FileReady { .. }
-            | Effect::FileGone { .. }
-            | Effect::Notify { .. }
-            | Effect::Snapshot { .. }
-            | Effect::SaveFile { .. }
-            | Effect::OpenUrl { .. } => {}
+            Effect::FileReady { file_id, bytes, .. } => {
+                if let Err(e) = self.desktop.file_ready(&file_id, &bytes) {
+                    eprintln!("[trommi] a file for drawing could not be kept: {}", e.kind());
+                }
+            }
+            Effect::FileGone { file_id } => self.desktop.file_gone(&file_id),
+            Effect::Notify { notice } => self.desktop.notify(notice),
+            Effect::SaveFile { name, bytes, .. } => {
+                if let Err(e) = self.desktop.save_file(&name, &bytes) {
+                    eprintln!("[trommi] the file could not be saved: {}", e.kind());
+                }
+            }
+            Effect::OpenUrl { url } => {
+                if !self.desktop.open_url(&url) {
+                    eprintln!("[trommi] a link of another kind was not opened");
+                }
+            }
+            // (no widgets on this desktop)
+            Effect::Snapshot { .. } => {}
             // (I/O: never handed to the window)
             Effect::Http { .. }
             | Effect::OpenStream { .. }
@@ -155,7 +175,10 @@ pub fn config(utc_offset_min: i32) -> Config {
         seed,
         utc_offset_min,
         locale,
-        can: Abilities::default(),
+        can: Abilities {
+            notify: true,
+            ..Abilities::default()
+        },
     }
 }
 
@@ -166,10 +189,20 @@ pub fn start(
     config: Config,
     draw: impl FnMut(String) + Send + 'static,
 ) -> Result<Handle, String> {
+    start_with(runtime, config, draw, Desktop::new())
+}
+
+/// The same, with the desktop's services as given (the window's, or a test's).
+pub fn start_with(
+    runtime: &tokio::runtime::Runtime,
+    config: Config,
+    draw: impl FnMut(String) + Send + 'static,
+    desktop: Desktop,
+) -> Result<Handle, String> {
     let slot = base_dir().join(&config.slot);
     let stores = Stores::open(&slot.join("device"), &slot.join("cache")).map_err(|e| e.to_string())?;
     let _on = runtime.enter();
-    let (handle, _task) = trommi_io::start(App::new(), Window::new(draw), stores)?;
+    let (handle, _task) = trommi_io::start(App::new(), Window::with_desktop(draw, desktop), stores)?;
     handle.send(Event::Start { config });
     Ok(handle)
 }
