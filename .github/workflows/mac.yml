@@ -65,6 +65,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      # the build run and its jobs, and ios.yml's runs (mac_release.sh check)
+      actions: read
     outputs:
       mode: ${{ steps.check.outputs.mode }}
       version: ${{ steps.check.outputs.version }}
