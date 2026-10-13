@@ -18,6 +18,7 @@ The App Store listing now opens with your encrypted notes.
 
 **Better**
 - Off your mind: what the agents are working on lies as live cards on one stack that fans out (+N running) and folds back; what is done is a compact list (web and iPhone)
+- The running work under a chat no longer scrolls sideways: what does not fit lies on a small stack "+N" at the end of the row, a tap lists it (web and iPhone)
 - Desk goals fold to one line and open again; each device remembers it per desk (web and iPhone)
 - Deciding on a card's own page keeps it open as decided and offers the next question; in Blitz the next card still comes at once (web and iPhone)
 - Helpers get fitting symbols by name: the tools list all 52 drawings, a name without prefix works, an unknown one says which exist, and a helper without a symbol gets one from its name (CI, Web, iOS, Design …)
