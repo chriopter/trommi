@@ -853,19 +853,108 @@ export interface VersionView {
   note?: string
 }
 
+/** The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`). */
 export interface NotesView {
+  /** The ids of the notes that show, the last written first (the ids of `rows`). A sent note held for the toast's
+   *  Undo shows nowhere. */
   notes: string[]
+  /** Those notes, in the same order. */
+  rows?: NoteView[]
+  /** The note in the corner: the first of them; none when there is none (the corner then makes a new one). */
+  corner?: string
+  /** The corner's note holds words or files (the tab's note is drawn written). */
+  written: boolean
+  /** What the corner's sticky says ("Your note: open it", "New note"). */
+  says: Text
+  /** The crowned session it goes to; none when no session wears the crown here. */
+  to?: NoteToView
+  /** All desks, and it goes to another desk's crown than the desk chosen last: the send names it. */
+  far: boolean
+  /** All desks with two crowned desks or more: the person picks one (each desk's crown, in the desks' order). */
+  choose?: NoteToView[]
+  /** What the send says ("Send to Fernly"). */
+  send_says?: Text
+  /** In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents). */
+  no_crown?: Text
 }
 
+/** One note. */
+export interface NoteView {
+  id: string
+  text: string
+  files?: NoteFileView[]
+  created_ms: number
+  updated_ms: number
+  /** This device's version is not confirmed by the hub yet. */
+  pending: boolean
+}
+
+/** A file of a note: a picture as a small thumbnail, any other file by its name. */
+export interface NoteFileView {
+  /** The attachment (`ViewModel.files`, `Action::OpenFile`). */
+  file_id: string
+  name: string
+  media_type: string
+  picture: boolean
+}
+
+/** A crowned session a note can go to. */
+export interface NoteToView {
+  session_id: string
+  /** Its name; "Main Session" while it has none. */
+  name: string
+  /** What draws it (`SessionRowView::mark`). */
+  mark: string
+  desk_id: string
+  /** Its desk's name ("Personal" for one without), for the choice on All desks. */
+  desk: string
+}
+
+/** Settings: what the list's rows say, and the person's devices (`settings.rs`). What only this device knows (the
+ *  theme, the Push level) is the shell's. */
 export interface SettingsView {
+  /** The account's e-mail, for the row Account; none until the account is read (W3). */
   account: string | null
+  /** The person's devices that are in, in the order they joined (the agents are under Agents). */
   devices: DeviceRow[]
+  /** The person's removed devices, in the order they joined (the row "Removed" and its page). */
+  removed?: DeviceRow[]
+  /** The devices that never finished signing in: offered for removal together. */
+  unfinished?: string[]
+  /** "Remove the 2 devices that never finished signing in". */
+  remove_unfinished?: Text
+  /** The row Agents: "2 agents · 5 sessions"; none without one. */
+  agents?: Text
+  /** The row Desks: "3 desks"; none in a room without desks. */
+  desks?: Text
+  /** The row Devices: "2 devices". */
+  devices_says?: Text
+  /** The room's key epoch (the version line at the list's foot). */
+  key_epoch: number
 }
 
+/** One device of the person. */
 export interface DeviceRow {
   id: string
+  /** Its name; "Device" while it has named itself nothing. */
   name: string
   this_device: boolean
+  /** "human" or "agent". */
+  role: string
+  /** In the room (not removed). */
+  active: boolean
+  /** The green dot: in, and connected (this device always is). */
+  online: boolean
+  /** "this_device", "unfinished" (never finished signing in), "online", "away", "removed". */
+  state: string
+  /** The state in words ("this device", "never finished signing in"). */
+  says: Text
+  /** The key fingerprint from the signed member list: it must look the same on every device. */
+  fingerprint: string
+  /** Its drawing: "phone", "laptop", "terminal". */
+  icon: string
+  /** When it joined, if known. */
+  added_ms?: number
 }
 
 /** The account's flows as a screen shows them. `step` names the screen; the fields it needs are filled.
@@ -911,9 +1000,28 @@ export interface FileView {
   loaded: boolean
 }
 
+/** A passing line at the window's foot: what was done, and the way back. The engine and the actions make them; the
+ *  shell draws them and drops one when its time is up or it is pressed. */
 export interface Toast {
   id: string
+  /** The bold words ("Note sent to Fernly", "Not saved"). */
   text: Text
   /** An action the toast offers ("Undo", "Retry"), sent back as that action. */
   action?: unknown
+  /** The quieter words after them ("the board did not take it"). */
+  line?: Text
+  /** The action's word on its button ("Undo", "Retry"); none: "Undo". */
+  label?: Text
+  /** Something went wrong: said at once to a screen reader (the web's role "alert"), drawn as a problem. */
+  alert: boolean
+  /** How long it stands (ms), as the ring on its Undo runs down; none: the shell's own time. */
+  ms?: number
+  /** A way to a page ("Open"): the screen, and the link's words. */
+  go?: ToastGo
+}
+
+/** A toast's way to a page. */
+export interface ToastGo {
+  screen: Screen
+  label: Text
 }

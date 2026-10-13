@@ -1,0 +1,76 @@
+{
+  "account": null,
+  "devices": [
+    {
+      "id": "30090210037da72834a586216fcc6a458bdab6a275519f6675e6c412f0dd8242",
+      "name": "Laptop",
+      "this_device": true,
+      "role": "human",
+      "active": true,
+      "online": true,
+      "state": "this_device",
+      "says": {
+        "key": "device.this_device",
+        "en": "this device"
+      },
+      "fingerprint": "3009 0210 037d a728",
+      "icon": "laptop",
+      "added_ms": 1788964200000
+    },
+    {
+      "id": "5e5c199cbf26ef2038765bf094beea7134501402b2629fdf9171b3c9b6ca67f0",
+      "name": "Phone",
+      "this_device": false,
+      "role": "human",
+      "active": true,
+      "online": false,
+      "state": "away",
+      "says": {
+        "key": "device.away",
+        "en": "away"
+      },
+      "fingerprint": "5e5c 199c bf26 ef20",
+      "icon": "phone",
+      "added_ms": 1789137000000
+    },
+    {
+      "id": "bab7d20137fb7093183f65076f6c0ba36a1f1d3ff7defdf7f429c7e45e2ed266",
+      "name": "iPad",
+      "this_device": false,
+      "role": "human",
+      "active": true,
+      "online": false,
+      "state": "away",
+      "says": {
+        "key": "device.away",
+        "en": "away"
+      },
+      "fingerprint": "bab7 d201 37fb 7093",
+      "icon": "phone",
+      "added_ms": 1790692200000
+    }
+  ],
+  "agents": {
+    "key": "settings.agents",
+    "args": {
+      "agents": "5",
+      "sessions": "37"
+    },
+    "en": "5 agents · 37 sessions"
+  },
+  "desks": {
+    "key": "settings.desks",
+    "args": {
+      "n": "2"
+    },
+    "en": "2 desks"
+  },
+  "devices_says": {
+    "key": "settings.devices",
+    "args": {
+      "n": "3"
+    },
+    "en": "3 devices"
+  },
+  "key_epoch": 1
+}

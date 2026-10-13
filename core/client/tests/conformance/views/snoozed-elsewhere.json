@@ -17,13 +17,20 @@
               "waiting": 0
             },
             "notes": {
-              "notes": []
+              "far": false,
+              "notes": [],
+              "says": {
+                "en": "",
+                "key": ""
+              },
+              "written": false
             },
             "phase": "starting",
             "rev": 0,
             "settings": {
               "account": null,
-              "devices": []
+              "devices": [],
+              "key_epoch": 0
             },
             "sidebar": {
               "badge": 0,
@@ -160,6 +167,83 @@
             "stack": [],
             "waiting": 0
           }
+        },
+        {
+          "part": "notes",
+          "view": {
+            "far": false,
+            "no_crown": {
+              "en": "Give a session the crown to send",
+              "key": "note.no_crown"
+            },
+            "notes": [],
+            "says": {
+              "en": "New note",
+              "key": "note.new"
+            },
+            "written": false
+          }
+        },
+        {
+          "part": "settings",
+          "view": {
+            "account": null,
+            "agents": {
+              "args": {
+                "agents": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent · 1 session",
+              "key": "settings.agents"
+            },
+            "devices": [
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": true,
+                "role": "human",
+                "says": {
+                  "en": "this device",
+                  "key": "device.this_device"
+                },
+                "state": "this_device",
+                "this_device": true
+              },
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": false,
+                "role": "human",
+                "says": {
+                  "en": "never finished signing in",
+                  "key": "device.unfinished"
+                },
+                "state": "unfinished",
+                "this_device": false
+              }
+            ],
+            "devices_says": {
+              "args": {
+                "n": "2"
+              },
+              "en": "2 devices",
+              "key": "settings.devices"
+            },
+            "key_epoch": 2,
+            "remove_unfinished": {
+              "en": "Remove the device that never finished signing in",
+              "key": "settings.remove_unfinished.one"
+            },
+            "unfinished": [
+              "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ]
+          }
         }
       ]
     },
@@ -288,7 +372,7 @@
                   ],
                   "session_id": "00000001eeeeeeeeeeeeeeeeeeeeeeee"
                 },
-                "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
                 "kind": "decision",
                 "loading": false,
                 "newer": false,
@@ -353,7 +437,7 @@
               }
             ],
             "stack": [
-              "00000002eeeeeeeeeeeeeeeeeeeeeeee"
+              "00000004eeeeeeeeeeeeeeeeeeeeeeee"
             ],
             "waiting": 1
           }
@@ -475,7 +559,7 @@
               "key": "desk.hello.calm.0"
             },
             "later": [
-              "00000002eeeeeeeeeeeeeeeeeeeeeeee"
+              "00000004eeeeeeeeeeeeeeeeeeeeeeee"
             ],
             "mode": "desk",
             "off": {
@@ -484,7 +568,7 @@
               "rows": [
                 {
                   "at_ms": 0,
-                  "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                  "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
                   "mark": "snooze",
                   "place": "later",
                   "says": {
@@ -539,7 +623,7 @@
         "key": "desk.hello.calm.0"
       },
       "later": [
-        "00000002eeeeeeeeeeeeeeeeeeeeeeee"
+        "00000004eeeeeeeeeeeeeeeeeeeeeeee"
       ],
       "mode": "desk",
       "off": {
@@ -548,7 +632,7 @@
         "rows": [
           {
             "at_ms": 0,
-            "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+            "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
             "mark": "snooze",
             "place": "later",
             "says": {
@@ -579,13 +663,77 @@
       "waiting": 0
     },
     "notes": {
-      "notes": []
+      "far": false,
+      "no_crown": {
+        "en": "Give a session the crown to send",
+        "key": "note.no_crown"
+      },
+      "notes": [],
+      "says": {
+        "en": "New note",
+        "key": "note.new"
+      },
+      "written": false
     },
     "phase": "live",
     "rev": 5,
     "settings": {
       "account": null,
-      "devices": []
+      "agents": {
+        "args": {
+          "agents": "1",
+          "sessions": "1"
+        },
+        "en": "1 agent · 1 session",
+        "key": "settings.agents"
+      },
+      "devices": [
+        {
+          "active": true,
+          "fingerprint": "(fingerprint)",
+          "icon": "laptop",
+          "id": "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "name": "Device",
+          "online": true,
+          "role": "human",
+          "says": {
+            "en": "this device",
+            "key": "device.this_device"
+          },
+          "state": "this_device",
+          "this_device": true
+        },
+        {
+          "active": true,
+          "fingerprint": "(fingerprint)",
+          "icon": "laptop",
+          "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "name": "Device",
+          "online": false,
+          "role": "human",
+          "says": {
+            "en": "never finished signing in",
+            "key": "device.unfinished"
+          },
+          "state": "unfinished",
+          "this_device": false
+        }
+      ],
+      "devices_says": {
+        "args": {
+          "n": "2"
+        },
+        "en": "2 devices",
+        "key": "settings.devices"
+      },
+      "key_epoch": 2,
+      "remove_unfinished": {
+        "en": "Remove the device that never finished signing in",
+        "key": "settings.remove_unfinished.one"
+      },
+      "unfinished": [
+        "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ]
     },
     "sidebar": {
       "badge": 0,

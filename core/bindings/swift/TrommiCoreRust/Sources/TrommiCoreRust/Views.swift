@@ -3112,70 +3112,341 @@ public enum CoreView {
     }
   }
 
+  /// The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`).
   public struct NotesView: Codable, Hashable, Sendable {
+    /// The ids of the notes that show, the last written first (the ids of `rows`). A sent note held for the toast's
+    /// Undo shows nowhere.
     public var notes: [String]
+    /// Those notes, in the same order.
+    public var rows: [NoteView]
+    /// The note in the corner: the first of them; none when there is none (the corner then makes a new one).
+    public var corner: String?
+    /// The corner's note holds words or files (the tab's note is drawn written).
+    public var written: Bool
+    /// What the corner's sticky says ("Your note: open it", "New note").
+    public var says: Text
+    /// The crowned session it goes to; none when no session wears the crown here.
+    public var to: NoteToView?
+    /// All desks, and it goes to another desk's crown than the desk chosen last: the send names it.
+    public var far: Bool
+    /// All desks with two crowned desks or more: the person picks one (each desk's crown, in the desks' order).
+    public var choose: [NoteToView]
+    /// What the send says ("Send to Fernly").
+    public var sendSays: Text?
+    /// In the send's place without a crown: "Give a session the crown to send" (opens Settings · Agents).
+    public var noCrown: Text?
 
-    public init(notes: [String] = []) {
+    public init(notes: [String] = [], rows: [NoteView] = [], corner: String? = nil, written: Bool = false, says: Text = Text(), to: NoteToView? = nil, far: Bool = false, choose: [NoteToView] = [], sendSays: Text? = nil, noCrown: Text? = nil) {
       self.notes = notes
+      self.rows = rows
+      self.corner = corner
+      self.written = written
+      self.says = says
+      self.to = to
+      self.far = far
+      self.choose = choose
+      self.sendSays = sendSays
+      self.noCrown = noCrown
     }
 
     enum CodingKeys: String, CodingKey {
       case notes = "notes"
+      case rows = "rows"
+      case corner = "corner"
+      case written = "written"
+      case says = "says"
+      case to = "to"
+      case far = "far"
+      case choose = "choose"
+      case sendSays = "send_says"
+      case noCrown = "no_crown"
     }
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.notes = try c.decode([String].self, forKey: .notes)
+      self.rows = try c.decodeIfPresent([NoteView].self, forKey: .rows) ?? []
+      self.corner = try c.decodeIfPresent(String.self, forKey: .corner)
+      self.written = try c.decodeIfPresent(Bool.self, forKey: .written) ?? false
+      self.says = try c.decodeIfPresent(Text.self, forKey: .says) ?? Text()
+      self.to = try c.decodeIfPresent(NoteToView.self, forKey: .to)
+      self.far = try c.decodeIfPresent(Bool.self, forKey: .far) ?? false
+      self.choose = try c.decodeIfPresent([NoteToView].self, forKey: .choose) ?? []
+      self.sendSays = try c.decodeIfPresent(Text.self, forKey: .sendSays)
+      self.noCrown = try c.decodeIfPresent(Text.self, forKey: .noCrown)
     }
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(notes, forKey: .notes)
+      if !rows.isEmpty { try c.encode(rows, forKey: .rows) }
+      try c.encodeIfPresent(corner, forKey: .corner)
+      try c.encode(written, forKey: .written)
+      try c.encode(says, forKey: .says)
+      try c.encodeIfPresent(to, forKey: .to)
+      try c.encode(far, forKey: .far)
+      if !choose.isEmpty { try c.encode(choose, forKey: .choose) }
+      try c.encodeIfPresent(sendSays, forKey: .sendSays)
+      try c.encodeIfPresent(noCrown, forKey: .noCrown)
     }
   }
 
-  public struct SettingsView: Codable, Hashable, Sendable {
-    public var account: String?
-    public var devices: [DeviceRow]
+  /// One note.
+  public struct NoteView: Codable, Hashable, Sendable {
+    public var id: String
+    public var text: String
+    public var files: [NoteFileView]
+    public var createdMs: UInt64
+    public var updatedMs: UInt64
+    /// This device's version is not confirmed by the hub yet.
+    public var pending: Bool
 
-    public init(account: String? = nil, devices: [DeviceRow] = []) {
+    public init(id: String = "", text: String = "", files: [NoteFileView] = [], createdMs: UInt64 = 0, updatedMs: UInt64 = 0, pending: Bool = false) {
+      self.id = id
+      self.text = text
+      self.files = files
+      self.createdMs = createdMs
+      self.updatedMs = updatedMs
+      self.pending = pending
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case text = "text"
+      case files = "files"
+      case createdMs = "created_ms"
+      case updatedMs = "updated_ms"
+      case pending = "pending"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.text = try c.decode(String.self, forKey: .text)
+      self.files = try c.decodeIfPresent([NoteFileView].self, forKey: .files) ?? []
+      self.createdMs = try c.decode(UInt64.self, forKey: .createdMs)
+      self.updatedMs = try c.decode(UInt64.self, forKey: .updatedMs)
+      self.pending = try c.decodeIfPresent(Bool.self, forKey: .pending) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(text, forKey: .text)
+      if !files.isEmpty { try c.encode(files, forKey: .files) }
+      try c.encode(createdMs, forKey: .createdMs)
+      try c.encode(updatedMs, forKey: .updatedMs)
+      try c.encode(pending, forKey: .pending)
+    }
+  }
+
+  /// A file of a note: a picture as a small thumbnail, any other file by its name.
+  public struct NoteFileView: Codable, Hashable, Sendable {
+    /// The attachment (`ViewModel.files`, `Action::OpenFile`).
+    public var fileId: String
+    public var name: String
+    public var mediaType: String
+    public var picture: Bool
+
+    public init(fileId: String = "", name: String = "", mediaType: String = "", picture: Bool = false) {
+      self.fileId = fileId
+      self.name = name
+      self.mediaType = mediaType
+      self.picture = picture
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case fileId = "file_id"
+      case name = "name"
+      case mediaType = "media_type"
+      case picture = "picture"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.fileId = try c.decode(String.self, forKey: .fileId)
+      self.name = try c.decode(String.self, forKey: .name)
+      self.mediaType = try c.decode(String.self, forKey: .mediaType)
+      self.picture = try c.decode(Bool.self, forKey: .picture)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(fileId, forKey: .fileId)
+      try c.encode(name, forKey: .name)
+      try c.encode(mediaType, forKey: .mediaType)
+      try c.encode(picture, forKey: .picture)
+    }
+  }
+
+  /// A crowned session a note can go to.
+  public struct NoteToView: Codable, Hashable, Sendable {
+    public var sessionId: String
+    /// Its name; "Main Session" while it has none.
+    public var name: String
+    /// What draws it (`SessionRowView::mark`).
+    public var mark: String
+    public var deskId: String
+    /// Its desk's name ("Personal" for one without), for the choice on All desks.
+    public var desk: String
+
+    public init(sessionId: String = "", name: String = "", mark: String = "", deskId: String = "", desk: String = "") {
+      self.sessionId = sessionId
+      self.name = name
+      self.mark = mark
+      self.deskId = deskId
+      self.desk = desk
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case sessionId = "session_id"
+      case name = "name"
+      case mark = "mark"
+      case deskId = "desk_id"
+      case desk = "desk"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.sessionId = try c.decode(String.self, forKey: .sessionId)
+      self.name = try c.decode(String.self, forKey: .name)
+      self.mark = try c.decode(String.self, forKey: .mark)
+      self.deskId = try c.decodeIfPresent(String.self, forKey: .deskId) ?? ""
+      self.desk = try c.decodeIfPresent(String.self, forKey: .desk) ?? ""
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(sessionId, forKey: .sessionId)
+      try c.encode(name, forKey: .name)
+      try c.encode(mark, forKey: .mark)
+      try c.encode(deskId, forKey: .deskId)
+      try c.encode(desk, forKey: .desk)
+    }
+  }
+
+  /// Settings: what the list's rows say, and the person's devices (`settings.rs`). What only this device knows (the
+  /// theme, the Push level) is the shell's.
+  public struct SettingsView: Codable, Hashable, Sendable {
+    /// The account's e-mail, for the row Account; none until the account is read (W3).
+    public var account: String?
+    /// The person's devices that are in, in the order they joined (the agents are under Agents).
+    public var devices: [DeviceRow]
+    /// The person's removed devices, in the order they joined (the row "Removed" and its page).
+    public var removed: [DeviceRow]
+    /// The devices that never finished signing in: offered for removal together.
+    public var unfinished: [String]
+    /// "Remove the 2 devices that never finished signing in".
+    public var removeUnfinished: Text?
+    /// The row Agents: "2 agents · 5 sessions"; none without one.
+    public var agents: Text?
+    /// The row Desks: "3 desks"; none in a room without desks.
+    public var desks: Text?
+    /// The row Devices: "2 devices".
+    public var devicesSays: Text?
+    /// The room's key epoch (the version line at the list's foot).
+    public var keyEpoch: UInt64
+
+    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0) {
       self.account = account
       self.devices = devices
+      self.removed = removed
+      self.unfinished = unfinished
+      self.removeUnfinished = removeUnfinished
+      self.agents = agents
+      self.desks = desks
+      self.devicesSays = devicesSays
+      self.keyEpoch = keyEpoch
     }
 
     enum CodingKeys: String, CodingKey {
       case account = "account"
       case devices = "devices"
+      case removed = "removed"
+      case unfinished = "unfinished"
+      case removeUnfinished = "remove_unfinished"
+      case agents = "agents"
+      case desks = "desks"
+      case devicesSays = "devices_says"
+      case keyEpoch = "key_epoch"
     }
 
     public init(from decoder: any Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       self.account = try c.decodeIfPresent(String.self, forKey: .account)
       self.devices = try c.decode([DeviceRow].self, forKey: .devices)
+      self.removed = try c.decodeIfPresent([DeviceRow].self, forKey: .removed) ?? []
+      self.unfinished = try c.decodeIfPresent([String].self, forKey: .unfinished) ?? []
+      self.removeUnfinished = try c.decodeIfPresent(Text.self, forKey: .removeUnfinished)
+      self.agents = try c.decodeIfPresent(Text.self, forKey: .agents)
+      self.desks = try c.decodeIfPresent(Text.self, forKey: .desks)
+      self.devicesSays = try c.decodeIfPresent(Text.self, forKey: .devicesSays)
+      self.keyEpoch = try c.decodeIfPresent(UInt64.self, forKey: .keyEpoch) ?? 0
     }
 
     public func encode(to encoder: any Encoder) throws {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(account, forKey: .account)
       try c.encode(devices, forKey: .devices)
+      if !removed.isEmpty { try c.encode(removed, forKey: .removed) }
+      if !unfinished.isEmpty { try c.encode(unfinished, forKey: .unfinished) }
+      try c.encodeIfPresent(removeUnfinished, forKey: .removeUnfinished)
+      try c.encodeIfPresent(agents, forKey: .agents)
+      try c.encodeIfPresent(desks, forKey: .desks)
+      try c.encodeIfPresent(devicesSays, forKey: .devicesSays)
+      try c.encode(keyEpoch, forKey: .keyEpoch)
     }
   }
 
+  /// One device of the person.
   public struct DeviceRow: Codable, Hashable, Sendable {
     public var id: String
+    /// Its name; "Device" while it has named itself nothing.
     public var name: String
     public var thisDevice: Bool
+    /// "human" or "agent".
+    public var role: String
+    /// In the room (not removed).
+    public var active: Bool
+    /// The green dot: in, and connected (this device always is).
+    public var online: Bool
+    /// "this_device", "unfinished" (never finished signing in), "online", "away", "removed".
+    public var state: String
+    /// The state in words ("this device", "never finished signing in").
+    public var says: Text
+    /// The key fingerprint from the signed member list: it must look the same on every device.
+    public var fingerprint: String
+    /// Its drawing: "phone", "laptop", "terminal".
+    public var icon: String
+    /// When it joined, if known.
+    public var addedMs: UInt64?
 
-    public init(id: String = "", name: String = "", thisDevice: Bool = false) {
+    public init(id: String = "", name: String = "", thisDevice: Bool = false, role: String = "", active: Bool = false, online: Bool = false, state: String = "", says: Text = Text(), fingerprint: String = "", icon: String = "", addedMs: UInt64? = nil) {
       self.id = id
       self.name = name
       self.thisDevice = thisDevice
+      self.role = role
+      self.active = active
+      self.online = online
+      self.state = state
+      self.says = says
+      self.fingerprint = fingerprint
+      self.icon = icon
+      self.addedMs = addedMs
     }
 
     enum CodingKeys: String, CodingKey {
       case id = "id"
       case name = "name"
       case thisDevice = "this_device"
+      case role = "role"
+      case active = "active"
+      case online = "online"
+      case state = "state"
+      case says = "says"
+      case fingerprint = "fingerprint"
+      case icon = "icon"
+      case addedMs = "added_ms"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -3183,6 +3454,14 @@ public enum CoreView {
       self.id = try c.decode(String.self, forKey: .id)
       self.name = try c.decode(String.self, forKey: .name)
       self.thisDevice = try c.decode(Bool.self, forKey: .thisDevice)
+      self.role = try c.decodeIfPresent(String.self, forKey: .role) ?? ""
+      self.active = try c.decodeIfPresent(Bool.self, forKey: .active) ?? false
+      self.online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
+      self.state = try c.decodeIfPresent(String.self, forKey: .state) ?? ""
+      self.says = try c.decodeIfPresent(Text.self, forKey: .says) ?? Text()
+      self.fingerprint = try c.decodeIfPresent(String.self, forKey: .fingerprint) ?? ""
+      self.icon = try c.decodeIfPresent(String.self, forKey: .icon) ?? ""
+      self.addedMs = try c.decodeIfPresent(UInt64.self, forKey: .addedMs)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -3190,6 +3469,14 @@ public enum CoreView {
       try c.encode(id, forKey: .id)
       try c.encode(name, forKey: .name)
       try c.encode(thisDevice, forKey: .thisDevice)
+      try c.encode(role, forKey: .role)
+      try c.encode(active, forKey: .active)
+      try c.encode(online, forKey: .online)
+      try c.encode(state, forKey: .state)
+      try c.encode(says, forKey: .says)
+      try c.encode(fingerprint, forKey: .fingerprint)
+      try c.encode(icon, forKey: .icon)
+      try c.encodeIfPresent(addedMs, forKey: .addedMs)
     }
   }
 
@@ -3364,22 +3651,45 @@ public enum CoreView {
     }
   }
 
+  /// A passing line at the window's foot: what was done, and the way back. The engine and the actions make them; the
+  /// shell draws them and drops one when its time is up or it is pressed.
   public struct Toast: Codable, Hashable, Sendable {
     public var id: String
+    /// The bold words ("Note sent to Fernly", "Not saved").
     public var text: Text
     /// An action the toast offers ("Undo", "Retry"), sent back as that action.
     public var action: CoreJSON?
+    /// The quieter words after them ("the board did not take it").
+    public var line: Text?
+    /// The action's word on its button ("Undo", "Retry"); none: "Undo".
+    public var label: Text?
+    /// Something went wrong: said at once to a screen reader (the web's role "alert"), drawn as a problem.
+    public var alert: Bool
+    /// How long it stands (ms), as the ring on its Undo runs down; none: the shell's own time.
+    public var ms: UInt64?
+    /// A way to a page ("Open"): the screen, and the link's words.
+    public var go: ToastGo?
 
-    public init(id: String, text: Text, action: CoreJSON?) {
+    public init(id: String, text: Text, action: CoreJSON?, line: Text?, label: Text?, alert: Bool, ms: UInt64?, go: ToastGo?) {
       self.id = id
       self.text = text
       self.action = action
+      self.line = line
+      self.label = label
+      self.alert = alert
+      self.ms = ms
+      self.go = go
     }
 
     enum CodingKeys: String, CodingKey {
       case id = "id"
       case text = "text"
       case action = "action"
+      case line = "line"
+      case label = "label"
+      case alert = "alert"
+      case ms = "ms"
+      case go = "go"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -3387,6 +3697,11 @@ public enum CoreView {
       self.id = try c.decode(String.self, forKey: .id)
       self.text = try c.decode(Text.self, forKey: .text)
       self.action = try c.decodeIfPresent(CoreJSON.self, forKey: .action)
+      self.line = try c.decodeIfPresent(Text.self, forKey: .line)
+      self.label = try c.decodeIfPresent(Text.self, forKey: .label)
+      self.alert = try c.decodeIfPresent(Bool.self, forKey: .alert) ?? false
+      self.ms = try c.decodeIfPresent(UInt64.self, forKey: .ms)
+      self.go = try c.decodeIfPresent(ToastGo.self, forKey: .go)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -3394,6 +3709,39 @@ public enum CoreView {
       try c.encode(id, forKey: .id)
       try c.encode(text, forKey: .text)
       try c.encodeIfPresent(action, forKey: .action)
+      try c.encodeIfPresent(line, forKey: .line)
+      try c.encodeIfPresent(label, forKey: .label)
+      try c.encode(alert, forKey: .alert)
+      try c.encodeIfPresent(ms, forKey: .ms)
+      try c.encodeIfPresent(go, forKey: .go)
+    }
+  }
+
+  /// A toast's way to a page.
+  public struct ToastGo: Codable, Hashable, Sendable {
+    public var screen: Screen
+    public var label: Text
+
+    public init(screen: Screen, label: Text) {
+      self.screen = screen
+      self.label = label
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case screen = "screen"
+      case label = "label"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.screen = try c.decode(Screen.self, forKey: .screen)
+      self.label = try c.decode(Text.self, forKey: .label)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(screen, forKey: .screen)
+      try c.encode(label, forKey: .label)
     }
   }
 

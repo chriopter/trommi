@@ -424,7 +424,7 @@ function check(value, t, at, decls, bind = {}) {
   }
 }
 
-const GOLDEN_TYPES = [[/^demo-sidebar/, 'SidebarView'], [/^demo-desk/, 'DeskView'], [/^demo-session/, 'SessionView'], [/^demo-card/, 'CardView']]
+const GOLDEN_TYPES = [[/^demo-sidebar/, 'SidebarView'], [/^demo-desk/, 'DeskView'], [/^demo-session/, 'SessionView'], [/^demo-card/, 'CardView'], [/^demo-notes/, 'NotesView'], [/^demo-settings/, 'SettingsView']]
 
 // ---- the run ------------------------------------------------------------------------------------------------------------
 

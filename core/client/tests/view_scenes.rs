@@ -36,6 +36,16 @@ fn world() -> World {
 /// `0000000n` then `e`s; a short form of one (a run of 8 or more that begins it: a session's short id) as the same
 /// beginning of its stand-in.
 fn stable_ids(text: &str) -> String {
+    // (a device's key fingerprint comes from its random key: written as one stand-in)
+    let text = &(text
+        .lines()
+        .map(|l| match l.find("\"fingerprint\": \"") {
+            Some(at) => format!("{}\"fingerprint\": \"(fingerprint)\"{}", &l[..at], if l.ends_with(',') { "," } else { "" }),
+            None => l.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + if text.ends_with('\n') { "\n" } else { "" });
     let runs = |text: &str| -> Vec<(usize, usize)> {
         let b = text.as_bytes();
         let (mut out, mut at) = (Vec::new(), 0);
