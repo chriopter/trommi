@@ -163,7 +163,7 @@ async fn a_codex_session_connects_files_cards_and_is_woken_by_the_board() {
     mcp.ready().await;
     mcp.ok(
         "introduce",
-        json!({ "model": "GPT-6", "task": "Codex test drive", "icon": "drum" }),
+        json!({ "model": "GPT-6", "task": "Codex test drive", "icon": "bell" }),
     )
     .await;
     // Between turns it hears the board at once (it is woken): the lease says so, and the apps show it as there,

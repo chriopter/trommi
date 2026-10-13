@@ -20,6 +20,7 @@ The App Store listing now opens with your encrypted notes.
 - Off your mind: what the agents are working on lies as live cards on one stack that fans out (+N running) and folds back; what is done is a compact list (web and iPhone)
 - Desk goals fold to one line and open again; each device remembers it per desk (web and iPhone)
 - Deciding on a card's own page keeps it open as decided and offers the next question; in Blitz the next card still comes at once (web and iPhone)
+- Helpers get fitting symbols by name: the tools list all 52 drawings, a name without prefix works, an unknown one says which exist, and a helper without a symbol gets one from its name (CI, Web, iOS, Design …)
 - What's new shows each day as a card with its summary and picture; open it for the details (web and iPhone)
 - A new session opens with a card from its agent instead of an empty page (web and iPhone)
 - App Store listing leads with the encrypted notes screenshot (iPhone and iPad); the others follow in their old order.

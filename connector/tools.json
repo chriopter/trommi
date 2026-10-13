@@ -1147,7 +1147,7 @@
           },
           "icon": {
             "type": "string",
-            "description": "Drawing for your session's symbol; one the human picked stays."
+            "description": "Your symbol: one of {drawings}. Left out, one fitting the session's name is used; one the human picked stays."
           },
           "parent": {
             "type": "string",
@@ -1281,7 +1281,7 @@
           },
           "icon": {
             "type": "string",
-            "description": "The name of the drawing that fits the helper's task (as in introduce)"
+            "description": "The helper's symbol: one of {drawings}. Left out, one fitting its name is used (CI, Web, iOS, Design …)."
           },
           "model": {
             "type": "string",

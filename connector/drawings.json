@@ -1,0 +1,469 @@
+[
+ {
+  "name": "burst",
+  "meaning": "spark",
+  "topics": []
+ },
+ {
+  "name": "spiral",
+  "meaning": "loop",
+  "topics": []
+ },
+ {
+  "name": "blob",
+  "meaning": "lump",
+  "topics": []
+ },
+ {
+  "name": "flower",
+  "meaning": "bloom",
+  "topics": [
+   "garden"
+  ]
+ },
+ {
+  "name": "waves",
+  "meaning": "flow",
+  "topics": [
+   "stream",
+   "sync",
+   "network"
+  ]
+ },
+ {
+  "name": "knot",
+  "meaning": "tangle",
+  "topics": []
+ },
+ {
+  "name": "bolt",
+  "meaning": "speed",
+  "topics": [
+   "fast",
+   "perf",
+   "performance"
+  ]
+ },
+ {
+  "name": "hatch",
+  "meaning": "shade",
+  "topics": []
+ },
+ {
+  "name": "star",
+  "meaning": "favourite",
+  "topics": [
+   "star",
+   "favorite"
+  ]
+ },
+ {
+  "name": "zigzag",
+  "meaning": "path",
+  "topics": []
+ },
+ {
+  "name": "eight",
+  "meaning": "infinity",
+  "topics": [
+   "loop"
+  ]
+ },
+ {
+  "name": "arrow",
+  "meaning": "direction",
+  "topics": [
+   "connector",
+   "bridge",
+   "mcp"
+  ]
+ },
+ {
+  "name": "leaf",
+  "meaning": "green",
+  "topics": [
+   "eco"
+  ]
+ },
+ {
+  "name": "eye",
+  "meaning": "watching",
+  "topics": [
+   "review",
+   "audit",
+   "monitor",
+   "watch",
+   "look"
+  ]
+ },
+ {
+  "name": "key",
+  "meaning": "access",
+  "topics": [
+   "auth",
+   "login",
+   "passkey",
+   "keys"
+  ]
+ },
+ {
+  "name": "anchor",
+  "meaning": "stable",
+  "topics": [
+   "mac",
+   "macos",
+   "mini",
+   "xcode"
+  ]
+ },
+ {
+  "name": "kite",
+  "meaning": "light",
+  "topics": []
+ },
+ {
+  "name": "comb",
+  "meaning": "order",
+  "topics": []
+ },
+ {
+  "name": "ladder",
+  "meaning": "steps",
+  "topics": [
+   "plan",
+   "steps",
+   "roadmap"
+  ]
+ },
+ {
+  "name": "heart",
+  "meaning": "care",
+  "topics": [
+   "health",
+   "love"
+  ]
+ },
+ {
+  "name": "moon",
+  "meaning": "night",
+  "topics": [
+   "night",
+   "sleep",
+   "dark"
+  ]
+ },
+ {
+  "name": "cloud",
+  "meaning": "hosting",
+  "topics": [
+   "cloud",
+   "host",
+   "infra",
+   "deploy"
+  ]
+ },
+ {
+  "name": "drop",
+  "meaning": "small",
+  "topics": []
+ },
+ {
+  "name": "flag",
+  "meaning": "milestone",
+  "topics": [
+   "milestone",
+   "goal"
+  ]
+ },
+ {
+  "name": "house",
+  "meaning": "home",
+  "topics": [
+   "home",
+   "desk"
+  ]
+ },
+ {
+  "name": "tree",
+  "meaning": "growth",
+  "topics": [
+   "tree",
+   "structure"
+  ]
+ },
+ {
+  "name": "fish",
+  "meaning": "swimmer",
+  "topics": []
+ },
+ {
+  "name": "bird",
+  "meaning": "free",
+  "topics": [
+   "bird",
+   "tweet",
+   "social"
+  ]
+ },
+ {
+  "name": "cup",
+  "meaning": "break",
+  "topics": [
+   "coffee",
+   "break"
+  ]
+ },
+ {
+  "name": "bell",
+  "meaning": "notice",
+  "topics": [
+   "trommi",
+   "notify",
+   "notification",
+   "push"
+  ]
+ },
+ {
+  "name": "cross",
+  "meaning": "stop",
+  "topics": [
+   "cancel",
+   "remove",
+   "cleanup",
+   "clean"
+  ]
+ },
+ {
+  "name": "triangle",
+  "meaning": "warning",
+  "topics": [
+   "warning"
+  ]
+ },
+ {
+  "name": "square",
+  "meaning": "box",
+  "topics": [
+   "box"
+  ]
+ },
+ {
+  "name": "diamond",
+  "meaning": "gem",
+  "topics": [
+   "gem",
+   "quality"
+  ]
+ },
+ {
+  "name": "grid",
+  "meaning": "table",
+  "topics": [
+   "grid",
+   "table",
+   "layout"
+  ]
+ },
+ {
+  "name": "mountain",
+  "meaning": "peak",
+  "topics": [
+   "peak",
+   "hill"
+  ]
+ },
+ {
+  "name": "umbrella",
+  "meaning": "cover",
+  "topics": [
+   "backup",
+   "shelter",
+   "cover"
+  ]
+ },
+ {
+  "name": "crown",
+  "meaning": "main",
+  "topics": [
+   "main",
+   "lead",
+   "boss"
+  ]
+ },
+ {
+  "name": "flame",
+  "meaning": "hot",
+  "topics": [
+   "hot",
+   "urgent",
+   "fire"
+  ]
+ },
+ {
+  "name": "boat",
+  "meaning": "ship",
+  "topics": [
+   "ship",
+   "boat",
+   "sail"
+  ]
+ },
+ {
+  "name": "browser",
+  "meaning": "web",
+  "topics": [
+   "web",
+   "site",
+   "website",
+   "frontend",
+   "html",
+   "css",
+   "js",
+   "browser",
+   "wasm"
+  ]
+ },
+ {
+  "name": "terminal",
+  "meaning": "shell",
+  "topics": [
+   "linux",
+   "cli",
+   "shell",
+   "terminal",
+   "bash",
+   "cmd"
+  ]
+ },
+ {
+  "name": "database",
+  "meaning": "data",
+  "topics": [
+   "db",
+   "database",
+   "data",
+   "hub",
+   "server",
+   "sql",
+   "storage"
+  ]
+ },
+ {
+  "name": "phone",
+  "meaning": "mobile",
+  "topics": [
+   "ios",
+   "iphone",
+   "android",
+   "mobile",
+   "app",
+   "testflight",
+   "swift"
+  ]
+ },
+ {
+  "name": "brush",
+  "meaning": "design",
+  "topics": [
+   "design",
+   "designer",
+   "brand",
+   "style",
+   "art",
+   "logo",
+   "icon",
+   "icons"
+  ]
+ },
+ {
+  "name": "flask",
+  "meaning": "test",
+  "topics": [
+   "test",
+   "tests",
+   "testing",
+   "qa",
+   "e2e",
+   "lab",
+   "fuzz",
+   "ci-test"
+  ]
+ },
+ {
+  "name": "lock",
+  "meaning": "security",
+  "topics": [
+   "core",
+   "crypto",
+   "security",
+   "secure",
+   "encryption",
+   "mls",
+   "audit-crypto"
+  ]
+ },
+ {
+  "name": "book",
+  "meaning": "docs",
+  "topics": [
+   "docs",
+   "doc",
+   "documentation",
+   "readme",
+   "spec",
+   "manual",
+   "help",
+   "changelog",
+   "write",
+   "writing"
+  ]
+ },
+ {
+  "name": "rocket",
+  "meaning": "release",
+  "topics": [
+   "release",
+   "launch",
+   "publish",
+   "version"
+  ]
+ },
+ {
+  "name": "mic",
+  "meaning": "video",
+  "topics": [
+   "video",
+   "audio",
+   "clip",
+   "voice",
+   "sound",
+   "podcast"
+  ]
+ },
+ {
+  "name": "bug",
+  "meaning": "fix",
+  "topics": [
+   "bug",
+   "bugs",
+   "fix",
+   "debug",
+   "crash"
+  ]
+ },
+ {
+  "name": "branch",
+  "meaning": "git",
+  "topics": [
+   "ci",
+   "git",
+   "branch",
+   "pr",
+   "merge",
+   "pipeline",
+   "actions",
+   "build",
+   "builds"
+  ]
+ }
+]

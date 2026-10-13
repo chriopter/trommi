@@ -34,7 +34,7 @@ public enum Pen {
   }
 
   public static let kinds = ["burst", "spiral", "blob", "flower", "waves", "knot", "bolt", "hatch"]
-  /** The forty-odd names a session's drawing can have, in the picker's order (the hue turns with the place). */
+  /** The 52 names a session's drawing can have, in the picker's order (the hue turns with the place). */
   public static let drawings = kinds + ["star", "zigzag", "eight", "arrow", "leaf", "eye", "key", "anchor", "kite", "comb", "ladder", "heart", "moon", "cloud", "drop", "flag", "house", "tree",
                                         "fish", "bird", "cup", "bell", "cross", "triangle", "square", "diamond", "grid", "mountain", "umbrella", "crown", "flame", "boat", "browser", "terminal",
                                         "database", "phone", "brush", "flask", "lock", "book", "rocket", "mic", "bug", "branch"]

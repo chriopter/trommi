@@ -1880,7 +1880,16 @@ impl Bridge {
                     },
                 );
                 if present(args.get("icon")) {
-                    p.insert("icon".into(), json!(js_str(&args["icon"])));
+                    let mark = crate::drawings::mark_of(&js_str(&args["icon"])).map_err(err)?;
+                    p.insert("icon".into(), json!(mark));
+                } else if !p.get("icon").is_some_and(truthy) {
+                    // no symbol yet: one that fits the session's name, if any does
+                    if let Some(mark) = present(args.get("session"))
+                        .then(|| crate::drawings::default_for(&s(args.get("session"))))
+                        .flatten()
+                    {
+                        p.insert("icon".into(), json!(mark));
+                    }
                 }
                 if args.contains_key("parent") {
                     p.insert(
@@ -1936,12 +1945,21 @@ impl Bridge {
                     ));
                 }
                 let mut profile = Map::new();
-                for k in ["task", "icon", "model"] {
+                for k in ["task", "model"] {
                     if present(args.get(k)) {
                         profile.insert(k.into(), json!(js_str(&args[k])));
                     }
                 }
+                if present(args.get("icon")) {
+                    let mark = crate::drawings::mark_of(&js_str(&args["icon"])).map_err(err)?;
+                    profile.insert("icon".into(), json!(mark));
+                }
                 let existed = self.find_child(&name).await;
+                if existed.is_none() && !profile.contains_key("icon") {
+                    if let Some(mark) = crate::drawings::default_for(&name) {
+                        profile.insert("icon".into(), json!(mark));
+                    }
+                }
                 let was_closed = match &existed {
                     Some(x) => self
                         .my_session(Some(x))

@@ -2486,3 +2486,29 @@ async fn a_human_message_keeps_a_live_session_online_and_reaches_inbox() {
     assert!(heard.contains("Message 0") && heard.contains("Message 2"), "{heard}");
     mcp.close().await;
 }
+
+/// The agent can know the drawings: both `icon` descriptions list them, a name works without its prefix and an
+/// unknown one is an error that lists the valid ones; a helper named after its topic needs no icon.
+#[tokio::test(flavor = "multi_thread")]
+async fn symbols_are_listed_by_name_and_checked() {
+    let (_hub, _human, _seat, mut mcp, _group) = seated().await;
+    let listed = mcp.request("tools/list", json!({})).await;
+    for tool in ["introduce", "open_session"] {
+        let t = listed["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == tool)
+            .unwrap_or_else(|| panic!("{tool}"));
+        let d = t["inputSchema"]["properties"]["icon"]["description"].as_str().unwrap();
+        assert!(d.contains("rocket (release)") && d.contains("branch (git)") && !d.contains("{drawings}"), "{tool}: {d}");
+    }
+    let (said, bad) = mcp.call("open_session", json!({ "name": "Spacey", "icon": "spaceship" })).await;
+    assert!(bad && said.contains("spaceship") && said.contains("rocket (release)"), "{said}");
+    let (said, bad) = mcp.call("introduce", json!({ "model": "m", "icon": "nope" })).await;
+    assert!(bad && said.contains("burst (spark)"), "{said}");
+    assert!(mcp.ok("open_session", json!({ "name": "CI" })).await.starts_with("child session opened"));
+    assert!(mcp.ok("open_session", json!({ "name": "Other", "icon": "rocket" })).await.starts_with("child session opened"));
+    assert_eq!(mcp.ok("introduce", json!({ "model": "m", "icon": "draw:bell" })).await, "noted");
+    mcp.close().await;
+}

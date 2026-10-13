@@ -100,9 +100,14 @@ pub fn monitor_note() -> String {
         .replacen("<inbox>", inbox_tool_name(), 1)
 }
 
+/// tools.json with the list of drawings (connector/drawings.json) put where it says {drawings}.
+fn tools_text() -> &'static str {
+    static T: OnceLock<String> = OnceLock::new();
+    T.get_or_init(|| TOOLS_JSON.replace("{drawings}", &crate::drawings::listing()))
+}
 fn tools_doc() -> &'static Value {
     static T: OnceLock<Value> = OnceLock::new();
-    T.get_or_init(|| serde_json::from_str(TOOLS_JSON).expect("tools.json"))
+    T.get_or_init(|| serde_json::from_str(tools_text()).expect("tools.json"))
 }
 fn with_description(t: &Value) -> Value {
     let mut m: Map<String, Value> = t.as_object().cloned().unwrap_or_default();
@@ -178,7 +183,7 @@ fn raw_tool(raw: &serde_json::value::RawValue) -> String {
 
 /// The answer to `tools/list` as JSON text: every tool, the reload tool, and with `inbox` the inbox tool.
 pub fn tools_list_json(inbox: bool) -> String {
-    let Ok(doc) = serde_json::from_str::<RawTools>(TOOLS_JSON) else {
+    let Ok(doc) = serde_json::from_str::<RawTools>(tools_text()) else {
         return "{\"tools\":[]}".into();
     };
     let mut tools: Vec<String> = doc.tools.iter().map(|raw| raw_tool(raw)).collect();
@@ -205,7 +210,7 @@ pub fn connect_list_json(note: Option<&str>) -> String {
 /// The connect tool as JSON text; with a self-join `note` (where joining by itself stands) in front of its
 /// description.
 fn connect_tool(note: Option<&str>) -> String {
-    let Ok(doc) = serde_json::from_str::<RawTools>(TOOLS_JSON) else {
+    let Ok(doc) = serde_json::from_str::<RawTools>(tools_text()) else {
         return "{}".into();
     };
     let tool = raw_tool(doc.connect);
