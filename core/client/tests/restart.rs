@@ -33,6 +33,55 @@ struct End {
     /// Open cards on the Desk.
     desk: usize,
     stored_as_held: bool,
+    /// The whole board in what does not depend on the room's random keys (`picture`).
+    board: Vec<String>,
+}
+
+/// What differs between two pictures of the board: in `a` alone, in `b` alone.
+fn differ(a: &[String], b: &[String]) -> String {
+    let only = |x: &[String], y: &[String]| x.iter().filter(|e| !y.contains(e)).cloned().collect::<Vec<_>>();
+    format!("only after the kill: {:?}\nonly in the whole run: {:?}", only(a, b), only(b, a))
+}
+
+/// The strings of a value that a person reads (texts, titles, states, choices), in order; no id, hash or time.
+fn words(v: &serde_json::Value, out: &mut Vec<String>) {
+    match v {
+        serde_json::Value::Object(o) => {
+            for (name, v) in o {
+                match (name.as_str(), v) {
+                    ("text" | "title" | "object_state" | "item_state" | "content_type" | "closed_how" | "key" | "urgency" | "card_type", serde_json::Value::String(s)) => out.push(format!("{name}={s}")),
+                    ("object_version" | "pending", v) if !v.is_null() => out.push(format!("{name}={v}")),
+                    _ => words(v, out),
+                }
+            }
+        }
+        serde_json::Value::Array(list) => {
+            out.push(format!("[{}]", list.len()));
+            list.iter().for_each(|v| words(v, out));
+        }
+        _ => {}
+    }
+}
+
+/// The board model as a person sees it, as far as the engine brings it back after a restart: the Desk in its order,
+/// every card with its versions, the sessions and the members, each by what it says. Not the items of the timelines:
+/// what the device took before a restart is a replay for the engine afterwards, and comes back from the app's cache
+/// (the model's snapshot, W5) or from the reading of the past, not from the order.
+fn picture(sim: &Sim) -> Vec<String> {
+    let m = &sim.app.board().model;
+    let said = |v: serde_json::Value| {
+        let mut out = Vec::new();
+        words(&v, &mut out);
+        out.join(" ")
+    };
+    let mut desk: Vec<String> = m.stack.iter().map(|id| format!("desk {}", m.cards.get(id).map_or("?".into(), |c| said(serde_json::to_value(c).unwrap_or_default())))).collect();
+    let mut rest: Vec<String> = Vec::new();
+    rest.extend(m.cards.values().map(|c| format!("card {}", said(serde_json::to_value(c).unwrap_or_default()))));
+    rest.extend(m.sessions.values().map(|s| format!("session archived={} stale={} agents={}", s.group_archived, s.stale, s.agent_device_ids.len())));
+    rest.push(format!("members {}", m.members.len()));
+    rest.sort();
+    desk.extend(rest);
+    desk
 }
 
 fn end(world: &World, sim: &Sim) -> End {
@@ -54,20 +103,27 @@ fn end(world: &World, sim: &Sim) -> End {
         groups,
         desk: sim.app.board().model.stack.len(),
         stored_as_held: stored.cursor() == device.cursor() && stored.outbox().len() == device.outbox().len(),
+        board: picture(sim),
     }
 }
 
 /// Runs the App to rest; killed before its `die_in`th effect, it is started again once.
 fn run(world: &World, store: &common::TestStore, me: &DeviceId, die_in: Option<usize>, after_start: &dyn Fn(&mut Sim)) -> (Sim, bool) {
+    run_twice(world, store, me, die_in, None, after_start)
+}
+
+/// The same, and killed once more before the `again`th effect after the first restart.
+fn run_twice(world: &World, store: &common::TestStore, me: &DeviceId, die_in: Option<usize>, mut again: Option<usize>, after_start: &dyn Fn(&mut Sim)) -> (Sim, bool) {
     let mut sim = world.sim_of(store);
     sim.die_in = die_in;
     sim.send(start());
     after_start(&mut sim);
     let mut died = false;
     for _ in 0..24 {
-        if sim.dead {
+        while sim.dead {
             died = true;
             sim.restart();
+            sim.die_in = again.take();
             sim.send(start());
         }
         news(world, &mut sim, me);
@@ -101,6 +157,21 @@ fn scene() -> World {
     let mut newcomer = Device::open(store, Box::new(SystemEntropy)).expect("opens");
     newcomer.key_packages_to_upload(0, now()).expect("key packages");
     assert!(post_all(&mut world.hub.borrow_mut(), &mut newcomer).is_empty());
+    // the person's other device writes three lines; the hub skips the second and withholds it from its chain: the
+    // third is never shown, and the gap is said
+    world.founder_says("f1");
+    let withheld = world.founder_says("f2, withheld");
+    world.founder_says("f3, after the gap");
+    {
+        let mut hub = world.hub.borrow_mut();
+        hub.hidden.insert(withheld);
+        let founder = world.founder.id();
+        let seq = hub.order.iter().find_map(|i| match i {
+            common::hub::Item::Envelope { change, seq, .. } if *change == withheld => Some(*seq),
+            _ => None,
+        });
+        hub.withhold.insert(founder, seq.expect("its number"));
+    }
     world.agent_says("last");
     world
 }
@@ -113,7 +184,10 @@ fn killed_before_any_effect_the_app_ends_where_an_uninterrupted_run_ends() {
     let whole = end(&world, &sim);
     let effects = sim.log.len();
     assert_eq!(whole.phase, Phase::Live);
-    assert!(whole.at_head && whole.outbox == 0 && whole.owes == (0, 0, 0, 0) && whole.stored_as_held, "{whole:?} {:?}", sim.app.alerts());
+    assert!(whole.at_head && whole.outbox == 0 && whole.owes == (0, 0, 1, 0) && whole.stored_as_held, "{whole:?} {:?}", sim.app.alerts());
+    assert!(sim.app.alerts().iter().any(|a| matches!(a, trommi_client_core::engine::Alert::Withheld { .. })), "the gap is said");
+    let lines: Vec<String> = sim.app.board().model.timelines.values().flat_map(|t| t.items.values()).filter_map(|i| i.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()).map(str::to_string)).collect();
+    assert!(lines.iter().any(|l| l == "f1") && !lines.iter().any(|l| l.contains("after the gap")), "{lines:?}");
     assert_eq!(whole.groups, vec![(true, 4), (true, 4)], "both sessions, the newcomer in each: {:?}", world.hub.borrow().refused);
     assert_eq!(whole.desk, 2);
     assert!(sim.cache.keys().any(|k| k.starts_with("engine/")), "the engine kept its record");
@@ -123,9 +197,29 @@ fn killed_before_any_effect_the_app_ends_where_an_uninterrupted_run_ends() {
         let world = scene();
         let (sim, died) = run(&world, &world.me_store, &world.me, Some(at), &|_| {});
         kills += usize::from(died);
-        assert_eq!(end(&world, &sim), whole, "killed before effect {at} of {effects}: {:?} {:?}", sim.app.alerts(), world.hub.borrow().refused);
+        let got = end(&world, &sim);
+        assert!(got == whole, "killed before effect {at} of {effects}: {}\n{got:?}", differ(&got.board, &whole.board));
     }
     assert!(kills > 40, "the kills fell inside the run: {kills} of {effects}");
+}
+
+#[test]
+fn killed_twice_the_app_still_ends_where_an_uninterrupted_run_ends() {
+    let world = scene();
+    let (sim, _) = run(&world, &world.me_store, &world.me, None, &|_| {});
+    let whole = end(&world, &sim);
+    let effects = sim.log.len();
+    let mut twice = 0;
+    for at in (1..effects).step_by(4) {
+        let world = scene();
+        // the second death comes early in the restarted run: in its reading of the record, its sign-in, its first page
+        let again = 1 + at % 11;
+        let (sim, died) = run_twice(&world, &world.me_store, &world.me, Some(at), Some(again), &|_| {});
+        twice += usize::from(died && sim.log.len() > at + again);
+        let got = end(&world, &sim);
+        assert!(got == whole, "killed before effect {at} and then before {again} of the restart: {}", differ(&got.board, &whole.board));
+    }
+    assert!(twice > 10, "{twice} runs died twice");
 }
 
 #[test]
