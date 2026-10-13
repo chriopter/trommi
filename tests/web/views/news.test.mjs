@@ -1,17 +1,12 @@
 // news.test.mjs: What's new (app/web/public/news.mjs) shows CHANGELOG.md as the build reads it (dev/build.mjs
 // parseChangelog): days newest first, each with its one-line summary, at most one picture of the demo room
 // (app/web/public/changelog/, webp, at most 150 KB) and its parts New, Better, Fixed, every line with its short form
-// (changelogHead). The page (news.mjs) shows the picture on the newest three days only. And a GitHub release's notes
-// (.github/scripts/release_notes.mjs): the newest day, short, its releases counted from the published ones.
+// (changelogHead). The page (news.mjs) shows the picture on the newest three days only.
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { changelogHead, parseChangelog } from '../../../app/web/dev/build.mjs'
-import { changelogHead as notesHead, releaseNotes, subjectLine } from '../../../.github/scripts/release_notes.mjs'
 
 const FILE = fs.readFileSync(new URL('../../../CHANGELOG.md', import.meta.url), 'utf8')
 
@@ -70,63 +65,4 @@ test('a line\'s short form: a bold start, a tag, the first clause, never too sho
   assert.equal(h('iPad layout in a window.').head, 'iPad layout in a window')
   const long = h('A new Claude Code or Codex session on a computer and account that already has a connected agent gets onto the board.')
   assert.ok(long.head.length <= 78 && long.head.endsWith('…'), long.head)
-})
-
-const NOTES = new URL('../../../.github/scripts/release_notes.mjs', import.meta.url).pathname
-const notes = (changelog, ...args) => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'notes-'))
-  fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), changelog)
-  const files = args.map((a, i) => (Array.isArray(a) ? (fs.writeFileSync(path.join(dir, `r${i}`), a.join('\n') + '\n'), path.join(dir, `r${i}`)) : a))
-  try {
-    return execFileSync(process.execPath, [NOTES, path.join(dir, 'CHANGELOG.md'), ...files], { encoding: 'utf8', env: { ...process.env, NOTES_BASE: 'https://raw.example/c/' } })
-  } finally { fs.rmSync(dir, { recursive: true }) }
-}
-
-test('release notes: the newest day short, one line per change by its short form, <…> escaped outside code', () => {
-  const out = notes('# Changelog\n\nIntro.\n\n## 11 October 2026 (v1 – v2)\n\nA summary that\ngoes on. And a second sentence.\n\n![The demo](app/web/public/changelog/2026-10-11.webp)\n\n**New**\n- **Readable addresses**: `/chat/<id>` and more,\n  what it keeps on the hub.\n- "<session> is working on it", what it keeps.\n- Web: a new row in the sidebar, with its folder.\n\n**Fixed**\n- A fix & more.\n\n**Better**\n- Faster.\n\n**Fixed**\n- Another fix.\n- A fix & more.\nA stray line.\n\n## 10 October 2026\n\n- Older.\n')
-  assert.equal(out, '## 11 October 2026\n\nA summary that goes on.\n\n![The demo](https://raw.example/c/app/web/public/changelog/2026-10-11.webp)\n\n**New**\n- Readable addresses\n- "&lt;session&gt; is working on it"\n- A new row in the sidebar (Web)\n\n**Better**\n- Faster\n\n**Fixed**\n- A fix &amp; more\n- Another fix\n')
-})
-
-test('release notes since the release before: only the lines added since, its picture and summary only when new', () => {
-  const before = '## 12 October 2026\n\nStar cards.\n\n**New**\n- **Stars**: star a card.\n\n**Fixed**\n- Web: a fix.\n\n## 11 October 2026\n\nOlder.\n\n**New**\n- Old thing.\n'
-  const now = '## 12 October 2026\n\nStar cards.\n\n![Stars](app/s.webp)\n\n**New**\n- **Stars**: star a card, now with more words.\n- **Duck it**: answer all at once.\n\n**Fixed**\n- Web: a fix.\n- iPhone: another fix.\n\n## 11 October 2026\n\nOlder.\n\n**New**\n- Old thing.\n'
-  assert.equal(releaseNotes(now, { previous: before, since: 'v284', base: 'https://raw.example/c/' }),
-    '## 12 October 2026 (since v284)\n\n![Stars](https://raw.example/c/app/s.webp)\n\n**New**\n- Duck it\n\n**Fixed**\n- Another fix (iPhone)\n')
-  // the day's first release: the summary is new too; a release the day before is not listed again
-  assert.equal(releaseNotes(now, { previous: before.slice(before.indexOf('## 11')), since: 'v200' }),
-    '## 12 October 2026 (since v200)\n\nStar cards.\n\n![Stars](app/s.webp)\n\n**New**\n- Stars\n- Duck it\n\n**Fixed**\n- A fix (Web)\n- Another fix (iPhone)\n')
-  // nothing added: the PR titles since, internal ones left out; none left: says so
-  const subjects = ['2026-10-12-36: Fixed: connector keys per folder, size limit (#80)', 'Fixed: self-join test race on CI (#68)', 'Updated: start page offers Try the demo (web) (#84)']
-  assert.equal(releaseNotes(now, { previous: now, since: 'v290', subjects }), '## 12 October 2026 (since v290)\n\n**Better**\n- Start page offers Try the demo\n\n**Fixed**\n- Connector keys per folder\n')
-  assert.equal(releaseNotes(now, { previous: now, since: 'v290', subjects: [subjects[1]] }), '## 12 October 2026 (since v290)\n\nNothing you can see changed: internal work only.\n')
-  assert.equal(subjectLine('Merge branch x'), null)
-  // a day filled in later, older than the release before's newest, is not this release's
-  assert.equal(releaseNotes(now + '\n## 10 October 2026\n\nBackfilled.\n\n**New**\n- Old news.\n', { previous: before, since: 'v284' }).includes('Old news'), false)
-  // no CHANGELOG.md yet: the PR titles since the release before
-  assert.equal(releaseNotes('', { previous: '', since: 'v49', subjects: [subjects[0]] }), '## Since v49\n\n**Fixed**\n- Connector keys per folder\n')
-  assert.equal(releaseNotes('', {}), '')
-})
-
-test('release notes: a line\'s short form is What\'s new\'s (changelogHead), only cut later', () => {
-  for (const line of FILE.split('\n').filter(l => /^- /.test(l))) assert.deepEqual(notesHead(line.slice(2)), changelogHead(line.slice(2)), line)
-  const long = 'Opening the app again no longer shows old cards for a moment that were closed on another device, at once.'
-  assert.ok(changelogHead(long).head.endsWith('…'))
-  assert.equal(notesHead(long, 120).head, 'Opening the app again no longer shows old cards for a moment that were closed on another device')
-})
-
-test('release notes: the heading counts the day\'s releases (Europe/Berlin), this one included', () => {
-  const log = '## 11 October 2020\n\n**New**\n- A thing.\n'
-  const published = ['v108 2020-10-10T21:00:54Z', 'v109 2020-10-10T22:06:13Z', 'v150 2020-10-11T12:00:00Z', 'v208 2020-10-11T18:42:57Z', 'v300 2020-10-11T22:30:00Z', 'hub-v5 2020-10-11T12:00:00Z']
-  // a day in the past: only the releases published on it (v109 at 00:06 in Berlin is the 11th, v300 the 12th)
-  assert.match(notes(log, 'v400', published), /^## 11 October 2020 \(v109 – v208\)\n/)
-  assert.match(notes(log, '', ['v150 2020-10-11T12:00:00Z']), /^## 11 October 2020 \(v150\)\n/)
-  assert.match(notes(log), /^## 11 October 2020\n/)
-  // today: this release counts although it is not published yet
-  const today = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())
-  assert.match(notes(`## ${today}\n\n- Now.\n`, 'v999', []), new RegExp(`^## ${today} \\(v999\\)\\n`))
-})
-
-test('release notes: nothing for a missing or empty CHANGELOG.md, and never a failure', () => {
-  assert.equal(execFileSync(process.execPath, [NOTES, '/nonexistent/CHANGELOG.md'], { encoding: 'utf8' }), '')
-  assert.equal(notes('# Changelog\n\nNo day yet.\n'), '')
 })

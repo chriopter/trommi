@@ -258,6 +258,10 @@ flowchart LR
   until the server runs the hub of the same commit, when that commit delivers both.
 - **The web app** gets a release `web-v<N>` too, once it is delivered: its release notes and `web.tar.gz` as it went
   out, signed and attested (the record of what went out and a build to put back; no browser checks it).
+- **Release notes** come from the pull requests: each PR's section "What's new" (`.github/pull_request_template.md`,
+  lines starting `New:`, `Better:` or `Fixed:`; empty for internal work), else its title. A part's release lists the
+  PRs merged since its release before that touch its paths (`.github/scripts/release_notes.mjs`,
+  `inputs.sh paths <part>`). What's new on the web and the iPhone is read from these notes.
 - **The iOS app** has its own workflow, `ios.yml`, so nothing of web, hub or connector waits for a Mac or TestFlight:
   on a pull request it checks the iOS client; after `build.yml` on main it builds and delivers the app when that run's
   core check passed and the app's inputs differ from those last delivered to TestFlight.

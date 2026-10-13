@@ -8,6 +8,8 @@
 # value for a part build the same part. A path too many costs one needless delivery; a path too few ships a stale
 # part: when in doubt a path is in. Each part names the workflows and scripts that build and deliver it (build
 # settings live there); tests are in none (they ship nothing).
+# `.github/scripts/inputs.sh paths <part>` prints the paths themselves (the shared ones included), for the release
+# notes (release_notes.mjs: the pull requests that touch a part).
 set -eu
 commit=${1:-HEAD}
 # every part: the shared core and client core (in every app and in the hub's checks of what it stores), the Rust
@@ -26,6 +28,11 @@ paths() {
     updater) echo "hub/updater/ hub/deploy/ .github/workflows/deploy_hub.yml $rust_release" ;;
   esac
 }
+if [ "$commit" = paths ]; then
+  [ -n "$(paths "${2:-}")" ] || { echo "inputs.sh paths: no part ${2:-}" >&2; exit 2; }
+  echo "$shared $(paths "$2")"
+  exit 0
+fi
 for part in web connector ios hub updater; do
   # shellcheck disable=SC2046,SC2086
   sum=$(git ls-tree -r "$commit" -- $shared $(paths "$part") | LC_ALL=C sort -k4 | sha256sum | cut -d' ' -f1)

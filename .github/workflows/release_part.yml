@@ -175,10 +175,11 @@ jobs:
           ref: ${{ github.sha }}
           path: repo
           persist-credentials: false
-          # release/ for the scripts and the key, release_notes.mjs for the notes
+          # release/ for the scripts and the key, release_notes.mjs (and inputs.sh: a part's paths) for the notes
           sparse-checkout: |
             /release/
             /.github/scripts/release_notes.mjs
+            /.github/scripts/inputs.sh
           sparse-checkout-cone-mode: false
       # What is published is what was signed: checked again against the manifest whose hash the signing job passed on.
       - name: Check the signature and the files
@@ -229,19 +230,13 @@ jobs:
             if tagged=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha 2>/dev/null); then
               [ "$tagged" = "$COMMIT" ] || { echo "::error::the tag $TAG is there already and names $tagged, not $COMMIT"; exit 1; }
             fi
-            # the notes: what CHANGELOG.md added since this series' release before, one line per change; the commit
-            # subjects since then when it added nothing; empty notes never stop a release
-            gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$COMMIT" > "$RUNNER_TEMP/changelog.md" 2>/dev/null || : > "$RUNNER_TEMP/changelog.md"
-            gh release list --exclude-drafts --limit 400 --json tagName,createdAt --jq '.[] | "\(.tagName) \(.createdAt)"' | grep "^$PART-v" > "$RUNNER_TEMP/releases.txt" 2>/dev/null || : > "$RUNNER_TEMP/releases.txt"
-            prev='' since=''
-            : > "$RUNNER_TEMP/subjects.txt"
-            if [ -n "$newest" ] && before=$(gh api "repos/$GH_REPO/commits/$PART-v$newest" --jq .sha 2>/dev/null) \
-              && gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/CHANGELOG.md?ref=$before" > "$RUNNER_TEMP/changelog-before.md" 2>/dev/null; then
-              prev="$RUNNER_TEMP/changelog-before.md" since="$PART-v$newest"
-              gh api "repos/$GH_REPO/compare/$before...$COMMIT" --jq '.commits[].commit.message | split("\n")[0]' > "$RUNNER_TEMP/subjects.txt" 2>/dev/null || : > "$RUNNER_TEMP/subjects.txt"
-            fi
+            # the notes: the "What's new" lines of the pull requests merged since this series' release before that touch
+            # this part (release_notes.mjs; What's new on the web and the iPhone reads them back); empty notes never stop
+            # a release
+            before=''
+            if [ -n "$newest" ]; then before=$(gh api "repos/$GH_REPO/commits/$PART-v$newest" --jq .sha 2>/dev/null) || before=''; fi
             {
-              NOTES_BASE="https://raw.githubusercontent.com/$GH_REPO/$COMMIT/" node repo/.github/scripts/release_notes.mjs "$RUNNER_TEMP/changelog.md" "$TAG" "$RUNNER_TEMP/releases.txt" "$prev" "$since" "$RUNNER_TEMP/subjects.txt" || true
+              node repo/.github/scripts/release_notes.mjs "$PART" "$before" "$COMMIT" || true
               echo
               echo "---"
               echo

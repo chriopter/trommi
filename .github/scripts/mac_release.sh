@@ -89,9 +89,15 @@ upload() {
   fi
   newest
   if [ -n "$newest_tag" ] && [ "${newest_tag#mac-v}" -gt "$VERSION" ]; then latest=--latest=false; fi
+  # the notes: the "What's new" lines of the pull requests since the newest mac-v that touch the app (release_notes.mjs)
+  local before=''
+  if [ -n "$newest_tag" ]; then before=$(gh api "repos/$GITHUB_REPOSITORY/commits/$newest_tag" --jq .sha 2>/dev/null) || before=''; fi
+  {
+    GH_REPO=$GITHUB_REPOSITORY node "$here/release_notes.mjs" mac "$before" "$COMMIT" || true
+    printf '\n---\n\nThe Mac app of commit %s: signed with Developer ID, notarized by Apple and stapled. Its build attestation: gh attestation verify %s.dmg --repo %s\n' "$COMMIT" "$name" "$GITHUB_REPOSITORY"
+  } > "$RUNNER_TEMP/mac-notes.md"
   gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$COMMIT" "$latest" --title "Trommi for Mac $tag" \
-    --notes "The Mac app of commit $COMMIT: signed with Developer ID, notarized by Apple and stapled. Its build attestation: gh attestation verify $name.dmg --repo $GITHUB_REPOSITORY" \
-    "${files[@]/#/$dir/}"
+    --notes-file "$RUNNER_TEMP/mac-notes.md" "${files[@]/#/$dir/}"
   echo "$tag holds ${files[*]}"
 }
 
