@@ -228,7 +228,7 @@ EOF
   xcodebuild -exportArchive \
     -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptionsMacDirect.plist" \
     -exportPath "$RUNNER_TEMP/signed-mac-direct" \
-    "${auth[@]}"
+    ${auth[@]+"${auth[@]}"}   # an empty array is an unbound variable under set -u in the Mac runner's bash 3.2
   app=$RUNNER_TEMP/signed-mac-direct/Trommi.app
   [ -d "$app" ] || { echo "::error::the export made no Trommi.app"; exit 1; }
 
