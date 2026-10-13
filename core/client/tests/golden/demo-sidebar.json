@@ -1,0 +1,564 @@
+{
+  "desks": [
+    {
+      "id": "main",
+      "name": {
+        "key": "desk.name",
+        "en": "Fernly"
+      },
+      "waiting": 14,
+      "selected": true,
+      "knocks": true
+    },
+    {
+      "id": "platform",
+      "name": {
+        "key": "desk.name",
+        "en": "Platform"
+      },
+      "waiting": 10,
+      "selected": false,
+      "knocks": true
+    }
+  ],
+  "sessions": [
+    {
+      "id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "name": {
+        "key": "session.name",
+        "en": "Fernly App"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "fernly-ios",
+      "mark": "draw:phone",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": false,
+      "subs": [
+        "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
+        "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
+        "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
+        "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e"
+      ],
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "main:on",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "1"
+        },
+        "en": "Working, 1 question open"
+      },
+      "folded": {
+        "open": 3,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "3"
+          },
+          "en": "Working, 3 questions open"
+        }
+      }
+    },
+    {
+      "id": "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
+      "name": {
+        "key": "session.name",
+        "en": "Widgets"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "widgets",
+      "mark": "draw:grid",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
+      "name": {
+        "key": "session.name",
+        "en": "Push Reminders"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "push-reminders",
+      "mark": "draw:bell",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
+      "name": {
+        "key": "session.name",
+        "en": "App Store"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "app-store",
+      "mark": "draw:star",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e",
+      "name": {
+        "key": "session.name",
+        "en": "Crash Fixes"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "crash-triage",
+      "mark": "draw:bug",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "name": {
+        "key": "session.name",
+        "en": "Fernly Website"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "fernly-web",
+      "mark": "draw:leaf",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": true,
+      "crowned": true,
+      "subs": [
+        "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+        "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
+        "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
+        "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+        "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+        "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1"
+      ],
+      "open": 2,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "main:on",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "2"
+        },
+        "en": "Working, 2 questions open"
+      },
+      "folded": {
+        "open": 8,
+        "knocks": false,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "8"
+          },
+          "en": "Working, 8 questions open"
+        }
+      }
+    },
+    {
+      "id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+      "name": {
+        "key": "session.name",
+        "en": "Search & Social"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "seo",
+      "mark": "draw:eye",
+      "desk_id": "main",
+      "online": false,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
+      "name": {
+        "key": "session.name",
+        "en": "Page Speed"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "web-perf",
+      "mark": "draw:bolt",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": ""
+    },
+    {
+      "id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
+      "name": {
+        "key": "session.name",
+        "en": "Testing"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "e2e-tests",
+      "mark": "draw:flask",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "1"
+        },
+        "en": "Working, 1 question open"
+      }
+    },
+    {
+      "id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+      "name": {
+        "key": "session.name",
+        "en": "Onboarding"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "onboarding",
+      "mark": "draw:kite",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 2,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "2"
+        },
+        "en": "2 questions open"
+      }
+    },
+    {
+      "id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+      "name": {
+        "key": "session.name",
+        "en": "Copywriting"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "copy",
+      "mark": "draw:pen",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 2,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "2"
+        },
+        "en": "2 questions open"
+      }
+    },
+    {
+      "id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+      "name": {
+        "key": "session.name",
+        "en": "Landing Page"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "landing-page",
+      "mark": "draw:brush",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "name": {
+        "key": "session.name",
+        "en": "Design System"
+      },
+      "link": "live",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 0,
+      "slug": "design-system",
+      "mark": "draw:diamond",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": true,
+      "crowned": false,
+      "subs": [
+        "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
+        "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
+        "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad"
+      ],
+      "open": 0,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "main:on",
+      "folded": {
+        "open": 3,
+        "knocks": true,
+        "online": true,
+        "working": true,
+        "says": {
+          "key": "badge.working_open",
+          "args": {
+            "n": "3"
+          },
+          "en": "Working, 3 questions open"
+        }
+      }
+    },
+    {
+      "id": "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
+      "name": {
+        "key": "session.name",
+        "en": "Icons"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "icons",
+      "mark": "draw:flower",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "open": 1,
+      "knocks": true,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
+      "name": {
+        "key": "session.name",
+        "en": "Dark Mode"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "dark-mode",
+      "mark": "draw:moon",
+      "desk_id": "main",
+      "online": true,
+      "working": false,
+      "main": false,
+      "crowned": false,
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.open",
+        "args": {
+          "n": "1"
+        },
+        "en": "1 question open"
+      }
+    },
+    {
+      "id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+      "name": {
+        "key": "session.name",
+        "en": "Design Tokens"
+      },
+      "link": "",
+      "blocked": false,
+      "unheard": 0,
+      "depth": 1,
+      "slug": "tokens",
+      "mark": "draw:drop",
+      "desk_id": "main",
+      "online": true,
+      "working": true,
+      "main": false,
+      "crowned": false,
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "open": 1,
+      "knocks": false,
+      "hushed": false,
+      "away": false,
+      "group": "",
+      "says": {
+        "key": "badge.working_open",
+        "args": {
+          "n": "1"
+        },
+        "en": "Working, 1 question open"
+      }
+    }
+  ],
+  "badge": 24,
+  "knocks": true,
+  "desk": "main",
+  "all": {
+    "id": "all",
+    "name": {
+      "key": "desk.all",
+      "en": "All Desks"
+    },
+    "waiting": 24,
+    "selected": false,
+    "knocks": true
+  },
+  "place": {
+    "key": "desk.name",
+    "en": "Fernly"
+  },
+  "waiting": 14,
+  "knocking": 1,
+  "stopped": 0,
+  "working": 6,
+  "unheard": 0
+}
