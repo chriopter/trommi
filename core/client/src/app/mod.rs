@@ -33,7 +33,7 @@ pub use io::{
     IoResult, PlatformAnswer, PlatformOp, SecretOp, StoreAnswer, StoreOp, StreamItem,
 };
 
-use crate::engine::{self, Codec, Connection, Engine, Jitter, OpenError, Report};
+use crate::engine::{self, Connection, Engine, Jitter, OpenError, Report};
 use crate::views::{Lens, Phase, Screen, ViewModel};
 use std::collections::BTreeMap;
 
@@ -42,10 +42,18 @@ pub const DEFAULT_HUB: &str = "https://hub.trommi.com";
 /// At most so many of the engine's alerts are kept for the views.
 const ALERTS_MAX: usize = 200;
 
+/// A device that closed itself is opened again in place at most so many times in a row (the count starts anew once
+/// it is live again, or the app comes to the front).
+pub const REOPEN_TRIES: u32 = 3;
+/// At most so many invites with a Request wait for the invite flow.
+const INVITE_REQUESTS_MAX: usize = 64;
+
 /// What a piece of I/O in flight was for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Pending {
     DeviceLoad,
+    /// A cache entry deleted (a file the hub evicted): nothing waits for it.
+    CacheDelete,
 }
 
 pub struct App {
@@ -57,10 +65,10 @@ pub struct App {
     /// The view model as the shell has it (what was rendered so far).
     view: ViewModel,
     rendered_once: bool,
-    #[allow(dead_code)] // (the engine draws its own from the same seed)
+    /// The App's own draws (the waits before a closed device is opened again); the engine draws its own.
     jitter: Jitter,
     /// The sync engine, once the stored device opened.
-    engine: Option<Engine<Codec>>,
+    engine: Option<Engine>,
     /// The timer the shell holds.
     timer: Option<u64>,
     /// What the engine reported for the person (until the views show them: W4).
@@ -76,6 +84,12 @@ pub struct App {
     view_wake: Option<u64>,
     /// The device's source of randomness when it is not the system's (a seeded test).
     entropy: Option<Box<dyn trommi_core::crypto::Entropy + Send>>,
+    /// Invites of this room a newcomer sent its Request for, oldest first (the invite flow reads them: W3).
+    invite_requests: Vec<trommi_core::ids::InviteId>,
+    /// The device closed itself (a failed write, a failure of its own): when the stored state is read again, and
+    /// how often it was in a row.
+    reopen_at: Option<u64>,
+    reopen_tries: u32,
 }
 
 impl Default for App {
@@ -103,6 +117,9 @@ impl App {
             stale_views: false,
             view_wake: None,
             entropy: None,
+            invite_requests: Vec::new(),
+            reopen_at: None,
+            reopen_tries: 0,
         }
     }
 
@@ -121,7 +138,7 @@ impl App {
     }
 
     /// The sync engine, once the stored device opened.
-    pub fn engine(&self) -> Option<&Engine<Codec>> {
+    pub fn engine(&self) -> Option<&Engine> {
         self.engine.as_ref()
     }
 
@@ -152,6 +169,11 @@ impl App {
     /// Once a sign-in's sessions are through: the ones this device is not in, each with the reason. None before.
     pub fn sessions_not_joined(&self) -> Option<&[(trommi_core::ids::GroupId, &'static str)]> {
         self.sessions_not_joined.as_deref()
+    }
+
+    /// The invites a newcomer sent its Request for since they were last taken, oldest first, each once.
+    pub fn take_invite_requests(&mut self) -> Vec<trommi_core::ids::InviteId> {
+        std::mem::take(&mut self.invite_requests)
     }
 
     /// The engine's alerts so far, oldest first.
@@ -196,9 +218,11 @@ impl App {
                     }
                     IoResult::Err(e) => {
                         out.push(log(LogLevel::Error, &format!("device load: {:?}", e.kind)));
-                        self.next_view.phase = Phase::Stopped;
+                        self.closed(now_ms, &mut out);
                     }
                 },
+                // (a cache entry that stays is only a cache entry: the hub no longer serves the file)
+                Some(Pending::CacheDelete) => {}
                 None => {
                     let mine = self.with_engine(now_ms, &mut out, |engine, ctx| {
                         engine.on_store(ctx, id, &result)
@@ -252,9 +276,17 @@ impl App {
             Event::Wake => {
                 self.timer = None;
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_wake(ctx));
+                if self.reopen_at.is_some_and(|at| now_ms >= at) {
+                    self.reopen(&mut out);
+                }
             }
             Event::Foreground => {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
+                // (one that gave up on its stored state tries again when the person comes back)
+                if self.next_view.phase == Phase::Stopped && self.reopen_tries > REOPEN_TRIES {
+                    self.reopen_tries = 0;
+                    self.reopen(&mut out);
+                }
             }
             Event::Background => {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_background(ctx));
@@ -284,18 +316,30 @@ impl App {
             .entropy
             .take()
             .unwrap_or_else(|| Box::new(trommi_core::crypto::SystemEntropy));
-        match Engine::open_with(Codec::default(), hub, &client, config.seed, revision, entries, entropy) {
+        // (opened again in place: the board stays as it was shown, the new engine brings what is new)
+        let again = self.engine.is_some();
+        match Engine::open_with(hub, &client, config.seed, revision, entries, entropy) {
+            Ok(engine) if again && engine.device().id() != self.board_device() => {
+                out.push(log(LogLevel::Error, "device open: another device is stored now"));
+                self.next_view.phase = Phase::Stopped;
+            }
             Ok(engine) => {
-                self.board = engine::feed::Board::new(engine.device());
+                if !again {
+                    self.board = engine::feed::Board::new(engine.device());
+                }
                 self.stale_views = true;
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;
                 self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
             }
-            Err(OpenError::NoRoom) => self.next_view.phase = Phase::SignedOut,
+            Err(OpenError::NoRoom) if !again => self.next_view.phase = Phase::SignedOut,
+            Err(OpenError::NoRoom) => {
+                out.push(log(LogLevel::Error, "device open: the stored state holds no room now"));
+                self.next_view.phase = Phase::Stopped;
+            }
             Err(OpenError::Device(code)) => {
                 out.push(log(LogLevel::Error, &format!("device open: {code}")));
-                self.next_view.phase = Phase::Stopped;
+                self.closed(now_ms, out);
             }
             Err(OpenError::Hub) => {
                 out.push(log(LogLevel::Error, "start: the hub's address is not canonical"));
@@ -304,11 +348,42 @@ impl App {
         }
     }
 
+    /// The id of the device the board is of (the one opened first).
+    fn board_device(&self) -> trommi_core::ids::DeviceId {
+        self.engine.as_ref().map_or(trommi_core::ids::DeviceId::new([0; 32]), |e| e.device().id())
+    }
+
+    /// The device closed itself, or its stored state did not open again: read again after a wait, at most
+    /// [`REOPEN_TRIES`] times in a row; then the App stops. Only a device that ran here is opened again in place.
+    fn closed(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        if self.engine.is_none() {
+            self.next_view.phase = Phase::Stopped;
+            return;
+        }
+        self.reopen_tries += 1;
+        if self.reopen_tries > REOPEN_TRIES {
+            out.push(log(LogLevel::Error, "the device does not open again: stopped"));
+            self.reopen_at = None;
+            self.next_view.phase = Phase::Stopped;
+            return;
+        }
+        let wait = engine::Backoff::HUB.delay_ms(self.reopen_tries, None, self.jitter.draw());
+        self.reopen_at = Some(now_ms + wait);
+        self.next_view.phase = Phase::Opening;
+    }
+
+    /// Reads the stored state again, to open it in place of the closed device.
+    fn reopen(&mut self, out: &mut Vec<Effect>) {
+        self.reopen_at = None;
+        let id = self.io(Pending::DeviceLoad);
+        out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
+    }
+
     fn with_engine<T>(
         &mut self,
         now_ms: u64,
         out: &mut Vec<Effect>,
-        step: impl FnOnce(&mut Engine<Codec>, &mut engine::Ctx<'_>) -> T,
+        step: impl FnOnce(&mut Engine, &mut engine::Ctx<'_>) -> T,
     ) -> Option<T> {
         let engine = self.engine.as_mut()?;
         let mut ctx = engine::Ctx {
@@ -325,19 +400,34 @@ impl App {
             return;
         };
         let mut fed = false;
+        let mut evicted = Vec::new();
+        let mut stopped = false;
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
             match report {
-                Report::Connection(Connection::Live) => self.next_view.phase = Phase::Live,
+                Report::Connection(Connection::Live) => {
+                    self.next_view.phase = Phase::Live;
+                    self.reopen_tries = 0;
+                }
                 Report::Connection(Connection::Offline) => self.next_view.phase = Phase::Offline,
                 Report::Connection(Connection::CatchingUp) => {
                     if self.next_view.phase != Phase::Live {
                         self.next_view.phase = Phase::Opening
                     }
                 }
+                Report::Stopped(why) if why.reopens() => stopped = true,
                 Report::Stopped(_) => self.next_view.phase = Phase::Stopped,
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
+                Report::InviteRequest { invite } => {
+                    if !self.invite_requests.contains(&invite) {
+                        if self.invite_requests.len() >= INVITE_REQUESTS_MAX {
+                            self.invite_requests.remove(0);
+                        }
+                        self.invite_requests.push(invite);
+                    }
+                }
+                Report::FileEvicted { file } => evicted.push(file),
                 Report::Alert(alert) => {
                     if self.alerts.len() >= ALERTS_MAX {
                         self.alerts.remove(0);
@@ -346,6 +436,15 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        if !evicted.is_empty() {
+            // the cached bytes of a file the hub deleted (11.3) go
+            let room = crate::engine::feed::hex(engine.room().as_bytes());
+            let delete = evicted.iter().map(|file| crate::cache::key(&room, crate::cache::part::FILE, Some(&crate::engine::feed::hex(file.as_bytes())))).collect();
+            let id = IoId(self.next_id);
+            self.next_id += 1;
+            self.pending.insert(id, Pending::CacheDelete);
+            out.push(Effect::Store { id, op: StoreOp::Put { put: Vec::new(), delete } });
         }
         if fed || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
             let _ = self.board.finish(now_ms);
@@ -358,8 +457,12 @@ impl App {
             self.lens.reading = self.board.model.reading;
             self.view_wake = crate::views::render(&self.board.model, &self.lens, now_ms, &mut self.next_view);
         }
+        let engine_wake = engine.next_wake();
+        if stopped {
+            self.closed(now_ms, out);
+        }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine.next_wake(), model_wake, self.view_wake].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, self.reopen_at].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });

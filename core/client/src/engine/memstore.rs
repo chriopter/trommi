@@ -114,6 +114,11 @@ impl Writes {
         Some(write)
     }
 
+    /// The revision the shell's store holds once every write handed out so far is applied.
+    pub fn revision(&self) -> u64 {
+        self.shell_revision
+    }
+
     /// A write failed in the shell: the device's memory is ahead of what is stored, and it may write no more.
     pub fn lose(&mut self) {
         lock(&self.inner).lost = true;

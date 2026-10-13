@@ -234,7 +234,12 @@ impl Board {
                 m.apply_presence_event(&event, c, now);
             }
             Report::Here => m.apply_here(c, now),
-            Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::Stopped(_) => {}
+            Report::Relay(received) => {
+                if let Received::StrokePiece { from, board, piece } = &**received {
+                    m.apply_stroke_piece(&hex(from.as_bytes()), &hex(board.as_bytes()), piece, now, c);
+                }
+            }
+            Report::InviteRequest { .. } | Report::FileEvicted { .. } | Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::Stopped(_) => {}
         }
     }
 

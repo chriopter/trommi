@@ -5,14 +5,23 @@
 //!
 //! - sign-in: a challenge and a token per device, checked with `hub_auth::verify`; a token lives ten minutes of
 //!   the sim's clock; no roles but `human` and `agent`;
-//! - visibility: every signed-in device is served every item of the room (the real hub serves what the asker may
-//!   see);
+//! - visibility: every signed-in device is served every item of the room: right for a human device (the real hub
+//!   serves a human device all of the room), not for an agent or helper device, which asks nothing over HTTP here;
 //! - envelopes: filed by their header; refused as `gap` unless the number is the next of its chain; no other check
 //!   (no epoch, no membership, no void records unless a test makes one);
-//! - `GET /v1/changes`: `head` is the room's newest change; `active=1` is not told apart from all;
+//! - `GET /v1/changes`: `head` is the room's newest change; `active=1` leaves out the archived sessions;
 //! - Welcomes: kept until the test drops them (the real hub deletes one when its device writes in the group);
-//! - the Desk: an object is open while the header of its newest envelope says so (the real hub replays 9.2);
-//!   `active=1` is not told apart; never truncated unless a test says so; registers are not served;
+//! - the Desk: an object is open while the header of its newest envelope says so (the real hub replays 9.2); the
+//!   order is by `first_change` alone (the real hub puts the knocking ones first), `urgency` and `owner` are made
+//!   up; `active=1` and `archived=1` as the real hub; cut as the real hub cuts (1000 objects of a kind, one budget of
+//!   envelope bytes, 20 000 registers); every writer's newest value per register is served;
+//! - `POST /v1/key-packages/claim`: a human device claims of any device (the real hub also lets an opener claim for
+//!   its helper session);
+//! - `GET /v1/rooms/{room}/groups`: every group to every device, in one order of the stand-in's own; `stale` by the
+//!   core's rule under the newest room state, `room_epoch` the one of the group's last Commit;
+//! - the stream's events beside the order: a Welcome to each device added, relays to the human devices but the sender, wishes to the human
+//!   devices (a device keeps every wish, not its 16 newest), an archived session to its leaves, an evicted file
+//!   to the human devices (not to the leaves of its group);
 //! - files, pushes, accounts, invites, recovery: not there.
 
 #![allow(dead_code)]
@@ -31,6 +40,11 @@ use trommi_core::store::{OutboxEntry, OutboxKind};
 use trommi_core::Error;
 
 pub const HUB_URL: &str = "https://hub.example";
+/// The real hub lists at most so many open objects of a kind on the Desk.
+pub const DESK_MAX: usize = 1000;
+/// The real Desk's one budget of envelope bytes, and its most registers.
+pub const DESK_BYTES: usize = 8 << 20;
+pub const DESK_REGISTERS: usize = 20_000;
 
 /// One entry of the room's order.
 #[derive(Clone)]
@@ -60,10 +74,29 @@ impl Item {
                 }
                 v
             }
-            Item::Envelope { change, bytes, void_code, seq, .. } => {
-                json!({ "change": change, "kind": "envelope", "envelope": b64(bytes), "received_at": 0, "void_code": void_code, "seq": seq })
+            Item::Envelope { .. } => {
+                let mut v = self.served();
+                v["kind"] = json!("envelope");
+                v
             }
         }
+    }
+    /// An envelope as a route serves it that brings envelopes alone (the Desk, an object, a Chat).
+    pub fn served(&self) -> Value {
+        let Item::Envelope { change, bytes, void_code, .. } = self else { return self.json() };
+        let mut v = json!({ "change": change, "envelope": b64(bytes), "received_at": 0 });
+        if let Some(code) = void_code {
+            v["void_code"] = json!(code);
+        }
+        v
+    }
+    /// An envelope as a link of its sender's chain.
+    pub fn link(&self) -> Value {
+        let mut v = self.served();
+        if let Item::Envelope { seq, .. } = self {
+            v["seq"] = json!(seq);
+        }
+        v
     }
     /// As the stream sends it.
     pub fn sse(&self) -> Vec<u8> {
@@ -110,14 +143,8 @@ pub struct No {
 fn no(error: Error) -> No {
     let code = error.code();
     No {
-        status: match code {
-            "unauthorised" | "bad-challenge" => 401,
-            "not-member" | "forbidden" | "wrong-sender" => 403,
-            "not-found" => 404,
-            "gone" => 410,
-            "bad-format" => 400,
-            _ => 409,
-        },
+        // (the status the protocol gives the code: the codec takes a refusal only under its own)
+        status: trommi_client_core::hub::status_of(code).unwrap_or(409),
         code: code.to_string(),
         voided: false,
     }
@@ -153,7 +180,6 @@ impl SessionFacts for Sessions<'_> {
 /// What a test makes of the next requests: looked at before the hub answers.
 pub type Fault = Box<dyn FnMut(u64, &HttpRequest) -> Option<Result<HttpResponse, IoError>>>;
 
-#[derive(Default)]
 pub struct Hub {
     pub change: u64,
     pub order: Vec<Item>,
@@ -174,8 +200,13 @@ pub struct Hub {
     /// Every request that reached the hub, as "METHOD /path?query".
     pub seen: Vec<String>,
     pub fault: Option<Fault>,
-    /// The streams that are open: the device, and the last change sent on it.
-    pub streaming: Vec<(DeviceId, u64)>,
+    /// The streams that are open: the device, the last change sent on it, and how many of `notes` it was past.
+    pub streaming: Vec<(DeviceId, u64, usize)>,
+    /// The stream's events beside the order (relays, wishes, archived sessions, evicted files): to whom, and the
+    /// event as the stream sends it. Never replayed: a stream opened later does not get them.
+    pub notes: Vec<(Vec<DeviceId>, Vec<u8>)>,
+    /// The wishes (`POST /v1/requests`): id, device, kind, group, the hub's clock.
+    pub wishes: Vec<(u64, DeviceId, String, Option<GroupId>, u64)>,
     /// The `head` a page of the hub's order names; none: the truth.
     pub head_lie: Option<u64>,
     /// The chains of these senders are served cut short before this number (a hub that withholds).
@@ -187,6 +218,8 @@ pub struct Hub {
     pub objects: BTreeMap<trommi_core::ids::ObjectId, Obj>,
     /// The Desk says it was cut short.
     pub desk_truncated: bool,
+    /// Every writer's newest value per register: the change of its envelope.
+    pub registers: BTreeMap<(GroupId, DeviceId, Vec<u8>), u64>,
     /// The `first_change` the Desk names for every object; none: the truth.
     pub first_change_lie: Option<u64>,
     /// Every SealedKey the hub was posted, in order (8.3).
@@ -195,8 +228,59 @@ pub struct Hub {
     pub read_fits: Option<usize>,
     /// A page of a group's log holds at most so many entries, whatever was asked.
     pub log_max: Option<usize>,
+    /// A page of the room's groups holds at most so many, whatever was asked.
+    pub groups_max: Option<usize>,
+    /// Every refusal the hub answered, as "METHOD /path: code".
+    pub refused: Vec<String>,
     /// Groups the hub says it does not know (`not-found`) on the read routes.
     pub unseen: BTreeSet<GroupId>,
+    /// The Desk's one budget of envelope bytes (the real hub's 8 MiB) and its most registers (20 000); a test may
+    /// lower them.
+    pub desk_bytes_max: usize,
+    pub desk_registers_max: usize,
+}
+
+impl Default for Hub {
+    fn default() -> Self {
+        Hub {
+            change: 0,
+            order: Vec::new(),
+            room: None,
+            sessions: BTreeMap::new(),
+            archived: BTreeSet::new(),
+            epochs: BTreeMap::new(),
+            log_n: BTreeMap::new(),
+            group_infos: BTreeMap::new(),
+            welcomes: Vec::new(),
+            pools: BTreeMap::new(),
+            chains: BTreeMap::new(),
+            answers: BTreeMap::new(),
+            challenges: Vec::new(),
+            counter: 0,
+            tokens: BTreeMap::new(),
+            seen: Vec::new(),
+            fault: None,
+            streaming: Vec::new(),
+            notes: Vec::new(),
+            wishes: Vec::new(),
+            head_lie: None,
+            withhold: BTreeMap::new(),
+            page_max: None,
+            hidden: BTreeSet::new(),
+            objects: BTreeMap::new(),
+            desk_truncated: false,
+            registers: BTreeMap::new(),
+            first_change_lie: None,
+            rows: Vec::new(),
+            read_fits: None,
+            log_max: None,
+            groups_max: None,
+            refused: Vec::new(),
+            unseen: BTreeSet::new(),
+            desk_bytes_max: DESK_BYTES,
+            desk_registers_max: DESK_REGISTERS,
+        }
+    }
 }
 
 fn part(entry: &OutboxEntry, at: usize) -> &[u8] {
@@ -274,6 +358,8 @@ impl Hub {
                 self.counter += 1;
                 self.welcomes.push(Welcome { id: self.counter, group, bytes: welcome.to_vec(), device: *device });
             }
+            // (the stream tells each device added that a Welcome waits)
+            self.note(adds.to_vec(), "welcome", json!({ "group_id": b64(group.as_bytes()) }));
         }
         json!({ "epoch": epoch + 1, "change": change })
     }
@@ -344,6 +430,13 @@ impl Hub {
                     return Err(no(Error::WrongEpoch));
                 }
                 if entry.kind == OutboxKind::RelayMessage {
+                    // (7.2: the room group alone, to the human devices but the sender, never stored)
+                    if !group.is_room() {
+                        return Err(no(Error::Forbidden));
+                    }
+                    let to = self.humans().into_iter().filter(|d| d != from).collect();
+                    let data = json!({ "group_id": b64(group.as_bytes()), "epoch": entry.epoch, "sender": from.to_base64url(), "message": b64(part(entry, 0)) });
+                    self.note(to, "relay", data);
                     return Ok(json!({ "n": null }));
                 }
                 let (_, n) = self.append(group, false, entry.epoch, part(entry, 0), None, from);
@@ -366,16 +459,17 @@ impl Hub {
                 Ok(json!({ "room_id": group.room_id().to_base64url() }))
             }
             OutboxKind::GroupFounding => {
-                let group = entry.group.ok_or(no(Error::BadFormat))?;
-                if self.epochs.contains_key(&group) {
-                    return Err(no(Error::RoomExists));
-                }
                 let posted = PostedCommit { commit: part(entry, 2), group_info: part(entry, 3), welcome: optional(part(entry, 4)), sealed_key: part(entry, 5), recovery_auth: None, base_group_info: None };
                 let room = self.room.as_ref().ok_or(no(Error::NoRoom))?;
                 let context = Context { room: room.history(), sessions: &Sessions { sessions: &self.sessions, archived: &self.archived }, recovery: &PublicRules, max_human_devices: MAX_HUMAN_DEVICES };
                 let (observer, facts) = Observer::found_session(part(entry, 0), part(entry, 1), &posted, &context).map_err(no)?;
-                if facts.committer != *from || observer.group() != group {
+                // (over HTTP the group is the founding's own: the request does not name it)
+                let group = observer.group();
+                if facts.committer != *from || entry.group.is_some_and(|named| named != group) {
                     return Err(no(Error::WrongSender));
+                }
+                if self.epochs.contains_key(&group) {
+                    return Err(no(Error::RoomExists));
                 }
                 self.sessions.insert(group, observer);
                 self.group_infos.insert((group, 0), part(entry, 0).to_vec());
@@ -420,6 +514,9 @@ impl Hub {
                 }
                 *head = seq;
                 self.change += 1;
+                if let trommi_core::envelope::Subject::Register(register) = &header.subject {
+                    self.registers.insert((group, sender, register.as_bytes().to_vec()), self.change);
+                }
                 if let Some(fields) = header.subject.object() {
                     use trommi_core::envelope::{ObjectState, ObjectType, Subject};
                     let change = self.change;
@@ -485,6 +582,40 @@ impl Hub {
         *self.chains.entry((group, sender)).or_default() += 1;
     }
 
+    /// The human devices of the room's newest state.
+    pub fn humans(&self) -> Vec<DeviceId> {
+        self.room.as_ref().and_then(Observer::history).map(|h| h.newest().humans.iter().copied().collect()).unwrap_or_default()
+    }
+
+    /// An event beside the order for `to`.
+    pub fn note(&mut self, to: Vec<DeviceId>, name: &str, data: Value) {
+        self.notes.push((to, format!("event: {name}\ndata: {data}\n\n").into_bytes()));
+    }
+
+    /// A device's wish to the human devices (`POST /v1/requests`), at the hub's clock `at`. Returns its id.
+    pub fn wish(&mut self, device: &DeviceId, kind: &str, group: Option<GroupId>, at: u64) -> u64 {
+        self.counter += 1;
+        let id = self.counter;
+        self.wishes.push((id, *device, kind.to_string(), group, at));
+        let to = self.humans();
+        self.note(to, "request", json!({ "id": id, "kind": kind, "device": device.to_base64url(), "group_id": group.map(|g| b64(g.as_bytes())), "n": null }));
+        id
+    }
+
+    /// The hub deletes a file (11.3): the human devices are told.
+    pub fn evict(&mut self, file: &trommi_core::ids::FileId) {
+        let to = self.humans();
+        self.note(to, "file_evicted", json!({ "file_id": file.to_base64url() }));
+    }
+
+    /// A human device archives a session (5.2.10): its leaves are told.
+    pub fn archive(&mut self, group: &GroupId) {
+        if self.archived.insert(*group) {
+            let to = self.observer(group).and_then(|o| o.leaves().ok()).unwrap_or_default().into_iter().collect();
+            self.note(to, "presence", json!({ "group_id": b64(group.as_bytes()), "archived": true }));
+        }
+    }
+
     /// Ends every token: the next request of each device is `unauthorised`.
     pub fn end_tokens(&mut self) {
         self.tokens.clear();
@@ -499,8 +630,14 @@ impl Hub {
         let path = request.url.strip_prefix(HUB_URL).unwrap_or("/nowhere").to_string();
         self.seen.push(format!("{} {path}", request.method));
         Ok(match self.route(now, request, &path) {
-            Ok(body) => answer(200, body),
-            Err(n) => answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided })),
+            Ok(body) => {
+                super::shape::check(&request.method, &path, &body);
+                answer(200, body)
+            }
+            Err(n) => {
+                self.refused.push(format!("{} {path}: {}", request.method, n.code));
+                answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided }))
+            }
         })
     }
 
@@ -537,7 +674,7 @@ impl Hub {
                     return Err(no(Error::NotMember));
                 };
                 self.counter += 1;
-                let token = format!("token-{}", self.counter);
+                let token = format!("token-of-the-stand-in-{}", self.counter);
                 self.tokens.insert(token.clone(), (device, now + 600_000));
                 return Ok(json!({ "token": token, "expires_at": now + 600_000, "role": role }));
             }
@@ -548,11 +685,14 @@ impl Hub {
             ("GET", ["v1", "changes"]) => {
                 let (after, limit) = (num("after"), num("limit").clamp(1, 1000) as usize);
                 let only: Option<GroupId> = q("group").and_then(|g| base64url_decode(g).ok()).and_then(|b| GroupId::from_bytes(&b).ok());
+                // (point 46: `active=1` leaves out what lies in an archived session)
+                let active = q("active") == Some("1");
                 let limit = limit.min(self.page_max.unwrap_or(usize::MAX));
                 let mut items: Vec<&Item> = self
                     .order
                     .iter()
                     .filter(|i| i.change() > after && !self.hidden.contains(&i.change()) && only.is_none_or(|g| i.group() == g && matches!(i, Item::Envelope { .. })))
+                    .filter(|i| !active || !self.archived.contains(&i.group()))
                     .collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
@@ -634,33 +774,77 @@ impl Hub {
                     .order
                     .iter()
                     .filter(|i| matches!(i, Item::Envelope { group: g, sender: s, seq, .. } if *g == group && *s == sender && *seq > after && *seq < stop))
-                    .map(Item::json)
+                    .map(Item::link)
                     .collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "items": items, "more": more }))
             }
             ("GET", ["v1", "desk"]) => {
-                let item = |change: u64| self.order.iter().find(|i| i.change() == change).map(Item::json);
-                let list = |request: bool| -> Vec<Value> {
-                    self.objects
-                        .iter()
-                        .filter(|(_, o)| o.open && (o.card || o.request) && o.request == request)
-                        .map(|(id, o)| {
-                            json!({ "object_id": id.to_base64url(), "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "answered_at": 0,
-                                "owner": DeviceId::new([0; 32]).to_base64url(), "first_change": self.first_change_lie.unwrap_or(o.first_change), "head_change": o.head_change,
-                                "version": item(o.version), "version_change": o.version })
-                        })
-                        .collect()
+                let item = |change: u64| self.order.iter().find(|i| i.change() == change).map(Item::served);
+                // (point 46: `active=1` the live sessions alone, `archived=1` the archived ones alone)
+                let (active, archived) = (q("active") == Some("1"), q("archived") == Some("1"));
+                let sees = |group: &GroupId| {
+                    let live = !self.archived.contains(group);
+                    !(active && !live || archived && live)
                 };
-                Ok(json!({ "cards": list(false), "permission_requests": list(true), "notes": [], "artifacts": [], "registers": [], "truncated": self.desk_truncated, "change": self.change }))
+                // As the real hub: by first_change, at most 1000 of a kind, one budget of envelope bytes for the whole
+                // Desk (the first item always goes in), at most 20 000 registers, and `truncated` when one was cut.
+                let mut bytes = 0usize;
+                let mut any = false;
+                let mut cut = false;
+                let list = |request: bool, bytes: &mut usize, any: &mut bool, cut: &mut bool| -> Vec<Value> {
+                    let mut open: Vec<_> = self.objects.iter().filter(|(_, o)| o.open && (o.card || o.request) && o.request == request && sees(&o.group)).collect();
+                    open.sort_by_key(|(_, o)| o.first_change);
+                    let mut rows = Vec::new();
+                    for (id, o) in open {
+                        if rows.len() >= DESK_MAX {
+                            *cut = true;
+                            break;
+                        }
+                        let version = item(o.version);
+                        *bytes += version.as_ref().and_then(|v| v["envelope"].as_str()).map_or(0, str::len);
+                        if *bytes > self.desk_bytes_max && *any {
+                            *cut = true;
+                            break;
+                        }
+                        rows.push(json!({ "object_id": id.to_base64url(), "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "answered_at": 0,
+                            "owner": DeviceId::new([0; 32]).to_base64url(), "first_change": self.first_change_lie.unwrap_or(o.first_change), "head_change": o.head_change,
+                            "version": version }));
+                        *any = true;
+                    }
+                    rows
+                };
+                let cards = list(false, &mut bytes, &mut any, &mut cut);
+                let requests = list(true, &mut bytes, &mut any, &mut cut);
+                let mut newest: Vec<(u64, GroupId)> = self.registers.iter().map(|((group, ..), change)| (*change, *group)).collect();
+                newest.sort_unstable();
+                let mut registers: Vec<Value> = Vec::new();
+                for (change, group) in newest {
+                    if !sees(&group) {
+                        continue;
+                    }
+                    if registers.len() >= self.desk_registers_max {
+                        cut = true;
+                        break;
+                    }
+                    let Some(served) = item(change) else { continue };
+                    bytes += served["envelope"].as_str().map_or(0, str::len);
+                    if bytes > self.desk_bytes_max {
+                        cut = true;
+                        break;
+                    }
+                    registers.push(served);
+                }
+                Ok(json!({ "cards": cards, "permission_requests": requests, "notes": [], "artifacts": [], "registers": registers, "groups": [],
+                    "truncated": self.desk_truncated || cut, "change": self.change }))
             }
             ("GET", ["v1", kind @ ("cards" | "permission-requests"), object]) => {
                 let _ = kind;
                 let id = trommi_core::ids::ObjectId::from_base64url(object).map_err(no)?;
                 let o = self.objects.get(&id).ok_or(no(Error::NotFound))?;
                 let (after, limit) = (num("after"), num("limit").clamp(1, 2000) as usize);
-                let mut items: Vec<Value> = o.envelopes.iter().filter(|c| **c > after).filter_map(|c| self.order.iter().find(|i| i.change() == *c).map(Item::json)).collect();
+                let mut items: Vec<Value> = o.envelopes.iter().filter(|c| **c > after).filter_map(|c| self.order.iter().find(|i| i.change() == *c).map(Item::served)).collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "object_id": object, "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "owner": DeviceId::new([0; 32]).to_base64url(),
@@ -677,7 +861,63 @@ impl Hub {
                 }
                 self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::KeyPackages, group: None, epoch: 0, parts })
             }
+            ("GET", ["v1", "rooms", _, "groups"]) => {
+                // (every group in one list, numbered from 1 in a fixed order; `stale` is not told)
+                let (after, limit) = (num("after") as usize, num("limit").clamp(1, 1000) as usize);
+                let limit = limit.min(self.groups_max.unwrap_or(usize::MAX));
+                let history = self.room.as_ref().and_then(Observer::history);
+                let facts = Sessions { sessions: &self.sessions, archived: &self.archived };
+                let row = |o: &Observer, kind: &str| {
+                    let session = o.session();
+                    let parent = session.filter(|s| s.parent != SessionId::ZERO).map(|s| s.parent.to_base64url());
+                    // (5.2.8 under the newest room state, the one predicate of the hub and every device)
+                    let stale = history.is_some_and(|h| o.staleness(h, h.newest(), &facts).is_ok_and(|s| s.is_stale()));
+                    json!({ "group_id": b64(o.group().as_bytes()), "kind": kind, "epoch": o.epoch().unwrap_or(0), "room_epoch": o.previous_room_epoch(),
+                        "leaves": o.leaves().unwrap_or_default().iter().map(DeviceId::to_base64url).collect::<Vec<_>>(),
+                        "live": !self.archived.contains(&o.group()), "stale": stale, "parent": parent, "session_id": session.map(|s| s.session_id.to_base64url()) })
+                };
+                let mut rows: Vec<Value> = self.room.iter().map(|o| row(o, "room")).collect();
+                rows.extend(self.sessions.values().map(|o| row(o, if o.session().is_some_and(|s| s.parent != SessionId::ZERO) { "helper" } else { "main" })));
+                let page: Vec<Value> = rows.iter().skip(after).take(limit).cloned().collect();
+                let end = after + page.len();
+                Ok(json!({ "items": page, "more": end < rows.len(), "after": end }))
+            }
+            ("POST", ["v1", "key-packages", "claim"]) => {
+                // (a human device claims; an agent only as the opener of a helper session, which no test asks here)
+                if !self.humans().contains(&device) {
+                    return Err(no(Error::Forbidden));
+                }
+                let asked: Vec<DeviceId> = body["devices"].as_array().into_iter().flatten().filter_map(|d| d.as_str().and_then(|s| DeviceId::from_base64url(s).ok())).collect();
+                let has = |p: &Pool| !p.single_use.is_empty() || p.last_resort.is_some();
+                if asked.is_empty() || asked.len() != body["devices"].as_array().map_or(0, Vec::len) {
+                    return Err(no(Error::BadFormat));
+                }
+                // (all or nothing, unless `partial`: then the devices without one are left out)
+                if body["partial"] != json!(true) && !asked.iter().all(|d| self.pools.get(d).is_some_and(has)) {
+                    return Err(no(Error::NotFound));
+                }
+                let mut claimed = serde_json::Map::new();
+                let mut missing = Vec::new();
+                for device in asked {
+                    match self.pools.get_mut(&device).filter(|p| has(p)) {
+                        Some(pool) => {
+                            let package = pool.single_use.pop().or_else(|| pool.last_resort.clone()).expect("checked");
+                            claimed.insert(device.to_base64url(), json!(b64(&package)));
+                        }
+                        None => missing.push(device.to_base64url()),
+                    }
+                }
+                let mut answer = json!({ "key_packages": claimed });
+                if body["partial"] == json!(true) {
+                    answer["missing"] = json!(missing);
+                }
+                Ok(answer)
+            }
             ("POST", ["v1", "envelopes"]) => self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::Envelope, group: None, epoch: 0, parts: vec![bytes("envelope")] }),
+            ("POST", ["v1", "groups"]) => {
+                let parts = vec![bytes("group_info_0"), bytes("sealed_key_0"), bytes("commit"), bytes("group_info"), bytes("welcome"), bytes("sealed_key")];
+                self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::GroupFounding, group: None, epoch: 0, parts })
+            }
             ("POST", ["v1", "groups", _, "commits"]) => {
                 let external = body.get("recovery_auth").is_some_and(Value::is_string);
                 let parts = if external {
@@ -693,7 +933,30 @@ impl Hub {
                 self.post(&device, &OutboxEntry { id: 0, kind, group: Some(group_at(2)?), epoch: body["epoch"].as_u64().unwrap_or(0), parts: vec![bytes("message")] })
             }
             ("POST", ["v1", "groups", _, "reject"]) => Ok(json!({ "id": 1 })),
-            ("POST", ["v1", "requests"]) => Ok(json!({ "id": 1 })),
+            ("POST", ["v1", "requests"]) => {
+                let kind = body["kind"].as_str().filter(|k| ["readmit", "handover", "session"].contains(k)).ok_or(no(Error::BadFormat))?.to_string();
+                let group = body["group"].as_str().and_then(|g| base64url_decode(g).ok()).and_then(|b| GroupId::from_bytes(&b).ok());
+                Ok(json!({ "id": self.wish(&device, &kind, group, now) }))
+            }
+            ("GET", ["v1", "requests"]) => {
+                // (a human device sees every wish of the room, another device its own)
+                let human = self.humans().contains(&device);
+                Ok(Value::Array(
+                    self.wishes
+                        .iter()
+                        .filter(|(_, d, ..)| human || *d == device)
+                        .map(|(id, d, kind, group, at)| json!({ "id": id, "device": d.to_base64url(), "kind": kind, "group_id": group.map(|g| b64(g.as_bytes())), "key_package": null, "n": null, "at": at, "committer": null }))
+                        .collect(),
+                ))
+            }
+            ("POST", ["v1", "groups", _, "archive"]) => {
+                let group = group_at(2)?;
+                if group.is_room() || !self.sessions.contains_key(&group) {
+                    return Err(no(Error::NotFound));
+                }
+                self.archive(&group);
+                Ok(json!({ "archived": true }))
+            }
             _ => Err(no(Error::NotFound)),
         }
     }
@@ -715,20 +978,25 @@ impl Hub {
             bytes.extend(item.sse());
         }
         bytes.extend(b"event: here\ndata: {}\n\n");
-        self.streaming.retain(|(d, _)| *d != device);
-        self.streaming.push((device, self.change.max(after)));
+        self.streaming.retain(|(d, ..)| *d != device);
+        self.streaming.push((device, self.change.max(after), self.notes.len()));
         vec![StreamItem::Opened { status: 200, headers: vec![Header { name: "content-type".into(), value: "text/event-stream".into() }] }, StreamItem::Chunk { bytes: bytes.into() }]
     }
 
     /// What the open stream of `device` has not been sent yet, as one chunk; none when nothing is new.
     pub fn stream_news(&mut self, device: &DeviceId) -> Option<Vec<u8>> {
-        let at = self.streaming.iter().position(|(d, _)| d == device)?;
-        let sent = self.streaming[at].1;
+        let at = self.streaming.iter().position(|(d, ..)| d == device)?;
+        let (_, sent, noted) = self.streaming[at];
         let mut bytes = Vec::new();
         for item in self.order.iter().filter(|i| i.change() > sent && !self.hidden.contains(&i.change())) {
             bytes.extend(item.sse());
         }
-        self.streaming[at].1 = self.change.max(sent);
+        for (to, note) in &self.notes[noted..] {
+            if to.contains(device) {
+                bytes.extend(note);
+            }
+        }
+        self.streaming[at] = (*device, self.change.max(sent), self.notes.len());
         (!bytes.is_empty()).then_some(bytes)
     }
 }
