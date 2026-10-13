@@ -1,4 +1,4 @@
-Your agents ring. You decide.
+Your agents ring. Answer anywhere.
 
 Claude Code and Codex ask as cards on your Mac. One click, and they keep working. End-to-end encrypted.
 
@@ -17,7 +17,7 @@ THE SAME BOARD EVERYWHERE
 Your Mac, your iPhone and the web app show the same Desk. Answer on one, and it is answered on all.
 
 END-TO-END ENCRYPTED
-Cards, answers, chats, notes and files are encrypted on your devices with MLS, the IETF standard for group messaging. The server delivers sealed envelopes and holds no key that opens them. App, connector and server are open source.
+Cards, answers, chats, notes and files are encrypted on your devices with MLS, the IETF standard for group messaging. The server delivers sealed envelopes and holds no key that opens them. App, connector and server are open code under the O'Saasy license: read it, change it, host it yourself.
 
 HOW IT CONNECTS
 Trommi works with agents you run yourself. On a Linux or macOS machine with Claude Code or Codex, install the Trommi connector once, then connect a session with the invite link from "Invite Agent…" in the app. Compare six emoji, confirm, and the session's next question lands on your Desk. Instructions: trommi.com

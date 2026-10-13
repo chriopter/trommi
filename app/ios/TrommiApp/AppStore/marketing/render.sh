@@ -17,7 +17,7 @@ trap 'rm -rf "$work"' EXIT
 
 # file name | headline | the words underlined (the end of the headline) | the line under it
 shots='01-note|End-to-end encrypted.|encrypted.|Notes, cards and chats are sealed on your phone.
-02-desk|Your agents ring. You decide.|decide.|Claude Code and Codex ask as cards on your phone.
+02-desk|Your agents ring. Answer anywhere.|anywhere.|Claude Code and Codex ask as cards on your phone.
 03-decision|Every question as a card.|card.|Pictures, options, a page to try. One tap answers.
 04-chat|One tap, they keep working.|working.|Chat with every session, wherever you are.
 05-scribble-board|Draw it, send it.|send it.|Sketch on the Scribble Board, send the part that matters.'

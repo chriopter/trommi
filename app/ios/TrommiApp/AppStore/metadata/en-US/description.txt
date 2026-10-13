@@ -1,4 +1,4 @@
-Your agents ring. You decide.
+Your agents ring. Answer anywhere.
 
 Claude Code and Codex ask as cards on your phone. One tap, and they keep working. End-to-end encrypted.
 
@@ -17,7 +17,7 @@ NOTES AND THE SCRIBBLE BOARD
 Jot a note or draw on the Scribble Board, then send what you selected to an agent.
 
 END-TO-END ENCRYPTED
-Cards, answers, chats, drawings and files are encrypted on your devices with MLS, the IETF standard for group messaging. The server delivers sealed envelopes and holds no key that opens them. App, connector and server are open source.
+Cards, answers, chats, drawings and files are encrypted on your devices with MLS, the IETF standard for group messaging. The server delivers sealed envelopes and holds no key that opens them. App, connector and server are open code under the O'Saasy license: read it, change it, host it yourself.
 
 HOW IT CONNECTS
 Trommi works with agents you run yourself. On a Linux or macOS machine with Claude Code or Codex, install the Trommi connector once, then connect a session with the invite link from "Invite Agent…" in the app. Compare six emoji, confirm, and the session's next question lands on your Desk. Instructions: trommi.com
