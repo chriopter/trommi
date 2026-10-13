@@ -59,6 +59,14 @@
 //!
 //! [`feed::Board`] turns the reports into the board model (`crate::model`), which the views are made from.
 //!
+//! # Joining the room with the code
+//!
+//! A slot without a device in a room joins with the recovery code ([`sync::room_join`], [`Engine::join_room`]): signed
+//! in with the code's key it reads the room's sealed keys, the room group's GroupInfos, its live sessions and its
+//! Commits (no content), lets the protocol core check the room from its founding, and posts the join. Until it is
+//! posted a failure leaves nothing stored; once posted, the device's outbox carries it across a restart
+//! ([`OpenError::Interrupted`]), and the hub's answer or the room's log decides it. Then the sessions follow.
+//!
 //! # A sign-in's sessions
 //!
 //! A device that signed in with the code joins its session groups from outside ([`sync::joins`]): what the joins
@@ -107,7 +115,7 @@ pub mod feed;
 pub mod memstore;
 pub mod sync;
 
-pub use sync::{Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
+pub use sync::{room_join, Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
 
 /// The device inside the engine: the protocol core's, over the store whose writes become barrier effects.
 pub type Device = trommi_core::device::Device<memstore::MemStore>;
