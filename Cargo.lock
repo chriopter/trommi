@@ -3176,6 +3176,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "trommi-io"
+version = "0.0.0"
+dependencies = [
+ "reqwest",
+ "tokio",
+ "trommi-client-core",
+ "trommi-connector",
+ "trommi-core",
+]
+
+[[package]]
 name = "trommi-tests"
 version = "0.0.0"
 dependencies = [
