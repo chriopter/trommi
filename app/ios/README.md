@@ -214,20 +214,20 @@ app/ios/TrommiApp/AppStore/ship-local.sh            # about 5 minutes to the upl
 target `Trommi` that links the package's `TrommiApp` library, with the app icon, the production entitlements and the
 Info.plist keys xtool adds; one extension target each. Linux builds do not use it.
 
-**The Xcode path** (the repository's `.github/workflows/deploy_ios.yml` with `.github/scripts/ios_testflight.sh` on a
+**The Xcode path** (the repository's `.github/workflows/ship-apple.yml` with `.github/scripts/ios_testflight.sh` on a
 Mac runner, uploaded to TestFlight). The archive is signed ad hoc (`.github/scripts/ios_archive.sh`: identity "-", no
 profile, no key, so no certificate is made per run); only the export signs, with the cloud-managed Apple
 Distribution certificate through the App Store Connect key. The IPA's entitlements are then checked against the four
 `.entitlements` files (`ios_entitlements.py`), and that very file is uploaded through the App Store Connect Build
 Uploads API (`asc.py upload`; no second Xcode export; the repository variable `IOS_UPLOADER=xcode` goes back to the
-export with destination upload). The iOS app has its own workflow, `.github/workflows/ios.yml`, so `build.yml` never
-waits for it: after a run of `build.yml` on main whose core check passed (or was skipped) and whose commit's iOS
-inputs differ from those last delivered (`.github/scripts/ios_delivered.sh`), it checks the client, builds the core on
-the Mac and calls `deploy_ios.yml`; the upload checks the same again first (`.github/scripts/ios_release_gate.sh`:
-that build run of main, its core check, the iOS inputs). By hand, Actions -> deploy_ios with `dry_run` signs and checks everything and
-uploads nothing. The Mac job ends with the upload; waiting for App Store Connect to
+export with destination upload). The apps have their own pipeline, `.github/workflows/ship-apple.yml`, so no other
+part waits for them: on a push to main that changed them, when their inputs differ from those last delivered
+(`.github/scripts/ios_delivered.sh`), it runs the client's tests (and the core's, when it changed), builds the core on
+the Mac and archives and uploads; the upload checks the same again first (`.github/scripts/ios_release_gate.sh`: that
+run's checks, the iOS inputs). By hand, Actions -> ship-apple, action testflight-again with `run_id` and `dry_run`
+signs and checks everything and uploads nothing. The Mac job ends with the upload; waiting for App Store Connect to
 process the build, the group and "What to Test" run in a Linux job after it (`ios_testflight.sh after`). The core for
-Swift is built once per change of `core/`, `Cargo.*` or `rust-toolchain.toml` (and Xcode): `ios.yml` keeps its
+Swift is built once per change of `core/`, `Cargo.*` or `rust-toolchain.toml` (and Xcode): `ship-apple.yml` keeps its
 output in the Actions cache under the hash of those paths, and CI leaves out the simulator library
 (`TROMMI_SIMULATOR=0`). What it needs from this folder:
 
@@ -274,8 +274,8 @@ distribution signing refuses App Manager keys: the key needs the Admin role.
 
 ### Crash reports
 
-`.github/workflows/ios_crashes.yml` reads the TestFlight crash reports every night (the last day) and by hand
-(Actions → ios_crashes → Run workflow, the last `days` days) with the same App Store Connect key, read only
+`.github/workflows/nightly.yml` (job `ios_crashes`) reads the TestFlight crash reports every night (the last day) and
+by hand (Actions → nightly → Run workflow, the last `days` days) with the same App Store Connect key, read only
 (`.github/scripts/ios_crashes.sh`, `asc.py crashes`): the crash feedback testers send, each with its crash log, and
 the diagnostic signatures (hangs, launches, disk writes) of the three newest builds. The artifact `ios-crashes` (30
 days) holds the logs and `summary.md`; when there were crashes, the open issue labelled `ios-crash` ("TestFlight
@@ -286,7 +286,7 @@ read in App Store Connect (TestFlight → Feedback). Test offline: `python3 -B -
 ## Public beta
 
 TestFlight's public link is the rolling channel; the App Store gets reviewed versions less often, by hand ("App Store
-release"). `deploy_ios.yml` delivers builds of main only (a release): to the internal group "Intern" and, once App
+release"). `ship-apple.yml` delivers builds of main only: to the internal group "Intern" and, once App
 Store Connect has processed it (VALID), to the external group "Trommi"
 (`asc.py external`), with "What to Test" from the newest day of `CHANGELOG.md` (`asc.py whats-new`), and to Beta App
 Review when Apple asks for it (`asc.py beta-review`: the build's external state is `READY_FOR_BETA_SUBMISSION` and it
@@ -355,7 +355,7 @@ Mac over ssh). The window is 1440 x 900 points, drawn at 2880 x 1800 pixels: the
 capsule of the bars' tint, the sidebar's glass as its own paper, the scroll edge under the bars as the page's paper
 fading out over 44 points.
 
-**TestFlight from CI** (`deploy_ios.yml`, jobs `mac` and `mac_processed`, beside the iOS jobs; the steps are
+**TestFlight from CI** (`ship-apple.yml`, jobs `mac` and `mac_processed`, beside the iOS jobs; the steps are
 `.github/scripts/mac_testflight.sh`):
 
 - `asc.py prepare-mac` registers the bundle id of `TrommiMac` (project.yml) with Push Notifications and Associated
@@ -375,8 +375,9 @@ fading out over 44 points.
   `MAC_UPLOADER=xcode` switches to Xcode's own upload. Build numbers are the highest build of the app record plus one (any platform, so an iOS and a Mac build never share one). Then the group
   "Intern" and What to Test; the public group and Beta App Review stay with iOS for now.
 
-**Direct download** (outside the store, Developer ID, notarized): `.github/workflows/mac.yml` with
-`.github/scripts/mac_direct.sh`, attached to every release as `Trommi-macOS.dmg`; README.md "Mac app (direct download)".
+**Direct download** (outside the store, Developer ID, notarized): `.github/workflows/ship-apple.yml` (job
+`mac_direct`) with `.github/scripts/mac_direct.sh`, released as `mac-v<N>` with `Trommi-macOS.dmg`; README.md "Mac app
+(direct download)".
 
 **Once by hand in App Store Connect** (the API cannot create an app record or add a platform to one). A universal
 purchase (one App Store page, one name, the TestFlight groups of both) needs the iOS bundle id `com.trommi.ios` for
@@ -384,7 +385,7 @@ purchase (one App Store page, one name, the TestFlight groups of both) needs the
 (`com.trommi.mac`) needs Apps → + → New App (macOS) under another name than "Trommi", `com.trommi.mac` in the hub's
 `APPLE_APNS_TOPIC` (`hub/deploy/install.sh secrets`) and its app id in the web app's association file.
 
-**App Store** (`release_ios.yml` with platform mac, or `ASC_PLATFORM=MAC_OS store.sh …`): the texts per locale in
+**App Store** (`ship-apple.yml`, an action store-… with platform mac, or `ASC_PLATFORM=MAC_OS store.sh …`): the texts per locale in
 `AppStore/metadata/macos/<locale>` (en-US, de-DE), App Review's notes in `metadata/macos/review_information/notes.txt`,
 the rest of `metadata/` shared with iOS; the screenshots in `AppStore/screenshots/macos/en-US/mac` (2880 x 1800, light
 and dark, the demo, drawn by `TROMMI_MAC_SHOT`). The Mac icon is the iPhone's bell on the Mac's rounded square with
@@ -415,8 +416,8 @@ from the demo on a Mac. Headlines and lines are in `marketing/render.sh`. `store
     AppStore/store.sh status
 
 The key comes from `~/.config/trommi/ios.env` (as `ship-local.sh`) or, under `op run --environment <id>`, from
-`APPLE_ASC_KEY*` of the 1Password Environment. CI: Actions → release_ios → Run workflow, step check / upload / submit /
-release / status (environment `ios`). `upload` sets price (free) and territories (all, see "Export
+`APPLE_ASC_KEY*` of the 1Password Environment. CI: Actions → ship-apple → Run workflow, action store-check / store-upload /
+store-submit / store-release / store-status (environment `ios`). `upload` sets price (free) and territories (all, see "Export
 compliance") only when the app has none; it replaces a screenshot set only when its files changed.
 
 Once by hand in App Store Connect, the API has no route for it: App Privacy, from `metadata/app_privacy.json` (Email

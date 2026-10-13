@@ -1,5 +1,5 @@
 #!/bin/sh
-# After a delivery of the web app (deploy_web.yml): what app.trommi.com serves is this release, byte for byte, and the
+# After a delivery of the web app (ship-web.yml): what app.trommi.com serves is this release, byte for byte, and the
 # page can load. Asked from outside, as a browser asks:
 #   - the start page (/) answers 200 as text/html with its security headers (Strict-Transport-Security,
 #     Content-Security-Policy, Cross-Origin-Opener-Policy) and is the release's public/index.html (SHA-256)

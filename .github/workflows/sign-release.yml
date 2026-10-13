@@ -1,6 +1,6 @@
 # Makes the signed release of one part, in that part's own series: `web-v<version>` (web.tar.gz as delivered to
 # Cloudflare, after the delivery), `hub-v<version>` (the hub and its updater) or `connector-v<version>` (the four
-# connector binaries), all from build.yml. Each has its own manifest.json (release/manifest.sh, product trommi-web,
+# connector binaries), from ship-web.yml, ship-hub.yml and ship-connector.yml. Each has its own manifest.json (release/manifest.sh, product trommi-web,
 # trommi-hub or trommi-connector), made and checked by the part's job, signed here with the release key, with the
 # release notes of what changed since the series' release before. The hub's server takes only `hub-v<N>`, install.sh
 # and `trommi-connector update` only `connector-v<N>`; no browser checks `web-v<N>` (it is the record of what went out
@@ -20,8 +20,8 @@
 #             higher number published already: overtaken, nothing is published.
 #
 # Secrets: the environment `connector` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; SIGN_RELEASE_KEY comes
-# from the 1Password Environment (as in release.yml).
-name: release_part
+# from the 1Password Environment (the only job that sees it).
+name: sign-release
 
 on:
   workflow_call:
@@ -246,7 +246,7 @@ jobs:
               publish/* 2> "$RUNNER_TEMP/create.err" && code=0 || code=$?
             cat "$RUNNER_TEMP/create.err" >&2
             if [ "$code" != 0 ]; then
-              # Overtaken as in release.yml: a later commit changed the workflow files and GitHub refuses the tag.
+              # Overtaken: a later commit changed the workflow files and GitHub refuses the tag.
               if grep -Eq 'HTTP 40[34]' "$RUNNER_TEMP/create.err"; then
                 echo "::notice::$TAG was not published: GitHub refused the tag (a later commit changed the workflow files?); the later run releases"
                 exit 0

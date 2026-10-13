@@ -69,20 +69,20 @@ trails after thirty days. The table per stored thing is in `spec/v1.md`, section
 
 ## Delivery
 
-Every commit on `main` runs `.github/workflows/build.yml`. It checks the parts whose folders changed, and delivers
-each part on its own, as soon as its own checks and the core's passed for the commit, when what that part has out
-there was built from other inputs: `.github/scripts/inputs.sh` hashes, per part (web, connector, ios, hub, updater),
+Each part has its own pipeline on `main` (`.github/workflows/ship-<part>.yml`), started by a push that changed the
+part or the core: it runs the part's full tests (and the core's, when it changed) and delivers the part, on its own,
+when what that part has out there was built from other inputs: `.github/scripts/inputs.sh` hashes, per part (web, connector, ios, hub, updater),
 the files its build reads (as git lists them for the commit: mode, object, path; `core/`, `client/` and the Rust pins
 count for every part, each part's own build and delivery files for it, tests for none), and
 `.github/scripts/deployed.sh` compares that with what is out there. A delivery that failed is therefore made again
-by the next run. There is no release of every part; N is the build's run number (plus `RELEASE_BASE`): it only grows.
+by the next run. There is no release of every part; N is the pipeline's run number (plus its `RELEASE_BASE`): it only grows.
 
 | Part | Build makes | Released as | Delivered when what is out there differs |
 | --- | --- | --- | --- |
-| Web app | `web-release`: the files the worker serves, the worker, its settings, `manifest.json`, `checksums.txt` | nothing (attested) | `deploy_web.yml`: the Cloudflare worker `trommi-app` at https://app.trommi.com, then checked from outside and put back when it does not serve exactly that build |
+| Web app | `web-release`: the files the worker serves, the worker, its settings, `manifest.json`, `checksums.txt` | `web-v<N>`, signed (a record) | `ship-web.yml`: the Cloudflare worker `trommi-app` at https://app.trommi.com, then checked from outside and put back when it does not serve exactly that build |
 | Connector | `connector-release`: four binaries | `connector-v<N>`, signed | the release is the delivery: `install.sh` and `trommi-connector update` take the newest; when the same commit delivers the hub, it is published only once the server runs that hub |
-| iOS app | nothing in `build.yml`; `ios.yml` (after the build run, when its core check passed and the app's inputs differ from those last delivered) makes `ios-release`: the Rust core for iOS and its Swift bindings | nothing | `deploy_ios.yml`, called by `ios.yml`: a TestFlight build in the group "Intern" |
-| Hub | `hub-release`: the hub and its updater as static programs | `hub-v<N>`, signed | `deploy_hub.yml`: the server takes `hub-v<N>` (below) and restarts the hub only when the hub's inputs changed |
+| iOS and Mac apps | `ship-apple.yml` (when the apps' inputs differ from those last delivered) makes `ios-release`: the Rust core for iOS and its Swift bindings | `ios-v<N>` (notes only), `mac-v<N>` (the .dmg) | `ship-apple.yml`: a TestFlight build in the groups "Intern" and "Trommi" |
+| Hub | `hub-release`: the hub and its updater as static programs | `hub-v<N>`, signed | `ship-hub.yml`: the server takes `hub-v<N>` (below) and restarts the hub only when the hub's inputs changed |
 
 A release of a series is published by one run at a time; a run whose number is not above the newest of its series,
 or whose commit does not come after that release's, publishes nothing.
@@ -93,10 +93,9 @@ From a commit to the running server, nobody logs in and no code is handed to the
 
 ```
 commit on main
-└── build.yml          finds the changed parts; for the hub: tests, builds two static programs (hub, updater)
-    ├── release_part.yml  the hub's release hub-v<N>, its manifest signed (Ed25519, key from the 1Password Environment)
-    └── deploy_hub.yml (the hub or its updater differs from what the server has)
-        └── deliver    joins the tailnet as tag:trommi-ci and says to the server: "take hub-v<N>"
+└── ship-hub.yml       the hub or its updater differs from what the server has: its tests, two static programs
+    ├── sign-release.yml  the hub's release hub-v<N>, its manifest signed (Ed25519, key from the 1Password Environment)
+    └── deliver        joins the tailnet as tag:trommi-ci and says to the server: "take hub-v<N>"
                        │
 server (updater, as its own user without root, port 9443, tailnet address only)
         ├── fetches hub-v<N> from GitHub itself
@@ -110,7 +109,7 @@ server (updater, as its own user without root, port 9443, tailnet address only)
         ├── not well: puts the release before back and starts it; the data goes back with it only if the new
         │   hub never served a request
         └── answers with what happened; the run shows it and fails unless the release runs
-deploy_hub.yml
+ship-hub.yml
 ├── asks https://hub.trommi.com/healthz until it answers as the new commit (three minutes)
 └── report     a failed delivery opens the issue "Hub update hub-v<N> failed" (label deploy-failed) or comments on the
                open one; the next delivery that goes through closes it (the same for the web app)
@@ -118,7 +117,7 @@ deploy_hub.yml
 
 **The release** has the form of every signed release (above); a release never brings a key. The hub is released as static programs, not as an image: one file each, hashable, no registry
 and nothing to unpack; the server says the SHA-256 of what it runs, to compare with the manifest of the release. The
-version is the build's run number (plus `RELEASE_BASE` in `build.yml`): a whole number that only grows. A published
+version is the run number of `ship-hub.yml` (plus its `RELEASE_BASE`): a whole number that only grows. A published
 release is never replaced.
 
 The manifest may carry fields an updater does not know (they are signed all the same and ignored), so a later
@@ -195,7 +194,7 @@ kernel, and on tailscaled telling any local user who a tailnet address is (`tail
    that is what a program rollback starts. So a migration only adds (tables, columns with defaults, indexes) and the
    code that stops using something ships first; dropping or reshaping what the hub before reads comes one release
    later, once no hub that needs it can come back. CI checks it on every hub build (`.github/scripts/hub_compat.sh`
-   in `build.yml`): the hub of the newest release makes a database, this build's hub migrates it, the hub before
+   in `ship-hub.yml`): every hub the updater may put back (the one that runs, the newest released) makes a database, this build's hub migrates it, the hub before
    must start on it and answer `/healthz`. A migration that cannot be made this way raises the number in
    `hub/data-epoch` in the same change: the release's manifest says `"data_epoch"`, the CI check is skipped for it,
    and the updater does not put the program back past it once the new hub has served (before that the data goes back
@@ -238,12 +237,12 @@ how many owner logins are (`caller_users` is a number). `install.sh` sets the jo
 500 MB (the drop-in above, then `systemctl restart systemd-journald`), so nothing older is on the server.
 
 Which hub and which updater run: `ssh root@<server> trommi-hub-updater status`, and the summary of every
-`deploy_hub` run. A backup of the server must hold `/srv/trommi/data` whole (the two key files with the database:
+`ship-hub` run. A backup of the server must hold `/srv/trommi/data` whole (the two key files with the database:
 without `vapid.key` every web push subscription is lost) and `/etc/trommi`.
 
 Rules that follow from this: a hub release must be able to run on the database of the release before it and leave
 it usable for that one, because that is what a rollback starts (expand, then contract, above; or a raised
-`hub/data-epoch`); renaming `build.yml` restarts the run number, so
+`hub/data-epoch`); renaming `ship-hub.yml` restarts the run number, so
 `RELEASE_BASE` is raised then; HSTS is off until `HUB_HSTS=on` is set in `/etc/trommi/hub.env`.
 
 **The installation** is `hub/deploy/install.sh` on the owner's laptop: `inventory` reads the server and changes
@@ -251,5 +250,5 @@ nothing; `install` puts the users, the fixed units and scripts, the pinned key, 
 release in place (run
 again, it renews the fixed parts; on a server whose updater still runs as root it converts the installation in
 place and moves everything back if a step fails); `secrets` sends the push credentials from the 1Password
-Environment. Until the server is installed, `deploy_hub` publishes each release and then fails saying that nothing
+Environment. Until the server is installed, `ship-hub` publishes each release and then fails saying that nothing
 answers on the server's deploy port.

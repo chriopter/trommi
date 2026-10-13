@@ -46,8 +46,8 @@ test(=a_room_grows_to_a_hundred_human_devices)
 """
 priority = 50
 
-# Pull requests (build.yml, the fast tier): every scenario test but the slow ones (1.5 s and more in CI, October 2026),
-# about a minute in all. The merge queue runs them all (profile ci) before anything lands on main; a test that becomes
+# Pull requests (pr-check.yml, the fast tier): every scenario test but the slow ones (1.5 s and more in CI, October
+# 2026), about a minute in all. Each part's ship-*.yml runs them all (profile ci) before it delivers; a test that becomes
 # slow later only makes pull requests a little slower until it is named here.
 [profile.fast]
 fail-fast = false

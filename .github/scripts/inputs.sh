@@ -15,17 +15,17 @@ commit=${1:-HEAD}
 # every part: the shared core and client core (in every app and in the hub's checks of what it stores), the Rust
 # workspace and its toolchain, this script
 shared='core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml .github/scripts/inputs.sh'
-# what builds and signs the hub, the updater and the connector (build.yml's jobs, the signed release of one part)
-rust_release='.github/workflows/build.yml .github/workflows/release_part.yml release/'
+# what signs the releases of the hub, the updater and the connector
+rust_release='.github/workflows/sign-release.yml release/'
 paths() {
   case $1 in
-    web) echo "app/web/ connector/tools.json connector/prompt.md demo/ .node-version .github/workflows/build.yml .github/scripts/web_release.mjs .github/scripts/web_smoke.sh .github/tools/wrangler/ .github/workflows/deploy_web.yml" ;;
-    connector) echo "connector/ install.sh .claude-plugin/ .node-version $rust_release" ;;
-    # the iPhone app and the Mac app (built from the same paths): ios.yml after build.yml, not build.yml itself
-    ios) echo "app/ios/ demo/ .github/scripts/ios_testflight.sh .github/scripts/ios_archive.sh .github/scripts/ios_entitlements.py .github/scripts/ios_release_gate.sh .github/scripts/ios_delivered.sh .github/scripts/mac_testflight.sh .github/scripts/mac_direct.sh .github/scripts/mac_release.sh .github/workflows/deploy_ios.yml .github/workflows/ios.yml .github/workflows/mac.yml" ;;
+    web) echo "app/web/ connector/tools.json connector/prompt.md demo/ .node-version .github/scripts/web_release.mjs .github/scripts/web_smoke.sh .github/scripts/wasm_core.sh .github/tools/wrangler/ .github/workflows/ship-web.yml .github/workflows/sign-release.yml" ;;
+    connector) echo "connector/ install.sh .claude-plugin/ .node-version .github/workflows/ship-connector.yml $rust_release" ;;
+    # the iPhone app and the Mac app (built from the same paths)
+    ios) echo "app/ios/ demo/ .github/scripts/ios_testflight.sh .github/scripts/ios_archive.sh .github/scripts/ios_entitlements.py .github/scripts/ios_release_gate.sh .github/scripts/ios_delivered.sh .github/scripts/mac_testflight.sh .github/scripts/mac_direct.sh .github/scripts/mac_release.sh .github/workflows/ship-apple.yml" ;;
     # the hub program: the hub's crate (hub/updater and hub/deploy belong to the updater)
-    hub) echo "hub/Cargo.toml hub/src/ hub/build.rs hub/static/ hub/data-epoch .github/workflows/deploy_hub.yml .github/scripts/hub_compat.sh $rust_release" ;;
-    updater) echo "hub/updater/ hub/deploy/ .github/workflows/deploy_hub.yml $rust_release" ;;
+    hub) echo "hub/Cargo.toml hub/src/ hub/build.rs hub/static/ hub/data-epoch .github/workflows/ship-hub.yml .github/scripts/hub_compat.sh $rust_release" ;;
+    updater) echo "hub/updater/ hub/deploy/ .github/workflows/ship-hub.yml $rust_release" ;;
   esac
 }
 if [ "$commit" = paths ]; then

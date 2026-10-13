@@ -1,12 +1,11 @@
 #!/bin/bash
-# The release side of the Mac app for direct download (README.md "Mac app (direct download)"), on Linux; mac.yml runs
-# it, mac_direct.sh builds the app on a Mac. The app has a release series of its own: mac-v<N>, N the number of the
-# build run of main it follows, marked "latest" (releases/latest/download/Trommi-macOS.dmg is always the newest app).
-#   mac_release.sh check           whether the build run RUN_ID of COMMIT builds the app. Writes to GITHUB_OUTPUT: mode
-#                                  (build: the run is build.yml of this repository on main, of COMMIT, finished, its
-#                                  "Core (check)" passed or was skipped, and COMMIT's iOS inputs
-#                                  (.github/scripts/inputs.sh: the Mac app is built from the same paths) differ from
-#                                  those of the newest Mac app released; none: not), commit, inputs_ios
+# The release side of the Mac app for direct download (README.md "Mac app (direct download)"), on Linux; ship-apple.yml runs
+# it (ship-apple.yml), mac_direct.sh builds the app on a Mac. The app has a release series of its own: mac-v<N>, N the
+# number of the ship-apple.yml run, marked "latest" (releases/latest/download/Trommi-macOS.dmg is always the newest).
+#   mac_release.sh check           whether COMMIT builds the app. Writes to GITHUB_OUTPUT: mode (build: COMMIT's iOS
+#                                  inputs (.github/scripts/inputs.sh: the Mac app is built from the same paths) differ
+#                                  from those of the newest Mac app released; none: not), commit, inputs_ios. That its
+#                                  checks passed, ship-apple.yml sees to (the build needs them)
 #   mac_release.sh prepare <dir>   <dir> holds Trommi-macOS.dmg and its .sha256 from the Mac: checked, `check` again,
 #                                  and Trommi-macOS.json written beside them (the release, the commit, the iOS inputs,
 #                                  the file's SHA-256 and size)
@@ -15,20 +14,19 @@
 #                                  published file is never replaced
 # The .dmg is in no manifest signed with the release key: what vouches for it is Apple's Developer ID signature and
 # notarization, which macOS checks itself, and the build attestation.
-# Environment: GH_TOKEN, GITHUB_REPOSITORY, RUNNER_TEMP, VERSION, COMMIT, RUN_ID; MAC_VERSION (prepare: the app's
-# version). Needs gh, jq and a checkout with the whole history.
+# Environment: GH_TOKEN, GITHUB_REPOSITORY, RUNNER_TEMP, VERSION, COMMIT; MAC_VERSION (prepare: the app's version).
+# Needs gh, jq and a checkout with the whole history.
 set -euo pipefail
 
 mode=${1:-}
 dir=${2:-}
 case "$mode" in check) ;; prepare|upload) [ -n "$dir" ] || { echo "usage: mac_release.sh $mode <dir>" >&2; exit 2; } ;;
   *) echo "usage: mac_release.sh check|prepare|upload [<dir>]" >&2; exit 2 ;; esac
-for var in GH_TOKEN GITHUB_REPOSITORY RUNNER_TEMP VERSION COMMIT RUN_ID; do
+for var in GH_TOKEN GITHUB_REPOSITORY RUNNER_TEMP VERSION COMMIT; do
   [ -n "${!var:-}" ] || { echo "::error::$var is not set"; exit 1; }
 done
 printf '%s' "$VERSION" | grep -Eq '^[1-9][0-9]{0,11}$' || { echo "::error::not a build number: $VERSION"; exit 1; }
 printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $COMMIT"; exit 1; }
-printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 tag=mac-v$VERSION
 name=Trommi-macOS
@@ -53,20 +51,8 @@ newest() {
 # check: sets release_mode and release_inputs
 check() {
   release_mode=none
-  gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/mac-run.json"
-  jq -e --arg r "$GITHUB_REPOSITORY" --arg c "$COMMIT" \
-    '.path == ".github/workflows/build.yml" and .head_branch == "main" and (.event == "push" or .event == "workflow_dispatch")
-     and .repository.full_name == $r and .head_repository.full_name == $r and .head_sha == $c and .status == "completed"' \
-    "$RUNNER_TEMP/mac-run.json" > /dev/null || { echo "::error::run $RUN_ID is not a finished build of $COMMIT on main of this repository"; exit 1; }
-  local core
-  core=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" \
-    --jq '.jobs[] | select(.name == "Core (check)") | .conclusion')
   release_inputs=$(sh "$here/inputs.sh" "$COMMIT" | sed -n 's/^ios //p')
   [ -n "$release_inputs" ] || { echo "::error::no iOS inputs for $COMMIT"; exit 1; }
-  case "$core" in
-    success|skipped) ;;
-    *) echo "::notice::Core (check) of build run $RUN_ID: ${core:-not there}: no Mac app"; return 0 ;;
-  esac
   newest
   # no Mac app released yet (while the Developer ID certificate is missing, every build ends without one): the inputs
   # last delivered to TestFlight stand in, so that the Mac is not asked to build on every run of main
@@ -119,7 +105,7 @@ case "$mode" in
     out commit "$COMMIT"
     out inputs_ios "$release_inputs"
     case "$release_mode" in
-      none) summary "- no Mac app for $COMMIT (its app is out there already, or the core's check did not pass)" ;;
+      none) summary "- no Mac app for $COMMIT: its app is out there already" ;;
       build) summary "- the Mac app of $COMMIT is built, notarized and released as $tag" ;;
     esac
     ;;

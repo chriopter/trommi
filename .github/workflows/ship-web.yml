@@ -1,53 +1,203 @@
-# Delivers the web app to https://app.trommi.com (the Cloudflare worker trommi-app). It delivers the files a build
-# run made and tested, and builds nothing itself.
+# The web app (app/web), from a push to main to https://app.trommi.com (the Cloudflare worker trommi-app), on its own:
+# it waits for no other part.
 #
-# Interface (build.yml calls it; see the head of build.yml):
-#   version   the number of the build run
-#   commit    the commit that was built
-#   artifact  the artifact of that run: out/ of .github/scripts/web_release.mjs (public/, worker.js, entry.js,
-#             wrangler.jsonc, manifest.json, checksums.txt)
-# By hand (Actions -> deploy_web -> Run workflow): `run_id`, the id of a build run whose web-release is delivered
-# once more (its artifact is kept for 30 days).
-#
-#   attest   checks every file against checksums.txt and manifest.json against the run, then attests them: GitHub's
-#            build provenance for each file and for the manifest (no secret; who built what, from which commit)
-#   deliver  `wrangler deploy` of exactly those files, then asks app.trommi.com which commit it serves; a build
-#            that arrives after a newer one is not delivered (the newest commit stays)
-#   report   when attest or deliver failed: opens the issue "Web update <build> failed" (label deploy-failed) with the
-#            reason, the run and what app.trommi.com serves, or comments on the open one; when it went through:
-#            closes that issue
+#   decide    whether the web app must be delivered: what app.trommi.com serves was built from other inputs than this
+#             commit's (.github/scripts/deployed.sh; a delivery that failed is made again by the next run); its
+#             number N (this workflow's run number plus RELEASE_BASE)
+#   checks    the web app's checks and, when the core changed, the core's, every test (pr-check.yml, called)
+#   build     beside the checks: the files the worker serves, the worker, its settings and the manifest that names every
+#             file (.github/scripts/web_release.mjs), and web.tar.gz with its manifest for the release
+#   attest    every file checked against checksums.txt and the manifest against the run, then attested (GitHub's build
+#             provenance; who built what, from which commit)
+#   deliver   `wrangler deploy` of exactly those files, then asks app.trommi.com which commit it serves; a build that
+#             arrives after a newer one is not delivered (the newest commit stays). Then the smoke test from outside
+#             (.github/scripts/web_smoke.sh): the start page and every file it loads are this build's; when not, the
+#             build before is put back at once (wrangler rollback)
+#   release   web-v<N> (sign-release.yml): the release notes and web.tar.gz, signed and attested, never latest
+#   report    a failed delivery opens the issue "Web update web-v<N> failed" (label deploy-failed), the next good one
+#             closes it
+# By hand (Actions -> ship-web -> Run workflow, on main): `run_id`, the id of an earlier run of this workflow on main
+# whose web-release is delivered once more (its artifact is kept for 30 days); its web and core checks must have
+# passed.
 #
 # Secrets: the environment `web` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID; CLOUDFLARE_API_TOKEN
 # and CLOUDFLARE_ACCOUNT_ID come from the 1Password Environment and are seen by the wrangler command only.
-name: deploy_web
+name: ship-web
 
 on:
-  workflow_call:
-    inputs:
-      version:
-        description: The number of the build run
-        required: true
-        type: string
-      commit:
-        description: The commit that was built
-        required: true
-        type: string
-      artifact:
-        description: The artifact of this run that holds the release
-        required: true
-        type: string
+  push:
+    branches: [main]
+    paths:
+      - app/web/**
+      - tests/web/**
+      - connector/tools.json
+      - connector/prompt.md
+      - demo/**
+      - .node-version
+      - core/**
+      - client/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/scripts/web_release.mjs
+      - .github/scripts/web_smoke.sh
+      - .github/scripts/wasm_core.sh
+      - .github/scripts/deployed.sh
+      - .github/scripts/inputs.sh
+      - .github/scripts/release_notes.mjs
+      - .github/tools/wrangler/**
+      - .github/workflows/ship-web.yml
+      - .github/workflows/pr-check.yml
+      - .github/workflows/sign-release.yml
   workflow_dispatch:
     inputs:
       run_id:
-        description: The id of a build run whose web release is delivered again
+        description: The id of an earlier run of ship-web on main whose web release is delivered again
         required: true
         type: string
 
 permissions: {}
 
+# One run at a time; of the runs waiting only the newest (a started run, and so a delivery, is never cut off).
+concurrency:
+  group: ship-web
+  cancel-in-progress: false
+
+env:
+  # web-v<N>: N is this workflow's run number plus this base (above every release number before the series began)
+  RELEASE_BASE: 1000
+
 jobs:
+  decide:
+    name: Must it be delivered
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      deliver: ${{ steps.decide.outputs.web }}
+      version: ${{ steps.decide.outputs.version }}
+      parts: ${{ steps.decide.outputs.parts }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: What app.trommi.com serves
+        id: decide
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -eu
+          echo "version=$((RUN_NUMBER + RELEASE_BASE))" >> "$GITHUB_OUTPUT"
+          sh .github/scripts/inputs.sh > "$RUNNER_TEMP/inputs"
+          sh .github/scripts/deployed.sh "$RUNNER_TEMP/inputs" web | tee "$RUNNER_TEMP/deliver"
+          cat "$RUNNER_TEMP/deliver" >> "$GITHUB_OUTPUT"
+          flag=$(sed -n 's/^web=//p' "$RUNNER_TEMP/deliver")
+          { echo "parts<<PARTS_END"; sed -n "s/^\(web [0-9a-f]\{64\}\)\$/\1 $flag/p" "$RUNNER_TEMP/inputs"; echo "PARTS_END"; } >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: Checks
+    needs: decide
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/pr-check.yml
+    with:
+      parts: web
+      workflow: ship-web.yml
+
+  build:
+    name: Build
+    needs: decide
+    if: github.event_name == 'push' && needs.decide.outputs.deliver == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # The hub the app speaks to. The build is checked against it: the page's policy must name this hub and no other.
+      WEB_HUB_URL: https://hub.trommi.com
+      VERSION: ${{ needs.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: app/web/package-lock.json
+      - name: Compiler (rust-toolchain.toml)
+        run: sh .github/scripts/rust_toolchain.sh wasm32-unknown-unknown
+      - name: The core's inputs
+        id: core
+        run: echo "key=$(sh .github/scripts/wasm_core.sh key)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pkg
+        with:
+          path: core/wasm/pkg
+          key: ${{ steps.core.outputs.key }}
+      - name: The Rust core for the browser
+        env:
+          HIT: ${{ steps.pkg.outputs.cache-hit }}
+        run: sh .github/scripts/wasm_core.sh build
+      - name: Packages
+        working-directory: app/web
+        run: npm ci --no-audit --no-fund
+      - name: Build
+        run: node app/web/dev/build.mjs --write
+      # What is delivered: the files, the worker, its settings, and the manifest that names every file.
+      - name: Put the release together
+        run: |
+          set -eu
+          node .github/scripts/web_release.mjs app/web/public out
+          (cd out && sha256sum -c --quiet checksums.txt)
+          # the settings are tried as wrangler reads them; nothing is sent
+          npm ci --no-audit --no-fund --ignore-scripts --prefix .github/tools/wrangler
+          (cd out && WRANGLER_SEND_METRICS=false ../.github/tools/wrangler/node_modules/.bin/wrangler deploy --dry-run --outdir "$RUNNER_TEMP/dry")
+          {
+            echo "### Web app, build $VERSION"
+            echo
+            echo "hub \`$WEB_HUB_URL\`, $(jq '.files | length' out/manifest.json) files, manifest \`$(sha256sum out/manifest.json | cut -d' ' -f1)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-release
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
+      # The web app's release web-v<N>: web.tar.gz (the same bytes for the same files: names sorted, no times, no
+      # owners) and a manifest that names it, with the web app's inputs.
+      - name: The web app's release
+        env:
+          PARTS: ${{ needs.decide.outputs.parts }}
+        run: |
+          set -eu
+          mkdir webrel
+          tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C out -cf - . | gzip -9n > webrel/web.tar.gz
+          printf '%s' "$PARTS" | grep -Eq '^web [0-9a-f]{64} (true|false)$' || { echo "::error::the web app's inputs are not known"; exit 1; }
+          PARTS="$PARTS" release/manifest.sh trommi-web "$VERSION" "$GITHUB_SHA" webrel/web.tar.gz > "$RUNNER_TEMP/manifest.json"
+          mv "$RUNNER_TEMP/manifest.json" webrel/manifest.json
+          release/sign.sh files webrel/manifest.json
+          cat webrel/manifest.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-part-release
+          path: webrel/
+          if-no-files-found: error
+          retention-days: 30
+
   attest:
     name: Check and attest
+    needs: [decide, checks, build]
+    # a push: when the web app's checks and the core's passed and the web app must be delivered; by hand: always
+    if: >-
+      ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || (needs.decide.outputs.deliver == 'true'
+      && needs.checks.result == 'success' && needs.build.result == 'success')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -63,7 +213,7 @@ jobs:
       # artifacts, and nothing of such a run may be signed, attested or delivered.
       - name: The run that is delivered again
         id: source
-        if: inputs.run_id != ''
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.run_id }}
@@ -72,25 +222,25 @@ jobs:
           printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
           jq -e --arg r "$GITHUB_REPOSITORY" \
-            '.path == ".github/workflows/build.yml" and .head_branch == "main" and (.event == "push" or .event == "workflow_dispatch") and .repository.full_name == $r and .head_repository.full_name == $r' \
+            '.path == ".github/workflows/ship-web.yml" and .head_branch == "main" and .event == "push" and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main branch of this repository"; exit 1; }
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
-          grep -Fq "Web app (check)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job Web app (check) of run $RUN_ID did not succeed"; exit 1; }
+          grep -Fxq "Checks / Web app (check)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job Checks / Web app (check) of run $RUN_ID did not succeed"; exit 1; }
           # the core's check of that run passed, or was skipped (the core did not change): as for a delivery by a build
-          core=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Core (check)") | .conclusion')
-          case "$core" in success|skipped) ;; *) echo "::error::the job Core (check) of run $RUN_ID: ${core:-not there}"; exit 1 ;; esac
+          core=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Checks / Core (check)") | .conclusion')
+          case "$core" in success|skipped) ;; *) echo "::error::the job Checks / Core (check) of run $RUN_ID: ${core:-not there}"; exit 1 ;; esac
           echo "commit=$(jq -r .head_sha "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ inputs.artifact || 'web-release' }}
+          name: web-release
           path: release
           run-id: ${{ inputs.run_id || github.run_id }}
           github-token: ${{ github.token }}
       - name: The files are the ones the build named
         id: check
         env:
-          VERSION: ${{ inputs.version }}
-          COMMIT: ${{ inputs.commit || steps.source.outputs.commit }}
+          VERSION: ${{ needs.decide.outputs.version }}
+          COMMIT: ${{ github.event_name == 'push' && github.sha || steps.source.outputs.commit }}
         run: |
           set -eu
           cd release
@@ -154,7 +304,7 @@ jobs:
             .node-version
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ inputs.artifact || 'web-release' }}
+          name: web-release
           path: release
           run-id: ${{ inputs.run_id || github.run_id }}
           github-token: ${{ github.token }}
@@ -188,7 +338,7 @@ jobs:
       # left-out build as a deployment of `web`; the run's summary says that nothing was delivered.
       - name: Is something newer served already
         id: newer
-        if: inputs.run_id == ''
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -200,7 +350,7 @@ jobs:
             if page=$(curl -sS --max-time 10 -w '\n%{http_code}' "https://app.trommi.com/gen/build.txt?ci=$GITHUB_RUN_ID-before-$try"); then break; fi
             page= ; sleep 5
           done
-          [ -n "$page" ] || { echo "::error::app.trommi.com did not answer: which build it serves is not known, nothing was delivered. Deliver by hand (deploy_web, run_id $GITHUB_RUN_ID) once it answers."; exit 1; }
+          [ -n "$page" ] || { echo "::error::app.trommi.com did not answer: which build it serves is not known, nothing was delivered. Deliver by hand (ship-web, run_id $GITHUB_RUN_ID) once it answers."; exit 1; }
           served=$(printf '%s\n' "$page" | sed -n 's/^commit: //p' | head -n 1)
           # a site that names no commit (never delivered to, or not this app): delivering
           printf '%s' "$served" | grep -Eq '^[0-9a-f]{7,40}$' || { echo "the site names no commit (HTTP $(printf '%s\n' "$page" | tail -n 1)): delivering"; exit 0; }
@@ -224,7 +374,7 @@ jobs:
             exit 1
           fi
           echo "app.trommi.com serves $served, which is ${status:-unknown} compared with $COMMIT"
-          [ -n "$status" ] || { echo "::error::how $served lies to $COMMIT could not be found out, nothing was delivered. Deliver by hand (deploy_web, run_id $GITHUB_RUN_ID)."; exit 1; }
+          [ -n "$status" ] || { echo "::error::how $served lies to $COMMIT could not be found out, nothing was delivered. Deliver by hand (ship-web, run_id $GITHUB_RUN_ID)."; exit 1; }
           if [ "$status" = ahead ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "served=$served" >> "$GITHUB_OUTPUT"
@@ -314,6 +464,26 @@ jobs:
             echo "app.trommi.com already serves \`$SERVED\`, a commit that comes after \`$COMMIT\` on main."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # The web app's signed release web-v<N> (sign-release.yml), once it is delivered: the release notes of that delivery
+  # and web.tar.gz as it went out (attested). No browser checks it: it is the record of what went out, and the build
+  # to put back.
+  release:
+    name: Web release
+    needs: [decide, deliver]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.deliver.result == 'success' }}
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/sign-release.yml
+    with:
+      part: web
+      version: ${{ needs.decide.outputs.version }}
+      commit: ${{ github.sha }}
+      artifact: web-part-release
+    secrets: inherit
+
   # One open issue per failing delivery, closed by the next one that goes through. Only this job may write issues.
   report:
     name: Report
@@ -327,7 +497,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TAG: build ${{ needs.attest.outputs.version || inputs.version || inputs.run_id }}
+      TAG: web-v${{ needs.attest.outputs.version || inputs.run_id }}
       RESULT: ${{ (needs.attest.result == 'failure' || needs.deliver.result == 'failure') && 'failure' || 'success' }}
       REASON: ${{ needs.deliver.outputs.reason || (needs.attest.result == 'failure' && 'the files could not be checked or attested (job Check and attest)') || 'a step of the job Deliver to Cloudflare failed' }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

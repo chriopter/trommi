@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A release's notes (release_part.yml for web-v, hub-v and connector-v; mac_release.sh for mac-v): the pull requests
+// A release's notes (sign-release.yml for web-v, hub-v and connector-v; mac_release.sh for mac-v; ship-apple.yml for ios-v): the pull requests
 // merged since the series' release before that touch the part, their "What's new" lines under New, Better and Fixed.
 //   node .github/scripts/release_notes.mjs <part> <commit of the release before, or empty> <commit>
 // <part>: web, hub, connector or mac (the Mac app: the iOS paths); its paths are those .github/scripts/inputs.sh

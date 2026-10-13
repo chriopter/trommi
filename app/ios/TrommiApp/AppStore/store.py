@@ -292,7 +292,7 @@ def pick_build(aid, version, number=None):
     rows = [b for b in call("GET", path)["data"] if not b["attributes"].get("expired")]
     if not rows:
         die(f"no VALID, unexpired build of version {version}" + (f" with build number {number}" if number else "")
-            + " in App Store Connect: deliver one to TestFlight first (deploy_ios)")
+            + " in App Store Connect: deliver one to TestFlight first (ship-apple)")
     b = rows[0]
     if b["attributes"].get("usesNonExemptEncryption") is None:
         die(f"build {b['attributes']['version']} has no export compliance answer: answer it in App Store Connect "

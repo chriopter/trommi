@@ -1,5 +1,5 @@
 #!/bin/sh
-# Main only (build.yml, job `changes`): which parts must be delivered, decided against what each part has out there,
+# Main only (ship-web.yml, ship-hub.yml, ship-connector.yml, job `decide`): which parts must be delivered, decided against what each part has out there,
 # not against the release of every part. Prints `web=`, `hub=`, `connector=` lines (true or false).
 #
 #   .github/scripts/deployed.sh <inputs> [web|hub|connector]...       (default: all three)
@@ -8,7 +8,7 @@
 # A part is delivered when what it has out there was built from other inputs than this commit's:
 #   web        the commit app.trommi.com names (/gen/build.txt), its web inputs (inputs.sh of that commit)
 #   hub        the commit of the newest delivery to the server that went through (GitHub's deployments of the
-#              environment `hub`: deploy_hub.yml fails when the hub or its updater was not taken), its hub and updater
+#              environment `hub`: ship-hub.yml fails when the hub or its updater was not taken), its hub and updater
 #              inputs; and the commit hub.trommi.com runs (/healthz), its hub inputs (an updater-only delivery leaves
 #              the hub's commit as it was, so /healthz alone cannot say whether the updater is out there)
 #   connector  the newest connector-v<N> (its signature checked; before the first one: the newest v<N>), its connector
