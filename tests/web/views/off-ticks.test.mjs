@@ -20,3 +20,16 @@ test('only a shredded row is struck through', () => {
   assert.match(struck[0], /\.oym-mini\[data-shredded\]/)
   assert.match(src, /s\.g === 'trash' && c\.status === 'shredded' \? raw\(' data-shredded'\)/, 'only a shredded row is marked so')
 })
+
+test('the cards behind the stack are the front card\'s size, a little narrower and lower; never turned', () => {
+  const css = read('desk.css')
+  const sheet = css.match(/^\.oym-sheet \{[^}]*\}/m)?.[0] ?? ''
+  assert.match(sheet, /left: calc\(var\(--k\) \* 12px\); right: calc\(var\(--k\) \* 12px\)/)
+  assert.match(sheet, /transform: translateY\(calc\(var\(--k\) \* 7px\)\)/)
+  assert.doesNotMatch(css.match(/\.oym-sheet[^{]*\{[^}]*\}/g).join('\n'), /rotate/, 'a turn runs askew across a wide card')
+})
+
+test('a put-off line says until when, or nothing; a line with no time never shows the epoch', () => {
+  const src = read('desk.mjs')
+  assert.match(src, /const when = s\.g === 'later' \? \(until \? html`<span class="ago oym-mini-ago">until \$\{until\}<\/span>` : ''\) : s\.at > 0 \? agoSpan\(s\.at, 'ago oym-mini-ago'\) : ''/)
+})
