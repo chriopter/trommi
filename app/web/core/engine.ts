@@ -287,6 +287,8 @@ export class Engine {
    *  chain (`settleAhead`), so a hub that withholds what stands before it is said (`withheld`) whatever it serves. */
   private ahead: { envelope: Uint8Array; change: number; void_code: string | null }[] = []
   private aheadWatched = false
+  /** How many links `fillGap` took from chains so far: a rescan sees by it that the core holds more than its batch knew. */
+  private filled = 0
   private async keepAhead(): Promise<void> { await (this.ahead.length ? this.opts.meta.set('ahead', this.ahead.map(x => [hex(x.envelope), x.change, x.void_code])) : this.opts.meta.delete('ahead')).catch(() => {}) }
   private watchAhead(): void {
     if (!this.ahead.length || this.aheadWatched) return
@@ -1047,7 +1049,7 @@ export class Engine {
         for (const link of page.items) {
           if (link.seq >= refused.header.seq) { more = false; break }
           const taken = await this.receive(link, true)
-          if (taken && taken.outcome !== 'refused') this.emit('envelope', { received: taken, how: 'again' })
+          if (taken && taken.outcome !== 'refused') { this.filled++; this.emit('envelope', { received: taken, how: 'again' }) }
           after = link.seq
         }
         more = more && page.more && page.items.length > 0
@@ -1228,7 +1230,7 @@ export class Engine {
         //  model has it; a device that signed in with the code takes the room from its start in order, and its
         //  rescan was otherwise one more call per envelope of the whole history)
         const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo && !this.whole.has(item.change))
-        const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null): Promise<void> => {
+        const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null, told: ReceivedEnvelope | null = null): Promise<void> => {
           let received = first
           // A gap in the hub's order as it is read again: tried once more (what stood before it in the batch may be
           // taken by now), then filled from the sender's chain as a live one is; a chain the hub does not serve whole
@@ -1236,9 +1238,11 @@ export class Engine {
           const chain = (): string => `${hex(received!.header.group)}/${hex(received!.header.sender)}`
           if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) received = await this.receive(item, true)
           if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) {
+            const was = this.filled
             received = await this.fillGap(item, received, false)
-            // (filled: what followed it in the batch was judged without it and is read once more, from here on)
-            if (received?.outcome === 'refused' && received.code === 'gap') gaps.add(chain()); else repaired = Math.min(repaired ?? item.change, item.change)
+            if (received?.outcome === 'refused' && received.code === 'gap') gaps.add(chain())
+            // (filled, also in part: what followed in the batch was judged without it and is read once more, from here on)
+            if (this.filled !== was || !(received?.outcome === 'refused' && received.code === 'gap')) repaired = Math.min(repaired ?? item.change, item.change)
           }
           // (this very envelope, taken in order or its gap said: no longer ahead; one the core still waits with stays)
           if (this.ahead.length && (!received || received.outcome !== 'refused' || received.code === 'replay' || received.code === 'gap')) {
@@ -1246,7 +1250,11 @@ export class Engine {
             if (left.length !== this.ahead.length) { this.ahead = left; await this.keepAhead() }
           }
           await this.noteBehind(item, received)
-          if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
+          if (received?.outcome === 'refused' && received.code === 'replay') {
+            spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received)
+            // (asked again after a repair, and it does not read back, as a pruned one does not: as the batch told it)
+            if (told && told.outcome !== 'refused' && (!received || received.outcome === 'refused')) received = told
+          }
           if (received && received.outcome !== 'refused') {
             // (whole under the number the core names for it: one read back from another place is not this change)
             if (received.payload && received.change === item.change) this.whole.add(item.change)
@@ -1261,7 +1269,7 @@ export class Engine {
           const outcomes = fed?.outcomes ?? []
           // (after a gap was filled, what the batch said of the envelopes behind it is stale: the core judged them
           //  without what was filled in, so each is asked of the core again, alone)
-          for (const [i, outcome] of outcomes.entries()) await again(batch[i]!, repaired !== null ? await this.receive(batch[i]!, true) : outcome.envelope)
+          for (const [i, outcome] of outcomes.entries()) await (repaired !== null ? again(batch[i]!, await this.receive(batch[i]!, true), outcome.envelope) : again(batch[i]!, outcome.envelope))
           at += outcomes.length
           // the one the core did not take in the batch (or the first of a batch it did not take): alone
           if (!fed || fed.refusedAt !== null) { await again(batch[outcomes.length]!, await this.receive(batch[outcomes.length]!, true)); at++ }
