@@ -336,6 +336,7 @@ function boardModel(state, agents = state.agents, desk = null) {
   return {
     state, agents: here, everyone, byAgent, byCard, open, fresh, reads, allFresh, onDesk, desk: deskId, homeDesk, all, deskOf, desks: desks ?? [], revising, snoozed, done, units,
     reading: Boolean(state.reading),
+    readingProgress: state.readingProgress ?? null,
     cut, unheard: units.reduce((n, u) => n + u.unheard, 0),
     knocking: fresh.filter(isKnock).length,
     blocked: units.filter(u => u.blocked).length,
@@ -710,6 +711,7 @@ export class BoardState {
       // (the room is still being read: a sign-in joining its sessions, the past read again; the Desk says so)
       // (or a start from this device's cache waits for the hub's Desk past a moment: client.deskFirst)
       get reading() { return Boolean(self.model.room.reading || self.model.room.desk_waiting) },
+      get readingProgress() { return self.model.room.reading_progress ?? null },
       get messages() { return (self.allMsgs ??= self.messages()) },
       messagesOf: agent => self.messagesOf(agent),
       messagesOfCard: id => self.messagesOfCard(id),

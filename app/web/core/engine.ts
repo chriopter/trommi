@@ -1647,6 +1647,8 @@ export class Engine {
   private stocking: Promise<void> | null = null
   private async stock(): Promise<void> {
     if (!this.room_id) return
+    // (a sign-in with the code: not before its own joins of the sessions are through, `holdKeyPackages`)
+    if (this.keyPackagesHeld) await this.keyPackagesHeld
     if (!this.stockAsked) {
       // (not answered, say `rate-limited` right after a sign-in: the kept count serves, and the next upkeep asks again)
       try {
@@ -1663,6 +1665,16 @@ export class Engine {
     })
   }
   private stockAsked = false
+  private keyPackagesHeld: Promise<unknown> | null = null
+  /**
+   * A device signed in with the code keeps its KeyPackages from the hub until `until` settles (its joins of the
+   * sessions): while it has none there, no other human device adds it to a session by Welcome (5.2.7), which
+   * would select none of that session's keys from the code (8.5), so its past (names, cards) stayed closed until a
+   * key handover. Its own joins select them.
+   */
+  holdKeyPackages(until: Promise<unknown>): void {
+    const held = this.keyPackagesHeld = until.catch(() => {}).finally(() => { if (this.keyPackagesHeld === held) this.keyPackagesHeld = null })
+  }
   private uploadsAnswered = 0
   /** The timed part: KeyPackages (14.2), the own-leaf update (5.2.9; the core says whether it is due), `heads` (9.0.7),
    *  and the wishes for keys that came while this device was away (7.1.1: the hub keeps them seven days). */
