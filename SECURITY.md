@@ -81,6 +81,12 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
 - The connector's `install.sh` and `trommi-connector update` check the same signature, with the key built in.
 - Release files and web app files carry GitHub build attestations: a public record of which build made them.
 - The iOS app is signed by Apple and ships through TestFlight.
+- The Mac app for direct download (`Trommi-macOS.dmg` on the release, `mac.yml`) is signed with the team's Developer
+  ID certificate with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start.
+  It is built only for a published release whose signature checks out and which marks the app changed, and never
+  without the certificate and notarization (the job is skipped instead). It is added to the release after the release
+  is published, so it is not in the signed manifest; it carries a GitHub build attestation instead. Only the job that
+  builds it sees the certificate, in an environment of its own (`mac`).
 - iOS uses only standard algorithms and is declared exempt from export paperwork.
 
 ## Deployment

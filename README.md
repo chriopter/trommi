@@ -267,6 +267,66 @@ The whole way, what goes wrong and what runs as root: [hub/deploy/README.md](hub
 </details>
 
 <details>
+<summary><b>Mac app (direct download)</b> · Developer ID, notarized, on every release</summary>
+
+The Mac app (the target `TrommiMac`, [app/ios/README.md](app/ios/README.md) "On a Mac") ships two ways: TestFlight
+and the Mac App Store as before (`deploy_ios.yml`), and as **`Trommi-macOS.dmg`** on the GitHub release, outside the
+store. The newest is always at
+[releases/latest/download/Trommi-macOS.dmg](https://github.com/trommi/trommi/releases/latest/download/Trommi-macOS.dmg)
+(Apple silicon, macOS 26).
+
+[`.github/workflows/mac.yml`](.github/workflows/mac.yml) runs after every build of main that published a release:
+
+1. **The release:** published, its manifest signed by the release key, of this repository, with its commit's iOS
+   inputs (the Mac app is built from the same paths as the iOS app; `.github/scripts/mac_release.sh check`).
+2. **The release marks the app changed** (`changed.ios`): on a Mac runner the Rust core for the Mac, then
+   [`.github/scripts/mac_direct.sh`](.github/scripts/mac_direct.sh): archive (build number = the release number),
+   export with method `developer-id` (the team's Developer ID Application certificate, hardened runtime, Xcode's
+   Developer ID profile for push and associated domains), checked (authority, the very certificate, runtime, secure
+   timestamp, entitlements of `TrommiMac.entitlements`, no `get-task-allow`), notarized with `notarytool`, stapled,
+   accepted by Gatekeeper; then the `.dmg` (the app and a link to Applications), itself signed, notarized, stapled.
+3. **Attached** to `v<N>`: `Trommi-macOS.dmg`, `Trommi-macOS.dmg.sha256` and `Trommi-macOS.json` (release, commit,
+   iOS inputs, SHA-256, size), each with a GitHub build attestation. A file already on the release is never replaced.
+4. **The release leaves the app unchanged:** the newest earlier release's three files, checked (SHA-256, the same iOS
+   inputs, the attestation of `mac.yml`), go onto `v<N>` too, so the "latest" link always works.
+5. A failed build or attach opens the issue "Mac build v<N> failed"; by hand, Actions → mac → Run workflow with a
+   release number builds or carries it again (`dry_run`: build, sign, notarize, attach nothing).
+
+The `.dmg` is not in the release's signed `manifest.json` (it is made after the release is published). What vouches
+for it: Apple's Developer ID signature and notarization, which macOS checks before the first start, and the build
+attestation. Check a download:
+
+```sh
+shasum -a 256 -c Trommi-macOS.dmg.sha256
+gh attestation verify Trommi-macOS.dmg --repo trommi/trommi
+spctl --assess --type open --context context:primary-signature -v Trommi-macOS.dmg   # source=Notarized Developer ID
+```
+
+**Fails closed.** Without the environment `mac`, or without the certificate or the App Store Connect key in its
+1Password Environment, the job ends green with a notice and nothing is attached; no unsigned or un-notarized app is
+ever published. A build on any Mac without secrets (signed ad hoc, the same checks, Gatekeeper must refuse it):
+`core/swift/build.sh macos`, then `.github/scripts/mac_direct.sh adhoc`.
+
+**Set up once** (owner):
+
+1. Apple Developer → Certificates → **+** → **Developer ID Application** (G2 Sub-CA), with a CSR from Keychain Access
+   on a Mac (only the Account Holder may create it). Install it, then in Keychain Access export the certificate
+   **with its private key** as a `.p12` with a strong password.
+2. A 1Password Environment for the Mac (not the `ios` one, so only this job sees the certificate) with:
+   `APPLE_DEVID_P12` (the `.p12` in base64: `base64 -i DeveloperID.p12 | tr -d '\n'`), `APPLE_DEVID_P12_PASSWORD`,
+   and the App Store Connect key as for TestFlight: `APPLE_ASC_KEY`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`,
+   `APPLE_TEAM_ID`. The key's role (Admin) is enough for `notarytool` and for Xcode's Developer ID profile; no
+   app-specific password is needed.
+3. GitHub → Settings → Environments → **New environment `mac`**, deployment branches: `main` only, with the secrets
+   `OP_SERVICE_ACCOUNT_TOKEN` (a service account that can read that 1Password Environment) and `OP_ENVIRONMENT_ID`.
+4. Delete the `.p12` file. Then Actions → mac → Run workflow with the newest release number and `dry_run`; when it
+   is green, once more without.
+
+No update feed yet: the app does not update itself (no Sparkle); a new version is a new download.
+
+</details>
+
+<details>
 <summary><b>Connector updates</b> · swapped in, no reconnect</summary>
 
 What Claude Code or Codex starts is a small **launcher** ([`connector/src/launch.rs`](connector/src/launch.rs)). It
@@ -369,6 +429,7 @@ main ─────────────────── full builds; one 
                            hub        the server pulls and checks v<N>
                            iOS        ios.yml after build.yml: TestFlight
                                       "Intern" + "Trommi" (public)
+                           Mac        Trommi-macOS.dmg on v<N> (Developer ID, notarized)
                            site       trommi.com, when site/ changed
                            connector  updates itself from the release
 ```
