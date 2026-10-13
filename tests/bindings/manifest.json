@@ -2980,7 +2980,7 @@
       "sessionId": "optional<text>",
       "state": "number",
       "urgency": "number",
-      "createdAt": "number",
+      "firstChange": "number",
       "agentDeviceId": "text",
       "versionChange": "number",
       "newest": "number",
@@ -3000,7 +3000,8 @@
     },
     "DeskListed": {
       "objectId": "text",
-      "versionChange": "number"
+      "versionChange": "number",
+      "firstChange": "number"
     },
     "DeskStackOp": {
       "at": "number",
