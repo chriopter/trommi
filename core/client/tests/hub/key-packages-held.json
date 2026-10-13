@@ -1,0 +1,13 @@
+{
+  "answer": "{\"unused\":8}",
+  "asked": {
+    "route": "key_packages_held"
+  },
+  "name": "key-packages-held",
+  "request": {
+    "body": "{\"single_use\":[]}",
+    "method": "PUT",
+    "path": "/v1/key-packages"
+  },
+  "status": 200
+}

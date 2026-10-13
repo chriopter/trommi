@@ -1,20 +1,58 @@
 //! The hub's routes as a codec without I/O: build a request, read an answer strictly, sort a failure.
 //!
-//! W2 fills it from the checks of web `hub.ts` (the strictest today) and the connector's `hub.rs`. The rules the
-//! contract fixes:
+//! The engine decides what to ask and when (order, retries, the token it holds). The codec knows how a route looks
+//! on the wire: [`Codec::request`] makes the whole [`HttpRequest`](crate::app::io::HttpRequest) of a [`Route`] at
+//! a [`Site`] and hands back an [`Expect`], its own note of what was asked; [`Codec::answer`] takes that note and
+//! the raw answer and gives the typed [`Answer`] or a [`Failure`]. Nothing here does I/O, reads a clock or keeps
+//! state between calls, but the [`stream::StreamReader`], which holds the unfinished event of one connection and
+//! the last change it brought.
 //!
-//! - **Strict answers.** A 2xx answer whose shape, sizes, ids, base64url or change order is not what the route
-//!   promises is [`Failure::BadAnswer`]: never half-applied.
+//! The rules:
+//!
+//! - **The hub is not trusted.** A 2xx answer whose shape, sizes, counts, ids, base64url or order is not what the
+//!   route promises is [`Failure::BadAnswer`] as a whole: no part of it is handed on. Every answer has a size
+//!   cap (also told to the shell as `max_answer`), every list a count, every byte string a length; a list that
+//!   must not repeat an entry is refused when it does; change, log and chain numbers must run the way the route
+//!   says and stay inside what was asked for. These limits are this client's own, whatever a hub does
+//!   ([`limits`], and `json.rs` for how the JSON itself is bounded).
 //! - **Three kinds of failure**, and only the engine decides what to do with them ([`classify`]):
-//!   - [`Failure::Refused`]: the hub said no for good (4xx but 408/429). Not retried; the action rolls back.
+//!   - [`Failure::Refused`]: an error status that is no "not now" (4xx but 408/429). `code` is set only for the
+//!     hub's own refusal ([`refusal`]: a code of spec/v1.md 16 under its own status); without one the answer came
+//!     from somewhere else (a proxy), and nothing may be voided or rolled back on it.
 //!   - [`Failure::NotNow`]: try again later (408, 429, 5xx, and `Retry-After` when given).
 //!   - [`Failure::Offline`]: no answer at all (an [`IoError`] of kind offline or timeout).
+//! - **A redirect is never followed** (the token would travel with it): a 3xx answer is a bad answer.
+//! - **A request the codec cannot build** (an address that is not canonical, a token of other than plain
+//!   characters, an outbox entry without its parts) is also [`Failure::BadAnswer`], its text beginning
+//!   "the request:"; nothing is sent.
+//!
+//! Built so far: catch-up, the live stream, the Desk's open list and the outbox ([`Codec::builds`]). Sign-in,
+//! joins and the other routes follow; until then `request` refuses them.
+
+mod changes;
+mod codec;
+mod desk;
+mod items;
+mod json;
+pub mod limits;
+mod outbox;
+mod refusal;
+mod request;
+pub mod stream;
+mod types;
+
+pub use codec::{Codec, Expect};
+pub use refusal::{refusal, status_of, Refusal};
+pub use request::TIMEOUT_MS;
+pub use stream::{Fed, StreamReader};
+pub use types::*;
 
 use crate::app::io::{HttpResponse, IoError, IoErrorKind};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Failure {
-    /// The hub refused; `code` is spec section 16's when the body names one.
+    /// An error status that is no "not now". `code` is spec section 16's when the answer is the hub's own
+    /// refusal ([`refusal`] gives its further members); `None`: not this protocol's refusal (a proxy).
     Refused { status: u16, code: Option<String> },
     /// Try again; not before `retry_after_ms` when the hub said so.
     NotNow {
@@ -33,6 +71,11 @@ pub fn classify(response: &HttpResponse) -> Result<(), Failure> {
     if (200..300).contains(&status) {
         return Ok(());
     }
+    if status < 400 {
+        return Err(Failure::BadAnswer {
+            why: "a redirect, or a status that is no answer",
+        });
+    }
     let retry_after_ms = response
         .header("retry-after")
         .and_then(|v| v.trim().parse::<u64>().ok())
@@ -43,10 +86,14 @@ pub fn classify(response: &HttpResponse) -> Result<(), Failure> {
             retry_after_ms,
         });
     }
-    let code = serde_json::from_slice::<serde_json::Value>(&response.body)
-        .ok()
-        .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_string));
+    let code = refusal(response).map(|r| r.code.to_owned());
     Err(Failure::Refused { status, code })
+}
+
+/// A JSON route's answer: its failure when the status is none of 2xx, else the body read within `cap` bytes.
+pub(crate) fn answer(response: &HttpResponse, cap: usize) -> Result<json::Json, Failure> {
+    classify(response)?;
+    json::Json::parse(&response.body, cap)
 }
 
 /// Sorts an I/O error: offline, timeout and failed are all [`Failure::Offline`]; `cancelled` is no failure; an
@@ -98,12 +145,38 @@ mod tests {
             })
         );
         assert_eq!(
-            classify(&answer(403, &[], r#"{"error":"not-member"}"#)),
+            classify(&answer(
+                403,
+                &[],
+                r#"{"error":"not-member","message":"no"}"#
+            )),
             Err(Failure::Refused {
                 status: 403,
                 code: Some("not-member".into())
             })
         );
+        // a code this protocol does not have, a known one under another status, a proxy's page: not the hub's
+        for body in [
+            r#"{"error":"made-up"}"#,
+            r#"{"error":"gone","message":"x"}"#,
+            "<html>",
+        ] {
+            assert_eq!(
+                classify(&answer(403, &[], body)),
+                Err(Failure::Refused {
+                    status: 403,
+                    code: None
+                })
+            );
+        }
+        assert!(matches!(
+            classify(&answer(
+                302,
+                &[("location", "https://elsewhere.example/")],
+                ""
+            )),
+            Err(Failure::BadAnswer { .. })
+        ));
         assert_eq!(
             classify_io(&IoError::new(IoErrorKind::Timeout)),
             Some(Failure::Offline)
