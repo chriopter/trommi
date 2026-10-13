@@ -14,6 +14,8 @@
 //! - the Desk: an object is open while the header of its newest envelope says so (the real hub replays 9.2);
 //!   `active=1` is not told apart; cut at 1000 objects of a kind as the real hub cuts (not at its 20 000 registers
 //!   or 8 MiB); every writer's newest value per register is served; every device is served every group's objects;
+//! - `POST /v1/key-packages/claim`: any signed-in device claims of any device (the real hub lets a human device, and
+//!   an opener for its helper session);
 //! - files, pushes, accounts, invites, recovery: not there.
 
 #![allow(dead_code)]
@@ -213,6 +215,8 @@ pub struct Hub {
     pub read_fits: Option<usize>,
     /// A page of a group's log holds at most so many entries, whatever was asked.
     pub log_max: Option<usize>,
+    /// Every refusal the hub answered, as "METHOD /path: code".
+    pub refused: Vec<String>,
     /// Groups the hub says it does not know (`not-found`) on the read routes.
     pub unseen: BTreeSet<GroupId>,
 }
@@ -524,7 +528,10 @@ impl Hub {
                 super::shape::check(&request.method, &path, &body);
                 answer(200, body)
             }
-            Err(n) => answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided })),
+            Err(n) => {
+                self.refused.push(format!("{} {path}: {}", request.method, n.code));
+                answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided }))
+            }
         })
     }
 
@@ -710,6 +717,25 @@ impl Hub {
                     return Ok(json!({ "unused": self.unused(&device) }));
                 }
                 self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::KeyPackages, group: None, epoch: 0, parts })
+            }
+            ("POST", ["v1", "key-packages", "claim"]) => {
+                let asked: Vec<DeviceId> = body["devices"].as_array().into_iter().flatten().filter_map(|d| d.as_str().and_then(|s| DeviceId::from_base64url(s).ok())).collect();
+                let has = |p: &Pool| !p.single_use.is_empty() || p.last_resort.is_some();
+                if asked.is_empty() || asked.len() != body["devices"].as_array().map_or(0, Vec::len) {
+                    return Err(no(Error::BadFormat));
+                }
+                // (all or nothing, unless `partial`: then the devices without one are left out)
+                if body["partial"] != json!(true) && !asked.iter().all(|d| self.pools.get(d).is_some_and(has)) {
+                    return Err(no(Error::NotFound));
+                }
+                let mut claimed = serde_json::Map::new();
+                for device in asked {
+                    if let Some(pool) = self.pools.get_mut(&device).filter(|p| has(p)) {
+                        let package = pool.single_use.pop().or_else(|| pool.last_resort.clone()).expect("checked");
+                        claimed.insert(device.to_base64url(), json!(b64(&package)));
+                    }
+                }
+                Ok(json!({ "key_packages": claimed }))
             }
             ("POST", ["v1", "envelopes"]) => self.post(&device, &OutboxEntry { id: 0, kind: OutboxKind::Envelope, group: None, epoch: 0, parts: vec![bytes("envelope")] }),
             ("POST", ["v1", "groups", _, "commits"]) => {

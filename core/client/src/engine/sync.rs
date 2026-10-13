@@ -12,6 +12,8 @@ use crate::hub::{classify_io, Failure};
 
 #[path = "joins.rs"]
 pub mod joins;
+#[path = "upkeep.rs"]
+pub mod upkeep;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -131,6 +133,11 @@ pub enum Alert {
     ClientTooOld,
     /// A newer Trommi wrote here.
     NewerVersion { from: DeviceId },
+    /// A stale session waits for a repair this device could not make: nothing is written in it until then (5.2.8).
+    Unrepaired { group: GroupId, code: &'static str },
+    /// The core found something wrong in a sender's chain while it processed a Commit (`equivocation`: a Cut names
+    /// another envelope than the one this device had accepted under that number).
+    Finding { group: GroupId, sender: DeviceId, code: &'static str },
 }
 
 /// What the engine tells the App, in order. The App feeds the model from it (`Envelope`, `Log`, `Groups`).
@@ -194,26 +201,46 @@ impl Retry {
 }
 
 /// What a request in flight was for.
-enum Asked<E> {
-    Challenge(E),
-    Token(E),
-    Page(E),
-    Post { expect: E, entry: u64, kind: OutboxKind, group: Option<GroupId> },
-    Welcomes(E),
-    GroupLog { expect: E, group: GroupId, upto: u64 },
-    Chain { expect: E, group: GroupId, sender: DeviceId, before: u64 },
+enum Asked {
+    Challenge(Expect),
+    Token(Expect),
+    Page(Expect),
+    Post { expect: Expect, entry: u64, kind: OutboxKind, group: Option<GroupId> },
+    Welcomes(Expect),
+    GroupLog { expect: Expect, group: GroupId, upto: u64 },
+    Chain { expect: Expect, group: GroupId, sender: DeviceId, before: u64 },
     /// A report to the hub nothing waits for (`RejectCommit`).
-    Told(E),
-    Mend { expect: E, mend: Mend },
-    KeyPackagesHeld(E),
-    Desk(E),
+    Told(Expect),
+    Mend { expect: Expect, mend: Mend },
+    KeyPackagesHeld(Expect),
+    Desk(Expect),
     /// Joins of session groups from outside, posted together: each entry's id and group, in order.
-    Joins { expect: E, entries: Vec<(u64, Option<GroupId>)> },
+    Joins { expect: Expect, entries: Vec<(u64, Option<GroupId>)> },
     /// A read for the joins of a sign-in's sessions (`joins`).
-    JoinRead { expect: E, what: joins::Read },
+    JoinRead { expect: Expect, what: joins::Read },
     /// The first envelope of an open object.
-    First { expect: E, route: ObjectRoute, object: ObjectId, after: u64 },
+    First { expect: Expect, route: ObjectRoute, object: ObjectId, after: u64 },
+    /// A KeyPackage claimed for a job of tending the groups (`upkeep`).
+    Claim { expect: Expect, job: upkeep::Job },
     DeviceWrite,
+}
+
+impl Asked {
+    /// How the answer is to be read; none for a write to the store.
+    fn expect(&self) -> Option<&Expect> {
+        match self {
+            Asked::DeviceWrite => None,
+            Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) => Some(e),
+            Asked::Post { expect, .. }
+            | Asked::GroupLog { expect, .. }
+            | Asked::Chain { expect, .. }
+            | Asked::Mend { expect, .. }
+            | Asked::Joins { expect, .. }
+            | Asked::JoinRead { expect, .. }
+            | Asked::First { expect, .. }
+            | Asked::Claim { expect, .. } => Some(expect),
+        }
+    }
 }
 
 /// The reading of the hub's Desk: once per run, and again when a session group was joined (the hub lists only what
@@ -291,7 +318,7 @@ pub struct Engine {
     client: String,
     jitter: Jitter,
     stopped: Option<Stopped>,
-    pending: BTreeMap<IoId, Asked<Expect>>,
+    pending: BTreeMap<IoId, Asked>,
     reports: VecDeque<Report>,
 
     // signing in
@@ -365,6 +392,8 @@ pub struct Engine {
     joining: Option<joins::Joining>,
     /// The hub refused joins posted together as a request: each goes alone, and gets its own answer.
     joins_alone: bool,
+    /// Tending the groups: stale sessions, human devices a session lacks, the core's findings (`upkeep`).
+    tending: upkeep::Tending,
 }
 
 /// Why a stored device does not open as an engine.
@@ -452,6 +481,7 @@ impl Engine {
             connection: Connection::Offline,
             joining: None,
             joins_alone: false,
+            tending: upkeep::Tending::new(),
         })
     }
 
@@ -527,6 +557,7 @@ impl Engine {
             if let Some(joining) = &self.joining {
                 want(joining.retry.at);
             }
+            want(self.tending.wake());
             if self.caught_up && self.upkeep_asked.is_none() {
                 want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
             }
@@ -584,6 +615,7 @@ impl Engine {
         if let Some(joining) = &mut self.joining {
             joining.retry.hurry();
         }
+        self.tending.retry.hurry();
     }
 
     /// The result of a store effect of this engine. False: the id is not the engine's.
@@ -612,26 +644,12 @@ impl Engine {
         if self.stopped.is_some() {
             return true;
         }
-        let (expect, response) = match (&asked, &result) {
-            (Asked::DeviceWrite, _) => return true,
-            (
-                Asked::Challenge(e)
-                | Asked::Token(e)
-                | Asked::Page(e)
-                | Asked::Post { expect: e, .. }
-                | Asked::Welcomes(e)
-                | Asked::GroupLog { expect: e, .. }
-                | Asked::Chain { expect: e, .. }
-                | Asked::Mend { expect: e, .. }
-                | Asked::Desk(e)
-                | Asked::KeyPackagesHeld(e)
-                | Asked::First { expect: e, .. }
-                | Asked::Joins { expect: e, .. }
-                | Asked::JoinRead { expect: e, .. }
-                | Asked::Told(e),
-                IoResult::Ok(response),
-            ) => (Some(e), Some(response)),
-            _ => (None, None),
+        if matches!(asked, Asked::DeviceWrite) {
+            return true;
+        }
+        let (expect, response) = match &result {
+            IoResult::Ok(response) => (asked.expect(), Some(response)),
+            IoResult::Err(_) => (None, None),
         };
         let answer: Result<Answer, Failure> = match (expect, response, &result) {
             (Some(expect), Some(response), _) => self.codec.answer(expect, response),
@@ -672,6 +690,7 @@ impl Engine {
             Asked::First { route, object, after, .. } => self.on_first(ctx, route, object, after, answer, unauthorised),
             Asked::Joins { entries, .. } => self.on_joins_posted(ctx, entries, answer, unauthorised),
             Asked::JoinRead { what, .. } => self.on_join_read(ctx, what, answer, unauthorised),
+            Asked::Claim { job, .. } => self.on_claimed(ctx, job, answer, unauthorised),
         }
         self.drive(ctx);
         true
@@ -790,6 +809,7 @@ impl Engine {
         self.drive_stream(ctx);
         self.drive_joins(ctx);
         self.drive_upkeep(ctx);
+        self.drive_tending(ctx);
         self.drive_pump(ctx);
         self.flush(ctx);
         self.connect(ctx);
@@ -866,7 +886,7 @@ impl Engine {
         }
     }
 
-    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(Expect) -> Asked<Expect>) -> Option<IoId> {
+    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(Expect) -> Asked) -> Option<IoId> {
         let site = Site {
             url: &self.hub,
             token: if token { self.token.as_ref().map(|t| t.value.as_str()) } else { None },
@@ -1137,6 +1157,7 @@ impl Engine {
     /// The device's groups may have changed: the App is told, and what waited for a group is looked at again.
     fn groups_changed(&mut self) {
         self.report(Report::Groups);
+        self.tending.changed();
         if self.behind.is_empty() {
             return;
         }
@@ -1822,6 +1843,9 @@ impl Engine {
         if let Err(e) = self.device.key_packages_to_upload(unused as usize, ctx.now) {
             self.local(ctx, &e);
         }
+        // (the groups are looked at with every round as well: a gap whose repair failed is not forgotten, and a
+        //  leaf that grew old is renewed)
+        self.tending.timed();
         // `heads` (9.0.7) in each live group when the core says they are due: what a hub withholds shows there
         for group in self.device.groups().unwrap_or_default() {
             if group.archived || group.pending {
@@ -1885,7 +1909,7 @@ impl Engine {
         }
     }
 
-    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(Expect) -> Asked<Expect>) -> Option<IoId> {
+    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(Expect) -> Asked) -> Option<IoId> {
         self.ask(ctx, Route::Outbox { room, entry, extra: None }, true, asked)
     }
 
@@ -1936,6 +1960,7 @@ impl Engine {
             // An accepted Commit is merged where the hub's order shows it. Without a stream that is the
             // next page.
             self.report(Report::Groups);
+            self.tending.want = true;
             if !self.stream.as_ref().is_some_and(|s| s.opened) {
                 self.pass = true;
             }
@@ -1998,6 +2023,18 @@ impl Engine {
         // the group moved on under it: the log is processed, and whoever asked builds it again
         if has_moved(&code) {
             self.pass = true;
+        } else if carries_commit(kind) {
+            // (a Commit refused for another reason: whatever of upkeep built it waits before it builds it again)
+            self.tending.refused();
+        }
+        // 3.5: the epoch took all the envelopes it may hold. A human device moves the group on with an update of
+        // its leaf, and writing goes on in the next epoch (whoever sealed the envelope seals it again).
+        if code == Error::EpochFull && kind == OutboxKind::Envelope && self.device.is_human() {
+            if let Some(group) = group {
+                if let Err(e) = self.device.update(&group, true, ctx.now) {
+                    self.local(ctx, &e);
+                }
+            }
         }
         self.join_answered(kind, group, Some(&code));
         None

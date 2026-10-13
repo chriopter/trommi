@@ -31,6 +31,9 @@ fn type_of(v: &Value) -> &'static str {
     }
 }
 
+/// Objects the hub keys by an id (the KeyPackages of a claim, by device).
+const MAPS: &[&str] = &[".key_packages"];
+
 fn walk(v: &Value, path: &str, shape: &mut Shape) {
     let place = shape.entry(path.to_string()).or_default();
     place.types.insert(type_of(v));
@@ -42,6 +45,15 @@ fn walk(v: &Value, path: &str, shape: &mut Shape) {
             }
             for (name, v) in o {
                 walk(v, &format!("{path}.{name}"), shape);
+            }
+            if MAPS.contains(&path) {
+                // (its members are keys, not names: every one counts as the same place)
+                let place = shape.entry(path.to_string()).or_default();
+                place.members.clear();
+                for (name, v) in o {
+                    shape.remove(&format!("{path}.{name}"));
+                    walk(v, &format!("{path}{{}}"), shape);
+                }
             }
         }
         Value::Array(list) => {
@@ -74,6 +86,7 @@ fn family(method: &str, path: &str) -> Option<&'static [&'static str]> {
         ("POST", ["v1", "groups", "read"]) => &["groups-read"],
         ("POST", ["v1", "commits"]) => &["joins"],
         ("PUT", ["v1", "key-packages"]) => &["key-packages-held", "outbox-key-packages"],
+        ("POST", ["v1", "key-packages", "claim"]) => &["claim"],
         ("POST", ["v1", "envelopes"]) => &["outbox-envelope"],
         ("POST", ["v1", "groups", _, "commits"]) => &["outbox-commit", "outbox-external-commit"],
         ("POST", ["v1", "groups", _, "messages"]) => &["outbox-message", "outbox-relay"],
