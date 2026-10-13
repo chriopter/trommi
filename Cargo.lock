@@ -3074,6 +3074,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "trommi-core",
+ "trommi-io",
  "zeroize",
 ]
 
@@ -3173,6 +3174,18 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tokio",
+]
+
+[[package]]
+name = "trommi-io"
+version = "0.0.0"
+dependencies = [
+ "reqwest",
+ "rustix",
+ "tokio",
+ "trommi-client-core",
+ "trommi-core",
+ "zeroize",
 ]
 
 [[package]]
