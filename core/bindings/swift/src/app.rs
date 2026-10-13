@@ -8,8 +8,9 @@ use trommi_client_core::app::edge::{self, Packet};
 use trommi_client_core::app::App;
 
 record! {
-    /// JSON text and the bytes it names: a `Bytes` field in the JSON is the index of its bytes in `blobs`.
-    pub struct AppPacket {
+    /// JSON text and the bytes it names: a `Bytes` field in the JSON is the index of its bytes in `blobs`. It may
+    /// hold a password or a key: `Debug` shows nothing of it.
+    secret pub struct AppPacket {
         pub json: String,
         pub blobs: Vec<Vec<u8>>,
     }

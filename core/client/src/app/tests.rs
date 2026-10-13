@@ -158,9 +158,11 @@ fn debug_never_shows_secrets() {
     assert!(!format!("{header:?}").contains("t0ken"));
     let packet = edge::encode_event(&event);
     assert!(!format!("{packet:?}").contains("hunter2"));
-    let answer = PlatformAnswer::Passkey {
+    let answer = PlatformAnswer::PasskeyCreated {
         credential_id: vec![1].into(),
+        attestation_object: vec![2].into(),
+        client_data_json: vec![3].into(),
         prf: vec![42; 32].into(),
     };
-    assert_eq!(format!("{answer:?}"), "Passkey(<redacted>)");
+    assert_eq!(format!("{answer:?}"), "PasskeyCreated(<redacted>)");
 }

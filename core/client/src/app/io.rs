@@ -236,16 +236,18 @@ pub enum SecretOp {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum PlatformOp {
-    /// Make a passkey with the PRF extension, evaluated at `prf_input`.
+    /// Make a passkey for the hub's registration `challenge`, with the PRF extension evaluated at `prf_input`.
     PasskeyCreate {
         rp_id: String,
+        challenge: Bytes,
         user_handle: Bytes,
         user_name: String,
         prf_input: Bytes,
     },
-    /// Use one of these passkeys, evaluating PRF at `prf_input`.
+    /// Sign the hub's `challenge` with one of these passkeys, evaluating PRF at `prf_input`.
     PasskeyGet {
         rp_id: String,
+        challenge: Bytes,
         credential_ids: Vec<Bytes>,
         prf_input: Bytes,
     },
@@ -263,9 +265,21 @@ pub enum PlatformOp {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "answer", rename_all = "snake_case")]
 pub enum PlatformAnswer {
-    /// `prf` is key material: never logged.
-    Passkey {
+    /// A new passkey: what the hub's registration route takes, and the PRF output (key material).
+    PasskeyCreated {
         credential_id: Bytes,
+        attestation_object: Bytes,
+        client_data_json: Bytes,
+        prf: Bytes,
+    },
+    /// A signed challenge: what the hub's sign-in route takes, and the PRF output (key material).
+    PasskeyAsserted {
+        credential_id: Bytes,
+        authenticator_data: Bytes,
+        client_data_json: Bytes,
+        signature: Bytes,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user_handle: Option<Bytes>,
         prf: Bytes,
     },
     Push {
@@ -280,7 +294,8 @@ pub enum PlatformAnswer {
 impl std::fmt::Debug for PlatformAnswer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PlatformAnswer::Passkey { .. } => f.write_str("Passkey(<redacted>)"),
+            PlatformAnswer::PasskeyCreated { .. } => f.write_str("PasskeyCreated(<redacted>)"),
+            PlatformAnswer::PasskeyAsserted { .. } => f.write_str("PasskeyAsserted(<redacted>)"),
             PlatformAnswer::Push { kind, .. } => write!(f, "Push({kind}, <redacted>)"),
             PlatformAnswer::Refused => f.write_str("Refused"),
             PlatformAnswer::Done => f.write_str("Done"),

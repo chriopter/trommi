@@ -652,6 +652,11 @@ fn the_app_core_takes_one_event_and_answers_with_its_effects() {
         },
     );
     assert!(ok.is_ok());
+    let secret = AppPacket {
+        json: r#"{"password":"hunter2"}"#.into(),
+        blobs: vec![vec![7; 32]],
+    };
+    assert!(!format!("{secret:?}").contains("hunter2"));
     app.close();
     assert_eq!(code_of(app.view_json()), ErrorCode::Internal);
 }
