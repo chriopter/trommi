@@ -317,6 +317,17 @@ export interface NotifyOpened {
   payload: Uint8Array
 }
 
+/** Off your mind laid out as one pile (client/src/off_pile.rs `OffPile`). */
+export interface OffPile {
+  top: number
+  moreRunning: number
+  putOff: number
+  closed: number
+  pile: boolean
+  behind: number
+  restShown: number
+  open: boolean
+}
 export interface Versions {
   core: string
   openmls: string
@@ -1171,6 +1182,9 @@ export class FileDecryptor {
 // ---- everything without state -------------------------------------------------------------------------------------
 
 export function versions(): Versions
+/** Off your mind as one pile (client/src/off_pile.rs): `running` worked on, `putOff`, `closed`: real totals; `full` on
+ *  the page Off your mind. */
+export function offPile(running: number, putOff: number, closed: number, full: boolean): OffPile
 /** Runs the core's self-test. Its last step derives password keys (Argon2id over 64 MiB): call it in a worker. */
 export function selfTest(nowMs: number): SelfTestReport
 export function logFinding(code: ErrorCode): LogFinding

@@ -1215,7 +1215,7 @@ body > main#inbox { contain: strict; }
 /* ---- Off your mind (desk.mjs offList): what runs as live cards on one stack that fans out ("+N running") and folds
    back; what is done, put off or thrown away as a very compact list ---- */
 .oym { gap: var(--s-3); text-align: left; }
-.oym :is(.oym-card, .oym-mini, summary) { text-align: left; }
+.oym :is(.oym-card, .pile-rest, summary) { text-align: left; }
 .oym-card { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: 12px 14px; border: 1.5px solid color-mix(in srgb, var(--fg) 55%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); color: var(--fg); text-decoration: none; box-shadow: 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent); }
 @media (any-hover: hover) { .oym-card:hover { border-color: var(--fg); } }
 .oym-card .agent-avatar { width: 30px; height: 30px; }
@@ -1225,30 +1225,42 @@ body > main#inbox { contain: strict; }
 .oym-who { color: var(--fg); font-weight: 600; }
 .oym-ago { align-self: start; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
 /* the compact list: one short line each */
-.oym-minis { display: grid; margin: 4px 0 0; padding: 0; list-style: none; }
-.oym-mini { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 28px; color: var(--muted); font: 400 var(--t-sm)/1.25 var(--font); }
-.oym-mini a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
-.oym-mini a:hover { color: var(--fg); text-decoration: underline; }
-.oym-mini-mark { display: grid; place-items: center; color: var(--accent); }
-.oym-mini-mark .sketch { width: 14px; height: 14px; stroke-width: 2.2; }
-.oym-mini[data-g="later"] .oym-mini-mark { color: var(--stamp-ink-later); }
-.oym-mini[data-g="trash"] .oym-mini-mark { color: var(--faint); }
-.oym-mini[data-shredded] a { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
-.oym-mini-ago { color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
 /* the stack: the top card, the edges of the others behind it; open, every card one under the other and Fold */
-.oym-stackwrap > summary { list-style: none; cursor: pointer; }
-.oym-stackwrap > summary::-webkit-details-marker { display: none; }
-.oym-stack { position: relative; display: block; margin-bottom: calc(var(--behind) * 7px + 6px); }
 /* the cards behind: the front card's size, each a little narrower and lower, so their bottom edges show; no rotation
    (a card as wide as the Desk turned even half a degree runs askew across the whole width) */
 .oym-sheet { position: absolute; top: 0; bottom: 0; left: calc(var(--k) * 12px); right: calc(var(--k) * 12px); border: 1.5px solid color-mix(in srgb, var(--fg) 30%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); transform: translateY(calc(var(--k) * 7px)); opacity: calc(1 - var(--k) * .22); }
-.oym-card.is-top { z-index: 1; }
-.oym-more { position: absolute; z-index: 2; right: 40px; bottom: -11px; padding: 4px 10px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 600 var(--t-xs)/1 var(--font); }
-.oym-stackwrap[open] > .oym-stack { display: none; }
-.oym-fan { display: grid; gap: var(--s-2); }
 .oym-fold { justify-self: start; margin: 2px 0 0; padding: 6px 2px; border: 0; background: none; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
 .oym-fold:hover { color: var(--fg); }
-.oym-fold:focus-visible, .oym-stack:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 10px; }
-.oym-stackwrap:not([open]) > .oym-fan { display: none; }
-.oym .oym-mini > a { text-align: left; justify-self: stretch; }
+.oym-fold:focus-visible, .pile-pile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 10px; }
 .oym .oym-card-words, .oym .oym-card-words > * { text-align: left; justify-self: start; }
+
+/* ---- Off your mind as one pile (desk.mjs offList; the owner's pick of 13 October 2026, "untereinander"): the first
+   running cards one under the other, slim; the pile with its words under them; opened, the other running cards, then
+   the put-off and done ones as small quiet rows at the bottom ---- */
+.oym-card.is-slim { padding: 9px 14px; grid-template-columns: 24px minmax(0, 1fr) auto; }
+.oym-card.is-slim .agent-avatar { width: 24px; height: 24px; }
+.oym-card.is-slim .oym-card-words b { font-size: var(--t-sm); -webkit-line-clamp: 1; }
+.pile-cards { display: grid; gap: 6px; }
+.pile-wrap > summary { list-style: none; cursor: pointer; }
+.pile-wrap > summary::-webkit-details-marker { display: none; }
+.pile-pile { position: relative; display: block; margin-bottom: calc(var(--behind) * 7px + 4px); }
+.pile-pile-top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 9px 14px; border: 1.5px dashed color-mix(in srgb, var(--fg) 35%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); color: var(--muted); }
+.pile-pile-top b { color: var(--fg); font: 600 var(--t-sm)/1.2 var(--font); }
+.pile-pile-top small { font: 600 var(--t-xs)/1 var(--font); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+.pile-pile:hover .pile-pile-top { border-color: color-mix(in srgb, var(--fg) 60%, transparent); }
+.pile-wrap[open] > .pile-pile { display: none; }
+.pile-open { display: grid; gap: 6px; }
+.pile-wrap:not([open]) > .pile-open { display: none; }
+.pile-rests { display: grid; gap: 4px; margin-top: 4px; }
+.pile-rest { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--muted); font: 400 var(--t-xs)/1.3 var(--font); text-decoration: none; text-align: left; }
+.pile-rest b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--muted); }
+.pile-rest:hover b { color: var(--fg); }
+.pile-rest .ago { color: var(--faint); white-space: nowrap; }
+.pile-rest-mark { display: grid; place-items: center; color: var(--accent); }
+.pile-rest-mark .sketch { width: 13px; height: 13px; stroke-width: 2.2; }
+.pile-rest[data-g="later"] .pile-rest-mark { color: var(--stamp-ink-later); }
+.pile-rest[data-g="trash"] .pile-rest-mark { color: var(--faint); }
+.pile-rest[data-shredded] b { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
+.pile-rest[data-pinned]:has(+ .pile-rest:not([data-pinned])) { margin-bottom: 6px; }
+.pile-all { justify-self: start; margin-top: 2px; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
+.pile-all:hover { color: var(--fg); }

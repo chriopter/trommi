@@ -9,15 +9,15 @@ const read = f => fs.readFileSync(new URL(`../../../app/web/public/${f}`, import
 
 test('a closed row: the tick when answered or done, the shredder or the return arrow when thrown away', () => {
   const src = read('desk.mjs')
-  const box = src.slice(src.indexOf('function miniRow('), src.indexOf('return html`<li class="oym-mini"'))
+  const box = src.slice(src.indexOf('function restRow('), src.indexOf('return html`<a class="pile-rest"'))
   assert.match(box, /s\.g === 'trash' \? sk\(c\.status === 'shredded' \? 'shred' : 'withdraw'\) : sk\('tick'\)/, 'shredded: the shredder; withdrawn: the return arrow; else the tick')
 })
 
 test('only a shredded row is struck through', () => {
   const css = read('desk.css'), src = read('desk.mjs')
-  const struck = css.split('}').filter(r => /\.oym-mini/.test(r) && /line-through/.test(r))
+  const struck = css.split('}').filter(r => /\.pile-rest/.test(r) && /line-through/.test(r))
   assert.equal(struck.length, 1, struck.join('}\n'))
-  assert.match(struck[0], /\.oym-mini\[data-shredded\]/)
+  assert.match(struck[0], /\.pile-rest\[data-shredded\]/)
   assert.match(src, /s\.g === 'trash' && c\.status === 'shredded' \? raw\(' data-shredded'\)/, 'only a shredded row is marked so')
 })
 
@@ -31,5 +31,5 @@ test('the cards behind the stack are the front card\'s size, a little narrower a
 
 test('a put-off line says until when, or nothing; a line with no time never shows the epoch', () => {
   const src = read('desk.mjs')
-  assert.match(src, /const when = s\.g === 'later' \? \(until \? html`<span class="ago oym-mini-ago">until \$\{until\}<\/span>` : ''\) : s\.at > 0 \? agoSpan\(s\.at, 'ago oym-mini-ago'\) : ''/)
+  assert.match(src, /const when = s\.g === 'later' \? \(until \? html`<span class="ago pile-rest-ago">until \$\{until\}<\/span>` : ''\) : s\.at > 0 \? agoSpan\(s\.at, 'ago pile-rest-ago'\) : ''/)
 })

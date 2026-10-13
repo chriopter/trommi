@@ -142,6 +142,7 @@ functions! {
     plain shape_id_from_wire(id);
     plain shape_id_to_wire(id);
     plain piece_from_wire(piece);
+    plain off_pile(running, put_off, closed, full);
     fallible piece_to_wire(piece_json);
 }
 

@@ -335,3 +335,34 @@ impl ClientDesk {
         })
     }
 }
+
+record! {
+    /// Off your mind laid out as one pile (client/src/off_pile.rs `OffPile`).
+    pub struct OffPile {
+        pub top: u64,
+        pub more_running: u64,
+        pub put_off: u64,
+        pub closed: u64,
+        pub pile: bool,
+        pub behind: u64,
+        pub rest_shown: u64,
+        pub open: bool,
+    }
+}
+
+/// Off your mind as one pile (client/src/off_pile.rs): `running` cards worked on, `put_off`, `closed` (real totals);
+/// `full` on the page Off your mind.
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+pub fn off_pile(running: u64, put_off: u64, closed: u64, full: bool) -> OffPile {
+    let p = trommi_client_core::off_pile::off_pile(running, put_off, closed, full);
+    OffPile {
+        top: p.top,
+        more_running: p.more_running,
+        put_off: p.put_off,
+        closed: p.closed,
+        pile: p.pile,
+        behind: p.behind,
+        rest_shown: p.rest_shown,
+        open: p.open,
+    }
+}
