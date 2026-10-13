@@ -8,6 +8,7 @@
 //   applyGroups(model, groups, roles, change)     the device's groups: members and sessions
 //   applyCommit(model, facts, change, opts)       what a Commit did, as far as a human is told
 //   applyPresence(model, reports, change, now)    who is connected, an agent's link report
+//   applyHere(model, named, change, now)          a new stream's list of who is here is whole: the rest is offline
 //   applyWorkTrail(model, session, step, n, change)   one step of a running turn (7.3)
 //   applyStrokePiece(model, piece, change, ctx)   the points of a stroke still being drawn (7.2)
 //   echo… / confirmEcho / rollbackEcho            own sends, shown at once ("Human actions" in the README)
@@ -399,6 +400,17 @@ export function applyPresence(model: Model, reports: Iterable<DeviceReport>, cha
     }
     change.members = true
   }
+}
+
+/**
+ * The hub's list of who is here is whole (stream event `here`, after a new stream's `presence` events): every other
+ * device shown online that the list did not name (`named`, hex ids) left while this device had no stream, and is
+ * offline as of `now`. A device never seen online keeps its state. Returns whether anything changed.
+ */
+export function applyHere(model: Model, named: ReadonlySet<string>, change: Change, now: number = Date.now()): boolean {
+  const gone = [...model.members.values()].filter(m => m.is_online && !m.is_me && !named.has(m.device_id))
+  applyPresence(model, gone.map(m => ({ device_id: m.device_id, is_online: false, offline_since: now })), change, now)
+  return gone.length > 0
 }
 
 /** Who holds an object now (whom a human addresses an answer or a verdict to): its owner while that device is a

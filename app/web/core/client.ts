@@ -472,6 +472,7 @@ export class Client {
     })
     on('alert', a => { M.pushAlert(this.model, this.change, { code: a.code, message: a.message, envelope_number: a.change, at: this.now() }) })
     on('stream', event => this.onStream(event))
+    on('opened', () => { this.namedHere = new Set() })
     on('invites', ({ open }) => this.invitesDone(open))
     on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() }; void this.reloadArchived().catch(() => {}) })
     on('batch', () => this.publish())
@@ -497,9 +498,12 @@ export class Client {
       else this.emit('device-closed', null)
     })
   }
+  /** The devices the hub named online since the live stream opened, until its `here` ends that list (null: none open). */
+  private namedHere: Set<string> | null = null
   private onStream(event: StreamEvent): void {
     switch (event.event) {
       case 'presence':
+        if (event.online) this.namedHere?.add(hex(event.device))
         // (an event without `hears` says only that a stream opened or closed: the link report held stands while the
         //  device is online; the hub tells a new stream the reports of now first, and every change after)
         M.applyPresence(this.model, [{ device_id: hex(event.device), is_online: event.online, offline_since: event.online ? null : this.now(),
@@ -509,6 +513,14 @@ export class Client {
         if (event.lost) M.pushAlert(this.model, this.change, { code: 'agent-lost', message: 'An agent lost its connection.', sender_device_id: hex(event.device), at: this.now() })
         this.publish()
         return
+      case 'here': {
+        // (the list of who is here is whole: a device shown online that it did not name left while no stream was
+        //  open, its `online: false` missed, as presence is not replayed)
+        const named = this.namedHere
+        this.namedHere = null
+        if (named && M.applyHere(this.model, named, this.change, this.now())) this.publish()
+        return
+      }
       case 'invite_request': void this.checkInvite(hex(event.invite_id)).catch(() => {}); return
       case 'file_evicted': this.attachmentCache.delete(hex(event.file_id)); void this.cache.delete(`file/${hex(event.file_id)}`).catch(() => {}); return
       case 'archived': void this.engine.archive(event.group).catch(() => {}); return

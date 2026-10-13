@@ -681,6 +681,15 @@ public final class Board {
   }
   /** A stream `presence` event for one device. */
   public func applyPresence(_ d: JV, change: inout Change) { applyDevices([d], change: &change) }
+  /**
+   * The hub's list of who is here is whole (stream event `here`, after a new stream's `presence` events): every other
+   * device shown online that the list did not name (`named`, hex ids) left while this device had no stream, and is
+   * offline as of `now`. A device never seen online keeps its state (model.ts applyHere).
+   */
+  public func applyHere(named: Set<String>, now: UInt64 = nowMs(), change: inout Change) {
+    let gone = members.values.filter { $0.isOnline && !$0.isMe && !named.contains($0.deviceId) }
+    applyDevices(gone.map { JV.obj(["device_id": .str($0.deviceId), "is_online": .bool(false), "offline_since": .num(Double(now))]) }, change: &change)
+  }
 
   /** The sessions a register `session/<key>` sets: the session of that id, or the main sessions of that agent device. */
   func sessionsSetBy(_ key: String) -> [Session] {
