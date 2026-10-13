@@ -329,8 +329,9 @@ fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView {
         run: 0,
         media_says,
         media: media.into_iter().take(3).collect(),
-        tiles: if info { read_tiles() } else { tiles(&options, &advised, multiple, false) },
-        ways: if info { vec!["later", "reverse", "shred"] } else { vec!["later", "reverse", "duck", "shred"] }.into_iter().map(String::from).collect(),
+        // (not read here yet: nothing to answer, not even "Got it", until it is read)
+        tiles: if loading { no_tiles() } else if info { read_tiles() } else { tiles(&options, &advised, multiple, false) },
+        ways: if loading { vec![] } else if info { vec!["later", "reverse", "shred"] } else { vec!["later", "reverse", "duck", "shred"] }.into_iter().map(String::from).collect(),
     }
 }
 
@@ -347,8 +348,8 @@ fn request_row(b: &Board, p: &PermissionRequest, agent: Option<usize>) -> DeskRo
             urgency: "normal".into(),
             created_ms: p.sent_at,
             from,
-            tiles: read_tiles(),
-            ways: vec!["later".into(), "reverse".into(), "shred".into()],
+            tiles: no_tiles(),
+            ways: Vec::new(),
             ..Default::default()
         };
     }
@@ -425,6 +426,13 @@ fn fits(label: &str, width: usize, lines: usize) -> bool {
 /// A plain yes or no.
 fn bare(label: &str) -> bool {
     matches!(label.trim().to_lowercase().as_str(), "yes" | "no" | "ok" | "okay" | "allow" | "deny" | "ja" | "nein")
+}
+
+fn no_tiles() -> TilesView {
+    TilesView {
+        kind: "none".into(),
+        ..Default::default()
+    }
 }
 
 fn read_tiles() -> TilesView {
@@ -703,7 +711,8 @@ mod tests {
         let v = view(&r, None);
         let row = |id: &str| v.rows.iter().find(|x| x.id == id).unwrap();
         let l = row("q-loading");
-        assert_eq!((l.kind.as_str(), l.loading, l.title.as_str(), l.words.as_str(), l.sign.as_str(), l.urgency.as_str(), l.tiles.kind.as_str()), ("info", true, "Loading …", "Still being decrypted on this device.", "", "normal", "read"));
+        assert_eq!((l.kind.as_str(), l.loading, l.title.as_str(), l.words.as_str(), l.sign.as_str(), l.urgency.as_str(), l.tiles.kind.as_str()), ("info", true, "Loading …", "Still being decrypted on this device.", "", "normal", "none"));
+        assert!(l.ways.is_empty() && row("p-unread").ways.is_empty() && row("p-unread").tiles.kind == "none");
         let n = row("q-newer");
         assert_eq!((n.kind.as_str(), n.newer, n.title.as_str(), n.words.as_str(), n.tiles.kind.as_str()), ("info", true, "A card from a newer Trommi", NEEDS_NEWER, "read"));
         let p = row("p-unread");

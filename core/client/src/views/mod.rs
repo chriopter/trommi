@@ -27,7 +27,7 @@ pub mod sidebar;
 mod testroom;
 pub mod words;
 
-pub use board::{Board, Lens};
+pub use board::{render, Board, Lens};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -222,12 +222,9 @@ pub struct SidebarView {
     pub desks: Vec<DeskTab>,
     /// The sessions of the desk in view, one row each, in drawing order: a main, then its helpers.
     pub sessions: Vec<SessionRowView>,
-    /// The number on the app icon and the tab: the open questions of every desk (no infos, nothing that is with
-    /// its agent).
+    /// The number on the app icon and the tab: the open questions of the desk in view (no infos, nothing that is
+    /// with its agent). Never drawn red.
     pub badge: u32,
-    /// One of the counted questions knocks (urgent, blocking, an approval): the number shows red.
-    #[serde(default)]
-    pub knocks: bool,
     /// The desk in view: its id, or "all".
     #[serde(default)]
     pub desk: String,
@@ -558,7 +555,7 @@ pub struct MediaView {
 /// The answers a row offers without opening the card.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TilesView {
-    /// "read" (What?? and Got it), "pair" (two answers, the lead last), "advised" (the advised answer, and
+    /// "none" (not read on this device yet: nothing to answer), "read" (What?? and Got it), "pair" (two answers, the lead last), "advised" (the advised answer, and
     /// "+N other ways" that opens the card), "choose" (one tile that opens the card).
     pub kind: String,
     /// The answers of "pair" and "advised", in drawing order.
