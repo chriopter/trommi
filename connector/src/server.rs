@@ -1094,12 +1094,19 @@ impl Conn {
             return format!("This session is not in the Trommi room: the key of this folder ({}) is held by {who}{why}. This session asks again on every Trommi tool call: it takes the key as soon as it is free, and a holder of this same session that does not use Trommi hands it over (never used: after {}, a Claude Code spare at once; used: after {} without a Trommi call). If the human just pressed Reconnect in /mcp and the holder is the old connector of this same session: tell the human to run `kill {}` in a terminal, then call any Trommi tool again (no restart needed). If a second Claude Code session in this folder is at work, this one needs an invite of its own (two sessions are two members): in the Trommi app \"invite an agent\", then in this folder {}. Do not join yourself.",
                 kf.display(), secs(self.unused_ms), secs(self.idle_ms), if pid_list.is_empty() { "<pid>".to_string() } else { pid_list }, join_hint());
         }
-        if let Some(p) = me
+        let foreign = me
             .paths
             .as_ref()
-            .filter(|p| !p.foreign.is_empty() && !p.has_key && me.error.is_none())
-        {
-            let n = p.foreign.len();
+            .filter(|p| !p.has_key)
+            .map(|p| p.foreign.len())
+            .filter(|n| *n > 0)
+            .or_else(|| {
+                // (a session with an id and no key of its own resolves to no room: the folder's keys are counted)
+                (me.paths.is_none() && !self.cfg.owner().is_empty())
+                    .then(|| member::others_keys_here(&self.cfg))
+                    .filter(|n| *n > 0)
+            });
+        if let Some(n) = foreign.filter(|_| me.error.is_none()) {
             let keys = if n == 1 {
                 "the Trommi key of this folder belongs".to_string()
             } else {

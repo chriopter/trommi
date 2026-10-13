@@ -1,229 +1,265 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
+import "pen.mjs" as Pen
 
-// One card of the Desk. Urgency shows as a word on a tile beside the session's name; the options are tiles, the
-// agent's pick outlined. An info card is read; a permission request allowed or denied.
-Rectangle {
+// A card's own page: who asks, the question in the display face, its teaser and body, and every option as a tile
+// in the asking session's hue (the agent's advice outlined with the pen). Several options: picked, then sent.
+Item {
     id: root
     required property var trommi
     required property var theme
     required property var card
-
-    readonly property bool decision: card.kind === "card" && card.card_type !== "info"
-    readonly property bool request: card.kind === "request"
-    property bool expanded: false
-    property var picked: []
-
-    height: content.implicitHeight + 44
-    radius: 14
-    color: theme.surface
-    border.color: theme.line
-
-    function urgencyWord(u) {
-        if (u === "critical") return "Blocks work"
-        if (u === "high") return "Urgent"
-        return ""
+    property var from: null
+    /** Where fetched files lie (attachment id to file URL). */
+    property var files: ({})
+    signal back()
+    /** Files of this machine that go with the answer (file URLs). */
+    property var attach: []
+    onCardChanged: { attach = []; picked = [] }
+    function answer(keys) {
+        if (attach.length) root.trommi.answer_with_files(root.card.id, JSON.stringify(keys), JSON.stringify(attach))
+        else if (keys.length === 1) root.trommi.answer(root.card.id, keys[0])
+        else root.trommi.answer_many(root.card.id, JSON.stringify(keys))
+        root.back()
+    }
+    FileDialog {
+        id: dialog
+        title: "Files for your answer"
+        fileMode: FileDialog.OpenFiles
+        onAccepted: root.attach = root.attach.concat(selectedFiles.map(u => u.toString()))
     }
 
-    ColumnLayout {
-        id: content
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.margins: 22
-        spacing: 10
+    property var picked: []
+    readonly property real hue: from ? Pen.hueFor({ id: from.board_id || from.id, mark: from.mark }) : 162
+    readonly property bool decision: card.kind === "card" && card.card_type !== "info"
+    readonly property bool request: card.kind === "request"
+    readonly property color urg: card.urgency === "critical" ? theme.urgCritical : card.urgency === "high" ? theme.urgHigh : theme.urgNormal
 
-        // the head: urgency, session, when
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-            Rectangle {
-                visible: root.urgencyWord(root.card.urgency) !== ""
-                radius: 6
-                height: 22
-                width: urgency.implicitWidth + 16
-                color: root.card.urgency === "critical" ? theme.criticalSoft : theme.highSoft
+    Flickable {
+        id: flick
+        anchors.fill: parent
+        contentHeight: col.implicitHeight + 120
+        clip: true
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        ColumnLayout {
+            id: col
+            x: (flick.width - width) / 2
+            y: 40
+            width: Math.min(720, flick.width - 64)
+            spacing: 14
+
+            // back, and who asks
+            RowLayout {
+                spacing: 10
                 Label {
-                    id: urgency
+                    text: "← Desk"; color: theme.muted; font.pixelSize: 14; font.weight: Font.DemiBold
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.back() }
+                }
+                Item { Layout.fillWidth: true }
+                PenMark {
+                    visible: !!root.from
+                    Layout.preferredWidth: 22; Layout.preferredHeight: 22
+                    svg: root.from ? Pen.doodleSvg(root.from.mark || root.from.board_id || root.from.id) : ""
+                    ink: theme.tone(root.hue, "pen"); lineWidth: 2.1
+                }
+                Label { text: root.card.session || ""; color: theme.tone(root.hue, "pen"); font.weight: Font.DemiBold }
+                Label { text: root.card.ago ? "· " + root.card.ago : ""; color: theme.faint; font.pixelSize: 13 }
+            }
+
+            Rectangle {
+                visible: root.card.urgency === "high" || root.card.urgency === "critical" || root.request
+                Layout.preferredHeight: 26
+                Layout.preferredWidth: tabText.implicitWidth + 22
+                radius: 6
+                color: root.request ? theme.urgHigh : root.urg
+                Label {
+                    id: tabText
                     anchors.centerIn: parent
-                    text: (root.card.urgency === "critical" ? "‼ " : "! ") + root.urgencyWord(root.card.urgency)
-                    color: root.card.urgency === "critical" ? theme.critical : theme.high
-                    font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    text: root.request ? "PERMISSION" : root.card.urgency === "critical" ? "BLOCKS WORK" : "KNOCKS"
+                    color: theme.surface; font.pixelSize: 12; font.weight: Font.DemiBold; font.letterSpacing: 0.8
                 }
             }
-            Rectangle {
-                visible: root.request
-                radius: 6; height: 22; width: reqWord.implicitWidth + 16
-                color: theme.highSoft
-                Label { id: reqWord; anchors.centerIn: parent; text: "Permission"; color: theme.high; font.pixelSize: 12; font.weight: Font.DemiBold }
-            }
-            Label {
-                text: root.card.session || ""
-                color: theme.muted
-                font.pixelSize: 13
-                font.weight: Font.Medium
-                elide: Text.ElideRight
+
+            Text {
                 Layout.fillWidth: true
+                text: root.card.title || ""
+                font.family: theme.display; font.pixelSize: 34; font.weight: Font.ExtraBold; font.letterSpacing: -0.8
+                lineHeight: 1.08
+                color: theme.fg
+                wrapMode: Text.Wrap
             }
-            Label { text: root.card.ago || ""; color: theme.faint; font.pixelSize: 12 }
-        }
+            Text {
+                visible: !!root.card.teaser
+                Layout.fillWidth: true
+                text: root.card.teaser || ""
+                font.family: theme.sans; font.pixelSize: 18; lineHeight: 1.3
+                color: theme.cardInk
+                wrapMode: Text.Wrap
+            }
+            Text {
+                visible: !!root.card.body
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                text: root.card.body || ""
+                textFormat: Text.MarkdownText
+                font.family: theme.sans; font.pixelSize: 16; lineHeight: 1.35
+                color: theme.fg
+                wrapMode: Text.Wrap
+                onLinkActivated: (link) => Qt.openUrlExternally(link)
+            }
+            Text {
+                visible: !!root.card.preview
+                Layout.fillWidth: true
+                text: root.card.preview || ""
+                font.family: theme.mono; font.pixelSize: 13
+                color: theme.muted
+                wrapMode: Text.WrapAnywhere
+            }
+            // the card's pictures and files
+            Flow {
+                Layout.fillWidth: true
+                Layout.topMargin: 6
+                spacing: 10
+                visible: (root.card.files || []).length > 0
+                Repeater {
+                    model: root.card.files || []
+                    delegate: Attachment {
+                        required property var modelData
+                        trommi: root.trommi; theme: root.theme
+                        file: modelData; files: root.files
+                        maxWidth: (root.card.files || []).filter(f => f.image).length > 1 ? (col.width - 10) / 2 : col.width
+                    }
+                }
+            }
 
-        Label {
-            text: root.card.title || "Loading …"
-            font.family: theme.display
-            font.pixelSize: 19
-            font.weight: Font.DemiBold
-            color: theme.fg
-            wrapMode: Text.Wrap
-            Layout.fillWidth: true
-        }
-
-        Label {
-            visible: !!root.card.teaser
-            text: root.card.teaser || ""
-            color: theme.muted
-            wrapMode: Text.Wrap
-            Layout.fillWidth: true
-        }
-
-        Text {
-            id: body
-            visible: !!root.card.body && (root.expanded || !root.card.teaser)
-            text: root.card.body || ""
-            textFormat: Text.MarkdownText
-            color: theme.fg
-            wrapMode: Text.Wrap
-            font.family: theme.sans
-            font.pixelSize: 14
-            lineHeight: 1.15
-            Layout.fillWidth: true
-            onLinkActivated: (link) => Qt.openUrlExternally(link)
-        }
-        Label {
-            visible: !!root.card.body && !!root.card.teaser
-            text: root.expanded ? "Less" : "More"
-            color: theme.accent
-            font.pixelSize: 13
-            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.expanded = !root.expanded }
-        }
-        Label {
-            visible: root.card.preview !== undefined && root.card.preview !== ""
-            text: root.card.preview || ""
-            font.family: "monospace"
-            font.pixelSize: 12
-            color: theme.muted
-            wrapMode: Text.WrapAnywhere
-            Layout.fillWidth: true
-        }
-        Label {
-            visible: root.card.attachments > 0
-            text: root.card.attachments === 1 ? "1 attachment (open it on the web or the phone)" : root.card.attachments + " attachments (open them on the web or the phone)"
-            color: theme.faint
-            font.pixelSize: 12
-        }
-
-        // the options, as tiles
-        Flow {
-            Layout.fillWidth: true
-            Layout.topMargin: 4
-            spacing: 8
-            visible: (root.decision || root.request) && root.card.options.length > 0
+            // the options
             Repeater {
-                model: root.card.options || []
+                model: (root.decision || root.request) && !root.card.answered ? (root.card.options || []) : []
                 delegate: Rectangle {
-                    id: tile
+                    id: opt
                     required property var modelData
                     readonly property bool chosen: root.picked.indexOf(modelData.key) >= 0
-                    readonly property bool deny: root.request && modelData.key === "deny"
-                    width: Math.min(root.width - 44, Math.max(150, tileCol.implicitWidth + 28))
-                    height: tileCol.implicitHeight + 20
-                    radius: 10
-                    color: chosen ? theme.accentSoft : (tileHover.hovered ? theme.sunken : theme.surface)
-                    border.width: modelData.recommended || chosen ? 1.5 : 1
-                    border.color: chosen || modelData.recommended ? theme.accent : theme.lineStrong
-                    opacity: root.card.answered ? 0.55 : 1
-                    HoverHandler { id: tileHover; cursorShape: Qt.PointingHandCursor }
+                    Layout.fillWidth: true
+                    Layout.topMargin: index === 0 ? 10 : 0
+                    required property int index
+                    implicitHeight: optCol.implicitHeight + 30
+                    radius: 12
+                    color: chosen ? theme.tone(root.hue, "edge") : theme.tone(root.hue, "wash")
+                    border.width: modelData.recommended || chosen || hover.hovered ? 2 : 0
+                    border.color: theme.tone(root.hue, "pen")
+                    HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
                     ColumnLayout {
-                        id: tileCol
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: 14
-                        anchors.rightMargin: 14
-                        spacing: 2
+                        id: optCol
+                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: 18; rightMargin: 18 }
+                        spacing: 4
                         RowLayout {
-                            spacing: 6
+                            spacing: 10
                             Label {
-                                text: tile.modelData.label || tile.modelData.key
-                                color: tile.deny ? theme.critical : theme.fg
-                                font.weight: Font.DemiBold
+                                text: opt.modelData.label || opt.modelData.key
+                                font.family: theme.display; font.pixelSize: 19; font.weight: Font.ExtraBold
+                                color: opt.modelData.key === "deny" ? theme.deny : theme.fg
                             }
-                            Label {
-                                visible: !!tile.modelData.recommended
-                                text: "Recommended"
-                                color: theme.accent
-                                font.pixelSize: 11
+                            Rectangle {
+                                visible: !!opt.modelData.recommended
+                                height: 20; width: rec.implicitWidth + 14; radius: 10
+                                color: theme.tone(root.hue, "pen")
+                                Label { id: rec; anchors.centerIn: parent; text: "Advised"; color: theme.surface; font.pixelSize: 11; font.weight: Font.DemiBold }
                             }
                         }
                         Text {
-                            visible: !!tile.modelData.detail
-                            text: tile.modelData.detail || ""
+                            visible: !!opt.modelData.detail
+                            Layout.fillWidth: true
+                            text: opt.modelData.detail || ""
                             textFormat: Text.MarkdownText
-                            color: theme.muted
-                            font.pixelSize: 12
-                            font.family: theme.sans
+                            font.family: theme.sans; font.pixelSize: 14
+                            color: theme.cardInk
                             wrapMode: Text.Wrap
-                            Layout.maximumWidth: 420
                         }
                     }
                     MouseArea {
                         anchors.fill: parent
-                        enabled: !root.card.answered
                         onClicked: {
                             if (root.card.multiple) {
-                                let p = root.picked.slice()
-                                const at = p.indexOf(tile.modelData.key)
-                                if (at >= 0) p.splice(at, 1); else p.push(tile.modelData.key)
+                                const p = root.picked.slice(), at = p.indexOf(opt.modelData.key)
+                                if (at >= 0) p.splice(at, 1); else p.push(opt.modelData.key)
                                 root.picked = p
                             } else {
-                                root.picked = [tile.modelData.key]
-                                trommi.answer(root.card.id, tile.modelData.key)
+                                root.answer([opt.modelData.key])
                             }
                         }
                     }
                 }
             }
-        }
 
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 10
-            visible: (root.decision && root.card.multiple) || root.card.card_type === "info" || root.card.answered
+            // files that go with the answer
+            Flow {
+                Layout.fillWidth: true
+                Layout.topMargin: 6
+                spacing: 8
+                visible: root.decision && !root.card.answered
+                Repeater {
+                    model: root.attach
+                    delegate: Rectangle {
+                        required property string modelData
+                        required property int index
+                        height: 34; radius: 8
+                        width: att.implicitWidth + 40
+                        color: theme.sunken
+                        Label { id: att; anchors.verticalCenter: parent.verticalCenter; x: 12; text: decodeURIComponent(modelData.split("/").pop()); color: theme.fg; font.pixelSize: 13 }
+                        Label {
+                            anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                            text: "×"; color: theme.muted; font.pixelSize: 16
+                            MouseArea { anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor; onClicked: { const a = root.attach.slice(); a.splice(index, 1); root.attach = a } }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 34; radius: 8
+                    width: addRow.implicitWidth + 20
+                    color: "transparent"
+                    border.color: theme.lineStrong
+                    Row {
+                        id: addRow
+                        anchors.centerIn: parent; spacing: 6
+                        PenMark { width: 18; height: 18; anchors.verticalCenter: parent.verticalCenter; svg: Pen.sketchSvg("clip"); ink: theme.muted; lineWidth: 1.8 }
+                        Label { anchors.verticalCenter: parent.verticalCenter; text: root.attach.length ? "More files" : "Add files to your answer"; color: theme.muted; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: dialog.open() }
+                }
+            }
 
-            Button {
-                id: sendMany
-                visible: root.decision && root.card.multiple && !root.card.answered
-                enabled: root.picked.length > 0
-                text: "Send " + root.picked.length
-                onClicked: trommi.answer_many(root.card.id, JSON.stringify(root.picked))
-                contentItem: Label { text: sendMany.text; color: sendMany.enabled ? theme.accentFg : theme.faint; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { implicitWidth: 96; implicitHeight: 36; radius: 10; color: sendMany.enabled ? theme.accent : theme.sunken }
-            }
-            Button {
-                id: gotIt
-                visible: root.card.card_type === "info" && !root.card.answered
-                text: "Got it"
-                onClicked: trommi.mark_read(root.card.id)
-                contentItem: Label { text: gotIt.text; color: theme.accent; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                background: Rectangle { implicitWidth: 96; implicitHeight: 36; radius: 10; color: gotIt.hovered ? theme.accentSoft : theme.surface; border.color: theme.accent }
-            }
-            Label {
-                visible: root.card.answered
-                text: root.card.pending ? "Sending …" : "Answered"
-                color: theme.muted
-                font.pixelSize: 13
+            RowLayout {
+                Layout.topMargin: 10
+                spacing: 10
+                Button {
+                    id: sendMany
+                    visible: root.decision && root.card.multiple && !root.card.answered
+                    enabled: root.picked.length > 0
+                    text: root.picked.length ? "Send " + root.picked.length : "Pick one or more"
+                    onClicked: root.answer(root.picked)
+                    contentItem: Label { text: sendMany.text; color: sendMany.enabled ? theme.accentFg : theme.faint; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { implicitWidth: 140; implicitHeight: 44; radius: 12; color: sendMany.enabled ? theme.tone(root.hue, "pen") : theme.sunken }
+                }
+                Button {
+                    id: gotIt
+                    visible: root.card.card_type === "info" && !root.card.answered
+                    text: "Got it"
+                    onClicked: { root.trommi.mark_read(root.card.id); root.back() }
+                    contentItem: Row {
+                        spacing: 8
+                        PenMark { width: 22; height: 22; anchors.verticalCenter: parent.verticalCenter; svg: Pen.sketchSvg("tick"); ink: theme.surface; lineWidth: 2 }
+                        Label { anchors.verticalCenter: parent.verticalCenter; text: gotIt.text; color: theme.surface; font.weight: Font.DemiBold }
+                    }
+                    background: Rectangle { implicitWidth: 140; implicitHeight: 44; radius: 12; color: theme.tone(root.hue, "pen") }
+                }
+                Label {
+                    visible: !!root.card.answered
+                    text: root.card.pending ? "Sending …" : "Answered"
+                    color: theme.muted
+                }
             }
         }
     }

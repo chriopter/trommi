@@ -7,8 +7,6 @@ import Foundation
 public let SESSION_ID_LEN = 12
 public let UNHEARD_MS: UInt64 = 2 * 60_000
 public let ACTING_MS: UInt64 = 6 * 60 * 60 * 1000
-/// A status line not updated for so long, and not held by its card, is stale (web app.mjs LINE_STALE_MS).
-public let LINE_STALE_MS: UInt64 = ACTING_MS
 
 public enum Words {
   public static let later = "Later", duck = "Duck it", wake = "Wake up", ack = "Got it", what = "What??", trust = "I don’t give a duck", revise = "Reverse"
@@ -443,10 +441,14 @@ public final class DeskModel {
     agents = makeAgents()
     byAgent = DeskModel.newestById(agents)
     tasks = []
-    // (each line's state as shown, lineState: its card and session decide, so it says what Off your mind says)
+    // (each line's state as shown: the client core's, at its clock, in the session list (client/src/status.rs
+    //  line_state: its card and session decide, so it says what Off your mind says); a session the list does not name:
+    //  gone)
+    var linesOf = [String: JV]()
+    for r in m.sessionList { if let k = r["key"].string { linesOf[k] = r["lines"] } }
     for s in sessions { for t in s.statusLines {
       var line = Task1(agent: devToAgent[s.sessionId] ?? "", id: t.id, label: t.label, state: t.state, detail: t.detail, cardId: t.objectId, updated: t.updatedAt)
-      line.state = lineState(line, now: now)
+      line.state = linesOf[s.sessionId]?[t.id].string ?? "gone"
       tasks.append(line)
     } }
     workingOf = Dictionary(grouping: tasks.filter { $0.state == "working" }, by: { $0.agent })
@@ -580,19 +582,20 @@ public final class DeskModel {
     public var working: Int
     public var allFreshCount: Int
     public var goals: String = ""            // this desk's goals; none on All desks
+    /** The client core's order of every card that waits (client/src/desk.rs walk_order, the patch's desk_order). */
+    public var order: [String] = []
     /** What the Desk's two tools act on: every open card that waits for him (fresh and reads). */
     public var tools: DeskTools { DeskTools((fresh + reads).map { (id: $0.id, kind: $0.kind) }) }
     /** The Scribble Board of this view: All desks' own, else the desk's (a room without desks: the board of 'main'). */
     public var board: String { all ? ALL_BOARD : deskBoard(deskId) }
+    /** The Desk's rows (questions and infos) in the client core's order, the same on every device: what blocks an
+     *  agent first, then what knocks, then the rest; in each the infos first, newest first, then the decisions. */
     public func deskCards() -> [DeskCard] {
-      func rank(_ c: DeskCard) -> Int { c.urgency == "critical" ? 2 : c.isKnock ? 1 : 0 }
-      var out = fresh
-      for info in reads.sorted(by: { $0.created < $1.created }) {
-        let from = info.isKnock ? 0 : (out.lastIndex { $0.isKnock }.map { $0 + 1 } ?? 0)
-        let at = out.indices.first { $0 >= from && out[$0].created < info.created }
-        out.insert(info, at: at ?? out.count)
-      }
-      return out.enumerated().sorted { (rank($1.element), $0.offset) < (rank($0.element), $1.offset) }.map { $0.element }
+      var here = Dictionary((fresh + reads).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+      var out = [DeskCard]()
+      for id in order { if let c = here.removeValue(forKey: id) { out.append(c) } }
+      // (a card the core's order does not name yet, between two patches: at the end, until it does)
+      return out + (fresh + reads).filter { here[$0.id] != nil }
     }
   }
 
@@ -668,7 +671,7 @@ public final class DeskModel {
     let name = all ? "All desks" : desks.first { $0.id == deskId }?.name ?? "Personal"
     return View(deskId: deskId, all: all, deskName: name, here: here, fresh: fresh, reads: reads, revising: revising, snoozed: snoozed, done: done, units: units, cut: cut,
                 unheard: units.reduce(0) { $0 + $1.unheard }, knocking: fresh.filter { $0.isKnock }.count, working: units.filter { $0.online && $0.running }.count, allFreshCount: allFresh.count,
-                goals: all ? "" : desks.first { $0.id == deskId }?.goals ?? "")
+                goals: all ? "" : desks.first { $0.id == deskId }?.goals ?? "", order: board.deskOrder)
   }
 
   /** agent: why the session is stopped, or nil (app.mjs blockedOf): the client core's decision (Agent.blocked), in words. */
@@ -707,22 +710,6 @@ public final class DeskModel {
     return nil
   }
 
-  /** The state a status line shows now (web app.mjs lineState, client/README.md "Status lines"): 'gone' for a line of an archived
-   *  or vanished session; linked to a card, the card's place decides (put off: 'later'; open: as set; answered and
-   *  still worked on: working at most; else 'done'); unlinked and not updated for LINE_STALE_MS: 'stale'. */
-  public func lineState(_ t: Task1, now: UInt64 = nowMs()) -> String {
-    let set = t.state ?? "working"
-    guard let a = byAgent[t.agent], !a.archived else { return "gone" }
-    if set == "done" { return "done" }
-    if let id = t.cardId, let c = byCard[id] {
-      let at = stackOf(c, now: now)
-      if at == "later" { return "later" }
-      if c.status == "open" { return set }
-      if at == "works" { return set == "decision" ? "working" : set }
-      return "done"
-    }
-    return now - min(now, t.updated) > LINE_STALE_MS ? "stale" : set
-  }
 
   /** The status line a card with its session shows (the Desk's "Off your mind" rows): the working line that names it,
    *  else the session's newest working line that names no card. */

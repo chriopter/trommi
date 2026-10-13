@@ -283,6 +283,12 @@ pub fn resolve_room(cfg: &Cfg) -> Result<Option<String>> {
     if !cfg.invite.is_empty() {
         return Ok(Some(room_of_link(&cfg.invite)?.0));
     }
+    // A session with an id: the room of its own key, found by its exact owner wherever it lies; no folder note and
+    // no other session's key decides (keys of two accounts in one folder, a folder changed).
+    let owner = cfg.owner();
+    if !owner.is_empty() {
+        return session_room(cfg, &owner);
+    }
     let names: Vec<String> = std::fs::read_dir(&cfg.keys_dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
@@ -307,19 +313,6 @@ pub fn resolve_room(cfg: &Cfg) -> Result<Option<String>> {
     }
     rooms.sort();
     if rooms.len() > 1 {
-        // A session whose own key is in one of the rooms is in that room (another session of this folder may
-        // have joined another account's room after it).
-        let own: Vec<&String> = rooms
-            .iter()
-            .filter(|r| {
-                slots_in(cfg, &cfg.keys_dir.join(r)).into_iter().any(|n| {
-                    owned_by(owner_of(&paths_of(cfg, r, n)).as_ref(), &cfg.owner(), ppid())
-                })
-            })
-            .collect();
-        if own.len() == 1 {
-            return Ok(Some(own[0].clone()));
-        }
         if let Some(joined) = joined_room(cfg).filter(|r| rooms.contains(r)) {
             return Ok(Some(joined));
         }
@@ -333,6 +326,129 @@ pub fn resolve_room(cfg: &Cfg) -> Result<Option<String>> {
         .with("code", "ambiguous-room"));
     }
     Ok(rooms.into_iter().next())
+}
+/// The rooms of this protocol under the keys folder.
+fn room_names(cfg: &Cfg) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(&cfg.keys_dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| is_room_id(n))
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+/// The paths of the slot `<name>` (`<base>-<n>`) in a room folder, of any folder's base.
+pub fn paths_named(dir: &Path, name: &str) -> SlotPaths {
+    SlotPaths {
+        key_file: dir.join(format!("{name}.key")),
+        lock_file: dir.join(format!("{name}.lock")),
+        prefix: format!("{name}."),
+        cache: dir.join(format!("{name}.files")),
+        dir: dir.to_path_buf(),
+        slot: name
+            .rsplit_once('-')
+            .and_then(|(_, n)| n.parse().ok())
+            .unwrap_or(0),
+        ..Default::default()
+    }
+}
+/// Every key of this machine whose owner record names `owner` exactly, in every room and every folder's slots:
+/// (room, paths). Keys put aside (`replaced-…`) and slots without a key are not counted.
+pub fn own_slots(cfg: &Cfg, owner: &str) -> Vec<(String, SlotPaths)> {
+    let mut out = vec![];
+    if owner.is_empty() {
+        return out;
+    }
+    for room in room_names(cfg) {
+        let dir = cfg.keys_dir.join(&room);
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut names: Vec<String> = rd
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter_map(|f| f.strip_suffix(".owner").map(String::from))
+            .filter(|n| !n.starts_with("replaced-"))
+            .collect();
+        names.sort();
+        for name in names {
+            let p = paths_named(&dir, &name);
+            let keyed = std::fs::read_to_string(&p.key_file).is_ok_and(|t| t == KEY_MARKER);
+            let mine = owner_of(&p)
+                .as_ref()
+                .and_then(|r| r.get("owner"))
+                .and_then(|o| o.as_str())
+                == Some(owner);
+            if keyed && mine {
+                out.push((room.clone(), p));
+            }
+        }
+    }
+    out
+}
+/// The room of a session with an id: the room of its own key (one room; keys of it in several rooms are refused
+/// by name, never picked by directory order); else the room of a key a terminal join made in this folder for
+/// whichever session uses it first, when exactly one room holds such keys; else the room of this session's own
+/// out mark (its key was removed: it is told so); else none (it needs an invite, or joins by itself).
+fn session_room(cfg: &Cfg, owner: &str) -> Result<Option<String>> {
+    let own = own_slots(cfg, owner);
+    let mut rooms: Vec<String> = own.iter().map(|(r, _)| r.clone()).collect();
+    rooms.dedup();
+    if rooms.len() > 1 {
+        let shown: Vec<String> = own
+            .iter()
+            .map(|(r, p)| format!("{} ({})", room_shown(cfg, r), p.key_file.display()))
+            .collect();
+        return Err(Fault::plain(format!(
+            "this session has keys in {} Trommi rooms: {}. A session is in one room: move the keys of the room it should not be in out of {}, then call the tool again",
+            rooms.len(),
+            shown.join("; "),
+            cfg.keys_dir.display()
+        ))
+        .with("code", "ambiguous-room"));
+    }
+    if let Some(room) = rooms.pop() {
+        return Ok(Some(room));
+    }
+    let terminal: Vec<String> = room_names(cfg)
+        .into_iter()
+        .filter(|r| {
+            slots_in(cfg, &cfg.keys_dir.join(r)).into_iter().any(|n| {
+                let p = paths_of(cfg, r, n);
+                std::fs::read_to_string(&p.key_file).is_ok_and(|t| t == KEY_MARKER)
+                    && holders_of(&p).is_empty()
+                    && owner_of(&p).is_some_and(|rec| is_terminal_record(&rec))
+            })
+        })
+        .collect();
+    if terminal.len() == 1 {
+        return Ok(terminal.into_iter().next());
+    }
+    Ok(room_names(cfg).into_iter().find(|r| {
+        last_out(cfg, r).is_some_and(|m| owned_by(m.get("owner"), owner, ppid()))
+    }))
+}
+/// How many keys of this folder, in any room, belong to other sessions than this one.
+pub fn others_keys_here(cfg: &Cfg) -> usize {
+    let owner = cfg.owner();
+    room_names(cfg)
+        .iter()
+        .flat_map(|r| {
+            slots_in(cfg, &cfg.keys_dir.join(r))
+                .into_iter()
+                .map(move |n| paths_of(cfg, r, n))
+        })
+        .filter(|p| std::fs::read_to_string(&p.key_file).is_ok_and(|t| t == KEY_MARKER))
+        .filter(|p| !may_take(owner_of(p).as_ref(), &owner, ppid()))
+        .count()
+}
+/// Whether a slot's owner record is that of a terminal's join: no owner and no process (`connect` in a terminal).
+pub fn is_terminal_record(r: &Value) -> bool {
+    !r.get("owner").is_some_and(crate::util::truthy)
+        && r.get("claude_pid").is_none_or(|v| v.is_null())
 }
 /// Whether a keyed slot of this folder waits for a connector of this session: no process holds it, and its owner
 /// record lets this session take it (a join of this session in a terminal or the agent's shell made it).
@@ -486,6 +602,23 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
                 .any(|h| session_of(&p, *h) == cfg.session)
         },
     );
+    // This session's own key in this room under another folder's slots (the session went on in another
+    // folder): it is used where it lies.
+    let owner = cfg.owner();
+    for (_, p) in own_slots(cfg, &owner)
+        .into_iter()
+        .filter(|(r, p)| r == room_id && !p.prefix.starts_with(&format!("{}-", cfg.base)))
+    {
+        let r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
+        if r.ok {
+            return SlotPaths {
+                has_key: true,
+                took_over: !r.took_over.is_empty(),
+                foreign: foreign.clone(),
+                ..p
+            };
+        }
+    }
     let mut holders = vec![];
     let mut busy = vec![];
     let mut refused: Option<Refused> = None;
@@ -1271,6 +1404,22 @@ impl Member {
             &owner_record(&self.cfg.owner(), if cli { None } else { Some(ppid()) }),
         );
         note_joined_room(&self.cfg, &room_id);
+        // This session joined this room by the human's link: its keys in other rooms (a room the hub no longer
+        // knows, a key it refused) are no longer its. They stay where they are, untouched, but name nobody's
+        // session any more ("left:<owner>"), so that one session has keys in one room.
+        let owner = self.cfg.owner();
+        for (room, other) in own_slots(&self.cfg, &owner) {
+            if room != room_id {
+                write_owner(
+                    &other,
+                    &json!({ "owner": format!("left:{owner}"), "left_for": room_id, "at": now_ms() }),
+                );
+                eprintln!(
+                    "[trommi] this session's key in another room ({}) is left there: this session is in the room of its new link now",
+                    other.key_file.display()
+                );
+            }
+        }
         if let Some(before) = old.clone().or(held.clone()) {
             // The earlier device's id is in its state, which its connector holds locked; it is not named here.
             let was_id: Option<String> = None;

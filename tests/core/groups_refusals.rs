@@ -622,3 +622,47 @@ fn a_commit_with_one_byte_changed() {
     assert_eq!(b.group(&room_group).unwrap().epoch, epoch);
     assert!(last(&hub, &mut agent).is_ok());
 }
+
+#[test]
+fn a_confirmation_tag_changed_in_the_log() {
+    // The nightly fuzz case of 13 October 2026: the hub hands a device a Commit whose confirmation tag (the 33
+    // bytes before the membership tag) it changed. A member refuses it (its membership tag, over the
+    // confirmation tag, no longer verifies). An observer cannot check the tag
+    // (14.1): it takes the Commit, whose signed content is the committer's, and refuses a later Commit, whose
+    // signature covers the real transcript. The hub gains a stall, as by holding the log back, and no
+    // content.
+    let World {
+        mut hub,
+        mut a,
+        mut b,
+        mut agent,
+        room_group,
+        ..
+    } = world(true);
+    a.update(&room_group, true, now()).unwrap().unwrap();
+    post_ok(&mut hub, &mut a);
+    let mut item = hub.log_after(b.cursor()).pop().expect("the Commit");
+    let in_tag = item.bytes.len() - 33 - 16;
+    item.bytes[in_tag] ^= 1;
+    let error = process(&mut b, &item).unwrap_err();
+    assert_eq!(log_finding(&error), LogFinding::BadGroup);
+    sync_ok(&hub, &mut b);
+    assert!(matches!(
+        process(&mut agent, &item),
+        Ok(Processed::Observed(_))
+    ));
+
+    // The tag goes into the interim transcript hash, and so into the GroupContext of the epoch after the
+    // next: the next Commit still verifies, the one after it does not.
+    a.update(&room_group, true, now()).unwrap().unwrap();
+    post_ok(&mut hub, &mut a);
+    sync_ok(&hub, &mut b);
+    assert!(matches!(last(&hub, &mut agent), Ok(Processed::Observed(_))));
+    a.update(&room_group, true, now()).unwrap().unwrap();
+    post_ok(&mut hub, &mut a);
+    sync_ok(&hub, &mut b);
+    let cursor = agent.cursor();
+    let error = last(&hub, &mut agent).unwrap_err();
+    assert_eq!(log_finding(&error), LogFinding::BadGroup, "{error:?}");
+    assert_eq!(agent.cursor(), cursor);
+}

@@ -199,9 +199,18 @@ export function heardOf(card, now = Date.now()) {
 // "All desks": the desk id ALL_DESKS stands for every desk at once (the single desks are its children); nothing is
 // stored on the hub for it, it is this browser's choice like any desk.
 const ALL_DESKS = 'all'
-/** The walk (Blitz, a card's before and next): every open card that waits for him, the questions first, then what
- *  is only to read, card by card. Not what is with an agent. */
-export const walkOf = m => (m.walk ??= [...m.fresh, ...(m.reads ?? [])])
+/** The walk (the Desk's rows, Blitz, a card's before and next): every open card that waits for him on this desk, in
+ *  the client core's order (client/src/desk.rs walk_order, the patch's desk_order), the same on every device: what
+ *  blocks an agent first, then what knocks, then the rest; in each the infos first, newest first, then the decisions,
+ *  oldest first. Not what is with an agent. */
+export const walkOf = m => (m.walk ??= (() => {
+  const here = new Set([...m.fresh, ...(m.reads ?? [])]), out = []
+  for (const id of m.state.desk_order ?? []) { const c = m.byCard.get(id); if (c && here.delete(c)) out.push(c) }
+  // (a card the core's order does not name yet, between two patches: at the end, until it does)
+  return here.size ? out.concat([...here]) : out
+})())
+/** The sessions of the desk in view, by session key, for the client core's walk (null: every desk). */
+export const deskScope = m => (m.all || m.desk == null ? null : m.agents.map(a => a.device_id))
 /** The last part of a folder's path: "~/git/game" is "game". */
 export const folderName = f => String(f ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || ''
 /**
@@ -522,26 +531,6 @@ export const runsOf = model => id => Boolean(model.byAgent.get(id)?.online) || l
  *  line that names no card. */
 export const workLine = (card, working) => working.find(t => t.card_id === card.id) ?? working.filter(t => t.agent === card.agent && !t.card_id).sort((a, b) => b.updated - a.updated)[0] ?? null
 export const workAt = card => (card.status === 'open' ? card.with_agent : card.decided) ?? 0
-/** The state a status line shows now: what its agent set, held against its card and its session, so the line never
- *  says more than the Desk's "Off your mind" does (client/README.md "Status lines"). A line of an archived or vanished session:
- *  'gone'. Linked to a card: the card's place decides: put off ('later' on the Desk) is 'later'; open (on the Desk,
- *  or with its agent) is as set; answered and still worked on ('works') is working at most; else (answered long ago,
- *  done, shredded) 'done'. Unlinked: a line not updated for LINE_STALE_MS is 'stale'. A done line stays done.
- *  online(agentId): whether that session still runs (for an answered card, as stackOf). */
-export const LINE_STALE_MS = ACTING_MS
-export function lineState(t, card, agent, { now = Date.now(), online = () => true } = {}) {
-  const set = t.state ?? 'working'
-  if (!agent || agent.archived) return 'gone'
-  if (set === 'done') return 'done'
-  if (card) {
-    const at = stackOf(card, { now, online })
-    if (at === 'later') return 'later'
-    if (card.status === 'open') return set
-    if (at === 'works') return set === 'decision' ? 'working' : set
-    return 'done'
-  }
-  return now - (t.updated ?? 0) > LINE_STALE_MS ? 'stale' : set
-}
 
 /** The card a status line of a session stands for, by the Desk's own pairing (workItems): the card it names, else the
  *  newest of the session's cards with it ("Off your mind") whose line it is; null for none. Clicking the line in the
@@ -684,13 +673,13 @@ export class BoardState {
     const onCoreDesk = new Set([...(m.stack ?? []), ...(m.open_permission_ids ?? [])])
     const queue = cardsMemo(cards, `queue ${[...shelved]} ${m.stack?.length}:${m.stack?.join()} ${m.open_permission_ids?.join()}`, () => cards.filter(c => c.status === 'open' && (onCoreDesk.has(c.id) || (c.working && !shelved.has(c.agent) && !c.snoozed_until))).sort((a, b) => a.created - b.created || a.number - b.number).map(c => c.id))
     const tasks = []
-    // (each line's state as shown, lineState: its card and session decide, so it says what Off your mind says;
-    //  set_state: what its agent set)
-    const agentById = new Map(agents.map(a => [a.id, a])), now = Date.now()
-    const lineCtx = { now, online: id => Boolean(agentById.get(id)?.online) || linkOf(agentById.get(id), now)?.state === 'cut' }
+    // (each line's state as shown: the client core's, at its clock, in the session list (client/src/status.rs
+    //  line_state: its card and session decide, so it says what Off your mind says); a session the list does not name:
+    //  gone. set_state: what its agent set)
+    const linesOf = new Map((m.session_list ?? []).map(r => [r.key, r.lines ?? {}]))
     for (const s of sessionsOf(m)) for (const t of s.status_lines ?? []) {
       const line = { agent: devToAgent.get(sessionKey(s)), id: t.id, label: t.label, state: t.state, set_state: t.state, detail: t.detail, card_id: t.object_id ?? null, updated: t.updated_at ?? 0 }
-      line.state = lineState(line, line.card_id ? this.byId.get(line.card_id) : null, agentById.get(line.agent), lineCtx)
+      line.state = linesOf.get(sessionKey(s))?.[t.id] ?? 'gone'
       tasks.push(line)
     }
     // (the order he dragged them into in the menu: each desk's register holds its place, order; a desk made since then

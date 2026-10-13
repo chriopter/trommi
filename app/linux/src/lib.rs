@@ -2,6 +2,7 @@
 //! and its views (`view.rs`), its folders on disk (`store.rs`), and the Qt bridge the window holds (`bridge.rs`).
 //! The window is `qml/`; `main.rs` only opens it.
 pub mod engine;
+pub mod notify;
 pub mod store;
 pub mod view;
 mod bridge;

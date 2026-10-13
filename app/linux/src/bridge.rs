@@ -27,6 +27,12 @@ pub mod qobject {
         #[qproperty(i32, shot_after_ms)]
         #[qproperty(QString, scene)]
         #[qproperty(QString, scene_session)]
+        #[qproperty(QString, scene_file)]
+        #[qproperty(QString, theme_mode)]
+        #[qproperty(QString, files_json)]
+        #[qproperty(QString, saved_json)]
+        #[qproperty(QString, open_request)]
+        #[qproperty(QString, greeting)]
         type Trommi = super::TrommiRust;
 
         /// Opens the room this machine holds, if any, from its cache, and starts catching up and listening.
@@ -53,6 +59,24 @@ pub mod qobject {
         /// Writes to the selected session's agent.
         #[qinvokable]
         fn send(self: Pin<&mut Trommi>, text: &QString);
+        /// Fetches and opens a file a card or a line names (its reference, JSON); `files_json` says where it lies.
+        #[qinvokable]
+        fn fetch_file(self: Pin<&mut Trommi>, reference: &QString);
+        /// Puts a file a card or a line names (its reference, JSON) into Downloads; `saved_json` says where.
+        #[qinvokable]
+        fn save_file(self: Pin<&mut Trommi>, reference: &QString);
+        /// Answers a card with options (a JSON list) and files of this machine (a JSON list of file URLs).
+        #[qinvokable]
+        fn answer_with_files(self: Pin<&mut Trommi>, id: &QString, keys_json: &QString, files_json: &QString);
+        /// Writes to the selected session's agent, with files of this machine (a JSON list of file URLs).
+        #[qinvokable]
+        fn send_with_files(self: Pin<&mut Trommi>, text: &QString, files_json: &QString);
+        /// The window has the focus (no notifications then) or not.
+        #[qinvokable]
+        fn set_focused(self: Pin<&mut Trommi>, focused: bool);
+        /// Light or dark, kept for the next start (the web's rule: light unless the person picks dark).
+        #[qinvokable]
+        fn set_theme(self: Pin<&mut Trommi>, mode: &QString);
         /// Writes a picture of the window to `shot_path` was done (QML): ends a scene run.
         #[qinvokable]
         fn shot_taken(self: Pin<&mut Trommi>);
@@ -84,6 +108,12 @@ pub struct TrommiRust {
     shot_after_ms: i32,
     scene: QString,
     scene_session: QString,
+    scene_file: QString,
+    theme_mode: QString,
+    greeting: QString,
+    files_json: QString,
+    saved_json: QString,
+    open_request: QString,
 }
 
 impl Default for TrommiRust {
@@ -107,6 +137,18 @@ impl Default for TrommiRust {
             shot_after_ms: env("TROMMI_LINUX_SHOT_AFTER_MS").parse().unwrap_or(1500),
             scene: QString::from(env("TROMMI_LINUX_SCENE").as_str()),
             scene_session: QString::from(env("TROMMI_LINUX_SESSION").as_str()),
+            scene_file: QString::from(env("TROMMI_LINUX_FILE").as_str()),
+            theme_mode: QString::from(
+                Some(env("TROMMI_LINUX_THEME"))
+                    .filter(|t| !t.is_empty())
+                    .or_else(|| std::fs::read_to_string(crate::store::base_dir().join("theme")).ok())
+                    .unwrap_or_default()
+                    .trim(),
+            ),
+            greeting: QString::from(env("TROMMI_LINUX_GREETING").as_str()),
+            files_json: QString::from("{}"),
+            saved_json: QString::from("{}"),
+            open_request: QString::default(),
         }
     }
 }
@@ -133,9 +175,104 @@ fn engine() -> Option<Arc<Engine>> {
 
 type Thread = cxx_qt::CxxQtThread<qobject::Trommi>;
 
+/// The files fetched in this run: attachment id to the file URL of its plain bytes ("" while it comes).
+fn fetched() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
+    static FILES: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
+    FILES.get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
+}
+
+/// The files put into Downloads in this run: attachment id to the file URL of the copy ("" while it comes).
+fn saved() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
+    static FILES: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
+    FILES.get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
+}
+
+/// The local files a JSON list of file URLs (a file dialog's) names.
+fn local_paths(json: &str) -> Vec<std::path::PathBuf> {
+    serde_json::from_str::<Vec<String>>(json)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|u| u.strip_prefix("file://").map(|p| std::path::PathBuf::from(percent_decode(p))))
+        .collect()
+}
+
+/// A file URL's path with its %XX escapes undone.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The window has the focus: nothing is announced then.
+static FOCUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What the Desk held so far, for the notifications.
+fn watch() -> &'static Mutex<crate::notify::Watch> {
+    static WATCH: OnceLock<Mutex<crate::notify::Watch>> = OnceLock::new();
+    WATCH.get_or_init(Mutex::default)
+}
+
+/// Announces new questions, urgent cards and requests on the desktop; a click opens the card in the window.
+fn announce(thread: &Thread, desk: &str) {
+    let mut notes = watch().lock().unwrap_or_else(|e| e.into_inner()).fresh(desk);
+    // (TROMMI_LINUX_NOTIFY: "0" none, "always" also with the focus, for the tests' window that always has it)
+    let setting = std::env::var("TROMMI_LINUX_NOTIFY").unwrap_or_default();
+    if notes.is_empty() || setting == "0" || (setting != "always" && FOCUSED.load(std::sync::atomic::Ordering::Relaxed)) {
+        return;
+    }
+    // (many at once, after a while away: one notification says how many, and opens the Desk)
+    if notes.len() > 3 {
+        let urgent = notes.iter().any(|n| n.urgent);
+        notes = vec![crate::notify::Note {
+            card: String::new(),
+            summary: format!("{} new on your Desk", notes.len()),
+            body: notes.iter().take(3).map(|n| n.summary.as_str()).collect::<Vec<_>>().join("\n"),
+            urgent,
+        }];
+    }
+    static NOTIFIER: tokio::sync::OnceCell<Option<crate::notify::Notifier>> = tokio::sync::OnceCell::const_new();
+    let thread = thread.clone();
+    runtime().spawn(async move {
+        let notifier = NOTIFIER
+            .get_or_init(|| async move {
+                let open: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |card: String| {
+                    let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
+                        // (set twice, so that the same card asked for again still changes the property)
+                        o.as_mut().set_open_request(QString::default());
+                        o.as_mut().set_open_request(QString::from(if card.is_empty() { "desk" } else { card.as_str() }));
+                    });
+                });
+                crate::notify::Notifier::connect(open).await.ok()
+            })
+            .await;
+        let Some(n) = notifier else { return };
+        for note in &notes {
+            let _ = n.show(note).await;
+        }
+    });
+}
+
 /// The engine's updates, onto Qt's thread.
 fn sink_for(thread: Thread) -> Sink {
     Arc::new(move |u: Update| {
+        if u.live == Some(true) {
+            watch().lock().unwrap_or_else(|e| e.into_inner()).go_live();
+        }
+        if let Some(d) = &u.desk {
+            announce(&thread, d);
+        }
         let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
             if let Some(s) = u.status {
                 o.as_mut().set_status(QString::from(s.as_str()));
@@ -309,6 +446,124 @@ impl qobject::Trommi {
                 tell_error(&thread, format!("Not sent: {}", f.text()));
             }
         });
+    }
+
+    fn fetch_file(self: Pin<&mut Self>, reference: &QString) {
+        let thread = self.qt_thread();
+        let Ok(r) = serde_json::from_str::<serde_json::Value>(&reference.to_string()) else { return };
+        let Some(id) = r["attachment_id"].as_str().map(str::to_string) else { return };
+        {
+            let mut asked = fetched().lock().unwrap_or_else(|e| e.into_inner());
+            if asked.contains_key(&id) {
+                return;
+            }
+            asked.insert(id.clone(), String::new());
+        }
+        let Some(engine) = engine() else { return };
+        runtime().spawn(async move {
+            let url = match engine.fetch_file(&r).await {
+                Ok(path) => format!("file://{}", path.display()),
+                Err(f) => {
+                    // (a file that did not come is asked for again on the next look)
+                    fetched().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                    tell_error(&thread, format!("A file did not open: {}", f.text()));
+                    return;
+                }
+            };
+            let all = {
+                let mut m = fetched().lock().unwrap_or_else(|e| e.into_inner());
+                m.insert(id, url);
+                serde_json::to_string(&*m).unwrap_or_default()
+            };
+            let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
+                o.as_mut().set_files_json(QString::from(all.as_str()));
+            });
+        });
+    }
+
+    fn save_file(self: Pin<&mut Self>, reference: &QString) {
+        let thread = self.qt_thread();
+        let Ok(r) = serde_json::from_str::<serde_json::Value>(&reference.to_string()) else { return };
+        let Some(id) = r["attachment_id"].as_str().map(str::to_string) else { return };
+        {
+            let mut asked = saved().lock().unwrap_or_else(|e| e.into_inner());
+            if asked.get(&id).is_some_and(|u| u.is_empty()) {
+                return;
+            }
+            asked.insert(id.clone(), String::new());
+        }
+        let Some(engine) = engine() else { return };
+        runtime().spawn(async move {
+            let url = match engine.save_file(&r).await {
+                Ok(path) => format!("file://{}", path.display()),
+                Err(f) => {
+                    saved().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+                    tell_error(&thread, format!("Not saved: {}", f.text()));
+                    return;
+                }
+            };
+            let all = {
+                let mut m = saved().lock().unwrap_or_else(|e| e.into_inner());
+                m.insert(id, url);
+                serde_json::to_string(&*m).unwrap_or_default()
+            };
+            let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
+                o.as_mut().set_saved_json(QString::from(all.as_str()));
+            });
+        });
+    }
+
+    fn answer_with_files(self: Pin<&mut Self>, id: &QString, keys_json: &QString, files_json: &QString) {
+        let thread = self.qt_thread();
+        let id = id.to_string();
+        let keys: Vec<String> = serde_json::from_str(&keys_json.to_string()).unwrap_or_default();
+        let paths = local_paths(&files_json.to_string());
+        let Some(engine) = engine() else { return };
+        runtime().spawn(async move {
+            let done = async {
+                let mut refs = Vec::new();
+                for p in &paths {
+                    refs.push(engine.upload_file(p).await?);
+                }
+                engine.answer_with(&id, keys, refs).await
+            }
+            .await;
+            if let Err(f) = done {
+                tell_error(&thread, format!("Not sent: {}", f.text()));
+            }
+        });
+    }
+
+    fn send_with_files(self: Pin<&mut Self>, text: &QString, files_json: &QString) {
+        let thread = self.qt_thread();
+        let session = self.rust().selected.to_string();
+        let text = text.to_string();
+        let paths = local_paths(&files_json.to_string());
+        let Some(engine) = engine() else { return };
+        runtime().spawn(async move {
+            let done = async {
+                let mut refs = Vec::new();
+                for p in &paths {
+                    refs.push(engine.upload_file(p).await?);
+                }
+                engine.say_with(&session, &text, refs).await
+            }
+            .await;
+            if let Err(f) = done {
+                tell_error(&thread, format!("Not sent: {}", f.text()));
+            }
+        });
+    }
+
+    fn set_focused(self: Pin<&mut Self>, focused: bool) {
+        FOCUSED.store(focused, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn set_theme(mut self: Pin<&mut Self>, mode: &QString) {
+        let mode = if mode.to_string() == "dark" { "dark" } else { "light" };
+        let _ = crate::store::private_dir(&crate::store::base_dir());
+        let _ = std::fs::write(crate::store::base_dir().join("theme"), mode);
+        self.as_mut().set_theme_mode(QString::from(mode));
     }
 
     fn shot_taken(self: Pin<&mut Self>) {

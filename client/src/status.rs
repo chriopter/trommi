@@ -21,11 +21,17 @@
 //!
 //! Quiet (a grey hint, never a stop): connected, a status line says "working", and nothing from it for [`QUIET_MS`].
 //!
-//! A status line says "working" only while it is current: linked to an open card that is not put off, or else updated
-//! within [`LINE_STALE_MS`].
-use crate::model::types::{Link, Session};
+//! A session works while one of its status lines shows "working" ([`line_state`]): the chip and the line never
+//! disagree.
+//!
+//! What a status line shows ([`line_state`]), so that it never says more than the Desk's "Off your mind" does
+//! (client/README.md "Status lines"): `gone` in an archived session; `done` once its agent said so; linked to a card,
+//! the card's place decides ([`card_place`]): put off is `later`, open is as set, answered and still worked on is
+//! `working` at most, else `done`; unlinked and not updated for [`LINE_STALE_MS`]: `stale`.
+use crate::model::types::{Card, Link, Session, StatusLine};
 use crate::model::Model;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 
 /// No tool call for this long, in a session that hears only on its next one: it is not listening.
@@ -37,6 +43,88 @@ pub const QUIET_MS: u64 = 15 * 60_000;
 /// A status line its agent has not updated for this long, and whose card does not hold it, is stale: it no longer
 /// says that its session works (the apps hide it).
 pub const LINE_STALE_MS: u64 = 6 * 60 * 60_000;
+/// An answered card counts as worked on by its session for so long (while the session runs, or has not heard it).
+pub const ACTING_MS: u64 = 6 * 60 * 60_000;
+
+/// Where a card lies at the foot of the Desk, as far as its status line needs it: `later` (put off), `works` (with
+/// its agent: handed back, an info it still works on, or answered within [`ACTING_MS`] while its session runs or has
+/// not heard the answer), `done`, `trash` (shredded, or closed without his answer), or None (open on the Desk, or an
+/// answered card without his answer). `runs`: its session is online or cut off (it still runs); `heard_up_to`: the
+/// session's receipt mark. With the moment the place changes by the clock, if it will.
+pub fn card_place(c: &Card, runs: bool, heard_up_to: Option<u64>, now: u64) -> (Option<&'static str>, Option<u64>) {
+    let info = c.field("card_type").as_str() == Some("info") || c.is_unsupported();
+    let a = c.answer.as_ref();
+    let answered_by = a.is_some_and(|a| {
+        if info {
+            a.answer_action == "read"
+        } else {
+            a.trusted || a.choices.as_array().is_some_and(|l| !l.is_empty())
+        }
+    });
+    if c.object_state == "open" {
+        if c.snoozed_until.is_some() {
+            return (Some("later"), None);
+        }
+        let working = info && c.field("working") == Value::Bool(true);
+        return ((c.in_revision.is_some() || working).then_some("works"), None);
+    }
+    if c.closed_how.as_deref() == Some("shredded") {
+        return (Some("trash"), None);
+    }
+    if c.closed_how.as_deref() == Some("answered") && c.object_state == "answered" {
+        if !answered_by {
+            return (None, None);
+        }
+        let a = a.expect("answered by him");
+        let heard = match (a.pending, a.envelope_number, heard_up_to) {
+            (false, Some(said), Some(mark)) => Some(said <= mark),
+            _ => None,
+        };
+        let until = a.answered_at.saturating_add(ACTING_MS);
+        return if now < until && (runs || heard == Some(false)) {
+            (Some("works"), Some(until))
+        } else {
+            (Some("done"), None)
+        };
+    }
+    (Some(if answered_by { "done" } else { "trash" }), None)
+}
+
+/// What a status line shows now (see the module's rules): `gone`, `done`, `later`, `stale` or the state its agent set
+/// (`working`, `decision`, …). `card`: the card it names, if this device holds it. With the moment it changes by the
+/// clock, if it will.
+pub fn line_state(
+    t: &StatusLine,
+    archived: bool,
+    card: Option<&Card>,
+    runs: bool,
+    heard_up_to: Option<u64>,
+    now: u64,
+) -> (String, Option<u64>) {
+    let set = t.state.as_str().unwrap_or("working");
+    if archived {
+        return ("gone".into(), None);
+    }
+    if set == "done" {
+        return ("done".into(), None);
+    }
+    if let Some(c) = card {
+        let (at, until) = card_place(c, runs, heard_up_to, now);
+        let shown = match at {
+            Some("later") => "later",
+            _ if c.object_state == "open" => set,
+            Some("works") if set == "decision" => "working",
+            Some("works") => set,
+            _ => "done",
+        };
+        return (shown.into(), until);
+    }
+    if now.saturating_sub(t.updated_at) > LINE_STALE_MS {
+        ("stale".into(), None)
+    } else {
+        (set.into(), Some(t.updated_at + LINE_STALE_MS + 1))
+    }
+}
 
 /// A session's link at a moment.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -161,6 +249,8 @@ pub struct Status {
     pub device_active: u64,
     /// When any of this may change by the clock alone.
     pub recheck_at: Option<u64>,
+    /// What each of its status lines shows now, by line id ([`line_state`]).
+    pub lines: std::collections::BTreeMap<String, String>,
 }
 
 fn earliest(a: Option<u64>, b: Option<u64>) -> Option<u64> {
@@ -195,27 +285,19 @@ pub fn status_of(
         recheck = earliest(recheck, at);
         Some(l)
     };
-    // (a working line counts while its card is open and not put off, or, without such a card, for LINE_STALE_MS
-    //  after its last update: the apps show it so, client/README.md "Status lines")
+    // (what each line shows: its card and its session decide; a session cut off still runs. The session works while
+    //  one of its lines shows "working": the chip and the line always say the same, client/README.md "Status lines")
+    let runs = online || link.as_ref().is_some_and(|l| l.state == "cut");
+    let mut lines = std::collections::BTreeMap::new();
     let mut working_lines: Vec<u64> = vec![];
-    for t in s
-        .status_lines
-        .iter()
-        .filter(|t| t.state.as_str() == Some("working"))
-    {
+    for t in &s.status_lines {
         let card = t.object_id.as_str().and_then(|id| m.cards.get(id));
-        match card {
-            Some(c) if c.object_state == "open" => {
-                if c.snoozed_until.is_none() {
-                    working_lines.push(t.updated_at);
-                }
-            }
-            _ if now.saturating_sub(t.updated_at) < LINE_STALE_MS => {
-                working_lines.push(t.updated_at);
-                recheck = earliest(recheck, Some(t.updated_at + LINE_STALE_MS));
-            }
-            _ => {}
+        let (shown, at) = line_state(t, archived, card, runs, s.heard_up_to, now);
+        recheck = earliest(recheck, at);
+        if shown == "working" {
+            working_lines.push(t.updated_at);
         }
+        lines.insert(t.id.clone(), shown);
     }
     let working = !working_lines.is_empty();
     let device_active = s
@@ -291,6 +373,7 @@ pub fn status_of(
         quiet_since,
         device_active,
         recheck_at: recheck,
+        lines,
     }
 }
 
@@ -449,6 +532,48 @@ mod tests {
         assert_eq!(why(&all(&mut m, stale)), None);
     }
 
+    /// The chip says what the line says: a fresh working line whose card was shredded shows done, and its session
+    /// does not work; one whose card was answered just now works while the session runs.
+    #[test]
+    fn the_chip_follows_the_line() {
+        let mut m = room(true);
+        card(&mut m, "normal", 1);
+        m.sessions.get_mut(S0).unwrap().status_lines.push(StatusLine {
+            id: "t".into(),
+            state: json!("working"),
+            object_id: json!(C0),
+            updated_at: 1_000,
+            ..Default::default()
+        });
+        let all = |m: &mut Model| {
+            let mut c = Change::new();
+            c.cards.insert(C0.into());
+            c.sessions.insert(S0.into());
+            m.project(&mut c, 2_000);
+            session_list(m, false).remove(0)
+        };
+        let r = all(&mut m);
+        assert!(r.working);
+        assert_eq!(r.lines["t"], "working");
+        {
+            let c = m.cards.get_mut(C0).unwrap();
+            c.object_state = "closed".into();
+            c.closed_how = Some("shredded".into());
+        }
+        let r = all(&mut m);
+        assert_eq!(r.lines["t"], "done");
+        assert!(!r.working);
+        {
+            let c = m.cards.get_mut(C0).unwrap();
+            c.object_state = "answered".into();
+            c.closed_how = Some("answered".into());
+            c.answer = Some(serde_json::from_value(json!({ "answer_action": "answer", "choices": ["a"], "answered_at": 1_500 })).unwrap());
+        }
+        let r = all(&mut m);
+        assert_eq!(r.lines["t"], "working");
+        assert!(r.working);
+    }
+
     /// Hears on its next step, then asleep by the clock; a session in Codex is never asleep.
     #[test]
     fn on_call_then_asleep() {
@@ -494,5 +619,72 @@ mod tests {
         assert!(c.status);
         let p = m.patch(&c);
         assert_eq!(p["session_list"][0]["link"]["state"], json!("asleep"));
+    }
+
+    mod lines {
+        use super::super::{line_state, ACTING_MS, LINE_STALE_MS};
+        use crate::model::types::{Answer, Card, InRevision, StatusLine};
+        use serde_json::json;
+
+        const NOW: u64 = 100 * 3_600_000;
+        fn line(state: &str, updated: u64) -> StatusLine {
+            StatusLine { id: "t".into(), state: json!(state), updated_at: updated, ..Default::default() }
+        }
+        fn open() -> Card {
+            Card { object_id: "c".into(), object_state: "open".into(), ..Default::default() }
+        }
+        fn answered(at: u64) -> Card {
+            Card {
+                object_state: "answered".into(),
+                closed_how: Some("answered".into()),
+                answer: Some(Answer { answer_action: "answer".into(), choices: json!(["a"]), answered_at: at, envelope_number: Some(9), ..Default::default() }),
+                ..open()
+            }
+        }
+        fn shown(t: &StatusLine, archived: bool, c: Option<&Card>) -> String {
+            line_state(t, archived, c, true, None, NOW).0
+        }
+
+        #[test]
+        fn a_line_of_an_archived_session_is_gone() {
+            assert_eq!(shown(&line("working", NOW - 60_000), true, None), "gone");
+        }
+
+        #[test]
+        fn a_line_whose_card_is_put_off_is_later() {
+            let put_off = Card { snoozed_until: Some(NOW + 3_600_000), ..open() };
+            assert_eq!(shown(&line("decision", NOW - 60_000), false, Some(&put_off)), "later");
+            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&put_off)), "later");
+        }
+
+        #[test]
+        fn an_open_card_holds_its_line_as_set_however_old() {
+            assert_eq!(shown(&line("decision", NOW - 50 * 3_600_000), false, Some(&open())), "decision");
+            let handed = Card { in_revision: Some(InRevision { envelope_number: 3, ..Default::default() }), ..open() };
+            assert_eq!(shown(&line("working", NOW - 50 * 3_600_000), false, Some(&handed)), "working");
+        }
+
+        #[test]
+        fn answered_working_while_its_session_is_at_it_then_done() {
+            let a = answered(NOW - 60_000);
+            assert_eq!(shown(&line("decision", NOW - 60_000), false, Some(&a)), "working");
+            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&a)), "working");
+            // (and it says when that ends)
+            assert_eq!(line_state(&line("working", NOW - 60_000), false, Some(&a), true, None, NOW).1, Some(NOW - 60_000 + ACTING_MS));
+            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&answered(NOW - ACTING_MS - 1))), "done");
+            let shredded = Card { object_state: "closed".into(), closed_how: Some("shredded".into()), ..open() };
+            assert_eq!(shown(&line("working", NOW - 60_000), false, Some(&shredded)), "done");
+            // a session that is gone: done, unless it has not heard the answer yet
+            assert_eq!(line_state(&line("working", NOW - 60_000), false, Some(&a), false, Some(9), NOW).0, "done");
+            assert_eq!(line_state(&line("working", NOW - 60_000), false, Some(&a), false, Some(8), NOW).0, "working");
+        }
+
+        #[test]
+        fn an_unlinked_line_nobody_updated_is_stale_and_done_stays_done() {
+            assert_eq!(shown(&line("working", NOW - LINE_STALE_MS + 1000), false, None), "working");
+            assert_eq!(shown(&line("working", NOW - LINE_STALE_MS - 1000), false, None), "stale");
+            assert_eq!(shown(&line("decision", NOW - LINE_STALE_MS - 1000), false, None), "stale");
+            assert_eq!(shown(&line("done", NOW - LINE_STALE_MS - 1000), false, None), "done");
+        }
     }
 }

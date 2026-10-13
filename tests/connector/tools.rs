@@ -1423,10 +1423,10 @@ async fn an_unconnected_session_connects_by_the_connect_tool_without_a_restart()
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    // another session, with no key of its own here, is told which rooms there are
+    // a client without a session id, which has no key of its own to go by, is told which rooms there are
     let output = seat
         .command(&["whoami"])
-        .env("TROMMI_SESSION_KEY", "test-another")
+        .env_remove("TROMMI_SESSION_KEY")
         .output()
         .await
         .expect("whoami runs");

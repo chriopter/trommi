@@ -35,4 +35,32 @@ final class CardHistoryTests: XCTestCase {
     XCTAssertEqual(revised.map(\.text), (1...5).map { "step \($0) built" }, "each says what changed")
     XCTAssertEqual(d.byCard[id]?.versions.map(\.objectVersion), [1, 2, 3, 4, 5], "every version before the newest opens under the one after it")
   }
+
+  /** A message in the card's Chat (chat:card/<id>): tied to the card, never to a version. */
+  private func say(_ b: Board, _ n: Int, _ text: String, from sender: String) {
+    let rec = OldRec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: sender, senderRole: sender == agent ? "agent" : "human", sentAt: UInt64(100 * n), kind: KIND.TIMELINE_ITEM,
+                     isHead: true, timelineKind: "chat", timelineId: "card/\(id)", sessionId: sid, content: .obj(["content_type": "message", "text": .str(text)]), contentState: "ok",
+                     causal: Causal(senderDeviceId: sender, senderSequence: UInt64(n), sentAt: UInt64(100 * n), lamport: n), senderSequence: UInt64(n), epoch: 1)
+    var ch = Change()
+    _ = b.apply(rec, change: &ch)
+  }
+
+  func testEveryCommentStandsInOneStreamWithTheRevisions() throws {
+    let b = Board()
+    let me = String(repeating: "e", count: 64)
+    b.myDeviceId = me
+    version(b, 1)
+    say(b, 15, "Background from the agent", from: agent)
+    say(b, 16, "A question of his", from: me)
+    version(b, 2)
+    say(b, 25, "His comment on version 2", from: me)
+    version(b, 3)
+    say(b, 35, "The agent's answer after version 3", from: agent)
+    b.project()
+    let d = DeskModel(board: b)
+    d.update(now: 10_000)
+    let stream = d.messagesOfCard(id).map { $0.from == "event" ? "\($0.kind ?? "")\($0.version.map(String.init) ?? "")" : $0.text }
+    XCTAssertEqual(stream, ["info", "Background from the agent", "A question of his", "revised2", "His comment on version 2", "revised3", "The agent's answer after version 3"],
+                   "one stream in time order: every comment from both sides, the revisions between them")
+  }
 }
