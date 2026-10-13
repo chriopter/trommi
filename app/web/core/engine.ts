@@ -1259,7 +1259,9 @@ export class Engine {
           const batch = due.slice(at, at + FEED)
           const fed = await this.feed(batch)
           const outcomes = fed?.outcomes ?? []
-          for (const [i, outcome] of outcomes.entries()) await again(batch[i]!, outcome.envelope)
+          // (after a gap was filled, what the batch said of the envelopes behind it is stale: the core judged them
+          //  without what was filled in, so each is asked of the core again, alone)
+          for (const [i, outcome] of outcomes.entries()) await again(batch[i]!, repaired !== null ? await this.receive(batch[i]!, true) : outcome.envelope)
           at += outcomes.length
           // the one the core did not take in the batch (or the first of a batch it did not take): alone
           if (!fed || fed.refusedAt !== null) { await again(batch[outcomes.length]!, await this.receive(batch[outcomes.length]!, true)); at++ }
