@@ -278,11 +278,18 @@ export class Engine {
   /** Per group, the log number up to which `handLog` handed the log to the device. */
   private readonly logRead = new Map<string, number>()
   private rescanDue = false
-  /** The live envelopes shown ahead of their chain while the room's past is read (`received`), by change. The reading
-   *  of the past takes each in order; one it did not bring, or that waited `ahead_wait`, is settled by its sender's
+  /** The live envelopes shown ahead of their chain while the room's past is read (`received`); kept in the meta store
+   *  across restarts. The reading of the past takes each in order (that very envelope: a change number is the hub's
+   *  word); one it did not bring, or that waited `ahead_wait`, is settled by its sender's
    *  chain (`settleAhead`), so a hub that withholds what stands before it is said (`withheld`) whatever it serves. */
-  private readonly ahead = new Map<number, Extract<ChangeItem, { kind: 'envelope' }>>()
+  private ahead: { envelope: Uint8Array; change: number; void_code: string | null }[] = []
   private aheadWatched = false
+  private async keepAhead(): Promise<void> { await (this.ahead.length ? this.opts.meta.set('ahead', this.ahead.map(x => [hex(x.envelope), x.change, x.void_code])) : this.opts.meta.delete('ahead')).catch(() => {}) }
+  private watchAhead(): void {
+    if (!this.ahead.length || this.aheadWatched) return
+    this.aheadWatched = true
+    this.later(this.timing.ahead_wait, () => { this.aheadWatched = false; void this.serial(() => this.settleAhead()).catch(() => {}) })
+  }
   /** The envelopes the core refused as `group-behind` while this device's group was not that far (not joined yet, or
    *  its log not processed up to the envelope's epoch), per group (hex): the first such change and the lowest epoch.
    *  Once the device's group reaches that epoch (`behindMet`, after each refresh), the envelopes from that change on
@@ -338,6 +345,8 @@ export class Engine {
       this.rescanFrom = typeof due === 'number' ? due : 0
       this.learnDue = (await this.opts.meta.get('learn').catch(() => null)) === true
       const behind = await this.opts.meta.get('behind').catch(() => null)
+      const ahead = await this.opts.meta.get('ahead').catch(() => null)
+      if (Array.isArray(ahead)) for (const row of ahead) if (Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'number') this.ahead.push({ envelope: unhex(row[0]), change: row[1], void_code: typeof row[2] === 'string' ? row[2] : null })
       if (Array.isArray(behind)) for (const row of behind) if (Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'number' && typeof row[2] === 'number') this.behind.set(row[0], { change: row[1], epoch: row[2] })
     })
     // the signer asks whatever device the engine holds at that moment: a reopened one signs as the same key
@@ -930,8 +939,9 @@ export class Engine {
       // order by the reading of the past, which reads from here on once more if it runs already.
       const shown = await this.receive(item, false)
       if (shown && shown.outcome !== 'refused') this.emit('envelope', { received: await this.readBack(shown), how: 'again' })
-      this.ahead.set(item.change, item)
-      if (!this.aheadWatched) { this.aheadWatched = true; this.later(this.timing.ahead_wait, () => { this.aheadWatched = false; void this.serial(() => this.settleAhead()).catch(() => {}) }) }
+      this.ahead.push({ envelope: item.envelope, change: item.change, void_code: item.void_code })
+      await this.keepAhead()
+      this.watchAhead()
       await this.wantRescan(item.change - 1)
       return
     }
@@ -1049,12 +1059,12 @@ export class Engine {
   /** The live envelopes shown ahead of their chain that the reading of the past did not take: each in order now, what
    *  stands before it fetched by its sender's chain (`fillGap`, which says what the hub withholds). Inside a job. */
   private async settleAhead(): Promise<void> {
-    for (const [change, item] of [...this.ahead]) {
-      this.ahead.delete(change)
+    for (const item of this.ahead.splice(0)) {
       let r = await this.receive(item, true)
       if (r?.outcome === 'refused' && r.code === 'gap') r = await this.fillGap(item, r, false)
-      if (r && r.outcome !== 'refused') { if (r.payload) this.whole.add(change); this.emit('envelope', { received: r, how: 'again' }) }
+      if (r && r.outcome !== 'refused') { if (r.payload) this.whole.add(item.change); this.emit('envelope', { received: r, how: 'again' }) }
     }
+    await this.keepAhead()
     this.emit('batch', null)
   }
   /**
@@ -1216,13 +1226,17 @@ export class Engine {
         const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo && !this.whole.has(item.change))
         const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null): Promise<void> => {
           let received = first
-          this.ahead.delete(item.change)
           // A gap in the hub's order as it is read again: tried once more (what stood before it in the batch may be
           // taken by now), then filled from the sender's chain as a live one is; a chain the hub does not serve whole
           // is said once per reading, and what follows it stays out
           const chain = (): string => `${hex(received!.header.group)}/${hex(received!.header.sender)}`
           if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) received = await this.receive(item, true)
           if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) { received = await this.fillGap(item, received, false); if (received?.outcome === 'refused' && received.code === 'gap') gaps.add(chain()) }
+          // (this very envelope, taken in order or its gap said: no longer ahead; one the core still waits with stays)
+          if (this.ahead.length && (!received || received.outcome !== 'refused' || received.code === 'replay' || received.code === 'gap')) {
+            const left = this.ahead.filter(x => !(x.change === item.change && x.envelope.length === item.envelope.length && x.envelope.every((b, i) => b === item.envelope[i])))
+            if (left.length !== this.ahead.length) { this.ahead = left; await this.keepAhead() }
+          }
           await this.noteBehind(item, received)
           if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
           if (received && received.outcome !== 'refused') {
@@ -1260,7 +1274,7 @@ export class Engine {
     this.rescanNext = null
     this.rescanDue = false
     this.rescanFrom = 0
-    if (this.ahead.size) await this.serial(() => this.settleAhead())
+    if (this.ahead.length) await this.serial(() => this.settleAhead())
     // (kept a while: the session groups of a sign-in are joined and learned after its first rescan, and each asks
     //  for one more)
     if (this.held) this.later(HELD_KEEP_MS, () => { if (!this.rescanDue && !this.learnDue) { this.held = null; this.heldDone = true } })
@@ -1411,6 +1425,7 @@ export class Engine {
     })
   }
   private async keep(): Promise<void> {
+    this.watchAhead()
     // (not waited for: the hub may hold the answer back while this device is not in yet)
     if (!this.stockAsked && !this.stocking && this.now() - this.timedAt < this.timing.upkeep_every) void this.stockKeyPackages().catch(() => {})
     await this.serial(async () => { await this.joinWelcomes(null); await this.tellFindings(); this.emit('batch', null) })

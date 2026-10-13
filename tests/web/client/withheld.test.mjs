@@ -12,13 +12,21 @@ async function hidden(t, timing = {}) {
   const { fake, a, recovery_code } = await scene(t, { timing })
   const first = await a.saveNote({ text: 'the first' }), second = await a.saveNote({ text: 'the second, withheld' }), third = await a.saveNote({ text: 'the third' })
   await a.settle()
-  const at = a.model.notes.get(second).envelope_number
+  const at = a.model.notes.get(second).envelope_number, firstAt = a.model.notes.get(first).envelope_number
   assert.ok(at > 0)
   const without = json => ({ ...json, items: json.items.filter(item => item.change !== at) })
   // how the hub serves the room's past (a rescan from the room's start), and whether it serves the founder's
   // envelopes from the withheld one on at all
-  const past = { how: 'at once', cut: false }
-  const served = json => (past.cut ? { ...json, items: json.items.filter(item => item.kind !== 'envelope' || item.change < at) } : without(json))
+  const past = { how: 'at once', cut: false, decoy: null }
+  let firstItem = null
+  const served = json => {
+    firstItem ??= json.items.find(item => item.change === firstAt) ?? null
+    if (!past.cut) return without(json)
+    const items = json.items.filter(item => item.kind !== 'envelope' || item.change < at)
+    // (`decoy`: a change number; the first note's envelope is served once more under it, as the page's last item)
+    const again = past.decoy !== null && firstItem && json.change >= past.decoy && (items.at(-1)?.change ?? 0) < past.decoy
+    return { ...json, items: again ? [...items, { ...firstItem, change: past.decoy }] : items }
+  }
   const isPast = rq => rq.query.get('after') === '0'
   fake.faults.add({ method: 'GET', path: '/v1/changes', times: 1e9, refuse: { error: 'overloaded', status: 503 }, when: rq => past.how === 'never' && isPast(rq) })
   fake.faults.add({ method: 'GET', path: '/v1/changes', times: 1e9, delay_ms: 400, answer: served, when: rq => past.how === 'slowly' && isPast(rq) })
@@ -26,8 +34,10 @@ async function hidden(t, timing = {}) {
   fake.faults.add({ method: 'GET', path: /\/chains\/[^/]+$/, times: 1e9, answer: without })
   const R = await rooms({ timing })
   const signIn = async () => {
-    const { client } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
+    const stored_as = storage('c')
+    const { client } = await R.joinWithCode({ storage: stored_as, hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
     t.after(() => client.stop().catch(() => {}))
+    client.stored_as = stored_as
     return client
   }
   /** Starts a device and returns once it asked the hub for the room's past (which the hub answers slowly). */
@@ -38,7 +48,7 @@ async function hidden(t, timing = {}) {
     await until(() => fake.requests.slice(from).some(r => r.method === 'GET' && r.path === '/v1/changes' && r.query.after === '0'), 'the past is asked for')
     t.after(() => started.catch(() => {}))
   }
-  return { a, first, second, third, past, signIn, startInThePast }
+  return { R, a, first, second, third, past, signIn, startInThePast }
 }
 
 test('the reading of the past says a part of a chain the hub does not serve', async t => {
@@ -86,4 +96,33 @@ test('a hub that leaves the live envelope out of the past it serves: its chain i
   // the past meets no gap of its own), the live one left out too
   past.cut = true
   await until(() => withheldSaid(c), 'the gap before the live note is said')
+})
+
+test('another envelope served under the live envelope\'s change number does not stand for it', async t => {
+  const { a, past, signIn, startInThePast } = await hidden(t)
+  const c = await signIn()
+  past.how = 'slowly'
+  await startInThePast(c)
+  const live = await a.saveNote({ text: 'written while the past is read' })
+  await until(() => c.model.notes.get(live)?.text === 'written while the past is read', 'the live note is shown ahead of its chain')
+  await a.settle()
+  // the past from now on: the founder's first note alone, and that one once more under the live note's number
+  past.decoy = a.model.notes.get(live).envelope_number
+  past.cut = true
+  await until(() => withheldSaid(c), 'the gap before the live note is said')
+})
+
+test('a restart while a live envelope is ahead of its chain: it is still settled', async t => {
+  const { R, a, past, signIn } = await hidden(t, { ahead_wait: 300 })
+  const c = await signIn()
+  past.how = 'never'
+  await c.start()
+  const live = await a.saveNote({ text: 'written while the past is read' })
+  await until(() => c.model.notes.get(live)?.text === 'written while the past is read', 'the live note is shown ahead of its chain')
+  assert.equal(withheldSaid(c), false)
+  await c.stop()
+  const again = await R.openRoom({ storage: c.stored_as })
+  t.after(() => again.stop().catch(() => {}))
+  await again.start().catch(() => {})
+  await until(() => withheldSaid(again), 'the gap before the live note is said after the restart')
 })
