@@ -2,9 +2,9 @@
 # for Swift or for TestFlight.
 #
 # On every pull request: which iOS parts changed (against the pull request's base), and when they did the app's client
-# package with its tests on Linux ("iOS client (check)", the stable name a ruleset can require) and the fast part of
-# the mega test's torture run with 10 iPhones (does not fail the run). A pull request gets no secret, uses no Mac and
-# delivers nothing.
+# package with its tests on Linux ("iOS client (check)", the stable name a ruleset can require), the app compiled for
+# iOS and the Mac on a Mac, unsigned ("iOS app (build)", also in the merge queue), and the fast part of the mega
+# test's torture run with 10 iPhones (does not fail the run). A pull request gets no secret and delivers nothing.
 #
 # After every run of build.yml on main (workflow_run): when that run published its release v<N> and the release's
 # signed manifest marks iOS changed (.github/scripts/inputs.sh: app/ios/, the core, the Rust workspace, build.yml,
@@ -212,6 +212,91 @@ jobs:
   # Main only, for a release that marks iOS changed: the Rust core for an iOS device and for this Mac, the core's Swift
   # binding tested on the Mac, the App Store Connect steps against fixtures; its artifact is what deploy_ios.yml
   # archives the app with. A pull request uses no Mac.
+  # The app itself (the Xcode project from AppStore/project.yml) compiled for iOS and for the Mac, on a pull request
+  # and in the merge queue when the app's inputs changed: what the Linux check of the client package cannot see (the
+  # app target, its extensions, the Mac target). Not signed (CODE_SIGNING_ALLOWED=NO), not archived, no secret.
+  # The Rust core for Swift comes from the cache main's job "iOS core for devices (main)" saves (the same key: its
+  # inputs and this Xcode); when the core changed, it is built here first. A stable name a ruleset can require.
+  ios_app:
+    name: iOS app (build)
+    needs: changes
+    if: >-
+      ${{ !cancelled() && contains(fromJSON('["pull_request","merge_group"]'), github.event_name)
+      && (needs.changes.outputs.ios == 'true' || needs.changes.result != 'success') }}
+    # macOS with Xcode 27 (the app's deployment target is iOS 27)
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      # XcodeGen, by the SHA-256 of its release archive (as deploy_ios.yml)
+      XCODEGEN_VERSION: 2.46.0
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # the same key as the job ios below: what the core for Swift is built from, and this Xcode
+      - name: What the core for Swift is built from
+        id: core_inputs
+        run: |
+          set -eu
+          sum=$( { git ls-tree -r HEAD -- core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml; xcodebuild -version; } | shasum -a 256 | cut -c1-64)
+          echo "key=ios-core-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: core_cache
+        with:
+          key: ${{ steps.core_inputs.outputs.key }}
+          path: |
+            core/swift/TrommiCoreRust/lib
+            core/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+            core/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+      - name: Compiler (rust-toolchain.toml)
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        run: |
+          set -eu
+          rustup toolchain install || rustup show
+          rustup component add llvm-tools
+          rustc --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        with:
+          prefix-key: v2-rust
+          save-if: false
+      - name: The Rust core for Swift
+        if: steps.core_cache.outputs.cache-hit != 'true'
+        env:
+          TROMMI_SIMULATOR: "0"
+        run: |
+          set -eu
+          DARWIN_CLANG_RT="$(xcrun --sdk iphoneos clang -print-resource-dir)/lib/darwin"
+          export DARWIN_CLANG_RT
+          sh core/swift/build.sh
+      - name: XcodeGen
+        run: |
+          set -eu
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/xcodegen.zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/xcodegen/bin/xcodegen" generate --spec app/ios/TrommiApp/AppStore/project.yml
+          xcodebuild -version
+      # Debug (no optimizer: the fastest compile that still type-checks and links everything), unsigned
+      - name: Build for iOS
+        run: |
+          set -eu
+          xcodebuild build -quiet \
+            -project app/ios/TrommiApp/AppStore/Trommi.xcodeproj -scheme Trommi -configuration Debug \
+            -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+      - name: Build for the Mac
+        run: |
+          set -eu
+          xcodebuild build -quiet \
+            -project app/ios/TrommiApp/AppStore/Trommi.xcodeproj -scheme TrommiMac -configuration Debug \
+            -destination 'generic/platform=macOS' -derivedDataPath "$RUNNER_TEMP/DerivedDataMac" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            TROMMI_MAC_ENTITLEMENTS=../Mac/TrommiMac.dev.entitlements
+
   ios:
     name: iOS core for devices (main)
     needs: changes
