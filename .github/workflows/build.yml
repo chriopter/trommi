@@ -212,11 +212,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # (only the targets and components this job needs: .github/scripts/rust_toolchain.sh)
       - name: Compiler (rust-toolchain.toml), clippy
-        run: |
-          rustup toolchain install || rustup show
-          rustup component add clippy
-          rustc --version
+        run: sh .github/scripts/rust_toolchain.sh --component clippy
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -266,8 +264,8 @@ jobs:
           cache-dependency-path: app/web/package-lock.json
       - name: Compiler (rust-toolchain.toml)
         run: |
-          rustup toolchain install || rustup show
-          rustc --version
+          set -eu
+          sh .github/scripts/rust_toolchain.sh wasm32-unknown-unknown
           echo "WASM_BINDGEN=$(sed -n 's/^wasm-bindgen = "=\(.*\)"$/\1/p' core/wasm/Cargo.toml)" >> "$GITHUB_ENV"
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
@@ -354,11 +352,7 @@ jobs:
         with:
           node-version-file: .node-version
       - name: Compiler (rust-toolchain.toml), clippy
-        run: |
-          set -eu
-          rustup toolchain install || rustup show
-          rustup component add clippy
-          rustc --version
+        run: sh .github/scripts/rust_toolchain.sh --component clippy
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -419,8 +413,7 @@ jobs:
       - name: Compiler (rust-toolchain.toml), clang, zig
         run: |
           set -eu
-          rustup toolchain install || rustup show
-          rustc --version
+          sh .github/scripts/rust_toolchain.sh "$TARGET"
           clang --version | head -n 1
           case "$TARGET" in *-apple-darwin) ;; *) exit 0 ;; esac
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
@@ -524,18 +517,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Compiler (rust-toolchain.toml), clippy
+      # and, for the release build (main), the static target and the C compiler for it, fetched beside the compiler
+      - name: Compiler (rust-toolchain.toml), clippy, the C compiler for static builds
+        env:
+          STATIC: ${{ github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false' }}
         run: |
           set -eu
-          rustup toolchain install || rustup show
-          rustup component add clippy
-          rustc --version
-      - name: The C compiler for static builds
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
-        run: |
-          set -eu
-          sudo apt-get update -q
-          sudo apt-get install -y -q musl-tools
+          if [ "$STATIC" = true ]; then
+            { sudo apt-get update -q && sudo apt-get install -y -q musl-tools; } > "$RUNNER_TEMP/apt.log" 2>&1 &
+            apt=$!
+            sh .github/scripts/rust_toolchain.sh --component clippy "$TARGET"
+            wait "$apt" || { cat "$RUNNER_TEMP/apt.log"; echo "::error::musl-tools could not be installed"; exit 1; }
+            tail -n 3 "$RUNNER_TEMP/apt.log"
+          else
+            sh .github/scripts/rust_toolchain.sh --component clippy
+          fi
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
