@@ -21,6 +21,7 @@ struct SettingsScreen: View {
     switch tab {
     case "sessions": AgentsPage()   // (the page of the web's /settings/agents; the old Sessions page leads here)
     case "devices": DevicesPage()
+    case "desks": DesksPage()
     case let t where t.hasPrefix("devices/"): DevicePage(deviceId: String(t.dropFirst("devices/".count)))
     case "account": AccountPage()
     case "account/password", "account/passkeys", "account/kit": AccountWayPage(way: String(tab.dropFirst("account/".count)))
@@ -114,6 +115,8 @@ struct SettingsHome: View {
       InviteTiles(device: { inviteDevice = true }, agent: { agentName = ""; askAgentName = true })
       SettingsGroup {
         link("sessions") { SettingsRow(title: "Agents", detail: agents.isEmpty ? nil : "\(agents.count) · \(sessions) sessions", chevron: true) { Sketch("terminal") } }
+        RowRule()
+        link("desks") { SettingsRow(title: "Desks", detail: (model.desk?.desks.count).map { "\($0)" }, chevron: true) { Sketch("desk") } }
         RowRule()
         link("devices") { SettingsRow(title: "Devices", detail: devices > 0 ? "\(devices)" : nil, chevron: true) { PenMark("draw:phone", color: Ink.fg) } }
         RowRule()

@@ -944,6 +944,24 @@ export async function openCanvas({ client, timeline_id, onRemote, onState }) {
       await client.sendMessage({ ...addressOf(client.model, to), ...(text || !real ? { text: text || '' } : {}), attachments: [attachment] })
     },
     settled: async () => { await flush(); return !error },
+    /** Deleting the desk (desks.mjs): every shape on the board is erased, and the erasures go out. */
+    async eraseAll() {
+      const all = [...st.shapes.values()].map(recordOf)
+      if (all.length) push(all.map(r => ({ id: r.id, before: r, after: null })))
+      await flush()
+      if (error) throw new Error(`The board could not be erased (${error}).`)
+    },
+    /** Deleting the desk: a snapshot of the board now (empty after eraseAll), at once, so that the hub prunes its
+     *  items (10.9). Whether the board's snapshot register now names no shape. */
+    async snapshotEmpty() {
+      if (!real) return true
+      await flush()
+      if (st.shapes.size) return false
+      for (let i = 0; snapping && i < 50; i++) await new Promise(r => setTimeout(r, 100))
+      snapping = true
+      await snapshotNow()
+      return client.model.human?.scribble_snapshots?.get(timeline_id)?.shapes === 0
+    },
     close() { off?.(); clearTimeout(snapTimer); if (queue.length || lives.size) flush() },
   }
 }

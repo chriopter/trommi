@@ -6,11 +6,12 @@
 //! 1. `Mark`: the desk's register gets `deleting: { at, by, total }`. From then on every human device knows the desk
 //!    is going (`desks_deleting`) and finishes the delete on its next start, whichever device began it.
 //! 2. `Shred`: every open card of its sessions is shredded (an answer, as Shred on the Desk).
-//! 3. `Archive`: its live sessions, helpers too, go to the archive (the register `session/<key>` and the hub's
-//!    `POST /v1/groups/{group}/archive`, spec 5.2.10).
-//! 4. `RemoveDevices`: the agent devices that carried only sessions of this desk leave the room (spec 5.2.8; their
+//! 3. `RemoveDevices`: the agent devices that carried only sessions of this desk leave the room (spec 5.2.8; their
 //!    connector wipes its keys once it verified the removal, 13.5). A device with a live session on another desk
-//!    stays, and so does every person's device.
+//!    stays, and so does every person's device; a helper device leaves with its archived helper session.
+//! 4. `Archive`: its sessions, helpers too, go to the archive (the register `session/<key>` and the hub's
+//!    `POST /v1/groups/{group}/archive`, spec 5.2.10). (After the devices: an archived session leaves this
+//!    device's list, and with it the knowledge of whose it was.)
 //! 5. `LoadBoard`, `EraseBoard`: the desk's board is read, then every shape on it is erased (spec 10.5 `erase`).
 //! 6. `DeleteFiles`: every file the desk's cards, answers, Chats in memory, Artifacts and board pictures name is
 //!    deleted at the hub at once (`DELETE /v1/files/{file}`, a human device may delete any file; an answer
@@ -190,14 +191,17 @@ impl Model {
         };
         let Some(value) = desks.get(desk_id) else {
             // (gone: done, by this device or another; a desk that never was cannot be begun)
-            return plan(
-                if self.human.contains_key(&register) {
-                    Step::Done
-                } else {
-                    Step::Refused { code: "no-desk".into() }
-                },
-                0,
-            );
+            let step = if self.human.contains_key(&register) {
+                Step::Done
+            } else {
+                Step::Refused { code: "no-desk".into() }
+            };
+            return Plan {
+                step,
+                done: 1,
+                total: 1,
+                left,
+            };
         };
         let marked = value.get("deleting").and_then(Value::as_object);
         if marked.is_none() && desks.len() <= 1 {
@@ -218,12 +222,12 @@ impl Model {
         let total = mark.get("total").and_then(Value::as_u64).unwrap_or(units).max(units);
         let step = if !work.shred.is_empty() {
             Step::Shred { object_ids: work.shred }
-        } else if !work.archive.is_empty() {
-            Step::Archive { sessions: work.archive }
         } else if !work.devices.is_empty() {
             Step::RemoveDevices {
                 device_ids: work.devices,
             }
+        } else if !work.archive.is_empty() {
+            Step::Archive { sessions: work.archive }
         } else if known.board.is_none() {
             Step::LoadBoard {
                 desk_id: desk_id.to_string(),
@@ -276,18 +280,19 @@ impl Model {
                 (false, true) => c.helpers += 1,
                 (false, false) => c.sessions += 1,
             }
-            if !r.archived {
-                let group = r
-                    .session_id
-                    .as_deref()
-                    .and_then(|s| self.sessions.get(s))
-                    .and_then(|s| s.group_id.clone());
-                w.archive.push(ArchiveOne {
-                    key: r.key.clone(),
-                    session_id: r.session_id.clone(),
-                    group_id: group,
-                });
-            }
+        }
+        // (a session whose agent already left the room is archived too: the archive is the person's word on it)
+        for r in rows.iter().filter(|r| r.desk == desk_id && !r.own && !r.archived) {
+            let group = r
+                .session_id
+                .as_deref()
+                .and_then(|s| self.sessions.get(s))
+                .and_then(|s| s.group_id.clone());
+            w.archive.push(ArchiveOne {
+                key: r.key.clone(),
+                session_id: r.session_id.clone(),
+                group_id: group,
+            });
         }
         for card in self
             .cards
@@ -296,7 +301,13 @@ impl Model {
         {
             if card.object_state == "open" {
                 c.open_cards += 1;
-                w.shred.push(card.object_id.clone());
+                // (a card this device holds only the header of, or of a newer version, cannot be answered here: it
+                // goes with its archived session, as the hub prunes that)
+                if matches!(card.content_state.as_str(), "ok" | "")
+                    && !card.unsupported.as_ref().is_some_and(|u| !u.is_null())
+                {
+                    w.shred.push(card.object_id.clone());
+                }
             } else {
                 c.done_cards += 1;
             }
@@ -333,14 +344,17 @@ impl Model {
             .filter(|r| r.desk != desk_id && !r.archived && !r.removed)
             .filter_map(|r| r.agent_device_id.as_deref())
             .collect();
-        let devices: BTreeSet<String> = here
+        // (every session that ever stood on the desk counts here, an archived or closed one too: its agent may still
+        // be in the room)
+        let devices: BTreeSet<String> = rows
             .iter()
+            .filter(|r| r.desk == desk_id && !r.own)
             .filter_map(|r| r.agent_device_id.as_deref())
             .filter(|d| !elsewhere.contains(d))
             .filter(|d| {
                 self.members
                     .get(*d)
-                    .is_some_and(|m| m.device_role != "human" && m.is_active && !m.is_me)
+                    .is_some_and(|m| m.device_role == "agent" && m.is_active && !m.is_me)
             })
             .map(String::from)
             .collect();
@@ -543,27 +557,27 @@ mod tests {
         );
         m.cards.get_mut("c1").unwrap().object_state = "closed".into();
         let p = m.desk_delete_plan("lab", &k, ME, 7);
-        let Step::Archive { sessions } = &p.step else {
-            panic!("{p:?}")
-        };
-        assert_eq!(sessions.len(), 2);
-        assert!(p.done > 0);
-        for s in [S1, S3] {
-            set(
-                &mut m,
-                &format!("session/{s}"),
-                json!({ "desk": "lab", "archived": true }),
-            );
-        }
-        let p = m.desk_delete_plan("lab", &k, ME, 8);
         assert_eq!(
             p.step,
             Step::RemoveDevices {
                 device_ids: vec![A1.into(), A3.into()]
             }
         );
+        assert!(p.done > 0);
         for a in [A1, A3] {
             m.members.get_mut(a).unwrap().is_active = false;
+        }
+        let p = m.desk_delete_plan("lab", &k, ME, 8);
+        let Step::Archive { sessions } = &p.step else {
+            panic!("{p:?}")
+        };
+        assert_eq!(sessions.len(), 2);
+        for s in [S1, S3] {
+            set(
+                &mut m,
+                &format!("session/{s}"),
+                json!({ "desk": "lab", "archived": true }),
+            );
         }
         assert_eq!(
             m.desk_delete_plan("lab", &k, ME, 9).step,
@@ -622,7 +636,7 @@ mod tests {
         m.cards.get_mut("c1").unwrap().object_state = "closed".into();
         assert_eq!(m.desks_deleting(), vec!["lab".to_string()]);
         let p = m.desk_delete_plan("lab", &Known::default(), ME, 50);
-        assert!(matches!(p.step, Step::Archive { .. }), "{p:?}");
+        assert!(matches!(p.step, Step::RemoveDevices { .. }), "{p:?}");
         // the total is the one the mark kept
         let Some(t) = m.human["desk/lab"].value["deleting"]["total"].as_u64() else {
             panic!()
