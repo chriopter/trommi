@@ -1658,9 +1658,9 @@ async fn helper_names_after_a_fresh_signin() {
     observers.push(Observer::spawn("web", "second", &root, &out, 1));
     let mut failures = Vec::new();
     for o in observers.iter_mut() {
-        // the last device's requests are slow: the devices that are in add it to the helper sessions (5.2.7)
-        // before its own joins with the code reach them
-        if o.name.ends_with("@second") {
+        // the later devices' requests are slow: the devices that are in add them to the helper sessions (5.2.7)
+        // before their own joins with the code reach them
+        if o.name.ends_with("@second") || o.name.ends_with("@phone") {
             let delay: u64 = num_env("MEGA_SLOW_MS", 400) as u64;
             let _ = o
                 .call(json!({ "op": "faults", "delay_ms": delay, "seed": 1 }))
@@ -1684,7 +1684,19 @@ async fn helper_names_after_a_fresh_signin() {
     }
     for o in observers.iter_mut() {
         let _ = o.call(json!({ "op": "sync" })).await;
-        let got = shown_names(&o.call(json!({ "op": "shown" })).await.expect("shown"));
+        // (the web: its sidebar's own list; the iPhone observer: each session's agent name)
+        let got = if o.platform == "web" {
+            shown_names(&o.call(json!({ "op": "shown" })).await.expect("shown"))
+        } else {
+            let snap = o.call(json!({ "op": "snapshot" })).await.expect("snapshot");
+            snap["sessions"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k, v["agent_name"].as_str().unwrap_or("").to_string()))
+                .collect()
+        };
         for (sid, name) in &want {
             match got.get(sid) {
                 Some(n) if n == name => {}
