@@ -76,7 +76,7 @@ such a time can be an hour off, as in today's apps.
 | Effect (out) | The shell |
 | --- | --- |
 | `Render { delta }` | folds it into its view state (`ViewModel::apply`) and draws |
-| `Http { id, request }` | sends exactly that request (no auth of its own, no retries, no redirects), answers `Http` |
+| `Http { id, request }` | sends exactly that request (no auth of its own, no retries, no redirects), reads at most `request.max_answer` bytes of the body, answers `Http` |
 | `OpenStream { id, request }` | opens a streamed GET, passes the raw bytes as `Stream` items (`opened`, `chunk`, `ended`, `failed`); the core parses the event stream |
 | `Cancel { id }` | stops that request or stream |
 | `Store { id, op }` | runs a store op (below), answers `Store` |
@@ -87,6 +87,14 @@ such a time can be an hour off, as in today's apps.
 | `Notify`, `Snapshot` | a local notification; the numbers for widgets and Live Activities |
 | `SaveFile`, `OpenUrl` | offers bytes as a file; opens a link outside |
 | `Log { level, text }` | writes a line; it never holds content, keys, addresses or tokens |
+
+**The size of an answer is the core's to bound, the shell's to enforce.** Every `HttpRequest` carries `max_answer`,
+the most bytes its answer's body may have (the route's cap; the hub is not trusted with how much it sends). The
+executor stops reading at the first byte beyond it, closes the connection and reports the request as failed with an
+`IoError` of kind `too_large`, which the core takes as a bad answer; a `Content-Length` above the cap fails before the
+body is read. It never hands over a body cut short and never buffers more than the cap. Of an `OpenStream` the cap
+bounds the body of an answer that is no 200; the events of an open stream are bounded by the core, which parses them
+(a line or an event above its limit ends the stream). A request whose JSON names no `max_answer` has 64 KiB.
 
 Ids (`IoId`) are the core's, counting up per App and never reused by it. Each `AppCore` has its own executor: a
 result goes only to the App that asked, and a replaced App's late results are dropped by the shell (its ids start
@@ -109,6 +117,7 @@ App).
   and 429: not retried, an action's echo rolls back with a toast); **not now** (408, 429, 5xx: retried, never sooner
   than a `Retry-After` given in seconds; a date there counts as absent); a 2xx answer the route does not allow is **bad answer** (W2: never half applied).
 - An `IoError` is only "no answer": `offline`, `timeout`, `failed` count as **offline**; `cancelled` is no failure;
+  `too_large` (the body passed `max_answer`) is a **bad answer**;
   `conflict` on `DeviceApply` means another owner wrote the device state: the App stops (`Phase::Stopped`) and the
   shell opens the stored state again with a new App.
 - Retries are the engine's alone (`engine::Backoff::HUB`: 1 s doubling to 60 s, jittered down by up to a quarter,
