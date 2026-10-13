@@ -296,12 +296,19 @@ fn a_store_that_does_not_answer_the_read_leaves_the_cache_unwritten() {
     let load = effects.iter().find_map(|e| if let Effect::Store { id, .. } = e { Some(*id) } else { None }).unwrap();
     let effects = app.handle(sim.now_ms, Event::Store { id: load, result: trommi_client_core::app::io::IoResult::Ok(trommi_client_core::app::io::StoreAnswer::Device { revision: sim.device.0, entries: sim.device.1.iter().map(|(k, v)| trommi_client_core::app::io::DeviceEntry { key: k.clone().into(), value: v.clone().into() }).collect() }) });
     let mut later = Vec::new();
-    for e in effects {
-        if let Effect::Store { id, op } = e {
-            if matches!(op, trommi_client_core::app::io::StoreOp::Get { .. } | trommi_client_core::app::io::StoreOp::Scan { .. }) {
-                later.extend(app.handle(sim.now_ms, Event::Store { id, result: trommi_client_core::app::io::IoResult::Err(trommi_client_core::app::io::IoError::new(trommi_client_core::app::io::IoErrorKind::Failed)) }));
+    // (every read the App asks for fails, the engine's own as well; the wanted ones come in rounds)
+    let mut todo = effects;
+    while !todo.is_empty() {
+        let mut next = Vec::new();
+        for e in todo {
+            if let Effect::Store { id, op } = &e {
+                if matches!(op, trommi_client_core::app::io::StoreOp::Get { .. } | trommi_client_core::app::io::StoreOp::Scan { .. }) {
+                    next.extend(app.handle(sim.now_ms, Event::Store { id: *id, result: trommi_client_core::app::io::IoResult::Err(trommi_client_core::app::io::IoError::new(trommi_client_core::app::io::IoErrorKind::Failed)) }));
+                }
             }
+            later.push(e);
         }
+        todo = next;
     }
     assert!(later.iter().any(|e| matches!(e, Effect::Http { .. })), "the engine starts without the cache");
     assert!(!later.iter().any(|e| matches!(e, Effect::Store { op: trommi_client_core::app::io::StoreOp::Put { .. }, .. })), "and nothing is written over it");

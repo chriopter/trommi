@@ -214,7 +214,7 @@ impl App {
             Event::Store { id, result } => match self.pending.remove(&id) {
                 Some(Pending::DeviceLoad) => match result {
                     IoResult::Ok(StoreAnswer::Device { revision, entries }) => {
-                        self.open(revision, entries, &mut out)
+                        self.open(now_ms, revision, entries, &mut out)
                     }
                     IoResult::Ok(_) => {
                         out.push(log(LogLevel::Error, "device load: not a device answer"))
@@ -306,7 +306,7 @@ impl App {
     }
 
     /// The stored device as the shell loaded it: an engine over it, or the sign-in screens.
-    fn open(&mut self, revision: u64, entries: Vec<DeviceEntry>, out: &mut Vec<Effect>) {
+    fn open(&mut self, now_ms: u64, revision: u64, entries: Vec<DeviceEntry>, out: &mut Vec<Effect>) {
         let Some(config) = self.config.as_ref() else {
             return;
         };
@@ -384,6 +384,8 @@ impl App {
         self.reopen_at = None;
         let id = self.io(Pending::DeviceLoad);
         out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
+    }
+
     /// An answer to one of the cache's store ops; false when it was none. Once the start's read is through, the board
     /// holds what it gave and the engine starts.
     fn cached(&mut self, now_ms: u64, id: IoId, result: &IoResult<StoreAnswer>, out: &mut Vec<Effect>) -> bool {
