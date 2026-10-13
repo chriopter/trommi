@@ -124,8 +124,10 @@ export interface EngineTiming {
   land: number
   /** How long a page that is being taken goes on without a `batch`: what it took so far is reported at least so often. */
   progress: number
+  /** How long a live envelope may stay shown ahead of its chain while the room's past is read (`ahead`). */
+  ahead_wait: number
 }
-const TIMING: EngineTiming = { backoff_first: 300, backoff_max: 30_000, blocked_retry: 30_000, heal_delay: 3000, upkeep_every: 600_000, halted_retry: 15_000, land: 60_000, progress: 500 }
+const TIMING: EngineTiming = { backoff_first: 300, backoff_max: 30_000, blocked_retry: 30_000, heal_delay: 3000, upkeep_every: 600_000, halted_retry: 15_000, land: 60_000, progress: 500, ahead_wait: 120_000 }
 
 export interface EngineOptions {
   core: Core
@@ -276,6 +278,11 @@ export class Engine {
   /** Per group, the log number up to which `handLog` handed the log to the device. */
   private readonly logRead = new Map<string, number>()
   private rescanDue = false
+  /** The live envelopes shown ahead of their chain while the room's past is read (`received`), by change. The reading
+   *  of the past takes each in order; one it did not bring, or that waited `ahead_wait`, is settled by its sender's
+   *  chain (`settleAhead`), so a hub that withholds what stands before it is said (`withheld`) whatever it serves. */
+  private readonly ahead = new Map<number, Extract<ChangeItem, { kind: 'envelope' }>>()
+  private aheadWatched = false
   /** The envelopes the core refused as `group-behind` while this device's group was not that far (not joined yet, or
    *  its log not processed up to the envelope's epoch), per group (hex): the first such change and the lowest epoch.
    *  Once the device's group reaches that epoch (`behindMet`, after each refresh), the envelopes from that change on
@@ -923,6 +930,8 @@ export class Engine {
       // order by the reading of the past, which reads from here on once more if it runs already.
       const shown = await this.receive(item, false)
       if (shown && shown.outcome !== 'refused') this.emit('envelope', { received: await this.readBack(shown), how: 'again' })
+      this.ahead.set(item.change, item)
+      if (!this.aheadWatched) { this.aheadWatched = true; this.later(this.timing.ahead_wait, () => { this.aheadWatched = false; void this.serial(() => this.settleAhead()).catch(() => {}) }) }
       await this.wantRescan(item.change - 1)
       return
     }
@@ -1015,7 +1024,7 @@ export class Engine {
   /** An envelope whose chain misses what stands before it: the sender's chain is fetched from where this device
    *  holds it (9.0.6), taken in order, and the envelope tried again. Still a gap: the hub withholds a part of the
    *  chain, which is said (`withheld`); the envelope stays out, and a rescan takes it when the chain is whole. */
-  private async fillGap(item: { envelope: Uint8Array; change: number; void_code: string | null }, refused: ReceivedEnvelope): Promise<ReceivedEnvelope | null> {
+  private async fillGap(item: { envelope: Uint8Array; change: number; void_code: string | null }, refused: ReceivedEnvelope, rescan = true): Promise<ReceivedEnvelope | null> {
     const { group, sender } = refused.header
     try {
       const held = await this.call(d => d.cutOf(group, sender))
@@ -1033,9 +1042,20 @@ export class Engine {
     const again = await this.receive(item, true)
     if (again?.outcome === 'refused' && again.code === 'gap') {
       this.alert('withheld', 'the hub does not serve a part of a device\'s chain: what follows it is not shown', group, item.change)
-      await this.wantRescan()
+      if (rescan) await this.wantRescan()
     }
     return again
+  }
+  /** The live envelopes shown ahead of their chain that the reading of the past did not take: each in order now, what
+   *  stands before it fetched by its sender's chain (`fillGap`, which says what the hub withholds). Inside a job. */
+  private async settleAhead(): Promise<void> {
+    for (const [change, item] of [...this.ahead]) {
+      this.ahead.delete(change)
+      let r = await this.receive(item, true)
+      if (r?.outcome === 'refused' && r.code === 'gap') r = await this.fillGap(item, r, false)
+      if (r && r.outcome !== 'refused') { if (r.payload) this.whole.add(change); this.emit('envelope', { received: r, how: 'again' }) }
+    }
+    this.emit('batch', null)
   }
   /**
    * A register value that was read back (an envelope its chain already holds): the core hands its body but does
@@ -1178,6 +1198,7 @@ export class Engine {
   private async rescanNow(): Promise<void> {
     const asked = this.rescanAsked
     const upTo = this.position
+    const gaps = new Set<string>()
     // the envelopes this run took already, when they reach back to where the rescan starts: no page from the hub
     const held = this.held && this.held.from <= this.rescanFrom ? [...this.held.items.values()].filter(item => item.change > this.rescanFrom).sort((x, y) => x.change - y.change) : null
     if (held) mark(`rescan from memory: ${held.length} envelopes`)
@@ -1195,6 +1216,13 @@ export class Engine {
         const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo && !this.whole.has(item.change))
         const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null): Promise<void> => {
           let received = first
+          this.ahead.delete(item.change)
+          // A gap in the hub's order as it is read again: tried once more (what stood before it in the batch may be
+          // taken by now), then filled from the sender's chain as a live one is; a chain the hub does not serve whole
+          // is said once per reading, and what follows it stays out
+          const chain = (): string => `${hex(received!.header.group)}/${hex(received!.header.sender)}`
+          if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) received = await this.receive(item, true)
+          if (received?.outcome === 'refused' && received.code === 'gap' && !gaps.has(chain())) { received = await this.fillGap(item, received, false); if (received?.outcome === 'refused' && received.code === 'gap') gaps.add(chain()) }
           await this.noteBehind(item, received)
           if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
           if (received && received.outcome !== 'refused') {
@@ -1232,6 +1260,7 @@ export class Engine {
     this.rescanNext = null
     this.rescanDue = false
     this.rescanFrom = 0
+    if (this.ahead.size) await this.serial(() => this.settleAhead())
     // (kept a while: the session groups of a sign-in are joined and learned after its first rescan, and each asks
     //  for one more)
     if (this.held) this.later(HELD_KEEP_MS, () => { if (!this.rescanDue && !this.learnDue) { this.held = null; this.heldDone = true } })
