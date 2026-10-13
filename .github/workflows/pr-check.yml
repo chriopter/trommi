@@ -61,6 +61,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # a crate, a test target or a browser test that no workflow runs fails here (.github/scripts/ci_coverage.mjs)
+      - name: Every test is run by a workflow
+        run: node .github/scripts/ci_coverage.mjs
       - name: Find the changed parts
         id: find
         env:
@@ -145,7 +148,7 @@ jobs:
       - name: The bindings manifest
         run: node tests/bindings/manifest.mjs
       - name: The crates' own tests
-        run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io
+        run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped -p trommi-tests-shipped
       # One test that fails must not hide the others: every target runs, the step fails at the end.
       - name: The scenario tests (tests/core, tests/bindings) and the test library
         run: |
@@ -210,6 +213,8 @@ jobs:
         run: npm test
       - name: Build
         run: node app/web/dev/build.mjs --write
+      - name: The demo data
+        run: node demo/check.mjs
       # The browser tests (headless Chrome of the runner), one after the other so that a failing one does not hide the others.
       # (tests/web/build/wasm-load.mjs is not among them: it fails on main, see the pull request.)
       - name: Browser tests
@@ -217,7 +222,7 @@ jobs:
           CHROMIUM: google-chrome
         run: |
           status=0
-          for t in store/run.mjs proof/proof.mjs views/overflow.browser.mjs views/att-gone.browser.mjs views/foot-level.browser.mjs views/security.browser.mjs views/news.browser.mjs views/tips.browser.mjs; do
+          for t in store/run.mjs proof/proof.mjs views/overflow.browser.mjs views/att-gone.browser.mjs views/foot-level.browser.mjs views/dock.browser.mjs views/security.browser.mjs views/news.browser.mjs views/tips.browser.mjs; do
             echo "== $t"
             node "tests/web/$t" || { echo "::error::tests/web/$t failed"; status=1; }
           done
@@ -250,6 +255,8 @@ jobs:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: Clippy
         run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
+      - name: The connector's own tests
+        run: cargo test --locked -p trommi-connector
       # The scenario tests start the hub of this repository and the built connector (tests/connector/common/mod.rs).
       - name: Test
         run: |
