@@ -1,5 +1,5 @@
-# Delivers a published release to the hub's server. Called by build.yml after release.yml published v<N> and the
-# inputs of the hub or its updater changed, or started by hand to deliver a published release once more.
+# Delivers a published release to the hub's server. Called by build.yml after release_part.yml published hub-v<N> (the
+# hub or its updater differs from what the server has), or started by hand to deliver a published release once more.
 #
 #   deliver  joins the tailnet and tells the server which release to take; shows the server's answer; then asks the
 #            hub from outside (https://hub.trommi.com/healthz) until it answers as the commit the server reported
@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: A published release to deliver again, e.g. v123 (or an older hub-v123)
+        description: A published release to deliver again, e.g. hub-v400 (or an older v123)
         required: true
         type: string
 

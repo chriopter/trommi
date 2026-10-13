@@ -236,27 +236,30 @@ flowchart LR
 </details>
 
 <details>
-<summary><b>Signed releases and deployment</b> · one signed release per change</summary>
+<summary><b>Signed releases and deployment</b> · each part on its own</summary>
 
 ```mermaid
 flowchart LR
-  commit["Commit on main"] --> build["build.yml<br/>tests and builds<br/>the changed parts"]
-  build --> rel["Release vN<br/>manifest.json<br/>signed with Ed25519"]
-  rel --> web["Web app<br/>Cloudflare worker,<br/>build attestations"]
-  rel --> conn["Connector<br/>install.sh and update<br/>check the signature"]
-  rel --> iosci["ios.yml<br/>after build.yml,<br/>when vN marks iOS"]
+  commit["Commit on main"] --> build["build.yml<br/>checks the changed parts,<br/>then each on its own"]
+  build --> web["Web app<br/>Cloudflare worker,<br/>attested, smoke-tested"]
+  build --> hubrel["hub-vN<br/>signed"] --> hub["Hub<br/>the server pulls,<br/>checks, swaps"]
+  build --> connrel["connector-vN<br/>signed"] --> conn["Connector<br/>install.sh and update<br/>check the signature"]
+  build --> iosci["ios.yml, mac.yml<br/>after build.yml"]
   iosci --> ios["iOS app<br/>TestFlight,<br/>signed by Apple"]
-  rel --> hub["Hub<br/>the server pulls,<br/>checks, swaps"]
+  iosci --> mac["mac-vN<br/>Developer ID,<br/>notarized"]
 ```
 
-- A change makes **one release `v<N>`** with every part and one `manifest.json` (each file's size and SHA-256),
-  signed with Ed25519. Public key: [`release/public-key.pem`](release/public-key.pem); the private key lives in
-  1Password. Each part is delivered only when it changed.
+- **Each part is delivered on its own**, as soon as its own checks and the core's passed for the commit, and only
+  when what it has out there was built from other inputs (`.github/scripts/deployed.sh`): a failed delivery is made
+  again by the next run. No part waits for another.
+- The hub and the connector have **their own signed release series**, `hub-v<N>` and `connector-v<N>`: one
+  `manifest.json` each (each file's size and SHA-256), signed with Ed25519. Public key:
+  [`release/public-key.pem`](release/public-key.pem); the private key lives in 1Password. A connector release waits
+  until the server runs the hub of the same commit, when that commit delivers both.
 - **The iOS app** has its own workflow, `ios.yml`, so nothing of web, hub or connector waits for a Mac or TestFlight:
   on a pull request it checks the iOS client; after `build.yml` on main it builds and delivers the app when that run's
-  release marks iOS changed, or when TestFlight still has older iOS inputs (a waiting delivery is replaced by the
-  newest), and the upload checks that release first.
-- **The hub:** CI sends no code and has no SSH, only "take `v<N>`" over the private network. The server's updater
+  core check passed and the app's inputs differ from those last delivered to TestFlight.
+- **The hub:** CI sends no code and has no SSH, only "take `hub-v<N>`" over the private network. The server's updater
   (its own user, no root) fetches the release itself, checks it against the pinned key, refuses anything older,
   swaps, and puts the release before back if the new hub is not well within 60 s.
 - **The web app** cannot be signed for a browser: every file it serves carries a GitHub build attestation.
@@ -285,25 +288,24 @@ store. The newest is always at
 [releases/latest/download/Trommi-macOS.dmg](https://github.com/trommi/trommi/releases/latest/download/Trommi-macOS.dmg)
 (Apple silicon, macOS 26).
 
-[`.github/workflows/mac.yml`](.github/workflows/mac.yml) runs after every build of main that published a release:
+[`.github/workflows/mac.yml`](.github/workflows/mac.yml) runs after every build of main:
 
-1. **The release:** published, its manifest signed by the release key, of this repository, with its commit's iOS
-   inputs (the Mac app is built from the same paths as the iOS app; `.github/scripts/mac_release.sh check`).
-2. **The release marks the app changed** (`changed.ios`), or the newest Mac app on a release is of older iOS inputs
-   (a waiting build was replaced by the newest): on a Mac runner the Rust core for the Mac, then
-   [`.github/scripts/mac_direct.sh`](.github/scripts/mac_direct.sh): archive (build number = the release number),
+1. **Whether it builds** (`.github/scripts/mac_release.sh check`): the build run's core check passed, and the
+   commit's iOS inputs (the Mac app is built from the same paths as the iOS app) differ from those of the newest Mac
+   app released.
+2. **Built:** on a Mac runner the Rust core for the Mac, then
+   [`.github/scripts/mac_direct.sh`](.github/scripts/mac_direct.sh): archive (build number = the build's number N),
    export with method `developer-id` (the team's Developer ID Application certificate, hardened runtime, Xcode's
    Developer ID profile for push and associated domains), checked (authority, the very certificate, runtime, secure
    timestamp, entitlements of `TrommiMac.entitlements`, no `get-task-allow`), notarized with `notarytool`, stapled,
    accepted by Gatekeeper; then the `.dmg` (the app and a link to Applications), itself signed, notarized, stapled.
-3. **Attached** to `v<N>`: `Trommi-macOS.dmg`, `Trommi-macOS.dmg.sha256` and `Trommi-macOS.json` (release, commit,
-   iOS inputs, SHA-256, size), each with a GitHub build attestation. A file already on the release is never replaced.
-4. **The release leaves the app unchanged:** the newest earlier release's three files, checked (SHA-256, the same iOS
-   inputs, the attestation of `mac.yml`), go onto `v<N>` too, so the "latest" link always works.
-5. A failed build or attach opens the issue "Mac build v<N> failed"; by hand, Actions → mac → Run workflow with a
-   release number builds or carries it again (`dry_run`: build, sign, notarize, attach nothing).
+3. **Released** as `mac-v<N>`, marked latest: `Trommi-macOS.dmg`, `Trommi-macOS.dmg.sha256` and `Trommi-macOS.json`
+   (release, commit, iOS inputs, SHA-256, size), each with a GitHub build attestation. A file already released is
+   never replaced.
+4. A failed build or release opens the issue "Mac build mac-v<N> failed"; by hand, Actions → mac → Run workflow with
+   the id of a build run of main builds its commit (`dry_run`: build, sign, notarize, release nothing).
 
-The `.dmg` is not in the release's signed `manifest.json` (it is made after the release is published). What vouches
+The `.dmg` is in no `manifest.json` signed with the release key. What vouches
 for it: Apple's Developer ID signature and notarization, which macOS checks before the first start, and the build
 attestation. Check a download:
 
@@ -484,17 +486,17 @@ pull request ─────────── fast checks of the changed parts 
 merge queue ──────────── the same checks on the very commit that lands on main
    │
    ▼
-main ─────────────────── full builds; one fails: an issue, nothing delivered.
-                         (checks that passed in the queue for the very same
-                         files are not run again)
-                         All pass: signed release v<N>, then the changed parts:
-                           web        app.trommi.com
-                           hub        the server pulls and checks v<N>
+main ─────────────────── each part on its own, once its checks and the core's
+                         passed (checks that passed in the queue for the very
+                         same files are not run again); one fails: an issue,
+                         that part is not delivered, the others are:
+                           web        app.trommi.com, checked from outside
+                           hub        signed hub-v<N>, the server pulls it
+                           connector  signed connector-v<N>, updates itself
                            iOS        ios.yml after build.yml: TestFlight
                                       "Intern" + "Trommi" (public)
-                           Mac        Trommi-macOS.dmg on v<N> (Developer ID, notarized)
+                           Mac        mac-v<N>: Trommi-macOS.dmg (Developer ID, notarized)
                            site       trommi.com, when site/ changed
-                           connector  updates itself from the release
 ```
 
 <details>

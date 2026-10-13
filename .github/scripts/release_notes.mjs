@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A release's notes (release.yml, job publish): what changed since the release before, short.
+// A release's notes (release_part.yml, job publish): what changed since the series' release before, short.
 //   node .github/scripts/release_notes.mjs <CHANGELOG.md> [<this tag> <published releases>
 //     [<CHANGELOG.md of the release before> <its tag> [<commit subjects since it>]]]
 // With the release before: the lines CHANGELOG.md added since then (a line counts as there before when its text, its

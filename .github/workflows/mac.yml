@@ -1,4 +1,4 @@
-# The Mac app for direct download (README.md "Mac app (direct download)"): Trommi-macOS.dmg on the release v<N>,
+# The Mac app for direct download (README.md "Mac app (direct download)"): Trommi-macOS.dmg on its own release mac-v<N>,
 # signed with the team's Developer ID certificate, notarized by Apple and stapled, beside TestFlight's Mac build
 # (deploy_ios.yml, jobs mac and mac_processed), which stays as it is.
 #

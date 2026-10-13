@@ -75,25 +75,29 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   holds one of your devices or the recovery code.
 
 ## Signing
-- Every change becomes one release `v<N>`: a list of all files with their hashes, signed with Ed25519.
+- The hub and the connector each have their own signed release series (`hub-v<N>`, `connector-v<N>`): a list of the
+  part's files with their hashes, signed with Ed25519, one key for both. A part is released only when its own checks
+  and the core's checks passed for that commit.
 - Public key: `release/public-key.pem`, also pinned on the hub server. The private key stays in 1Password.
 - The hub server installs a release only if its signature checks out, and never one older than it accepted before.
 - The connector's `install.sh` and `trommi-connector update` check the same signature, with the key built in.
 - Release files and web app files carry GitHub build attestations: a public record of which build made them.
+- The web app is delivered as soon as its own checks and the core's checks passed; after each delivery CI checks from
+  outside that app.trommi.com serves exactly that build, and puts the build before back when it does not.
 - The iOS app is signed by Apple and ships through TestFlight.
-- The Mac app for direct download (`Trommi-macOS.dmg` on the release, `mac.yml`) is signed with the team's Developer
-  ID certificate with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start.
-  It is built only for a published release whose signature checks out and which marks the app changed (or brings a
-  change an earlier release's Mac build did not deliver), and never
-  without the certificate and notarization (the job is skipped instead). It is added to the release after the release
-  is published, so it is not in the signed manifest; it carries a GitHub build attestation instead. Only the job that
-  builds it sees the certificate, in an environment of its own (`mac`).
+- The Mac app for direct download (`Trommi-macOS.dmg`, `mac.yml`) is signed with the team's Developer ID certificate
+  with the hardened runtime, notarized by Apple and stapled; macOS checks that before its first start. It is built when
+  the core's checks passed for its commit and the app's inputs differ from those of the newest Mac app, and never
+  without the certificate and notarization (the job is skipped instead); it is published as its own release
+  `mac-v<N>` with a GitHub build attestation (macOS checks Apple's signature and notarization itself; the .dmg is not
+  in a manifest signed with the release key). Only the job that builds it sees the certificate, in an environment of
+  its own (`mac`).
 - iOS uses only standard algorithms and is declared exempt from export paperwork.
 
 ## Deployment
 - Secrets live in 1Password and are read only by the step that needs them.
 - Pull requests get no secrets and deploy nothing.
-- CI never logs into the hub server and sends it no code, only "take release `v<N>`".
+- CI never logs into the hub server and sends it no code, only "take release `hub-v<N>`".
 - CI reaches the hub server over a private network (Tailscale) with a short-lived GitHub login, no stored key.
 - The hub server downloads and checks the release itself.
 - Before the switch, the new hub is tried on a copy of the live data, without network; if that fails, nothing changes.
@@ -127,11 +131,11 @@ stores and relays encrypted data; the web app is delivered separately, by Cloudf
   3. Its pull request into `main`: CI tests it; with auto-merge it joins main's merge queue once all required checks
      are green, the queue checks the very squashed commit that will land on `main` again, and only then merges it.
      Builds, TestFlight and deliveries come only from `main`.
-- A pull request runs quick checks only (tests, clippy, the web app's build), without secrets. `main` runs the full
-  builds; when one fails, an issue is opened and nothing is released or delivered. The iOS app is checked and built in
-  a workflow of its own (`ios.yml`) after the release, so it never holds the others back; when that fails, an issue is
-  opened and the app is not delivered, and it ships only a published release that marks it changed (or that brings a
-  change an earlier release did not deliver: a waiting delivery is replaced by the newest one).
+- A pull request runs quick checks only (tests, clippy, the web app's build), without secrets. `main` checks and
+  builds each part on its own; a part is delivered only when its own checks and the core's checks passed for that
+  commit, and a part that fails opens an issue and is not delivered, while the other parts still are. The iOS app is
+  checked and built in a workflow of its own (`ios.yml`) after `main`'s checks; it is delivered only when the core's
+  checks passed for that commit and its inputs differ from those last delivered to TestFlight.
 - `main` is protected: only signed commits, linear history, no force-push, no deletion, changes only through pull requests.
   The squash merge is signed by GitHub, so every commit on `main` is verified. The history before 11 October 2026 was re-signed once by the owner.
 - GitHub secret scanning is on and blocks pushes that contain secrets.

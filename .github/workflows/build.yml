@@ -1,49 +1,44 @@
-# On every pull request: find which parts changed and check those, fast: their tests, clippy, the web app's build; no
-# release binaries, no cross builds, no Mac. The jobs' names are the checks the ruleset of main requires (they do not
-# change): Which parts changed, Core (check), Web app (check), Connector (check), Hub (check).
-# A part that did not change skips its job, which counts as passed.
-# On every commit on main: the same checks, and the full builds of the changed parts (release binaries). When one of
-# them fails, the job `report` opens the issue "Main build v<N> failed" (label build-failed) and nothing is released
-# or delivered; the next run on main that passes closes it.
-# A part whose check job passed on the pull request the commit was merged from, for the very same tree of files (the
-# usual case: nothing else merged in between), does not run its tests and clippy again on main; its job still builds
-# what main releases (.github/scripts/checked_tree.sh says which parts, and on what evidence).
-# On main also:
-# when what a part is built from changed since the newest release, make one release v<N> of every part
-# (release.yml) and deliver each part whose inputs changed (web, hub; the connector is delivered by the release
-# itself: installers and `trommi-connector update` take the newest).
+# On every pull request and in the merge queue: find which parts changed and check those, fast: their tests, clippy,
+# the web app's build; no release binaries, no cross builds, no Mac. The jobs' names are the checks the ruleset of main
+# requires (they do not change): Which parts changed, Core (check), Web app (check), Connector (check), Hub (check).
+# A part that did not change skips its job, which counts as passed; when finding the changed parts fails, that
+# required check fails.
+#
+# On every commit on main: the same checks, and each part that must be delivered is built and delivered ON ITS OWN, as
+# soon as its own checks and the core's passed for this commit (Core (check) passed, or was skipped because the core
+# did not change); no part waits for another, and there is no release of every part:
+#   web        deploy_web.yml: the files attested and delivered to Cloudflare, then checked from outside and put back
+#              when app.trommi.com does not serve exactly them
+#   hub        release_part.yml: the signed release hub-v<N>; then deploy_hub.yml: the server takes it
+#   connector  release_part.yml: the signed release connector-v<N> (installers and `trommi-connector update` take the
+#              newest); when the same commit delivers the hub, only once the server runs that hub
+# Whether a part must be delivered is decided against what it has out there, not against the commit before
+# (.github/scripts/deployed.sh): a delivery that failed is made again by the next run, and a part that went back is
+# delivered again. A part's job builds it then, even when its folder did not change.
+# A part whose check job passed in the merge queue (or on the merged pull request) for the very same tree of files does
+# not run its tests and clippy again on main; its job still builds what main delivers (.github/scripts/checked_tree.sh).
+# When a job fails, the job `report` opens the issue "Main build v<N> failed" (label build-failed); the next run on
+# main that passes closes it. The other parts are delivered all the same.
 #
 # iOS is not in this file, so nothing here waits for a Mac or for TestFlight: ios.yml checks the iOS client on every
-# pull request ("iOS client (check)") and, after a run of this file on main, delivers the app to TestFlight when that
-# run's release v<N> marks iOS changed (ios.yml reads RELEASE_BASE below for N). The release still counts iOS among
-# its parts (.github/scripts/inputs.sh): an iOS-only change makes a release, and only a released app ships.
+# pull request ("iOS client (check)") and, after a run of this file on main, delivers the iPhone app to TestFlight
+# (ios.yml) and the Mac app as mac-v<N> (mac.yml) when that run's Core (check) passed and the apps' inputs differ from
+# those out there (both read RELEASE_BASE below for N).
 #
-# Which jobs run: a part's tests and build run when its own folder changed, or core/ or client/, or what pins the build
-# (Cargo.toml, Cargo.lock, rust-toolchain.toml), compared with the commit of the newest release (on a pull request:
-# with its base).
-# Whether there is a release: .github/scripts/inputs.sh hashes, per part, what its build reads (the paths of the
-# commit, by git); the release is made when one hash differs from the newest release's manifest. A part whose hash
-# differs is built (its job runs even when its folder did not change since the commit before); a part whose hash is
-# the newest release's runs its tests when its folder changed, but not its build: release.yml takes its files from
-# that release, checked against its signed manifest. When the newest release cannot be read or checked, every part
-# counts as changed and is built. A pull request has no release to compare with: what runs, builds. A run started by
-# hand counts every part as changed for its tests.
+# Which checks run: a part's tests run when its own folder changed, or core/ or client/, or what pins the build
+# (Cargo.toml, Cargo.lock, rust-toolchain.toml), compared with the commit of the newest run on main that passed (on a
+# pull request: with its base); so what a failed or replaced run left untested is tested again. A run started by hand
+# counts every part as changed.
 #
-# How a part is wired in (the same three steps for web, connector and hub; iOS: see ios.yml):
-#   1. `changes`: one more `part <name> '<its own paths>'` line and one more output.
+# How a part is wired in (iOS and the Mac: see ios.yml and mac.yml):
+#   1. `changes`: one more `part <name> '<its own paths>'` line and one more output; its paths in
+#      .github/scripts/inputs.sh, and how its delivered state is read in .github/scripts/deployed.sh.
 #   2. a job named after the part: tests, builds, uploads ONE artifact named `<part>-release`.
-#   3. its paths in .github/scripts/inputs.sh, its files in release.yml, and (when it is delivered somewhere) a job
-#      `deploy_<part>` after `release` that calls `.github/workflows/deploy_<part>.yml` with
-#        version:  the release number of this run (see `changes`): a whole number that only grows, the same for
-#                  every part built by one run
-#        commit:   the commit that was built
-#        artifact: `<part>-release`
-#      and `secrets: inherit`. The deploy workflow alone uses the part's environment (`web`, `hub`, `connector`,
-#      `ios` from ios.yml), which holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID.
-#
-# The release is signed: release/manifest.sh writes manifest.json, release/sign.sh signs and checks it, the public
-# key is release/public-key.pem. The artifact of a part holds its files (hub and connector: with a manifest of their
-# own, checked when the release is put together); release.yml signs and publishes.
+#   3. its delivery after its job and the core's: deploy_<part>.yml, or release_part.yml for a signed release (its
+#      manifest by release/manifest.sh, with the part's inputs), with `secrets: inherit`. The delivery workflow alone
+#      uses the part's environment (`web`, `hub`, `connector`, `ios` and `mac` from ios.yml and mac.yml), which holds
+#      OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID. The number N of a release is this run's number plus
+#      RELEASE_BASE: it only grows, and it is the same for every part of one run.
 name: build
 
 on:
@@ -373,8 +368,8 @@ jobs:
         env:
           WEB_TEST_CONCURRENCY: '6'
         run: npm test
-      # The build: on a pull request as a check; on main the build of the release, only when the web's inputs differ
-      # from the newest release's (otherwise release.yml takes web.tar.gz from that release).
+      # The build: on a pull request as a check; on main the build that is delivered, only when the web app must be
+      # delivered (what app.trommi.com serves differs, see `changes`).
       - name: Build
         if: needs.changes.outputs.deliver_web != 'false'
         run: node app/web/dev/build.mjs --write
@@ -479,8 +474,8 @@ jobs:
           # its removal there (without it the test accepts a connector that only keeps its state)
           TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked $RUN -p trommi-tests --no-fail-fast $tests
 
-  # Main only, and only when the connector's inputs differ from the newest release's (otherwise release.yml takes the
-  # binaries from it): the four release binaries, as connector/build-plugin.mjs makes them, one machine per target at
+  # Main only, and only when the connector must be delivered (the newest connector-v<N> was built from other inputs,
+  # see `changes`): the four release binaries, as connector/build-plugin.mjs makes them, one machine per target at
   # the same time (one after another they took 11-12 minutes) and beside the job connector's tests. The job
   # connector_release puts them together.
   connector_build:
@@ -678,9 +673,8 @@ jobs:
           shellcheck -S warning release/*.sh hub/deploy/*.sh
           bash hub/deploy/install.sh check
       # The files of the release: both programs as static binaries and the manifest that
-      # names them. The commit is compiled in; paths of the build machine are not. Main only, and only when the inputs
-      # of the hub or its updater differ from the newest release's; release.yml takes the program whose inputs did not
-      # change from that release.
+      # names them. The commit is compiled in; paths of the build machine are not. Main only, and only when the hub must
+      # be delivered (what the server has differs, see `changes`).
       - name: Build the release
         if: github.ref == 'refs/heads/main' && needs.changes.outputs.deliver_hub != 'false'
         env:
