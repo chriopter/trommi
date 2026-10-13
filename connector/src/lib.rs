@@ -20,6 +20,7 @@ pub mod mcp;
 pub mod member;
 pub mod mirror;
 pub mod model;
+pub mod drawings;
 pub mod prompt;
 pub mod server;
 pub mod setup;
