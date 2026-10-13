@@ -365,7 +365,8 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
 const shownLines = (tasks, now = Date.now()) => tasks.filter(t => ['working', 'decision', 'later'].includes(t.state) || (t.state === 'done' && now - (t.updated ?? 0) < WORKING_WINDOW))
 const lineMark = t => html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span>`
 /** The status lines of the session's running work, and that it is answering, at the end of the conversation: one row
- *  of small chips (mark, title, age), never two rows; on a phone the row scrolls sideways. A chip with a question
+ *  of small chips (mark, title, age), never two rows; what does not fit lies on a stack "+N" at its end (controller
+ *  "status-lines"). A chip with a question
  *  opens it; one without shows its detail under the row on a tap (and hides it on a second). */
 function sessionStatus(s, base, now = Date.now()) {
   const last = s.messages.findLast(m => m.from !== 'event')
@@ -381,8 +382,49 @@ function sessionStatus(s, base, now = Date.now()) {
 // A chip without a question: a tap shows its title and detail under the row, a second tap hides it; the one shown stays
 // shown when the live piece is drawn anew.
 const statusOpen = new Set()
+// No sideways scroll (the owner, 13 October 2026): the chips that fit stand in the row; what does not fit lies on a
+// small stack "+N" at its end (its edges show), and a tap on the stack opens what lies on it, one under the other,
+// under the row. Measured again whenever the row's width changes.
 controller('status-lines', class extends Controller {
-  connect() { const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip) }
+  connect() {
+    const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip)
+    const row = this.element.querySelector('.status-chips')
+    if (!row) return
+    this.pile = Object.assign(document.createElement('button'), { type: 'button', className: 'status-pile', hidden: true })
+    this.pile.setAttribute('aria-expanded', 'false')
+    this.pile.addEventListener('click', () => this.openPile())
+    row.append(this.pile)
+    this.more = Object.assign(document.createElement('div'), { className: 'status-more', role: 'list', hidden: true })
+    row.after(this.more)
+    this.watch = new ResizeObserver(() => this.place()); this.watch.observe(row)
+    this.place()
+  }
+  disconnect() { this.watch?.disconnect(); this.pile?.remove(); this.more?.remove() }
+  /** Which chips stand in the row and which lie on the stack. */
+  place() {
+    const row = this.element.querySelector('.status-chips'), chips = [...row.querySelectorAll(':scope > .status-chip')]
+    for (const c of chips) c.hidden = false
+    // (the stack's room is kept free while measuring: as wide as "+9")
+    this.pile.hidden = false
+    this.pile.innerHTML = '<span class="status-pile-n">+9</span>'
+    const room = this.pile.getBoundingClientRect().width + 14, right = row.getBoundingClientRect().right
+    const all = chips.every(c => c.getBoundingClientRect().right <= right)
+    const over = all ? [] : chips.filter(c => c.getBoundingClientRect().right > right - room)
+    for (const c of over) c.hidden = true
+    this.pile.hidden = !over.length
+    this.pile.innerHTML = `<span class="status-pile-n">+${over.length}</span>`
+    this.pile.setAttribute('aria-label', `${over.length} more`)
+    this.pile.style.setProperty('--behind', String(Math.min(over.length, 2)))
+    this.over = over
+    if (!this.more.hidden) { if (over.length) this.fill(); else { this.more.hidden = true; this.pile.setAttribute('aria-expanded', 'false') } }
+  }
+  fill() { this.more.replaceChildren(...this.over.map(c => { const k = c.cloneNode(true); k.hidden = false; return k })) }
+  openPile() {
+    if (!this.over?.length) return
+    const open = this.more.hidden
+    this.more.hidden = !open; this.pile.setAttribute('aria-expanded', String(open))
+    if (open) this.fill()
+  }
   toggle(e) {
     const chip = e.currentTarget, on = chip.getAttribute('aria-expanded') === 'true'
     for (const c of this.element.querySelectorAll('.status-chip[data-key]')) { c.setAttribute('aria-expanded', 'false'); statusOpen.delete(c.dataset.key) }

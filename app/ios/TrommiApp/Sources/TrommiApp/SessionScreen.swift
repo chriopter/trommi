@@ -670,11 +670,13 @@ struct CopyLinkButton: View {
 }
 
 /** The session's running work at the end of the conversation, and that it is answering: one row of small chips (mark,
- *  title, age), never two rows; it scrolls sideways. A chip with a question opens it; one without shows its detail
+ *  title, age), never two rows; what does not fit lies on a stack "+N" at its end, listed under the row on a tap. A chip with a question opens it; one without shows its detail
  *  under the row on a tap, a second tap hides it (web session.mjs sessionStatus). */
 struct SessionStatus: View {
   @EnvironmentObject var model: BoardModel
   @State private var shown: String? = nil   // (the chip whose detail stands under the row, by session and id)
+  /** The stack opened: the chips from this place on stand listed under the row. */
+  @State private var pileFrom: Int? = nil
   let agent: Agent
   let tasks: [Task1]
   let messages: [Message]
@@ -691,8 +693,21 @@ struct SessionStatus: View {
           HStack(spacing: 8) { AgentMark(agent: agent, size: 16, crown: false); Text("\(agent.name) is working").font(Face.text(14)).foregroundStyle(Ink.muted); TypingDots() }
         }
         if !lines.isEmpty {
-          ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) { ForEach(lines, id: \.id) { t in chip(t) } }
+          // (no sideways scroll, his pick of 13 October: the chips that fit, the rest on a stack "+N" at the row's end;
+          //  a tap on the stack lists them under the row. ViewThatFits takes the longest row that fits.)
+          ViewThatFits(in: .horizontal) {
+            ForEach(Array(stride(from: lines.count, through: 0, by: -1)), id: \.self) { k in
+              HStack(spacing: 6) {
+                ForEach(lines.prefix(k), id: \.id) { t in chip(t) }
+                if k < lines.count { pile(rest: lines.count - k, from: k) }
+              }.fixedSize()
+            }
+          }
+          if let from = pileFrom, from < lines.count {
+            VStack(alignment: .leading, spacing: 6) { ForEach(lines.dropFirst(from), id: \.id) { t in chip(t) } }
+              .padding(8)
+              .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+              .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.lineStrong))
           }
           if let key = shown, let t = lines.first(where: { "\($0.agent):\($0.id)" == key }) {
             Text([t.label, t.detail ?? ""].filter { !$0.isEmpty }.joined(separator: ": "))
@@ -701,6 +716,23 @@ struct SessionStatus: View {
         }
       }.padding(.vertical, 12)
     }
+  }
+
+  /** The stack at the row's end: "+N" with the edges of the chips under it; a tap lists them under the row. */
+  private func pile(rest: Int, from: Int) -> some View {
+    Button { withAnimation(.easeOut(duration: 0.18)) { pileFrom = pileFrom == nil ? from : nil } } label: {
+      Text("+\(rest)").font(Face.text(14, .semibold)).monospacedDigit().foregroundStyle(Ink.fg)
+        .padding(.horizontal, 10).frame(height: 30)
+        .background(Capsule().fill(Ink.sunken))
+        .overlay(Capsule().strokeBorder(Ink.lineStrong, lineWidth: 1))
+        .background(Capsule().fill(Ink.sunken).overlay(Capsule().strokeBorder(Ink.lineStrong, lineWidth: 1)).rotationEffect(.degrees(1.5)).offset(x: 4, y: 3))
+        .background(Capsule().fill(Ink.sunken).overlay(Capsule().strokeBorder(Ink.lineStrong, lineWidth: 1)).opacity(0.7).rotationEffect(.degrees(-1)).offset(x: 8, y: 6))
+        .padding(.trailing, 8)
+        .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(rest) more")
+    .accessibilityHint(pileFrom == nil ? "Lists them" : "Hides them")
   }
 
   @ViewBuilder private func chip(_ t: Task1) -> some View {
