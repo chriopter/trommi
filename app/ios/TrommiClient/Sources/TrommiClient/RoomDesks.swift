@@ -98,7 +98,7 @@ extension Room {
         }
       case "write_snapshot":
         // (this app writes no snapshot: the board is erased; its items go when a snapshot covers them, or in 30 days)
-        canvas = canvas ?? (try await loadCanvas(timeline))
+        if canvas == nil { canvas = try await loadCanvas(timeline) }
       case "remove_desk":
         guard let reg = p["register"].string else { throw TrommiError("bad-format", "no register") }
         try await setRegisters([reg: .null])
