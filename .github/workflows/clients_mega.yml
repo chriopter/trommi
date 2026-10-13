@@ -68,7 +68,7 @@ jobs:
         if: steps.bindgen.outputs.cache-hit != 'true'
         run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
       - name: The core for the browser and for Swift, the iOS test runner
-        run: sh tests/client/mega/prepare.sh .
+        run: bash tests/client/mega/prepare.sh .
       - name: The hub and the test
         run: cargo build --locked -p trommi-hub -p trommi-tests --test client_mega
       - name: Every client shows the same
@@ -140,7 +140,7 @@ jobs:
         if: steps.bindgen.outputs.cache-hit != 'true'
         run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
       - name: The core for the browser and for Swift, the iOS test runner
-        run: sh tests/client/mega/prepare.sh .
+        run: bash tests/client/mega/prepare.sh .
       - name: The hub, the connector and the test
         run: cargo build --locked -p trommi-hub -p trommi-connector -p trommi-tests --test client_mega
       - name: Torture, the fleet growing to ${{ inputs.fleet || '100' }} iPhones
