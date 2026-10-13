@@ -2277,9 +2277,9 @@ export const LAYOUT = [
     { id: 'go.jump', keys: ['Mod+k', 'g j'], does: 'menu', verb: 'open the Trommi menu: desks and places' },
     { id: 'go.walk', keys: ['g b'], does: 'Blitz', verb: 'Blitz: every open card, one after the other' },
     { id: 'go.artifacts', keys: ['g m', 'g p'], does: 'Artifacts', verb: 'go to the Artifacts: every picture, video, file and page your agents made' },
-    // 1…9 alone are the desks'; G then 1…9 are the sessions'.
+    // 0…9 alone are the desks' (0 All desks, 1…9 the desks in the menu's order); G then 1…9 are the sessions'.
     { id: 'go.session', keys: ['g 1…9'], does: 'session 1 to 9', verb: 'go to that session of the sidebar', needs: 'sidebar' },
-    { id: 'desk.switch', keys: ['1…9'], does: 'desk 1 to 9', verb: 'switch to that desk', needs: 'desks' },
+    { id: 'desk.switch', keys: ['0…9'], does: 'All desks (0), desk 1 to 9', verb: 'switch to that desk; 0: All desks', needs: 'desks' },
     { id: 'session.next', keys: ['.'], does: 'next session', needs: 'sidebar' },
     { id: 'session.prev', keys: [','], does: 'previous session', needs: 'sidebar' },
     { id: 'pen', keys: ['p'], does: 'turn the page: the Scribble Board on the back of the Desk, and back' },
@@ -2525,7 +2525,7 @@ function start(signal) {
     'go.walk': () => go(`${base()}/blitz`),
     'go.artifacts': () => go(`${base()}/artifacts`),
     'go.jump': () => openJump(),
-    'desk.switch': n => { press(desks()[n - 1]) },   // a number past the last desk does nothing
+    'desk.switch': n => { press(deskByNumber(desks(), n)) },
     'go.session': n => { press(sessions()[n - 1]) },
     'session.next': () => sessionStep(1),
     'session.prev': () => sessionStep(-1),
@@ -3043,6 +3043,9 @@ export const settingsPage = (title, inner, { id = 'room', cls = 'room', lead = '
 /** Devices and Account (auth.mjs): a page under Settings in the account screens' own main (#room). */
 export const roomPage = (title, inner, lead = '') => settingsPage(title, inner, { lead })
 /** The short list of keys (the "?" sheet's), for Settings · Keyboard Shortcuts. */
+/** The menu's desk entry a number key picks: 0 All desks (there while there are two desks or more), 1…9 the desks
+ *  in the menu's order, All desks not counted. Nothing for a number past the last. entries: elements with data-desk. */
+export const deskByNumber = (entries, n) => (n === 0 ? entries.find(d => d.dataset.desk === 'all') : entries.filter(d => d.dataset.desk !== 'all')[n - 1]) ?? null
 export const keysList = () => html`<dl class="set-keys">${SHORT.map(k => html`<div><dt>${k.keys.map((spec, i) => html`${i ? html`<i>or</i>` : ''}${caps(spec)}`)}</dt><dd>${k.does}</dd></div>`)}</dl>`
 export const errorLine = e => (e ? html`<p class="room-error" role="alert">${e}</p>` : '')
 /** What a refused action says on screen: the line for a refusal every screen may meet (by its code), else the

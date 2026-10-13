@@ -30,7 +30,7 @@ test('the phone puts Log out with Settings and Demo', async () => {
   assert.match(css, /:is\(\.menu-demo-row, \.menu-logout-row\) \{ order: 3;/, 'the same place in the phone\'s column as Demo')
 })
 
-// The number keys 1…9 switch desks by clicking the desk's entry in the closed menu (ui.mjs, desk.switch): that must
+// The number keys 0…9 switch desks by clicking the desk's entry in the closed menu (ui.mjs, desk.switch): that must
 // not leave the "open the menu again after the switch" mark, or the menu comes up and blocks the next key.
 test('a desk switched by its number key leaves the menu shut; one picked in the open menu keeps it open', async () => {
   const { MenuController } = await import('../../../app/web/public/sidebar.mjs')
@@ -57,4 +57,19 @@ test('the release script writes what runs there beside the build, outside the bu
   assert.match(src, /'public', 'gen', 'release\.json'\)[\s\S]*version, commit, released/, 'gen/release.json: number, commit, time')
   const app = readFileSync(new URL('../../../app/web/public/app.mjs', import.meta.url), 'utf8')
   assert.match(app, /fetch\('\/gen\/release\.json'[\s\S]*fetch\('\/gen\/build\.txt'/, 'the app asks for it, else for the build\'s commit')
+})
+
+// The number keys: 0 is All desks, 1…9 the desks in the menu's order (the owner, 13 October 2026).
+test('0 switches to All desks, 1…9 to the desks in order', async () => {
+  const { LAYOUT, deskByNumber } = await import('../../../app/web/public/ui.mjs')
+  const entry = LAYOUT.find(g => g.scope === 'app').keys.find(k => k.id === 'desk.switch')
+  assert.deepEqual(entry.keys, ['0…9'])
+  const row = desk => ({ dataset: { desk } })
+  const menu = [row('all'), row('main'), row('platform'), row('lab')]
+  assert.equal(deskByNumber(menu, 0)?.dataset.desk, 'all')
+  assert.equal(deskByNumber(menu, 1)?.dataset.desk, 'main')
+  assert.equal(deskByNumber(menu, 3)?.dataset.desk, 'lab')
+  assert.equal(deskByNumber(menu, 4), null, 'a number past the last desk does nothing')
+  assert.equal(deskByNumber([row('main')], 0), null, 'one desk: no All desks')
+  assert.equal(deskByNumber([row('main')], 1)?.dataset.desk, 'main')
 })
