@@ -24,6 +24,7 @@ The App Store listing now opens with your encrypted notes.
 
 **Fixed**
 - Pointing at an option on a card no longer scrolls the picture away (web).
+- A large account opens on the web again: it showed "Not opened" with "too-large: a text" when its saved board was above one megabyte. A saved board the app cannot read is now read anew from the hub instead of stopping the account, and the error line names its code once.
 
 **Fixed**
 - Codex connects in a folder where other agent sessions already have keys: connect with an invite link works on the first try instead of answering "Not connected to Trommi. Call the tool again.", and the messages say exactly what to do (an invite in the app, its link given to Codex).

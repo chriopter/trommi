@@ -89,7 +89,7 @@ const typedArrayLength = Object.getOwnPropertyDescriptor(typedArray, 'byteLength
 const fill = Uint8Array.prototype.fill
 const MAX_BYTES = 256 * 1024 * 1024 // all bytes of one call together: above the largest stored file, and room for a long room history
 const MAX_VALUES = 4 * 1024 * 1024 // every value of one call together: a room's whole log served for a join is far below
-const MAX_TEXT = 1024 * 1024       // no call takes longer text
+const MAX_TEXT = 128 * 1024 * 1024 // no call takes longer text: the model of a large account, read back from the cache, is one text of tens of megabytes
 // How deep the deepest argument of any call is nested: a ServedRoom holds a list of groups, each a list of
 // Commits, each with its bytes. tests/bindings/manifest.mjs works this out from the facade's declarations and
 // fails when this number is another. It keeps a cyclic object from being walked for ever; the budgets above are

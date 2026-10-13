@@ -1071,13 +1071,19 @@ export async function roomScreen({ start, hub, openError = null, demo = '' }) {
   else if (wayLogin) loginFlow()
   else welcome()
 
+  // The code and the message of an error, the code once: the core's messages begin with their code already.
+  function codeAndMessage(err) {
+    const code = err?.code ? String(err.code) : '', message = err?.message ? String(err.message) : ''
+    if (!code) return message
+    return message === code || message.startsWith(`${code}:`) ? message : message ? `${code}: ${message}` : code
+  }
   // The stored account does not open (or a login found one stored): say so, Retry, or Log out of this device (wipe
   // this browser's copy; the account and the other devices stay). Never a dead end.
   function brokenFlow(err, { fromLogin = false } = {}) {
     const why = err?.code === 'no-device' || err?.code === 'device-not-stored' ? 'This browser lost this device\'s keys.' : fromLogin ? 'This browser holds an account that does not open.' : 'Your account did not open here.'
     show(obShell('Not opened', html`<p class="ob-error is-shown" role="alert" id="broken-why">${why}</p>
 <div class="ob-stack"><button type="button" class="ob-go" id="broken-logout">Log out</button><button type="button" class="ob-second" id="broken-retry">Retry</button></div>
-<p class="ob-hint" id="broken-detail">${err?.code ? `${err.code}: ` : ''}${err?.message ?? ''}</p>`, { lead: 'Log out here, then log in again. Your account stays.', home: false }), '#broken-retry')
+<p class="ob-hint" id="broken-detail">${codeAndMessage(err)}</p>`, { lead: 'Log out here, then log in again. Your account stays.', home: false }), '#broken-retry')
     on('#broken-retry', 'click', () => location.reload())
     on('#broken-logout', 'click', async e => {
       e.target.disabled = true; e.target.textContent = 'Logging out…'
