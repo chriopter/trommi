@@ -1,6 +1,6 @@
 // status-lines.test.mjs: the running work at the end of a chat (session.mjs sessionStatus, session.css): one row of
-// small chips (mark, title, age), never two rows; a chip with a question opens it, one without shows its detail under
-// the row on a tap.
+// small chips (mark, title, age), never two rows; a tap on any chip opens it under the row: its whole text, how it
+// stands, and the way to its card when it stands for one.
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -8,12 +8,14 @@ import fs from 'node:fs'
 
 const read = f => fs.readFileSync(new URL(`../../../app/web/public/${f}`, import.meta.url), 'utf8')
 
-test('the lines are one row of chips: a question opens, the rest show their detail on a tap', () => {
+test('the lines are one row of chips; a tap on any opens it: its whole text, how it stands, its card', () => {
   const src = read('session.mjs')
   assert.match(src, /<div class="status-chips" role="list">/)
-  assert.match(src, /<a class="status-chip" role="listitem" data-state="\$\{t\.state\}" data-nav href="\$\{questionPath\(card, base\)\}"/)
-  assert.match(src, /<button type="button" class="status-chip"[^`]*data-action="status-lines#toggle"/)
-  assert.match(src, /<p class="status-detail-line" hidden><\/p>/)
+  assert.doesNotMatch(src, /<a class="status-chip"/, 'a chip with a card opens too, it does not leave the page at once')
+  assert.match(src, /<button type="button" class="status-chip"[^\n]*data-href="\$\{questionPath\(card, base\)\}"[^\n]*data-action="status-lines#toggle"/)
+  assert.match(src, /<div class="status-open" id="status-open-\$\{s\.id\}" hidden><\/div>/)
+  assert.match(src, /<p class="status-open-text"><b>\$\{d\.label\}<\/b>\$\{d\.detail \? html`: \$\{d\.detail\}` : ''\}<\/p>/)
+  assert.match(src, /<a class="status-open-card" data-nav href="\$\{d\.href\}">Open card/)
   assert.doesNotMatch(src, /stripMode|\?strip=/, 'no trial switch left')
 })
 
@@ -33,7 +35,24 @@ test('the age is short, the words kept for a screen reader', async () => {
   assert.match(src, /<span class="status-age" aria-hidden="true" data-ts="\$\{t\.updated\}">\$\{agoShort\(t\.updated\)\}<\/span>\$\{agoSpan\(t\.updated, 'offscreen'\)\}/)
 })
 
-test('only what still runs shows: stale and gone lines do not, a done one for a while', () => {
+test('what still runs shows, a done one for a while, a stale one greyed for a day; gone lines do not', () => {
   const src = read('session.mjs')
-  assert.match(src, /const shownLines = \(tasks, now = Date\.now\(\)\) => tasks\.filter\(t => \['working', 'decision', 'later'\]\.includes\(t\.state\) \|\| \(t\.state === 'done' && now - \(t\.updated \?\? 0\) < WORKING_WINDOW\)\)/)
+  assert.match(src, /const shownLines = \(tasks, now = Date\.now\(\)\) => tasks\.filter\(t => \['working', 'decision', 'later'\]\.includes\(t\.state\) \|\| \(t\.state === 'done' && now - \(t\.updated \?\? 0\) < WORKING_WINDOW\) \|\| \(t\.state === 'stale'/)
+  assert.doesNotMatch(src, /'gone'\]\.includes|t\.state === 'gone' &&/)
+})
+
+test('a line nobody updated for two hours is stale: greyed, a still ring, shown for a day', async () => {
+  // (the core decides stale, client/src/status.rs line_state)
+  assert.match(fs.readFileSync(new URL('../../../client/src/status.rs', import.meta.url), 'utf8'), /pub const LINE_STALE_MS: u64 = 2 \* 60 \* 60_000;/)
+  const src = read('session.mjs'), css = read('session.css')
+  assert.match(src, /\(t\.state === 'stale' && now - \(t\.updated \?\? 0\) < STALE_SHOWN_MS\)/)
+  assert.match(src, /t\.state === 'stale' \? html`<i class="status-still"/)
+  assert.match(css, /\.status-chip\[data-state="stale"\] \{ color: var\(--muted\); \}/)
+})
+
+test('the iPhone: a tap on any chip opens it with its card; a stale line greyed and still', () => {
+  const swift = fs.readFileSync(new URL('../../../app/ios/TrommiApp/Sources/TrommiApp/SessionScreen.swift', import.meta.url), 'utf8')
+  assert.match(swift, /Button \{\n\s*withAnimation\(\.easeOut\(duration: 0\.18\)\) \{ shown = on \? nil : key \}/)
+  assert.match(swift, /Text\("Open card"\)/)
+  assert.match(swift, /\$0\.state == "stale" && now - min\(now, \$0\.updated\) < 24 \* 60 \* 60 \* 1000/)
 })

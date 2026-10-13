@@ -67,12 +67,12 @@ final class BoardTests: XCTestCase {
     XCTAssertEqual(cleanGoals("\n\n 1. Ship iOS  \r\n2. Sleep\t\n\n"), " 1. Ship iOS\n2. Sleep")
     XCTAssertEqual(cleanGoals("a\n\nb\n"), "a\n\nb", "a blank line inside stays")
     XCTAssertEqual(GOALS_LINES, 20)
-    // folded on the Desk: the first five lines, the rest behind "+N more"
+    // folded on the Desk: the first line, the rest under it
     let twelve = (1...12).map { "goal \($0)" }.joined(separator: "\n")
-    XCTAssertEqual(goalsFold(twelve).shown, (1...5).map { "goal \($0)" }.joined(separator: "\n"))
-    XCTAssertEqual(goalsFold(twelve).more, 7)
-    XCTAssertEqual(goalsFold("a\nb\nc\nd\ne").more, 0, "five lines: nothing to fold")
-    XCTAssertEqual(goalsFold("a\nb\nc\nd\ne").shown, "a\nb\nc\nd\ne")
+    XCTAssertEqual(goalsFold(twelve).shown, "goal 1")
+    XCTAssertEqual(goalsFold(twelve).more, 11)
+    XCTAssertEqual(goalsFold("a").more, 0, "one line: nothing to fold")
+    XCTAssertEqual(goalsFold("a").shown, "a")
     XCTAssertEqual(goalsFold("").more, 0)
     XCTAssertEqual(cleanGoals((1...21).map(String.init).joined(separator: "\n")), (1...20).map(String.init).joined(separator: "\n"), "a checklist of 20 lines, the 21st cut")
     XCTAssertEqual(cleanGoals(String(repeating: "x", count: 250)).count, 200)

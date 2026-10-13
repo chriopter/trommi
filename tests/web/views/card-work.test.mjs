@@ -39,7 +39,7 @@ test('an open card on the Desk and a permission are never "being worked on"', ()
 
 test('the strip stands above the title (live with the card\'s lead), its pen stroke runs, and rests without motion', () => {
   const src = read('card.mjs'), css = read('card.css')
-  assert.match(src, /\$\{old \? '' : workStrip\(card, model\)\}<h1 class="tc-title"/)
+  assert.match(src, /\$\{old \? '' : workStrip\(card, model\)\}(?:\$\{from \? fromLine\(from, base\) : ''\})?<h1 class="tc-title"/)
   assert.match(src, /<div class="tc-work" role="status">\$\{avatar\(w\.agent, \{ crown: false, working: true \}\)\}[\s\S]*is working on it/)
   assert.match(css, /\.tc-work-run \.run-pen \{[^}]*animation: tc-work-run/)
   assert.match(css, /prefers-reduced-motion: reduce\) \{ \.tc-work-run \.run-pen \{ animation: none; display: none; \}/)

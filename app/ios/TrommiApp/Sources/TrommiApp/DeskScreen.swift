@@ -111,6 +111,8 @@ struct DeskScreen: View {
       }.opacity(0).accessibilityHidden(true)
     }
     .modifier(DeskTop(regular: hSize == .regular))
+    // his starred cards as a small stack at the bottom right, above the tab pill (StarStack, MoreScreens.swift)
+    .overlay(alignment: .bottomTrailing) { StarStack().padding(.trailing, 16).padding(.bottom, hSize == .regular ? 24 : 84) }
   }
 
   @ViewBuilder private func head(_ v: DeskModel.View) -> some View {

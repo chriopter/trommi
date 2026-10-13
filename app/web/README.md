@@ -165,9 +165,8 @@ instead); files come network first, the cache only offline. On the dev server (`
 
 - **Goals:** under the greeting, a desk's own checklist (at most 20 lines of 200 characters: `GOALS_LINES`,
   `GOALS_LINE_MAX`, `cleanGoals` in `app.mjs`), written in place with a click; empty only a faint "Goals…", nothing on
-  All desks. The Desk shows the first five lines (`GOALS_SHOWN`) and folds the rest behind "+N more", which opens them
-  in place ("Show less" folds them again; open or not is kept per desk in `localStorage` `trommi-goals-open`), so a
-  long list never pushes the cards off the screen. A line that starts with an emoji or a tick box has its sign in a
+  All desks. One toggle, a chevron beside them, folds them to their first line and opens them again (folded or
+  not is kept per desk in `localStorage` `trommi-goals-folded`), so a long list need not push the cards off the screen. A line that starts with an emoji or a tick box has its sign in a
   column of its own: the words of such lines start under each other. The field grows with its words to twelve rows,
   then it scrolls. Leaving the field always keeps what was written: on `blur`, and also on a press outside it, when the
   page is hidden or left, and when the field is found to be no longer the active element (a document without focus, a

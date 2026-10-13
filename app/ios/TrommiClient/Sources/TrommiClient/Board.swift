@@ -681,3 +681,11 @@ public final class Board {
   /** A key only an agent writes in its session group. */
   public static func isAgentKey(_ k: String) -> Bool { k == "profile" || k == "heard" || k.hasPrefix("status_line/") || k.hasPrefix("alert/") }
 }
+
+extension Board {
+  /** His starred cards, the last starred first: the client core's rule (client/src/stars.rs). Card ids. */
+  public func starredCards() -> [String] {
+    guard let t = try? engine.starredCards(), let j = JV.parse(Bytes(t.utf8)) else { return [] }
+    return j.array?.compactMap { $0["object_id"].string } ?? []
+  }
+}

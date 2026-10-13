@@ -65,7 +65,7 @@ a line by one rule, so the line never says more than the Desk's "Off your mind" 
 - linked to a card (`object_id`), the card's place decides: put off (Later) is `later`, shown quietly; open (on the
   Desk, or with its agent) is as set; answered and still worked on is `working` at most; else (answered long ago,
   done, shredded) `done`, which goes after ten minutes;
-- not linked, and not updated for 6 hours: `stale`, not shown, and no sign of work.
+- not linked, and not updated for 2 hours: `stale`, shown greyed and still (no sign of work) for a day, then not shown.
 
 The apps apply it where they read the lines (web `app.mjs` `lineState`, iOS `Desk.swift` `lineState`); the core's
 red hand and quiet hint count only the lines that are still current (`src/status.rs`, `LINE_STALE_MS`).

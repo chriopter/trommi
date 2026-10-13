@@ -835,27 +835,25 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 /* the desk's goals (desk.mjs deskGoals): a quiet checklist under the greeting, in the text face; empty only a faint
    "Goals…"; the first five lines, more behind "+N more" (.is-open: all of them); a click writes in place, the field
    the same size and face as the words, at most twelve rows high (less on a low screen), then it scrolls */
-.desk-goals { grid-column: 1; min-width: 0; margin-top: 4px; }
+.desk-goals { grid-column: 1; min-width: 0; margin-top: 4px; display: grid; grid-template-columns: minmax(0, max-content) auto; justify-content: start; align-items: start; column-gap: 2px; }
+.desk-goals > .desk-goals-show { width: auto; max-width: 600px; }
 .desk-goals-show, .desk-goals-field { display: block; width: min(100%, 600px); box-sizing: border-box; margin: 0; padding: 3px 6px; margin-inline: -6px; border: 0; border-radius: 8px; background: none; color: var(--muted); font: 500 var(--t-md)/1.45 var(--font); text-align: left; overflow-wrap: anywhere; }
 .desk-goals-show { cursor: text; }
 .desk-goals-show.is-empty { color: var(--faint); font-style: italic; }
 .dg-line { display: block; min-height: 1.45em; }
 .dg-line.has-sign { display: grid; grid-template-columns: 1.6em minmax(0, 1fr); }
 .dg-sign { height: 1.45em; line-height: 1.45; overflow: hidden; white-space: nowrap; }
-.desk-goals:not(.is-open) .dg-line:nth-child(n+6) { display: none; }
-.desk-goals.is-writing > .desk-goals-show, .desk-goals.is-writing > .desk-goals-more { display: none; }
-.desk-goals-more { display: block; margin: 1px 0 0; padding: 5px 0; border: 0; background: none; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; text-decoration-color: var(--accent); }
-/* folding the goals (desk.mjs goals#collapse): "Hide goals" under them, quiet, shown with the pointer over them or on a
-   touch screen; folded only "Goals · N" with its chevron, which opens them again */
-.desk-goals-fold, .desk-goals-unfold { display: none; margin: 1px 0 0; padding: 5px 0; border: 0; background: none; color: var(--faint); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; }
-.desk-goals:not(.is-folded):not(.is-writing) > .desk-goals-fold { display: block; }
-@media (any-hover: hover) { .desk-goals:not(:hover):not(:focus-within) > .desk-goals-fold { visibility: hidden; } .desk-goals-fold:hover, .desk-goals-unfold:hover { color: var(--fg); } }
-.desk-goals.is-folded > :is(.desk-goals-show, .desk-goals-more) { display: none; }
-.desk-goals.is-folded:not(.is-writing) > .desk-goals-unfold { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--t-md); font-weight: 500; }
-.desk-goals-unfold .sketch { width: 16px; height: 16px; transform: rotate(-90deg); }
-.desk-goals-fold:focus-visible, .desk-goals-unfold:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
-.desk-goals-more:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
-@media (any-hover: hover) { .desk-goals-show:hover { background: var(--sunken); color: var(--fg); } .desk-goals-more:hover { color: var(--accent); } }
+.desk-goals.is-folded .dg-line:nth-child(n+2) { display: none; }
+.desk-goals.is-writing > :is(.desk-goals-show, .desk-goals-toggle) { display: none; }
+.desk-goals > .desk-goals-field { grid-column: 1 / -1; }
+/* the one toggle (desk.mjs goals#toggle): a chevron beside the first line, down while open, to the side while folded */
+.desk-goals-toggle { display: grid; place-items: center; width: 32px; height: calc(1.45em + 6px); padding: 0; border: 0; border-radius: 8px; background: none; color: var(--faint); font: 500 var(--t-md)/1.45 var(--font); cursor: pointer; }
+.desk-goals-toggle .sketch { width: 16px; height: 16px; transition: transform 120ms; }
+.desk-goals.is-folded .desk-goals-toggle .sketch { transform: rotate(-90deg); }
+.desk-goals.is-folded .desk-goals-toggle { color: var(--muted); }
+.desk-goals-toggle:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+@media (any-hover: hover) { .desk-goals-toggle:hover { color: var(--fg); background: var(--sunken); } }
+@media (any-hover: hover) { .desk-goals-show:hover { background: var(--sunken); color: var(--fg); } }
 .desk-goals-show:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .desk-goals-field { resize: none; max-height: min(calc(12 * 1.45em + 6px), 42dvh); overflow-y: auto; color: var(--fg); background: var(--sunken); white-space: pre-wrap; outline: 0; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
 .desk-goals-field::placeholder { color: var(--faint); }

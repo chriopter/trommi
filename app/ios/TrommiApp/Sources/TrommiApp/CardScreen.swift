@@ -130,6 +130,25 @@ struct CardScreen: View {
     return n.map { "Ask \($0) something, or say what is missing…" } ?? "Ask something, or say what is missing…"
   }
 
+  /** Who a card comes from (web card.mjs fromLine): the session's drawing, desk › main session › itself, its name in
+   *  bold; a tap opens the session. */
+  private func fromLine(_ a: Agent) -> some View {
+    let path = a.path.isEmpty ? [a.name] : a.path
+    return Button { model.path.append(.session(a.id)) } label: {
+      HStack(spacing: 6) {
+        AgentMark(agent: { var x = a; x.starred = false; return x }(), size: 20, crown: false)
+        ForEach(Array(path.dropLast().enumerated()), id: \.offset) { _, p in
+          Text(p).font(Face.text(14, .medium)).foregroundStyle(Ink.muted).lineLimit(1)
+          Text("›").font(Face.text(14)).foregroundStyle(Ink.faint)
+        }
+        Text(path.last ?? a.name).font(Face.text(14, .bold)).foregroundStyle(Ink.fg).lineLimit(1)
+      }
+      .frame(minHeight: 44, alignment: .leading).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("From \(path.joined(separator: ", "))")
+  }
+
   @ViewBuilder private func lead(_ c: DeskCard, _ a: Agent?, _ d: DeskModel) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       if c.isKnock && c.status == "open", let w = c.knockWord {
@@ -137,14 +156,10 @@ struct CardScreen: View {
           .foregroundStyle(Ink.surface).padding(.horizontal, 8).padding(.vertical, 4).background(RoundedRectangle(cornerRadius: 6).fill(Ink.urgency(c.urgency)))
       }
       if let w = CardWork.of(c, d) { CardWorkStrip(work: w) }
+      // who it comes from, above the title (also in Blitz): the session's drawing and its path, the client core's
+      if let a = a { fromLine(a) }
       Text(c.title).font(Face.display(30, .heavy)).foregroundStyle(Ink.fg).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
       HStack(spacing: 6) {
-        if let a = a {
-          Button { model.path.append(.session(a.id)) } label: {
-            HStack(spacing: 5) { AgentMark(agent: a, size: 18, crown: false); Text(a.name).font(Face.text(14, .medium)).foregroundStyle(Tone.color(hue: a.hue, .pen)) }
-          }.buttonStyle(.plain)
-          Text("·").foregroundStyle(Ink.faint)
-        }
         Text(agoText(c.revised ?? c.created)).font(Face.text(14)).foregroundStyle(Ink.muted)
         if let v = model.view, let at = (v.fresh.firstIndex { $0.id == c.id }) {
           Text("·").foregroundStyle(Ink.faint)
