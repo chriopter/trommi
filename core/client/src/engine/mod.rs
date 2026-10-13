@@ -83,6 +83,13 @@
 //! taken, an agent without a session seated ([`crate::seats`]), the core's findings said. An envelope
 //! the hub voids as `epoch-full` leads to an update of the own leaf at once, which moves the group on.
 //!
+//! # Across a restart
+//!
+//! The engine keeps one small record in the app's store ([`sync::record`]): its position, what it passed over and
+//! still owes (groups it waited for, missing keys, withheld chains, queued mends), and a sign-in's session groups
+//! still to join. It is written behind the device's own write of the same step, so it never runs ahead of the
+//! stored device; one that lags only costs a second reading, and one of another stored state is left.
+//!
 //! # Not here yet
 //!
 //! The Desk as a delta on a warm start, the reading of the room's past (one

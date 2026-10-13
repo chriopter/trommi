@@ -24,9 +24,10 @@
 //!
 //! # What is kept
 //!
-//! The code's keys live in the engine only while this runs and are dropped with it. Nothing of it is stored: after
-//! a restart the joins already in the outbox are posted, and the groups not reached are left to another human
-//! device of the person (5.2.7), or to the shell asking again with the code.
+//! The code's keys live in the engine only while this runs and are dropped with it; they are never stored. The
+//! engine's record ([`super::record`]) keeps which groups are still to join. After a restart the joins already in
+//! the outbox are posted; a session whose join was not built yet is reported as `interrupted`, and is left to
+//! another human device of the person (5.2.7), or to the shell asking again with the code.
 
 use super::*;
 use std::collections::BTreeSet;
@@ -83,7 +84,8 @@ struct One {
 }
 
 pub(super) struct Joining {
-    keys: RecoveryKeys,
+    /// The keys of the code; none after a restart, when only the joins already built go on.
+    keys: Option<RecoveryKeys>,
     later: Option<Later>,
     /// Still to be read, together.
     together: VecDeque<GroupId>,
@@ -93,6 +95,8 @@ pub(super) struct Joining {
     alone: VecDeque<GroupId>,
     one: Option<One>,
     asked: Option<IoId>,
+    /// The groups of the read in flight that are in none of the lists above.
+    reading: Vec<GroupId>,
     pub(super) retry: Retry,
     tries: BTreeMap<GroupId, u32>,
     /// Joins built and in the outbox: the hub's answer is awaited.
@@ -125,6 +129,33 @@ fn code_of(failure: &Failure) -> &'static str {
     }
 }
 
+impl Joining {
+    /// After a restart: the joins that were built wait for the hub's answer; nothing more is read.
+    pub(super) fn resumed(posted: BTreeSet<GroupId>, joined: u32, not_joined: Vec<(GroupId, &'static str)>) -> Self {
+        Joining {
+            keys: None,
+            later: None,
+            together: VecDeque::new(),
+            rows: VecDeque::new(),
+            alone: VecDeque::new(),
+            one: None,
+            asked: None,
+            reading: Vec::new(),
+            retry: Retry::default(),
+            tries: BTreeMap::new(),
+            posted,
+            joined,
+            not_joined,
+        }
+    }
+
+    /// What a restart needs of it: the groups still to join, and how the others ended.
+    pub(super) fn record(&self) -> super::record::JoinsRecord {
+        let waiting = self.together.iter().chain(&self.alone).copied().chain(self.rows.iter().map(|row| row.group)).chain(self.one.iter().map(|one| one.group)).chain(self.posted.iter().copied()).chain(self.reading.iter().copied());
+        super::record::JoinsRecord::new(waiting, self.joined, &self.not_joined)
+    }
+}
+
 impl Engine {
     /// Joins the live session groups of a sign-in with the code (see the module). A second call while one runs adds
     /// its groups and replaces the keys.
@@ -134,18 +165,19 @@ impl Engine {
         }
         let mut joining = match self.joining.take() {
             Some(mut joining) => {
-                joining.keys = joins.keys;
+                joining.keys = Some(joins.keys);
                 joining.later = joins.later;
                 joining
             }
             None => Joining {
-                keys: joins.keys,
+                keys: Some(joins.keys),
                 later: joins.later,
                 together: VecDeque::new(),
                 rows: VecDeque::new(),
                 alone: VecDeque::new(),
                 one: None,
                 asked: None,
+                reading: Vec::new(),
                 retry: Retry::default(),
                 tries: BTreeMap::new(),
                 posted: BTreeSet::new(),
@@ -186,7 +218,7 @@ impl Engine {
             self.want_reread(0);
             self.report(Report::Groups);
             self.report(Report::SessionsJoined { joined: j.joined, not_joined: j.not_joined });
-            return self.drive(ctx);
+            return self.drive_all(ctx);
         }
         self.joining = Some(j);
     }
@@ -222,6 +254,7 @@ impl Engine {
                 j.asked = self.ask(ctx, Route::GroupsRead { groups: &groups }, true, |expect| Asked::JoinRead { expect, what: Read::Together(groups.clone()) });
                 if j.asked.is_some() {
                     j.together.drain(..groups.len());
+                    j.reading = groups;
                     return;
                 }
                 // (a request that cannot be built: each alone)
@@ -277,9 +310,11 @@ impl Engine {
     /// The check is through: the join is built on the GroupInfo served as current, and waits in the outbox.
     fn join_build(&mut self, ctx: &mut Ctx<'_>, j: &mut Joining, one: One) {
         let Some((current, _)) = &one.current else { return };
+        // (after a restart the code's keys are gone: nothing is read then, so nothing comes here)
+        let Some(keys) = &j.keys else { return j.not_joined.push((one.group, "interrupted")) };
         let built = match &j.later {
-            Some(later) => self.device.join_session_checked_keys(&j.keys, &one.group, current, &later.rows, &later.links, ctx.now),
-            None => self.device.join_session_checked(&j.keys, &one.group, current, ctx.now),
+            Some(later) => self.device.join_session_checked_keys(keys, &one.group, current, &later.rows, &later.links, ctx.now),
+            None => self.device.join_session_checked(keys, &one.group, current, ctx.now),
         };
         match built {
             Ok(_) => {
@@ -315,6 +350,7 @@ impl Engine {
     pub(super) fn on_join_read(&mut self, ctx: &mut Ctx<'_>, what: Read, answer: Result<Answer, Failure>, unauthorised: bool) {
         let Some(mut j) = self.joining.take() else { return };
         j.asked = None;
+        j.reading.clear();
         self.join_read(ctx, &mut j, what, answer, unauthorised);
         if self.stopped.is_none() {
             self.joining = Some(j);

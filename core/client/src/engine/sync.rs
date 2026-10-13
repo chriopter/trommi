@@ -14,6 +14,8 @@ use crate::hub::{classify_io, Failure};
 pub mod joins;
 #[path = "upkeep.rs"]
 pub mod upkeep;
+#[path = "record.rs"]
+pub mod record;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -224,6 +226,9 @@ enum Asked {
     Claim { expect: Expect, job: upkeep::Job },
     /// A page of the hub's list of the room's groups, for a job of tending (`upkeep`).
     RoomGroups { expect: Expect, job: upkeep::Job },
+    /// The engine's record, read at the start and written when it changed (`record`).
+    Record,
+    RecordWrite,
     DeviceWrite,
 }
 
@@ -231,7 +236,7 @@ impl Asked {
     /// How the answer is to be read; none for a write to the store.
     fn expect(&self) -> Option<&Expect> {
         match self {
-            Asked::DeviceWrite => None,
+            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite => None,
             Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) => Some(e),
             Asked::Post { expect, .. }
             | Asked::GroupLog { expect, .. }
@@ -397,6 +402,12 @@ pub struct Engine {
     joins_alone: bool,
     /// Tending the groups: stale sessions, human devices a session lacks, the core's findings (`upkeep`).
     tending: upkeep::Tending,
+    /// Where this device's reading of the order began, when not at its start (`record`).
+    floor: Option<u64>,
+    /// The record is being read from the store: nothing else starts before.
+    restoring: Option<IoId>,
+    /// The record as it was last written.
+    written: Option<record::Record>,
 }
 
 /// Why a stored device does not open as an engine.
@@ -485,6 +496,9 @@ impl Engine {
             joining: None,
             joins_alone: false,
             tending: upkeep::Tending::new(),
+            floor: None,
+            restoring: None,
+            written: None,
         })
     }
 
@@ -512,6 +526,11 @@ impl Engine {
     /// From where the room's order is to be read once more, if it is (the seam to the reading of the past).
     pub fn reread_from(&self) -> Option<u64> {
         self.reread_from
+    }
+    /// How much the engine passed over and still has to read: groups it waits for, groups whose keys it lacks,
+    /// chains the hub withholds, mends queued.
+    pub fn owes(&self) -> (usize, usize, usize, usize) {
+        (self.behind.len(), self.keyless.len(), self.withheld.len(), self.mends.len())
     }
     /// The next report, oldest first.
     pub fn next_report(&mut self) -> Option<Report> {
@@ -573,6 +592,8 @@ impl Engine {
     /// The first step, and the one after every event: starts whatever is due and possible.
     pub fn start(&mut self, ctx: &mut Ctx<'_>) {
         self.report(Report::Groups);
+        // what the engine kept across the restart comes first: where it stands, and what it owes
+        self.restore(ctx);
         self.drive(ctx);
     }
 
@@ -631,6 +652,21 @@ impl Engine {
                 }
                 true
             }
+            Some(Asked::Record) => {
+                if self.stopped.is_none() {
+                    self.restored(ctx, result);
+                    self.drive(ctx);
+                }
+                true
+            }
+            Some(Asked::RecordWrite) => {
+                if let IoResult::Err(e) = result {
+                    // (not kept: the next step writes it again; a restart before that reads a little more)
+                    ctx.log(LogLevel::Warn, format!("the engine's record was not written: {:?}", e.kind));
+                    self.written = None;
+                }
+                true
+            }
             Some(other) => {
                 self.pending.insert(id, other);
                 false
@@ -647,7 +683,7 @@ impl Engine {
         if self.stopped.is_some() {
             return true;
         }
-        if matches!(asked, Asked::DeviceWrite) {
+        if matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite) {
             return true;
         }
         let (expect, response) = match &result {
@@ -678,7 +714,7 @@ impl Engine {
             self.unauthorised = 0;
         }
         match asked {
-            Asked::DeviceWrite => {}
+            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite => {}
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
             Asked::Page(_) => self.on_page(ctx, answer, unauthorised, refusal),
@@ -797,10 +833,15 @@ impl Engine {
     // ---- the drive: whatever is due and possible is started
 
     fn drive(&mut self, ctx: &mut Ctx<'_>) {
-        if self.stopped.is_some() {
+        if self.stopped.is_some() || self.restoring.is_some() {
             self.flush(ctx);
             return;
         }
+        self.drive_all(ctx);
+        self.keep(ctx);
+    }
+
+    fn drive_all(&mut self, ctx: &mut Ctx<'_>) {
         // The order first: what is at hand is taken before anything new is asked.
         self.take(ctx);
         self.flush(ctx);
@@ -876,7 +917,7 @@ impl Engine {
         self.joining = None;
         self.writes.lose();
         for (id, asked) in std::mem::take(&mut self.pending) {
-            if !matches!(asked, Asked::DeviceWrite) {
+            if !matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite) {
                 ctx.out.push(Effect::Cancel { id });
             }
         }
@@ -991,7 +1032,7 @@ impl Engine {
                 if !self.order_retry.waiting(ctx.now) {
                     let Some(group) = groups.front().copied() else {
                         self.repair = None;
-                        return self.drive(ctx);
+                        return self.drive_all(ctx);
                     };
                     let (after, upto) = (*after, self.position);
                     *asked = true;

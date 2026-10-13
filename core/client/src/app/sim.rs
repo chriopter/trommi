@@ -35,6 +35,10 @@ pub struct Sim {
     pub streams: Vec<(IoId, HttpRequest)>,
     /// Requests wait in `held` to be answered by hand.
     pub hold: bool,
+    /// The process dies once so many more effects were run (`restart` brings a new one): the effect it dies before
+    /// and everything behind it never happens, and no event reaches the App any more.
+    pub die_in: Option<usize>,
+    pub dead: bool,
     pub held: VecDeque<(IoId, HttpRequest)>,
     /// Every effect the App asked for, in order (for assertions).
     pub log: Vec<Effect>,
@@ -54,6 +58,8 @@ impl Sim {
             stream_hub: None,
             streams: Vec::new(),
             hold: false,
+            die_in: None,
+            dead: false,
             held: VecDeque::new(),
             log: Vec::new(),
             queue: VecDeque::new(),
@@ -62,6 +68,9 @@ impl Sim {
 
     /// Sends one event and runs everything that follows from it until nothing is left to do now.
     pub fn send(&mut self, event: Event) {
+        if self.dead {
+            return;
+        }
         self.queue.push_back(event);
         while let Some(event) = self.queue.pop_front() {
             let effects = self.app.handle(self.now_ms, event);
@@ -116,11 +125,24 @@ impl Sim {
         self.queue.clear();
         self.streams.clear();
         self.held.clear();
+        self.die_in = None;
+        self.dead = false;
     }
 
     /// Runs effects as a shell does: in order, a failed device write ending the rest. Results are queued.
     pub fn execute(&mut self, effects: Vec<Effect>) {
         for effect in effects {
+            if self.dead {
+                return;
+            }
+            if let Some(left) = self.die_in.as_mut() {
+                if *left == 0 {
+                    self.dead = true;
+                    self.queue.clear();
+                    return;
+                }
+                *left -= 1;
+            }
             self.log.push(effect.clone());
             match effect {
                 Effect::Render { delta } => self.view.apply(&delta).expect("renders come in order"),
