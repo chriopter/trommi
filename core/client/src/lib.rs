@@ -44,7 +44,6 @@ pub mod seats;
 pub mod selfjoin;
 pub mod sessions;
 pub mod status;
-pub mod store;
 pub mod views;
 
 pub use board::{Board, Fact, Kind, Object, Source, State};
@@ -54,4 +53,3 @@ pub use desk::{
 };
 pub use plan::{CatchUp, Step};
 pub use registers::{RegisterOutcome, Registers};
-pub use store::{MemoryStore, Store};
