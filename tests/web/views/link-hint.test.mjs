@@ -10,7 +10,7 @@ import { ASLEEP_MS, linkOf } from '../../../app/web/public/app.mjs'
 import { connectCommand, connectPrompt } from '../../../app/web/public/ui.mjs'
 
 const now = 1_800_000_000_000
-// (the link's state as the client core hands it in the session list: client/src/status.rs)
+// (the link's state as the client core hands it in the session list: core/client/src/status.rs)
 const session = (idle, client = '') => ({ name: 'web', online: true, client, link: { hears: 'oncall', attached: true, last_call_at: now - idle, since: now - idle },
   link_view: { state: idle >= ASLEEP_MS && client !== 'codex' ? 'asleep' : 'oncall', since: now - idle, reason: '' } })
 

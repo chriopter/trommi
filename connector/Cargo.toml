@@ -14,7 +14,7 @@ name = "trommi_connector"
 path = "src/lib.rs"
 
 [dependencies]
-trommi-core = { path = "../core" }
+trommi-core = { path = "../core/protocol" }
 # Runtime and transport. TLS is rustls with ring: no system library, so the four targets link statically.
 tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "io-std", "net", "process", "signal", "fs"] }
 reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls", "stream", "http2"] }

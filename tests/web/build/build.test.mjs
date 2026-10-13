@@ -1,14 +1,14 @@
 // build.test.mjs: the Rust core in the web app's build (app/web/dev/build.mjs "the Rust core").
 //   node tests/web/build/build.test.mjs
 // Builds the app twice, each in a process of its own, into two temporary folders, and checks:
-//   - the .wasm is a file of its own under gen/app/, named by its content, byte for byte what core/wasm/build.sh
+//   - the .wasm is a file of its own under gen/app/, named by its content, byte for byte what core/bindings/wasm/build.sh
 //     wrote; no script of the binding is served beside it (they are inside the worker);
 //   - a worker bundled with the build's constants names the hashed .wasm and its SHA-256 and holds the binding's
 //     scripts; so does the app's own worker once it loads the core (until then that one check is SKIPPED, and said so);
 //   - the service worker's shell and the manifest hold the .wasm; the manifest names Rust and wasm-bindgen beside
 //     Node and esbuild, and the core as it names itself;
 //   - the two builds are identical, file for file.
-// Not checked here: that two machines compile the same .wasm (both builds take the .wasm that lies in core/wasm/pkg/).
+// Not checked here: that two machines compile the same .wasm (both builds take the .wasm that lies in core/bindings/wasm/pkg/).
 // Needs the binding's output or the tools to make it (the build says which is absent).
 import fs from 'node:fs'
 import path from 'node:path'
@@ -37,10 +37,10 @@ try {
   check(wasms.length === 1 && app.filter(f => f.endsWith('.wasm')).length === 1, `gen/app/ holds one .wasm, with a hashed name (found: ${app.filter(f => f.endsWith('.wasm')).join(', ') || 'none'})`)
   if (wasms.length !== 1) throw new Error('nothing more can be checked without the .wasm')
   const wasm = `gen/app/${wasms[0]}`
-  const pkg = f => fs.readFileSync(path.join(REPO, 'core/wasm/pkg', f))
+  const pkg = f => fs.readFileSync(path.join(REPO, 'core/bindings/wasm/pkg', f))
   check(wasm.includes(hash(read(wasm)).slice(0, 12)), 'the .wasm is named by its content')
-  check(read(wasm).equals(pkg('trommi_core_wasm_bg.wasm')), "the served .wasm equals the binding's output (core/wasm/pkg/trommi_core_wasm_bg.wasm)")
-  check(hash(read(wasm)) === JSON.parse(pkg('build.json'))['trommi_core_wasm_bg.wasm'].sha256, "its SHA-256 is the one core/wasm/build.sh wrote down (pkg/build.json)")
+  check(read(wasm).equals(pkg('trommi_core_wasm_bg.wasm')), "the served .wasm equals the binding's output (core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm)")
+  check(hash(read(wasm)) === JSON.parse(pkg('build.json'))['trommi_core_wasm_bg.wasm'].sha256, "its SHA-256 is the one core/bindings/wasm/build.sh wrote down (pkg/build.json)")
   check(WebAssembly.validate(read(wasm)), 'the served .wasm is a valid module (written as bytes, not as text)')
   check(!walk(a).some(f => /trommi_core_wasm|idb-store|trommi-core\.m?js/.test(f)), "no script of the binding is served as a file of its own")
 
@@ -58,7 +58,7 @@ try {
   const manifest = JSON.parse(read('gen/manifest.json'))
   const pin = (file, re) => re.exec(fs.readFileSync(path.join(REPO, file), 'utf8'))?.[1]
   check(manifest.toolchain.rust === pin('rust-toolchain.toml', /^channel = "([^"]+)"$/m), `the manifest names the pinned Rust (it says ${manifest.toolchain.rust})`)
-  check(manifest.toolchain['wasm-bindgen'] === pin('core/wasm/Cargo.toml', /^wasm-bindgen = "=([^"]+)"$/m), `the manifest names the pinned wasm-bindgen (it says ${manifest.toolchain['wasm-bindgen']})`)
+  check(manifest.toolchain['wasm-bindgen'] === pin('core/bindings/wasm/Cargo.toml', /^wasm-bindgen = "=([^"]+)"$/m), `the manifest names the pinned wasm-bindgen (it says ${manifest.toolchain['wasm-bindgen']})`)
   check(manifest.toolchain.node && manifest.toolchain.esbuild, 'the manifest still names Node and esbuild')
   check(manifest.files[wasm] === hash(read(wasm)), `the manifest lists ${wasm} with its SHA-256`)
   check(['core', 'openmls', 'provider', 'binding'].every(k => typeof manifest.core?.[k] === 'string' && manifest.core[k]), 'the manifest names the core as it names itself (versions())', manifest.core)

@@ -17,5 +17,5 @@
     "noEmit": true,
     "skipLibCheck": false
   },
-  "files": ["typings.ts", "../../core/wasm/js/trommi-core.d.ts", "../../core/wasm/js/idb-store.d.ts"]
+  "files": ["typings.ts", "../../core/bindings/wasm/js/trommi-core.d.ts", "../../core/bindings/wasm/js/idb-store.d.ts"]
 }

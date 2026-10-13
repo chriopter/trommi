@@ -91,7 +91,7 @@ test('presence and the link: online, on call, asleep, cut, gone; a helper sessio
   const hs = hex(w.session), ha = hex(w.agent)
   const report = (fields, now = w.clock) => w.run(c => applyPresence(w.model, [{ device_id: ha, ...fields }], c, now))
   report({ is_online: true, link: { hears: 'live', attached: true, working: true, last_call_at: w.clock, since: w.clock - 5 } })
-  // (the link's state is the client core's, at its clock: the session list's row, client/src/status.rs)
+  // (the link's state is the client core's, at its clock: the session list's row, core/client/src/status.rs)
   const linkAt = now => { if (now !== undefined) w.run(c => project(w.model, c, now)); return w.model.session_list.find(r => r.key === hs).link }
   let s = w.model.sessions.get(hs)
   assert.equal(s.is_online, true); assert.equal(s.link.working, true); assert.equal(linkAt().state, 'live'); assert.ok(w.last.sessions.has(hs) && w.last.members)

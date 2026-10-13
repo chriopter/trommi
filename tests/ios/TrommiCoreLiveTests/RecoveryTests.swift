@@ -6,7 +6,7 @@ import XCTest
 import TrommiClient
 @testable import TrommiCoreLive
 
-/// One outbox entry with its kind as the number of core/src/store.rs.
+/// One outbox entry with its kind as the number of core/protocol/src/store.rs.
 typealias Posted = (id: UInt64, kind: UInt8, group: GroupId?, epoch: UInt64, parts: [Bytes])
 
 final class PocketHub {

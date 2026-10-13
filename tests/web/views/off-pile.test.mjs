@@ -1,7 +1,7 @@
 // off-pile.test.mjs: Off your mind as ONE pile (the owner's pick of 13 October 2026, "untereinander"): the first three
 // running cards on top, one under the other; everything else on one pile that says how much lies on it and opens in
 // place; the put-off and done ones small at the bottom. The layout from the counts is the client core's rule
-// (client/src/off_pile.rs off_pile); desk.mjs offPile mirrors it and is held equal to the core's here.
+// (core/client/src/off_pile.rs off_pile); desk.mjs offPile mirrors it and is held equal to the core's here.
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import { offPile, pileWords, PILE_TOP, PILE_REST } from '../../../app/web/public/desk.mjs'
 
 const read = f => fs.readFileSync(new URL(`../../../${f}`, import.meta.url), 'utf8')
-const PKG = new URL('../../../core/wasm/pkg/trommi-core.js', import.meta.url)
+const PKG = new URL('../../../core/bindings/wasm/pkg/trommi-core.js', import.meta.url)
 
 test('three running on top, the rest on the pile, the real totals', () => {
   const p = offPile(5, 1, 2345, false)
@@ -22,13 +22,13 @@ test('three running on top, the rest on the pile, the real totals', () => {
   assert.equal(pileWords(none), '2 put off · 3 done')
 })
 
-test('the same numbers as the client core', { skip: fs.existsSync(PKG) ? false : 'core/wasm/pkg is not built' }, async () => {
+test('the same numbers as the client core', { skip: fs.existsSync(PKG) ? false : 'core/bindings/wasm/pkg is not built' }, async () => {
   const core = await import(PKG.href)
-  await core.init(fs.readFileSync(new URL('../../../core/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
+  await core.init(fs.readFileSync(new URL('../../../core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm', import.meta.url)))
   for (const running of [0, 1, 3, 4, 9]) for (const putOff of [0, 1, 7]) for (const closed of [0, 4, 12, 900]) for (const full of [false, true]) {
     assert.deepEqual({ ...core.offPile(running, putOff, closed, full) }, offPile(running, putOff, closed, full), `${running} ${putOff} ${closed} ${full}`)
   }
-  assert.match(read('client/src/off_pile.rs'), new RegExp(`pub const PILE_TOP: u64 = ${PILE_TOP};[\\s\\S]*pub const PILE_REST: u64 = ${PILE_REST};`))
+  assert.match(read('core/client/src/off_pile.rs'), new RegExp(`pub const PILE_TOP: u64 = ${PILE_TOP};[\\s\\S]*pub const PILE_REST: u64 = ${PILE_REST};`))
 })
 
 test('the Desk draws the pile: the top cards, one pile that opens, small rows at the bottom; no switch, no other look', () => {

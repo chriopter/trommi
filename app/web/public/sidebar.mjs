@@ -70,7 +70,7 @@ const MAC = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? '')
 const SEND_KEYS = MAC ? 'Meta+Enter' : 'Control+Enter', SEND_WORD = MAC ? '⌘ Enter' : 'Ctrl+Enter'
 // ---- his starred cards as a small stack beside the note (the owner, 13 October 2026): a pile of tilted cards with the
 // star and their count; a tap fans them up into a column (title, session), a tap beside it or Escape lays them back.
-// Which cards and in what order is the client core's (client/src/stars.rs, client.starredCards): drawn here only.
+// Which cards and in what order is the client core's (core/client/src/stars.rs, client.starredCards): drawn here only.
 // The stack stands in the note's box (#corner-note-box), which the live stream draws anew; the controller fills it.
 const starStack = base => html`<div class="star-stack" data-controller="star-stack" data-star-stack-base-value="${base}" hidden><button type="button" class="ss-toggle" data-action="star-stack#toggle" aria-expanded="false"><span class="ss-pile" aria-hidden="true"><i style="--k:0"></i><i style="--k:1"></i><i style="--k:2"></i></span><span class="ss-badge">${sk('star')}<b></b></span></button><div class="ss-open" role="list"></div></div>`
 controller('star-stack', class extends Controller {

@@ -91,7 +91,7 @@ final class RoomTests: XCTestCase {
     _ = try await room.sync()
     XCTAssertNotNil(room.board.members[gone]); XCTAssertNotNil(room.board.members[never])
     func presence(_ id: String) throws -> JV { JV.parse(utf8(#"{"device":"\#(b64u(try unhex(id)))","online":true}"#))! }
-    // the first stream: both agents are here (the client core's rule, client/src/presence.rs)
+    // the first stream: both agents are here (the client core's rule, core/client/src/presence.rs)
     room.board.streamOpened()
     await room.handleStreamEvent("presence", try presence(gone))
     await room.handleStreamEvent("presence", try presence(stays))

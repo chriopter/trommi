@@ -1,6 +1,6 @@
 // The browser binding in headless Chromium, served with the web app's own Content-Security-Policy
 // (app/web/public/_headers), in the page and in module workers.
-//   core/wasm/build.sh && node tests/bindings/browser.mjs
+//   core/bindings/wasm/build.sh && node tests/bindings/browser.mjs
 // What it checks:
 // - the self-test passes in the page and in a worker under the app's policy as it is, with no violation;
 // - the scenario of scenario.json passes with every device in a worker of its own and IndexedDB as the store;
@@ -11,7 +11,7 @@
 // - without 'wasm-unsafe-eval' WebAssembly is refused (in the page by the page's policy; in a worker by the policy
 //   of the worker script's own response).
 // - catching up through `feed` leaves the same device as one envelope at a time, with one transaction per call;
-// It prints a report with the sizes of the build (core/wasm/pkg/build.json) and the times of this machine.
+// It prints a report with the sizes of the build (core/bindings/wasm/pkg/build.json) and the times of this machine.
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
@@ -25,7 +25,7 @@ if (!appCsp.includes("script-src 'self' 'wasm-unsafe-eval'")) throw new Error("t
 const without = appCsp.replace(" 'wasm-unsafe-eval'", '')
 
 const TYPES = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm' }
-const SERVED = /^\/(core\/wasm\/pkg|tests\/bindings|spec\/vectors)\//
+const SERVED = /^\/(core\/bindings\/wasm\/pkg|tests\/bindings|spec\/vectors)\//
 // The policy of the page (the document and everything but the worker's script) and of the worker script's response.
 const policy = { page: appCsp, worker: appCsp }
 const server = http.createServer((request, response) => {
@@ -44,7 +44,7 @@ const server = http.createServer((request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const origin = `http://127.0.0.1:${server.address().port}`
 
-const report = { chromium: null, csp: appCsp, sizes: JSON.parse(fs.readFileSync(path.join(repo, 'core/wasm/pkg/build.json'), 'utf8')), cases: {}, refused: [] }
+const report = { chromium: null, csp: appCsp, sizes: JSON.parse(fs.readFileSync(path.join(repo, 'core/bindings/wasm/pkg/build.json'), 'utf8')), cases: {}, refused: [] }
 let failed = false
 const fail = (what, detail) => { failed = true; console.error(`FAILED: ${what}: ${JSON.stringify(detail)}`) }
 

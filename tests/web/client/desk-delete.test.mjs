@@ -1,4 +1,4 @@
-// Deleting a desk (client/src/desk_delete.rs, client.ts deskDeleteStep): the core plans each step, the client does
+// Deleting a desk (core/client/src/desk_delete.rs, client.ts deskDeleteStep): the core plans each step, the client does
 // it; the board's steps are the app's (here: an empty board). A delete broken off on one device is finished by
 // another. STAND-IN core, FAKE hub.
 import test from 'node:test'

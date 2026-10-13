@@ -152,7 +152,7 @@ test('a note: pending under its local id, then under its object id, then the con
   assert.equal(w.model.notes.has('N4'), false); assert.equal(n.text, 'call the plumber')
 })
 
-// The red hand and the Desk are one rule (client/src/status.rs): a blocking question raises its session's hand only
+// The red hand and the Desk are one rule (core/client/src/status.rs): a blocking question raises its session's hand only
 // while it stands on the Desk. Put off (Later), both go; a newer version of it brings both back ("Back from snooze").
 test('the red hand stands exactly while the blocking question stands on the Desk', async () => {
   const { applyPresence } = await import('./factory.mjs')

@@ -1,4 +1,4 @@
-// The device's store against the contract of core/src/store.rs: durable and whole, one owner, the revision.
+// The device's store against the contract of core/protocol/src/store.rs: durable and whole, one owner, the revision.
 import XCTest
 @testable import TrommiClient
 

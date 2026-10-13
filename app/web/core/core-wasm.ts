@@ -1,4 +1,4 @@
-// core-wasm.ts: the Rust core (`trommi-core`) as the web app holds it, made from its WASM binding (core/wasm). THE
+// core-wasm.ts: the Rust core (`trommi-core`) as the web app holds it, made from its WASM binding (core/bindings/wasm). THE
 // ONLY MODULE that imports the binding's scripts and fetches its .wasm; everything else is written against the `Core`
 // of core-api.ts, which the tests' stand-in implements as well.
 //
@@ -17,12 +17,12 @@
 // but the bytes the build saw, and the binding instantiates exactly that response. No script of the core is loaded
 // on its own: all of it is inside the worker's one file, which is as trustworthy as the worker itself (this origin
 // only, CSP `script-src 'self'`; a worker's script and its imports take no integrity).
-import * as binding from '../../../core/wasm/js/trommi-core.js'
+import * as binding from '../../../core/bindings/wasm/js/trommi-core.js'
 import type { Core, Device, ErrorCode, ProvisionalDevice, Store } from './core-api.ts'
 import { useCodec } from './codec.ts'
 
 /** The binding's store on IndexedDB (store-idb.ts is handed this class and wraps it). */
-export { IdbStore } from '../../../core/wasm/js/idb-store.js'
+export { IdbStore } from '../../../core/bindings/wasm/js/idb-store.js'
 
 /** The address of the .wasm and the base64 SHA-256 of its bytes (app/web/dev/build.mjs coreFiles). */
 declare const __TROMMI_CORE_WASM__: string

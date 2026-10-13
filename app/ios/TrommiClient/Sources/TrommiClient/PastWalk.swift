@@ -1,7 +1,7 @@
 // PastWalk.swift: a group's history in pages and slices. The core walks a group's past (spec/v1.md 4.6) and checks a
 // room for a device that comes with the code (8.4, 8.5) in steps: a start, slices of Commits, a finish. Nothing of a
 // history is held whole here: the hub serves a group's log page by page (GET /v1/groups/{group}/log), and each page
-// goes to the core in slices of at most 256 Commits and 16 MiB together (core/README.md, "A walk in steps").
+// goes to the core in slices of at most 256 Commits and 16 MiB together (core/protocol/README.md, "A walk in steps").
 //
 // A walk is held in the core's memory only, one at a time: a relaunch, or any refusal but `too-large`, ends it, and
 // the caller starts again from the founding.

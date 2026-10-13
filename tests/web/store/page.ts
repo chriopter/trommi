@@ -10,7 +10,7 @@ import type { Cache, DeviceStore, IdbStoreClass } from '../../../app/web/core/st
 import { adoptInTabs, callKey, forgetCalls, openRoomInTabs } from '../../../app/web/core/tabs.ts'
 import type { CallReceipt, ClientLike, TabClient } from '../../../app/web/core/tabs.ts'
 import type { StoredState, StoreEntry, StoreWrite } from '../../../app/web/core/core-api.ts'
-import type * as Binding from '../../../core/wasm/js/trommi-core.js'
+import type * as Binding from '../../../core/bindings/wasm/js/trommi-core.js'
 import { hex, keyOf, openFake, openReal } from './fake-client.ts'
 import type { FakeClient } from './fake-client.ts'
 

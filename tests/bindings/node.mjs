@@ -1,10 +1,10 @@
 // The scenario of tests/bindings/scenario.json through the browser binding, in Node: the same module and .wasm a
 // browser loads, with a store in memory. Quick, and no browser needed; tests/bindings/browser.mjs runs the same in
 // Chromium with IndexedDB and workers.
-//   core/wasm/build.sh && node tests/bindings/node.mjs
+//   core/bindings/wasm/build.sh && node tests/bindings/node.mjs
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import * as core from '../../core/wasm/pkg/trommi-core.js'
+import * as core from '../../core/bindings/wasm/pkg/trommi-core.js'
 import { runScenario } from './scenario.mjs'
 import { accountVectors } from './vectors.mjs'
 import { FailingStore, MemoryStore } from './stores.mjs'
@@ -15,7 +15,7 @@ const check = (holds, what) => { if (!holds) throw new Error(what) }
 const refusal = async work => { try { await work() } catch (error) { return error instanceof core.TrommiError ? error.code : `not a TrommiError: ${error}` } return null }
 
 check(await refusal(() => core.versions()) === 'internal', 'a call before init() was not refused')
-await core.init(fs.readFileSync(here('../../core/wasm/pkg/trommi_core_wasm_bg.wasm')))
+await core.init(fs.readFileSync(here('../../core/bindings/wasm/pkg/trommi_core_wasm_bg.wasm')))
 
 const report = core.selfTest(Date.now())
 for (const step of report.steps) if (!step.ok) throw new Error(`self-test: ${step.name}: ${step.detail}`)

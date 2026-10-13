@@ -1,5 +1,5 @@
 // DeviceStore.swift: where the device's state lives on the phone, the Swift side of the core's `Storage`
-// (core/src/store.rs, spec/v1.md 13.2).
+// (core/protocol/src/store.rs, spec/v1.md 13.2).
 //
 // ONE OWNER, by construction and by lock.
 //   - The state is in the APP's own container (Application Support/Trommi/<room>/state), not in the App Group. The
@@ -67,7 +67,7 @@ public protocol StateAnchor: AnyObject {
 public final class DeviceStore: CoreStorage {
   /** The log is folded into a new snapshot once it is larger than this. */
   nonisolated(unsafe) static var compactAbove = 4 << 20
-  /** The first byte of a key in the core's outbox table (core/src/store.rs `table::OUTBOX`). */
+  /** The first byte of a key in the core's outbox table (core/protocol/src/store.rs `table::OUTBOX`). */
   static let outboxTable: UInt8 = 0x09
   private static let logAad = Array("trommi state record".utf8), snapAad = Array("trommi state snapshot".utf8)
 

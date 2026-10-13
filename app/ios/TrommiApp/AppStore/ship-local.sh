@@ -17,7 +17,7 @@
 #   NOTES          What to Test instead of the generated text
 #   TESTFLIGHT_TESTER   a user of the team kept in the group "Intern" (unset: nobody is added)
 #   OUT_DIR        [~/.cache/trommi-ship]   where the .ipa is kept
-#   CARGO_TARGET_DIR [OUT_DIR/target]   Rust's build folder for the core (core/swift/build.sh ios), kept between runs
+#   CARGO_TARGET_DIR [OUT_DIR/target]   Rust's build folder for the core (core/bindings/swift/build.sh ios), kept between runs
 #   APPLE_DEV      [~/.local/share/omarchy-apple-dev]   its tools/asc.py (stamp, frameworks, identity, validate, upload)
 # They may stand in ~/.config/trommi/ios.env (shell assignments; TROMMI_IOS_ENV names another file), read first.
 # Nothing here prints key material or tokens. The app extensions (PlugIns/: TrommiShare, com.trommi.ios.share;
@@ -78,7 +78,7 @@ echo "== 2. Release build (the Rust core, then xtool) =="
 # output, not in the repository, so a clean worktree has none: build them first (app/ios/README.md "The Rust core").
 # The cargo target folder is kept between runs (CARGO_TARGET_DIR), so only the first run compiles everything.
 command -v cargo >/dev/null || { echo "no cargo on PATH (rustup; the compiler and targets are named in rust-toolchain.toml)" >&2; exit 1; }
-CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$out_dir/target} sh "$src/core/swift/build.sh" ios
+CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$out_dir/target} sh "$src/core/bindings/swift/build.sh" ios
 cd "$app_dir"
 ulimit -n 65536 2>/dev/null || true
 xtool dev build --configuration release

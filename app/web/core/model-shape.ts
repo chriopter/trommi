@@ -1,4 +1,4 @@
-// model-shape.ts: an empty model and an empty change (core/README.md "The model", "Change notifications"), with
+// model-shape.ts: an empty model and an empty change (core/protocol/README.md "The model", "Change notifications"), with
 // nothing else: the page's copy of a model in a worker (mirror.ts) needs these without the builder and the codec
 // behind it. model.ts re-exports them.
 import type { Change, HumanRegisters, Model, Newer } from './types.ts'

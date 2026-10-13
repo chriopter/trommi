@@ -126,7 +126,7 @@ test('the Delete route shreds the session\'s open questions, archives it with it
 })
 
 // The same list on every device: the order is the order of the session keys (a place he gave one goes first), not
-// the order the sessions reached this device; the iPhone reads the same list (client/src/sessions.rs).
+// the order the sessions reached this device; the iPhone reads the same list (core/client/src/sessions.rs).
 test('sessions without a place stand in the order of their ids, whatever order they came in', () => {
   const m = emptyModel()
   m.room.my_device_id = 'ee'.repeat(16)

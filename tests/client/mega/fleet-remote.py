@@ -9,7 +9,7 @@ at the same address as here, http://127.0.0.1:<port> of the run's proxy (a hub t
 host): the ssh connection forwards that port back here (`-R`), once the first command named it.
 
   MEGA_FLEET_SSH="ssh -i <key> <user>@<host>"   how to reach the other machine
-  MEGA_FLEET_ROOT=<checkout there>              a checkout with core/swift built (`core/swift/build.sh macos` on any
+  MEGA_FLEET_ROOT=<checkout there>              a checkout with core/bindings/swift built (`core/bindings/swift/build.sh macos` on any
                                                 host, its lib/macos copied over) and `swift build --build-tests
                                                 --package-path tests/ios` done there
   MEGA_FLEET_RUNNER=tests/client/mega/fleet-remote.py … torture

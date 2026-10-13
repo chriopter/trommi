@@ -1,6 +1,6 @@
 // swift-tools-version:6.0
 // The tests of app/ios/TrommiClient, in the repository's one tests folder. A package of its own, because SwiftPM takes no
-// target outside its package: it depends on the client by path. Run `swift test` here, after core/swift/build.sh
+// target outside its package: it depends on the client by path. Run `swift test` here, after core/bindings/swift/build.sh
 // (the tests of TrommiCoreLive link the Rust library). One folder per tested target.
 import PackageDescription
 

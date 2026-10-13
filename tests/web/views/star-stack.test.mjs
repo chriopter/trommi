@@ -1,5 +1,5 @@
 // star-stack.test.mjs: his starred cards as a small stack beside the note (the owner, 13 October 2026; sidebar.mjs
-// starStack). Which cards and in what order is the client core's (client/src/stars.rs, client.starredCards); the
+// starStack). Which cards and in what order is the client core's (core/client/src/stars.rs, client.starredCards); the
 // page only draws them. The demo room answers the same rule.
 //   node --test tests/web/views/
 import test from 'node:test'

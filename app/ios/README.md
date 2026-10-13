@@ -2,7 +2,7 @@
 
 A native iOS app in Swift and SwiftUI, no web view for the board: the same board as app.trommi.com, verified and
 decrypted on the phone. The protocol ([`spec/v1.md`](../../spec/v1.md)) is not written a second time in Swift: the app
-links [`trommi-core`](../../core/README.md) (Rust, OpenMLS) as a static library and talks to it through one Swift
+links [`trommi-core`](../../core/protocol/README.md) (Rust, OpenMLS) as a static library and talks to it through one Swift
 protocol. It is built, signed and shipped from Linux; no Mac is needed.
 
 ## Layout
@@ -12,13 +12,13 @@ protocol. It is built, signed and shipped from Linux; no Mac is needed.
 | `TrommiClient/` | A Swift package: everything of the app that is not a view. Four targets, below. |
 | `TrommiApp/` | The SwiftUI app and its three extensions (an [xtool](https://github.com/xtool-org/xtool) project). |
 | `TrommiApp/AppStore/` | What a TestFlight build needs on top: icon, production entitlements, the ship script. |
-| `../../core/swift/` | The Rust core for Swift: `build.sh`, the Swift package `TrommiCoreRust` it fills, a proof app. |
+| `../../core/bindings/swift/` | The Rust core for Swift: `build.sh`, the Swift package `TrommiCoreRust` it fills, a proof app. |
 
 Targets of `TrommiClient`:
 
 | Target | What | Links the Rust core |
 | --- | --- | --- |
-| `TrommiClient` | The board model (`Board.swift`, `Desk.swift`), the device store, the hub client and live stream, the engine. `Core.swift` is the core as Swift sees it: the protocols `CoreTools` and `CoreDevice`, one call for one call of `core/README.md`. No crypto of its own. The Desk's rules (stack, session lists, open requests, what the hub settled) are the client core's ([`client/`](../../client/README.md)): `Board.projectDesk` hands `ClientDesk` what changed and applies its answer, so it links the library's `ClientDesk` (`core/swift/build.sh host` before `swift test` on Linux). | the Desk only |
+| `TrommiClient` | The board model (`Board.swift`, `Desk.swift`), the device store, the hub client and live stream, the engine. `Core.swift` is the core as Swift sees it: the protocols `CoreTools` and `CoreDevice`, one call for one call of `core/protocol/README.md`. No crypto of its own. The Desk's rules (stack, session lists, open requests, what the hub settled) are the client core's ([`core/client/`](../../core/client/README.md)): `Board.projectDesk` hands `ClientDesk` what changed and applies its answer, so it links the library's `ClientDesk` (`core/bindings/swift/build.sh host` before `swift test` on Linux). | the Desk only |
 | `TrommiCoreLive` | `LiveCore`: `CoreTools` on the real library (UniFFI module `TrommiCoreRust`). Its header lists which calls are real, which are stubbed (none) and what of the binding is not bound. | yes |
 | `ShareInbox` | The Share Extension's sealed inbox in the App Group (local storage, Apple's CryptoKit). | no |
 | `PushNotify` | What the Notification Service Extension and the Live Activity widget share with the app. | no |
@@ -41,7 +41,7 @@ Needs: [rustup](https://rustup.rs) (the compiler and its targets are named in `r
 first use), Swift 6.4, and for anything that runs on a phone the toolchain of "On an iPhone" below.
 
 ```bash
-core/swift/build.sh                                 # the Rust core: lib/linux and lib/ios, UniFFI's Swift file and header
+core/bindings/swift/build.sh                                 # the Rust core: lib/linux and lib/ios, UniFFI's Swift file and header
 (cd tests/ios && swift test)                              # the model, the store, and LiveCore against the Linux library
 (cd app/ios/TrommiApp && ulimit -n 65536 && xtool dev build --configuration release)   # xtool/TrommiApp.app
 ```
@@ -52,7 +52,7 @@ path). `swift test` is run there.
 
 ### The Rust core
 
-`core/swift/build.sh` (`host`, `ios`, or both without an argument) writes into `core/swift/TrommiCoreRust/`:
+`core/bindings/swift/build.sh` (`host`, `ios`, or both without an argument) writes into `core/bindings/swift/TrommiCoreRust/`:
 `lib/<platform>/libtrommi_core_ffi.a`, `Sources/TrommiCoreFFI/include/TrommiCoreFFI.h` and
 `Sources/TrommiCoreRust/TrommiCoreRust.swift`. All three are build output and ignored by git: **after a fresh
 checkout, and after every change under `core/`, run it again** before `swift test` or `xtool dev build`. About two
@@ -63,17 +63,17 @@ With a hub binary of branch `v2-hub` the tests also run against the real hub:
 
 - No Apple SDK and no Apple linker are needed for the library itself: a static library is an archive of object files,
   which `rustc` writes for `aarch64-apple-ios` on Linux.
-- The package links it with a library search path per platform (`core/swift/TrommiCoreRust/Package.swift`), not an
+- The package links it with a library search path per platform (`core/bindings/swift/TrommiCoreRust/Package.swift`), not an
   XCFramework: SwiftPM on Linux refuses an XCFramework, and `swift test` needs the Linux library. SwiftPM allows such a
-  flag only in a package used by path; `app/ios/TrommiClient/Package.swift` names it as `../../../core/swift/TrommiCoreRust`.
+  flag only in a package used by path; `app/ios/TrommiClient/Package.swift` names it as `../../../core/bindings/swift/TrommiCoreRust`.
 - The darwin SDK's toolset passes `-all_load` to every link, so the script takes rustc's copy of the compiler runtime's
   C and assembly helpers out of the iOS archive (Apple's `libclang_rt.ios.a` has the same symbols) and checks every
   removed symbol against Apple's file. Without the SDK installed, set `DARWIN_CLANG_RT=unchecked`.
-- `core/swift/ProofApp` is the smallest app that links the core; `xtool dev build` there checks the iOS link alone.
+- `core/bindings/swift/ProofApp` is the smallest app that links the core; `xtool dev build` there checks the iOS link alone.
 
 ## Who owns the state
 
-The core's rule (`core/src/store.rs`): exactly one owner works on a stored device state; two would sign two
+The core's rule (`core/protocol/src/store.rs`): exactly one owner works on a stored device state; two would sign two
 different items under one number.
 
 - **The app alone owns the device.** The device's state (its key, the MLS groups, the chains, the outbox) lies in the
@@ -160,7 +160,7 @@ after that, building and shipping are plain commands.
 5. **Run on the phone:**
 
    ```bash
-   core/swift/build.sh ios
+   core/bindings/swift/build.sh ios
    cd app/ios/TrommiApp
    ulimit -n 65536
    xtool dev build                                   # xtool/TrommiApp.app
@@ -187,7 +187,7 @@ app/ios/TrommiApp/AppStore/ship-local.sh            # about 5 minutes to the upl
   next to it run from the checkout you start it in.
 - Build number: the highest build App Store Connect has for the app, plus one (`asc.py next-build`); `BUILD_NUMBER`
   overrides it. Version: `MARKETING_VERSION` in `AppStore/project.yml`.
-- Build: first **`core/swift/build.sh ios`** in that worktree (a clean worktree has no library; Rust's build folder is
+- Build: first **`core/bindings/swift/build.sh ios`** in that worktree (a clean worktree has no library; Rust's build folder is
   kept between runs in `CARGO_TARGET_DIR`, default `~/.cache/trommi-ship/target`), then
   `xtool dev build --configuration release`, then the app icon from `AppStore/Assets.xcassets` (the SDK's Linux
   `actool`), `ITSAppUsesNonExemptEncryption` (`ITS_NON_EXEMPT_ENCRYPTION`; "Export compliance" below), and
@@ -231,7 +231,7 @@ Swift is built once per change of `core/`, `Cargo.*` or `rust-toolchain.toml` (a
 output in the Actions cache under the hash of those paths, and CI leaves out the simulator library
 (`TROMMI_SIMULATOR=0`). What it needs from this folder:
 
-- `core/swift/build.sh` on the runner before anything is built: `ios` for the archive (the package links
+- `core/bindings/swift/build.sh` on the runner before anything is built: `ios` for the archive (the package links
   `lib/ios/libtrommi_core_ffi.a` by a search path; a device archive needs no XCFramework), `host` for
   `swift test` in `tests/ios` on the Mac (it links `lib/macos`). The simulator library is chosen with
   `TROMMI_IOS_SIMULATOR=1`; one checkout builds for the device OR the simulator, not both at once.
@@ -338,7 +338,7 @@ on a Mac). `MacApp.swift` holds the Mac's scenes.
   that topic for its APNs key (a token key of the team serves every topic). No Notification Service Extension: a
   push shows its fixed text.
 
-Build and screenshot on a Mac (unsigned, the demo; the Rust core for the Mac first: `core/swift/build.sh macos`, on any
+Build and screenshot on a Mac (unsigned, the demo; the Rust core for the Mac first: `core/bindings/swift/build.sh macos`, on any
 host, writes `lib/macos`):
 
 ```bash
@@ -760,7 +760,7 @@ chrome; the minimum is iOS 27.
 
 ## Not there yet
 
-`TrommiCoreLive` binds every call of `Core.swift` to the core (`core/swift`, v2-bindings 33a943d). Its header
+`TrommiCoreLive` binds every call of `Core.swift` to the core (`core/bindings/swift`, v2-bindings 33a943d). Its header
 (`LiveCore.swift`) lists what is bound and what of the binding is left out. What the app still cannot do:
 
 - **The notification title on a phone.** Tested with the real core on Linux and macOS (`swift test`) and built for

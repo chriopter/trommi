@@ -27,7 +27,7 @@
 # Connect key (asc.py devid-profile: the one made
 # by hand in the developer portal, or a new one), and the export signs manually with it: Xcode's automatic export would
 # need cloud-managed Developer ID signing, which only the Account Holder has, an API key never. MAC_OUT: where the files go (default $RUNNER_TEMP/mac-direct). The Rust core
-# for the Mac must be in place (core/swift/TrommiCoreRust/lib/macos). Nothing here prints a value of a secret.
+# for the Mac must be in place (core/bindings/swift/TrommiCoreRust/lib/macos). Nothing here prints a value of a secret.
 set -euo pipefail
 
 mode=${1:-build}
@@ -85,7 +85,7 @@ plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$2/Contents/Info.plist"; }
 project_id=$(awk '/^  TrommiMac:/{t=1} t && /PRODUCT_BUNDLE_IDENTIFIER:/{print $2; exit}' "$appstore/project.yml")
 version=$(sed -n 's/^ *MARKETING_VERSION: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' "$appstore/project.yml")
 [ -n "$project_id" ] && [ -n "$version" ] || { echo "::error::project.yml names no TrommiMac bundle id or MARKETING_VERSION"; exit 1; }
-[ -f "$repo/core/swift/TrommiCoreRust/lib/macos/libtrommi_core_ffi.a" ] || { echo "::error::no Rust core for the Mac at core/swift/TrommiCoreRust/lib/macos"; exit 1; }
+[ -f "$repo/core/bindings/swift/TrommiCoreRust/lib/macos/libtrommi_core_ffi.a" ] || { echo "::error::no Rust core for the Mac at core/bindings/swift/TrommiCoreRust/lib/macos"; exit 1; }
 echo "building $project_id $version ($VERSION) for direct download from $(printf '%s' "$COMMIT" | cut -c1-7) ($mode)"
 
 if [ "$mode" = build ]; then

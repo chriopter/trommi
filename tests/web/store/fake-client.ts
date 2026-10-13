@@ -12,7 +12,7 @@ import { emptyChange, emptyModel } from '../../../app/web/core/model-shape.ts'
 import type { ClientLike } from '../../../app/web/core/tabs.ts'
 import type { StoredState } from '../../../app/web/core/core-api.ts'
 import type { Change, Model } from '../../../app/web/core/types.ts'
-import type * as Binding from '../../../core/wasm/js/trommi-core.js'
+import type * as Binding from '../../../core/bindings/wasm/js/trommi-core.js'
 
 const utf8 = new TextEncoder(), text = new TextDecoder()
 export const hex = (b: Uint8Array) => [...b].map(x => x.toString(16).padStart(2, '0')).join('')

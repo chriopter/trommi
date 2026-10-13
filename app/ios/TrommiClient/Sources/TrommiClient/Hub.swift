@@ -304,7 +304,7 @@ public final class HubClient: @unchecked Sendable {
   /** Every envelope of an object. `kind`: cards, notes, permission-requests, artifacts. */
   public func object(kind: String, _ object: ObjectId) async throws -> JSON { try await request("GET", "/\(kind)/\(hex(object))") }
 
-  // ---- the outbox: one route per kind (core/src/store.rs `OutboxKind`) ------------------------------------
+  // ---- the outbox: one route per kind (core/protocol/src/store.rs `OutboxKind`) ------------------------------------
 
   /**
    * Posts one outbox entry exactly as the core made it; the hub's answer, of which the core wants `change`. A

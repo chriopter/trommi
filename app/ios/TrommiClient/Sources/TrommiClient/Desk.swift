@@ -52,13 +52,13 @@ public struct Agent: Identifiable, Equatable {
   /** Whether the human gave it a place in the order (its register's position; the sidebar's drag on the web). */
   public var placed: Bool = false
   /** Where it stands, as a card's page names its sender: desk (two or more), main session (a helper), itself; the
-   *  client core's (client/src/sessions.rs `path`). */
+   *  client core's (core/client/src/sessions.rs `path`). */
   public var path: [String] = []
-  /** The model it runs on as its heading says it ("Opus 5.5"): the client core's (client/src/sessions.rs model_label). */
+  /** The model it runs on as its heading says it ("Opus 5.5"): the client core's (core/client/src/sessions.rs model_label). */
   public var modelLabel: String = ""
   /** Archived because a newer pairing in the same folder took its place (the client core's session list). */
   public var replaced: Bool = false
-  /** At the client core's clock (client/src/status.rs): its link (nil when archived or removed), why it is stopped
+  /** At the client core's clock (core/client/src/status.rs): its link (nil when archived or removed), why it is stopped
    *  (the red hand: it reads the Desk), whether a status line says working, since when it is quiet. */
   public var linkState: CoreLink? = nil
   public var blocked: CoreBlocked? = nil
@@ -446,7 +446,7 @@ public final class DeskModel {
     agents = makeAgents()
     byAgent = DeskModel.newestById(agents)
     tasks = []
-    // (each line's state as shown: the client core's, at its clock, in the session list (client/src/status.rs
+    // (each line's state as shown: the client core's, at its clock, in the session list (core/client/src/status.rs
     //  line_state: its card and session decide, so it says what Off your mind says); a session the list does not name:
     //  gone)
     var linesOf = [String: JV]()
@@ -484,7 +484,7 @@ public final class DeskModel {
   public func sessionKey(of agentId: String) -> String? { agentToDev[agentId] }
 
   /**
-   * The sessions as the sidebar shows them: the client core's session list (Board.sessionList, client/src/sessions.rs),
+   * The sessions as the sidebar shows them: the client core's session list (Board.sessionList, core/client/src/sessions.rs),
    * the same on every device of the person. What is added here is only what the views draw beside it.
    */
   private func makeAgents() -> [Agent] {
@@ -589,7 +589,7 @@ public final class DeskModel {
     public var working: Int
     public var allFreshCount: Int
     public var goals: String = ""            // this desk's goals; none on All desks
-    /** The client core's order of every card that waits (client/src/desk.rs walk_order, the patch's desk_order). */
+    /** The client core's order of every card that waits (core/client/src/desk.rs walk_order, the patch's desk_order). */
     public var order: [String] = []
     /** What the Desk's two tools act on: every open card that waits for him (fresh and reads). */
     public var tools: DeskTools { DeskTools((fresh + reads).map { (id: $0.id, kind: $0.kind) }) }
@@ -640,7 +640,7 @@ public final class DeskModel {
     let shelved = Set(everyone.filter { $0.archived }.map { $0.id })
     let mine: (DeskCard) -> Bool = { onDesk(byA[$0.agent]) }
     // The Desk: what the client core's Desk holds (its stack and open requests: not held, not put off, not of an
-    // archived session; client/src/desk.rs), with the infos their agents still work on (Off your mind), by age.
+    // archived session; core/client/src/desk.rs), with the infos their agents still work on (Off your mind), by age.
     let onCoreDesk = Set(board.stack).union(board.openPermissionIds)
     let allOpen = cards.filter { $0.status == "open" && (onCoreDesk.contains($0.id) || ($0.working && !shelved.contains($0.agent) && $0.snoozedUntil == nil)) }.sorted { ($0.created, $0.number) < ($1.created, $1.number) }
     let allFresh = allOpen.filter { $0.withAgent == nil && $0.kind != "info" }

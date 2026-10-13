@@ -61,7 +61,7 @@ Updates come by themselves: a running connector installs a new signed release an
        │                   │
 ╔═ Trommi core (Rust) ═════════════════════════╗
 ║ ┌─────────────────────┐ ┌──────────────────┐ ║
-║ │ client/             │ │ connector/       │ ║
+║ │ core/client/             │ │ connector/       │ ║
 ║ │ board, Desk,        │ │ Claude Code and  │ ║
 ║ │ sessions, presence  │ │ Codex (native)   │ ║
 ║ └─────────────────────┘ └──────────────────┘ ║
@@ -77,16 +77,16 @@ Updates come by themselves: a running connector installs a new signed release an
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Each box is built on the one below it. `client/`, `connector/` and `core/` form the Trommi core in Rust; the hub shares no code with it: both sit on OpenMLS. All
+Each box is built on the one below it. `core/client/`, `connector/` and `core/` form the Trommi core in Rust; the hub shares no code with it: both sit on OpenMLS. All
 devices talk to the hub with sealed MLS messages, and keys stay on devices.
 
-Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `client/`
+Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `core/client/`
 (the client core) is what every app decides the same way above it: the board model, the Desk (which cards stand on
 it, what the hub settled, what ran out, what is put off, when to look again), the session list (names, order, one
 per folder, archive) with each session's link and red hand, and the load plan of a catch-up. Both reach the web
-app and the iOS app through the same facade (`core/swift/src`, bound by `core/wasm` and UniFFI). What stays in each
+app and the iOS app through the same facade (`core/bindings/swift/src`, bound by `core/bindings/wasm` and UniFFI). What stays in each
 app: the network and the live stream, storage, the sync engine, the UI and its words, and in the connector its MCP
-tools. [`client/README.md`](client/README.md) has the detail.
+tools. [`core/client/README.md`](core/client/README.md) has the detail.
 
 ## Under the hood
 
@@ -328,7 +328,7 @@ spctl --assess --type open --context context:primary-signature -v Trommi-macOS.d
 **Fails closed.** Without the environment `mac`, or without the certificate or the App Store Connect key in its
 1Password Environment, the job ends green with a notice and nothing is attached; no unsigned or un-notarized app is
 ever published. A build on any Mac without secrets (signed ad hoc, the same checks, Gatekeeper must refuse it):
-`core/swift/build.sh macos`, then `.github/scripts/mac_direct.sh adhoc`.
+`core/bindings/swift/build.sh macos`, then `.github/scripts/mac_direct.sh adhoc`.
 
 **Set up once** (owner):
 
@@ -367,7 +367,7 @@ src/view.rs     the app's copy of the board model, kept by the client core's pat
 src/store.rs    ~/.local/share/trommi-linux/<room>/: the device (the connector's journal) and the model cache
 ```
 
-**Binding.** The engine is Rust and calls the facade crate `core/swift` (`trommi-core-swift`, without its UniFFI
+**Binding.** The engine is Rust and calls the facade crate `core/bindings/swift` (`trommi-core-swift`, without its UniFFI
 and wasm features) directly: `CoreDevice` and `ClientModel`, the records iOS gets, with no foreign-function layer.
 Only the window crosses into C++, through [cxx-qt](https://github.com/KDAB/cxx-qt): one object, plain properties.
 The hub client and the journal on disk are the connector's (`trommi-connector`). Nothing is decided in the app:
@@ -519,8 +519,8 @@ nightly ──────────────── nightly.yml: the giant 
 
 | | |
 |---|---|
-| `core/` | the shared Rust core on OpenMLS; `core/wasm` for the browser, `core/swift` for iOS |
-| `client/` | the client core (Rust): the Desk's rules and the catch-up's load plan, shared by the web app and the iOS app through `core/swift`'s facade (`ClientDesk`) |
+| `core/` | the shared Rust core on OpenMLS; `core/bindings/wasm` for the browser, `core/bindings/swift` for iOS |
+| `core/client/` | the client core (Rust): the Desk's rules and the catch-up's load plan, shared by the web app and the iOS app through `core/bindings/swift`'s facade (`ClientDesk`) |
 | `hub/` | the hub (the server) and its updater; `hub/deploy/` installs it |
 | `app/web/` | the web app |
 | `app/ios/` | the iOS app (Swift, SwiftUI) |
@@ -555,7 +555,7 @@ cargo build --release -p trommi-hub -p trommi-connector
 node app/web/dev/serve.mjs 8900               # the app; ?mock=1 for the demo room
 
 # iOS
-core/swift/build.sh                           # the core for Swift
+core/bindings/swift/build.sh                           # the core for Swift
 (cd tests/ios && swift test)
 ```
 
@@ -580,7 +580,7 @@ cargo test -p trommi-tests --test client_mega speed_of_every_client -- --ignored
 ```
 
 More: [`app/web/README.md`](app/web/README.md), [`app/ios/README.md`](app/ios/README.md),
-[`connector/README.md`](connector/README.md), [`core/README.md`](core/README.md), [`client/README.md`](client/README.md).
+[`connector/README.md`](connector/README.md), [`core/protocol/README.md`](core/protocol/README.md), [`core/client/README.md`](core/client/README.md).
 
 </details>
 

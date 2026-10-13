@@ -1,4 +1,4 @@
-// The mock room: the client core's API and model shape (core/README.md), without a hub and without crypto, fed from
+// The mock room: the client core's API and model shape (core/protocol/README.md), without a hub and without crypto, fed from
 // /demo/fixture.json (the repository's demo/data/, copied by the build: demo/README.md) or generated big
 // (?mock=crazy). The other names (?mock=side, quiet, fresh, first, many, foot, reads, link, new) are variants built from the
 // fixture's own sessions and cards: on a room without any they are the room as it is. Used with ?mock=1 for UI work;
@@ -26,7 +26,7 @@ const sessionOf = s => ({
 })
 const memberOf = ({ agent_session_id: _, ...m }) => ({ platform: null, folder: null, host: null, offline_since: null, link: null, fingerprint: m.device_id.slice(0, 16).match(/.{4}/g).join(' '), ...m })
 const answerOf = a => Object.assign(a, { envelope_hash: a.envelope_hash ?? null, by_device_id: a.by_device_id ?? null, taken_back_at: a.taken_back_at ?? null, taken_back_sent_at: a.taken_back_sent_at ?? null, pending: false })
-// A card's history as the client core keeps it (client/src/model/types.rs history_of): the demo has no core.
+// A card's history as the client core keeps it (core/client/src/model/types.rs history_of): the demo has no core.
 const historyOf = versions => versions.filter(v => v.object_version === 1 || v.object_state === 'open').map(v => ({ object_version: v.object_version, envelope_number: v.envelope_number, sent_at: v.sent_at, note: String(v.content?.change_note ?? '').trim(), title: String(v.content?.title ?? '').trim() }))
 const cardOf = c => { for (const a of [c.answer, ...c.answers]) if (a) answerOf(a); return Object.assign(c, { history: historyOf(c.versions ?? []), session_id: c.session_id ?? c.agent_device_id, state_envelope_number: c.state_envelope_number ?? c.envelope_number ?? 0, unsupported: c.unsupported ?? null }) }
 const requestOf = p => Object.assign(p, { session_id: p.session_id ?? p.agent_device_id, content_state: p.content_state ?? 'ok' })
@@ -36,7 +36,7 @@ const noteOf = n => Object.assign(n, { version_hashes: n.version_hashes ?? (n.ve
 const boardItems = items => items.map(it => (it.content?.content_type === 'strokes' && it.content.strokes?.some(e => e.attachment && !(e.attachment.file_key && e.attachment.sha256))
   ? { ...it, content: { ...it.content, strokes: it.content.strokes.map(e => (e.attachment ? { ...e, attachment: keyed(e.attachment) } : e)) } } : it))
 
-/** A fixture session's status in the core's shape (client/src/status.rs), read plainly: its link, the red hand from
+/** A fixture session's status in the core's shape (core/client/src/status.rs), read plainly: its link, the red hand from
  *  what stands on the mock Desk, its working line. */
 function demoStatus(m, s, archived, removed) {
   const l = s.link ?? null, online = Boolean(s.is_online), now = Date.now()
@@ -58,7 +58,7 @@ function demoStatus(m, s, archived, removed) {
   return { link, blocked, working, quiet_since: null, device_active: s.last_activity_at ?? 0, recheck_at: null, lines }
 }
 
-/** A model's id as a heading shows it: the client core's rule (client/src/sessions.rs model_label), for the demo room. */
+/** A model's id as a heading shows it: the client core's rule (core/client/src/sessions.rs model_label), for the demo room. */
 const demoModelLabel = id => {
   const t = String(id ?? '').trim(), l = t.toLowerCase()
   if (!t) return ''
@@ -70,7 +70,7 @@ const demoModelLabel = id => {
   return t
 }
 /**
- * The session list of the mock room, in the shape of the client core's (client/src/sessions.rs `SessionRow`): the demo
+ * The session list of the mock room, in the shape of the client core's (core/client/src/sessions.rs `SessionRow`): the demo
  * has no core, and its sessions are a fixture's, so the plain reading of it is enough here: the person's label, else
  * the agent's name; archived as the person set it; in the person's order, else the fixture's; the parent named.
  */
@@ -96,7 +96,7 @@ export function demoSessions(m) {
   })
   const byId = new Map(rows.map(r => [r.id, r]))
   for (const r of rows) if (r.parent && byId.has(r.parent)) r.desk = byId.get(r.parent).desk
-  // (each row's path, as the client core makes it: client/src/sessions.rs session_paths)
+  // (each row's path, as the client core makes it: core/client/src/sessions.rs session_paths)
   const desks = Object.entries(m.human.desks instanceof Map ? Object.fromEntries(m.human.desks) : m.human.desks ?? {}).filter(([, v]) => v && typeof v === 'object')
     .map(([id, v]) => ({ id, name: String(v.name ?? '').trim() || 'Personal', order: Number.isFinite(v.order) ? v.order : null, created: v.created_at ?? 0 }))
   const ordered = desks.some(d => d.order != null)
@@ -171,7 +171,7 @@ export class MockClient {
       const s = m.sessions.get(c.agent_device_id); if (!s) continue
       s.card_ids.push(c.object_id); if (c.object_state === 'open') s.open_card_ids.push(c.object_id)
     }
-    // (the demo has no client core: its walk by the core's rule, client/src/desk.rs walk_order)
+    // (the demo has no client core: its walk by the core's rule, core/client/src/desk.rs walk_order)
     const band = o => (o.permission_state || o.urgency === 'critical' ? 2 : o.urgency === 'high' ? 1 : 0)
     const walk = [...m.open_permission_ids.map(id => m.permissions.get(id)), ...m.stack.map(id => m.cards.get(id)).filter(c => !c.in_revision)]
     const at = o => o.created_at ?? o.sent_at ?? 0, info = o => o.card_type === 'info'
@@ -283,7 +283,7 @@ export class MockClient {
   snooze(id, until) { return this.setRegisters({ [`snooze/${id}`]: until == null ? null : { until, at: Date.now() } }) }
   duck(id, v) { return this.setRegisters({ [`duck/${id}`]: v }) }
   star(id, on) { return this.setRegisters({ [`star/${id}`]: on ? { at: Date.now() } : null }) }
-  /** His starred cards, the last starred first: the client core's rule (client/src/stars.rs), for the demo's own room. */
+  /** His starred cards, the last starred first: the client core's rule (core/client/src/stars.rs), for the demo's own room. */
   starredCards() { return [...(this.model.human.stars ?? new Map())].filter(([id, v]) => v && v !== false && this.model.cards.has(id)).map(([object_id, v]) => ({ object_id, at: Number(v?.at) || 0 })).sort((a, b) => b.at - a.at || (a.object_id < b.object_id ? -1 : 1)) }
   setCrown(v) { return this.setRegisters({ crown: v }) }
   setDesk(id, v) { return this.setRegisters({ [`desk/${id}`]: v }) }
@@ -593,7 +593,7 @@ export async function openRoom({ mock = '1' } = {}) { return new MockClient(awai
 // ---- the very big demo room (?mock=crazy: dev/perf.mjs) ----
 // A very big mock room for performance work (?mock=crazy): 30+ sessions with status lines, 5,000 answered cards
 // with revisions, hundreds of open cards on the Desk, 50,000 chat messages (one session thread over 2,000).
-// Same shape as demo/data/fixture.json (the core's model, core/README.md).
+// Same shape as demo/data/fixture.json (the core's model, core/protocol/README.md).
 function crazyFixture({ sessions = 32, answered = 5000, open = 300, messages = 50000 } = {}) {
   const hex = (n, seed) => { let h = ''; let x = seed * 2654435761 >>> 0; while (h.length < n) { x = (x ^ (x << 13)) >>> 0; x = (x ^ (x >>> 17)) >>> 0; x = (x ^ (x << 5)) >>> 0; h += x.toString(16).padStart(8, '0') } return h.slice(0, n) }
   const now = Date.now()

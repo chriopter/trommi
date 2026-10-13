@@ -1,9 +1,9 @@
 // codec.ts: the bodies of stored content (spec/v1.md 9.1: UTF-8 JSON, `schema_version` 2) between the wire and the
-// model, as the app calls them. The rules are the client core's (client/src/codec.rs), the same for every app; this
+// model, as the app calls them. The rules are the client core's (core/client/src/codec.rs), the same for every app; this
 // module only hands the fields across (as JSON text) and gives the answers the shapes the model and the views name
 // (types.ts). What the two forms are, and what is converted, is said in codec.rs.
 //
-// Reading: what the core received the client core's model reads itself (client/src/model); `decodeBody` reads a
+// Reading: what the core received the client core's model reads itself (core/client/src/model); `decodeBody` reads a
 // payload in hand. Writing: `encodeBody` turns a draft's fields into the text the core seals.
 //
 // The core's codec is reached through the binding, which this module is handed once it is loaded (`useCodec`:
@@ -41,7 +41,7 @@ export class BodyError extends Error {
 
 // ---- the core's codec ----------------------------------------------------------------------------------------------
 
-/** The calls of the binding this module uses (core/wasm/js/trommi-core.d.ts, "the body codec"). */
+/** The calls of the binding this module uses (core/bindings/wasm/js/trommi-core.d.ts, "the body codec"). */
 export interface CodecCalls {
   bodyFromWire(kindName: string, payload: Uint8Array): string
   bodyToWire(kindName: string, fieldsJson: string): string

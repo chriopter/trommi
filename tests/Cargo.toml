@@ -9,7 +9,7 @@ description = "Scenario, conformance and crash tests of Trommi's protocol core, 
 path = "src/lib.rs"
 
 [dependencies]
-trommi-core = { path = "../core", features = ["vectors"] }
+trommi-core = { path = "../core/protocol", features = ["vectors"] }
 serde_json = "=1.0.151"
 # OpenMLS itself, for the member of `src/forge.rs` that builds what no device builds.
 openmls = { workspace = true }
@@ -18,7 +18,7 @@ openmls_basic_credential = { workspace = true }
 openmls_traits = { workspace = true }
 tls_codec = "=0.5.0"
 # The facade both bindings share, for the tests of the bindings (`bindings/`).
-trommi-core-swift = { path = "../core/swift" }
+trommi-core-swift = { path = "../core/bindings/swift" }
 # the hub and what its test clients need (tests/hub/…)
 trommi-hub = { path = "../hub", features = ["fuzz"] }
 # the hub's updater and what its tests sign with (tests/deploy/…); ed25519-dalek also makes the throwaway release
