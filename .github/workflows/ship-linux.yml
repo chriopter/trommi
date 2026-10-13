@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - app/linux/**
+      - app/web/public/ui.mjs
+      - app/web/public/fonts/**
       - client/**
       - core/**
       - connector/**
