@@ -150,6 +150,9 @@ pub enum Alert {
     NotMember,
     /// The hub needs a newer Trommi.
     ClientTooOld,
+    /// A leaf could not merge an accepted Commit (14.7): `from` refused the Commit numbered `n` in `group`, made by
+    /// `committer` as the hub says. The person decides; remove the device that made it.
+    Rejected { group: GroupId, n: u64, from: DeviceId, committer: Option<DeviceId> },
     /// The room was joined with the code, but the hub did not serve the link from an older code to this one: what
     /// was sealed under the older codes stays closed to this device.
     MissingLink,
@@ -653,6 +656,9 @@ impl Engine {
                 want(j.retry.at);
             }
             want(self.requests.wake());
+            if self.caught_up {
+                want(self.readmit_wake());
+            }
             want(self.tending.wake());
             if self.caught_up && self.upkeep_asked.is_none() {
                 want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
@@ -924,7 +930,7 @@ impl Engine {
             }
             StreamEvent::Here => self.report(Report::Here),
             StreamEvent::Relay { group, sender, message, .. } => self.on_relay(ctx, group, sender, &message),
-            StreamEvent::Wish(row) => self.on_wish(row),
+            StreamEvent::Wish(row) => self.on_wish(ctx, row),
             StreamEvent::InviteRequest { invite } => self.report(Report::InviteRequest { invite }),
             StreamEvent::Archived { group } => self.on_archived(ctx, group),
             StreamEvent::FileEvicted { file } => self.report(Report::FileEvicted { file }),
@@ -1657,8 +1663,12 @@ impl Engine {
 
     fn processed(&mut self, ctx: &mut Ctx<'_>, change: u64, group: GroupId, processed: Processed, groups_changed: &mut bool) {
         match &processed {
-            Processed::Commit { removed, .. } => {
+            Processed::Commit { removed, facts, .. } => {
                 *groups_changed = true;
+                if !group.is_room() {
+                    let (adds, removes) = (facts.adds.clone(), facts.removes.clone());
+                    self.note_readmit(ctx, &group, &adds, &removes);
+                }
                 if *removed && group.is_room() {
                     self.report(Report::Log { change, group, processed: Box::new(processed) });
                     self.stop(ctx, Stopped::Removed);
