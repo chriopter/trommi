@@ -87,7 +87,9 @@ jobs:
         run: |
           set -eu
           if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
-            base=$(sed -n 's/^  RELEASE_BASE: \([0-9][0-9]*\)$/\1/p' .github/workflows/build.yml)
+            printf '%s' "$BUILD_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $BUILD_SHA"; exit 1; }
+            # the base of the build run's own build.yml: main may have moved on (and changed it) since that run
+            base=$(git show "$BUILD_SHA:.github/workflows/build.yml" | sed -n 's/^  RELEASE_BASE: \([0-9][0-9]*\)$/\1/p')
             [ "$(printf '%s' "$base" | grep -c .)" = 1 ] || { echo "::error::build.yml names no single RELEASE_BASE"; exit 1; }
             printf '%s' "$RUN_NUMBER" | grep -Eq '^[1-9][0-9]*$' || { echo "::error::not a run number: $RUN_NUMBER"; exit 1; }
             VERSION=$((RUN_NUMBER + base)) COMMIT=$BUILD_SHA
