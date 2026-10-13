@@ -33,6 +33,7 @@ pub mod qobject {
         #[qproperty(QString, saved_json)]
         #[qproperty(QString, open_request)]
         #[qproperty(QString, greeting)]
+        #[qproperty(QString, view_json)]
         type Trommi = super::TrommiRust;
 
         /// Opens the room this machine holds, if any, from its cache, and starts catching up and listening.
@@ -111,6 +112,8 @@ pub struct TrommiRust {
     scene_file: QString,
     theme_mode: QString,
     greeting: QString,
+    /// The app core's view model, as folded by `shell::View` (set only when the app core runs).
+    view_json: QString,
     files_json: QString,
     saved_json: QString,
     open_request: QString,
@@ -146,6 +149,7 @@ impl Default for TrommiRust {
                     .trim(),
             ),
             greeting: QString::from(env("TROMMI_LINUX_GREETING").as_str()),
+            view_json: QString::from("{}"),
             files_json: QString::from("{}"),
             saved_json: QString::from("{}"),
             open_request: QString::default(),
@@ -171,6 +175,12 @@ fn engine_slot() -> &'static Mutex<Option<Arc<Engine>>> {
 
 fn engine() -> Option<Arc<Engine>> {
     engine_slot().lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The loop of the app core, while it runs: the window's end of its queue.
+fn core_slot() -> &'static Mutex<Option<trommi_io::Handle>> {
+    static SLOT: OnceLock<Mutex<Option<trommi_io::Handle>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
 }
 
 type Thread = cxx_qt::CxxQtThread<qobject::Trommi>;
@@ -316,6 +326,22 @@ fn run(engine: Arc<Engine>) {
 impl qobject::Trommi {
     fn start(self: Pin<&mut Self>) {
         let thread = self.qt_thread();
+        // The app core (core/client) behind this window instead of `engine/`: the switch of the series that moves
+        // this app onto it, gone with `engine/` at its end.
+        if std::env::var("TROMMI_LINUX_APP_CORE").is_ok_and(|v| v == "1") {
+            let offset = cxx_qt_lib::QDateTime::current_date_time().offset_from_utc() / 60;
+            let draw_on = thread.clone();
+            let started = crate::shell::start(runtime(), crate::shell::config(offset), move |json| {
+                let _ = draw_on.queue(move |mut o: Pin<&mut qobject::Trommi>| {
+                    o.as_mut().set_view_json(QString::from(json.as_str()));
+                });
+            });
+            match started {
+                Ok(handle) => *core_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(handle),
+                Err(why) => tell_error(&thread, format!("Could not open: {why}")),
+            }
+            return;
+        }
         let sink = sink_for(thread.clone());
         runtime().spawn(async move {
             match Engine::open_newest(sink) {
@@ -567,6 +593,8 @@ impl qobject::Trommi {
     }
 
     fn shot_taken(self: Pin<&mut Self>) {
+        // (the app core's loop ends with its handle; the slot is free for the next run)
+        core_slot().lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(engine) = engine() {
             engine.close();
         }
