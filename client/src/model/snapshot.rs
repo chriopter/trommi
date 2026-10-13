@@ -4,37 +4,71 @@
 
 use super::types::*;
 use super::Model;
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-fn pairs<V: serde::Serialize>(map: &BTreeMap<String, V>) -> Value {
-    Value::Array(map.iter().map(|(k, v)| json!([k, v])).collect())
+/// A map as its list of `[key, value]` pairs, written straight from the records (no `Value` in between).
+struct Pairs<'a, V>(&'a BTreeMap<String, V>);
+
+impl<V: Serialize> Serialize for Pairs<'_, V> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_seq(self.0.iter())
+    }
 }
 
-fn read_pairs<V: DeserializeOwned>(
-    v: Option<&Value>,
-    what: &str,
-) -> Result<BTreeMap<String, V>, String> {
-    let mut out = BTreeMap::new();
-    for e in v.and_then(Value::as_array).into_iter().flatten() {
-        let (Some(k), Some(val)) = (e.get(0).and_then(Value::as_str), e.get(1)) else {
-            return Err(format!("{what}: not a pair"));
-        };
-        if val.is_null() {
-            continue;
-        }
-        out.insert(
-            k.to_string(),
-            serde_json::from_value(val.clone()).map_err(|err| format!("{what} {k}: {err}"))?,
-        );
-    }
-    Ok(out)
+/// The whole model as `snapshot()` gives it, written as text without building it as a `Value` first.
+#[derive(Serialize)]
+struct SnapshotOut<'a> {
+    room: Value,
+    members: Pairs<'a, Member>,
+    sessions: Pairs<'a, Session>,
+    cards: Pairs<'a, Card>,
+    permissions: Pairs<'a, PermissionRequest>,
+    notes: Pairs<'a, Note>,
+    published: Pairs<'a, Published>,
+    timelines: Vec<Value>,
+    human: Pairs<'a, HumanRegister>,
+    alerts: &'a Vec<Alert>,
+    stack: &'a Vec<String>,
+    open_permission_ids: &'a Vec<String>,
+    newer: &'a Newer,
+}
+
+/// A snapshot's records as they are read: each map typed at once (no `Value` in between); the rest as it stands.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct SnapshotIn {
+    room: Value,
+    members: Vec<(String, Option<Member>)>,
+    sessions: Vec<(String, Option<Session>)>,
+    cards: Vec<(String, Option<Card>)>,
+    permissions: Vec<(String, Option<PermissionRequest>)>,
+    notes: Vec<(String, Option<Note>)>,
+    published: Vec<(String, Option<Published>)>,
+    human: Vec<(String, Option<HumanRegister>)>,
+    timelines: Value,
+    devregs: Value,
+    alerts: Option<Value>,
+    newer: Option<Value>,
+}
+
+fn typed<V>(list: Vec<(String, Option<V>)>) -> BTreeMap<String, V> {
+    list.into_iter().filter_map(|(k, v)| Some((k, v?))).collect()
 }
 
 impl Model {
     /// The whole model.
     pub fn snapshot(&self) -> Value {
+        serde_json::to_value(self.snapshot_out()).unwrap_or(Value::Null)
+    }
+
+    /// The whole model as JSON text, as `snapshot()` (an app's cache; written without a `Value` of it all).
+    pub fn snapshot_text(&self) -> String {
+        serde_json::to_string(&self.snapshot_out()).unwrap_or_default()
+    }
+
+    fn snapshot_out(&self) -> SnapshotOut<'_> {
         let timelines: Vec<Value> = self
             .timelines
             .iter()
@@ -54,27 +88,37 @@ impl Model {
                 json!([k, meta])
             })
             .collect();
-        json!({
-            "room": self.room_json(),
-            "members": pairs(&self.members),
-            "sessions": pairs(&self.sessions),
-            "cards": pairs(&self.cards),
-            "permissions": pairs(&self.permissions),
-            "notes": pairs(&self.notes),
-            "published": pairs(&self.published),
-            "timelines": timelines,
-            "human": pairs(&self.human),
-            "alerts": self.alerts,
-            "stack": self.stack,
-            "open_permission_ids": self.open_permission_ids,
-            "newer": self.newer,
-        })
+        SnapshotOut {
+            room: self.room_json(),
+            members: Pairs(&self.members),
+            sessions: Pairs(&self.sessions),
+            cards: Pairs(&self.cards),
+            permissions: Pairs(&self.permissions),
+            notes: Pairs(&self.notes),
+            published: Pairs(&self.published),
+            timelines,
+            human: Pairs(&self.human),
+            alerts: &self.alerts,
+            stack: &self.stack,
+            open_permission_ids: &self.open_permission_ids,
+            newer: &self.newer,
+        }
     }
 
     /// The records of a snapshot (an app's cache): what is not in it stays empty. The Desk is built anew at the next
     /// projection.
     pub fn load(&mut self, v: &Value) -> Result<(), String> {
-        if let Some(room) = v.get("room") {
+        self.load_from(SnapshotIn::deserialize(v).map_err(|e| e.to_string())?)
+    }
+
+    /// As `load`, from the snapshot's text (each record typed as it is read).
+    pub fn load_text(&mut self, text: &str) -> Result<(), String> {
+        self.load_from(serde_json::from_str(text).map_err(|e| e.to_string())?)
+    }
+
+    fn load_from(&mut self, v: SnapshotIn) -> Result<(), String> {
+        let room = &v.room;
+        if !room.is_null() {
             if let Some(e) = room.get("key_epoch").and_then(Value::as_u64) {
                 self.key_epoch = e;
             }
@@ -83,17 +127,17 @@ impl Model {
                 self.my_device_id = Some(me.to_string());
             }
         }
-        self.members = read_pairs(v.get("members"), "member")?;
-        self.sessions = read_pairs(v.get("sessions"), "session")?;
-        self.cards = read_pairs(v.get("cards"), "card")?;
-        self.permissions = read_pairs(v.get("permissions"), "permission request")?;
-        self.notes = read_pairs(v.get("notes"), "note")?;
-        self.published = read_pairs(v.get("published"), "artifact")?;
-        self.human = read_pairs(v.get("human"), "register")?;
+        self.members = typed(v.members);
+        self.sessions = typed(v.sessions);
+        self.cards = typed(v.cards);
+        self.permissions = typed(v.permissions);
+        self.notes = typed(v.notes);
+        self.published = typed(v.published);
+        self.human = typed(v.human);
         self.timelines.clear();
         for e in v
-            .get("timelines")
-            .and_then(Value::as_array)
+            .timelines
+            .as_array()
             .into_iter()
             .flatten()
         {
@@ -115,8 +159,8 @@ impl Model {
             self.timelines.insert(k.to_string(), t);
         }
         self.device_registers = v
-            .get("devregs")
-            .and_then(Value::as_array)
+            .devregs
+            .as_array()
             .into_iter()
             .flatten()
             .filter_map(|e| {
@@ -126,11 +170,11 @@ impl Model {
                 ))
             })
             .collect();
-        if let Some(a) = v.get("alerts") {
-            self.alerts = serde_json::from_value(a.clone()).unwrap_or_default();
+        if let Some(a) = v.alerts {
+            self.alerts = serde_json::from_value(a).unwrap_or_default();
         }
-        if let Some(n) = v.get("newer") {
-            self.newer = serde_json::from_value(n.clone()).unwrap_or_default();
+        if let Some(n) = v.newer {
+            self.newer = serde_json::from_value(n).unwrap_or_default();
         }
         // (the Desk's own marks are its to set again)
         for c in self.cards.values_mut() {
@@ -173,5 +217,49 @@ impl Model {
         change.alerts = true;
         change.stack = true;
         change.room = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn filled() -> Model {
+        let mut m = Model::new();
+        let card: Card = serde_json::from_value(json!({
+            "object_id": "c1", "agent_device_id": "a1", "object_version": 2, "catching_up": true,
+            "title": "Ask", "versions": [{ "object_version": 1, "content": { "title": "Before" } }],
+        }))
+        .unwrap();
+        m.cards.insert("c1".into(), card);
+        m.members.insert("a1".into(), serde_json::from_value(json!({ "device_id": "a1", "device_role": "agent" })).unwrap());
+        m.sessions.insert("s1".into(), serde_json::from_value(json!({ "session_id": "s1" })).unwrap());
+        m.human.insert("star/c1".into(), serde_json::from_value(json!({ "value": true, "envelope_number": 3 })).unwrap());
+        let mut t = Timeline { timeline_key: "chat:s1".into(), item_count: 2, ..Timeline::default() };
+        for it in [json!({ "envelope_number": 4, "content": "hi" }), json!({ "local_id": "l1", "pending": true })] {
+            let o = it.as_object().unwrap().clone();
+            t.items.insert(ItemKey::of(&o), o);
+        }
+        m.timelines.insert("chat:s1".into(), t);
+        m.stack = vec!["c1".into()];
+        m
+    }
+
+    #[test]
+    fn the_snapshot_text_is_the_snapshot_and_loads_as_it() {
+        let m = filled();
+        let text = m.snapshot_text();
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), m.snapshot());
+        let (mut a, mut b) = (Model::new(), Model::new());
+        a.load_text(&text).unwrap();
+        b.load(&m.snapshot()).unwrap();
+        assert_eq!(a.snapshot(), b.snapshot());
+        assert_eq!(a.cards["c1"].fields.get("title"), Some(&json!("Ask")));
+        assert!(!a.cards["c1"].catching_up);
+        assert_eq!(a.timelines["chat:s1"].items.len(), 2);
+        // (a pair whose value is null stands for no record; what is not a snapshot is refused)
+        assert!(a.load_text(r#"{"cards":[["c2",null]]}"#).is_ok() && a.cards.is_empty());
+        assert!(a.load_text(r#"{"cards":[["c2"]]}"#).is_err());
+        assert!(a.load_text("[").is_err());
     }
 }

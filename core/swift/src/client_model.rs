@@ -140,8 +140,7 @@ impl ClientModel {
 
     /// The model as an app's cache held it (the web model's snapshot JSON): records only, no echoes.
     pub fn load(&self, snapshot: String) -> Result<(), CoreError> {
-        let v: serde_json::Value = serde_json::from_str(&snapshot).map_err(json_err)?;
-        self.with(|m, _| m.load(&v).map_err(|e| CoreError::bad_format(&e)))
+        self.with(|m, _| m.load_text(&snapshot).map_err(|e| CoreError::bad_format(&e)))
     }
 
     /// Envelopes as the core took them, in order. Returns, per envelope, whether it changed what the model shows
@@ -676,7 +675,7 @@ impl ClientModel {
 
     /// The whole model as JSON (the web model's snapshot): for a new copy.
     pub fn snapshot(&self) -> Result<String, CoreError> {
-        self.with(|m, _| Ok(m.snapshot().to_string()))
+        self.with(|m, _| Ok(m.snapshot_text()))
     }
 
     /// The room is being read (`reading`) or not: names a session without a profile "Loading …" meanwhile.
