@@ -132,10 +132,19 @@ if [ "$mode" = build ]; then
   # not expired) and installed where Xcode looks for profiles; the export then signs manually with it.
   profile_uuid=
   {
+    have_profile=no
     if [ -n "${APPLE_DEVID_PROFILE:-}" ]; then
-      # the profile from the 1Password Environment (base64 of the .provisionprofile)
-      python3 -c 'import base64, os, sys; sys.stdout.buffer.write(base64.b64decode(os.environ["APPLE_DEVID_PROFILE"], validate=False))' > "$keys/devid.provisionprofile"
-    else
+      # the profile from the 1Password Environment (base64 of the .provisionprofile); a value that is not valid base64 or
+      # not a provisioning profile is not fatal: it is said (never printed) and the profile is fetched with the API key
+      if python3 -c 'import base64, os, re, sys; sys.stdout.buffer.write(base64.b64decode(re.sub(r"\s+", "", os.environ["APPLE_DEVID_PROFILE"]), validate=True))' > "$keys/devid.provisionprofile" 2>/dev/null \
+        && security cms -D -i "$keys/devid.provisionprofile" > /dev/null 2>&1; then
+        have_profile=yes
+      else
+        echo "::warning::APPLE_DEVID_PROFILE is not the base64 of a provisioning profile (${#APPLE_DEVID_PROFILE} characters): fetching the profile with the App Store Connect key instead"
+        rm -f "$keys/devid.provisionprofile"
+      fi
+    fi
+    if [ "$have_profile" = no ]; then
       ASC_KEY_ID=$APPLE_ASC_KEY_ID ASC_ISSUER_ID=$APPLE_ASC_ISSUER_ID ASC_KEY_PATH=$key ASC_PLATFORM=MAC_OS \
         python3 "$appstore/asc.py" devid-profile "$project_id" "$identity" "$keys/devid.provisionprofile"
     fi
