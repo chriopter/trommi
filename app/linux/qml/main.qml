@@ -63,6 +63,18 @@ ApplicationWindow {
         return null
     }
     Connections { target: trommi; function onSelectedChanged() { window.openCard = "" } }
+    // a notification clicked: its card (or the Desk), in front
+    onActiveChanged: trommi.set_focused(active)
+    Connections {
+        target: trommi
+        function onOpen_requestChanged() {
+            const id = trommi.open_request
+            if (id === "") return
+            if (trommi.selected !== "") trommi.select_session("")
+            window.openCard = id === "desk" ? "" : id
+            window.show(); window.raise(); window.requestActivate()
+        }
+    }
     function sessionOf(id) {
         for (let i = 0; i < sessions.length; i++) if (sessions[i].id === id) return sessions[i]
         return null

@@ -31,6 +31,7 @@ pub mod qobject {
         #[qproperty(QString, theme_mode)]
         #[qproperty(QString, files_json)]
         #[qproperty(QString, saved_json)]
+        #[qproperty(QString, open_request)]
         #[qproperty(QString, greeting)]
         type Trommi = super::TrommiRust;
 
@@ -70,6 +71,9 @@ pub mod qobject {
         /// Writes to the selected session's agent, with files of this machine (a JSON list of file URLs).
         #[qinvokable]
         fn send_with_files(self: Pin<&mut Trommi>, text: &QString, files_json: &QString);
+        /// The window has the focus (no notifications then) or not.
+        #[qinvokable]
+        fn set_focused(self: Pin<&mut Trommi>, focused: bool);
         /// Light or dark, kept for the next start (the web's rule: light unless the person picks dark).
         #[qinvokable]
         fn set_theme(self: Pin<&mut Trommi>, mode: &QString);
@@ -109,6 +113,7 @@ pub struct TrommiRust {
     greeting: QString,
     files_json: QString,
     saved_json: QString,
+    open_request: QString,
 }
 
 impl Default for TrommiRust {
@@ -143,6 +148,7 @@ impl Default for TrommiRust {
             greeting: QString::from(env("TROMMI_LINUX_GREETING").as_str()),
             files_json: QString::from("{}"),
             saved_json: QString::from("{}"),
+            open_request: QString::default(),
         }
     }
 }
@@ -209,9 +215,64 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// The window has the focus: nothing is announced then.
+static FOCUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What the Desk held so far, for the notifications.
+fn watch() -> &'static Mutex<crate::notify::Watch> {
+    static WATCH: OnceLock<Mutex<crate::notify::Watch>> = OnceLock::new();
+    WATCH.get_or_init(Mutex::default)
+}
+
+/// Announces new questions, urgent cards and requests on the desktop; a click opens the card in the window.
+fn announce(thread: &Thread, desk: &str) {
+    let mut notes = watch().lock().unwrap_or_else(|e| e.into_inner()).fresh(desk);
+    // (TROMMI_LINUX_NOTIFY: "0" none, "always" also with the focus, for the tests' window that always has it)
+    let setting = std::env::var("TROMMI_LINUX_NOTIFY").unwrap_or_default();
+    if notes.is_empty() || setting == "0" || (setting != "always" && FOCUSED.load(std::sync::atomic::Ordering::Relaxed)) {
+        return;
+    }
+    // (many at once, after a while away: one notification says how many, and opens the Desk)
+    if notes.len() > 3 {
+        let urgent = notes.iter().any(|n| n.urgent);
+        notes = vec![crate::notify::Note {
+            card: String::new(),
+            summary: format!("{} new on your Desk", notes.len()),
+            body: notes.iter().take(3).map(|n| n.summary.as_str()).collect::<Vec<_>>().join("\n"),
+            urgent,
+        }];
+    }
+    static NOTIFIER: tokio::sync::OnceCell<Option<crate::notify::Notifier>> = tokio::sync::OnceCell::const_new();
+    let thread = thread.clone();
+    runtime().spawn(async move {
+        let notifier = NOTIFIER
+            .get_or_init(|| async move {
+                let open: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |card: String| {
+                    let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
+                        // (set twice, so that the same card asked for again still changes the property)
+                        o.as_mut().set_open_request(QString::default());
+                        o.as_mut().set_open_request(QString::from(if card.is_empty() { "desk" } else { card.as_str() }));
+                    });
+                });
+                crate::notify::Notifier::connect(open).await.ok()
+            })
+            .await;
+        let Some(n) = notifier else { return };
+        for note in &notes {
+            let _ = n.show(note).await;
+        }
+    });
+}
+
 /// The engine's updates, onto Qt's thread.
 fn sink_for(thread: Thread) -> Sink {
     Arc::new(move |u: Update| {
+        if u.live == Some(true) {
+            watch().lock().unwrap_or_else(|e| e.into_inner()).go_live();
+        }
+        if let Some(d) = &u.desk {
+            announce(&thread, d);
+        }
         let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
             if let Some(s) = u.status {
                 o.as_mut().set_status(QString::from(s.as_str()));
@@ -492,6 +553,10 @@ impl qobject::Trommi {
                 tell_error(&thread, format!("Not sent: {}", f.text()));
             }
         });
+    }
+
+    fn set_focused(self: Pin<&mut Self>, focused: bool) {
+        FOCUSED.store(focused, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn set_theme(mut self: Pin<&mut Self>, mode: &QString) {
