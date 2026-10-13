@@ -6,6 +6,9 @@ use super::{Backoff, Jitter};
 use crate::app::io::{DeviceEntry, HttpResponse, IoId, IoResult, StoreAnswer, StoreOp, StreamItem};
 use crate::app::{Effect, LogLevel};
 use crate::hub::{classify_io, Failure};
+
+#[path = "joins.rs"]
+pub mod joins;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -154,6 +157,9 @@ pub enum Report {
     Refused { id: u64, kind: OutboxKind, code: &'static str, voided: bool },
     /// The pump halts on this entry (an envelope refused without a void record), or goes on again (`None`).
     Blocked(Option<(u64, &'static str)>),
+    /// The session groups of a sign-in with the code are through: how many the hub took this device into, and the
+    /// ones it is not in, each with the reason. Another human device of the person adds it to those (5.2.7).
+    SessionsJoined { joined: u32, not_joined: Vec<(GroupId, &'static str)> },
     Stopped(Stopped),
 }
 
@@ -198,6 +204,10 @@ enum Asked<E> {
     Mend { expect: E, mend: Mend },
     KeyPackagesHeld(E),
     Desk(E),
+    /// Joins of session groups from outside, posted together: each entry's id and group, in order.
+    Joins { expect: E, entries: Vec<(u64, Option<GroupId>)> },
+    /// A read for the joins of a sign-in's sessions (`joins`).
+    JoinRead { expect: E, what: joins::Read },
     /// The first envelope of an open object.
     First { expect: E, route: ObjectRoute, object: ObjectId, after: u64 },
     DeviceWrite,
@@ -348,6 +358,10 @@ pub struct Engine<H: HubCodec> {
     upkeep_asked: Option<IoId>,
     upkeep_retry: Retry,
     connection: Connection,
+    /// The session groups of a sign-in with the code, being read and joined (`joins`).
+    joining: Option<joins::Joining>,
+    /// The hub refused joins posted together as a request: each goes alone, and gets its own answer.
+    joins_alone: bool,
 }
 
 /// Why a stored device does not open as an engine.
@@ -434,6 +448,8 @@ impl<H: HubCodec> Engine<H> {
             upkeep_asked: None,
             upkeep_retry: Retry::default(),
             connection: Connection::Offline,
+            joining: None,
+            joins_alone: false,
         })
     }
 
@@ -506,6 +522,9 @@ impl<H: HubCodec> Engine<H> {
             if !self.device.outbox().is_empty() {
                 want(self.pump_retry.at);
             }
+            if let Some(joining) = &self.joining {
+                want(joining.retry.at);
+            }
             if self.caught_up && self.upkeep_asked.is_none() {
                 want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
             }
@@ -560,6 +579,9 @@ impl<H: HubCodec> Engine<H> {
         self.order_retry.hurry();
         self.stream_retry.hurry();
         self.pump_retry.hurry();
+        if let Some(joining) = &mut self.joining {
+            joining.retry.hurry();
+        }
     }
 
     /// The result of a store effect of this engine. False: the id is not the engine's.
@@ -602,6 +624,8 @@ impl<H: HubCodec> Engine<H> {
                 | Asked::Desk(e)
                 | Asked::KeyPackagesHeld(e)
                 | Asked::First { expect: e, .. }
+                | Asked::Joins { expect: e, .. }
+                | Asked::JoinRead { expect: e, .. }
                 | Asked::Told(e),
                 IoResult::Ok(response),
             ) => (Some(e), Some(response)),
@@ -644,6 +668,8 @@ impl<H: HubCodec> Engine<H> {
             Asked::Desk(_) => self.on_desk(ctx, answer, unauthorised),
             Asked::KeyPackagesHeld(_) => self.on_key_packages_held(ctx, answer, unauthorised),
             Asked::First { route, object, after, .. } => self.on_first(ctx, route, object, after, answer, unauthorised),
+            Asked::Joins { entries, .. } => self.on_joins_posted(ctx, entries, answer, unauthorised),
+            Asked::JoinRead { what, .. } => self.on_join_read(ctx, what, answer, unauthorised),
         }
         self.drive(ctx);
         true
@@ -760,6 +786,7 @@ impl<H: HubCodec> Engine<H> {
         self.drive_desk(ctx);
         self.drive_order(ctx);
         self.drive_stream(ctx);
+        self.drive_joins(ctx);
         self.drive_upkeep(ctx);
         self.drive_pump(ctx);
         self.flush(ctx);
@@ -816,6 +843,7 @@ impl<H: HubCodec> Engine<H> {
             return;
         }
         self.stopped = Some(why);
+        self.joining = None;
         self.writes.lose();
         for (id, asked) in std::mem::take(&mut self.pending) {
             if !matches!(asked, Asked::DeviceWrite) {
@@ -1762,7 +1790,8 @@ impl<H: HubCodec> Engine<H> {
     /// A round is due once the order is at rest, then every [`UPKEEP_EVERY_MS`]: it begins with the hub's count of
     /// this device's unused KeyPackages.
     fn drive_upkeep(&mut self, ctx: &mut Ctx<'_>) {
-        if !self.caught_up || self.pass || !self.todo.is_empty() || self.upkeep_asked.is_some() || ctx.now < self.upkeep_at || self.upkeep_retry.waiting(ctx.now) {
+        // (a sign-in's KeyPackages go up once its sessions are joined: a founding claims one of every human device)
+        if self.joining.is_some() || !self.caught_up || self.pass || !self.todo.is_empty() || self.upkeep_asked.is_some() || ctx.now < self.upkeep_at || self.upkeep_retry.waiting(ctx.now) {
             return;
         }
         self.upkeep_asked = self.ask(ctx, Route::KeyPackagesHeld, true, Asked::KeyPackagesHeld);
@@ -1828,15 +1857,26 @@ impl<H: HubCodec> Engine<H> {
         if self.posting.is_some() || self.pump_retry.waiting(ctx.now) {
             return;
         }
-        let Some(entry) = self.device.outbox().into_iter().next() else {
+        let entries = self.device.outbox();
+        let Some(entry) = entries.first() else {
             if self.blocked.take().is_some() {
                 self.report(Report::Blocked(None));
             }
             return;
         };
+        // a sign-in's joins of session groups from outside at the head: together, in one request
+        let together = if self.joins_alone { 0 } else { joins::joins_at(&entries) };
+        if together > 1 {
+            let joins = &entries[..together];
+            let ids: Vec<(u64, Option<GroupId>)> = joins.iter().map(|e| (e.id, e.group)).collect();
+            self.posting = self.ask(ctx, Route::Joins { entries: joins }, true, |expect| Asked::Joins { expect, entries: ids });
+            if self.posting.is_some() {
+                return;
+            }
+        }
         let room = self.room;
         let (id, kind, group) = (entry.id, entry.kind, entry.group);
-        self.posting = self.post(ctx, &room, &entry, |expect| Asked::Post { expect, entry: id, kind, group });
+        self.posting = self.post(ctx, &room, entry, |expect| Asked::Post { expect, entry: id, kind, group });
         if self.posting.is_none() {
             // an entry this build cannot post (a founding or a recovery without its extra): the pump waits
             self.pump_retry.wait(ctx.now, BLOCKED_RETRY_MS);
@@ -1862,28 +1902,7 @@ impl<H: HubCodec> Engine<H> {
         let failure = match answer {
             Ok(Answer::Outbox(taken)) => {
                 self.pump_retry.ok();
-                if self.blocked.take().is_some() {
-                    self.report(Report::Blocked(None));
-                }
-                // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the
-                //  core merged it and dropped the entry then)
-                match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
-                    Ok(()) | Err(Error::NotFound) => {}
-                    Err(e) => return self.local(ctx, &e),
-                }
-                if kind == OutboxKind::KeyPackages {
-                    self.key_packages_at_hub = taken.unused.or(self.key_packages_at_hub);
-                }
-                self.report(Report::Accepted { id: entry, kind, change: taken.change });
-                if carries_commit(kind) {
-                    // An accepted Commit is merged where the hub's order shows it. Without a stream that is the
-                    // next page.
-                    self.report(Report::Groups);
-                    if !self.stream.as_ref().is_some_and(|s| s.opened) {
-                        self.pass = true;
-                    }
-                }
-                return;
+                return self.accepted(ctx, entry, kind, group, taken);
             }
             Ok(_) => Failure::BadAnswer { why: "an outbox answer" },
             Err(failure) => failure,
@@ -1891,9 +1910,42 @@ impl<H: HubCodec> Engine<H> {
         if unauthorised {
             return; // posted again, unchanged, once signed in
         }
-        // What a failed post means for the entry. A transient failure (not reached, 5xx, throttled, an answer the
-        // route does not allow, a refusal that is not the hub's own, a code this build does not know) is the same
-        // entry again after a wait: never dropped, never reordered.
+        if let Some(retry_after) = self.not_accepted(ctx, entry, kind, group, failure, refusal) {
+            self.pump_retry.fail(ctx.now, retry_after, &mut self.jitter);
+        }
+    }
+
+    /// The hub took an outbox entry.
+    fn accepted(&mut self, ctx: &mut Ctx<'_>, entry: u64, kind: OutboxKind, group: Option<GroupId>, taken: OutboxAnswer) {
+        if self.blocked.take().is_some() {
+            self.report(Report::Blocked(None));
+        }
+        // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the
+        //  core merged it and dropped the entry then)
+        match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
+            Ok(()) | Err(Error::NotFound) => {}
+            Err(e) => return self.local(ctx, &e),
+        }
+        if kind == OutboxKind::KeyPackages {
+            self.key_packages_at_hub = taken.unused.or(self.key_packages_at_hub);
+        }
+        self.report(Report::Accepted { id: entry, kind, change: taken.change });
+        if carries_commit(kind) {
+            // An accepted Commit is merged where the hub's order shows it. Without a stream that is the
+            // next page.
+            self.report(Report::Groups);
+            if !self.stream.as_ref().is_some_and(|s| s.opened) {
+                self.pass = true;
+            }
+        }
+        self.join_answered(kind, group, None);
+    }
+
+    /// What a failed post means for the entry. `Some`: a transient failure (not reached, 5xx, throttled, an answer
+    /// the route does not allow, a refusal that is not the hub's own, a code this build does not know): the same
+    /// entry again after a wait, never dropped, never reordered; inside, the hub's `Retry-After`. `None`: settled
+    /// here (refused for good, or the pump halts on it and has set its own wait).
+    fn not_accepted(&mut self, ctx: &mut Ctx<'_>, entry: u64, kind: OutboxKind, group: Option<GroupId>, failure: Failure, refusal: Option<Refusal>) -> Option<Option<u64>> {
         let code = match (&failure, refusal.as_ref()) {
             (Failure::Refused { .. }, Some(refusal)) => Error::from_code(&refusal.code).filter(|code| !refusal_is_passing(code)),
             _ => None,
@@ -1907,8 +1959,7 @@ impl<H: HubCodec> Engine<H> {
             if refusal.as_ref().is_some_and(|r| r.code == "client-too-old") {
                 self.report(Report::Alert(Alert::ClientTooOld));
             }
-            self.pump_retry.fail(ctx.now, retry_after, &mut self.jitter);
-            return;
+            return Some(retry_after);
         };
         let voided = refusal.as_ref().is_some_and(|r| r.voided);
         // An envelope the hub refused WITHOUT keeping a void record, for a reason that is not the end of the group
@@ -1920,7 +1971,7 @@ impl<H: HubCodec> Engine<H> {
                 self.report(Report::Blocked(Some((entry, code.code()))));
             }
             self.pump_retry.wait(ctx.now, BLOCKED_RETRY_MS);
-            return;
+            return None;
         }
         // A definitive refusal: told to the core and to the App (the echo is rolled back), and the pump goes on.
         let told = if kind != OutboxKind::Envelope {
@@ -1932,7 +1983,10 @@ impl<H: HubCodec> Engine<H> {
         };
         match told {
             Ok(()) | Err(Error::NotFound) => {}
-            Err(e) => return self.local(ctx, &e),
+            Err(e) => {
+                self.local(ctx, &e);
+                return None;
+            }
         }
         self.pump_retry.ok();
         self.report(Report::Refused { id: entry, kind, code: code.code(), voided });
@@ -1941,6 +1995,7 @@ impl<H: HubCodec> Engine<H> {
         if has_moved(&code) {
             self.pass = true;
         }
-        let _ = group;
+        self.join_answered(kind, group, Some(&code));
+        None
     }
 }

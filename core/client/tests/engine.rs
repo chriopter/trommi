@@ -651,3 +651,150 @@ fn upkeep_stocks_key_packages_and_writes_heads_once_at_rest_then_every_ten_minut
     assert_eq!(chain_at_hub(&world, &world.me).len(), 2, "heads again: another sender's head moved");
     assert!(sim.app.engine().unwrap().device().outbox().is_empty());
 }
+
+use trommi_client_core::engine::sync::joins::SessionJoins;
+
+/// Sends the App's stream what the hub's order holds beyond what it was sent, until nothing is new.
+fn news(world: &World, sim: &mut Sim, device: &trommi_core::ids::DeviceId) {
+    for _ in 0..16 {
+        let Some(bytes) = world.hub.borrow_mut().stream_news(device) else { return };
+        sim.stream(StreamItem::Chunk { bytes: bytes.into() });
+    }
+}
+
+fn count(world: &World, what: &str) -> usize {
+    requests(world).iter().filter(|r| r.starts_with(what)).count()
+}
+
+#[test]
+fn a_sign_in_with_the_code_reads_its_sessions_in_one_request_and_posts_their_joins_in_one() {
+    let mut world = World::new();
+    let second = world.another_session();
+    let third = world.another_session();
+    world.agent_asks("Ship it?");
+    let (store, id, keys) = world.newcomer();
+    let mut sim = world.sim_of(&store);
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    let groups = vec![world.group, second, third];
+    let held = |sim: &Sim| groups.iter().filter(|g| sim.app.engine().unwrap().device().group(g).is_ok()).count();
+    assert_eq!(held(&sim), 0, "in the room, in no session yet");
+    assert!(stack(&sim).is_empty());
+    let unused = world.hub.borrow().unused(&id);
+
+    let effects = sim.app.join_sessions(sim.now_ms, SessionJoins { keys, later: None, groups: groups.clone() });
+    sim.run(effects);
+    news(&world, &mut sim, &id);
+    assert_eq!(count(&world, "POST /v1/groups/read"), 1, "{:?}", requests(&world));
+    assert_eq!(count(&world, "POST /v1/commits"), 1, "the joins together: {:?}", requests(&world));
+    assert_eq!(count(&world, "POST /v1/groups/"), 1, "no join posted alone, no group read alone: {:?}", requests(&world));
+    assert_eq!(count(&world, "GET /v1/groups/"), 0, "{:?}", requests(&world));
+    assert_eq!(held(&sim), 3);
+    assert!(!sim.app.engine().unwrap().joining_sessions());
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[][..]));
+    // durable, and the session's open card stands on the Desk
+    let again = world.reopen_me(&sim);
+    assert!(groups.iter().all(|g| again.group(g).is_ok()));
+    assert!(again.outbox().iter().all(|e| e.kind != OutboxKind::ExternalCommit));
+    assert_eq!(stack(&sim).len(), 1, "the joined session's card");
+    // its KeyPackages went up only after the joins
+    assert!(world.hub.borrow().unused(&id) >= unused);
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
+}
+
+#[test]
+fn a_group_that_did_not_fit_is_read_alone_and_one_the_hub_hides_is_not_joined() {
+    let mut world = World::new();
+    let second = world.another_session();
+    let third = world.another_session();
+    let (store, id, keys) = world.newcomer();
+    {
+        let mut hub = world.hub.borrow_mut();
+        hub.read_fits = Some(1);
+        hub.log_max = Some(1);
+        hub.unseen.insert(third);
+    }
+    let mut sim = world.sim_of(&store);
+    sim.send(start());
+    let effects = sim.app.join_sessions(sim.now_ms, SessionJoins { keys, later: None, groups: vec![third, world.group, second] });
+    sim.run(effects);
+    news(&world, &mut sim, &id);
+    let device = sim.app.engine().unwrap().device();
+    assert!(device.group(&world.group).is_ok() && device.group(&second).is_ok(), "{:?}", requests(&world));
+    assert!(device.group(&third).is_err());
+    assert_eq!(sim.app.sessions_not_joined(), Some(&[(third, "not-found")][..]));
+    assert_eq!(count(&world, "POST /v1/groups/read"), 1);
+    // each of the two that did not fit: its founding, its current GroupInfo, its log
+    let infos = requests(&world).iter().filter(|r| r.contains("/info")).count();
+    assert_eq!(infos, 4, "{:?}", requests(&world));
+    assert!(requests(&world).iter().any(|r| r.contains("/log?after=0&") && r.contains("kind=commit")), "{:?}", requests(&world));
+    // each join is posted as soon as it is built: the pump does not wait for the reading of the next group
+    assert_eq!(requests(&world).iter().filter(|r| r.starts_with("POST /v1/groups/") && r.ends_with("/commits")).count(), 2, "{:?}", requests(&world));
+}
+
+#[test]
+fn a_read_that_fails_is_asked_again_after_a_wait_and_a_restart_posts_the_joins_already_built() {
+    let mut world = World::new();
+    let second = world.another_session();
+    let (store, id, keys) = world.newcomer();
+    let mut sim = world.sim_of(&store);
+    sim.send(start());
+    let mut script: VecDeque<Result<HttpResponse, IoError>> = [offline(), Ok(later(503, 7))].into_iter().collect();
+    let down = Rc::new(RefCell::new(true));
+    let is_down = down.clone();
+    world.hub.borrow_mut().fault = Some(Box::new(move |_, request: &HttpRequest| {
+        if request.url.ends_with("/v1/groups/read") {
+            return script.pop_front();
+        }
+        if request.url.ends_with("/v1/commits") && *is_down.borrow() {
+            return Some(offline());
+        }
+        None
+    }));
+    let effects = sim.app.join_sessions(sim.now_ms, SessionJoins { keys, later: None, groups: vec![world.group, second] });
+    sim.run(effects);
+    assert_eq!(count(&world, "POST /v1/groups/read"), 0);
+    fire(&mut sim);
+    assert!(fire(&mut sim) >= 7_000, "not sooner than Retry-After");
+    assert_eq!(count(&world, "POST /v1/groups/read"), 1);
+    // the joins are built and stored; the hub is not reached; the process dies
+    assert_eq!(sim.app.engine().unwrap().device().outbox().len(), 2);
+    sim.restart();
+    *down.borrow_mut() = false;
+    sim.send(start());
+    news(&world, &mut sim, &id);
+    assert_eq!(count(&world, "POST /v1/commits"), 1, "{:?}", requests(&world));
+    let device = sim.app.engine().unwrap().device();
+    assert!(device.group(&world.group).is_ok() && device.group(&second).is_ok());
+}
+
+/// What the order assertion of the Desk test is worth: without the first versions the revised cards stand where
+/// their newest version puts them, which that assertion refuses; the order's own reading then puts them right.
+#[test]
+fn without_the_first_versions_the_revised_cards_stand_out_of_place_until_the_order_brings_them() {
+    let mut world = World::new();
+    let cards: Vec<_> = (0..6).map(|n| world.agent_card(&format!("card {n}"))).collect();
+    world.agent_revises(cards[0].0, &cards[0].1, "card 0, said better", 2);
+    world.agent_revises(cards[1].0, &cards[1].1, "card 1, said better", 2);
+    let mut sim = world.sim();
+    sim.hold = true;
+    sim.send(start());
+    serve(&world, &mut sim, |r| r.url.contains("/rooms/"));
+    serve(&world, &mut sim, |r| r.url.contains("/v1/desk"));
+    // the hub refuses the reads of the first versions
+    let refused: Vec<_> = sim.held.iter().filter(|(_, r)| r.url.contains("/v1/cards/")).cloned().collect();
+    assert_eq!(refused.len(), 2);
+    for (id, _) in refused {
+        sim.answer(id, Ok(answer(404, json!({ "error": "not-found", "message": "refused" }))));
+    }
+    assert!(sim.app.board().desk_complete, "a refusal ends the read: the order brings the version");
+    let ids: Vec<String> = cards.iter().map(|(id, ..)| trommi_client_core::engine::feed::hex(id.as_bytes())).collect();
+    let places = |sim: &Sim| -> Vec<usize> { ids.iter().map(|id| stack(sim).iter().position(|s| s == id).expect("on the Desk")).collect() };
+    let in_order = |p: &[usize]| p.windows(2).all(|w| w[0] < w[1]) || p.windows(2).all(|w| w[0] > w[1]);
+    assert!(!in_order(&places(&sim)), "the revised cards stand by their newest version: {:?}", places(&sim));
+    sim.hold = false;
+    while serve(&world, &mut sim, |_| true) > 0 {}
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert!(in_order(&places(&sim)), "by the time asked once the order was read: {:?}", places(&sim));
+}

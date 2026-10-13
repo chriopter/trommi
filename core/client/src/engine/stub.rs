@@ -34,6 +34,8 @@ pub enum Expect {
     Object { object: ObjectId, after: u64, limit: u32 },
     Outbox { kind: OutboxKind },
     Joins { count: usize },
+    GroupsRead { groups: Vec<GroupId> },
+    GroupInfo { epoch: Option<u64> },
     KeyPackagesHeld,
     Wished,
     Done,
@@ -147,6 +149,26 @@ fn outbox_answer(kind: OutboxKind, v: &Value) -> Result<OutboxAnswer, Failure> {
         }
     }
     Ok(answer)
+}
+
+/// A page of one group's log: its entries rise by their number and by their change.
+fn log_page(v: &Value, group: &GroupId, limit: u32) -> Result<(Vec<ChangeItem>, bool), Failure> {
+    let raw = v.get("items").and_then(Value::as_array).ok_or(BAD("items"))?;
+    if raw.len() > limit as usize {
+        return Err(BAD("a page longer than asked"));
+    }
+    let mut items = Vec::new();
+    let (mut n, mut change) = (0, 0);
+    for one in raw {
+        let Some(item) = log_item(one, Some(*group))? else { continue };
+        let (ChangeItem::Commit(log) | ChangeItem::Message(log)) = &item else { continue };
+        if log.n <= n || log.change <= change {
+            return Err(BAD("a log out of order"));
+        }
+        (n, change) = (log.n, log.change);
+        items.push(item);
+    }
+    Ok((items, v.get("more").and_then(Value::as_bool).ok_or(BAD("more"))?))
 }
 
 fn commit_body(entry: &trommi_core::store::OutboxEntry, welcome: Option<usize>, sealed_key: usize, auth: Option<usize>) -> Map<String, Value> {
@@ -330,7 +352,21 @@ impl HubCodec for StubCodec {
                 (send("POST", "/v1/requests".into(), body), Expect::Wished)
             }
             Route::RejectCommit { group, n } => (send("POST", format!("/v1/groups/{}/reject", b64(group.as_bytes())), json!({ "n": n })), Expect::Done),
-            Route::GroupsRead { .. } | Route::ClaimKeyPackages { .. } | Route::RoomGroups { .. } | Route::GroupInfo { .. } | Route::Wishes => {
+            Route::GroupsRead { groups } => {
+                let distinct: std::collections::BTreeSet<&GroupId> = groups.iter().collect();
+                if groups.is_empty() || groups.len() > 64 || distinct.len() != groups.len() {
+                    return Err(BAD("1 to 64 groups go in one request, each once"));
+                }
+                let names: Vec<String> = groups.iter().map(|g| b64(g.as_bytes())).collect();
+                let (mut request, expect) = (send("POST", "/v1/groups/read".into(), json!({ "groups": names })), Expect::GroupsRead { groups: groups.to_vec() });
+                request.max_answer = 9 << 20;
+                (request, expect)
+            }
+            Route::GroupInfo { group, epoch } => (
+                get(format!("/v1/groups/{}/info{}", b64(group.as_bytes()), epoch.map(|e| format!("?epoch={e}")).unwrap_or_default())),
+                Expect::GroupInfo { epoch },
+            ),
+            Route::ClaimKeyPackages { .. } | Route::RoomGroups { .. } | Route::Wishes => {
                 return Err(BAD("the stand-in codec does not know this route"))
             }
         })
@@ -413,25 +449,8 @@ impl HubCodec for StubCodec {
                 Answer::Welcomes(rows)
             }
             Expect::GroupLog { group, limit } => {
-                let raw = v.get("items").and_then(Value::as_array).ok_or(BAD("items"))?;
-                if raw.len() > *limit as usize {
-                    return Err(BAD("a page longer than asked"));
-                }
-                let mut items = Vec::new();
-                let (mut n, mut change) = (0, 0);
-                for one in raw {
-                    let Some(item) = log_item(one, Some(*group))? else { continue };
-                    let (ChangeItem::Commit(log) | ChangeItem::Message(log)) = &item else { continue };
-                    if log.n <= n || log.change <= change {
-                        return Err(BAD("a log out of order"));
-                    }
-                    (n, change) = (log.n, log.change);
-                    items.push(item);
-                }
-                Answer::GroupLog {
-                    items,
-                    more: v.get("more").and_then(Value::as_bool).ok_or(BAD("more"))?,
-                }
+                let (items, more) = log_page(&v, group, *limit)?;
+                Answer::GroupLog { items, more }
             }
             Expect::Chain { after, limit } => {
                 let raw = v.get("items").and_then(Value::as_array).ok_or(BAD("items"))?;
@@ -549,6 +568,41 @@ impl HubCodec for StubCodec {
                 })
             }
             Expect::Outbox { kind } => Answer::Outbox(outbox_answer(*kind, &v)?),
+            Expect::GroupInfo { epoch } => {
+                let got = number(&v, "epoch")?;
+                if epoch.is_some_and(|e| e != got) {
+                    return Err(BAD("another epoch than asked"));
+                }
+                Answer::GroupInfo { epoch: got, group_info: bytes_of(&v, "group_info")? }
+            }
+            Expect::GroupsRead { groups } => {
+                let raw = v.get("groups").and_then(Value::as_array).filter(|a| a.len() == groups.len()).ok_or(BAD("one row per group"))?;
+                let mut rows = Vec::new();
+                for (group, one) in groups.iter().zip(raw) {
+                    if group_of(one, "group")? != *group {
+                        return Err(BAD("a row of another group"));
+                    }
+                    if let Some(code) = one.get("error").and_then(Value::as_str) {
+                        let status = one.get("status").and_then(Value::as_u64).unwrap_or(500) as u16;
+                        rows.push(Err(Failure::Refused { status, code: Some(code.to_string()) }));
+                        continue;
+                    }
+                    let info = one.get("info").ok_or(BAD("info"))?;
+                    let founding = match one.get("founding") {
+                        None | Some(Value::Null) => None,
+                        Some(f) => {
+                            if number(f, "epoch")? != 0 {
+                                return Err(BAD("a founding of another epoch"));
+                            }
+                            Some(bytes_of(f, "group_info")?)
+                        }
+                    };
+                    let (items, more) = log_page(one.get("log").ok_or(BAD("log"))?, group, 256)?;
+                    let log = items.into_iter().filter_map(|i| if let ChangeItem::Commit(l) = i { Some(l) } else { None }).collect();
+                    rows.push(Ok(GroupRead { group: *group, info: bytes_of(info, "group_info")?, epoch: number(info, "epoch")?, founding, log, more }));
+                }
+                Answer::GroupsRead(rows)
+            }
             Expect::Joins { count } => {
                 let raw = v.get("answers").and_then(Value::as_array).filter(|a| a.len() == *count).ok_or(BAD("one answer per Commit"))?;
                 Answer::Joins(
