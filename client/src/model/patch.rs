@@ -236,6 +236,7 @@ impl Model {
         if change.stack {
             p.insert("stack".into(), json!(this.stack));
             p.insert("open_permission_ids".into(), json!(this.open_permission_ids));
+            p.insert("desk_order".into(), json!(this.desk_order));
         }
         if let Some(rows) = rows {
             p.insert("session_list".into(), serde_json::to_value(rows).unwrap_or(Value::Null));

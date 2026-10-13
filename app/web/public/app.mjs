@@ -696,7 +696,7 @@ export class BoardState {
     this.assetsNaming = naming
     const self = this
     const state = {
-      cards, byId: this.byId, queue, closedGen: this.closedGen, agents, tasks, desks, notes, assets,
+      cards, byId: this.byId, queue, desk_order: m.desk_order ?? [], closedGen: this.closedGen, agents, tasks, desks, notes, assets,
       // (the room is still being read: a sign-in joining its sessions, the past read again; the Desk says so)
       // (or a start from this device's cache waits for the hub's Desk past a moment: client.deskFirst)
       get reading() { return Boolean(self.model.room.reading || self.model.room.desk_waiting) },
@@ -1155,6 +1155,9 @@ function hubFacade(client, board) {
     },
     /** Star a card, or take its star off: his own mark, on all his devices. */
     star(cardId, on) { card(cardId); return client.star(cardId, Boolean(on)) },
+    /** The open question to offer after this card: the client core's (client/src/model/walk.rs), among the sessions
+     *  `within` (the desk in view; null: every desk). Null when nothing else waits. */
+    async nextOpenAfter(cardId, within = null) { return (await client.nextOpenAfter(cardId, within)) ?? null },
     async reopen(cardId) {
       const c = card(cardId)
       if (c.status === 'open' && c.snoozed_until) return client.snooze(cardId, Date.now())

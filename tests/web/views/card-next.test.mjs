@@ -8,7 +8,7 @@ import fs from 'node:fs'
 const src = fs.readFileSync(new URL('../../../app/web/public/card.mjs', import.meta.url), 'utf8')
 
 test('decided on its own page, not in Blitz: back to the card, with the question that followed it', () => {
-  assert.match(src, /if \(\['decide', 'trust'\]\.includes\(what\) && !form\.has\('walk'\) && form\.has\('page'\)\) \{[\s\S]*?return redirect\(res, to\(card, fromSession \? home : BASE, said, next \? `next=\$\{next\.id\}` : ''\)\)/)
+  assert.match(src, /if \(\['decide', 'trust'\]\.includes\(what\) && !form\.has\('walk'\) && form\.has\('page'\)\) \{[\s\S]*?return redirect\(res, to\(card, fromSession \? home : BASE, said, next \? `next=\$\{next\}` : ''\)\)/)
   assert.match(src, /<input type="hidden" name="page" value="1">/, 'the card page\'s form says where it was sent from')
 })
 
@@ -22,4 +22,12 @@ test('the decided card offers the next question, or says there is none, and Clos
   assert.match(src, /<span>Next question<\/span><small>\$\{next\.title\}<\/small>/)
   assert.match(src, /That was the last open question\./)
   assert.match(src, /<a class="tc-next-close" data-nav href="\$\{home\}">Close<\/a>/)
+})
+
+test('which question comes next is the client core\'s, not the page\'s', () => {
+  // (client/src/model/walk.rs next_open_after, through the worker: the Desk's order, the desk in view)
+  assert.match(src, /const next = await Promise\.resolve\(hub\.nextOpenAfter\?\.\(id, deskScope\(model\(\)\)\)\)/)
+  // (while it still waits; else the first that waits on this desk in the core's order)
+  assert.match(src, /model\.state\.desk_order \?\? \[\]\)\.find\(x => waits\.has\(x\)\)/)
+  assert.doesNotMatch(src, /const nextOpen = [^\n]*walk\[0\]/)
 })

@@ -1140,6 +1140,8 @@ export class ClientModel {
   snapshot(): string
   /** The session list every app shows (client/src/sessions.rs), JSON: `SessionRow[]` in order. */
   sessionList(reading: boolean): string
+  /** The open question to offer after this card: the next in the Desk's order among the sessions `within` (none: every desk). */
+  nextOpenAfter(cardId: string, within: string[] | null): string | null
   /** The room is being read or not (the session list names a session without a profile "Loading …" meanwhile). */
   setReading(reading: boolean): void
   touchAll(): void

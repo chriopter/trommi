@@ -441,6 +441,7 @@ export class ClientModel extends FileObject {
   finishPart(nowMs, maxCards) { return this[CALL]('finish_part', [nowMs, maxCards]) }
   snapshot() { return this[CALL]('snapshot', []) }
   sessionList(reading) { return this[CALL]('session_list', [reading]) }
+  nextOpenAfter(cardId, within) { return this[CALL]('next_open_after', [cardId, within]) }
   setReading(reading) { return this[CALL]('set_reading', [reading]) }
   touchAll() { return this[CALL]('touch_all', []) }
   applyCardDeedsJson(received) { return this[CALL]('apply_card_deeds_json', [received]) }
