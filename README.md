@@ -53,23 +53,25 @@ Updates come by themselves: a running connector installs a new signed release an
 - **Connector:** one signed program that joins a Claude Code or Codex session to your room.
   What the agent is told: [connector/prompt.md](connector/prompt.md).
 
+```mermaid
+flowchart TB
+    core["<b>core/</b> (Rust, OpenMLS)<br/>all cryptography"]
+    client["<b>client/</b> (Rust)<br/>board, Desk, sessions,<br/>status, presence, seats"]
+    web["<b>app/web</b><br/>WebAssembly"]
+    ios["<b>app/ios</b><br/>iPhone, iPad, Mac<br/>UniFFI, Swift"]
+    conn["<b>connector/</b><br/>native"]
+    hub["<b>hub/</b> (native)<br/>stores ciphertext,<br/>checks MLS changes"]
+
+    core --> client
+    core --> conn
+    client --> web
+    client --> ios
+    web <-->|MLS| hub
+    ios <-->|MLS| hub
+    conn <-->|MLS| hub
 ```
-                         core/  (Rust, OpenMLS)
-                 one implementation of all cryptography
-                                   │
-                client/  (Rust)    │
-   board, Desk, sessions, once     │
-                   │               │
-       ┌───────────┴──────┬────────┴─────────┬──────────────────┐
-       │ WebAssembly      │ UniFFI (Swift)   │ native           │ native
-       ▼                  ▼                  ▼                  ▼
-    app/web/           app/ios/          connector/            hub/
-   web app in        iPhone and        Claude Code and       the server:
-   the browser          iPad           Codex sessions     stores ciphertext,
-       │                  │                  │            checks MLS changes
-       └───────────── MLS (end-to-end encrypted) ───────────────▲
-                    sealed messages only; keys stay on devices
-```
+
+Everything between the devices and the hub is MLS, end-to-end encrypted: the hub sees sealed messages only, and keys stay on devices.
 
 Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `client/`
 (the client core) is what every app decides the same way above it: the board model, the Desk (which cards stand on
@@ -89,7 +91,7 @@ tools. [`client/README.md`](client/README.md) has the detail.
 - **One suite**, no negotiation: `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` (X25519, ChaCha20-Poly1305,
   SHA-256, Ed25519).
 - **One Rust core** (`core/`, the crate `trommi-core`) does all of it: as WebAssembly in the browser, through UniFFI
-  on iOS, natively in the connector and the hub. There is no second implementation.
+  on iOS, natively in the connector. The hub checks group changes with OpenMLS itself and holds no keys. There is no second implementation.
 - **A device is its key:** one Ed25519 key per device, made on the device; private keys never leave it.
 - **Content** (chat, cards, notes, board items) is stored as signed envelopes, encrypted under a content key that
   MLS exports per group and key period. **Files** get a random key of their own each, sent inside the encrypted
