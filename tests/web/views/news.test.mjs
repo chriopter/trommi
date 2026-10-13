@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { changelogHead, parseChangelog } from '../../../app/web/dev/build.mjs'
-import { changelogHead as notesHead } from '../../../.github/scripts/release_notes.mjs'
+import { changelogHead as notesHead, releaseNotes, subjectLine } from '../../../.github/scripts/release_notes.mjs'
 
 const FILE = fs.readFileSync(new URL('../../../CHANGELOG.md', import.meta.url), 'utf8')
 
@@ -84,7 +84,27 @@ const notes = (changelog, ...args) => {
 
 test('release notes: the newest day short, one line per change by its short form, <…> escaped outside code', () => {
   const out = notes('# Changelog\n\nIntro.\n\n## 11 October 2026 (v1 – v2)\n\nA summary that\ngoes on. And a second sentence.\n\n![The demo](app/web/public/changelog/2026-10-11.webp)\n\n**New**\n- **Readable addresses**: `/chat/<id>` and more,\n  what it keeps on the hub.\n- "<session> is working on it", what it keeps.\n- Web: a new row in the sidebar, with its folder.\n\n**Fixed**\n- A fix & more.\n\n**Better**\n- Faster.\n\n**Fixed**\n- Another fix.\n- A fix & more.\nA stray line.\n\n## 10 October 2026\n\n- Older.\n')
-  assert.equal(out, '## 11 October 2026\n\nA summary that goes on.\n\n![The demo](https://raw.example/c/app/web/public/changelog/2026-10-11.webp)\n\n**New**\n- Readable addresses\n- "&lt;session&gt; is working on it"\n- A new row in the sidebar (Web)\n\n**Fixed**\n- A fix &amp; more\n- Another fix\n\n**Better**\n- Faster\n')
+  assert.equal(out, '## 11 October 2026\n\nA summary that goes on.\n\n![The demo](https://raw.example/c/app/web/public/changelog/2026-10-11.webp)\n\n**New**\n- Readable addresses\n- "&lt;session&gt; is working on it"\n- A new row in the sidebar (Web)\n\n**Better**\n- Faster\n\n**Fixed**\n- A fix &amp; more\n- Another fix\n')
+})
+
+test('release notes since the release before: only the lines added since, its picture and summary only when new', () => {
+  const before = '## 12 October 2026\n\nStar cards.\n\n**New**\n- **Stars**: star a card.\n\n**Fixed**\n- Web: a fix.\n\n## 11 October 2026\n\nOlder.\n\n**New**\n- Old thing.\n'
+  const now = '## 12 October 2026\n\nStar cards.\n\n![Stars](app/s.webp)\n\n**New**\n- **Stars**: star a card, now with more words.\n- **Duck it**: answer all at once.\n\n**Fixed**\n- Web: a fix.\n- iPhone: another fix.\n\n## 11 October 2026\n\nOlder.\n\n**New**\n- Old thing.\n'
+  assert.equal(releaseNotes(now, { previous: before, since: 'v284', base: 'https://raw.example/c/' }),
+    '## 12 October 2026 (since v284)\n\n![Stars](https://raw.example/c/app/s.webp)\n\n**New**\n- Duck it\n\n**Fixed**\n- Another fix (iPhone)\n')
+  // the day's first release: the summary is new too; a release the day before is not listed again
+  assert.equal(releaseNotes(now, { previous: before.slice(before.indexOf('## 11')), since: 'v200' }),
+    '## 12 October 2026 (since v200)\n\nStar cards.\n\n![Stars](app/s.webp)\n\n**New**\n- Stars\n- Duck it\n\n**Fixed**\n- A fix (Web)\n- Another fix (iPhone)\n')
+  // nothing added: the PR titles since, internal ones left out; none left: says so
+  const subjects = ['2026-10-12-36: Fixed: connector keys per folder, size limit (#80)', 'Fixed: self-join test race on CI (#68)', 'Updated: start page offers Try the demo (web) (#84)']
+  assert.equal(releaseNotes(now, { previous: now, since: 'v290', subjects }), '## 12 October 2026 (since v290)\n\n**Better**\n- Start page offers Try the demo\n\n**Fixed**\n- Connector keys per folder\n')
+  assert.equal(releaseNotes(now, { previous: now, since: 'v290', subjects: [subjects[1]] }), '## 12 October 2026 (since v290)\n\nNothing you can see changed: internal work only.\n')
+  assert.equal(subjectLine('Merge branch x'), null)
+  // a day filled in later, older than the release before's newest, is not this release's
+  assert.equal(releaseNotes(now + '\n## 10 October 2026\n\nBackfilled.\n\n**New**\n- Old news.\n', { previous: before, since: 'v284' }).includes('Old news'), false)
+  // no CHANGELOG.md yet: the PR titles since the release before
+  assert.equal(releaseNotes('', { previous: '', since: 'v49', subjects: [subjects[0]] }), '## Since v49\n\n**Fixed**\n- Connector keys per folder\n')
+  assert.equal(releaseNotes('', {}), '')
 })
 
 test('release notes: a line\'s short form is What\'s new\'s (changelogHead), only cut later', () => {

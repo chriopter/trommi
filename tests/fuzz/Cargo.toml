@@ -1,0 +1,65 @@
+# The libFuzzer targets (README "Fuzzing"). A workspace of its own: cargo-fuzz builds it with coverage
+# instrumentation, which the main workspace never gets. Each target is one line; the harness is
+# `trommi_tests::fuzz`, which the property tests of `tests/fuzz_props.rs` run as well.
+[package]
+name = "trommi-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+trommi-tests = { path = ".." }
+
+[profile.release]
+debug = 1
+debug-assertions = true
+overflow-checks = true
+
+[[bin]]
+name = "core_decode"
+path = "fuzz_targets/core_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "board_merge"
+path = "fuzz_targets/board_merge.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content_flow"
+path = "fuzz_targets/content_flow.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mls_devices"
+path = "fuzz_targets/mls_devices.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "hub_api"
+path = "fuzz_targets/hub_api.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "connector_text"
+path = "fuzz_targets/connector_text.rs"
+test = false
+doc = false
+bench = false

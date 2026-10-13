@@ -10,7 +10,9 @@ import { ASLEEP_MS, linkOf } from '../../../app/web/public/app.mjs'
 import { connectCommand, connectPrompt } from '../../../app/web/public/ui.mjs'
 
 const now = 1_800_000_000_000
-const session = (idle, client = '') => ({ name: 'web', online: true, client, link: { hears: 'oncall', attached: true, last_call_at: now - idle, since: now - idle } })
+// (the link's state as the client core hands it in the session list: client/src/status.rs)
+const session = (idle, client = '') => ({ name: 'web', online: true, client, link: { hears: 'oncall', attached: true, last_call_at: now - idle, since: now - idle },
+  link_view: { state: idle >= ASLEEP_MS && client !== 'codex' ? 'asleep' : 'oncall', since: now - idle, reason: '' } })
 
 test('a session that hears on its next step: no restart, no flag', () => {
   const soon = linkOf(session(60_000), now), asleep = linkOf(session(ASLEEP_MS + 60_000), now)

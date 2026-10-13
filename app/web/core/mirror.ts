@@ -10,7 +10,7 @@
 // Every record the core changes is named in its change (that is the contract the app renders by); what the builder
 // keeps for itself (model._builder: echoes, the projection's sort state) does not travel.
 import { emptyChange, emptyModel } from './model-shape.ts'
-import type { Alert, Card, Change, HumanRegister, Invite, Member, Model, Newer, Note, OutboxItem, PermissionRequest, Published, Room, Session, Timeline, TimelineItem } from './types.ts'
+import type { Alert, Card, Change, HumanRegister, Invite, Member, Model, Newer, Note, OutboxItem, PermissionRequest, Published, Room, Session, SessionRow, Timeline, TimelineItem } from './types.ts'
 
 type Entries<V> = [string, V | null][]
 type ItemKey = number | string
@@ -36,13 +36,17 @@ export interface ModelPatch {
   outbox?: OutboxItem[]
   stack?: string[]
   open_permission_ids?: string[]
+  /** The session list (client/src/sessions.rs), whenever it may have changed. */
+  session_list?: SessionRow[]
+  /** When to project again although nothing came (the core's clock: a snooze, a request, a session's status); 0: never. */
+  wake_at?: number
   change: PlainChange
   extra?: Record<string, unknown>
 }
 /** A change as plain lists (Sets and Maps clone as well, but lists say what is meant). items: timeline key -> item keys. */
 export interface PlainChange {
   cards: string[]; sessions: string[]; permissions: string[]; notes: string[]; published: string[]; timelines: string[]; registers: string[]; invites: string[]
-  members: boolean; alerts: boolean; outbox: boolean; stack: boolean; room: boolean
+  members: boolean; alerts: boolean; outbox: boolean; stack: boolean; room: boolean; status?: boolean
   items: [string, ItemKey[]][]
 }
 /** The whole model as it travels (without the builder's own state). */
@@ -84,6 +88,8 @@ export function patchOf(model: Model, change: Change, extra?: Record<string, unk
   if (change.alerts) p.alerts = model.alerts
   if (change.outbox) p.outbox = model.outbox
   if (change.stack) { p.stack = model.stack; p.open_permission_ids = model.open_permission_ids }
+  // (the session list, whenever something it is made from may have changed: the core's own rule, patch.rs)
+  if (model.session_list && (change.status || change.room || change.members || change.stack || change.sessions.size || change.registers.size || change.cards.size || change.permissions.size)) p.session_list = model.session_list
   if (extra) p.extra = extra
   return p
 }
@@ -91,7 +97,7 @@ export function patchOf(model: Model, change: Change, extra?: Record<string, unk
 function plainChange(c: Change): PlainChange {
   return {
     cards: [...c.cards], sessions: [...c.sessions], permissions: [...c.permissions], notes: [...c.notes], published: [...c.published], timelines: [...c.timelines],
-    registers: [...c.registers], invites: [...c.invites], members: c.members, alerts: c.alerts, outbox: c.outbox, stack: c.stack, room: c.room,
+    registers: [...c.registers], invites: [...c.invites], members: c.members, alerts: c.alerts, outbox: c.outbox, stack: c.stack, room: c.room, status: c.status === true,
     items: [...c.items].map(([k, list]) => [k, list.map(itemKeyOf)]),
   }
 }
@@ -136,6 +142,7 @@ function slotOf(model: Model, key: string): { map: Map<string, unknown>; id: str
 export function applyPatch(m: Model, p: ModelPatch): Change {
   assignInPlace(m.room, { ...m.room, ...p.room })   // (fields the page set on its own, the account's, stay)
   if (p.newer) m.newer = p.newer
+  if (p.session_list) m.session_list = p.session_list
   if (p.members) {
     const keep = new Set(p.members.map(([id]) => id))
     for (const id of [...m.members.keys()]) if (!keep.has(id)) m.members.delete(id)
@@ -172,6 +179,7 @@ export function applyPatch(m: Model, p: ModelPatch): Change {
   const pc = p.change
   for (const k of ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites'] as const) for (const id of pc[k]) c[k].add(id)
   c.members = pc.members; c.alerts = pc.alerts; c.outbox = pc.outbox; c.stack = pc.stack; c.room = pc.room
+  if (pc.status) c.status = true
   c.items = items
   return c
 }

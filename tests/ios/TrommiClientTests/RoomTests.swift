@@ -29,7 +29,7 @@ final class RoomTests: XCTestCase {
   }
   func texts(_ room: Room) -> [String] {
     let t = room.board.timelineOf("chat:session/\(session)")
-    return t.items.keys.sorted().compactMap { t.items[$0]?.content?["text"].string }
+    return t.items.keys.sorted().compactMap { t.items[$0]?.content.map { $0["text"].string ?? "" } }
   }
 
   func testFoundingMakesARoomOnDiskAndAtTheHub() async throws {
@@ -86,10 +86,13 @@ final class RoomTests: XCTestCase {
   func testADeviceThatLeftWhileTheStreamWasCutIsOfflineOnceTheStreamIsBack() async throws {
     let room = try await founded()
     let gone = String(repeating: "11", count: 32), stays = String(repeating: "22", count: 32), never = String(repeating: "33", count: 32)
-    for id in [gone, stays, never] { room.board.members[id] = RoomMember(deviceId: id, role: "agent") }
+    // (three agents of the room, each in a session of its own: members as the client core knows them)
+    for (k, id) in [gone, stays, never].enumerated() { FakeHub.shared.commit(group: room.roomId, ["session": String(repeating: "e\(k)", count: 16), "agent": id]) }
+    _ = try await room.sync()
+    XCTAssertNotNil(room.board.members[gone]); XCTAssertNotNil(room.board.members[never])
     func presence(_ id: String) throws -> JV { JV.parse(utf8(#"{"device":"\#(b64u(try unhex(id)))","online":true}"#))! }
-    // the first stream: both agents are here
-    room.streamOpened()
+    // the first stream: both agents are here (the client core's rule, client/src/presence.rs)
+    room.board.streamOpened()
     await room.handleStreamEvent("presence", try presence(gone))
     await room.handleStreamEvent("presence", try presence(stays))
     await room.handleStreamEvent("here", .obj([:]))
@@ -97,7 +100,7 @@ final class RoomTests: XCTestCase {
     XCTAssertEqual(room.board.members[stays]?.isOnline, true)
     // the stream was cut and `gone` left meanwhile: the new stream names only `stays`
     let back = nowMs()
-    room.streamOpened()
+    room.board.streamOpened()
     await room.handleStreamEvent("presence", try presence(stays))
     XCTAssertEqual(room.board.members[gone]?.isOnline, true, "not before the list is whole")
     await room.handleStreamEvent("here", .obj([:]))
@@ -314,7 +317,7 @@ final class RoomTests: XCTestCase {
     XCTAssertEqual(room.board.human.crown.string, "first")
     XCTAssertEqual(room.board.human.desks["a"]?["name"].string, "A", "sealed before the failure: it stays")
     XCTAssertNil(room.board.human.desks["b"])
-    XCTAssertNil(room.board.human.raw["desk/b"])
+    XCTAssertTrue(room.board.human.raw["desk/b"]?.value.isNull ?? true, "as it was: none (a deletion stays in the raw entries as null, as on the web)")
     room.close()
   }
 
@@ -362,6 +365,40 @@ final class RoomTests: XCTestCase {
                             payload: ["object_type": "card", "object_version": 1, "card_type": "decision", "title": title, "options": [["key": "yes", "label": "Yes"]]])
   }
 
+  /// Two human devices answer the same card at once. The hub takes the other device's answer and refuses this one's.
+  /// The other one's answer, which came while this device's was on its way, stays: the card is answered here too, as
+  /// on every other device (the torture run, seed 403: the card stayed open on one iPhone for good).
+  func testAnAnswerTheHubRefusedForAnotherDevicesAnswerLeavesThatOne() async throws {
+    let room = try await founded()
+    addSession(room)
+    let card = String(repeating: "e5", count: 16), other = String(repeating: "ef", count: 32)
+    agentAsks(room, seq: 1, card: card, "Which one?")
+    _ = try await room.sync()
+    room.board.members[other] = RoomMember(deviceId: other, role: "human")
+    let hold = DispatchSemaphore(value: 0)
+    FakeHub.shared.lock.withLock { FakeHub.shared.holdEnvelope = hold }
+    let answering = Task { try await room.answer(cardId: card, choices: ["yes"]) }
+    for _ in 0..<200 where room.board.cards[card]?.answer?.pending != true { try await Task.sleep(nanoseconds: 10_000_000) }
+    XCTAssertEqual(room.board.cards[card]?.objectState, "answered", "the echo: answered at once")
+    // the other device's answer reaches this one first
+    let version = room.board.cards[card]?.versionHash ?? ""
+    FakeHub.shared.envelope(["sender": other, "group": hex(FakeDevice.sessionGroup(room.roomIdHex, session)), "seq": 1, "time": 2000, "kind": KIND.ANSWER,
+                             "otype": OBJECT_TYPE.CARD, "ostate": CARD_STATE.ANSWERED, "oid": card, "recipient": agent, "bind": ["card": card, "version": version, "choices": ["yes"]],
+                             "files": [String]()],
+                            payload: ["answer_action": "answer", "choices": ["yes"], "answered_at": 2000])
+    _ = try await room.sync()
+    // and the hub refuses this device's, keeping its number as a void record
+    FakeHub.shared.lock.withLock { FakeHub.shared.refuse["/v1/envelopes"] = (403, "forbidden", true); FakeHub.shared.holdEnvelope = nil }
+    hold.signal()
+    do { try await answering.value; XCTFail("refused") } catch let e as HubError { XCTAssertEqual(e.code, "forbidden") }
+    let c = room.board.cards[card]
+    XCTAssertEqual(c?.objectState, "answered", "answered, by the other device")
+    XCTAssertEqual(c?.answer?.byDeviceId, other)
+    XCTAssertEqual(c?.answer?.pending, false)
+    FakeHub.shared.lock.withLock { FakeHub.shared.refuse = [:] }
+    room.close()
+  }
+
   func testAStarIsHisOwnRegisterOnTheCard() async throws {
     let room = try await founded()
     addSession(room)
@@ -400,7 +437,7 @@ final class RoomTests: XCTestCase {
     let worked = view.revising.first { $0.id == card }
     XCTAssertEqual(worked?.working, true, "with the agent, being worked on")
     XCTAssertNotNil(worked?.withAgent)
-    version(2, ["title": "Done: the migration", "body": "38 seconds.", "previous_version_hash": room.board.cards[card]?.versionHash ?? ""])
+    version(2, ["title": "Done: the migration", "body": "38 seconds.", "previous_version_hash": (room.board.cards[card]?.versionHash).flatMap { try? unhex($0) }.map(b64u) ?? ""])
     _ = try await room.sync()
     XCTAssertTrue(room.board.stack.contains(card), "done: on the stack")
     view = DeskModel(board: room.board).view(desk: nil)
@@ -506,12 +543,5 @@ final class RoomTests: XCTestCase {
     XCTAssertEqual(Records.registerName("device/" + b64u(ZERO32), toWire: false), "device/" + hex(ZERO32))
     XCTAssertEqual(Records.registerName("device/" + hex(ZERO32), toWire: true), "device/" + b64u(ZERO32))
     XCTAssertEqual(Records.fileIds(wire), [file])
-    // a body that names a file its signed header does not list is not shown
-    let h = EnvelopeHeader(group: [], epoch: 0, sender: [], seq: 1, time: 0, kind: .item, fileIds: [])
-    XCTAssertEqual(Records.decodePayload(wire.encoded(), header: h).state, "undecryptable")
-    // a register becomes the one-name `values` the board reads; a board snapshot keeps its old name there
-    let reg = Records.fromWire(.obj(["name": "board_snapshot/00ff", "value": .obj(["change": 3]), "lamport": 4]), header: EnvelopeHeader(group: [], epoch: 0, sender: [], seq: 1, time: 0, kind: .register), sessionId: nil)
-    XCTAssertEqual(reg["values"]["scribble_snapshot/desk/00ff"]["change"].int, 3)
-    XCTAssertEqual(reg["lamport"].int, 4)
   }
 }

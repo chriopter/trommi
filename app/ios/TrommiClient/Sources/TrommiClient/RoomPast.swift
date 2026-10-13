@@ -111,8 +111,8 @@ extension Room {
     let rs = try? recordStore()
     let cached: [Rec] = await Task.detached(priority: .userInitiated) { rs?.readAll() ?? [] }.value
     var whole = [UInt64: Rec]()
-    for r in cached where r.contentState == "ok" { whole[UInt64(r.envelopeNumber)] = r }
-    for (n, r) in log where r.contentState == "ok" { whole[n] = r }
+    for r in cached where r.opened { whole[UInt64(r.envelopeNumber)] = r }
+    for (n, r) in log where r.opened { whole[n] = r }
     readBackWhole = Room.readBackFromCache && record.past?.afterCut != true ? whole : [:]
     defer { readBackWhole = [:] }
     // The Desk on screen stays as it was until the read is through: the views show a copy of the board as it stood

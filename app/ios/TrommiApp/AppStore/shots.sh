@@ -33,11 +33,11 @@ out=${OUT:-$here/screenshots-raw/en-US}
 derived=${DERIVED:-$HOME/Library/Caches/trommi-shots}
 wait=${WAIT:-6}
 bundle=com.trommi.ios
-default_shots="01-desk desk
-02-decision card--two-pictures
-03-chat chat
-04-scribble-board scribble-board
-05-note desk--corner-note-open"
+default_shots="01-note desk--corner-note-open
+02-desk desk
+03-decision card--two-pictures
+04-chat chat
+05-scribble-board scribble-board"
 shots_phone=${SHOTS_PHONE:-$default_shots}
 shots_ipad=${SHOTS_IPAD:-$default_shots}
 

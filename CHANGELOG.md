@@ -12,6 +12,13 @@ A day may have at most one picture, a line `![what it shows](app/web/public/chan
 under its summary: a screenshot of the demo room only (`?mock=1`, never real data), webp, at most 150 KB. It shows
 small under the summary while the day is one of the newest three.
 
+## 13 October 2026
+
+The App Store listing now opens with your encrypted notes.
+
+**Better**
+- App Store listing leads with the encrypted notes screenshot (iPhone and iPad); the others follow in their old order.
+
 ## 12 October 2026
 
 Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and settings.
@@ -49,8 +56,32 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
   (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
 - **What's new at a glance**: the newest three days open with a one-line summary, its picture and the first lines of
   New, Better and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
+- **iPhone catches up with a fraction of the traffic**: opening the app reads only what changed on your Desk (about 90 KB instead of 4.5 MB in a 1,000-card room), new keys from your other devices no longer make it reread the whole room, and a sign-in with the code reads each session once.
+- **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
+- Web: the start page offers "Try the demo" right under Log in, with a line saying nothing is sent.
+- Web: a new version no longer reloads an open tab while you look at it: a quiet "A new version is ready" offers it, and the tab reloads by itself once it is in the background.
+- Web: pictures and previews come from the browser once shown, not from the hub on every open.
+- Web: an open tab no longer downloads the whole Desk every minute (about 100 MB an hour in a big room); it asks the hub only what changed.
+- Web: a tab opened again is live in under a second in a big room: the Desk is checked with the hub while it catches up, not before.
+- iPhone Live Activity with nothing waiting: "All answered" with the working ring and how many agents are at work
+  (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
+- **What's new at a glance**: the newest three days open with a one-line summary, its picture and the first lines of
+  New, Better and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
 
 **Fixed**
+- **Helper sessions keep their names on every device**: a helper session whose start one device caught only late on
+  a rough network (web and iPhone) now shows its name there too, and one closed meanwhile no longer shows as open (web).
+- **New sessions join faster**: when founding a new session's group fails, your device tries again within a second
+  instead of after half a minute, and never sends a second founding while the first one waits (web and iPhone).
+- **iPhone: a session's link as on the web**: a stream event that says nothing of the link no longer turns a live
+  session into "hears you on its next step"; an agent that lost its connection is told on the iPhone too.
+- **The red hand matches the Desk**: a session raises the red hand for a question only while that question stands
+  on your Desk (web and iPhone); put off, settled on another device or with its agent, it raises none. A session's
+  link (on its next step, not listening, cut off) is decided once for both apps.
+- **iPhone: agents show online after a fresh pairing**: an iPhone that read the room anew no longer shows every
+  agent as offline until it reconnects.
+- **iPhone and web read every card and session by one rule**: the board model and its codec are shared by both
+  apps; an iPhone sends a board selection as the plain message the web sends.
 - **Web: a card you put off comes back when its agent writes again**: Later holds a card only for the version you
   put off; a revision or a raised urgency brings it back to the Desk at once, and its morning brings it back while
   the page stays open. A card on Later no longer raises the red hand in the sidebar.
@@ -80,20 +111,13 @@ Star the cards you want to keep. Web and iPhone now agree on snoozes, drafts and
 - **A 64 MB attachment no longer fails with "too-large"**: the connector took files of exactly 64 MiB, which the hub refuses once padded; it now takes up to 64 MiB less one byte and says the limit in bytes before anything is sent.
 - **A second window in the same folder can be invited**: when a new Claude Code or Codex session in a folder whose agent belongs to another session was not let in by itself (denied, too many, or self-join off), `/trommi:connect` with an invite link now works; before, the connect tool was missing and refused.
 - **A new agent's session no longer stays nameless on one device**: a device that took the session before the agent's arrival in the room showed it without a name and its cards without titles, for good; it now waits for the room and then opens it.
-
-**Better**
-- **iPhone signs in ten times faster**: a fresh sign-in into a big room (1,000 cards) now takes about 2 seconds instead of 24, as fast as the web. It stores the Desk it reads in one step instead of one disk write per card.
-- Web: the start page offers "Try the demo" right under Log in, with a line saying nothing is sent.
-- Web: a new version no longer reloads an open tab while you look at it: a quiet "A new version is ready" offers it, and the tab reloads by itself once it is in the background.
-- Web: pictures and previews come from the browser once shown, not from the hub on every open.
-- Web: an open tab no longer downloads the whole Desk every minute (about 100 MB an hour in a big room); it asks the hub only what changed.
-- Web: a tab opened again is live in under a second in a big room: the Desk is checked with the hub while it catches up, not before.
-- iPhone Live Activity with nothing waiting: "All answered" with the working ring and how many agents are at work
-  (Dynamic Island and Lock Screen), a tick when none works; it stays while agents work and goes when all is quiet.
-- **What's new at a glance**: the newest three days open with a one-line summary, its picture and the first lines of
-  New, Better and Fixed; a line opens to its whole text, older days fold to one row with their counts (web and iPhone).
-
-**Fixed**
+- Hidden Unicode characters can no longer slip into an agent's messages: board text reaching an agent drops
+  invisible and direction-changing characters, also the tag characters that spell text no one sees.
+- Numbers in settings and card fields keep their exact value when a device writes them again (the last digits
+  of a large or long decimal could change).
+- **Agents come back at once after a network blip**: the connector waited longer after every cut connection (up to a minute and a half), and its agent showed as away and missed your answers meanwhile; it now reconnects within about a second each time.
+- **A session asking to join by itself no longer gives up at a hiccup**: when the session vouching for it was busy reconnecting at that moment, the new session stayed off the board until its next tool call; it now waits for the voucher and gets in after your tap.
+- **iPhone: a card answered on two devices at once shows the answer**: when another device answered the same card a moment before this iPhone, the card went back to open here and stayed so; it now shows the other device's answer.
 - Web: starring a card no longer shows a line of code for a moment in place of the star.
 - A card snoozed on the web no longer stays on the iPhone's Desk: the iPhone now reads the card names the web
   writes, and writes them the same way (drafts, ducks, session and desk settings too; web and iPhone).

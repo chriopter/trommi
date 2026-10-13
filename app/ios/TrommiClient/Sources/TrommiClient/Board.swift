@@ -1,8 +1,8 @@
-// Board.swift: the board model and its reducer, a port of shared/model.mjs (shared/README.md "The model" is the
-// contract). No crypto, no I/O: Room hands in verified, decoded records in hub order, and every client applies the same
-// rules, so this device arrives at the same board as the web app. The names follow the JS model (snake_case fields
-// become camelCase); every refusal code is the JS one.
+// Board.swift: the board as the views read it. The model and its rules are the client core's (client/src/model, the
+// binding's `ClientModel`, the same for the web app); this is its copy in Swift classes, filled from the core's patch
+// once per batch (BoardMirror.swift). The names follow the model's (snake_case fields become camelCase).
 import Foundation
+import TrommiCoreRust
 
 public let ALERTS_MAX = 200
 public let LAMPORT_MAX = 1 << 48
@@ -25,47 +25,6 @@ public struct Causal: Equatable, Codable {
   public var sentAt: UInt64
   public var lamport: Int
   public var noBody = false
-}
-
-public enum DecodedBind: Equatable, Codable {
-  case answer(cardId: String, versionHash: String, choices: [String])
-  case decideAgain(cardId: String, previousHash: String, versionHash: String)
-  case permissionRequest(requestId: String, expiresAt: UInt64)
-  case verdict(requestId: String, requestHash: String, expiresAt: UInt64, allow: Bool)
-}
-
-public struct ObjectHead: Equatable, Codable {
-  public var objectId: String
-  public var objectState: Int
-  public var urgency: Int
-  public var answeredAt: UInt64
-}
-
-public struct Rec: Codable {
-  public var envelopeNumber: Int
-  public var envelopeHash: String
-  public var senderDeviceId: String
-  public var senderRole: String                 // "human" | "agent" | "unknown"
-  public var recipientDeviceId: String?
-  public var sentAt: UInt64
-  public var kind: Int
-  public var isHead: Bool
-  public var object: ObjectHead?
-  public var timelineKind: String?
-  public var timelineId: String?
-  public var sessionId: String?
-  public var attachmentIds: [String] = []
-  public var content: JV?
-  public var contentState: String               // ok | newer_schema | undecryptable | pruned | header
-  public var bind: DecodedBind?
-  public var causal: Causal
-  public var senderSequence: UInt64
-  public var epoch: Int
-  public var objectIdOk: Bool?
-  public var localId: String?
-  public var pending = false
-  /** A register write whose value the core named the one in force (`RegisterChange.current`): taken as it is. */
-  public var winner = false
 }
 
 // ---- the parts of the board ------------------------------------------------------------------------------
@@ -208,7 +167,17 @@ public struct CardVersion {
   public var sentAt: UInt64
   public var objectState: String
   public var urgency: String
-  public var content: JV?
+  /** Its body; of a lean card's version (`owner`), read from the client core when first asked. */
+  public var content: JV? {
+    get { if let c = ownContent, !c.isNull { return c }; return owner?.versionContent(objectVersion) ?? ownContent }
+    set { ownContent = newValue }
+  }
+  var ownContent: JV?
+  weak var owner: Card?
+  public init(objectVersion: Int, versionHash: String, previousVersionHash: String?, envelopeNumber: Int, sentAt: UInt64, objectState: String, urgency: String, content: JV?, owner: Card? = nil) {
+    self.objectVersion = objectVersion; self.versionHash = versionHash; self.previousVersionHash = previousVersionHash; self.envelopeNumber = envelopeNumber
+    self.sentAt = sentAt; self.objectState = objectState; self.urgency = urgency; self.ownContent = content; self.owner = owner
+  }
 }
 
 public struct InRevision: Equatable { public var by: String; public var envelopeNumber: Int }
@@ -218,8 +187,37 @@ public final class Card {
   public var agentDeviceId: String
   public var objectState = "open"
   public var urgency = "normal"
-  /** The card's content fields (CARD_CONTENT_FIELDS), as the agent sent them: unknown ones are kept too. */
-  public var fields: [String: JV] = [:]
+  /** The card's content fields (CARD_CONTENT_FIELDS), as the agent sent them: unknown ones are kept too. Of a lean card
+   *  (the client core's patch leaves lists and objects out, `lazy`) the rest is read from the core when first asked. */
+  public var fields: [String: JV] {
+    get { if !lazyFields.isEmpty { fill() }; return ownFields }
+    set { ownFields = newValue }
+  }
+  var ownFields: [String: JV] = [:]
+  /** The fields a lean card left out; the versions' bodies and the answers before the one in force are left out too. */
+  var lazyFields: Set<String> = []
+  var lean = false
+  /** Where a lean card reads the rest: the client core's whole card (`card_json`). */
+  var whole: (() -> JV?)?
+  /** One field, read from the core only when the lean card left it out. */
+  func field(_ name: String) -> JV? { lazyFields.contains(name) ? fields[name] : ownFields[name] }
+  /** A lean card made whole: its fields, versions with their bodies and answers, from the client core. */
+  func fill() {
+    guard lean, let v = whole?() else { lazyFields = []; lean = false; return }
+    lean = false; lazyFields = []
+    for k in CARD_CONTENT_FIELDS { let x = v[k]; if !x.isNull { ownFields[k] = x } else { ownFields.removeValue(forKey: k) } }
+    ownVersions = (v["versions"].array ?? []).map {
+      CardVersion(objectVersion: $0["object_version"].int ?? 0, versionHash: $0["version_hash"].string ?? "", previousVersionHash: $0["previous_version_hash"].string,
+                  envelopeNumber: $0["envelope_number"].int ?? 0, sentAt: $0["sent_at"].double.map { UInt64(max(0, $0)) } ?? 0, objectState: $0["object_state"].string ?? "",
+                  urgency: $0["urgency"].string ?? "", content: $0["content"].isNull ? nil : $0["content"])
+    }
+    ownAnswers = (v["answers"].array ?? []).map(answerOf)
+  }
+  /** A version's body (a lean card's are read from the core when first asked). */
+  func versionContent(_ objectVersion: Int) -> JV? {
+    if lean { fill() }
+    return ownVersions.first { $0.objectVersion == objectVersion }?.ownContent
+  }
   public var objectVersion = 0
   public var versionHash: String?
   public var envelopeNumber: Int
@@ -227,9 +225,19 @@ public final class Card {
   public var createdAt: UInt64
   public var sessionId: String?
   public var updatedAt: UInt64
-  public var versions: [CardVersion] = []
+  /** Its versions; of a lean card their headers, each body read when first asked. */
+  public var versions: [CardVersion] {
+    get { ownVersions }
+    set { ownVersions = newValue }
+  }
+  var ownVersions: [CardVersion] = []
   public var answer: Answer?
-  public var answers: [Answer] = []
+  /** Every answer it was given (the history); of a lean card read from the core when first asked. */
+  public var answers: [Answer] {
+    get { if lean { fill() }; return ownAnswers }
+    set { ownAnswers = newValue }
+  }
+  var ownAnswers: [Answer] = []
   public var closedHow: String?
   public var inRevision: InRevision?
   public var timelineKey: String
@@ -237,37 +245,40 @@ public final class Card {
   public var refusedHead: Int?
   /** A card of a newer Trommi (an unknown card_type, a newer schema): a placeholder, never answered from here. */
   public var unsupported = false
-  /** A card read back from the board snapshot (BoardCodec): every field is set by the reader. */
+  /** Settled at the hub after this device's cursor, not taken yet: off the Desk (the client core's Desk). */
+  public var catchingUp = false
+  /** His "Later" as the client core holds it (client/src/desk.rs `snooze_holds`: until its time, only for the version he
+   *  put off): until when, and when he put it off; `unsnoozed`: an open card whose snooze ended. */
+  public var snoozedUntil: UInt64?
+  public var snoozedAt: UInt64?
+  public var unsnoozed: UInt64?
+  /** A card of the copy (BoardMirror.swift `cardOf`): every field is set from the core's record. */
   init(snapshot id: String, agent: String) {
     objectId = id; agentDeviceId = agent; envelopeNumber = 0; firstEnvelopeNumber = 0; createdAt = 0; sessionId = nil; updatedAt = 0
     timelineKey = timelineKeyOf("chat", "card/\(id)")
   }
-  init(_ id: String, agent: String, rec: Rec) {
-    objectId = id; agentDeviceId = agent; envelopeNumber = rec.envelopeNumber; firstEnvelopeNumber = rec.envelopeNumber
-    createdAt = rec.sentAt; sessionId = rec.sessionId; updatedAt = rec.sentAt; timelineKey = timelineKeyOf("chat", "card/\(id)")
-  }
-  public var cardType: String { fields["card_type"]?.string ?? "decision" }
-  public var title: String { fields["title"]?.string ?? "" }
-  public var teaser: String? { fields["teaser"]?.string }
-  public var body: String? { fields["body"]?.string }
-  public var html: String? { fields["html"]?.string }
-  public var options: [Option] { (fields["options"]?.array ?? []).map(Option.init) }
-  public var sections: [JV]? { fields["sections"]?.array }
-  public var allowsMultiple: Bool { fields["allows_multiple"] == .bool(true) }
+  public var cardType: String { field("card_type")?.string ?? "decision" }
+  public var title: String { field("title")?.string ?? "" }
+  public var teaser: String? { field("teaser")?.string }
+  public var body: String? { field("body")?.string }
+  public var html: String? { field("html")?.string }
+  public var options: [Option] { (field("options")?.array ?? []).map(Option.init) }
+  public var sections: [JV]? { field("sections")?.array }
+  public var allowsMultiple: Bool { field("allows_multiple") == .bool(true) }
   public var recommended: [String] {
-    guard let r = fields["recommended"] else { return [] }
+    guard let r = field("recommended") else { return [] }
     if let s = r.string { return [s] }
     return (r.array ?? []).compactMap { $0.string }
   }
-  public var urgencyReason: String? { fields["urgency_reason"]?.string }
-  public var attachments: [JV] { fields["attachments"]?.array ?? [] }
-  public var changeNote: String? { fields["change_note"]?.string }
-  public var closeSummary: String? { fields["close_summary"]?.string }
-  public var withdrawReason: String? { fields["withdraw_reason"]?.string }
-  public var mergedIntoObjectId: String? { fields["merged_into_object_id"]?.string }
-  public var mergedFromObjectIds: [String] { (fields["merged_from_object_ids"]?.array ?? []).compactMap { $0.string } }
+  public var urgencyReason: String? { field("urgency_reason")?.string }
+  public var attachments: [JV] { field("attachments")?.array ?? [] }
+  public var changeNote: String? { field("change_note")?.string }
+  public var closeSummary: String? { field("close_summary")?.string }
+  public var withdrawReason: String? { field("withdraw_reason")?.string }
+  public var mergedIntoObjectId: String? { field("merged_into_object_id")?.string }
+  public var mergedFromObjectIds: [String] { (field("merged_from_object_ids")?.array ?? []).compactMap { $0.string } }
   /** An info its agent is still working on (spec 9.1.3): off the Desk, under Off your mind, until a version without it. */
-  public var working: Bool { fields["working"] == .bool(true) }
+  public var working: Bool { field("working") == .bool(true) }
 }
 
 public final class Permission {
@@ -285,6 +296,10 @@ public final class Permission {
   public var permissionState = "pending"
   public var verdict: (allow: Bool, byDeviceId: String, envelopeNumber: Int)?
   public var withdrawReason: String?
+  /** `ok` once its body was read here (its tool, words, deadline); else what is known of it. */
+  public var contentState = "ok"
+  /** As a card's: settled at the hub after this device's cursor, not taken yet. */
+  public var catchingUp = false
   init(objectId: String, agentDeviceId: String, sessionId: String?, toolName: String, description: String, inputPreview: String, expiresAt: UInt64, versionHash: String, envelopeNumber: Int, sentAt: UInt64) {
     self.objectId = objectId; self.agentDeviceId = agentDeviceId; self.sessionId = sessionId; self.toolName = toolName; self.description = description
     self.inputPreview = inputPreview; self.expiresAt = expiresAt; self.versionHash = versionHash; self.envelopeNumber = envelopeNumber; self.sentAt = sentAt
@@ -407,12 +422,14 @@ public struct Change {
   public var cards = Set<String>(), sessions = Set<String>(), permissions = Set<String>(), notes = Set<String>(), published = Set<String>()
   public var timelines = Set<String>(), registers = Set<String>(), invites = Set<String>()
   public var members = false, alerts = false, outbox = false, stack = false, room = false
+  /** The session list was made again (a link, a red hand, a quiet hint changed by the clock). */
+  public var status = false
   public init() {}
-  public var isEmpty: Bool { cards.isEmpty && sessions.isEmpty && permissions.isEmpty && notes.isEmpty && published.isEmpty && timelines.isEmpty && registers.isEmpty && invites.isEmpty && !members && !alerts && !outbox && !stack && !room }
+  public var isEmpty: Bool { cards.isEmpty && sessions.isEmpty && permissions.isEmpty && notes.isEmpty && published.isEmpty && timelines.isEmpty && registers.isEmpty && invites.isEmpty && !members && !alerts && !outbox && !stack && !room && !status }
   public mutating func merge(_ o: Change) {
     cards.formUnion(o.cards); sessions.formUnion(o.sessions); permissions.formUnion(o.permissions); notes.formUnion(o.notes); published.formUnion(o.published)
     timelines.formUnion(o.timelines); registers.formUnion(o.registers); invites.formUnion(o.invites)
-    members = members || o.members; alerts = alerts || o.alerts; outbox = outbox || o.outbox; stack = stack || o.stack; room = room || o.room
+    members = members || o.members; alerts = alerts || o.alerts; outbox = outbox || o.outbox; stack = stack || o.stack; room = room || o.room; status = status || o.status
   }
 }
 
@@ -444,18 +461,6 @@ public func choicesFinal(_ card: Card?, _ choices: [String]) -> Bool {
   return !choices.isEmpty && choices.allSatisfy { final.contains($0) }
 }
 
-/** The state of a member's or a session's link (model.mjs linkState). */
-public struct LinkState: Equatable { public var state: String; public var since: UInt64?; public var idleMs: UInt64?; public var reason: String }
-public func linkState(online: Bool, offlineSince: UInt64?, link l: AgentLink?, now: UInt64 = nowMs()) -> LinkState {
-  if !online { return LinkState(state: l?.exitClaude == "alive" ? "cut" : "gone", since: offlineSince, idleMs: nil, reason: l?.exitReason ?? "") }
-  if let c = l?.cutSince { return LinkState(state: "cut", since: c, idleMs: nil, reason: "folder") }
-  if let l = l, !l.attached { return LinkState(state: "cut", since: l.since, idleMs: nil, reason: "detached") }
-  guard let l = l, l.hears == "oncall" else { return LinkState(state: "live", since: nil, idleMs: nil, reason: "") }
-  let last = l.lastCallAt ?? l.since
-  let idle = last.map { now > $0 ? now - $0 : 0 }
-  return LinkState(state: idle.map { $0 >= ASLEEP_MS } == true ? "asleep" : "oncall", since: last, idleMs: idle, reason: "")
-}
-
 // ---- the board ---------------------------------------------------------------------------------------------
 
 /** The room's recovery key as Settings → Security shows it. */
@@ -470,24 +475,24 @@ public func keyFingerprint(_ key: Bytes) -> String {
   return stride(from: 0, to: h.count, by: 4).map { String(h[$0..<min($0 + 4, h.count)]) }.joined(separator: " ")
 }
 
+/**
+ * The board the views read. It is a copy: the model is the client core's (client/src/model, `ClientModel`), which
+ * takes what the protocol core accepted and hands back, once per batch, what changed (`project`, BoardMirror.swift).
+ * Nothing here decides a rule of the model.
+ */
 public final class Board {
   public var roomId: String?
   public var hubURL: String?
-  public var myDeviceId: String?
+  public var myDeviceId: String? { didSet { if let me = myDeviceId, me != oldValue { try? engine.setMe(myDeviceId: me) } } }
   public var myRole: String? = "human"
   public var keyEpoch = 0
-  /** A preview built from the hub's Desk alone (Room.deskPreview): an object's newest version is taken as its first
-   *  seen here, without the versions before it. Never set on the room's own board. */
+  /** A preview built from the hub's Desk alone (Room.deskPreview): its records read out of order. Never set on the room's own board. */
   public var preview = false
-  public var lastEntryNumber = -1
   public var lastEnvelopeNumber = 0
   public var connection = "offline"
-  /** The room's recovery key (8.1), which every epoch's content key is sealed to: the fingerprint of its HPKE public
-   *  key, and the time of the one room Commit that put it in force (nil when this device did not see that Commit
-   *  alone: the founding, a key older than this device, a catch-up of several Commits). */
-  public var recoveryKey: RecoveryKey?
-  /** The room Commits taken since the recovery key was last read: how many, and the time of the last. */
-  var roomCommits: (count: Int, time: UInt64?) = (0, nil)
+  /** The room's recovery key (8.1): the fingerprint of its HPKE public key, and the time of the one room Commit that
+   *  put it in force (nil when this device did not see that Commit alone). */
+  public var recoveryKey: TrommiClient.RecoveryKey?
   public var members: [String: RoomMember] = [:]
   public var sessions: [String: Session] = [:]
   public var cards: [String: Card] = [:]
@@ -498,102 +503,93 @@ public final class Board {
   public var human = HumanRegisters()
   public var alerts: [BoardAlert] = []
   public var stack: [String] = []
-  /**
-   * While a catch-up is behind the hub's Desk (Room.deskFirst): the cards and permission requests the Desk lists as
-   * open. One this device holds as open that is not among them was settled elsewhere meanwhile and is held back
-   * (off the Desk, and not shown as a question) until the catch-up reaches the Desk's cursor. nil: nothing held back.
-   * Not stored: each start reads the Desk again.
-   */
-  public var deskGate: Set<String>?
-  /**
-   * Open here although the hub's Desk, read at a change this device had passed, did not list them (the hub settled
-   * them: answered, read, closed): by id, that change. Held back as well, as long as nothing newer of them came
-   * (a card answered again, reopened, revised). Set by Room.settleWithDesk at every catch-up; not stored.
-   */
-  public var hubSettled: [String: Int] = [:]
-  /**
-   * No open card or request stands at all (the Desk says "Catching up…"). Not set by the room: a launch from the
-   * cache shows the cached Desk as the list kept from the last launch filters it (`hubSettled`), never an empty one.
-   * Not stored.
-   */
-  public var deskWaiting = false
-  /** Open here, but settled at the hub: not on its Desk while a catch-up is behind it (`deskGate`), or not on it
-   *  after this device passed its cursor (`hubSettled`). */
-  public func heldBack(_ id: String, open: Bool) -> Bool {
-    guard open else { return false }
-    if deskWaiting { return true }
-    if let gate = deskGate, !gate.contains(id) { return true }
-    guard let at = hubSettled[id] else { return false }
-    return newest(id) <= at
-  }
-  /** What is open here and was not on the hub's Desk read at change `at`, with nothing newer than `at`: by id, `at`. */
-  public func settled(byDesk open: Set<String>, at: Int) -> [String: Int] {
-    var out = [String: Int]()
-    for c in cards.values where c.objectState == "open" && !open.contains(c.objectId) && newest(c.objectId) <= at { out[c.objectId] = at }
-    for p in permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) && newest(p.objectId) <= at { out[p.objectId] = at }
-    return out
-  }
-  /** The newest change of a card or permission request this board took: its version's, or an answer's. */
-  func newest(_ id: String) -> Int {
-    if let c = cards[id] { return max(c.envelopeNumber, c.answers.compactMap(\.envelopeNumber).max() ?? 0) }
-    return permissions[id].map { max($0.envelopeNumber, $0.verdict?.envelopeNumber ?? 0) } ?? 0
-  }
-  /** Stands on the Desk: open, not held back, and not an info its agent is still working on (spec 9.1.3). */
-  func onDesk(_ id: String) -> Bool { guard let c = cards[id], c.objectState == "open", !c.working else { return false }; return !heldBack(id, open: true) }
+  /** When the core's model changes by the clock alone (a snooze ends, a request runs out, a session's status): the
+   *  app projects again then (Room `wakeLater`); nil: never. */
+  public internal(set) var wakeAt: UInt64?
   public var openPermissionIds: [String] = []
-  /** What a newer client wrote that this version cannot show (model.mjs model.newer): how many, what, the newest. */
+  /** The session list every device of the person shows (client/src/sessions.rs, one entry per session, in order):
+   *  which sessions, their names, online or gone, archived, their parents. DeskModel draws it as it comes. */
+  public internal(set) var sessionList: [JV] = []
+  /** Open here, settled at the hub (or held while the app waits for the hub's first list): off the Desk. */
+  public internal(set) var held: Set<String> = []
+  /** What a newer client wrote that this version cannot show: how many, what, the newest. */
   public var newerCount = 0
   public var newerWhat: [String] = []
   public var newerEnvelope = 0
-  func noteNewer(_ what: String, _ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    newerCount += 1
-    // (what is noted is the kind of thing only, never the sender's word for it: it goes into logs)
-    let what = String(what.prefix { $0 != " " })
-    if !newerWhat.contains(what) { newerWhat.append(what); if newerWhat.count > 16 { newerWhat.removeFirst() } }
-    newerEnvelope = max(newerEnvelope, rec.envelopeNumber)
-    change.room = true
-    return (false, "needs-update")
-  }
+  /** Each device's own register `device/<id>` (its name before it is a member here). */
   var deviceRegisters: [String: JV] = [:]
-  private var alertSeq = 0
-  /** (BoardCodec reads and writes it.) */
-  var alertSeqValue: Int { get { alertSeq } set { alertSeq = newValue } }
+  /** The client core's model behind this copy. */
+  private(set) var engine = ClientModel(myDeviceId: "")
+  /** What the views were not told yet of what came straight into the copy (none: everything goes through the core). */
 
-  public init() {}
-
-  /** Take every field of another board (a snapshot read off the main thread) into this one. */
-  public func adopt(_ o: Board) {
-    roomId = o.roomId ?? roomId; hubURL = o.hubURL ?? hubURL; myDeviceId = o.myDeviceId ?? myDeviceId; myRole = o.myRole ?? myRole
-    keyEpoch = max(keyEpoch, o.keyEpoch); lastEntryNumber = max(lastEntryNumber, o.lastEntryNumber); lastEnvelopeNumber = o.lastEnvelopeNumber; connection = o.connection
-    members = o.members; sessions = o.sessions; cards = o.cards; permissions = o.permissions; notes = o.notes; published = o.published; timelines = o.timelines
-    human = o.human; alerts = o.alerts; stack = o.stack; openPermissionIds = o.openPermissionIds
-    newerCount = o.newerCount; newerWhat = o.newerWhat; newerEnvelope = o.newerEnvelope; deviceRegisters = o.deviceRegisters; alertSeq = o.alertSeq; answerEchoes = [:]
+  public init() {
+    try? engine.setWindowsOpen(open: true)
+    try? engine.setLeanCards(lean: true)
   }
+
   /**
-   * A copy of what this board shows, for the views while the room builds its board anew (Room.readBackView): every
-   * field `adopt` takes, the recovery key, and what holds cards back, with the stack as it stands.
+   * A copy of what this board shows, for the views while the room builds its board anew (Room.readBackView): the
+   * fields the views read, with the stack and what is held back as they stand. The copy has an engine of its own
+   * that is never fed: nothing of it changes until it is dropped.
    */
   public func heldCopy() -> Board {
     let b = Board()
-    b.adopt(self)
-    b.recoveryKey = recoveryKey; b.roomCommits = roomCommits
-    b.deskGate = deskGate; b.hubSettled = hubSettled; b.deskWaiting = deskWaiting
-    b.stack = stack; b.openPermissionIds = openPermissionIds
+    b.roomId = roomId; b.hubURL = hubURL; b.myDeviceId = myDeviceId; b.myRole = myRole; b.keyEpoch = keyEpoch
+    b.lastEnvelopeNumber = lastEnvelopeNumber; b.connection = connection; b.recoveryKey = recoveryKey
+    b.members = members; b.sessions = sessions; b.cards = cards; b.permissions = permissions; b.notes = notes
+    b.published = published; b.timelines = timelines; b.human = human; b.alerts = alerts
+    b.stack = stack; b.openPermissionIds = openPermissionIds; b.held = held; b.sessionList = sessionList
+    b.newerCount = newerCount; b.newerWhat = newerWhat; b.newerEnvelope = newerEnvelope; b.deviceRegisters = deviceRegisters
+    b.deskWaiting = deskWaiting
     return b
   }
-  /** Nothing of this device in flight on the board: no own echo, no pending answer, note or register (a snapshot may be taken). */
-  public var settled: Bool {
-    answerEchoes.isEmpty && timelines.values.allSatisfy { $0.echoes.isEmpty && !$0.items.values.contains { $0.pending } }
-      && !cards.values.contains { $0.answer?.pending == true || $0.answers.contains { $0.pending } }
-      && !notes.values.contains { $0.pending } && !human.raw.values.contains { $0.pending } && !sessions.values.contains { $0.registers.values.contains { $0.pending } }
+
+  /** Open here, but settled at the hub: off its Desk. */
+  public func heldBack(_ id: String, open: Bool) -> Bool { open && held.contains(id) }
+  /**
+   * A launch from the cache waits for the hub's Desk of this run (Room.deskFirst): meanwhile no open card or request
+   * stands (the Desk says "Catching up…"), as the cache may hold ones settled elsewhere since.
+   */
+  public var deskWaiting = false { didSet { if deskWaiting != oldValue { try? engine.setDeskHold(hold: deskWaiting) } } }
+  /** The hub's Desk as read at change `at`: what it lists as open, by id (hex) with the change of its version; nil forgets it. */
+  public func setDeskListing(_ open: [String: Int]?, at: Int) {
+    if let open { try? engine.setDeskListing(at: UInt64(max(0, at)), listed: open.map { DeskListed(objectId: $0.key, versionChange: UInt64(max(0, $0.value))) }) }
+    else { try? engine.forgetDeskListing() }
   }
 
-  /** Forget everything the records built (a store that could not be read to its end): the member list stays. */
+  /** Nothing of this device in flight on the board: no own echo, no pending answer, note or register (a snapshot may be taken). */
+  public var settled: Bool {
+    timelines.values.allSatisfy { $0.echoes.isEmpty && !$0.items.values.contains { $0.pending && $0.localId != nil } }
+      && !cards.values.contains { $0.answer?.pending == true }
+      && !notes.values.contains { $0.pending } && !human.raw.values.contains { $0.pending }
+  }
+
+  /** Forget everything the records built (a store that could not be read to its end, a read back from the start). */
   public func reset() {
+    // (who is connected is not in the history: presence is not replayed. What this board knows of it goes to the new
+    // model, which holds each report until the groups name its device again)
+    let presence: [JV] = members.values.filter { $0.isOnline || $0.link != nil }.map { m in
+      var o: [String: JV] = ["device_id": .str(m.deviceId), "is_online": .bool(m.isOnline)]
+      if let t = m.offlineSince { o["offline_since"] = .num(Double(t)) }
+      if let l = m.link {
+        var lj: [String: JV] = ["hears": .str(l.hears), "attached": .bool(l.attached), "working": .bool(l.working)]
+        if let t = l.lastCallAt { lj["last_call_at"] = .num(Double(t)) }
+        if let t = l.since { lj["since"] = .num(Double(t)) }
+        if let t = l.cutSince { lj["cut_since"] = .num(Double(t)) }
+        if l.exitReason != nil || l.exitClaude != nil { lj["exit"] = .obj(["reason": .str(l.exitReason ?? ""), "claude": .str(l.exitClaude ?? "gone")]) }
+        o["link"] = .obj(lj)
+      }
+      return .obj(o)
+    }
     lastEnvelopeNumber = 0
-    sessions = [:]; cards = [:]; permissions = [:]; notes = [:]; published = [:]; timelines = [:]
-    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []
-    newerCount = 0; newerWhat = []; newerEnvelope = 0; deviceRegisters = [:]; alertSeq = 0; answerEchoes = [:]
+    sessions = [:]; cards = [:]; permissions = [:]; notes = [:]; published = [:]; timelines = [:]; members = [:]
+    human = HumanRegisters(); alerts = []; stack = []; openPermissionIds = []; held = []; sessionList = []
+    newerCount = 0; newerWhat = []; newerEnvelope = 0; deviceRegisters = [:]
+    engine = ClientModel(myDeviceId: myDeviceId ?? "")
+    if !presence.isEmpty { try? engine.applyPresence(reports: String(decoding: JV.arr(presence).encoded(), as: UTF8.self), nowMs: nowMs()) }
+    try? engine.setWindowsOpen(open: true)
+    try? engine.setLeanCards(lean: true)
+    if deskWaiting { try? engine.setDeskHold(hold: true) }
   }
 
   /**
@@ -620,98 +616,22 @@ public final class Board {
     return h.finalize()
   }
 
-  // ---- members and sessions ----------------------------------------------------------------
+  // ---- what the views read ------------------------------------------------------------------------
 
-  /** From the verified member list: (device id, role, active, added, removed). */
-  public func applyMembers(_ list: [(id: String, role: String, active: Bool, added: Int, removed: Int?)], change: inout Change) {
-    for m in list {
-      let x = members[m.id] ?? RoomMember(deviceId: m.id, role: m.role)
-      x.deviceRole = m.role
-      if let reg = deviceRegisters[m.id] { x.deviceName = reg["device_name"].string ?? ""; x.platform = reg["platform"].string; x.folder = reg["folder"].string; x.host = reg["host"].string }
-      x.isActive = m.active; x.addedEntryNumber = m.added; x.removedEntryNumber = m.removed; x.isMe = m.id == myDeviceId
-      members[m.id] = x
-      if m.role == "agent" { touchAgent(m.id, &change) }
-    }
-    change.members = true
-  }
-  /**
-   * When a device came in (model.ts applyCommit): a room Commit adds human devices (also the one that joins with the
-   * recovery code) and names the agent devices; a session Commit adds helper devices. A device is dated only by the
-   * Commit that first brought it: one this board already dated, or a human device added to a session, is not.
-   */
-  public func applyCommitFacts(_ f: CommitFacts, room: Bool, change: inout Change) {
-    func added(_ id: String, _ role: String, _ isNew: Bool) {
-      if let known = members[id], known.addedAt != nil || !isNew { return }
-      let m = members[id] ?? RoomMember(deviceId: id, role: role)
-      m.addedAt = f.time
-      if members[id] == nil { m.isActive = true; m.addedEntryNumber = Int(f.epoch) + 1; m.isMe = id == myDeviceId; members[id] = m }
-      change.members = true
-    }
-    if room {
-      // (a room Add or a join from outside always brings a new device, 4.2; an agent named again is an old one)
-      for d in f.adds { added(hex(d), "human", true) }
-      if f.external { added(hex(f.committer), "human", true) }
-      for d in f.agents ?? [] { let id = hex(d); added(id, "agent", members[id]?.isActive != true) }
-      roomCommits = (roomCommits.count + 1, f.time)
-    } else {
-      for d in f.adds { let id = hex(d); added(id, "agent", members[id] == nil) }
-    }
-  }
-  /** The recovery key the room state names now: dated by the room Commit before it only when it was the only one. */
-  public func applyRecoveryKey(_ key: Bytes?, change: inout Change) {
-    let seen = roomCommits
-    roomCommits = (0, nil)
-    guard let key, !key.isEmpty else { return }
-    let fp = keyFingerprint(key)
-    guard recoveryKey?.fingerprint != fp else { return }
-    recoveryKey = RecoveryKey(fingerprint: fp, since: recoveryKey != nil && seen.count == 1 ? seen.time : nil)
-    change.room = true
-  }
-  /** GET devices: who is online, and the agents' links. */
-  public func applyDevices(_ devices: [JV], change: inout Change) {
-    for d in devices {
-      guard let id = d["device_id"].string, let m = members[id] else { continue }
-      m.isOnline = d["is_online"].truthy
-      m.offlineSince = m.isOnline ? nil : stampOf(d["offline_since"])
-      m.link = cleanLink(d["link"])
-      if let s = d["agent_session_id"].string { m.agentSessionId = s }
-      if m.deviceRole == "agent" { touchAgent(id, &change) }
-    }
-    change.members = true
-  }
-  /** A stream `presence` event for one device. */
-  public func applyPresence(_ d: JV, change: inout Change) { applyDevices([d], change: &change) }
-  /**
-   * The hub's list of who is here is whole (stream event `here`, after a new stream's `presence` events): every other
-   * device shown online that the list did not name (`named`, hex ids) left while this device had no stream, and is
-   * offline as of `now`. A device never seen online keeps its state (model.ts applyHere).
-   */
-  public func applyHere(named: Set<String>, now: UInt64 = nowMs(), change: inout Change) {
-    let gone = members.values.filter { $0.isOnline && !$0.isMe && !named.contains($0.deviceId) }
-    applyDevices(gone.map { JV.obj(["device_id": .str($0.deviceId), "is_online": .bool(false), "offline_since": .num(Double(now))]) }, change: &change)
-  }
-
-  /** The sessions a register `session/<key>` sets: the session of that id, or the main sessions of that agent device. */
-  func sessionsSetBy(_ key: String) -> [Session] {
-    if let s = sessions[key] { return [s] }
-    return sessions.values.filter { $0.agentDeviceId == key && $0.parentSessionId == nil && $0.sessionId != key }
-  }
   /** A session's settings (register `session/<id>`): by its session id; for a main session also by its agent device's id. */
   public func settingsOf(_ s: Session) -> JV {
     if let v = human.sessionSettings[s.sessionId] { return v }
     if s.parentSessionId == nil, let d = s.agentDeviceId, let v = human.sessionSettings[d] { return v }
     return s.settings
   }
+  /** A session of the copy, made if it is new (the demo builds its board by hand). */
   public func sessionOf(_ id: String) -> Session {
     if let s = sessions[id] { return s }
     let s = Session(id)
     sessions[id] = s
     return s
   }
-  /**
-   * The name a device gave itself (its register `device/<id>`): `device_name`, else the last part of its folder.
-   * Read from the member, else from the register itself (a device that is no member here, e.g. an agent that left).
-   */
+  /** The name a device gave itself (its register `device/<id>`): `device_name`, else the last part of its folder. */
   public func deviceNameOf(_ id: String?) -> String {
     guard let id = id else { return "" }
     let m = members[id], reg = deviceRegisters[id]
@@ -720,70 +640,8 @@ public final class Board {
     let folder = m?.folder ?? reg?["folder"].string ?? ""
     return folder.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
   }
-  /**
-   * Who sits in a session group, as the web's applyGroups: every leaf that is no human device is an agent (or helper)
-   * device; a helper session's opener is the enrolled one; the speaker (first) is a helper device in a helper
-   * session, else the enrolled agent device.
-   */
-  public static func seats(leaves: [String], humans: Set<String>, enrolled: Set<String>, helper: Bool) -> (agents: [String], opener: String?) {
-    let others = leaves.filter { !humans.contains($0) }
-    let opener = helper ? others.first { enrolled.contains($0) } : nil
-    let speaker = helper ? (others.first { $0 != opener } ?? others.first) : (others.first { enrolled.contains($0) } ?? others.first)
-    guard let sp = speaker else { return ([], opener) }
-    return ([sp] + others.filter { $0 != sp }, opener)
-  }
-  /** Copies the speaking device's facts onto its session; a helper session without a device of its own shows its opener's (as the web). */
-  private func syncSessionAgent(_ s: Session) {
-    let a = s.agentDeviceId ?? s.everAgentIds.last
-    let opener = s.creatorDeviceId.flatMap { $0 != a ? members[$0] : nil }
-    let name = deviceNameOf(a)
-    s.deviceName = name.isEmpty ? deviceNameOf(opener?.deviceId) : name
-    guard let a = a, let m = members[a] else { return }
-    s.agentSessionId = m.agentSessionId ?? String(m.deviceId.prefix(16)); s.isActive = m.isActive
-    s.isOnline = m.isOnline || opener?.isOnline == true
-    s.offlineSince = s.isOnline ? nil : m.offlineSince ?? opener?.offlineSince
-    s.link = (m.isOnline || opener?.isOnline != true ? m.link : nil) ?? opener?.link
-  }
-  private func touchAgent(_ id: String, _ change: inout Change) {
-    for s in sessions.values where s.agentDeviceIds.contains(id) || s.agentDeviceId == id || s.creatorDeviceId == id || (s.agentDeviceId == nil && s.everAgentIds.last == id) {
-      syncSessionAgent(s); change.sessions.insert(s.sessionId)
-    }
-  }
-  /**
-   * One session as its group says it (the core verified the group): its agent devices now, the group's epoch, and
-   * for a helper session the main session it hangs under.
-   */
-  public func applySession(sessionId: String, agentIds: [String], epoch: Int, parentSessionId: String?, archived: Bool, opener: String? = nil, change: inout Change) {
-    let s = sessionOf(sessionId)
-    if let o = opener { s.creatorDeviceId = o }
-    s.epochAgentIds[epoch] = agentIds
-    s.agentDeviceIds = agentIds
-    for a in agentIds where !s.everAgentIds.contains(a) { s.everAgentIds.append(a) }
-    s.agentDeviceId = agentIds.first ?? s.agentDeviceId
-    s.sessionKeyEpoch = epoch
-    s.withHistory = true
-    s.createdByAgent = parentSessionId != nil
-    s.parentSessionId = parentSessionId
-    if s.creatorDeviceId == nil { s.creatorDeviceId = parentSessionId.flatMap { sessions[$0]?.agentDeviceId } }
-    syncSessionAgent(s)
-    change.sessions.insert(s.sessionId)
-    change.stack = true
-  }
-
-  /**
-   * A device the core vouched for as an agent or helper device of that session in that epoch (it accepted an
-   * envelope of it there, or one addressed to it): the board's own checks know it from then on, also when the
-   * device left before this one joined.
-   */
-  public func sawAgent(_ sessionId: String, _ device: String, epoch: Int) {
-    let s = sessionOf(sessionId)
-    if !s.everAgentIds.contains(device) { s.everAgentIds.append(device) }
-    if !(s.epochAgentIds[epoch] ?? []).contains(device) { s.epochAgentIds[epoch, default: []].append(device) }
-  }
-
-  /** The parent a session names in its profile, if it may (model.mjs parentSessionOf). */
+  /** The parent a session names: its group's (5.2.5), else its profile's. */
   public func parentSessionOf(_ s: Session) -> String? {
-    // A helper session's group names its main session (5.2.5): that is the tree, whatever a profile says.
     if let p = s.parentSessionId { return p }
     guard let want = s.profile["parent_session"].string, !want.isEmpty else { return nil }
     let parent = sessions[want]
@@ -791,615 +649,18 @@ public final class Board {
     return parent?.sessionId ?? want
   }
   func childOf(_ parent: Session, _ s: Session) -> Bool { parent.agentDeviceIds.contains { $0 == s.creatorDeviceId || s.agentDeviceIds.contains($0) } }
-  private func everAgent(_ sid: String?, _ device: String?) -> Bool {
-    guard let sid = sid, let d = device else { return false }
-    return sessions[sid]?.everAgentIds.contains(d) ?? false
-  }
-  /** B03/A7: may this agent write into session sid with this record? */
-  private func agentAt(_ sid: String?, _ device: String?, _ rec: Rec?) -> Bool {
-    guard let sid = sid, let s = sessions[sid], let device = device else { return false }
-    if let rec = rec, rec.sessionId == sid, let at = s.epochAgentIds[rec.epoch] { return at.contains(device) }
-    return s.everAgentIds.contains(device)
-  }
-  /** R1: who holds an object of a session, judged for one record. */
-  private func holdsAt(sessionId: String?, creator: String, _ device: String?, _ rec: Rec?) -> Bool {
-    guard let device = device else { return false }
-    if device == creator { return true }
-    guard let sid = sessionId, let rec = rec, rec.sessionId == sid else { return false }
-    return agentAt(sid, device, rec) && !agentAt(sid, creator, rec)
-  }
-  /** Who holds a card now (whom a human addresses): its creator while assigned, else the session's agent. */
+  /** Who holds a card now (whom a human addresses): its owner while it is a leaf of the session, else the session's
+   *  agent device (a helper session: its opener), spec 9.2. */
   public func holderOf(_ c: Card) -> String {
-    let now = c.sessionId.flatMap { sessions[$0]?.agentDeviceIds } ?? []
-    return now.isEmpty || now.contains(c.agentDeviceId) ? c.agentDeviceId : now[0]
+    guard let s = c.sessionId.flatMap({ sessions[$0] }), !s.agentDeviceIds.isEmpty, !s.agentDeviceIds.contains(c.agentDeviceId) else { return c.agentDeviceId }
+    return (s.parentSessionId != nil ? s.creatorDeviceId : s.agentDeviceId) ?? c.agentDeviceId
   }
-
-  // ---- alerts -------------------------------------------------------------------------------
-
-  @discardableResult public func pushAlert(_ change: inout Change, code: String, message: String = "", envelopeNumber: Int? = nil, sender: String? = nil, source: String = "local") -> BoardAlert {
-    alertSeq += 1
-    let a = BoardAlert(alertId: "\(nowMs())-\(alertSeq)", code: code, message: message, envelopeNumber: envelopeNumber, senderDeviceId: sender, at: nowMs(), source: source)
-    alerts.append(a)
-    if alerts.count > ALERTS_MAX { alerts.removeFirst(alerts.count - ALERTS_MAX) }
-    change.alerts = true
-    return a
-  }
-  private func refuse(_ change: inout Change, _ rec: Rec, _ code: String, _ message: String) -> (applied: Bool, refused: String?) {
-    pushAlert(&change, code: code, message: message, envelopeNumber: rec.envelopeNumber, sender: rec.senderDeviceId)
-    return (false, code)
-  }
-
-  // ---- the reducer --------------------------------------------------------------------------
-
-  @discardableResult public func apply(_ rec: Rec, change: inout Change) -> (applied: Bool, refused: String?) {
-    if let sid = rec.sessionId, myRole == "agent", rec.senderDeviceId != myDeviceId, !everAgent(sid, myDeviceId) { return (false, nil) }
-    if let sid = rec.sessionId {
-      let s = sessionOf(sid)
-      s.lastActivityAt = max(s.lastActivityAt, rec.sentAt)
-      change.sessions.insert(sid)
-    }
-    var rec = rec
-    if rec.contentState == "newer_schema" {
-      _ = noteNewer("schema_version \(rec.content?["schema_version"].int ?? 0)", rec, &change)
-      if rec.kind != KIND.TIMELINE_ITEM { rec.content = nil }
-    } else if rec.kind == KIND.TIMELINE_ITEM, let ct = rec.content?["content_type"].string, !Compat.CONTENT_TYPES.contains(ct) {
-      _ = noteNewer("content_type \(ct)", rec, &change)
-    } else if rec.kind == KIND.ANSWER, let a = rec.content?["answer_action"].string, !Compat.ANSWER_ACTIONS.contains(a) {
-      return noteNewer("answer_action \(a)", rec, &change)
-    }
-    switch rec.kind {
-    case KIND.TIMELINE_ITEM: return applyTimelineItem(rec, &change)
-    case KIND.OBJECT_VERSION: return applyObjectVersion(rec, &change)
-    case KIND.ANSWER: return applyAnswer(rec, &change)
-    case KIND.PERMISSION_REQUEST: return applyPermissionRequest(rec, &change)
-    case KIND.VERDICT: return applyVerdict(rec, &change)
-    case KIND.STATUS: return applyStatus(rec, &change)
-    case KIND.DECIDE_AGAIN: return applyDecideAgain(rec, &change)
-    default: return noteNewer("envelope kind \(rec.kind)", rec, &change)
-    }
-  }
-
-  // ---- timelines ----------------------------------------------------------------------------
-
   public func timelineOf(_ key: String) -> Timeline {
     if let t = timelines[key] { return t }
     let t = Timeline(key)
     timelines[key] = t
     return t
   }
-  /** An item's state once its body is here: loaded, or unsupported for a content type of a newer Trommi. */
-  public static func bodyState(_ content: JV?, _ decoded: String) -> String {
-    guard let c = content else { return "undecryptable" }
-    if decoded != "ok" { return decoded }
-    if let ct = c["content_type"].string, !Compat.CONTENT_TYPES.contains(ct) { return "unsupported" }
-    return "loaded"
-  }
-  public static func itemOf(_ rec: Rec) -> TimelineItem {
-    let state: String
-    if rec.content != nil { state = rec.contentState == "ok" ? "loaded" : rec.contentState }
-    else { state = rec.contentState == "pruned" ? "pruned" : rec.contentState == "undecryptable" ? "undecryptable" : "header" }
-    var state2 = state
-    if state == "loaded", let ct = rec.content?["content_type"].string, !Compat.CONTENT_TYPES.contains(ct) { state2 = "unsupported" }
-    return TimelineItem(envelopeNumber: rec.envelopeNumber, localId: rec.localId, pending: false, envelopeHash: rec.envelopeHash, senderDeviceId: rec.senderDeviceId,
-                        senderSequence: rec.senderSequence, recipientDeviceId: rec.recipientDeviceId, sentAt: rec.sentAt, itemState: state2,
-                        contentType: rec.content?["content_type"].string, content: rec.content)
-  }
-  /** R1: who may write into which timeline: nil if allowed, else a refusal code. */
-  public func timelineRefusal(_ rec: Rec) -> String? {
-    timelineRefusal(rec, parseTimelineKey(timelineKeyOf(rec.timelineKind ?? "", rec.timelineId ?? "")))
-  }
-  func timelineRefusal(_ rec: Rec, _ p: (kind: String, timelineId: String, scope: String, scopeId: String)) -> String? {
-    let human = rec.senderRole == "human"
-    if p.kind == "chat" {
-      if p.scope == "session" {
-        if let sid = rec.sessionId, sid != p.scopeId { return "not-allowed" }
-        return agentAt(p.scopeId, rec.senderDeviceId, rec) || (human && everAgent(p.scopeId, rec.recipientDeviceId)) ? nil : "not-allowed"
-      }
-      if p.scope == "card" {
-        guard let card = cards[p.scopeId] else { return "card-mismatch" }
-        return holdsAt(sessionId: card.sessionId, creator: card.agentDeviceId, rec.senderDeviceId, rec) || (human && holdsAt(sessionId: card.sessionId, creator: card.agentDeviceId, rec.recipientDeviceId, rec)) ? nil : "not-allowed"
-      }
-      return "not-allowed"
-    }
-    if p.kind == "scribble" {
-      if p.scope == "desk" { return human ? nil : "not-allowed" }
-      if p.scope == "session" { return human || agentAt(p.scopeId, rec.senderDeviceId, rec) ? nil : "not-allowed" }
-      if p.scope == "card" { return human || (cards[p.scopeId].map { holdsAt(sessionId: $0.sessionId, creator: $0.agentDeviceId, rec.senderDeviceId, rec) } ?? false) ? nil : "not-allowed" }
-      return "not-allowed"
-    }
-    return nil
-  }
-  private func applyTimelineItem(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    // the key and its parts once per record (a replay applies tens of thousands)
-    let key = timelineKeyOf(rec.timelineKind ?? "", rec.timelineId ?? "")
-    let p = parseTimelineKey(key)
-    if let why = timelineRefusal(rec, p) { return refuse(&change, rec, why, "not allowed in \(rec.timelineId ?? "")") }
-    let t = timelineOf(key)
-    t.itemCount += 1
-    t.newestEnvelopeNumber = max(t.newestEnvelopeNumber, rec.envelopeNumber)
-    if rec.senderRole == "human" { t.newestHumanEnvelopeNumber = rec.envelopeNumber } else { t.newestAgentEnvelopeNumber = rec.envelopeNumber }
-    if t.numbers.last.map({ $0 < rec.envelopeNumber }) ?? true { t.numbers.append(rec.envelopeNumber) } else if !t.numbers.contains(rec.envelopeNumber) { t.numbers.append(rec.envelopeNumber); t.numbers.sort() }
-    // The window holds live items (they come in full) and items of opened timelines; an own echo is replaced in place.
-    if rec.content != nil || t.windowOpen {
-      if let l = rec.localId { t.echoes.removeValue(forKey: l) }
-      t.items[rec.envelopeNumber] = Board.itemOf(rec)
-    }
-    change.timelines.insert(key)
-    if p.kind == "chat" && p.scope == "card" {
-      if let card = cards[p.scopeId] {
-        let c = rec.content
-        if c?["present_card"].truthy == true { card.inRevision = nil }
-        // (a hand back older than the card's newest version is over: read again, it does not put a card presented
-        //  again back into revision; the web's model.ts does the same)
-        else if rec.senderRole == "human", let c = c, c["hand_back"].truthy || c["explain"].truthy, rec.envelopeNumber > card.envelopeNumber, card.objectState == "open" || card.answer?.pending == true {
-          card.inRevision = InRevision(by: c["hand_back"].truthy ? "hand_back" : "explain", envelopeNumber: rec.envelopeNumber)
-        }
-        change.cards.insert(card.objectId)
-        if let s = card.sessionId { change.sessions.insert(s) }
-      }
-    } else if p.scope == "session" { change.sessions.insert(p.scopeId) }
-    return (true, nil)
-  }
-
-  // ---- objects ------------------------------------------------------------------------------
-
-  private func stateOf(_ rec: Rec) -> (objectState: String, urgency: String) {
-    (OBJECT_STATE_NAME[rec.object?.objectState ?? 1] ?? "open", URGENCY_NAME[rec.object?.urgency ?? 1] ?? "normal")
-  }
-  private func isZeroHash(_ h: String?) -> Bool { (h ?? "").allSatisfy { $0 == "0" } }
-  /** A card's level (spec/v1.md 9): the body's `urgency`; a header written since 11 October 2026 carries only the
-   *  knock bit (low or high), one of before the level itself, so the header stands in where no body says it. */
-  private func levelOf(_ c: JV?, header: String) -> String {
-    if let u = c?["urgency"].string, Board.urgencyRank[u] != nil { return u }
-    return header
-  }
-  /** When an answer was given: the body's `answered_at`, else the header's of before 11 October 2026, else its time. */
-  private func answeredAtOf(_ c: JV, _ rec: Rec) -> UInt64 {
-    if let a = c["answered_at"].int, a > 0 { return UInt64(a) }
-    return (rec.object?.answeredAt).flatMap { $0 > 0 ? $0 : nil } ?? rec.sentAt
-  }
-
-  private func applyObjectVersion(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    guard let objectId = rec.object?.objectId else { return refuse(&change, rec, "bad-object", "object version without object id") }
-    let c = rec.content
-    let type = c?["object_type"].string ?? (notes[objectId] != nil || rec.senderRole == "human" ? "note" : published[objectId] != nil ? "published" : "card")
-    if c == nil && rec.contentState == "undecryptable" && myRole == "agent" && rec.senderRole == "human" { return (false, nil) }
-    if type == "note" { return applyNote(rec, &change) }
-    if type == "published" { return applyPublished(rec, &change) }
-    if type != "card" { return noteNewer("object_type \(type)", rec, &change) }
-    var card = cards[objectId]
-    if rec.senderRole != "agent" { return refuse(&change, rec, "not-creator", "cards come from agents") }
-    let fresh = card == nil
-    if let card = card, !holdsAt(sessionId: card.sessionId, creator: card.agentDeviceId, rec.senderDeviceId, rec) { return refuse(&change, rec, "not-creator", "a card version from someone else than its creator") }
-    if let sid = rec.sessionId, !agentAt(sid, rec.senderDeviceId, rec) { return refuse(&change, rec, "not-allowed", "a card in a session this agent is not assigned to") }
-    if let card = card, card.sessionId != rec.sessionId { return refuse(&change, rec, "not-allowed", "a card version in another session") }
-    if fresh && rec.objectIdOk == false { return refuse(&change, rec, "bad-object-id", "object id is not H(creator, sequence of version 1)") }
-    if let c = c, !(preview && fresh) {
-      let expected = (card?.objectVersion ?? 0) + 1
-      if c["object_version"].int != expected { return refuse(&change, rec, "bad-version", "card version \(c["object_version"]), expected \(expected)") }
-      if expected > 1 && c["previous_version_hash"].string != card?.versionHash { return refuse(&change, rec, "bad-version", "previous_version_hash does not name the current version") }
-      if expected == 1, let p = c["previous_version_hash"].string, !p.isEmpty, !isZeroHash(p) { return refuse(&change, rec, "bad-version", "version 1 names a predecessor") }
-    }
-    if fresh {
-      let n = Card(objectId, agent: rec.senderDeviceId, rec: rec)
-      cards[objectId] = n
-      card = n
-      if let sid = rec.sessionId {
-        let s = sessionOf(sid)
-        var at = s.cardIds.count
-        while at > 0 && (cards[s.cardIds[at - 1]]?.createdAt ?? 0) > n.createdAt { at -= 1 }
-        s.cardIds.insert(objectId, at: at)
-      }
-    }
-    let card2 = card!
-    let st = stateOf(rec)
-    let level = levelOf(c, header: st.urgency)
-    let wasOpen = card2.objectState == "open"
-    card2.objectState = st.objectState
-    card2.urgency = level
-    card2.envelopeNumber = rec.envelopeNumber
-    card2.updatedAt = rec.sentAt
-    card2.versionHash = rec.envelopeHash
-    if let c = c, rec.contentState == "ok", let obj = c.object {
-      var f: [String: JV] = [:]
-      // Every field except the version bookkeeping: the known ones and whatever a newer agent added.
-      for (k, v) in obj where !["schema_version", "object_type", "object_version", "previous_version_hash"].contains(k) { f[k] = v }
-      card2.fields = f
-      card2.objectVersion = c["object_version"].int ?? card2.objectVersion + 1
-      card2.contentState = "ok"
-      if case .unsupported(let kind) = Item.of(envelopeKind: KIND.OBJECT_VERSION, objectType: "card", cardType: f["card_type"]?.string ?? "decision") {
-        card2.unsupported = true
-        _ = noteNewer(kind, rec, &change)
-      } else { card2.unsupported = false }
-    } else {
-      card2.objectVersion += 1
-      card2.contentState = rec.contentState
-      // a body of a newer schema: the head counts, the card is a placeholder (never answered from here)
-      if rec.contentState == "newer_schema" { card2.unsupported = true }
-    }
-    card2.versions.append(CardVersion(objectVersion: card2.objectVersion, versionHash: rec.envelopeHash, previousVersionHash: c?["previous_version_hash"].string,
-                                      envelopeNumber: rec.envelopeNumber, sentAt: rec.sentAt, objectState: st.objectState, urgency: level, content: c))
-    card2.inRevision = nil
-    if card2.objectState == "open" { card2.closedHow = nil; if !wasOpen && card2.answer != nil { card2.answer = nil } }
-    else if card2.objectState == "closed" {
-      card2.closedHow = card2.mergedIntoObjectId != nil ? "merged" : card2.withdrawReason != nil ? "withdrawn" : card2.answer?.answerAction == "read" ? "read" : card2.answer?.answerAction == "shred" ? "shredded" : "closed"
-    } else if card2.objectState == "answered" { card2.closedHow = "answered" }
-    change.cards.insert(objectId)
-    if let s = card2.sessionId { change.sessions.insert(s) }
-    change.stack = true
-    return (true, nil)
-  }
-
-  private func applyNote(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    let objectId = rec.object!.objectId
-    if rec.senderRole != "human" { return refuse(&change, rec, "not-creator", "notes come from human devices") }
-    let c = rec.content ?? .obj([:])
-    let cur = notes[objectId]
-    let old: Note? = cur?.pending == true ? cur?.base?.value : cur
-    if old == nil && rec.objectIdOk == false { return refuse(&change, rec, "bad-object-id", "object id is not H(creator, sequence of version 1)") }
-    if let old = old, rec.content != nil, !old.versionHashes.contains(c["previous_version_hash"].string ?? "") { return refuse(&change, rec, "bad-version", "note previous_version_hash names no known version") }
-    let after: Bool
-    if let old = old, rec.content == nil || old.causal?.noBody == true { after = rec.envelopeNumber > old.envelopeNumber }
-    else { after = causallyAfter(rec.causal, old?.causal) }
-    if var o = old, !after {
-      o.versionHashes.append(rec.envelopeHash)
-      if cur?.pending == true, let l = rec.localId, l == cur?.localId { notes[objectId] = o; change.notes.insert(objectId) }
-      else if cur?.pending == true { cur!.base!.value = o } else { notes[objectId] = o }
-      return (false, nil)
-    }
-    let next = noteOf(objectId, rec, c, old)
-    if var cur = cur, cur.pending, rec.localId != cur.localId {
-      cur.base = Box(next)
-      notes[objectId] = cur
-      change.notes.insert(objectId)
-      return (true, nil)
-    }
-    notes[objectId] = next
-    change.notes.insert(objectId)
-    return (true, nil)
-  }
-  private func noteOf(_ objectId: String, _ rec: Rec, _ c: JV, _ old: Note?) -> Note {
-    var extra = c.object ?? [:]
-    for k in ["schema_version", "object_type", "object_version", "previous_version_hash", "lamport"] { extra.removeValue(forKey: k) }
-    var causal = rec.causal
-    if rec.content == nil { causal.noBody = true }
-    return Note(objectId: objectId, byDeviceId: rec.senderDeviceId, text: c["text"].string ?? old?.text ?? "", extra: extra,
-                objectVersion: c["object_version"].int ?? (old?.objectVersion ?? 0) + 1, versionHash: rec.envelopeHash, versionHashes: (old?.versionHashes ?? []) + [rec.envelopeHash],
-                causal: causal, envelopeNumber: rec.envelopeNumber, objectState: stateOf(rec).objectState)
-  }
-
-  private func applyPublished(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    let objectId = rec.object!.objectId
-    let old = published[objectId]
-    if rec.senderRole != "agent" { return refuse(&change, rec, "not-creator", "published objects come from agents") }
-    if let sid = rec.sessionId, !agentAt(sid, rec.senderDeviceId, rec) { return refuse(&change, rec, "not-allowed", "a published object in a session this agent is not assigned to") }
-    if let o = old, !holdsAt(sessionId: o.sessionId, creator: o.agentDeviceId, rec.senderDeviceId, rec) { return refuse(&change, rec, "not-creator", "a published object from someone else than its creator") }
-    if old == nil && rec.objectIdOk == false { return refuse(&change, rec, "bad-object-id", "object id is not H(creator, sequence of version 1)") }
-    let c = rec.content ?? .obj([:])
-    let expected = (old?.objectVersion ?? 0) + 1
-    if rec.content != nil && c["object_version"].int != expected { return refuse(&change, rec, "bad-version", "published version \(c["object_version"]), expected \(expected)") }
-    if rec.content != nil, let o = old, let p = c["previous_version_hash"].string, !p.isEmpty, p != o.versionHash { return refuse(&change, rec, "bad-version", "previous_version_hash does not name the current version") }
-    published[objectId] = PublishedObject(objectId: objectId, agentDeviceId: old?.agentDeviceId ?? rec.senderDeviceId, sessionId: rec.sessionId ?? old?.sessionId,
-                                    attachments: c["attachments"].array ?? old?.attachments ?? [], title: c["title"].string ?? old?.title ?? "", note: c["note"].string,
-                                    releasedUntil: c["released_until"], objectVersion: expected, versionHash: rec.envelopeHash, envelopeNumber: rec.envelopeNumber,
-                                    objectState: stateOf(rec).objectState, sentAt: old?.sentAt ?? rec.sentAt)
-    change.published.insert(objectId)
-    if let s = rec.sessionId { change.sessions.insert(s) }
-    return (true, nil)
-  }
-
-  // ---- answers --------------------------------------------------------------------------------
-
-  public func answerRefusal(_ rec: Rec) -> String? {
-    guard rec.senderRole == "human" else { return "not-human" }
-    guard let card = rec.object.flatMap({ cards[$0.objectId] }) else { return "card-mismatch" }
-    if !holdsAt(sessionId: card.sessionId, creator: card.agentDeviceId, rec.recipientDeviceId, rec) { return "not-for-owner" }
-    guard case let .answer(cardId, versionHash, bound)? = rec.bind else {
-      if rec.bind == nil && rec.content == nil && (rec.contentState == "pruned" || rec.contentState == "header") { return card.objectState == "open" ? nil : "card-closed" }
-      return "card-mismatch"
-    }
-    if cardId != card.objectId { return "card-mismatch" }
-    if card.objectState != "open" { return "card-closed" }
-    if versionHash != card.versionHash { return "answer-stale" }
-    guard let c = rec.content else { return nil }
-    let action = c["answer_action"].string ?? ""
-    if !["answer", "read", "shred"].contains(action) { return "bad-answer" }
-    if card.contentState != "ok" { return nil }
-    let choices = (c["choices"].array ?? []).compactMap { $0.string }
-    if bound != choices { return "bad-answer" }
-    if action == "answer" {
-      let keys = Set(card.options.map { $0.key })
-      if card.cardType == "info" { return "bad-answer" }
-      if c["trusted"].truthy {
-        if choices.contains(where: { !keys.contains($0) || !card.recommended.contains($0) }) { return "bad-choice" }
-      } else if choices.isEmpty || choices.contains(where: { !keys.contains($0) }) { return "bad-choice" }
-      if choices.count > 1 && !card.allowsMultiple { return "bad-choice" }
-      if stateOf(rec).objectState == "closed" && (c["trusted"].truthy || !choicesFinal(card, choices)) { return "bad-answer" }
-    }
-    if action == "read" && card.cardType != "info" { return "bad-answer" }
-    return nil
-  }
-  /** An own answer shown before the hub has it: how the card was, by the echo's local id (undone when the real one comes). */
-  public var answerEchoes: [String: (state: String, closedHow: String?, answer: Answer?)] = [:]
-  private func applyAnswer(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    if let l = rec.localId, let was = answerEchoes.removeValue(forKey: l), let card = rec.object.flatMap({ cards[$0.objectId] }) {
-      card.objectState = was.state; card.closedHow = was.closedHow; card.answer = was.answer
-      card.answers.removeAll { $0.pending }
-    }
-    if let why = answerRefusal(rec) {
-      if let card = rec.object.flatMap({ cards[$0.objectId] }), rec.isHead, stateOf(rec).objectState != "open", rec.envelopeNumber > (card.refusedHead ?? 0), rec.envelopeNumber > card.envelopeNumber {
-        card.refusedHead = rec.envelopeNumber; change.cards.insert(card.objectId)
-      }
-      return refuse(&change, rec, why, "answer not counted")
-    }
-    let card = cards[rec.object!.objectId]!
-    let c = rec.content ?? .obj([:])
-    var notesOf: [String: String] = [:]
-    for (k, v) in c["option_notes"].object ?? [:] { if let s = v.string { notesOf[k] = s } }
-    let a = Answer(answerAction: c["answer_action"].string ?? "answer", choices: (c["choices"].array ?? []).compactMap { $0.string }, note: c["note"].string, optionNotes: notesOf,
-                   attachments: c["attachments"].array ?? [], marks: c["marks"].array ?? [], trusted: c["trusted"].truthy, boundObjectVersion: card.objectVersion,
-                   envelopeNumber: rec.envelopeNumber, envelopeHash: rec.envelopeHash, byDeviceId: rec.senderDeviceId,
-                   answeredAt: answeredAtOf(c, rec))
-    card.answer = a
-    card.answers.append(a)
-    let st = stateOf(rec)
-    card.objectState = st.objectState == "open" ? "answered" : st.objectState
-    card.closedHow = a.answerAction == "read" ? "read" : a.answerAction == "shred" ? "shredded" : card.objectState == "closed" && rec.content != nil ? "settled" : "answered"
-    card.inRevision = nil
-    card.updatedAt = rec.sentAt
-    change.cards.insert(card.objectId)
-    if let s = card.sessionId { change.sessions.insert(s) }
-    change.stack = true
-    return (true, nil)
-  }
-
-  public func decideAgainRefusal(_ rec: Rec) -> String? {
-    guard rec.senderRole == "human" else { return "not-human" }
-    guard let card = rec.object.flatMap({ cards[$0.objectId] }) else { return "card-mismatch" }
-    if !holdsAt(sessionId: card.sessionId, creator: card.agentDeviceId, rec.recipientDeviceId, rec) { return "not-for-owner" }
-    guard case let .decideAgain(cardId, previousHash, versionHash)? = rec.bind, cardId == card.objectId else { return "card-mismatch" }
-    guard let a = card.answer, a.envelopeHash == previousHash else { return "decision-mismatch" }
-    if versionHash != card.versionHash { return "card-changed" }
-    if card.objectState == "closed" && ["closed", "withdrawn", "merged"].contains(card.closedHow ?? "") { return "card-closed" }
-    return nil
-  }
-  private func applyDecideAgain(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    if let why = decideAgainRefusal(rec) { return refuse(&change, rec, why, "decide again not counted") }
-    let card = cards[rec.object!.objectId]!
-    if let i = card.answers.lastIndex(where: { $0.envelopeHash == card.answer?.envelopeHash }) {
-      card.answers[i].takenBackAt = rec.envelopeNumber; card.answers[i].takenBackSentAt = rec.sentAt
-    }
-    card.answer = nil
-    card.objectState = "open"
-    card.closedHow = nil
-    card.updatedAt = rec.sentAt
-    change.cards.insert(card.objectId)
-    if let s = card.sessionId { change.sessions.insert(s) }
-    change.stack = true
-    return (true, nil)
-  }
-
-  // ---- permission requests ---------------------------------------------------------------------
-
-  private func applyPermissionRequest(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    let objectId = rec.object?.objectId
-    if rec.senderRole != "agent" { return refuse(&change, rec, "not-creator", "permission requests come from agents") }
-    if let sid = rec.sessionId, !agentAt(sid, rec.senderDeviceId, rec) { return refuse(&change, rec, "not-allowed", "a permission request in a session this agent is not assigned to") }
-    let known = objectId.flatMap { permissions[$0] }
-    if let k = known, k.agentDeviceId == rec.senderDeviceId, OBJECT_STATE_NAME[rec.object?.objectState ?? 0] == "closed" {
-      if k.permissionState != "pending" { return (false, nil) }
-      k.permissionState = "withdrawn"
-      k.withdrawReason = rec.content?["withdraw_reason"].string ?? ""
-      change.permissions.insert(k.objectId)
-      if let s = k.sessionId { change.sessions.insert(s) }
-      change.stack = true
-      return (true, nil)
-    }
-    // (the same version again, now with its body: a request first taken as its header only gets its deadline and fields)
-    if let k = known, k.versionHash == rec.envelopeHash {
-      guard k.expiresAt == 0, case let .permissionRequest(rid, exp)? = rec.bind, rid == k.objectId else { return (false, nil) }
-      k.expiresAt = exp
-      if let c = rec.content { k.toolName = c["tool_name"].string ?? ""; k.description = c["description"].string ?? ""; k.inputPreview = c["input_preview"].string ?? "" }
-      change.permissions.insert(k.objectId)
-      if let s = k.sessionId { change.sessions.insert(s) }
-      change.stack = true
-      return (true, nil)
-    }
-    guard let oid = objectId, known == nil else { return refuse(&change, rec, "bad-object", "permission request without a new object id") }
-    var expires: UInt64 = 0
-    if let b = rec.bind {
-      guard case let .permissionRequest(rid, exp) = b, rid == oid else { return refuse(&change, rec, "bad-object", "request id differs from object id") }
-      expires = exp
-    }
-    if rec.objectIdOk == false { return refuse(&change, rec, "bad-object-id", "object id is not H(creator, sequence)") }
-    let c = rec.content ?? .obj([:])
-    permissions[oid] = Permission(objectId: oid, agentDeviceId: rec.senderDeviceId, sessionId: rec.sessionId, toolName: c["tool_name"].string ?? "", description: c["description"].string ?? "",
-                                  inputPreview: c["input_preview"].string ?? "", expiresAt: expires, versionHash: rec.envelopeHash, envelopeNumber: rec.envelopeNumber, sentAt: rec.sentAt)
-    change.permissions.insert(oid)
-    if let s = rec.sessionId { change.sessions.insert(s) }
-    change.stack = true
-    return (true, nil)
-  }
-  public func verdictRefusal(_ rec: Rec) -> String? {
-    var rid: String? = rec.object?.objectId
-    if case let .verdict(r, _, _, _)? = rec.bind { rid = rid ?? r }
-    let p = rid.flatMap { permissions[$0] }
-    guard rec.senderRole == "human" else { return "not-human" }
-    guard let p = p, case let .verdict(requestId, requestHash, expiresAt, _)? = rec.bind, requestId == p.objectId else { return "request-mismatch" }
-    if rec.recipientDeviceId != p.agentDeviceId { return "not-for-owner" }
-    // (a verdict counts on a request that ran out here as well: the web model takes it, and a catch-up read after the
-    //  deadline meets the request's expiry before the verdict that came in time)
-    if p.permissionState != "pending" && p.permissionState != "expired" { return "request-not-pending" }
-    if requestHash != p.versionHash || expiresAt != p.expiresAt { return "request-changed" }
-    return nil
-  }
-  private func applyVerdict(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    if let why = verdictRefusal(rec) { return refuse(&change, rec, why, "verdict not counted") }
-    guard case let .verdict(requestId, _, _, allow)? = rec.bind, let p = permissions[requestId] else { return (false, nil) }
-    p.verdict = (allow, rec.senderDeviceId, rec.envelopeNumber)
-    p.permissionState = allow ? "allowed" : "denied"
-    change.permissions.insert(p.objectId)
-    if let s = p.sessionId { change.sessions.insert(s) }
-    change.stack = true
-    return (true, nil)
-  }
-
-  // ---- registers --------------------------------------------------------------------------------
-
-  static let humanPrefixes = ["draft/", "snooze/", "duck/", "star/", "desk/", "session/", "session_history/", "scribble_snapshot/", "goals/"]
-  public static func isHumanKey(_ k: String) -> Bool { k == "crown" || k == "room_snapshot" || humanPrefixes.contains { k.hasPrefix($0) } }
+  /** A key only an agent writes in its session group. */
   public static func isAgentKey(_ k: String) -> Bool { k == "profile" || k == "heard" || k.hasPrefix("status_line/") || k.hasPrefix("alert/") }
-
-  private func applyStatus(_ rec: Rec, _ change: inout Change) -> (applied: Bool, refused: String?) {
-    guard let values = rec.content?["values"].object else {
-      if rec.contentState == "ok" { return refuse(&change, rec, "bad-status", "status without values") }
-      return (false, nil)
-    }
-    for key in values.keys.sorted() {
-      let value = values[key]!
-      if key.hasPrefix("device/") {
-        if key != "device/\(rec.senderDeviceId)" { _ = refuse(&change, rec, "foreign-key", "\(key) from another device"); continue }
-        deviceRegisters[rec.senderDeviceId] = value
-        if let m = members[rec.senderDeviceId] {
-          m.deviceName = value["device_name"].string ?? ""; m.platform = value["platform"].string; m.folder = value["folder"].string; m.host = value["host"].string
-          change.members = true
-        }
-        // (also for a device that is no member here: a session it spoke in still shows its name)
-        if members[rec.senderDeviceId]?.deviceRole != "human" { touchAgent(rec.senderDeviceId, &change) }
-        change.registers.insert(key)
-      } else if rec.senderRole == "human" && Board.isHumanKey(key) {
-        if myRole == "agent" { continue }
-        setHumanRegister(key, value, rec, &change)
-      } else if rec.senderRole == "agent" && Board.isAgentKey(key) {
-        guard let sid = rec.sessionId, agentAt(sid, rec.senderDeviceId, rec) else { _ = refuse(&change, rec, "not-allowed", "\(key) outside the agent's session"); continue }
-        setAgentRegister(sid, key, value, rec, &change)
-      } else if (rec.senderRole == "agent" && Board.isHumanKey(key)) || (rec.senderRole == "human" && Board.isAgentKey(key)) {
-        _ = refuse(&change, rec, "foreign-key", "\(key) is not a \(rec.senderRole) key")
-      } else if rec.senderRole == "agent" {
-        if let sid = rec.sessionId, agentAt(sid, rec.senderDeviceId, rec) { setAgentRegister(sid, key, value, rec, &change) }
-      } else if myRole != "agent" {
-        setHumanRegister(key, value, rec, &change)
-      }
-    }
-    return (true, nil)
-  }
-
-  public func setHumanRegister(_ key: String, _ value: JV, _ rec: Rec, _ change: inout Change) {
-    let old = human.raw[key]
-    if !rec.pending, !rec.winner, let old = old, !old.pending, let rc = old.causal, !causallyAfter(rec.causal, rc) { return }
-    human.raw[key] = RegisterValue(value: value, envelopeNumber: rec.envelopeNumber, senderSequence: rec.senderSequence, byDeviceId: rec.senderDeviceId, pending: rec.pending, causal: rec.causal)
-    showHumanValue(key, value, &change)
-  }
-  /**
-   * Takes back this device's echo of a register write that was never sealed: the value before it is shown again.
-   * A value that came from the log meanwhile (not pending) stays.
-   */
-  public func restoreHumanRegister(_ key: String, to old: RegisterValue?, _ change: inout Change) {
-    guard human.raw[key]?.pending == true else { return }
-    if let old = old { human.raw[key] = old } else { human.raw.removeValue(forKey: key) }
-    showHumanValue(key, old?.value ?? .null, &change)
-  }
-  private func showHumanValue(_ key: String, _ value: JV, _ change: inout Change) {
-    let slash = key.firstIndex(of: "/")
-    let prefix = slash.map { String(key[..<$0]) } ?? key
-    let id = slash.map { String(key[key.index(after: $0)...]) } ?? ""
-    func put(_ m: inout [String: JV]) { if value.isNull { m.removeValue(forKey: id) } else { m[id] = value } }
-    switch prefix {
-    case "draft": put(&human.drafts); change.cards.insert(id)
-    case "snooze": put(&human.snoozes); change.cards.insert(id); change.stack = true
-    case "duck": put(&human.ducks); change.cards.insert(id)
-    case "star": put(&human.stars); change.cards.insert(id); change.stack = true
-    case "crown": human.crown = value
-    case "desk": put(&human.desks)
-    case "session":
-      // (keyed by a session id, or, for a main session, by its agent device's id, as an older web client wrote it:
-      // the settings go to that session; a register makes no session of its own, which the list would show as a
-      // second one, empty, under the new name)
-      put(&human.sessionSettings)
-      for s in sessionsSetBy(id) { s.settings = value; change.sessions.insert(s.sessionId) }
-      change.stack = true
-    case "scribble_snapshot": put(&human.scribbleSnapshots); change.timelines.insert(timelineKeyOf("scribble", id))
-    default: break
-    }
-    change.registers.insert(key)
-  }
-
-  private func setAgentRegister(_ sid: String, _ key: String, _ value: JV, _ rec: Rec, _ change: inout Change) {
-    let s = sessionOf(sid)
-    if !rec.winner, let old = s.registers[key] {
-      if let oc = old.causal { if !causallyAfter(rec.causal, oc) { return } }
-      else if let os = old.senderSequence, rec.senderSequence <= os { return }
-    }
-    s.registers[key] = RegisterValue(value: value, envelopeNumber: rec.envelopeNumber, senderSequence: rec.senderSequence, byDeviceId: rec.senderDeviceId, causal: rec.causal)
-    if key == "profile" { s.profile = value }
-    else if key == "heard" {
-      if let up = value["up_to"].int, up >= 0, up >= (s.heardUpTo ?? -1) { s.heardUpTo = up; s.heardAt = stampOf(value["at"]) ?? rec.sentAt }
-    } else if key.hasPrefix("status_line/") {
-      let id = String(key.dropFirst("status_line/".count))
-      let at = s.statusLines.firstIndex { $0.id == id }
-      if value.isNull { if let at = at { s.statusLines.remove(at: at) } }
-      else {
-        let line = StatusLine(id: id, label: value["label"].string ?? id, state: value["state"].string, detail: value["detail"].string, objectId: value["object_id"].string,
-                              envelopeNumber: rec.envelopeNumber, updatedAt: rec.sentAt)
-        if let at = at { s.statusLines[at] = line } else { s.statusLines.append(line) }
-      }
-    } else if key.hasPrefix("alert/") {
-      let at = s.agentAlerts.firstIndex { $0.key == key }
-      if value.isNull { if let at = at { s.agentAlerts.remove(at: at) } }
-      else {
-        let a = (key: key, value: value, envelopeNumber: rec.envelopeNumber)
-        if let at = at { s.agentAlerts[at] = a } else { s.agentAlerts.append(a) }
-        pushAlert(&change, code: value["code"].string ?? "agent-alert", message: value["message"].string ?? "", envelopeNumber: rec.envelopeNumber, sender: rec.senderDeviceId, source: "agent")
-      }
-    }
-    change.sessions.insert(sid)
-    change.registers.insert(key)
-  }
-
-  // ---- projections ------------------------------------------------------------------------------
-
-  static let urgencyRank = ["critical": 3, "high": 2, "normal": 1, "low": 0]
-  /** The stack (open cards, the most urgent first, then the oldest), per-session open lists, open permissions. */
-  /**
-   * The projection again for what one batch touched (a live envelope): only those sessions' card lists are sorted, and
-   * the open stack only when cards, registers or permissions changed (a chat message touches neither: O(1) work).
-   */
-  public func project(_ change: Change, now: UInt64 = nowMs()) {
-    if change.stack || change.room || change.members { project(now: now); return }
-    for sid in change.sessions {
-      guard let s = sessions[sid] else { continue }
-      s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { onDesk($0) }
-    }
-    if !change.cards.isEmpty || !change.registers.isEmpty || !change.permissions.isEmpty { projectStack(now: now) }
-  }
-  public func project(now: UInt64 = nowMs()) {
-    for s in sessions.values {
-      s.cardIds.sort { (cards[$0]?.createdAt ?? 0, $0) < (cards[$1]?.createdAt ?? 0, $1) }
-      s.openCardIds = s.cardIds.filter { onDesk($0) }
-    }
-    projectStack(now: now)
-  }
-  private func projectStack(now: UInt64) {
-    let archived = Set(sessions.values.filter { $0.settings["archived"].truthy }.map { $0.sessionId })
-    let open = cards.values.filter { onDesk($0.objectId) }.sorted { a, b in
-      let ra = Board.urgencyRank[a.urgency] ?? 1, rb = Board.urgencyRank[b.urgency] ?? 1
-      if ra != rb { return ra > rb }
-      if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-      if a.agentDeviceId != b.agentDeviceId { return a.agentDeviceId < b.agentDeviceId }
-      return a.objectId < b.objectId
-    }
-    stack = open.filter { c in
-      if let v = human.snoozes[c.objectId], v.object != nil { if v["until"].isNull { return false }; if let u = v["until"].double, clampedU64(u) > now { return false } }
-      if let sid = c.sessionId, archived.contains(sid) { return false }
-      return true
-    }.map { $0.objectId }
-    // A pending request whose time has run out becomes `expired` (web model.ts `project()`); one held back as settled
-    // at the hub is left as it is, as the web leaves one that is `catching_up`.
-    var waiting = [Permission]()
-    for p in permissions.values where p.permissionState == "pending" && !heldBack(p.objectId, open: true) {
-      if now > p.endsAt { p.permissionState = "expired" } else { waiting.append(p) }
-    }
-    openPermissionIds = waiting.sorted { $0.envelopeNumber < $1.envelopeNumber }.map { $0.objectId }
-  }
 }

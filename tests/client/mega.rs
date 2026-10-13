@@ -33,6 +33,10 @@
 //! taking it to the agent's holding it).
 #[path = "../connector/common/mod.rs"]
 mod common;
+#[path = "mega/chaos.rs"]
+mod chaos;
+#[path = "mega/torture.rs"]
+mod torture;
 
 use common::{HubProc, Human, TempDir};
 use serde_json::{json, Map, Value};
@@ -153,6 +157,8 @@ impl Observer {
         std::fs::write(&tmp, cmd.to_string()).unwrap();
         std::fs::rename(&tmp, self.dir.join(format!("cmd-{n}.json"))).unwrap();
         let res = self.dir.join(format!("res-{n}.json"));
+        let started = std::time::Instant::now();
+        let _slow = SlowCall(started, format!("{} {}", self.name, cmd["op"]));
         let limit: u64 = env("MEGA_CALL_S")
             .and_then(|s| s.parse().ok())
             .unwrap_or(240);
@@ -176,6 +182,17 @@ impl Observer {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         Err(format!("{}: no answer to {cmd} in {limit} s", self.name))
+    }
+}
+
+/// Says when a call to a device took longer than 5 s (for the reader of a slow run).
+struct SlowCall(std::time::Instant, String);
+impl Drop for SlowCall {
+    fn drop(&mut self) {
+        let ms = self.0.elapsed().as_millis();
+        if ms > 5_000 {
+            eprintln!("SLOW {} took {ms} ms", self.1);
+        }
     }
 }
 
@@ -780,6 +797,8 @@ fn common_view(snap: &Value) -> Value {
 struct Report {
     failures: Vec<String>,
     checkpoints: usize,
+    /// (the torture run) failures of known open bugs, not failing it
+    known: Vec<String>,
 }
 
 /// The platform and tree of a device's name ("web@main2" → ("web", "main")).
@@ -801,17 +820,37 @@ fn compare(label: &str, snaps: &BTreeMap<String, Value>, report: &mut Report) {
         .iter()
         .filter(|(k, v)| k.contains('@') && v.get("snapshot_failed").is_none())
         .collect();
-    // VARIANCE: devices of the same app and tree
-    for (i, (a, va)) in devices.iter().enumerate() {
-        for (b, vb) in devices.iter().skip(i + 1) {
-            if platform_tree(a) == platform_tree(b) {
-                let mut d = Vec::new();
-                diff(va, vb, "", &mut d, 8);
-                for line in d {
-                    report
-                        .failures
-                        .push(format!("{label} VARIANCE {a} vs {b} {line}"));
-                }
+    // VARIANCE: devices of the same app and tree, each against what most of them show (with many devices one
+    // that differs is named once, not once per other device)
+    let groups: BTreeSet<(&str, &str)> = devices.iter().map(|(k, _)| platform_tree(k)).collect();
+    for group in groups {
+        let mine: Vec<(&String, &Value)> = devices.iter().copied().filter(|(k, _)| platform_tree(k) == group).collect();
+        let shown = |v: &Value| {
+            let mut v = v.clone();
+            if let Some(o) = v.as_object_mut() {
+                o.remove("debug");
+            }
+            v.to_string()
+        };
+        let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+        for (i, (_, v)) in mine.iter().enumerate() {
+            counts.entry(shown(v)).or_insert((0, i)).0 += 1;
+        }
+        // the most shown; on a tie the one of the first device
+        let Some(&(_, at)) = counts.values().max_by_key(|(n, i)| (*n, std::cmp::Reverse(*i))) else {
+            continue;
+        };
+        let (a, va) = mine[at];
+        for (b, vb) in &mine {
+            if b == &a {
+                continue;
+            }
+            let mut d = Vec::new();
+            diff(va, vb, "", &mut d, 8);
+            for line in d {
+                report
+                    .failures
+                    .push(format!("{label} VARIANCE {a} vs {b} {line}"));
             }
         }
     }

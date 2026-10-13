@@ -184,6 +184,178 @@
       "arguments": [],
       "returns": "bytes"
     },
+    "bodyFromWire": {
+      "arguments": [
+        {
+          "name": "kindName",
+          "type": "text"
+        },
+        {
+          "name": "payload",
+          "type": "bytes"
+        }
+      ],
+      "returns": "text"
+    },
+    "bodiesFromWire": {
+      "arguments": [
+        {
+          "name": "kindNames",
+          "type": "list<text>"
+        },
+        {
+          "name": "payloads",
+          "type": "list<bytes>"
+        }
+      ],
+      "returns": "text"
+    },
+    "bodyToWire": {
+      "arguments": [
+        {
+          "name": "kindName",
+          "type": "text"
+        },
+        {
+          "name": "fieldsJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "boardItemParse": {
+      "arguments": [
+        {
+          "name": "payload",
+          "type": "bytes"
+        }
+      ],
+      "returns": "text"
+    },
+    "registerToWire": {
+      "arguments": [
+        {
+          "name": "key",
+          "type": "text"
+        },
+        {
+          "name": "valueJson",
+          "type": "text"
+        }
+      ],
+      "returns": "RegisterWire"
+    },
+    "registerFromWire": {
+      "arguments": [
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "valueJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "registerKeyOf": {
+      "arguments": [
+        {
+          "name": "name",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "registerNameOf": {
+      "arguments": [
+        {
+          "name": "key",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "bodyFileIds": {
+      "arguments": [
+        {
+          "name": "kindName",
+          "type": "text"
+        },
+        {
+          "name": "fieldsJson",
+          "type": "text"
+        }
+      ],
+      "returns": "list<bytes>"
+    },
+    "attachmentFromWire": {
+      "arguments": [
+        {
+          "name": "attachmentJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "attachmentToWire": {
+      "arguments": [
+        {
+          "name": "attachmentJson",
+          "type": "text"
+        }
+      ],
+      "returns": "text"
+    },
+    "boardEntryFromWire": {
+      "arguments": [
+        {
+          "name": "entryJson",
+          "type": "text"
+        },
+        {
+          "name": "withId",
+          "type": "bool"
+        }
+      ],
+      "returns": "text"
+    },
+    "shapeIdFromWire": {
+      "arguments": [
+        {
+          "name": "id",
+          "type": "text"
+        }
+      ],
+      "returns": "optional<text>"
+    },
+    "shapeIdToWire": {
+      "arguments": [
+        {
+          "name": "id",
+          "type": "text"
+        }
+      ],
+      "returns": "optional<text>"
+    },
+    "pieceFromWire": {
+      "arguments": [
+        {
+          "name": "piece",
+          "type": "bytes"
+        }
+      ],
+      "returns": "optional<text>"
+    },
+    "pieceToWire": {
+      "arguments": [
+        {
+          "name": "pieceJson",
+          "type": "text"
+        }
+      ],
+      "returns": "bytes"
+    },
     "boardReduce": {
       "arguments": [
         {
@@ -525,6 +697,802 @@
     }
   },
   "objects": {
+    "ClientDesk": {
+      "new": {
+        "arguments": [],
+        "returns": "self"
+      },
+      "putCards": {
+        "arguments": [
+          {
+            "name": "cards",
+            "type": "list<DeskCardIn>"
+          }
+        ],
+        "returns": "void"
+      },
+      "putRequests": {
+        "arguments": [
+          {
+            "name": "requests",
+            "type": "list<DeskRequestIn>"
+          }
+        ],
+        "returns": "void"
+      },
+      "remove": {
+        "arguments": [
+          {
+            "name": "objectIds",
+            "type": "list<text>"
+          }
+        ],
+        "returns": "void"
+      },
+      "clear": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "setSnooze": {
+        "arguments": [
+          {
+            "name": "card",
+            "type": "text"
+          },
+          {
+            "name": "value",
+            "type": "optional<text>"
+          },
+          {
+            "name": "at",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "setArchived": {
+        "arguments": [
+          {
+            "name": "sessionIds",
+            "type": "list<text>"
+          }
+        ],
+        "returns": "void"
+      },
+      "setListing": {
+        "arguments": [
+          {
+            "name": "at",
+            "type": "number"
+          },
+          {
+            "name": "listed",
+            "type": "list<DeskListed>"
+          }
+        ],
+        "returns": "void"
+      },
+      "forgetListing": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "setHoldAll": {
+        "arguments": [
+          {
+            "name": "hold",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "putCardsJson": {
+        "arguments": [
+          {
+            "name": "cards",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "putRequestsJson": {
+        "arguments": [
+          {
+            "name": "requests",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "projectJson": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "project": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "DeskDelta"
+      }
+    },
+    "ClientModel": {
+      "new": {
+        "arguments": [
+          {
+            "name": "myDeviceId",
+            "type": "text"
+          }
+        ],
+        "returns": "self"
+      },
+      "setMe": {
+        "arguments": [
+          {
+            "name": "myDeviceId",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "load": {
+        "arguments": [
+          {
+            "name": "snapshot",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyEnvelopes": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "list<ReceivedEnvelope>"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "applyReceivedJson": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "setWindowsOpen": {
+        "arguments": [
+          {
+            "name": "open",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "setLeanCards": {
+        "arguments": [
+          {
+            "name": "lean",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "cardJson": {
+        "arguments": [
+          {
+            "name": "objectId",
+            "type": "text"
+          }
+        ],
+        "returns": "text"
+      },
+      "applyCardDeeds": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "list<ReceivedEnvelope>"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyGroups": {
+        "arguments": [
+          {
+            "name": "groups",
+            "type": "list<GroupSummary>"
+          },
+          {
+            "name": "roles",
+            "type": "optional<RoomRoles>"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyCommit": {
+        "arguments": [
+          {
+            "name": "facts",
+            "type": "CommitSummary"
+          },
+          {
+            "name": "byRecovery",
+            "type": "bool"
+          },
+          {
+            "name": "removedMe",
+            "type": "bool"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyPresence": {
+        "arguments": [
+          {
+            "name": "reports",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "streamOpened": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "applyPresenceEvent": {
+        "arguments": [
+          {
+            "name": "event",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "bool"
+      },
+      "applyHere": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "seatPlan": {
+        "arguments": [
+          {
+            "name": "known",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "seatAfterHub": {
+        "arguments": [
+          {
+            "name": "candidates",
+            "type": "text"
+          },
+          {
+            "name": "hubSeated",
+            "type": "text"
+          }
+        ],
+        "returns": "optional<text>"
+      },
+      "seatFailed": {
+        "arguments": [
+          {
+            "name": "agent",
+            "type": "text"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "number"
+      },
+      "seatFounded": {
+        "arguments": [
+          {
+            "name": "agent",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "setSeatGrace": {
+        "arguments": [
+          {
+            "name": "ms",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "selfJoinAsks": {
+        "arguments": [
+          {
+            "name": "answered",
+            "type": "text"
+          },
+          {
+            "name": "pending",
+            "type": "text"
+          }
+        ],
+        "returns": "text"
+      },
+      "selfJoinVerdict": {
+        "arguments": [
+          {
+            "name": "sessionId",
+            "type": "text"
+          },
+          {
+            "name": "nonce",
+            "type": "text"
+          },
+          {
+            "name": "requestHash",
+            "type": "text"
+          }
+        ],
+        "returns": "optional<bool>"
+      },
+      "selfJoinRetire": {
+        "arguments": [],
+        "returns": "text"
+      },
+      "joinRows": {
+        "arguments": [
+          {
+            "name": "invites",
+            "type": "text"
+          }
+        ],
+        "returns": "text"
+      },
+      "applyWorkTrail": {
+        "arguments": [
+          {
+            "name": "sessionId",
+            "type": "text"
+          },
+          {
+            "name": "from",
+            "type": "bytes"
+          },
+          {
+            "name": "turn",
+            "type": "bytes"
+          },
+          {
+            "name": "number",
+            "type": "number"
+          },
+          {
+            "name": "time",
+            "type": "number"
+          },
+          {
+            "name": "payload",
+            "type": "bytes"
+          },
+          {
+            "name": "changeNumber",
+            "type": "number"
+          }
+        ],
+        "returns": "bool"
+      },
+      "applyStrokePiece": {
+        "arguments": [
+          {
+            "name": "from",
+            "type": "bytes"
+          },
+          {
+            "name": "board",
+            "type": "bytes"
+          },
+          {
+            "name": "payload",
+            "type": "bytes"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "bool"
+      },
+      "echoItem": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "content",
+            "type": "text"
+          },
+          {
+            "name": "recipient",
+            "type": "optional<text>"
+          },
+          {
+            "name": "objectId",
+            "type": "optional<text>"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "echoRegisters": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "values",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "echoAnswer": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "objectId",
+            "type": "text"
+          },
+          {
+            "name": "answer",
+            "type": "text"
+          },
+          {
+            "name": "objectState",
+            "type": "text"
+          }
+        ],
+        "returns": "bool"
+      },
+      "echoNote": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "objectId",
+            "type": "optional<text>"
+          },
+          {
+            "name": "fields",
+            "type": "text"
+          },
+          {
+            "name": "closed",
+            "type": "bool"
+          }
+        ],
+        "returns": "text"
+      },
+      "confirmEcho": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          },
+          {
+            "name": "hash",
+            "type": "text"
+          },
+          {
+            "name": "seq",
+            "type": "number"
+          },
+          {
+            "name": "objectId",
+            "type": "optional<text>"
+          }
+        ],
+        "returns": "void"
+      },
+      "rollbackEcho": {
+        "arguments": [
+          {
+            "name": "localId",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "setDeskListing": {
+        "arguments": [
+          {
+            "name": "at",
+            "type": "number"
+          },
+          {
+            "name": "listed",
+            "type": "list<DeskListed>"
+          }
+        ],
+        "returns": "void"
+      },
+      "forgetDeskListing": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "setDeskHold": {
+        "arguments": [
+          {
+            "name": "hold",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "setWindow": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "open",
+            "type": "bool"
+          },
+          {
+            "name": "loadedDownTo",
+            "type": "number"
+          },
+          {
+            "name": "hasMore",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyPage": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "received",
+            "type": "list<ReceivedEnvelope>"
+          },
+          {
+            "name": "scratch",
+            "type": "bool"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "putItems": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "items",
+            "type": "text"
+          },
+          {
+            "name": "loadedDownTo",
+            "type": "optional<number>"
+          },
+          {
+            "name": "hasMore",
+            "type": "optional<bool>"
+          }
+        ],
+        "returns": "void"
+      },
+      "pushAlert": {
+        "arguments": [
+          {
+            "name": "code",
+            "type": "text"
+          },
+          {
+            "name": "message",
+            "type": "text"
+          },
+          {
+            "name": "envelopeNumber",
+            "type": "optional<number>"
+          },
+          {
+            "name": "senderDeviceId",
+            "type": "optional<text>"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "noteNewer": {
+        "arguments": [
+          {
+            "name": "what",
+            "type": "text"
+          },
+          {
+            "name": "envelopeNumber",
+            "type": "optional<number>"
+          }
+        ],
+        "returns": "void"
+      },
+      "finish": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "finishPart": {
+        "arguments": [
+          {
+            "name": "nowMs",
+            "type": "number"
+          },
+          {
+            "name": "maxCards",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "applyCardDeedsJson": {
+        "arguments": [
+          {
+            "name": "received",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "touchAll": {
+        "arguments": [],
+        "returns": "void"
+      },
+      "applyGroupsJson": {
+        "arguments": [
+          {
+            "name": "groups",
+            "type": "text"
+          },
+          {
+            "name": "roles",
+            "type": "text"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyCommitJson": {
+        "arguments": [
+          {
+            "name": "facts",
+            "type": "text"
+          },
+          {
+            "name": "byRecovery",
+            "type": "bool"
+          },
+          {
+            "name": "removedMe",
+            "type": "bool"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "applyPageJson": {
+        "arguments": [
+          {
+            "name": "timelineKey",
+            "type": "text"
+          },
+          {
+            "name": "received",
+            "type": "text"
+          },
+          {
+            "name": "scratch",
+            "type": "bool"
+          },
+          {
+            "name": "nowMs",
+            "type": "number"
+          }
+        ],
+        "returns": "text"
+      },
+      "snapshot": {
+        "arguments": [],
+        "returns": "text"
+      },
+      "sessionList": {
+        "arguments": [
+          {
+            "name": "reading",
+            "type": "bool"
+          }
+        ],
+        "returns": "text"
+      },
+      "setReading": {
+        "arguments": [
+          {
+            "name": "reading",
+            "type": "bool"
+          }
+        ],
+        "returns": "void"
+      }
+    },
     "CoreDevice": {
       "create": {
         "arguments": [
@@ -1925,6 +2893,65 @@
       "email": "optional<text>",
       "id": "optional<text>"
     },
+    "DeskCardIn": {
+      "objectId": "text",
+      "sessionId": "optional<text>",
+      "state": "number",
+      "urgency": "number",
+      "createdAt": "number",
+      "agentDeviceId": "text",
+      "versionChange": "number",
+      "newest": "number",
+      "inRevision": "optional<number>",
+      "read": "bool",
+      "working": "bool"
+    },
+    "DeskRequestIn": {
+      "objectId": "text",
+      "sessionId": "optional<text>",
+      "pending": "bool",
+      "envelopeNumber": "number",
+      "newest": "number",
+      "sentAt": "number",
+      "expiresAt": "number",
+      "read": "bool"
+    },
+    "DeskListed": {
+      "objectId": "text",
+      "versionChange": "number"
+    },
+    "DeskStackOp": {
+      "at": "number",
+      "gone": "number",
+      "ids": "list<text>"
+    },
+    "DeskSessionOpen": {
+      "sessionId": "text",
+      "cardIds": "list<text>"
+    },
+    "DeskSessionOp": {
+      "sessionId": "text",
+      "at": "number",
+      "gone": "number",
+      "ids": "list<text>"
+    },
+    "DeskDelta": {
+      "whole": "bool",
+      "stack": "list<text>",
+      "stackOps": "list<DeskStackOp>",
+      "permissionsOpen": "optional<list<text>>",
+      "held": "list<text>",
+      "unheld": "list<text>",
+      "expired": "list<text>",
+      "handBackOver": "list<text>",
+      "sessionOpen": "list<DeskSessionOpen>",
+      "sessionOps": "list<DeskSessionOp>",
+      "nextWake": "number"
+    },
+    "RegisterWire": {
+      "name": "text",
+      "value": "optional<bytes>"
+    },
     "Draft": {
       "kind": "DraftKind",
       "session": "optional<bytes>",
@@ -2014,6 +3041,7 @@
       "code": "optional<ErrorCode>",
       "finding": "optional<ErrorCode>",
       "payload": "optional<bytes>",
+      "body": "optional<text>",
       "bind": "optional<Bind>",
       "objectAfter": "optional<ObjectView>",
       "register": "optional<RegisterChange>",

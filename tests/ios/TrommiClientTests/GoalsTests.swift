@@ -13,17 +13,16 @@ final class GoalsTests: XCTestCase {
   private func set(_ b: Board, _ values: JV, session: String? = nil) {
     n += 1
     var ch = Change()
-    b.apply(Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: h, senderRole: "human", recipientDeviceId: nil, sentAt: UInt64(n), kind: KIND.STATUS, isHead: true,
+    b.apply(OldRec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: h, senderRole: "human", recipientDeviceId: nil, sentAt: UInt64(n), kind: KIND.STATUS, isHead: true,
                 object: nil, timelineKind: nil, timelineId: nil, sessionId: session, content: ["values": values], contentState: "ok", bind: nil,
                 causal: Causal(senderDeviceId: h, senderSequence: UInt64(n), sentAt: UInt64(n), lamport: n), senderSequence: UInt64(n), epoch: 1), change: &ch)
   }
   private func room() -> Board {
     let b = Board()
     b.myDeviceId = h
-    for (sid, epoch) in [(s1, 3), (s2, 1)] {
-      let s = b.sessionOf(sid)
-      s.agentDeviceIds = [agent]; s.everAgentIds = [agent]; s.agentDeviceId = agent; s.sessionKeyEpoch = epoch
-    }
+    var ch = Change()
+    b.applyMembers([(id: h, role: "human", active: true, added: 0, removed: nil), (id: agent, role: "agent", active: true, added: 0, removed: nil)], change: &ch)
+    for (sid, epoch) in [(s1, 3), (s2, 1)] { b.applySession(sessionId: sid, agentIds: [agent], epoch: epoch, parentSessionId: nil, archived: false, change: &ch) }
     return b
   }
   private func wanted(_ b: Board, holds: Set<String>? = nil) -> [String: JV] {
@@ -57,9 +56,9 @@ final class GoalsTests: XCTestCase {
     XCTAssertEqual(w[s2], ["desk_id": "ab12cd34", "desk_name": "Site", "goals": "Launch", "epoch": 1])
     XCTAssertEqual(GoalsSync.toWrite(b, holdsKey: { _ in true }).map { $0.sessionId }, [s1, s2])
     // written (each under its session's key): in step, nothing to write
-    set(b, [.init("goals/\(s1)"): w[s1]!], session: s1)
-    set(b, [.init("goals/\(s2)"): w[s2]!], session: s2)
-    XCTAssertEqual(b.human.raw["goals/\(s1)"]?.value, w[s1], "goals/ is a human key, taken from a human under a session's key")
+    set(b, ["goals": w[s1]!], session: s1)
+    set(b, ["goals": w[s2]!], session: s2)
+    XCTAssertEqual(b.sessions[s1]?.registers["goals"]?.value, w[s1], "the session's register goals, as the web reads it")
     XCTAssertTrue(GoalsSync.toWrite(b, holdsKey: { _ in true }).isEmpty)
     // the goals are edited
     set(b, ["desk/ab12cd34": ["name": "Site", "created_at": 2, "goals": "Launch on Friday"]])

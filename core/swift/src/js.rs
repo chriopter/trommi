@@ -69,6 +69,26 @@ pub fn get<T: FromJs>(object: &JsValue, name: &str) -> Result<T, CoreError> {
     T::from_js(&value)
 }
 
+/// Sets a field of `object` by its key made before (a record's `KEYS`).
+pub fn set_key(object: &Object, key: Option<&JsValue>, value: &impl ToJs) -> Result<(), CoreError> {
+    let key = key.ok_or_else(|| CoreError::internal("a field without its key"))?;
+    match Reflect::set(object, key, &value.to_js()?) {
+        Ok(true) => Ok(()),
+        _ => Err(CoreError::internal("a field could not be set")),
+    }
+}
+
+/// Reads a field by its key made before (a record's `KEYS`); `name` names it in a refusal.
+pub fn get_key<T: FromJs>(
+    object: &JsValue,
+    key: Option<&JsValue>,
+    name: &str,
+) -> Result<T, CoreError> {
+    let key = key.ok_or_else(|| CoreError::internal("a field without its key"))?;
+    let value = Reflect::get(object, key).map_err(|_| CoreError::bad_format(name))?;
+    T::from_js(&value)
+}
+
 /// Refuses anything that is not an object with fields.
 pub fn object(value: &JsValue) -> Result<(), CoreError> {
     if value.is_object() && !Array::is_array(value) {

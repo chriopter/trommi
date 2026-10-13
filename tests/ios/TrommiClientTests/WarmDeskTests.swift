@@ -91,7 +91,8 @@ final class WarmDeskTests: XCTestCase {
     FakeHub.shared.offline = true
     room = try Room.open(base: base, roomId: id)
     _ = await room.restore()
-    XCTAssertEqual(room.board.hubSettled.keys.sorted(), [closedA, status].sorted(), "held back from the kept list at once")
+    XCTAssertEqual([closedA, status].filter { room.board.heldBack($0, open: true) }.sorted(), [closedA, status].sorted(), "held back from the kept list at once")
+    XCTAssertFalse(room.board.deskWaiting, "a warm open never waits with an empty Desk")
     _ = try? await room.sync()
     XCTAssertFalse(room.deskHolding)
     XCTAssertFalse(room.board.deskWaiting)
@@ -99,13 +100,28 @@ final class WarmDeskTests: XCTestCase {
     room.close()
   }
 
+  /** A device that holds the room reads the Desk as the brief list: whole at a run's first reading, then only what
+   *  changed since (the web's `readDesk`); a card settled elsewhere leaves by the delta's `settled`. */
+  func testTheDeskIsReadAsTheBriefListAndThenAsADelta() async throws {
+    let id = try await away()
+    let room = try Room.open(base: base, roomId: id)
+    _ = await room.restore()
+    let before = FakeHub.shared.lock.withLock { FakeHub.shared.deskBriefReads }
+    _ = try await room.sync()
+    XCTAssertEqual(shown(room), [kept])
+    _ = try await room.sync()
+    let briefs = FakeHub.shared.lock.withLock { FakeHub.shared.deskBriefReads }
+    XCTAssertEqual(briefs - before, 2, "no full Desk once the room is held: the brief list, whole, then since")
+    XCTAssertEqual(Spent.take().contains("desk brief since"), true)
+    deskLists([])
+    _ = try await room.sync()
+    XCTAssertEqual(shown(room), [], "settled at the hub: the delta names it")
+    room.close()
+  }
+
   func testWhileWaitingNothingOpenStandsAndTheFingerprintSeesTheStack() {
     let b = Board()
-    let rec = Rec(envelopeNumber: 5, envelopeHash: "aa", senderDeviceId: "bb", senderRole: "agent", recipientDeviceId: nil, sentAt: 1, kind: 2, isHead: true, object: nil,
-                  timelineKind: nil, timelineId: nil, sessionId: nil, content: nil, contentState: "ok", bind: nil, causal: Causal(senderDeviceId: "bb", senderSequence: 1, sentAt: 1, lamport: 1),
-                  senderSequence: 1, epoch: 1)
-    let c = Card("x", agent: "a", rec: rec); c.envelopeNumber = 5; c.objectState = "open"
-    b.cards["x"] = c
+    b.feedCard("x", at: 5)
     b.project()
     let before = b.fingerprint
     b.deskWaiting = true

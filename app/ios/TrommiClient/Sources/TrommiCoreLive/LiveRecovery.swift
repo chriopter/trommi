@@ -135,6 +135,18 @@ extension LiveDevice {
     try core { try device.sessionCheckSlice(group: group.data, commits: commits.map(served)) }
   }
 
+  /// Names the live session groups whose check comes after the join of the room (8.5): the room check selects none
+  /// of their keys; `joinSessionCheckedKeys` does when each is checked.
+  public func codeCheckDefer(_ groups: [GroupId]) throws {
+    try core { try device.codeCheckDefer(groups: groups.map(\.data)) }
+  }
+
+  /// `joinSessionChecked` for a session whose check was deferred at the join of the room (`codeCheckDefer`): its
+  /// content keys are selected from `rows` (every SealedKey of the room) and `links` (every RecoveryLink).
+  public func joinSessionCheckedKeys(_ code: Bytes, group: GroupId, current: Bytes, rows: [Bytes], links: [Bytes], nowMs: UInt64) throws -> UInt64 {
+    try core { try device.joinSessionCheckedKeys(recoveryCode: code.data, group: group.data, current: current.data, rows: rows.map(\.data), links: links.map(\.data), nowMs: nowMs) }
+  }
+
   /// Ends the check of the session group with the GroupInfo the hub offers as `current` and builds the join from
   /// outside. The outbox entry's id (an `externalCommit`).
   public func joinSessionChecked(_ code: Bytes, group: GroupId, current: Bytes, nowMs: UInt64) throws -> UInt64 {
@@ -335,6 +347,18 @@ struct ServedByHub {
             (currents[0], Array(currents.dropFirst()), sealed.sealedKeys, sealed.links), groups)
   }
 
+  /// The room group alone, for a sign-in with the code that checks each live session group after it joined (8.5,
+  /// the web's `roomOnlyInSteps`): the SealedKeys and RecoveryLinks, the anchor, the room group's current GroupInfo
+  /// and its founding; `later`: the live session groups, main sessions first.
+  func roomOnly(anchorEpoch: ([Bytes]) throws -> UInt64) async throws -> (start: LiveServedStart, end: LiveServedEnd, groups: [(group: GroupId, below: UInt64)], later: [GroupId]) {
+    let sealed = try await sealedKeys()
+    let anchor = try await hub.groupInfoBytes(hub.room, epoch: try anchorEpoch(sealed.sealedKeys)).bytes
+    let current = try await hub.groupInfoBytes(hub.room)
+    let founding = current.epoch == 0 ? current.bytes : try await hub.groupInfoBytes(hub.room, epoch: 0).bytes
+    let later = try await liveSessions()
+    return ((hub.room, founding, anchor, sealed.sealedKeys, []), (current.bytes, [], sealed.sealedKeys, sealed.links), [(hub.room, current.epoch)], later)
+  }
+
   /// `work` for every item, at most `width` at a time, the answers in the order of `items`; the first failure throws.
   static func each<T, R: Sendable>(_ items: [T], at width: Int, _ work: @escaping @Sendable (T) async throws -> R) async throws -> [R] where T: Sendable {
     var out = [R?](repeating: nil, count: items.count)
@@ -388,7 +412,7 @@ struct ServedByHub {
   /// check begun on it, its log page by page up to the current epoch in slices. The group and its current GroupInfo.
   func checkSession(_ id: GroupId, on device: LiveDevice) async throws -> Bytes {
     let current = try await hub.groupInfoBytes(id)
-    let founding = try await hub.groupInfoBytes(id, epoch: 0).bytes
+    let founding = current.epoch == 0 ? current.bytes : try await hub.groupInfoBytes(id, epoch: 0).bytes
     guard try device.sessionCheckStart(founding: founding) == id else { throw TrommiError("bad-group", "the hub served another group's founding") }
     var pages = GroupLogPages(hub: hub, group: id, below: current.epoch), cap = Slices.maxCommits
     while let page = try await pages.next() {
@@ -421,9 +445,11 @@ extension LiveCore {
     let reader = ServedByHub(hub: hub)
     SignInWatch.say(.reading)
     let started = Date()
-    let read = try await reader.room { try self.recoveryAnchor(code: code, room: hub.room, sealedKeys: $0).epoch }
-    SignInWatch.log("room read (\(read.groups.count) groups)", since: started)
+    // (the room group alone: each live session group is checked after the join, `joinSessionsWithRecoveryCode`)
+    let read = try await reader.roomOnly { try self.recoveryAnchor(code: code, room: hub.room, sealedKeys: $0).epoch }
+    SignInWatch.log("room read (\(read.later.count) sessions after it)", since: started)
     try device.codeCheckStart(code, served: read.start)
+    try device.codeCheckDefer(read.later)
     // (what is to be read is known from the current epochs: each group's Commits up to it)
     let total = read.groups.reduce(0) { $0 + Int($1.below) }
     var done = 0
@@ -450,12 +476,15 @@ extension LiveCore {
     let reader = ServedByHub(hub: hub)
     let held = Set(try device.groups().map(\.group))
     var notJoined = [(group: GroupId, code: String)](), again = false
+    // (the room's SealedKeys and RecoveryLinks, read once: each session's keys are selected from them)
+    var sealed: (sealedKeys: [Bytes], links: [Bytes])?
     for group in try await reader.liveSessions() where !held.contains(group) {
       // (a join of this group built before, which the hub has not answered: the outbox sends it again)
       if device.outbox().contains(where: { $0.kind == .externalCommit && $0.group == group }) { again = true; continue }
       do {
+        if sealed == nil { sealed = try await reader.sealedKeys() }
         let current = try await reader.checkSession(group, on: device)
-        try await post(try device.joinSessionChecked(code, group: group, current: current, nowMs: now), of: device, to: hub)
+        try await post(try device.joinSessionCheckedKeys(code, group: group, current: current, rows: sealed!.sealedKeys, links: sealed!.links, nowMs: now), of: device, to: hub)
       }
       catch let refused as TrommiError {
         notJoined.append((group, refused.code))

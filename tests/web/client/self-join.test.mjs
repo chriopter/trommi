@@ -1,5 +1,5 @@
 // Self-join (spec/v1.md 12.4) on the human's side: an agent asks in its main session to let in a new session of its
-// machine and account (`join_ask/<nonce>`); it waits for the person's one tap (`answerVouch`): Allow answers with an
+// machine and account (`join_ask/<nonce>`, the nonce 16 random bytes as hex, spec 12.4.2); it waits for the person's one tap (`answerVouch`): Allow answers with an
 // agent invite link (`join_link/<nonce>`) whose Request is confirmed when the ask names its hash, Deny refuses. The
 // new session is named after the ask with who vouched, and its device goes when it is archived. A Request the ask
 // does not name is refused; asks past the bounds are refused without asking. The invite handshake and its Commits are the REAL core's; content is the stand-in's; the hub is FAKE.
@@ -15,13 +15,13 @@ const sees = (a, agent, nonce) => until(() => a.model.sessions.get(agent.session
 
 test('an ask waits for the tap; Allow answers with a link, and the Request it names is let in without the emoji', async t => {
   const { a, agent } = await scene(t, { agent: true })
-  await agent.setRegister('join_ask/n1', ask())
-  await sees(a, agent, 'n1')
+  await agent.setRegister('join_ask/a1', ask())
+  await sees(a, agent, 'a1')
   await new Promise(r => setTimeout(r, 500))
-  assert.equal(linkOf(a, agent, 'n1'), undefined, 'nothing is answered before the person taps')
+  assert.equal(linkOf(a, agent, 'a1'), undefined, 'nothing is answered before the person taps')
   assert.equal([...a.model.invites.values()].filter(i => i.vouch).length, 0, 'nor any link opened')
-  await a.answerVouch('n1', true)
-  const answer = await until(() => linkOf(a, agent, 'n1'), 'the link for the ask')
+  await a.answerVouch('a1', true)
+  const answer = await until(() => linkOf(a, agent, 'a1'), 'the link for the ask')
   assert.ok(answer.link && answer.invite_id, JSON.stringify(answer))
   const invite = a.model.invites.get(answer.invite_id)
   assert.ok(invite.vouch, 'the invite remembers the ask it answers')
@@ -35,7 +35,7 @@ test('an ask waits for the tap; Allow answers with a link, and the Request it na
   await new Promise(r => setTimeout(r, 300))
   assert.equal(a.model.invites.get(answer.invite_id).invite_state, 'confirm_code')
   const request = (await a.hub.getInvite(Buffer.from(answer.invite_id, 'hex'))).requests[0]
-  await agent.setRegister('join_ask/n1', ask({ request_hash: hubReaders.requestHash(request.request, request.mac) }))
+  await agent.setRegister('join_ask/a1', ask({ request_hash: hubReaders.requestHash(request.request, request.mac) }))
   await until(() => a.model.invites.get(answer.invite_id)?.invite_state === 'joined', 'let in on its own')
   const second = await joining.client
   t.after(() => second.stop().catch(() => {}))
@@ -52,15 +52,15 @@ test('an ask waits for the tap; Allow answers with a link, and the Request it na
 
 test('a Request the ask does not name is refused, and the invite is spent', async t => {
   const { a, agent } = await scene(t, { agent: true })
-  await agent.setRegister('join_ask/n2', ask())
-  await sees(a, agent, 'n2')
-  await a.answerVouch('n2', true)
-  const answer = await until(() => linkOf(a, agent, 'n2'), 'the link for the ask')
+  await agent.setRegister('join_ask/a2', ask())
+  await sees(a, agent, 'a2')
+  await a.answerVouch('a2', true)
+  const answer = await until(() => linkOf(a, agent, 'a2'), 'the link for the ask')
   const R = await rooms({ agent: true })
   const joining = R.joinRoom({ link: answer.link, storage: storage('other'), poll_ms: 20 })
   joining.client.catch(() => {})
   await until(() => a.model.invites.get(answer.invite_id)?.invite_state === 'confirm_code', 'the Request')
-  await agent.setRegister('join_ask/n2', ask({ request_hash: 'A'.repeat(43) }))
+  await agent.setRegister('join_ask/a2', ask({ request_hash: 'A'.repeat(43) }))
   await until(() => a.model.invites.get(answer.invite_id)?.invite_state === 'failed', 'refused')
   assert.equal(a.model.invites.get(answer.invite_id).error, 'code-mismatch')
   joining.cancel()
@@ -69,8 +69,8 @@ test('a Request the ask does not name is refused, and the invite is spent', asyn
 test('an ask without an account is refused, and nothing is opened for it', async t => {
   const { a, agent } = await scene(t, { agent: true })
   const before = a.model.invites.size
-  await agent.setRegister('join_ask/n3', ask({ account: '' }))
-  const answer = await until(() => linkOf(a, agent, 'n3'), 'the answer')
+  await agent.setRegister('join_ask/a3', ask({ account: '' }))
+  const answer = await until(() => linkOf(a, agent, 'a3'), 'the answer')
   assert.deepEqual(answer, { refused: 'bad-ask' })
   assert.equal(a.model.invites.size, before)
 })
@@ -78,13 +78,13 @@ test('an ask without an account is refused, and nothing is opened for it', async
 test('Deny refuses the ask, and nothing is opened for it', async t => {
   const { a, agent } = await scene(t, { agent: true })
   const before = a.model.invites.size
-  await agent.setRegister('join_ask/n4', ask())
-  await sees(a, agent, 'n4')
-  await a.answerVouch('n4', false)
-  assert.deepEqual(await until(() => linkOf(a, agent, 'n4'), 'the answer'), { refused: 'denied' })
+  await agent.setRegister('join_ask/a4', ask())
+  await sees(a, agent, 'a4')
+  await a.answerVouch('a4', false)
+  assert.deepEqual(await until(() => linkOf(a, agent, 'a4'), 'the answer'), { refused: 'denied' })
   assert.equal(a.model.invites.size, before)
-  await a.answerVouch('n4', true)
-  assert.deepEqual(linkOf(a, agent, 'n4'), { refused: 'denied' }, 'answered once')
+  await a.answerVouch('a4', true)
+  assert.deepEqual(linkOf(a, agent, 'a4'), { refused: 'denied' }, 'answered once')
 })
 
 test('taps at once count against the cap, and past eight open links an ask is told to wait', async t => {

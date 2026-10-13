@@ -19,7 +19,9 @@
 use js_sys::Array;
 use trommi_core_ffi as facade;
 use trommi_core_ffi::js::{FromJs, ToJs};
-use trommi_core_ffi::{CoreDevice, CoreError, FileDecryptor, FileEncryptor};
+use trommi_core_ffi::{
+    ClientDesk, ClientModel, CoreDevice, CoreError, FileDecryptor, FileEncryptor,
+};
 use wasm_bindgen::prelude::*;
 
 /// What every export returns: a pair. `[null, value]` when the call went through, `[code, message]` when the
@@ -125,6 +127,22 @@ functions! {
     fallible kit_keys_for(name, words);
     fallible account_id_parse(text);
     fallible envelope_header(envelope);
+    fallible body_from_wire(kind_name, payload);
+    fallible bodies_from_wire(kind_names, payloads);
+    fallible body_to_wire(kind_name, fields_json);
+    plain board_item_parse(payload);
+    fallible register_to_wire(key, value_json);
+    fallible register_from_wire(name, value_json);
+    plain register_key_of(name);
+    plain register_name_of(key);
+    fallible body_file_ids(kind_name, fields_json);
+    fallible attachment_from_wire(attachment_json);
+    fallible attachment_to_wire(attachment_json);
+    fallible board_entry_from_wire(entry_json, with_id);
+    plain shape_id_from_wire(id);
+    plain shape_id_to_wire(id);
+    plain piece_from_wire(piece);
+    fallible piece_to_wire(piece_json);
 }
 
 /// The methods of a facade object that return a `Result`, by name and arguments.
@@ -302,6 +320,98 @@ methods!(RawFileEncryptor {
     file_id();
     update(plaintext);
     finish();
+});
+
+/// The client core's Desk (EXPERIMENT).
+#[wasm_bindgen]
+pub struct RawClientDesk(ClientDesk);
+
+#[wasm_bindgen]
+impl RawClientDesk {
+    /// An empty Desk.
+    pub fn create() -> Answer {
+        made(Ok::<_, CoreError>(RawClientDesk(ClientDesk::new())))
+    }
+}
+
+methods!(RawClientDesk {
+    put_cards(cards);
+    put_requests(requests);
+    remove(object_ids);
+    clear();
+    set_snooze(card, value, at);
+    set_archived(session_ids);
+    set_listing(at, listed);
+    forget_listing();
+    set_hold_all(hold);
+    project(now_ms);
+    put_cards_json(cards);
+    put_requests_json(requests);
+    project_json(now_ms);
+});
+
+/// The client core's board model.
+#[wasm_bindgen]
+pub struct RawClientModel(ClientModel);
+
+#[wasm_bindgen]
+impl RawClientModel {
+    /// An empty model of the device `me` (hex; "" while not known).
+    pub fn create(me: &JsValue) -> Answer {
+        made(arg::<String>(me).map(|me| RawClientModel(ClientModel::new(me))))
+    }
+}
+
+methods!(RawClientModel {
+    set_me(my_device_id);
+    load(snapshot);
+    apply_envelopes(received, now_ms);
+    apply_card_deeds(received);
+    apply_received_json(received, now_ms);
+    set_windows_open(open);
+    set_lean_cards(lean);
+    card_json(object_id);
+    apply_groups(groups, roles);
+    apply_commit(facts, by_recovery, removed_me, now_ms);
+    apply_presence(reports, now_ms);
+    stream_opened();
+    apply_presence_event(event, now_ms);
+    apply_here(now_ms);
+    seat_plan(known, now_ms);
+    seat_after_hub(candidates, hub_seated);
+    seat_founded(agent);
+    seat_failed(agent, now_ms);
+    set_seat_grace(ms);
+    self_join_asks(answered, pending);
+    self_join_verdict(session_id, nonce, request_hash);
+    self_join_retire();
+    join_rows(invites);
+    apply_work_trail(session_id, from, turn, number, time, payload, change_number);
+    apply_stroke_piece(from, board, payload, now_ms);
+    echo_item(local_id, timeline_key, content, recipient, object_id, now_ms);
+    echo_registers(local_id, values);
+    echo_answer(local_id, object_id, answer, object_state);
+    echo_note(local_id, object_id, fields, closed);
+    confirm_echo(local_id, hash, seq, object_id);
+    rollback_echo(local_id);
+    set_desk_listing(at, listed);
+    forget_desk_listing();
+    set_desk_hold(hold);
+    set_window(timeline_key, open, loaded_down_to, has_more);
+    apply_page(timeline_key, received, scratch, now_ms);
+    put_items(timeline_key, items, loaded_down_to, has_more);
+    push_alert(code, message, envelope_number, sender_device_id, now_ms);
+    note_newer(what, envelope_number);
+    finish(now_ms);
+    finish_part(now_ms, max_cards);
+    snapshot();
+    session_list(reading);
+    set_reading(reading);
+    touch_all();
+    apply_card_deeds_json(received);
+    apply_groups_json(groups, roles);
+    apply_commit_json(facts, by_recovery, removed_me, now_ms);
+    apply_page_json(timeline_key, received, scratch, now_ms);
 });
 
 /// The facade's file decryptor.

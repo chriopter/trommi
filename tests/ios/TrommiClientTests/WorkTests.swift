@@ -113,8 +113,8 @@ final class WorkTests: XCTestCase {
 
   // ---- in a chat (Desk.swift itemsOf, newestWord; ChatTeaser) -------------------------------------------
 
-  private func rec(_ n: Int, from: String, role: String, sid: String, content: JV) -> Rec {
-    Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: from, senderRole: role, recipientDeviceId: nil, sentAt: UInt64(1_000_000 + n), kind: KIND.TIMELINE_ITEM, isHead: false,
+  private func rec(_ n: Int, from: String, role: String, sid: String, content: JV) -> OldRec {
+    OldRec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: from, senderRole: role, recipientDeviceId: nil, sentAt: UInt64(1_000_000 + n), kind: KIND.TIMELINE_ITEM, isHead: false,
         object: nil, timelineKind: "chat", timelineId: "session/\(sid)", sessionId: sid, content: content, contentState: "ok", bind: nil,
         causal: Causal(senderDeviceId: from, senderSequence: UInt64(n), sentAt: UInt64(n), lamport: n), senderSequence: UInt64(n), epoch: 1)
   }
@@ -122,8 +122,9 @@ final class WorkTests: XCTestCase {
     let b = Board()
     let me = String(repeating: "a", count: 64), agent = String(repeating: "b", count: 64), sid = String(repeating: "c", count: 32)
     b.myDeviceId = me
-    let s = b.sessionOf(sid)
-    s.agentDeviceIds = [agent]; s.everAgentIds = [agent]; s.agentDeviceId = agent
+    var ch = Change()
+    b.applyMembers([(id: me, role: "human", active: true, added: 0, removed: nil), (id: agent, role: "agent", active: true, added: 0, removed: nil)], change: &ch)
+    b.applySession(sessionId: sid, agentIds: [agent], epoch: 1, parentSessionId: nil, archived: false, change: &ch)
     return (b, me, agent, sid)
   }
   private func work(_ turn: String, _ seq: Int, _ state: String, _ items: JV = []) -> JV {

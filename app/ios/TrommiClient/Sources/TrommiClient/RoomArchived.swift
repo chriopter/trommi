@@ -53,7 +53,7 @@ extension Room {
     record.archivedOpened = Array(opened.suffix(20))
     try? store.save(record)
     change.sessions.insert(sessionId)
-    board.project(change)
+    board.project(&change)
     emit(change)
     return taken
   }

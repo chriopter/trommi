@@ -2,8 +2,8 @@
 // board the views read (Board.swift). This file holds what the room is and how it keeps up with the hub:
 //
 //   catch up   GET /v1/changes after the cursor: Commits, messages and envelopes in the hub's order, each handed to
-//              the core, which checks it and keeps the keys, chains and object state; what it opened becomes a record
-//              (Records.swift) and is applied to the board by the same reducer as ever.
+//              the core, which checks it and keeps the keys, chains and object state; what it took goes into the
+//              client core's model (`ClientModel`, the same as the web app's), whose patch the board takes.
 //   live       GET /v1/stream (server-sent events) with the same items, resumed by change number.
 //   outbox     everything this device wants sent is in the core's outbox, stored with the state it implies; it is
 //              posted in order and the hub's answer reported back. After a crash the same bytes go out again.
@@ -215,6 +215,8 @@ public struct Store {
   var echoSeq = 0
   /** Records applied since launch, by change number: what the cache appends at its next save. */
   var log: [UInt64: Rec] = [:]
+  /** The room's recovery HPKE key as the core last said it (its fingerprint stands in Settings → Security). */
+  var recoveryKeyNow: Bytes?
   /** What this device sealed and has not seen back yet, by envelope hash (hex): the local id of its echo. */
   var ownEchoes: [String: String] = [:]
   /** What the hub said to an envelope this device sealed, by outbox id. */
@@ -236,8 +238,6 @@ public struct Store {
   /** The upkeep's next round of invite steps, while one is planned; its pause grows while steps stay open. */
   var invitesPlanned: Task<Void, Never>?
   var invitesPause: UInt64 = 2_000_000_000
-  /** Agent devices of the room seen without a session, by hex: since when (`seatAgents`). */
-  var seatless: [String: UInt64] = [:]
   /** How long an agent without a session waits for its inviter before any human device founds its session (the
    *  web's heal_delay * 10). */
   var seatGraceMs: UInt64 = 30_000
@@ -259,6 +259,12 @@ public struct Store {
   /** The cache on disk is left as it is: a read back builds the board anew, and the cache of before stays until it
    *  is through (a launch meanwhile starts warm from it and reads back again). */
   var cacheHeld = false
+  /** The bytes of waiting items kept in this pass (RoomPast.swift noteWaiting), and whether one was not. */
+  var waitingBytes = 0
+  var waitingDropped = false
+  var waitingTail: Task<Void, Never>?
+  /** The role the hub gave this run's token for (`catchUp`); nil: not signed in in this run. */
+  var signedInAs: String?
   /** Keys came while the past was being read back (7.1.1): read back once more when that read ends. */
   var readBackAgain = false
   /** The chains (group/sender, hex) whose gap this run filled once already (`fillGap`). */
@@ -306,8 +312,8 @@ public struct Store {
     board.roomId = record.roomId; board.hubURL = record.hubURL; board.myDeviceId = record.myDeviceId; board.myRole = record.role
     removedAt = record.removedAt
     var ch = Change()
+    recoveryKeyNow = (try? device.recoveryHpkeKey()) ?? nil
     try applyGroups(try device.groups(), &ch)
-    board.applyRecoveryKey((try? device.recoveryHpkeKey()) ?? nil, change: &ch)
   }
 
   /**
@@ -317,7 +323,7 @@ public struct Store {
    */
   public func close() {
     closed = true
-    liveTask?.cancel(); goalsTask?.cancel(); cacheTask?.cancel(); invitesPlanned?.cancel()
+    liveTask?.cancel(); goalsTask?.cancel(); cacheTask?.cancel(); invitesPlanned?.cancel(); wakeTask?.cancel()
     hub.signer = nil
     hub.shutdown()
     // The core first (it wipes what it holds in memory and lets go of the store), then the store's lock.
@@ -327,7 +333,7 @@ public struct Store {
   public func shutdown() async {
     closed = true
     // (what waits on the hub ends now, not after its own timeouts: the queued work then fails with `closed`)
-    liveTask?.cancel(); invitesPlanned?.cancel()
+    liveTask?.cancel(); invitesPlanned?.cancel(); wakeTask?.cancel()
     hub.shutdown()
     // (queued work gets five seconds to end; after that, what still runs can no longer reach the core: `closed`)
     let queued = queueTail, saving = saveTail
@@ -371,6 +377,10 @@ public struct Store {
   }
 
   func emit(_ c: Change) {
+    // (what the client core's model changed since its last patch goes with it)
+    var c = c
+    board.project(&c)
+    wakeLater()
     if c.isEmpty { return }
     Spent.count("emits")
     onChange?(c)
@@ -394,6 +404,23 @@ public struct Store {
   // ---- desk goals for the agents (spec/v1.md 9.3.4, Goals.swift) -----------------------------------------
 
   var goalsTask: Task<Void, Never>?
+  /** The emit at the client core's next wake (Board.wakeAt: a snooze ends, a request runs out, a session falls asleep,
+   *  a red hand after its grace): the core decides it at its clock, the app only asks again then. */
+  var wakeTask: Task<Void, Never>?
+  var wakeTaskAt: UInt64?
+  func wakeLater() {
+    let at = board.wakeAt
+    if at == wakeTaskAt { return }
+    wakeTask?.cancel(); wakeTask = nil; wakeTaskAt = at
+    guard let at = at, !closed else { return }
+    let now = nowMs(), wait = at > now ? at - now : 0
+    wakeTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: (min(wait, 86_400_000) + 50) * 1_000_000)
+      guard let self = self, !Task.isCancelled, !self.closed else { return }
+      self.wakeTask = nil; self.wakeTaskAt = nil
+      self.emit(Change())
+    }
+  }
   /** Self-join (spec/v1.md 12.4, SelfJoin.swift): the look at the agents' asks that is due, and the asks answered. */
   var vouchTask: Task<Void, Never>?
   var vouchAnswered = Set<String>()
@@ -445,41 +472,20 @@ public struct Store {
     groups = Dictionary(list.map { (hex($0.group), $0) }, uniquingKeysWith: { a, _ in a })
     guard let room = list.first(where: { $0.session == nil }) else { return }   // not in a room yet (founding, joining)
     roomGroup = room.group
-    let humans = Set(room.leaves.map(hex))
+    let humans = room.leaves.map(hex)
     state = (Int(room.epoch), humans.count)
-    board.keyEpoch = Int(room.epoch)
-    // As the web's applyGroups: every leaf of a session group that is no human device is an agent (or helper) device,
-    // also one the room no longer enrols; the enrolled ones open helper sessions.
-    let enrolled = Set(list.flatMap { $0.session?.agents ?? [] }.map(hex))
-    var seats = [String: (agents: [String], opener: String?)]()
-    var agents = [String]()
-    for g in list {
-      guard let s = g.session else { continue }
-      let seat = Board.seats(leaves: g.leaves.map(hex), humans: humans, enrolled: enrolled, helper: s.parent != nil)
-      seats[hex(g.group)] = seat
-      for a in seat.agents where !agents.contains(a) { agents.append(a) }
-    }
-    // A device that is no leaf any more stays in the list as removed, so that what it wrote keeps its name.
-    var members = [(id: String, role: String, active: Bool, added: Int, removed: Int?)]()
-    // (a device is dated when this board first knows it, as the web's memberOf: the slot rule takes the newest pairing)
-    let born = { (id: String) in board.members[id]?.addedEntryNumber ?? Int(room.epoch) }
-    for id in humans.sorted() { members.append((id, "human", true, born(id), nil)) }
-    for id in agents { members.append((id, "agent", true, born(id), nil)) }
-    for (id, m) in board.members where !humans.contains(id) && !agents.contains(id) { members.append((id, m.deviceRole, false, m.addedEntryNumber, m.removedEntryNumber ?? Int(room.epoch))) }
-    board.applyMembers(members, change: &change)
-    for g in list {
-      guard let s = g.session else { continue }
-      let sid = hex(s.session)
-      sessionIdOfGroup[hex(g.group)] = sid
-      let seat = seats[hex(g.group)] ?? (agents: s.agents.map(hex), opener: nil)
-      board.applySession(sessionId: sid, agentIds: seat.agents, epoch: Int(g.epoch), parentSessionId: s.parent.map(hex), archived: g.archived, opener: seat.opener, change: &change)
-    }
-    change.room = true
+    for g in list { if let s = g.session { sessionIdOfGroup[hex(g.group)] = hex(s.session) } }
+    // (the enrolled agent devices: those the session groups name; every other leaf that is no human device is a helper)
+    var enrolled = [String]()
+    for d in list.flatMap({ $0.session?.agents ?? [] }).map(hex) where !enrolled.contains(d) { enrolled.append(d) }
+    board.applyGroups(list, humans: humans, agents: enrolled, epoch: room.epoch, recoveryHpkeKey: recoveryKeyNow)
+    change.room = true; change.members = true
+    board.project(&change)
   }
   func refreshGroups(_ change: inout Change) async throws {
     let (list, recovery): ([GroupSummary], Bytes?) = try await onCore { d in (try d.groups(), (try? d.recoveryHpkeKey()) ?? nil) }
+    recoveryKeyNow = recovery
     try applyGroups(list, &change)
-    board.applyRecoveryKey(recovery, change: &change)
     await notifyKeysIfMoved(list)
   }
 
@@ -516,7 +522,14 @@ public struct Store {
     // A token is not membership: the hub names the role it gave it for. A removed device gets one that reads the
     // proof of its removal and nothing else (spec/hub-api.md point 42).
     let role: String
-    do { role = try await noted { try await hub.signIn() } } catch { _ = await restoring?.value; throw error }
+    // A token of this run that is good for two minutes more is used as it is (the web keeps its token too): a removed
+    // device's token is answered `not-member` (spec/hub-api.md point 8), and then it signs in again at once below.
+    let kept = signedInAs != nil && hub.holdsToken(validFor: 120_000)
+    if kept { role = signedInAs!; Spent.count("sign-in kept") }
+    else {
+      do { role = try await noted { try await hub.signIn() } } catch { _ = await restoring?.value; throw error }
+      signedInAs = role == "removed" ? nil : role
+    }
     _ = await restoring?.value
     if role == "removed" {
       try await checkRemoval()
@@ -525,8 +538,16 @@ public struct Store {
     var change = Change()
     // (a device back after a while: what was settled elsewhere leaves the Desk before the long history is read)
     let groupsAtDesk = sessionGroupIds
-    var until = await Spent.time("desk first") { await deskFirst() }
-    try await Spent.time("welcomes") { try await takeWelcomes(&change) }
+    // (the Desk is read alongside the Welcomes, and taken once they are in)
+    let deskRead = Task { @MainActor in await self.fetchDesk(whole: false) }
+    var until: UInt64?
+    do { try await Spent.time("welcomes") { try await takeWelcomes(&change) } } catch {
+      deskRead.cancel(); _ = await deskRead.value
+      // (the kept token is not good any more: signed in again, and the hub says what this device is now)
+      if kept, let h = error as? HubError, h.code == "not-member" || h.status == 401 { hub.forgetToken(); signedInAs = nil; return try await catchUp() }
+      throw error
+    }
+    until = await Spent.time("desk first") { await applyDesk(await deskRead.value) }
     let joiningByCode = record.codeJoin == true
     if let work = codeJoinWork { await Spent.time("wait session joins") { await work.value }; codeJoinWork = nil }
     await Spent.time("finish code join") { await finishCodeJoin() }
@@ -540,7 +561,7 @@ public struct Store {
     // The hub's Desk lists only what lies in the groups this device is in: one read before a session group was joined
     // (a sign-in's joins, a Welcome) would hold that session's open cards back as settled elsewhere. Read it again
     // (the web client's `deskSoon` on `groups`).
-    if sessionGroupIds != groupsAtDesk { until = await Spent.time("desk again") { await deskFirst() } }
+    if sessionGroupIds != groupsAtDesk { until = await Spent.time("desk again") { await deskFirst(whole: true) } }
     // KeyPackages before the catch-up: a device back after long, or just signed in, may hold none at the hub, and
     // every session founded meanwhile leaves it out until it has (5.2.5); a long catch-up must not keep them back.
     // (upkeep: a failure here does not keep the board from showing; the end of this sync tries again)
@@ -567,7 +588,7 @@ public struct Store {
     synced = true
     if preview != nil { preview = nil; change.room = true }
     Task { await self.refreshPresence() }
-    board.project()
+    board.project(&change)
     change.stack = true
     emit(change)
     pumpOutbox()
@@ -578,35 +599,56 @@ public struct Store {
    * A start behind the hub (a device back after a while, or one just signed in): before the history since the
    * cursor is read, which can be long, the hub's Desk says what is open now (the web client's `deskFirst`). Until the
    * catch-up reaches the Desk's cursor, a card or permission request this device holds as open that the Desk does not
-   * list was settled elsewhere and is held back (`Board.deskGate`): no old question stands on the Desk as if it
+   * list was settled elsewhere and is held back (the client core's Desk, `Board.setDeskListing`): no old question stands on the Desk as if it
    * waited. Returns that cursor; nil when the Desk was not had or is not ahead (a failure here only leaves the old
    * view a moment longer).
    */
-  func deskFirst() async -> UInt64? {
-    guard let desk = try? await noted({ try await hub.desk(active: true) }), desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
-    var open = Set<String>()
-    for kind in ["cards", "permission_requests"] {
-      for o in desk[kind] as? [JSON] ?? [] { if let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) { open.insert(hex(id)) } }
+  func deskFirst(whole: Bool = false) async -> UInt64? { await applyDesk(await fetchDesk(whole: whole)) }
+  /** The hub's Desk as this run reads it (see `applyDesk`), with the list it builds on; nil: not had. */
+  func fetchDesk(whole: Bool) async -> (desk: JSON, base: (open: Set<String>, at: UInt64)?)? {
+    // A device that holds nothing yet reads the full Desk (its versions make the preview); any other reads the
+    // brief list: whole at the first reading of a run, after its groups changed and every 30 minutes, else only
+    // what changed since the last (the web client's `readDesk`). A hub without the brief list: the full Desk.
+    let full = cursor == 0 && board.cards.isEmpty
+    let base = whole || deskWholeAt.map { nowMs() >= $0 + 30 * 60_000 } != false ? nil : deskSeen
+    var desk: JSON? = nil
+    if !full {
+      desk = try? await noted({ try await hub.deskBrief(since: base?.at) })
+      if desk?["truncated"] as? Bool == true || Wire.uint(desk?["change"]) == nil { desk = nil }
+      else { Spent.count(base == nil ? "desk brief whole" : "desk brief since") }
     }
-    deskSeen = (open, at)
-    keepDesk(open, at: at)
-    // (what the last launch's list held back and this one lists again stands: reopened elsewhere)
-    board.hubSettled = board.hubSettled.filter { !open.contains($0.key) }
+    if desk == nil { desk = try? await noted({ try await hub.desk(active: true) }) }
+    return desk.map { ($0, base) }
+  }
+  /** Takes the hub's Desk read by `fetchDesk` (see `deskFirst`). */
+  func applyDesk(_ got: (desk: JSON, base: (open: Set<String>, at: UInt64)?)?) async -> UInt64? {
+    guard let desk = got?.desk, desk["truncated"] as? Bool != true, let at = Wire.uint(desk["change"]) else { deskAnswered(); return nil }
+    let base = got?.base
+    let delta = desk["settled"] != nil && base != nil
+    // (by id, the change of its version: a delta builds on the list read before)
+    var listed: [String: Int] = delta ? deskListed : [:]
+    for kind in ["cards", "permission_requests"] {
+      for o in desk[kind] as? [JSON] ?? [] {
+        guard let id = (o["object_id"] as? String).flatMap({ try? unb64u($0) }) else { continue }
+        listed[hex(id)] = Int(Wire.uint((o["version"] as? JSON)?["change"]) ?? Wire.uint(o["version_change"]) ?? 0)
+      }
+    }
+    if delta { for s in desk["settled"] as? [Any] ?? [] { if let id = (s as? String).flatMap({ try? unb64u($0) }) { listed.removeValue(forKey: hex(id)) } } }
+    else { deskWholeAt = nowMs() }
+    deskListed = listed
+    deskSeen = (Set(listed.keys), at)
+    keepDesk(Set(listed.keys), at: at)
     board.deskWaiting = false
     // (a device that holds nothing yet: the Desk from the hub's list, before any of the history is read)
     if cursor == 0 && board.cards.isEmpty { await Spent.time("desk preview") { await deskPreview(desk) } }
     var change = Change()
-    if at > cursor {
-      board.deskGate = open
-      catchingUp = (cursor, at)
-      for c in board.cards.values where c.objectState == "open" && !open.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
-      for p in board.permissions.values where p.permissionState == "pending" && !open.contains(p.objectId) { change.permissions.insert(p.objectId); if let sid = p.sessionId { change.sessions.insert(sid) } }
-    } else {
-      // (nothing to read: what is open here and not there is compared at once)
-      settleWithDesk(&change)
-    }
+    // The hub's list decides the Desk (the client core's rule, the same on every app): what it leaves out, with
+    // nothing newer here than its change, was settled elsewhere and is held back; a hand back older than the version
+    // it lists is over.
+    board.setDeskListing(listed, at: Int(at))
+    if at > cursor { catchingUp = (cursor, at) }
     change.stack = true
-    board.project(change)
+    board.project(&change)
     emit(change)
     deskAnswered()
     return at > cursor ? at : nil
@@ -639,18 +681,9 @@ public struct Store {
         }
       }
     }) else { return }
-    var shown = 0
-    for e in opened {
-      if e.header.kind == .register, e.register?.name == "heads" { continue }
-      guard var rec = Records.record(e, senderRole: roleOf(e.header.sender)), rec.contentState == "ok" else { continue }
-      if e.header.kind == .register { rec.winner = true }
-      if let sid = rec.sessionId {
-        if rec.senderRole == "agent" { p.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
-        else if let to = rec.recipientDeviceId { p.sawAgent(sid, to, epoch: rec.epoch) }
-      }
-      if p.apply(rec, change: &change).applied { shown += 1 }
-    }
-    p.project()
+    let list = opened.filter { e in e.payload != nil && !(e.header.kind == .register && e.register?.name == "heads") }.map(receivedJSON)
+    let shown = p.apply(received: list).filter { $0.applied }.count
+    p.project(&change)
     Spent.count("desk preview items", shown)
     PerfLog.line("desk preview: \(shown) of \(items.count) taken, \(p.stack.count) cards on the Desk")
     guard !p.stack.isEmpty else { return }
@@ -663,37 +696,14 @@ public struct Store {
 
   /** The hub's Desk of the last `deskFirst`: its open cards and requests, and its cursor. */
   var deskSeen: (open: Set<String>, at: UInt64)?
-  /** The catch-up reached the Desk's cursor of `deskFirst`: nothing is held back for being behind any more. */
+  /** When the Desk was last read whole in this run (ms): a delta builds on it for 30 minutes. */
+  var deskWholeAt: UInt64?
+  /** The hub's Desk of the last reading, by id with the change of its version (a delta builds on it). */
+  var deskListed: [String: Int] = [:]
+  /** The catch-up reached the Desk's change of `deskFirst`. */
   func caughtUp(_ change: inout Change) {
     catchingUp = nil
-    if let gate = board.deskGate {
-      board.deskGate = nil
-      for c in board.cards.values where c.objectState == "open" && !gate.contains(c.objectId) { change.cards.insert(c.objectId); if let sid = c.sessionId { change.sessions.insert(sid) } }
-      for p in board.permissions.values where p.permissionState == "pending" && !gate.contains(p.objectId) { change.permissions.insert(p.objectId) }
-    }
-    settleWithDesk(&change)
     change.stack = true
-  }
-  /**
-   * This device has passed the cursor of the hub's Desk: whatever it holds as open that the Desk did not list, and
-   * that has nothing newer than that cursor, the hub settled (answered, read, closed) and this device did not take
-   * (an envelope it could not open, a step it refused). It is held back (`Board.hubSettled`) instead of standing on
-   * the Desk as a question that waits, and said in the log.
-   */
-  func settleWithDesk(_ change: inout Change) {
-    guard let seen = deskSeen, cursor >= seen.at else { return }
-    let settled = board.settled(byDesk: seen.open, at: Int(seen.at))
-    if settled.keys.sorted() != board.hubSettled.keys.sorted() {
-      for id in Set(settled.keys).symmetricDifference(board.hubSettled.keys) {
-        if board.cards[id] != nil { change.cards.insert(id) } else { change.permissions.insert(id) }
-        if let sid = board.cards[id]?.sessionId ?? board.permissions[id]?.sessionId { change.sessions.insert(sid) }
-      }
-    }
-    board.hubSettled = settled
-    if !settled.isEmpty {
-      Spent.count("held back: settled at the hub", settled.count)
-      PerfLog.line("held back: \(settled.count) open here, settled at the hub: \(settled.keys.sorted().prefix(20).joined(separator: " "))")
-    }
   }
 
   /** The session groups this device is in (hex). */
@@ -722,6 +732,10 @@ public struct Store {
     // entries up to where the core has read are handed again, as the web engine's `handLog` does.
     for group in joinedGroups { try await handGroupLog(group, upTo: try await onCore { $0.cursor }, &change) }
     try await refreshGroups(&change)
+    // What was passed over before these joins (an envelope of a group this device did not hold yet: its Welcome not at
+    // the hub yet, or not read) is read back now, whatever learning the group's past brings (none for a helper session
+    // whose walk waits, 5.2.6): as the web engine's `behind` rule.
+    if !joinedGroups.isEmpty, record.past?.passedOver == true { notePast { $0.readBack = true } }
     // A sign-in with the code whose session another human device added this one to first (5.2.7, its Welcome won the
     // race): the code selected none of that session's keys, and what was written before the Welcome stays closed
     // until a human device hands them over. They are asked for at once, not after the grace (7.1.1): the person
@@ -951,7 +965,7 @@ public struct Store {
       if cursor <= before { throw finding("bad-format", "the hub says there is more and gives nothing new") }
       // A long catch-up shows what it has page by page (what the hub settled meanwhile is held back: deskFirst);
       // reading back builds the board anew and shows it at its end.
-      if !readingBack && !change.isEmpty { board.project(change); emit(change); change = Change() }
+      if !readingBack { board.project(&change); if !change.isEmpty { emit(change); change = Change() } }
     }
     throw finding("bad-format", "the hub's changes do not end")
   }
@@ -1005,9 +1019,7 @@ public struct Store {
     /** `facts`: what the Commit did (CoreDevice.lastCommitFacts), for the dates Settings → Security shows. */
     case processed(Processed, facts: CommitFacts? = nil)
     /** `heads`: for a `heads` register of another device, how its heads compare with this device's chains. */
-    /** `winner`: for a register write the core did not make current, the core's current value of its name (nil
-     *  inside: none, or deleted); nil for anything else. */
-    case envelope(ReceivedEnvelope, heads: [(sender: DeviceId, standing: HeadStanding)], winner: Bytes?? = nil)
+    case envelope(ReceivedEnvelope, heads: [(sender: DeviceId, standing: HeadStanding)])
     case refused(change: UInt64, code: String)
     /** The run ends before this item; the cursor stays in front of it. */
     case stopped(code: String)
@@ -1096,9 +1108,7 @@ public struct Store {
             if e.outcome == .applied, e.register?.name == "heads", e.header.sender != device.id {
               heads = (try? device.compareHeads(group: e.header.group, writer: e.header.sender)) ?? []
             }
-            var winner: Bytes?? = nil
-            if e.outcome == .applied, let r = e.register, !r.current, r.of == nil { winner = .some(try? device.register(group: e.header.group, name: r.name)) }
-            out.append(.envelope(e, heads: heads, winner: winner))
+            out.append(.envelope(e, heads: heads))
           }
         } catch {
           // A local failure is not the item's fault: stop here, nothing after it is processed out of order.
@@ -1140,7 +1150,7 @@ public struct Store {
       board.lastEnvelopeNumber = max(board.lastEnvelopeNumber, Int(cursor))
       switch o {
       case .processed(let p, let facts):
-        if let facts { board.applyCommitFacts(facts, room: facts.group == roomId, change: &change) }
+        if let facts { board.applyCommitFacts(facts, room: facts.group == roomId); change.members = true }
         switch p {
         case .commit(let group, _, let superseded, let removed):
           groupsStale = true
@@ -1156,9 +1166,9 @@ public struct Store {
           if case .log(_, let entry) = parsed[i] { applyMessage(m, group: entry.group, change: entry.change, &change) }
         case .skipped: break
         }
-      case .envelope(let e, let heads, let winner):
+      case .envelope(let e, let heads):
         try await freshGroups()
-        apply(e, report: &report, &change, winner: winner)
+        apply(e, report: &report, &change)
         for h in heads { applyHead(h.standing, of: h.sender, group: e.header.group, saidBy: e.header.sender, &change) }
       case .refused(let c, let code):
         report.refused += 1
@@ -1170,13 +1180,7 @@ public struct Store {
         try await freshGroups()
         report.envelopes += 1; report.opened += 1
         Spent.count("read back from the cache")
-        lamport = max(lamport, rec.causal.lamport)
-        // (as `apply` does for an envelope the core applied: the board learns who writes in the session)
-        if let sid = rec.sessionId {
-          if rec.senderRole == "agent" { board.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
-          else if let to = rec.recipientDeviceId { board.sawAgent(sid, to, epoch: rec.epoch) }
-        }
-        board.apply(rec, change: &change)
+        replay(rec)
         log[UInt64(rec.envelopeNumber)] = rec
         sinceSnapshot += 1
         cacheSoon(UInt64(rec.envelopeNumber))
@@ -1247,8 +1251,10 @@ public struct Store {
     switch m {
     case let .workTrail(from, turn, number, time, step):
       // (which session: the group the message came in; the item is kept and folded like every chat item)
-      guard let sid = sessionIdOfGroup[hex(group)], let rec = Records.workStep(session: sid, sender: hex(from), turn: hex(turn), number: Int(number), time: time, step: step, change: n) else { return }
-      board.apply(rec, change: &change)
+      guard let sid = sessionIdOfGroup[hex(group)] else { return }
+      let rec = Rec(envelopeNumber: Int(n), json: .obj(["work": .obj(["session": .str(sid), "from": .str(hex(from)), "turn": .str(hex(turn)), "number": .num(Double(number)),
+                                                                       "time": .num(Double(time)), "step": .str(String(decoding: step, as: UTF8.self))])]), opened: true)
+      guard replay(rec) else { return }
       log[n] = rec
       cacheSoon(n)
     case let .strokePiece(from, boardId, piece):
@@ -1273,7 +1279,7 @@ public struct Store {
   }
 
   /** One received envelope into the board. */
-  func apply(_ e: ReceivedEnvelope, report: inout SyncReport, _ change: inout Change, winner: Bytes?? = nil) {
+  func apply(_ e: ReceivedEnvelope, report: inout SyncReport, _ change: inout Change) {
     let n = e.change, sender = hex(e.header.sender)
     report.envelopes += 1
     if let f = e.finding { board.pushAlert(&change, code: f, message: "the hub set an item of another device aside for a reason this device cannot check", envelopeNumber: Int(n), sender: sender) }
@@ -1296,51 +1302,33 @@ public struct Store {
       return
     case .void:
       report.voids += 1
+      board.apply(received: [receivedJSON(e)])
       return
     case .chained:
       // Chained and never applied. A body that did not open still counts for its object's state (9.2.1) and goes
-      // on as a header; a refusal by who may write it or by its epoch (checks 7 and 8) shows nothing.
+      // on as a header; a refusal by who may write it or by its epoch (checks 7 and 8) shows nothing (the client
+      // core's model says so, as on the web).
       if e.code == "no-key" { notePast { $0.closed = true } }
-      if e.code != "pruned" { board.pushAlert(&change, code: e.code ?? "forbidden", message: "an item was not applied", envelopeNumber: Int(n), sender: sender) }
     case .applied, .provisional: break
     }
     // `heads` is the devices' own bookkeeping (9.0.7), compared in the core: nothing of it is on the board.
     if e.header.kind == .register, e.register?.name == "heads" { return }
-    guard var rec = Records.record(e, senderRole: roleOf(e.header.sender)) else { report.voids += 1; return }
-    // A register write: which value is in force is the core's word (9.3.2, `RegisterChange.current`), not the
-    // board's. Made current: it is shown as it is. Not made current: the board shows the core's current value of
-    // that name instead (an own echo that lost goes with it).
-    if e.header.kind == .register, let r = e.register {
-      rec.winner = true
-      if !r.current {
-        guard r.of == nil, let w = winner, let values = rec.content?["values"].object, values.count == 1, let key = values.keys.first else { return }
-        let current: JV = w.flatMap { JV.parse($0) }.map { Records.registerValue(key, Records.renameFiles($0, toWire: false, depth: 0), toWire: false) } ?? .null
-        rec.content = rec.content?.with("values", .obj([key: current]))
-      }
-    }
-    // A lamport far above every one seen is not counted (9.3.2: the core counts it as 0; so does the board).
-    if rec.causal.lamport > 0, !lamportAccepted(rec.causal.lamport, lamport) {
-      board.pushAlert(&change, code: "lamport-inflated", message: "a write claims a lamport far above every one seen: counted as 0", envelopeNumber: Int(n), sender: rec.senderDeviceId)
-      rec.causal.lamport = 0
-    }
-    switch rec.contentState {
-    case "ok": report.opened += 1
-    case "pruned", "header": report.headerOnly += 1
-    default: report.undecryptable += 1
-    }
-    rec.localId = ownEchoes.removeValue(forKey: rec.envelopeHash)
-    // The core checked who may write what (9.2); the board's reducer checks again and needs to know the devices.
-    if e.outcome == .applied, let sid = rec.sessionId {
-      if rec.senderRole == "agent" { board.sawAgent(sid, rec.senderDeviceId, epoch: rec.epoch) }
-      else if let to = rec.recipientDeviceId { board.sawAgent(sid, to, epoch: rec.epoch) }
-    }
-    lamport = max(lamport, rec.causal.lamport)
-    board.apply(rec, change: &change)
-    var kept = rec
-    kept.localId = nil
-    log[n] = kept
+    if e.outcome == .applied || e.outcome == .provisional { if e.payload == nil { report.headerOnly += 1 } else { report.opened += 1 } }
+    else if e.code == "pruned" { report.headerOnly += 1 } else { report.undecryptable += 1 }
+    let json = receivedJSON(e)
+    board.apply(received: [json])
+    ownEchoes.removeValue(forKey: hex(e.hash))
+    log[n] = Rec(envelopeNumber: Int(n), json: .obj(["received": json]), opened: e.payload != nil)
     sinceSnapshot += 1
     cacheSoon(n)
+  }
+  /** A record of the warm-start log into the board again: an envelope as the core read it, or a step of a work trail. */
+  @discardableResult func replay(_ rec: Rec) -> Bool {
+    if rec.json["received"].object != nil { return board.apply(received: [rec.json["received"]]).first?.applied ?? false }
+    let w = rec.json["work"]
+    guard let from = try? unhex(w["from"].string ?? ""), let turn = try? unhex(w["turn"].string ?? "") else { return false }
+    return board.applyWorkTrail(session: w["session"].string ?? "", from: from, turn: turn, number: UInt32(w["number"].int ?? 0), time: UInt64(w["time"].int ?? 0),
+                                step: Bytes((w["step"].string ?? "").utf8), change: UInt64(rec.envelopeNumber))
   }
   /** Takes out of every conversation what was shown as not yet confirmed under that number of a sender's chain, except the envelope `keep`. */
   private func dropProvisional(sender: String, seq: UInt64, keep: String, _ change: inout Change) {
@@ -1373,7 +1361,7 @@ public struct Store {
       if let i = item, i.change <= cursor { return }
       _ = try? await serial { [self] in
         var report = SyncReport(), change = Change()
-        defer { self.board.project(change); self.emit(change); self.pumpOutbox() }
+        defer { self.board.project(&change); self.emit(change); self.pumpOutbox() }
         var taken = false
         if let i = item, i.change > self.cursor { taken = (try? await self.process([i], report: &report, change: &change)) != nil }
         if !taken { try await self.readChanges(&report, &change) }
@@ -1388,30 +1376,24 @@ public struct Store {
     case "welcome":
       _ = try? await serial { [self] in
         var report = SyncReport(), ch = Change()
-        defer { self.board.project(); self.emit(ch) }
+        defer { self.board.project(&ch); self.emit(ch) }
         let before = self.sessionGroupIds
         try await self.takeWelcomes(&ch)
         // (a session group joined: the hub's Desk lists its open cards now, and is read again, as at a catch-up)
-        if self.sessionGroupIds != before, let until = await self.deskFirst() {
+        if self.sessionGroupIds != before, let until = await self.deskFirst(whole: true) {
           try await self.readChanges(&report, &ch)
           if self.cursor >= until { self.caughtUp(&ch) }
         }
         if self.pastDue { try await self.tendPast(&report, &ch) }
       }
     case "presence":
-      var ch = Change()
-      let report = Records.presence(data)
-      if report["is_online"].truthy, let id = report["device_id"].string { namedHere?.insert(id) }
-      board.applyPresence(report, change: &ch)
-      emit(ch)
+      // (the client core reads it: client/src/presence.rs, the same on every app)
+      board.applyPresenceEvent(data)
+      emit(Change())
     case "here":
-      // (the list of who is here is whole: a device shown online that it did not name left while no stream was
-      //  open, its `online: false` missed, as presence is not replayed)
-      guard let named = namedHere else { return }
-      namedHere = nil
-      var ch = Change()
-      board.applyHere(named: named, change: &ch)
-      emit(ch)
+      // (the end of a new stream's list of who is here: a device shown online that it did not name left meanwhile)
+      board.applyHere()
+      emit(Change())
     case "request":
       // a wish of a signed-in device (readmit, handover, session) or a join request of an invite; a wish for keys
       // is answered (7.1.1)
@@ -1428,7 +1410,7 @@ public struct Store {
           // (the stored flag, not only `pastDue`: a pass that failed half way left it set)
           guard self.pastDue || self.record.past?.readBack == true else { return }
           var report = SyncReport(), ch = Change()
-          defer { self.board.project(ch); self.emit(ch) }
+          defer { self.board.project(&ch); self.emit(ch) }
           try await self.tendPast(&report, &ch)
         }
       }
@@ -1457,7 +1439,7 @@ public struct Store {
             if status == 401 { unauthorised = true; reader.stop(); break }
             if status != 200 { refused = true; reader.stop(); break }
             live = true; board.connection = "live"
-            streamOpened()
+            board.streamOpened()
             var ch = Change(); ch.room = true; emit(ch)
           case .event(let name, let data):
             pause = 300_000_000   // (a stream that brought something was a real one: the next pause is short again)
@@ -1479,11 +1461,6 @@ public struct Store {
     }
     live = false
   }
-
-  /** The live stream opened (again): the hub's list of who is here comes first, ended by a `here` event. */
-  func streamOpened() { namedHere = [] }
-  /** The devices the hub named online since the live stream opened, until its `here` ends that list (nil: none open). */
-  var namedHere: Set<String>?
 
   /** Who is online and what the agents' links say. */
   public func refreshPresence() async {
@@ -1604,7 +1581,7 @@ public struct Store {
     if !synced { _ = try? await sync(); return }
     _ = try? await serial { [self] in
       var report = SyncReport(), ch = Change()
-      defer { self.board.project(ch); self.emit(ch) }
+      defer { self.board.project(&ch); self.emit(ch) }
       try? await self.readChanges(&report, &ch)
       try await self.refreshGroups(&ch)
     }

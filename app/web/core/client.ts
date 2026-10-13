@@ -25,12 +25,14 @@
 // Nothing here logs. A file key, a share link's secret and a recovery code never go into an error's text.
 import { attachmentFromWire, attachmentRef, encodeBodyBytes, encodePiece, encodeRegister, fileIdsOf, fileRefOf, UPDATE_MESSAGE } from './codec.ts'
 import type { Fields } from './codec.ts'
-import type { Core, Device, Draft, FileRef, OutboxEntry, ReceivedEnvelope, Sealed } from './core-api.ts'
+import { relink, revivePatch, snapshotForCore } from './board.ts'
+import type { ClientModel, Core, Device, Draft, FileRef, OutboxEntry, ReceivedEnvelope, Sealed } from './core-api.ts'
 import { Engine } from './engine.ts'
 import type { EngineEvents, EngineMeta } from './engine.ts'
 import { accountCopiesBytes, HubError } from './hub.ts'
 import type { AccountCopies, EnvelopeItem, Hub, StreamEvent } from './hub.ts'
 import { b64u, hex, unb64u, unhex } from './ids.ts'
+import { applyPatch } from './mirror.ts'
 import * as M from './model.ts'
 import { mark, timed } from './spent.ts'
 import type { Cache } from './store-idb.ts'
@@ -71,6 +73,8 @@ const DESK_SOON_MS = 250
  *  cards wait off the Desk until the list answers, and past DESK_HOLD_MAX_MS the last list kept here decides. */
 const DESK_FIRST_MS = 300
 const DESK_HOLD_MAX_MS = 5000
+/** A failed read of the hub's archived sessions (`archivedSoon`) is tried again after this long. */
+const ARCHIVED_RETRY_MS = 3000
 /** Where the hub's Desk as last read is kept between runs. */
 const DESK_KEY = 'client/desk'
 /** How many answered cards a reading of the Desk asks the hub about (`readDesk`). */
@@ -171,12 +175,6 @@ export interface ClientOptions {
   device_info?: unknown
   now?: () => number
 }
-/** The most live sessions of one account that joined by themselves (12.4), links still open counted in; the most
- *  of all accounts together (the account is the asking agent's word, so this one bounds a lying agent); and the most
- *  vouched links open at once on this device (the hub keeps 16 open invites a room: the rest stay for the person). */
-const MAX_VOUCHED = 8
-const MAX_VOUCHED_ROOM = 24
-const MAX_VOUCHED_OPEN = 8
 /** An invite as this device keeps it beside what the model shows. */
 interface InviteKept { public: Invite; checked_at?: number; done?: boolean; code?: number[]; request_hash?: string; committed?: boolean }
 
@@ -202,6 +200,8 @@ function snapshotFiles(shapes: readonly Record<string, unknown>[]): Uint8Array[]
 
 export class Client {
   model: Model
+  /** The client core's board model (client/src/model): it builds the model; `model` is its copy, patched once per batch. */
+  private readonly board: ClientModel
   readonly core: Core
   readonly hub: Hub
   readonly engine: Engine
@@ -259,7 +259,7 @@ export class Client {
   /** The hub's Desk of THIS run decided what stands open (`knowDesk`); until then the model is the cache's, and a card
    *  closed elsewhere since the last run would still stand. False only on a start from the cache. */
   private deskKnown = true
-  /** Past DESK_FIRST_MS without the hub's answer: every open card waits off the Desk (`judgeDesk`). */
+  /** Past DESK_FIRST_MS without the hub's answer: every open card waits off the Desk (the client core holds them all: `M.setDeskHold`). */
   private deskHeld = false
   private deskWait: Promise<void> | null = null
   private deskWaitDone: (() => void) | null = null
@@ -285,8 +285,9 @@ export class Client {
     this.room_id = opts.engine.room_id ?? fail('no-room', 'this device has no room')
     this.my_device_id = hex(opts.engine.device_id)
     this.model = M.emptyModel()
-    // (an agent that waits for its main session is given one once it is connected: engine.ts `seatAgents`)
-    opts.engine.isOnline = device => this.model.members.get(hex(device))?.is_online === true
+    this.board = new this.core.ClientModel(this.my_device_id)
+    // (an agent that waits for its main session is given one once it is connected: the core's seat rule, engine.ts `seatAgents`)
+    opts.engine.seats = { plan: (k, now) => this.board.seatPlan(k, now), afterHub: (c, h) => this.board.seatAfterHub(c, h), founded: a => this.board.seatFounded(a), failed: (a, now) => this.board.seatFailed(a, now), grace: ms => this.board.setSeatGrace(ms) }
     this.listen()
   }
   get is_human(): boolean { return this.engine.is_human }
@@ -303,9 +304,9 @@ export class Client {
     // dropped.
     if (kept && kept.device === this.my_device_id && kept.cursor <= e.cursor) {
       this.model = M.modelFromCache(await this.cache.range(''))
-      // (a mark of an earlier run is the past: `readDesk` sets it again from the hub's Desk of now)
-      for (const c of this.model.cards.values()) delete c.catching_up
-      for (const r of this.model.permissions.values()) delete r.catching_up
+      this.model.room.my_device_id = this.my_device_id
+      // (the core builds the model from here on; a mark of an earlier run is the past: `readDesk` sets it again)
+      this.board.load(snapshotForCore(this.model))
       // What stands open is what the hub's Desk listed when this device last read it (kept beside the cache): a card
       // it had settled stays off the Desk although this device never read its closing. The Desk of now follows
       // (`deskFirst`, `readDesk`), and only it lets anything else stand.
@@ -324,11 +325,11 @@ export class Client {
     Object.assign(room, { room_id: hex(this.room_id), hub_url: this.hub.hub_url, my_device_id: this.my_device_id, my_role: e.is_human ? 'human' : 'agent', last_envelope_number: e.position, connection: 'offline', outbox_blocked: null })
     const ch = M.emptyChange()
     ch.room = true
-    M.applyGroups(this.model, e.groups, e.roles, ch)
-    if (this.desk) this.judgeDesk(ch, null)
+    this.board.applyGroups(e.groups, e.roles ?? null)
+    if (this.desk) this.deskToModel()
     this.sessionGroups = e.groups.filter(g => g.session && !g.archived).length
     for (const [key, value] of await this.cache.range('client/invite/')) { const k = value as InviteKept; this.invites.set(key.slice('client/invite/'.length), k); if (!k.done) this.model.invites.set(k.public.invite_id, k.public) }
-    M.project(this.model, ch, this.now())
+    this.fromBoard(ch)
     this.record(ch)
     return this
   }
@@ -353,11 +354,10 @@ export class Client {
   /** Ends a batch: projects, tells the views what changed, hands the change's records to the cache. */
   private publish(): void {
     const ch = this.change
-    if (this.desk && (ch.cards.size || ch.permissions.size)) this.judgeDesk(ch, { cards: new Set(ch.cards), permissions: new Set(ch.permissions) })
     if (this.model.room.last_envelope_number !== this.engine.position) { this.model.room.last_envelope_number = this.engine.position; ch.room = true }
     const reading = this.readingHolds > 0 || this.rebuild !== null || this.engine.rescanPending
-    if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true }
-    M.project(this.model, ch, this.now())
+    if (this.model.room.reading !== reading) { this.model.room.reading = reading; ch.room = true; this.board.setReading(reading) }
+    this.fromBoard(ch)
     // (the engine moves its cursor only after an item's effects were reported: at any publish the model holds
     // everything up to it, and this change carries what the cache lacks of it)
     if (this.rebuild === null) this.stamped = this.engine.cursor
@@ -429,7 +429,7 @@ export class Client {
     const e = this.engine
     const on = <K extends keyof EngineEvents>(event: K, fn: (data: EngineEvents[K]) => void): void => { this.offs.push(e.on(event, fn)) }
     on('envelope', ({ received, how }) => {
-      M.applyEnvelope(this.model, received, this.change, { now: this.now() })
+      this.board.applyEnvelopes([received], this.now())
       const o = received.header.object
       // a card or a request that came live: what the hub's Desk says of it now, shortly
       if (how === 'ordered' && (o?.objectType === 'card' || o?.objectType === 'request') && this.started && this.is_human && this.engine.connection === 'live') this.deskSoon(DESK_AFTER_MS)
@@ -437,19 +437,24 @@ export class Client {
     })
     on('log', ({ item, done }) => {
       const room = item.group.length === 32
-      if (done.commit) M.applyCommit(this.model, done.commit, this.change, { by_recovery: room && done.commit.external, removed_me: done.removed && room, now: this.now() })
+      if (done.commit) this.board.applyCommit(done.commit, room && done.commit.external, done.removed && room, this.now())
       const m = done.message
-      if (m?.kind === 'workTrail') { const s = e.groups.find(g => sameBytes(g.group, item.group))?.session; if (s) M.applyWorkTrail(this.model, hex(s.sessionId), m, item.change, this.change) }
-      else if (m?.kind === 'recoveryAuthConflict') M.pushAlert(this.model, this.change, { code: 'equivocation', message: 'two different confirmations of the recovery key were sent: neither replaces the one this device holds', envelope_number: item.change, sender_device_id: m.from ? hex(m.from) : null, at: this.now() })
-      else if (m?.kind === 'newerVersion') M.noteNewer(this.model, this.change, 'message type', { envelope_number: item.change })
+      if (m?.kind === 'workTrail') { const s = e.groups.find(g => sameBytes(g.group, item.group))?.session; if (s && m.from && m.turn) this.board.applyWorkTrail(hex(s.sessionId), m.from, m.turn, m.number, m.time, m.payload, item.change) }
+      else if (m?.kind === 'recoveryAuthConflict') this.board.pushAlert('equivocation', 'two different confirmations of the recovery key were sent: neither replaces the one this device holds', item.change, m.from ? hex(m.from) : null, this.now())
+      else if (m?.kind === 'newerVersion') this.board.noteNewer('message type', item.change)
     })
-    on('relay', m => { if (m.kind === 'strokePiece') M.applyStrokePiece(this.model, m, this.change, { now: this.now() }) })
+    on('relay', m => { if (m.kind === 'strokePiece' && m.from && m.board) this.board.applyStrokePiece(m.from, m.board, m.payload, this.now()) })
     on('groups', ({ groups, roles }) => {
-      M.applyGroups(this.model, groups, roles, this.change)
+      this.board.applyGroups(groups, roles ?? null)
       // The hub's Desk lists only what lies in the groups this device is in: a device just signed in joins its
       // session groups one by one after it is in the room, and each one joined adds its open cards to the Desk.
       const sessions = groups.filter(g => g.session && !g.archived).length
-      if (sessions !== this.sessionGroups) { this.sessionGroups = sessions; this.deskWholeDue = true; if (this.started && this.is_human) this.deskSoon() }
+      if (sessions !== this.sessionGroups) {
+        // (a session group joined later than the hub archived it, its Welcome read after the stream's word of the
+        //  archiving: held as archived too, as at the start)
+        if (sessions > this.sessionGroups && this.started) this.archivedSoon()
+        this.sessionGroups = sessions; this.deskWholeDue = true; if (this.started && this.is_human) this.deskSoon()
+      }
       const role = e.is_human ? 'human' : 'agent'
       if (this.model.room.my_role !== role) { this.model.room.my_role = role; this.change.room = true }
     })
@@ -460,7 +465,7 @@ export class Client {
       for (const s of this.sending.values()) if (s.item.outbox_state === 'blocked') { s.item.outbox_state = 'sending'; s.item.error = null }
       if (held) { held.item.outbox_state = 'blocked'; held.item.error = blocked!.code }
       this.model.room.outbox_blocked = blocked ? { local_id: held?.local_id ?? '', code: blocked.code, message: blocked.message } : null
-      if (blocked) M.pushAlert(this.model, this.change, { code: 'chain-halted', message: `the hub refused an envelope (${blocked.code}). Sending is halted; the same envelope is tried again.`, at: this.now() })
+      if (blocked) this.board.pushAlert('chain-halted', `the hub refused an envelope (${blocked.code}). Sending is halted; the same envelope is tried again.`, null, null, this.now())
       this.change.outbox = this.change.room = true
     })
     // (a device that was removed stays `removed`: that is the last word on its connection)
@@ -470,9 +475,9 @@ export class Client {
       if (connection === 'live' && this.model.room.connection !== 'live' && this.started) void this.readDesk().catch(() => {})
       this.model.room.connection = connection; this.change.room = true
     })
-    on('alert', a => { M.pushAlert(this.model, this.change, { code: a.code, message: a.message, envelope_number: a.change, at: this.now() }) })
+    on('alert', a => { this.board.pushAlert(a.code, a.message ?? '', a.change ?? null, null, this.now()) })
     on('stream', event => this.onStream(event))
-    on('opened', () => { this.namedHere = new Set() })
+    on('opened', () => this.board.streamOpened())
     on('invites', ({ open }) => this.invitesDone(open))
     on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() }; void this.reloadArchived().catch(() => {}) })
     on('batch', () => this.publish())
@@ -484,7 +489,8 @@ export class Client {
         this.change.room = true
         // said once, however this device processed the Commit that removed it (in the room's log, or served by the
         // hub's removal route after a `not-member`): never on the hub's word alone
-        if (!this.model.alerts.some(x => x.code === 'removed')) M.pushAlert(this.model, this.change, { code: 'removed', message: 'this device was removed from the room', at: this.now() })
+        this.fromBoard(this.change)
+        if (!this.model.alerts.some(x => x.code === 'removed')) this.board.pushAlert('removed', 'this device was removed from the room', null, null, this.now())
         this.publish()
       }
       // the hub no longer takes this device and the device did not confirm it: nothing is wiped, nothing more is
@@ -498,29 +504,20 @@ export class Client {
       else this.emit('device-closed', null)
     })
   }
-  /** The devices the hub named online since the live stream opened, until its `here` ends that list (null: none open). */
-  private namedHere: Set<string> | null = null
   private onStream(event: StreamEvent): void {
     switch (event.event) {
       case 'presence':
-        if (event.online) this.namedHere?.add(hex(event.device))
-        // (an event without `hears` says only that a stream opened or closed: the link report held stands while the
-        //  device is online; the hub tells a new stream the reports of now first, and every change after)
-        M.applyPresence(this.model, [{ device_id: hex(event.device), is_online: event.online, offline_since: event.online ? null : this.now(),
-          ...(event.hears === null ? {} : { link: { hears: event.hears ? 'live' : 'oncall', attached: true, working: event.working === true, last_call_at: event.last_call_at } }) }], this.change, this.now())
+        // (the client core reads it: client/src/presence.rs, the same on every app)
+        this.board.applyPresenceEvent(JSON.stringify({ device: hex(event.device), online: event.online, lost: event.lost, hears: event.hears, working: event.working, last_call_at: event.last_call_at }), this.now())
         // (an agent that came online without a main session gets one: engine.ts seatAgents)
         if (event.online && this.is_human && this.engine.roles?.agents.some(d => hex(d) === hex(event.device))) this.engine.keepSoon(0)
-        if (event.lost) M.pushAlert(this.model, this.change, { code: 'agent-lost', message: 'An agent lost its connection.', sender_device_id: hex(event.device), at: this.now() })
         this.publish()
         return
-      case 'here': {
-        // (the list of who is here is whole: a device shown online that it did not name left while no stream was
-        //  open, its `online: false` missed, as presence is not replayed)
-        const named = this.namedHere
-        this.namedHere = null
-        if (named && M.applyHere(this.model, named, this.change, this.now())) this.publish()
+      case 'here':
+        // (the end of a new stream's list of who is here: a device shown online that it did not name left meanwhile)
+        this.board.applyHere(this.now())
+        this.publish()
         return
-      }
       case 'invite_request': void this.checkInvite(hex(event.invite_id)).catch(() => {}); return
       case 'file_evicted': this.attachmentCache.delete(hex(event.file_id)); void this.cache.delete(`file/${hex(event.file_id)}`).catch(() => {}); return
       case 'archived': void this.engine.archive(event.group).catch(() => {}); return
@@ -550,7 +547,7 @@ export class Client {
       const item: OutboxItem = { local_id, envelope_kind: 'register', object_id: null, timeline_key: null, recipient_device_id: null, outbox_state: 'sending', error: null, content: { key } } as OutboxItem
       this.sending.set(entry.id, { local_id, item })
       const sealed = { outboxId: entry.id, envelopeHash: info.envelopeHash, seq: info.header.seq, group: info.header.group, objectId: null, time: info.header.time } as Sealed
-      this.tell(ch => { M.echoRegisters(this.model, { local_id, values: { [key]: out.value ?? null } }, ch); this.model.outbox.push(item); ch.outbox = true; M.confirmEcho(this.model, local_id, sealed, ch) })
+      this.tell(ch => { this.board.echoRegisters(local_id, JSON.stringify({ [key]: out.value ?? null })); this.model.outbox.push(item); ch.outbox = true; this.confirmEcho(local_id, sealed) })
     }
   }
   /** The hub answered an outbox entry: its item leaves model.outbox; a refusal takes the echo back first. */
@@ -567,7 +564,7 @@ export class Client {
       if (at >= 0) this.model.outbox.splice(at, 1)
       this.change.outbox = true
       void (async () => { await this.engine.healNow().catch(() => {}); await again() })().catch(e => {
-        M.pushAlert(this.model, this.change, { code: this.core.errorCode(e) ?? 'stale-session', message: 'a message was not sent: its session waits for a repair', at: this.now() })
+        this.board.pushAlert(this.core.errorCode(e) ?? 'stale-session', 'a message was not sent: its session waits for a repair', null, null, this.now())
         this.publish()
       })
       return
@@ -577,8 +574,8 @@ export class Client {
       sent.item.outbox_state = 'failed'; sent.item.error = refusal
       // a refused Note version: the edit that waited behind it is tried on what stands
       for (const [id, busy] of this.noteBusy) if (busy.outbox === entry.id) this.noteBack(id)
-      M.rollbackEcho(this.model, sent.local_id, ch)
-      M.pushAlert(this.model, ch, { code: refusal, message: `the hub refused an envelope (${refusal})`, at: this.now() })
+      this.board.rollbackEcho(sent.local_id)
+      this.board.pushAlert(refusal, `the hub refused an envelope (${refusal})`, null, null, this.now())
       ch.outbox = true
       this.publish()
     }
@@ -593,7 +590,7 @@ export class Client {
       for (const [id, sent] of this.sending) {
         if (stored.has(id)) continue
         this.sending.delete(id)
-        M.rollbackEcho(this.model, sent.local_id, ch)
+        this.board.rollbackEcho(sent.local_id)
         const at = this.model.outbox.indexOf(sent.item)
         if (at >= 0) this.model.outbox.splice(at, 1)
         ch.outbox = true
@@ -609,7 +606,7 @@ export class Client {
     this.started = true
     mark(`client start (${this.rebuild !== null ? `rebuild from ${this.rebuild}` : 'from the cache'})`)
     // From the cache, the Desk stands already: the hub's Desk is read alongside the catch-up and the stream, not
-    // before them (`judgeDesk` holds back by the Desk's own cursor, whichever comes first; the catch-up's end reads
+    // before them (the client core holds back by the Desk's own cursor, whichever comes first; the catch-up's end reads
     // it again only when this one is through). Without a cache it is what is shown first, and waited for.
     if (this.rebuild !== null) { await this.fromDesk().catch(() => {}); mark('desk read') }
     else if (this.is_human && !this.deskReading) void this.readDesk().catch(() => {}).finally(() => mark('desk read'))
@@ -626,6 +623,18 @@ export class Client {
   }
   /** The sessions the hub holds as archived that this device still holds as live (archived while it was away): it
    *  holds them as archived too, so that it loads them only when one is opened (loadArchived). One small request. */
+  /** `learnArchived` once more, after what runs now; a failed read is tried again a while later. */
+  private archivedSoon(): void {
+    if (this.archivedRun) { this.archivedAgain = true; return }
+    this.archivedRun = this.learnArchived().catch(() => {
+      if (this.started) setTimeout(() => { if (this.started) this.archivedSoon() }, ARCHIVED_RETRY_MS)
+    }).finally(() => {
+      this.archivedRun = null
+      if (this.archivedAgain) { this.archivedAgain = false; this.archivedSoon() }
+    })
+  }
+  private archivedRun: Promise<void> | null = null
+  private archivedAgain = false
   private async learnArchived(): Promise<void> {
     for (const row of await this.hub.roomGroups({ archived: true })) {
       const held = this.engine.groups.find(g => g.session && sameBytes(g.group, row.group))
@@ -653,7 +662,7 @@ export class Client {
       }
     } catch (e) { this.archivedLoaded.delete(session_id); throw e }
     const received = await this.engine.receiveGroup(items)
-    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }) })
+    this.tell(() => { this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now()) })
     await this.engine.noteArchivedOpened(session_id)
     return received.length
   }
@@ -688,6 +697,7 @@ export class Client {
     if (this.goalsTimer !== null) { clearTimeout(this.goalsTimer); this.goalsTimer = null }
     if (this.deskTimer !== null) { clearTimeout(this.deskTimer); this.deskTimer = null }
     if (this.deskHoldTimer !== null) { clearTimeout(this.deskHoldTimer); this.deskHoldTimer = null }
+    if (this.wakeTimer !== null) { clearTimeout(this.wakeTimer); this.wakeTimer = null }
     this.deskWaitDone?.()
     await this.engine.stop()
     for (const off of this.offs.splice(0)) off()
@@ -707,12 +717,13 @@ export class Client {
       const listed = [...desk.cards, ...desk.permission_requests]
       this.desk = { open: new Set(listed.map(o => hex(o.object_id))), versions: new Map(listed.map(o => [hex(o.object_id), o.version?.change ?? 0])), at: desk.change }
       this.keepDesk()
+      this.deskToModel()
     }
     const items: EnvelopeItem[] = [...desk.registers]
     for (const list of [desk.cards, desk.notes, desk.permission_requests, desk.artifacts]) for (const o of list) if (o.version) items.push(o.version)
     items.sort((a, b) => a.change - b.change)
     const received = await this.engine.receivePage(items)
-    this.tell(ch => { for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() }); this.judgeDesk(ch, null) })
+    this.tell(() => { this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now()) })
     if (!desk.truncated) this.knowDesk()
   }
   /**
@@ -734,7 +745,7 @@ export class Client {
     if (!late || this.deskKnown || this.deskHeld) return
     this.deskHeld = true
     this.deskHoldTimer = setTimeout(() => { this.deskHoldTimer = null; this.knowDesk() }, DESK_HOLD_MAX_MS)
-    this.tell(ch => { this.model.room.desk_waiting = true; ch.room = true; this.judgeDesk(ch, null) })
+    this.tell(ch => { this.model.room.desk_waiting = true; ch.room = true; ch.stack = true; this.board.setDeskHold(true) })
   }
   /** The hub's Desk of this run decided (or none comes: the last list kept here does). */
   private knowDesk(): void {
@@ -743,7 +754,7 @@ export class Client {
     if (this.deskHoldTimer !== null) { clearTimeout(this.deskHoldTimer); this.deskHoldTimer = null }
     const held = this.deskHeld
     this.deskHeld = false
-    this.tell(ch => { if (held) { this.model.room.desk_waiting = false; ch.room = true } this.judgeDesk(ch, null) })
+    this.tell(ch => { if (held) { this.model.room.desk_waiting = false; ch.room = true; this.board.setDeskHold(false) } this.deskToModel(); ch.stack = true })
     this.deskWaitDone?.()
   }
   /** Keeps the hub's Desk as read, for the next start (`open`). */
@@ -845,31 +856,48 @@ export class Client {
     const deeds: ReceivedEnvelope[] = []
     for (const got of pages) if (got?.items.length) deeds.push(...await this.engine.receivePage(got.items).catch(() => []))
     this.tell(ch => {
-      for (const r of received) if (r.outcome !== 'refused') M.applyEnvelope(this.model, r, ch, { now: this.now() })
-      if (deeds.length) M.applyCardDeeds(this.model, deeds, ch, this.now())
-      this.judgeDesk(ch, null)
+      this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now())
+      if (deeds.length) this.board.applyCardDeeds(deeds)
+      this.deskToModel()
+      ch.stack = true
     })
   }
-  /** Holds back, or lets stand, what the hub's Desk says (`readDesk`); `only`: the objects a change named. */
-  private judgeDesk(ch: Change, only: { cards: Set<string>; permissions: Set<string> } | null): void {
+  /** The hub's Desk as read decides what stands (the client core's Desk: client/src/desk.rs, `M.project`): an open
+   *  card or request it does not list, with nothing of it here newer than its change, is held back (`catching_up`);
+   *  a hand back older than the version it lists is over. */
+  /** What the core's model changed since the last batch, put into the copy (`model`) and into `ch`. */
+  private fromBoard(ch: Change): void {
+    const text = this.board.finish(this.now())
+    if (!text) return
+    const patch = revivePatch(text)
+    const got = applyPatch(this.model, patch)
+    relink(this.model, patch)
+    if (patch.devregs) { const d = M.devregsOf(this.model); d.clear(); for (const [k, v] of patch.devregs) d.set(k, v) }
+    for (const k of ['cards', 'sessions', 'permissions', 'notes', 'published', 'timelines', 'registers', 'invites'] as const) for (const id of got[k]) ch[k].add(id)
+    for (const [k, list] of got.items) for (const it of list) M.addItem(ch, k, it)
+    ch.members ||= got.members; ch.alerts ||= got.alerts; ch.stack ||= got.stack; ch.room ||= got.room
+    if (patch.session_list) ch.status = true
+    if (patch.wake_at !== undefined) this.wakeAt(patch.wake_at)
+  }
+  /** When the core's model changes by the clock alone (a snooze ends, a request runs out, a session falls asleep, a
+   *  red hand after its grace): a batch then, so that the core decides it, not the page. */
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null
+  private wakeTime = 0
+  private wakeAt(at: number): void {
+    if (at === this.wakeTime) return
+    if (this.wakeTimer !== null) { clearTimeout(this.wakeTimer); this.wakeTimer = null }
+    this.wakeTime = at
+    if (!at) return
+    this.wakeTimer = setTimeout(() => { this.wakeTimer = null; this.wakeTime = 0; this.publish() }, Math.min(2 ** 31 - 1, Math.max(0, at - this.now()) + 50))
+  }
+  /** An own send was sealed: the core's model learns its hash (the hub's copy will name it), number and object id. */
+  private confirmEcho(local_id: string, sealed: Sealed): void {
+    this.board.confirmEcho(local_id, hex(sealed.envelopeHash), sealed.seq, sealed.objectId ? hex(sealed.objectId) : null)
+  }
+  private deskToModel(): void {
     const d = this.desk
-    // (waiting for the hub's first answer past DESK_FIRST_MS: no open card stands, `deskFirst`)
-    const held = this.deskHeld
-    if (!d && !held) return
-    const cards = only ? [...only.cards].map(id => this.model.cards.get(id)).filter((c): c is Card => !!c) : [...this.model.cards.values()]
-    for (const c of cards) {
-      const listed = !held && !!d?.open.has(c.object_id)
-      // settled at the hub: open here, not listed, and nothing of it here newer than the Desk
-      const hold = !listed && c.object_state === 'open' && (held || c.state_envelope_number <= d!.at)
-      // a hand back older than the version the hub lists is over: the agent answered it with that version
-      if (listed && c.in_revision && c.in_revision.envelope_number < (d!.versions.get(c.object_id) ?? 0)) { c.in_revision = null; ch.cards.add(c.object_id) }
-      if (hold !== !!c.catching_up) { if (hold) c.catching_up = true; else delete c.catching_up; ch.cards.add(c.object_id); if (c.session_id) ch.sessions.add(c.session_id) }
-    }
-    const perms = only ? [...only.permissions].map(id => this.model.permissions.get(id)).filter((r): r is NonNullable<typeof r> => !!r) : [...this.model.permissions.values()]
-    for (const r of perms) {
-      const hold = (held || !d!.open.has(r.object_id)) && r.permission_state === 'pending' && (held || r.envelope_number <= d!.at)
-      if (hold !== !!r.catching_up) { if (hold) r.catching_up = true; else delete r.catching_up; ch.permissions.add(r.object_id); if (r.session_id) ch.sessions.add(r.session_id) }
-    }
+    if (!d) return
+    this.board.setDeskListing(d.at, [...d.open].map(id => ({ objectId: id, versionChange: d.versions.get(id) ?? 0 })))
   }
   private async nameDevice(): Promise<void> {
     const name = this.opts.device_name
@@ -892,11 +920,11 @@ export class Client {
         // (a single message may go once more if the hub held its session as stale: its words are sealed anew)
         const again = drafts.length === 1 && !retried && (d.draft.kind === 'sessionChat' || d.draft.kind === 'cardChat') ? () => this.send(local_id, drafts, after, true) : null
         this.sending.set(sealed.outboxId, { local_id, item, again })
-        this.tell(ch => { this.model.outbox.push(item); ch.outbox = true; M.confirmEcho(this.model, local_id, sealed, ch); after?.(sealed) })
+        this.tell(ch => { this.model.outbox.push(item); ch.outbox = true; this.confirmEcho(local_id, sealed); after?.(sealed) })
       }
     } catch (e) {
       // what was sealed stays sealed (its number is used); what the echo showed beyond that is taken back
-      if (!last) this.tell(ch => M.rollbackEcho(this.model, local_id, ch))
+      if (!last) this.tell(() => this.board.rollbackEcho(local_id))
       throw e
     }
     return { local_id, envelope_hash: hex(last!.envelopeHash), seq: last!.seq }
@@ -933,7 +961,7 @@ export class Client {
     const payload = encodeBodyBytes('message', content)
     const timeline_key = M.timelineKey('chat', object_id ? `card/${object_id}` : `session/${sid}`)
     const local_id = `local-${randomHex(8)}`
-    this.tell(ch => M.echoTimelineItem(this.model, { local_id, timeline_key, content, recipient_device_id: recipient, object_id, now: this.now() }, ch))
+    this.tell(() => { this.board.echoItem(local_id, timeline_key, JSON.stringify(content), recipient ?? null, object_id ?? null, this.now()) })
     const draft: Draft = object_id ? { kind: 'cardChat', session: unhex(sid), card: unhex(object_id), payload } : { kind: 'sessionChat', session: unhex(sid), payload }
     const sent = await this.send(local_id, [{ draft, recipient, files: fileIdsOf('message', content), item: { timeline_key, object_id, content } }])
     // handed back (the reverse card) or "What??": the card goes to its agent and comes back up awake
@@ -969,7 +997,7 @@ export class Client {
     const echo: Omit<Answer, 'pending'> = { answer_action, choices, note: note ?? null, option_notes: option_notes ?? {}, attachments: attachments ?? [], marks: marks ?? [], trusted: !!trusted,
       bound_version_hash: card.version_hash, bound_object_version: card.object_version, envelope_number: null, envelope_hash: null, by_device_id: this.my_device_id, answered_at, taken_back_at: null, taken_back_sent_at: null }
     const local_id = `local-${randomHex(8)}`
-    this.tell(ch => { M.echoAnswer(this.model, { local_id, object_id, answer: echo, object_state: state }, ch) })
+    this.tell(() => { this.board.echoAnswer(local_id, object_id, JSON.stringify(echo), state) })
     const draft: Draft = { kind: 'answer', session: unhex(card.session_id!), objectId: unhex(object_id), choices, closes: state === 'closed', payload: encodeBodyBytes('answer', content) }
     const sent = await this.send(local_id, [{ draft, recipient, files: fileIdsOf('answer', content), item: { object_id, content } }])
     // answered while put off: awake, so a reworked or reopened card is back on the Desk
@@ -1055,7 +1083,7 @@ export class Client {
     let last: Sent | null = null
     for (const key of keys) {
       const local_id = `local-${randomHex(8)}`
-      if (!session_id && !key.startsWith('device/')) this.tell(ch => M.echoRegisters(this.model, { local_id, values: { [key]: values[key] ?? null } }, ch))
+      if (!session_id && !key.startsWith('device/')) this.tell(() => this.board.echoRegisters(local_id, JSON.stringify({ [key]: values[key] ?? null })))
       const { name, value } = encodeRegister(key, values[key] ?? null)
       last = await this.send(local_id, [{ draft: { kind: 'register', group, name, value }, files: fileIdsOf('register', { value: values[key] }), item: { content: { key } } }], sealed => {
         // (kept beside the outbox entry: a page loaded again before the hub took it shows the write, not the value
@@ -1107,11 +1135,11 @@ export class Client {
     const local_id = `local-${randomHex(8)}`
     const busy = object_id ? this.noteBusy.get(object_id) : undefined
     if (busy) {
-      this.tell(ch => { if (busy.next) M.rollbackEcho(this.model, busy.next.local_id, ch); M.echoNote(this.model, { local_id, object_id, fields: closed ? {} : own, closed }, ch) })
+      this.tell(() => { if (busy.next) this.board.rollbackEcho(busy.next.local_id); this.board.echoNote(local_id, object_id ?? null, JSON.stringify(closed ? {} : own), closed) })
       busy.next = { own: { ...(busy.next?.own ?? {}), ...own }, closed, local_id }
       return object_id!
     }
-    this.tell(ch => { M.echoNote(this.model, { local_id, object_id, fields: closed ? {} : own, closed }, ch) })
+    this.tell(() => { this.board.echoNote(local_id, object_id ?? null, JSON.stringify(closed ? {} : own), closed) })
     return this.sealNote(object_id, own, closed, local_id)
   }
   private async sealNote(object_id: string | null, own: Fields, closed: boolean, local_id: string): Promise<string> {
@@ -1166,7 +1194,7 @@ export class Client {
     const payload = encodeBodyBytes('board_item', content)
     const timeline_key = M.timelineKey('scribble', timeline_id)
     const local_id = `local-${randomHex(8)}`
-    this.tell(ch => M.echoTimelineItem(this.model, { local_id, timeline_key, content, now: this.now() }, ch))
+    this.tell(() => { this.board.echoItem(local_id, timeline_key, JSON.stringify(content), null, null, this.now()) })
     return this.send(local_id, [{ draft: { kind: 'boardItem', board: unhex(id), payload }, files: fileIdsOf('board_item', content), item: { timeline_key, content } }])
   }
   /** The points of a stroke still being drawn (7.2), to the other human devices that are connected: not stored,
@@ -1198,9 +1226,9 @@ export class Client {
     // `last`: how far the hub's page went, whatever of it could be read
     return { received: (await this.engine.receivePage(got.items)).filter(r => r.outcome !== 'refused'), more: got.more, last: got.items.at(-1)?.change ?? 0 }
   }
-  /** Older items of a timeline, newest first: from the cache where it holds them, else the hub's page. `into`: the
-   *  model the hub's page is applied to (the client's own, or a scratch one for a read that must not grow the window). */
-  private async older(timeline_key: string, before: number, limit: number, into: Model, ch: Change): Promise<{ items: TimelineItem[]; more: boolean }> {
+  /** Older items of a timeline, newest first: from the cache where it holds them, else the hub's page. `scratch`: the
+   *  page is read into a model of its own (a read that must not grow the window), else into the client's. */
+  private async older(timeline_key: string, before: number, limit: number, scratch: boolean): Promise<{ items: TimelineItem[]; more: boolean }> {
     await this.flush().catch(() => {})
     const local = await this.cached(timeline_key, { before, limit, reverse: true })
     if (local.length >= limit) return { items: local, more: true }
@@ -1208,11 +1236,9 @@ export class Client {
     try {
       const page = await this.page(timeline_key, { before, limit })
       more = page.more
-      const t = M.timelineOf(into, timeline_key)
-      t.window_open = true
-      for (const r of page.received) M.applyEnvelope(into, r, ch, { now: this.now() })
+      const got = JSON.parse(this.board.applyPage(timeline_key, page.received, scratch, this.now())) as TimelineItem[]
       const merged = new Map<number, TimelineItem>(local.map(i => [i.envelope_number!, i]))
-      for (const r of page.received) { const item = t.items.get(r.change); if (item) merged.set(r.change, merged.get(r.change)?.content && !item.content ? merged.get(r.change)! : item) }
+      for (const item of got) { const n = item.envelope_number!; merged.set(n, merged.get(n)?.content && !item.content ? merged.get(n)! : item) }
       return { items: [...merged.values()].sort((a, b) => b.envelope_number! - a.envelope_number!).slice(0, limit), more }
     } catch (e) {
       // offline: what the cache holds is what there is
@@ -1227,46 +1253,36 @@ export class Client {
     // A Chat's first window: its last `since_ms` (24 hours) or `limit` items, whichever holds more, at most
     // `KEEP_PER_CHAT`; what lies before it is read when the person scrolls up.
     if (since_ms !== undefined && !timeline_key.startsWith('scribble:')) {
-      const t = M.timelineOf(this.model, timeline_key), from = this.now() - since_ms
+      const from = this.now() - since_ms
       let loaded = 0, got = await this.loadTimeline(timeline_key, { limit })
       loaded += got.loaded
-      const oldest = (): number => t.items.get(t.loaded_down_to)?.sent_at ?? 0
+      const oldest = (): number => { const t = this.model.timelines.get(timeline_key); return t ? t.items.get(t.loaded_down_to)?.sent_at ?? 0 : 0 }
       while (got.has_more && got.loaded > 0 && loaded < KEEP_PER_CHAT && oldest() > from) { got = await this.loadTimeline(timeline_key, { limit: Math.min(200, KEEP_PER_CHAT - loaded) }); loaded += got.loaded }
       return { loaded, has_more: got.has_more }
     }
     // a board has no pages towards the past (its route reads forwards from a change): all of it, once
     if (timeline_key.startsWith('scribble:')) return { loaded: (await this.loadTimelineAfter(timeline_key, 0)).loaded, has_more: false }
-    const t = M.timelineOf(this.model, timeline_key)
-    t.window_open = true
-    const ch = M.emptyChange()
-    const { items, more } = await this.older(timeline_key, t.loaded_down_to, limit, this.model, ch)
-    for (const it of items) { if (!t.items.get(it.envelope_number!)?.content) t.items.set(it.envelope_number!, it); M.addItem(ch, timeline_key, t.items.get(it.envelope_number!)!) }
-    if (items.length) t.loaded_down_to = Math.min(t.loaded_down_to, items.at(-1)!.envelope_number!)
-    t.has_more = more && items.length > 0
-    ch.timelines.add(timeline_key)
-    this.tell(now => { for (const k of ch.timelines) now.timelines.add(k); for (const [k, list] of ch.items) for (const it of list) M.addItem(now, k, it); for (const c of ch.cards) now.cards.add(c); for (const s of ch.sessions) now.sessions.add(s) })
-    return { loaded: items.length, has_more: t.has_more }
+    const down = this.model.timelines.get(timeline_key)?.loaded_down_to ?? Infinity
+    const { items, more } = await this.older(timeline_key, down, limit, false)
+    const has_more = more && items.length > 0
+    this.tell(() => { this.board.putItems(timeline_key, JSON.stringify(items), items.length ? items.at(-1)!.envelope_number! : null, has_more) })
+    return { loaded: items.length, has_more }
   }
   /** A windowed read for scrolling: items before an envelope number, oldest first. Does not grow the window. */
   async timelineWindow(timeline_key: string, { before_envelope_number = Infinity, limit = 50 }: { before_envelope_number?: number; limit?: number } = {}): Promise<TimelineItem[]> {
-    const { items } = await this.older(timeline_key, before_envelope_number, limit, M.emptyModel(), M.emptyChange())
+    const { items } = await this.older(timeline_key, before_envelope_number, limit, true)
     return items.reverse()
   }
   /** A board's tail after a snapshot: every item after an envelope number, oldest first, all pages. */
   async loadTimelineAfter(timeline_key: string, after_envelope_number: number): Promise<{ loaded: number; items: TimelineItem[]; has_more: false }> {
-    const t = M.timelineOf(this.model, timeline_key)
-    t.window_open = true
-    const ch = M.emptyChange()
     const out = new Map<number, TimelineItem>()
     await this.flush().catch(() => {})
     for (const it of await this.cached(timeline_key, { after: after_envelope_number })) out.set(it.envelope_number!, it)
     try {
       for (let after = after_envelope_number; ;) {
         const page = await this.page(timeline_key, { after, limit: 500 })
-        for (const r of page.received) {
-          M.applyEnvelope(this.model, r, ch, { now: this.now() })
-          const item = t.items.get(r.change)
-          if (item && !(out.get(r.change)?.content && !item.content)) out.set(r.change, item)
+        for (const item of JSON.parse(this.board.applyPage(timeline_key, page.received, false, this.now())) as TimelineItem[]) {
+          if (!(out.get(item.envelope_number!)?.content && !item.content)) out.set(item.envelope_number!, item)
         }
         if (!page.more || page.last <= after) break
         after = page.last
@@ -1276,10 +1292,8 @@ export class Client {
       if (!(e instanceof HubError) || !e.transient || !out.size) throw e
     }
     const items = [...out.values()].sort((a, b) => a.envelope_number! - b.envelope_number!)
-    for (const it of items) { if (!t.items.get(it.envelope_number!)?.content) t.items.set(it.envelope_number!, it); M.addItem(ch, timeline_key, it) }
-    ch.timelines.add(timeline_key)
-    this.tell(now => { for (const k of ch.timelines) now.timelines.add(k); for (const [k, list] of ch.items) for (const it of list) M.addItem(now, k, it) })
-    return { loaded: items.length, items, has_more: false }
+    this.tell(() => { this.board.putItems(timeline_key, JSON.stringify(items), null, null) })
+    return { loaded: items.length, items: items.map(it => this.model.timelines.get(timeline_key)?.items.get(it.envelope_number!) ?? it), has_more: false }
   }
 
   // ---- attachments and Share links
@@ -1490,44 +1504,25 @@ export class Client {
     this.vouchTimer = setTimeout(() => { this.vouchTimer = null; void this.answerAsks().catch(() => {}) }, 300)
   }
   /** Each live main session whose agent asks to let a new session in (`join_ask/<nonce>`) gets a link for it in
-   *  `join_link/<nonce>`, or `{ refused }`: `cap` when that account has MAX_VOUCHED live sessions that joined so or
-   *  the room MAX_VOUCHED_ROOM (open vouched links counted in), `busy` while MAX_VOUCHED_OPEN are open here or no
-   *  invite can be opened. */
+   *  `join_link/<nonce>`, or `{ refused }` (the client core's bounds, client/src/selfjoin.rs: `cap`, `busy`; `busy` too
+   *  when no invite can be opened). */
   private async answerAsks(): Promise<void> {
     if (!this.started || this.model.room.connection !== 'live') return
     // an archived session that joined by itself whose device is still in (archived on another device, an older app,
     // or the removal did not go through): its device goes now
-    for (const x of this.model.sessions.values()) if ((x.settings?.archived || x.group_archived) && x.settings?.['vouched']) void this.retireVouched(x.session_id, x.settings['vouched']).catch(() => {})
+    for (const device of JSON.parse(this.board.selfJoinRetire()) as string[]) void this.retireDevice(device).catch(() => {})
     // an ask past the bounds is refused at once; one within them waits for the person's tap (answerVouch)
-    for (const { s, nonce, ask } of this.pendingAsks()) {
-      if (this.vouchAnswered.has(nonce)) continue
-      const refused = this.vouchRefusal(ask)
-      if (!refused) continue
-      this.vouchAnswered.add(nonce)
-      await this.setRegisters({ [`join_link/${nonce}`]: { refused } }, { session_id: s.session_id })
+    for (const a of this.selfJoinAsks()) {
+      if (!a.refused) continue
+      this.vouchAnswered.add(a.nonce)
+      await this.setRegisters({ [`join_link/${a.nonce}`]: { refused: a.refused } }, { session_id: a.session_id })
     }
   }
-  /** The asks of live main sessions' agents nobody answered yet. */
-  private pendingAsks(): { s: Session; nonce: string; ask: Record<string, unknown> }[] {
-    const out: { s: Session; nonce: string; ask: Record<string, unknown> }[] = []
-    for (const s of this.model.sessions.values()) {
-      if (!s.is_active || s.stale || s.parent_session_id || !s.group_id || s.settings?.archived) continue
-      for (const [key, reg] of s.registers) {
-        if (!key.startsWith('join_ask/')) continue
-        const nonce = key.slice('join_ask/'.length), ask = reg.value as Record<string, unknown> | null
-        if (!ask || typeof ask !== 'object' || s.registers.get(`join_link/${nonce}`)?.value != null) continue
-        out.push({ s, nonce, ask })
-      }
-    }
-    return out
-  }
-  /** Why an ask is refused without asking the person: `bad-ask` (no account), `cap` (8 live self-joined sessions of
-   *  that account or 24 in the room, this device's open links counted in), `busy` (8 links open here); else null. */
-  private vouchRefusal(ask: Record<string, unknown>): string | null {
-    const account = String(ask['account'] ?? '')
-    const open = [...this.invites.values()].filter(k => !k.done && k.public['vouch']).map(k => (k.public['vouch'] as Vouch).account)
-    const accounts = [...this.model.sessions.values()].filter(x => x.is_active && !x.settings?.archived && x.settings?.['vouched']).map(x => (x.settings!['vouched'] as { account?: unknown }).account).concat(open)
-    return !account ? 'bad-ask' : accounts.filter(x => x === account).length >= MAX_VOUCHED || accounts.length >= MAX_VOUCHED_ROOM ? 'cap' : open.length >= MAX_VOUCHED_OPEN ? 'busy' : null
+  /** The asks of the agents to act on, each with the refusal it gets at once: the client core's rule
+   *  (client/src/selfjoin.rs: bad-ask, cap, busy), this device's answered ones and its open vouched links counted in. */
+  private selfJoinAsks(): { session_id: string; nonce: string; ask: Record<string, unknown>; refused: string | null }[] {
+    const pending = [...this.invites.values()].filter(k => !k.done && k.public['vouch']).map(k => (k.public['vouch'] as Vouch).account)
+    return JSON.parse(this.board.selfJoinAsks(JSON.stringify([...this.vouchAnswered]), JSON.stringify(pending)))
   }
   /**
    * The person's tap on an agent's ask to let in a new session of its machine (12.4): `true` (Allow) answers it with
@@ -1537,13 +1532,12 @@ export class Client {
   async answerVouch(nonce: string, allow: unknown): Promise<void> {
     this.needHuman()
     if (typeof allow !== 'boolean') fail('bad-argument', 'answerVouch takes true (allow) or false (deny)')
-    const found = this.pendingAsks().find(x => x.nonce === nonce)
-    if (!found || this.vouchAnswered.has(nonce)) return
-    const { s, ask } = found
+    const found = this.selfJoinAsks().find(x => x.nonce === nonce)
+    if (!found) return
+    const { ask, refused } = found, s = this.model.sessions.get(found.session_id)!
     this.vouchAnswered.add(nonce)
     const answer = async (value: unknown) => { await this.setRegisters({ [`join_link/${nonce}`]: value }, { session_id: s.session_id }) }
     if (!allow) return answer({ refused: 'denied' })
-    const refused = this.vouchRefusal(ask)
     if (refused) return answer({ refused })
     const vouch: Vouch = { nonce, session_id: s.session_id, account: String(ask['account']), account_label: String(ask['account_label'] ?? ''), by_name: String(s.settings?.name ?? ask['vouched_by'] ?? '') }
     let invite: Invite
@@ -1554,19 +1548,23 @@ export class Client {
   /** A vouched invite whose Request came: confirmed on its own when the ask names that Request's hash and its
    *  voucher still stands, burned otherwise. */
   private vouchConfirm(invite_id: string, kept: InviteKept): void {
-    const vouch = kept.public['vouch'] as Vouch, hash = this.model.sessions.get(vouch.session_id)?.registers.get(`join_ask/${vouch.nonce}`)?.value as { request_hash?: unknown } | null | undefined
-    const named = typeof hash?.request_hash === 'string' ? hash.request_hash : null
-    if (!named || this.vouchConfirming.has(invite_id)) return
+    const vouch = kept.public['vouch'] as Vouch
+    if (!kept.request_hash || this.vouchConfirming.has(invite_id)) return
+    // (the client core's verdict: the ask names this Request's hash and its voucher still stands; null: no hash yet)
+    const verdict = this.board.selfJoinVerdict(vouch.session_id, vouch.nonce, kept.request_hash)
+    if (verdict === null) return
     this.vouchConfirming.add(invite_id)
-    // the voucher must still be a live session with its agent in: a removed or archived one vouches for nobody
-    const voucher = this.model.sessions.get(vouch.session_id), standing = !!voucher?.is_active && !voucher.settings?.archived
-    void this.confirmInvite(invite_id, standing && named === kept.request_hash).catch(() => {}).finally(() => this.vouchConfirming.delete(invite_id))
+    void this.confirmInvite(invite_id, verdict).catch(() => {}).finally(() => this.vouchConfirming.delete(invite_id))
   }
   /** An archived session that joined by itself takes its device along: it was made for this session alone. */
   private async retireVouched(session_id: string, vouched: unknown): Promise<void> {
     if (!vouched || typeof vouched !== 'object') return
     const device = this.model.sessions.get(session_id)?.agent_device_id
-    if (!device || this.vouchRetiring.has(device) || !(this.engine.roles?.agents ?? []).some(a => hex(a) === device)) return
+    if (device) await this.retireDevice(device)
+  }
+  /** A self-joined session's device goes (client/src/selfjoin.rs `to_retire` names them), once at a time. */
+  private async retireDevice(device: string): Promise<void> {
+    if (this.vouchRetiring.has(device) || !(this.engine.roles?.agents ?? []).some(a => hex(a) === device)) return
     this.vouchRetiring.add(device)
     try { await this.removeDevices([device]) } finally { this.vouchRetiring.delete(device) }
   }

@@ -50,11 +50,11 @@ public enum PerfLog {
 extension PerfLog {
   /** The speed run (the app's SpeedScript, SpeedTests): a chat line from the agent of `session`, as the live stream
    *  brings one; made up, applied only to a board without a room. */
-  public static func chatLine(_ b: Board, session: String, number n: Int, text: String) -> Rec? {
+  public static func chatLine(_ b: Board, session: String, number n: Int, text: String) -> JV? {
     guard let agent = b.sessions[session]?.agentDeviceId else { return nil }
-    return Rec(envelopeNumber: n, envelopeHash: String(format: "%064x", n), senderDeviceId: agent, senderRole: "agent", recipientDeviceId: nil, sentAt: nowMs(),
-               kind: KIND.TIMELINE_ITEM, isHead: false, object: nil, timelineKind: "chat", timelineId: "session/\(session)", sessionId: session,
-               content: .obj(["text": .str(text), "attachments": .arr([])]), contentState: "ok", bind: nil,
-               causal: Causal(senderDeviceId: agent, senderSequence: UInt64(n), sentAt: nowMs(), lamport: 1), senderSequence: UInt64(n), epoch: 1)
+    let body = JV.obj(["content_type": "message", "text": .str(text), "attachments": .arr([])]).encoded()
+    return .obj(["change": .num(Double(n)), "hash": .str(String(format: "%064x", n)), "outcome": "applied", "kind": "item", "sender": .str(agent), "seq": .num(Double(n)),
+                 "time": .num(Double(nowMs())), "session_id": .str(session), "timeline": .obj(["kind": "session_chat", "id": .str(session)]),
+                 "payload": .str(String(decoding: body, as: UTF8.self))])
   }
 }

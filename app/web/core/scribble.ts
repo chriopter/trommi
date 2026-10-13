@@ -1,7 +1,7 @@
 // scribble.ts: the Scribble Board without DOM (spec/v1.md section 10): the shapes the app draws, the merge that
 // turns a board's items into shapes, and the snapshot file. The app's Scribble Board (app/web/public/whiteboard.mjs
-// openCanvas) drives it with the client; ink.ts packs a stroke's points, palette.ts names its colours, codec.ts
-// knows a board item's body on the wire.
+// openCanvas) drives it with the client; ink.ts packs a stroke's points, palette.ts names its colours, and the end of
+// this file knows a board item's body on the wire (the page has no core; see there).
 //
 // Three forms of one shape, each with one job:
 //   wire shape   what an item's body and the snapshot file carry (10.5): whole numbers of 1/16 board unit, base64url
@@ -20,8 +20,6 @@
 // (core-api.ts ProvisionalStateless.boardReduce). CanvasState is only the adapter between that function and the app: it converts the
 // model's items to the wire form, calls reduceBoard, and keeps the Shapes of what changed.
 
-import { attachmentFromWire, checkWireShape, encodeBody, entryFromWire, parseBoardItem, shapeIdFromWire, shapeIdToWire } from './codec.ts'
-import type { Fields } from './codec.ts'
 import { idFromHex, idToHex } from './ids.ts'
 import { packPoints, unpackPoints, quantum, wrapAdd, Q, STROKE_TOOLS } from './ink.ts'
 import type { Ink } from './ink.ts'
@@ -117,6 +115,8 @@ export function shapeOf(e: Entry | null | undefined, id: string, by: string): Sh
 // ---- the merge (10.7), on the wire's form ----
 
 /** A shape as the wire carries it (10.5), in a board's state with its `id`. */
+/** A body's fields. */
+export type Fields = Record<string, unknown>
 export type WireShape = Fields
 /** One board item as the merge takes it: sender (base64url) and number from the signed header, the body's payload
  *  as the core opened it. `unread`: the item stands in its writer's chain but could not be read here. */
@@ -264,7 +264,7 @@ export class CanvasState {
     // A picture keeps the reference its item named (what the app added to it beside the wire's fields stays).
     for (const e of c?.['content_type'] === 'strokes' && Array.isArray(c['strokes']) ? c['strokes'] : []) if (typeof e?.attachment?.attachment_id === 'string') this.#refs.set(e.attachment.attachment_id, e.attachment)
     let payload: string | null = null
-    if (!unread) try { payload = encodeBody('board_item', c ?? {}) } catch { payload = null }
+    if (!unread) try { payload = encodeBoardItem(c ?? {}) } catch { payload = null }
     const next = reduceBoard(this.#board, [{ sender: idFromHex(by), seq, hash: item.envelope_hash ? idFromHex(item.envelope_hash) : null, payload, ...(unread ? { unread: item.item_state === 'newer_schema' ? 'newer' as const : 'no_key' as const } : {}) }])
     const changed = this.#take(next)
     // The finished form of a stroke replaces what was shown of its pieces.
@@ -391,7 +391,7 @@ export async function unpackSnapshot(bytes: Uint8Array<ArrayBuffer>, frontier?: 
   if ([...gone, ...moved.map(m => m[0])].some(covered) || moved.some(m => gone.includes(m[0]))) refuse('an entry the frontier covers')
   const mine = frontierTo(heads, idToHex)
   if (frontier && JSON.stringify(Object.entries(mine).sort()) !== JSON.stringify(Object.entries(frontier).sort())) refuse('its frontier is not the register\'s')
-  for (const s of shapes) if (s['attachment']) attachmentFromWire(s['attachment'])
+  for (const s of shapes) if (s['attachment']) pictureFromWire(s['attachment'])
   return { v: 3, shapes, frontier: mine, gone, moved, last_envelope_number: 0 }
 }
 
@@ -402,5 +402,185 @@ export function chunks<T>(list: T[], size = 400): T[][] {
   return out
 }
 
-/** A shape id of the model as the wire writes it, and back (codec.ts): for a caller that names shapes itself. */
-export { shapeIdFromWire, shapeIdToWire }
+// ---- a board item's body on the wire (10.5) ------------------------------------------------------------------------
+//
+// THE PAGE HAS NO CORE: this module runs in the page that draws the board (gen/vendor/scribble.mjs), where the
+// WebAssembly core is not loaded, and the merge above works on the wire's form. So the rules of a board item's body
+// stand here once more, for the page: they are the client core's (client/src/codec.rs: `check_wire_shape`,
+// `entry_from_wire`, `entry_to_wire`, the board items of `decode_body` and `encode_body`), which every other reader
+// uses (the worker's model reads board items through the core), and they go when the merge runs in the core
+// (core-api.ts boardReduce). A change of the rules is made in both, and the tests of both hold them to each other
+// (tests/web/model/scribble.test.mjs, client/src/codec_tests.rs).
+
+const bad = (message: string): never => { throw failure('bad-format', message) }
+const isObject = (v: unknown): v is Fields => !!v && typeof v === 'object' && !Array.isArray(v)
+/** A wire id of exactly `bytes` bytes as hex, or null when the text is not one. */
+function hexId(text: unknown, bytes: number): string | null {
+  if (typeof text !== 'string' || text.length !== Math.ceil((bytes * 4) / 3)) return null
+  try { const h = idToHex(text); return h.length === bytes * 2 ? h : null } catch { return null }
+}
+/** A model id of exactly `bytes` bytes as the wire writes it, or null when the text is not one. */
+const wireId = (text: unknown, bytes: number): string | null => (typeof text === 'string' && text.length === bytes * 2 && /^[0-9a-f]+$/.test(text) ? idFromHex(text) : null)
+
+/** A shape id `<sender>/<envelope number>/<index>` (10.1): the wire's sender is base64url, the model's hex. */
+export function shapeIdFromWire(id: unknown): string | null {
+  const m = typeof id === 'string' ? /^([A-Za-z0-9_-]{43})\/([1-9][0-9]{0,15})\/(0|[1-9][0-9]{0,9})$/.exec(id) : null
+  const sender = m ? hexId(m[1], 32) : null
+  return sender && Number(m![3]) <= 0xffffffff ? `${sender}/${m![2]}/${m![3]}` : null
+}
+export function shapeIdToWire(id: unknown): string | null {
+  const m = typeof id === 'string' ? /^([0-9a-f]{64})\/([1-9][0-9]{0,15})\/(0|[1-9][0-9]{0,9})$/.exec(id) : null
+  return m && Number(m[3]) <= 0xffffffff ? `${idFromHex(m[1]!)}/${m[2]}/${m[3]}` : null
+}
+
+const B64U = /^[A-Za-z0-9_-]+$/
+/** A picture's attachment reference on the wire as the model keeps it (9.1.1). */
+function pictureFromWire(a: unknown): AttachmentRef {
+  if (!isObject(a)) return bad('an attachment is not an object')
+  const { file_id, poster_file_id, ...rest } = a
+  const attachment_id = hexId(file_id, 16)
+  if (!attachment_id || typeof a['file_key'] !== 'string' || !B64U.test(a['file_key']) || typeof a['sha256'] !== 'string' || !B64U.test(a['sha256'])) return bad('an attachment names no file')
+  const out: Fields = { attachment_id, ...rest }
+  if (poster_file_id != null) out['poster_attachment_id'] = hexId(poster_file_id, 16) ?? bad('a poster names no file')
+  return out as AttachmentRef
+}
+/** A picture's attachment reference of the model as the wire writes it: the fields of a picture alone. */
+function pictureToWire(a: unknown): Fields {
+  const file_id = isObject(a) ? wireId(a['attachment_id'], 16) : null
+  if (!isObject(a) || !file_id || typeof a['file_key'] !== 'string' || typeof a['sha256'] !== 'string') throw failure('bad-argument', 'an attachment needs attachment_id, file_key and sha256')
+  const out: Fields = { file_id, file_name: 'file', media_type: 'application/octet-stream', total_size: 0 }
+  for (const f of ['file_key', 'sha256', 'file_name', 'media_type', 'total_size', 'width', 'height']) if (a[f] != null) out[f] = a[f]
+  if (a['poster_attachment_id'] != null) out['poster_file_id'] = wireId(a['poster_attachment_id'], 16) ?? bad('a poster names no file')
+  return out
+}
+
+const PENS: readonly unknown[] = ['pen', 'marker'], NOTES: readonly unknown[] = ['text', 'sticky', 'voice']
+const MAX_WIDTH = 1000 * Q, MAX_SHAPES = 1000, MAX_SHAPE_IDS = 2000
+const utf8 = new TextEncoder()
+const bytesOf = (s: string): number => utf8.encode(s).length
+const i32 = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= -(2 ** 31) && v < 2 ** 31
+const i32s = (v: unknown, n: number): v is number[] => Array.isArray(v) && v.length === n && v.every(i32)
+const text = (v: unknown, min: number, max: number): v is string => typeof v === 'string' && bytesOf(v) >= min && bytesOf(v) <= max
+const u32 = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0xffffffff
+const sizeQ = (v: unknown): v is number => i32(v) && v >= 1 && v <= MAX_WIDTH
+/** Fields a shape may carry by its tool; a field of another tool, or one that is null, refuses the shape. */
+const SHAPE_FIELDS: readonly string[] = ['color', 'width', 'points', 'live', 'at', 'text', 'size', 'wrap', 'rect', 'attachment']
+const TOOL_FIELDS: Readonly<Record<string, readonly string[]>> = { pen: ['color', 'width', 'points', 'live'], note: ['at', 'text', 'size', 'color', 'wrap'], image: ['rect', 'attachment'] }
+
+/** One shape as the wire carries it, checked as trommi-core checks it; returns its family. */
+function checkWireShape(e: unknown, withId: boolean): 'pen' | 'note' | 'image' {
+  if (!isObject(e)) return bad('a shape is not an object')
+  const family = PENS.includes(e['tool']) ? 'pen' : NOTES.includes(e['tool']) ? 'note' : e['tool'] === 'image' ? 'image' : bad('an unknown tool')
+  if (('id' in e) !== withId) bad(withId ? 'a shape without its id' : 'a shape names an id')
+  for (const f of [...SHAPE_FIELDS, 'group', 'id']) if (f in e && (e[f] === null || (SHAPE_FIELDS.includes(f) && !TOOL_FIELDS[family]!.includes(f)))) bad(`a shape's ${f} does not belong`)
+  if ('z' in e && !i32(e['z'])) bad('a layer is not a whole number')
+  if ('group' in e && !text(e['group'], 1, 80)) bad('a group name is out of range')
+  if (family === 'pen') {
+    if (!text(e['color'], 1, 40) || !sizeQ(e['width']) || !unpackPoints(e['points'])) bad('a stroke is not readable')
+    if ('live' in e && !hexId(e['live'], 16)) bad('a live stroke id is not 16 bytes')
+  } else if (family === 'note') {
+    if (!i32s(e['at'], 2) || !text(e['text'], 0, 20000) || !sizeQ(e['size']) || !text(e['color'], 1, 40) || ('wrap' in e && !(i32(e['wrap']) && e['wrap'] > 0))) bad('a note is not readable')
+  } else {
+    const a = e['attachment']
+    if (!i32s(e['rect'], 4) || !isObject(a) || !text(a['file_name'], 1, 255) || !text(a['media_type'], 1, 255) || !(typeof a['total_size'] === 'number' && Number.isSafeInteger(a['total_size']) && a['total_size'] >= 0)) return bad('a picture is not readable')
+    for (const f of ['width', 'height']) if (f in a && !u32(a[f])) bad('a picture size is not a whole number')
+    if (!hexId(a['file_key'], 32) || !hexId(a['sha256'], 32)) bad('a picture names no file')
+    pictureFromWire(a)
+  }
+  return family
+}
+const units = (q: number): number => q / Q
+/** A wire shape -> the model's entry (board units; a picture's own size, type and name beside its attachment). */
+function entryFromWire(e: Fields, withId = false): Fields {
+  const family = checkWireShape(e, withId)
+  const out: Fields = { tool: e['tool'] }
+  if (family === 'pen') {
+    Object.assign(out, { color: e['color'], width: units(e['width'] as number), points: e['points'] })
+    if ('live' in e) out['live'] = hexId(e['live'], 16)
+  } else if (family === 'note') {
+    Object.assign(out, { at: (e['at'] as number[]).map(units), text: e['text'], size: units(e['size'] as number), color: e['color'] })
+    if ('wrap' in e) out['wrap'] = units(e['wrap'] as number)
+  } else {
+    const a = pictureFromWire(e['attachment'])
+    Object.assign(out, { rect: (e['rect'] as number[]).map(units), attachment: a, nw: a.width ?? 0, nh: a.height ?? 0, mime: a.media_type ?? null, name: a.file_name ?? null })
+  }
+  if (e['z']) out['z'] = e['z']
+  if ('group' in e) out['group'] = e['group']
+  return out
+}
+const lengthQ = (v: unknown, fallback: number): number => Math.max(1, Math.min(MAX_WIDTH, Math.round((typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback) * Q)))
+/** A model entry -> the wire's shape. Throws for what no reader would take. */
+function entryToWire(e: unknown): Fields {
+  if (!isObject(e)) return bad('a shape is not an object')
+  const tool = e['tool']
+  const out: Fields = { tool }
+  if (PENS.includes(tool)) {
+    Object.assign(out, { color: e['color'] ?? (tool === 'marker' ? 'yellow' : 'ink'), width: lengthQ(e['width'], tool === 'marker' ? 18 : 4), points: e['points'] })
+    if (e['live'] != null) out['live'] = wireId(e['live'], 16) ?? bad('a live stroke id is not 16 bytes')
+  } else if (NOTES.includes(tool)) {
+    const at = Array.isArray(e['at']) ? e['at'] : []
+    Object.assign(out, { at: [quantum(at[0]), quantum(at[1])], text: String(e['text'] ?? ''), size: lengthQ(e['size'], 20), color: e['color'] ?? 'ink' })
+    if (e['wrap'] != null) out['wrap'] = lengthQ(e['wrap'], 1)
+  } else if (tool === 'image') {
+    const rect = Array.isArray(e['rect']) ? e['rect'] : []
+    const a = pictureToWire(e['attachment'])
+    for (const [k, v] of [['width', e['nw']], ['height', e['nh']]] as const) if (typeof v === 'number' && v > 0) a[k] = Math.round(v)
+    if (typeof e['mime'] === 'string' && e['mime']) a['media_type'] = e['mime']
+    if (typeof e['name'] === 'string' && e['name']) a['file_name'] = e['name']
+    Object.assign(out, { rect: [0, 1, 2, 3].map(i => quantum(rect[i])), attachment: a })
+  }
+  if (typeof e['z'] === 'number' && e['z']) out['z'] = Math.round(e['z']) | 0
+  if (typeof e['group'] === 'string' && e['group']) out['group'] = e['group']
+  checkWireShape(out, false)
+  return out
+}
+
+function idsFromWire(list: unknown): string[] {
+  if (!Array.isArray(list) || !list.length || list.length > MAX_SHAPE_IDS || new Set(list).size !== list.length) return bad('shape ids: 1 to 2 000, none twice')
+  return list.map(id => shapeIdFromWire(id) ?? bad('a shape id is not readable'))
+}
+/** A board item's body is one of 10.5's (it throws for anything else); its model form. */
+function boardFromWire(b: Fields): Fields {
+  const has = (f: string) => { if (b[f] === null) bad(`${f} is null`); return f in b }
+  const type = b['content_type']
+  if (type === 'strokes' && has('strokes') && !has('shape_ids') && !has('offset')) {
+    const list = b['strokes']
+    if (!Array.isArray(list) || !list.length || list.length > MAX_SHAPES) return bad('strokes: 1 to 1 000 shapes')
+    return { content_type: type, strokes: list.map(e => entryFromWire(e as Fields)) }
+  }
+  if ((type === 'erase' || type === 'send_away') && !has('strokes') && !has('offset')) return { content_type: type, stroke_ids: idsFromWire(b['shape_ids']) }
+  if (type === 'move' && !has('strokes') && has('offset')) {
+    if (!i32s(b['offset'], 2)) return bad('an offset is two whole numbers')
+    return { content_type: type, stroke_ids: idsFromWire(b['shape_ids']), offset: (b['offset'] as number[]).map(units) }
+  }
+  return bad('not a board item')
+}
+/** A board item's model form as the payload the merge takes (with `schema_version` 2). Throws for what no reader would take. */
+function encodeBoardItem(c: Fields): string {
+  const type = c['content_type']
+  const ids = (): string[] => {
+    const list = Array.isArray(c['stroke_ids']) ? c['stroke_ids'].map(id => shapeIdToWire(id) ?? bad('a shape id is not readable')) : bad('stroke_ids is not a list')
+    if (!list.length || list.length > MAX_SHAPE_IDS || new Set(list).size !== list.length) bad('shape ids: 1 to 2 000, none twice')
+    return list
+  }
+  let body: Fields
+  if (type === 'strokes') {
+    const list = Array.isArray(c['strokes']) ? c['strokes'] : []
+    if (!list.length || list.length > MAX_SHAPES) bad('strokes: 1 to 1 000 shapes')
+    body = { content_type: type, strokes: list.map(entryToWire) }
+  } else if (type === 'erase' || type === 'send_away') body = { content_type: type, shape_ids: ids() }
+  else if (type === 'move') { const o = Array.isArray(c['offset']) ? c['offset'] : []; body = { content_type: type, shape_ids: ids(), offset: [quantum(o[0]), quantum(o[1])] } }
+  else throw failure('bad-argument', `unknown content_type ${String(type)}`)
+  return JSON.stringify({ schema_version: 2, ...body })
+}
+/** A board item's payload in the wire's own form, checked: 'newer_schema' for a `schema_version` above 2, 'bad'
+ *  for what is no board item. */
+function parseBoardItem(payload: string): Fields | 'newer_schema' | 'bad' {
+  let parsed: unknown
+  try { parsed = JSON.parse(payload) } catch { return 'bad' }
+  if (!isObject(parsed)) return 'bad'
+  const version = parsed['schema_version']
+  if (version !== undefined && !(typeof version === 'number' && Number.isInteger(version) && version >= 2)) return 'bad'
+  if (typeof version === 'number' && version > 2) return 'newer_schema'
+  try { boardFromWire(parsed); return parsed } catch { return 'bad' }
+}

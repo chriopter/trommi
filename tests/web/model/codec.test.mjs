@@ -4,13 +4,14 @@
 //   node --test tests/web/model/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { attachmentFromWire, attachmentRef, attachmentToWire, decodeBody, encodeBody, encodeBodyBytes, encodeRegister, fileIdsOf, fileRefOf, registerKeyOf, registerNameOf, shapeIdFromWire, shapeIdToWire, SCHEMA_VERSION } from '../../../app/web/core/codec.ts'
+import { attachmentFromWire, attachmentRef, attachmentToWire, decodeBody, encodeBody, encodeBodyBytes, encodeRegister, fileIdsOf, fileRefOf, registerKeyOf, registerNameOf, SCHEMA_VERSION } from '../../../app/web/core/codec.ts'
+import { shapeIdFromWire, shapeIdToWire } from '../../../app/web/core/scribble.ts'
 import { device, hex, id16, bytes, raw } from './factory.mjs'
 import { readFileSync } from 'node:fs'
 
 const text = b => (b === null ? null : new TextDecoder().decode(b))
-/** A register write with its value as text, to compare. */
-const written = (key, value) => { const w = encodeRegister(key, value); return { name: w.name, value: text(w.value) } }
+/** A register write with its value as JSON, to compare (the core writes an object's keys sorted). */
+const written = (key, value) => { const w = encodeRegister(key, value); return { name: w.name, value: w.value === null ? null : JSON.parse(text(w.value)) } }
 
 const file = id16(0xf1), poster = id16(0xf2)
 const wireRef = { file_id: file, file_key: bytes(32, 1), sha256: bytes(32, 2), file_name: 'clip.mp4', media_type: 'video/mp4', total_size: 5000, width: 640, height: 360, caption: 'the demo', poster_file_id: poster, marks: [{ x: 1 }] }
@@ -94,13 +95,13 @@ test('registers: the model\'s keys and the wire\'s names, the ids inside a value
   assert.equal(decodeBody('register', '{"value":1}'), 'bad')
   // what a draft's register write hands the core: the wire's name and the value as JSON bytes (null deletes)
   assert.ok(encodeRegister('crown', { a: 1 }).value instanceof Uint8Array)
-  assert.deepEqual(written(`session/${hex(obj)}`, { name: 'S', desk: hex(board), archived: true }), { name: `session/${obj}`, value: JSON.stringify({ name: 'S', desk: board, archived: true }) })
-  assert.deepEqual(written('crown', { session_id: hex(obj), agent_device_id: hex(dev) }), { name: 'crown', value: JSON.stringify({ session_id: obj, agent_device_id: dev }) })
+  assert.deepEqual(written(`session/${hex(obj)}`, { name: 'S', desk: hex(board), archived: true }), { name: `session/${obj}`, value: { name: 'S', desk: board, archived: true } })
+  assert.deepEqual(written('crown', { session_id: hex(obj), agent_device_id: hex(dev) }), { name: 'crown', value: { session_id: obj, agent_device_id: dev } })
   assert.deepEqual(written(`draft/${hex(obj)}`, null), { name: `draft/${obj}`, value: null })
-  assert.deepEqual(written('status_line/tests', { label: 'Tests', object_id: hex(obj) }), { name: 'status_line/tests', value: JSON.stringify({ label: 'Tests', object_id: obj }) })
+  assert.deepEqual(written('status_line/tests', { label: 'Tests', object_id: hex(obj) }), { name: 'status_line/tests', value: { label: 'Tests', object_id: obj } })
   // the board snapshot as the whiteboard writes it and as spec 10.2 has it
   const snap = written(`scribble_snapshot/desk/${hex(board)}`, { attachment: modelRef, frontier: { [hex(dev)]: [4, hex(hash)] }, last_envelope_number: 300, shapes: 12 })
-  assert.equal(snap.name, `board_snapshot/${board}`); assert.deepEqual(JSON.parse(snap.value), { attachment: wireRef, frontier: { [dev]: [4, hash] }, change: 300 })
+  assert.equal(snap.name, `board_snapshot/${board}`); assert.deepEqual(snap.value, { attachment: wireRef, frontier: { [dev]: [4, hash] }, change: 300 })
   assert.throws(() => encodeBody('register', {}), { code: 'bad-argument' })
 })
 

@@ -10,7 +10,7 @@
 set -eu
 commit=${1:-HEAD}
 # every part: the shared core, the Rust workspace and toolchain, the build workflow, the release form
-shared='core/ Cargo.toml Cargo.lock rust-toolchain.toml .github/workflows/build.yml .github/workflows/release.yml .github/scripts/inputs.sh release/'
+shared='core/ client/ Cargo.toml Cargo.lock rust-toolchain.toml .github/workflows/build.yml .github/workflows/release.yml .github/scripts/inputs.sh release/'
 paths() {
   case $1 in
     web) echo "app/web/ connector/tools.json connector/prompt.md demo/ .node-version .github/scripts/web_release.mjs .github/tools/wrangler/ .github/workflows/deploy_web.yml" ;;

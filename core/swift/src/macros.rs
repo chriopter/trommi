@@ -43,18 +43,32 @@ macro_rules! record {
         #[cfg(feature = "js")]
         impl $crate::js::ToJs for $name {
             fn to_js(&self) -> Result<wasm_bindgen::JsValue, $crate::CoreError> {
-                let object = $crate::js::record()?;
-                $($crate::js::set(&object, stringify!($field), &self.$field)?;)*
-                Ok(object.into())
+                Self::KEYS.with(|keys| {
+                    let object = $crate::js::record()?;
+                    let mut key = keys.iter();
+                    $($crate::js::set_key(&object, key.next(), &self.$field)?;)*
+                    Ok(object.into())
+                })
             }
         }
         #[cfg(feature = "js")]
         impl $crate::js::FromJs for $name {
             fn from_js(value: &wasm_bindgen::JsValue) -> Result<Self, $crate::CoreError> {
                 $crate::js::object(value)?;
-                Ok(Self {
-                    $($field: $crate::js::get(value, stringify!($field))?,)*
+                Self::KEYS.with(|keys| {
+                    let mut key = keys.iter();
+                    Ok(Self {
+                        $($field: $crate::js::get_key(value, key.next(), stringify!($field))?,)*
+                    })
                 })
+            }
+        }
+        #[cfg(feature = "js")]
+        impl $name {
+            // (the field names in camel case, made once per thread: a record crosses without making them again)
+            thread_local! {
+                static KEYS: Vec<wasm_bindgen::JsValue> =
+                    vec![$(wasm_bindgen::JsValue::from_str(&$crate::js::camel(stringify!($field))),)*];
             }
         }
         #[cfg(feature = "js")]

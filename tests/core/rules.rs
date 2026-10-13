@@ -1116,3 +1116,26 @@ fn the_repair_of_a_stale_session_does_nothing_beside() {
     );
     assert_eq!(verdict(&and_more), Err(Error::StaleSession));
 }
+
+#[test]
+fn a_room_state_lists_its_human_devices_ascending_and_once() {
+    let held = state(3, &[1, 2], &[]);
+    let bytes = trommi_core::codec::encode(&held).unwrap();
+    let back: RoomState = trommi_core::codec::decode(&bytes, 1 << 20).unwrap();
+    assert_eq!(back, held);
+    // epoch (8), state (32), the list's length (1), then the two devices: swapped, or one twice, is refused
+    let (first, second) = (41..73, 73..105);
+    let mut swapped = bytes.clone();
+    swapped[first.clone()].copy_from_slice(&bytes[second.clone()]);
+    swapped[second.clone()].copy_from_slice(&bytes[first.clone()]);
+    assert_eq!(
+        trommi_core::codec::decode::<RoomState>(&swapped, 1 << 20),
+        Err(Error::BadFormat)
+    );
+    let mut twice = bytes.clone();
+    twice[second].copy_from_slice(&bytes[first]);
+    assert_eq!(
+        trommi_core::codec::decode::<RoomState>(&twice, 1 << 20),
+        Err(Error::BadFormat)
+    );
+}

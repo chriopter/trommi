@@ -8,7 +8,7 @@ import Foundation
 extension Room {
   /** The cache's small head: where the records stop. */
   struct Head: Codable {
-    var v = 4
+    var v = 5
     /** How many records the store held when this head was written: fewer on reading means a store damaged beyond its tail. */
     var records: Int
     var cursor: UInt64
@@ -58,7 +58,6 @@ extension Room {
     deskHolding = false
     board.deskWaiting = false
     wakeDeskWaiters()
-    board.project()
     var ch = Change(); ch.room = true; ch.stack = true
     emit(ch)
   }
@@ -108,25 +107,29 @@ extension Room {
     let head = Head(records: restoredCount + log.count, cursor: cursor, lamport: lamport)
     var snap: [UInt8]? = nil
     if wantSnap {
-      var w = RecCodec.W()
-      w.b.append(2); w.u(cursor); w.i(lamport); w.u(UInt64(head.records))
-      BoardCodec.encode(board, into: &w)
-      snap = w.b
+      // (a small head line, then the client core's model as the JSON text it gave: never escaped into a string)
+      snap = JV.obj(["v": 2, "cursor": .num(Double(cursor)), "lamport": .num(Double(lamport)), "records": .num(Double(head.records))]).encoded() + [0x0A] + Array(board.modelSnapshot().utf8)
       sinceSnapshot = 0
     }
     let prev = saveTail
     let t = Task.detached(priority: .utility) { () -> Bool in
       _ = await prev?.value
       do {
-        try rs.append(recs)
+        // (a board written at the cursor holds every record up to it: those are not appended as well; a restore
+        // reads the records after the board's cursor alone. Only when the board could not be written they go)
+        let boardWritten = snap.map { b in (try? rs.writeBoard(b)) != nil } ?? false
+        if !boardWritten { try rs.append(recs) }
         try rs.writeSmall(head, to: rs.headURL, aad: "trommi ios head")
-        if let b = snap { try rs.writeBoard(b) }
         return true
       } catch { return false }
     }
     saveTail = Task { _ = await t.value }
     // What could not be written is written with the next save.
-    if !(await t.value) { dirtyRecs.formUnion(numbers); cacheDirty = true }
+    if !(await t.value) { dirtyRecs.formUnion(numbers); cacheDirty = true; return }
+    // What is in the cache now (appended, or in the board written) is not kept in memory as well: the log holds
+    // what is still to be written (a room of thousands of envelopes kept each one's JSON while the app ran). The head
+    // counts them still (`restoredCount`).
+    for n in numbers where !dirtyRecs.contains(n) && log.removeValue(forKey: n) != nil { restoredCount += 1 }
   }
 
   /**
@@ -141,18 +144,14 @@ extension Room {
   }
   private func restoreOnce() async -> Bool {
     guard let rs = try? recordStore() else { return false }
-    typealias Snap = (cursor: UInt64, lamport: Int, records: Int, board: Board)
+    typealias Snap = (cursor: UInt64, lamport: Int, records: Int, model: String)
     let found: (head: Head, snap: Snap?, ix: RecordStore.Index)? = await Task.detached(priority: .userInitiated) {
-      guard let h = rs.readSmall(Head.self, from: rs.headURL, aad: "trommi ios head"), h.v == 4 else { return nil }
+      guard let h = rs.readSmall(Head.self, from: rs.headURL, aad: "trommi ios head"), h.v == 5 else { return nil }
       var snap: Snap? = nil
-      if let plain = rs.readBoard() {
-        snap = plain.withUnsafeBufferPointer { buf -> Snap? in
-          var r = RecCodec.R(b: buf)
-          guard (try? r.byte()) == 2, let c = try? r.u(), let l = try? r.i(), let n = try? r.u() else { return nil }
-          let b = Board()
-          guard (try? BoardCodec.decode(&r, into: b)) != nil, r.at == buf.count, c <= h.cursor else { return nil }
-          return (c, l, Int(n), b)
-        }
+      // (the client core's model as a whole, and the cursor, lamport and record count it stands at)
+      if let plain = rs.readBoard(), let nl = plain.firstIndex(of: 0x0A), let v = JV.parse(Array(plain[..<nl])), v["v"].int == 2,
+         let c = v["cursor"].int, c <= h.cursor, let m = String(bytes: plain[(nl + 1)...], encoding: .utf8) {
+        snap = (UInt64(c), v["lamport"].int ?? 0, v["records"].int ?? 0, m)
       }
       guard let ix = rs.index(after: snap.map { Int($0.cursor) }) else { return nil }
       return (h, snap, ix)
@@ -167,7 +166,7 @@ extension Room {
     guard upto - lo0 >= f.head.records - (f.snap?.records ?? 0) else { rs.wipe(); return false }
     var ch = Change()
     if let sn = f.snap {
-      board.adopt(sn.board)
+      guard board.loadModel(sn.model) else { rs.wipe(); return false }
       try? applyGroups(Array(groups.values), &ch)
     }
     let slice = 2048
@@ -183,7 +182,7 @@ extension Room {
         var c = Change(); try? applyGroups(Array(groups.values), &c)
         return false
       }
-      for r in recs { board.apply(r, change: &ch) }
+      for r in recs { replay(r) }
     }
     restoredCount = f.head.records
     sinceSnapshot = f.snap == nil ? Room.snapshotEvery : upto - lo0
@@ -194,10 +193,10 @@ extension Room {
     // never read its closing (it would stand again on every launch). The Desk of this run follows (`deskFirst`); until
     // it answers no open card stands at all (`holdDesk`).
     if let kept = rs.readSmall(DeskKept.self, from: rs.deskURL, aad: Room.deskAAD), kept.v == 1, kept.at <= cursor {
-      board.hubSettled = board.settled(byDesk: Set(kept.open), at: Int(kept.at))
+      board.setDeskListing(Dictionary(kept.open.map { ($0, 0) }, uniquingKeysWith: { a, _ in a }), at: Int(kept.at))
     }
     if record.role == "human" { holdDesk() }
-    board.project()
+    board.project(&ch)
     restored = true
     ch.stack = true; ch.room = true
     emit(ch)

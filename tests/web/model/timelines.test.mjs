@@ -4,7 +4,9 @@
 //   node --test tests/web/model/
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPresence, cardHeard, timelineOf } from '../../../app/web/core/model.ts'
+import { cardHeard } from '../../../app/web/core/model.ts'
+import { applyPresence, timelineOf } from './factory.mjs'
+import { openWindow } from './factory.mjs'
 import { foldWork, isWork, workAnchor } from '../../../app/web/core/work.ts'
 import { World, hex, id16, bytes } from './factory.mjs'
 
@@ -55,7 +57,7 @@ test('a card\'s Chat: hand_back and explain put the open card in revision; prese
 test('a body that cannot be read here keeps its place: undecryptable, and a content type of a newer Trommi', () => {
   const w = new World(); w.groups()
   const key = `chat:session/${hex(w.session)}`
-  timelineOf(w.model, key).window_open = true
+  openWindow(w.model, key)
   const a = w.message({}, { outcome: 'chained', code: 'no-key' })
   const b = w.message({ content_type: 'poll', question: '?' })
   const c = w.take({ kind: 'item', timeline: { kind: 'chat', scope: 'session', ref: w.session }, payload: { schema_version: 2, attachments: [{ file_id: 'no id' }] } })

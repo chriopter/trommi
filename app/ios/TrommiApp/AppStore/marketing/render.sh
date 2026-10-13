@@ -16,11 +16,11 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/trommi-poster.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 # file name | headline | the words underlined (the end of the headline) | the line under it
-shots='01-desk|Your agents ring. You decide.|decide.|Claude Code and Codex ask as cards on your phone.
-02-decision|Every question as a card.|card.|Pictures, options, a page to try. One tap answers.
-03-chat|One tap, they keep working.|working.|Chat with every session, wherever you are.
-04-scribble-board|Draw it, send it.|send it.|Sketch on the Scribble Board, send the part that matters.
-05-note|End-to-end encrypted.|encrypted.|Notes, cards and chats are sealed on your phone.'
+shots='01-note|End-to-end encrypted.|encrypted.|Notes, cards and chats are sealed on your phone.
+02-desk|Your agents ring. You decide.|decide.|Claude Code and Codex ask as cards on your phone.
+03-decision|Every question as a card.|card.|Pictures, options, a page to try. One tap answers.
+04-chat|One tap, they keep working.|working.|Chat with every session, wherever you are.
+05-scribble-board|Draw it, send it.|send it.|Sketch on the Scribble Board, send the part that matters.'
 
 enc() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$1"; }
 

@@ -271,7 +271,16 @@ final class FakeDevice: CoreDevice {
     func made(_ outcome: EnvelopeOutcome, code: String? = nil) -> ReceivedEnvelope {
       let payload = outcome == .applied || outcome == .provisional ? (e["p"] as? String).flatMap { try? unhex($0) } : nil
       let name = header.kind == .register ? payload.flatMap { parse($0)["name"] as? String } : nil
-      return ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, register: name.map { RegisterChange(name: $0, current: true) })
+      // (an object as the core's replay of headers leaves it: this envelope's state, its sender the owner, it the current version)
+      let after = outcome == .applied ? header.object.map { ObjectView(objectId: $0.objectId, type: $0.type, owner: header.sender, state: $0.state, current: Self.hash(bytes)) } : nil
+      var r = ReceivedEnvelope(change: change, hash: Self.hash(bytes), header: header, outcome: outcome, code: code, payload: payload, objectAfter: after,
+                               register: name.map { RegisterChange(name: $0, current: true) })
+      // (header "bind": an answer's binding as the core reads it from the body: card, version hash, choices)
+      if header.kind == .answer, let bind = h["bind"] as? [String: Any], let card = (bind["card"] as? String).flatMap({ try? unhex($0) }),
+         let version = (bind["version"] as? String).flatMap({ try? unhex($0) }) {
+        r.bind = .answer(objectId: card, versionHash: version, choices: bind["choices"] as? [String] ?? [])
+      }
+      return r
     }
     // (header "passed": a session group this device is not in yet, read past as the real core does: the cursor moves)
     if group.count == 48, state.sessions[hex(group.suffix(16))] == nil, h["passed"] as? Bool == true {
@@ -403,6 +412,8 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var wishes: [[String: Any]] = []
     /** Set: the answer to a posted Commit waits for a signal, while the Commit is in the changes already. */
     var holdCommitAnswer: DispatchSemaphore?
+    /** Set: a posted envelope waits for a signal before the hub looks at it (what `refuse` says then counts). */
+    var holdEnvelope: DispatchSemaphore?
     /** What GET /v1/groups/{group}/chains/{sender} serves, by "group hex/sender hex": the chain's items with `seq`. */
     var chains: [String: [[String: Any]]] = [:]
     /** What GET /v1/welcomes lists, and how often it was read. */
@@ -412,11 +423,16 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     var deskCards: (() -> [String])?
     /** Session groups (hex) the hub holds as archived (spec/hub-api.md point 46). */
     var archivedGroups: Set<String> = []
+    /** Every card the Desk listed so far (what a brief list with `since` names as settled once it is not open). */
+    var deskListed = Set<String>()
+    var deskBriefReads = 0
     var deskReads = 0
     /** The devices (hex) the hub holds a KeyPackage of; one claimed without is answered 404, as the hub does. */
     var keyPackages: Set<String> = []
     /** What GET /v1/rooms/{room}/groups lists as live (`kind`, `leaves` in base64url). */
     var liveGroups: [[String: Any]] = []
+    /** GET /v1/groups/{group}/info answers a founding GroupInfo (the fake core reads nothing of it); false: not there. */
+    var servesGroupInfo = false
     func add(_ item: [String: Any]) -> UInt64 { change += 1; var i = item; i["change"] = change; items.append(i); return change }
     /** A Commit in the log of a group. */
     func commit(group: Bytes, _ body: [String: Any]) { lock.withLock { _ = add(["kind": "commit", "group_id": b64u(group), "bytes": b64u(j(body))]) } }
@@ -437,6 +453,7 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
       case ("GET", _) where path.hasSuffix("/challenge"): return (200, ["challenge": b64u(Bytes(repeating: 9, count: 32))])
       case ("POST", _) where path.hasSuffix("/tokens"): return (200, ["token": "t", "expires_at": nowMs() + 600_000, "role": "human"])
       case ("GET", "/v1/welcomes"): welcomesRead += 1; return (200, welcomes)
+      case ("GET", _) where servesGroupInfo && path.hasPrefix("/v1/groups/") && path.hasSuffix("/info"): return (200, ["epoch": 0, "group_info": b64u(j(["founding": true]))])
       case ("GET", _) where path.contains("/chains/"):
         let parts = path.split(separator: "/").map(String.init)
         let key = "\(hex((try? unb64u(parts[2])) ?? []))/\(hex((try? unb64u(parts[4])) ?? []))"
@@ -446,7 +463,18 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
       case ("GET", "/v1/desk"):
         guard let cards = deskCards else { return (404, ["error": "not-found", "message": path]) }
         deskReads += 1
-        return (200, ["change": change, "cards": cards().map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any]()])
+        let open = cards()
+        // (the brief list with `since`: the open ones and, in `settled`, the ones listed before that are not open now)
+        if query["brief"] == "1" {
+          deskBriefReads += 1
+          if query["since"] != nil {
+            let settled = deskListed.subtracting(open)
+            deskListed.formUnion(open)
+            return (200, ["change": change, "cards": open.map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any](), "settled": settled.map { b64u(try! unhex($0)) }])
+          }
+        }
+        deskListed.formUnion(open)
+        return (200, ["change": change, "cards": open.map { ["object_id": b64u(try! unhex($0))] }, "permission_requests": [Any]()])
       case ("PUT", "/v1/key-packages"): return (200, ["unused": 100])
       case ("POST", "/v1/key-packages/claim"):
         let asked = (body["devices"] as? [String] ?? []).compactMap { try? unb64u($0) }.map(hex)
@@ -503,7 +531,19 @@ final class FakeHub: URLProtocol, @unchecked Sendable {
     for q in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] { query[q.name] = q.value }
     var data = request.httpBody ?? Data()
     if data.isEmpty, let s = request.httpBodyStream { s.open(); var buf = [UInt8](repeating: 0, count: 65536); while s.hasBytesAvailable { let n = s.read(&buf, maxLength: buf.count); if n <= 0 { break }; data.append(buf, count: n) }; s.close() }
-    let (status, answer) = hub.answer(request.httpMethod ?? "GET", url.path, query, parse(Bytes(data)))
+    let method = request.httpMethod ?? "GET", body = parse(Bytes(data))
+    if url.path == "/v1/envelopes", let hold = hub.lock.withLock({ hub.holdEnvelope }) {
+      Thread.detachNewThread { [self] in
+        hold.wait()
+        let (status, answer) = hub.answer(method, url.path, query, body)
+        let res = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["content-type": "application/json"])!
+        client?.urlProtocol(self, didReceive: res, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: answer))
+        client?.urlProtocolDidFinishLoading(self)
+      }
+      return
+    }
+    let (status, answer) = hub.answer(method, url.path, query, body)
     let res = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["content-type": "application/json"])!
     let deliver = { [self] in
       client?.urlProtocol(self, didReceive: res, cacheStoragePolicy: .notAllowed)

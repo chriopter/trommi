@@ -114,8 +114,7 @@ enum PerfScript {
     func message(_ session: String, batched: Bool = false) {
       n += 1
       guard let rec = PerfLog.chatLine(b, session: session, number: n, text: "Speed run line \(n): done with the build, all green.") else { return }
-      var ch = Change()
-      b.apply(rec, change: &ch)
+      b.apply(received: [rec]); b.project()
       if batched { model.perfNews() } else { model.perfChanged() }
     }
     func window(_ name: String, seconds: Double, _ op: @escaping @MainActor () async -> Void) async {

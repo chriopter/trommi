@@ -368,3 +368,23 @@ fn a_helper_notice_names_the_session_and_is_cleaned() {
     assert!(!line.contains('<') && !line.contains('"'), "{line}");
     assert_eq!(line.matches(" · ").count(), 3, "{line}");
 }
+
+/// Board text in a channel tag and in the monitor line loses every character no one sees or that turns the
+/// direction of text: tag characters (hidden ASCII), the Arabic letter mark, zero width characters, BOM.
+#[test]
+fn hidden_characters_never_reach_the_agent() {
+    let hidden = "a\u{e0049}\u{e0067}\u{e006e}b\u{61c}c\u{200b}d\u{feff}e\u{2060}f\u{202e}g\u{ad}h";
+    assert_eq!(trommi_connector::server::channel_text(hidden), "abcdefgh");
+    assert_eq!(clean(hidden), "abcdefgh");
+    let tag = trommi_connector::server::channel_tag(
+        &json!({ "content": hidden, "meta": { "kind": hidden } }),
+    );
+    assert!(
+        tag.contains("kind=\"abcdefgh\"") && tag.contains("\nabcdefgh\n"),
+        "{tag}"
+    );
+    assert!(
+        !tag.chars().any(trommi_connector::line::invisible),
+        "{tag:?}"
+    );
+}

@@ -21,7 +21,9 @@ tls_codec = { version = "=0.5.0", features = ["derive", "mls"] }
 zeroize = "=1.9.1"
 subtle = "=2.6.1"
 serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.151"
+# float_roundtrip: a decimal reads as the nearest f64, so a value written again reads the same (a register value, a
+# body's number), and every reader and writer agrees on it to the last bit.
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 getrandom = "=0.2.17"
 # The public half of a signature key from its seed; signing and verifying go through the provider.
 ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["zeroize"] }

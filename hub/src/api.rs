@@ -459,6 +459,45 @@ impl Drop for Admitted {
     }
 }
 
+/// One request to the routes that do not stream, without HTTP: for the fuzz harness (tests/src/fuzz/hub.rs),
+/// which hands it what a request's line, headers and parsed body would carry. The answer is the JSON text of a
+/// 200, or the refusal.
+#[cfg(feature = "fuzz")]
+#[allow(clippy::too_many_arguments)]
+pub fn fuzz_route(
+    app: &Arc<App>,
+    method: &str,
+    path: &str,
+    query: Option<&str>,
+    bearer: Option<String>,
+    lease: Option<u64>,
+    found_token: Option<String>,
+    ticket: Option<String>,
+    body: Value,
+) -> Res<String> {
+    let method = Method::from_bytes(method.as_bytes()).map_err(|_| refuse("bad-format", "method"))?;
+    let path: Vec<String> = path
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if path.first().map(String::as_str) != Some("v1") || path.len() < 2 {
+        return Err(refuse("not-found", "every route is under /v1/"));
+    }
+    let rq = Rq {
+        method,
+        path,
+        query: http::query(query),
+        bearer,
+        lease,
+        found_token,
+        ticket,
+        ip: "203.0.113.7".into(),
+        body,
+    };
+    route(app, &rq).map(|v| v.to_string())
+}
+
 fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
     let segs: Vec<&str> = rq.path.iter().skip(1).map(String::as_str).collect();
     let m = &rq.method;

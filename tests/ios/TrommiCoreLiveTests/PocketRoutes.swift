@@ -69,6 +69,11 @@ final class PocketRoutes: URLProtocol, @unchecked Sendable {
     let epoch = number(body["epoch"])
     let sender = token.flatMap { try? unhex($0) } ?? []
     let after = UInt64(query["after"] ?? "0") ?? 0
+    // (a removed device's token is answered `not-member` until it runs out, but for the proof of its removal:
+    //  spec/hub-api.md point 8)
+    if let t = token, removed[t] != nil, !(path.first == "rooms" && path.count == 3 && ["challenge", "tokens"].contains(path[2])), !(path.count == 3 && path[2] == "removal") {
+      return refuse(403, "not-member")
+    }
     switch (method, path.count, path.first ?? "") {
     case ("GET", 3, "rooms") where path[2] == "challenge": return (200, ["challenge": b64u(systemRandom(32))])
     case ("POST", 3, "rooms") where path[2] == "tokens":

@@ -1040,3 +1040,15 @@ mod rules {
         assert_eq!(kept, handed("Ship it"));
     }
 }
+
+/// A value with a number reads and writes the same, to the last bit: written again by a device that read it, it
+/// is the value it read (serde_json's float_roundtrip; found by fuzzing).
+#[test]
+fn a_register_number_is_written_again_as_it_was_read() {
+    for number in ["186e23", "0.1", "3e159", "7777777777743.479497", "113264344455190055908", "-2.2250738585072014e-308"] {
+        let payload = format!(r#"{{"name":"desk/a","value":{{"x":{number}}},"lamport":1}}"#);
+        let value = trommi_core::registers::Value::parse(payload.as_bytes()).unwrap();
+        let again = trommi_core::registers::Value::parse(&value.payload().unwrap()).unwrap();
+        assert_eq!(again, value, "{number}");
+    }
+}

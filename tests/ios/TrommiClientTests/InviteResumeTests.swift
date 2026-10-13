@@ -91,7 +91,8 @@ final class InviteResumeTests: XCTestCase {
     room.seatGraceMs = 0
     var ch = Change()
     room.board.applyMembers([(id: hex(lone), role: "agent", active: true, added: 1, removed: nil)], change: &ch)
-    room.board.members[hex(lone)]?.isOnline = true
+    // (connected, as the hub's presence says it: the client core's model holds it)
+    room.board.applyPresence(.obj(["device_id": .str(hex(lone)), "is_online": true]))
     _ = try await room.sync()
     try await until("its session is founded") { device.founded.contains(lone) }
     try await Task.sleep(nanoseconds: 300_000_000)

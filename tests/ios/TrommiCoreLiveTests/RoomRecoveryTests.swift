@@ -121,7 +121,7 @@ final class RoomRecoveryTests: XCTestCase {
     try hub.deliver(to: first)
     for round in 0..<2 {
       for device in [first, second] {
-        _ = try device.seal(.noteFirst(payload: utf8(#"{"schema_version":1,"text":"note \#(round)","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
+        _ = try device.seal(.noteFirst(payload: utf8(#"{"schema_version":2,"text":"note \#(round)","previous_version_hash":"\#(b64u(ZERO32))"}"#)), files: [], nowMs: nowMs())
         try hub.post(device)
       }
     }
