@@ -1152,7 +1152,7 @@ body > main#inbox { contain: strict; }
 .pile-rest[data-g="trash"] .pile-rest-mark { color: var(--faint); }
 .pile-rest[data-shredded] b { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
 
-/* ---- the Desk's foot (desk.mjs offHint, deskDock; the owner's pick of 13 October 2026, "zwei Stapel wie HEY") ----
+/* ---- the Desk's foot (desk.mjs offHint, deskDock; the owner's picks of 13 October 2026: "zwei Stapel wie HEY", drawn as "nur zwei Reiter") ----
    The section Off your mind: a short hinted list, its rows fading, beside Artifacts on a wide window. */
 .oym-hint { gap: 0; text-align: left; }
 .oym-hint-list { display: grid; gap: 3px; justify-items: start; padding: 0 4px 2px; color: var(--muted); text-decoration: none; text-align: left; font: 400 var(--t-xs)/1.3 var(--font); }
@@ -1176,50 +1176,42 @@ body > main#inbox { contain: strict; }
   :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 56px; }
 }
 /* (the last rows scroll clear of the dock) */
-main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 104px; }
-/* The dock: two stacks at the bottom of the Desk, in the Desk's layer (fixed; gone with the Desk, so not on a card's
-   page). Each: its sign, the top card, the straight edges of two more behind it, how many. */
-.oym-dock { position: fixed; z-index: var(--z-pop); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: calc(var(--side, 0px) + (100vw - var(--side, 0px)) / 2); translate: -50% 0; display: flex; align-items: flex-end; gap: 28px; padding: 16px 18px 10px; border-radius: 18px 16px 19px 15px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 0 0 1.5px var(--line-strong), 0 10px 28px rgb(0 0 0 / .14); }
+main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 64px; }
+/* The dock: two tabs at the window's lower edge, in the Desk's layer (fixed; gone with the Desk, so not on a card's
+   page). Each: its sign, its word, how many; the cards themselves only in the fan. */
+.oym-dock { position: fixed; z-index: var(--z-pop); bottom: 0; left: calc(var(--side, 0px) + (100vw - var(--side, 0px)) / 2); translate: -50% 0; display: flex; align-items: flex-end; gap: 12px; }
 .oym-dock[hidden], .desk-layer:has(.sel-bar:not([hidden])) .oym-dock, :root.is-choosing .oym-dock { display: none; }
 .dock-stack { position: relative; }
-.dock-stack > summary { display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; border-radius: 12px; }
-.dock-stack > summary::-webkit-details-marker { display: none; }
-.dock-stack > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
-.dock-icon { display: grid; place-items: center; width: 22px; color: var(--muted); }
-.dock-icon :is(.sketch, svg) { width: 20px; height: 20px; }
-.dock-stack[data-k="star"] .dock-icon .sketch { color: #c99a13; fill: color-mix(in srgb, #e8b923 55%, transparent); }
-.dock-top { position: relative; display: block; }
-.dock-top > i { position: absolute; left: calc(var(--k) * 9px); right: calc(var(--k) * 9px); top: calc(var(--k) * -6px); height: 20px; border: 1.5px solid color-mix(in srgb, var(--fg) 30%, transparent); border-bottom: 0; border-radius: 12px 11px 0 0; background: var(--surface); opacity: calc(1 - var(--k) * .22); }
-.dock-top > em { position: absolute; z-index: 2; right: -8px; top: -9px; min-width: 20px; box-sizing: border-box; padding: 3px 6px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 700 11px/1 var(--font); font-style: normal; text-align: center; }
-.dock-card { position: relative; z-index: 1; display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 10px; width: 250px; box-sizing: border-box; padding: 8px 12px; border: 1.5px solid color-mix(in srgb, var(--fg) 55%, transparent); border-radius: 13px 11px 14px 12px; background: var(--surface); color: var(--fg); text-decoration: none; text-align: left; }
+.dock-tab { display: inline-flex; align-items: center; gap: 8px; padding: 11px 16px calc(11px + env(safe-area-inset-bottom, 0px)); border: 1px solid var(--line-strong); border-bottom: 0; border-radius: 13px 11px 0 0; background: var(--surface); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); box-shadow: var(--shadow-md); list-style: none; cursor: pointer; white-space: nowrap; }
+.dock-tab::-webkit-details-marker { display: none; }
+.dock-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.dock-tab > :is(.sketch, svg) { flex: none; width: 15px; height: 15px; }
+.dock-tab > .agent-ring { position: static; inset: auto; color: var(--muted); }
+.dock-stack[data-k="star"] > .dock-tab > .sketch { color: #c99a13; fill: color-mix(in srgb, #e8b923 55%, transparent); }
+.dock-tab > b { font-weight: inherit; }
+.dock-tab > em { min-width: 18px; box-sizing: border-box; padding: 3px 6px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 700 11px/1 var(--font); font-style: normal; text-align: center; font-variant-numeric: tabular-nums; }
+@media (any-hover: hover) { .dock-tab:hover { border-color: var(--fg); } a.dock-card:hover { border-color: var(--fg); } }
+.dock-stack[open] > .dock-tab { background: var(--sunken); }
+/* fanned: small cards of a fixed width upward, each a little askew (never a card that spans the window) */
+.dock-fan { position: absolute; left: -10px; bottom: calc(100% + 4px); display: grid; gap: 7px; max-height: min(64dvh, 540px); overflow-y: auto; padding: 8px 10px; scrollbar-width: thin; }
+.dock-stack:not([open]) > .dock-fan { display: none; }
+.dock-card { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 10px; width: min(300px, calc(100vw - 60px)); box-sizing: border-box; padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 13px 11px 14px 12px; background: var(--surface); color: var(--fg); text-decoration: none; text-align: left; box-shadow: 0 4px 14px rgb(0 0 0 / .16); }
 .dock-card .agent-avatar { width: 26px; height: 26px; }
 .dock-card > span { display: grid; gap: 2px; min-width: 0; }
-.dock-card b { font: 600 var(--t-sm)/1.25 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-card b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font: 600 var(--t-sm)/1.25 var(--font); }
 .dock-card small { color: var(--muted); font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dock-top > .dock-card { pointer-events: none; }   /* (the stack's top card opens the fan, not the card) */
-@media (any-hover: hover) { .dock-stack > summary:hover .dock-card, a.dock-card:hover { border-color: var(--fg); } }
-.dock-stack[open] > summary .dock-top > :is(i, em) { visibility: hidden; }
-.dock-stack[open] > summary .dock-card { opacity: .45; }
-/* fanned: small cards of a fixed width upward, each a little askew (never a card that spans the window) */
-.dock-fan { position: absolute; left: 22px; bottom: calc(100% + 6px); display: grid; gap: 7px; max-height: min(64dvh, 540px); overflow-y: auto; padding: 8px 10px; scrollbar-width: thin; }
-.dock-stack:not([open]) > .dock-fan { display: none; }
-.dock-fan > .dock-card { box-shadow: 0 4px 14px rgb(0 0 0 / .16); }
 .dock-fan > .dock-card:nth-child(odd) { rotate: -1.4deg; }
 .dock-fan > .dock-card:nth-child(even) { rotate: 1.1deg; translate: 5px 0; }
 .dock-fan > .dock-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .dock-all { justify-self: start; display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 8px 14px; border: 1.5px solid var(--fg); border-radius: var(--r-pill); background: var(--surface); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); text-decoration: none; }
 .dock-all .sketch { width: 14px; height: 14px; }
 @media (prefers-reduced-motion: reduce) { .dock-fan > .dock-card { rotate: none; translate: none; } }
-/* a phone: the dock stands above the tab pill, as wide as the screen allows; the signs give way to the cards */
+/* a phone: the two tabs are pills above the tab pill; the running one's fan opens from its right edge */
 @media (max-width: 860px) {
-  .oym-dock { left: 50%; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); gap: 10px; padding: 14px 10px 8px; max-width: calc(100vw - 16px); box-sizing: border-box; justify-content: center; }
-  .dock-icon { display: none; }
-  .dock-top > .dock-card { width: min(168px, calc(50vw - 24px)); padding: 7px 9px; gap: 7px; grid-template-columns: 22px minmax(0, 1fr); }
-  .dock-top > .dock-card .agent-avatar { width: 22px; height: 22px; }
-  .dock-fan { left: -10px; }
-  .dock-fan > .dock-card { width: min(250px, calc(100vw - 60px)); }
+  .oym-dock { left: 50%; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); gap: 10px; }
+  .dock-tab { padding: 9px 14px; border: 1px solid var(--line-strong); border-radius: var(--r-pill); }
   .dock-stack[data-k="run"]:not(:only-child) .dock-fan { left: auto; right: -10px; }
   :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .oym-hint { margin-top: 40px; }
   :is(#inbox, #session) .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks.stack-tabs { margin-top: 20px; }
-  main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 176px; }
+  main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 140px; }
 }
