@@ -112,13 +112,14 @@ export async function hub(t, opts = {}) {
 }
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms))
-/** Waits until `check()` is truthy; fails with `what` after `ms`. */
+/** Waits until `check()` is truthy; fails with `what` after `ms`. `what` may be a function: it then says the state at
+ *  the moment of the failure, not at the start of the wait. */
 export async function until(check, what, ms = 8000) {
   const end = Date.now() + ms
   for (;;) {
     const got = await check()
     if (got) return got
-    if (Date.now() > end) throw new Error(`timed out waiting for: ${what}`)
+    if (Date.now() > end) throw new Error(`timed out waiting for: ${typeof what === 'function' ? what() : what}`)
     await sleep(15)
   }
 }
