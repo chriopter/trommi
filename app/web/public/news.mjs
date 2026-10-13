@@ -1,7 +1,8 @@
 // What's new (/whats-new, a row of the Trommi menu): CHANGELOG.md at the repository's root, as the build read it
-// (gen/vendor/changelog.mjs; never fetched), newest first. The newest three days are open: the date, the summary line,
-// the day's picture small under it (public/changelog/, a shot of the demo room), then New, Better and Fixed with
-// their first three lines by their short form (dev/build.mjs changelogHead), the rest under "+N more"; a line opens to its whole text. Older days are one row with their counts, open on a tap.
+// (gen/vendor/changelog.mjs; never fetched), newest first. Each day is one card: the date, the summary line, the day's
+// picture (public/changelog/, a shot of the demo room; at the right on a wide screen, under the summary on a phone),
+// its counts ("6 new · 18 better · 39 fixed") and Details, which opens New, Better and Fixed with their first three
+// lines by their short form (dev/build.mjs changelogHead), the rest under "+N more"; a line opens to its whole text.
 // Opening it marks the newest day as seen on this device: the menu row's dot (sidebar.mjs) goes. The iOS app shows
 // the same file in its menu, the same way (WhatsNew.swift).
 import { changelog, runningLine } from './app.mjs'
@@ -22,18 +23,15 @@ const words = text => raw(String(text).split(/(`[^`]+`|\[[^\]]+\]\(https:\/\/[^)
 }).join(''))
 const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
-const OPEN_DAYS = 3   // the newest days shown open
 const TOP = 3         // the lines of a part shown before "+N more"
 const ORDER = ['New', 'Better', 'Fixed']
 const parts = d => [...d.groups].sort((a, b) => (ORDER.indexOf(a.kind) + 4) % 4 - (ORDER.indexOf(b.kind) + 4) % 4)
-/** "19 new · 41 better · 35 fixed" */
-const counts = d => parts(d).map(g => `${g.items.length} ${(g.kind || 'changes').toLowerCase()}`).join(' · ')
 const line = item => html`<li><details class="news-line"><summary>${item.tag ? html`<span class="news-tag">${item.tag}</span>` : ''}<span>${item.head}</span></summary><p>${words(item.text)}</p></details></li>`
 const part = g => html`<div class="news-part" data-kind="${g.kind.toLowerCase()}">${g.kind ? html`<p class="news-kind">${MARK[g.kind] ? sk(MARK[g.kind]) : ''}<b>${g.kind}</b><small>${g.items.length}</small></p>` : ''}<ol>${g.items.slice(0, TOP).map(line)}</ol>${g.items.length > TOP ? html`<details class="news-rest"><summary>+${g.items.length - TOP} more</summary><ol start="${TOP + 1}">${g.items.slice(TOP).map(line)}</ol></details>` : ''}</div>`
-const body = (d, picture) => html`${d.summary ? html`<p class="news-summary">${words(d.summary)}</p>` : ''}${picture && d.picture ? html`<img class="news-pic" src="${d.picture.src}" alt="${d.picture.alt}" loading="lazy" decoding="async">` : ''}<div class="set-group news-parts">${parts(d).map(part)}</div>`
-const day = (d, i) => i < OPEN_DAYS
-  ? html`<section class="news-day" aria-labelledby="news-day-${i}"><h3 class="news-date" id="news-day-${i}">${d.day}${d.releases ? html` <small>${d.releases}</small>` : ''}</h3>${body(d, true)}</section>`
-  : html`<details class="news-day news-old"><summary><span class="news-date">${d.day}</span><small>${counts(d)}</small>${SET_CHEVRON}</summary>${body(d, false)}</details>`
+/** "6 new · 18 better · 39 fixed", each count with its mark */
+const tally = d => html`<span class="news-tally">${parts(d).map(g => html`<span data-kind="${g.kind.toLowerCase()}">${MARK[g.kind] ? sk(MARK[g.kind]) : ''}<b>${g.items.length}</b> ${(g.kind || 'changes').toLowerCase()}</span>`)}</span>`
+/** One day, one card: the date, the summary (else its first line's short form), the picture, and the lines behind Details. */
+const day = (d, i) => html`<article class="news-day${d.picture ? ' has-pic' : ''}" aria-labelledby="news-day-${i}"><div class="news-text"><h3 class="news-date" id="news-day-${i}">${d.day}${d.releases ? html` <small>${d.releases}</small>` : ''}</h3><p class="news-summary">${d.summary ? words(d.summary) : d.groups[0]?.items[0]?.head ?? ''}</p></div>${d.picture ? html`<img class="news-pic" src="${d.picture.src}" alt="${d.picture.alt}" loading="lazy" decoding="async">` : ''}<details class="news-more"><summary>${tally(d)}<span class="news-open">Details${SET_CHEVRON}</span></summary><div class="set-group news-parts">${parts(d).map(part)}</div></details></article>`
 
 const newsMain = () => settingsPage(TITLE, html`<div class="news" data-controller="news"><p class="news-build" id="news-build">${runningLine()}</p>${DAYS.length ? DAYS.map(day) : html`<p class="set-note">Nothing written down yet.</p>`}</div>`, { back: false, lead: 'What changed in Trommi, newest first.' })
 

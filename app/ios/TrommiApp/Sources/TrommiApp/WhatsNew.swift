@@ -1,8 +1,8 @@
 // WhatsNew.swift: What's new, a row of the menu (MenuPill): the repository's CHANGELOG.md, bundled with the app
-// (Resources/CHANGELOG.md, a link to the file at the root), newest first. The newest three days are open: the date,
-// the summary line, the day's picture small under it (a shot of the demo room, loaded from the web app:
-// https://app.trommi.com/changelog/…), then New, Better and Fixed with their first three lines by their short form (Changelog.head), the
-// rest under "+N more"; a line opens to its whole text. Older days are one row with their counts, open on a tap.
+// (Resources/CHANGELOG.md, a link to the file at the root), newest first. Each day is one card: the date, the summary
+// line, the day's picture (a shot of the demo room, loaded from the web app: https://app.trommi.com/changelog/…), its
+// counts and Details, which opens New, Better and Fixed with their first three lines by their short form
+// (Changelog.head), the rest under "+N more"; a line opens to its whole text.
 // The same file, reading and layout as the web app's page (app/web/dev/build.mjs parseChangelog and changelogHead,
 // app/web/public/news.mjs). Opening it marks the newest day as seen on this phone; until then the menu's row says so.
 import SwiftUI
@@ -29,8 +29,8 @@ struct ChangelogDay: Equatable {
 
 enum Changelog {
   static let seenKey = "trommi-news-seen"
-  /** The newest days shown open, and the lines of a part shown before "+N more". */
-  static let openDays = 3, top = 3
+  /** The lines of a part shown before "+N more". */
+  static let top = 3
   /** The bundled file's days, newest first (empty when the file is not there). */
   static let days: [ChangelogDay] = {
     guard let url = Bundle.module.url(forResource: "CHANGELOG", withExtension: "md"), let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
@@ -152,52 +152,82 @@ struct WhatsNewPage: View {
       Text("What changed in Trommi, newest first.").font(Face.text(15)).foregroundStyle(Ink.muted)
       Text(Changelog.running).font(Face.text(12)).foregroundStyle(Ink.muted).accessibilityLabel("This app: \(Changelog.running)")
       if Changelog.days.isEmpty { Text("Nothing written down yet.").font(Face.text(15)).foregroundStyle(Ink.muted) }
-      ForEach(Array(Changelog.days.enumerated()), id: \.offset) { i, d in
-        if i < Changelog.openDays {
-          VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-              Text(d.day).font(Face.display(19, .bold))
-              if !d.releases.isEmpty { Text(d.releases).font(Face.text(13)).foregroundStyle(Ink.muted) }
-            }.padding(.horizontal, 4)
-            WhatsNewDay(day: d, picture: true)
-          }
-        } else {
-          WhatsNewOlderDay(day: d)
-        }
-      }
+      ForEach(Array(Changelog.days.enumerated()), id: \.offset) { _, d in WhatsNewDay(day: d) }
     }
     .onAppear { Changelog.markSeen() }
   }
 }
 
-/** A day's summary line, its picture (on the open days only), and its parts, each with its first lines and "+N more". */
+/** One day, one card: the date, the summary (else its first line's short form), the picture, the counts, and its parts
+ *  behind Details. */
 struct WhatsNewDay: View {
   let day: ChangelogDay
-  var picture = false
+  @State private var open = false
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      if !day.summary.isEmpty {
-        Text((try? AttributedString(markdown: day.summary)) ?? AttributedString(day.summary)).font(Face.text(17, .semibold))
-          .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(day.day).font(Face.display(17, .bold))
+        if !day.releases.isEmpty { Text(day.releases).font(Face.text(13)).foregroundStyle(Ink.muted) }
       }
-      if picture, let pic = day.picture {
+      let summary = day.summary.isEmpty ? (day.ordered.first?.lines.first?.head ?? "") : day.summary
+      if !summary.isEmpty {
+        Text((try? AttributedString(markdown: summary)) ?? AttributedString(summary)).font(Face.text(16, .semibold))
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      if let pic = day.picture {
         AsyncImage(url: pic.url) { phase in
           if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) } else { Rectangle().fill(Ink.sunken).aspectRatio(2.2, contentMode: .fit) }
         }
-        .frame(maxWidth: 280, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Ink.line))
-        .padding(.horizontal, 4)
+        .frame(maxWidth: 360, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Ink.line))
         .accessibilityLabel(pic.alt)
       }
-      SettingsGroup {
-        ForEach(Array(day.ordered.enumerated()), id: \.offset) { i, p in
-          if i > 0 { RowRule(inset: 0) }
-          WhatsNewPart(part: p)
+      DashedRule()
+      Button { withAnimation(.snappy) { open.toggle() } } label: {
+        HStack(alignment: .center, spacing: 12) {
+          HStack(spacing: 12) {
+            ForEach(Array(day.ordered.enumerated()), id: \.offset) { _, p in
+              HStack(spacing: 4) {
+                if !p.kind.isEmpty { Sketch(p.kind == "New" ? "spark" : p.kind == "Better" ? "wake" : "tick", color: p.kind == "New" ? Ink.accent : Ink.muted).frame(width: 14, height: 14) }
+                Text("\(p.items.count)").font(Face.text(14, .bold)).foregroundStyle(Ink.fg)
+                Text((p.kind.isEmpty ? "changes" : p.kind).lowercased()).font(Face.text(14)).foregroundStyle(Ink.muted)
+              }
+            }
+          }.lineLimit(1).minimumScaleFactor(0.8)
+          Spacer(minLength: 4)
+          HStack(spacing: 4) {
+            Text("Details").font(Face.text(14, .bold))
+            Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold)).rotationEffect(.degrees(open ? 180 : 0))
+          }.foregroundStyle(Ink.accent)
+        }
+        .frame(minHeight: 32).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("\(day.counts). Details")
+      .accessibilityHint(open ? "Hides the lines" : "Shows the lines")
+      if open {
+        SettingsGroup {
+          ForEach(Array(day.ordered.enumerated()), id: \.offset) { i, p in
+            if i > 0 { RowRule(inset: 0) }
+            WhatsNewPart(part: p)
+          }
         }
       }
     }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Ink.surface))
+    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.lineStrong))
   }
+}
+
+/** The dashed line between a card's words and its counts. */
+private struct DashedRule: View {
+  private struct Across: Shape {
+    func path(in r: CGRect) -> Path { Path { p in p.move(to: CGPoint(x: r.minX, y: r.midY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY)) } }
+  }
+  var body: some View { Across().stroke(Ink.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 4])).frame(height: 1) }
 }
 
 /** One part: New, Better or Fixed with its count, its first lines numbered, the rest under "+N more". */
@@ -253,27 +283,5 @@ struct WhatsNewLine: View {
     }
     .buttonStyle(.plain)
     .accessibilityHint(open ? "" : "Shows the whole line")
-  }
-}
-
-/** An older day: one row with its date and counts; a tap opens it. */
-struct WhatsNewOlderDay: View {
-  let day: ChangelogDay
-  @State private var open = false
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Button { withAnimation(.snappy) { open.toggle() } } label: {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-          Text(day.day).font(Face.display(17, .bold)).foregroundStyle(Ink.fg)
-          Text(day.counts).font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
-          Spacer(minLength: 4)
-          Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.muted).rotationEffect(.degrees(open ? 90 : 0))
-        }
-        .padding(.vertical, 10).padding(.horizontal, 4).contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      if open { WhatsNewDay(day: day) }
-      Rectangle().fill(Ink.line).frame(height: 1)
-    }
   }
 }
