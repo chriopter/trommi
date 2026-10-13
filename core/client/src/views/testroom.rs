@@ -18,6 +18,8 @@ pub struct Room {
     pub crown: Value,
     pub snoozes: Value,
     pub stars: Value,
+    pub timelines: serde_json::Map<String, Value>,
+    pub members: Vec<Value>,
 }
 
 /// A session's device id: its name, padded to an id.
@@ -59,11 +61,23 @@ impl Room {
             "envelope_number": 900, "sent_at": NOW - MIN, "expires_at": NOW + 30 * MIN,
         }));
     }
+    /// A message in a session's chat (`card`: under that card instead), as envelope `number`, sent `ago` before NOW.
+    /// `from`: "me", or a session's name.
+    pub fn say(&mut self, of: &str, card: Option<&str>, number: u64, from: &str, ago: u64, content: Value) {
+        let key = match card {
+            Some(id) => format!("chat:card/{id}"),
+            None => format!("chat:session/{}", dev(of)),
+        };
+        let sender = if from == "me" { "me".to_string() } else { dev(from) };
+        let item = json!({ "envelope_number": number, "local_id": null, "pending": false, "sender_device_id": sender, "sent_at": NOW - ago,
+            "item_state": "loaded", "content_type": "message", "content": content });
+        self.timelines.entry(key).or_insert_with(|| json!([])).as_array_mut().unwrap().push(item);
+    }
     /// The room as a model, its Desk projected at `now`.
     pub fn model(&self, now: u64) -> Model {
         let fixture = json!({
-            "made_at": now, "room": { "my_device_id": "me" }, "members": [], "sessions": self.sessions, "cards": self.cards,
-            "permissions": self.permissions,
+            "made_at": now, "room": { "my_device_id": "me" }, "members": self.members, "sessions": self.sessions, "cards": self.cards,
+            "permissions": self.permissions, "timelines": self.timelines,
             "human": { "desks": self.desks, "session_settings": self.settings, "crown": self.crown, "snoozes": self.snoozes, "stars": self.stars },
         });
         demo::model_of(&fixture, now).unwrap()

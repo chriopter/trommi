@@ -66,6 +66,9 @@ pub struct OffMind {
     /// The closed cards of each session, counted, by the session's key.
     pub closed: BTreeMap<String, u64>,
     pub recent: Vec<Closed>,
+    /// Every card with its agent, starred ones too, in the running stack's order: the complete list's top part.
+    #[serde(skip)]
+    pub with_agents: Vec<Running>,
     #[serde(skip)]
     pub wake: Option<u64>,
 }
@@ -75,7 +78,7 @@ fn star_at(v: &Value) -> Option<u64> {
 }
 
 /// When a card went to its agent: the hand-back's message, an info's start, his answer.
-fn went_at(m: &Model, c: &Card) -> u64 {
+pub fn went_at(m: &Model, c: &Card) -> u64 {
     if c.object_state == "open" {
         if let Some(r) = &c.in_revision {
             let said = m.timelines.get(&c.timeline_key).and_then(|t| {
@@ -92,7 +95,7 @@ fn went_at(m: &Model, c: &Card) -> u64 {
 }
 
 /// When a closed card closed: his answer (a shredding is one), else its last change; a withdrawn one, when it came.
-fn closed_at(c: &Card, place: &str) -> u64 {
+pub fn closed_at(c: &Card, place: &str) -> u64 {
     match (&c.answer, place) {
         (Some(a), _) if a.answered_at > 0 => a.answered_at,
         (_, "done") => c.updated_at,
@@ -101,7 +104,7 @@ fn closed_at(c: &Card, place: &str) -> u64 {
 }
 
 /// Off your mind at `now`, for the sessions as listed (`rows`: sessions.rs `session_list`).
-pub fn off_mind(m: &Model, rows: &[SessionRow], now: u64) -> OffMind {
+pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, now: u64) -> OffMind {
     // (a card names its session, else its agent device: the list's row of either, as the apps pair them)
     let mut by_session: HashMap<&str, &SessionRow> = HashMap::new();
     let mut by_device: HashMap<&str, &SessionRow> = HashMap::new();
@@ -148,10 +151,8 @@ pub fn off_mind(m: &Model, rows: &[SessionRow], now: u64) -> OffMind {
                     (a, b) => a.or(b),
                 };
                 running_ids.insert(c.object_id.as_str());
-                if stars.contains_key(c.object_id.as_str()) {
-                    continue;
-                }
-                // (its working line: the one that names it, else its session's newest working line naming no card)
+                // (its working line: the one that names it, else its session's newest working line naming no card;
+                //  of two equally new, the first, as the web's workLine and the session's and card's pages)
                 let working = s.into_iter().flat_map(|s| s.status_lines.iter()).filter(|t| {
                     row.lines.get(&t.id).map(String::as_str) == Some("working")
                 });
@@ -159,9 +160,12 @@ pub fn off_mind(m: &Model, rows: &[SessionRow], now: u64) -> OffMind {
                 let line = named.or_else(|| {
                     working
                         .filter(|t| t.object_id.as_str().is_none_or(str::is_empty))
-                        .max_by_key(|t| t.updated_at)
+                        .fold(None, |best: Option<&crate::model::types::StatusLine>, t| match best {
+                            Some(b) if b.updated_at >= t.updated_at => Some(b),
+                            _ => Some(t),
+                        })
                 });
-                out.running.push(Running {
+                out.with_agents.push(Running {
                     object_id: c.object_id.clone(),
                     at: line.map(|t| t.updated_at).unwrap_or_else(|| went_at(m, c)),
                     label: line.and_then(|t| t.label.as_str()).unwrap_or("").to_string(),
@@ -174,7 +178,9 @@ pub fn off_mind(m: &Model, rows: &[SessionRow], now: u64) -> OffMind {
             _ => {}
         }
     }
-    out.running.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
+    out.with_agents.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
+    // (a card has one home: a starred one lies in the starred stack only)
+    out.running = out.with_agents.iter().filter(|r| !stars.contains_key(r.object_id.as_str())).cloned().collect();
     put_off.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
     out.put_off = put_off.into_iter().map(|(_, id)| id.to_string()).collect();
     recent.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
@@ -266,6 +272,17 @@ mod tests {
         assert_eq!(ids(&o.running), ["old", "new", "acting"]);
         assert_eq!(o.running[0].label, "Reworking");
         assert_eq!(o.running[1].label, "");
+    }
+
+    #[test]
+    fn of_two_unnamed_working_lines_of_the_same_time_the_first_stands() {
+        let mut m = model();
+        handed_back(&mut m, "a", S1, NOW - 9_000);
+        let line = |id: &str, label: &str| StatusLine { id: id.into(), label: json!(label), state: json!("working"), updated_at: NOW - 10, ..Default::default() };
+        m.sessions.get_mut(S1).unwrap().status_lines = vec![line("l1", "First"), line("l2", "Second")];
+        let o = off(&m);
+        assert_eq!(o.running[0].label, "First", "as the web's workLine and the session's and card's pages");
+        assert_eq!(o.with_agents, o.running);
     }
 
     #[test]

@@ -19,6 +19,11 @@ use serde_json::Value;
 pub const NEEDS_NEWER: &str = "This needs a newer version of Trommi. Reload to update.";
 
 pub fn desk(b: &Board) -> DeskView {
+    desk_with(b, &super::off::of_board(b))
+}
+
+/// The Desk, with what has left it as the core's `off_mind` says (made once per render).
+pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     let m = b.model;
     let units = units_of(b);
     let agent_of = |session: &Option<String>, device: &str| b.by_key.get(key_of(session, device)).copied();
@@ -144,11 +149,8 @@ pub fn desk(b: &Board) -> DeskView {
         }
     });
     let n = walk_len.to_string();
-    DeskView {
+    let mut view = DeskView {
         stack: rows.iter().map(|r| r.id.clone()).collect(),
-        off_your_mind: Vec::new(),
-        later: Vec::new(),
-        done: Vec::new(),
         empty,
         mode: mode.into(),
         hello,
@@ -164,7 +166,10 @@ pub fn desk(b: &Board) -> DeskView {
             }
         }),
         slip: cut,
-    }
+        ..Default::default()
+    };
+    super::off::fill_desk(b, off, &mut view);
+    view
 }
 
 /// One of the greetings, the same for a whole run of the app; a calm one when nothing waits.
@@ -188,7 +193,7 @@ fn grouped(n: u64) -> String {
     out
 }
 
-fn from_of(b: &Board, agent: Option<usize>) -> Option<FromView> {
+pub(super) fn from_of(b: &Board, agent: Option<usize>) -> Option<FromView> {
     let a = &b.agents[agent?];
     Some(FromView {
         session_id: a.row.key.clone(),
@@ -199,7 +204,7 @@ fn from_of(b: &Board, agent: Option<usize>) -> Option<FromView> {
     })
 }
 
-fn text_of(v: &Value) -> String {
+pub(super) fn text_of(v: &Value) -> String {
     v.as_str().unwrap_or("").to_string()
 }
 
@@ -243,18 +248,25 @@ fn sign_of(permission: bool, info: bool, urgency: &str) -> (String, Option<Text>
     }
 }
 
-fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView {
+/// A card's title as every screen shows it: "Loading …" while its body is not read on this device, a line for a
+/// card of a newer Trommi that names none.
+pub fn shown_title(c: &Card) -> String {
+    let title = text_of(&c.field("title"));
+    if is_loading(c) {
+        "Loading …".to_string()
+    } else if c.is_unsupported() && title.is_empty() {
+        "A card from a newer Trommi".into()
+    } else {
+        title
+    }
+}
+
+pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView {
     let loading = is_loading(c);
     let newer = c.is_unsupported();
     let info = reads_as_info(c);
     let urgency = if loading { "normal".to_string() } else if c.urgency.is_empty() { "normal".into() } else { c.urgency.clone() };
-    let title = if loading {
-        "Loading …".to_string()
-    } else if newer && text_of(&c.field("title")).is_empty() {
-        "A card from a newer Trommi".into()
-    } else {
-        text_of(&c.field("title"))
-    };
+    let title = shown_title(c);
     let teaser = if loading {
         "Still being decrypted on this device.".to_string()
     } else if newer {
@@ -335,7 +347,7 @@ fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView {
     }
 }
 
-fn request_row(b: &Board, p: &PermissionRequest, agent: Option<usize>) -> DeskRowView {
+pub(super) fn request_row(b: &Board, p: &PermissionRequest, agent: Option<usize>) -> DeskRowView {
     let from = from_of(b, agent);
     // (not read here yet: what it asks to run is unknown, so it is not offered to allow; it waits quietly)
     if !(p.content_state.is_empty() || p.content_state == "ok") {
@@ -381,7 +393,7 @@ pub struct Opt {
     pub settles: bool,
 }
 
-fn options_of(v: &Value) -> Vec<Opt> {
+pub(super) fn options_of(v: &Value) -> Vec<Opt> {
     v.as_array()
         .into_iter()
         .flatten()
