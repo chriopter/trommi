@@ -628,9 +628,9 @@ install_() {
     say "Find the newest release of $REPOSITORY"
     tag=$(curl -fsSL --max-time 30 "https://api.github.com/repos/$REPOSITORY/releases?per_page=100" | python3 -c '
 import json, re, sys
-tags = [r["tag_name"] for r in json.load(sys.stdin) if not r["draft"] and re.fullmatch(r"v[1-9][0-9]*", r["tag_name"])]
-print(max(tags, key=lambda t: int(t[1:])) if tags else "")') || die "GitHub could not be asked for the releases"
-    [ -n "$tag" ] || die "no release found in $REPOSITORY (the build on main publishes v<N>)"
+tags = [r["tag_name"] for r in json.load(sys.stdin) if not r["draft"] and re.fullmatch(r"(hub-)?v[1-9][0-9]*", r["tag_name"])]
+print(max(tags, key=lambda t: int(t.rsplit("v", 1)[1])) if tags else "")') || die "GitHub could not be asked for the releases"
+    [ -n "$tag" ] || die "no release found in $REPOSITORY (the build on main publishes hub-v<N>)"
   fi
   printf '%s' "$tag" | grep -Eq '^(hub-)?v[1-9][0-9]{0,11}$' || die "not a release: $tag"
 
