@@ -382,6 +382,9 @@ methods!(RawClientModel {
     seat_founded(agent);
     seat_failed(agent, now_ms);
     set_seat_grace(ms);
+    desks_deleting();
+    desk_contents(desk_id, board);
+    desk_delete_plan(desk_id, known, by, now_ms);
     self_join_asks(answered, pending);
     self_join_verdict(session_id, nonce, request_hash);
     self_join_retire();

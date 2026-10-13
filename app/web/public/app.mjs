@@ -21,6 +21,7 @@ const PROOF_PATH = /^\/settings\/proof$/
 const LAZY = {
   auth: { load: () => import('./auth.mjs'), paths: /^\/(?:settings(?:\/(?:devices|account|theme|keys|kit|password|security))?|devices\/|pair|logout|join|login)(?:\/|$)/ },
   agents: { load: () => import('./agents.mjs'), paths: /^\/(?:settings\/(?:sessions|agents)$|sessions\/)/ },
+  desks: { load: () => import('./desks.mjs'), paths: /^\/settings\/desks(?:\/|$)/ },
   card: { load: () => import('./card.mjs'), paths: /^(?:\/chat\/[^/]+)?\/card\/|^\/cards\/[0-9a-f]+\// },
   session: { load: () => import('./session.mjs'), paths: /^\/chat\// },
   media: { load: () => import('./media.mjs'), paths: /^\/artifacts(?:\/|$)/ },
@@ -29,6 +30,8 @@ const LAZY = {
   news: { load: () => import('./news.mjs'), paths: /^\/whats-new$/ },
 }
 const loaded = {}   // name -> the view's module, once loaded
+/** Another view's module, for a view that draws with its parts (desks.mjs: the Scribble Board's canvas and thumbnail). */
+export const viewModule = name => view(name)
 /** A lazy view's module (loaded once; registered on the board, when there is one, as it arrives). */
 function view(name) {
   const v = LAZY[name]
@@ -2170,6 +2173,15 @@ async function start(client, { fresh = false } = {}) {
   const kitWatch = () => { if (!mock && client.model.room.my_role === 'human' && (read('trommi-kit-pending') === '1' || (started() && client.model.human?.raw?.get('kit')?.value?.pending === true))) view('auth').then(v => v.kitGate(client)).catch(err => console.warn('kit', err)) }
   client.on('change', change => { if (change.registers?.has?.('kit') || change.room) kitWatch() })
   kitWatch()
+  // A desk delete begun before, on this device or another, and broken off is finished once the room is live (desks.mjs).
+  let deskResumed = false
+  const deskWatch = () => {
+    if (deskResumed || mock || client.model.room.my_role !== 'human' || client.model.room.connection !== 'live') return
+    deskResumed = true
+    view('desks').then(v => v.resumeDeskDeletes(client)).catch(err => console.warn('desk delete', err))
+  }
+  client.on('change', change => { if (change.room) deskWatch() })
+  deskWatch()
 
   // Changes come in batches; one frame patches the page for all that came meanwhile. A navigation or the end of a
   // form takes what is pending at once (flush), so a page never renders a state older than the action that led to it.

@@ -332,6 +332,24 @@ impl ClientModel {
             Ok(())
         })
     }
+    /// Deleting a desk (client/src/desk_delete.rs): the desks a delete was begun on, JSON list of ids. An app finishes
+    /// each on its start with `desk_delete_plan`.
+    pub fn desks_deleting(&self) -> Result<String, CoreError> {
+        self.with(|m, _| Ok(serde_json::to_string(&m.desks_deleting()).unwrap_or_default()))
+    }
+    /// What a desk holds, counted, for the confirm: JSON `Counts`. `board`: JSON `{shapes, files, notes, snapshot_empty}`
+    /// of the desk's board as read, or "" while it is not.
+    pub fn desk_contents(&self, desk_id: String, board: String) -> Result<String, CoreError> {
+        let b: Option<trommi_client_core::desk_delete::BoardKnown> =
+            if board.is_empty() { None } else { Some(serde_json::from_str(&board).map_err(json_err)?) };
+        self.with(|m, _| Ok(serde_json::to_string(&m.desk_contents(&desk_id, b.as_ref())).unwrap_or_default()))
+    }
+    /// The next step of deleting a desk: JSON `{step, …, done, total, left}`. `known`: JSON `{board?, files_gone}`;
+    /// `by`: this device (hex). The app does the step and asks again until `step` is `done` (or `refused`).
+    pub fn desk_delete_plan(&self, desk_id: String, known: String, by: String, now_ms: u64) -> Result<String, CoreError> {
+        let k: trommi_client_core::desk_delete::Known = serde_json::from_str(&known).map_err(json_err)?;
+        self.with(|m, _| Ok(serde_json::to_string(&m.desk_delete_plan(&desk_id, &k, &by, now_ms)).unwrap_or_default()))
+    }
     /// Self-join (client/src/selfjoin.rs): the agents' asks to act on, JSON `[{session_id, nonce, ask, refused}]`.
     /// `answered`: the nonces this device answered; `pending`: the accounts of its vouched links not through yet.
     pub fn self_join_asks(&self, answered: String, pending: String) -> Result<String, CoreError> {

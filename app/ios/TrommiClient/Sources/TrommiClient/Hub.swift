@@ -367,6 +367,8 @@ public final class HubClient: @unchecked Sendable {
     _ = try await exchange("PUT", "/files/\(b64u(id))", query: [:], body: Data(stored), contentType: "application/octet-stream", auth: true, headers: [:])
   }
   public func deleteFile(_ id: FileId) async throws { try await request("DELETE", "/files/\(b64u(id))") }
+  /** `POST /v1/groups/{group}/archive`: a session group archived for good (5.2.10). */
+  public func archiveGroup(_ id: GroupId) async throws { _ = try await request("POST", "/groups/\(b64u(id))/archive", body: [:]) }
 
   // ---- invites (12.1), by invite id only -----------------------------------------------------------------
 

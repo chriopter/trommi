@@ -23,6 +23,7 @@
 pub mod board;
 pub mod codec;
 pub mod desk;
+pub mod desk_delete;
 pub mod model;
 pub mod plan;
 pub mod presence;
