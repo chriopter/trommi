@@ -748,7 +748,7 @@ export const steps = [
     const id = await A.js("return [...document.querySelectorAll('#agents .agent-row[data-unit]')].find(r => r.textContent.includes('second-agent'))?.dataset.unit")
     check(await A.js(`const r = await fetch('/sessions/${id}/star', { method: 'POST', headers: { accept: 'text/vnd.turbo-stream.html' }, body: new URLSearchParams({ stay: '1', starred: '1' }) }); return r.status`) === 200, 'the second session is given the crown')
     await A.js("[...document.querySelectorAll('#agents a.agent-entry')].find(a => a.textContent.includes('second-agent')).click()")
-    await A.until("document.querySelector('#session form.composer textarea') && document.querySelector('#corner-note-box .corner-note-send') && document.querySelector('#session .empty-chat')", 'the second session\'s empty chat')
+    await A.until("document.querySelector('#session form.composer textarea') && document.querySelector('#corner-note-box .corner-note-send') && document.querySelector('#session .empty-card')", 'the second session\'s empty chat')
     await A.click('#corner-note-box .corner-note-head')
     await A.until("document.querySelector('#corner-note-box.is-open')", 'the note open')
     await A.type('#corner-note-box .corner-note-field', 'First words for the second.')

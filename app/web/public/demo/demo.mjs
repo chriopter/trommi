@@ -1,6 +1,6 @@
 // The mock room: the client core's API and model shape (core/README.md), without a hub and without crypto, fed from
 // /demo/fixture.json (the repository's demo/data/, copied by the build: demo/README.md) or generated big
-// (?mock=crazy). The other names (?mock=side, quiet, fresh, first, many, foot, reads, link) are variants built from the
+// (?mock=crazy). The other names (?mock=side, quiet, fresh, first, many, foot, reads, link, new) are variants built from the
 // fixture's own sessions and cards: on a room without any they are the room as it is. Used with ?mock=1 for UI work;
 // the real core is the default.
 // Agents are simulated: they reply to messages, rework a card that was handed back, explain on "What??".
@@ -465,7 +465,20 @@ export function variantOf(f, kind) {
   if (kind === 'many') return manyHelpers(crowded(f))
   if (kind === 'foot') return fullFoot(f)
   if (kind === 'reads') return onlyReads(f)
+  if (kind === 'new') return newSession(f)
   return kind === 'side' ? crowded(f) : kind === 'link' ? linkDemo(f) : f
+}
+
+// ?mock=new: the room as it is, and one agent that just joined and has said nothing yet (/chat/new-session: the empty
+// conversation, what to start with).
+function newSession(f) {
+  if (!f.sessions.length) return f
+  const id = hex(64), now = Date.now(), main = f.sessions[0]
+  f.members.push({ device_id: id, device_role: 'agent', device_name: 'new-session', is_active: true, added_entry_number: 9999, removed_entry_number: null, added_at: now - 60e3, is_me: false, is_online: true, agent_session_id: 'new-session', platform: 'claude-code', host: 'MacBook Pro', folder: '~/code/fernly-web' })
+  f.sessions.push({ agent_device_id: id, agent_session_id: 'new-session', device_name: 'Release Notes', is_active: true, is_online: true,
+    profile: { model: 'claude-opus-5-5', task: '', icon: 'draw:quill', agent_name: 'Release Notes', parent_session: main.agent_session_id, is_main: false },
+    status_lines: [], settings: { name: '', desk: main.settings?.desk ?? 'main', archived: false, group: null, icon: null } })
+  return f
 }
 
 // ?mock=link: one session in each state of its link (app.mjs linkOf), and receipts. landing-page hears on its next step and
