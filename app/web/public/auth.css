@@ -137,7 +137,7 @@ body > main#room:not(.room-paged) { max-width: none; margin: 0; padding-inline: 
 .clip-sub { margin: 0 0 10px; color: var(--muted); font: 400 var(--t-sm)/1.4 var(--font); }
 .clip-list { list-style: none; margin: 0; padding: 0; display: grid; }
 .clip-step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: var(--s-3); align-items: start; padding: 14px 0; border-top: 1.2px dashed color-mix(in srgb, var(--fg) 26%, transparent); }
-.clip-step-body { display: grid; gap: 9px; min-width: 0; }
+.clip-step-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; min-width: 0; }   /* (one column no wider than the step: the long invite link wraps instead of widening it) */
 .clip-step b { font: 700 var(--t-md)/1.35 var(--font); }
 .clip-step small { color: var(--muted); font-size: var(--t-sm); }
 .clip-step small code { color: var(--fg); font: 500 var(--t-sm)/1.4 var(--mono); overflow-wrap: anywhere; }
