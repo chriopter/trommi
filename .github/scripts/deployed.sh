@@ -24,7 +24,7 @@ shift
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'rc=$?; rm -rf "$work"; exit "$rc"' EXIT
 want() { sed -n "s/^$1 \([0-9a-f]\{64\}\)\$/\1/p" "$inputs"; }
 say() { echo "deployed.sh: $*" >&2; }
 # the inputs of one part at a commit named out there (short or full), or nothing

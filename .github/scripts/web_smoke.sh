@@ -13,7 +13,7 @@ dir=${1:?usage: web_smoke.sh <release dir> <commit> [origin]}
 commit=${2:?usage: web_smoke.sh <release dir> <commit> [origin]}
 origin=${3:-https://app.trommi.com}
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'rc=$?; rm -rf "$work"; exit "$rc"' EXIT
 bust="ci=${GITHUB_RUN_ID:-0}-smoke"
 # the release's SHA-256 of a file the site serves at <path> (public/<path> in the manifest)
 want() { jq -r --arg n "public/$1" '.files[] | select(.name == $n) | .sha256' "$dir/manifest.json"; }

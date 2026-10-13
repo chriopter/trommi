@@ -73,11 +73,13 @@ keychain=$RUNNER_TEMP/mac-direct.keychain-db
 search_list=()
 restore_search_list=no
 cleanup() {
+  rc=$?   # the status of the run, not of the cleanup (bash 3.2 on macOS lets the trap's last command win)
   if [ "$restore_search_list" = yes ]; then security list-keychains -d user -s "${search_list[@]}" || true; fi
   [ ! -f "$keychain" ] || security delete-keychain "$keychain" || true
   rm -rf "$keys" "$RUNNER_TEMP/ExportOptionsMacDirect.plist"
   [ -z "${profile_uuid:-}" ] || rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.provisionprofile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$profile_uuid.provisionprofile"
   [ -z "${mounted:-}" ] || hdiutil detach "$mounted" -quiet || true
+  exit "$rc"
 }
 trap cleanup EXIT
 plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$2/Contents/Info.plist"; }
@@ -228,7 +230,7 @@ EOF
   xcodebuild -exportArchive \
     -archivePath "$archive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptionsMacDirect.plist" \
     -exportPath "$RUNNER_TEMP/signed-mac-direct" \
-    "${auth[@]}"
+    ${auth[@]+"${auth[@]}"}   # an empty array is an unbound variable under set -u in the Mac runner's bash 3.2
   app=$RUNNER_TEMP/signed-mac-direct/Trommi.app
   [ -d "$app" ] || { echo "::error::the export made no Trommi.app"; exit 1; }
 
