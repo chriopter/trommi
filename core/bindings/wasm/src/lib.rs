@@ -20,7 +20,7 @@ use js_sys::Array;
 use trommi_core_ffi as facade;
 use trommi_core_ffi::js::{FromJs, ToJs};
 use trommi_core_ffi::{
-    ClientDesk, ClientModel, CoreDevice, CoreError, FileDecryptor, FileEncryptor,
+    AppCore, ClientDesk, ClientModel, CoreDevice, CoreError, FileDecryptor, FileEncryptor,
 };
 use wasm_bindgen::prelude::*;
 
@@ -321,6 +321,28 @@ methods!(RawFileEncryptor {
     file_id();
     update(plaintext);
     finish();
+});
+
+/// The app core (core/client/src/app): one event in, the effects out.
+#[wasm_bindgen]
+pub struct RawAppCore(AppCore);
+
+#[wasm_bindgen]
+impl RawAppCore {
+    /// A new app core; it does nothing until the event `start`.
+    pub fn create() -> Answer {
+        made(Ok::<_, CoreError>(RawAppCore(AppCore::new())))
+    }
+
+    /// Gives it up.
+    pub fn close(&self) {
+        self.0.close();
+    }
+}
+
+methods!(RawAppCore {
+    handle(now_ms, event);
+    view_json();
 });
 
 /// The client core's Desk (EXPERIMENT).

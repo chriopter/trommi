@@ -1,0 +1,16 @@
+{
+  "name": "an empty device shows the sign-in, a device with state opens",
+  "steps": [
+    { "at": 1000, "event": { "type": "start", "config": { "platform": "test", "version": "0", "seed": 1 } } },
+    { "expect_effects": [ { "type": "store", "id": 1, "op": { "op": "device_load" } } ] },
+    { "expect_view": { "rev": 1, "phase": "starting" } },
+    { "at": 1001, "event": { "type": "store", "id": 1,
+                             "result": { "ok": { "answer": "device", "revision": 0, "entries": [] } } } },
+    { "expect_effects": [] },
+    { "expect_view": { "rev": 2, "phase": "signed_out", "desk": { "stack": [] } } },
+    { "at": 1002, "event": { "type": "store", "id": 1,
+                             "result": { "ok": { "answer": "device", "revision": 0, "entries": [] } } } },
+    { "expect_effects": [ { "type": "log", "level": "warn" } ] },
+    { "expect_view": { "rev": 2, "phase": "signed_out" } }
+  ]
+}

@@ -1032,6 +1032,11 @@ export interface DeskRequestIn {
   expiresAt: number
   read: boolean
 }
+/** JSON text and the bytes it names: a `Bytes` field in the JSON is the index of its bytes in `blobs`. */
+export interface AppPacket {
+  json: string
+  blobs: Uint8Array[]
+}
 /** One object the hub's Desk lists as open, with the change of its current version. */
 export interface DeskListed {
   objectId: string
@@ -1069,6 +1074,17 @@ export interface DeskDelta {
   sessionOps: DeskSessionOp[]
   nextWake: number
 }
+/** The app core (core/client/src/app): the whole app's logic for one room. One event in (`nowMs`: the page's
+ *  clock), every effect out, in the order they run (core/client/README.md, "The app core"). */
+export class AppCore {
+  constructor()
+  handle(nowMs: number, event: AppPacket): AppPacket
+  /** The view model as rendered so far, as JSON: what the page's folded view must equal. */
+  viewJson(): string
+  /** Gives it up; later calls are refused with `internal`. */
+  close(): void
+}
+
 /** The client core's Desk (core/client/src/desk.rs): the app tells it what changed and asks what changed of the Desk. */
 export class ClientDesk {
   constructor()
