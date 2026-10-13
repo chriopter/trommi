@@ -5,6 +5,7 @@
 // field has the words' face and size and grows with them to ROWS rows, then it scrolls; Return is a new line (none
 // past the last); the keyboard going away (a drag down, a tap in the content) keeps what he wrote, an emptied field
 // takes the goals away. No control of our own for the keyboard (app/ios/README "Keyboard and tab bar").
+// "Hide goals" folds them to one line, "Goals · N", which opens them again (kept per desk on this device).
 // Not on All desks (the caller leaves it out there).
 import SwiftUI
 import TrommiClient
@@ -19,6 +20,8 @@ struct DeskGoals: View {
   @FocusState private var focused: Bool
   /** The desks whose goals are unfolded on this device, their ids joined by "," (the web's localStorage trommi-goals-open). */
   @AppStorage("trommi-goals-open") private var opened = ""
+  /** The desks whose goals are folded to one line on this device (the web's localStorage trommi-goals-folded). */
+  @AppStorage("trommi-goals-folded") private var foldedIds = ""
   private let face = Face.text(16, .medium)
   /** The field's most rows before it scrolls, and what a row and the field's own inset measure. */
   private static let ROWS = 10, ROW: CGFloat = 23, INSET: CGFloat = 16
@@ -28,6 +31,13 @@ struct DeskGoals: View {
     var ids = opened.split(separator: ",").map(String.init).filter { $0 != desk }
     if on { ids.append(desk) }
     opened = ids.suffix(50).joined(separator: ",")
+  }
+
+  private var isFolded: Bool { !text.isEmpty && foldedIds.split(separator: ",").contains(Substring(desk)) }
+  private func setFolded(_ on: Bool) {
+    var ids = foldedIds.split(separator: ",").map(String.init).filter { $0 != desk }
+    if on { ids.append(desk) }
+    foldedIds = ids.suffix(50).joined(separator: ",")
   }
 
   var body: some View {
@@ -49,6 +59,17 @@ struct DeskGoals: View {
           .accessibilityLabel("This desk’s goals, up to \(GOALS_LINES) lines")
           .onChange(of: focused) { _, on in if !on { done() } }
           .onDisappear { done() }
+      } else if isFolded {
+        // folded: one quiet line that opens them again
+        Button { setFolded(false) } label: {
+          HStack(spacing: 6) {
+            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+            Text("Goals · \(text.split(separator: "\n", omittingEmptySubsequences: false).count)").font(face)
+          }
+          .foregroundStyle(Ink.muted).padding(.vertical, 8).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Show goals")
       } else {
         let fold = goalsFold(text), open = isOpen
         VStack(alignment: .leading, spacing: 0) {
@@ -69,6 +90,13 @@ struct DeskGoals: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(open ? "Show fewer goals" : "Show \(fold.more) more goals")
+          }
+          if !text.isEmpty {
+            Button { setFolded(true) } label: {
+              Text("Hide goals").font(Face.text(14, .semibold)).foregroundStyle(Ink.faint)
+                .padding(.bottom, 8).padding(.trailing, 16).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
           }
         }
       }
