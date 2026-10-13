@@ -116,10 +116,16 @@ extension Room {
     guard inv.pairing.code != nil else { return }
     var verdict: Bool? = nil
     let until = nowMs() + 5 * 60_000
+    var synced: UInt64 = 0
     while verdict == nil && nowMs() < until {
       // (the client core's verdict: the ask names this Request's hash and its voucher still stands)
       verdict = SelfJoinPlan.verdict(board, session: voucher, nonce: nonce, requestHash: b64u(inv.pairing.requestHash))
-      if verdict == nil { try? await Task.sleep(nanoseconds: 500_000_000) }
+      if verdict != nil { break }
+      // The ask's answer comes as a register of the vouching session: without the live stream (cut, or the app
+      // brought back from the background before it reconnected) the board learns it only by a sync. Waiting for the
+      // stream alone kept the new session out until the next sync, a minute and more after Allow.
+      if !live && nowMs() >= synced + 1_000 { synced = nowMs(); _ = try? await sync(); continue }
+      try? await Task.sleep(nanoseconds: 500_000_000)
     }
     guard let matches = verdict else { return }
     guard let sid = try? await confirmAgent(inv, matches: matches) else { return }

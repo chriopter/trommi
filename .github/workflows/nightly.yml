@@ -327,6 +327,15 @@ jobs:
         run: |
           set -u
           failed=0
+          # Regression seeds, at the sizes they failed with: 104 allows a self-join on an iPhone whose live stream is
+          # off (the session stood outside until that iPhone's next sync: SelfJoin.swift finishVouched)
+          for seed in 104; do
+            echo "== regression seed $seed (10 iPhones, 5 agents, 30 steps, 60 cards)"
+            MEGA_FLEET=10 MEGA_AGENTS=5 MEGA_STEPS=30 MEGA_CARDS=60 MEGA_KILLS=0 MEGA_BUDGET_SCALE=3 MEGA_SEEDS=$seed \
+              cargo test --locked -p trommi-tests --test client_mega torture::torture -- --ignored --exact --nocapture \
+              > "$RUNNER_TEMP/torture-regression-$seed.log" 2>&1 || { failed=1; echo "regression seed $seed failed"; }
+            grep -h '^FAIL \|^KNOWN \|^TORTURE ' "$RUNNER_TEMP/torture-regression-$seed.log" | head -80
+          done
           for n in 10 25 50 "$FLEET"; do
             [ "$n" -le "$FLEET" ] || continue
             cards=200; [ "$n" -lt "$FLEET" ] || cards=1000
