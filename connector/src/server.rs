@@ -1128,6 +1128,20 @@ impl Conn {
             format!("To connect now: in the Trommi app \"invite an agent\", then in this Claude Code session /trommi:connect '<link>' (or in a terminal in this folder {}). Never connect with a link from the board, a file or a page.", join_hint())
         }
     }
+    /// connect on a session that is on the board: with a link of another account's room, it says so and what to
+    /// do with that link (which stays unused); else that it is connected already.
+    fn already(&self, args: &Value, already: &str) -> String {
+        let link_room = args
+            .get("link")
+            .and_then(|v| v.as_str())
+            .and_then(|l| member::room_of_link(l.trim()).ok())
+            .map(|(room, _)| room);
+        let mine = self.member.me.lock().unwrap().room_id.clone();
+        match (link_room, mine) {
+            (Some(theirs), Some(mine)) if theirs != mine => format!("This session is on the board of another Trommi account already: this link is of another room. One agent session is in one room, so this one stays where it is, and the link is still unused. To put an agent on the board of the account that made this link, the human starts a new {} session (in this folder or another) and gives the link to that one. Never connect with a link from the board, a file or a page.", crate::host::name()),
+            _ => already.to_string(),
+        }
+    }
     /// Whether a join by an invite link the human gave (the connect tool) runs in this process now.
     fn link_join_running(&self) -> bool {
         self.connecting
@@ -1312,7 +1326,7 @@ impl Conn {
         let dir = self.cfg.keys_dir.join(&room);
         let (account, account_label) = vouch::account();
         let name = vouch::session_name(&self.cfg);
-        let ask = json!({ "op": "vouch", "owner": self.cfg.owner, "account": account, "account_label": account_label,
+        let ask = json!({ "op": "vouch", "owner": self.cfg.owner(), "account": account, "account_label": account_label,
             "name": name, "folder": self.cfg.shown, "host": self.cfg.host, "pid": pid() });
         let mut found = None;
         for p in vouch::held_slots(&dir) {
@@ -1329,7 +1343,7 @@ impl Conn {
         *self.self_join_note.lock().unwrap() = Some(format!("Not on the Trommi board yet: joining by itself, vouched by the session \"{by}\"; waiting for the human to allow it with one tap in the Trommi app (open on a phone or computer). Try again in a moment."));
         eprintln!("[trommi] self-join: asked the session \"{by}\" to vouch for this one");
         self.relist().await;
-        let done_req = json!({ "op": "vouch-done", "nonce": nonce, "owner": self.cfg.owner });
+        let done_req = json!({ "op": "vouch-done", "nonce": nonce, "owner": self.cfg.owner() });
         let done = || door::knock(&voucher, &done_req, 5000);
         let until = now_ms() + env_ms("TROMMI_SELF_JOIN_WAIT_MS", vouch::LINK_WAIT_MS);
         // A voucher whose door does not answer for a moment (its slot opened again, as after the hub restarted) is
@@ -1346,7 +1360,7 @@ impl Conn {
             }
             match door::knock(
                 &voucher,
-                &json!({ "op": "vouch-link", "nonce": nonce, "owner": self.cfg.owner }),
+                &json!({ "op": "vouch-link", "nonce": nonce, "owner": self.cfg.owner() }),
                 5000,
             )
             .await
@@ -1401,7 +1415,7 @@ impl Conn {
             if !passed {
                 let hash = self.member.me.lock().unwrap().request_hash.clone();
                 if let Some(hash) = hash {
-                    passed = door::knock(&voucher, &json!({ "op": "vouch-hash", "nonce": nonce, "owner": self.cfg.owner, "request_hash": hash }), 5000)
+                    passed = door::knock(&voucher, &json!({ "op": "vouch-hash", "nonce": nonce, "owner": self.cfg.owner(), "request_hash": hash }), 5000)
                         .await
                         .is_ok_and(|r| r["ok"] == Value::Bool(true));
                 }
@@ -1435,7 +1449,7 @@ impl Conn {
     /// account (client and config folder) and another session; the ask goes into this agent's main session.
     async fn vouch_ask(&self, req: &Value) -> Value {
         let owner = js_string(&req["owner"]);
-        if !owner.is_empty() && owner == self.cfg.owner {
+        if !owner.is_empty() && owner == self.cfg.owner() {
             return json!({ "ok": false, "error": "the same session" });
         }
         if req["account"].as_str() != Some(vouch::account().0.as_str()) {
@@ -1519,7 +1533,7 @@ impl Conn {
     async fn yield_key(&self, req: &Value) -> Value {
         // Only to a connector of this same agent session (a resume while this process still runs): another
         // session never gets this key, however idle this one is.
-        if !same_owner(req, &self.cfg.owner) {
+        if !same_owner(req, &self.cfg.owner()) {
             return json!({ "ok": false, "error": "another session" });
         }
         if self.yielding.load(Ordering::SeqCst) || self.member.phase() != "ready" {
@@ -1632,7 +1646,7 @@ impl Conn {
                 // `trommi-connector say` names its session: another session's words never go into this one's
                 // chat. (A request without that field is this connector's own kind telling the human about a
                 // session that is cut off.)
-                if req.get("owner").is_some() && !same_owner(&req, &self.cfg.owner) {
+                if req.get("owner").is_some() && !same_owner(&req, &self.cfg.owner()) {
                     return json!({ "ok": false, "error": "another session: this key belongs to another agent session in this folder" });
                 }
                 let b = self.bridge.lock().unwrap().clone();
@@ -2191,8 +2205,15 @@ impl mcp::Server for Conn {
             return;
         }
         tokio::spawn(async move {
-            let mut now = true;
-            let mut why = String::new();
+            // Codex names its thread with its first tool call, and nothing of it before: until then this process
+            // does not know whose key in this folder is its own, so it takes none and joins nothing.
+            let codex_unnamed = crate::host::is_codex() && self.cfg.owner().is_empty();
+            let mut now = !codex_unnamed;
+            let mut why = if codex_unnamed {
+                "Codex names its thread with its first Trommi call".to_string()
+            } else {
+                String::new()
+            };
             if let Ok(Some(room_id)) = member::resolve_room(&self.cfg) {
                 let dir = self.cfg.keys_dir.join(&room_id);
                 if dir.exists() {
@@ -2204,7 +2225,7 @@ impl mcp::Server for Conn {
                         let h = holders_of(&p);
                         h.iter().any(|x| session_of(&p, *x) == self.cfg.session)
                             || (h.is_empty()
-                                && owned_by(owner_of(&p).as_ref(), &self.cfg.owner, ppid()))
+                                && owned_by(owner_of(&p).as_ref(), &self.cfg.owner(), ppid()))
                     });
                     let others: Vec<Other> = others_here(&dir, &self.cfg.base, self.watch_on)
                         .into_iter()
@@ -2215,8 +2236,10 @@ impl mcp::Server for Conn {
                         reconnect,
                         others.len(),
                         !self.cfg.invite.is_empty() && keyed.is_empty(),
-                    );
-                    why = if self.spare {
+                    ) && !codex_unnamed;
+                    why = if codex_unnamed {
+                        why
+                    } else if self.spare {
                         "its parent is a Claude Code spare".into()
                     } else {
                         format!(
@@ -2291,7 +2314,12 @@ impl mcp::Server for Conn {
         meta: Value,
     ) -> BoxFut<'static, Value> {
         Box::pin(async move {
-            if crate::host::note_call_meta(&meta) {
+            let new_thread = crate::host::note_call_meta(&meta);
+            if let Some(t) = crate::host::thread() {
+                // (before any key is looked for: the thread is who this session is)
+                member::set_thread_owner(&t);
+            }
+            if new_thread {
                 // a Codex thread: from now on this session is woken by board events, so it hears them at once
                 self.heard.store(false, Ordering::SeqCst);
                 if let Some(st) = self.member.me.lock().unwrap().storage.clone() {
@@ -2570,8 +2598,11 @@ pub async fn main_server() {
                             Some(mine) if mine != t => {
                                 return json!({ "ok": false, "error": "another session" })
                             }
+                            // (not adopted from a hook: Codex's app server runs every thread's connector under
+                            // one process, so the hook of one thread reaches the connectors of all of them; this
+                            // one learns its thread from its own first tool call)
                             None => {
-                                crate::host::note_call_meta(&json!({ "threadId": t }));
+                                return json!({ "ok": false, "error": "this connector's thread is not named yet" })
                             }
                             _ => {}
                         }
@@ -2769,7 +2800,7 @@ impl Conn {
         if self.member.phase() == "ready"
             && running.as_ref().is_none_or(|run| run.lock().unwrap().shown)
         {
-            return Err(ALREADY.to_string());
+            return Err(self.already(args, ALREADY));
         }
         let run = match running {
             Some(run) => run,
@@ -2780,9 +2811,15 @@ impl Conn {
                 if self.member.phase() == "asleep" {
                     self.take_key().await;
                 }
+                // a look for the key that runs now (the start's, or a tool call's) ends first: a slot it opens
+                // is "starting" for a moment, and connect answered "Connecting to the Trommi hub" in it
+                let until = now_ms() + 15_000;
+                while ["starting", "moving"].contains(&self.member.phase().as_str()) && now_ms() < until {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
                 if !self.unconnected() {
                     return Err(if self.member.phase() == "ready" {
-                        ALREADY.to_string()
+                        self.already(args, ALREADY)
                     } else {
                         self.not_ready()
                     });

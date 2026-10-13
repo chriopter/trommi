@@ -521,7 +521,7 @@ impl Human {
     pub async fn admit(&mut self, invite: &mut Invite) -> Admitted {
         let path = format!("/v1/invites/{}", invite.id.to_base64url());
         let request = loop {
-            let served = self.hub.get(&path).await.expect("the invite");
+            let served = self.invite_state(&path).await;
             if let Some(first) = served["requests"].as_array().and_then(|list| list.first()) {
                 break SignedRequest {
                     request: unb64(first, "request").expect("request"),
@@ -574,21 +574,9 @@ impl Human {
     /// Request that comes, and confirms it on its own once the ask names that Request's hash; then founds the new
     /// session. Returns the device and its main session group, and the ask as it was answered.
     pub async fn admit_self_join(&mut self, voucher: &GroupId) -> (Admitted, GroupId, Value) {
-        let session = hex(voucher.session_id().expect("a session group").as_bytes());
         let mut nonce = None;
         for _ in 0..600 {
-            self.sync().await;
-            nonce = self
-                .items
-                .iter()
-                .filter(|(s, _, payload)| *s == session && !payload["value"].is_null())
-                .filter_map(|(_, _, payload)| {
-                    payload["name"]
-                        .as_str()?
-                        .strip_prefix("join_ask/")
-                        .map(String::from)
-                })
-                .last();
+            nonce = self.open_ask(voucher).await;
             if nonce.is_some() {
                 break;
             }
@@ -605,7 +593,7 @@ impl Human {
         .expect("the link is written");
         let path = format!("/v1/invites/{}", invite.id.to_base64url());
         let request = loop {
-            let served = self.hub.get(&path).await.expect("the invite");
+            let served = self.invite_state(&path).await;
             if let Some(first) = served["requests"].as_array().and_then(|list| list.first()) {
                 break SignedRequest {
                     request: unb64(first, "request").expect("request"),
@@ -671,6 +659,51 @@ impl Human {
         };
         let group = self.found_session(&admitted).await;
         (admitted, group, ask)
+    }
+
+    /// An invite as the hub serves it; a refusal for too many requests is waited out (a test polls it often).
+    async fn invite_state(&self, path: &str) -> Value {
+        loop {
+            match self.hub.get(path).await {
+                Ok(served) => return served,
+                Err(e) if e.code == "rate-limited" => {
+                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await
+                }
+                Err(e) => panic!("the invite: {e:?}"),
+            }
+        }
+    }
+
+    /// The newest ask in the session of `voucher` that is still open (not taken back) and not answered yet.
+    pub async fn open_ask(&mut self, voucher: &GroupId) -> Option<String> {
+        let session = hex(voucher.session_id().expect("a session group").as_bytes());
+        self.sync().await;
+        let mut nonces: Vec<String> = self
+            .items
+            .iter()
+            .filter(|(s, _, payload)| *s == session && !payload["value"].is_null())
+            .filter_map(|(_, _, payload)| {
+                payload["name"]
+                    .as_str()?
+                    .strip_prefix("join_ask/")
+                    .map(String::from)
+            })
+            .collect();
+        nonces.dedup();
+        for nonce in nonces.into_iter().rev() {
+            let open = self
+                .register(voucher, &format!("join_ask/{nonce}"))
+                .await
+                .is_some_and(|v| !v.is_null());
+            let answered = self
+                .register(voucher, &format!("join_link/{nonce}"))
+                .await
+                .is_some_and(|v| !v.is_null());
+            if open && !answered {
+                return Some(nonce);
+            }
+        }
+        None
     }
 
     /// The person taps Deny on the next ask of the agent of `voucher` (12.4): `join_link/<nonce>` = `{ refused: denied }`.
