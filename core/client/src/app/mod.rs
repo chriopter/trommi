@@ -133,6 +133,8 @@ pub struct App {
     sent: Sent,
     /// The room's cache: read before the engine starts, written behind the board (`cache::keeper`).
     cache: Option<crate::cache::Keeper>,
+    /// The model moved: the sessions' goals are compared with their desks' once live (`Doing::sync_goals`).
+    goals_check: bool,
 }
 
 impl Default for App {
@@ -172,6 +174,7 @@ impl App {
             reopen_tries: 0,
             sent: Sent::default(),
             cache: None,
+            goals_check: false,
         }
     }
 
@@ -637,6 +640,7 @@ impl App {
         let mut change = std::mem::take(&mut doing.change);
         self.board.model.project(&mut change, now_ms);
         self.stale_views = true;
+        self.goals_check = true;
     }
 
     /// A Note's version is back, refused or lost: the edit that waited behind it is sealed on what stands now.
@@ -657,6 +661,8 @@ impl App {
     /// What the hub said of the actions in flight, and the ones whose entry is gone without a word: each echo of
     /// a refused or lost entry is rolled back, with a toast that offers the action again.
     fn settle_actions(&mut self, now_ms: u64, refused: Vec<(u64, &'static str)>, out: &mut Vec<Effect>) {
+        // (goals refused are written again at the next look)
+        self.sent.goals.retain(|_, (_, entry)| !refused.iter().any(|(id, _)| id == entry));
         let mut gone: Vec<(u64, crate::views::Text)> =
             refused.into_iter().map(|(id, code)| (id, actions::run::refused(code))).collect();
         if !self.sent.is_empty() {
@@ -950,6 +956,11 @@ impl App {
         }
         self.settle_actions(now_ms, refused, out);
         self.notes_free(now_ms, notes_back, out);
+        self.goals_check |= fed;
+        if self.goals_check && self.next_view.phase == Phase::Live {
+            self.doing(now_ms, out, |doing| doing.sync_goals());
+            self.goals_check = false;
+        }
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
         if self.stale_views || view_due {

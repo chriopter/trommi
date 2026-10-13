@@ -61,6 +61,9 @@ pub struct Sent {
     outbox: BTreeMap<u64, Vec<Out>>,
     /// The Notes with a version on its way, by object id.
     pub notes: BTreeMap<String, NoteBusy>,
+    /// The goals this App wrote into a session's group (`goals`), by session: the value and its outbox entry, so the
+    /// same value is not written again while it is on its way.
+    pub goals: BTreeMap<String, (Value, u64)>,
     /// The highest lamport this App gave a Note's version (9.3.2 chooses the current version by it).
     pub lamport: u64,
 }

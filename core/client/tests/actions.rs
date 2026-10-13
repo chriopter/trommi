@@ -495,3 +495,28 @@ fn a_draft_keeps_the_shape_both_apps_read_and_what_it_does_not_name() {
     act(&mut sim, draft(" ", Some(vec![])));
     assert!(human(&sim, &key).unwrap().0.is_null());
 }
+
+#[test]
+fn a_sessions_group_carries_its_desks_goals_and_is_written_once() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    let held = |sim: &Sim| sim.app.board().model.sessions[&session].registers.get("goals").map(|r| r.value.clone()).unwrap_or_default();
+    act(&mut sim, Action::SetGoal { desk_id: "main".into(), text: "ship it\nwrite the docs".into() });
+    world.stream(&mut sim);
+    assert!(held(&sim).is_null(), "the session is on no desk yet");
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), desk_id: "main".into() });
+    world.stream(&mut sim);
+    assert_eq!(held(&sim), json!({ "desk_id": "main", "desk_name": "Personal", "goals": "ship it\nwrite the docs" }));
+    // nothing changed: nothing more is written
+    let posts = envelope_posts(&world);
+    world.agent_says("still here");
+    world.stream(&mut sim);
+    assert_eq!(envelope_posts(&world), posts);
+    // the goals cleared: the session's copy goes
+    act(&mut sim, Action::SetGoal { desk_id: "main".into(), text: "  ".into() });
+    world.stream(&mut sim);
+    assert!(held(&sim).is_null());
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+}

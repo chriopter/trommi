@@ -286,6 +286,49 @@ impl Doing<'_> {
         self.seal_note(action, note_id, &own, closed, &local_id)
     }
 
+    /// Each live main session on a desk carries that desk's goals for its agent (9.3.4, web `syncGoals`): its
+    /// group's register `goals` = `{desk_id, desk_name, goals}`, or none when the desk has none. Written where it
+    /// differs from what the group holds and was not written already; no echo, no toast (the person did not act).
+    pub fn sync_goals(&mut self) {
+        let mut writes = Vec::new();
+        for (sid, s) in &self.model.sessions {
+            let settings = s.settings.clone().or_else(|| self.model.human.get(&format!("session/{sid}")).map(|r| r.value.clone()));
+            let archived = s.group_archived || settings.as_ref().and_then(|v| v.get("archived")) == Some(&Value::Bool(true));
+            if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
+                continue;
+            }
+            let desk_id = settings.as_ref().and_then(|v| v.get("desk")).and_then(Value::as_str).map(str::to_string);
+            let desk = desk_id.as_ref().and_then(|d| self.model.human.get(&format!("desk/{d}"))).map(|r| r.value.clone()).unwrap_or(Value::Null);
+            let goals = clean_goals(desk.get("goals").and_then(Value::as_str).unwrap_or(""));
+            let wanted = match desk_id {
+                Some(d) if !goals.is_empty() => {
+                    json!({ "desk_id": d, "desk_name": desk.get("name").and_then(Value::as_str).unwrap_or(""), "goals": goals })
+                }
+                _ => Value::Null,
+            };
+            let held = s.registers.get("goals").map(|r| r.value.clone()).unwrap_or(Value::Null);
+            if held == wanted {
+                continue;
+            }
+            if self.sent.goals.get(sid).is_some_and(|(w, _)| *w == wanted) {
+                continue;
+            }
+            writes.push((sid.clone(), wanted));
+        }
+        for (sid, wanted) in writes {
+            let Some(session) = id(&sid).map(SessionId::new) else { continue };
+            let Ok((name, wire)) = codec::encode_register("goals", &wanted) else { continue };
+            let draft = Draft::Register {
+                group: GroupId::session(self.room, session),
+                name,
+                value: wire.map(|w| SecretBytes::new(w.into_bytes())),
+            };
+            if let Ok(sealed) = (self.seal)(&draft, None, &[]) {
+                self.sent.goals.insert(sid, (wanted, sealed.outbox_id));
+            }
+        }
+    }
+
     /// Seals a Note's version whose echo stands under `local_id`: the note's fields as they stand with `own` over
     /// them, one version above it, naming it as `previous_version_hash` (zeros for a new note), with a lamport above
     /// every one this device has seen on a note.
