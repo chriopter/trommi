@@ -1065,13 +1065,14 @@ export class Engine {
   /** The live envelopes shown ahead of their chain that the reading of the past did not take: each in order now, what
    *  stands before it fetched by its sender's chain (`fillGap`, which says what the hub withholds). Inside a job. */
   private async settleAhead(): Promise<void> {
-    for (const item of this.ahead.splice(0)) {
-      let r = await this.receive(item, true)
-      if (r?.outcome === 'refused' && r.code === 'gap') r = await this.fillGap(item, r, false)
-      if (r && r.outcome !== 'refused') { if (r.payload && r.change === item.change) this.whole.add(item.change); this.emit('envelope', { received: r, how: 'again' }) }
-    }
-    await this.keepAhead()
-    this.emit('batch', null)
+    // (one that fails, a write that did not go through, stays with those behind it, and is tried after another wait)
+    try {
+      for (let item = this.ahead[0]; item; this.ahead.shift(), item = this.ahead[0]) {
+        let r = await this.receive(item, true)
+        if (r?.outcome === 'refused' && r.code === 'gap') r = await this.fillGap(item, r, false)
+        if (r && r.outcome !== 'refused') { if (r.payload && r.change === item.change) this.whole.add(item.change); this.emit('envelope', { received: r, how: 'again' }) }
+      }
+    } finally { await this.keepAhead(); this.watchAhead(); this.emit('batch', null) }
   }
   /**
    * A register value that was read back (an envelope its chain already holds): the core hands its body but does

@@ -58,7 +58,7 @@
   "app/web/core/core-start.ts": 42,
   "app/web/core/core-wasm.ts": 70,
   "app/web/core/core-worker.ts": 140,
-  "app/web/core/engine.ts": 1949,
+  "app/web/core/engine.ts": 1950,
   "app/web/core/hub.ts": 1964,
   "app/web/core/ids.ts": 34,
   "app/web/core/index.ts": 21,
