@@ -834,3 +834,54 @@ fn a_register_of_the_desk_stands_on_the_board_before_the_order_is_read() {
     let held = sim.app.board().model.sessions.get(&session).is_some_and(|s| s.registers.contains_key("profile"));
     assert!(held, "the Desk brought the session's profile");
 }
+
+#[test]
+fn a_desk_cut_by_the_hubs_byte_budget_is_cut_short_and_the_order_brings_the_rest() {
+    let mut world = World::new();
+    for n in 0..6 {
+        world.agent_card(&format!("card {n}"));
+    }
+    world.agent_register("profile", r#"{"name":"Builder"}"#);
+    // the budget holds three versions: the fourth and the register are left out
+    let one = world.hub.borrow().order.iter().find_map(|i| match i {
+        common::hub::Item::Envelope { .. } => i.served()["envelope"].as_str().map(str::len),
+        _ => None,
+    });
+    world.hub.borrow_mut().desk_bytes_max = one.expect("an envelope") * 3 + 10;
+    let mut sim = world.sim();
+    sim.hold = true;
+    sim.send(start());
+    serve(&world, &mut sim, |r| r.url.contains("/rooms/"));
+    assert_eq!(serve(&world, &mut sim, |r| r.url.contains("/v1/desk")), 1);
+    assert!((1..6).contains(&stack(&sim).len()), "cut short: {:?}", stack(&sim));
+    assert!(sim.app.board().desk_complete, "a list cut short decides nothing, what it brought stands");
+    while serve(&world, &mut sim, |_| true) > 0 {}
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(stack(&sim).len(), 6, "the order brought the rest");
+    assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
+}
+
+#[test]
+fn the_desk_of_a_start_leaves_out_an_archived_sessions_cards() {
+    let mut world = World::new();
+    let other = world.another_session();
+    world.agent_asks("in the live session");
+    // a card in the other session, which is archived while the App is away
+    {
+        let agent = world.others.last_mut().expect("its agent");
+        let hub = &mut *world.hub.borrow_mut();
+        common::sync(hub, agent);
+        let session = other.session_id().expect("a session");
+        let payload = r#"{"card_type":"decision","title":"in the archived one","options":[{"key":"yes"},{"key":"no"}],"object_version":1,"previous_version_hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#;
+        let draft = trommi_core::device::Draft::CardFirst { session, urgency: trommi_core::envelope::Urgency::Normal, push: false, payload: common::text(payload) };
+        agent.seal(&draft, None, &[], common::now()).expect("the card seals");
+        assert!(common::post_all(hub, agent).is_empty());
+        hub.archive(&other);
+    }
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert!(requests(&world).iter().any(|r| r == "GET /v1/desk?active=1"));
+    assert_eq!(stack(&sim).len(), 1, "the live session's card alone: {:?}", stack(&sim));
+    assert!(sim.app.engine().unwrap().device().group(&other).unwrap().archived);
+}
