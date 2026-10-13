@@ -339,12 +339,10 @@ ever published. A build on any Mac without secrets (signed ad hoc, the same chec
    `APPLE_DEVID_P12` (the `.p12` in base64: `base64 -i DeveloperID.p12 | tr -d '\n'`), `APPLE_DEVID_P12_PASSWORD`,
    and the App Store Connect key as for TestFlight: `APPLE_ASC_KEY`, `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID`,
    `APPLE_TEAM_ID`. The key's role (Admin) is enough for `notarytool`; no app-specific password is needed.
-3. Apple Developer → Profiles → **+** → Distribution: **Developer ID** → App ID `com.trommi.ios` (the Mac app's bundle
-   id) → the certificate of step 1 → name it "Trommi Developer ID" → Generate → Download. Into the same 1Password
-   Environment as `APPLE_DEVID_PROFILE` (`base64 -i Trommi_Developer_ID.provisionprofile | tr -d '\n'`). An API key,
-   even Admin, cannot make a Developer ID profile (Xcode would need cloud-managed Developer ID signing, which only the
-   Account Holder has): without this profile the export fails with "Cloud signing permission error". It lasts 18
-   years; a new certificate needs a new profile.
+3. The Developer ID profile (push and associated domains need one): CI fetches it with the App Store Connect key and
+   makes it when it is missing (`asc.py devid-profile`). Should Apple refuse that, make it once by hand:
+   developer.apple.com/account/resources/profiles/add → Developer ID → App ID `com.trommi.ios` → the certificate of
+   step 1 → name "Trommi Mac Direct" → Generate; nothing to download or store, the next run finds it.
 4. GitHub → Settings → Environments → **New environment `mac`**, deployment branches: `main` only, with the secrets
    `OP_SERVICE_ACCOUNT_TOKEN` (a service account that can read that 1Password Environment) and `OP_ENVIRONMENT_ID`.
 5. Delete the `.p12` file. The next push to main that changes the apps builds it (`ship-apple.yml`, job

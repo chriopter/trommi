@@ -35,6 +35,11 @@ JWT is signed with the openssl command line tool, so it runs on a stock macOS ru
                                     ago) with each crash log as a file, the diagnostic signatures (hangs, launches,
                                     disk writes) of the three newest builds, summary.md and issue.md (the same);
                                     no tester comment, name or e-mail is asked for or written
+  asc.py devid-profile BUNDLE_ID CERT_SHA1 OUT
+                                    the Developer ID profile (MAC_APP_DIRECT) of BUNDLE_ID for the Developer ID
+                                    Application certificate with that SHA-1, written to OUT: an active one that is there
+                                    already (made by hand in the developer portal, or by an earlier run), else a new one
+                                    (name "Trommi Mac Direct"); fails saying what to click if Apple refuses to make it
   asc.py export-code                the code of the app's APPROVED export compliance documentation (the newest if
                                     several), read only; fails listing every declaration's state and date if none is
 
@@ -820,6 +825,47 @@ def crash_report(found, diags, names, start):
     return "\n".join(lines)
 
 
+def devid_profile(bundle, sha1, out):
+    """The Developer ID profile of BUNDLE for the Developer ID Application certificate whose SHA-1 is SHA1, to OUT."""
+    sha1 = sha1.upper()
+    bids = [b for b in call("GET", f"/v1/bundleIds?filter[identifier]={q(bundle)}&limit=200")["data"]
+            if b["attributes"]["identifier"] == bundle]
+    if not bids:
+        die(f"the bundle id {bundle} is not registered")
+    bid = bids[0]["id"]
+    cert = None
+    for c in call("GET", "/v1/certificates?limit=200")["data"]:
+        a = c["attributes"]
+        if not a.get("certificateType", "").startswith("DEVELOPER_ID_APPLICATION") or not a.get("certificateContent"):
+            continue
+        if hashlib.sha1(base64.b64decode(a["certificateContent"])).hexdigest().upper() == sha1:
+            cert = c["id"]
+    if not cert:
+        die(f"no Developer ID Application certificate with SHA-1 {sha1} in the team (the .p12 is of another certificate?)")
+    for p in call("GET", f"/v1/profiles?filter[profileType]=MAC_APP_DIRECT&filter[profileState]=ACTIVE&include=bundleId,certificates&limit=200").get("data", []):
+        rels = p.get("relationships", {})
+        if (rels.get("bundleId", {}).get("data") or {}).get("id") != bid:
+            continue
+        if cert not in [x["id"] for x in (rels.get("certificates", {}).get("data") or [])]:
+            continue
+        content = p["attributes"]["profileContent"]
+        print(f"the Developer ID profile {p['attributes']['name']!r} of {bundle} is there", file=sys.stderr)
+        break
+    else:
+        made = call("POST", "/v1/profiles", {"data": {"type": "profiles",
+            "attributes": {"name": "Trommi Mac Direct", "profileType": "MAC_APP_DIRECT"},
+            "relationships": {"bundleId": rel("bundleIds", bid), "certificates": {"data": [{"type": "certificates", "id": cert}]}}}},
+            ok=(403, 409))
+        if made.get("error"):
+            die(f"Apple refuses to make the Developer ID profile ({made['detail']}). Once by hand: "
+                f"developer.apple.com/account/resources/profiles/add -> Developer ID -> App ID {bundle} -> the Developer ID "
+                f"Application certificate (SHA-1 {sha1}) -> name Trommi Mac Direct -> Generate. The next run finds it.")
+        content = made["data"]["attributes"]["profileContent"]
+        print(f"made the Developer ID profile 'Trommi Mac Direct' of {bundle}", file=sys.stderr)
+    with open(out, "wb") as f:
+        f.write(base64.b64decode(content))
+
+
 def gh_out(name, value):
     print(f"{name}: {value}")
     if os.environ.get("GITHUB_OUTPUT"):
@@ -830,7 +876,7 @@ def gh_out(name, value):
 if __name__ == "__main__":
     cmds = {"prepare": prepare, "prepare-mac": prepare_mac, "wait": wait, "upload": upload, "internal": internal, "notes": notes, "next-build": next_build,
             "last-sha": last_sha, "export-code": export_code, "external": external, "beta-review": beta_review,
-            "whats-new": whats_new, "crashes": crashes}
+            "whats-new": whats_new, "crashes": crashes, "devid-profile": devid_profile}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)
     cmds[sys.argv[1]](*sys.argv[2:])
