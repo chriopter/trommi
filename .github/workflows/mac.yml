@@ -2,25 +2,23 @@
 # signed with the team's Developer ID certificate, notarized by Apple and stapled, beside TestFlight's Mac build
 # (deploy_ios.yml, jobs mac and mac_processed), which stays as it is.
 #
-# After every run of build.yml on main (workflow_run), for that run's release v<N> (run number plus RELEASE_BASE):
-#   release  the release is published and its manifest signed by the release key, of this repository, with its
-#            commit's iOS inputs (the Mac app is built from the same paths; .github/scripts/mac_release.sh check).
-#            No release: nothing runs.
-#   build    the release marks the app changed (or the newest Mac app is of older iOS inputs): on a Mac, the Rust
-#            core for the Mac (cached by its inputs), then
+# After every run of build.yml on main (workflow_run), for that run's commit and number N (run number plus
+# RELEASE_BASE of that commit's build.yml):
+#   release  whether the app is built (.github/scripts/mac_release.sh check): the build run's "Core (check)" passed
+#            (or was skipped), and the commit's iOS inputs differ from those of the newest Mac app released. Else
+#            nothing runs.
+#   build    on a Mac, the Rust core for the Mac (cached by its inputs), then
 #            .github/scripts/mac_direct.sh build: archive, Developer ID export with hardened runtime, notarytool,
 #            staple, the .dmg (signed, notarized, stapled), Gatekeeper's verdict, the SHA-256. Without the certificate
-#            or the App Store Connect key it ends green with a notice and nothing is attached: never an unsigned app.
-#   attach   the release checked again, Trommi-macOS.json written (release, commit, iOS inputs, SHA-256, size), the
-#            three files attested (GitHub's build provenance) and attached to v<N>; a file there already must be the
-#            same bytes (a published file is never replaced).
-#   carry    the release leaves the app unchanged: the newest earlier release's three files, checked (SHA-256, the
-#            same iOS inputs, the attestation of this workflow), are attached to v<N> as well, so that
-#            https://github.com/trommi/trommi/releases/latest/download/Trommi-macOS.dmg is always the newest app.
+#            or the App Store Connect key it ends green with a notice and nothing is released: never an unsigned app.
+#   attach   Trommi-macOS.json written (release, commit, iOS inputs, SHA-256, size), the three files attested
+#            (GitHub's build provenance) and released as mac-v<N>, marked latest, so that
+#            https://github.com/trommi/trommi/releases/latest/download/Trommi-macOS.dmg is always the newest app (a
+#            published file is never replaced).
 #   report   a failed build or attach opens the issue "Mac build v<N> failed" (label build-failed); the next one that
 #            passes closes it.
-# By hand (Actions -> mac -> Run workflow, on main): `version`, a published release, is built and attached (or
-# carried) again; `dry_run` builds, signs and notarizes but attaches nothing.
+# By hand (Actions -> mac -> Run workflow, on main): `run_id`, a finished build.yml run of main, whose commit is built
+# and released (when its app is not out there yet); `dry_run` builds, signs and notarizes but releases nothing.
 #
 # Secrets: the environment `mac` holds OP_SERVICE_ACCOUNT_TOKEN and OP_ENVIRONMENT_ID of a 1Password Environment with
 # APPLE_DEVID_P12, APPLE_DEVID_P12_PASSWORD (the Developer ID Application certificate and its key) and APPLE_ASC_KEY,
@@ -35,8 +33,8 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      version:
-        description: The release number N of a published release v<N>
+      run_id:
+        description: The id of a finished build.yml run of main whose commit is built
         required: true
         type: string
       dry_run:
@@ -70,6 +68,7 @@ jobs:
     outputs:
       mode: ${{ steps.check.outputs.mode }}
       version: ${{ steps.check.outputs.version }}
+      run_id: ${{ steps.check.outputs.run_id }}
       commit: ${{ steps.check.outputs.commit }}
     steps:
       # the scripts of the revision this workflow runs from; the whole history, for the release's commit
@@ -77,27 +76,24 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Check the release
+      - name: Whether the app is built
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
-          BUILD_SHA: ${{ github.event.workflow_run.head_sha }}
-          INPUT_VERSION: ${{ inputs.version }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
         run: |
           set -eu
-          if [ "$GITHUB_EVENT_NAME" = workflow_run ]; then
-            printf '%s' "$BUILD_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $BUILD_SHA"; exit 1; }
-            # the base of the build run's own build.yml: main may have moved on (and changed it) since that run
-            base=$(git show "$BUILD_SHA:.github/workflows/build.yml" | sed -n 's/^  RELEASE_BASE: \([0-9][0-9]*\)$/\1/p')
-            [ "$(printf '%s' "$base" | grep -c .)" = 1 ] || { echo "::error::build.yml names no single RELEASE_BASE"; exit 1; }
-            printf '%s' "$RUN_NUMBER" | grep -Eq '^[1-9][0-9]*$' || { echo "::error::not a run number: $RUN_NUMBER"; exit 1; }
-            VERSION=$((RUN_NUMBER + base)) COMMIT=$BUILD_SHA
-          else
-            VERSION=$INPUT_VERSION COMMIT=
-          fi
-          export VERSION COMMIT
+          printf '%s' "$RUN_ID" | grep -Eq '^[1-9][0-9]{0,19}$' || { echo "::error::not a run id: $RUN_ID"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
+          COMMIT=$(jq -r .head_sha "$RUNNER_TEMP/run.json") RUN_NUMBER=$(jq -r .run_number "$RUNNER_TEMP/run.json")
+          printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $COMMIT"; exit 1; }
+          # the base of the build run's own build.yml: main may have moved on (and changed it) since that run
+          base=$(git show "$COMMIT:.github/workflows/build.yml" | sed -n 's/^  RELEASE_BASE: \([0-9][0-9]*\)$/\1/p')
+          [ "$(printf '%s' "$base" | grep -c .)" = 1 ] || { echo "::error::build.yml names no single RELEASE_BASE"; exit 1; }
+          VERSION=$((RUN_NUMBER + base))
+          export VERSION COMMIT RUN_ID
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           bash .github/scripts/mac_release.sh check
 
   build:
@@ -216,7 +212,7 @@ jobs:
           rm -rf "$RUNNER_TEMP/mac-direct-keys" "$RUNNER_TEMP/ExportOptionsMacDirect.plist"
 
   attach:
-    name: Attach to the release
+    name: Release mac-v<N>
     needs: [release, build]
     if: needs.build.outputs.ready == 'yes' && !inputs.dry_run
     runs-on: ubuntu-24.04
@@ -229,6 +225,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.release.outputs.version }}
       COMMIT: ${{ needs.release.outputs.commit }}
+      RUN_ID: ${{ needs.release.outputs.run_id }}
       MAC_VERSION: ${{ needs.build.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -248,28 +245,8 @@ jobs:
             ${{ runner.temp }}/mac/Trommi-macOS.dmg
             ${{ runner.temp }}/mac/Trommi-macOS.dmg.sha256
             ${{ runner.temp }}/mac/Trommi-macOS.json
-      - name: Attach
+      - name: Release
         run: bash .github/scripts/mac_release.sh upload "$RUNNER_TEMP/mac"
-
-  carry:
-    name: Attach the newest Mac app again
-    needs: release
-    if: needs.release.outputs.mode == 'carry' && !inputs.dry_run
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      attestations: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-      VERSION: ${{ needs.release.outputs.version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Attach
-        run: bash .github/scripts/mac_release.sh carry "$RUNNER_TEMP/mac"
 
   report:
     name: Report
@@ -283,7 +260,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TAG: v${{ needs.release.outputs.version }}
+      TAG: mac-v${{ needs.release.outputs.version }}
       WHAT: build
       RUNNING: the commit built, ${{ needs.release.outputs.commit }}
       LABEL: build-failed

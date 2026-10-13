@@ -10,7 +10,8 @@
 #   commit    the commit that was built
 #   artifact  the artifact of the calling run: the Rust core for iOS as ios.yml built and tested it
 #             (lib/ios/libtrommi_core_ffi.a, UniFFI's TrommiCoreFFI.h and TrommiCoreRust.swift, checksums.txt)
-#   gate      "release" (main): upload only once the release of the build run is published and verified; empty: no
+#   gate      "release" (main): upload only when the build run's core check passed and the app is not out there yet
+#             (.github/scripts/ios_release_gate.sh); a delivery by hand is gated by its build run too; empty: no
 #             wait
 #   build_run the id of the build.yml run whose release gates the upload (default: the calling run)
 # By hand (Actions -> deploy_ios -> Run workflow): `run_id`, the id of an ios.yml run of main whose iOS build is
@@ -125,6 +126,10 @@ jobs:
           jq -e --arg r "$GITHUB_REPOSITORY" \
             '.path == ".github/workflows/ios.yml" and .head_branch == "main" and .event == "workflow_run" and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a run of ios.yml on the main branch of this repository"; exit 1; }
+          # the build run it followed (ios.yml's run name): the upload checks its core check again (ios_release_gate.sh)
+          build_run=$(jq -r '(.display_title | capture("^ios after build (?<r>[0-9]+) of [0-9a-f]{40}$").r) // ""' "$RUNNER_TEMP/run.json")
+          [ -n "$build_run" ] || { echo "::error::run $RUN_ID does not name the build run it followed"; exit 1; }
+          echo "build_run=$build_run" >> "$GITHUB_OUTPUT"
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
           grep -Fq "iOS core for devices (main)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job iOS core for devices (main) of run $RUN_ID did not succeed"; exit 1; }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -186,11 +191,13 @@ jobs:
           COMMIT: ${{ steps.core.outputs.commit }}
           ITS_NON_EXEMPT_ENCRYPTION: ${{ vars.IOS_NON_EXEMPT_ENCRYPTION || 'NO' }}
           ITS_EXPORT_COMPLIANCE_CODE: ${{ vars.IOS_EXPORT_COMPLIANCE_CODE }}
-          TF_GATE: ${{ inputs.gate }}
+          # a delivery by hand is gated as well (its build run's core check), only not refused for inputs out there already
+          TF_GATE: ${{ inputs.gate || (inputs.run_id != '' && 'release') || '' }}
+          SAME_OK: ${{ inputs.run_id != '' && '1' || '' }}
           TF_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
           TF_UPLOADER: ${{ vars.IOS_UPLOADER || 'api' }}
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.build_run || github.run_id }}
+          RUN_ID: ${{ inputs.build_run || steps.source.outputs.build_run || github.run_id }}
           VERSION_RELEASE: ${{ inputs.version }}
         run: |
           set -eu
@@ -274,6 +281,10 @@ jobs:
           jq -e --arg r "$GITHUB_REPOSITORY" \
             '.path == ".github/workflows/ios.yml" and .head_branch == "main" and .event == "workflow_run" and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a run of ios.yml on the main branch of this repository"; exit 1; }
+          # the build run it followed (ios.yml's run name): the upload checks its core check again (ios_release_gate.sh)
+          build_run=$(jq -r '(.display_title | capture("^ios after build (?<r>[0-9]+) of [0-9a-f]{40}$").r) // ""' "$RUNNER_TEMP/run.json")
+          [ -n "$build_run" ] || { echo "::error::run $RUN_ID does not name the build run it followed"; exit 1; }
+          echo "build_run=$build_run" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.artifact || 'ios-release' }}
@@ -336,11 +347,13 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           OP_ENVIRONMENT_ID: ${{ secrets.OP_ENVIRONMENT_ID }}
           COMMIT: ${{ steps.core.outputs.commit }}
-          TF_GATE: ${{ inputs.gate }}
+          # a delivery by hand is gated as well (its build run's core check), only not refused for inputs out there already
+          TF_GATE: ${{ inputs.gate || (inputs.run_id != '' && 'release') || '' }}
+          SAME_OK: ${{ inputs.run_id != '' && '1' || '' }}
           TF_DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
           TF_UPLOADER: ${{ vars.MAC_UPLOADER || 'api' }}
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.build_run || github.run_id }}
+          RUN_ID: ${{ inputs.build_run || steps.source.outputs.build_run || github.run_id }}
           VERSION_RELEASE: ${{ inputs.version }}
         run: |
           set -eu

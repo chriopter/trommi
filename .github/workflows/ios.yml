@@ -6,20 +6,21 @@
 # iOS and the Mac on a Mac, unsigned ("iOS app (build)", also in the merge queue), and the fast part of the mega
 # test's torture run with 10 iPhones (does not fail the run). A pull request gets no secret and delivers nothing.
 #
-# After every run of build.yml on main (workflow_run): when that run published its release v<N> and the release's
-# signed manifest marks iOS changed (.github/scripts/inputs.sh: app/ios/, the core, the Rust workspace, build.yml,
-# this file, ...), the client check again on that very commit, the Rust core for iOS devices and the Mac with the
-# core's Swift binding tests on the Mac ("iOS core for devices (main)"), then deploy_ios.yml delivers it to
-# TestFlight. Its upload still waits on the release (ios_release_gate.sh: published, signed, this commit, these iOS
-# inputs), so only a released app ships. No release, or iOS unchanged in it: nothing runs.
-# Why workflow_run and not a push on main: the release of the build run is the one thing that says whether iOS ships,
-# and by the time this starts it is published; a push trigger would have to repeat the path list and wait on the
-# build run itself.
+# After every run of build.yml on main (workflow_run): when that run's "Core (check)" passed (or was skipped: the core
+# did not change) and the app's inputs (.github/scripts/inputs.sh: app/ios/, demo/, the core, the client core, the
+# Rust workspace, this file, ...) differ from those last delivered to TestFlight (.github/scripts/ios_delivered.sh),
+# the client check again on that very commit, the Rust core for iOS devices and the Mac with the core's Swift binding
+# tests on the Mac ("iOS core for devices (main)"), then deploy_ios.yml delivers it to TestFlight. Its upload checks
+# the same again on the Mac (.github/scripts/ios_release_gate.sh). Why workflow_run and not a push on main: the build
+# run's core check is what the app waits for, and by the time this starts it is done.
 #
-# When a job of a delivery fails, the job `report` opens the issue "iOS build v<N> failed" (label build-failed); the
-# next delivery that passes closes it. A release whose iOS delivery failed is not tried again by itself: re-run the
-# failed jobs of that run of ios.yml, or the next change of the app's inputs delivers.
+# When a job of a delivery fails, the job `report` opens the issue "iOS build <N> failed" (label build-failed); the
+# next delivery that passes closes it. A delivery that failed is made again by the next run of main (its inputs still
+# differ from those last delivered).
 name: ios
+# the build commit in the run's name: ios_delivered.sh reads which commit a delivery was of
+run-name: >-
+  ${{ github.event_name == 'workflow_run' && format('ios after build {0} of {1}', github.event.workflow_run.id, github.event.workflow_run.head_sha) || format('ios {0}', github.event_name) }}
 
 on:
   pull_request:
@@ -61,7 +62,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      # main: the runs of ios.yml, for the iOS inputs last delivered (ios_delivered.sh)
+      # main: the build run's jobs and the runs of ios.yml (ios_release_gate.sh, ios_delivered.sh)
       actions: read
     outputs:
       # the client check runs
@@ -109,46 +110,28 @@ jobs:
           part mega 'app/|connector/|hub/|demo/|tests/|spec/|release/'
       # main: the release of the build run, v<run number + RELEASE_BASE>, its signature checked. Not published (nothing
       # changed since the newest release, or the build failed or was overtaken by a newer one): nothing to deliver.
-      - name: The release of the build run (main)
+      - name: Whether the build run delivers the app (main)
         id: main
         if: github.event_name == 'workflow_run'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
-          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -eu
           printf '%s' "$BUILD_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::not a commit: $BUILD_SHA"; exit 1; }
           echo "commit=$BUILD_SHA" >> "$GITHUB_OUTPUT"
-          echo "deliver=false" >> "$GITHUB_OUTPUT"
-          base=$(sed -n 's/^  RELEASE_BASE: \([0-9][0-9]*\)$/\1/p' .github/workflows/build.yml)
+          # the build's number (TestFlight's own build numbers come from App Store Connect)
+          base=$(git show "$BUILD_SHA:.github/workflows/build.yml" | sed -n 's/^  RELEASE_BASE: \([0-9][0-9]*\)$/\1/p')
           [ "$(printf '%s' "$base" | grep -c .)" = 1 ] || { echo "::error::build.yml names no single RELEASE_BASE"; exit 1; }
-          version=$((RUN_NUMBER + base))
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          dir=$RUNNER_TEMP/release
-          mkdir "$dir"
-          if ! gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --pattern manifest.json.sig --dir "$dir" 2> "$RUNNER_TEMP/err"; then
-            cat "$RUNNER_TEMP/err" >&2
-            grep -qi 'release not found' "$RUNNER_TEMP/err" || { echo "::error::the release v$version could not be read"; exit 1; }
-            echo "::notice::build run $RUN_URL published no release v$version: nothing to deliver"
-            echo "- no release v$version: nothing to deliver" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          echo "version=$((RUN_NUMBER + base))" >> "$GITHUB_OUTPUT"
+          # the gate does not hold (the core's check failed, not a build of main): nothing is delivered, and it says why
+          if ! COMMIT=$BUILD_SHA bash .github/scripts/ios_release_gate.sh decide > "$RUNNER_TEMP/decide"; then
+            cat "$RUNNER_TEMP/decide"
+            echo "deliver=false" > "$RUNNER_TEMP/decide"
           fi
-          sh release/sign.sh verify "$dir/manifest.json"
-          jq -e --arg r "$GITHUB_REPOSITORY" --arg t "v$version" --arg v "$version" --arg c "$BUILD_SHA" \
-            '.product == "trommi" and .repository == $r and .tag == $t and (.version | tostring) == $v and .commit == $c' \
-            "$dir/manifest.json" > /dev/null || { echo "::error::the manifest of v$version is not v$version of $BUILD_SHA in this repository"; exit 1; }
-          if jq -e '.changed.ios == true' "$dir/manifest.json" > /dev/null; then
-            echo "deliver=true" >> "$GITHUB_OUTPUT"
-            echo "- v$version marks iOS changed: built and delivered to TestFlight" >> "$GITHUB_STEP_SUMMARY"
-          elif delivered=$(sh .github/scripts/ios_delivered.sh) && [ -n "$delivered" ] \
-            && ! jq -e --arg s "$delivered" '.inputs.ios == $s' "$dir/manifest.json" > /dev/null; then
-            # an earlier release's iOS change was not delivered (its run was replaced while waiting, or failed)
-            echo "deliver=true" >> "$GITHUB_OUTPUT"
-            echo "- v$version leaves iOS unchanged, but TestFlight has older iOS inputs: built and delivered" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "- v$version leaves iOS unchanged: nothing to deliver" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          grep -E '^deliver=(true|false)$' "$RUNNER_TEMP/decide" >> "$GITHUB_OUTPUT"
+          echo "- $(grep -q 'deliver=true' "$RUNNER_TEMP/decide" && echo "the app of $BUILD_SHA is built and delivered to TestFlight" || echo "nothing to deliver")" >> "$GITHUB_STEP_SUMMARY"
 
   # The app's client package (app/ios/TrommiClient) with its tests (tests/ios), on Linux: the package does not compile
   # for macOS (ActivityKit). The iOS check of a pull request (also when finding the changed parts failed); on main the

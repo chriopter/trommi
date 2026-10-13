@@ -1,25 +1,27 @@
 #!/bin/sh
 # The iOS inputs (.github/scripts/inputs.sh, line `ios`) of the app last delivered to TestFlight from main, or nothing
-# when that is not known. ios.yml and ios_release_gate.sh deliver a release whose iOS inputs differ from these even when
-# the release itself does not mark iOS changed: its iOS change came with an earlier release whose delivery did not
-# happen (replaced while it waited, or failed), and a later release must not leave it undelivered.
+# when that is not known. ios.yml and ios_release_gate.sh deliver a commit whose iOS inputs differ from these: a
+# delivery that did not happen (replaced while it waited, or failed) is made by the next run.
 #
-# Last delivered: the commit of the newest finished run of ios.yml after a build of main (workflow_run) in this
-# repository whose job "iOS / TestFlight" (deploy_ios.yml's upload of the iPhone app) ended in success. Only the newest
-# 50 such runs are looked at; none found: nothing is printed, and only a release that marks iOS changed delivers.
+# Last delivered: the build commit of the newest finished run of ios.yml after a build of main (workflow_run) in this
+# repository whose job "iOS / TestFlight (processed, groups, What to Test, review)" ended in success: the build is
+# processed by Apple and in its groups. The build commit is the one the run's name says ("ios after build <run> of
+# <commit>", ios.yml's run-name); runs from before that name: the run's head commit. Only the newest 50 such runs are
+# looked at; none found: nothing is printed, and the next run delivers.
 #
 #   GH_TOKEN (actions: read), GITHUB_REPOSITORY; a checkout of this repository (the commit is fetched when missing)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$GITHUB_REPOSITORY
 runs=$(gh api "repos/$repo/actions/workflows/ios.yml/runs?event=workflow_run&status=completed&per_page=50" \
-  --jq '.workflow_runs[] | select(.head_branch == "main" and .head_repository.full_name == "'"$repo"'" and .repository.full_name == "'"$repo"'") | "\(.id) \(.head_sha)"') \
+  --jq '.workflow_runs[] | select(.head_branch == "main" and .head_repository.full_name == "'"$repo"'" and .repository.full_name == "'"$repo"'")
+    | "\(.id) \((.display_title | capture(" of (?<c>[0-9a-f]{40})$").c) // .head_sha)"') \
   || { echo "ios_delivered.sh: the runs of ios.yml could not be listed" >&2; exit 0; }
 commit=
 while read -r run sha; do
   [ -n "$run" ] || continue
   if gh api "repos/$repo/actions/runs/$run/jobs?filter=latest&per_page=100" \
-    --jq '.jobs[] | select(.name == "iOS / TestFlight" and .conclusion == "success") | .name' 2>/dev/null | grep -q .; then
+    --jq '.jobs[] | select(.name == "iOS / TestFlight (processed, groups, What to Test, review)" and .conclusion == "success") | .name' 2>/dev/null | grep -q .; then
     commit=$sha
     break
   fi
