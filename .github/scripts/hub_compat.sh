@@ -20,7 +20,7 @@ target=${2:?usage: $0 <hub binary> <target>}
 repository=${GITHUB_REPOSITORY:-trommi/trommi}
 here=$(cd "$(dirname "$0")/../.." && pwd)
 work=$(mktemp -d)
-trap 'kill "$pid" 2>/dev/null || true; rm -rf "$work"' EXIT
+trap 'rc=$?; kill "$pid" 2>/dev/null || true; rm -rf "$work"; exit "$rc"' EXIT
 pid=''
 epoch=$(tr -d ' \n' < "$here/hub/data-epoch")
 asset="trommi-hub-$target"

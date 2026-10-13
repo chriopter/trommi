@@ -57,7 +57,7 @@ pem() {
 }
 
 keys=$RUNNER_TEMP/asc
-cleanup() { rm -rf "$keys"; }
+cleanup() { rc=$?; rm -rf "$keys"; exit "$rc"; }  # the status of the run, not of the cleanup (bash 3.2 on macOS lets the trap's last command win)
 trap cleanup EXIT
 umask 077
 mkdir -p "$keys"
