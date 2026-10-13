@@ -1230,7 +1230,7 @@ export class Engine {
         //  model has it; a device that signed in with the code takes the room from its start in order, and its
         //  rescan was otherwise one more call per envelope of the whole history)
         const due = page.items.filter((item): item is Extract<ChangeItem, { kind: 'envelope' }> => item.kind === 'envelope' && item.change <= upTo && !this.whole.has(item.change))
-        const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null, told: ReceivedEnvelope | null = null): Promise<void> => {
+        const again = async (item: Extract<ChangeItem, { kind: 'envelope' }>, first: ReceivedEnvelope | null): Promise<void> => {
           let received = first
           // A gap in the hub's order as it is read again: tried once more (what stood before it in the batch may be
           // taken by now), then filled from the sender's chain as a live one is; a chain the hub does not serve whole
@@ -1250,11 +1250,7 @@ export class Engine {
             if (left.length !== this.ahead.length) { this.ahead = left; await this.keepAhead() }
           }
           await this.noteBehind(item, received)
-          if (received?.outcome === 'refused' && received.code === 'replay') {
-            spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received)
-            // (asked again after a repair, and it does not read back, as a pruned one does not: as the batch told it)
-            if (told && told.outcome !== 'refused' && (!received || received.outcome === 'refused')) received = told
-          }
+          if (received?.outcome === 'refused' && received.code === 'replay') { spent.again++; received = await this.receive(item, false); if (received) received = await this.readBack(received) }
           if (received && received.outcome !== 'refused') {
             // (whole under the number the core names for it: one read back from another place is not this change)
             if (received.payload && received.change === item.change) this.whole.add(item.change)
@@ -1268,8 +1264,10 @@ export class Engine {
           const fed = await this.feed(batch)
           const outcomes = fed?.outcomes ?? []
           // (after a gap was filled, what the batch said of the envelopes behind it is stale: the core judged them
-          //  without what was filled in, so each is asked of the core again, alone)
-          for (const [i, outcome] of outcomes.entries()) await (repaired !== null ? again(batch[i]!, await this.receive(batch[i]!, true), outcome.envelope) : again(batch[i]!, outcome.envelope))
+          //  without what was filled in, so each is asked of the core again, alone. One that does not read back then,
+          //  as a pruned one does not, is not told: the core has no call yet that names its verdict without its body,
+          //  and the batch's word for it may be what the core forbids now.)
+          for (const [i, outcome] of outcomes.entries()) await again(batch[i]!, repaired !== null ? await this.receive(batch[i]!, true) : outcome.envelope)
           at += outcomes.length
           // the one the core did not take in the batch (or the first of a batch it did not take): alone
           if (!fed || fed.refusedAt !== null) { await again(batch[outcomes.length]!, await this.receive(batch[outcomes.length]!, true)); at++ }
