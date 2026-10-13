@@ -1,0 +1,17 @@
+{
+  "answer": "{\"epoch\":2,\"error\":\"epoch-taken\",\"message\":\"another Commit took this epoch: fetch, process, build again\"}",
+  "asked": {
+    "epoch": 1,
+    "group": "W7XRUtgDUbbN5l-bhvy2z4EW15wojGTjy9uSFQ8ValAhLCrUSjkJ4K570_n9maLN",
+    "kind": "Commit",
+    "parts": 4,
+    "route": "outbox"
+  },
+  "name": "outbox-commit-refused",
+  "request": {
+    "body": "{\"commit\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ\",\"epoch\":1,\"group_info\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg\",\"sealed_key\":\"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw\"}",
+    "method": "POST",
+    "path": "/v1/groups/W7XRUtgDUbbN5l-bhvy2z4EW15wojGTjy9uSFQ8ValAhLCrUSjkJ4K570_n9maLN/commits"
+  },
+  "status": 409
+}

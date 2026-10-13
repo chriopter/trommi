@@ -1,0 +1,17 @@
+{
+  "answer": "{\"key_packages\":{\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\":\"AAEABQABAAMgRsgCtrg0TRIiYgl369R3PQlZg-iEHNLL1nWRPwrvHHEg_lY1W44mG5_ZivBAGQthDP1j_5S6rbxdZNVg7sk5J0QgiL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBAAASCIvvJI4-ZZQGCk_pzUYF8Hf1UXFfOu769IRndYxaOYEAIAAQIAAwbwAfACAAoAAgABAQAAAABqzi-_AAAAAH2aQM8AQECRj-9btNZxH39P97SzH6nvYcY7p5YVltTrvfHune-K6iL8MkA73KlLPFPZG3ayfqfa-puBK1FgWSsJHd_rtwIHAEBApvJioFgxwusHlCAmtY09JVDbtyVfT3eOQX6SsRW_avJehb3hTDXsveoDTWeaanSsssjxoxc_gCy8bhiStfZSCw\"}}",
+  "asked": {
+    "devices": [
+      "iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA"
+    ],
+    "partial": false,
+    "route": "claim"
+  },
+  "name": "claim",
+  "request": {
+    "body": "{\"devices\":[\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\"]}",
+    "method": "POST",
+    "path": "/v1/key-packages/claim"
+  },
+  "status": 200
+}

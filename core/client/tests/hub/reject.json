@@ -1,0 +1,15 @@
+{
+  "answer": "{\"id\":2}",
+  "asked": {
+    "group": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us",
+    "n": 3,
+    "route": "reject"
+  },
+  "name": "reject",
+  "request": {
+    "body": "{\"n\":3}",
+    "method": "POST",
+    "path": "/v1/groups/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJASULs65AYQRfS75zb_E8us/reject"
+  },
+  "status": 200
+}

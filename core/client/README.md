@@ -130,6 +130,20 @@ App).
 - A panic inside the core closes that `AppCore` (`internal` from then on); the shell starts a new one, which reads
   the stored state again. In the browser a panic stops the module, as today.
 
+### The hub codec
+
+`hub::Codec` is every hub route as data: `request(site, route)` gives the whole `HttpRequest` and an `Expect` (what
+was asked), `answer(expect, response)` the typed `Answer` or a failure. The hub is not trusted: an answer that is
+not exactly what its route promises is a bad answer as a whole and nothing of it is handed on. The limits are the
+client's own (`hub::limits`): a size cap per answer (also the request's `max_answer`), a count per list, a length
+per byte string, base64url in its one spelling, whole numbers below 2^53, no member named twice, no object named
+twice in a list, change numbers strictly rising and inside the stretch asked for. `hub::StreamReader` is the one
+parser of the live stream: it takes the bytes cut anywhere, bounds a line and an event (4 MiB), and refuses a
+change the stream brought before. `hub::refusal` reads the hub's own refusal (a code of spec/v1.md 16 under its own
+status, with `voided`, the wait, the `epoch` of `epoch-taken`); an error status without one came from a proxy and
+voids nothing. What the real hub answers is recorded in `tests/hub/*.json` by `tests/hub/codec.rs` of the test crate
+(`TROMMI_HUB_VECTORS=write cargo test -p trommi-tests --test hub_codec`) and read back by `tests/hub_vectors.rs`.
+
 ### Threads, per platform
 
 The App is single-threaded and synchronous; nothing async crosses a binding.

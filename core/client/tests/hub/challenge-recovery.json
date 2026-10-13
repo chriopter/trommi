@@ -1,0 +1,14 @@
+{
+  "answer": "{\"challenge\":\"810bSdM6aPAb8PZKumB_LoCIuiEDjf8f7UJbdxCyNok\"}",
+  "asked": {
+    "room": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "route": "challenge"
+  },
+  "name": "challenge-recovery",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/rooms/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/challenge"
+  },
+  "status": 200
+}

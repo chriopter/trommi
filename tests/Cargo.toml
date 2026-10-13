@@ -19,6 +19,8 @@ openmls_traits = { workspace = true }
 tls_codec = "=0.5.0"
 # The facade both bindings share, for the tests of the bindings (`bindings/`).
 trommi-core-swift = { path = "../core/bindings/swift" }
+# The app core's hub codec, read against what the real hub answers (hub/codec.rs).
+trommi-client-core = { path = "../core/client" }
 # the hub and what its test clients need (tests/hub/…)
 trommi-hub = { path = "../hub", features = ["fuzz"] }
 # the hub's updater and what its tests sign with (tests/deploy/…); ed25519-dalek also makes the throwaway release
@@ -424,3 +426,8 @@ path = "hub/active.rs"
 [[test]]
 name = "connector_paths"
 path = "connector/paths.rs"
+
+# The app core's hub codec against the real hub; with TROMMI_HUB_VECTORS=write it records core/client/tests/hub/*.json.
+[[test]]
+name = "hub_codec"
+path = "hub/codec.rs"

@@ -1,0 +1,15 @@
+{
+  "answer": "{\"cards\":[{\"head_change\":13,\"object_id\":\"DpmlqU16AVf8uD3qvVO30A\",\"version_change\":13}],\"change\":26,\"permission_requests\":[],\"settled\":[],\"truncated\":false}",
+  "asked": {
+    "active": false,
+    "route": "desk_brief",
+    "since": 12
+  },
+  "name": "desk-brief-since",
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/v1/desk?brief=1&since=12"
+  },
+  "status": 200
+}
