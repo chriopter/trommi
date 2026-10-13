@@ -7,6 +7,8 @@ import Foundation
 public let SESSION_ID_LEN = 12
 public let UNHEARD_MS: UInt64 = 2 * 60_000
 public let ACTING_MS: UInt64 = 6 * 60 * 60 * 1000
+/// A status line not updated for so long, and not held by its card, is stale (web app.mjs LINE_STALE_MS).
+public let LINE_STALE_MS: UInt64 = ACTING_MS
 
 public enum Words {
   public static let later = "Later", duck = "Duck it", wake = "Wake up", ack = "Got it", what = "What??", trust = "I don’t give a duck", revise = "Reverse"
@@ -441,7 +443,12 @@ public final class DeskModel {
     agents = makeAgents()
     byAgent = DeskModel.newestById(agents)
     tasks = []
-    for s in sessions { for t in s.statusLines { tasks.append(Task1(agent: devToAgent[s.sessionId] ?? "", id: t.id, label: t.label, state: t.state, detail: t.detail, cardId: t.objectId, updated: t.updatedAt)) } }
+    // (each line's state as shown, lineState: its card and session decide, so it says what Off your mind says)
+    for s in sessions { for t in s.statusLines {
+      var line = Task1(agent: devToAgent[s.sessionId] ?? "", id: t.id, label: t.label, state: t.state, detail: t.detail, cardId: t.objectId, updated: t.updatedAt)
+      line.state = lineState(line, now: now)
+      tasks.append(line)
+    } }
     workingOf = Dictionary(grouping: tasks.filter { $0.state == "working" }, by: { $0.agent })
     var d = m.human.desks.compactMap { (id, v) -> DeskDesc? in
       guard v.object != nil else { return nil }
@@ -698,6 +705,23 @@ public final class DeskModel {
     if c.status == "decided" { return !c.answeredBy ? nil : now - min(now, c.decided ?? 0) < ACTING_MS && (online(c.agent) || c.heard == false) ? "works" : "done" }
     if c.status == "done" { return c.answeredBy ? "done" : "trash" }
     return nil
+  }
+
+  /** The state a status line shows now (web app.mjs lineState, client/README.md "Status lines"): 'gone' for a line of an archived
+   *  or vanished session; linked to a card, the card's place decides (put off: 'later'; open: as set; answered and
+   *  still worked on: working at most; else 'done'); unlinked and not updated for LINE_STALE_MS: 'stale'. */
+  public func lineState(_ t: Task1, now: UInt64 = nowMs()) -> String {
+    let set = t.state ?? "working"
+    guard let a = byAgent[t.agent], !a.archived else { return "gone" }
+    if set == "done" { return "done" }
+    if let id = t.cardId, let c = byCard[id] {
+      let at = stackOf(c, now: now)
+      if at == "later" { return "later" }
+      if c.status == "open" { return set }
+      if at == "works" { return set == "decision" ? "working" : set }
+      return "done"
+    }
+    return now - min(now, t.updated) > LINE_STALE_MS ? "stale" : set
   }
 
   /** The status line a card with its session shows (the Desk's "Off your mind" rows): the working line that names it,

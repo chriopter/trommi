@@ -1,5 +1,6 @@
-// status-lines.test.mjs: the status lines at the end of a chat (session.mjs sessionStatus, session.css): on a phone one
-// line each, the title and the time; a tap opens the detail and the way to its question below it, a second shuts it.
+// status-lines.test.mjs: the running work at the end of a chat (session.mjs sessionStatus, session.css): one row of
+// small chips (mark, title, age), never two rows; a chip with a question opens it, one without shows its detail under
+// the row on a tap.
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -7,28 +8,32 @@ import fs from 'node:fs'
 
 const read = f => fs.readFileSync(new URL(`../../../app/web/public/${f}`, import.meta.url), 'utf8')
 
-test('each line is a row with what a tap opens: the detail and "Open the question"', () => {
+test('the lines are one row of chips: a question opens, the rest show their detail on a tap', () => {
   const src = read('session.mjs')
-  assert.match(src, /class="status-row" data-key="\$\{t\.agent\}:\$\{t\.id\}"/)
-  assert.match(src, /data-action="click->status-lines#toggle"/)
-  assert.match(src, /<div class="status-more">[\s\S]*class="status-open" data-nav href="\$\{href\}">Open the question →<\/a>/)
-  assert.match(src, /controller\('status-lines'[\s\S]*mq\('\(max-width: 860px\)'\)\.matches\) return/, 'on a wide screen a line stays a link')
+  assert.match(src, /<div class="status-chips" role="list">/)
+  assert.match(src, /<a class="status-chip" role="listitem" data-state="\$\{t\.state\}" data-nav href="\$\{questionPath\(card, base\)\}"/)
+  assert.match(src, /<button type="button" class="status-chip"[^`]*data-action="status-lines#toggle"/)
+  assert.match(src, /<p class="status-detail-line" hidden><\/p>/)
+  assert.doesNotMatch(src, /stripMode|\?strip=/, 'no trial switch left')
 })
 
-test('on a phone the detail is hidden in the line and shown only in an open row', () => {
+test('the row never wraps: on a phone it scrolls sideways', () => {
   const css = read('session.css')
-  const phone = css.slice(css.indexOf('.status-more { display: none; }'))
-  assert.match(phone, /@media \(max-width: 860px\)[\s\S]*\.status-line \.status-detail \{ display: none; \}[\s\S]*\.status-row\[data-open\] \.status-more \{ display: grid;/)
+  assert.match(css, /^\.status-chips \{ display: flex;[^}]*overflow-x: auto;/m)
+  assert.match(css, /^\.status-chip \{[^}]*flex: none;[^}]*max-width: 16rem;/m)
+  assert.match(css, /^\.status-chip b \{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/m)
 })
 
-test('the time is short beside a small clock, the words kept for a screen reader', async () => {
+test('the age is short, the words kept for a screen reader', async () => {
   const { agoShort } = await import('../../../app/web/public/ui.mjs')
   const now = Date.now()
   assert.equal(agoShort(now - 4 * 60000, now), '4m')
   assert.equal(agoShort(now - 3 * 3600000, now), '3h')
-  assert.equal(agoShort(now, now), 'now')
-  const src = read('session.mjs'), css = read('session.css')
-  assert.match(src, /<span class="status-when"><span data-short aria-hidden="true" data-ts="\$\{t\.updated\}">\$\{agoShort\(t\.updated\)\}<\/span>\$\{ico\('clock'\)\}[\s\S]*agoSpan\(t\.updated, 'offscreen'\)/)
-  assert.match(css, /^\.status-when \{ display: inline-flex;/m, 'on every screen, not only a phone')
-  assert.doesNotMatch(src, /'status-ago'/, 'no long time beside it')
+  const src = read('session.mjs')
+  assert.match(src, /<span class="status-age" aria-hidden="true" data-ts="\$\{t\.updated\}">\$\{agoShort\(t\.updated\)\}<\/span>\$\{agoSpan\(t\.updated, 'offscreen'\)\}/)
+})
+
+test('only what still runs shows: stale and gone lines do not, a done one for a while', () => {
+  const src = read('session.mjs')
+  assert.match(src, /const shownLines = \(tasks, now = Date\.now\(\)\) => tasks\.filter\(t => \['working', 'decision', 'later'\]\.includes\(t\.state\) \|\| \(t\.state === 'done' && now - \(t\.updated \?\? 0\) < WORKING_WINDOW\)\)/)
 })
