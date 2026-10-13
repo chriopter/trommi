@@ -115,9 +115,11 @@ extension Room {
     let t = Task.detached(priority: .utility) { () -> Bool in
       _ = await prev?.value
       do {
-        try rs.append(recs)
+        // (a board written at the cursor holds every record up to it: those are not appended as well; a restore
+        // reads the records after the board's cursor alone. Only when the board could not be written they go)
+        let boardWritten = snap.map { b in (try? rs.writeBoard(b)) != nil } ?? false
+        if !boardWritten { try rs.append(recs) }
         try rs.writeSmall(head, to: rs.headURL, aad: "trommi ios head")
-        if let b = snap { try rs.writeBoard(b) }
         return true
       } catch { return false }
     }
