@@ -1632,11 +1632,10 @@ controller('card', class extends Controller {
 
   // ---- the options explained: the pointer on a tile marks its block at the end of the left column ----
   // and draws the pen's arrow from the tile to the block's heading, where both stand side by side and in sight.
-  // A block out of sight is brought into view after a moment (a pointer passing over does not scroll).
+  // Nothing scrolls: the pointer on a tile never moves the left column away from the picture being looked at.
   say(key) {
     const host = this.element.querySelector('.tc-card'), box = host?.querySelector('.tc-say')
     if (!box) return
-    clearTimeout(this.sayWait)
     const block = key != null ? box.querySelector(`.tc-say-one[data-key="${CSS.escape(key)}"]`) : null
     box.toggleAttribute('data-hover', Boolean(block))
     for (const b of box.querySelectorAll('.tc-say-one')) {
@@ -1644,11 +1643,6 @@ controller('card', class extends Controller {
     }
     this.sayKey = block ? key : null
     this.sayLink()
-    if (block) this.sayWait = setTimeout(() => {
-      const left = host.querySelector('.tc-left'), r = block.getBoundingClientRect(), f = left?.getBoundingClientRect()
-      if (!left || !f || (r.top >= f.top && r.top + 40 <= f.bottom)) return
-      left.scrollTo({ top: left.scrollTop + r.top - f.top - 24, behavior: 'smooth' })
-    }, 450)
   }
   sayLink() {
     const host = this.element.querySelector('.tc-card')
