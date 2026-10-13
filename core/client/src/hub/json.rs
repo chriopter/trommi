@@ -183,7 +183,7 @@ thread_local! {
 }
 
 /// The values any answer may hold, however short: as many as JSON can put in 64 KiB (the most of a write's
-/// answer), at about 50 bytes of memory each.
+/// answer): a few MiB of memory at the most.
 const SMALL_VALUES: usize = 32 << 10;
 
 /// Most members an object may have: no object of the protocol has more than the 1024 devices of a claim's
@@ -481,11 +481,26 @@ mod tests {
             r#"{{"id":1,"device":"{}","kind":"session","at":1}}"#,
             id(43)
         );
+        // (as the hub writes it: the optional members as null)
+        let wish_nulls = format!(
+            r#"{{"id":1,"device":"{}","kind":"session","group_id":null,"key_package":null,"n":null,"at":1,"committer":null}}"#,
+            id(43)
+        );
         let group = format!(
             r#"{{"group_id":"{}","kind":"room","epoch":0,"room_epoch":0,"live":true,"stale":false,"leaves":[]}}"#,
             id(43)
         );
-        for (row, at_least) in [(&open, 9), (&wish, 9), (&group, 8)] {
+        let group_nulls = format!(
+            r#"{{"group_id":"{}","kind":"room","session_id":null,"parent":null,"epoch":0,"room_epoch":0,"live":true,"stale":false,"leaves":[]}}"#,
+            id(43)
+        );
+        for (row, at_least) in [
+            (&open, 9),
+            (&wish, 9),
+            (&wish_nulls, 8),
+            (&group, 8),
+            (&group_nulls, 8),
+        ] {
             let rows = (4 << 20) / (row.len() + 1);
             let body = format!(
                 r#"{{"change":1,"more":false,"items":[{}]}}"#,
