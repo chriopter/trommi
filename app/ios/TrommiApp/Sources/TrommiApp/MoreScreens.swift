@@ -60,7 +60,7 @@ struct OffScreen: View {
           Text("Off your ").font(Face.display(34, .heavy))
           Text("mind").font(Face.display(34, .heavy)).background(alignment: .bottom) { PenUnderline().stroke(Ink.accent, lineWidth: 2.2).frame(height: 8).offset(y: 6) }
         }.padding(.top, 10)
-        if let v = model.view { OffList(view: v, full: true, query: query) }
+        if let v = model.view { OffList(view: v, query: query) }
       }
       // the last row scrolls clear of the floating tab bar
       .padding(.horizontal, 16).padding(.bottom, 120)
@@ -73,38 +73,27 @@ struct OffScreen: View {
 }
 
 /**
- * Off your mind as ONE pile (the owner's pick of 13 October 2026, "untereinander"; web desk.mjs offList): the first
- * three cards the agents are working on as live cards, one under the other; then one pile with everything else, which
- * says how much lies on it ("+2 running · 1 put off · 14 done"). A tap opens it in place: the other running cards,
- * then what is put off, then what is closed, the newest first, small and quiet at the bottom (shredded ones struck
- * through). How it is laid out from the real totals is the client core's (offPile, core/client/src/off_pile.rs). Its
- * heading, a link, opens the page Off your mind: every card, the pile open, with its search.
+ * The page Off your mind, the complete list (web desk.mjs endList): what the agents are working on as live cards, the
+ * one that moved last first; then what is put off, then what is closed, the newest first, one small row each
+ * (shredded ones struck through). Each card in its place by time, none lifted. With its search.
  */
 struct OffList: View {
   @EnvironmentObject var model: BoardModel
   let view: DeskModel.View
-  let full: Bool
   var query = ""
-  /** On the Desk of an iPhone the list lies under the fold: its heading carries a small arrow (EndDivider). */
-  var chevron: String? = nil
-  struct Row: Identifiable { var card: DeskCard; var g: String; var pinned = false; var id: String { card.id } }
+  struct Row: Identifiable { var card: DeskCard; var g: String; var id: String { card.id } }
   // (no Desk: the room was just left, a log out; the view is on its way out and draws nothing)
   var body: some View { if let d = model.desk { content(d) } }
   @ViewBuilder private func content(_ d: DeskModel) -> some View {
     let rows = OffList.rows(view, d)
     let terms = query.lowercased().split(separator: " ").map(String.init)
     let shown = terms.isEmpty ? rows : rows.filter { r in terms.allSatisfy { "\(r.card.title) \(d.byAgent[r.card.agent]?.name ?? "")".lowercased().contains($0) } }
-    let busy = shown.filter { $0.g == "works" }, later = shown.filter { $0.g == "later" }, closed = shown.filter { $0.g == "done" || $0.g == "trash" }
-    let pile = offPile(running: UInt64(busy.count), putOff: UInt64(later.count), closed: UInt64(closed.count), full: full)
-    if !shown.isEmpty || full {
-      VStack(alignment: .leading, spacing: 0) {
-        if !full { EndDivider(title: "Off your mind", chevron: chevron, more: { model.path.append(.off) }).padding(.bottom, 4) }
-        // (the rest in the list's order: his starred ones pinned first, then put off, then closed, the newest first)
-        let rest = shown.filter { $0.g != "works" }
-        OffPileView(busy: busy.map(\.card), rest: Array(rest.prefix(max(pile.restShown, rest.filter(\.pinned).count))), pile: pile, full: full)
-        if full && shown.isEmpty { Text(terms.isEmpty ? "Nothing yet." : "Nothing here has these words.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20) }
-      }.padding(.top, 8)
-    }
+    VStack(alignment: .leading, spacing: 6) {
+      ForEach(shown.filter { $0.g == "works" }) { card($0.card) }
+      let rest = shown.filter { $0.g != "works" }
+      if !rest.isEmpty { VStack(spacing: 4) { ForEach(rest) { restRow($0) } }.padding(.top, 4) }
+      if shown.isEmpty { Text(terms.isEmpty ? "Nothing yet." : "Nothing here has these words.").font(Face.text(15)).foregroundStyle(Ink.muted).padding(.vertical, 20) }
+    }.padding(.top, 8)
   }
   /** Being worked on first (the newest move first), then the end list's order (EndList.endItems: Later, the rest). */
   static func rows(_ v: DeskModel.View, _ d: DeskModel) -> [Row] {
@@ -116,101 +105,27 @@ struct OffList: View {
       return (c, line?.updated ?? (c.status == "open" ? c.withAgent : c.decided) ?? 0)
     }.sorted { $0.1 > $1.1 }.map { Row(card: $0.0, g: "works") }
     let seen = Set(busy.map { $0.id })
-    let rest = EndList().endItems(v, d).filter { !seen.contains($0.card.id) }.map { Row(card: $0.card, g: $0.g) }
-    return OffList.pinStarred(busy + rest)
+    return busy + EndList().endItems(v, d).filter { !seen.contains($0.card.id) }.map { Row(card: $0.card, g: $0.g) }
   }
-  /** His starred cards pinned at the top, the last starred first; the others below in their order (desk.mjs pinStarred). */
-  static func pinStarred(_ rows: [Row]) -> [Row] {
-    let starred = rows.filter { $0.card.starred != nil }
-    if starred.isEmpty { return rows }
-    let pinned = starred.sorted { ($0.card.starred ?? 0) > ($1.card.starred ?? 0) }.map { Row(card: $0.card, g: $0.g, pinned: true) }
-    return pinned + rows.filter { $0.card.starred == nil }
-  }
-}
-
-/**
- * The pile itself (web desk.mjs offList): the top running cards, slim; the pile with its words and the edges of the
- * sheets behind it; a tap opens it in place, Fold lays it together again. On the page Off your mind it stands open.
- */
-struct OffPileView: View {
-  @EnvironmentObject var model: BoardModel
-  let busy: [DeskCard]
-  let rest: [OffList.Row]
-  let pile: Pile
-  let full: Bool
-  @State private var open: Bool? = nil
-  var body: some View {
-    let opened = open ?? pile.open
-    VStack(alignment: .leading, spacing: 6) {
-      ForEach(Array(busy.prefix(pile.top)), id: \.id) { card($0) }
-      if pile.pile {
-        if opened {
-          ForEach(Array(busy.dropFirst(pile.top)), id: \.id) { card($0) }
-          if !rest.isEmpty { VStack(spacing: 4) { ForEach(rest) { restRow($0) } }.padding(.top, 4) }
-          if !full && pile.putOff + pile.closed > pile.restShown {
-            Button { model.path.append(.off) } label: {
-              Text("All \(pile.putOff + pile.closed) put off and done").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted).underline(true, color: Ink.accent)
-                .frame(minHeight: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-          }
-          if !full {
-            Button { withAnimation(.easeOut(duration: 0.2)) { open = false } } label: {
-              Text("Fold").font(Face.text(14, .semibold)).foregroundStyle(Ink.muted).underline(true, color: Ink.accent)
-                .frame(minHeight: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-          }
-        } else {
-          pileTop
-        }
-      }
-    }
-  }
-  /** The pile at rest: its words on a dashed sheet, the edges of the others behind it. */
-  private var pileTop: some View {
-    let words = pileWords(pile)
-    return Button { withAnimation(.easeOut(duration: 0.2)) { open = true } } label: {
-      ZStack {
-        ForEach((1...max(pile.behind, 1)).reversed(), id: \.self) { k in
-          RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Ink.surface)
-            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Ink.fg.opacity(0.3), lineWidth: 1.5))
-            .padding(.horizontal, CGFloat(k) * 12)
-            .offset(y: CGFloat(7 * k))
-            .opacity(k <= pile.behind ? 1 - Double(k) * 0.22 : 0)
-        }
-        HStack {
-          Text(words).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg)
-          Spacer(minLength: 8)
-          Text("Show all").font(Face.text(12, .semibold)).foregroundStyle(Ink.muted).underline(true, color: Ink.accent)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Ink.surface))
-        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Ink.fg.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
-      }
-      .padding(.bottom, CGFloat(pile.behind) * 7 + 4)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("\(words): show them")
-  }
-  /** A running card, slim: who is on it (drawing), the title, its status line, how long. */
+  /** A running card: who is on it (drawing), the title, its status line, how long. */
   private func card(_ c: DeskCard) -> some View {
     let d = model.desk, a = d?.byAgent[c.agent]
     let line = d?.workLine(c, working: d?.tasks.filter { $0.state == "working" } ?? [])
     let at = line?.updated ?? (c.status == "open" ? c.withAgent : c.decided) ?? 0
     return Button { model.path.append(.card(c.id)) } label: {
       HStack(alignment: .center, spacing: 10) {
-        if let a { AgentMark(agent: { var x = a; x.starred = false; return x }(), size: 24) }
+        if let a { AgentMark(agent: { var x = a; x.starred = false; return x }(), size: 28) }
         VStack(alignment: .leading, spacing: 2) {
           HStack(spacing: 4) {
             if c.starred != nil { StarMark().frame(width: 14, height: 14).accessibilityHidden(true) }
-            Text(c.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+            Text(c.title).font(Face.text(15, .semibold)).foregroundStyle(Ink.fg).lineLimit(2).multilineTextAlignment(.leading)
           }
           (Text(a?.name ?? "").font(Face.text(12, .semibold)).foregroundColor(Ink.fg) + Text(" · \(line?.label ?? "on it")").font(Face.text(12)).foregroundColor(Ink.muted)).lineLimit(1)
         }
         Spacer(minLength: 6)
         if at > 0 { Text(agoShort(at)).font(Face.text(11)).foregroundStyle(Ink.faint).frame(maxHeight: .infinity, alignment: .top) }
       }
-      .padding(.horizontal, 14).padding(.vertical, 9)
+      .padding(.horizontal, 14).padding(.vertical, 11)
       .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Ink.surface))
       .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Ink.fg.opacity(0.55), lineWidth: 1.5))
       .contentShape(RoundedRectangle(cornerRadius: 13))
@@ -218,17 +133,13 @@ struct OffPileView: View {
     .buttonStyle(.plain)
     .accessibilityLabel("\(c.title), \(a?.name ?? "") is on it")
   }
-  /** A put-off or closed card at the bottom, small and quiet: its mark, the title, when. */
-  private func restRow(_ r: OffList.Row) -> some View {
+  /** A put-off or closed card, small and quiet: its mark, the title, when. */
+  private func restRow(_ r: Row) -> some View {
     let c = r.card
     let at: UInt64 = r.g == "later" ? 0 : (r.g == "trash" ? (c.status == "shredded" ? c.shredded : c.created) : c.decided) ?? 0
     return Button { model.path.append(.card(c.id)) } label: {
       HStack(spacing: 8) {
-        Group {
-          if r.g == "later" { Sketch("snooze", color: Ink.stampLater) }
-          else if r.g == "trash" { Sketch(c.status == "shredded" ? "shred" : "withdraw", color: Ink.faint) }
-          else { Sketch("tick", color: Ink.accent) }
-        }.frame(width: 13, height: 13).accessibilityHidden(true)
+        PlaceMark(place: r.g, card: c).frame(width: 13, height: 13).accessibilityHidden(true)
         if c.starred != nil { StarMark().frame(width: 13, height: 13).accessibilityHidden(true) }
         Text(c.title.isEmpty ? "(no title)" : c.title).font(Face.text(13, .medium)).foregroundStyle(Ink.muted)
           .strikethrough(r.g == "trash" && c.status == "shredded", color: Ink.faint)
@@ -242,19 +153,158 @@ struct OffPileView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .padding(.bottom, r.pinned ? 2 : 0)
-    .accessibilityLabel(c.starred != nil ? "Starred: \(c.title)" : r.g == "later" ? "\(c.title), later" : r.g == "trash" ? (c.status == "shredded" ? "\(c.title), shredded" : "\(c.title), withdrawn") : "\(c.title), done")
+    .accessibilityLabel(r.g == "later" ? "\(c.title), later" : r.g == "trash" ? (c.status == "shredded" ? "\(c.title), shredded" : "\(c.title), withdrawn") : "\(c.title), done")
+  }
+}
+/** The mark of a card off the Desk: put off the three Z, shredded the shredder, withdrawn the return arrow, else the tick. */
+struct PlaceMark: View {
+  let place: String
+  let card: DeskCard
+  var body: some View {
+    if place == "later" { Sketch("snooze", color: Ink.stampLater) }
+    else if place == "trash" { Sketch(card.status == "shredded" ? "shred" : "withdraw", color: Ink.faint) }
+    else { Sketch("tick", color: Ink.accent) }
   }
 }
 
-/** The small green dot of something still being worked on: it breathes. */
-struct PulseDot: View {
-  @State private var on = false
+/**
+ * The section Off your mind on the Desk (web desk.mjs offHint): a short hinted list, the first rows of what is put off
+ * and closed, fading, and how many there are; its heading and the list open the page with every card. Which cards and
+ * the counts are the client core's (DeskModel.offMind).
+ */
+struct OffHint: View {
+  @EnvironmentObject var model: BoardModel
+  let view: DeskModel.View
+  /** On the Desk of an iPhone the section lies under the fold: its heading carries a small arrow (EndDivider). */
+  var chevron: String? = nil
   var body: some View {
-    Circle().fill(Ink.stDone).frame(width: 8, height: 8)
-      .background(Circle().fill(Ink.stDone.opacity(0.35)).frame(width: 16, height: 16).scaleEffect(on ? 1 : 0.4).opacity(on ? 0 : 1))
-      .onAppear { withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { on = true } }
-      .accessibilityHidden(true)
+    if let off = model.desk?.offMind(view), !off.putOff.isEmpty || off.closed > 0 {
+      let rows = Array((off.putOff.map { e -> DeskModel.OffMind.Entry in var x = e; x.place = "later"; return x } + off.recent).prefix(3))
+      let words = [off.putOff.isEmpty ? "" : "\(off.putOff.count) put off", off.closed > 0 ? "\(off.closed) done" : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+      VStack(alignment: .leading, spacing: 0) {
+        EndDivider(title: "Off your mind", chevron: chevron, more: { model.path.append(.off) }).padding(.bottom, 4)
+        Button { model.path.append(.off) } label: {
+          VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { i, e in
+              HStack(spacing: 8) {
+                PlaceMark(place: e.place, card: e.card).frame(width: 12, height: 12)
+                Text(e.card.title).font(Face.text(13, .medium)).foregroundStyle(Ink.muted).lineLimit(1)
+              }.opacity(i == 0 ? 1 : i == 1 ? 0.7 : 0.4)
+            }
+            Text(words).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg).underline(true, color: Ink.accent).padding(.top, 3)
+          }
+          .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Off your mind: \(words)")
+      }.padding(.top, 8)
+    }
+  }
+}
+
+/**
+ * The dock at the bottom of the Desk (web desk.mjs deskDock; the owner's pick of 13 October 2026, "zwei Stapel wie
+ * HEY"): two stacks, his starred cards and the cards still running. Each shows its top card, the straight edges of two
+ * more behind it and how many; a tap fans it upward as small cards, a little askew; the running one leads on to the
+ * complete list. Which card lies in which stack and in what order is the client core's (DeskModel.offMind): a starred
+ * card lies in the starred stack only. Above the tab pill on an iPhone; not on a card's page (it is the Desk's).
+ */
+struct DeskDock: View {
+  @EnvironmentObject var model: BoardModel
+  let view: DeskModel.View
+  /** The dock's height at rest, for the Desk's fold and its last rows. */
+  static let height: CGFloat = 74
+  @State private var open: String? = nil
+  var body: some View {
+    if let off = model.desk?.offMind(view), !off.starred.isEmpty || !off.running.isEmpty {
+      let both = !off.starred.isEmpty && !off.running.isEmpty
+      VStack(alignment: open == "run" && both ? .trailing : .leading, spacing: 8) {
+        if open == "star" { fan(off.starred, all: false) }
+        if open == "run" { fan(off.running, all: true) }
+        HStack(alignment: .bottom, spacing: 10) {
+          if !off.starred.isEmpty { stack("star", off.starred, word: "starred") }
+          if !off.running.isEmpty { stack("run", off.running, word: "running") }
+        }
+        .padding(.horizontal, 10).padding(.top, 14).padding(.bottom, 8)
+        .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(.ultraThinMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).strokeBorder(Ink.lineStrong, lineWidth: 1.5))
+      }
+      .padding(.horizontal, 8)
+      .frame(maxWidth: 640)
+    }
+  }
+  /** A stack at rest: its top card, the edges of two more behind it, how many. */
+  private func stack(_ key: String, _ cards: [DeskModel.OffMind.Entry], word: String) -> some View {
+    let on = open == key, behind = min(cards.count - 1, 2)
+    return Button { withAnimation(.easeOut(duration: 0.2)) { open = on ? nil : key } } label: {
+      HStack(spacing: 8) {
+        if key == "star" { Image(systemName: "star.fill").font(.system(size: 13)).foregroundStyle(Color(hex: 0xc99a13)) }
+        else { WorkingRing(working: true, color: Ink.accent).frame(width: 14, height: 14) }
+        mini(cards[0], key)
+          .opacity(on ? 0.45 : 1)
+          .background(alignment: .top) {
+            if !on && behind > 0 {
+              ForEach(1...behind, id: \.self) { k in
+                UnevenRoundedRectangle(topLeadingRadius: 11, topTrailingRadius: 11, style: .continuous).fill(Ink.surface)
+                  .overlay(UnevenRoundedRectangle(topLeadingRadius: 11, topTrailingRadius: 11, style: .continuous).strokeBorder(Ink.fg.opacity(0.3), lineWidth: 1.5))
+                  .frame(height: 20).padding(.horizontal, CGFloat(k) * 9).offset(y: CGFloat(-6 * k))
+                  .opacity(1 - Double(k) * 0.22)
+              }
+            }
+          }
+          .overlay(alignment: .topTrailing) {
+            if !on {
+              Text("\(cards.count)").font(Face.text(11, .bold)).foregroundStyle(Ink.bg)
+                .padding(.horizontal, 6).padding(.vertical, 3).background(Capsule().fill(Ink.fg)).offset(x: 8, y: -9)
+            }
+          }
+      }.contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("\(cards.count) \(word)")
+    .accessibilityHint(on ? "Lays them together" : "Shows them")
+  }
+  /** A stack fanned out: small cards of a fixed width, each a little askew; the running one ends in the way to the list. */
+  private func fan(_ cards: [DeskModel.OffMind.Entry], all: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 7) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 7) {
+          ForEach(Array(cards.enumerated()), id: \.element.id) { i, e in
+            Button { open = nil; model.path.append(.card(e.card.id)) } label: { mini(e, all ? "run" : "star").frame(width: 250) }
+              .buttonStyle(.plain)
+              .rotationEffect(.degrees(i % 2 == 0 ? -1.4 : 1.1)).offset(x: i % 2 == 0 ? 0 : 5)
+              .shadow(color: .black.opacity(0.16), radius: 7, y: 4)
+              .accessibilityLabel(e.card.title)
+          }
+        }.padding(.horizontal, 10).padding(.vertical, 8)
+      }
+      .frame(maxHeight: 420).fixedSize(horizontal: true, vertical: true)
+      if all {
+        Button { open = nil; model.path.append(.off) } label: {
+          HStack(spacing: 5) { Text("All running and done").font(Face.text(14, .semibold)); Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold)) }
+            .foregroundStyle(Ink.fg).padding(.horizontal, 14).frame(minHeight: 36)
+            .background(Capsule().fill(Ink.surface)).overlay(Capsule().strokeBorder(Ink.fg, lineWidth: 1.5))
+            .frame(minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).padding(.leading, 10)
+      }
+    }
+    .transition(.move(edge: .bottom).combined(with: .opacity))
+  }
+  /** A small card: who it comes from (drawing), its title, one quiet line. */
+  private func mini(_ e: DeskModel.OffMind.Entry, _ key: String) -> some View {
+    let sub = key == "star" ? "\(e.agent.name)\(e.running ? " · running" : "")" : "\(e.agent.name) · \(e.label.isEmpty ? "on it" : e.label)"
+    return HStack(spacing: 8) {
+      AgentMark(agent: { var x = e.agent; x.starred = false; return x }(), size: 22)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(e.card.title).font(Face.text(13, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
+        Text(sub).font(Face.text(11)).foregroundStyle(Ink.muted).lineLimit(1)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 10).padding(.vertical, 7)
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Ink.surface))
+    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.fg.opacity(0.55), lineWidth: 1.5))
+    .contentShape(RoundedRectangle(cornerRadius: 12))
   }
 }
 
@@ -399,62 +449,6 @@ struct NoteButton: View {
       .onReceive(NotificationCenter.default.publisher(for: .trommiNoteOpen)) { _ in open = true }
   }
 }
-/**
- * His starred cards as a small stack (the web's sidebar.mjs starStack, his pick of 13 October): three tilted cards
- * with the star and the count; a tap fans them up into a column (title, session), a tap on the stack lays them back.
- * Which cards and in what order is the client core's (core/client/src/stars.rs, Board.starredCards); drawn here only.
- */
-struct StarStack: View {
-  @EnvironmentObject var model: BoardModel
-  @State private var open = false
-  var body: some View {
-    let _ = model.version
-    let cards = (model.board?.starredCards() ?? []).compactMap { id in model.desk?.byCard[id] }
-    if !cards.isEmpty {
-      VStack(alignment: .trailing, spacing: 10) {
-        if open {
-          ScrollView {
-            VStack(alignment: .trailing, spacing: 6) { ForEach(cards, id: \.id) { c in row(c) } }.padding(2)
-          }
-          .frame(maxHeight: 420).fixedSize(horizontal: true, vertical: true)
-          .transition(.move(edge: .bottom).combined(with: .opacity))
-        }
-        Button { withAnimation(.easeOut(duration: 0.18)) { open.toggle() } } label: { pile(cards.count) }
-          .buttonStyle(.plain)
-          .accessibilityLabel("\(cards.count) starred")
-          .accessibilityHint(open ? "Lays them together" : "Shows them")
-      }
-    }
-  }
-  private func pile(_ n: Int) -> some View {
-    ZStack {
-      ForEach((0..<min(n, 3)).reversed(), id: \.self) { k in
-        RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Ink.surface)
-          .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Ink.fg.opacity(0.7), lineWidth: 1.5))
-          .frame(width: 46, height: 58)
-          .rotationEffect(.degrees(-6 + Double(k) * 5)).offset(x: CGFloat(-3 * k), y: CGFloat(-3 * k))
-      }
-      HStack(spacing: 2) { Image(systemName: "star.fill").font(.system(size: 11)).foregroundStyle(Color(hex: 0xc99a13)); Text("\(n)").font(Face.text(13, .bold)).foregroundStyle(Ink.fg) }
-    }
-    .frame(width: 56, height: 66).contentShape(Rectangle())
-  }
-  private func row(_ c: DeskCard) -> some View {
-    Button { open = false; model.path.append(.card(c.id)) } label: {
-      HStack(spacing: 8) {
-        Image(systemName: "star.fill").font(.system(size: 12)).foregroundStyle(Color(hex: 0xc99a13))
-        VStack(alignment: .leading, spacing: 2) {
-          Text(c.title).font(Face.text(14, .semibold)).foregroundStyle(Ink.fg).lineLimit(1)
-          Text(model.desk?.byAgent[c.agent]?.name ?? "").font(Face.text(12)).foregroundStyle(Ink.muted).lineLimit(1)
-        }
-        Spacer(minLength: 0)
-      }
-      .padding(.horizontal, 11).padding(.vertical, 9).frame(width: 270, alignment: .leading)
-      .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.surface))
-      .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Ink.fg.opacity(0.65), lineWidth: 1.5))
-    }.buttonStyle(.plain).accessibilityLabel("Starred: \(c.title)")
-  }
-}
-
 /** The note as a sheet (the iPad's corner button). */
 struct NoteSheet: View {
   @Environment(\.dismiss) private var dismiss

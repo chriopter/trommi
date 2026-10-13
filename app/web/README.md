@@ -186,10 +186,13 @@ instead); files come network first, the cache only offline. On the dev server (`
   (`working`, from `start_task`: never on the Desk until its "Done: …" version), one line each, below the open ones. A card answered
   with a final option (a small pen tick on its tile) never lies here: the answer settles it, it goes to "Off the desk"
   at once ("settled by your answer"), and Take back opens it again.
-- **Foot:** Off your mind as one pile (`desk.mjs offList`, laid out by the client core's `off_pile`): the first three
-  running cards one under the other, then one pile that says what lies on it ("+2 running · 1 put off · 14 done") and
-  opens in place (the other running cards, then the put-off and done ones small at the bottom, twelve; Fold); its
-  heading opens `/stacks/off`, every card with the pile open and a search), Artifacts (the newest four;
+- **Foot:** two stacks docked at the bottom of the Desk (`desk.mjs deskDock`, in the Desk's layer, so not on a card's
+  page): the starred cards and the cards still running, each its top card with the edges of two more behind it and
+  its count; a tap fans it upward as small cards, the running one ends in the way to the complete list. The section
+  Off your mind (`offHint`) is a short hinted list of what is put off and closed, beside Artifacts on a wide window;
+  its heading opens `/stacks/off`, every card with a search. Which card lies where is the client core's (the
+  patch's `off_mind`, `core/client/src/off_mind.rs`): a card has one home, a starred card lies in the starred stack
+  only. The note stays in its corner (a phone: in the tab pill). Artifacts (the newest four;
   its heading "Artifacts N" is the link that opens `/artifacts`: Media and Pages together, the newest first, the filter
   All · Media · Pages, compact tiles in a soft frame with Open and, on a page, Share as small icons; 25 tiles made at once,
   the rest as they come near).

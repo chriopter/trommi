@@ -350,10 +350,6 @@ impl ClientModel {
         let k: trommi_client_core::desk_delete::Known = serde_json::from_str(&known).map_err(json_err)?;
         self.with(|m, _| Ok(serde_json::to_string(&m.desk_delete_plan(&desk_id, &k, &by, now_ms)).unwrap_or_default()))
     }
-    /// His starred cards (core/client/src/stars.rs), the last starred first: JSON `[{object_id, at}]`.
-    pub fn starred_cards(&self) -> Result<String, CoreError> {
-        self.with(|m, _| Ok(serde_json::to_string(&m.starred_cards()).unwrap_or_default()))
-    }
     /// Self-join (core/client/src/selfjoin.rs): the agents' asks to act on, JSON `[{session_id, nonce, ask, refused}]`.
     /// `answered`: the nonces this device answered; `pending`: the accounts of its vouched links not through yet.
     pub fn self_join_asks(&self, answered: String, pending: String) -> Result<String, CoreError> {

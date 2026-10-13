@@ -276,7 +276,6 @@ body:has(.inbox-edge.is-up > :not([hidden])) .inbox-news { translate: 0 26px; }
   .inbox-answer.is-thumb.is-short { grid-auto-flow: column; grid-template-columns: auto minmax(0, auto); gap: var(--s-2); padding-inline: var(--s-2); }
   .inbox-answer.is-thumb.is-short .sketch { width: 22px; height: 22px; }
   .inbox-answer.is-thumb.is-short:not(.is-stacked) > span.inbox-short { text-align: left; }
-  
 }
 @media (min-width: 861px) {
   .topbar:has(#desk-go[aria-current]) { box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-md); }
@@ -287,7 +286,6 @@ body:has(.inbox-edge.is-up > :not([hidden])) .inbox-news { translate: 0 26px; }
 
 /* A finger needs 44px: the one-line pile heads and the menu's entries. */
 @media (pointer: coarse), (max-width: 860px) {
-  
   .inbox-revising-open { min-height: 44px; }
 }
 
@@ -402,8 +400,6 @@ dialog.rowmenu::backdrop { background: transparent; }
    is as wide as the cards. */
 @media (min-width: 861px) {
   :is(#inbox, #session) .inbox-groups > .inbox-stacks { --inset: 46px; padding-left: var(--inset); }
-  
-  
 }
 
 /* ---- The foot as small tabs (.stack-tabs) ----
@@ -516,7 +512,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 
 @container rows (max-width: 600px) {
   :is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { grid-template-columns: minmax(0, 1fr); }
-  
 }
 
 /* ---- A lower decision row, the pictures as a small fan beside the title ---- */
@@ -724,9 +719,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 /* a phone: the three in one row, smaller */
 @container rows (max-width: 600px) {
   :is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: var(--s-3) 10px; }
-  
-  
-  
 }
 
 /* ---- Select by the session's drawing (desk.mjs selectWays): a soft ring on hover, an empty round box, a filled round
@@ -910,12 +902,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
 
 @media (max-width: 860px) {
   :is(#inbox, #session) .inbox-groups > .tail { margin-top: -2px; gap: 6px; }
-  
-  
-  
-  
-  
-  
 }
 
 /* ---- a final option's sign on an answer tile of a row: the small pen tick in the tile's corner (ui.mjs finalSign) ---- */
@@ -940,7 +926,6 @@ form.inbox-actions, form.inbox-tabs { margin: 0; }
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-answer .sketch { width: 22px !important; height: 22px !important; }
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-answer > span:last-child:not(.inbox-disc) { font-size: var(--t-sm); white-space: nowrap; }
   html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-answer.is-what .sketch-what { width: 62px !important; height: 22px !important; }
-  
 }
 
 /* ---- Several options, one advised: the advised option is the lead tile with its words
@@ -1007,45 +992,14 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 /* (a phone: the advised pair a little taller, the stroke clear under the words) */
 @media (max-width: 860px) { html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-answer.is-advised::after { bottom: 3px; } html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer { height: 60px; } html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-actions.is-advised-pair .inbox-answer.is-take { padding-bottom: 14px; } }
 
-/* ---- the end of the Desk's list (desk.mjs endList): Off your mind, a plain feed of slim rows: the work with a green
-   dot, Later's three Z in its ink, then what is closed; nothing to tick. Max five; the heading links to the rest. ---- */
+/* ---- the Desk's foot: the section Off your mind (desk.mjs offHint) under a pen rule with its label, and the page
+   /stacks/off (endList) ---- */
 .endlist { display: grid; gap: 2px; margin: var(--s-6) 0 0; }
 .endlist[hidden] { display: none; }
-.end-rows { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
-.end-row { text-align: left; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto 36px; grid-template-areas: "t s w b"; align-items: center; column-gap: var(--s-2); min-height: 40px; padding: 2px 4px 2px var(--s-2); border-bottom: 1px solid var(--line); }
-.end-row[hidden] { display: none; }
-/* (the dot or the Z at the row's right end, in line with the Desk's tiles; the title and its line at the left) */
-.end-row > .end-tick { grid-area: b; justify-self: end; }
-.end-title { grid-area: t; } .end-said { grid-area: s; } .end-ago { grid-area: w; }
-@media (pointer: coarse) { .end-tick { width: 44px; height: 44px; } .end-row { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) auto 44px; } }
-.end-tick { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--fg); }
-.end-tick.is-later { color: var(--stamp-ink-later); }
-.end-tick.is-later .sketch { width: 20px; height: 20px; }
-.end-row[data-g="later"] :is(.end-title, .end-said) { color: var(--muted); }
-/* (a closed card: answered, done or read a green tick on the right; shredded or withdrawn its own small drawing in quiet ink;
-   the title as it is; only a shredded one is struck through, below) */
-.end-tick.is-done { color: var(--accent); }
-.end-tick.is-done .sketch { width: 20px; height: 20px; stroke-width: 2.2; }
-.end-tick.is-thrown { color: var(--muted); }
-.end-tick.is-thrown .sketch { width: 19px; height: 19px; stroke-width: 1.8; }
-/* (a shredded card, thrown away unanswered: struck through as well) */
-.end-row[data-shredded] > :is(.end-title, .end-said) { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 45%, transparent); }
-.end-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 600 var(--t-sm)/1.3 var(--font); text-decoration: none; }
-.end-title:hover { text-decoration: underline; }
-.end-said { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 400 var(--t-sm)/1.3 var(--font); }
-.end-ago { color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
-/* (put off: grey; thrown away: struck through; what is done reads plain) */
-
-/* a phone: the title and its line one above the other */
-@media (max-width: 860px) {
-  .end-row { grid-template-columns: minmax(0, 1fr) auto 44px !important; grid-template-areas: "t w b" "s s b"; row-gap: 0; padding-block: 3px; }
-  .end-title { grid-area: t; } .end-said { grid-area: s; font-size: var(--t-xs); } .end-ago { grid-area: w; }
-}
 
 /* (the foot holds one pile, Artifacts, centred; on its own page /stacks/off the list of everything stands above it) */
 :is(#inbox, #session) .inbox-groups > .inbox-stacks.stack-tabs.is-two { grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr) !important; }
 #inbox .inbox-stacks.stack-tabs.is-two > #desk-artifacts { grid-column: 2; grid-row: 1; }
-.end-row > :is(.end-title, .end-said) { justify-self: stretch; text-align: left; } .end-row > .end-ago { justify-self: end; }
 
 /* ---- one list: the cards with the agents and the end list are one slim list, under a pen rule with its label in a
    hand (.end-divider). ---- */
@@ -1066,47 +1020,21 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 .end-divider > .end-head:is(:hover, :focus-visible) .sketch { translate: 3px 1px; }
 #desk-ip:not([hidden]) + .endlist { margin-top: 0; }
 #desk-ip:not([hidden]) + .endlist .end-divider { display: flex; }
-#desk-ip:not([hidden]) + .endlist .end-rows { border-top: 0; }
 @media (max-width: 860px) {
   :is(#inbox, #session) .inbox-groups > .tail { margin-top: var(--s-5); gap: 0; }
-  
-  
-  
-  
-  
-  
 }
 
 /* ---- a calm Desk: the open questions stand alone; what is off his mind begins well below them, under a pen rule with
-   a small label, one line per card: the title and a small mark (the green dot, the three Z). Who has it, the closing
-   line, Read, Withdrawn… show under the pointer (and on the card's own page). ---- */
+   a small label. ---- */
 :is(#inbox, #session) .inbox-groups > .tail, :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .endlist { margin-top: clamp(56px, 22vh, 180px); border-top: 0; }
 
 #desk-ip[hidden] + .endlist .end-divider { display: flex; }
-#desk-ip[hidden] + .endlist .end-rows { border-top: 0; }
-.end-row > .end-said, .end-row > .end-ago { display: none; }
-@media (hover: hover) {
-  .end-row:is(:hover, :focus-within) > :is(.end-said, .end-ago) { display: revert; }
-  
-}
-.end-row > .end-title { font-weight: 500; }
 @media (max-width: 860px) {
   :is(#inbox, #session) .inbox-groups > .tail, :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .endlist { margin-top: max(72px, 40vh); }
-  
-  
-  .end-row { grid-template-areas: "t t b"; }
 }
-
-/* ---- Off your mind: one heading for the whole list; a small drawn gear turns slowly (still where motion is
-   reduced). On the Desk the heading itself links to the whole list, /stacks/off. ---- */
-
-.gear { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; animation: gear-turn 9s linear infinite; }
-@keyframes gear-turn { to { rotate: 360deg; } }
-@media (prefers-reduced-motion: reduce) { .gear { animation: none; } }
 
 #desk-ip:not([hidden]) + .endlist .end-divider { display: none !important; }
 #desk-ip:not([hidden]) + .endlist { margin-top: 0; }
-#desk-ip:not([hidden]) + .endlist .end-rows { border-top: 0; }
 /* the page /stacks/off */
 .off-page .desk-hello { display: flex; align-items: baseline; gap: var(--s-3); }
 .off-back { color: var(--muted); text-decoration: none; font: 400 1.4rem/1 var(--font); }
@@ -1124,17 +1052,7 @@ html body :is(#inbox, #session) .inbox-groups .inbox-row .inbox-text { padding-r
 .off-page .desk-top { flex-wrap: wrap; row-gap: var(--s-3); }
 .off-page .desk-top .end-search { flex: 1 0 100%; margin: 0; }
 .off-page .endlist { margin-top: 0 !important; }
-.off-page .endlist .end-rows { border-top: 0; }
 .off-page .inbox-groups > .tail { margin-bottom: 0 !important; }
-
-/* ---- Off your mind as one list: the work first (a small green dot that breathes),
-   then the rest; one line each, only the title (the rest on hover, or a tap opens the card). ---- */
-.end-row[data-g="works"] > .end-title { text-decoration: none; color: var(--fg); font-weight: 500; }
-.end-tick.is-working { display: grid; place-items: center; width: 28px; height: 28px; }
-.work-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #2f9e5b); box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok, #2f9e5b) 50%, transparent); animation: work-breathe 1.8s ease-in-out infinite; }
-@keyframes work-breathe { 50% { box-shadow: 0 0 0 5px transparent; opacity: .6; } }
-@media (prefers-reduced-motion: reduce) { .work-dot { animation: none; } }
-@media (max-width: 860px) { .end-row > :is(.end-said, .end-ago) { display: none !important; } }
 
 /* ---- a Desk row is its title and its answer tiles: no session name, no
    line under the title, no drawing, no tag; a wide screen shows the tag while the pointer rests. The row never grows:
@@ -1209,13 +1127,11 @@ body > main#inbox { contain: strict; }
   :root:is([data-shift], [data-shift-swap]) .inbox-actions :is(.inbox-answer, .inbox-answer *) { transition: none !important; animation: none !important; }
 }
 
-/* His starred rows pinned at the top of Off your mind: a firmer rule under the last of them */
-.end-row[data-pinned]:not(:has(+ [data-pinned])) { border-bottom: 1.5px solid var(--line-strong); }
-
-/* ---- Off your mind (desk.mjs offList): what runs as live cards on one stack that fans out ("+N running") and folds
-   back; what is done, put off or thrown away as a very compact list ---- */
+/* ---- the page Off your mind (desk.mjs endList): what runs as live cards, one under the other; what is put off,
+   done or thrown away as small quiet rows under them ---- */
 .oym { gap: var(--s-3); text-align: left; }
-.oym :is(.oym-card, .pile-rest, summary) { text-align: left; }
+.oym :is(.oym-card, .pile-rest) { text-align: left; }
+.oym .oym-card-words, .oym .oym-card-words > * { text-align: left; justify-self: start; }
 .oym-card { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: var(--s-3); padding: 12px 14px; border: 1.5px solid color-mix(in srgb, var(--fg) 55%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); color: var(--fg); text-decoration: none; box-shadow: 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent); }
 @media (any-hover: hover) { .oym-card:hover { border-color: var(--fg); } }
 .oym-card .agent-avatar { width: 30px; height: 30px; }
@@ -1224,33 +1140,7 @@ body > main#inbox { contain: strict; }
 .oym-card-words small { color: var(--muted); font-size: var(--t-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .oym-who { color: var(--fg); font-weight: 600; }
 .oym-ago { align-self: start; color: var(--faint); font-size: var(--t-xs); white-space: nowrap; }
-/* the compact list: one short line each */
-/* the stack: the top card, the edges of the others behind it; open, every card one under the other and Fold */
-/* the cards behind: the front card's size, each a little narrower and lower, so their bottom edges show; no rotation
-   (a card as wide as the Desk turned even half a degree runs askew across the whole width) */
-.oym-sheet { position: absolute; top: 0; bottom: 0; left: calc(var(--k) * 12px); right: calc(var(--k) * 12px); border: 1.5px solid color-mix(in srgb, var(--fg) 30%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); transform: translateY(calc(var(--k) * 7px)); opacity: calc(1 - var(--k) * .22); }
-.oym-fold { justify-self: start; margin: 2px 0 0; padding: 6px 2px; border: 0; background: none; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); cursor: pointer; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
-.oym-fold:hover { color: var(--fg); }
-.oym-fold:focus-visible, .pile-pile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 10px; }
-.oym .oym-card-words, .oym .oym-card-words > * { text-align: left; justify-self: start; }
-
-/* ---- Off your mind as one pile (desk.mjs offList; the owner's pick of 13 October 2026, "untereinander"): the first
-   running cards one under the other, slim; the pile with its words under them; opened, the other running cards, then
-   the put-off and done ones as small quiet rows at the bottom ---- */
-.oym-card.is-slim { padding: 9px 14px; grid-template-columns: 24px minmax(0, 1fr) auto; }
-.oym-card.is-slim .agent-avatar { width: 24px; height: 24px; }
-.oym-card.is-slim .oym-card-words b { font-size: var(--t-sm); -webkit-line-clamp: 1; }
 .pile-cards { display: grid; gap: 6px; }
-.pile-wrap > summary { list-style: none; cursor: pointer; }
-.pile-wrap > summary::-webkit-details-marker { display: none; }
-.pile-pile { position: relative; display: block; margin-bottom: calc(var(--behind) * 7px + 4px); }
-.pile-pile-top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 9px 14px; border: 1.5px dashed color-mix(in srgb, var(--fg) 35%, transparent); border-radius: 14px 12px 15px 13px; background: var(--surface); color: var(--muted); }
-.pile-pile-top b { color: var(--fg); font: 600 var(--t-sm)/1.2 var(--font); }
-.pile-pile-top small { font: 600 var(--t-xs)/1 var(--font); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
-.pile-pile:hover .pile-pile-top { border-color: color-mix(in srgb, var(--fg) 60%, transparent); }
-.pile-wrap[open] > .pile-pile { display: none; }
-.pile-open { display: grid; gap: 6px; }
-.pile-wrap:not([open]) > .pile-open { display: none; }
 .pile-rests { display: grid; gap: 4px; margin-top: 4px; }
 .pile-rest { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--muted); font: 400 var(--t-xs)/1.3 var(--font); text-decoration: none; text-align: left; }
 .pile-rest b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--muted); }
@@ -1261,6 +1151,71 @@ body > main#inbox { contain: strict; }
 .pile-rest[data-g="later"] .pile-rest-mark { color: var(--stamp-ink-later); }
 .pile-rest[data-g="trash"] .pile-rest-mark { color: var(--faint); }
 .pile-rest[data-shredded] b { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); }
-.pile-rest[data-pinned]:has(+ .pile-rest:not([data-pinned])) { margin-bottom: 6px; }
-.pile-all { justify-self: start; margin-top: 2px; color: var(--muted); font: 600 var(--t-sm)/1 var(--font); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
-.pile-all:hover { color: var(--fg); }
+
+/* ---- the Desk's foot (desk.mjs offHint, deskDock; the owner's pick of 13 October 2026, "zwei Stapel wie HEY") ----
+   The section Off your mind: a short hinted list, its rows fading, beside Artifacts on a wide window. */
+.oym-hint { gap: 4px; text-align: left; }
+.oym-hint-list { display: grid; gap: 3px; justify-items: start; padding: 2px 4px; color: var(--muted); text-decoration: none; text-align: left; font: 400 var(--t-xs)/1.3 var(--font); }
+.oym-hint-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; }
+.oym-hint-row .sketch { width: 12px; height: 12px; stroke-width: 2.2; color: var(--accent); }
+.oym-hint-row[data-g="later"] .sketch { color: var(--stamp-ink-later); }
+.oym-hint-row[data-g="trash"] .sketch { color: var(--faint); }
+.oym-hint-row b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.oym-hint-row:nth-child(2) { opacity: .7; }
+.oym-hint-row:nth-child(3) { opacity: .4; }
+.oym-hint-more { margin-top: 3px; color: var(--fg); font-weight: 600; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+@media (any-hover: hover) { .oym-hint-list:hover b { color: var(--fg); } }
+.oym-hint-list:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 8px; }
+:is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .oym-hint, .inbox-groups > .oym-hint + .inbox-stacks.stack-tabs { margin-top: 56px; }
+@container rows (min-width: 700px) {
+  .inbox-groups > .oym-hint:not([hidden]) { grid-column: 1 / 3; align-self: start; }
+  .inbox-groups > .oym-hint:not([hidden]) + .inbox-stacks { grid-column: 3 / -1; align-self: start; }
+}
+/* (the last rows scroll clear of the dock) */
+main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 104px; }
+/* The dock: two stacks at the bottom of the Desk, in the Desk's layer (fixed; gone with the Desk, so not on a card's
+   page). Each: its sign, the top card, the straight edges of two more behind it, how many. */
+.oym-dock { position: fixed; z-index: var(--z-pop); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: calc(var(--side, 0px) + (100vw - var(--side, 0px)) / 2); translate: -50% 0; display: flex; align-items: flex-end; gap: 28px; padding: 16px 18px 10px; border-radius: 18px 16px 19px 15px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 0 0 1.5px var(--line-strong), 0 10px 28px rgb(0 0 0 / .14); }
+.oym-dock[hidden], .desk-layer:has(.sel-bar:not([hidden])) .oym-dock, :root.is-choosing .oym-dock { display: none; }
+.dock-stack { position: relative; }
+.dock-stack > summary { display: flex; align-items: center; gap: 10px; list-style: none; cursor: pointer; border-radius: 12px; }
+.dock-stack > summary::-webkit-details-marker { display: none; }
+.dock-stack > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 4px; }
+.dock-icon { display: grid; place-items: center; width: 22px; color: var(--muted); }
+.dock-icon :is(.sketch, svg) { width: 20px; height: 20px; }
+.dock-stack[data-k="star"] .dock-icon .sketch { color: #c99a13; fill: color-mix(in srgb, #e8b923 55%, transparent); }
+.dock-top { position: relative; display: block; }
+.dock-top > i { position: absolute; left: calc(var(--k) * 9px); right: calc(var(--k) * 9px); top: calc(var(--k) * -6px); height: 20px; border: 1.5px solid color-mix(in srgb, var(--fg) 30%, transparent); border-bottom: 0; border-radius: 12px 11px 0 0; background: var(--surface); opacity: calc(1 - var(--k) * .22); }
+.dock-top > em { position: absolute; z-index: 2; right: -8px; top: -9px; min-width: 20px; box-sizing: border-box; padding: 3px 6px; border-radius: var(--r-pill); background: var(--fg); color: var(--bg); font: 700 11px/1 var(--font); font-style: normal; text-align: center; }
+.dock-card { position: relative; z-index: 1; display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 10px; width: 250px; box-sizing: border-box; padding: 8px 12px; border: 1.5px solid color-mix(in srgb, var(--fg) 55%, transparent); border-radius: 13px 11px 14px 12px; background: var(--surface); color: var(--fg); text-decoration: none; text-align: left; }
+.dock-card .agent-avatar { width: 26px; height: 26px; }
+.dock-card > span { display: grid; gap: 2px; min-width: 0; }
+.dock-card b { font: 600 var(--t-sm)/1.25 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-card small { color: var(--muted); font-size: var(--t-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-top > .dock-card { pointer-events: none; }   /* (the stack's top card opens the fan, not the card) */
+@media (any-hover: hover) { .dock-stack > summary:hover .dock-card, a.dock-card:hover { border-color: var(--fg); } }
+.dock-stack[open] > summary .dock-top > :is(i, em) { visibility: hidden; }
+.dock-stack[open] > summary .dock-card { opacity: .45; }
+/* fanned: small cards of a fixed width upward, each a little askew (never a card that spans the window) */
+.dock-fan { position: absolute; left: 22px; bottom: calc(100% + 6px); display: grid; gap: 7px; max-height: min(64dvh, 540px); overflow-y: auto; padding: 8px 10px; scrollbar-width: thin; }
+.dock-stack:not([open]) > .dock-fan { display: none; }
+.dock-fan > .dock-card { box-shadow: 0 4px 14px rgb(0 0 0 / .16); }
+.dock-fan > .dock-card:nth-child(odd) { rotate: -1.4deg; }
+.dock-fan > .dock-card:nth-child(even) { rotate: 1.1deg; translate: 5px 0; }
+.dock-fan > .dock-card:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.dock-all { justify-self: start; display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 8px 14px; border: 1.5px solid var(--fg); border-radius: var(--r-pill); background: var(--surface); color: var(--fg); font: 600 var(--t-sm)/1 var(--font); text-decoration: none; }
+.dock-all .sketch { width: 14px; height: 14px; }
+@media (prefers-reduced-motion: reduce) { .dock-fan > .dock-card { rotate: none; translate: none; } }
+/* a phone: the dock stands above the tab pill, as wide as the screen allows; the signs give way to the cards */
+@media (max-width: 860px) {
+  .oym-dock { left: 50%; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); gap: 10px; padding: 14px 10px 8px; max-width: calc(100vw - 16px); box-sizing: border-box; justify-content: center; }
+  .dock-icon { display: none; }
+  .dock-top > .dock-card { width: min(168px, calc(50vw - 24px)); padding: 7px 9px; gap: 7px; grid-template-columns: 22px minmax(0, 1fr); }
+  .dock-top > .dock-card .agent-avatar { width: 22px; height: 22px; }
+  .dock-fan { left: -10px; }
+  .dock-fan > .dock-card { width: min(250px, calc(100vw - 60px)); }
+  .dock-stack[data-k="run"]:not(:only-child) .dock-fan { left: auto; right: -10px; }
+  :is(#inbox, #session) .inbox-groups > #desk-ip[hidden] + .oym-hint { margin-top: 40px; }
+  .inbox-groups > .oym-hint + .inbox-stacks.stack-tabs { margin-top: 20px; }
+  main#inbox:has(+ .desk-layer .oym-dock:not([hidden])) .inbox-groups { padding-bottom: 176px; }
+}

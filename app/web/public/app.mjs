@@ -696,7 +696,7 @@ export class BoardState {
     this.assetsNaming = naming
     const self = this
     const state = {
-      cards, byId: this.byId, queue, desk_order: m.desk_order ?? [], closedGen: this.closedGen, agents, tasks, desks, notes, assets,
+      cards, byId: this.byId, queue, desk_order: m.desk_order ?? [], off_mind: m.off_mind ?? null, closedGen: this.closedGen, agents, tasks, desks, notes, assets,
       // (the room is still being read: a sign-in joining its sessions, the past read again; the Desk says so)
       // (or a start from this device's cache waits for the hub's Desk past a moment: client.deskFirst)
       get reading() { return Boolean(self.model.room.reading || self.model.room.desk_waiting) },
