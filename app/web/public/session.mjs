@@ -365,7 +365,8 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
 const shownLines = (tasks, now = Date.now()) => tasks.filter(t => ['working', 'decision', 'later'].includes(t.state) || (t.state === 'done' && now - (t.updated ?? 0) < WORKING_WINDOW))
 const lineMark = t => html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span>`
 /** The status lines of the session's running work, and that it is answering, at the end of the conversation: one row
- *  of small chips (mark, title, age), never two rows; on a phone the row scrolls sideways. A chip with a question
+ *  of small chips (mark, title, age), never two rows; what does not fit lies on a stack "+N" at its end (controller
+ *  "status-lines"). A chip with a question
  *  opens it; one without shows its detail under the row on a tap (and hides it on a second). */
 function sessionStatus(s, base, now = Date.now()) {
   const last = s.messages.findLast(m => m.from !== 'event')
@@ -381,26 +382,21 @@ function sessionStatus(s, base, now = Date.now()) {
 // A chip without a question: a tap shows its title and detail under the row, a second tap hides it; the one shown stays
 // shown when the live piece is drawn anew.
 const statusOpen = new Set()
-// Proposals while he chooses (localStorage trommi-chips): instead of scrolling sideways, what does not fit lies on a
-// stack. a: the chips that fit, the rest on a stack "+N"; b: one stack, its most urgent chip on top; c: two rows, then
-// the stack. A tap on the stack opens what lies on it, one under the other.
-const CHIP_LOOKS = ['a', 'b', 'c']
-const chipLook = () => { try { const v = localStorage.getItem('trommi-chips'); return CHIP_LOOKS.includes(v) ? v : '' } catch { return '' } }
+// No sideways scroll (the owner, 13 October 2026): the chips that fit stand in the row; what does not fit lies on a
+// small stack "+N" at its end (its edges show), and a tap on the stack opens what lies on it, one under the other,
+// under the row. Measured again whenever the row's width changes.
 controller('status-lines', class extends Controller {
   connect() {
     const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip)
-    this.look = chipLook()
     const row = this.element.querySelector('.status-chips')
-    if (!this.look || !row) return
-    row.dataset.look = this.look
-    this.pile = Object.assign(document.createElement('button'), { type: 'button', className: 'status-pile' })
+    if (!row) return
+    this.pile = Object.assign(document.createElement('button'), { type: 'button', className: 'status-pile', hidden: true })
     this.pile.setAttribute('aria-expanded', 'false')
     this.pile.addEventListener('click', () => this.openPile())
     row.append(this.pile)
     this.more = Object.assign(document.createElement('div'), { className: 'status-more', role: 'list', hidden: true })
     row.after(this.more)
-    this.fit = () => this.place()
-    this.watch = new ResizeObserver(this.fit); this.watch.observe(row)
+    this.watch = new ResizeObserver(() => this.place()); this.watch.observe(row)
     this.place()
   }
   disconnect() { this.watch?.disconnect(); this.pile?.remove(); this.more?.remove() }
@@ -408,30 +404,19 @@ controller('status-lines', class extends Controller {
   place() {
     const row = this.element.querySelector('.status-chips'), chips = [...row.querySelectorAll(':scope > .status-chip')]
     for (const c of chips) c.hidden = false
-    let over = []
-    if (this.look === 'b') {
-      // one stack: the most urgent chip on top (a question that waits on him), the count beside it
-      const top = chips.find(c => c.dataset.state === 'decision') ?? chips[0]
-      if (chips.length > 1) {
-        over = chips
-        this.pile.innerHTML = `<span class="status-pile-top">${top.innerHTML}</span><i class="status-pile-n">${chips.length}</i>`
-        this.pile.dataset.state = top.dataset.state ?? ''
-      }
-    } else {
-      // what fits in one row (c: two), the stack at its end
-      this.pile.hidden = false
-      this.pile.innerHTML = '<span class="status-pile-n">+9</span>'
-      const pileW = this.pile.getBoundingClientRect().width + 14, right = row.getBoundingClientRect().right
-      const rows = [...new Set(chips.map(c => c.offsetTop))].sort((x, y) => x - y), last = rows[(this.look === 'c' ? 2 : 1) - 1] ?? 0
-      for (const c of chips) if (c.offsetTop > last || (c.offsetTop === last && c.getBoundingClientRect().right > right - pileW)) over.push(c)
-      if (over.length) this.pile.innerHTML = `<span class="status-pile-n">+${over.length}</span>`
-    }
+    // (the stack's room is kept free while measuring: as wide as "+9")
+    this.pile.hidden = false
+    this.pile.innerHTML = '<span class="status-pile-n">+9</span>'
+    const room = this.pile.getBoundingClientRect().width + 14, right = row.getBoundingClientRect().right
+    const all = chips.every(c => c.getBoundingClientRect().right <= right)
+    const over = all ? [] : chips.filter(c => c.getBoundingClientRect().right > right - room)
     for (const c of over) c.hidden = true
     this.pile.hidden = !over.length
+    this.pile.innerHTML = `<span class="status-pile-n">+${over.length}</span>`
     this.pile.setAttribute('aria-label', `${over.length} more`)
     this.pile.style.setProperty('--behind', String(Math.min(over.length, 2)))
     this.over = over
-    if (!this.more.hidden) this.fill()
+    if (!this.more.hidden) { if (over.length) this.fill(); else { this.more.hidden = true; this.pile.setAttribute('aria-expanded', 'false') } }
   }
   fill() { this.more.replaceChildren(...this.over.map(c => { const k = c.cloneNode(true); k.hidden = false; return k })) }
   openPile() {

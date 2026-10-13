@@ -17,9 +17,9 @@ test('the lines are one row of chips: a question opens, the rest show their deta
   assert.doesNotMatch(src, /stripMode|\?strip=/, 'no trial switch left')
 })
 
-test('the row never wraps: on a phone it scrolls sideways', () => {
+test('the row never wraps and never scrolls sideways (what does not fit lies on a stack: status-pile.test.mjs)', () => {
   const css = read('session.css')
-  assert.match(css, /^\.status-chips \{ display: flex;[^}]*overflow-x: auto;/m)
+  assert.match(css, /^\.status-chips \{ display: flex;[^}]*overflow: visible;/m)
   assert.match(css, /^\.status-chip \{[^}]*flex: none;[^}]*max-width: 16rem;/m)
   assert.match(css, /^\.status-chip b \{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap;/m)
 })
