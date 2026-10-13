@@ -50,6 +50,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # the merge queue (ruleset of main): the checks of a pull request, on the very commit that will land on main; main
+  # then does not run them again (checked_tree.sh)
+  merge_group:
   workflow_dispatch:
 
 permissions: {}
@@ -174,7 +177,7 @@ jobs:
           BEFORE: ${{ github.event.before }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
           SINCE: ${{ steps.inputs.outputs.since }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -eu
@@ -184,7 +187,7 @@ jobs:
             # main: since the newest release, as the parts' inputs above; a main build that failed or was cancelled
             # leaves its changes in that range, so the next one runs their checks again (not only the last push's)
             push) if [ "$MAIN" = true ]; then base=$SINCE; else base=$BEFORE; fi ;;
-            pull_request) base=$(git merge-base "$PR_BASE" HEAD || true) ;;
+            pull_request|merge_group) base=$(git merge-base "$PR_BASE" HEAD || true) ;;
           esac
           # no known commit to compare with (a run by hand, a first push, a rewritten branch): everything changed
           if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
@@ -216,10 +219,10 @@ jobs:
       # A pull request: the tree it checked (the merge GitHub made), named by an artifact, for checked_tree.sh on main.
       # The name is the claim; checked_tree.sh takes the jobs' results from GitHub, not from this file.
       - name: The tree this run checks
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/tree" && echo "TREE=$(cat "$RUNNER_TEMP/tree")" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         with:
           name: checked-tree-${{ env.TREE }}
           path: ${{ runner.temp }}/tree
@@ -397,7 +400,7 @@ jobs:
         run: node app/web/dev/build.mjs --write
       # What is delivered (main only): the files, the worker, its settings, and the manifest that names every file.
       - name: Put the release together
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_web != 'false'
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.changed_web != 'false'
         run: |
           set -eu
           node .github/scripts/web_release.mjs app/web/public out
@@ -411,7 +414,7 @@ jobs:
             echo "hub \`$WEB_HUB_URL\`, $(jq '.files | length' out/manifest.json) files, manifest \`$(sha256sum out/manifest.json | cut -d' ' -f1)\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_web != 'false'
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.changed_web != 'false'
         with:
           name: web-release
           path: out/
@@ -497,7 +500,7 @@ jobs:
   connector_build:
     name: Connector build (${{ matrix.target }})
     needs: changes
-    if: github.event_name != 'pull_request' && needs.changes.outputs.connector == 'true' && needs.changes.outputs.changed_connector != 'false'
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.connector == 'true' && needs.changes.outputs.changed_connector != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -572,7 +575,7 @@ jobs:
   connector_release:
     name: Connector release
     needs: [changes, connector_build]
-    if: github.event_name != 'pull_request' && needs.changes.outputs.connector == 'true' && needs.changes.outputs.changed_connector != 'false'
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.connector == 'true' && needs.changes.outputs.changed_connector != 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -633,7 +636,7 @@ jobs:
       # and, for the release build (main), the static target and the C compiler for it, fetched beside the compiler
       - name: Compiler (rust-toolchain.toml), clippy, the C compiler for static builds
         env:
-          STATIC: ${{ github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false' }}
+          STATIC: ${{ github.ref == 'refs/heads/main' && needs.changes.outputs.changed_hub != 'false' }}
         run: |
           set -eu
           if [ "$STATIC" = true ]; then
@@ -689,7 +692,7 @@ jobs:
       # of the hub or its updater differ from the newest release's; release.yml takes the program whose inputs did not
       # change from that release.
       - name: Build the release
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.changed_hub != 'false'
         env:
           TROMMI_COMMIT: ${{ github.sha }}
         run: |
@@ -708,7 +711,7 @@ jobs:
           cat out/manifest.json
       # The very file that will be released is started once and asked whether it is well and which commit it is.
       - name: Try the built hub
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.changed_hub != 'false'
         run: |
           set -eu
           data=$(mktemp -d)
@@ -728,12 +731,12 @@ jobs:
       # deploy is always safe. A build that raises hub/data-epoch declares that it is not; the check is then skipped
       # and the updater never puts the program back past it once the new hub has served.
       - name: The hub before runs on data this one migrated
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.changed_hub != 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh .github/scripts/hub_compat.sh "out/trommi-hub-$TARGET" "$TARGET"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name != 'pull_request' && needs.changes.outputs.changed_hub != 'false'
+        if: github.ref == 'refs/heads/main' && needs.changes.outputs.changed_hub != 'false'
         with:
           name: hub-release
           path: out/
