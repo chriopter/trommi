@@ -58,12 +58,23 @@ function demoStatus(m, s, archived, removed) {
   return { link, blocked, working, quiet_since: null, device_active: s.last_activity_at ?? 0, recheck_at: null, lines }
 }
 
+/** A model's id as a heading shows it: the client core's rule (client/src/sessions.rs model_label), for the demo room. */
+const demoModelLabel = id => {
+  const t = String(id ?? '').trim(), l = t.toLowerCase()
+  if (!t) return ''
+  if (l.startsWith('claude-')) {
+    const parts = l.slice(7).split('[')[0].split('-').filter(p => !/^\d{8}$/.test(p)), fam = parts.find(p => /^[a-z]+$/.test(p))
+    if (fam) { const v = parts.filter(p => /^\d+$/.test(p)); return `${fam[0].toUpperCase()}${fam.slice(1)}${v.length ? ` ${v.join('.')}` : ''}` }
+  }
+  if (l.startsWith('gpt-')) { const [first, ...rest] = l.slice(4).split('-'); return [`GPT-${first}`, ...rest.map(w => w[0].toUpperCase() + w.slice(1))].join(' ') }
+  return t
+}
 /**
  * The session list of the mock room, in the shape of the client core's (client/src/sessions.rs `SessionRow`): the demo
  * has no core, and its sessions are a fixture's, so the plain reading of it is enough here: the person's label, else
  * the agent's name; archived as the person set it; in the person's order, else the fixture's; the parent named.
  */
-function demoSessions(m) {
+export function demoSessions(m) {
   const list = [...m.sessions.values()]
   const idOf = s => (s.agent_session_id && !/^[0-9a-f]{12,}$/.test(s.agent_session_id) ? s.agent_session_id : (s.session_id ?? s.agent_device_id).slice(0, 12))
   const ids = new Map(list.map(s => [s.session_id ?? s.agent_device_id, idOf(s)]))
@@ -78,13 +89,19 @@ function demoSessions(m) {
       id, key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id ?? null, name: label || given, given, label, icon: set.icon || p.icon || '',
       online: Boolean(s.is_online), offline_since: s.offline_since ?? null, parent: parentKey && ids.has(parentKey) ? ids.get(parentKey) : null, parent_key: parentKey && ids.has(parentKey) ? parentKey : null,
       archived: chosen && !(s.is_online && !parentKey), replaced: false, removed: s.is_active === false, position: Number.isFinite(set.position) ? set.position : i, placed: Number.isFinite(set.position),
-      desk: set.desk ?? 'main', starred: crown === key || crown === s.agent_device_id, main: Boolean(p.is_main), own: m.members.get(s.agent_device_id)?.device_role === 'human',
+      desk: set.desk ?? 'main', model_label: demoModelLabel(p.model), starred: crown === key || crown === s.agent_device_id, main: Boolean(p.is_main), own: m.members.get(s.agent_device_id)?.device_role === 'human',
       waiting: s.open_card_ids?.length ?? 0, fetched: 'archived' in set && !set.archived, last_activity_at: s.last_activity_at ?? 0,
       ...demoStatus(m, s, chosen && !(s.is_online && !parentKey), s.is_active === false),
     }
   })
   const byId = new Map(rows.map(r => [r.id, r]))
   for (const r of rows) if (r.parent && byId.has(r.parent)) r.desk = byId.get(r.parent).desk
+  // (each row's path, as the client core makes it: client/src/sessions.rs session_paths)
+  const desks = Object.entries(m.human.desks instanceof Map ? Object.fromEntries(m.human.desks) : m.human.desks ?? {}).filter(([, v]) => v && typeof v === 'object')
+    .map(([id, v]) => ({ id, name: String(v.name ?? '').trim() || 'Personal', order: Number.isFinite(v.order) ? v.order : null, created: v.created_at ?? 0 }))
+  const ordered = desks.some(d => d.order != null)
+  desks.sort((a, b) => (ordered ? (a.order ?? Infinity) - (b.order ?? Infinity) || a.created - b.created : (a.id !== 'main') - (b.id !== 'main') || a.created - b.created))
+  for (const r of rows) r.path = [...(desks.length > 1 ? [(desks.find(d => d.id === r.desk) ?? desks[0]).name] : []), ...(r.parent && byId.has(r.parent) ? [byId.get(r.parent).name] : []), r.name]
   return rows.sort((a, b) => a.position - b.position)
 }
 
@@ -266,6 +283,8 @@ export class MockClient {
   snooze(id, until) { return this.setRegisters({ [`snooze/${id}`]: until == null ? null : { until, at: Date.now() } }) }
   duck(id, v) { return this.setRegisters({ [`duck/${id}`]: v }) }
   star(id, on) { return this.setRegisters({ [`star/${id}`]: on ? { at: Date.now() } : null }) }
+  /** His starred cards, the last starred first: the client core's rule (client/src/stars.rs), for the demo's own room. */
+  starredCards() { return [...(this.model.human.stars ?? new Map())].filter(([id, v]) => v && v !== false && this.model.cards.has(id)).map(([object_id, v]) => ({ object_id, at: Number(v?.at) || 0 })).sort((a, b) => b.at - a.at || (a.object_id < b.object_id ? -1 : 1)) }
   setCrown(v) { return this.setRegisters({ crown: v }) }
   setDesk(id, v) { return this.setRegisters({ [`desk/${id}`]: v }) }
   async saveNote({ object_id = hex(32), ...fields }) {

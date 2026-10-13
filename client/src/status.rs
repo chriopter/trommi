@@ -41,8 +41,8 @@ pub const OFFLINE_GRACE_MS: u64 = 60_000;
 /// Nothing from a working, connected session for this long: the quiet hint.
 pub const QUIET_MS: u64 = 15 * 60_000;
 /// A status line its agent has not updated for this long, and whose card does not hold it, is stale: it no longer
-/// says that its session works (the apps hide it).
-pub const LINE_STALE_MS: u64 = 6 * 60 * 60_000;
+/// says that its session works (the apps show it greyed and still for a day).
+pub const LINE_STALE_MS: u64 = 2 * 60 * 60_000;
 /// An answered card counts as worked on by its session for so long (while the session runs, or has not heard it).
 pub const ACTING_MS: u64 = 6 * 60 * 60_000;
 

@@ -1,7 +1,7 @@
 // The Desk: every open question as a row, in the client core's order, and at its foot the end list
 // (Off your mind) and the Artifacts. The markup is the one app.css and desk.css style. A row never unfolds: its text is a link to
 // the card's own page, its tiles are forms that answer with one tap.
-import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, GOALS_SHOWN, cleanGoals, closedMemo, deskScope, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
+import { ACTING_MS, BASE, GOALS_LINES, GOALS_LINE_MAX, cleanGoals, closedMemo, deskScope, linkOf, runsOf, stackOf, stream, flipOut, walkOf, workAt, workLine } from './app.mjs'
 import { lastUndo, undoLast } from './ui.mjs'
 import { Controller, PLUS, SETTLED, starMark, WORDS, advisedLabels, agoSpan, avatar, artifactItems, calm, controller, deskRow, el, act, html, isKnock, linkSlip, mediaPreview, mq, plain, raw, runSection, sideWays, sk } from './ui.mjs'
 // ---- the rows: the questions and the infos (reports, notes, nothing to decide) ----
@@ -43,26 +43,27 @@ function deskHead(model, base) {
 
 /** The desk's goals: a note of his own right under the greeting, a checklist of at most
  *  GOALS_LINES lines, kept in the desk's register (desk/<id>, field goals: end-to-end encrypted like its name, on
- *  every device of his). Empty: only a faint "Goals…". The first GOALS_SHOWN lines are shown; more are folded behind
- *  "+N more", which opens them in place (kept per desk on this device). "Hide goals" folds them to one line, "Goals · N",
- *  which opens them again (per desk on this device too). A click on the words writes in place
+ *  every device of his). Empty: only a faint "Goals…". One toggle, a chevron beside them (the owner, 13 October 2026:
+ *  "nur ein Auf- und Zuklappen"): folded, the first line; open, every line (kept per desk on this device). A click on
+ *  the words writes in place
  *  (controller "goals" below); not on All desks. The write: app.mjs hub.desk({ id, goals }). */
 function deskGoals(model) {
   if (model.all) return ''
   const text = model.goals ?? '', desk = model.desk ?? 'main'
-  // (folded: one quiet line "Goals · N" that opens them again; kept per desk on this device, goalsFolded)
-  const folded = Boolean(text) && goalsFolded().includes(desk)
-  return html`<div class="desk-goals${folded ? ' is-folded' : ''}" data-controller="goals" data-goals-desk-value="${desk}" data-goals-text-value="${text}">${goalsWords(text)}</div>`
+  // (folded: the first line only; kept per desk on this device, goalsFolded)
+  const folded = text.includes('\n') && goalsFolded().includes(desk)
+  return html`<div class="desk-goals${folded ? ' is-folded' : ''}" data-controller="goals" data-goals-desk-value="${desk}" data-goals-text-value="${text}">${goalsWords(text, folded)}</div>`
 }
 /** A line that starts with an emoji or a tick box: the sign in a column of its own, so the words of such lines start
  *  under each other and a long line wraps under its words. */
 const GOAL_SIGN = /^\s*((?:\p{Regional_Indicator}{2}|[\u2610\u2612\u2713\u2717]|\p{Extended_Pictographic})(?:\uFE0F|\u20E3|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*)\s+(\S.*)$/u
-/** The words of the goals and, past GOALS_SHOWN lines, the fold's toggle (also drawn by the controller after a write). */
-function goalsWords(text) {
-  const lines = text ? text.split('\n') : [], more = lines.length - GOALS_SHOWN
-  const fold = text ? html`<button type="button" class="desk-goals-fold" data-action="goals#collapse" aria-expanded="true">Hide goals</button><button type="button" class="desk-goals-unfold" data-action="goals#collapse" aria-expanded="false" aria-label="Show goals">${sk('unfold')}<span>Goals · ${lines.length}</span></button>` : ''
+/** The words of the goals and, with two lines or more, the one toggle that folds them to the first line and opens
+ *  them again (also drawn by the controller after a write). */
+export function goalsWords(text, folded = false) {
+  const lines = text ? text.split('\n') : []
+  const fold = lines.length > 1 ? html`<button type="button" class="desk-goals-toggle" data-action="goals#toggle" aria-expanded="${folded ? 'false' : 'true'}" aria-label="${folded ? `Show all ${lines.length} goals` : 'Show the first goal only'}" title="${folded ? 'Show all' : 'Fold'}">${sk('unfold')}</button>` : ''
   const line = l => { const m = GOAL_SIGN.exec(l); return m ? html`<span class="dg-line has-sign"><span class="dg-sign">${m[1]}</span><span>${m[2]}</span></span>` : html`<span class="dg-line">${l}</span>` }
-  return html`<button type="button" class="desk-goals-show${text ? '' : ' is-empty'}" data-action="goals#edit" title="Goals">${text ? lines.map(line) : 'Goals…'}</button>${more > 0 ? html`<button type="button" class="desk-goals-more" data-action="goals#toggle" data-more="${more}" aria-expanded="false">+${more} more</button>` : ''}${fold}`
+  return html`<button type="button" class="desk-goals-show${text ? '' : ' is-empty'}" data-action="goals#edit" title="Goals">${text ? lines.map(line) : 'Goals…'}</button>${fold}`
 }
 
 /** The Desk of a new account (no session yet): a calm note with one way on, inviting the first agent. The button sends
@@ -369,44 +370,36 @@ function artifactsPile(model, base) {
 }
 
 // ---- controller "goals" ----
-// The goals under the greeting. Folded: lines past GOALS_SHOWN are behind "+N more"; open or not is kept per desk on
-// this device. Written in place: a click turns the words into a field of up to GOALS_LINES lines that grows with them
+// The goals under the greeting. One toggle: folded, the first line; open, all of them; kept per desk on this device. Written in place: a click turns the words into a field of up to GOALS_LINES lines that grows with them
 // to twelve rows and scrolls beyond (Enter a new line, none past the last; Ctrl/⌘+Enter or a click beside keeps; Esc
 // leaves it as it was). Leaving the field always keeps: the blur event, and, because a document without focus (a
 // background tab, a window behind another) sends none, also a press outside it, the page being hidden or left, and a
 // look at document.activeElement while the field is open. While he writes, the live stream does not replace the
 // heading the field stands in: what comes is held, and applied when he is done (or dropped, when his own write
 // follows: the stream then brings the heading anew).
-const GOALS_OPEN = 'trommi-goals-open'
 const GOALS_FOLDED = 'trommi-goals-folded'
 /** The desks whose goals are folded on this device (their ids). */
 const goalsFolded = () => { try { const v = JSON.parse(localStorage.getItem(GOALS_FOLDED) ?? '[]'); return Array.isArray(v) ? v.map(String) : [] } catch { return [] } }
-const goalsOpen = () => { try { const v = JSON.parse(localStorage.getItem(GOALS_OPEN) ?? '[]'); return Array.isArray(v) ? v.map(String) : [] } catch { return [] } }
 controller('goals', class extends Controller {
   static values = { desk: String, text: String }
   connect() {
     this.held = new Map(); this.hold = e => this.holdStream(e)
     this.away = e => { if (this.field && e.target !== this.field) this.done(true) }
     this.left = () => { if (this.field && (document.visibilityState === 'hidden' || document.activeElement !== this.field)) this.done(true) }
-    this.fold(goalsOpen().includes(this.deskValue))
   }
   disconnect() { if (this.field) this.done(true, { flush: false }) }
-  fold(open) {
-    this.element.classList.toggle('is-open', open)
-    const more = this.element.querySelector('.desk-goals-more')
-    if (more) { more.setAttribute('aria-expanded', String(open)); more.textContent = open ? 'Show less' : `+${more.dataset.more} more` }
-  }
+  /** The chevron: the goals fold to their first line and open again, per desk on this device. */
   toggle() {
-    const open = !this.element.classList.contains('is-open')
-    this.fold(open)
-    try { localStorage.setItem(GOALS_OPEN, JSON.stringify([...goalsOpen().filter(d => d !== this.deskValue), ...(open ? [this.deskValue] : [])].slice(-50))) } catch {}
-  }
-  /** Hide goals / Goals · N: the goals fold to one line and open again, per desk on this device. */
-  collapse() {
     const folded = !this.element.classList.contains('is-folded')
-    this.element.classList.toggle('is-folded', folded)
+    this.fold(folded)
     try { localStorage.setItem(GOALS_FOLDED, JSON.stringify([...goalsFolded().filter(d => d !== this.deskValue), ...(folded ? [this.deskValue] : [])].slice(-50))) } catch {}
-    this.element.querySelector(folded ? '.desk-goals-unfold' : '.desk-goals-show')?.focus()
+  }
+  fold(folded) {
+    this.element.classList.toggle('is-folded', folded)
+    const t = this.element.querySelector('.desk-goals-toggle')
+    if (!t) return
+    const n = (this.element.dataset.goalsTextValue ?? '').split('\n').length
+    t.setAttribute('aria-expanded', String(!folded)); t.setAttribute('aria-label', folded ? `Show all ${n} goals` : 'Show the first goal only'); t.title = folded ? 'Show all' : 'Fold'
   }
   edit() {
     if (this.field) return
@@ -452,7 +445,7 @@ controller('goals', class extends Controller {
     document.removeEventListener('turbo:before-stream-render', this.hold)
     const text = cleanGoals(f.value), changed = keep && text !== this.was
     f.remove(); this.element.classList.remove('is-writing')
-    if (changed) { this.element.dataset.goalsTextValue = text; this.element.innerHTML = String(goalsWords(text)); this.fold(this.element.classList.contains('is-open')) }
+    if (changed) { this.element.dataset.goalsTextValue = text; const folded = this.element.classList.contains('is-folded') && text.includes('\n'); this.element.innerHTML = String(goalsWords(text, folded)); this.fold(folded) }
     const held = [...this.held.values()]; this.held.clear()
     const apply = () => { if (flush) for (const el of held) document.documentElement.append(el) }
     if (!changed) return apply()

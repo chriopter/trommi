@@ -358,8 +358,8 @@ function boardModel(state, agents = state.agents, desk = null) {
 }
 
 /** A desk's goals as they are kept: at most GOALS_LINES lines of at most GOALS_LINE_MAX characters, no blank lines at
- *  either end, no trailing spaces. The Desk shows the first GOALS_SHOWN and folds the rest (desk.mjs deskGoals). */
-export const GOALS_LINES = 20, GOALS_LINE_MAX = 200, GOALS_SHOWN = 5
+ *  either end, no trailing spaces. The Desk folds them to the first line on a tap (desk.mjs deskGoals). */
+export const GOALS_LINES = 20, GOALS_LINE_MAX = 200
 export const cleanGoals = text => String(text ?? '').replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+$/, '').slice(0, GOALS_LINE_MAX)).join('\n').replace(/^\n+|\n+$/g, '').split('\n').slice(0, GOALS_LINES).join('\n')
 
 /** Who receives a note: the crowned session of the desk. One crown per desk: the starred session. */
@@ -732,7 +732,7 @@ export class BoardState {
       return {
         id: r.id, device_id: key, session_id: s.session_id ?? null, agent_device_id: s.agent_device_id, name: r.given, label: r.label, icon: r.icon, icon_by: set.icon ? 'human' : 'agent',
         online: r.online, offline_since: r.offline_since ?? null, account: accountOf.get(s.agent_device_id) ?? null, model: p.model ?? '', task: p.task ?? '', client: dev?.platform ?? '', host: '', starred: r.starred, parent: r.parent ?? null, main: r.main,
-        desk: r.desk, archived: r.archived, replaced: r.replaced, group: set.group ?? null, position: r.position, placed: r.placed, seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: r.device_active ?? 0,
+        desk: r.desk, path: r.path ?? [], model_label: r.model_label ?? '', archived: r.archived, replaced: r.replaced, group: set.group ?? null, position: r.position, placed: r.placed, seen: s.last_activity_at ?? 0, connected: s.last_activity_at ?? 0, active: s.last_activity_at ?? 0, device_active: r.device_active ?? 0,
         removed: r.removed, own: r.own,
         link: s.link ?? null, heard_up_to: s.heard_up_to ?? null,
         slot: !s.parent_session_id && dev?.folder ? `${dev.host ?? ''}\n${dev.folder}` : null, born: dev?.added_entry_number ?? 0,

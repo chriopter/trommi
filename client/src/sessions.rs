@@ -76,6 +76,11 @@ pub struct SessionRow {
     pub recheck_at: Option<u64>,
     /// What each of its status lines shows now, by line id (status.rs `line_state`).
     pub lines: BTreeMap<String, String>,
+    /// Where it stands, as a card's page names its sender: its desk (when there are two or more), its main session
+    /// (for a helper), itself. `session_path`.
+    pub path: Vec<String>,
+    /// The model it runs on as its heading says it (`model_label`: "Opus 5.5", "GPT-6.1"); empty when it named none.
+    pub model_label: String,
 }
 
 fn is_hex_id(s: &str) -> bool {
@@ -204,6 +209,42 @@ fn parent_claim<'a>(m: &'a Model, s: &'a Session) -> Option<&'a str> {
     ok.then_some(want)
 }
 
+/// A model's id as a session's heading shows it, short and quiet: "claude-opus-5-5" is "Opus 5.5",
+/// "claude-sonnet-4-5-20250929" "Sonnet 4.5", "gpt-6.1" "GPT-6.1", "gpt-5.1-codex" "GPT-5.1 Codex". An id of another
+/// form stays as it is; none is "".
+pub fn model_label(id: &str) -> String {
+    let id = id.trim();
+    if id.is_empty() {
+        return String::new();
+    }
+    let lower = id.to_ascii_lowercase();
+    // (Claude: family and version; a date and a context tag such as "[1m]" are left out)
+    if let Some(rest) = lower.strip_prefix("claude-") {
+        let rest = rest.split('[').next().unwrap_or(rest);
+        let parts: Vec<&str> = rest.split('-').filter(|p| !(p.len() == 8 && p.bytes().all(|b| b.is_ascii_digit()))).collect();
+        if let Some(fam) = parts.iter().position(|p| p.chars().all(|c| c.is_ascii_alphabetic())) {
+            let name = parts[fam];
+            let version: Vec<&str> = parts.iter().filter(|p| p.chars().all(|c| c.is_ascii_digit())).copied().collect();
+            let mut out = name[..1].to_ascii_uppercase() + &name[1..];
+            if !version.is_empty() {
+                out.push(' ');
+                out.push_str(&version.join("."));
+            }
+            return out;
+        }
+    }
+    if let Some(rest) = lower.strip_prefix("gpt-") {
+        let mut words = rest.split('-');
+        let mut out = format!("GPT-{}", words.next().unwrap_or(""));
+        for w in words {
+            out.push(' ');
+            out.push_str(&(w[..1].to_ascii_uppercase() + &w[1..]));
+        }
+        return out;
+    }
+    id.to_string()
+}
+
 /// The session list. `reading`: the room is still being read (a session whose profile has not come shows
 /// "Loading …" rather than its id).
 pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
@@ -225,7 +266,53 @@ pub fn session_list(m: &Model, reading: bool) -> Vec<SessionRow> {
             .partial_cmp(&b.position)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    session_paths(m, &mut out);
     out
+}
+
+/// The desks that are there (a register `desk/<id>` with a value), in the menu's order: the place he dragged each to
+/// (`order`), else the first desk ("main") first, then by age. Each with its name ("Personal" when it has none).
+pub fn desks_in_order(m: &Model) -> Vec<(String, String)> {
+    let mut d: Vec<(String, Option<f64>, u64, String)> = m
+        .human
+        .iter()
+        .filter_map(|(k, r)| k.strip_prefix("desk/").map(|id| (id, &r.value)))
+        .filter(|(_, v)| v.is_object())
+        .map(|(id, v)| {
+            let name = v.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).unwrap_or("Personal");
+            (id.to_string(), v.get("order").and_then(Value::as_f64), v.get("created_at").and_then(Value::as_u64).unwrap_or(0), name.to_string())
+        })
+        .collect();
+    let ordered = d.iter().any(|x| x.1.is_some());
+    d.sort_by(|a, b| {
+        if ordered {
+            a.1.unwrap_or(f64::INFINITY).partial_cmp(&b.1.unwrap_or(f64::INFINITY)).unwrap_or(std::cmp::Ordering::Equal).then(a.2.cmp(&b.2))
+        } else {
+            (a.0 != "main").cmp(&(b.0 != "main")).then(a.2.cmp(&b.2))
+        }
+    });
+    d.into_iter().map(|(id, _, _, name)| (id, name)).collect()
+}
+
+/// Each row's path (`SessionRow::path`): its desk's name while there are two desks or more (a desk that is gone counts
+/// as the first), its main session's name for a helper, its own name.
+fn session_paths(m: &Model, out: &mut [SessionRow]) {
+    let desks = desks_in_order(m);
+    let names: HashMap<String, String> = out.iter().map(|a| (a.id.clone(), a.name.clone())).collect();
+    for a in out.iter_mut() {
+        let mut p = Vec::new();
+        if desks.len() > 1 {
+            let d = desks.iter().find(|(id, _)| *id == a.desk).or(desks.first());
+            if let Some((_, n)) = d {
+                p.push(n.clone());
+            }
+        }
+        if let Some(main) = a.parent.as_ref().and_then(|x| names.get(x)) {
+            p.push(main.clone());
+        }
+        p.push(a.name.clone());
+        a.path = p;
+    }
 }
 
 /// The sessions the list shows as archived (their session ids): the Desk leaves their cards out, so that a card
@@ -359,6 +446,7 @@ fn rows_of(m: &Model, reading: bool) -> (Vec<SessionRow>, Vec<&Session>) {
             position: position.unwrap_or(i as f64),
             placed: position.is_some(),
             desk: text(set.get("desk")).unwrap_or("").to_string(),
+            model_label: model_label(text(p.get("model")).unwrap_or("")),
             starred: crown.as_deref() == Some(key.as_str())
                 || (crown.is_some() && crown == s.agent_device_id),
             main: truthy(p.get("is_main")),
@@ -513,6 +601,40 @@ mod tests {
         }
         s.profile = Some(p);
         s.open_card_ids = (0..open).map(|i| format!("c{i}")).collect();
+    }
+
+    /// The path a card's page shows: desk (two or more desks), main session (a helper), the session itself.
+    #[test]
+    fn the_path_names_the_desk_the_main_session_and_itself() {
+        let mut m = Model::new();
+        member(&mut m, "d0", 1, true);
+        member(&mut m, "d1", 1, true);
+        session(&mut m, S0, "d0", true, None, 0);
+        session(&mut m, S1, "d1", true, Some(S0), 0);
+        let row = |m: &Model, k: &str| session_list(m, false).into_iter().find(|r| r.key == k).unwrap();
+        // one desk: no desk in the path
+        m.human.insert("desk/main".into(), HumanRegister { value: json!({ "name": "Work" }), ..Default::default() });
+        assert_eq!(row(&m, S0).path, vec![row(&m, S0).name.clone()]);
+        assert_eq!(row(&m, S1).path, vec![row(&m, S0).name.clone(), row(&m, S1).name.clone()]);
+        // two desks: the desk's name first; a session on no desk that is there stands on the first
+        m.human.insert("desk/lab".into(), HumanRegister { value: json!({ "name": "Lab", "created_at": 5 }), ..Default::default() });
+        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "lab", "name": "Core" }), ..Default::default() });
+        assert_eq!(row(&m, S0).path, vec!["Lab".to_string(), "Core".to_string()]);
+        assert_eq!(row(&m, S1).path[..2], ["Lab".to_string(), "Core".to_string()]);
+        m.human.insert(format!("session/{S0}"), HumanRegister { value: json!({ "desk": "gone", "name": "Core" }), ..Default::default() });
+        assert_eq!(row(&m, S0).path, vec!["Work".to_string(), "Core".to_string()]);
+    }
+
+    #[test]
+    fn model_labels_are_short() {
+        assert_eq!(model_label("claude-opus-5-5"), "Opus 5.5");
+        assert_eq!(model_label("claude-sonnet-4-5-20250929"), "Sonnet 4.5");
+        assert_eq!(model_label("claude-opus-5-5[1m]"), "Opus 5.5");
+        assert_eq!(model_label("claude-haiku-4-5"), "Haiku 4.5");
+        assert_eq!(model_label("gpt-6.1"), "GPT-6.1");
+        assert_eq!(model_label("gpt-5.1-codex"), "GPT-5.1 Codex");
+        assert_eq!(model_label("o4-mini"), "o4-mini");
+        assert_eq!(model_label("  "), "");
     }
 
     fn shown(m: &Model) -> Vec<String> {

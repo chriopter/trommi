@@ -51,6 +51,11 @@ public struct Agent: Identifiable, Equatable {
   public var hue: Int = 162
   /** Whether the human gave it a place in the order (its register's position; the sidebar's drag on the web). */
   public var placed: Bool = false
+  /** Where it stands, as a card's page names its sender: desk (two or more), main session (a helper), itself; the
+   *  client core's (client/src/sessions.rs `path`). */
+  public var path: [String] = []
+  /** The model it runs on as its heading says it ("Opus 5.5"): the client core's (client/src/sessions.rs model_label). */
+  public var modelLabel: String = ""
   /** Archived because a newer pairing in the same folder took its place (the client core's session list). */
   public var replaced: Bool = false
   /** At the client core's clock (client/src/status.rs): its link (nil when archived or removed), why it is stopped
@@ -343,8 +348,8 @@ public struct DeskDesc: Identifiable, Equatable {
  *  kept in the desk's register desk/<id> as the field goals (a human register: end-to-end encrypted like the name, on
  *  every device of his). At most GOALS_LINES lines of at most GOALS_LINE_MAX characters (UTF-16 units, as the web
  *  counts; never half a character), no spaces at a line's end, no blank lines at either end. The caps are the same
- *  on every client and in the connector; the Desk shows the first GOALS_SHOWN lines and folds the rest. */
-public let GOALS_LINES = 20, GOALS_LINE_MAX = 200, GOALS_SHOWN = 5
+ *  on every client and in the connector; the Desk folds them to their first line on a tap. */
+public let GOALS_LINES = 20, GOALS_LINE_MAX = 200
 public func cleanGoals(_ text: String) -> String {
   var lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { raw -> String in
     var l = Substring(raw)
@@ -357,12 +362,12 @@ public func cleanGoals(_ text: String) -> String {
   while lines.last == "" { lines.removeLast() }
   return lines.prefix(GOALS_LINES).joined(separator: "\n")
 }
-/** The goals as the Desk shows them folded (desk.mjs goalsWords): the first GOALS_SHOWN lines, and how many more
- *  there are behind "+N more" (0: nothing to fold). */
+/** The goals as the Desk shows them folded (desk.mjs goalsWords): the first line, and how many more lie under it
+ *  (0: one line, nothing to fold, no toggle). */
 public func goalsFold(_ text: String) -> (shown: String, more: Int) {
   let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-  if lines.count <= GOALS_SHOWN { return (text, 0) }
-  return (lines.prefix(GOALS_SHOWN).joined(separator: "\n"), lines.count - GOALS_SHOWN)
+  if lines.count <= 1 { return (text, 0) }
+  return (String(lines[0]), lines.count - 1)
 }
 /** The register a desk has after its goals were written (app.mjs hub.desk({ id, goals })): every other field kept, the
  *  field gone when the text is empty; a desk that is not there yet starts as the first desk, "Personal". */
@@ -499,6 +504,8 @@ public final class DeskModel {
                     deviceActive: s.agentDeviceId.flatMap { lastOfDevice[$0] } ?? 0, removed: r["removed"].truthy, own: r["own"].truthy, link: s.link, heardUpTo: s.heardUpTo)
       a.hue = Pen.hueFor(id: a.id, mark: a.mark)
       a.placed = r["placed"].truthy
+      a.path = r["path"].array?.compactMap(\.string) ?? []
+      a.modelLabel = r["model_label"].string ?? ""
       a.replaced = r["replaced"].truthy
       let lv = r["link"]
       if lv.object != nil { a.linkState = CoreLink(state: lv["state"].string ?? "live", since: lv["since"].double.map { UInt64(max(0, $0)) }, reason: lv["reason"].string ?? "") }
