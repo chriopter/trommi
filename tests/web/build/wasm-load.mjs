@@ -5,7 +5,8 @@
 // starts a module worker that loads core-wasm.ts (probe-worker.mjs; the app's own worker does not load the core yet).
 // It checks:
 //   1. as built: the binding's own self test passes there (selfTest(Date.now()): every step ok), versions() answers,
-//      a call the binding lacks throws `core-missing`, a refusal of the binding keeps its code, and neither the page
+//      a call that the binding once lacked (hubAddress) is answered by the binding itself, not by a core-missing stand-in
+//      (core-wasm.ts's table of missing calls is empty), a refusal of the binding keeps its code, and neither the page
 //      nor the worker saw a policy violation;
 //   2. with 'wasm-unsafe-eval' taken out of the policy the same load is refused, as a compile error that names the
 //      policy: the keyword is necessary, and (1) shows it is enough;
@@ -69,7 +70,7 @@ try {
   const steps = built.selfTest?.steps ?? []
   check(built.selfTest?.ok === true && steps.length > 0 && steps.every(step => step.ok), "the binding's self test passes in the worker", built.selfTest ?? built)
   check(typeof built.versions?.core === 'string' && built.versions.core.length > 0 && built.versions.binding?.includes(pins['wasm-bindgen']), 'versions() answers and names the pinned wasm-bindgen', built.versions)
-  check(built.missing?.code === 'core-missing' && /hubAddress/.test(built.missing.message), 'a call the binding lacks throws core-missing and names itself', built.missing)
+  check(typeof built.address?.value === 'string' && built.address.value.length > 0 && built.address.code === undefined, 'hubAddress is the binding\'s own call, not a core-missing stand-in', built.address)
   check(typeof built.refusal === 'string' && built.refusal !== 'core-missing' && built.refusal !== 'internal', "a refusal of the binding keeps its code through errorCode()", built.refusal)
   check(built.violations?.length === 0 && built.pageViolations?.length === 0, 'no policy violation in the worker or the page', built)
 
