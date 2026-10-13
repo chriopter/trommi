@@ -433,13 +433,35 @@ struct ServedByHub {
     return (main, helper)
   }
 
+  /// What a sign-in holds of its sessions' GroupInfos and logs before the core has checked any of it (`readSession`):
+  /// so much of one session, so much of all together. The hub names the sessions and serves their logs, so without
+  /// a limit it decides how much memory the phone spends before the first check.
+  nonisolated(unsafe) static var heldPerSession = 4 << 20   // (a variable for the tests alone)
+  static let heldAtOnce = 48 << 20
+  actor Held {
+    private var left: Int
+    init(_ bytes: Int = ServedByHub.heldAtOnce) { left = bytes }
+    /// Takes `bytes` of what may still be held; false when that is more than is left.
+    func take(_ bytes: Int) -> Bool { guard bytes <= left else { return false }; left -= bytes; return true }
+  }
+
   /// What a session's check reads from the hub (no call into the core): its current and founding GroupInfos and
-  /// the Commits of its log up to the current epoch, page by page.
-  func readSession(_ id: GroupId) async throws -> (current: Bytes, founding: Bytes, pages: [[PastCommit]]) {
+  /// the Commits of its log up to the current epoch, page by page. nil when that is more than a sign-in holds
+  /// unchecked (`heldPerSession`, `held`): the session is then checked page by page as it is read
+  /// (`checkSession(_:on:)`), one page held at a time.
+  func readSession(_ id: GroupId, held: Held) async throws -> (current: Bytes, founding: Bytes, pages: [[PastCommit]])? {
     let current = try await hub.groupInfoBytes(id)
     let founding = current.epoch == 0 ? current.bytes : try await hub.groupInfoBytes(id, epoch: 0).bytes
+    var mine = current.bytes.count + founding.count
+    guard mine <= Self.heldPerSession, await held.take(mine) else { return nil }
     var pages = GroupLogPages(hub: hub, group: id, below: current.epoch), all = [[PastCommit]]()
-    while let page = try await pages.next() { all.append(page) }
+    while let page = try await pages.next() {
+      // (every page read counts, also one without a Commit: a log of pages that hold none does not grow for free)
+      let size = page.reduce(1024) { $0 + $1.commit.count + ($1.recoveryAuth?.count ?? 0) + 64 }
+      mine += size
+      guard mine <= Self.heldPerSession, await held.take(size) else { return nil }
+      if !page.isEmpty { all.append(page) }
+    }
     return (current.bytes, founding, all)
   }
 
@@ -559,9 +581,10 @@ extension LiveCore {
     //  the main sessions' joins)
     async let keys = reader.sealedKeys()
     let all = waves.flatMap { $0 }
-    let reads = try await ServedByHub.each(all, at: 16) { group in Unchecked(value: await Result(catching: { try await reader.readSession(group) })) }
+    let unchecked = ServedByHub.Held()
+    let reads = try await ServedByHub.each(all, at: 16) { group in Unchecked(value: await Result(catching: { try await reader.readSession(group, held: unchecked) })) }
     sealed = try await keys
-    var readOf = [GroupId: Result<(current: Bytes, founding: Bytes, pages: [[PastCommit]]), Error>]()
+    var readOf = [GroupId: Result<(current: Bytes, founding: Bytes, pages: [[PastCommit]])?, Error>]()
     for (group, r) in zip(all, reads) { readOf[group] = r.value }
     for (at, todo) in waves.enumerated() where !todo.isEmpty {
       // (the main sessions are in: their open cards can show while the helper sessions are joined)
@@ -570,7 +593,10 @@ extension LiveCore {
       for group in todo {
         let served = Unchecked(value: readOf[group]!)
         do {
-          let current = try reader.checkSession(group, served: try served.value.get(), on: device)
+          // (a session too large to hold unchecked: read and checked page by page, now)
+          let read = try served.value.get()
+          let current: Bytes
+          if let read { current = try reader.checkSession(group, served: read, on: device) } else { current = try await reader.checkSession(group, on: device) }
           let id = try device.joinSessionCheckedKeys(code, group: group, current: current, rows: sealed!.sealedKeys, links: sealed!.links, nowMs: now)
           guard let entry = device.outbox().first(where: { $0.id == id }) else { throw TrommiError("internal", "an entry the core named is not in the outbox") }
           built.append((group, entry))

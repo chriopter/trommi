@@ -290,6 +290,50 @@ final class RoomRecoveryTests: XCTestCase {
     XCTAssertGreaterThan(PocketRoutes.asked.filter { $0.hasSuffix("/groups/\(b64u(room))/log") }.count, 2, "the log is read in pages")
   }
 
+  /// A SESSION WHOSE LOG IS MORE THAN A SIGN-IN HOLDS UNCHECKED (review finding F4). The hub names the sessions and
+  /// serves their logs: what is read ahead of the core's check is held only up to a limit per session and for all
+  /// together. A session beyond it is dropped from what is held and checked page by page as it is read, and joined
+  /// all the same.
+  func testASessionLogBeyondWhatIsHeldUncheckedIsCheckedPageByPage() async throws {
+    let secret = try tools.generateRecoveryCode()
+    let a = try newDevice(), agent = try newDevice()
+    let room = try a.foundRoom(recoveryCode: secret, nowMs: nowMs())
+    try hub.post(a)
+    let invite = try exchangeInvite(from: a, to: agent, role: .agent, tools: tools)
+    try agent.joinObserve(groupInfo: try XCTUnwrap(hub.infos[room]?[0]))
+    _ = try a.inviteConfirm(invite: invite.invite, numbers: invite.inviterShows, requestHash: invite.requestHash, matches: true, nowMs: nowMs())
+    try hub.post(a)
+    guard case .foundSession(_, _, let keyPackage)? = try a.inviteSteps().first else { return XCTFail("the invite asks for no session") }
+    let session = room + (try a.foundSession(agent: agent.id, keyPackages: [keyPackage], nowMs: nowMs()))
+    try hub.post(a)
+    for _ in 0..<40 { _ = try a.update(group: session, forced: true, nowMs: nowMs()); try hub.post(a) }
+    // the limit: the session's two GroupInfos fit, its log does not
+    let infos = try XCTUnwrap(hub.infos[session]), newest = try XCTUnwrap(infos.keys.max())
+    let logBytes = hub.log.reduce(0) { sum, entry in if case .commit(let commit, _) = entry.kind, entry.group == session { return sum + commit.count } else { return sum } }
+    let was = ServedByHub.heldPerSession
+    ServedByHub.heldPerSession = (infos[newest]?.count ?? 0) + (infos[0]?.count ?? 0) + 1024 + 512
+    addTeardownBlock { ServedByHub.heldPerSession = was }
+    XCTAssertGreaterThan(logBytes, 4 * 1536, "the log is more than the limit leaves")
+
+    // the budget itself: what is taken is gone, and more than is left is refused whole
+    let held = ServedByHub.Held(100)
+    let (first, tooMuch, rest) = (await held.take(60), await held.take(41), await held.take(40))
+    XCTAssertEqual([first, tooMuch, rest], [true, false, true])
+
+    let base = try scratchFolder(self)
+    let joined = try await Room.joinWithRecoveryCode(hubURL: PocketRoutes.url, roomId: hex(room), code: secret, base: base)
+    addTeardownBlock { await joined.shutdown() }
+    await joined.codeJoinSettled()
+    // read twice by the sign-in: once ahead (given up at the limit, nothing of it kept), once page by page with the
+    // core's check
+    XCTAssertEqual(PocketRoutes.asked.filter { $0.hasSuffix("/groups/\(b64u(session))/log") }.count, 2)
+    _ = try await joined.sync()
+    try await joined.flush()
+    _ = try await joined.sync()
+    let device = try XCTUnwrap(joined.device as? LiveDevice)
+    XCTAssertEqual(Set(try device.groups().map(\.group)), [room, session], "the session is joined all the same")
+  }
+
   /// The join of the room group is taken and its answer is lost: the room group's log, handed to the core, holds
   /// the device's own join, so the sign-in goes on with this device; nothing is posted twice.
   func testALostAnswerToATakenJoinIsSettledByTheLog() async throws {
