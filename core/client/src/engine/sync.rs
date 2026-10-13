@@ -1,6 +1,9 @@
 //! The engine itself: one state, driven by events, answering with effects. See [`super`] for the design.
 
-use super::hubapi::*;
+use crate::hub::{
+    Answer, ChangeItem, Codec, DeskOnly, EnvelopeItem, Expect, GroupRead, LogItem, ObjectRoute, Only, OutboxAnswer, Presence, Refusal, Role, Route, Site,
+    StreamEvent, StreamReader, WishKind,
+};
 use super::memstore::{self, Writes};
 use super::{Backoff, Jitter};
 use crate::app::io::{DeviceEntry, HttpResponse, IoId, IoResult, StoreAnswer, StoreOp, StreamItem};
@@ -278,8 +281,8 @@ struct StreamConn<S> {
 }
 
 /// The sync engine of one device in one room.
-pub struct Engine<H: HubCodec> {
-    codec: H,
+pub struct Engine {
+    codec: Codec,
     device: Device<memstore::MemStore>,
     writes: Writes,
     room: RoomId,
@@ -288,7 +291,7 @@ pub struct Engine<H: HubCodec> {
     client: String,
     jitter: Jitter,
     stopped: Option<Stopped>,
-    pending: BTreeMap<IoId, Asked<H::Expect>>,
+    pending: BTreeMap<IoId, Asked<Expect>>,
     reports: VecDeque<Report>,
 
     // signing in
@@ -338,7 +341,7 @@ pub struct Engine<H: HubCodec> {
     desk: DeskRead,
 
     // the stream
-    stream: Option<StreamConn<H::Stream>>,
+    stream: Option<StreamConn<StreamReader>>,
     stream_retry: Retry,
     /// The room's head as a page said it: a hint for where to open the stream.
     head_hint: Option<u64>,
@@ -375,14 +378,13 @@ pub enum OpenError {
     Hub,
 }
 
-impl<H: HubCodec> Engine<H> {
+impl Engine {
     /// Opens the device the shell loaded and makes its engine. Nothing is asked of the hub yet (`drive`).
-    pub fn open(codec: H, hub: &str, client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>) -> Result<Self, OpenError> {
-        Self::open_with(codec, hub, client, seed, revision, entries, Box::new(SystemEntropy))
+    pub fn open(hub: &str, client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>) -> Result<Self, OpenError> {
+        Self::open_with(hub, client, seed, revision, entries, Box::new(SystemEntropy))
     }
 
     pub fn open_with(
-        codec: H,
         hub: &str,
         client: &str,
         seed: u64,
@@ -399,7 +401,7 @@ impl<H: HubCodec> Engine<H> {
         let room = device.room().ok_or(OpenError::NoRoom)?;
         let position = device.cursor();
         Ok(Engine {
-            codec,
+            codec: Codec,
             device,
             writes,
             room,
@@ -864,7 +866,7 @@ impl<H: HubCodec> Engine<H> {
         }
     }
 
-    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(H::Expect) -> Asked<H::Expect>) -> Option<IoId> {
+    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(Expect) -> Asked<Expect>) -> Option<IoId> {
         let site = Site {
             url: &self.hub,
             token: if token { self.token.as_ref().map(|t| t.value.as_str()) } else { None },
@@ -1027,7 +1029,7 @@ impl<H: HubCodec> Engine<H> {
                         None
                     }
                     Failure::Refused { .. } => {
-                        match refusal.as_ref().map(|r| r.code.as_str()) {
+                        match refusal.as_ref().map(|r| r.code) {
                             Some("not-member") => self.report(Report::Alert(Alert::NotMember)),
                             Some("client-too-old") => self.report(Report::Alert(Alert::ClientTooOld)),
                             _ => {}
@@ -1650,7 +1652,7 @@ impl<H: HubCodec> Engine<H> {
             return;
         }
         if self.desk.want && self.desk.asked.is_none() {
-            self.desk.asked = self.ask(ctx, Route::Desk { active: true }, true, Asked::Desk);
+            self.desk.asked = self.ask(ctx, Route::Desk { only: DeskOnly::Active }, true, Asked::Desk);
             if self.desk.asked.is_none() {
                 self.desk.want = false;
             }
@@ -1775,7 +1777,7 @@ impl<H: HubCodec> Engine<H> {
         };
         self.flush(ctx);
         let id = ctx.id();
-        self.stream = Some(StreamConn { id, reader: self.codec.stream(from), opened: false, from, heard_at: ctx.now });
+        self.stream = Some(StreamConn { id, reader: StreamReader::new(from), opened: false, from, heard_at: ctx.now });
         ctx.out.push(Effect::OpenStream { id, request });
     }
 
@@ -1883,7 +1885,7 @@ impl<H: HubCodec> Engine<H> {
         }
     }
 
-    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(H::Expect) -> Asked<H::Expect>) -> Option<IoId> {
+    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(Expect) -> Asked<Expect>) -> Option<IoId> {
         self.ask(ctx, Route::Outbox { room, entry, extra: None }, true, asked)
     }
 
@@ -1946,17 +1948,19 @@ impl<H: HubCodec> Engine<H> {
     /// entry again after a wait, never dropped, never reordered; inside, the hub's `Retry-After`. `None`: settled
     /// here (refused for good, or the pump halts on it and has set its own wait).
     fn not_accepted(&mut self, ctx: &mut Ctx<'_>, entry: u64, kind: OutboxKind, group: Option<GroupId>, failure: Failure, refusal: Option<Refusal>) -> Option<Option<u64>> {
-        let code = match (&failure, refusal.as_ref()) {
-            (Failure::Refused { .. }, Some(refusal)) => Error::from_code(&refusal.code).filter(|code| !refusal_is_passing(code)),
+        // (`code` is set only for the hub's own refusal: a proxy's page never voids or rolls back)
+        let named = match &failure {
+            Failure::Refused { code: Some(code), .. } => Some(code.as_str()),
             _ => None,
         };
+        let code = named.and_then(Error::from_code).filter(|code| !refusal_is_passing(code));
         let Some(code) = code else {
             let retry_after = match (&failure, refusal.as_ref()) {
                 (Failure::NotNow { retry_after_ms, .. }, _) => *retry_after_ms,
                 (_, Some(refusal)) => refusal.retry_after_ms,
                 _ => None,
             };
-            if refusal.as_ref().is_some_and(|r| r.code == "client-too-old") {
+            if named == Some("client-too-old") {
                 self.report(Report::Alert(Alert::ClientTooOld));
             }
             return Some(retry_after);

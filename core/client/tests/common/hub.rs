@@ -12,7 +12,8 @@
 //! - `GET /v1/changes`: `head` is the room's newest change; `active=1` is not told apart from all;
 //! - Welcomes: kept until the test drops them (the real hub deletes one when its device writes in the group);
 //! - the Desk: an object is open while the header of its newest envelope says so (the real hub replays 9.2);
-//!   `active=1` is not told apart; never truncated unless a test says so; registers are not served;
+//!   `active=1` is not told apart; cut at 1000 objects of a kind as the real hub cuts (not at its 20 000 registers
+//!   or 8 MiB); every writer's newest value per register is served; every device is served every group's objects;
 //! - files, pushes, accounts, invites, recovery: not there.
 
 #![allow(dead_code)]
@@ -31,6 +32,8 @@ use trommi_core::store::{OutboxEntry, OutboxKind};
 use trommi_core::Error;
 
 pub const HUB_URL: &str = "https://hub.example";
+/// The real hub lists at most so many open objects of a kind on the Desk.
+pub const DESK_MAX: usize = 1000;
 
 /// One entry of the room's order.
 #[derive(Clone)]
@@ -60,10 +63,29 @@ impl Item {
                 }
                 v
             }
-            Item::Envelope { change, bytes, void_code, seq, .. } => {
-                json!({ "change": change, "kind": "envelope", "envelope": b64(bytes), "received_at": 0, "void_code": void_code, "seq": seq })
+            Item::Envelope { .. } => {
+                let mut v = self.served();
+                v["kind"] = json!("envelope");
+                v
             }
         }
+    }
+    /// An envelope as a route serves it that brings envelopes alone (the Desk, an object, a Chat).
+    pub fn served(&self) -> Value {
+        let Item::Envelope { change, bytes, void_code, .. } = self else { return self.json() };
+        let mut v = json!({ "change": change, "envelope": b64(bytes), "received_at": 0 });
+        if let Some(code) = void_code {
+            v["void_code"] = json!(code);
+        }
+        v
+    }
+    /// An envelope as a link of its sender's chain.
+    pub fn link(&self) -> Value {
+        let mut v = self.served();
+        if let Item::Envelope { seq, .. } = self {
+            v["seq"] = json!(seq);
+        }
+        v
     }
     /// As the stream sends it.
     pub fn sse(&self) -> Vec<u8> {
@@ -110,14 +132,8 @@ pub struct No {
 fn no(error: Error) -> No {
     let code = error.code();
     No {
-        status: match code {
-            "unauthorised" | "bad-challenge" => 401,
-            "not-member" | "forbidden" | "wrong-sender" => 403,
-            "not-found" => 404,
-            "gone" => 410,
-            "bad-format" => 400,
-            _ => 409,
-        },
+        // (the status the protocol gives the code: the codec takes a refusal only under its own)
+        status: trommi_client_core::hub::status_of(code).unwrap_or(409),
         code: code.to_string(),
         voided: false,
     }
@@ -187,6 +203,8 @@ pub struct Hub {
     pub objects: BTreeMap<trommi_core::ids::ObjectId, Obj>,
     /// The Desk says it was cut short.
     pub desk_truncated: bool,
+    /// Every writer's newest value per register: the change of its envelope.
+    pub registers: BTreeMap<(GroupId, DeviceId, Vec<u8>), u64>,
     /// The `first_change` the Desk names for every object; none: the truth.
     pub first_change_lie: Option<u64>,
     /// Every SealedKey the hub was posted, in order (8.3).
@@ -420,6 +438,9 @@ impl Hub {
                 }
                 *head = seq;
                 self.change += 1;
+                if let trommi_core::envelope::Subject::Register(register) = &header.subject {
+                    self.registers.insert((group, sender, register.as_bytes().to_vec()), self.change);
+                }
                 if let Some(fields) = header.subject.object() {
                     use trommi_core::envelope::{ObjectState, ObjectType, Subject};
                     let change = self.change;
@@ -499,7 +520,10 @@ impl Hub {
         let path = request.url.strip_prefix(HUB_URL).unwrap_or("/nowhere").to_string();
         self.seen.push(format!("{} {path}", request.method));
         Ok(match self.route(now, request, &path) {
-            Ok(body) => answer(200, body),
+            Ok(body) => {
+                super::shape::check(&request.method, &path, &body);
+                answer(200, body)
+            }
             Err(n) => answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided })),
         })
     }
@@ -537,7 +561,7 @@ impl Hub {
                     return Err(no(Error::NotMember));
                 };
                 self.counter += 1;
-                let token = format!("token-{}", self.counter);
+                let token = format!("token-of-the-stand-in-{}", self.counter);
                 self.tokens.insert(token.clone(), (device, now + 600_000));
                 return Ok(json!({ "token": token, "expires_at": now + 600_000, "role": role }));
             }
@@ -634,33 +658,43 @@ impl Hub {
                     .order
                     .iter()
                     .filter(|i| matches!(i, Item::Envelope { group: g, sender: s, seq, .. } if *g == group && *s == sender && *seq > after && *seq < stop))
-                    .map(Item::json)
+                    .map(Item::link)
                     .collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "items": items, "more": more }))
             }
             ("GET", ["v1", "desk"]) => {
-                let item = |change: u64| self.order.iter().find(|i| i.change() == change).map(Item::json);
-                let list = |request: bool| -> Vec<Value> {
-                    self.objects
-                        .iter()
-                        .filter(|(_, o)| o.open && (o.card || o.request) && o.request == request)
+                let item = |change: u64| self.order.iter().find(|i| i.change() == change).map(Item::served);
+                // (as the real hub: by first_change, at most 1000 of a kind, and `truncated` when one was cut)
+                let list = |request: bool| -> (Vec<Value>, bool) {
+                    let mut open: Vec<_> = self.objects.iter().filter(|(_, o)| o.open && (o.card || o.request) && o.request == request).collect();
+                    open.sort_by_key(|(_, o)| o.first_change);
+                    let cut = open.len() > DESK_MAX;
+                    open.truncate(DESK_MAX);
+                    let rows = open
+                        .into_iter()
                         .map(|(id, o)| {
                             json!({ "object_id": id.to_base64url(), "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "answered_at": 0,
                                 "owner": DeviceId::new([0; 32]).to_base64url(), "first_change": self.first_change_lie.unwrap_or(o.first_change), "head_change": o.head_change,
-                                "version": item(o.version), "version_change": o.version })
+                                "version": item(o.version) })
                         })
-                        .collect()
+                        .collect();
+                    (rows, cut)
                 };
-                Ok(json!({ "cards": list(false), "permission_requests": list(true), "notes": [], "artifacts": [], "registers": [], "truncated": self.desk_truncated, "change": self.change }))
+                let ((cards, cut), (requests, cut_too)) = (list(false), list(true));
+                let mut newest: Vec<u64> = self.registers.values().copied().collect();
+                newest.sort_unstable();
+                let registers: Vec<Value> = newest.into_iter().filter_map(item).collect();
+                Ok(json!({ "cards": cards, "permission_requests": requests, "notes": [], "artifacts": [], "registers": registers, "groups": [],
+                    "truncated": self.desk_truncated || cut || cut_too, "change": self.change }))
             }
             ("GET", ["v1", kind @ ("cards" | "permission-requests"), object]) => {
                 let _ = kind;
                 let id = trommi_core::ids::ObjectId::from_base64url(object).map_err(no)?;
                 let o = self.objects.get(&id).ok_or(no(Error::NotFound))?;
                 let (after, limit) = (num("after"), num("limit").clamp(1, 2000) as usize);
-                let mut items: Vec<Value> = o.envelopes.iter().filter(|c| **c > after).filter_map(|c| self.order.iter().find(|i| i.change() == *c).map(Item::json)).collect();
+                let mut items: Vec<Value> = o.envelopes.iter().filter(|c| **c > after).filter_map(|c| self.order.iter().find(|i| i.change() == *c).map(Item::served)).collect();
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "object_id": object, "group_id": b64(o.group.as_bytes()), "state": 1, "urgency": 1, "owner": DeviceId::new([0; 32]).to_base64url(),

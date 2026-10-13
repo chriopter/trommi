@@ -125,7 +125,7 @@ fn code_of(failure: &Failure) -> &'static str {
     }
 }
 
-impl<H: HubCodec> Engine<H> {
+impl Engine {
     /// Joins the live session groups of a sign-in with the code (see the module). A second call while one runs adds
     /// its groups and replaces the keys.
     pub fn join_sessions(&mut self, ctx: &mut Ctx<'_>, joins: SessionJoins) {
@@ -305,7 +305,7 @@ impl<H: HubCodec> Engine<H> {
         let mut one = One { group, started: true, current: Some((row.info, row.epoch)), after: 0, reached: 0 };
         match self.join_slices(&mut one, &row.log) {
             Ok(true) => self.join_build(ctx, j, one),
-            Ok(false) if row.more => j.one = Some(one),
+            Ok(false) if !row.complete => j.one = Some(one),
             // (the log ends before the epoch named: the check and the GroupInfo decide)
             Ok(false) => self.join_build(ctx, j, one),
             Err(e) => self.join_failed(ctx, j, group, &e),
@@ -459,14 +459,9 @@ impl<H: HubCodec> Engine<H> {
         for ((entry, group), row) in entries.into_iter().zip(rows) {
             match row {
                 Ok(taken) => self.accepted(ctx, entry, OutboxKind::ExternalCommit, group, taken),
+                // (a row's refusal names its code alone: no void record, no wait of its own)
                 Err(failure) => {
-                    let refusal = match &failure {
-                        Failure::Refused { status, code: Some(code) } => {
-                            Some(Refusal { code: code.clone(), status: *status, voided: false, retry_after_ms: None, epoch: None, seq: None, device: None, group })
-                        }
-                        _ => None,
-                    };
-                    if let Some(retry_after) = self.not_accepted(ctx, entry, OutboxKind::ExternalCommit, group, failure, refusal) {
+                    if let Some(retry_after) = self.not_accepted(ctx, entry, OutboxKind::ExternalCommit, group, failure, None) {
                         wait = Some(wait.flatten().max(retry_after));
                     }
                 }

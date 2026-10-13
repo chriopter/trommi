@@ -33,7 +33,7 @@ pub use io::{
     IoResult, PlatformAnswer, PlatformOp, SecretOp, StoreAnswer, StoreOp, StreamItem,
 };
 
-use crate::engine::{self, Codec, Connection, Engine, Jitter, OpenError, Report};
+use crate::engine::{self, Connection, Engine, Jitter, OpenError, Report};
 use crate::views::{Lens, Phase, Screen, ViewModel};
 use std::collections::BTreeMap;
 
@@ -60,7 +60,7 @@ pub struct App {
     #[allow(dead_code)] // (the engine draws its own from the same seed)
     jitter: Jitter,
     /// The sync engine, once the stored device opened.
-    engine: Option<Engine<Codec>>,
+    engine: Option<Engine>,
     /// The timer the shell holds.
     timer: Option<u64>,
     /// What the engine reported for the person (until the views show them: W4).
@@ -121,7 +121,7 @@ impl App {
     }
 
     /// The sync engine, once the stored device opened.
-    pub fn engine(&self) -> Option<&Engine<Codec>> {
+    pub fn engine(&self) -> Option<&Engine> {
         self.engine.as_ref()
     }
 
@@ -284,7 +284,7 @@ impl App {
             .entropy
             .take()
             .unwrap_or_else(|| Box::new(trommi_core::crypto::SystemEntropy));
-        match Engine::open_with(Codec::default(), hub, &client, config.seed, revision, entries, entropy) {
+        match Engine::open_with(hub, &client, config.seed, revision, entries, entropy) {
             Ok(engine) => {
                 self.board = engine::feed::Board::new(engine.device());
                 self.stale_views = true;
@@ -308,7 +308,7 @@ impl App {
         &mut self,
         now_ms: u64,
         out: &mut Vec<Effect>,
-        step: impl FnOnce(&mut Engine<Codec>, &mut engine::Ctx<'_>) -> T,
+        step: impl FnOnce(&mut Engine, &mut engine::Ctx<'_>) -> T,
     ) -> Option<T> {
         let engine = self.engine.as_mut()?;
         let mut ctx = engine::Ctx {

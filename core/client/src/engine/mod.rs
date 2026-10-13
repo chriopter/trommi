@@ -51,6 +51,12 @@
 //! is a hint for what to read: every envelope is checked like any other, and the list only ever HOLDS a card back
 //! ([`crate::desk`]), it cannot make one.
 //!
+//! The hub cuts its Desk short (1000 objects of a kind, 20 000 registers, 8 MiB) and says `truncated`: such a list
+//! decides nothing, what it brought is shown, and the rest comes in the hub's order. Nothing here relies on the
+//! list being whole, on a version being the newest, or on the change numbers beyond their order. The Desk's
+//! registers are read like its versions, out of the order; the core does not say of such a register whether it is
+//! current, so the model takes a session's or a device's register only once the order reaches it (a finding, open).
+//!
 //! [`feed::Board`] turns the reports into the board model (`crate::model`), which the views are made from.
 //!
 //! # A sign-in's sessions
@@ -79,19 +85,16 @@
 //! The contract fixes the retry rule here, so every app waits the same way.
 
 pub mod feed;
-pub mod hubapi;
 pub mod memstore;
-pub mod stub;
 pub mod sync;
 
-pub use hubapi::HubCodec;
 pub use sync::{Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
 
 /// The device inside the engine: the protocol core's, over the store whose writes become barrier effects.
 pub type Device = trommi_core::device::Device<memstore::MemStore>;
 
-/// The hub codec the App runs on: the stand-in until W2's `crate::hub` codec lands (one line to switch).
-pub type Codec = stub::StubCodec;
+/// The hub codec the engine runs on: the routes built and their answers read strictly ([`crate::hub`]).
+pub type Codec = crate::hub::Codec;
 
 /// How long to wait before the next try of something that failed with `NotNow` or `Offline`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

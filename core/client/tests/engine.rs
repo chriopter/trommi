@@ -602,6 +602,26 @@ fn a_sign_in_with_a_thousand_open_cards_goes_live_with_the_whole_desk() {
 }
 
 #[test]
+fn a_desk_one_above_the_hubs_limit_is_cut_short_and_the_order_brings_the_rest() {
+    let mut world = World::new();
+    for n in 0..=common::hub::DESK_MAX {
+        world.agent_card(&format!("card {n}"));
+    }
+    let mut sim = world.sim();
+    sim.hold = true;
+    sim.send(start());
+    serve(&world, &mut sim, |r| r.url.contains("/rooms/"));
+    assert_eq!(serve(&world, &mut sim, |r| r.url.contains("/v1/desk")), 1);
+    // the hub's list is cut short: it decides nothing, but what it brought stands
+    assert_eq!(stack(&sim).len(), common::hub::DESK_MAX);
+    assert!(sim.app.board().desk_complete);
+    while serve(&world, &mut sim, |_| true) > 0 {}
+    assert_eq!(sim.view.phase, Phase::Live);
+    assert_eq!(stack(&sim).len(), common::hub::DESK_MAX + 1, "the card the Desk left out came with the order");
+    assert!(sim.app.alerts().is_empty(), "{:?}", sim.app.alerts());
+}
+
+#[test]
 #[ignore = "a measurement: where a thousand-card sign-in spends its time"]
 fn where_the_time_goes() {
     let mut world = World::new();
@@ -797,4 +817,20 @@ fn without_the_first_versions_the_revised_cards_stand_out_of_place_until_the_ord
     while serve(&world, &mut sim, |_| true) > 0 {}
     assert_eq!(sim.view.phase, Phase::Live);
     assert!(in_order(&places(&sim)), "by the time asked once the order was read: {:?}", places(&sim));
+}
+
+#[test]
+#[ignore = "a finding, not yet so: the core reads a register out of the order without saying whether it is current, so the model takes a session's or a device's register only when the order reaches it"]
+fn a_register_of_the_desk_stands_on_the_board_before_the_order_is_read() {
+    let mut world = World::new();
+    world.agent_register("profile", r#"{"name":"Builder"}"#);
+    world.agent_says("a line after it");
+    let mut sim = world.sim();
+    sim.hold = true;
+    sim.send(start());
+    serve(&world, &mut sim, |r| r.url.contains("/rooms/"));
+    assert_eq!(serve(&world, &mut sim, |r| r.url.contains("/v1/desk")), 1);
+    let session = trommi_client_core::engine::feed::hex(world.session.as_bytes());
+    let held = sim.app.board().model.sessions.get(&session).is_some_and(|s| s.registers.contains_key("profile"));
+    assert!(held, "the Desk brought the session's profile");
 }
