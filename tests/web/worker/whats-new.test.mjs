@@ -1,4 +1,4 @@
-// /whats-new.json (app/web/whats-new.mjs through worker.js): What's new from the GitHub releases' notes, the day
+// /whats-new.json (app/web/whats-new.mjs through worker.js): What's new from the public GitHub releases' notes, the day
 // summaries (public/changelog/CHANGELOG.md) and the frozen history (public/changelog/history.json). GitHub is a
 // stand-in here; the worker's ASSETS reads public/ as in association.test.mjs.
 //   node --test tests/web/worker/
@@ -55,36 +55,54 @@ test('days: a line on the day of its first release, tagged with every part that 
   assert.equal(changelogHead('iPhone: the app no longer crashes.').tag, 'iPhone')
 })
 
-test('the releases: read page by page with the token, up to the old series; kept ten minutes; kept ones when GitHub fails', async () => {
+/** Cloudflare's cache as a stand-in: what is put is matched again (by its address). */
+const fakeCache = () => { const m = new Map(); return { m, async match(k) { const r = m.get(String(k.url ?? k)); return r ? r.clone() : undefined }, async put(k, r) { m.set(String(k.url ?? k), r.clone()) } } }
+
+test('the releases: read page by page without a token, up to the old series; a token only when one is set', async () => {
   forget()
   const asked = []
-  let fail = false
   const page = n => Array.from({ length: 100 }, (_, i) => ({ tag_name: `web-v${1000 - (n - 1) * 100 - i}`, published_at: '2026-10-15T10:00:00Z', body: '' }))
   const get = async (url, init) => {
     asked.push([url, init.headers.Authorization])
-    if (fail) return new Response('no', { status: 503 })
     const n = Number(new URL(url).searchParams.get('page'))
     return Response.json(n === 1 ? page(1) : [{ tag_name: 'web-v900' }, { tag_name: 'v375' }, { tag_name: 'v374' }])
   }
-  const env = { GITHUB_RELEASES_TOKEN: 'secret' }
-  const got = await readReleases(env, { fetch: get, now: 0 })
-  assert.equal(got.length, 103)
-  assert.deepEqual(asked.map(a => a[1]), ['Bearer secret', 'Bearer secret'])
+  assert.equal((await readReleases({}, { fetch: get, now: 0, cache: null })).length, 103)
+  assert.deepEqual(asked.map(a => a[1]), [undefined, undefined], 'unauthenticated')
   assert.match(asked[0][0], /^https:\/\/api\.github\.com\/repos\/trommi\/trommi\/releases\?per_page=100&page=1$/)
-  await readReleases(env, { fetch: get, now: 599_000 })
-  assert.equal(asked.length, 2, 'kept for ten minutes')
-  fail = true
-  assert.equal((await readReleases(env, { fetch: get, now: 601_000 })).length, 103, 'GitHub failed: the kept ones')
   forget()
-  await assert.rejects(readReleases({}, { fetch: get, now: 0 }))
-  assert.equal(asked.at(-1)[1], undefined, 'no token: unauthenticated')
+  await readReleases({ GITHUB_RELEASES_TOKEN: 'secret' }, { fetch: get, now: 0, cache: null })
+  assert.equal(asked.at(-1)[1], 'Bearer secret')
+  forget()
+})
+
+test('the releases: fresh ten minutes in the isolate and in Cloudflare\'s cache; on any GitHub error the last good list, asked again in two minutes', async () => {
+  forget()
+  const cache = fakeCache()
+  let calls = 0, status = 200
+  const get = async () => { calls++; return status === 200 ? Response.json([{ tag_name: 'web-v1', published_at: '2026-10-15T10:00:00Z', body: '' }]) : new Response('rate limited', { status }) }
+  assert.equal((await readReleases({}, { fetch: get, now: 0, cache })).length, 1)
+  forget()   // another isolate of the same data centre: from the cache, GitHub not asked
+  await readReleases({}, { fetch: get, now: 599_000, cache })
+  assert.equal(calls, 1)
+  forget()
+  status = 403   // limited: the last good list, and GitHub not asked again for two minutes
+  assert.equal((await readReleases({}, { fetch: get, now: 700_000, cache })).length, 1)
+  assert.equal(calls, 2)
+  forget()
+  assert.equal((await readReleases({}, { fetch: get, now: 760_000, cache })).length, 1)
+  assert.equal(calls, 2, 'within two minutes of the failure: not asked')
+  await readReleases({}, { fetch: get, now: 830_000, cache })
+  assert.equal(calls, 3, 'after two minutes: asked again')
+  forget()
+  await assert.rejects(readReleases({}, { fetch: async () => { throw new Error('offline') }, now: 0, cache: fakeCache() }), 'nothing kept: no releases')
   forget()
 })
 
 test('/whats-new.json: JSON from the releases, the summaries and the history in public/changelog/; GitHub down: still the history', async () => {
   forget()
   const get = async () => Response.json([rel('web-v1', new Date().toISOString(), [{ number: 7, title: 'New: today\'s thing', body: '' }])])
-  const r = await whatsNew(new Request('https://app.trommi.com/whats-new.json'), { ASSETS }, { fetch: get })
+  const r = await whatsNew(new Request('https://app.trommi.com/whats-new.json'), { ASSETS }, { fetch: get, cache: null })
   assert.equal(r.status, 200)
   assert.match(r.headers.get('Content-Type'), /^application\/json/)
   assert.equal(r.headers.get('Cache-Control'), 'public, max-age=600')
@@ -98,7 +116,7 @@ test('/whats-new.json: JSON from the releases, the summaries and the history in 
   const real = globalThis.fetch
   globalThis.fetch = async () => { throw new Error('offline') }
   let down
-  try { down = await worker.fetch(new Request('https://app.trommi.com/whats-new.json'), { ASSETS, GITHUB_RELEASES_TOKEN: 'x' }) } finally { globalThis.fetch = real }
+  try { down = await worker.fetch(new Request('https://app.trommi.com/whats-new.json'), { ASSETS }) } finally { globalThis.fetch = real }
   assert.equal(down.status, 200)
   assert.equal(down.headers.get('Cache-Control'), 'public, max-age=60')
   assert.ok((await down.json()).days.length >= history.length)
