@@ -363,32 +363,38 @@ export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
 /** The lines a session's page shows (their state as app.mjs lineState made it): the working ones, those that wait on
  *  him, those put off with their card, and a done one for a while; not the stale ones nor those of a gone session. */
 const shownLines = (tasks, now = Date.now()) => tasks.filter(t => ['working', 'decision', 'later'].includes(t.state) || (t.state === 'done' && now - (t.updated ?? 0) < WORKING_WINDOW))
-/** The status lines of the session's running work, and that it is answering. They stand at the end of the conversation. */
+const lineMark = t => html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span>`
+/** The status lines of the session's running work, and that it is answering, at the end of the conversation: one row
+ *  of small chips (mark, title, age), never two rows; on a phone the row scrolls sideways. A chip with a question
+ *  opens it; one without shows its detail under the row on a tap (and hides it on a second). */
 function sessionStatus(s, base, now = Date.now()) {
   const last = s.messages.findLast(m => m.from !== 'event')
   const answering = last?.from === 'user' && now - last.ts < WORKING_WINDOW
   const lines = shownLines(s.tasks, now)
-  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.map(t => {
-    const card = lineCard(t, s.model, s.cards, s.tasks)
-    const inner = html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span><b>${t.label}</b>${t.detail ? html`<span class="status-detail">${t.detail}</span>` : ''}${t.updated ? html`<span class="status-when"><span data-short aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${ico('clock')}${agoSpan(t.updated, 'offscreen')}</span>` : ''}`
-    // (on a phone only the title and the time; a tap opens the detail and the way to its question below, a second shuts it)
-    const href = card ? questionPath(card, base) : ''
-    return html`<div class="status-row" data-key="${t.agent}:${t.id}">${card ? html`<a class="status-line" data-state="${t.state}" data-nav href="${href}" data-action="click->status-lines#toggle">${inner}</a>` : html`<p class="status-line" data-state="${t.state}" data-action="click->status-lines#toggle">${inner}</p>`}${t.detail || card ? html`<div class="status-more">${t.detail ? html`<p>${t.detail}</p>` : ''}${card ? html`<a class="status-open" data-nav href="${href}">Open the question →</a>` : ''}</div>` : ''}</div>`
-  })}</div>`
+  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.length ? html`<div class="status-chips" role="list">${lines.map(t => {
+    const card = lineCard(t, s.model, s.cards, s.tasks), tip = [t.label, t.detail].filter(Boolean).join(': ')
+    const inner = html`${lineMark(t)}<b>${t.label}</b>${t.updated ? html`<span class="status-age" aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${agoSpan(t.updated, 'offscreen')}` : ''}`
+    if (card) return html`<a class="status-chip" role="listitem" data-state="${t.state}" data-nav href="${questionPath(card, base)}" title="${tip}">${inner}</a>`
+    return html`<button type="button" class="status-chip" role="listitem" data-state="${t.state}" data-key="${t.agent}:${t.id}" data-detail="${tip}" title="${tip}" aria-expanded="false" data-action="status-lines#toggle">${inner}</button>`
+  })}</div><p class="status-detail-line" hidden></p>` : ''}</div>`
 }
-// The status lines on a phone: a tap on one opens its detail below it (and shuts it again); the rows that are open stay
-// open when the live piece is drawn anew. On a wide screen a line is what it was: a link to its question.
+// A chip without a question: a tap shows its title and detail under the row, a second tap hides it; the one shown stays
+// shown when the live piece is drawn anew.
 const statusOpen = new Set()
 controller('status-lines', class extends Controller {
-  connect() { for (const row of this.element.querySelectorAll('.status-row')) if (statusOpen.has(row.dataset.key)) row.dataset.open = '' }
+  connect() { const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip) }
   toggle(e) {
-    if (!mq('(max-width: 860px)').matches) return
-    const row = e.target.closest('.status-row')
-    if (!row?.querySelector('.status-more')) return
-    e.preventDefault(); e.stopPropagation()
-    const open = !('open' in row.dataset)
-    if (open) { row.dataset.open = ''; statusOpen.add(row.dataset.key) } else { delete row.dataset.open; statusOpen.delete(row.dataset.key) }
-    row.querySelector('.status-line').setAttribute('aria-expanded', String(open))
+    const chip = e.currentTarget, on = chip.getAttribute('aria-expanded') === 'true'
+    for (const c of this.element.querySelectorAll('.status-chip[data-key]')) { c.setAttribute('aria-expanded', 'false'); statusOpen.delete(c.dataset.key) }
+    const out = this.element.querySelector('.status-detail-line')
+    if (on) { if (out) out.hidden = true; return }
+    this.show(chip)
+  }
+  show(chip) {
+    const out = this.element.querySelector('.status-detail-line')
+    if (!out) return
+    chip.setAttribute('aria-expanded', 'true'); statusOpen.add(chip.dataset.key)
+    out.textContent = chip.dataset.detail; out.hidden = false
   }
 })
 /** "N open": the questions of this session that wait, and the way to the first of them. */

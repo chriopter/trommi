@@ -580,33 +580,27 @@ turbo-frame.log-earlier[busy] > .log-earlier-link { opacity: .5; pointer-events:
 #session a.shot { cursor: zoom-in; }
 #session a.event { text-align: left; user-select: text; -webkit-user-select: text; }
 #session a.msg-about { text-align: left; }
-/* What the session is at, at the end of the conversation: one quiet line per piece of running work. */
-.session-status { display: grid; gap: 6px; justify-items: start; margin-top: var(--s-6); }
+/* What the session is at, at the end of the conversation: its running work as one row of chips. */
+.session-status { display: grid; gap: 6px; justify-items: stretch; margin-top: var(--s-6); }
 .session-status[hidden] { display: none; }
-.status-line { display: flex; align-items: center; gap: var(--s-2); max-width: 100%; min-width: 0; color: var(--muted); font-size: var(--t-sm); }
-.status-line b { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: 600; }
-.status-line[data-state="done"] b { color: var(--muted); font-weight: 500; }
-.status-line[data-state="decision"] .status-mark { color: var(--urg-high); }
-.status-line[data-state="done"] .status-mark { color: var(--faint); }
-.status-line[data-state="later"] b { color: var(--muted); font-weight: 500; }
-.status-line[data-state="later"] .status-mark { color: var(--faint); }
 .session-status .working { margin-top: var(--s-2); }
-/* a status row: its line, and on a phone what a tap opens below it (session.mjs status-lines) */
-.status-row { display: grid; max-width: 100%; min-width: 0; }
-.status-more { display: none; }
-/* the time short, beside a small clock ("4m"); the words stay for a screen reader */
-.status-when { display: inline-flex; align-items: center; gap: 3px; flex: none; color: var(--faint); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
-.status-when .ico { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; }
-@media (max-width: 860px) {
-  .session-status { justify-items: stretch; }
-  .status-line { cursor: pointer; }
-  .status-line b { flex: 1 1 auto; max-width: none; text-align: left; }
-  .status-line .status-detail { display: none; }
-  .status-line .status-when { margin-left: auto; }
-  .status-row[data-open] .status-more { display: grid; gap: 6px; padding: 4px 0 6px calc(18px + var(--s-2)); }
-  .status-more p { margin: 0; color: var(--muted); font-size: var(--t-sm); line-height: 1.45; }
-  .status-open { justify-self: start; color: var(--accent); font-weight: 600; font-size: var(--t-sm); text-decoration: none; }
-}
+/* one row of chips, never two; on a phone it scrolls sideways (session.mjs sessionStatus) */
+.status-chips { display: flex; gap: 6px; min-width: 0; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.status-chips::-webkit-scrollbar { display: none; }
+.status-chip { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 16rem; height: 30px; padding: 0 10px 0 7px; border: 0; border-radius: var(--r-pill); background: var(--sunken); color: var(--fg); font: 400 var(--t-sm)/1 var(--font); text-decoration: none; cursor: pointer; }
+.status-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.status-chip .status-mark { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; }
+.status-chip .status-mark :is(svg, .sketch) { width: 16px; height: 16px; }
+.status-chip[data-state="decision"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--urg-high) 55%, transparent); }
+.status-chip[data-state="decision"] .status-mark { color: var(--urg-high); }
+.status-chip:is([data-state="later"], [data-state="done"]) { color: var(--muted); }
+.status-chip:is([data-state="later"], [data-state="done"]) .status-mark { color: var(--faint); }
+.status-chip[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--line-strong); }
+a.status-chip:hover b, a.status-chip:focus-visible b { text-decoration: underline; text-underline-offset: 3px; }
+.status-age { color: var(--faint); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.status-detail-line { margin: 0 4px; color: var(--muted); font-size: var(--t-sm); line-height: 1.45; }
+.status-detail-line[hidden] { display: none; }
+@media (max-width: 860px) { .status-chip { max-width: 11rem; } }
 /* The composer: the clip is the label of a real file field; the chosen files stand above the words. */
 .composer-clip { cursor: pointer; }
 /* The heading's controls (ui.mjs), on the heading's line: the name in the heading's letters. */
@@ -778,7 +772,6 @@ a.files-where:hover span { text-decoration: underline; }
 #session .composer > .send { order: 3; width: 38px; height: 38px; border-radius: var(--r-md); background: var(--accent); color: var(--accent-fg); }
 #session .composer > .send:disabled { background: var(--accent); color: var(--accent-fg); opacity: .45; }
 @media (max-width: 860px) { #session .composer > :is(.composer-clip, .send) { width: 44px; height: 44px; } #session .composer { border-radius: 14px; } }
-a.status-line:hover b, a.status-line:focus-visible b { text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---- the heading on one line (session.mjs sessionWho, sessionDot, sessionFilters, sessionUsage): the drawing and the
    name, the connection as a dot (what the session is at, its model and machine in its tip), the switch; at the right
@@ -808,3 +801,4 @@ a.status-line:hover b, a.status-line:focus-visible b { text-decoration: underlin
   body[data-t-view="session"]:not([data-pair]) #session .pane-who .head-use-mini:not(:empty) + .t-pick-desk { margin-left: 2px; }
   #session .pane-who .head-dot { display: none; }
 }
+
