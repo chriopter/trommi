@@ -1,0 +1,99 @@
+# The Linux app (app/linux, README.md "Linux app"): its build, its tests and a smoke test of the window, on its own so
+# that it never slows the other parts' checks. It runs only when the app or what it is built from changed: app/linux,
+# the client core, the protocol core and its facade, the connector (its hub client and journal), the pins.
+#
+# The smoke test starts the app with Qt's offscreen platform and an empty data folder: the QML loads, the window
+# draws the sign-in screen, writes a picture of itself and quits. The picture is kept as the run's artifact.
+#
+# Nothing is released or delivered from here yet; it reads no secret.
+name: linux
+
+on:
+  pull_request:
+    paths:
+      - app/linux/**
+      - client/**
+      - core/**
+      - connector/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/linux.yml
+  push:
+    branches: [main]
+    paths:
+      - app/linux/**
+      - client/**
+      - core/**
+      - connector/**
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+      - .github/workflows/linux.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: linux-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  app:
+    name: Linux app (check)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Qt 6 and the build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            qt6-base-dev qt6-declarative-dev qt6-declarative-private-dev \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtqml-workerscript \
+            libgl-dev lld
+          qmake6 -query QT_VERSION
+      - name: Compiler (rust-toolchain.toml)
+        run: |
+          rustup toolchain install || rustup show
+          rustc --version
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          prefix-key: v2-rust-linux
+          workspaces: app/linux -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build
+        working-directory: app/linux
+        env:
+          QMAKE: qmake6
+        run: cargo build --locked -j 4
+      - name: Tests
+        working-directory: app/linux
+        env:
+          QMAKE: qmake6
+        run: cargo test --locked -j 4
+      - name: Smoke test (Qt offscreen)
+        working-directory: app/linux
+        run: |
+          data=$(mktemp -d)
+          QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 TROMMI_LINUX_DIR="$data" \
+            TROMMI_LINUX_SHOT="$PWD/smoke.png" TROMMI_LINUX_SHOT_AFTER_MS=500 \
+            timeout 60 target/debug/trommi-linux 2>&1 | grep -v '^qt\.' || true
+          test -s smoke.png || { echo "the window drew nothing"; exit 1; }
+          # (a QML error would leave the window empty: the picture must not be one plain colour)
+          test "$(stat -c %s smoke.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: linux-smoke
+          path: app/linux/smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
