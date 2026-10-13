@@ -109,6 +109,11 @@ pub fn received_of(r: &ReceivedEnvelope) -> rx::Received {
         }),
         register: r.register.as_ref().map(|x| rx::RegisterTaken { name: x.name.clone(), current: x.current }),
         payload: r.body.as_ref().map(|body| String::from_utf8_lossy(body.payload()).into_owned()),
+        shown: r
+            .shown
+            .iter()
+            .map(|shown| rx::Shown { name: shown.name.clone(), now: shown.now.as_deref().map(|now| Box::new(received_of(now))) })
+            .collect(),
     }
 }
 

@@ -593,8 +593,18 @@ export interface ReceivedEnvelope {
   dropped: ErrorCode | null
   /** The group's objects and registers were built again in the hub's order: read them again. */
   replayed: boolean
+  /** On a human device: register names whose value read out of the hub's order stood and is dropped with this
+   *  envelope, with what stands for each now (spec 9.3.6); the board model applies them with the envelope. */
+  shown: RegisterShown[]
   /** On an agent or helper device: `command` decides whether to act on it. */
   command: boolean
+}
+
+export interface RegisterShown {
+  name: string
+  of: Uint8Array | null
+  /** The envelope whose value stands for the name now; null: the name has no value. */
+  now: { change: number; envelopeHash: Uint8Array; header: EnvelopeHeader; provisional: boolean; payload: Uint8Array } | null
 }
 
 export interface ChainHead {

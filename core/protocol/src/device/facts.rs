@@ -69,6 +69,9 @@ const PRESENT: [u8; 1] = [1];
 /// The parts of the table of registers.
 pub(super) const SUB_REGISTERS: u8 = 0;
 pub(super) const SUB_OWN_IDS: u8 = 1;
+/// A human device's register values read out of the hub's order (9.3.6), by sender and number: kept apart
+/// from the registers its chains build.
+pub(super) const SUB_OVERLAY: u8 = 2;
 
 const ROLE_NONE: u8 = 0;
 
@@ -448,6 +451,7 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
         table::REGISTER => match rest.u8().map_err(|_| damaged("a key"))? {
             SUB_REGISTERS => Registers::from_bytes(value).map(|_| ()),
             SUB_OWN_IDS => crate::registers::OwnIds::from_bytes(value).map(|_| ()),
+            SUB_OVERLAY => super::overlay::check_entry(key.get(2..).unwrap_or_default(), value),
             _ => Err(Error::BadFormat),
         },
         _ => Ok(()),
@@ -1413,6 +1417,7 @@ impl<S: Storage> Device<S> {
             return Ok(());
         }
         self.end_chain(batch, group, cut, epoch, epoch)?;
+        self.overlay_cut(batch, group, &cut.device, cut.seq)?;
         // This device's own chain ends there too: whatever it signed beyond the Cut is void, and if its key
         // is added again, its next envelope is the one after the Cut (3.7).
         if cut.device == self.id {

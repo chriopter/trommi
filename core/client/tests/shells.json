@@ -48,7 +48,7 @@
   "app/web/core/account.ts": 575,
   "app/web/core/board.ts": 54,
   "app/web/core/check-emoji.ts": 28,
-  "app/web/core/client.ts": 1810,
+  "app/web/core/client.ts": 1812,
   "app/web/core/codec.ts": 147,
   "app/web/core/core-api.ts": 57,
   "app/web/core/core-start.ts": 42,

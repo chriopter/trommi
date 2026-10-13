@@ -270,6 +270,7 @@ export class Client {
   private deskReading: Promise<void> | null = null
   /** A reading of this run read the versions it lacked (`readDeskNow`). */
   private deskVersionsRead = false
+  private deskRegistersRead = false // (the Desk's registers got to the core in this run; until then: the full Desk, 9.3.6)
   /** A session group was joined: the next reading takes the hub's full Desk (its open objects' newest versions and
    *  every register of the groups: the sessions' names and status lines), not only the list. */
   private deskFullDue = false
@@ -908,6 +909,7 @@ export class Client {
     this.deskVersionsRead = true
     const reading = this.engine.position < brief.change || this.engine.rescanPending || this.readingHolds > 0
     const fromFull = full && !full.truncated ? full : null
+    const registersDue = !fromFull && !this.deskRegistersRead && (first || this.engine.rescanPending); let withRegisters = !!fromFull
     const versions = fromFull
       ? (() => {
           const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`))
@@ -918,9 +920,9 @@ export class Client {
           const all = [...objects, ...fromFull.registers, ...[...fromFull.notes, ...fromFull.artifacts].flatMap(o => (o.version ? [o.version] : []))]
           return all.filter(i => !this.deskTaken.has(i.change))
         })()
-      : lacking.length > DESK_ONE_BY_ONE && !first && reading ? []
-      : lacking.length > DESK_ONE_BY_ONE
-      ? await this.hub.desk({ active: true }).then(full => { for (const o of [...full.cards, ...full.permission_requests]) d.firsts.set(hex(o.object_id), o.first_change); const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
+      : lacking.length > DESK_ONE_BY_ONE && !first && reading && !registersDue ? []
+      : lacking.length > DESK_ONE_BY_ONE || registersDue
+      ? await this.hub.desk({ active: true }).then(full => { for (const o of [...full.cards, ...full.permission_requests]) d.firsts.set(hex(o.object_id), o.first_change); const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); withRegisters = registersDue && !full.truncated; return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])).concat(withRegisters ? full.registers.filter(i => !this.deskTaken.has(i.change)) : []) }).catch(() => [])
       : (await inParallel(lacking, async o => {
           const got = await this.hub.objectEnvelopes(o.route, o.object_id, { after: o.version_change - 1, limit: 1 }).catch(() => null)
           if (got) d.firsts.set(hex(o.object_id), got.first_change)
@@ -935,9 +937,9 @@ export class Client {
     for (const got of await inParallel(answered, c => this.hub.objectEnvelopes('cards', unhex(c.object_id), { after: c.state_envelope_number, limit: 20 }).then(got => ({ got, c })).catch(() => null))) {
       if (got && got.got.head_change > got.c.state_envelope_number) missing.push(...got.got.items)
     }
-    const received = missing.length ? await this.engine.receivePage(missing.sort((x, y) => x.change - y.change)).catch(() => []) : []
+    const received = missing.length ? await this.engine.receivePage(missing.sort((x, y) => x.change - y.change)).catch(() => { withRegisters = false; return [] }) : []
     // (what opened is not handed again by the next full reading; what did not, its group not joined yet, is)
-    if (fromFull) for (const r of received) if (r.outcome !== 'refused') this.deskTaken.add(r.change)
+    if (withRegisters) { this.deskRegistersRead = true; for (const r of received) if (r.outcome !== 'refused') this.deskTaken.add(r.change) }
     // a card the hub lists as open that this device holds as handed back: the newest page of its Chat says whether
     // the agent put it before the human again since (a present this device missed, or one an older app read before
     // the hand back it answered); once per hand back and run, the few there are

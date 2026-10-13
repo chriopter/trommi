@@ -177,7 +177,7 @@ export class World {
       payload: payload === null || outcome === 'chained' || outcome === 'void' || outcome === 'refused' ? null : utf8(JSON.stringify(payload)),
       bind: outcome === 'applied' || outcome === 'provisional' ? coreBind : null,
       objectAfter: after ? { objectId: raw(after.object_id), objectType: object?.object_type ?? 'card', owner: raw(after.owner), objectState: after.object_state, current: raw(after.current_version), answer: null } : null,
-      register: register && { of: null, ...register }, confirmed: null, dropped: null, replayed: false, command: false,
+      register: register && { of: null, ...register }, confirmed: null, dropped: null, replayed: false, shown: [], command: false,
     }
   }
   /** Build an envelope (or take one already built) and hand it to the model. Returns the core's value `r`, the

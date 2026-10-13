@@ -297,6 +297,13 @@ pub struct Update {
     largest: u64,
 }
 
+impl Update {
+    /// The stamp the value counts with, against the registers it was judged with.
+    pub fn stamp(&self) -> Stamp {
+        self.stamp
+    }
+}
+
 impl fmt::Debug for Update {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Update")
@@ -363,6 +370,14 @@ impl Registers {
         self.values
             .get(&(name.to_owned(), Some(*sender)))
             .and_then(|held| held.value.as_deref())
+    }
+
+    /// The stamp of the value held for a name (`of`: the sender, for a name each device writes for itself);
+    /// none if it was never written.
+    pub fn held(&self, name: &str, of: Option<DeviceId>) -> Option<Stamp> {
+        self.values
+            .get(&(name.to_owned(), of))
+            .map(|held| held.stamp)
     }
 
     /// Judges the value of a register envelope that passed all nine checks: `header` and the opened

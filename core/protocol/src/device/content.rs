@@ -306,6 +306,9 @@ pub struct ReceivedEnvelope {
     pub register: Option<RegisterChange>,
     /// For an envelope that came through its chain and had been shown as provisional before.
     pub provisional: Option<Confirmation>,
+    /// On a human device: register values read out of the hub's order that stood for their names and are
+    /// dropped with this envelope (9.3.6), with what stands for each name now.
+    pub shown: Vec<super::RegisterShown>,
     /// The envelope was accepted behind later ones of its group, and the group's object states and registers
     /// were built again in the hub's order: what was read from them before is to be read again.
     pub replayed: bool,
@@ -332,6 +335,7 @@ impl ReceivedEnvelope {
             object_after: None,
             register: None,
             provisional: None,
+            shown: Vec::new(),
             replayed: false,
             command: false,
         }
@@ -415,6 +419,22 @@ struct Lamport {
 }
 
 /// What a record keeps of an opened body for later steps.
+/// A register envelope read out of the hub's order as the overlay keeps it (9.3.6).
+fn out_of_order(received: &ReceivedEnvelope, body: &Body) -> Record {
+    Record {
+        change: received.change,
+        hash: received.envelope_hash,
+        status: Status::Taken,
+        fresh: false,
+        code: None,
+        header: received.header.clone(),
+        extra: match received.header.subject {
+            Subject::Register(_) => body.payload().to_vec(),
+            _ => Vec::new(),
+        },
+    }
+}
+
 pub(super) fn extra_of(header: &Header, body: &Body, keeps_cards: bool) -> Vec<u8> {
     match (&header.subject, body.bind()) {
         (Subject::Register(_), _) => body.payload().to_vec(),
@@ -1457,6 +1477,30 @@ impl<S: Storage> Device<S> {
         }
         record.code = received.code.clone();
 
+        // 9.3.6: the chain reaches the number of a register value this device read out of the hub's order: it
+        // leaves the overlay, whatever envelope the chain holds there. A record without its body takes that
+        // body when it is the very envelope.
+        let watched = self.overlay_watch(
+            &header,
+            received.body.as_ref().map(|body| body.payload()),
+            behind,
+        )?;
+        let reached = self.overlay_reached(batch, &group, &header.sender, header.seq)?;
+        if let Some(entry) = &reached {
+            let bodiless = record.status == Status::Taken
+                && received.outcome == EnvelopeOutcome::Chained
+                && record.extra.is_empty();
+            if entry.hash == hash && bodiless {
+                if let Ok(body) = Body::new(Bind::None, &entry.extra) {
+                    record.extra = entry.extra.clone();
+                    record.code = None;
+                    received.code = None;
+                    received.outcome = EnvelopeOutcome::Applied;
+                    received.body = Some(body);
+                }
+            }
+        }
+
         // A register's value and a Note version's lamport, for an envelope whose body opened. Nothing else
         // says anything to the registers: they are read and written for those two alone.
         let for_registers = match &header.subject {
@@ -1502,6 +1546,9 @@ impl<S: Storage> Device<S> {
                     .map(|object| (object_id, object));
             }
         }
+
+        received.register = self.overlay_mask(&group, received.register.take())?;
+        self.overlay_settle(&group, &mut received, watched)?;
 
         // An envelope that was shown as provisional is confirmed or dropped here (9.0.6).
         let shown = provisional_key(&group, &header.sender, header.seq);
@@ -1577,6 +1624,7 @@ impl<S: Storage> Device<S> {
                 provisional_key(&group, &sender, seq),
                 hash.as_bytes().to_vec(),
             );
+            received.register = self.take_out_of_order(batch, out_of_order(&received, &body))?;
             received.outcome = EnvelopeOutcome::Provisional;
             received.body = Some(body);
             return Ok(received);
@@ -1584,11 +1632,13 @@ impl<S: Storage> Device<S> {
         // The chain holds this very envelope: its record says what became of it there. The envelope a
         // chain began at (10.3) has none until the chain was read from number 1: it is shown unconfirmed.
         let Some(record) = self.record(&group, &sender, seq)? else {
+            received.register = self.take_out_of_order(batch, out_of_order(&received, &body))?;
             received.outcome = EnvelopeOutcome::Provisional;
             received.body = Some(body);
             return Ok(received);
         };
         let mut record = record;
+        let mut watched = None;
         // It is read back under the number it took its place at: the caller's number for an envelope fetched out
         // of order is the hub's word alone, and nothing may be dated by it once the chain holds the envelope.
         received.change = record.change;
@@ -1597,6 +1647,13 @@ impl<S: Storage> Device<S> {
             // that opens now is taken, with what it says for the registers and for the gate.
             record.code = None;
             record.extra = extra_of(&received.header, &body, !self.is_human());
+            let counts = match &received.header.subject {
+                Subject::Register(_) => true,
+                Subject::Version(fields) => fields.object_type == ObjectType::Note,
+                _ => false,
+            };
+            watched = Some(self.overlay_watch(&received.header, Some(body.payload()), counts)?);
+            self.overlay_reached(batch, &group, &sender, seq)?;
             let mut registers = self.registers(&group)?;
             if matches!(received.header.subject, Subject::Register(_)) {
                 match registers.judge(&Facts(self), &received.header, &record.extra) {
@@ -1641,7 +1698,8 @@ impl<S: Storage> Device<S> {
                     .registers(&group)?
                     .standing(&received.header, &record.extra)
                     .map_err(|_| damaged("a register's record"))?;
-                received.register = Some(RegisterChange { name, of, current });
+                received.register =
+                    self.overlay_mask(&group, Some(RegisterChange { name, of, current }))?;
             }
             if let Some(fields) = received.header.subject.object() {
                 received.object_after = self
@@ -1655,6 +1713,9 @@ impl<S: Storage> Device<S> {
                 EnvelopeOutcome::Chained
             };
             received.code = record.code;
+        }
+        if let Some(watched) = watched {
+            self.overlay_settle(&group, &mut received, watched)?;
         }
         Ok(received)
     }

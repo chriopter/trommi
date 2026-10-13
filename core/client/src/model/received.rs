@@ -114,4 +114,16 @@ pub struct Received {
     pub register: Option<RegisterTaken>,
     /// The body's JSON as the core opened it (wire form); none when it did not open.
     pub payload: Option<String>,
+    /// Register names whose value read out of the hub's order stood and is dropped with this envelope (spec
+    /// 9.3.6), with what stands for each now.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shown: Vec<Shown>,
+}
+
+/// A register name whose value read out of the hub's order was dropped: the envelope whose value stands for it
+/// now (`register.current`), or none when the name has no value now.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Shown {
+    pub name: String,
+    pub now: Option<Box<Received>>,
 }
