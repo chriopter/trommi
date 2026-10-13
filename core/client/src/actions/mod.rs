@@ -86,10 +86,17 @@ pub enum Action {
         #[serde(default)]
         attachments: Vec<String>,
     },
-    /// What the person has typed and not sent yet, kept per place.
+    /// What the person has typed and not sent yet, kept per place (a card's id): the register `draft/<place>` as both
+    /// apps keep it, `{keys, note, notes, marks?, ts}`. `keys` and `notes` left out keep what stands.
     Draft {
         place: String,
         text: String,
+        /// The options ticked.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        keys: Option<Vec<String>>,
+        /// A note per option, by its key.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        notes: Option<serde_json::Map<String, serde_json::Value>>,
     },
 
     // ---- sessions and desks ----

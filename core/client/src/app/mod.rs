@@ -34,7 +34,7 @@ pub use io::{
 };
 
 use crate::actions::run::{Doing, NotDone};
-use crate::actions::sent::Sent;
+use crate::actions::sent::{NoteNext, Sent};
 use crate::actions::{self, Action};
 use crate::engine::{self, Connection, Engine, Jitter, OpenError, Report};
 use crate::model::change::Change;
@@ -593,10 +593,23 @@ impl App {
             }
             _ => {}
         }
-        let utc_offset_min = self.lens.utc_offset_min;
-        let Some(engine) = self.engine.as_mut() else {
+        if self.engine.is_none() {
             let text = crate::views::Text::new("action.no_room", "Sign in first.");
             self.sent.toast(&mut self.next_view.toasts, text, None);
+            return;
+        }
+        self.doing(now_ms, out, |doing| {
+            if let Err(NotDone { text, again }) = doing.run(&action) {
+                doing.sent.toast(doing.toasts, text, again.then_some(action));
+            }
+        });
+    }
+
+    /// Runs `step` with what an action needs (the model, the bookkeeping, the device's seal), then shows what it
+    /// changed. Nothing without a device.
+    fn doing(&mut self, now_ms: u64, out: &mut Vec<Effect>, step: impl FnOnce(&mut Doing<'_>)) {
+        let utc_offset_min = self.lens.utc_offset_min;
+        let Some(engine) = self.engine.as_mut() else {
             return;
         };
         let room = engine.room();
@@ -613,20 +626,29 @@ impl App {
         let mut doing = Doing {
             model: &mut self.board.model,
             sent: &mut self.sent,
+            toasts: &mut self.next_view.toasts,
             room,
             now: now_ms,
             utc_offset_min,
             seal: &mut seal,
             change: Change::default(),
         };
-        let result = doing.run(&action);
+        step(&mut doing);
         let mut change = std::mem::take(&mut doing.change);
-        if let Err(NotDone { text, again }) = result {
-            self.sent
-                .toast(&mut self.next_view.toasts, text, again.then_some(action));
-        }
         self.board.model.project(&mut change, now_ms);
         self.stale_views = true;
+    }
+
+    /// A Note's version is back, refused or lost: the edit that waited behind it is sealed on what stands now.
+    fn notes_free(&mut self, now_ms: u64, free: Vec<(String, Option<NoteNext>)>, out: &mut Vec<Effect>) {
+        for (id, next) in free {
+            let Some(next) = next else { continue };
+            self.doing(now_ms, out, |doing| {
+                if let Err(NotDone { text, again }) = doing.seal_note(&next.action, Some(&id), &next.own, next.closed, &next.local_id) {
+                    doing.sent.toast(doing.toasts, text, again.then_some(next.action.clone()));
+                }
+            });
+        }
     }
 
     /// A card or a session came into view (or left it): the hook for reading its past.
@@ -634,34 +656,37 @@ impl App {
 
     /// What the hub said of the actions in flight, and the ones whose entry is gone without a word: each echo of
     /// a refused or lost entry is rolled back, with a toast that offers the action again.
-    fn settle_actions(&mut self, now_ms: u64, refused: Vec<(u64, &'static str)>) {
-        let mut back = Vec::new();
-        for (id, code) in refused {
-            back.extend(self.sent.take(id).into_iter().map(|o| (o, actions::run::refused(code))));
-        }
+    fn settle_actions(&mut self, now_ms: u64, refused: Vec<(u64, &'static str)>, out: &mut Vec<Effect>) {
+        let mut gone: Vec<(u64, crate::views::Text)> =
+            refused.into_iter().map(|(id, code)| (id, actions::run::refused(code))).collect();
         if !self.sent.is_empty() {
             if let Some(engine) = self.engine.as_ref() {
                 let held = engine.device().outbox().iter().map(|e| e.id).collect();
-                back.extend(self.sent.lost(&held).into_iter().map(|o| (o, actions::run::lost())));
+                gone.extend(self.sent.gone(&held).into_iter().map(|id| (id, actions::run::lost())));
             }
         }
-        if back.is_empty() {
+        if gone.is_empty() {
             return;
         }
         let mut change = Change::default();
         let mut offered: Vec<Action> = Vec::new();
-        for (out, text) in back {
-            if let Some(local_id) = &out.local_id {
-                self.board.model.rollback_echo(local_id, &mut change);
-            }
-            // (one toast per action, however many entries it made)
-            if !offered.contains(&out.action) {
-                offered.push(out.action.clone());
-                self.sent.toast(&mut self.next_view.toasts, text, Some(out.action));
+        let mut free = Vec::new();
+        for (id, text) in gone {
+            free.extend(self.sent.note_back(None, Some(id)));
+            for out in self.sent.take(id) {
+                if let Some(local_id) = &out.local_id {
+                    self.board.model.rollback_echo(local_id, &mut change);
+                }
+                // (one toast per action, however many entries it made)
+                if !offered.contains(&out.action) {
+                    offered.push(out.action.clone());
+                    self.sent.toast(&mut self.next_view.toasts, text.clone(), Some(out.action));
+                }
             }
         }
         self.board.model.project(&mut change, now_ms);
         self.stale_views = true;
+        self.notes_free(now_ms, free, out);
     }
 
     /// The stored device as the shell loaded it: an engine over it, or the sign-in screens.
@@ -813,6 +838,7 @@ impl App {
         let mut refused = Vec::new();
         let mut dropped = false;
         let joining_room = engine.joining_room();
+        let mut notes_back = Vec::new();
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
@@ -822,6 +848,11 @@ impl App {
                         let open = open.iter().map(|(id, version)| (engine::feed::hex(id.as_bytes()), *version)).collect();
                         cache.listed(crate::cache::Listing { at, open });
                     }
+                }
+                // an own Note's version back from the hub: the edit that waited behind it can follow
+                Report::Envelope { received, .. } if !self.sent.notes.is_empty() => {
+                    let hash = crate::engine::feed::hex(received.envelope_hash.as_bytes());
+                    notes_back.extend(self.sent.note_back(Some(&hash), None));
                 }
                 Report::Connection(Connection::Live) => {
                     self.next_view.phase = Phase::Live;
@@ -917,7 +948,8 @@ impl App {
             cache.step(now_ms, &mut self.next_id, out);
             cache_wake = cache.next_wake();
         }
-        self.settle_actions(now_ms, refused);
+        self.settle_actions(now_ms, refused, out);
+        self.notes_free(now_ms, notes_back, out);
         // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
         // did not change is not sent, `ViewModel::diff`).
         if self.stale_views || view_due {
