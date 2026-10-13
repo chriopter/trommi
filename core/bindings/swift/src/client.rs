@@ -15,7 +15,8 @@ record! {
         pub session_id: Option<String>,
         pub state: u8,
         pub urgency: u8,
-        pub created_at: u64,
+        /// The change of its first envelope: where it stands among the others.
+        pub first_change: u64,
         pub agent_device_id: String,
         /// The change of its newest version known here.
         pub version_change: u64,
@@ -46,10 +47,13 @@ record! {
 }
 
 record! {
-    /// One object the hub's Desk lists as open, with the change of its current version.
+    /// One object the hub's Desk lists as open, with the change of its current version and the change it was
+    /// first filed at (the hub's row, `first_change`; 0: not said): a card stands on the Desk by that change.
     pub struct DeskListed {
         pub object_id: String,
         pub version_change: u64,
+        #[cfg_attr(feature = "uniffi", uniffi(default = 0))]
+        pub first_change: u64,
     }
 }
 
@@ -143,7 +147,7 @@ impl ClientDesk {
                     session_id: c.session_id,
                     state: state_of(c.state)?,
                     urgency,
-                    created_at: c.created_at,
+                    first_change: c.first_change,
                     agent_device_id: Some(c.agent_device_id),
                     version_change: c.version_change,
                     newest: c.newest,
@@ -229,7 +233,7 @@ impl ClientDesk {
                 kind: Kind::Card,
                 session_id: None,
                 version_change: l.version_change,
-                first_change: 0,
+                first_change: l.first_change,
             })
             .collect();
         self.with(|d| {
