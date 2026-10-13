@@ -22,6 +22,15 @@ import TrommiCoreRust
 /// One group as the hub serves it to a device that verifies it from its founding: the GroupInfo of epoch 0, every
 /// Commit since in the hub's order (each with its change number and, for a join from outside, its RecoveryAuth), and
 /// the GroupInfo the hub offers as current. Nothing in it is trusted.
+/// A value handed between tasks as it is (the hub's answers are plain JSON, read by one task at a time).
+struct Unchecked<T>: @unchecked Sendable { let value: T }
+
+extension Result where Failure == Error {
+  init(catching body: () async throws -> Success) async {
+    do { self = .success(try await body()) } catch { self = .failure(error) }
+  }
+}
+
 public typealias LiveServedGroup = (founding: Bytes, commits: [PastCommit], current: Bytes)
 /// What a hub serves to begin the check of a room in steps (8.4, 8.5), everything but the Commits: the room, the room
 /// group's founding GroupInfo, the GroupInfo of the anchor's epoch (`LiveCore.recoveryAnchor` names the epoch), every
@@ -410,6 +419,40 @@ struct ServedByHub {
 
   /// One session group the device joins with the code, in steps: its current GroupInfo first, then its founding, the
   /// check begun on it, its log page by page up to the current epoch in slices. The group and its current GroupInfo.
+  /// The live session groups by kind: the main sessions and the helper sessions.
+  func liveSessionsByKind() async throws -> (mains: [GroupId], helpers: [GroupId]) {
+    var main = [GroupId](), helper = [GroupId]()
+    for group in try await hub.groups() where group["live"] as? Bool == true {
+      guard let id = (group["group_id"] as? String).flatMap({ try? unb64u($0) }) else { throw TrommiError("bad-format", "a group of the hub's list has no id") }
+      switch group["kind"] as? String {
+      case "main": main.append(id)
+      case "helper": helper.append(id)
+      default: break   // the room group
+      }
+    }
+    return (main, helper)
+  }
+
+  /// What a session's check reads from the hub (no call into the core): its current and founding GroupInfos and
+  /// the Commits of its log up to the current epoch, page by page.
+  func readSession(_ id: GroupId) async throws -> (current: Bytes, founding: Bytes, pages: [[PastCommit]]) {
+    let current = try await hub.groupInfoBytes(id)
+    let founding = current.epoch == 0 ? current.bytes : try await hub.groupInfoBytes(id, epoch: 0).bytes
+    var pages = GroupLogPages(hub: hub, group: id, below: current.epoch), all = [[PastCommit]]()
+    while let page = try await pages.next() { all.append(page) }
+    return (current.bytes, founding, all)
+  }
+
+  /// The core's check of what `readSession` read; returns the current GroupInfo.
+  func checkSession(_ id: GroupId, served: (current: Bytes, founding: Bytes, pages: [[PastCommit]]), on device: LiveDevice) throws -> Bytes {
+    guard try device.sessionCheckStart(founding: served.founding) == id else { throw TrommiError("bad-group", "the hub served another group's founding") }
+    var cap = Slices.maxCommits
+    for page in served.pages {
+      try Slices.feed(page, size: { $0.commit.count }, cap: &cap) { try device.sessionCheckSlice(group: id, commits: $0); return true }
+    }
+    return served.current
+  }
+
   func checkSession(_ id: GroupId, on device: LiveDevice) async throws -> Bytes {
     let current = try await hub.groupInfoBytes(id)
     let founding = current.epoch == 0 ? current.bytes : try await hub.groupInfoBytes(id, epoch: 0).bytes
@@ -441,6 +484,10 @@ extension LiveCore {
   ///
   /// A failure throws and leaves the device as it was: in no room. Returns `missingLink` (see `LiveCodeJoin`).
   public func joinRoomWithRecoveryCode(device: TrommiClient.CoreDevice, code: Bytes, hub: HubClient, nowMs now: UInt64) async throws -> Bytes? {
+    try await joinRoomWithRecoveryCodeAt(device: device, code: code, hub: hub, nowMs: now).missingLink
+  }
+
+  public func joinRoomWithRecoveryCodeAt(device: TrommiClient.CoreDevice, code: Bytes, hub: HubClient, nowMs now: UInt64) async throws -> (missingLink: Bytes?, change: UInt64?) {
     let device = try live(device)
     let reader = ServedByHub(hub: hub)
     SignInWatch.say(.reading)
@@ -462,8 +509,9 @@ extension LiveCore {
     SignInWatch.log("\(done) Commits checked", since: started)
     SignInWatch.say(.joining)
     let joined = try device.joinRoomChecked(code, served: read.end, nowMs: now)
-    for id in joined.outbox { try await post(id, of: device, to: hub) }
-    return joined.missingLink
+    var change: UInt64?
+    for id in joined.outbox { change = try await post(id, of: device, to: hub) ?? change }
+    return (joined.missingLink, change)
   }
 
   /// Joins every live session group the device is not a leaf of yet with the code, each read from the hub and
@@ -472,26 +520,72 @@ extension LiveCore {
   /// did not answer (the join stays in the outbox and goes out with the device's own token), a Commit took the
   /// join's epoch, or something the join builds on has not come yet.
   public func joinSessionsWithRecoveryCode(device: TrommiClient.CoreDevice, code: Bytes, hub: HubClient, nowMs now: UInt64) async throws -> (notJoined: [(group: GroupId, code: String)], again: Bool) {
+    try await joinSessionsWithRecoveryCode(device: device, code: code, hub: hub, nowMs: now, afterMains: nil)
+  }
+
+  public func joinSessionsWithRecoveryCode(device: TrommiClient.CoreDevice, code: Bytes, hub: HubClient, nowMs now: UInt64, afterMains: (@MainActor () async -> Void)?) async throws -> (notJoined: [(group: GroupId, code: String)], again: Bool) {
     let device = try live(device)
     let reader = ServedByHub(hub: hub)
     let held = Set(try device.groups().map(\.group))
     var notJoined = [(group: GroupId, code: String)](), again = false
     // (the room's SealedKeys and RecoveryLinks, read once: each session's keys are selected from them)
     var sealed: (sealedKeys: [Bytes], links: [Bytes])?
-    for group in try await reader.liveSessions() where !held.contains(group) {
-      // (a join of this group built before, which the hub has not answered: the outbox sends it again)
-      if device.outbox().contains(where: { $0.kind == .externalCommit && $0.group == group }) { again = true; continue }
-      do {
-        if sealed == nil { sealed = try await reader.sealedKeys() }
-        let current = try await reader.checkSession(group, on: device)
-        try await post(try device.joinSessionCheckedKeys(code, group: group, current: current, rows: sealed!.sealedKeys, links: sealed!.links, nowMs: now), of: device, to: hub)
-      }
-      catch let refused as TrommiError {
+    func failed(_ group: GroupId, _ error: Error) {
+      if let refused = error as? TrommiError {
         notJoined.append((group, refused.code))
         if ["busy", "room-behind", "group-behind"].contains(refused.code) { again = true }
-      } catch let refused as HubError {
+      } else if let refused = error as? HubError {
         notJoined.append((group, refused.code))
         if refused.isOffline || refused.code == "epoch-taken" || !isFinalRefusal(refused.code) { again = true }
+      } else { notJoined.append((group, "failed")); again = true }
+    }
+    // All at once, in two waves: the main sessions, then their helper sessions (judged against their main
+    // session's agent leaf, 5.2.1). Per wave every session is read at once (a few in flight), each checked and its
+    // join built by the core one after another, and all joins posted at once; the hub's answers go to the core one
+    // after another. A session that fails is left out, as before: it fails no other.
+    let (mains, helpers) = try await reader.liveSessionsByKind()
+    var waves = [[GroupId]]()
+    for wave in [mains, helpers] {
+      var todo = [GroupId]()
+      for group in wave where !held.contains(group) {
+        // (a join of this group built before, which the hub has not answered: the outbox sends it again)
+        if device.outbox().contains(where: { $0.kind == .externalCommit && $0.group == group }) { again = true; continue }
+        todo.append(group)
+      }
+      waves.append(todo)
+    }
+    if waves.allSatisfy(\.isEmpty) { return (notJoined, again) }
+    // (what both waves check is read at once, with the room's keys: the helper sessions' reading does not wait for
+    //  the main sessions' joins)
+    async let keys = reader.sealedKeys()
+    let all = waves.flatMap { $0 }
+    let reads = try await ServedByHub.each(all, at: 16) { group in Unchecked(value: await Result(catching: { try await reader.readSession(group) })) }
+    sealed = try await keys
+    var readOf = [GroupId: Result<(current: Bytes, founding: Bytes, pages: [[PastCommit]]), Error>]()
+    for (group, r) in zip(all, reads) { readOf[group] = r.value }
+    for (at, todo) in waves.enumerated() where !todo.isEmpty {
+      // (the main sessions are in: their open cards can show while the helper sessions are joined)
+      if at > 0, !waves[0].isEmpty, let afterMains { await afterMains() }
+      var built: [(group: GroupId, entry: TrommiClient.OutboxEntry)] = []
+      for group in todo {
+        let served = Unchecked(value: readOf[group]!)
+        do {
+          let current = try reader.checkSession(group, served: try served.value.get(), on: device)
+          let id = try device.joinSessionCheckedKeys(code, group: group, current: current, rows: sealed!.sealedKeys, links: sealed!.links, nowMs: now)
+          guard let entry = device.outbox().first(where: { $0.id == id }) else { throw TrommiError("internal", "an entry the core named is not in the outbox") }
+          built.append((group, entry))
+        } catch { failed(group, error) }
+      }
+      let answers = try await ServedByHub.each(built.map { Unchecked(value: $0.entry) }, at: 12) { (entry: Unchecked<TrommiClient.OutboxEntry>) in Unchecked(value: await Result(catching: { try await hub.post(entry.value) })) }
+      for (join, answer) in zip(built, answers) {
+        do {
+          let answer = try answer.value.get()
+          guard let change = Wire.uint(answer["change"]) else { throw TrommiError("bad-format", "the hub's answer to a join names no change number") }
+          try device.outboxAccepted(join.entry.id, change: change)
+        } catch let refused as HubError where !refused.isOffline && isFinalRefusal(refused.code) {
+          try? device.outboxRefused(join.entry.id, code: refused.code)
+          failed(join.group, refused)
+        } catch { failed(join.group, error) }
       }
     }
     return (notJoined, again)
@@ -559,12 +653,14 @@ extension LiveCore {
   /// puts that copy in force (the device is in the group at once, its cursor untouched). So nothing is handed back
   /// here. The room's first catch-up reads the log from the start, in the hub's order; there the join's own Commit
   /// is passed over and gives the join its place (RecoveryTests.testANewDeviceJoinsWithTheCode holds this down).
-  private func post(_ id: UInt64, of device: LiveDevice, to hub: HubClient) async throws {
+  @discardableResult
+  private func post(_ id: UInt64, of device: LiveDevice, to hub: HubClient) async throws -> UInt64? {
     guard let entry = device.outbox().first(where: { $0.id == id }) else { throw TrommiError("internal", "an entry the core named is not in the outbox") }
     do {
       let answer = try await hub.post(entry)
       guard let change = Wire.uint(answer["change"]) else { throw TrommiError("bad-format", "the hub's answer to a join names no change number") }
       try device.outboxAccepted(id, change: change)
+      return change
     } catch let refused as HubError where !refused.isOffline && isFinalRefusal(refused.code) {
       try? device.outboxRefused(id, code: refused.code)
       throw refused

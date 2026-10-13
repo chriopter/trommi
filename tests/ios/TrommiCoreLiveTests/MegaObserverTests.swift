@@ -17,6 +17,7 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
   nonisolated(unsafe) static var fail = 0.0
   nonisolated(unsafe) static var delayMs = 0
   nonisolated(unsafe) static var changesDown = false
+  static let rttMs = Double(ProcessInfo.processInfo.environment["TRACE_RTT_MS"] ?? "") ?? 0
   nonisolated(unsafe) static var rng: UInt64 = 1
   static let lock = NSLock()
   static func rand() -> Double { lock.withLock { rng = (rng &* 1103515245 &+ 12345) & 0x7fffffff; return Double(rng) / Double(0x7fffffff) } }
@@ -61,7 +62,22 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
     }
     let counted = !path.contains("/stream")
     if counted { let n = req.httpBody?.count ?? 0; MegaFaults.lock.withLock { MegaFaults.asked["bytes out", default: 0] += n } }
-    let wait = MegaFaults.delayMs > 0 ? Double(Int(MegaFaults.rand() * Double(MegaFaults.delayMs))) / 1000 : 0
+    var wait = MegaFaults.delayMs > 0 ? Double(Int(MegaFaults.rand() * Double(MegaFaults.delayMs))) / 1000 : 0
+    // (a real network: TRACE_RTT_MS of round trip on every request, the stream's opening too)
+    wait += MegaFaults.rttMs / 1000
+    // The live stream is handed on as it comes, piece by piece (a completion handler would hold it until it ends:
+    // no presence, no live event ever reached the device behind this protocol)
+    if path.hasSuffix("/stream") {
+      DispatchQueue.global().asyncAfter(deadline: .now() + wait) { [self] in
+        guard live() else { return }
+        let forward = StreamForward(self)
+        let session = URLSession(configuration: .ephemeral, delegate: forward, delegateQueue: nil)
+        let task = session.dataTask(with: req)
+        state.withLock { self.forward = task; self.streamSession = session }
+        task.resume()
+      }
+      return
+    }
     DispatchQueue.global().asyncAfter(deadline: .now() + wait) { [self] in
       guard live() else { return }
       let task = MegaFaults.plain.dataTask(with: req) { [self] data, response, error in
@@ -79,7 +95,31 @@ final class MegaFaults: URLProtocol, @unchecked Sendable {
       task.resume()
     }
   }
-  override func stopLoading() { state.withLock { stopped = true; return forward }?.cancel() }
+  override func stopLoading() {
+    let (task, session) = state.withLock { () -> (URLSessionDataTask?, URLSession?) in stopped = true; return (forward, streamSession) }
+    // (not here and now: Foundation on Linux holds the cancelling session's lock while it calls this, and the
+    //  forwarding session's end would wait on it)
+    if task != nil || session != nil { DispatchQueue.global().async { task?.cancel(); session?.invalidateAndCancel() } }
+  }
+  private var streamSession: URLSession?
+  /** What the forwarded stream brings, said to this protocol's client while it is live. */
+  fileprivate func streamed(response: URLResponse) { guard live() else { return }; client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed) }
+  fileprivate func streamed(data: Data) { guard live() else { return }; client?.urlProtocol(self, didLoad: data) }
+  fileprivate func streamEnded(_ error: Error?) {
+    guard live() else { return }
+    if let error { client?.urlProtocol(self, didFailWithError: error) } else { client?.urlProtocolDidFinishLoading(self) }
+  }
+}
+
+/** The delegate of a forwarded live stream (MegaFaults): every piece on to the protocol as it comes. */
+final class StreamForward: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+  weak var owner: MegaFaults?
+  init(_ owner: MegaFaults) { self.owner = owner }
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    owner?.streamed(response: response); completionHandler(.allow)
+  }
+  func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) { owner?.streamed(data: data) }
+  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) { owner?.streamEnded(error); session.finishTasksAndInvalidate() }
 }
 
 @MainActor
@@ -100,7 +140,8 @@ final class MegaObserverTests: XCTestCase {
 
   /** What the person would see now (as the web observer's `seen`): the Desk, Off your mind, Artifacts, sessions, agents online. */
   private func seen() -> [String: Any]? {
-    guard let b = room?.board else { return nil }
+    // (what the views show: the hub's Desk of a fresh sign-in, or the board as it stood while it is read back)
+    guard let b = room?.shownBoard else { return nil }
     var off = 0, closed = 0, working = 0, cards = 0
     for c in b.cards.values { cards += 1; if c.objectState != "open" { closed += 1; off += 1 } else if c.working { working += 1; off += 1 } }
     let snoozed = b.human.snoozes.count
@@ -114,7 +155,7 @@ final class MegaObserverTests: XCTestCase {
     let artifacts = b.published.values.filter { $0.objectState != "closed" }.count
     return ["desk": desk, "stack": b.stack.count, "held": b.held.count, "off": off + snoozed, "closed": closed, "working": working, "snoozed": snoozed,
             "cards": cards, "artifacts": artifacts, "sessions_live": live, "sessions_archived": archived, "agents": agents, "online": online, "items": items,
-            "reading": b.preview]
+            "reading": b.preview, "live": room?.live ?? false]
   }
   private func startTrace() {
     Spent.traceStart()

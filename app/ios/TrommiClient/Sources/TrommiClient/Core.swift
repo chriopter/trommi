@@ -803,12 +803,20 @@ public protocol CoreTools: AnyObject {
    */
   func joinRoomWithRecoveryCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64) async throws -> Bytes?
   /**
+   * The same, and the hub's change number of the join's own Commit (nil: not known): a device that joined from
+   * outside takes the hub's order from just before it, and reads the room's past later, once (RoomPast.swift).
+   */
+  func joinRoomWithRecoveryCodeAt(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64) async throws -> (missingLink: Bytes?, change: UInt64?)
+  /**
    * Second step, for a device that is in the room group: joins every live session group it is not a leaf of yet the
    * same way, main sessions before helper sessions. `hub` may be signed in as the device itself. `notJoined`: the
    * sessions left out, each with its code. `again`: one of them may be joined by calling this once more (the hub
    * did not answer, a join waits in the outbox, a Commit came in between); until then the caller keeps the code.
    */
   func joinSessionsWithRecoveryCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64) async throws -> (notJoined: [(group: GroupId, code: String)], again: Bool)
+  /** The same, telling `afterMains` once the main sessions are joined, before their helper sessions: the main
+   *  sessions' open cards can show while the helpers are joined. */
+  func joinSessionsWithRecoveryCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64, afterMains: (@MainActor () async -> Void)?) async throws -> (notJoined: [(group: GroupId, code: String)], again: Bool)
   /**
    * The whole recovery when every device is lost (8.7), on a new device that is in no room: opens the recovery at
    * the hub (the room takes nothing else meanwhile), checks the room, and asks `confirm` with the human devices it
@@ -838,6 +846,15 @@ public enum Core {
   public static var isInstalled: Bool { lock.lock(); defer { lock.unlock() }; return installed != nil }
   private static var installed: CoreTools?
   private static let lock = NSLock()
+}
+
+public extension CoreTools {
+  func joinSessionsWithRecoveryCode(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64, afterMains: (@MainActor () async -> Void)?) async throws -> (notJoined: [(group: GroupId, code: String)], again: Bool) {
+    try await joinSessionsWithRecoveryCode(device: device, code: code, hub: hub, nowMs: nowMs)
+  }
+  func joinRoomWithRecoveryCodeAt(device: CoreDevice, code: Bytes, hub: HubClient, nowMs: UInt64) async throws -> (missingLink: Bytes?, change: UInt64?) {
+    (try await joinRoomWithRecoveryCode(device: device, code: code, hub: hub, nowMs: nowMs), nil)
+  }
 }
 
 public extension CoreDevice {

@@ -160,7 +160,10 @@ final class RealHubTests: XCTestCase {
     XCTAssertFalse(steps.isEmpty, "the sign-in reports its progress")
     let b = try XCTUnwrap(second.device as? LiveDevice)
     XCTAssertEqual(try b.groups().first?.epoch, UInt64(epochs + 1))
-    // (the hub holds KeyPackages of the new device at once: a session founded now finds one)
+    // (the hub holds KeyPackages of the new device once its sessions are joined, not before: no other device can
+    //  add it to a session while its own joins are on their way; a session founded then finds one)
+    await second.codeJoinSettled()
+    try await second.flush(timeoutMs: 10_000)
     let claimed = try await first.hub.claimKeyPackages([b.id])
     XCTAssertEqual(claimed.count, 1)
   }
