@@ -1,0 +1,39 @@
+# The steps of the job "Core (check)" (pr-check.yml on a pull request; the part's ship-*.yml on main). The caller checks out the repository first.
+name: Core (check)
+description: The steps of the check Core (check)
+runs:
+  using: composite
+  steps:
+    - name: Compiler (rust-toolchain.toml), clippy
+      shell: bash
+      run: sh .github/scripts/rust_toolchain.sh --component clippy
+    # the downloaded crates (~/.cargo) and the compiled ones (target/), saved by main; a pull request reads main's
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        prefix-key: v2-rust
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      with:
+        tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+    - name: Clippy
+      shell: bash
+      run: cargo clippy --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io --all-targets -- -D warnings
+    - name: THIRD-PARTY.md is current
+      shell: bash
+      run: node .github/scripts/third_party.mjs --check
+    # the Rust facade, the wasm exports, the JavaScript layer and the typings offer the same calls (Node only, under a second)
+    - name: The bindings manifest
+      shell: bash
+      run: node tests/bindings/manifest.mjs
+    - name: The crates' own tests
+      shell: bash
+      run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped
+    # One test that fails must not hide the others: every target runs, the step fails at the end.
+    - name: The scenario tests (tests/core, tests/bindings) and the test library
+      shell: bash
+      run: |
+        set -eu
+        tests=$(sed -n 's/^name = "\(\(core\|bindings\)_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
+        [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no core test"; exit 1; }
+        # shellcheck disable=SC2086
+        cargo nextest run --locked -p trommi-tests --no-fail-fast --lib $tests

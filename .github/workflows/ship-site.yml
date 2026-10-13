@@ -1,7 +1,7 @@
 # The website trommi.com (site/), from a push to main that changed it to the Cloudflare worker trommi-com, on its own.
 # Nothing is built: site/public/ goes out as it is, with site/worker.js in front of it.
 #
-#   checks   the site's checks (tests/site/check.mjs; pr-check.yml, called)
+#   checks   the site's checks (tests/site/check.mjs; .github/actions/check-site)
 #   deliver  asks GitHub for the head of main, runs the site's checks on it, `wrangler deploy --config
 #            site/wrangler.jsonc`, then asks trommi.com for its front page and compares it with site/public/index.html
 #            byte for byte (SHA-256)
@@ -26,16 +26,87 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  checks:
-    name: Checks
+  # Which parts changed (since this workflow's newest green run on main), the core's checks when it did, and the part's
+  # own checks: the steps are the composite actions of .github/actions, the ones a pull request runs as well
+  changed:
+    name: Which parts changed
     if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/pr-check.yml
-    with:
-      parts: site
-      workflow: ship-site.yml
+    outputs:
+      core: ${{ steps.find.outputs.core }}
+      part: ${{ steps.find.outputs.site }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find the changed parts
+        id: find
+        env:
+          EVENT: ${{ github.event_name }}
+          PARTS: site
+          WORKFLOW: ship-site.yml
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/changed_parts.sh
+
+  core:
+    name: Core (check)
+    needs: changed
+    if: needs.changed.outputs.core == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-core
+
+  site_check:
+    name: Site (test)
+    needs: changed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            site
+            tests/site
+            .node-version
+      - uses: ./.github/actions/check-site
+
+  # The result of the checks, for the jobs that need them: the part's passed, the core's passed or was not asked for
+  checks:
+    name: Checks
+    needs: [changed, core, site_check]
+    if: ${{ !cancelled() && needs.changed.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Both passed
+        env:
+          PART: ${{ needs.site_check.result }}
+          CORE: ${{ needs.core.result }}
+        run: |
+          echo "Site (test): $PART, Core (check): $CORE"
+          [ "$PART" = success ] && { [ "$CORE" = success ] || [ "$CORE" = skipped ]; }
 
   deliver:
     name: Deliver to Cloudflare

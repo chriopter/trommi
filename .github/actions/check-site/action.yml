@@ -1,0 +1,12 @@
+# The steps of the job "Site (test)" (pr-check.yml on a pull request; the part's ship-*.yml on main). The caller checks out the repository first.
+name: Site (test)
+description: The steps of the check Site (test)
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+    - name: The site's checks
+      shell: bash
+      run: node tests/site/check.mjs

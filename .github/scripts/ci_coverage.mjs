@@ -22,8 +22,11 @@ const NOT_RUN = {
   'build/wasm-load.mjs': 'fails on main since the binding gained the call it expected to lack; to be repaired, then wired in',
 }
 
-const workflows = fs.readdirSync(path.join(repo, '.github/workflows')).filter(f => f.endsWith('.yml'))
-  .map(f => read(`.github/workflows/${f}`)).join('\n')
+const files = [
+  ...fs.readdirSync(path.join(repo, '.github/workflows')).filter(f => f.endsWith('.yml')).map(f => `.github/workflows/${f}`),
+  ...fs.readdirSync(path.join(repo, '.github/actions')).map(d => `.github/actions/${d}/action.yml`),   // the composite actions hold the steps
+]
+const workflows = files.map(read).join('\n')
 const problems = []
 
 // 1. crates

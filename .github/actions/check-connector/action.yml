@@ -1,0 +1,37 @@
+# The steps of the job "Connector (check)" (pr-check.yml on a pull request; the part's ship-*.yml on main). The caller checks out the repository first.
+name: Connector (check)
+description: The steps of the check Connector (check)
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+    - name: Compiler (rust-toolchain.toml), clippy
+      shell: bash
+      run: sh .github/scripts/rust_toolchain.sh --component clippy
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        prefix-key: v2-rust
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      with:
+        tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+    - name: Clippy
+      shell: bash
+      run: cargo clippy --locked -p trommi-connector --all-targets -- -D warnings
+    - name: The connector's own tests
+      shell: bash
+      run: cargo test --locked -p trommi-connector
+    # The scenario tests start the hub of this repository and the built connector (tests/connector/common/mod.rs).
+    - name: Test
+      shell: bash
+      run: |
+        set -eu
+        cargo build --locked -p trommi-hub -p trommi-connector
+        tests=$(sed -n 's/^name = "\(connector_[a-z0-9_]*\)"$/--test \1/p' tests/Cargo.toml | tr '\n' ' ')
+        [ -n "$tests" ] || { echo "::error::tests/Cargo.toml names no connector test"; exit 1; }
+        # TROMMI_HUB_SERVES_REMOVAL: this repository's hub has the removal route, so a removed connector must verify
+        # its removal there (without it the test accepts a connector that only keeps its state)
+        # shellcheck disable=SC2086
+        TROMMI_HUB_SERVES_REMOVAL=1 TROMMI_HUB_BIN="$PWD/target/debug/trommi-hub" cargo nextest run --locked -p trommi-tests --no-fail-fast $tests
