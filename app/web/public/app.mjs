@@ -60,14 +60,21 @@ let work = null
 const workLoaded = import('./gen/vendor/work.mjs').then(m => { work = m }, () => {})
 // The account screens' slow parts (the key derivation, founding and joining) run in the core worker (core/account-remote.ts).
 export const account = () => import('./gen/vendor/account-remote.mjs')
-// What's new (news.mjs): CHANGELOG.md as the build read it. The newest day comes with the first bundle (the menu row's
-// dot); the days themselves only with the page.
-// (loaded at once, not imported statically: the views run in Node's tests too, where gen/ is not)
+// What's new (news.mjs): /whats-new.json, the worker's days from the releases' notes (whats-new.mjs), asked once after
+// the start (the menu row's dot needs the newest day). The last answer is kept on this device for when it is offline.
+// (In Node's tests there is no such address: no days.)
+const NEWS_KEY = 'trommi-news-days'
 let newsLatest = null
+let newsDays = null
 /** The newest day of What's new, or null until it is loaded. */
 export const newsLatestDay = () => newsLatest
-import('./gen/vendor/changelog-latest.mjs').then(m => { newsLatest = m.LATEST; document.dispatchEvent(new CustomEvent('trommi:news')) }, () => {})
-export const changelog = () => import('./gen/vendor/changelog.mjs')
+/** { DAYS }: What's new's days, newest first ([] when neither the network nor this device has them). */
+export const changelog = () => (newsDays ??= fetch('/whats-new.json', { headers: { Accept: 'application/json' } })
+  .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+  .then(j => { const days = Array.isArray(j?.days) ? j.days : []; try { localStorage.setItem(NEWS_KEY, JSON.stringify(days)) } catch {} return days })
+  .catch(() => { try { const kept = JSON.parse(localStorage.getItem(NEWS_KEY) ?? '[]'); return Array.isArray(kept) ? kept : [] } catch { return [] } })
+  .then(days => { newsLatest = days[0]?.day ?? ''; globalThis.document?.dispatchEvent(new CustomEvent('trommi:news')); return { DAYS: days } }))
+if (globalThis.location?.protocol?.startsWith('http')) changelog()
 // What runs here, for the small line at the top of What's new: the release (gen/release.json, which the release writes
 // beside the build: number, commit, time), else the build's commit (gen/build.txt, the dev server's too). Asked once,
 // after the page has started; offline it says nothing.

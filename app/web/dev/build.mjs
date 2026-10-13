@@ -4,8 +4,7 @@
 //                          worker (proof-worker-<hash>.mjs, for the "MLS proof" screen), all named by
 //                          their content; and the Rust core's trommi-core-<hash>.wasm beside them ("the Rust core"
 //                          below; its scripts are in the worker's bundle)
-//   gen/vendor/            tools-reference.mjs: the connector's tools and events as data, for the help page; changelog.mjs
-//                          and changelog-latest.mjs: CHANGELOG.md as data, for What's new (the dev
+//   gen/vendor/            tools-reference.mjs: the connector's tools and events as data, for the help page (the dev
 //                          server, bundle: false, also serves the core here, copied flat from core/,
 //                          with the Rust core's scripts and its trommi_core_wasm_bg.wasm)
 //   gen/bundle.<hash>.css  the stylesheets of index.html as one file (their <link>s become one)
@@ -197,61 +196,8 @@ function vendorFiles(repo, { sourcemap = false } = {}) {
   }
   out['tools-reference.mjs'] = toolsReference(repo)
   out['demo-screens.mjs'] = `// Written by app/web/dev/build.mjs from demo/data/screens.json. Do not edit: edit that file.\nexport const STATES = ${JSON.stringify(demoData(repo).states)}\n`
-  // What's new (the menu's row and its page, news.mjs): CHANGELOG.md at the repository's root, read here, never fetched.
-  // The row's dot needs only the newest day (changelog-latest.mjs, in the first bundle); the page takes the rest.
-  const days = parseChangelog(fs.readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8'))
-  out['changelog.mjs'] = `// Written by app/web/dev/build.mjs from CHANGELOG.md. Do not edit: edit that file.\nexport const DAYS = ${JSON.stringify(days)}\n`
-  out['changelog-latest.mjs'] = `// Written by app/web/dev/build.mjs from CHANGELOG.md. Do not edit: edit that file.\nexport const LATEST = ${JSON.stringify(days[0]?.day ?? '')}\n`
   out['core-version.mjs'] = `// Written by app/web/dev/build.mjs from app/web/core/. Do not edit: edit the core.\nexport const CORE_COMMIT = ${JSON.stringify(commitOf(repo))}\n`
   return out
-}
-/** CHANGELOG.md as data: [{ day, releases, summary, picture, groups: [{ kind, items: [{ text, tag, head }] }] }], newest first.
- *  A day is a "## " heading ("11 October 2026 (v109 – v115)": the releases in brackets); the plain lines before its
- *  first part are its summary, a line "![words](app/web/public/changelog/<name>.webp)" there its one picture
- *  ({ alt, src }, src as the app serves it: "/changelog/<name>.webp", else null); a part is a line "**New**" (Better, Fixed), an item a line "- …" (a line indented under
- *  it goes on with it). The words before the first day are the file's own. Each item comes with its short form
- *  (changelogHead). */
-export function parseChangelog(text) {
-  const days = []
-  let group = null
-  for (const line of String(text).split(/\r?\n/)) {
-    const head = /^## +(.+?)(?: +\(([^)]*)\))? *$/.exec(line)
-    if (head) { days.push({ day: head[1], releases: head[2] ?? '', summary: '', picture: null, groups: [] }); group = null; continue }
-    const day = days.at(-1)
-    if (!day) continue
-    const pic = !day.groups.length && /^!\[([^\]]*)\]\((?:app\/web\/public\/)?(changelog\/[\w.-]+\.webp)\) *$/.exec(line)
-    if (pic) { day.picture ??= { alt: pic[1], src: `/${pic[2]}` }; continue }
-    if (!day.groups.length && line.trim() && !/^\s*([-*]|\*\*)/.test(line)) { day.summary = `${day.summary} ${line.trim()}`.trim(); continue }
-    const kind = /^\*\*([^*]+)\*\* *$/.exec(line)
-    if (kind) { group = { kind: kind[1].trim(), items: [] }; day.groups.push(group); continue }
-    const item = /^[-*] +(.+)$/.exec(line)
-    if (item) { if (!group) { group = { kind: '', items: [] }; day.groups.push(group) } group.items.push(item[1].trim()); continue }
-    if (/^\s+\S/.test(line) && group?.items.length) group.items[group.items.length - 1] += ` ${line.trim()}`
-  }
-  for (const d of days) for (const g of d.groups) g.items = g.items.map(changelogHead)
-  return days
-}
-/** A changelog line and its short form for What's new: { text, tag, head }. A bold start ("**Readable addresses**: …")
- *  is the head; else a leading "Web:", "iPhone:" (iPad, Mac, Desk, Codex, Connector) becomes the tag, and the head is
- *  the line up to its first colon, semicolon, bracket, comma or full stop (when that leaves fewer than three words, up
- *  to the first colon, semicolon or full stop), at most 78 characters. The same rule as the iOS app's
- *  (WhatsNew.swift Changelog.head). */
-export function changelogHead(line) {
-  let text = String(line).trim(), tag = '', head
-  const bold = /^\*\*([^*]+)\*\*/.exec(text)
-  if (bold) { head = bold[1].trim(); text = text.slice(bold[0].length).replace(/^:\s*/, ''); text = text.charAt(0).toUpperCase() + text.slice(1) }
-  const TAG = /^(Web|iPhone|iPad|Mac|Desk|Codex|Connector): +/
-  let rest = text
-  if (bold) { const t = TAG.exec(head); if (t) { tag = t[1]; head = head.slice(t[0].length) } }
-  else { const t = TAG.exec(text); if (t) { tag = t[1]; rest = text = text.slice(t[0].length).replace(/^./, c => c.toUpperCase()) } }
-  if (!head) {
-    const plain = rest.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/`/g, '')
-    head = plain.split(/[:;]\s|\s\(|,\s|\.\s|\.$/)[0]
-    if (head.split(' ').length < 3) head = plain.split(/[:;]\s|\.\s|\.$/)[0]
-    if (head.length > 78) head = `${head.slice(0, 75).replace(/\s+\S*$/, '')}…`
-  }
-  if (!/^i[A-Z]/.test(head)) head = head.charAt(0).toUpperCase() + head.slice(1)
-  return { text, tag, head }
 }
 function commitOf(repo) {
   const env = process.env.WORKERS_CI_COMMIT_SHA || process.env.GITHUB_SHA

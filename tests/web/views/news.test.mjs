@@ -1,54 +1,52 @@
-// news.test.mjs: What's new (app/web/public/news.mjs) shows CHANGELOG.md as the build reads it (dev/build.mjs
-// parseChangelog): days newest first, each with its one-line summary, at most one picture of the demo room
-// (app/web/public/changelog/, webp, at most 150 KB) and its parts New, Better, Fixed, every line with its short form
-// (changelogHead). The page (news.mjs) shows the picture on the newest three days only.
+// news.test.mjs: what What's new (app/web/public/news.mjs, from /whats-new.json: app/web/whats-new.mjs) is made of
+// besides the releases' notes: public/changelog/CHANGELOG.md, one short summary a day and at most one picture of the
+// demo room (webp, at most 150 KB), and history.json, the days of the old CHANGELOG.md with New, Better and Fixed;
+// every line with its short form (changelogHead).
 //   node --test tests/web/views/
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { changelogHead, parseChangelog } from '../../../app/web/dev/build.mjs'
+import { buildDays, changelogHead, isoOf, parseSummaries } from '../../../app/web/whats-new.mjs'
 
-const FILE = fs.readFileSync(new URL('../../../CHANGELOG.md', import.meta.url), 'utf8')
+const DIR = new URL('../../../app/web/public/changelog/', import.meta.url)
+const TEXT = fs.readFileSync(new URL('CHANGELOG.md', DIR), 'utf8')
+const HISTORY = JSON.parse(fs.readFileSync(new URL('history.json', DIR), 'utf8'))
 
-test('the repository\'s CHANGELOG.md reads as days with New, Better and Fixed', () => {
-  const days = parseChangelog(FILE)
-  assert.ok(days.length >= 1, 'at least one day')
-  for (const d of days) {
-    assert.match(d.day, /^\d{1,2} [A-Z][a-z]+ \d{4}$/, `a day's heading is a date: ${d.day}`)
-    assert.equal(d.releases, '', `${d.day}: no release numbers by hand (the release notes count them)`)
-    assert.ok(d.groups.length, `${d.day} has parts`)
-    assert.ok(d.summary.length > 10 && d.summary.length <= 110, `${d.day} has a summary of one short line: ${d.summary}`)
+test('the day summaries: a date heading, one short line, at most one picture that is there', () => {
+  const heads = [...TEXT.matchAll(/^## +(.+)$/gm)].map(m => m[1])
+  assert.ok(heads.length >= 1, 'at least one day')
+  for (const h of heads) assert.ok(isoOf(h), `a day's heading is a date: ${h}`)
+  const isos = heads.map(isoOf)
+  assert.deepEqual(isos, [...isos].sort().reverse(), 'newest first')
+  for (const [iso, d] of Object.entries(parseSummaries(TEXT))) {
+    assert.ok(d.summary.length > 10 && d.summary.length <= 110, `${iso} has a summary of one short line: ${d.summary}`)
     if (d.picture) {
       const file = new URL(`../../../app/web/public${d.picture.src}`, import.meta.url)
-      assert.ok(fs.existsSync(file), `${d.day}: its picture ${d.picture.src} is in app/web/public/changelog/`)
-      assert.ok(fs.statSync(file).size <= 150 * 1024, `${d.day}: its picture is at most 150 KB`)
-      assert.equal(fs.readFileSync(file).subarray(8, 12).toString(), 'WEBP', `${d.day}: its picture is a webp`)
-      assert.ok(d.picture.alt, `${d.day}: its picture says what it shows`)
-    }
-    for (const g of d.groups) {
-      assert.ok(['New', 'Better', 'Fixed'].includes(g.kind), `${d.day}: a part is New, Better or Fixed, not "${g.kind}"`)
-      assert.ok(g.items.length && g.items.every(i => i.text.length > 3), `${d.day} · ${g.kind}: lines with words`)
-      for (const i of g.items) assert.ok(i.head.length >= 3 && i.head.length <= 80, `${d.day} · ${g.kind}: a short form of 3 to 80 characters: "${i.head}"`)
+      assert.ok(fs.existsSync(file), `${iso}: its picture ${d.picture.src} is in app/web/public/changelog/`)
+      assert.ok(fs.statSync(file).size <= 150 * 1024, `${iso}: its picture is at most 150 KB`)
+      assert.equal(fs.readFileSync(file).subarray(8, 12).toString(), 'WEBP', `${iso}: its picture is a webp`)
+      assert.ok(d.picture.alt, `${iso}: its picture says what it shows`)
     }
   }
-  const dates = days.map(d => Date.parse(d.day))
-  assert.deepEqual(dates, [...dates].sort((a, b) => b - a), 'newest first')
 })
 
-test('a heading\'s releases, a line that goes on indented, and the words before the first day', () => {
-  const days = parseChangelog('# Changelog\n\nIntro words.\n\n## 12 October 2026 (v116)\n\n**New**\n- One thing\n  that goes on.\n- `code` too.\n\n**Fixed**\n- A fix.\n\n## 11 October 2026\n\n- Without a part.\n')
-  assert.deepEqual(days, [
-    { day: '12 October 2026', releases: 'v116', summary: '', picture: null, groups: [{ kind: 'New', items: [{ text: 'One thing that goes on.', tag: '', head: 'One thing that goes on' }, { text: '`code` too.', tag: '', head: 'Code too' }] }, { kind: 'Fixed', items: [{ text: 'A fix.', tag: '', head: 'A fix' }] }] },
-    { day: '11 October 2026', releases: '', summary: '', picture: null, groups: [{ kind: '', items: [{ text: 'Without a part.', tag: '', head: 'Without a part' }] }] },
-  ])
+test('the history: days with New, Better and Fixed, every line with a short form of 3 to 80 characters', () => {
+  assert.ok(HISTORY.length >= 1)
+  for (const d of buildDays({ history: HISTORY })) {
+    assert.ok(d.groups.length, `${d.day} has parts`)
+    for (const g of d.groups) {
+      assert.ok(['New', 'Better', 'Fixed'].includes(g.kind), `${d.day}: a part is New, Better or Fixed, not "${g.kind}"`)
+      for (const i of g.items) assert.ok(i.text.length > 3 && i.head.length >= 3 && i.head.length <= 80, `${d.day} · ${g.kind}: "${i.head}"`)
+    }
+  }
 })
 
-test('a day\'s summary and its one picture: the lines before its first part', () => {
-  const days = parseChangelog('# Changelog\n\n## 12 October 2026\n\nStar cards. Web and\niPhone agree.\n\n![The Desk](app/web/public/changelog/2026-10-12.webp)\n![A second](app/web/public/changelog/x.webp)\n\n**New**\n- One thing.\n\nNot a summary any more.\n\n## 11 October 2026\n\nNo picture.\n\n**New**\n- A thing.\n')
-  assert.equal(days[0].summary, 'Star cards. Web and iPhone agree.')
-  assert.deepEqual(days[0].picture, { alt: 'The Desk', src: '/changelog/2026-10-12.webp' })
-  assert.equal(days[0].groups[0].items.length, 1)
-  assert.equal(days[1].picture, null)
+test('a day\'s summary and its one picture', () => {
+  const s = parseSummaries('# x\n\n## 12 October 2026\n\nStar cards. Web and\niPhone agree.\n\n![The Desk](2026-10-12.webp)\n![A second](x.webp)\n\n## 11 October 2026\n\nNo picture.\n\n## Not a date\n\nLeft out.\n')
+  assert.deepEqual(s, {
+    '2026-10-12': { summary: 'Star cards. Web and iPhone agree.', picture: { alt: 'The Desk', src: '/changelog/2026-10-12.webp' } },
+    '2026-10-11': { summary: 'No picture.', picture: null },
+  })
 })
 
 test('a line\'s short form: a bold start, a tag, the first clause, never too short or too long', () => {

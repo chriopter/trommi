@@ -104,14 +104,3 @@ test('/whats-new.json: JSON from the releases, the summaries and the history in 
   assert.ok((await down.json()).days.length >= history.length)
   forget()
 })
-
-test('every picture the summaries name is there, webp, at most 150 KB', async () => {
-  const text = await readFile(new URL('changelog/CHANGELOG.md', PUBLIC), 'utf8')
-  const pics = Object.values(parseSummaries(text)).map(s => s.picture).filter(Boolean)
-  assert.ok(pics.length >= 1)
-  for (const p of pics) {
-    const bytes = await readFile(new URL(`.${p.src}`, PUBLIC))
-    assert.ok(bytes.length <= 150 * 1024, `${p.src} is ${bytes.length} bytes`)
-    assert.equal(bytes.subarray(8, 12).toString('latin1'), 'WEBP', p.src)
-  }
-})
