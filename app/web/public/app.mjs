@@ -358,8 +358,8 @@ function boardModel(state, agents = state.agents, desk = null) {
 }
 
 /** A desk's goals as they are kept: at most GOALS_LINES lines of at most GOALS_LINE_MAX characters, no blank lines at
- *  either end, no trailing spaces. The Desk shows the first GOALS_SHOWN and folds the rest (desk.mjs deskGoals). */
-export const GOALS_LINES = 20, GOALS_LINE_MAX = 200, GOALS_SHOWN = 5
+ *  either end, no trailing spaces. The Desk folds them to the first line on a tap (desk.mjs deskGoals). */
+export const GOALS_LINES = 20, GOALS_LINE_MAX = 200
 export const cleanGoals = text => String(text ?? '').replace(/\r\n?/g, '\n').split('\n').map(l => l.replace(/\s+$/, '').slice(0, GOALS_LINE_MAX)).join('\n').replace(/^\n+|\n+$/g, '').split('\n').slice(0, GOALS_LINES).join('\n')
 
 /** Who receives a note: the crowned session of the desk. One crown per desk: the starred session. */

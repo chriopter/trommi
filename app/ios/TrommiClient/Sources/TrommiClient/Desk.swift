@@ -348,8 +348,8 @@ public struct DeskDesc: Identifiable, Equatable {
  *  kept in the desk's register desk/<id> as the field goals (a human register: end-to-end encrypted like the name, on
  *  every device of his). At most GOALS_LINES lines of at most GOALS_LINE_MAX characters (UTF-16 units, as the web
  *  counts; never half a character), no spaces at a line's end, no blank lines at either end. The caps are the same
- *  on every client and in the connector; the Desk shows the first GOALS_SHOWN lines and folds the rest. */
-public let GOALS_LINES = 20, GOALS_LINE_MAX = 200, GOALS_SHOWN = 5
+ *  on every client and in the connector; the Desk folds them to their first line on a tap. */
+public let GOALS_LINES = 20, GOALS_LINE_MAX = 200
 public func cleanGoals(_ text: String) -> String {
   var lines = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").split(separator: "\n", omittingEmptySubsequences: false).map { raw -> String in
     var l = Substring(raw)
@@ -362,12 +362,12 @@ public func cleanGoals(_ text: String) -> String {
   while lines.last == "" { lines.removeLast() }
   return lines.prefix(GOALS_LINES).joined(separator: "\n")
 }
-/** The goals as the Desk shows them folded (desk.mjs goalsWords): the first GOALS_SHOWN lines, and how many more
- *  there are behind "+N more" (0: nothing to fold). */
+/** The goals as the Desk shows them folded (desk.mjs goalsWords): the first line, and how many more lie under it
+ *  (0: one line, nothing to fold, no toggle). */
 public func goalsFold(_ text: String) -> (shown: String, more: Int) {
   let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-  if lines.count <= GOALS_SHOWN { return (text, 0) }
-  return (lines.prefix(GOALS_SHOWN).joined(separator: "\n"), lines.count - GOALS_SHOWN)
+  if lines.count <= 1 { return (text, 0) }
+  return (String(lines[0]), lines.count - 1)
 }
 /** The register a desk has after its goals were written (app.mjs hub.desk({ id, goals })): every other field kept, the
  *  field gone when the text is empty; a desk that is not there yet starts as the first desk, "Personal". */

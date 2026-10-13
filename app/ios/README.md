@@ -630,8 +630,8 @@ As Messages, Mail and Notes do on iOS 26: no control of our own for the keyboard
   little below the keyboard's top edge) is kept free at its bottom. On the iPad the note is a sheet from the Desk's
   corner button.
 - **Desk:** one text field, the desk's goals under the greeting (`DeskGoals.swift`): a checklist of at most 20 lines
-  of 200 characters (`GOALS_LINES`, `cleanGoals` in `TrommiClient/Desk.swift`); the first five are shown, more are
-  folded behind "+N more" (`goalsFold`; open or not kept per desk), empty a faint "Goals…", nothing on All desks. A tap
+  of 200 characters (`GOALS_LINES`, `cleanGoals` in `TrommiClient/Desk.swift`); one toggle, a chevron
+  beside them, folds them to their first line and opens them again (`goalsFold`; kept per desk), empty a faint "Goals…", nothing on All desks. A tap
   writes in place; the keyboard going away keeps it, an emptied field clears it. Otherwise the keyboard only appears
   in sheets (New Desk, Rename), which the system handles.
 - **Settings:** forms with the system's keyboard handling; a drag dismisses it.
