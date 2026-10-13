@@ -37,7 +37,9 @@ permissions: {}
 # A replaced run's delivery is not lost: the newest run delivers when its release's iOS inputs differ from those last
 # delivered to TestFlight (.github/scripts/ios_delivered.sh), also when its release itself leaves iOS unchanged.
 concurrency:
-  group: ios-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  # (the merge queue: each entry has a ref of its own and a run of its own; in the group of main the entries cancelled
+  # each other, and "iOS client (check)" never reported)
+  group: ios-${{ contains(fromJSON('["pull_request","merge_group"]'), github.event_name) && github.ref || 'main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
