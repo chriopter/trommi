@@ -401,6 +401,10 @@ pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel)
     if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {
         view.sessions.insert(s.id.clone(), s);
     }
+    view.cards.clear();
+    if let Some(c) = lens.card.as_deref().and_then(|id| super::card::card(&b, id, &view.desk.stack)) {
+        view.cards.insert(c.id.clone(), c);
+    }
     // (and when a session's link, red hand or status line changes by the clock: status.rs `recheck_at`)
     let status = b.agents.iter().filter_map(|a| a.row.recheck_at).min();
     earliest(b.wake(), status)

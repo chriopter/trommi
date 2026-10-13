@@ -15,12 +15,13 @@
 //! W4 fills the screen types; their fields here are the contract's first cut.
 //!
 //! **Who makes it.** [`board::Board`] reads the board model once per render (the session list, the desks, what
-//! waits where), and each screen's module makes its unit from it: [`sidebar`], [`desk`], [`session`] (the page in view;
+//! waits where), and each screen's module makes its unit from it: [`sidebar`], [`desk`], [`session`] and [`card`] (the pages in view;
 //! its conversation's rows come from [`talk`]). The rules are the web app's of
 //! before (`app/web/public/app.mjs` `boardModel`), now here and nowhere else; [`words`] holds every sentence.
 //! What this device alone chooses (the desk in view, the zone) comes in as a [`Lens`].
 
 pub mod board;
+pub mod card;
 pub mod demo;
 pub mod desk;
 pub mod session;
@@ -610,7 +611,7 @@ pub struct SessionView {
     /// Talk rows, newest last.
     pub talk: Vec<TalkRow>,
     pub status_lines: Vec<StatusLineView>,
-    /// The hub holds older messages than `talk` has (`Action::LoadEarlier`).
+    /// The hub holds older messages than `talk` has.
     pub has_more: bool,
     /// Its short id on the board (`/chat/<slug>`).
     #[serde(default)]
@@ -866,6 +867,8 @@ pub struct StatusLineView {
     pub card: Option<CardRefView>,
 }
 
+/// One card's page (a question, something to read, a request for approval): who it comes from, its words, its
+/// answers or what was said, its history, and the comments under it. Made for the card in view (`Lens::card`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardView {
     pub id: String,
@@ -874,20 +877,96 @@ pub struct CardView {
     pub kind: String,
     /// "open", "answered", "closed".
     pub state: String,
+    /// 0 low, 1 normal, 2 high, 3 critical.
     pub urgency: u8,
     pub title: String,
+    /// Its whole text (markdown).
     pub body: String,
+    /// Its options, in the tiles' order (the advised last).
     pub options: Vec<OptionView>,
-    /// "You chose …", when answered.
+    /// "You chose: Ship it", when he answered (for a screen reader; drawn from `answer`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub you_chose: Option<Text>,
+    /// How many versions stood before this one.
     pub history: u32,
     pub starred: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<u64>,
-    /// File ids (`ViewModel.files`).
+    /// File ids (`ViewModel.files`): every attachment that is no page of a picture.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
+    /// Its number, for its address (`/card/<number>`); 0 when unknown.
+    #[serde(default)]
+    pub number: u32,
+    /// "Nr. 12".
+    #[serde(default)]
+    pub nr: Text,
+    /// Where it stands: "catching" (settled elsewhere, its outcome on the way), "open", "decided", "shredded", "done".
+    #[serde(default)]
+    pub status: String,
+    /// Who it comes from, above its title: "Desk › Main › Helper" (`FromView::path`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<FromView>,
+    /// "Knock! Blocking", while it is open and knocks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knock: Option<Text>,
+    /// The strip above the title while its session works on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<CardWorkView>,
+    /// When it was asked, or last revised.
+    #[serde(default)]
+    pub asked_ms: u64,
+    /// Its place among what waits on the Desk in view ("3 of 7"), with its neighbours.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<PlaceView>,
+    /// Small words of the quiet line: "replaces 2 questions", "revised", "3 messages below".
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Text>,
+    /// The text that stands on the card (markdown): its paragraphs; code and tables stand in the comments.
+    #[serde(default)]
+    pub text: String,
+    /// The comments hold more of the text ("More in the comments ↓").
+    #[serde(default)]
+    pub more: bool,
+    /// The agent's layout under the text (drawn in the sandboxed frame).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub html: String,
+    /// The options' own paragraphs, in the tiles' order; empty when none says more than its label.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sections: Vec<SectionView>,
+    /// Several options may be ticked.
+    #[serde(default)]
+    pub multiple: bool,
+    /// The answers' column: what can be done, or what was said.
+    #[serde(default)]
+    pub answer: AnswerView,
+    /// Under the answers: whether its session hears, and whether it has his answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<LinkNoteView>,
+    /// What the field under the card says while it is empty.
+    #[serde(default)]
+    pub ask: Text,
+    /// His unsent words (the draft kept with the card).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub draft: String,
+    /// The versions that stood before this one, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub versions: Vec<VersionView>,
+    /// What the star says ("Star", "Starred").
+    #[serde(default)]
+    pub star_says: Text,
+    /// The comments and what happened to the card, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub talk: Vec<TalkRow>,
+    /// The hub holds older comments than `talk` has.
+    #[serde(default)]
+    pub has_more: bool,
+    /// The cards it replaces.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub merged_from: Vec<CardRefView>,
+    /// The card that replaced it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged_into: Option<CardRefView>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -895,7 +974,114 @@ pub struct OptionView {
     pub key: String,
     pub label: String,
     pub recommended: bool,
+    /// He chose it (the answer that stands), or ticked it (his draft, while several may be ticked).
     pub chosen: bool,
+    /// Its line of detail, as plain words.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    /// Choosing it settles the card (its agent marked it final).
+    #[serde(default)]
+    pub settles: bool,
+    /// His note on it: unsent (his draft) while the card is open, else as he sent it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    /// The tooltip ("Recommended · Settles it").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tip: Option<Text>,
+}
+
+/// An option's own paragraph (a card written as sections).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SectionView {
+    pub key: String,
+    pub label: String,
+    pub recommended: bool,
+    /// What it says beyond its label (markdown); "" when nothing.
+    pub text: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub html: String,
+}
+
+/// The strip above a card's title while its session works on it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CardWorkView {
+    pub session_id: String,
+    /// What draws the session.
+    pub mark: String,
+    /// "Fernly Website is working on it".
+    pub says: Text,
+    /// Its status line ("Launch checklist · 14 of 19 done"), else "Reworking the card".
+    pub words: Text,
+    /// When that was said.
+    pub at_ms: u64,
+}
+
+/// A card's place among what waits on the Desk in view.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaceView {
+    pub at: u32,
+    pub of: u32,
+    /// "3 of 7".
+    pub says: Text,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prev: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<String>,
+}
+
+/// The answers' column of a card's page.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnswerView {
+    /// "options" (the card's options answer; a decision also offers the duck, What?? and the reverse card), "read"
+    /// (Got it, What??, the reverse card), "request" (Allow, Deny), "said" (what was said, and the way back),
+    /// "revising" (handed back), "working" (an info still worked on), "catching", "loading", "newer".
+    pub mode: String,
+    /// The one still tile: what was said ("Ship it", "Read", "Shredded"), "In revision", "Being worked on".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<Text>,
+    /// Under it: "Your note: …", or what the mode means.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<Text>,
+    /// The foot: "You chose", "You handed it back".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub did: Option<Text>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_ms: Option<u64>,
+    /// The way back, when there is one: "reopen" (his answer is taken back: `Action::DecideAgain`), "takeback" (his hand-back is).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub back: String,
+    /// His notes on single options, as sent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub option_notes: Vec<NotedView>,
+    /// "<name> marked this answer as final: nothing follows from it.", when his answer settled the card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settled: Option<Text>,
+    /// What its agent said when it closed the card ("Done by the agent").
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub summary: String,
+    /// Its agent closed it after his answer: What?? asks about what it did.
+    #[serde(default)]
+    pub finished: bool,
+    /// What the options say to a screen reader ("Your answer. One tap answers."), or the mode's one quiet sentence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub says: Option<Text>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotedView {
+    pub label: String,
+    pub note: Text,
+}
+
+/// A version of a card that stood before.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VersionView {
+    pub n: u32,
+    pub at_ms: u64,
+    pub title: String,
+    /// What its agent said changed with the version after it; "" without a word.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

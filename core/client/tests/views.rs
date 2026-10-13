@@ -6,7 +6,7 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use trommi_client_core::model::Model;
-use trommi_client_core::views::{demo, desk, session, sidebar, Board, Lens};
+use trommi_client_core::views::{card, demo, desk, session, sidebar, Board, Lens};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -77,6 +77,19 @@ fn the_demo_rooms_sessions() {
     for slug in ["fernly-web", "payments-service"] {
         let view = session::session(&b, slug).unwrap_or_else(|| panic!("no session {slug}"));
         golden(&format!("demo-session-{slug}.json"), &view);
+    }
+}
+
+/// A card's page: an open decision with pictures, one that was answered, and one that is with its agent.
+#[test]
+fn the_demo_rooms_cards() {
+    let (m, now) = demo_room();
+    let lens = lens(None);
+    let b = Board::new(&m, &lens, now);
+    let walk = desk::desk(&b).stack;
+    for (file, id) in [("demo-card-hero.json", "a38afef6dbdd056db8042980f2b83336"), ("demo-card-answered.json", "cac2dd6c8c804cbff53f50e0bf8c239e"), ("demo-card-with-agent.json", "0b48fb2a02a4fcc2a22da6f5a3b7bb49")] {
+        let view = card::card(&b, id, &walk).unwrap_or_else(|| panic!("no card {id}"));
+        golden(file, &view);
     }
 }
 
@@ -215,7 +228,12 @@ fn render_makes_the_boards_units_and_keeps_the_rest() {
     let page = session::session(&b, "fernly-web").unwrap();
     assert_eq!(view.sessions.get(&page.id), Some(&page));
     assert_eq!(view.sessions.len(), 1);
-    render(&m, &lens, now, &mut view);
+    // the card in view, by its number of the address
+    let on = Lens { card: Some("46".into()), ..lens.clone() };
+    render(&m, &on, now, &mut view);
+    assert_eq!(view.cards.values().map(|c| (c.number, c.title.as_str())).collect::<Vec<_>>(), [(46, "Launch on Monday at 09:00, or on Tuesday?")]);
     assert!(view.sessions.is_empty());
+    render(&m, &lens, now, &mut view);
+    assert!(view.sessions.is_empty() && view.cards.is_empty());
     assert!(wake.is_none_or(|w| w > now), "a wake lies ahead: {wake:?} at {now}");
 }
