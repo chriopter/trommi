@@ -59,24 +59,25 @@ Updates come by themselves: a running connector installs a new signed release an
 │ WebAssembly │  │ iPhone, iPad, Mac │
 └─────────────┘  └───────────────────┘
        │                   │
-┌─────────────────────────────┐  ┌─────────────────────────────┐
-│ client/ (Rust)              │  │ connector/                  │
-│ board, Desk, sessions,      │  │ Claude Code and Codex       │
-│ status, presence, seats     │  │ (native)                    │
-└─────────────────────────────┘  └─────────────────────────────┘
-               │                    │
-┌──────────────────────────────────────┐  ┌────────────────────┐
-│ core/ (Rust)                         │  │ hub/ (server)      │
-│ all cryptography                     │  │ stores ciphertext, │
-│                                      │  │ checks MLS changes │
-└──────────────────────────────────────┘  └────────────────────┘
-                    │                                │
-┌──────────────────────────────────────────────────────────────┐
-│                           OpenMLS                            │
-└──────────────────────────────────────────────────────────────┘
+╔═ Trommi core (Rust) ═════════════════════════╗
+║ ┌─────────────────────┐ ┌──────────────────┐ ║
+║ │ client/             │ │ connector/       │ ║
+║ │ board, Desk,        │ │ Claude Code and  │ ║
+║ │ sessions, presence  │ │ Codex (native)   │ ║
+║ └─────────────────────┘ └──────────────────┘ ║
+║            │                    │            ║  ┌────────────────────┐
+║ ┌──────────────────────────────────────────┐ ║  │ hub/ (server)      │
+║ │ core/                                    │ ║  │ stores ciphertext, │
+║ │ all cryptography                         │ ║  │ checks MLS changes │
+║ └──────────────────────────────────────────┘ ║  └────────────────────┘
+╚══════════════════════════════════════════════╝            │
+                      │                                     │
+┌───────────────────────────────────────────────────────────────────┐
+│                              OpenMLS                              │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
-Each box is built on the one below it. The hub shares no code with `core/` or `client/`: both sit on OpenMLS. All
+Each box is built on the one below it. `client/`, `connector/` and `core/` form the Trommi core in Rust; the hub shares no code with it: both sit on OpenMLS. All
 devices talk to the hub with sealed MLS messages, and keys stay on devices.
 
 Two Rust layers are shared. `core/` is the protocol: MLS, envelopes, chains, the command gate, files. `client/`
