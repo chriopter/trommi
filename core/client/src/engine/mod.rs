@@ -1,8 +1,77 @@
-//! The sync engine: catch-up in the hub's order, the live stream, the outbox pump, retries, upkeep, the login
-//! rebuild, recovery of a closed device, and when to wake. W1 builds it (start: Linux `engine/sync.rs`, the
-//! specification of the login rebuild, iOS `Room.swift`, web `engine.ts`).
+//! The sync engine: one device of one room against its hub, without I/O. Events in ([`Engine::on_http`],
+//! [`Engine::on_stream`], [`Engine::on_store`], [`Engine::on_wake`]), effects out, reports for the App
+//! ([`Report`]). The App holds it and feeds the model from its reports.
+//!
+//! # How it runs
+//!
+//! **Level-triggered.** After every event `drive` looks at the state and starts whatever is due and possible: a
+//! sign-in, the next page, the stream, the outbox's head, a repair. Nothing is "queued to be sent": a want stays a
+//! want until it is met, so a failure, a token that ended or a restart never loses one.
+//!
+//! **The device inside.** The protocol core's `Device` runs over [`memstore`]: what it writes leaves as one
+//! `DeviceApply` per step, placed before every request of the same answer. That effect is a barrier in the shell, so
+//! nothing a write implies is sent before the write is durable; if it fails the engine stops ([`Stopped::Store`]).
+//!
+//! **The position** is the engine's place in the hub's one order: every change at or below it was handed to the
+//! device, or passed for good. It starts at the device's own stored cursor and moves only item by item, upwards. A
+//! page (`GET /v1/changes` after the position) and the stream (opened after a change at or below the position) are
+//! each gap-free from where they start, so an item at or below the position is one already taken.
+//!
+//! # What is right by construction
+//!
+//! - **A gap is always found and said.** An envelope whose chain misses what stands before it is never shown out
+//!   of order. The sender's chain is fetched from what the device holds and the envelope tried again; if the hub
+//!   does not serve the chain, `Alert::Withheld` is raised (in a catch-up and live alike), the envelope stays out,
+//!   and the chain is asked for again whenever the order comes to rest.
+//! - **The hub's hints cannot break the order.** `head` (where to open the stream beside a long catch-up) and a
+//!   token's `expires_at` are hints. A stream that began beyond where the pages ended is closed and opened again
+//!   from the position; its changes are taken only when it began at or below the position. A wrong hint costs a
+//!   second stream, never an item.
+//! - **Every buffer is bounded.** A page holds at most [`sync::PAGE`] items and is taken before the next is asked;
+//!   the stream's changes that wait for a page are at most [`sync::LIVE_MAX`] ([`sync::LIVE_BYTES_MAX`] bytes),
+//!   beyond which they are dropped and read by a page; the tables of what waits for a group, a key or a chain hold
+//!   [`sync::BEHIND_MAX`] entries, beyond which one number says from where to read again; an answer is capped by
+//!   its request's `max_answer`, a stream's lines and events by the codec.
+//! - **A Commit is never passed over.** A log entry that does not process halts the pass with the position before
+//!   it (13.4); only a duplicate is skipped. So there is no later reading that would have to "repair" one.
+//! - **Repairs read what is missing, not everything.** An envelope for a group this device does not hold that far:
+//!   the Welcomes once, the joined group's log up to the position, then that group's envelopes from the first one
+//!   refused (`GET /v1/changes?group=`). Keys handed over: the envelopes chained without their body, per group,
+//!   from the first of them. A withheld chain: that sender's chain from what the device holds. None of them reads
+//!   the room's order again; [`Engine::reread_from`] is set only when one of those tables overflowed.
+//!
+//! # Which order the model is handed
+//!
+//! The engine hands the model each envelope as the protocol core took it. What is authenticated in that:
+//! each sender's own order (its chain: number, hash of the one before, signature), and for an envelope that
+//! changed an object the object's state after the core's replay of its versions (`object_after`: owner, state,
+//! the current version's hash), which follows the versions' own hash links and not the hub. A register's
+//! `current` is the core's as well. What is NOT authenticated: the order of envelopes of different senders
+//! where nothing links them (the lines of a Chat, an answer against a version it does not name). There the only
+//! order is the hub's change number, and the model must not let it decide a card's state where `object_after`
+//! says otherwise.
+//!
+//! # Not here yet
+//!
+//! Upkeep (invite steps, 5.2.7 to 5.2.9, heads, KeyPackages, seats), the Desk-first sign-in with the hub's batch
+//! routes, the reading of the room's past (one module, one entry point, behind [`Engine::reread_from`]), recovery
+//! of a closed device, relayed pieces and wishes.
 //!
 //! The contract fixes the retry rule here, so every app waits the same way.
+
+pub mod hubapi;
+pub mod memstore;
+pub mod stub;
+pub mod sync;
+
+pub use hubapi::HubCodec;
+pub use sync::{Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
+
+/// The device inside the engine: the protocol core's, over the store whose writes become barrier effects.
+pub type Device = trommi_core::device::Device<memstore::MemStore>;
+
+/// The hub codec the App runs on: the stand-in until W2's `crate::hub` codec lands (one line to switch).
+pub type Codec = stub::StubCodec;
 
 /// How long to wait before the next try of something that failed with `NotNow` or `Offline`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

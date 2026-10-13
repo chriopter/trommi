@@ -1,0 +1,1716 @@
+//! The engine itself: one state, driven by events, answering with effects. See [`super`] for the design.
+
+use super::hubapi::*;
+use super::memstore::{self, Writes};
+use super::{Backoff, Jitter};
+use crate::app::io::{DeviceEntry, HttpResponse, IoId, IoResult, StoreAnswer, StoreOp, StreamItem};
+use crate::app::{Effect, LogLevel};
+use crate::hub::{classify_io, Failure};
+use std::collections::{BTreeMap, VecDeque};
+use trommi_core::crypto::{Entropy, SystemEntropy};
+use trommi_core::device::{
+    log_finding, refusal_is_passing, Accepted, Device, EnvelopeOutcome, LogEntry, LogFinding, LogKind, Processed, Received, ReceivedEnvelope,
+    WelcomeExpectation,
+};
+use trommi_core::hub_auth::HubAddress;
+use trommi_core::ids::{DeviceId, GroupId, RoomId};
+use trommi_core::store::{OutboxEntry, OutboxKind};
+use trommi_core::Error;
+
+/// Items asked for in one page of the hub's order. Also the most the engine holds of the order at once.
+pub const PAGE: u32 = 500;
+/// Links asked for in one page of a sender's chain.
+pub const CHAIN_PAGE: u32 = 500;
+/// Entries asked for in one page of a group's log.
+pub const LOG_PAGE: u32 = 200;
+/// At most so many changes the stream brought wait for their turn; more are left to the next page.
+pub const LIVE_MAX: usize = 512;
+/// At most so many bytes of them.
+pub const LIVE_BYTES_MAX: usize = 8 << 20;
+/// After a read of the Welcomes that joined nothing, so many items that wait for a group pass before the next.
+pub const WELCOMES_AGAIN: u32 = 64;
+/// At most so many groups are noted as behind; beyond that one number says from where to read again.
+pub const BEHIND_MAX: usize = 4096;
+/// A catch-up that halted at an item is tried again after this long.
+pub const HALTED_RETRY_MS: u64 = 15_000;
+/// The pump tries a blocking entry again after this long.
+pub const BLOCKED_RETRY_MS: u64 = 30_000;
+/// A token is renewed this long before the engine takes it to end.
+pub const TOKEN_RENEW_BEFORE_MS: u64 = 60_000;
+/// A token lives at most this long (12.3.1), whatever the hub says.
+pub const TOKEN_MAX_MS: u64 = 600_000;
+/// A stream that brought nothing for this long is taken for dead (the hub pings every 20 s).
+pub const STREAM_SILENT_MS: u64 = 75_000;
+/// At most so many reports wait for the App.
+const REPORTS_MAX: usize = 4 * PAGE as usize;
+
+/// Refusals that end an envelope without a void record and without a hole that matters: the group is archived, or
+/// this device is out.
+fn is_dead(code: &Error) -> bool {
+    matches!(code, Error::Gone | Error::NotMember | Error::RemovedSender | Error::NoRoom)
+}
+
+/// Refusals that mean the group moved on under a Commit or message: the log is processed, and it is built again.
+fn has_moved(code: &Error) -> bool {
+    matches!(code, Error::EpochTaken | Error::RoomBehind | Error::WrongEpoch | Error::StaleSession | Error::GroupBehind)
+}
+
+fn carries_commit(kind: OutboxKind) -> bool {
+    !matches!(
+        kind,
+        OutboxKind::Message | OutboxKind::RelayMessage | OutboxKind::Envelope | OutboxKind::KeyPackages | OutboxKind::SealedKey
+    )
+}
+
+/// What the engine needs from the App to act: the clock, the App's id counter and where effects go.
+pub struct Ctx<'a> {
+    pub now: u64,
+    pub next_id: &'a mut u64,
+    pub out: &'a mut Vec<Effect>,
+}
+
+impl Ctx<'_> {
+    fn id(&mut self) -> IoId {
+        let id = IoId(*self.next_id);
+        *self.next_id += 1;
+        id
+    }
+    fn log(&mut self, level: LogLevel, text: impl Into<String>) {
+        self.out.push(Effect::Log { level, text: text.into() });
+    }
+}
+
+/// How the device stands with the hub.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Connection {
+    /// Nothing reached the hub yet, or the last try failed.
+    Offline,
+    /// The hub's order is being read up to its end.
+    CatchingUp,
+    /// At the end of the hub's order, and the stream is open.
+    Live,
+}
+
+/// Why the engine does nothing more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stopped {
+    /// A Commit of the room group removed this device.
+    Removed,
+    /// Another owner wrote the device state, or a write failed: memory is ahead of what is stored.
+    Store,
+    /// The device itself failed (its store's contents, its entropy).
+    Device,
+}
+
+/// An alert for the person. The words are the App's (`views`); the engine names what happened.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Alert {
+    /// The hub does not serve a part of a device's chain: what follows it is not shown (9.0.6).
+    Withheld { group: GroupId, sender: DeviceId, change: u64 },
+    /// An entry of a group's log does not process: the group is kept as it was (13.4).
+    BadGroup { group: GroupId, change: u64, code: &'static str },
+    /// The hub served something that is no envelope.
+    NotAnEnvelope { change: u64, code: &'static str },
+    /// A Welcome was refused.
+    Welcome { group: GroupId, code: &'static str },
+    /// The hub answered with something the protocol does not allow: nothing of it was taken.
+    BadAnswer { why: &'static str },
+    /// The hub says this key is no member; the device itself has seen no Commit that removed it.
+    NotMember,
+    /// The hub needs a newer Trommi.
+    ClientTooOld,
+    /// A newer Trommi wrote here.
+    NewerVersion { from: DeviceId },
+}
+
+/// What the engine tells the App, in order. The App feeds the model from it (`Envelope`, `Log`, `Groups`).
+#[derive(Debug)]
+pub enum Report {
+    /// An envelope as the protocol core took it. `ordered`: in the hub's order; else read again (a repair).
+    Envelope { received: Box<ReceivedEnvelope>, ordered: bool },
+    /// A log entry the device processed.
+    Log { change: u64, group: GroupId, processed: Box<Processed> },
+    /// The device's groups may have changed: read `Engine::device().groups()` again.
+    Groups,
+    Alert(Alert),
+    Presence(Presence),
+    /// The stream opened (again): the hub's list of who is here comes first, ended by `Here`.
+    StreamOpened,
+    Here,
+    Connection(Connection),
+    /// The hub took an outbox entry.
+    Accepted { id: u64, kind: OutboxKind, change: Option<u64> },
+    /// The hub refused an outbox entry for good: what it echoed is rolled back.
+    Refused { id: u64, kind: OutboxKind, code: &'static str, voided: bool },
+    /// The pump halts on this entry (an envelope refused without a void record), or goes on again (`None`).
+    Blocked(Option<(u64, &'static str)>),
+    Stopped(Stopped),
+}
+
+/// A wait before the next try of something.
+#[derive(Clone, Copy, Debug, Default)]
+struct Retry {
+    attempt: u32,
+    at: Option<u64>,
+}
+
+impl Retry {
+    fn fail(&mut self, now: u64, retry_after_ms: Option<u64>, jitter: &mut Jitter) {
+        self.attempt = self.attempt.saturating_add(1);
+        self.at = Some(now + Backoff::HUB.delay_ms(self.attempt, retry_after_ms, jitter.draw()));
+    }
+    fn wait(&mut self, now: u64, ms: u64) {
+        self.at = Some(now + ms);
+    }
+    fn ok(&mut self) {
+        *self = Retry::default();
+    }
+    fn waiting(&self, now: u64) -> bool {
+        self.at.is_some_and(|at| at > now)
+    }
+    /// The network may be back: the wait ends, the count stays (a failure doubles on from where it was).
+    fn hurry(&mut self) {
+        self.at = None;
+    }
+}
+
+/// What a request in flight was for.
+enum Asked<E> {
+    Challenge(E),
+    Token(E),
+    Page(E),
+    Post { expect: E, entry: u64, kind: OutboxKind, group: Option<GroupId> },
+    Welcomes(E),
+    GroupLog { expect: E, group: GroupId, upto: u64 },
+    Chain { expect: E, group: GroupId, sender: DeviceId, before: u64 },
+    /// A report to the hub nothing waits for (`RejectCommit`).
+    Told(E),
+    Mend { expect: E, mend: Mend },
+    DeviceWrite,
+}
+
+/// A bounded read of what is actually missing, made when the order is at rest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mend {
+    /// One group's envelopes after `after`, up to `upto` (`GET /v1/changes?group=`): what the device could not take
+    /// before (its group was behind) is taken, what it chained without a key is read back.
+    Group { group: GroupId, after: u64, upto: u64 },
+    /// A sender's chain from what this device holds: a stretch the hub withheld before.
+    Chain { group: GroupId, sender: DeviceId },
+}
+
+/// What the head of the order waits for before it is tried again.
+enum Repair {
+    /// The hub's Welcomes for this device; `after`: the last row read.
+    Welcomes { after: u64, joined: Vec<GroupId>, asked: bool },
+    /// The logs of groups joined late, one after another, up to the position.
+    Logs { groups: VecDeque<GroupId>, after: u64, asked: bool },
+    /// A stretch of a sender's chain, from what this device holds to just before `before`.
+    Chain { group: GroupId, sender: DeviceId, after: u64, before: u64, asked: bool },
+}
+
+/// What was tried for the item at the head of the order.
+#[derive(Clone, Copy, Default)]
+struct Tried {
+    welcomes: bool,
+    chain: bool,
+}
+
+enum Taken {
+    /// Taken, or passed for good: the position moves over it.
+    Done,
+    /// It waits for a repair.
+    Wait(Repair),
+    /// It does not process: the pass stops with the position before it.
+    Halt,
+}
+
+struct Token {
+    value: String,
+    renew_at: u64,
+}
+
+struct StreamConn<S> {
+    id: IoId,
+    reader: S,
+    opened: bool,
+    /// The change it was opened after.
+    from: u64,
+    heard_at: u64,
+}
+
+/// The sync engine of one device in one room.
+pub struct Engine<H: HubCodec> {
+    codec: H,
+    device: Device<memstore::MemStore>,
+    writes: Writes,
+    room: RoomId,
+    hub: String,
+    address: HubAddress,
+    client: String,
+    jitter: Jitter,
+    stopped: Option<Stopped>,
+    pending: BTreeMap<IoId, Asked<H::Expect>>,
+    reports: VecDeque<Report>,
+
+    // signing in
+    token: Option<Token>,
+    signing: Option<IoId>,
+    auth_retry: Retry,
+    /// Requests refused as `unauthorised` in a row under a fresh token.
+    unauthorised: u32,
+
+    // the hub's order
+    /// Every change at or below it was taken by the device, or passed for good.
+    position: u64,
+    /// The items being taken, in order: a page's, or the stream's.
+    todo: VecDeque<ChangeItem>,
+    /// Where the position stands once `todo` is through, and whether the hub has more after it.
+    todo_upto: u64,
+    todo_more: bool,
+    tried: Tried,
+    repair: Option<Repair>,
+    page: Option<IoId>,
+    /// How many items the next page asks for: halved when a page was more than the shell may read.
+    page_limit: u32,
+    /// A pass is wanted: pages from the position until the hub has no more.
+    pass: bool,
+    /// A pass came to the hub's end at least once since the start.
+    caught_up: bool,
+    order_retry: Retry,
+    /// Welcomes read with nothing joined: items that waited for a group since (`WELCOMES_AGAIN`).
+    welcomes_idle: Option<u32>,
+    welcomes_after: u64,
+    /// Envelopes refused as `group-behind` for a group this device does not hold that far: per group the first such
+    /// change and the lowest epoch. Read again once the group is there (`past`).
+    behind: BTreeMap<GroupId, (u64, u64)>,
+    /// Envelopes chained without their body for want of a key (`no-key`): per group the first such change. Read back
+    /// once keys were handed over.
+    keyless: BTreeMap<GroupId, u64>,
+    /// Chains the hub did not serve whole: per group and sender the number that could not be reached. Asked for
+    /// again when the order comes to rest.
+    withheld: BTreeMap<(GroupId, DeviceId), u64>,
+    /// The reads that mend the above, one at a time.
+    mends: VecDeque<Mend>,
+    mending: Option<IoId>,
+    /// From where the room's order is to be read once more (the seam to `past`): only when one of the tables above
+    /// had no room for one more group, or reports were lost.
+    reread_from: Option<u64>,
+
+    // the stream
+    stream: Option<StreamConn<H::Stream>>,
+    stream_retry: Retry,
+    /// The room's head as a page said it: a hint for where to open the stream.
+    head_hint: Option<u64>,
+    /// Changes the stream brought while pages were read.
+    live: VecDeque<ChangeItem>,
+    live_bytes: usize,
+    background: bool,
+
+    // the outbox
+    posting: Option<IoId>,
+    pump_retry: Retry,
+    blocked: Option<u64>,
+    /// How many unused KeyPackages the hub holds, as it last said.
+    pub key_packages_at_hub: Option<u32>,
+    connection: Connection,
+}
+
+/// Why a stored device does not open as an engine.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OpenError {
+    /// The store is empty, or its device belongs to no room yet: the sign-in and join screens.
+    NoRoom,
+    /// The stored state does not open.
+    Device(&'static str),
+    /// `Config.hub` is no canonical hub address.
+    Hub,
+}
+
+impl<H: HubCodec> Engine<H> {
+    /// Opens the device the shell loaded and makes its engine. Nothing is asked of the hub yet (`drive`).
+    pub fn open(codec: H, hub: &str, client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>) -> Result<Self, OpenError> {
+        Self::open_with(codec, hub, client, seed, revision, entries, Box::new(SystemEntropy))
+    }
+
+    pub fn open_with(
+        codec: H,
+        hub: &str,
+        client: &str,
+        seed: u64,
+        revision: u64,
+        entries: Vec<DeviceEntry>,
+        entropy: Box<dyn Entropy + Send>,
+    ) -> Result<Self, OpenError> {
+        if revision == 0 || entries.is_empty() {
+            return Err(OpenError::NoRoom);
+        }
+        let address = HubAddress::parse(hub).map_err(|_| OpenError::Hub)?;
+        let (store, writes) = memstore::store(revision, entries.into_iter().map(|e| (e.key.0, e.value.0)).collect());
+        let device = Device::open(store, entropy).map_err(|e| OpenError::Device(e.code()))?;
+        let room = device.room().ok_or(OpenError::NoRoom)?;
+        let position = device.cursor();
+        Ok(Engine {
+            codec,
+            device,
+            writes,
+            room,
+            hub: hub.to_string(),
+            address,
+            client: client.to_string(),
+            jitter: Jitter::new(seed),
+            stopped: None,
+            pending: BTreeMap::new(),
+            reports: VecDeque::new(),
+            token: None,
+            signing: None,
+            auth_retry: Retry::default(),
+            unauthorised: 0,
+            position,
+            todo: VecDeque::new(),
+            todo_upto: position,
+            todo_more: false,
+            tried: Tried::default(),
+            repair: None,
+            page: None,
+            page_limit: PAGE,
+            pass: true,
+            caught_up: false,
+            order_retry: Retry::default(),
+            welcomes_idle: None,
+            welcomes_after: 0,
+            behind: BTreeMap::new(),
+            keyless: BTreeMap::new(),
+            withheld: BTreeMap::new(),
+            mends: VecDeque::new(),
+            mending: None,
+            reread_from: None,
+            stream: None,
+            stream_retry: Retry::default(),
+            head_hint: None,
+            live: VecDeque::new(),
+            live_bytes: 0,
+            background: false,
+            posting: None,
+            pump_retry: Retry::default(),
+            blocked: None,
+            key_packages_at_hub: None,
+            connection: Connection::Offline,
+        })
+    }
+
+    // ---- what the App reads
+
+    pub fn device(&self) -> &Device<memstore::MemStore> {
+        &self.device
+    }
+    pub fn room(&self) -> RoomId {
+        self.room
+    }
+    pub fn position(&self) -> u64 {
+        self.position
+    }
+    pub fn connection(&self) -> Connection {
+        self.connection
+    }
+    pub fn stopped(&self) -> Option<Stopped> {
+        self.stopped
+    }
+    /// A pass reached the hub's end at least once since this App started.
+    pub fn caught_up(&self) -> bool {
+        self.caught_up
+    }
+    /// From where the room's order is to be read once more, if it is (the seam to the reading of the past).
+    pub fn reread_from(&self) -> Option<u64> {
+        self.reread_from
+    }
+    /// The next report, oldest first.
+    pub fn next_report(&mut self) -> Option<Report> {
+        self.reports.pop_front()
+    }
+
+    /// An action on the device (seal, commit, answer): what it wrote is stored and the pump is woken.
+    pub fn act<T>(&mut self, ctx: &mut Ctx<'_>, action: impl FnOnce(&mut Device<memstore::MemStore>, u64) -> Result<T, Error>) -> Result<T, Error> {
+        if self.stopped.is_some() {
+            return Err(Error::Storage("the device is closed".into()));
+        }
+        let result = action(&mut self.device, ctx.now);
+        if let Err(e) = &result {
+            self.local(ctx, e);
+        }
+        self.drive(ctx);
+        result
+    }
+
+    /// When the engine wants `Event::Wake` next; none: nothing waits for the clock.
+    pub fn next_wake(&self) -> Option<u64> {
+        if self.stopped.is_some() {
+            return None;
+        }
+        let mut at: Option<u64> = None;
+        let mut want = |t: Option<u64>| {
+            if let Some(t) = t {
+                at = Some(at.map_or(t, |a| a.min(t)));
+            }
+        };
+        want(self.auth_retry.at);
+        if self.token.is_some() {
+            if self.pass || !self.todo.is_empty() {
+                want(self.order_retry.at);
+            }
+            if !self.background {
+                want(self.stream_retry.at);
+                want(self.stream.as_ref().map(|s| s.heard_at + STREAM_SILENT_MS));
+            }
+            if !self.device.outbox().is_empty() {
+                want(self.pump_retry.at);
+            }
+        }
+        at
+    }
+
+    // ---- events
+
+    /// The first step, and the one after every event: starts whatever is due and possible.
+    pub fn start(&mut self, ctx: &mut Ctx<'_>) {
+        self.report(Report::Groups);
+        self.drive(ctx);
+    }
+
+    pub fn on_wake(&mut self, ctx: &mut Ctx<'_>) {
+        // a stream that went silent is cut and opened again
+        if self.stream.as_ref().is_some_and(|s| ctx.now >= s.heard_at + STREAM_SILENT_MS) {
+            self.close_stream(ctx);
+            self.pass = true;
+        }
+        self.drive(ctx);
+    }
+
+    /// The app came to the front, or the network is back: whatever waited is tried now.
+    pub fn on_foreground(&mut self, ctx: &mut Ctx<'_>) {
+        self.background = false;
+        self.hurry();
+        if self.stream.is_none() {
+            self.pass = true;
+        }
+        self.drive(ctx);
+    }
+
+    pub fn on_background(&mut self, ctx: &mut Ctx<'_>) {
+        self.background = true;
+        self.close_stream(ctx);
+        self.drive(ctx);
+    }
+
+    pub fn on_net(&mut self, ctx: &mut Ctx<'_>, online: bool) {
+        // (only a hint: the engine's own results decide)
+        if online {
+            self.hurry();
+            self.drive(ctx);
+        }
+    }
+
+    fn hurry(&mut self) {
+        self.auth_retry.hurry();
+        self.order_retry.hurry();
+        self.stream_retry.hurry();
+        self.pump_retry.hurry();
+    }
+
+    /// The result of a store effect of this engine. False: the id is not the engine's.
+    pub fn on_store(&mut self, ctx: &mut Ctx<'_>, id: IoId, result: &IoResult<StoreAnswer>) -> bool {
+        match self.pending.remove(&id) {
+            Some(Asked::DeviceWrite) => {
+                if let IoResult::Err(e) = result {
+                    ctx.log(LogLevel::Error, format!("device write: {:?}", e.kind));
+                    self.stop(ctx, Stopped::Store);
+                }
+                true
+            }
+            Some(other) => {
+                self.pending.insert(id, other);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// The result of an HTTP effect of this engine. False: the id is not the engine's.
+    pub fn on_http(&mut self, ctx: &mut Ctx<'_>, id: IoId, result: IoResult<HttpResponse>) -> bool {
+        let Some(asked) = self.pending.remove(&id) else {
+            return false;
+        };
+        if self.stopped.is_some() {
+            return true;
+        }
+        let (expect, response) = match (&asked, &result) {
+            (Asked::DeviceWrite, _) => return true,
+            (
+                Asked::Challenge(e)
+                | Asked::Token(e)
+                | Asked::Page(e)
+                | Asked::Post { expect: e, .. }
+                | Asked::Welcomes(e)
+                | Asked::GroupLog { expect: e, .. }
+                | Asked::Chain { expect: e, .. }
+                | Asked::Mend { expect: e, .. }
+                | Asked::Told(e),
+                IoResult::Ok(response),
+            ) => (Some(e), Some(response)),
+            _ => (None, None),
+        };
+        let answer: Result<Answer, Failure> = match (expect, response, &result) {
+            (Some(expect), Some(response), _) => self.codec.answer(expect, response),
+            (_, _, IoResult::Err(error)) => match classify_io(error) {
+                Some(failure) => Err(failure),
+                None => Err(Failure::Offline), // cancelled by somebody else: as if it never left
+            },
+            _ => Err(Failure::Offline),
+        };
+        // a token the hub no longer takes: forgotten; whatever asked is asked again once signed in
+        let refusal = match (&answer, response) {
+            (Err(Failure::Refused { .. }), Some(response)) => self.codec.refusal(response),
+            _ => None,
+        };
+        let unauthorised = refusal.as_ref().is_some_and(|r| r.code == "unauthorised") && !matches!(asked, Asked::Challenge(_) | Asked::Token(_));
+        if unauthorised {
+            self.token = None;
+            self.unauthorised += 1;
+            if self.unauthorised > 1 {
+                self.auth_retry.fail(ctx.now, None, &mut self.jitter);
+            }
+        } else if answer.is_ok() && !matches!(asked, Asked::Challenge(_) | Asked::Token(_)) {
+            self.unauthorised = 0;
+        }
+        match asked {
+            Asked::DeviceWrite => {}
+            Asked::Challenge(_) => self.on_challenge(ctx, answer),
+            Asked::Token(_) => self.on_token(ctx, answer),
+            Asked::Page(_) => self.on_page(ctx, answer, unauthorised, refusal),
+            Asked::Post { entry, kind, group, .. } => self.on_posted(ctx, entry, kind, group, answer, unauthorised, refusal),
+            Asked::Welcomes(_) => self.on_welcomes(ctx, answer, unauthorised),
+            Asked::GroupLog { group, upto, .. } => self.on_group_log(ctx, group, upto, answer, unauthorised),
+            Asked::Chain { group, sender, before, .. } => self.on_chain(ctx, group, sender, before, answer, unauthorised),
+            Asked::Told(_) => {}
+            Asked::Mend { mend, .. } => self.on_mend(ctx, mend, answer, unauthorised),
+        }
+        self.drive(ctx);
+        true
+    }
+
+    /// An item of a stream this engine opened. False: the id is not the engine's (an old stream's late item).
+    pub fn on_stream(&mut self, ctx: &mut Ctx<'_>, id: IoId, item: StreamItem) -> bool {
+        let Some(conn) = self.stream.as_mut().filter(|s| s.id == id) else {
+            return false;
+        };
+        if self.stopped.is_some() {
+            return true;
+        }
+        conn.heard_at = ctx.now;
+        match item {
+            StreamItem::Opened { status, headers } => {
+                // (an answer that is no stream: its body follows and says why, `ended` sorts it)
+                if conn.reader.opened(status, &headers).is_ok() {
+                    conn.opened = true;
+                    self.stream_retry.ok();
+                    self.report(Report::StreamOpened);
+                }
+            }
+            StreamItem::Chunk { bytes } => {
+                let fed = conn.reader.chunk(&bytes);
+                for event in fed.events {
+                    self.on_stream_event(ctx, event);
+                }
+                if let Some(failure) = fed.failure {
+                    // an event the protocol does not allow ends the connection; the next resumes after the position
+                    ctx.log(LogLevel::Warn, "stream: an event the protocol does not allow");
+                    if let Failure::BadAnswer { why } = failure {
+                        self.report(Report::Alert(Alert::BadAnswer { why }));
+                    }
+                    self.close_stream(ctx);
+                    self.stream_retry.fail(ctx.now, None, &mut self.jitter);
+                    self.pass = true;
+                }
+            }
+            StreamItem::Ended | StreamItem::Failed { .. } => {
+                let failure = self.stream.take().and_then(|mut s| s.reader.ended());
+                let retry_after = match &failure {
+                    Some(Failure::NotNow { retry_after_ms, .. }) => *retry_after_ms,
+                    Some(Failure::Refused { status: 401, .. }) => {
+                        self.token = None;
+                        None
+                    }
+                    _ => None,
+                };
+                self.stream_retry.fail(ctx.now, retry_after, &mut self.jitter);
+                // what came between this stream's end and the next one's start is read by a page
+                self.pass = true;
+            }
+        }
+        self.drive(ctx);
+        true
+    }
+
+    fn on_stream_event(&mut self, ctx: &mut Ctx<'_>, event: StreamEvent) {
+        match event {
+            StreamEvent::Change(item) => {
+                if item.change() <= self.position {
+                    return;
+                }
+                // While pages are read, or the stream began beyond the position, a change waits for its turn: taken
+                // now it would move the position over what lies between. What does not fit is left to a page.
+                let size = match &item {
+                    ChangeItem::Envelope(e) => e.envelope.len(),
+                    ChangeItem::Commit(l) | ChangeItem::Message(l) => l.bytes.len(),
+                } + 64;
+                if self.live.len() >= LIVE_MAX || self.live_bytes + size > LIVE_BYTES_MAX {
+                    self.live.clear();
+                    self.live_bytes = 0;
+                    self.pass = true;
+                    // (the stream goes on from after the page: it is opened again there)
+                    self.close_stream(ctx);
+                    return;
+                }
+                self.live_bytes += size;
+                self.live.push_back(item);
+            }
+            StreamEvent::Welcome { .. } => {
+                // a Welcome waits: read at the next item that needs one, and at once when nothing is being taken
+                self.welcomes_idle = None;
+                if self.repair.is_none() && self.todo.is_empty() {
+                    self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                }
+            }
+            StreamEvent::Presence(p) => self.report(Report::Presence(p)),
+            StreamEvent::Here => self.report(Report::Here),
+            // (relayed pieces, wishes, invite Requests, archived, evicted files: with the parts that use them)
+            StreamEvent::Relay { .. } | StreamEvent::Wish(_) | StreamEvent::InviteRequest { .. } | StreamEvent::Archived { .. } | StreamEvent::FileEvicted { .. } => {}
+        }
+    }
+
+    // ---- the drive: whatever is due and possible is started
+
+    fn drive(&mut self, ctx: &mut Ctx<'_>) {
+        if self.stopped.is_some() {
+            self.flush(ctx);
+            return;
+        }
+        // The order first: what is at hand is taken before anything new is asked.
+        self.take(ctx);
+        self.flush(ctx);
+        if self.stopped.is_some() {
+            return;
+        }
+        if !self.signed_in(ctx) {
+            self.connect(ctx);
+            return;
+        }
+        self.drive_order(ctx);
+        self.drive_stream(ctx);
+        self.drive_pump(ctx);
+        self.flush(ctx);
+        self.connect(ctx);
+    }
+
+    /// Hands the shell what the device wrote: before any request that follows in this answer (the barrier).
+    fn flush(&mut self, ctx: &mut Ctx<'_>) {
+        if let Some(write) = self.writes.take() {
+            let id = ctx.id();
+            self.pending.insert(id, Asked::DeviceWrite);
+            ctx.out.push(Effect::Store {
+                id,
+                op: StoreOp::DeviceApply {
+                    expected_revision: write.expected_revision,
+                    put: write.put.into_iter().map(|(k, v)| DeviceEntry { key: k.into(), value: v.into() }).collect(),
+                    delete: write.delete.into_iter().map(Into::into).collect(),
+                },
+            });
+        }
+    }
+
+    fn connect(&mut self, _ctx: &mut Ctx<'_>) {
+        let now = if self.stream.as_ref().is_some_and(|s| s.opened) && !self.pass && self.todo.is_empty() && self.caught_up {
+            Connection::Live
+        } else if self.token.is_some() && (self.page.is_some() || !self.todo.is_empty()) {
+            Connection::CatchingUp
+        } else if self.token.is_some() && self.caught_up && self.background && !self.pass {
+            // (in the back, at the end of the order, without a stream: as live as it gets there)
+            Connection::Live
+        } else if self.auth_retry.at.is_none() && self.order_retry.at.is_none() && self.stream_retry.at.is_none() {
+            // (on its way: no failure stands)
+            if self.caught_up { self.connection } else { Connection::CatchingUp }
+        } else {
+            Connection::Offline
+        };
+        if now != self.connection {
+            self.connection = now;
+            self.report(Report::Connection(now));
+        }
+    }
+
+    fn report(&mut self, report: Report) {
+        // (the App drains after every event; a page's worth at most stands here)
+        if self.reports.len() >= REPORTS_MAX {
+            self.reports.pop_front();
+            self.reread_from = Some(0);
+        }
+        self.reports.push_back(report);
+    }
+
+    fn stop(&mut self, ctx: &mut Ctx<'_>, why: Stopped) {
+        if self.stopped.is_some() {
+            return;
+        }
+        self.stopped = Some(why);
+        self.writes.lose();
+        for (id, asked) in std::mem::take(&mut self.pending) {
+            if !matches!(asked, Asked::DeviceWrite) {
+                ctx.out.push(Effect::Cancel { id });
+            }
+        }
+        if let Some(stream) = self.stream.take() {
+            ctx.out.push(Effect::Cancel { id: stream.id });
+        }
+        self.report(Report::Stopped(why));
+    }
+
+    /// A failure of the device itself ends the engine: the shell opens the stored state again with a new App.
+    fn local(&mut self, ctx: &mut Ctx<'_>, error: &Error) {
+        if matches!(error, Error::Storage(_) | Error::Entropy | Error::Internal(_)) || !self.device.is_owner() {
+            ctx.log(LogLevel::Error, format!("device: {}", error.code()));
+            self.stop(ctx, if self.device.is_owner() { Stopped::Device } else { Stopped::Store });
+        }
+    }
+
+    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(H::Expect) -> Asked<H::Expect>) -> Option<IoId> {
+        let site = Site {
+            url: &self.hub,
+            token: if token { self.token.as_ref().map(|t| t.value.as_str()) } else { None },
+            client: &self.client,
+        };
+        match self.codec.request(&site, &route) {
+            Ok((request, expect)) => {
+                // (what the device wrote goes first: the request may carry what that state implies)
+                self.flush(ctx);
+                let id = ctx.id();
+                self.pending.insert(id, asked(expect));
+                ctx.out.push(Effect::Http { id, request });
+                Some(id)
+            }
+            Err(_) => {
+                ctx.log(LogLevel::Error, "a request could not be built");
+                None
+            }
+        }
+    }
+
+    // ---- signing in (12.3)
+
+    fn signed_in(&mut self, ctx: &mut Ctx<'_>) -> bool {
+        if self.token.as_ref().is_some_and(|t| ctx.now < t.renew_at) {
+            return true;
+        }
+        if self.signing.is_none() && !self.auth_retry.waiting(ctx.now) {
+            let room = self.room;
+            self.signing = self.ask(ctx, Route::Challenge { room: &room }, false, Asked::Challenge);
+        }
+        // (a token about to end still serves until the new one is there)
+        self.token.is_some()
+    }
+
+    fn on_challenge(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
+        self.signing = None;
+        match answer {
+            Ok(Answer::Challenge(challenge)) => match self.device.hub_sign_in(&self.address, challenge) {
+                Ok(signed) => {
+                    let room = self.room;
+                    self.signing = self.ask(ctx, Route::Token { room: &room, auth: &signed.auth, signature: &signed.signature }, false, Asked::Token);
+                }
+                Err(e) => self.local(ctx, &e),
+            },
+            Ok(_) => self.auth_failed(ctx, Failure::BadAnswer { why: "challenge" }),
+            Err(failure) => self.auth_failed(ctx, failure),
+        }
+    }
+
+    fn on_token(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>) {
+        self.signing = None;
+        match answer {
+            Ok(Answer::Token { token, expires_at, role }) => {
+                // The hub's clock is not this one's: the token is taken to live at least two renewal spans and at
+                // most ten minutes. One that ended earlier is found out by its 401.
+                let life = expires_at.saturating_sub(ctx.now).clamp(2 * TOKEN_RENEW_BEFORE_MS, TOKEN_MAX_MS);
+                self.token = Some(Token { value: token, renew_at: ctx.now + life - TOKEN_RENEW_BEFORE_MS });
+                self.auth_retry.ok();
+                if role == Role::Removed {
+                    // (the hub's word alone ends nothing: the device follows the room's Commits itself)
+                    self.report(Report::Alert(Alert::NotMember));
+                }
+            }
+            Ok(_) => self.auth_failed(ctx, Failure::BadAnswer { why: "token" }),
+            Err(failure) => self.auth_failed(ctx, failure),
+        }
+    }
+
+    fn auth_failed(&mut self, ctx: &mut Ctx<'_>, failure: Failure) {
+        let retry_after = match failure {
+            Failure::NotNow { retry_after_ms, .. } => retry_after_ms,
+            _ => None,
+        };
+        self.auth_retry.fail(ctx.now, retry_after, &mut self.jitter);
+    }
+
+    // ---- the hub's order
+
+    fn drive_order(&mut self, ctx: &mut Ctx<'_>) {
+        // a repair the head waits for
+        match &mut self.repair {
+            Some(Repair::Welcomes { after, asked, .. }) if !*asked => {
+                if !self.order_retry.waiting(ctx.now) {
+                    let after = *after;
+                    *asked = true;
+                    if self.ask(ctx, Route::Welcomes { after }, true, Asked::Welcomes).is_none() {
+                        self.repair = None;
+                    }
+                }
+                return;
+            }
+            Some(Repair::Logs { groups, after, asked }) if !*asked => {
+                if !self.order_retry.waiting(ctx.now) {
+                    let Some(group) = groups.front().copied() else {
+                        self.repair = None;
+                        return self.drive(ctx);
+                    };
+                    let (after, upto) = (*after, self.position);
+                    *asked = true;
+                    let route = Route::GroupLog { group: &group, after, limit: LOG_PAGE, commits_only: false };
+                    if self.ask(ctx, route, true, |expect| Asked::GroupLog { expect, group, upto }).is_none() {
+                        self.repair = None;
+                    }
+                }
+                return;
+            }
+            Some(Repair::Chain { group, sender, after, before, asked }) if !*asked => {
+                if !self.order_retry.waiting(ctx.now) {
+                    let (group, sender, after, before) = (*group, *sender, *after, *before);
+                    *asked = true;
+                    let route = Route::Chain { group: &group, sender: &sender, after, limit: CHAIN_PAGE };
+                    if self.ask(ctx, route, true, |expect| Asked::Chain { expect, group, sender, before }).is_none() {
+                        self.repair = None;
+                    }
+                }
+                return;
+            }
+            Some(_) => return,
+            None => {}
+        }
+        if !self.todo.is_empty() || self.page.is_some() || self.order_retry.waiting(ctx.now) {
+            return;
+        }
+        if !self.pass {
+            return self.drive_mend(ctx);
+        }
+        let after = self.position;
+        // Everything the device may see, archived sessions' envelopes too: the stream brings those as well, and a
+        // read that left them out would let the position pass over one the stream handed to it.
+        let limit = self.page_limit;
+        self.page = self.ask(ctx, Route::Changes { after, limit, only: Only::All }, true, Asked::Page);
+    }
+
+    fn on_page(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool, refusal: Option<Refusal>) {
+        self.page = None;
+        match answer {
+            Ok(Answer::Changes(page)) => {
+                self.order_retry.ok();
+                self.page_limit = (self.page_limit * 2).min(PAGE);
+                self.head_hint = page.head;
+                self.todo_upto = page.change;
+                self.todo_more = page.more;
+                self.todo = page.items.into_iter().filter(|i| i.change() > self.position).collect();
+                self.tried = Tried::default();
+                if self.todo.is_empty() {
+                    self.page_through(ctx);
+                }
+            }
+            Ok(_) => self.order_retry.fail(ctx.now, None, &mut self.jitter),
+            Err(_) if unauthorised => {}
+            Err(failure) => {
+                let retry_after = match &failure {
+                    Failure::NotNow { retry_after_ms, .. } => *retry_after_ms,
+                    Failure::BadAnswer { why } => {
+                        // a page that breaks the hub's own order, or is longer than the shell may read, is refused
+                        // whole: nothing of it was taken. The next one asks for less, after a wait.
+                        self.report(Report::Alert(Alert::BadAnswer { why }));
+                        self.page_limit = (self.page_limit / 2).max(1);
+                        None
+                    }
+                    Failure::Refused { .. } => {
+                        match refusal.as_ref().map(|r| r.code.as_str()) {
+                            Some("not-member") => self.report(Report::Alert(Alert::NotMember)),
+                            Some("client-too-old") => self.report(Report::Alert(Alert::ClientTooOld)),
+                            _ => {}
+                        }
+                        None
+                    }
+                    Failure::Offline => None,
+                };
+                self.order_retry.fail(ctx.now, retry_after, &mut self.jitter);
+            }
+        }
+    }
+
+    /// The items at hand are through: the position stands at the hub's cursor after them.
+    fn page_through(&mut self, ctx: &mut Ctx<'_>) {
+        self.position = self.position.max(self.todo_upto);
+        if let Some(stream) = self.stream.as_mut() {
+            stream.reader.caught_up_to(self.position);
+        }
+        if self.todo_more {
+            return; // `pass` stands: the next page
+        }
+        self.todo_more = false;
+        // The hub has no more. What the stream brought meanwhile continues the order, if the stream began at or
+        // below where the pages ended; a stream that began beyond it (the hub's `head` was a hint) left a stretch
+        // nobody read, and is opened again from here.
+        self.pass = false;
+        self.caught_up = true;
+        self.mendable(true);
+        if self.stream.as_ref().is_some_and(|s| s.from > self.position) {
+            self.live.clear();
+            self.live_bytes = 0;
+            self.close_stream(ctx);
+        }
+    }
+
+    /// Takes what is at hand in the hub's order: the page's items, then, at the end of the order, the stream's.
+    fn take(&mut self, ctx: &mut Ctx<'_>) {
+        if self.repair.is_some() || self.order_retry.waiting(ctx.now) && self.todo.is_empty() {
+            return;
+        }
+        let mut groups_changed = false;
+        loop {
+            if self.stopped.is_some() {
+                break;
+            }
+            if self.todo.is_empty() {
+                // the stream's changes continue the order only once no page is due or in flight
+                if self.pass || self.page.is_some() || self.live.is_empty() || self.order_retry.waiting(ctx.now) {
+                    break;
+                }
+                let Some(stream_from) = self.stream.as_ref().map(|s| s.from) else {
+                    self.live.clear();
+                    self.live_bytes = 0;
+                    break;
+                };
+                if stream_from > self.position {
+                    break;
+                }
+                self.todo = std::mem::take(&mut self.live).into_iter().filter(|i| i.change() > self.position).collect();
+                self.live_bytes = 0;
+                self.todo_upto = self.todo.back().map_or(self.position, ChangeItem::change);
+                self.todo_more = false;
+                self.tried = Tried::default();
+                if self.todo.is_empty() {
+                    break;
+                }
+            }
+            let Some(item) = self.todo.pop_front() else { break };
+            let change = item.change();
+            match self.take_one(ctx, &item, &mut groups_changed) {
+                Taken::Done => {
+                    self.position = self.position.max(change);
+                    self.tried = Tried::default();
+                    if self.todo.is_empty() {
+                        let paged = self.pass;
+                        if paged {
+                            self.page_through(ctx);
+                        } else {
+                            self.position = self.position.max(self.todo_upto);
+                        }
+                    }
+                }
+                Taken::Wait(repair) => {
+                    self.todo.push_front(item);
+                    self.repair = Some(repair);
+                    break;
+                }
+                Taken::Halt => {
+                    // 13.4: the last good state and position are kept; what was at hand is asked for again later
+                    self.todo.clear();
+                    self.live.clear();
+                    self.live_bytes = 0;
+                    self.pass = true;
+                    self.order_retry.wait(ctx.now, HALTED_RETRY_MS);
+                    break;
+                }
+            }
+        }
+        if groups_changed {
+            self.groups_changed();
+        }
+    }
+
+    /// The device's groups may have changed: the App is told, and what waited for a group is looked at again.
+    fn groups_changed(&mut self) {
+        self.report(Report::Groups);
+        if self.behind.is_empty() {
+            return;
+        }
+        self.mendable(false);
+    }
+
+    fn queue(&mut self, mend: Mend) {
+        if !self.mends.contains(&mend) && self.mends.len() < BEHIND_MAX {
+            self.mends.push_back(mend);
+        }
+    }
+
+    /// What can be mended now is queued: groups that came as far as what waited for them, and (`chains`) the chains
+    /// the hub withheld before.
+    fn mendable(&mut self, chains: bool) {
+        let groups = self.device.groups().unwrap_or_default();
+        let upto = self.position;
+        let met: Vec<(GroupId, u64)> = self
+            .behind
+            .iter()
+            .filter(|(group, (_, epoch))| groups.iter().any(|g| g.group == **group && g.epoch >= *epoch))
+            .map(|(group, (change, _))| (*group, *change))
+            .collect();
+        for (group, change) in met {
+            self.behind.remove(&group);
+            self.queue(Mend::Group { group, after: change.saturating_sub(1), upto });
+        }
+        if chains {
+            let withheld: Vec<(GroupId, DeviceId)> = self.withheld.keys().copied().collect();
+            for (group, sender) in withheld {
+                self.queue(Mend::Chain { group, sender });
+            }
+        }
+    }
+
+    /// Keys were handed over: what was chained without its body is read back, group by group.
+    fn keys_came(&mut self) {
+        let upto = self.position;
+        for (group, change) in std::mem::take(&mut self.keyless) {
+            self.queue(Mend::Group { group, after: change.saturating_sub(1), upto });
+        }
+    }
+
+    fn drive_mend(&mut self, ctx: &mut Ctx<'_>) {
+        if self.mending.is_some() {
+            return;
+        }
+        self.mendable(false);
+        let Some(mend) = self.mends.front().copied() else { return };
+        self.mending = match mend {
+            Mend::Group { group, after, .. } => self.ask(ctx, Route::Changes { after, limit: PAGE, only: Only::Group(&group) }, true, |expect| Asked::Mend { expect, mend }),
+            Mend::Chain { group, sender } => {
+                let after = self.device.chain_head(&group, &sender).map(|h| h.seq).unwrap_or(0);
+                self.ask(ctx, Route::Chain { group: &group, sender: &sender, after, limit: CHAIN_PAGE }, true, |expect| Asked::Mend { expect, mend })
+            }
+        };
+        if self.mending.is_none() {
+            self.mends.pop_front();
+        }
+    }
+
+    fn on_mend(&mut self, ctx: &mut Ctx<'_>, mend: Mend, answer: Result<Answer, Failure>, unauthorised: bool) {
+        self.mending = None;
+        let answer = match answer {
+            Ok(answer) => answer,
+            Err(_) if unauthorised => return,
+            Err(failure) => {
+                // tried again when the order next comes to rest after a wait; a refusal ends this one
+                if matches!(failure, Failure::Refused { .. }) {
+                    self.mends.pop_front();
+                }
+                let retry_after = match failure {
+                    Failure::NotNow { retry_after_ms, .. } => retry_after_ms,
+                    _ => None,
+                };
+                return self.order_retry.fail(ctx.now, retry_after, &mut self.jitter);
+            }
+        };
+        self.order_retry.ok();
+        self.mends.pop_front();
+        match (mend, answer) {
+            (Mend::Group { group, upto, .. }, Answer::Changes(page)) => {
+                for item in &page.items {
+                    let ChangeItem::Envelope(e) = item else { continue };
+                    if e.change > upto {
+                        return; // what lies after came, or comes, in the one order
+                    }
+                    self.take_again(ctx, e);
+                    if self.stopped.is_some() {
+                        return;
+                    }
+                }
+                if page.more && page.change < upto {
+                    self.mends.push_front(Mend::Group { group, after: page.change, upto });
+                }
+            }
+            (Mend::Chain { group, sender }, Answer::Chain { items, more }) => {
+                let mut any = false;
+                for link in &items {
+                    any = true;
+                    self.take_again(ctx, &link.item);
+                    if self.stopped.is_some() {
+                        return;
+                    }
+                }
+                let held = self.device.chain_head(&group, &sender).map(|h| h.seq).unwrap_or(0);
+                if self.withheld.get(&(group, sender)).is_some_and(|seq| held >= *seq) {
+                    self.withheld.remove(&(group, sender));
+                } else if any && more {
+                    self.mends.push_front(mend);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// An envelope read again out of the order's turn (a mend): taken if its chain takes it now; one the chain
+    /// holds already is read back (its body, now that the key is there).
+    fn take_again(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) {
+        let void = Self::void_code(item);
+        let mut received = match self.device.receive_envelope(&item.envelope, item.change, true, void.as_ref(), ctx.now) {
+            Ok(received) => received,
+            Err(e) => return self.local(ctx, &e),
+        };
+        if received.outcome == EnvelopeOutcome::Refused {
+            match received.code {
+                Some(Error::Replay) => match self.device.receive_envelope(&item.envelope, item.change, false, void.as_ref(), ctx.now) {
+                    Ok(again) => received = again,
+                    Err(e) => return self.local(ctx, &e),
+                },
+                Some(Error::GroupBehind) => {
+                    let held = self.device.group(&received.header.group).ok();
+                    if !held.is_some_and(|g| g.epoch >= received.header.epoch) {
+                        self.note_behind(received.header.group, item.change, received.header.epoch);
+                    }
+                    return;
+                }
+                Some(Error::Gap) => {
+                    let (group, sender, seq) = (received.header.group, received.header.sender, received.header.seq);
+                    self.note_withheld(group, sender, seq, item.change);
+                    return;
+                }
+                _ => return,
+            }
+        }
+        if received.outcome == EnvelopeOutcome::Refused {
+            return;
+        }
+        if received.code == Some(Error::NoKey) {
+            self.note_keyless(received.header.group, item.change);
+        }
+        self.report(Report::Envelope { received: Box::new(received), ordered: false });
+    }
+
+    /// The hub withholds a part of a chain: said, in every phase, and asked for again when the order rests.
+    fn note_withheld(&mut self, group: GroupId, sender: DeviceId, seq: u64, change: u64) {
+        let known = self.withheld.get(&(group, sender)).copied();
+        if known.is_none() && self.withheld.len() >= BEHIND_MAX {
+            self.want_reread(change.saturating_sub(1));
+        } else {
+            self.withheld.insert((group, sender), known.map_or(seq, |k| k.max(seq)));
+        }
+        if known.is_none() {
+            self.report(Report::Alert(Alert::Withheld { group, sender, change }));
+        }
+    }
+
+    fn note_keyless(&mut self, group: GroupId, change: u64) {
+        if let Some(first) = self.keyless.get_mut(&group) {
+            *first = (*first).min(change);
+        } else if self.keyless.len() < BEHIND_MAX {
+            self.keyless.insert(group, change);
+        } else {
+            self.want_reread(change.saturating_sub(1));
+        }
+    }
+
+    /// Asks for the room's order to be read once more from `from` (the seam to the reading of the past).
+    fn want_reread(&mut self, from: u64) {
+        self.reread_from = Some(self.reread_from.map_or(from, |f| f.min(from)));
+    }
+
+    fn take_one(&mut self, ctx: &mut Ctx<'_>, item: &ChangeItem, groups_changed: &mut bool) -> Taken {
+        match item {
+            ChangeItem::Envelope(e) => self.take_envelope(ctx, e),
+            ChangeItem::Commit(l) => self.take_log(ctx, l, true, groups_changed),
+            ChangeItem::Message(l) => self.take_log(ctx, l, false, groups_changed),
+        }
+    }
+
+    fn void_code(item: &EnvelopeItem) -> Option<Error> {
+        item.void_code.as_deref().map(|code| Error::from_code(code).unwrap_or(Error::HubVoidedOther))
+    }
+
+    fn take_envelope(&mut self, ctx: &mut Ctx<'_>, item: &EnvelopeItem) -> Taken {
+        let void = Self::void_code(item);
+        let received = match self.device.receive_envelope(&item.envelope, item.change, true, void.as_ref(), ctx.now) {
+            Ok(received) => received,
+            Err(e) => {
+                self.local(ctx, &e);
+                if self.stopped.is_some() {
+                    return Taken::Halt;
+                }
+                // not an envelope at all: nothing of it is taken
+                self.report(Report::Alert(Alert::NotAnEnvelope { change: item.change, code: e.code() }));
+                return Taken::Done;
+            }
+        };
+        if received.outcome == EnvelopeOutcome::Refused {
+            match received.code {
+                Some(Error::GroupBehind) => {
+                    let group = received.header.group;
+                    let held = self.device.group(&group).ok();
+                    // A group this device holds far enough refuses only what lies before its own start there.
+                    if held.as_ref().is_some_and(|g| g.epoch >= received.header.epoch) {
+                        return Taken::Done;
+                    }
+                    // A Welcome this device has not taken yet may be what it lacks.
+                    if !self.tried.welcomes && self.welcomes_due() {
+                        self.tried.welcomes = true;
+                        return Taken::Wait(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                    }
+                    // Still behind: noted, and read again once the group is there. The position passes it; the
+                    // device's own cursor does not (it stays for a group it is a leaf of).
+                    self.note_behind(group, item.change, received.header.epoch);
+                    return Taken::Done;
+                }
+                Some(Error::Gap) => {
+                    let (group, sender, seq) = (received.header.group, received.header.sender, received.header.seq);
+                    if !self.tried.chain {
+                        self.tried.chain = true;
+                        let after = self.device.chain_head(&group, &sender).map(|h| h.seq).unwrap_or(0);
+                        return Taken::Wait(Repair::Chain { group, sender, after, before: seq, asked: false });
+                    }
+                    // The hub withholds a part of the chain. Said in every phase; the envelope stays out, and the
+                    // chain is asked for again from what this device holds when the order next rests.
+                    self.note_withheld(group, sender, seq, item.change);
+                    return Taken::Done;
+                }
+                _ => return Taken::Done, // a replay, a forgery: nothing of it is taken
+            }
+        }
+        if received.code == Some(Error::NoKey) {
+            // chained without its body: read back once the key was handed over
+            self.note_keyless(received.header.group, item.change);
+        }
+        self.report(Report::Envelope { received: Box::new(received), ordered: true });
+        Taken::Done
+    }
+
+    fn welcomes_due(&mut self) -> bool {
+        match &mut self.welcomes_idle {
+            None => true,
+            Some(n) => {
+                *n += 1;
+                if *n >= WELCOMES_AGAIN {
+                    self.welcomes_idle = None;
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    fn note_behind(&mut self, group: GroupId, change: u64, epoch: u64) {
+        if let Some((c, e)) = self.behind.get_mut(&group) {
+            *c = (*c).min(change);
+            *e = (*e).min(epoch);
+        } else if self.behind.len() < BEHIND_MAX {
+            self.behind.insert(group, (change, epoch));
+        } else {
+            // (no room for one more group: one number stands for all of them)
+            self.want_reread(change.saturating_sub(1));
+        }
+    }
+
+    fn take_log(&mut self, ctx: &mut Ctx<'_>, item: &LogItem, commit: bool, groups_changed: &mut bool) -> Taken {
+        let entry = LogEntry {
+            change: item.change,
+            group: item.group,
+            kind: if commit {
+                LogKind::Commit { bytes: &item.bytes, recovery_auth: item.recovery_auth.as_deref() }
+            } else {
+                LogKind::Message { bytes: &item.bytes }
+            },
+        };
+        match self.device.process_log_entry(&entry, ctx.now) {
+            Ok(processed) => {
+                self.processed(ctx, item.change, item.group, processed, groups_changed);
+                Taken::Done
+            }
+            Err(e) => match log_finding(&e) {
+                LogFinding::Duplicate => Taken::Done,
+                LogFinding::Local => {
+                    self.local(ctx, &e);
+                    Taken::Halt
+                }
+                LogFinding::Early => {
+                    // What it builds on may be a Welcome not taken yet. Nothing is read ahead of the hub's order
+                    // for it: an entry that still comes early halts, and the next pass tries it again.
+                    if !self.tried.welcomes {
+                        self.tried.welcomes = true;
+                        return Taken::Wait(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+                    }
+                    Taken::Halt
+                }
+                LogFinding::BadGroup => {
+                    self.report(Report::Alert(Alert::BadGroup { group: item.group, change: item.change, code: e.code() }));
+                    if commit {
+                        let (group, n) = (item.group, item.n);
+                        self.ask(ctx, Route::RejectCommit { group: &group, n }, true, Asked::Told);
+                    }
+                    Taken::Halt
+                }
+            },
+        }
+    }
+
+    fn processed(&mut self, ctx: &mut Ctx<'_>, change: u64, group: GroupId, processed: Processed, groups_changed: &mut bool) {
+        match &processed {
+            Processed::Commit { removed, .. } => {
+                *groups_changed = true;
+                if *removed && group.is_room() {
+                    self.report(Report::Log { change, group, processed: Box::new(processed) });
+                    self.stop(ctx, Stopped::Removed);
+                    return;
+                }
+            }
+            Processed::OwnCommit | Processed::Observed(_) | Processed::JoinSuperseded { .. } => *groups_changed = true,
+            Processed::Message(Received::Keys { taken, .. }) if *taken > 0 => {
+                // keys that open what was chained without them: those envelopes are read back, and no more
+                self.keys_came();
+            }
+            Processed::Message(Received::NewerVersion { from }) => self.report(Report::Alert(Alert::NewerVersion { from: *from })),
+            Processed::Message(_) | Processed::Skipped => {}
+        }
+        self.report(Report::Log { change, group, processed: Box::new(processed) });
+    }
+
+    // ---- repairs
+
+    fn repair_failed(&mut self, ctx: &mut Ctx<'_>, failure: Failure, unauthorised: bool) {
+        // the same repair is asked again after a wait; the head of the order stays where it is
+        match &mut self.repair {
+            Some(Repair::Welcomes { asked, .. } | Repair::Logs { asked, .. } | Repair::Chain { asked, .. }) => *asked = false,
+            None => {}
+        }
+        if unauthorised {
+            return;
+        }
+        let retry_after = match failure {
+            Failure::NotNow { retry_after_ms, .. } => retry_after_ms,
+            _ => None,
+        };
+        self.order_retry.fail(ctx.now, retry_after, &mut self.jitter);
+    }
+
+    fn on_welcomes(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
+        let rows = match answer {
+            Ok(Answer::Welcomes(rows)) => rows,
+            Ok(_) => return self.repair_failed(ctx, Failure::BadAnswer { why: "welcomes" }, false),
+            Err(failure) => return self.repair_failed(ctx, failure, unauthorised),
+        };
+        self.order_retry.ok();
+        let Some(Repair::Welcomes { mut joined, .. }) = self.repair.take() else { return };
+        let expected = WelcomeExpectation { room: self.room, committer: None };
+        let more = !rows.is_empty();
+        for row in rows {
+            self.welcomes_after = self.welcomes_after.max(row.id);
+            // (the hub keeps a Welcome until this device writes in its group: one joined before is passed over)
+            if self.device.group(&row.group).is_ok() {
+                continue;
+            }
+            match self.device.join_welcome(&row.welcome, &expected, ctx.now) {
+                Ok(j) => joined.push(j.group),
+                // (taken at its place in the log, with the Commit that made it; or not yet: the room is behind)
+                Err(Error::WrongEpoch | Error::RoomBehind) => {}
+                Err(e) => {
+                    self.local(ctx, &e);
+                    if self.stopped.is_some() {
+                        return;
+                    }
+                    self.report(Report::Alert(Alert::Welcome { group: row.group, code: e.code() }));
+                }
+            }
+        }
+        if more {
+            // an answer holds a bounded stretch: asked again after its last row until one is empty
+            self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined, asked: false });
+            return;
+        }
+        if joined.is_empty() {
+            self.welcomes_idle = Some(0);
+            return;
+        }
+        self.welcomes_idle = None;
+        self.groups_changed();
+        // A group joined late: its log is handed again from its start up to the position, so the join has its
+        // place in the hub's order. What lies after the position comes at its place in the one order.
+        self.repair = Some(Repair::Logs { groups: joined.into(), after: 0, asked: false });
+    }
+
+    fn on_group_log(&mut self, ctx: &mut Ctx<'_>, group: GroupId, upto: u64, answer: Result<Answer, Failure>, unauthorised: bool) {
+        let (items, more) = match answer {
+            Ok(Answer::GroupLog { items, more }) => (items, more),
+            Ok(_) => return self.repair_failed(ctx, Failure::BadAnswer { why: "log" }, false),
+            Err(failure) => return self.repair_failed(ctx, failure, unauthorised),
+        };
+        self.order_retry.ok();
+        let Some(Repair::Logs { mut groups, mut after, .. }) = self.repair.take() else { return };
+        let mut through = !more || items.is_empty();
+        let mut changed = false;
+        for item in &items {
+            let (commit, log) = match item {
+                ChangeItem::Commit(l) => (true, l),
+                ChangeItem::Message(l) => (false, l),
+                ChangeItem::Envelope(_) => continue,
+            };
+            if log.change > upto {
+                through = true;
+                break;
+            }
+            after = log.n;
+            let entry = LogEntry {
+                change: log.change,
+                group,
+                kind: if commit {
+                    LogKind::Commit { bytes: &log.bytes, recovery_auth: log.recovery_auth.as_deref() }
+                } else {
+                    LogKind::Message { bytes: &log.bytes }
+                },
+            };
+            match self.device.process_log_entry(&entry, ctx.now) {
+                Ok(processed) => self.processed(ctx, log.change, group, processed, &mut changed),
+                Err(e) => match log_finding(&e) {
+                    LogFinding::Duplicate => {}
+                    LogFinding::Local => {
+                        self.local(ctx, &e);
+                        return;
+                    }
+                    // not yet, or not at all: this group's reading ends here; its entries come in the one order
+                    LogFinding::Early | LogFinding::BadGroup => {
+                        through = true;
+                        break;
+                    }
+                },
+            }
+            if self.stopped.is_some() {
+                return;
+            }
+        }
+        if changed {
+            self.groups_changed();
+        }
+        if through {
+            groups.pop_front();
+            after = 0;
+        }
+        if !groups.is_empty() {
+            self.repair = Some(Repair::Logs { groups, after, asked: false });
+        }
+    }
+
+    fn on_chain(&mut self, ctx: &mut Ctx<'_>, group: GroupId, sender: DeviceId, before: u64, answer: Result<Answer, Failure>, unauthorised: bool) {
+        let (items, more) = match answer {
+            Ok(Answer::Chain { items, more }) => (items, more),
+            Ok(_) => return self.repair_failed(ctx, Failure::BadAnswer { why: "chain" }, false),
+            // (a chain the hub refuses to serve is a chain withheld: the head is tried again and says so)
+            Err(Failure::Refused { .. }) if !unauthorised => {
+                self.repair = None;
+                return;
+            }
+            Err(failure) => return self.repair_failed(ctx, failure, unauthorised),
+        };
+        self.order_retry.ok();
+        self.repair = None;
+        let mut last = None;
+        let mut reached = items.is_empty() || !more;
+        for link in items {
+            if link.seq >= before {
+                reached = true;
+                break;
+            }
+            last = Some(link.seq);
+            let void = Self::void_code(&link.item);
+            match self.device.receive_envelope(&link.item.envelope, link.item.change, true, void.as_ref(), ctx.now) {
+                Ok(received) if received.outcome != EnvelopeOutcome::Refused => {
+                    self.report(Report::Envelope { received: Box::new(received), ordered: false })
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    self.local(ctx, &e);
+                    if self.stopped.is_some() {
+                        return;
+                    }
+                }
+            }
+        }
+        if !reached {
+            if let Some(after) = last {
+                self.repair = Some(Repair::Chain { group, sender, after, before, asked: false });
+            }
+        }
+        // (else the head is tried again: taken now, or still a gap, which is then said)
+    }
+
+    // ---- the stream
+
+    fn drive_stream(&mut self, ctx: &mut Ctx<'_>) {
+        if self.background || self.stream.is_some() || self.stream_retry.waiting(ctx.now) {
+            return;
+        }
+        // Opened beside the first page at the head the hub named (a hint: presence and Welcomes do not wait for a
+        // long catch-up), else at the end of the order. `page_through` opens it again if the hint was too high.
+        let from = if self.pass || !self.todo.is_empty() {
+            match self.head_hint {
+                Some(head) => head.max(self.todo_upto).max(self.position),
+                None => return,
+            }
+        } else {
+            self.position
+        };
+        let site = Site { url: &self.hub, token: self.token.as_ref().map(|t| t.value.as_str()), client: &self.client };
+        let Ok((request, _)) = self.codec.request(&site, &Route::Stream { after: from }) else {
+            return;
+        };
+        self.flush(ctx);
+        let id = ctx.id();
+        self.stream = Some(StreamConn { id, reader: self.codec.stream(from), opened: false, from, heard_at: ctx.now });
+        ctx.out.push(Effect::OpenStream { id, request });
+    }
+
+    fn close_stream(&mut self, ctx: &mut Ctx<'_>) {
+        if let Some(stream) = self.stream.take() {
+            ctx.out.push(Effect::Cancel { id: stream.id });
+        }
+    }
+
+    // ---- the outbox: one entry in flight, strictly in order
+
+    fn drive_pump(&mut self, ctx: &mut Ctx<'_>) {
+        if self.posting.is_some() || self.pump_retry.waiting(ctx.now) {
+            return;
+        }
+        let Some(entry) = self.device.outbox().into_iter().next() else {
+            if self.blocked.take().is_some() {
+                self.report(Report::Blocked(None));
+            }
+            return;
+        };
+        let room = self.room;
+        let (id, kind, group) = (entry.id, entry.kind, entry.group);
+        self.posting = self.post(ctx, &room, &entry, |expect| Asked::Post { expect, entry: id, kind, group });
+        if self.posting.is_none() {
+            // an entry this build cannot post (a founding or a recovery without its extra): the pump waits
+            self.pump_retry.wait(ctx.now, BLOCKED_RETRY_MS);
+        }
+    }
+
+    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(H::Expect) -> Asked<H::Expect>) -> Option<IoId> {
+        self.ask(ctx, Route::Outbox { room, entry, extra: None }, true, asked)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn on_posted(
+        &mut self,
+        ctx: &mut Ctx<'_>,
+        entry: u64,
+        kind: OutboxKind,
+        group: Option<GroupId>,
+        answer: Result<Answer, Failure>,
+        unauthorised: bool,
+        refusal: Option<Refusal>,
+    ) {
+        self.posting = None;
+        let failure = match answer {
+            Ok(Answer::Outbox(taken)) => {
+                self.pump_retry.ok();
+                if self.blocked.take().is_some() {
+                    self.report(Report::Blocked(None));
+                }
+                // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the
+                //  core merged it and dropped the entry then)
+                match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
+                    Ok(()) | Err(Error::NotFound) => {}
+                    Err(e) => return self.local(ctx, &e),
+                }
+                if kind == OutboxKind::KeyPackages {
+                    self.key_packages_at_hub = taken.unused.or(self.key_packages_at_hub);
+                }
+                self.report(Report::Accepted { id: entry, kind, change: taken.change });
+                if carries_commit(kind) {
+                    // An accepted Commit is merged where the hub's order shows it. Without a stream that is the
+                    // next page.
+                    self.report(Report::Groups);
+                    if !self.stream.as_ref().is_some_and(|s| s.opened) {
+                        self.pass = true;
+                    }
+                }
+                return;
+            }
+            Ok(_) => Failure::BadAnswer { why: "an outbox answer" },
+            Err(failure) => failure,
+        };
+        if unauthorised {
+            return; // posted again, unchanged, once signed in
+        }
+        // What a failed post means for the entry. A transient failure (not reached, 5xx, throttled, an answer the
+        // route does not allow, a refusal that is not the hub's own, a code this build does not know) is the same
+        // entry again after a wait: never dropped, never reordered.
+        let code = match (&failure, refusal.as_ref()) {
+            (Failure::Refused { .. }, Some(refusal)) => Error::from_code(&refusal.code).filter(|code| !refusal_is_passing(code)),
+            _ => None,
+        };
+        let Some(code) = code else {
+            let retry_after = match (&failure, refusal.as_ref()) {
+                (Failure::NotNow { retry_after_ms, .. }, _) => *retry_after_ms,
+                (_, Some(refusal)) => refusal.retry_after_ms,
+                _ => None,
+            };
+            if refusal.as_ref().is_some_and(|r| r.code == "client-too-old") {
+                self.report(Report::Alert(Alert::ClientTooOld));
+            }
+            self.pump_retry.fail(ctx.now, retry_after, &mut self.jitter);
+            return;
+        };
+        let voided = refusal.as_ref().is_some_and(|r| r.voided);
+        // An envelope the hub refused WITHOUT keeping a void record, for a reason that is not the end of the group
+        // or of this device: its number is not taken at the hub and may never be signed again (9.0.1), so every
+        // later envelope of that chain would meet `gap`. The pump halts on it, keeps the bytes and tries again.
+        if kind == OutboxKind::Envelope && !voided && !is_dead(&code) {
+            if self.blocked != Some(entry) {
+                self.blocked = Some(entry);
+                self.report(Report::Blocked(Some((entry, code.code()))));
+            }
+            self.pump_retry.wait(ctx.now, BLOCKED_RETRY_MS);
+            return;
+        }
+        // A definitive refusal: told to the core and to the App (the echo is rolled back), and the pump goes on.
+        let told = if kind != OutboxKind::Envelope {
+            self.device.outbox_refused(entry, &code)
+        } else if voided {
+            self.device.outbox_voided(entry)
+        } else {
+            self.device.envelope_abandon(entry)
+        };
+        match told {
+            Ok(()) | Err(Error::NotFound) => {}
+            Err(e) => return self.local(ctx, &e),
+        }
+        self.pump_retry.ok();
+        self.report(Report::Refused { id: entry, kind, code: code.code(), voided });
+        self.report(Report::Groups);
+        // the group moved on under it: the log is processed, and whoever asked builds it again
+        if has_moved(&code) {
+            self.pass = true;
+        }
+        let _ = group;
+    }
+}
