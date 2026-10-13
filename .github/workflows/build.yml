@@ -318,6 +318,18 @@ jobs:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: app/web/package-lock.json
+      # The Rust core for the browser (core/wasm/pkg) as core/wasm/build.sh made it on main from the very same inputs:
+      # the committed files of the core, the client core, the workspace's pins and this file (the build is
+      # reproducible: the same sources give the same bytes). Only main saves it; a pull request reads main's. A change
+      # of the web app alone then compiles no Rust. The compiler is still installed: the build's manifest names it.
+      - name: The core's inputs
+        id: core
+        run: echo "key=wasm-pkg-v1-$(git ls-tree -r HEAD -- core client Cargo.toml Cargo.lock rust-toolchain.toml .github/workflows/build.yml | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pkg
+        with:
+          path: core/wasm/pkg
+          key: ${{ steps.core.outputs.key }}
       - name: Compiler (rust-toolchain.toml)
         run: |
           set -eu
@@ -326,23 +338,43 @@ jobs:
       # the downloaded crates (~/.cargo) and the compiled ones (target/), one cache per job, saved by main; a pull
       # request reads main's (see env above)
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.pkg.outputs.cache-hit != 'true'
         with:
           prefix-key: v2-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.pkg.outputs.cache-hit != 'true'
         id: bindgen
         with:
           path: ~/.cargo/bin/wasm-bindgen
           key: wasm-bindgen-${{ runner.os }}-${{ env.WASM_BINDGEN }}-${{ hashFiles('rust-toolchain.toml') }}
       # the command must be the version of the crate in Cargo.lock (core/wasm/build.sh checks it)
       - name: wasm-bindgen
-        if: steps.bindgen.outputs.cache-hit != 'true'
+        if: steps.pkg.outputs.cache-hit != 'true' && steps.bindgen.outputs.cache-hit != 'true'
         run: cargo install wasm-bindgen-cli --version "$WASM_BINDGEN" --locked
       - name: Packages
         working-directory: app/web
         run: npm ci --no-audit --no-fund
       - name: The Rust core for the browser
+        if: steps.pkg.outputs.cache-hit != 'true'
         run: sh core/wasm/build.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.pkg.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        with:
+          path: core/wasm/pkg
+          key: ${{ steps.core.outputs.key }}
+      # Taken from the cache: its files are older than this checkout's, and the web app's build makes the core anew
+      # when they look older than its sources (app/web/dev/build.mjs): they are marked as made now, and checked.
+      - name: The Rust core for the browser, as made before
+        if: steps.pkg.outputs.cache-hit == 'true'
+        run: |
+          set -eu
+          touch core/wasm/pkg/*
+          cat core/wasm/pkg/build.json
+          for f in trommi_core_wasm_bg.wasm trommi_core_wasm.js trommi-core.js idb-store.js; do
+            [ "$(sha256sum "core/wasm/pkg/$f" | cut -d' ' -f1)" = "$(jq -r --arg f "$f" '.[$f].sha256' core/wasm/pkg/build.json)" ] \
+              || { echo "::error::core/wasm/pkg/$f is not the file its build.json names"; exit 1; }
+          done
       # (main: not again when it passed on the pull request for this very tree, see `changes`)
       - name: Test
         if: needs.changes.outputs.checked_web != 'true'
