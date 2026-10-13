@@ -35,3 +35,13 @@ strip = true
 [profile.dev.package."*"]
 opt-level = 2
 debug-assertions = false
+
+# What CI ships of the hub, its updater and the connector (build.yml, connector/build-plugin.mjs): the release
+# profile with thin LTO, which links in parallel. Measured against `release` (fat LTO) on 4 cores, October 2026: the
+# rebuild after a change 73 s instead of 105 s; the binaries (stripped) hub 10.3 MB instead of 9.5, connector 17.0
+# instead of 15.0; the hub's 1000-device scenario as fast (27 s, a request at 1000 leaves 44 ms). More code units
+# (4, 16) built no faster here and made the hub slower (16: that request 75 ms). The browser (wasm) and the iOS core
+# keep `release`.
+[profile.dist]
+inherits = "release"
+lto = "thin"
