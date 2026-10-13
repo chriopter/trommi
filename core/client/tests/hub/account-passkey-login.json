@@ -1,0 +1,14 @@
+{
+  "answer": "{\"account\":\"7e7ce8b6-200f-4ddb-8e76-f6908c30d430\",\"email\":null,\"kdf\":null,\"rooms\":[{\"challenge\":\"XyYZGmqe6wB4Qd3WyTGi7MxgbrScnAHtoaCFuH2Q9OE\",\"room_id\":\"vqLDf7Yi0dm8yiiHolbthu4cSLs2CgF4b8-3xvXTk1w\",\"sealed_copy\":\"AgMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAw\"}]}",
+  "asked": {
+    "route": "passkey_login"
+  },
+  "content_range": null,
+  "name": "account-passkey-login",
+  "request": {
+    "body": "{\"authenticator_data\":\"S-KPwmqjb4A5qNi20T87sXW_R_OmAjE8_n37tmcgR9AFAAAABw\",\"client_data_json\":\"eyJjaGFsbGVuZ2UiOiJYaGJxZjc5NVdsUDZLUGxNd2FDQUp1aml3NTQ5UHFpaks5ZEJncjl2QjJJIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC50cm9tbWkuY29tIiwidHlwZSI6IndlYmF1dGhuLmdldCJ9\",\"credential_id\":\"0OybL8vVs3mx8Dm3qimPdcHuMuA\",\"signature\":\"MEYCIQD8HTCnEx6AaZzoh5zVNeZfpYp_ta_H7OOwp1-v3iyxiQIhANuPW5ovrnmtvu1lsFLR8B8sNH0AfN7N7i-dkNgIacqf\",\"user_handle\":\"fnzotiAPTduOdvaQjDDUMA\"}",
+    "method": "POST",
+    "path": "/v1/account/passkey/login"
+  },
+  "status": 200
+}

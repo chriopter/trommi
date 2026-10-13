@@ -1,0 +1,14 @@
+{
+  "answer": "{\"deleted\":true}",
+  "asked": {
+    "route": "delete_account"
+  },
+  "content_range": null,
+  "name": "account-delete",
+  "request": {
+    "body": "{\"password\":{\"auth_key\":\"XyfDmootVM06k6XDT45QXddYGq6SPJ5gEuYJkrXaT2k\"}}",
+    "method": "DELETE",
+    "path": "/v1/account"
+  },
+  "status": 200
+}

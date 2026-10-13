@@ -1,0 +1,15 @@
+{
+  "answer": "{\"revealed\":true}",
+  "asked": {
+    "invite": "5XADjlVFxB-DDOVQOPfvmg",
+    "route": "put_reveal"
+  },
+  "content_range": null,
+  "name": "invite-put-reveal",
+  "request": {
+    "body": "{\"reveal\":\"5XADjlVFxB-DDOVQOPfvmsaCLBVTpBz80zjsktvR_JKGvvv3SbW9ZHaGL2JZ_68HQfJEasWCu1w5wg2RZ2KzABJUSXOhfayljGbQqTRbgLs\",\"signature\":\"Rrx19jDllWSr254EC0OVdec7IubqSqivE1994X5WI_U_yzKUdwWl3nUa-fDdZuojdTgbTGg7gkCP5J8DI_kWCQ\"}",
+    "method": "PUT",
+    "path": "/v1/invites/5XADjlVFxB-DDOVQOPfvmg/reveal"
+  },
+  "status": 200
+}

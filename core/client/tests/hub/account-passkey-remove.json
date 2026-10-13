@@ -1,0 +1,15 @@
+{
+  "answer": "{\"deleted\":true}",
+  "asked": {
+    "credential_id": "SKAx-dIxp97y852A4J6WyCY6HmY",
+    "route": "remove_passkey"
+  },
+  "content_range": null,
+  "name": "account-passkey-remove",
+  "request": {
+    "body": "{\"proof\":{\"kit\":{\"auth_key\":\"MqZDWAAYXkH4O9SFcV3cMqRzJBYfOjQQYO5K1nR0Dwg\"}}}",
+    "method": "DELETE",
+    "path": "/v1/account/passkeys/SKAx-dIxp97y852A4J6WyCY6HmY"
+  },
+  "status": 200
+}

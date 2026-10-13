@@ -1,0 +1,14 @@
+{
+  "answer": "{\"error\":\"bad-format\",\"message\":\"live-activity: token, tag, environment or topic not accepted by this hub\"}",
+  "asked": {
+    "route": "live_activity"
+  },
+  "content_range": null,
+  "name": "live-activity",
+  "request": {
+    "body": "{\"environment\":\"development\",\"kind\":\"start\",\"tag\":\"desk\",\"token\":\"abababababababababababababababababababababababababababababababab\",\"topic\":\"com.trommi.app.push-type.liveactivity\"}",
+    "method": "POST",
+    "path": "/v1/live-activity"
+  },
+  "status": 400
+}

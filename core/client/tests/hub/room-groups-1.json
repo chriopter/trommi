@@ -1,16 +1,17 @@
 {
-  "answer": "{\"after\":11,\"items\":[{\"epoch\":1,\"group_id\":\"Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJB7zgZdNEJC2_QPPverrJ1B\",\"kind\":\"main\",\"leaves\":[\"Ge6utoVo27V_PCFWwbdThC8hKqYqNfbdIvDVUbIzt6w\",\"hxAIMmfTMLcDbJ8smvqjxSsSRtveYi3_cWrd3p-w-DM\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":\"e84GXTRCQtv0Dz73q6ydQQ\",\"stale\":false}],\"more\":false}",
+  "answer": "{\"after\":15,\"items\":[{\"epoch\":1,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS1FDWWmSCFGthH98_y8yQaA\",\"kind\":\"helper\",\"leaves\":[\"ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA\",\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\"],\"live\":true,\"parent\":\"5PiomyhofoPRqHPTDNJRsA\",\"room_epoch\":1,\"session_id\":\"RQ1lpkghRrYR_fP8vMkGgA\",\"stale\":false},{\"epoch\":1,\"group_id\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS1DcNfZAw-MY7irL0tCTQgg\",\"kind\":\"main\",\"leaves\":[\"v3WYVzh5ld_5A2TAxKnnEbLPBpU8_DZGvsYITjd5d-U\",\"_f4l3HBxZyz_Oshi1GbDX3URPlkgS6sWjVyA5o3Wm_Q\"],\"live\":true,\"parent\":null,\"room_epoch\":2,\"session_id\":\"Q3DX2QMPjGO4qy9LQk0IIA\",\"stale\":false}],\"more\":false}",
   "asked": {
     "after": 5,
     "limit": 2,
-    "room": "Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA",
+    "room": "bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0",
     "route": "room_groups"
   },
+  "content_range": null,
   "name": "room-groups-1",
   "request": {
     "body": null,
     "method": "GET",
-    "path": "/v1/rooms/Y8HvNp_3VoGDbNWzXfjD_wl7urkb1_iy2YArOeJTkJA/groups?after=5&limit=2"
+    "path": "/v1/rooms/bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS0/groups?after=5&limit=2"
   },
   "status": 200
 }

@@ -520,8 +520,10 @@ fn a_device_that_missed_its_handover_asks_and_another_human_device_answers() {
     let mut r = room();
     let main = r.main;
     let mut phone = phone_that_missed_its_handovers(&mut r);
-    let t = now();
     let got = read_group(&r.hub, &mut phone, &main);
+    // After the read: the grace runs from when the missing key was seen, which on a slow runner is a few
+    // milliseconds after a clock read taken before it.
+    let t = now();
     assert!(
         no_key_left(&got) > 0,
         "the agent's name does not open without its key"

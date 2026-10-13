@@ -1,15 +1,16 @@
 {
-  "answer": "{\"key_packages\":{\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\":\"AAEABQABAAMgRsgCtrg0TRIiYgl369R3PQlZg-iEHNLL1nWRPwrvHHEg_lY1W44mG5_ZivBAGQthDP1j_5S6rbxdZNVg7sk5J0QgiL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBAAASCIvvJI4-ZZQGCk_pzUYF8Hf1UXFfOu769IRndYxaOYEAIAAQIAAwbwAfACAAoAAgABAQAAAABqzi-_AAAAAH2aQM8AQECRj-9btNZxH39P97SzH6nvYcY7p5YVltTrvfHune-K6iL8MkA73KlLPFPZG3ayfqfa-puBK1FgWSsJHd_rtwIHAEBApvJioFgxwusHlCAmtY09JVDbtyVfT3eOQX6SsRW_avJehb3hTDXsveoDTWeaanSsssjxoxc_gCy8bhiStfZSCw\"}}",
+  "answer": "{\"key_packages\":{\"ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA\":\"AAEABQABAAMgoxDM-jtpWHrHh94zPnsRShYZbABOGWrBNadOULF-PUkgrBkneeTHOtgerHBgnvemXr-hHe7ADkdupSECu-kVMCggceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhAAASBx5WktGsIDTY7_X-xBRA-DxBdOSZTKxO7wlngN5vdSEAIAAQIAAwbwAfACAAoAAgABAQAAAABqzkASAAAAAH2aUSIAQEDvux2CmD3R0hAsfCt38kctOT5R62tHDvKI7CjBVHM8Ra1dkg8XQD7sq0hRXDU9PsLeIqOdEcd7npXGD5a-bx8GAEBATjEv25wiqnnuHIQCSTqnOUaXTTh88THn1fsy3eoEzuBW5csBm2CUz2mVFuJXPM6CnGlXUqvxXVXmmst4a4ubDw\"}}",
   "asked": {
     "devices": [
-      "iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA"
+      "ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA"
     ],
     "partial": false,
     "route": "claim"
   },
+  "content_range": null,
   "name": "claim",
   "request": {
-    "body": "{\"devices\":[\"iL7ySOPmWUBgpP6c1GBfB39VFxXzru-vSEZ3WMWjmBA\"]}",
+    "body": "{\"devices\":[\"ceVpLRrCA02O_1_sQUQPg8QXTkmUysTu8JZ4Deb3UhA\"]}",
     "method": "POST",
     "path": "/v1/key-packages/claim"
   },

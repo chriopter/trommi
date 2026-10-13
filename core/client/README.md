@@ -135,7 +135,9 @@ App).
 
 ### The hub codec
 
-`hub::Codec` is every hub route as data: `request(site, route)` gives the whole `HttpRequest` and an `Expect` (what
+`hub::Codec` is every hub route a human device's app uses, as data (sign-in, catch-up, the live stream, the Desk,
+the outbox, joins, content, files and Share links, invites, the account, push; not an agent's lease and not the two
+routes of the notification extension that go by a push ticket): `request(site, route)` gives the whole `HttpRequest` and an `Expect` (what
 was asked), `answer(expect, response)` the typed `Answer` or a failure. The hub is not trusted: an answer that is
 not exactly what its route promises is a bad answer as a whole and nothing of it is handed on. The limits are the
 client's own (`hub::limits`): a size cap per answer (also the request's `max_answer`), a count per list, a length

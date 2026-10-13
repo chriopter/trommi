@@ -1,7 +1,7 @@
 {
   "answer": "{\"deleted\":true}",
   "asked": {
-    "file": "S2SdMndyJ1rNjFUsrVgPZg",
+    "file": "xEiarxB35Ov7Zthm6moFag",
     "route": "delete_file"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": null,
     "method": "DELETE",
-    "path": "/v1/files/S2SdMndyJ1rNjFUsrVgPZg"
+    "path": "/v1/files/xEiarxB35Ov7Zthm6moFag"
   },
   "status": 200
 }
