@@ -2895,8 +2895,18 @@ fn groups_read_together_share_one_answer_budget() {
         assert_eq!(late["group"], ids[i + 2], "in its place");
         assert!(late.get("log").is_none());
     }
-    let sent: usize = groups.iter().map(|g| g.to_string().len()).sum();
-    assert!(sent <= trommi_hub::content::ANSWER_BYTES + (64 << 10), "{sent} bytes in one answer");
+    assert!(got.to_string().len() <= trommi_hub::content::ANSWER_BYTES + (64 << 10), "{} bytes in one answer", got.to_string().len());
+    // the budget is the answer's own size, RecoveryAuths and all: with a RecoveryAuth of 3 MiB on its Commit, the
+    // second group no longer fits beside the first
+    {
+        let db = rusqlite::Connection::open(w.hub.dir.join("hub.db")).unwrap();
+        db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+        db.execute("UPDATE group_log SET recovery_auth = zeroblob(3 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&sessions[0][..]]).unwrap();
+    }
+    let with_auth = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[1]] })).ok();
+    assert!(with_auth["groups"][0]["log"].is_object());
+    assert_eq!(with_auth["groups"][1]["error"], "too-large", "2 MiB + 3 MiB + 2 MiB are more than 8 MiB of base64");
+    assert!(with_auth.to_string().len() <= trommi_hub::content::ANSWER_BYTES);
     // a group left out is read alone, whole
     let alone = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[2]] })).ok();
     assert!(alone["groups"][0]["log"]["items"].as_array().is_some_and(|l| !l.is_empty()));

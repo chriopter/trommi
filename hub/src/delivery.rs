@@ -1166,6 +1166,18 @@ pub fn log(
     Ok(json!({ "items": items, "more": more }))
 }
 
+/// How many bytes the first `limit` Commits of a group's log hold together (with their RecoveryAuths), without
+/// reading them: what an answer of several groups asks before it reads a log it may have no room for.
+pub fn commits_size(c: &Connection, group_id: &[u8], limit: i64) -> Res<usize> {
+    let size: i64 = c
+        .prepare_cached(
+            "SELECT coalesce(sum(length(bytes) + coalesce(length(recovery_auth), 0)), 0) FROM
+               (SELECT bytes, recovery_auth FROM group_log WHERE group_id = ?1 AND kind = 'commit' ORDER BY n LIMIT ?2)",
+        )?
+        .query_row(params![group_id, limit], |r| r.get(0))?;
+    Ok(size as usize)
+}
+
 /// The log entry at a change number, for the stream.
 /// How long after its removal a device may still fetch the Commits that prove it (13.5).
 pub const REMOVAL_KEPT_MS: u64 = 30 * 86_400_000;

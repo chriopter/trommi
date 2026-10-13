@@ -692,6 +692,17 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
         "a push ticket for change {rang} learns the room's head {}",
         later["head"]
     );
+    assert_eq!(later["head"].as_i64(), Some(rang), "as far as the ticket reads");
+    // `more` says that the room went on past the push, and no more than that: asked from beyond its change, the
+    // ticket gets the same word wherever it asks from, never "the room's head lies below this number"
+    let room_head = s.w.ada.get(hub, "/v1/changes?after=0").ok()["head"].as_i64().unwrap();
+    assert!(room_head > rang + 1);
+    for after in [rang, rang + 1, room_head - 1, room_head, room_head + 5, 1 << 40] {
+        let page = common::request(hub.port, "GET", &format!("/v1/push-changes?after={after}"), &[("trommi-ticket", ticket.clone())], &[]).ok();
+        assert_eq!(page["items"], json!([]), "nothing beyond the ticket's change");
+        assert_eq!(page["more"], true, "asked after {after}: the same word as at the ticket's change");
+        assert_eq!(page["head"].as_i64(), Some(rang));
+    }
 }
 
 #[test]
