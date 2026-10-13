@@ -680,9 +680,6 @@ jobs:
     name: Release mac-v<N>
     needs: [decide, mac_direct]
     if: needs.mac_direct.outputs.ready == 'yes'
-    concurrency:
-      group: ship-apple-mac-direct
-      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
