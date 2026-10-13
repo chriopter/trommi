@@ -1,0 +1,150 @@
+{
+  "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
+  "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+  "kind": "decision",
+  "state": "answered",
+  "urgency": 1,
+  "title": "Remind in the morning or in the evening?",
+  "body": "",
+  "options": [
+    {
+      "key": "evening",
+      "label": "Evening, 19:00",
+      "recommended": false,
+      "chosen": false,
+      "settles": false
+    },
+    {
+      "key": "morning",
+      "label": "Morning, 8:00",
+      "recommended": true,
+      "chosen": true,
+      "settles": false,
+      "tip": {
+        "key": "tile.recommended",
+        "en": "Recommended"
+      }
+    }
+  ],
+  "you_chose": {
+    "key": "card.you_chose",
+    "args": {
+      "labels": "Morning, 8:00"
+    },
+    "en": "You chose: Morning, 8:00"
+  },
+  "history": 0,
+  "starred": false,
+  "number": 14,
+  "nr": {
+    "key": "card.nr",
+    "args": {
+      "n": "14"
+    },
+    "en": "Nr. 14"
+  },
+  "status": "decided",
+  "from": {
+    "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+    "name": "Fernly Website",
+    "mark": "draw:leaf",
+    "path": [
+      "Fernly",
+      "Fernly Website"
+    ]
+  },
+  "asked_ms": 1791379800000,
+  "text": "",
+  "more": false,
+  "multiple": false,
+  "answer": {
+    "mode": "said",
+    "label": {
+      "key": "card.said",
+      "en": "Morning, 8:00"
+    },
+    "detail": {
+      "key": "card.your_note",
+      "args": {
+        "note": "I water before work."
+      },
+      "en": "Your note: I water before work."
+    },
+    "did": {
+      "key": "card.did.chose",
+      "en": "You chose"
+    },
+    "at_ms": 1791380400000,
+    "back": "reopen",
+    "finished": false
+  },
+  "ask": {
+    "key": "card.ask",
+    "args": {
+      "name": "Fernly Website"
+    },
+    "en": "Ask Fernly Website something, or say what is missing…"
+  },
+  "star_says": {
+    "key": "card.star",
+    "en": "Star"
+  },
+  "talk": [
+    {
+      "id": "v787600a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791379800000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 787600,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
+        "number": 14,
+        "title": "Remind in the morning or in the evening?"
+      },
+      "event": {
+        "kind": "asked",
+        "label": {
+          "key": "event.asked",
+          "en": "New question"
+        },
+        "text": "Remind in the morning or in the evening?",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "v788200d",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791380400000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 788200,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
+        "number": 14,
+        "title": "Remind in the morning or in the evening?"
+      },
+      "event": {
+        "kind": "decided",
+        "label": {
+          "key": "event.decided",
+          "en": "Answered"
+        },
+        "about": "Remind in the morning or in the evening?",
+        "text": "Morning, 8:00",
+        "echo": false
+      },
+      "scribble": false
+    }
+  ],
+  "has_more": false
+}

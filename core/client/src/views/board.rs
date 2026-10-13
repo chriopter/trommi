@@ -12,7 +12,7 @@ use crate::model::types::{Card, PermissionRequest};
 use crate::model::Model;
 use crate::sessions::{desks_in_order, session_list, SessionRow};
 use serde_json::Value;
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell};
 use std::collections::HashMap;
 
 /// The desk id that stands for every desk at once. Nothing is stored for it: it is this device's choice.
@@ -37,6 +37,12 @@ pub struct Lens {
     pub reading_progress: Option<(u64, u64)>,
     /// Picks the Desk's greeting, once per run of the app (from `Config.seed`).
     pub dice: u32,
+    /// The session whose page is in view (its key, or its short id of the address): its unit is made.
+    pub session: Option<String>,
+    /// The card whose page is in view: its unit is made.
+    pub card: Option<String>,
+    /// The page Off your mind is in view, with the search's words: its unit is made.
+    pub off: Option<String>,
 }
 
 /// A desk of the room.
@@ -98,6 +104,7 @@ pub struct Board<'a> {
     /// How many of his answers each session has not picked up for [`UNHEARD_MS`], by index of `agents`.
     pub unheard: HashMap<usize, u32>,
     wake: Cell<Option<u64>>,
+    numbers: OnceCell<HashMap<String, u32>>,
 }
 
 /// A card that reads as an info: one that is, one of a newer Trommi, and one whose body is not read here yet (a
@@ -219,6 +226,7 @@ impl<'a> Board<'a> {
             all_fresh,
             unheard: HashMap::new(),
             wake: Cell::new(None),
+            numbers: OnceCell::new(),
         };
         board.unheard = board.count_unheard();
         board
@@ -239,6 +247,42 @@ impl<'a> Board<'a> {
             Some(i) => self.agents[i].desk.as_deref(),
             None => self.desks.first().map(|d| d.id.as_str()),
         }
+    }
+
+    /// A card's or a request's number ("Nr. 12"): the order they were first filed in, from 1, never reused, the
+    /// same on every device (the web's `numberOf`). 0 for one this device does not hold.
+    pub fn number_of(&self, id: &str) -> u32 {
+        let all = self.numbers.get_or_init(|| {
+            let m = self.model;
+            let mut filed: Vec<(u64, &str)> = m.cards.values().map(|c| (c.first_envelope_number, c.object_id.as_str())).collect();
+            filed.extend(m.permissions.values().map(|p| (p.envelope_number, p.object_id.as_str())));
+            // (a stable sort: of two filed in the same envelope, a card stands before a request)
+            filed.sort_by_key(|(n, _)| *n);
+            filed.into_iter().enumerate().map(|(i, (_, id))| (id.to_string(), i as u32 + 1)).collect()
+        });
+        all.get(id).copied().unwrap_or(0)
+    }
+
+    /// Where a card stands: "catching" (settled elsewhere, its outcome on the way), "open", "shredded", "decided"
+    /// (his answer stands), "done" (closed by its agent, withdrawn, merged).
+    pub fn status_of(c: &Card) -> &'static str {
+        if c.catching_up {
+            "catching"
+        } else if c.object_state == "open" {
+            "open"
+        } else if c.closed_how.as_deref() == Some("shredded") {
+            "shredded"
+        } else if c.closed_how.as_deref() == Some("answered") && c.object_state == "answered" {
+            "decided"
+        } else {
+            "done"
+        }
+    }
+
+    /// Whether a session runs (connected, or cut off: it still works on what it was given).
+    pub fn runs(&self, agent: usize) -> bool {
+        let r = &self.agents[agent].row;
+        r.online || r.link.as_ref().is_some_and(|l| l.state == "cut")
     }
 
     /// The open questions of the desk in view.
@@ -353,7 +397,18 @@ pub fn clean_goals(text: &str) -> String {
 pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
     let b = Board::new(model, lens, now);
     view.sidebar = super::sidebar::sidebar(&b);
-    view.desk = super::desk::desk(&b);
+    let off = super::off::of_board(&b);
+    view.desk = super::desk::desk_with(&b, &off);
+    view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
+    // The pages in view: one session, one card. A page that is left is taken away.
+    view.sessions.clear();
+    if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {
+        view.sessions.insert(s.id.clone(), s);
+    }
+    view.cards.clear();
+    if let Some(c) = lens.card.as_deref().and_then(|id| super::card::card(&b, id, &view.desk.stack)) {
+        view.cards.insert(c.id.clone(), c);
+    }
     // (and when a session's link, red hand or status line changes by the clock: status.rs `recheck_at`)
     let status = b.agents.iter().filter_map(|a| a.row.recheck_at).min();
     earliest(b.wake(), status)

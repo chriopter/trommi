@@ -34,7 +34,7 @@ pub use io::{
 };
 
 use crate::engine::{self, Codec, Connection, Engine, Jitter, OpenError, Report};
-use crate::views::{Phase, ViewModel};
+use crate::views::{Lens, Phase, Screen, ViewModel};
 use std::collections::BTreeMap;
 
 /// The hub of a shell that names none.
@@ -68,6 +68,12 @@ pub struct App {
     sessions_not_joined: Option<Vec<(trommi_core::ids::GroupId, &'static str)>>,
     /// The board model, fed from the engine's reports.
     board: engine::feed::Board,
+    /// What this device alone chooses: the desk and the pages in view, the zone (`Event::Focus`, `Event::Zone`).
+    lens: Lens,
+    /// The board's units are to be made again: the model, the lens or the clock moved.
+    stale_views: bool,
+    /// When the board's units change by the clock alone.
+    view_wake: Option<u64>,
     /// The device's source of randomness when it is not the system's (a seeded test).
     entropy: Option<Box<dyn trommi_core::crypto::Entropy + Send>>,
 }
@@ -93,6 +99,9 @@ impl App {
             alerts: Vec::new(),
             sessions_not_joined: None,
             board: engine::feed::Board::default(),
+            lens: Lens::default(),
+            stale_views: false,
+            view_wake: None,
             entropy: None,
         }
     }
@@ -164,6 +173,9 @@ impl App {
                     out.push(log(LogLevel::Warn, "start: already started"));
                 } else {
                     self.jitter = Jitter::new(config.seed);
+                    self.lens.utc_offset_min = config.utc_offset_min;
+                    // (the Desk's greeting: one for the whole run)
+                    self.lens.dice = (config.seed ^ (config.seed >> 32)) as u32;
                     self.config = Some(config);
                     self.next_view.phase = Phase::Starting;
                     let id = self.io(Pending::DeviceLoad);
@@ -214,9 +226,29 @@ impl App {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_stream(ctx, id, item));
             }
             Event::Progress { .. } | Event::Finished { .. } => {}
-            Event::PushToken { .. } | Event::Zone { .. } => {}
+            Event::PushToken { .. } => {}
+            Event::Zone { utc_offset_min } => {
+                self.lens.utc_offset_min = utc_offset_min;
+                self.stale_views = true;
+            }
             Event::Action { .. } => {}
-            Event::Focus { .. } => {}
+            Event::Focus { focus } => {
+                // (the single desk chosen last keeps the note and the Scribble Board on All desks)
+                if let Some(desk) = focus.desk.as_deref().filter(|d| *d != crate::views::board::ALL_DESKS) {
+                    self.lens.home_desk = Some(desk.to_string());
+                }
+                self.lens.desk = focus.desk;
+                let (session, card, off) = match focus.screen {
+                    Screen::Session { session_id } => (Some(session_id), None, None),
+                    Screen::Card { card_id } => (None, Some(card_id), None),
+                    Screen::Off { query } => (None, None, Some(query)),
+                    _ => (None, None, None),
+                };
+                self.lens.session = session;
+                self.lens.card = card;
+                self.lens.off = off;
+                self.stale_views = true;
+            }
             Event::Wake => {
                 self.timer = None;
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_wake(ctx));
@@ -255,6 +287,7 @@ impl App {
         match Engine::open_with(Codec::default(), hub, &client, config.seed, revision, entries, entropy) {
             Ok(engine) => {
                 self.board = engine::feed::Board::new(engine.device());
+                self.stale_views = true;
                 self.engine = Some(engine);
                 self.next_view.phase = Phase::Opening;
                 self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
@@ -315,14 +348,18 @@ impl App {
             }
         }
         if fed || (self.board.model.desk_wake != 0 && now_ms >= self.board.model.desk_wake) {
-            // (W4: the views are made from what this says changed)
             let _ = self.board.finish(now_ms);
+            self.stale_views = true;
+        }
+        // The board's units: made again when the model, the lens or the clock moved (every unit whole; a unit that
+        // did not change is not sent, `ViewModel::diff`).
+        if self.stale_views || self.view_wake.is_some_and(|at| now_ms >= at) {
+            self.stale_views = false;
+            self.lens.reading = self.board.model.reading;
+            self.view_wake = crate::views::render(&self.board.model, &self.lens, now_ms, &mut self.next_view);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = match (engine.next_wake(), model_wake) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
+        let wake = [engine.next_wake(), model_wake, self.view_wake].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });

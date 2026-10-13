@@ -1,0 +1,198 @@
+{
+  "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+  "session_id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+  "kind": "decision",
+  "state": "open",
+  "urgency": 1,
+  "title": "Social card for the launch: photo or illustration?",
+  "body": "A photo of a real windowsill with plants, or the drawn plants from the style tiles.",
+  "options": [
+    {
+      "key": "photo",
+      "label": "Photo",
+      "recommended": false,
+      "chosen": false,
+      "detail": "Warm, real",
+      "settles": false
+    },
+    {
+      "key": "drawn",
+      "label": "Illustration",
+      "recommended": true,
+      "chosen": false,
+      "detail": "Matches the site",
+      "settles": false,
+      "tip": {
+        "key": "tile.recommended",
+        "en": "Recommended"
+      }
+    }
+  ],
+  "history": 0,
+  "starred": false,
+  "files": [
+    "14ae48930f6f2048127e9103e88db787"
+  ],
+  "number": 41,
+  "nr": {
+    "key": "card.nr",
+    "args": {
+      "n": "41"
+    },
+    "en": "Nr. 41"
+  },
+  "status": "open",
+  "from": {
+    "session_id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+    "name": "Search & Social",
+    "mark": "draw:eye",
+    "path": [
+      "Fernly",
+      "Fernly Website",
+      "Search & Social"
+    ]
+  },
+  "asked_ms": 1791468000000,
+  "notes": [
+    {
+      "key": "card.below",
+      "args": {
+        "n": "2"
+      },
+      "en": "2 messages below"
+    }
+  ],
+  "text": "A photo of a real windowsill with plants, or the drawn plants from the style tiles.",
+  "more": false,
+  "multiple": false,
+  "answer": {
+    "mode": "revising",
+    "label": {
+      "key": "card.revising",
+      "en": "In revision"
+    },
+    "detail": {
+      "key": "card.revising.detail",
+      "en": "It is with its session and comes back reworked."
+    },
+    "did": {
+      "key": "card.did.handed_back",
+      "en": "You handed it back"
+    },
+    "at_ms": 1791468000000,
+    "back": "takeback",
+    "finished": false
+  },
+  "note": {
+    "tone": "gone",
+    "receipt": {
+      "key": "card.receipt.waits",
+      "args": {
+        "name": "Search & Social"
+      },
+      "en": "Your answer waits for Search & Social."
+    },
+    "line": {
+      "key": "link.gone.line_silent",
+      "args": {
+        "at": "",
+        "name": "Search & Social",
+        "program": "Claude Code"
+      },
+      "en": "Search & Social is gone: it stopped without a word: its session ended, was killed, or its machine is off the network."
+    },
+    "fix": {
+      "say": {
+        "key": "link.fix.start_again",
+        "en": "Start it again in its folder:"
+      },
+      "code": "claude --continue"
+    }
+  },
+  "ask": {
+    "key": "card.ask.gone",
+    "args": {
+      "name": "Search & Social"
+    },
+    "en": "Search & Social is gone. What you write waits for it…"
+  },
+  "star_says": {
+    "key": "card.star",
+    "en": "Star"
+  },
+  "talk": [
+    {
+      "id": "v875800a",
+      "from_me": false,
+      "text": "",
+      "time_ms": 1791468000000,
+      "heard": false,
+      "pending": false,
+      "kind": "event",
+      "number": 875800,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      },
+      "event": {
+        "kind": "asked",
+        "label": {
+          "key": "event.asked",
+          "en": "New question"
+        },
+        "text": "Social card for the launch: photo or illustration?",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876101",
+      "from_me": true,
+      "text": "Neither. Show the app on a phone, with the drawn plants behind it.",
+      "time_ms": 1791468300000,
+      "heard": false,
+      "pending": false,
+      "kind": "user",
+      "number": 876101,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      },
+      "deed": {
+        "kind": "handed_back",
+        "label": {
+          "key": "event.handed_back",
+          "en": "You handed it back"
+        },
+        "about": "Social card for the launch: photo or illustration?",
+        "echo": false
+      },
+      "scribble": false
+    },
+    {
+      "id": "e876220",
+      "from_me": false,
+      "text": "Good, that is what people will see first anyway. I am making the new card now.",
+      "time_ms": 1791468420000,
+      "heard": false,
+      "pending": false,
+      "kind": "agent",
+      "number": 876220,
+      "cont": false,
+      "terminal": false,
+      "card": {
+        "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+        "number": 41,
+        "title": "Social card for the launch: photo or illustration?"
+      },
+      "scribble": false
+    }
+  ],
+  "has_more": false
+}
