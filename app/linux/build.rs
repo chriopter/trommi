@@ -27,6 +27,7 @@ fn main() {
         "qml/DeskRow.qml",
         "qml/CardView.qml",
         "qml/Chat.qml",
+        "qml/Attachment.qml",
         "qml/pen.mjs",
     ]))
     .qt_module("Quick")

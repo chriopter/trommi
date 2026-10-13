@@ -260,7 +260,7 @@ impl Mirror {
         let rows: Vec<Value> = t
             .items
             .values()
-            .filter(|i| i["content_type"] == json!("message") || i["content"]["text"].is_string())
+            .filter(|i| i["content_type"] == json!("message") || i["content"]["text"].is_string() || i["content"]["attachments"].is_array())
             .map(|i| {
                 let sender = i["sender_device_id"].as_str().unwrap_or("");
                 let mine = sender == me;
@@ -278,6 +278,7 @@ impl Mirror {
                     "pending": i["pending"] == json!(true),
                     "ago": ago(i["sent_at"].as_u64().unwrap_or(0), now),
                     "at": i["sent_at"],
+                    "files": files_of(&i["content"]["attachments"]),
                 })
             })
             .collect();
@@ -311,6 +312,27 @@ impl Mirror {
     pub fn counts(&self) -> (usize, usize) {
         (self.stack.len() + self.open_permissions.len(), self.session_list.len())
     }
+}
+
+/// A body's files as the window shows them: the reference (which the engine opens), its name, type and size, and
+/// whether it is a picture.
+fn files_of(list: &Value) -> Value {
+    Value::Array(
+        list.as_array()
+            .into_iter()
+            .flatten()
+            .filter(|a| a["attachment_id"].is_string() && a["file_key"].as_str().is_some_and(|k| !k.is_empty()))
+            .map(|a| {
+                let media = a["media_type"].as_str().unwrap_or("");
+                json!({
+                    "id": a["attachment_id"], "name": a["file_name"], "media_type": media,
+                    "size": a["total_size"], "width": a["width"], "height": a["height"],
+                    "image": media.starts_with("image/") && media != "image/svg+xml",
+                    "ref": { "attachment_id": a["attachment_id"], "file_key": a["file_key"], "sha256": a["sha256"], "file_name": a["file_name"] },
+                })
+            })
+            .collect(),
+    )
 }
 
 /// "5 min ago" and the like.
@@ -389,6 +411,7 @@ fn card_row(c: &Value, session: &str, now: u64) -> Value {
     row.insert("working".into(), json!(c["working"] == json!(true)));
     row.insert("handed_back".into(), json!(!c["in_revision"].is_null()));
     row.insert("attachments".into(), json!(attachments));
+    row.insert("files".into(), files_of(&c["attachments"]));
     row.insert("readable".into(), json!(c["content_state"] == json!("ok")));
     row.insert("ago".into(), json!(ago(c["updated_at"].as_u64().or(c["created_at"].as_u64()).unwrap_or(0), now)));
     Value::Object(row)

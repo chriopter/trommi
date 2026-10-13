@@ -12,6 +12,7 @@ Item {
     required property var theme
     required property var cards
     required property var sessions
+    property var files: ({})
     signal openCard(string id)
 
     // one of the web's greetings, picked once per start (desk.mjs GREETINGS); a calm one when nothing waits
@@ -107,6 +108,7 @@ Item {
                 theme: root.theme
                 card: parent.modelData
                 from: root.sessionOf(parent.modelData.session_id)
+                files: root.files
                 onOpen: root.openCard(parent.modelData.id)
             }
         }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "pen.mjs" as Pen
 
 // A card's own page: who asks, the question in the display face, its teaser and body, and every option as a tile
@@ -11,7 +12,24 @@ Item {
     required property var theme
     required property var card
     property var from: null
+    /** Where fetched files lie (attachment id to file URL). */
+    property var files: ({})
     signal back()
+    /** Files of this machine that go with the answer (file URLs). */
+    property var attach: []
+    onCardChanged: { attach = []; picked = [] }
+    function answer(keys) {
+        if (attach.length) root.trommi.answer_with_files(root.card.id, JSON.stringify(keys), JSON.stringify(attach))
+        else if (keys.length === 1) root.trommi.answer(root.card.id, keys[0])
+        else root.trommi.answer_many(root.card.id, JSON.stringify(keys))
+        root.back()
+    }
+    FileDialog {
+        id: dialog
+        title: "Files for your answer"
+        fileMode: FileDialog.OpenFiles
+        onAccepted: root.attach = root.attach.concat(selectedFiles.map(u => u.toString()))
+    }
 
     property var picked: []
     readonly property real hue: from ? Pen.hueFor({ id: from.board_id || from.id, mark: from.mark }) : 162
@@ -100,10 +118,21 @@ Item {
                 color: theme.muted
                 wrapMode: Text.WrapAnywhere
             }
-            Label {
-                visible: root.card.attachments > 0
-                text: root.card.attachments === 1 ? "1 picture or file: open it on the web or the phone" : root.card.attachments + " pictures or files: open them on the web or the phone"
-                color: theme.faint; font.pixelSize: 13
+            // the card's pictures and files
+            Flow {
+                Layout.fillWidth: true
+                Layout.topMargin: 6
+                spacing: 10
+                visible: (root.card.files || []).length > 0
+                Repeater {
+                    model: root.card.files || []
+                    delegate: Attachment {
+                        required property var modelData
+                        trommi: root.trommi; theme: root.theme
+                        file: modelData; files: root.files
+                        maxWidth: (root.card.files || []).filter(f => f.image).length > 1 ? (col.width - 10) / 2 : col.width
+                    }
+                }
             }
 
             // the options
@@ -158,11 +187,47 @@ Item {
                                 if (at >= 0) p.splice(at, 1); else p.push(opt.modelData.key)
                                 root.picked = p
                             } else {
-                                root.trommi.answer(root.card.id, opt.modelData.key)
-                                root.back()
+                                root.answer([opt.modelData.key])
                             }
                         }
                     }
+                }
+            }
+
+            // files that go with the answer
+            Flow {
+                Layout.fillWidth: true
+                Layout.topMargin: 6
+                spacing: 8
+                visible: root.decision && !root.card.answered
+                Repeater {
+                    model: root.attach
+                    delegate: Rectangle {
+                        required property string modelData
+                        required property int index
+                        height: 34; radius: 8
+                        width: att.implicitWidth + 40
+                        color: theme.sunken
+                        Label { id: att; anchors.verticalCenter: parent.verticalCenter; x: 12; text: decodeURIComponent(modelData.split("/").pop()); color: theme.fg; font.pixelSize: 13 }
+                        Label {
+                            anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                            text: "×"; color: theme.muted; font.pixelSize: 16
+                            MouseArea { anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor; onClicked: { const a = root.attach.slice(); a.splice(index, 1); root.attach = a } }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 34; radius: 8
+                    width: addRow.implicitWidth + 20
+                    color: "transparent"
+                    border.color: theme.lineStrong
+                    Row {
+                        id: addRow
+                        anchors.centerIn: parent; spacing: 6
+                        PenMark { width: 18; height: 18; anchors.verticalCenter: parent.verticalCenter; svg: Pen.sketchSvg("clip"); ink: theme.muted; lineWidth: 1.8 }
+                        Label { anchors.verticalCenter: parent.verticalCenter; text: root.attach.length ? "More files" : "Add files to your answer"; color: theme.muted; font.pixelSize: 13; font.weight: Font.DemiBold }
+                    }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: dialog.open() }
                 }
             }
 
@@ -174,7 +239,7 @@ Item {
                     visible: root.decision && root.card.multiple && !root.card.answered
                     enabled: root.picked.length > 0
                     text: root.picked.length ? "Send " + root.picked.length : "Pick one or more"
-                    onClicked: { root.trommi.answer_many(root.card.id, JSON.stringify(root.picked)); root.back() }
+                    onClicked: root.answer(root.picked)
                     contentItem: Label { text: sendMany.text; color: sendMany.enabled ? theme.accentFg : theme.faint; font.weight: Font.DemiBold; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     background: Rectangle { implicitWidth: 140; implicitHeight: 44; radius: 12; color: sendMany.enabled ? theme.tone(root.hue, "pen") : theme.sunken }
                 }

@@ -11,6 +11,7 @@
 //! The order of a catch-up is the client core's rule: the Welcomes, then the hub's open list (the Desk is right
 //! before any history is read), then the changes from the cursor, oldest first, for the MLS epochs and the chains.
 
+pub mod files;
 pub mod signin;
 mod sync;
 
@@ -27,7 +28,7 @@ use trommi_connector::util::{hex, now_ms, unhex};
 use trommi_core::hub_auth::SignedHubAuth;
 use trommi_core::ids::RoomId;
 use trommi_core_ffi::{
-    body_to_wire, error_code_text, ClientModel, CoreDevice, CoreError, Draft, DraftKind, GroupSummary,
+    body_file_ids, body_to_wire, error_code_text, ClientModel, CoreDevice, CoreError, Draft, DraftKind, GroupSummary,
 };
 use zeroize::Zeroizing;
 
@@ -249,6 +250,11 @@ impl Engine {
         Ok(text.into_bytes())
     }
 
+    /// The files a body names, as the core seals them with it (the client core's codec).
+    fn files_of(kind: &str, content: &Value) -> Result<Vec<Vec<u8>>> {
+        body_file_ids(kind.to_string(), content.to_string()).map_err(fault)
+    }
+
     fn draft(kind: DraftKind) -> Draft {
         Draft {
             kind,
@@ -277,12 +283,12 @@ impl Engine {
     }
 
     /// Seals one envelope (it is in the outbox from then on, durable), confirms its echo, and sends.
-    async fn send(self: &Arc<Self>, local_id: &str, draft: Draft, recipient: Option<Vec<u8>>) -> Result<()> {
+    async fn send(self: &Arc<Self>, local_id: &str, draft: Draft, recipient: Option<Vec<u8>>, files: Vec<Vec<u8>>) -> Result<()> {
         let sealed = {
             let _one = self.serial.lock().await;
             let sealed = self
                 .device
-                .seal(draft, recipient, Vec::new(), now_ms())
+                .seal(draft, recipient, files, now_ms())
                 .map_err(fault)?;
             let object = sealed.object_id.as_ref().map(|o| hex(o));
             let _ = self
@@ -298,6 +304,11 @@ impl Engine {
 
     /// Answers a decision card with these options (an info card: read, `choices` empty).
     pub async fn answer(self: &Arc<Self>, card_id: &str, choices: Vec<String>) -> Result<()> {
+        self.answer_with(card_id, choices, Vec::new()).await
+    }
+
+    /// Answers a card with these options and these files (attachment references, `upload_file`).
+    pub async fn answer_with(self: &Arc<Self>, card_id: &str, choices: Vec<String>, attachments: Vec<Value>) -> Result<()> {
         let card = self
             .mirror
             .lock()
@@ -324,13 +335,17 @@ impl Engine {
             .filter(|o| o["final"] == json!(true))
             .filter_map(|o| o["key"].as_str())
             .collect();
-        let settles = action == "answer" && !choices.is_empty() && choices.iter().all(|c| finals.contains(&c.as_str()));
+        // (an answer with files says more than its choice: it does not settle the card by itself)
+        let settles = action == "answer" && attachments.is_empty() && !choices.is_empty() && choices.iter().all(|c| finals.contains(&c.as_str()));
         let closes = action != "answer" || settles;
         let at = now_ms();
-        let content = json!({ "answer_action": action, "choices": choices, "answered_at": at });
+        let mut content = json!({ "answer_action": action, "choices": choices, "answered_at": at });
+        if !attachments.is_empty() {
+            content["attachments"] = json!(attachments);
+        }
         let local = Self::local_id();
         let echo = json!({
-            "answer_action": action, "choices": choices, "note": null, "option_notes": {}, "attachments": [], "marks": [],
+            "answer_action": action, "choices": choices, "note": null, "option_notes": {}, "attachments": attachments, "marks": [],
             "trusted": false, "bound_version_hash": card["version_hash"], "bound_object_version": card["object_version"],
             "envelope_number": null, "envelope_hash": null, "by_device_id": self.me, "answered_at": at,
             "taken_back_at": null, "taken_back_sent_at": null,
@@ -342,16 +357,16 @@ impl Engine {
             if closes { "closed".into() } else { "answered".into() },
         );
         self.emit();
-        let payload = Self::wire("answer", &content);
+        let payload = Self::wire("answer", &content).and_then(|p| Ok((p, Self::files_of("answer", &content)?)));
         let result = match payload {
-            Ok(payload) => {
+            Ok((payload, files)) => {
                 let mut d = Self::draft(DraftKind::Answer);
                 d.session = Some(session);
                 d.object_id = unhex(card_id);
                 d.choices = Some(choices);
                 d.closes = Some(closes);
                 d.payload = Some(payload);
-                self.send(&local, d, None).await
+                self.send(&local, d, None, files).await
             }
             Err(e) => Err(e),
         };
@@ -380,13 +395,18 @@ impl Engine {
         d.request_id = unhex(request_id);
         d.allow = Some(allow);
         d.payload = Some(Self::wire("verdict", &json!({}))?);
-        self.send(&Self::local_id(), d, None).await
+        self.send(&Self::local_id(), d, None, Vec::new()).await
     }
 
     /// A message to a session's agent, shown at once.
     pub async fn say_to(self: &Arc<Self>, session_id: &str, text: &str) -> Result<()> {
+        self.say_with(session_id, text, Vec::new()).await
+    }
+
+    /// A message with files (attachment references, `upload_file`).
+    pub async fn say_with(self: &Arc<Self>, session_id: &str, text: &str, attachments: Vec<Value>) -> Result<()> {
         let text = text.trim();
-        if text.is_empty() {
+        if text.is_empty() && attachments.is_empty() {
             return Ok(());
         }
         let recipient = self
@@ -395,7 +415,10 @@ impl Engine {
             .unwrap_or_else(|e| e.into_inner())
             .agent_of(session_id)
             .ok_or_else(|| Fault::new("bad-argument", "this session has no agent to write to"))?;
-        let content = json!({ "content_type": "message", "text": text });
+        let mut content = json!({ "content_type": "message", "text": text });
+        if !attachments.is_empty() {
+            content["attachments"] = json!(attachments);
+        }
         let local = Self::local_id();
         let key = format!("chat:session/{session_id}");
         let _ = self.model.echo_item(
@@ -411,7 +434,7 @@ impl Engine {
             let mut d = Self::draft(DraftKind::SessionChat);
             d.session = Some(unhex(session_id).ok_or_else(|| Fault::new("bad-argument", "session"))?);
             d.payload = Some(Self::wire("message", &content)?);
-            self.send(&local, d, None).await
+            self.send(&local, d, None, Self::files_of("message", &content)?).await
         }
         .await;
         if result.is_err() {

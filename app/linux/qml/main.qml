@@ -68,6 +68,7 @@ ApplicationWindow {
         return null
     }
     property var chat: { try { return JSON.parse(trommi.chat_json) } catch (e) { return [] } }
+    property var files: { try { return JSON.parse(trommi.files_json) } catch (e) { return ({}) } }
     property var selectedSession: {
         for (let i = 0; i < sessions.length; i++) if (sessions[i].id === trommi.selected) return sessions[i]
         return null
@@ -97,7 +98,9 @@ ApplicationWindow {
             }
             if (scene === "say" && step === 1) {
                 step = 2
-                trommi.send("Looks good from the Linux app. Ship the split hero, please.")
+                // (TROMMI_LINUX_FILE: a file of this machine goes with the line)
+                if (trommi.scene_file !== "") trommi.send_with_files("The numbers, from the Linux app.", JSON.stringify(["file://" + trommi.scene_file]))
+                else trommi.send("Looks good from the Linux app. Ship the split hero, please.")
                 shotTimer.restart()
                 return
             }
@@ -105,6 +108,21 @@ ApplicationWindow {
                 step = 1
                 for (let i = 0; i < window.desk.length; i++) if ((window.desk[i].options || []).length > 2) { window.openCard = window.desk[i].id; break }
                 if (window.openCard === "" && window.desk.length) window.openCard = window.desk[0].id
+                shotTimer.restart()
+                return
+            }
+            // `files` opens the first card with pictures, `save` the first with another file and puts that into Downloads
+            if ((scene === "files" || scene === "save") && step === 0) {
+                step = 1
+                for (let i = 0; i < window.desk.length; i++) {
+                    const fs = window.desk[i].files || []
+                    const other = fs.filter(f => !f.image)
+                    if (scene === "files" ? fs.some(f => f.image) : other.length > 0) {
+                        window.openCard = window.desk[i].id
+                        if (scene === "save") trommi.save_file(JSON.stringify(other[0].ref))
+                        break
+                    }
+                }
                 shotTimer.restart()
                 return
             }
@@ -178,6 +196,7 @@ ApplicationWindow {
                     theme: theme
                     cards: window.desk
                     sessions: window.sessions
+                    files: window.files
                     onOpenCard: (id) => window.openCard = id
                 }
                 CardView {
@@ -187,6 +206,7 @@ ApplicationWindow {
                     theme: theme
                     card: window.openCardData || ({})
                     from: window.openCardData ? window.sessionOf(window.openCardData.session_id) : null
+                    files: window.files
                     onBack: window.openCard = ""
                 }
                 Chat {
@@ -196,6 +216,7 @@ ApplicationWindow {
                     theme: theme
                     items: window.chat
                     session: window.selectedSession
+                    files: window.files
                 }
             }
         }

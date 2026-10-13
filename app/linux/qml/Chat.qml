@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import "pen.mjs" as Pen
 
 // A session's Chat as the web shows it (session.css): its drawing and name at the top with the online dot, the
@@ -12,6 +13,24 @@ Item {
     required property var theme
     required property var items
     required property var session
+    /** Where fetched files lie (attachment id to file URL). */
+    property var files: ({})
+    /** Files of this machine that go with the next line (file URLs). */
+    property var attach: []
+    onSessionChanged: attach = []
+    FileDialog {
+        id: dialog
+        title: "Files for " + (root.session ? root.session.name : "the session")
+        fileMode: FileDialog.OpenFiles
+        onAccepted: root.attach = root.attach.concat(selectedFiles.map(u => u.toString()))
+    }
+    function sendNow() {
+        if (field.text.trim().length === 0 && root.attach.length === 0) return
+        if (root.attach.length) root.trommi.send_with_files(field.text, JSON.stringify(root.attach))
+        else root.trommi.send(field.text)
+        field.text = ""
+        root.attach = []
+    }
 
     readonly property real hue: session ? Pen.hueFor({ id: session.board_id || session.id, mark: session.mark }) : 162
     readonly property bool gone: !!session && (session.link === "gone" || session.link === "cut")
@@ -96,7 +115,7 @@ Item {
                     Label { text: root.clock(line.modelData.at); font.pixelSize: 12; color: theme.faint }
                 }
                 Text {
-                    visible: !line.mine
+                    visible: !line.mine && !!line.modelData.text
                     Layout.fillWidth: true
                     text: line.modelData.text || ""
                     textFormat: Text.MarkdownText
@@ -107,7 +126,7 @@ Item {
                 }
                 // the person's own line: a bubble at the right, the time under it
                 Rectangle {
-                    visible: line.mine
+                    visible: line.mine && !!line.modelData.text
                     Layout.alignment: Qt.AlignRight
                     Layout.maximumWidth: col.width * 0.8
                     implicitWidth: Math.min(col.width * 0.8, mineText.implicitWidth + 32)
@@ -125,6 +144,22 @@ Item {
                         wrapMode: Text.Wrap
                     }
                 }
+                // the line's pictures and files
+                Flow {
+                    visible: (line.modelData.files || []).length > 0
+                    Layout.fillWidth: true
+                    layoutDirection: line.mine ? Qt.RightToLeft : Qt.LeftToRight
+                    spacing: 8
+                    Repeater {
+                        model: line.modelData.files || []
+                        delegate: Attachment {
+                            required property var modelData
+                            trommi: root.trommi; theme: root.theme
+                            file: modelData; files: root.files
+                            maxWidth: Math.min(420, col.width * 0.8); maxHeight: 300
+                        }
+                    }
+                }
                 Label {
                     visible: line.mine
                     Layout.alignment: Qt.AlignRight
@@ -139,7 +174,7 @@ Item {
     // ---- the session's link, when it does not hear ----
     Rectangle {
         id: note
-        anchors { bottom: composer.top; bottomMargin: 10; horizontalCenter: parent.horizontalCenter }
+        anchors { bottom: root.attach.length ? pending.top : composer.top; bottomMargin: 10; horizontalCenter: parent.horizontalCenter }
         width: Math.min(712, root.width - 64)
         visible: root.gone
         height: visible ? noteCol.implicitHeight + 24 : 0
@@ -178,6 +213,31 @@ Item {
         }
     }
 
+    // ---- files that go with the next line ----
+    Flow {
+        id: pending
+        anchors { bottom: composer.top; bottomMargin: 8; horizontalCenter: parent.horizontalCenter }
+        width: Math.min(712, root.width - 64)
+        spacing: 8
+        z: 2
+        Repeater {
+            model: root.attach
+            delegate: Rectangle {
+                required property string modelData
+                required property int index
+                height: 32; radius: 8
+                width: att.implicitWidth + 40
+                color: theme.sunken
+                Label { id: att; anchors.verticalCenter: parent.verticalCenter; x: 12; text: decodeURIComponent(modelData.split("/").pop()); color: theme.fg; font.pixelSize: 13 }
+                Label {
+                    anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                    text: "×"; color: theme.muted; font.pixelSize: 16
+                    MouseArea { anchors.fill: parent; anchors.margins: -6; cursorShape: Qt.PointingHandCursor; onClicked: { const a = root.attach.slice(); a.splice(index, 1); root.attach = a } }
+                }
+            }
+        }
+    }
+
     // ---- writing to the agent ----
     Rectangle {
         id: composer
@@ -189,7 +249,7 @@ Item {
         border.width: field.activeFocus ? 1.5 : 1
         border.color: field.activeFocus ? theme.fg : theme.lineStrong
         ScrollView {
-            anchors { left: parent.left; right: send.left; top: parent.top; bottom: parent.bottom; leftMargin: 6; rightMargin: 6 }
+            anchors { left: parent.left; right: clip.left; top: parent.top; bottom: parent.bottom; leftMargin: 6; rightMargin: 6 }
             TextArea {
                 id: field
                 placeholderText: root.gone ? "It is gone. What you write waits for it" : (root.session ? "Write to " + root.session.name : "Write …")
@@ -201,27 +261,30 @@ Item {
                 verticalAlignment: TextEdit.AlignVCenter
                 Keys.onPressed: (e) => {
                     if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter) && !(e.modifiers & Qt.ShiftModifier)) {
-                        sendArea.clicked(null)
+                        root.sendNow()
                         e.accepted = true
                     }
                 }
             }
         }
+        PenMark {
+            id: clip
+            anchors { right: send.left; rightMargin: 10; verticalCenter: parent.verticalCenter }
+            width: 20; height: 20
+            svg: Pen.sketchSvg("clip"); ink: theme.muted; lineWidth: 1.8
+            MouseArea { anchors.fill: parent; anchors.margins: -8; cursorShape: Qt.PointingHandCursor; onClicked: dialog.open() }
+        }
         Rectangle {
             id: send
             anchors { right: parent.right; rightMargin: 6; verticalCenter: parent.verticalCenter }
             width: 38; height: 38; radius: 10
-            color: field.text.trim().length > 0 ? theme.accent : theme.withAlpha(theme.accent, 0.4)
+            color: field.text.trim().length > 0 || root.attach.length > 0 ? theme.accent : theme.withAlpha(theme.accent, 0.4)
             PenMark { anchors.centerIn: parent; width: 22; height: 22; svg: Pen.sketchSvg("send"); ink: theme.accentFg; lineWidth: 2.2 }
             MouseArea {
                 id: sendArea
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (field.text.trim().length === 0) return
-                    root.trommi.send(field.text)
-                    field.text = ""
-                }
+                onClicked: root.sendNow()
             }
         }
     }

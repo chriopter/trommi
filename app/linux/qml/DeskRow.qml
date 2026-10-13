@@ -14,7 +14,10 @@ Rectangle {
     required property var card
     /** The asking session (sessions_json), or null. */
     property var from: null
+    /** Where fetched files lie (attachment id to file URL). */
+    property var files: ({})
     signal open()
+    readonly property var pictures: (card.files || []).filter(f => f.image).slice(0, 3)
 
     readonly property real hue: from ? Pen.hueFor({ id: from.board_id || from.id, mark: from.mark }) : 162
     readonly property bool knock: card.urgency === "high" || card.urgency === "critical"
@@ -89,22 +92,38 @@ Rectangle {
         onClicked: row.open()
     }
 
-    // the pictures as a small fan (the web shows the pictures themselves; this app does not fetch files yet)
+    // the pictures as a small fan beside the title (desk.css .inbox-fan): the first three, each turned a little
     Item {
         id: fan
         anchors { right: tileRow.left; rightMargin: 22; verticalCenter: parent.verticalCenter }
-        width: row.card.attachments > 0 ? 58 + Math.min(row.card.attachments - 1, 2) * 18 : 0
+        readonly property int n: row.pictures.length > 0 ? row.pictures.length : Math.min(row.card.attachments || 0, 3)
+        width: n > 0 ? 58 + (n - 1) * 18 : 0
         height: 48
         Repeater {
-            model: Math.min(row.card.attachments || 0, 3)
+            model: fan.n
             delegate: Rectangle {
+                id: leaf
                 required property int index
+                readonly property var pic: row.pictures[index]
+                readonly property string url: pic ? (row.files[pic.id] || "") : ""
+                Component.onCompleted: if (pic && !url) row.trommi.fetch_file(JSON.stringify(pic.ref))
                 x: index * 18; y: 2 + (index % 2) * 2
+                z: -index
                 width: 58; height: 44; radius: 4
                 rotation: [-3, 2.5, -1.5][index]
                 color: theme.sunken
                 border.color: theme.fg; border.width: 1
+                clip: true
+                Image {
+                    anchors.fill: parent; anchors.margins: 1
+                    source: leaf.url
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    sourceSize.width: 160
+                    visible: status === Image.Ready
+                }
                 Column {
+                    visible: !leaf.url
                     anchors.centerIn: parent; spacing: 4
                     Repeater { model: 3; Rectangle { width: [34, 26, 30][index]; height: 2; radius: 1; color: theme.lineStrong } }
                 }
