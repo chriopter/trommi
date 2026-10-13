@@ -596,6 +596,7 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
     hub.get("/v1/push-changes?after=0").refused(401, "unauthorised");
     // the ticket is taken from its header only, never from the URL
     hub.get(&format!("/v1/push-changes?ticket={ticket}&after=0")).refused(401, "unauthorised");
+    let ticket = ticket.to_string();
 
     // Live Activity: two marks (0 or 1) and a tag. Work begins: start; a mark changes: update
     s.agent.post(hub, "/v1/link", &json!({ "process": b64(&random::<16>()), "generation": s.agent.lease, "hears": true, "working": true, "last_call_at": 1 })).refused(409, "lease-lost");
@@ -681,6 +682,27 @@ fn an_iphone_gets_a_sealed_number_and_a_ticket_for_that_one_envelope() {
                 .any(|a| a["event"] == "update" && a["content-state"]["working"] == 1)
         },
     );
+    // SECURITY.md: the ticket reads the room's changes up to that push "and nothing newer". The room goes on after
+    // the push; the ticket's answer must not say how far (`head` is the room's newest change number).
+    card(&mut s, 1, 0);
+    let hub = &s.w.hub;
+    let later = common::request(hub.port, "GET", "/v1/push-changes?after=0", &[("trommi-ticket", ticket.clone())], &[]).ok();
+    assert!(
+        later["head"].as_i64().is_none_or(|head| head <= rang),
+        "a push ticket for change {rang} learns the room's head {}",
+        later["head"]
+    );
+    assert_eq!(later["head"].as_i64(), Some(rang), "as far as the ticket reads");
+    // `more` says that the room went on past the push, and no more than that: asked from beyond its change, the
+    // ticket gets the same word wherever it asks from, never "the room's head lies below this number"
+    let room_head = s.w.ada.get(hub, "/v1/changes?after=0").ok()["head"].as_i64().unwrap();
+    assert!(room_head > rang + 1);
+    for after in [rang, rang + 1, room_head - 1, room_head, room_head + 5, 1 << 40] {
+        let page = common::request(hub.port, "GET", &format!("/v1/push-changes?after={after}"), &[("trommi-ticket", ticket.clone())], &[]).ok();
+        assert_eq!(page["items"], json!([]), "nothing beyond the ticket's change");
+        assert_eq!(page["more"], true, "asked after {after}: the same word as at the ticket's change");
+        assert_eq!(page["head"].as_i64(), Some(rang));
+    }
 }
 
 #[test]

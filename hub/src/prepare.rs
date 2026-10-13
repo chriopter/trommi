@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::delivery::CommitBody;
 use crate::memo::{commit_key, Entry, Key, Memo};
 use crate::observer::{GroupState, Observer};
-use crate::store::{self, Room};
+use crate::store::{self, Auth, Room, Sight};
 
 /// A Commit on a state: the Commit itself, and the GroupInfo that came with it.
 fn on_state(memo: &Memo, state: &GroupState, body: &CommitBody) {
@@ -17,10 +17,15 @@ fn on_state(memo: &Memo, state: &GroupState, body: &CommitBody) {
 }
 
 /// `POST /v1/groups/{group}/commits` and the code's replacement: if the Commit builds on the group's epoch.
-pub fn commit(c: &Connection, memo: &Memo, room: &Room, group_id: &[u8], body: &CommitBody) {
-    let Ok(row) = store::group(c, room, group_id) else {
+/// Nothing for a group the asker may not see: it is answered as for no group (`delivery::commit_in`), and no work
+/// here tells it from one.
+pub fn commit(c: &Connection, memo: &Memo, auth: &Auth, group_id: &[u8], body: &CommitBody) {
+    let Ok(row) = store::group(c, &auth.room, group_id) else {
         return;
     };
+    if !matches!(store::sight(c, auth, &row), Ok(Sight::Leaf | Sight::Public)) {
+        return;
+    }
     if !row.live || body.epoch != row.epoch {
         return;
     }

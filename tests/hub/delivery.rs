@@ -2809,6 +2809,39 @@ fn commits_posted_together_are_each_taken_or_refused_in_their_place() {
     w.ada.post(&w.hub, "/v1/commits", &json!({ "commits": [one.clone(), one] })).refused(400, "bad-format");
 }
 
+/// A Commit posted to a session the asker may not see is answered as for a group that does not exist: the route
+/// does not say whether the session exists, which epoch it stands at or whether it is archived.
+#[test]
+fn a_commit_to_a_session_the_asker_may_not_see_tells_nothing_of_it() {
+    let mut w = World::new();
+    let mut agent = w.enrol_agent();
+    let mut other = w.enrol_agent();
+    w.found_main(&mut [], Some(&mut agent));
+    let (_, theirs) = w.found_main(&mut [], Some(&mut other));
+    let nowhere = [&w.room[..], &random::<16>()[..]].concat();
+    let ask = |dev: &Dev, group: &[u8], epoch: u64| {
+        let body = json!({ "epoch": epoch, "commit": b64(&[1u8; 600]), "group_info": b64(&[2u8; 600]), "sealed_key": b64(&[3u8; 100]) });
+        dev.post(&w.hub, &format!("/v1/groups/{}/commits", b64(group)), &body)
+    };
+    // a human device sees every session: the epoch is taken, and the answer names the current one
+    let seen = ask(&w.ada, &theirs, 0);
+    assert_eq!(seen.refused(409, "epoch-taken")["epoch"], 1);
+    // an agent that is no leaf of the session: every epoch, taken, current or ahead, is answered like no group
+    let none = ask(&agent, &nowhere, 0);
+    let none = none.refused(404, "not-found");
+    for epoch in [0, 1, 2] {
+        let got = ask(&agent, &theirs, epoch);
+        assert_eq!(got.refused(404, "not-found"), none, "epoch {epoch}");
+    }
+    // archived or not
+    w.ada.post(&w.hub, &format!("/v1/groups/{}/archive", b64(&theirs)), &json!({})).ok();
+    assert_eq!(ask(&agent, &theirs, 1).refused(404, "not-found"), none);
+    // and in a request of several
+    let many = json!({ "commits": [{ "group": b64(&theirs), "epoch": 0, "commit": b64(&[1u8; 600]), "group_info": b64(&[2u8; 600]), "sealed_key": b64(&[3u8; 100]) }] });
+    let answers = agent.post(&w.hub, "/v1/commits", &many).ok()["answers"].clone();
+    assert_eq!(answers[0]["error"], "not-found", "{answers:?}");
+}
+
 #[test]
 fn several_groups_are_read_in_one_request_each_in_its_place() {
     let w = World::new();
@@ -2824,4 +2857,78 @@ fn several_groups_are_read_in_one_request_each_in_its_place() {
     assert_eq!(groups[1]["group"], b64(&nowhere));
     assert_eq!(groups[1]["error"], "not-found", "{groups:?}");
     w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [] })).refused(400, "bad-format");
+    // each group once: 64 times the same group is not 64 answers
+    w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&w.room), b64(&w.room)] })).refused(400, "bad-format");
+}
+
+/// The whole answer of `POST /v1/groups/read` has one budget (8 MiB, the first group always goes in): a group that
+/// no longer fits and those after it are answered `too-large` in their place, for a reading of their own.
+#[test]
+fn groups_read_together_share_one_answer_budget() {
+    let mut w = World::new();
+    let room = w.room;
+    // three sessions, each with one Commit of 2 MiB in its log (written into the hub's database: no real Commit is
+    // that large with a handful of devices)
+    let sessions: Vec<Vec<u8>> = (0..3)
+        .map(|_| {
+            let mut agent = w.enrol_agent();
+            w.found_main(&mut [], Some(&mut agent)).1
+        })
+        .collect();
+    {
+        let db = rusqlite::Connection::open(w.hub.dir.join("hub.db")).unwrap();
+        db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+        for group in &sessions {
+            let fat = db.execute("UPDATE group_log SET bytes = zeroblob(2 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&group[..]]).unwrap();
+            assert_eq!(fat, 1);
+        }
+    }
+    let ids: Vec<String> = sessions.iter().map(|g| b64(g)).chain([b64(&room)]).collect();
+    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": ids })).ok();
+    let groups = got["groups"].as_array().expect("groups");
+    assert_eq!(groups.len(), 4);
+    // 2 MiB are 2.7 MiB of base64: two fit, the third does not, and nothing after it is read into this answer
+    assert!(groups[0]["log"].is_object() && groups[1]["log"].is_object(), "the first two fit: {:?} {:?}", groups[0]["error"], groups[1]["error"]);
+    for (i, late) in groups[2..].iter().enumerate() {
+        assert_eq!(late["error"], "too-large", "group {} of an answer that is full", i + 2);
+        assert_eq!(late["status"], 413);
+        assert_eq!(late["group"], ids[i + 2], "in its place");
+        assert!(late.get("log").is_none());
+    }
+    assert!(got.to_string().len() <= trommi_hub::content::ANSWER_BYTES + (64 << 10), "{} bytes in one answer", got.to_string().len());
+    // the budget is the answer's own size, RecoveryAuths and all: with a RecoveryAuth of 3 MiB on its Commit, the
+    // second group no longer fits beside the first
+    {
+        let db = rusqlite::Connection::open(w.hub.dir.join("hub.db")).unwrap();
+        db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+        db.execute("UPDATE group_log SET recovery_auth = zeroblob(3 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&sessions[0][..]]).unwrap();
+    }
+    let with_auth = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[1]] })).ok();
+    assert!(with_auth["groups"][0]["log"].is_object());
+    assert_eq!(with_auth["groups"][1]["error"], "too-large", "2 MiB + 3 MiB + 2 MiB are more than 8 MiB of base64");
+    assert!(with_auth.to_string().len() <= trommi_hub::content::ANSWER_BYTES);
+    // a group left out is read alone, whole
+    let alone = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[2]] })).ok();
+    assert!(alone["groups"][0]["log"]["items"].as_array().is_some_and(|l| !l.is_empty()));
+    // the first group always goes in, however large
+    {
+        let db = rusqlite::Connection::open(w.hub.dir.join("hub.db")).unwrap();
+        db.busy_timeout(std::time::Duration::from_secs(5)).unwrap();
+        db.execute("UPDATE group_log SET bytes = zeroblob(7 << 20) WHERE group_id = ?1 AND n = (SELECT min(n) FROM group_log WHERE group_id = ?1 AND kind = 'commit')", [&sessions[0][..]]).unwrap();
+    }
+    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[3]] })).ok();
+    assert!(got["groups"][0]["log"].is_object());
+    assert_eq!(got["groups"][1]["error"], "too-large");
+    // a group that does not exist, or that the asker may not see, is `not-found` also in an answer that is full:
+    // it is not told to read it alone
+    let nowhere: [u8; 48] = random();
+    let got = w.ada.post(&w.hub, "/v1/groups/read", &json!({ "groups": [ids[0], ids[1], b64(&nowhere)] })).ok();
+    assert_eq!(got["groups"][1]["error"], "too-large");
+    assert_eq!(got["groups"][2]["error"], "not-found", "{:?}", got["groups"][2]);
+    let mut outsider = w.enrol_agent();
+    w.found_main(&mut [], Some(&mut outsider));
+    let got = outsider.post(&w.hub, "/v1/groups/read", &json!({ "groups": [b64(&room), ids[0], ids[1]] })).ok();
+    assert!(got["groups"][0]["log"].is_object(), "an agent follows the room group");
+    assert_eq!(got["groups"][1]["error"], "not-found", "another agent's session");
+    assert_eq!(got["groups"][2]["error"], "not-found");
 }
