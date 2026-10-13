@@ -49,10 +49,14 @@ pub fn classify(response: &HttpResponse) -> Result<(), Failure> {
     Err(Failure::Refused { status, code })
 }
 
-/// Sorts an I/O error: offline, timeout and failed are all [`Failure::Offline`]; `cancelled` is no failure.
+/// Sorts an I/O error: offline, timeout and failed are all [`Failure::Offline`]; `cancelled` is no failure; an
+/// answer longer than the request's `max_answer` is a bad answer (the hub answered, with what no route allows).
 pub fn classify_io(error: &IoError) -> Option<Failure> {
     match error.kind {
         IoErrorKind::Cancelled => None,
+        IoErrorKind::TooLarge => Some(Failure::BadAnswer {
+            why: "an answer larger than its route allows",
+        }),
         _ => Some(Failure::Offline),
     }
 }
@@ -105,5 +109,9 @@ mod tests {
             Some(Failure::Offline)
         );
         assert_eq!(classify_io(&IoError::new(IoErrorKind::Cancelled)), None);
+        assert!(matches!(
+            classify_io(&IoError::new(IoErrorKind::TooLarge)),
+            Some(Failure::BadAnswer { .. })
+        ));
     }
 }
