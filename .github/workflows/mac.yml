@@ -6,7 +6,8 @@
 #   release  the release is published and its manifest signed by the release key, of this repository, with its
 #            commit's iOS inputs (the Mac app is built from the same paths; .github/scripts/mac_release.sh check).
 #            No release: nothing runs.
-#   build    the release marks the app changed: on a Mac, the Rust core for the Mac (cached by its inputs), then
+#   build    the release marks the app changed (or the newest Mac app is of older iOS inputs): on a Mac, the Rust
+#            core for the Mac (cached by its inputs), then
 #            .github/scripts/mac_direct.sh build: archive, Developer ID export with hardened runtime, notarytool,
 #            staple, the .dmg (signed, notarized, stapled), Gatekeeper's verdict, the SHA-256. Without the certificate
 #            or the App Store Connect key it ends green with a notice and nothing is attached: never an unsigned app.
@@ -46,9 +47,11 @@ on:
 
 permissions: {}
 
-# every release its own run (a dropped waiting run would be a release without its Mac app)
+# After build.yml: one run at a time, and of the runs waiting only the newest; a started run is never cut off. A
+# replaced run's app is not lost: the newest builds when the newest Mac app on a release is of other iOS inputs than its
+# release's (mac_release.sh check), also when its release leaves the app unchanged. By hand: a run of its own.
 concurrency:
-  group: mac-${{ github.run_id }}
+  group: mac-${{ github.event_name == 'workflow_run' && 'main' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
