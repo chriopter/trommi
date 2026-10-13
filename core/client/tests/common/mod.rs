@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 pub mod hub;
+pub mod shape;
 
 use hub::{Hub, HUB_URL};
 use std::cell::RefCell;
@@ -127,7 +128,7 @@ pub fn post_all(hub: &mut Hub, device: &mut Peer) -> Vec<String> {
     refused
 }
 
-fn invite(inviter: &mut Peer, joiner: &mut Peer, role: Role) -> u64 {
+pub fn invite(inviter: &mut Peer, joiner: &mut Peer, role: Role) -> u64 {
     let address = HubAddress::parse(HUB_URL).expect("an address");
     let opened = inviter.invite_open(role, None, "https://app.example", &address, now()).expect("an invite");
     let link = String::from_utf8(opened.link.expose().to_vec()).expect("the link is text");
@@ -312,6 +313,12 @@ impl World {
         let draft = Draft::CardVersion { session: self.session, object_id: card, closed: false, urgency: Urgency::Normal, push: false, payload: text(&payload) };
         let (sealed, change) = self.seal(false, &draft);
         (trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)
+    }
+
+    /// The agent writes a register of its session.
+    pub fn agent_register(&mut self, name: &str, value: &str) -> u64 {
+        let draft = Draft::Register { group: self.group, name: name.into(), value: Some(text(value)) };
+        self.write(false, &draft)
     }
 
     /// The founder (the person's other device) says a line.

@@ -51,6 +51,12 @@
 //! is a hint for what to read: every envelope is checked like any other, and the list only ever HOLDS a card back
 //! ([`crate::desk`]), it cannot make one.
 //!
+//! The hub cuts its Desk short (1000 objects of a kind, 20 000 registers, 8 MiB) and says `truncated`: such a list
+//! decides nothing, what it brought is shown, and the rest comes in the hub's order. Nothing here relies on the
+//! list being whole, on a version being the newest, or on the change numbers beyond their order. The Desk's
+//! registers are read like its versions, out of the order; the core does not say of such a register whether it is
+//! current, so the model takes a session's or a device's register only once the order reaches it (a finding, open).
+//!
 //! [`feed::Board`] turns the reports into the board model (`crate::model`), which the views are made from.
 //!
 //! # A sign-in's sessions
@@ -69,29 +75,45 @@
 //! order is the hub's change number, and the model must not let it decide a card's state where `object_after`
 //! says otherwise.
 //!
+//! # Upkeep
+//!
+//! The timed round (once the order is at rest, then every [`sync::UPKEEP_EVERY_MS`]): KeyPackages stocked, `heads`
+//! written, missing keys asked for. Tending the groups ([`sync::upkeep`]): a stale session cleaned (5.2.8), a human
+//! device a live session lacks added (5.2.7), the own leaf renewed (5.2.9), the steps of this device's invites
+//! taken, an agent without a session seated ([`crate::seats`]), the core's findings said. An envelope
+//! the hub voids as `epoch-full` leads to an update of the own leaf at once, which moves the group on.
+//!
+//! # Across a restart
+//!
+//! The engine keeps one small record in the app's store ([`sync::record`]): its position, what it passed over and
+//! still owes (groups it waited for, missing keys, withheld chains, queued mends), and a sign-in's session groups
+//! still to join. It is written behind the device's own write of the same step, so it never runs ahead of the
+//! stored device; one that lags only costs a second reading, and one of another stored state is left.
+//!
 //! # Not here yet
 //!
-//! Of upkeep only the timed round is here (KeyPackages stocked, `heads` written, missing keys asked for: once the
-//! order is at rest, then every [`sync::UPKEEP_EVERY_MS`]). Still to come: the invite steps, 5.2.7 to 5.2.9, the
-//! seats, the core's findings, the Desk as a delta on a warm start, the reading of the room's past (one module, one entry point, behind [`Engine::reread_from`]), recovery
-//! of a closed device, relayed pieces and wishes.
+//! The Desk as a delta on a warm start, the reading of the room's past (one
+//! module, one entry point, behind [`Engine::reread_from`]), wishes to be let in again
+//! (`readmit`) and a leaf's refusal of a Commit (`reject`).
+//!
+//! # Beside the order
+//!
+//! The stream's events that have no change number ([`sync::events`]): relayed pieces, wishes, invite Requests,
+//! archived sessions, evicted files.
 //!
 //! The contract fixes the retry rule here, so every app waits the same way.
 
 pub mod feed;
-pub mod hubapi;
 pub mod memstore;
-pub mod stub;
 pub mod sync;
 
-pub use hubapi::HubCodec;
 pub use sync::{Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
 
 /// The device inside the engine: the protocol core's, over the store whose writes become barrier effects.
 pub type Device = trommi_core::device::Device<memstore::MemStore>;
 
-/// The hub codec the App runs on: the stand-in until W2's `crate::hub` codec lands (one line to switch).
-pub type Codec = stub::StubCodec;
+/// The hub codec the engine runs on: the routes built and their answers read strictly ([`crate::hub`]).
+pub type Codec = crate::hub::Codec;
 
 /// How long to wait before the next try of something that failed with `NotNow` or `Offline`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

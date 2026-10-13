@@ -1,6 +1,9 @@
 //! The engine itself: one state, driven by events, answering with effects. See [`super`] for the design.
 
-use super::hubapi::*;
+use crate::hub::{
+    Answer, ChangeItem, Codec, DeskOnly, EnvelopeItem, Expect, GroupRead, LogItem, ObjectRoute, Only, OutboxAnswer, Presence, Refusal, Role, Route, Site,
+    StreamEvent, StreamReader, WishKind,
+};
 use super::memstore::{self, Writes};
 use super::{Backoff, Jitter};
 use crate::app::io::{DeviceEntry, HttpResponse, IoId, IoResult, StoreAnswer, StoreOp, StreamItem};
@@ -9,6 +12,12 @@ use crate::hub::{classify_io, Failure};
 
 #[path = "joins.rs"]
 pub mod joins;
+#[path = "upkeep.rs"]
+pub mod upkeep;
+#[path = "record.rs"]
+pub mod record;
+#[path = "events.rs"]
+pub mod events;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -16,7 +25,7 @@ use trommi_core::device::{
     WelcomeExpectation,
 };
 use trommi_core::hub_auth::HubAddress;
-use trommi_core::ids::{DeviceId, GroupId, ObjectId, RoomId};
+use trommi_core::ids::{DeviceId, FileId, GroupId, InviteId, ObjectId, RoomId};
 use trommi_core::store::{OutboxEntry, OutboxKind};
 use trommi_core::Error;
 
@@ -103,10 +112,21 @@ pub enum Connection {
 pub enum Stopped {
     /// A Commit of the room group removed this device.
     Removed,
-    /// Another owner wrote the device state, or a write failed: memory is ahead of what is stored.
+    /// Another owner wrote the device state: this App is no owner of it any more (the shell opens it again).
     Store,
-    /// The device itself failed (its store's contents, its entropy).
+    /// A write of the device state failed otherwise (the store is full, refused): memory is ahead of what is stored.
+    /// The App opens the stored state again in place.
+    Write,
+    /// The device itself failed (its store's contents, its entropy). The App opens the stored state again in place.
     Device,
+}
+
+impl Stopped {
+    /// Whether the App opens the stored state again in place: the stored state is the last good one, and nobody
+    /// else holds it.
+    pub fn reopens(self) -> bool {
+        matches!(self, Stopped::Write | Stopped::Device)
+    }
 }
 
 /// An alert for the person. The words are the App's (`views`); the engine names what happened.
@@ -128,6 +148,11 @@ pub enum Alert {
     ClientTooOld,
     /// A newer Trommi wrote here.
     NewerVersion { from: DeviceId },
+    /// A stale session waits for a repair this device could not make: nothing is written in it until then (5.2.8).
+    Unrepaired { group: GroupId, code: &'static str },
+    /// The core found something wrong in a sender's chain while it processed a Commit (`equivocation`: a Cut names
+    /// another envelope than the one this device had accepted under that number).
+    Finding { group: GroupId, sender: DeviceId, code: &'static str },
 }
 
 /// What the engine tells the App, in order. The App feeds the model from it (`Envelope`, `Log`, `Groups`).
@@ -160,6 +185,12 @@ pub enum Report {
     /// The session groups of a sign-in with the code are through: how many the hub took this device into, and the
     /// ones it is not in, each with the reason. Another human device of the person adds it to those (5.2.7).
     SessionsJoined { joined: u32, not_joined: Vec<(GroupId, &'static str)> },
+    /// A piece the hub only passed on, as the protocol core opened it (a stroke still being drawn, 7.2).
+    Relay(Box<Received>),
+    /// A newcomer sent its Request for an invite of this room (12.1): the invite flow reads it.
+    InviteRequest { invite: InviteId },
+    /// The hub deleted a file (11.3): its cached bytes go.
+    FileEvicted { file: FileId },
     Stopped(Stopped),
 }
 
@@ -191,26 +222,54 @@ impl Retry {
 }
 
 /// What a request in flight was for.
-enum Asked<E> {
-    Challenge(E),
-    Token(E),
-    Page(E),
-    Post { expect: E, entry: u64, kind: OutboxKind, group: Option<GroupId> },
-    Welcomes(E),
-    GroupLog { expect: E, group: GroupId, upto: u64 },
-    Chain { expect: E, group: GroupId, sender: DeviceId, before: u64 },
+enum Asked {
+    Challenge(Expect),
+    Token(Expect),
+    Page(Expect),
+    Post { expect: Expect, entry: u64, kind: OutboxKind, group: Option<GroupId> },
+    Welcomes(Expect),
+    GroupLog { expect: Expect, group: GroupId, upto: u64 },
+    Chain { expect: Expect, group: GroupId, sender: DeviceId, before: u64 },
     /// A report to the hub nothing waits for (`RejectCommit`).
-    Told(E),
-    Mend { expect: E, mend: Mend },
-    KeyPackagesHeld(E),
-    Desk(E),
+    Told(Expect),
+    Mend { expect: Expect, mend: Mend },
+    KeyPackagesHeld(Expect),
+    Desk(Expect),
     /// Joins of session groups from outside, posted together: each entry's id and group, in order.
-    Joins { expect: E, entries: Vec<(u64, Option<GroupId>)> },
+    Joins { expect: Expect, entries: Vec<(u64, Option<GroupId>)> },
     /// A read for the joins of a sign-in's sessions (`joins`).
-    JoinRead { expect: E, what: joins::Read },
+    JoinRead { expect: Expect, what: joins::Read },
     /// The first envelope of an open object.
-    First { expect: E, route: ObjectRoute, object: ObjectId, after: u64 },
+    First { expect: Expect, route: ObjectRoute, object: ObjectId, after: u64 },
+    /// A KeyPackage claimed for a job of tending the groups (`upkeep`).
+    Claim { expect: Expect, job: upkeep::Job },
+    /// A page of the hub's list of the room's groups, for a job of tending (`upkeep`).
+    RoomGroups { expect: Expect, job: upkeep::Job },
+    /// The hub's list of wishes (`events`).
+    Wishes(Expect),
+    /// The engine's record, read at the start and written when it changed (`record`).
+    Record,
+    RecordWrite,
     DeviceWrite,
+}
+
+impl Asked {
+    /// How the answer is to be read; none for a write to the store.
+    fn expect(&self) -> Option<&Expect> {
+        match self {
+            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite => None,
+            Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) | Asked::Wishes(e) => Some(e),
+            Asked::Post { expect, .. }
+            | Asked::GroupLog { expect, .. }
+            | Asked::Chain { expect, .. }
+            | Asked::Mend { expect, .. }
+            | Asked::Joins { expect, .. }
+            | Asked::JoinRead { expect, .. }
+            | Asked::First { expect, .. }
+            | Asked::Claim { expect, .. }
+            | Asked::RoomGroups { expect, .. } => Some(expect),
+        }
+    }
 }
 
 /// The reading of the hub's Desk: once per run, and again when a session group was joined (the hub lists only what
@@ -278,8 +337,8 @@ struct StreamConn<S> {
 }
 
 /// The sync engine of one device in one room.
-pub struct Engine<H: HubCodec> {
-    codec: H,
+pub struct Engine {
+    codec: Codec,
     device: Device<memstore::MemStore>,
     writes: Writes,
     room: RoomId,
@@ -288,7 +347,7 @@ pub struct Engine<H: HubCodec> {
     client: String,
     jitter: Jitter,
     stopped: Option<Stopped>,
-    pending: BTreeMap<IoId, Asked<H::Expect>>,
+    pending: BTreeMap<IoId, Asked>,
     reports: VecDeque<Report>,
 
     // signing in
@@ -319,6 +378,10 @@ pub struct Engine<H: HubCodec> {
     /// Welcomes read with nothing joined: items that waited for a group since (`WELCOMES_AGAIN`).
     welcomes_idle: Option<u32>,
     welcomes_after: u64,
+    /// A Welcome was read before the room reached its epoch (`room-behind`, `wrong-epoch`), or a group this device
+    /// does not hold was founded; `.1`: the groups changed since (or the founding was seen), so the Welcomes are read
+    /// once the items at hand are through.
+    welcome_waits: (bool, bool),
     /// Envelopes refused as `group-behind` for a group this device does not hold that far: per group the first such
     /// change and the lowest epoch. Read again once the group is there (`past`).
     behind: BTreeMap<GroupId, (u64, u64)>,
@@ -338,7 +401,7 @@ pub struct Engine<H: HubCodec> {
     desk: DeskRead,
 
     // the stream
-    stream: Option<StreamConn<H::Stream>>,
+    stream: Option<StreamConn<StreamReader>>,
     stream_retry: Retry,
     /// The room's head as a page said it: a hint for where to open the stream.
     head_hint: Option<u64>,
@@ -362,6 +425,16 @@ pub struct Engine<H: HubCodec> {
     joining: Option<joins::Joining>,
     /// The hub refused joins posted together as a request: each goes alone, and gets its own answer.
     joins_alone: bool,
+    /// Tending the groups: stale sessions, human devices a session lacks, the core's findings (`upkeep`).
+    tending: upkeep::Tending,
+    /// Where this device's reading of the order began, when not at its start (`record`).
+    floor: Option<u64>,
+    /// The record is being read from the store: nothing else starts before.
+    restoring: Option<IoId>,
+    /// The record as it was last written.
+    written: Option<record::Record>,
+    /// Wishes of other devices for keys, and the ones answered (`events`).
+    wishes: events::Wishes,
 }
 
 /// Why a stored device does not open as an engine.
@@ -375,14 +448,13 @@ pub enum OpenError {
     Hub,
 }
 
-impl<H: HubCodec> Engine<H> {
+impl Engine {
     /// Opens the device the shell loaded and makes its engine. Nothing is asked of the hub yet (`drive`).
-    pub fn open(codec: H, hub: &str, client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>) -> Result<Self, OpenError> {
-        Self::open_with(codec, hub, client, seed, revision, entries, Box::new(SystemEntropy))
+    pub fn open(hub: &str, client: &str, seed: u64, revision: u64, entries: Vec<DeviceEntry>) -> Result<Self, OpenError> {
+        Self::open_with(hub, client, seed, revision, entries, Box::new(SystemEntropy))
     }
 
     pub fn open_with(
-        codec: H,
         hub: &str,
         client: &str,
         seed: u64,
@@ -399,7 +471,7 @@ impl<H: HubCodec> Engine<H> {
         let room = device.room().ok_or(OpenError::NoRoom)?;
         let position = device.cursor();
         Ok(Engine {
-            codec,
+            codec: Codec,
             device,
             writes,
             room,
@@ -427,6 +499,7 @@ impl<H: HubCodec> Engine<H> {
             order_retry: Retry::default(),
             welcomes_idle: None,
             welcomes_after: 0,
+            welcome_waits: (false, false),
             behind: BTreeMap::new(),
             keyless: BTreeMap::new(),
             withheld: BTreeMap::new(),
@@ -450,6 +523,11 @@ impl<H: HubCodec> Engine<H> {
             connection: Connection::Offline,
             joining: None,
             joins_alone: false,
+            tending: upkeep::Tending::new(),
+            floor: None,
+            restoring: None,
+            written: None,
+            wishes: events::Wishes::default(),
         })
     }
 
@@ -477,6 +555,11 @@ impl<H: HubCodec> Engine<H> {
     /// From where the room's order is to be read once more, if it is (the seam to the reading of the past).
     pub fn reread_from(&self) -> Option<u64> {
         self.reread_from
+    }
+    /// How much the engine passed over and still has to read: groups it waits for, groups whose keys it lacks,
+    /// chains the hub withholds, mends queued.
+    pub fn owes(&self) -> (usize, usize, usize, usize) {
+        (self.behind.len(), self.keyless.len(), self.withheld.len(), self.mends.len())
     }
     /// The next report, oldest first.
     pub fn next_report(&mut self) -> Option<Report> {
@@ -525,6 +608,7 @@ impl<H: HubCodec> Engine<H> {
             if let Some(joining) = &self.joining {
                 want(joining.retry.at);
             }
+            want(self.tending.wake());
             if self.caught_up && self.upkeep_asked.is_none() {
                 want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
             }
@@ -537,6 +621,8 @@ impl<H: HubCodec> Engine<H> {
     /// The first step, and the one after every event: starts whatever is due and possible.
     pub fn start(&mut self, ctx: &mut Ctx<'_>) {
         self.report(Report::Groups);
+        // what the engine kept across the restart comes first: where it stands, and what it owes
+        self.restore(ctx);
         self.drive(ctx);
     }
 
@@ -582,6 +668,7 @@ impl<H: HubCodec> Engine<H> {
         if let Some(joining) = &mut self.joining {
             joining.retry.hurry();
         }
+        self.tending.retry.hurry();
     }
 
     /// The result of a store effect of this engine. False: the id is not the engine's.
@@ -590,7 +677,23 @@ impl<H: HubCodec> Engine<H> {
             Some(Asked::DeviceWrite) => {
                 if let IoResult::Err(e) = result {
                     ctx.log(LogLevel::Error, format!("device write: {:?}", e.kind));
-                    self.stop(ctx, Stopped::Store);
+                    let why = if e.kind == crate::app::io::IoErrorKind::Conflict { Stopped::Store } else { Stopped::Write };
+                    self.stop(ctx, why);
+                }
+                true
+            }
+            Some(Asked::Record) => {
+                if self.stopped.is_none() {
+                    self.restored(ctx, result);
+                    self.drive(ctx);
+                }
+                true
+            }
+            Some(Asked::RecordWrite) => {
+                if let IoResult::Err(e) = result {
+                    // (not kept: the next step writes it again; a restart before that reads a little more)
+                    ctx.log(LogLevel::Warn, format!("the engine's record was not written: {:?}", e.kind));
+                    self.written = None;
                 }
                 true
             }
@@ -610,26 +713,12 @@ impl<H: HubCodec> Engine<H> {
         if self.stopped.is_some() {
             return true;
         }
-        let (expect, response) = match (&asked, &result) {
-            (Asked::DeviceWrite, _) => return true,
-            (
-                Asked::Challenge(e)
-                | Asked::Token(e)
-                | Asked::Page(e)
-                | Asked::Post { expect: e, .. }
-                | Asked::Welcomes(e)
-                | Asked::GroupLog { expect: e, .. }
-                | Asked::Chain { expect: e, .. }
-                | Asked::Mend { expect: e, .. }
-                | Asked::Desk(e)
-                | Asked::KeyPackagesHeld(e)
-                | Asked::First { expect: e, .. }
-                | Asked::Joins { expect: e, .. }
-                | Asked::JoinRead { expect: e, .. }
-                | Asked::Told(e),
-                IoResult::Ok(response),
-            ) => (Some(e), Some(response)),
-            _ => (None, None),
+        if matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite) {
+            return true;
+        }
+        let (expect, response) = match &result {
+            IoResult::Ok(response) => (asked.expect(), Some(response)),
+            IoResult::Err(_) => (None, None),
         };
         let answer: Result<Answer, Failure> = match (expect, response, &result) {
             (Some(expect), Some(response), _) => self.codec.answer(expect, response),
@@ -655,7 +744,7 @@ impl<H: HubCodec> Engine<H> {
             self.unauthorised = 0;
         }
         match asked {
-            Asked::DeviceWrite => {}
+            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite => {}
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
             Asked::Page(_) => self.on_page(ctx, answer, unauthorised, refusal),
@@ -670,6 +759,9 @@ impl<H: HubCodec> Engine<H> {
             Asked::First { route, object, after, .. } => self.on_first(ctx, route, object, after, answer, unauthorised),
             Asked::Joins { entries, .. } => self.on_joins_posted(ctx, entries, answer, unauthorised),
             Asked::JoinRead { what, .. } => self.on_join_read(ctx, what, answer, unauthorised),
+            Asked::Claim { job, .. } => self.on_claimed(ctx, job, answer, unauthorised),
+            Asked::RoomGroups { job, .. } => self.on_room_groups(ctx, job, answer, unauthorised),
+            Asked::Wishes(_) => self.on_wishes(ctx, answer),
         }
         self.drive(ctx);
         true
@@ -690,6 +782,7 @@ impl<H: HubCodec> Engine<H> {
                 if conn.reader.opened(status, &headers).is_ok() {
                     conn.opened = true;
                     self.stream_retry.ok();
+                    self.tending.stream_opened();
                     self.report(Report::StreamOpened);
                 }
             }
@@ -758,20 +851,31 @@ impl<H: HubCodec> Engine<H> {
                     self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
                 }
             }
-            StreamEvent::Presence(p) => self.report(Report::Presence(p)),
+            StreamEvent::Presence(p) => {
+                self.tending.presence(&p);
+                self.report(Report::Presence(p))
+            }
             StreamEvent::Here => self.report(Report::Here),
-            // (relayed pieces, wishes, invite Requests, archived, evicted files: with the parts that use them)
-            StreamEvent::Relay { .. } | StreamEvent::Wish(_) | StreamEvent::InviteRequest { .. } | StreamEvent::Archived { .. } | StreamEvent::FileEvicted { .. } => {}
+            StreamEvent::Relay { group, sender, message, .. } => self.on_relay(ctx, group, sender, &message),
+            StreamEvent::Wish(row) => self.on_wish(row),
+            StreamEvent::InviteRequest { invite } => self.report(Report::InviteRequest { invite }),
+            StreamEvent::Archived { group } => self.on_archived(ctx, group),
+            StreamEvent::FileEvicted { file } => self.report(Report::FileEvicted { file }),
         }
     }
 
     // ---- the drive: whatever is due and possible is started
 
     fn drive(&mut self, ctx: &mut Ctx<'_>) {
-        if self.stopped.is_some() {
+        if self.stopped.is_some() || self.restoring.is_some() {
             self.flush(ctx);
             return;
         }
+        self.drive_all(ctx);
+        self.keep(ctx);
+    }
+
+    fn drive_all(&mut self, ctx: &mut Ctx<'_>) {
         // The order first: what is at hand is taken before anything new is asked.
         self.take(ctx);
         self.flush(ctx);
@@ -788,6 +892,8 @@ impl<H: HubCodec> Engine<H> {
         self.drive_stream(ctx);
         self.drive_joins(ctx);
         self.drive_upkeep(ctx);
+        self.drive_tending(ctx);
+        self.drive_wishes(ctx);
         self.drive_pump(ctx);
         self.flush(ctx);
         self.connect(ctx);
@@ -846,7 +952,7 @@ impl<H: HubCodec> Engine<H> {
         self.joining = None;
         self.writes.lose();
         for (id, asked) in std::mem::take(&mut self.pending) {
-            if !matches!(asked, Asked::DeviceWrite) {
+            if !matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite) {
                 ctx.out.push(Effect::Cancel { id });
             }
         }
@@ -864,7 +970,7 @@ impl<H: HubCodec> Engine<H> {
         }
     }
 
-    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(H::Expect) -> Asked<H::Expect>) -> Option<IoId> {
+    fn ask(&mut self, ctx: &mut Ctx<'_>, route: Route<'_>, token: bool, asked: impl FnOnce(Expect) -> Asked) -> Option<IoId> {
         let site = Site {
             url: &self.hub,
             token: if token { self.token.as_ref().map(|t| t.value.as_str()) } else { None },
@@ -961,7 +1067,7 @@ impl<H: HubCodec> Engine<H> {
                 if !self.order_retry.waiting(ctx.now) {
                     let Some(group) = groups.front().copied() else {
                         self.repair = None;
-                        return self.drive(ctx);
+                        return self.drive_all(ctx);
                     };
                     let (after, upto) = (*after, self.position);
                     *asked = true;
@@ -1027,7 +1133,7 @@ impl<H: HubCodec> Engine<H> {
                         None
                     }
                     Failure::Refused { .. } => {
-                        match refusal.as_ref().map(|r| r.code.as_str()) {
+                        match refusal.as_ref().map(|r| r.code) {
                             Some("not-member") => self.report(Report::Alert(Alert::NotMember)),
                             Some("client-too-old") => self.report(Report::Alert(Alert::ClientTooOld)),
                             _ => {}
@@ -1130,11 +1236,18 @@ impl<H: HubCodec> Engine<H> {
         if groups_changed {
             self.groups_changed();
         }
+        // a Welcome that came before the room Commit it builds on: read again now that the room moved
+        if self.welcome_waits == (true, true) && self.repair.is_none() && self.todo.is_empty() && self.stopped.is_none() {
+            self.welcome_waits = (false, false);
+            self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined: Vec::new(), asked: false });
+        }
     }
 
     /// The device's groups may have changed: the App is told, and what waited for a group is looked at again.
     fn groups_changed(&mut self) {
         self.report(Report::Groups);
+        self.welcome_waits.1 = self.welcome_waits.0;
+        self.tending.changed();
         if self.behind.is_empty() {
             return;
         }
@@ -1424,6 +1537,11 @@ impl<H: HubCodec> Engine<H> {
         };
         match self.device.process_log_entry(&entry, ctx.now) {
             Ok(processed) => {
+                // The founding of a group this device does not hold: if it was added there, its Welcome waits (the
+                // stream says so only to who is connected then). Read once the items at hand are through.
+                if commit && item.epoch == 0 && matches!(processed, Processed::Skipped) && self.device.is_human() {
+                    self.welcome_waits = (true, true);
+                }
                 self.processed(ctx, item.change, item.group, processed, groups_changed);
                 Taken::Done
             }
@@ -1500,31 +1618,39 @@ impl<H: HubCodec> Engine<H> {
             Err(failure) => return self.repair_failed(ctx, failure, unauthorised),
         };
         self.order_retry.ok();
-        let Some(Repair::Welcomes { mut joined, .. }) = self.repair.take() else { return };
+        let Some(Repair::Welcomes { mut joined, mut after, .. }) = self.repair.take() else { return };
         let expected = WelcomeExpectation { room: self.room, committer: None };
         let more = !rows.is_empty();
+        // `welcomes_after` passes only what is settled: a Welcome read before the room Commit it builds on is read
+        // again by the next look (the stream says a Welcome before the Commits ahead of it are taken)
+        let mut settled = true;
         for row in rows {
-            self.welcomes_after = self.welcomes_after.max(row.id);
+            after = after.max(row.id);
             // (the hub keeps a Welcome until this device writes in its group: one joined before is passed over)
-            if self.device.group(&row.group).is_ok() {
-                continue;
-            }
-            match self.device.join_welcome(&row.welcome, &expected, ctx.now) {
-                Ok(j) => joined.push(j.group),
-                // (taken at its place in the log, with the Commit that made it; or not yet: the room is behind)
-                Err(Error::WrongEpoch | Error::RoomBehind) => {}
-                Err(e) => {
-                    self.local(ctx, &e);
-                    if self.stopped.is_some() {
-                        return;
+            if self.device.group(&row.group).is_err() {
+                match self.device.join_welcome(&row.welcome, &expected, ctx.now) {
+                    Ok(j) => joined.push(j.group),
+                    // (not yet: the room is behind, or this device has not reached the epoch it was made in)
+                    Err(Error::WrongEpoch | Error::RoomBehind) => settled = false,
+                    Err(e) => {
+                        self.local(ctx, &e);
+                        if self.stopped.is_some() {
+                            return;
+                        }
+                        self.report(Report::Alert(Alert::Welcome { group: row.group, code: e.code() }));
                     }
-                    self.report(Report::Alert(Alert::Welcome { group: row.group, code: e.code() }));
                 }
             }
+            if settled {
+                self.welcomes_after = self.welcomes_after.max(row.id);
+            }
+        }
+        if !settled {
+            self.welcome_waits = (true, false);
         }
         if more {
             // an answer holds a bounded stretch: asked again after its last row until one is empty
-            self.repair = Some(Repair::Welcomes { after: self.welcomes_after, joined, asked: false });
+            self.repair = Some(Repair::Welcomes { after, joined, asked: false });
             return;
         }
         if joined.is_empty() {
@@ -1533,6 +1659,7 @@ impl<H: HubCodec> Engine<H> {
         }
         self.welcomes_idle = None;
         self.desk.want = true;
+        self.tending.look_for_archived();
         self.groups_changed();
         // A group joined late: its log is handed again from its start up to the position, so the join has its
         // place in the hub's order. What lies after the position comes at its place in the one order.
@@ -1650,7 +1777,7 @@ impl<H: HubCodec> Engine<H> {
             return;
         }
         if self.desk.want && self.desk.asked.is_none() {
-            self.desk.asked = self.ask(ctx, Route::Desk { active: true }, true, Asked::Desk);
+            self.desk.asked = self.ask(ctx, Route::Desk { only: DeskOnly::Active }, true, Asked::Desk);
             if self.desk.asked.is_none() {
                 self.desk.want = false;
             }
@@ -1775,7 +1902,7 @@ impl<H: HubCodec> Engine<H> {
         };
         self.flush(ctx);
         let id = ctx.id();
-        self.stream = Some(StreamConn { id, reader: self.codec.stream(from), opened: false, from, heard_at: ctx.now });
+        self.stream = Some(StreamConn { id, reader: StreamReader::new(from), opened: false, from, heard_at: ctx.now });
         ctx.out.push(Effect::OpenStream { id, request });
     }
 
@@ -1820,6 +1947,9 @@ impl<H: HubCodec> Engine<H> {
         if let Err(e) = self.device.key_packages_to_upload(unused as usize, ctx.now) {
             self.local(ctx, &e);
         }
+        // (the groups are looked at with every round as well: a gap whose repair failed is not forgotten, and a
+        //  leaf that grew old is renewed)
+        self.tending.timed();
         // `heads` (9.0.7) in each live group when the core says they are due: what a hub withholds shows there
         for group in self.device.groups().unwrap_or_default() {
             if group.archived || group.pending {
@@ -1849,6 +1979,8 @@ impl<H: HubCodec> Engine<H> {
             }
             Err(e) => self.local(ctx, &e),
         }
+        // the wishes for keys that came while this device was away (the hub keeps them seven days)
+        self.ask_wishes(ctx);
     }
 
     // ---- the outbox: one entry in flight, strictly in order
@@ -1883,7 +2015,7 @@ impl<H: HubCodec> Engine<H> {
         }
     }
 
-    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(H::Expect) -> Asked<H::Expect>) -> Option<IoId> {
+    fn post(&mut self, ctx: &mut Ctx<'_>, room: &RoomId, entry: &OutboxEntry, asked: impl FnOnce(Expect) -> Asked) -> Option<IoId> {
         self.ask(ctx, Route::Outbox { room, entry, extra: None }, true, asked)
     }
 
@@ -1922,10 +2054,11 @@ impl<H: HubCodec> Engine<H> {
         }
         // (`not-found`: the stream brought this device's own Commit before the POST was answered, and the
         //  core merged it and dropped the entry then)
-        match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
-            Ok(()) | Err(Error::NotFound) => {}
+        let merged = match self.device.outbox_accepted(entry, Accepted { change: taken.change }) {
+            Ok(()) => false,
+            Err(Error::NotFound) => true,
             Err(e) => return self.local(ctx, &e),
-        }
+        };
         if kind == OutboxKind::KeyPackages {
             self.key_packages_at_hub = taken.unused.or(self.key_packages_at_hub);
         }
@@ -1934,9 +2067,13 @@ impl<H: HubCodec> Engine<H> {
             // An accepted Commit is merged where the hub's order shows it. Without a stream that is the
             // next page.
             self.report(Report::Groups);
+            self.tending.sent(merged);
             if !self.stream.as_ref().is_some_and(|s| s.opened) {
                 self.pass = true;
             }
+        } else if kind == OutboxKind::Message {
+            // (a message of this device is a step of upkeep, a key handover say: the next step is looked for now)
+            self.tending.want = true;
         }
         self.join_answered(kind, group, None);
     }
@@ -1946,17 +2083,19 @@ impl<H: HubCodec> Engine<H> {
     /// entry again after a wait, never dropped, never reordered; inside, the hub's `Retry-After`. `None`: settled
     /// here (refused for good, or the pump halts on it and has set its own wait).
     fn not_accepted(&mut self, ctx: &mut Ctx<'_>, entry: u64, kind: OutboxKind, group: Option<GroupId>, failure: Failure, refusal: Option<Refusal>) -> Option<Option<u64>> {
-        let code = match (&failure, refusal.as_ref()) {
-            (Failure::Refused { .. }, Some(refusal)) => Error::from_code(&refusal.code).filter(|code| !refusal_is_passing(code)),
+        // (`code` is set only for the hub's own refusal: a proxy's page never voids or rolls back)
+        let named = match &failure {
+            Failure::Refused { code: Some(code), .. } => Some(code.as_str()),
             _ => None,
         };
+        let code = named.and_then(Error::from_code).filter(|code| !refusal_is_passing(code));
         let Some(code) = code else {
             let retry_after = match (&failure, refusal.as_ref()) {
                 (Failure::NotNow { retry_after_ms, .. }, _) => *retry_after_ms,
                 (_, Some(refusal)) => refusal.retry_after_ms,
                 _ => None,
             };
-            if refusal.as_ref().is_some_and(|r| r.code == "client-too-old") {
+            if named == Some("client-too-old") {
                 self.report(Report::Alert(Alert::ClientTooOld));
             }
             return Some(retry_after);
@@ -1994,6 +2133,18 @@ impl<H: HubCodec> Engine<H> {
         // the group moved on under it: the log is processed, and whoever asked builds it again
         if has_moved(&code) {
             self.pass = true;
+        } else if carries_commit(kind) {
+            // (a Commit refused for another reason: whatever of upkeep built it waits before it builds it again)
+            self.tending.refused();
+        }
+        // 3.5: the epoch took all the envelopes it may hold. A human device moves the group on with an update of
+        // its leaf, and writing goes on in the next epoch (whoever sealed the envelope seals it again).
+        if code == Error::EpochFull && kind == OutboxKind::Envelope && self.device.is_human() {
+            if let Some(group) = group {
+                if let Err(e) = self.device.update(&group, true, ctx.now) {
+                    self.local(ctx, &e);
+                }
+            }
         }
         self.join_answered(kind, group, Some(&code));
         None

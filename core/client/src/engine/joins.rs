@@ -24,9 +24,10 @@
 //!
 //! # What is kept
 //!
-//! The code's keys live in the engine only while this runs and are dropped with it. Nothing of it is stored: after
-//! a restart the joins already in the outbox are posted, and the groups not reached are left to another human
-//! device of the person (5.2.7), or to the shell asking again with the code.
+//! The code's keys live in the engine only while this runs and are dropped with it; they are never stored. The
+//! engine's record ([`super::record`]) keeps which groups are still to join. After a restart the joins already in
+//! the outbox are posted; a session whose join was not built yet is reported as `interrupted`, and is left to
+//! another human device of the person (5.2.7), or to the shell asking again with the code.
 
 use super::*;
 use std::collections::BTreeSet;
@@ -83,7 +84,8 @@ struct One {
 }
 
 pub(super) struct Joining {
-    keys: RecoveryKeys,
+    /// The keys of the code; none after a restart, when only the joins already built go on.
+    keys: Option<RecoveryKeys>,
     later: Option<Later>,
     /// Still to be read, together.
     together: VecDeque<GroupId>,
@@ -93,6 +95,8 @@ pub(super) struct Joining {
     alone: VecDeque<GroupId>,
     one: Option<One>,
     asked: Option<IoId>,
+    /// The groups of the read in flight that are in none of the lists above.
+    reading: Vec<GroupId>,
     pub(super) retry: Retry,
     tries: BTreeMap<GroupId, u32>,
     /// Joins built and in the outbox: the hub's answer is awaited.
@@ -125,7 +129,34 @@ fn code_of(failure: &Failure) -> &'static str {
     }
 }
 
-impl<H: HubCodec> Engine<H> {
+impl Joining {
+    /// After a restart: the joins that were built wait for the hub's answer; nothing more is read.
+    pub(super) fn resumed(posted: BTreeSet<GroupId>, joined: u32, not_joined: Vec<(GroupId, &'static str)>) -> Self {
+        Joining {
+            keys: None,
+            later: None,
+            together: VecDeque::new(),
+            rows: VecDeque::new(),
+            alone: VecDeque::new(),
+            one: None,
+            asked: None,
+            reading: Vec::new(),
+            retry: Retry::default(),
+            tries: BTreeMap::new(),
+            posted,
+            joined,
+            not_joined,
+        }
+    }
+
+    /// What a restart needs of it: the groups still to join, and how the others ended.
+    pub(super) fn record(&self) -> super::record::JoinsRecord {
+        let waiting = self.together.iter().chain(&self.alone).copied().chain(self.rows.iter().map(|row| row.group)).chain(self.one.iter().map(|one| one.group)).chain(self.posted.iter().copied()).chain(self.reading.iter().copied());
+        super::record::JoinsRecord::new(waiting, self.joined, &self.not_joined)
+    }
+}
+
+impl Engine {
     /// Joins the live session groups of a sign-in with the code (see the module). A second call while one runs adds
     /// its groups and replaces the keys.
     pub fn join_sessions(&mut self, ctx: &mut Ctx<'_>, joins: SessionJoins) {
@@ -134,18 +165,19 @@ impl<H: HubCodec> Engine<H> {
         }
         let mut joining = match self.joining.take() {
             Some(mut joining) => {
-                joining.keys = joins.keys;
+                joining.keys = Some(joins.keys);
                 joining.later = joins.later;
                 joining
             }
             None => Joining {
-                keys: joins.keys,
+                keys: Some(joins.keys),
                 later: joins.later,
                 together: VecDeque::new(),
                 rows: VecDeque::new(),
                 alone: VecDeque::new(),
                 one: None,
                 asked: None,
+                reading: Vec::new(),
                 retry: Retry::default(),
                 tries: BTreeMap::new(),
                 posted: BTreeSet::new(),
@@ -179,14 +211,28 @@ impl<H: HubCodec> Engine<H> {
         if self.stopped.is_some() {
             return;
         }
+        // A join that left the outbox without its answer being read (the stream brought the Commit and the core
+        // merged it, then the answer was lost): settled by what the device holds, or nobody would ever say it.
+        let outbox = self.device.outbox();
+        let gone: Vec<GroupId> = j.posted.iter().filter(|g| !outbox.iter().any(|e| e.kind == OutboxKind::ExternalCommit && e.group == Some(**g))).copied().collect();
+        for group in gone {
+            j.posted.remove(&group);
+            if self.device.group(&group).is_ok() {
+                j.joined += 1;
+                self.desk.want = true;
+            } else {
+                j.not_joined.push((group, "refused"));
+            }
+        }
         let through = j.asked.is_none() && j.one.is_none() && j.rows.is_empty() && j.together.is_empty() && j.alone.is_empty() && j.posted.is_empty();
         if through {
             // every session's keys are at hand now: the Desk of the joined groups, and the room's past once more
             self.desk.want = true;
+            self.tending.look_for_archived();
             self.want_reread(0);
             self.report(Report::Groups);
             self.report(Report::SessionsJoined { joined: j.joined, not_joined: j.not_joined });
-            return self.drive(ctx);
+            return self.drive_all(ctx);
         }
         self.joining = Some(j);
     }
@@ -222,6 +268,7 @@ impl<H: HubCodec> Engine<H> {
                 j.asked = self.ask(ctx, Route::GroupsRead { groups: &groups }, true, |expect| Asked::JoinRead { expect, what: Read::Together(groups.clone()) });
                 if j.asked.is_some() {
                     j.together.drain(..groups.len());
+                    j.reading = groups;
                     return;
                 }
                 // (a request that cannot be built: each alone)
@@ -277,9 +324,11 @@ impl<H: HubCodec> Engine<H> {
     /// The check is through: the join is built on the GroupInfo served as current, and waits in the outbox.
     fn join_build(&mut self, ctx: &mut Ctx<'_>, j: &mut Joining, one: One) {
         let Some((current, _)) = &one.current else { return };
+        // (after a restart the code's keys are gone: nothing is read then, so nothing comes here)
+        let Some(keys) = &j.keys else { return j.not_joined.push((one.group, "interrupted")) };
         let built = match &j.later {
-            Some(later) => self.device.join_session_checked_keys(&j.keys, &one.group, current, &later.rows, &later.links, ctx.now),
-            None => self.device.join_session_checked(&j.keys, &one.group, current, ctx.now),
+            Some(later) => self.device.join_session_checked_keys(keys, &one.group, current, &later.rows, &later.links, ctx.now),
+            None => self.device.join_session_checked(keys, &one.group, current, ctx.now),
         };
         match built {
             Ok(_) => {
@@ -305,7 +354,7 @@ impl<H: HubCodec> Engine<H> {
         let mut one = One { group, started: true, current: Some((row.info, row.epoch)), after: 0, reached: 0 };
         match self.join_slices(&mut one, &row.log) {
             Ok(true) => self.join_build(ctx, j, one),
-            Ok(false) if row.more => j.one = Some(one),
+            Ok(false) if !row.complete => j.one = Some(one),
             // (the log ends before the epoch named: the check and the GroupInfo decide)
             Ok(false) => self.join_build(ctx, j, one),
             Err(e) => self.join_failed(ctx, j, group, &e),
@@ -315,6 +364,7 @@ impl<H: HubCodec> Engine<H> {
     pub(super) fn on_join_read(&mut self, ctx: &mut Ctx<'_>, what: Read, answer: Result<Answer, Failure>, unauthorised: bool) {
         let Some(mut j) = self.joining.take() else { return };
         j.asked = None;
+        j.reading.clear();
         self.join_read(ctx, &mut j, what, answer, unauthorised);
         if self.stopped.is_none() {
             self.joining = Some(j);
@@ -459,14 +509,9 @@ impl<H: HubCodec> Engine<H> {
         for ((entry, group), row) in entries.into_iter().zip(rows) {
             match row {
                 Ok(taken) => self.accepted(ctx, entry, OutboxKind::ExternalCommit, group, taken),
+                // (a row's refusal names its code alone: no void record, no wait of its own)
                 Err(failure) => {
-                    let refusal = match &failure {
-                        Failure::Refused { status, code: Some(code) } => {
-                            Some(Refusal { code: code.clone(), status: *status, voided: false, retry_after_ms: None, epoch: None, seq: None, device: None, group })
-                        }
-                        _ => None,
-                    };
-                    if let Some(retry_after) = self.not_accepted(ctx, entry, OutboxKind::ExternalCommit, group, failure, refusal) {
+                    if let Some(retry_after) = self.not_accepted(ctx, entry, OutboxKind::ExternalCommit, group, failure, None) {
                         wait = Some(wait.flatten().max(retry_after));
                     }
                 }
