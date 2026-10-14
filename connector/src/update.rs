@@ -328,6 +328,41 @@ pub fn tags_in_feed(feed: &str) -> Vec<String> {
     tags.into_iter().map(|(_, tag)| tag).collect()
 }
 
+/// The release tags in GitHub's list of a repository's releases (`https://api.github.com/repos/<repo>/releases`,
+/// JSON), of the series that hold a connector, highest number first. GitHub's feed names only the ten newest
+/// releases of every part (hub, web, Mac, iPhone): a day of other parts' releases leaves no connector in it, so
+/// the list, a hundred long, is read first and the feed only beside it.
+pub fn tags_in_listing(listing: &str) -> Vec<String> {
+    let Ok(serde_json::Value::Array(releases)) = serde_json::from_str::<serde_json::Value>(listing)
+    else {
+        return vec![];
+    };
+    let mut tags: Vec<(u64, String)> = releases
+        .iter()
+        .filter(|r| r["draft"] != serde_json::Value::Bool(true))
+        .filter_map(|r| r["tag_name"].as_str())
+        .filter(|tag| tag.starts_with('v') || tag.starts_with("connector-v"))
+        .filter_map(|tag| tag_number(tag).map(|number| (number, tag.to_string())))
+        .collect();
+    tags.sort_by(|a, b| b.cmp(a));
+    tags.dedup();
+    tags.into_iter().map(|(_, tag)| tag).collect()
+}
+
+/// The tags to ask, highest number first: those of the list of releases and of the feed together.
+pub fn candidate_tags(listing: Option<&str>, feed: Option<&str>) -> Vec<String> {
+    let mut tags: Vec<(u64, String)> = listing
+        .map(tags_in_listing)
+        .unwrap_or_default()
+        .into_iter()
+        .chain(feed.map(tags_in_feed).unwrap_or_default())
+        .filter_map(|tag| tag_number(&tag).map(|number| (number, tag)))
+        .collect();
+    tags.sort_by(|a, b| b.cmp(a));
+    tags.dedup();
+    tags.into_iter().map(|(_, tag)| tag).collect()
+}
+
 /// The largest connector that is downloaded.
 const MAX_BINARY_LEN: u64 = 200 << 20;
 /// The largest feed of releases that is read.
@@ -418,10 +453,26 @@ async fn has_asset(http: &reqwest::Client, tag: &str, name: &str) -> Result<bool
 
 /// The newest release that holds `manifest.json` and the connector for this machine.
 async fn newest_release(http: &reqwest::Client) -> Result<String, String> {
+    let list_url = format!("https://api.github.com/repos/{REPOSITORY}/releases?per_page=100");
     let feed_url = format!("https://github.com/{REPOSITORY}/releases.atom");
-    let feed = body(get(http, &feed_url).await?, &feed_url, MAX_LISTING_LEN).await?;
+    // (either may fail alone, the list for GitHub's limit of requests without an account: the other stands in)
+    let listing = match get(http, &list_url).await {
+        Ok(answer) => body(answer, &list_url, MAX_LISTING_LEN).await,
+        Err(why) => Err(why),
+    };
+    let feed = match get(http, &feed_url).await {
+        Ok(answer) => body(answer, &feed_url, MAX_LISTING_LEN).await,
+        Err(why) => Err(why),
+    };
+    if let (Err(why), Err(_)) = (&listing, &feed) {
+        return Err(why.clone());
+    }
+    let listing = listing
+        .ok()
+        .map(|b| String::from_utf8_lossy(&b).into_owned());
+    let feed = feed.ok().map(|b| String::from_utf8_lossy(&b).into_owned());
     let name = format!("trommi-connector-{TARGET}");
-    for tag in tags_in_feed(&String::from_utf8_lossy(&feed))
+    for tag in candidate_tags(listing.as_deref(), feed.as_deref())
         .iter()
         .take(MAX_PROBES)
     {

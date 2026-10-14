@@ -490,6 +490,7 @@ fn the_installer_installs_for_root_refuses_sudo_by_another_user_and_goes_nowhere
     assert_eq!(
         hosts,
         [
+            "api.github.com",
             "github.com",
             "objects.githubusercontent.com",
             "release-assets.githubusercontent.com"
@@ -564,6 +565,8 @@ while [ $# -gt 0 ]; do
 done
 case $url in
   https://github.com/trommi/trommi/releases.atom) cp "$stage/releases.atom" "$out" ;;
+  'https://api.github.com/repos/trommi/trommi/releases?per_page=100')
+    if [ -f "$stage/releases.json" ]; then cp "$stage/releases.json" "$out"; else echo "curl: (22) 403" >&2; exit 22; fi ;;
   https://github.com/trommi/trommi/releases/download/*)
     file=${{url#https://github.com/trommi/trommi/releases/download/}}
     case $format in
@@ -586,6 +589,20 @@ esac
         !calls.contains("hub-v"),
         "a release of another part is not asked for a connector: {calls}"
     );
+
+    // The feed names only the ten newest releases of every part: after a day of other parts' releases it holds
+    // no connector (2026-10-14), and GitHub's list of releases names it.
+    let others: String = (0..10).map(|n| entry(&format!("web-v{}", 40 + n))).collect();
+    std::fs::write(stage.join("releases.atom"), format!("<feed>\n{others}</feed>\n")).expect("the feed");
+    std::fs::write(
+        stage.join("releases.json"),
+        "[\n  {\n    \"tag_name\": \"hub-v34\",\n    \"draft\": false\n  },\n  {\n    \"tag_name\": \"connector-v34\"\n  },\n  {\n    \"tag_name\": \"connector-v29\"\n  }\n]\n",
+    )
+    .expect("the list");
+    let output = bench.install(&[], Some(&fake));
+    let text = said(&output);
+    assert!(output.status.success(), "{text}");
+    assert!(text.contains("Downloaded release connector-v34"), "{text}");
 }
 
 /// After the program is in place the installer sets up claude and codex, those of them that are on the PATH,

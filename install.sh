@@ -172,12 +172,19 @@ else
     case $code in 30[12378]) return 0 ;; 404) return 1 ;; *) fail "github.com answers $code for $2 of $1" ;; esac
   }
   if [ -z "$tag" ]; then
-    # GitHub's feed of releases names the newest; each, highest number first, is asked for the two files. (Releases
-    # of other parts share the numbers: hub-v34 beside connector-v34.)
-    get -f --max-time 60 --max-filesize "$MAX_LISTING" -o "$work/releases.atom" "https://github.com/$REPOSITORY/releases.atom" \
-      || fail "could not read the releases of $REPOSITORY from github.com"
-    sed -n 's|.*href="https://github.com/'"$REPOSITORY"'/releases/tag/\([a-z-]*v[1-9][0-9]*\)".*|\1|p' "$work/releases.atom" \
-      | while read -r candidate; do
+    # GitHub's list of releases (a hundred) and its feed (the ten newest of every part, which a day of hub, web, Mac
+    # and iPhone releases fills) name the newest; each, highest number first, is asked for the two files. (Releases
+    # of other parts share the numbers: hub-v34 beside connector-v34.) Either alone will do.
+    : > "$work/releases.json"
+    : > "$work/releases.atom"
+    listed=
+    get -f --max-time 60 --max-filesize "$MAX_LISTING" -o "$work/releases.json" "https://api.github.com/repos/$REPOSITORY/releases?per_page=100" 2>/dev/null && listed=1
+    get -f --max-time 60 --max-filesize "$MAX_LISTING" -o "$work/releases.atom" "https://github.com/$REPOSITORY/releases.atom" && listed=1
+    [ -n "$listed" ] || fail "could not read the releases of $REPOSITORY from github.com"
+    {
+      grep -o '"tag_name": *"[a-z-]*v[1-9][0-9]*"' "$work/releases.json" | sed 's|.*"\([a-z-]*v[1-9][0-9]*\)"$|\1|'
+      sed -n 's|.*href="https://github.com/'"$REPOSITORY"'/releases/tag/\([a-z-]*v[1-9][0-9]*\)".*|\1|p' "$work/releases.atom"
+    } | while read -r candidate; do
           # only the series that hold a connector: connector-v<N>, and v<N> of a release of everything
           printf '%s' "$candidate" | grep -Eq '^(connector-)?v[1-9][0-9]{0,11}$' || continue
           printf '%s %s\n' "${candidate##*v}" "$candidate"
