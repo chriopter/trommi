@@ -23,6 +23,7 @@
 pub mod board;
 pub mod card;
 pub mod demo;
+pub mod files_seen;
 pub mod desk;
 pub mod links;
 pub mod notes;
@@ -35,7 +36,7 @@ pub mod talk;
 mod testroom;
 pub mod words;
 
-pub use board::{render, Board, Lens, MoreOf};
+pub use board::{render, render_with_files, Board, Lens, MoreOf};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -1686,6 +1687,17 @@ pub struct FileView {
     pub percent: Option<u8>,
     /// Its bytes were handed over (`Effect::FileReady`).
     pub loaded: bool,
+    /// The Share links this device made for it (`Action::Share`), kept in memory only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shares: Vec<FileShareView>,
+}
+
+/// A Share link of a file: the whole link (its key behind the `#`), for the person to copy.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileShareView {
+    pub share_id: String,
+    pub link: String,
+    pub expires_ms: u64,
 }
 
 /// A passing line at the window's foot: what was done, and the way back. The engine and the actions make them; the

@@ -235,6 +235,9 @@ fn slug(text: &str) -> String {
 /// A card's pictures and the option each shows (the web's `pictureKeys`).
 pub fn pictures_of(attachments: &[Value], sections: &[Value], options: &[super::desk::Opt]) -> Vec<PictureView> {
     let s = |a: &Value, k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    for a in attachments {
+        super::files_seen::saw(a);
+    }
     let images: Vec<(usize, &Value)> = attachments
         .iter()
         .enumerate()

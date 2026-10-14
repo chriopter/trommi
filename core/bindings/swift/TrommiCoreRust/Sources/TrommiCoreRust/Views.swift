@@ -4242,8 +4242,10 @@ public enum CoreView {
     public var percent: UInt8?
     /// Its bytes were handed over (`Effect::FileReady`).
     public var loaded: Bool
+    /// The Share links this device made for it (`Action::Share`), kept in memory only.
+    public var shares: [FileShareView]
 
-    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false) {
+    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false, shares: [FileShareView] = []) {
       self.name = name
       self.mediaType = mediaType
       self.size = size
@@ -4251,6 +4253,7 @@ public enum CoreView {
       self.attachmentId = attachmentId
       self.percent = percent
       self.loaded = loaded
+      self.shares = shares
     }
 
     enum CodingKeys: String, CodingKey {
@@ -4261,6 +4264,7 @@ public enum CoreView {
       case attachmentId = "attachment_id"
       case percent = "percent"
       case loaded = "loaded"
+      case shares = "shares"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -4272,6 +4276,7 @@ public enum CoreView {
       self.attachmentId = try c.decodeIfPresent(String.self, forKey: .attachmentId)
       self.percent = try c.decodeIfPresent(UInt8.self, forKey: .percent)
       self.loaded = try c.decode(Bool.self, forKey: .loaded)
+      self.shares = try c.decodeIfPresent([FileShareView].self, forKey: .shares) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -4283,6 +4288,40 @@ public enum CoreView {
       try c.encodeIfPresent(attachmentId, forKey: .attachmentId)
       try c.encodeIfPresent(percent, forKey: .percent)
       try c.encode(loaded, forKey: .loaded)
+      if !shares.isEmpty { try c.encode(shares, forKey: .shares) }
+    }
+  }
+
+  /// A Share link of a file: the whole link (its key behind the `#`), for the person to copy.
+  public struct FileShareView: Codable, Hashable, Sendable {
+    public var shareId: String
+    public var link: String
+    public var expiresMs: UInt64
+
+    public init(shareId: String = "", link: String = "", expiresMs: UInt64 = 0) {
+      self.shareId = shareId
+      self.link = link
+      self.expiresMs = expiresMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case shareId = "share_id"
+      case link = "link"
+      case expiresMs = "expires_ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.shareId = try c.decode(String.self, forKey: .shareId)
+      self.link = try c.decode(String.self, forKey: .link)
+      self.expiresMs = try c.decode(UInt64.self, forKey: .expiresMs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(shareId, forKey: .shareId)
+      try c.encode(link, forKey: .link)
+      try c.encode(expiresMs, forKey: .expiresMs)
     }
   }
 

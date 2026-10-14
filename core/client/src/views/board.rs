@@ -464,6 +464,18 @@ pub fn clean_goals(text: &str) -> String {
 /// when to call again by the clock alone (a count of minutes, an answer that turns late), if ever. The App calls
 /// this after each batch and at that moment, and sends what `ViewModel::diff` finds.
 pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
+    render_with_files(model, lens, now, view).0
+}
+
+/// [`render`], and the files the units show with their references (`views::files_seen`): what the App lets the
+/// person open and share. `view.files` is the App's to fill from them.
+pub fn render_with_files(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> (Option<u64>, std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>) {
+    super::files_seen::begin();
+    let wake = render_units(model, lens, now, view);
+    (wake, super::files_seen::take())
+}
+
+fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
     let b = Board::new(model, lens, now);
     view.sidebar = super::sidebar::sidebar(&b);
     let off = super::off::of_board(&b);

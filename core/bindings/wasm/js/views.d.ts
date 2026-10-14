@@ -1195,6 +1195,15 @@ export interface FileView {
   percent?: number
   /** Its bytes were handed over (`Effect::FileReady`). */
   loaded: boolean
+  /** The Share links this device made for it (`Action::Share`), kept in memory only. */
+  shares?: FileShareView[]
+}
+
+/** A Share link of a file: the whole link (its key behind the `#`), for the person to copy. */
+export interface FileShareView {
+  share_id: string
+  link: string
+  expires_ms: number
 }
 
 /** A passing line at the window's foot: what was done, and the way back. The engine and the actions make them; the

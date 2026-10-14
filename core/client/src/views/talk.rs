@@ -229,6 +229,9 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
 /// The files of a content's attachments: a page that belongs to a picture is no file of its own.
 pub fn file_ids(attachments: &Value) -> Vec<String> {
     let list: Vec<&Value> = attachments.as_array().into_iter().flatten().collect();
+    for a in &list {
+        super::files_seen::saw(a);
+    }
     let pages: Vec<&str> = list.iter().filter_map(|a| a.get("page").and_then(Value::as_str)).filter_map(|p| p.strip_prefix("attachment:")).collect();
     list.iter().map(|a| str_of(a, "attachment_id")).filter(|id| !id.is_empty() && !pages.contains(id)).map(String::from).collect()
 }
