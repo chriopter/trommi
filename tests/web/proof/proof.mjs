@@ -191,6 +191,8 @@ try {
   check(fromRow.line?.startsWith('OK: ') && fromRow.steps.length === first.steps.length && workers.length === before + 1, 'opened from the Settings row it runs and passes', fromRow.line)
 
   // ---- 3. Run again: a new worker, and nothing asked for but its file and the .wasm ----
+  // (every face of the page's fonts loaded first: a face the result screen uses for the first time is the page's request, not the run's)
+  await evaluate('Promise.all([...document.fonts].map(f => f.load().catch(() => null))).then(() => true)')
   const [askedBefore, seenBefore] = [asked.length, requests.length]
   hold = new Promise(resolve => { release = resolve })
   await click('#proof-again')
