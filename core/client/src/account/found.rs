@@ -13,11 +13,18 @@ use trommi_core::crypto::{Entropy, Secret as Key, SecretBytes};
 use trommi_core::ids::RoomId;
 use trommi_core::recovery::RecoveryKeys;
 
+/// The way in an account is founded with.
+enum FoundWay {
+    Password(account::PasswordKeys),
+    /// A passkey the platform made on the hub's challenge, which named the account's id.
+    Passkey { credential_id: Vec<u8>, attestation_object: Vec<u8>, client_data_json: Vec<u8>, prf: Key<32> },
+}
+
 /// Everything a founding needs once the room's id is known. Wiped when dropped.
 pub(crate) struct Founding {
     pub(crate) hub: String,
-    email: String,
-    password: account::PasswordKeys,
+    email: Option<String>,
+    way: FoundWay,
     kit: account::KitKeys,
     pub(crate) words: SecretBytes,
     code: Key<32>,
@@ -36,21 +43,71 @@ pub(crate) fn begin(hub: String, email: &str, password: &Secret, entropy: &mut d
     let text = std::str::from_utf8(words.expose()).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?.to_string();
     let kit = account::kit_keys(&email, &text).map_err(|_| Text::new("account.refused", "No Emergency Kit could be made."))?;
     let (code, keys) = RecoveryKeys::generate(entropy).map_err(|_| Text::new("account.refused", "No recovery code could be made."))?;
-    Ok(Founding { hub, email, password: pw, kit, words, code, keys })
+    Ok(Founding { hub, email: Some(email), way: FoundWay::Password(pw), kit, words, code, keys })
+}
+
+/// A founding with a passkey (no password): `account` is the id the hub's challenge named, the kit is salted with
+/// the e-mail where one is given, else with that id.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn begin_with_passkey(
+    hub: String,
+    email: Option<&str>,
+    account_id: &str,
+    credential_id: Vec<u8>,
+    attestation_object: Vec<u8>,
+    client_data_json: Vec<u8>,
+    prf: &[u8],
+    entropy: &mut dyn Entropy,
+) -> Result<Founding, Text> {
+    let refused = || Text::new("account.refused", "No account could be made with this passkey.");
+    let email = match email.map(str::trim).filter(|e| !e.is_empty()) {
+        Some(e) => Some(account::normalise_email(e).map_err(|_| Problem::BadAccount.text())?),
+        None => None,
+    };
+    let id = account::AccountId::parse(account_id).map_err(|_| refused())?;
+    let prf = Key::from_slice(prf).map_err(|_| Text::new("account.bad_passkey", "This passkey cannot keep a key (no PRF)."))?;
+    let words = account::generate_kit_words(entropy).map_err(|_| refused())?;
+    let text = std::str::from_utf8(words.expose()).map_err(|_| refused())?.to_string();
+    let kit = match &email {
+        Some(e) => account::kit_keys(e, &text),
+        None => account::kit_keys_for(account::AccountName::Id(&id), &text),
+    }
+    .map_err(|_| refused())?;
+    let (code, keys) = RecoveryKeys::generate(entropy).map_err(|_| refused())?;
+    let way = FoundWay::Passkey { credential_id, attestation_object, client_data_json, prf };
+    Ok(Founding { hub, email, way, kit, words, code, keys })
 }
 
 impl Founding {
     /// The account's body for `POST /v1/rooms` (the copies of the code bind the room).
     pub(crate) fn account_body(&self, room: &RoomId, entropy: &mut dyn Entropy) -> Result<Vec<u8>, &'static str> {
         let b64 = trommi_core::ids::base64url_encode;
-        let sealed_password = account::seal_code(&self.password.wrap_key, room, Way::Password, &self.code, entropy).map_err(|e| e.code())?;
         let sealed_kit = account::seal_code(&self.kit.wrap_key, room, Way::Kit, &self.code, entropy).map_err(|e| e.code())?;
-        let kdf: serde_json::Value = serde_json::from_str(account::KDF_RECORD).map_err(|_| "internal")?;
-        let body = json!({
-            "email": self.email,
-            "password": { "auth_key": b64(self.password.auth_key.expose()), "sealed_copy": b64(&sealed_password), "kdf": kdf },
-            "kit": { "auth_key": b64(self.kit.auth_key.expose()), "sealed_copy": b64(&sealed_kit) },
-        });
+        let mut body = json!({ "kit": { "auth_key": b64(self.kit.auth_key.expose()), "sealed_copy": b64(&sealed_kit) } });
+        if let Some(email) = &self.email {
+            body["email"] = json!(email);
+        }
+        match &self.way {
+            FoundWay::Password(password) => {
+                let sealed = account::seal_code(&password.wrap_key, room, Way::Password, &self.code, entropy).map_err(|e| e.code())?;
+                let kdf: serde_json::Value = serde_json::from_str(account::KDF_RECORD).map_err(|_| "internal")?;
+                body["password"] = json!({ "auth_key": b64(password.auth_key.expose()), "sealed_copy": b64(&sealed), "kdf": kdf });
+            }
+            FoundWay::Passkey { credential_id, attestation_object, client_data_json, prf } => {
+                let wrap = account::passkey_wrap_key(prf.expose(), room, credential_id).map_err(|e| e.code())?;
+                let sealed = account::seal_code(&wrap, room, Way::Passkey { credential_id }, &self.code, entropy).map_err(|e| e.code())?;
+                let sealed: [u8; 61] = sealed.try_into().map_err(|_| "internal")?;
+                let passkey = crate::hub::PasskeyRegistration { attestation_object: attestation_object.clone(), client_data_json: client_data_json.clone(), sealed_copy: sealed, transports: None };
+                let new = crate::hub::NewAccount {
+                    email: None,
+                    kit: crate::hub::KitPart { auth_key: [0; 32], sealed_copy: [0; 61] },
+                    password: None,
+                    passkey: Some(passkey),
+                };
+                let made: serde_json::Value = serde_json::from_slice(&crate::hub::new_account_body(&new).map_err(|_| "internal")?).map_err(|_| "internal")?;
+                body["passkey"] = made.get("passkey").cloned().ok_or("internal")?;
+            }
+        }
         serde_json::to_vec(&body).map_err(|_| "internal")
     }
 
