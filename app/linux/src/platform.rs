@@ -286,7 +286,9 @@ mod tests {
 
     #[test]
     fn a_saved_file_takes_a_free_name() {
-        let dir = std::env::temp_dir().join(format!("trommi-linux-free-{}", std::process::id()));
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("trommi-linux-free-{}-{nanos}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(free_path(&dir, "a.pdf"), dir.join("a.pdf"));
         std::fs::write(dir.join("a.pdf"), b"x").unwrap();
