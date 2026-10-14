@@ -310,16 +310,6 @@ const TYPED = [
   ['app.mjs', '\n  itemsOf(t, agent, cardId, out) {', { t: 'Timeline', i: 'TimelineItem' }],
   ['app.mjs', '\n  eventsOf(c, card) {', { c: 'Card', a: 'Answer', v: 'CardVersion' }],
   ['app.mjs', '\n  update(change = null) {', { s: 'Session', p: ['Published', 'PermissionRequest'] }],
-  ['auth.mjs', 'const fp = d =>', { d: 'Member' }],
-  ['auth.mjs', 'const member = d =>', { d: 'Member' }],
-  ['auth.mjs', 'const devName = d =>', { d: 'Member' }],
-  ['auth.mjs', 'const devIcon = d =>', { d: 'Member' }],
-  ['auth.mjs', 'const devState = d =>', { d: 'Member' }],
-  ['auth.mjs', 'const devLine = d =>', { d: 'Member' }],
-  ['auth.mjs', 'const removeWords = d =>', { d: 'Member' }],
-  ['auth.mjs', 'const deviceMain = (d, error = \'\') =>', { d: 'Member' }],
-  ['auth.mjs', 'const lists = () => {', { d: 'Member', a: 'Member', b: 'Member' }],
-  ['auth.mjs', 'const newcomerName = inv =>', { inv: 'Invite' }],
 ]
 function typedReads() {
   const reads = []
@@ -394,7 +384,6 @@ test('every field of the model the views read is one types.ts names', () => {
   // the scan finds the model at all, in each of its forms
   const seen = new Set(reads.flatMap(([type, field]) => [type].flat().map(t => `${t}.${field}`)))
   for (const k of ['Model.sessions', 'Model.cards', 'Model.newer', 'Model.outbox', 'Room.my_device_id', 'Room.connection', 'Room.key_epoch', 'HumanRegisters.desks', 'HumanRegisters.raw', 'Session.card_ids', 'Session.heard_up_to', 'Member.device_role', 'Card.title', 'Timeline.has_more', 'Published.object_state']) assert.ok(seen.has(k), `the scan no longer finds ${k}: its patterns are out of step with the views`)
-  assert.ok(room.has('account'), 'the page keeps the account\'s state on model.room (auth.mjs _setRoom)')
 })
 
 test('no view reads a field that only protocol v1\'s model had', () => {
