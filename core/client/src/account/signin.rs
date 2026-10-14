@@ -22,14 +22,22 @@ use trommi_core::recovery::RecoveryKeys;
 pub enum By {
     Password,
     Kit,
+    Passkey,
 }
 
 /// A sign-in waiting for the hub's login answer. Holds the wrap key only (wiped when dropped).
 pub(crate) struct Waiting {
     pub(crate) hub: String,
     pub(crate) by: By,
-    wrap_key: Key<32>,
+    wrap_key: Wrap,
     pub(crate) expect: Expect,
+}
+
+/// What opens the copy of the code: a wrap key, or a passkey's PRF output, whose wrap key is bound to the room the
+/// answer names.
+enum Wrap {
+    Key(Key<32>),
+    Passkey { prf: Key<32>, credential_id: Vec<u8> },
 }
 
 /// Why a sign-in did not get to the join.
@@ -93,6 +101,7 @@ fn sorted(e: AccountError, by: By) -> Problem {
 pub(crate) fn begin(hub: String, by: By, account: &str, secret: &Secret, client: &str) -> Result<(Waiting, crate::app::io::HttpRequest), Problem> {
     let account = account.trim();
     let (named, auth_key, wrap_key) = match by {
+        By::Passkey => return Err(Problem::Other("internal")),
         By::Password => {
             let email = account::normalise_email(account).map_err(|e| sorted(e, by))?;
             let keys = account::password_keys(&email, &secret.0, None).map_err(|e| sorted(e, by))?;
@@ -117,11 +126,26 @@ pub(crate) fn begin(hub: String, by: By, account: &str, secret: &Secret, client:
     let site = Site { url: &hub, token: None, client };
     let auth: [u8; 32] = *auth_key.expose();
     let route = match by {
-        By::Password => Route::Login { account: &named, auth_key: &auth },
+        By::Password | By::Passkey => Route::Login { account: &named, auth_key: &auth },
         By::Kit => Route::Recover { account: &named, auth_key: &auth },
     };
     let (request, expect) = Codec.request(&site, &route).map_err(|_| Problem::BadAccount)?;
-    Ok((Waiting { hub, by, wrap_key, expect }, request))
+    Ok((Waiting { hub, by, wrap_key: Wrap::Key(wrap_key), expect }, request))
+}
+
+/// The challenge of a sign-in with a passkey (no token).
+pub(crate) fn passkey_challenge(hub: &str, client: &str) -> Result<(crate::app::io::HttpRequest, Expect), Problem> {
+    let site = Site { url: hub, token: None, client };
+    Codec.request(&site, &Route::PasskeyChallenge).map_err(|_| Problem::BadHub)
+}
+
+/// The login with a passkey's assertion; `prf`: its PRF output (32 bytes).
+pub(crate) fn passkey_begin(hub: String, assertion: crate::hub::PasskeyAssertion, prf: &[u8], client: &str) -> Result<(Waiting, crate::app::io::HttpRequest), Problem> {
+    let prf = Key::from_slice(prf).map_err(|_| Problem::Other("no-prf"))?;
+    let site = Site { url: &hub, token: None, client };
+    let (request, expect) = Codec.request(&site, &Route::PasskeyLogin { assertion: &assertion }).map_err(|_| Problem::Other("bad-passkey"))?;
+    let credential_id = assertion.credential_id;
+    Ok((Waiting { hub, by: By::Passkey, wrap_key: Wrap::Passkey { prf, credential_id }, expect }, request))
 }
 
 /// The hub's login answer: the room and the keys of its code, or why not.
@@ -145,11 +169,15 @@ pub(crate) fn answered(waiting: &Waiting, answer: Result<Answer, Failure>) -> Re
         Err(Failure::BadAnswer { .. }) => return Err(Problem::Other("bad-format")),
     };
     let room = login.rooms.first().ok_or(Problem::NoRoom)?;
-    let way = match waiting.by {
-        By::Password => Way::Password,
-        By::Kit => Way::Kit,
-    };
-    let code = account::open_code(&waiting.wrap_key, &room.room, way, &room.sealed_copy).map_err(|e| sorted(e, waiting.by))?;
+    let code = match &waiting.wrap_key {
+        Wrap::Key(key) => {
+            let way = if waiting.by == By::Kit { Way::Kit } else { Way::Password };
+            account::open_code(key, &room.room, way, &room.sealed_copy)
+        }
+        Wrap::Passkey { prf, credential_id } => account::passkey_wrap_key(prf.expose(), &room.room, credential_id)
+            .and_then(|key| account::open_code(&key, &room.room, Way::Passkey { credential_id }, &room.sealed_copy)),
+    }
+    .map_err(|e| sorted(e, waiting.by))?;
     let keys = RecoveryKeys::from_code(code).map_err(|e| Problem::Other(e.code()))?;
     Ok((room.room, keys))
 }

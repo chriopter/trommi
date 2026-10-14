@@ -1052,6 +1052,26 @@ export interface SettingsView {
   devices_says?: Text
   /** The room's key epoch (the version line at the list's foot). */
   key_epoch: number
+  /** The account's ways in, once read (`AccountAction::ReadAccount`). */
+  login?: LoginView
+}
+
+/** The account's ways in, for the page Account: what can be changed and how it is proved. */
+export interface LoginView {
+  email?: string
+  /** The account's id as printed on the kit (a UUID). */
+  account: string
+  has_password: boolean
+  /** The kit is salted with the e-mail ("email") or with the id ("id"). */
+  kit_form: string
+  passkeys?: PasskeyView[]
+}
+
+export interface PasskeyView {
+  /** base64url: what `RemovePasskey` names. */
+  credential_id: string
+  created_at: number
+  last_used_at?: number
 }
 
 /** An agent: a program on one computer ("Claude Code on MacBook Pro"), with its sessions. */

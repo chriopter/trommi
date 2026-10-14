@@ -412,6 +412,10 @@ name = "hub_account_proof"
 path = "hub/account_proof.rs"
 
 [[test]]
+name = "hub_app_account"
+path = "hub/app_account.rs"
+
+[[test]]
 name = "hub_metrics"
 path = "hub/metrics.rs"
 

@@ -19,6 +19,17 @@ impl std::fmt::Debug for Secret {
     }
 }
 
+/// The way in a change of the account is proved with, given again.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "by", rename_all = "snake_case")]
+pub enum Unlock {
+    Password { password: Secret },
+    /// The Emergency Kit's twelve words.
+    Words { words: Secret },
+    /// One of the account's passkeys (`PlatformOp::PasskeyGet`).
+    Passkey,
+}
+
 /// `Debug` names the step only: e-mail addresses, links with their secret and passwords stay out of every log.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case")]
@@ -70,17 +81,50 @@ pub enum AccountAction {
     RemoveDevices {
         device_ids: Vec<String>,
     },
-    /// Use a passkey instead of the password (where `Config.can.passkeys`).
+    /// Use a passkey instead of the password (where `Config.can.passkeys`): the platform offers the person's
+    /// passkeys for the hub (`PlatformOp::PasskeyGet`).
     SignInWithPasskey {
-        email: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hub: Option<String>,
     },
-    AddPasskey,
+    /// Reads the account (`GET /v1/account`) into `view.settings.login`: its e-mail, password, kit and passkeys.
+    ReadAccount,
+    /// A new Emergency Kit for the same recovery code; its words are shown once (`step: "keep_kit"`).
+    NewKit {
+        unlock: Unlock,
+    },
+    /// Sets the password: a change with the password of now, or a new one with a passkey or the kit's words. With
+    /// the words the recovery code is replaced as well (8.6), and a new kit is shown.
+    SetPassword {
+        unlock: Unlock,
+        next: Secret,
+    },
+    /// Gives an account without e-mail one, once; the kit's same words are typed again (they are salted with the
+    /// e-mail from now on).
+    SetEmail {
+        email: String,
+        words: Secret,
+    },
+    /// Adds a passkey (`PlatformOp::PasskeyCreate`). With the kit's words the code is replaced as well, and a new
+    /// kit is shown.
+    AddPasskey {
+        unlock: Unlock,
+    },
+    /// Removes a passkey (its id, base64url).
+    RemovePasskey {
+        credential_id: String,
+        unlock: Unlock,
+    },
     /// A self-join ask: allow or deny.
     AnswerAsk {
         nonce: String,
         allow: bool,
     },
-    ReplaceRecoveryCode,
+    /// Replaces the room's recovery code (8.6), after a device not in the person's hands was removed: the way in
+    /// given (the password or a passkey) is kept, every other is removed, and a new kit is shown.
+    ReplaceRecoveryCode {
+        unlock: Unlock,
+    },
     SignOut,
     DeleteAccount {
         password: Secret,

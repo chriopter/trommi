@@ -24,6 +24,7 @@ pub mod event;
 pub mod io;
 mod invites;
 mod account_steps;
+mod account_change;
 mod selfjoin;
 pub mod script;
 pub mod sim;
@@ -75,6 +76,10 @@ enum Pending {
     Wipe,
     /// The device state read for a join by an invite link (`AccountAction::Join`).
     LinkLoad,
+    /// The challenge of a sign-in with a passkey, at this hub.
+    PasskeyChallenge(String),
+    /// The platform's passkey for a sign-in at this hub.
+    PasskeyGet(String),
     /// I/O of an engine that was dropped (a join of the room that failed): its answer is only logged.
     Dropped,
 }
@@ -129,6 +134,7 @@ pub struct App {
     invites: invites::Invites,
     /// The account's steps in flight (`app::account_steps`).
     steps: account_steps::Steps,
+    changes: account_change::Changes,
     /// Agents' asks to let in a new session of their machine (`app::selfjoin`).
     selfjoin: selfjoin::SelfJoin,
     /// Actions that write the room's registers, held while the device catches up: a register written before the
@@ -193,6 +199,7 @@ impl App {
             files: crate::files::Files::default(),
             invites: invites::Invites::default(),
             steps: account_steps::Steps::default(),
+            changes: account_change::Changes::default(),
             selfjoin: selfjoin::SelfJoin::default(),
             held_actions: Vec::new(),
             opening: None,
@@ -291,7 +298,11 @@ impl App {
     fn account(&mut self, now_ms: u64, action: crate::account::AccountAction, out: &mut Vec<Effect>) {
         use crate::account::signin::{self, By};
         use crate::account::AccountAction;
-        if self.invite_action(now_ms, &action, out) || self.account_step(now_ms, &action, out) || self.selfjoin_action(now_ms, &action, out) {
+        if self.invite_action(now_ms, &action, out)
+            || self.account_step(now_ms, &action, out)
+            || self.selfjoin_action(now_ms, &action, out)
+            || self.change_action(now_ms, &action, out)
+        {
             return;
         }
         match action {
@@ -302,6 +313,7 @@ impl App {
                 return;
             }
             AccountAction::Found { email, password, hub } => return self.found(&email, &password, hub.as_deref(), out),
+            AccountAction::SignInWithPasskey { hub } => return self.passkey_sign_in(hub.as_deref(), out),
             AccountAction::Join { link } => {
                 if self.engine.is_some() || self.founding.is_some() || self.signing_in.is_some() || self.linking.is_some() {
                     out.push(log(LogLevel::Warn, "account: a join by link on a slot that has a device or is busy"));
@@ -336,6 +348,78 @@ impl App {
                 let id = self.io(Pending::Login);
                 self.signing_in = Some((id, waiting));
                 self.next_view.account = crate::views::AccountView { step: "working".into(), ..Default::default() };
+                out.push(Effect::Http { id, request });
+            }
+            Err(problem) => self.sign_in_failed(problem),
+        }
+    }
+
+    /// `SignInWithPasskey`: the hub's challenge, then the platform's passkey, then the login (`login_answered`).
+    fn passkey_sign_in(&mut self, hub: Option<&str>, out: &mut Vec<Effect>) {
+        use crate::account::signin;
+        let Some(config) = self.config.as_ref() else { return };
+        if self.engine.is_some() || self.room_join_wait.is_some() || self.signing_in.is_some() {
+            out.push(log(LogLevel::Warn, "account: a sign-in on a slot that has a device or signs in already"));
+            return;
+        }
+        let client = format!("{}/{}", config.platform, config.version);
+        match signin::hub_of(hub, &config.hub).and_then(|hub| signin::passkey_challenge(&hub, &client).map(|asked| (hub, asked))) {
+            Ok((hub, (request, _))) => {
+                let id = self.io(Pending::PasskeyChallenge(hub));
+                self.next_view.account = crate::views::AccountView { step: "working".into(), ..Default::default() };
+                out.push(Effect::Http { id, request });
+            }
+            Err(problem) => self.sign_in_failed(problem),
+        }
+    }
+
+    fn passkey_challenged(&mut self, hub: String, result: IoResult<HttpResponse>, out: &mut Vec<Effect>) {
+        use crate::account::signin::{self, Problem};
+        let Some(config) = self.config.as_ref() else { return };
+        let client = format!("{}/{}", config.platform, config.version);
+        let Ok((_, expect)) = signin::passkey_challenge(&hub, &client) else { return };
+        let answer = match result {
+            IoResult::Ok(response) => crate::hub::Codec.answer(&expect, &response),
+            IoResult::Err(error) => Err(crate::hub::classify_io(&error).unwrap_or(crate::hub::Failure::Offline)),
+        };
+        match answer {
+            Ok(crate::hub::Answer::PasskeyChallenge(challenge)) => {
+                let id = self.io(Pending::PasskeyGet(hub));
+                out.push(Effect::Platform {
+                    id,
+                    op: PlatformOp::PasskeyGet {
+                        rp_id: String::new(),
+                        challenge: challenge.challenge.to_vec().into(),
+                        credential_ids: Vec::new(),
+                        prf_input: trommi_core::account::PASSKEY_PRF_INPUT.to_vec().into(),
+                    },
+                });
+            }
+            Err(crate::hub::Failure::NotNow { status: 429, .. }) => self.sign_in_failed(Problem::Throttled),
+            Err(crate::hub::Failure::NotNow { .. } | crate::hub::Failure::Offline) => self.sign_in_failed(Problem::Offline),
+            _ => self.sign_in_failed(Problem::Other("bad-format")),
+        }
+    }
+
+    fn passkey_asserted(&mut self, hub: String, result: IoResult<PlatformAnswer>, out: &mut Vec<Effect>) {
+        use crate::account::signin;
+        let Some(config) = self.config.as_ref() else { return };
+        let client = format!("{}/{}", config.platform, config.version);
+        let IoResult::Ok(PlatformAnswer::PasskeyAsserted { credential_id, authenticator_data, client_data_json, signature, user_handle, prf }) = result else {
+            self.next_view.account = crate::views::AccountView { step: "sign_in".into(), ..Default::default() };
+            return;
+        };
+        let assertion = crate::hub::PasskeyAssertion {
+            credential_id: credential_id.0,
+            authenticator_data: authenticator_data.0,
+            client_data_json: client_data_json.0,
+            signature: signature.0,
+            user_handle: user_handle.map(|h| h.0),
+        };
+        match signin::passkey_begin(hub, assertion, &prf.0, &client) {
+            Ok((waiting, request)) => {
+                let id = self.io(Pending::Login);
+                self.signing_in = Some((id, waiting));
                 out.push(Effect::Http { id, request });
             }
             Err(problem) => self.sign_in_failed(problem),
@@ -614,7 +698,7 @@ impl App {
                         self.open(now_ms, revision, entries, &mut out);
                     }
                 }
-                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) => {
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) => {
                     if let IoResult::Err(e) = &result {
                         out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
                     }
@@ -655,6 +739,16 @@ impl App {
                     }
                 }
             },
+            Event::Http { id, result } if matches!(self.pending.get(&id), Some(Pending::PasskeyChallenge(_))) => {
+                if let Some(Pending::PasskeyChallenge(hub)) = self.pending.remove(&id) {
+                    self.passkey_challenged(hub, result, &mut out);
+                }
+            }
+            Event::Platform { id, result } if matches!(self.pending.get(&id), Some(Pending::PasskeyGet(_))) => {
+                if let Some(Pending::PasskeyGet(hub)) = self.pending.remove(&id) {
+                    self.passkey_asserted(hub, result, &mut out);
+                }
+            }
             Event::Http { id, result } if self.pending.get(&id) == Some(&Pending::Login) => {
                 self.pending.remove(&id);
                 self.login_answered(now_ms, id, result, &mut out);
@@ -667,6 +761,7 @@ impl App {
                     out.push(log(LogLevel::Warn, "an answer to nothing asked"));
                 }
             }
+            Event::Platform { id, result } if self.changes.owns_platform(id) => self.change_platform(now_ms, id, result, &mut out),
             Event::Secret { id, .. } | Event::Platform { id, .. } => {
                 if self.pending.remove(&id).is_none() {
                     out.push(log(LogLevel::Warn, "an answer to nothing asked"));
@@ -1085,6 +1180,7 @@ impl App {
         let mut invite_news = Vec::new();
         let mut invite_answers = Vec::new();
         let mut step_answers = Vec::new();
+        let mut replaced: Option<Option<&'static str>> = None;
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
@@ -1190,6 +1286,8 @@ impl App {
                     }
                 }
                 Report::FileEvicted { file } => evicted.push(file),
+                Report::Accepted { id, .. } if self.changes.replacing() == Some(id) => replaced = Some(None),
+                Report::Refused { id, code, .. } if self.changes.replacing() == Some(id) => replaced = Some(Some(code)),
                 Report::Accepted { id, .. } => {
                     self.sent.take(id);
                 }
@@ -1248,6 +1346,9 @@ impl App {
         }
         for answered in step_answers {
             self.step_answered(now_ms, answered.id, &answered.result, out);
+        }
+        if let Some(refused) = replaced {
+            self.change_replaced(now_ms, refused, out);
         }
         for invite in invite_news {
             self.invites_look(now_ms, Some(invite), out);

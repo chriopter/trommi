@@ -18,6 +18,10 @@ pub(super) enum Step {
     ReadAccount { password: crate::account::Secret, expect: Expect },
     Delete(Expect),
     SignOut,
+    /// A change of the account's ways in (`account_change`).
+    Change(super::account_change::Ask, Expect),
+    /// Nothing waits for the answer.
+    Quiet,
 }
 
 #[derive(Default)]
@@ -52,13 +56,13 @@ impl App {
         true
     }
 
-    fn step_send(
+    pub(super) fn step_send(
         &mut self,
         now_ms: u64,
         out: &mut Vec<Effect>,
         build: impl FnOnce(&crate::hub::Site<'_>) -> Result<(crate::app::io::HttpRequest, Expect), Failure> + 'static,
         step: impl FnOnce(Expect) -> Step,
-    ) {
+    ) -> bool {
         let cell = std::rc::Rc::new(std::cell::RefCell::new(None));
         let put = cell.clone();
         let sent = self.with_engine(now_ms, out, |engine, ctx| {
@@ -76,8 +80,12 @@ impl App {
         match (sent, expect) {
             (Some(Ok(id)), Some(expect)) => {
                 self.steps.asked.insert(id, step(expect));
+                true
             }
-            _ => self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.not_sent", "That could not be sent. Try again.")), ..Default::default() },
+            _ => {
+                self.next_view.account = AccountView { step: "none".into(), problem: Some(Text::new("account.not_sent", "That could not be sent. Try again.")), ..Default::default() };
+                false
+            }
         }
     }
 
@@ -155,7 +163,11 @@ impl App {
             Err(failure) => Err(failure.clone()),
         };
         match step {
-            Step::SignOut => {}
+            Step::SignOut | Step::Quiet => {}
+            Step::Change(ask, expect) => {
+                let answer = answer(&expect);
+                self.change_answered(now_ms, ask, answer, out);
+            }
             Step::ReadAccount { password, expect } => {
                 let email = match answer(&expect) {
                     Ok(Answer::Account(view)) => view.email,
