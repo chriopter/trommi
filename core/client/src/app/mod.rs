@@ -24,6 +24,7 @@ pub mod event;
 pub mod io;
 mod invites;
 mod account_steps;
+mod selfjoin;
 pub mod script;
 pub mod sim;
 
@@ -128,6 +129,8 @@ pub struct App {
     invites: invites::Invites,
     /// The account's steps in flight (`app::account_steps`).
     steps: account_steps::Steps,
+    /// Agents' asks to let in a new session of their machine (`app::selfjoin`).
+    selfjoin: selfjoin::SelfJoin,
     /// Actions that write the room's registers, held while the device catches up: a register written before the
     /// device read the newest value would lose to an older one read later (its write counter is too low).
     held_actions: Vec<Action>,
@@ -190,6 +193,7 @@ impl App {
             files: crate::files::Files::default(),
             invites: invites::Invites::default(),
             steps: account_steps::Steps::default(),
+            selfjoin: selfjoin::SelfJoin::default(),
             held_actions: Vec::new(),
             opening: None,
             board: engine::feed::Board::default(),
@@ -287,7 +291,7 @@ impl App {
     fn account(&mut self, now_ms: u64, action: crate::account::AccountAction, out: &mut Vec<Effect>) {
         use crate::account::signin::{self, By};
         use crate::account::AccountAction;
-        if self.invite_action(now_ms, &action, out) || self.account_step(now_ms, &action, out) {
+        if self.invite_action(now_ms, &action, out) || self.account_step(now_ms, &action, out) || self.selfjoin_action(now_ms, &action, out) {
             return;
         }
         match action {
@@ -1224,6 +1228,9 @@ impl App {
             self.invites_look(now_ms, Some(invite), out);
         }
         self.invites_settle(now_ms, out);
+        if fed {
+            self.selfjoin_tend(now_ms, out);
+        }
         self.notes_free(now_ms, notes_back, out);
         self.goals_check |= fed;
         if !self.held_actions.is_empty() && self.next_view.phase == Phase::Live {

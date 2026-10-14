@@ -126,3 +126,35 @@ fn a_new_device_joins_by_link() {
     assert_eq!(sim.view.account.step, "none");
     assert!(sim.app.engine().unwrap().roles().0.contains(&sim.app.engine().unwrap().device().id()));
 }
+
+fn join_link(sim: &Sim, nonce: &str) -> Option<serde_json::Value> {
+    sim.app.board().model.sessions.values().find_map(|s| s.registers.get(&format!("join_link/{nonce}")).map(|r| r.value.clone()))
+}
+
+#[test]
+fn an_agents_ask_is_refused_past_the_bounds_and_allowed_with_a_link() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    // an ask that names no account: refused at once, without the person
+    world.agent_register("join_ask/a1", r#"{"name":"helper","folder":"~/x"}"#);
+    for _ in 0..3 {
+        world.stream(&mut sim);
+        sim.advance(500);
+    }
+    assert_eq!(join_link(&sim, "a1").map(|v| v["refused"].clone()), Some(serde_json::json!("bad-ask")));
+    // an ask with its account: the person allows it, the agent gets a link
+    world.agent_register("join_ask/b2", r#"{"name":"helper","folder":"~/x","account":"acct-1"}"#);
+    world.stream(&mut sim);
+    assert!(join_link(&sim, "b2").is_none(), "it waits for the person");
+    account(&mut sim, AccountAction::AnswerAsk { nonce: "b2".into(), allow: true });
+    for _ in 0..3 {
+        world.stream(&mut sim);
+        sim.advance(500);
+    }
+    let link = join_link(&sim, "b2").expect("the answer");
+    assert!(link["link"].as_str().is_some_and(|l| l.contains('#')), "{link}");
+    assert_eq!(world.hub.borrow().invites.len(), 1, "its Offer is at the hub");
+    assert_eq!(sim.view.account.step, "", "the person's screen is not taken over: {:?}", sim.view.account);
+}
