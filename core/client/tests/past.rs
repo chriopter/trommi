@@ -192,3 +192,65 @@ fn the_page_off_your_mind_reads_the_settled_cards_page_by_page() {
     // (each one answered after its version: its answer read too, so none stands on the Desk as open)
     assert!(sim.view.desk.rows.is_empty());
 }
+
+fn revised_closed_card(world: &mut World) -> String {
+    let (card, hash, _) = world.agent_card("First version");
+    let (hash, _) = world.agent_revises(card, &hash, "Second version", 2);
+    world.founder_answers(card, "yes");
+    world.agent_closes(card, &hash, "Second version", 3);
+    card.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn history_down(sim: &mut Sim, world: &World) {
+    let hub = world.hub.clone();
+    sim.hub = Some(Box::new(move |now, request| {
+        if request.url.contains("/v1/cards/") || request.url.contains("/v1/chats/") {
+            Ok(trommi_client_core::app::io::HttpResponse { status: 503, headers: vec![trommi_client_core::app::io::Header { name: "Retry-After".into(), value: "10".into() }], body: b"{}".to_vec().into() })
+        } else {
+            hub.borrow_mut().http(now, request)
+        }
+    }));
+}
+
+#[test]
+fn restarted_closed_card_recovers_its_answer_and_history_when_history_returns() {
+    let mut world = World::new();
+    let card = revised_closed_card(&mut world);
+    let mut sim = without_past(&world);
+    history_down(&mut sim, &world);
+    sim.send(focus(Screen::Off { query: String::new() }));
+    sim.send(focus(Screen::Card { card_id: card.clone() }));
+    let failed_reads = sim.log.iter().filter(|e| matches!(e, Effect::Http { request, .. } if request.url.contains("/v1/cards/"))).count();
+    world.attach(&mut sim);
+    sim.advance(9_000);
+    assert_eq!(sim.log.iter().filter(|e| matches!(e, Effect::Http { request, .. } if request.url.contains("/v1/cards/"))).count(), failed_reads, "Retry-After is honored");
+    sim.advance(1_000);
+    let got = &sim.view.cards[&card];
+    assert_eq!(got.history, 1, "the previous revision is recovered");
+    assert!(got.you_chose.is_some(), "the answer is recovered: {got:?}");
+    assert_eq!(got.state, "closed");
+}
+
+#[test]
+fn fresh_devices_agree_on_history_after_one_device_recovers_from_an_outage() {
+    let mut world = World::new();
+    let card = revised_closed_card(&mut world);
+    let mut first = without_past(&world);
+    let (store, device, keys) = world.newcomer();
+    let mut second = world.sim_of(&store);
+    second.send(start());
+    let effects = second.app.join_sessions(second.now_ms, trommi_client_core::engine::sync::joins::SessionJoins { keys, later: None, groups: vec![world.group] });
+    second.run(effects);
+    for _ in 0..20 {
+        let Some(bytes) = world.hub.borrow_mut().stream_news(&device) else { break };
+        second.stream(StreamItem::Chunk { bytes: bytes.into() });
+    }
+    first.send(focus(Screen::Card { card_id: card.clone() }));
+    history_down(&mut second, &world);
+    second.send(focus(Screen::Card { card_id: card.clone() }));
+    world.attach(&mut second);
+    second.advance(10_000);
+    assert_eq!(first.view.cards[&card].history, 1);
+    assert_eq!(first.view.cards[&card].history, second.view.cards[&card].history);
+    assert_eq!(first.view.cards[&card].versions, second.view.cards[&card].versions);
+}

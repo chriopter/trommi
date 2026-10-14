@@ -1955,7 +1955,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1))].into_iter().flatten().min();
+        let wake = [self.past.wake(), engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1))].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
