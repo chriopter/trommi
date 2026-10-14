@@ -56,8 +56,8 @@ const UNDER = raw('<svg viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidd
 const DEMO_LINK = html`<a href="/?mock=1" id="ob-demo" data-turbo="false">Try the demo</a>`
 /** On the start page the demo is the third way, right under Create account and Log in: a clear quieter button. */
 const DEMO_WAY = html`<a href="/?mock=1" id="ob-demo" class="ob-demo-way" data-turbo="false"><span>Try the demo</span><small>A made-up room: nothing is sent</small></a>`
-/** A button that leads to another screen (a form of its own: the look of a button, the way of a link). */
-const goButton = (path, cls, id, inner) => html`<form method="get" action="${path}" style="display: contents"><button type="submit" class="${cls}" id="${id}">${inner}</button></form>`
+/** A button that leads to another screen (the look of a button, the way of a link: controller "ob-nav"). */
+const goButton = (path, cls, id, inner) => html`<button type="button" class="${cls}" id="${id}" data-controller="ob-nav" data-action="ob-nav#go" data-ob-nav-to-value="${path}">${inner}</button>`
 /** One screen: the bell (the way back to the start), a short headline, at most one line under it, the demo at the
  *  foot (demo: false where the screen offers it itself, the start page). */
 const obShell = (title, inner, { lead = '', cls = '', home = true, foot = '', demo = true, focus = 'input:not([type=hidden], [hidden]), button.ob-go' } = {}) => html`<main id="room" class="ob${cls ? ` ${cls}` : ''}" aria-labelledby="ob-title"${focus ? html` data-controller="ob-focus" data-ob-focus-at-value="${focus}"` : ''}>
@@ -706,7 +706,7 @@ export function demoScreen(state) {
   // (a preview: password managers stay off its fields; nothing is sent, nothing leads elsewhere)
   for (const f of root.querySelectorAll('input, textarea')) { f.autocomplete = 'off'; for (const a of ['data-1p-ignore', 'data-bwignore', 'data-protonpass-ignore']) f.setAttribute(a, ''); f.setAttribute('data-lpignore', 'true'); f.setAttribute('data-form-type', 'other') }
   root.addEventListener('submit', e => { e.preventDefault(); e.stopImmediatePropagation() }, true)
-  root.addEventListener('click', e => { if (e.target.closest('a[href], #broken-logout, #broken-retry, #join-again, #scan-again')) { e.preventDefault(); e.stopImmediatePropagation() } }, true)
+  root.addEventListener('click', e => { if (e.target.closest('a[href], [data-controller~="ob-nav"], #broken-logout, #broken-retry, #join-again, #scan-again')) { e.preventDefault(); e.stopImmediatePropagation() } }, true)
   for (const [sel, value] of Object.entries(typed)) { const f = root.querySelector(sel); if (f) f.value = value }
 }
 
@@ -983,6 +983,11 @@ controller('ob-focus', class extends Controller {
     const framed = (() => { try { return window.top !== window } catch { return true } })()
     if (!framed && this.atValue) this.element.querySelector(this.atValue)?.focus({ preventScroll: true })
   }
+})
+// A button that leads to another screen.
+controller('ob-nav', class extends Controller {
+  static values = { to: String }
+  go() { window.Turbo?.visit(this.toValue) }
 })
 // The kit's sheet: a tap on it is a tap on Show.
 controller('kit', class extends Controller {
