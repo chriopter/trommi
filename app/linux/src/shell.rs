@@ -108,27 +108,6 @@ impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
     }
 }
 
-/// A view model for pictures and tests of the drawing alone: the sidebar and the Desk as the core's golden
-/// files give them (core/client/tests/golden), folded like any render. The window's JSON, or why not.
-pub fn golden(sidebar_json: &str, desk_json: &str) -> Result<String, String> {
-    use trommi_client_core::views::{Phase, ViewPart};
-    let model = ViewModel {
-        phase: Phase::Live,
-        sidebar: serde_json::from_str(sidebar_json).map_err(|e| format!("the sidebar: {e}"))?,
-        desk: serde_json::from_str(desk_json).map_err(|e| format!("the Desk: {e}"))?,
-        ..ViewModel::default()
-    };
-    let mut view = View::default();
-    let whole = ViewDelta {
-        base: 0,
-        parts: vec![ViewPart::Whole { model: Box::new(model) }],
-    };
-    if !view.fold(&whole) {
-        return Err("the fold refused it".into());
-    }
-    Ok(view.json())
-}
-
 /// What the window may send, as JSON in the contract's spelling (`Event`): what the person did (`action`), what
 /// they look at (`focus`), the window coming to the front or going to the back, the time zone. Anything else (an
 /// I/O result, a start) is the loop's alone and refused here.
