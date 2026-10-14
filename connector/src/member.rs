@@ -453,6 +453,9 @@ pub fn is_terminal_record(r: &Value) -> bool {
 /// Whether a keyed slot of this folder waits for a connector of this session: no process holds it, and its owner
 /// record lets this session take it (a join of this session in a terminal or the agent's shell made it).
 pub fn key_waiting(cfg: &Cfg) -> bool {
+    if !own_keys_free(cfg).is_empty() {
+        return true;
+    }
     let Ok(Some(room_id)) = resolve_room(cfg) else {
         return false;
     };
@@ -462,6 +465,28 @@ pub fn key_waiting(cfg: &Cfg) -> bool {
             let p = paths_of(cfg, &room_id, n);
             holders_of(&p).is_empty() && may_take(owner_of(&p).as_ref(), &cfg.owner(), ppid())
         })
+}
+
+/// This session's own keys (by its id, in any folder's slots) that no running connector holds, this process
+/// included: a key it went on from in another folder or under another account of its program, or one that
+/// `trommi-connector connect` made for it in a terminal of any folder. The session takes one of them.
+pub fn own_keys_free(cfg: &Cfg) -> Vec<SlotPaths> {
+    own_slots(cfg, &cfg.owner())
+        .into_iter()
+        .map(|(_, p)| p)
+        .filter(|p| holders_of(p).is_empty() && !held_here(p))
+        .collect()
+}
+/// This session's own keys that another running connector holds now: (key, holder pids).
+pub fn own_keys_held(cfg: &Cfg) -> Vec<(SlotPaths, Vec<u32>)> {
+    own_slots(cfg, &cfg.owner())
+        .into_iter()
+        .map(|(_, p)| {
+            let h = holders_of(&p);
+            (p, h)
+        })
+        .filter(|(p, h)| !h.is_empty() && !held_here(p))
+        .collect()
 }
 
 pub fn paths_of(cfg: &Cfg, room_id: &str, slot: u32) -> SlotPaths {
@@ -602,18 +627,57 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
                 .any(|h| session_of(&p, *h) == cfg.session)
         },
     );
+    let mut refused: Option<Refused> = None;
     // This session's own key in this room under another folder's slots (the session went on in another
-    // folder): it is used where it lies.
+    // folder, or under another account of its program): it is used where it lies. A connector of this same
+    // session that still holds it (the program's earlier process, still ending) is asked to hand it over, as in
+    // the session's own folder; one that does not yet keeps it, and this session takes it once it is free: it
+    // never joins anew while a key of its own lies on this machine.
     let owner = cfg.owner();
     for (_, p) in own_slots(cfg, &owner)
         .into_iter()
         .filter(|(r, p)| r == room_id && !p.prefix.starts_with(&format!("{}-", cfg.base)))
     {
-        let r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
+        let mut r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
+        let mut handed = false;
+        if !r.ok && ask {
+            let was = r.holders.clone();
+            match ask_yield(&p, &cfg.session, &owner).await {
+                Ok(()) => {
+                    r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
+                    handed = r.ok;
+                    if handed {
+                        eprintln!(
+                            "[trommi] this session's key {} handed over by its idle holder (pid {})",
+                            p.key_file.display(),
+                            was.iter()
+                                .map(|x| x.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
+                    }
+                }
+                Err(y) => {
+                    if refused.is_none() {
+                        refused = Some(Refused {
+                            slot: p.slot,
+                            pids: was,
+                            ..y
+                        });
+                    }
+                }
+            }
+        }
+        // (a key put aside while this claim waited for its holder is no key)
+        if r.ok && !std::fs::read_to_string(&p.key_file).is_ok_and(|t| t == KEY_MARKER) {
+            unlock_slot(&p);
+            continue;
+        }
         if r.ok {
             return SlotPaths {
                 has_key: true,
                 took_over: !r.took_over.is_empty(),
+                handed_over: handed,
                 foreign: foreign.clone(),
                 ..p
             };
@@ -621,7 +685,6 @@ pub async fn pick_slot(cfg: &Cfg, room_id: &str, ask: bool) -> SlotPaths {
     }
     let mut holders = vec![];
     let mut busy = vec![];
-    let mut refused: Option<Refused> = None;
     for n in &keyed {
         let p = paths_of(cfg, room_id, *n);
         let mut r = claim_slot(&p, &cfg.session, cfg.takeover_ms).await;
@@ -891,7 +954,9 @@ impl Member {
         };
         let st = match held {
             Some(st) => st,
-            None => SlotStore::open(&p.key_file)?,
+            // (a state another process holds, as the terminal `connect` that made it while it ends: the slot is
+            // given back, so that this session finds it free on its next look)
+            None => SlotStore::open(&p.key_file).inspect_err(|_| unlock_slot(&p))?,
         };
         let mut me = self.me.lock().unwrap();
         me.room_id = Some(room_id.into());
