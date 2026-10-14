@@ -2,7 +2,6 @@
 // folded into the view model the screens draw (`vm()`), and what the person does goes in as events: `act(action)`,
 // `focus(focus)`, the window in front or not, the network. Files the core hands over become object URLs
 // (`fileUrl(id)`), a platform op (passkeys, push) is answered by platform.mjs. Nothing of the room is decided here.
-import { emptyView, foldView } from './gen/vendor/views-fold.mjs'
 import { platform } from './platform.mjs'
 
 /* global __TROMMI_CORE_WORKER__ */
@@ -11,7 +10,9 @@ const CORE_WORKER = typeof __TROMMI_CORE_WORKER__ === 'string' ? __TROMMI_CORE_W
 export const SLOT = 'trommi'
 
 let worker = null
-let view = emptyView()
+// (the fold is the binding's views-fold.js, loaded with the core's start: Node's tests import this module without gen/)
+let fold = null
+let view = { rev: 0 }
 const listeners = new Map()
 const urls = new Map()        // file id -> object URL
 const asked = new Set()       // file ids asked for (OpenFile) and not here yet
@@ -31,7 +32,7 @@ export const vm = () => view
 function receive(m) {
   switch (m.t) {
     case 'render': {
-      try { view = foldView(view, m.delta) } catch (err) { console.error('render', err); return }
+      try { view = fold.foldView(view, m.delta) } catch (err) { console.error('render', err); return }
       emit('render', view)
       return
     }
@@ -68,7 +69,8 @@ function receive(m) {
  * Starts the core for this page: the worker core-start.mjs began (or a new one), `start` with the config. `take`:
  * the device is asked from the tab that has it (it gives it up). Resolves once the worker took the start.
  */
-export function startCore(config, { take = false, slot = SLOT } = {}) {
+export async function startCore(config, { take = false, slot = SLOT } = {}) {
+  fold ??= await import('./gen/vendor/views-fold.mjs')
   if (!worker) {
     const early = globalThis.__trommiCore ?? null
     globalThis.__trommiCore = null
@@ -78,7 +80,7 @@ export function startCore(config, { take = false, slot = SLOT } = {}) {
     for (const e of early?.messages ?? []) receive(e.data)
     if (early?.error) emit('failed', new Error(early.error.message || 'the core worker failed'))
   }
-  view = emptyView()
+  view = fold.emptyView()
   worker.postMessage({ t: 'start', slot, config, take })
 }
 /** Stops the core (this tab gives the device up). */

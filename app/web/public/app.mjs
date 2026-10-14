@@ -934,7 +934,7 @@ async function start({ take = false } = {}) {
   let fixture = null
   if (demo) fixture = await fetch('/demo/fixture.json').then(r => r.json()).catch(() => null)
   screenInView = screenOf(location.pathname, location.search)
-  core.startCore(configOf(fixture), { take })
+  await core.startCore(configOf(fixture), { take })
   sendFocus()
   // The first page waits for the core to say where it stands (stored, signed out, the demo), a moment at most.
   await new Promise(done => { const t = setTimeout(done, 3000); const stop = core.on('render', vm => { if (vm.phase && vm.phase !== 'starting') { clearTimeout(t); stop(); done() } }) })
@@ -989,7 +989,7 @@ async function boot() {
   if (params.has('mock')) { params.delete('mock'); history.replaceState(history.state, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`) }
   document.documentElement.classList.toggle('is-demo', Boolean(demo))
   // A link for someone outside the room (/artifact/<share_id>#…): its own small page, no room needed.
-  if (SHARE_PAGE.test(location.pathname)) { core.startCore(configOf(null), { slot: '' }); return (await view('media')).showShare({ act: core.act, on: core.on, fileUrl: core.fileUrl }) }
+  if (SHARE_PAGE.test(location.pathname)) { await core.startCore(configOf(null), { slot: '' }); return (await view('media')).showShare({ act: core.act, on: core.on, fileUrl: core.fileUrl }) }
   // (the demo's account screens, /screens: ?mock=1&onboard=<state> draws one of them; no account, nothing sent)
   const onboard = demo && params.get('onboard')
   if (onboard) { fontsAfterPaint(); return (await view('auth')).demoScreen(onboard) }
