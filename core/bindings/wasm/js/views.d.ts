@@ -356,11 +356,27 @@ export interface OffListView {
   rest?: OffRowView[]
   /** In the list's place when nothing is shown: "Nothing yet.", "Nothing here has these words.". */
   none?: Text
+  /** The line under `rest` when this device holds more of it than the window shows: `rest` is the first
+   *  [`board::OFF_PAGE`] rows, a page more for each time the person asked (`Lens::off_window`). */
+  more?: MoreView
   /** Older closed cards are on the hub and not on this device yet (history on demand): the line under the list
    *  that fetches the next page. Always none until the engine pages the Done list. */
   older?: Text
   /** A page of older cards is being fetched: the shell shows its quiet "Loading …" line at the end. */
   loading: boolean
+}
+
+/** More of a long list than its window shows: the line that asks for the next page (an action moves the window,
+ *  `Lens::show_more`; where this device does not hold it yet, the engine reads it from the hub). */
+export interface MoreView {
+  /** Rows this device holds beyond the window. */
+  left: number
+  /** The hub holds more beyond those (not read on this device yet). */
+  hub: boolean
+  /** "Earlier messages", "Show more". */
+  says: Text
+  /** How many pages the window shows after the person asks: the number the action sets. */
+  pages: number
 }
 
 /** A card with its agent, on the page Off your mind. */
@@ -386,6 +402,12 @@ export interface GoalsView {
   foldable: boolean
   /** What the toggle says while they are folded ("Show all 4 goals"). */
   show_all?: Text
+  /** Folded to the first line on this device (`Lens::goals_folded`; the owner's pick of 13 October 2026: one
+   *  toggle, folded shows the first line). Only while `foldable`. */
+  folded: boolean
+  /** What the toggle says: "Show all 4 goals" while folded, "Show the first goal only" while open; none while not
+   *  foldable. */
+  toggle?: Text
 }
 
 /** A session that is cut off, as the Desk says it. */
@@ -500,8 +522,12 @@ export interface SessionView {
   /** Talk rows, newest last. */
   talk: TalkRow[]
   status_lines: StatusLineView[]
-  /** The hub holds older messages than `talk` has. */
+  /** The hub holds older messages than this device has (history on demand: asking for more reads them). */
   has_more: boolean
+  /** The line above the first row when more stands before it ("Earlier messages"): what this device holds before
+   *  the window, and whether the hub holds older still. `talk` is a window of the newest [`board::TALK_PAGE`] rows,
+   *  a page more for each time the person asked (`Lens::talk_window`); none when it shows everything there is. */
+  earlier?: MoreView
   /** Its short id on the board (`/chat/<slug>`). */
   slug: string
   /** What draws it (`SessionRowView::mark`). */
@@ -612,6 +638,10 @@ export interface TalkRow {
   scribble: boolean
   /** A note: when it was written. */
   written_ms?: number
+  /** On a card's page, the agent's words that answer his What??: that row's id (drawn as one block with it). */
+  answers?: string
+  /** On a card's page, his What?? that has no answer yet: "Waiting for the explanation." */
+  waits?: Text
 }
 
 /** A card as a row of a conversation names it. */
@@ -634,6 +664,11 @@ export interface EventView {
   text?: string
   /** What became of the question is said where it was asked: this line only repeats it. */
   echo: boolean
+  /** On a card's page: "revised", the version it brought ("Version 3"); "decided", the version he answered when it
+   *  was not the newest ("You chose in version 2"). */
+  version?: number
+  /** "revised" on a card's page: it came after his hand-back ("Version 3, as you asked"). */
+  asked: boolean
 }
 
 /** A turn's trail: what the agent did between his prompt and its answer, as one block. */
@@ -761,6 +796,38 @@ export interface CardView {
   merged_from?: CardRefView[]
   /** The card that replaced it. */
   merged_into?: CardRefView
+  /** Its pictures, in order (the stage and the small ones under it), each with the option it shows. */
+  pictures?: PictureView[]
+  /** Once it is settled (not open, not catching up): the way on that the page offers right after the person
+   *  answered here (the shell shows it then): the next open question of the desk in view, or that there is none. */
+  after?: AfterView
+}
+
+/** A picture of a card, and the option it belongs to (the web's `pictureKeys`, `picturesOf`): a section that names
+ *  it decides; else its file name names one option (by key or label, the longest key winning, two equal ones
+ *  naming none); else, with as many pictures as options and three or more, they pair in order. */
+export interface PictureView {
+  /** The file (`ViewModel.files`). */
+  file_id: string
+  name: string
+  /** Its caption, when it says more than its name. */
+  title?: string
+  width?: number
+  height?: number
+  /** The page that belongs to it (an attachment id), shown beside it. */
+  page?: string
+  /** The option it shows: pointing at that option puts it on the stage. */
+  key?: string
+  /** Every option a section shows it for (several may share one picture); else its `key`. */
+  keys?: string[]
+}
+
+/** The way on after an answer on a card's page. */
+export interface AfterView {
+  /** The next open question: the next in the Desk's order after this card's place, else the first that waits. */
+  next?: CardRefView
+  /** "Next question", or "That was the last open question." */
+  says: Text
 }
 
 export interface OptionView {
@@ -851,6 +918,12 @@ export interface VersionView {
   title: string
   /** What its agent said changed with the version after it; "" without a word. */
   note?: string
+  /** The version as it was, read only ("See version 2", "Open version 2 as it was"): its text as the card shows it
+   *  (markdown), and its options. Empty while its body is not on this device (`loaded`). */
+  text?: string
+  options?: OptionView[]
+  /** Its body is on this device (history on demand: an old version may be read from the hub when asked for). */
+  loaded: boolean
 }
 
 /** The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`). */

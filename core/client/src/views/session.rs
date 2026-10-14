@@ -14,12 +14,12 @@
 //! - above the field: why the session does not hear (cut off, gone, not listening) with the step in its terminal,
 //!   or that his last message was not picked up for two minutes.
 
-use super::board::{key_of, Board, UNHEARD_MS};
+use super::board::{key_of, Board, Lens, TALK_PAGE, UNHEARD_MS};
 use super::desk::{card_row, request_row, shown_title};
 use super::sidebar::{hand_of, link_of};
 use super::talk::{card_ref, choices_of, event_label, events_of, in_order, items_of, Entry, Side, UNSENT};
 use super::words::{local, next_midnight, quiet_words, say};
-use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, LinkNoteView, LinkWords, SessionView, StatusLineView, TalkRow, Text};
+use super::{CardRefView, DotView, EmptyTalkView, EventView, FixView, LinkNoteView, LinkWords, MoreView, SessionView, StatusLineView, TalkRow, Text};
 use crate::model::types::Card;
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -125,6 +125,27 @@ fn outcome(c: &Card) -> (&'static str, String) {
 
 /// The page of the session `id` (its key, or its short id of the address); none when it is not on the board.
 pub fn session(b: &Board, id: &str) -> Option<SessionView> {
+    let mut v = page(b, id)?;
+    // The talk's window: the newest pages (the day line and the runs stay as the whole talk has them).
+    let pages = Lens::pages(&b.lens.talk_window, &v.id).max(Lens::pages(&b.lens.talk_window, &v.slug));
+    let keep = TALK_PAGE * pages as usize;
+    let left = v.talk.len().saturating_sub(keep);
+    if left > 0 {
+        v.talk.drain(..left);
+    }
+    if left > 0 || v.has_more {
+        let n = left.to_string();
+        v.earlier = Some(MoreView {
+            left: left as u32,
+            hub: v.has_more,
+            says: say("session.earlier", "Earlier messages", &[("left", &n)]),
+            pages: pages + 1,
+        });
+    }
+    Some(v)
+}
+
+fn page(b: &Board, id: &str) -> Option<SessionView> {
     let m = b.model;
     let idx = b.by_key.get(id).or_else(|| b.by_id.get(id)).copied()?;
     let a = &b.agents[idx];
@@ -222,6 +243,7 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
                     about: if title.is_empty() { asked_as } else { title.clone() },
                     text: if text == title { String::new() } else { text },
                     echo: false,
+                    ..Default::default()
                 });
             }
         } else if side == Side::Event {
@@ -370,6 +392,7 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
         talk,
         status_lines,
         has_more,
+        earlier: None,
         slug: a.row.id.clone(),
         mark: if a.row.icon.is_empty() { a.row.id.clone() } else { a.row.icon.clone() },
         desk_id: a.desk.clone().unwrap_or_default(),
@@ -389,7 +412,7 @@ pub fn session(b: &Board, id: &str) -> Option<SessionView> {
         open_word: (open > 0).then(|| say("session.open", format!("{n} open"), &[("n", &n)])),
         open_says: (open > 0).then(|| {
             if open == 1 {
-                say("session.open.one", "One open question: go to it", &[])
+                say("session.open.one", "One open question: go to it", &[("n", "1")])
             } else {
                 say("session.open.some", format!("{n} open questions: go to the first one"), &[("n", &n)])
             }
@@ -424,6 +447,34 @@ mod tests {
         let e = r.event.as_ref().expect("an event's line");
         (e.kind.as_str(), e.label.en.as_str(), e.about.as_str(), e.text.as_str())
     }
+    /// A long talk shows its newest page; each "more" adds one; the line above says what stands before.
+    #[test]
+    fn a_long_talk_shows_a_window_of_pages() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        for n in 0..100u64 {
+            r.say("a", None, 1000 + n, if n % 2 == 0 { "a" } else { "me" }, (100 - n) * MIN, json!({ "text": format!("m{n}") }));
+        }
+        let m = r.model(NOW);
+        let mut lens = Lens::default();
+        let at = |lens: &Lens| session(&Board::new(&m, lens, NOW), &dev("a")).unwrap();
+        let v = at(&lens);
+        assert_eq!(v.talk.len(), TALK_PAGE);
+        assert_eq!(v.talk.last().unwrap().text, "m99");
+        let e = v.earlier.clone().unwrap();
+        assert_eq!((e.left, e.hub, e.says.en.as_str(), e.pages), (60, false, "Earlier messages", 2));
+        lens.show_more(crate::views::MoreOf::Talk { session: dev("a") });
+        let v = at(&lens);
+        assert_eq!((v.talk.len(), v.earlier.as_ref().map(|e| (e.left, e.pages))), (80, Some((20, 3))));
+        lens.show_more(crate::views::MoreOf::Talk { session: dev("a") });
+        let v = at(&lens);
+        assert_eq!((v.talk.len(), v.talk[0].text.as_str()), (100, "m0"));
+        assert!(v.earlier.is_none());
+        // another session's window is its own
+        lens.show_more(crate::views::MoreOf::Talk { session: dev("b") });
+        assert_eq!(at(&lens).talk.len(), TALK_PAGE);
+    }
+
     fn msg(text: &str) -> Value {
         json!({ "text": text })
     }

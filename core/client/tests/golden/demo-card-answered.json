@@ -113,7 +113,8 @@
           "en": "New question"
         },
         "text": "Remind in the morning or in the evening?",
-        "echo": false
+        "echo": false,
+        "asked": false
       },
       "scribble": false
     },
@@ -141,10 +142,22 @@
         },
         "about": "Remind in the morning or in the evening?",
         "text": "Morning, 8:00",
-        "echo": false
+        "echo": false,
+        "asked": false
       },
       "scribble": false
     }
   ],
-  "has_more": false
+  "has_more": false,
+  "after": {
+    "next": {
+      "id": "8b91e8761d15b3933a6412af44da7851",
+      "number": 24,
+      "title": "Dark mode: keep the plant photos at full colour?"
+    },
+    "says": {
+      "key": "card.next",
+      "en": "Next question"
+    }
+  }
 }
