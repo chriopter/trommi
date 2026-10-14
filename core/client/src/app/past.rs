@@ -14,8 +14,8 @@
 //! - **a starred card this device does not hold** (a star is a room register, which the Desk brings; the card may
 //!   be long closed): its versions, once a run, a few at a time, so the starred stack stands whole.
 //!
-//! Each read is asked once a run: what failed or was refused is not asked again until the next run (or, for a
-//! page of a Chat, until the person asks for it again), so nothing here polls.
+//! Successful reads and permanent refusals are remembered for the run. Network failures and temporary hub
+//! failures retry after a delay, honoring Retry-After, so unavailable history can recover without a restart.
 
 use crate::app::io::{HttpResponse, IoId};
 use crate::engine::{Ctx, Engine};
@@ -41,12 +41,24 @@ pub const SETTLED_PAGE: u32 = 100;
 const HEADS_AT_ONCE: usize = 6;
 
 enum Asked {
-    Chat { key: String, expect: Expect },
+    Chat {
+        key: String,
+        expect: Expect,
+    },
     /// `starred`: read for the starred stack (counted in `starred_flying`).
-    Versions { card: String, read: usize, starred: bool, expect: Expect },
-    Settled { expect: Expect },
+    Versions {
+        card: String,
+        read: usize,
+        starred: bool,
+        expect: Expect,
+    },
+    Settled {
+        expect: Expect,
+    },
     /// A settled card's envelopes from its first version on (its answer among them): one page.
-    Head { expect: Expect },
+    Head {
+        expect: Expect,
+    },
 }
 
 /// The settled cards read for the page Off your mind.
@@ -69,6 +81,8 @@ pub struct Window {
 #[derive(Default)]
 pub struct Past {
     asked: BTreeMap<IoId, Asked>,
+    routes: BTreeMap<IoId, Read>,
+    retries: Vec<(u64, Read, Asked)>,
     /// Timelines with a page on its way.
     flying: BTreeSet<String>,
     /// Timelines whose newest page came (or was refused) this run.
@@ -94,14 +108,51 @@ fn unhex(text: &str) -> Option<Vec<u8>> {
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
 }
 
-fn ask(engine: &mut Engine, ctx: &mut Ctx<'_>, route: Route<'_>) -> Option<(IoId, Expect)> {
+#[derive(Clone)]
+enum Read {
+    Session { session: SessionId, before: Option<u64> },
+    Card { card: ObjectId, before: Option<u64> },
+    Object { object: ObjectId, after: u64, limit: u32 },
+    Settled { before: Option<u64> },
+}
+
+impl Read {
+    fn route(&self) -> Route<'_> {
+        match self {
+            Self::Session { session, before } => Route::Chat {
+                timeline: Timeline::Session(session),
+                before: *before,
+                limit: CHAT_PAGE,
+            },
+            Self::Card { card, before } => Route::Chat {
+                timeline: Timeline::Card(card),
+                before: *before,
+                limit: CHAT_PAGE,
+            },
+            Self::Object { object, after, limit } => Route::Object {
+                route: ObjectRoute::Cards,
+                object,
+                after: *after,
+                limit: *limit,
+            },
+            Self::Settled { before } => Route::Settled {
+                kind: Some(ObjectRoute::Cards),
+                only: crate::hub::Only::Active,
+                before: *before,
+                limit: SETTLED_PAGE,
+            },
+        }
+    }
+}
+
+fn ask(engine: &mut Engine, ctx: &mut Ctx<'_>, read: &Read) -> Option<(IoId, Expect)> {
     let cell: Rc<RefCell<Option<Expect>>> = Rc::new(RefCell::new(None));
     let put = cell.clone();
     let id = engine
         .request(
             ctx,
-            move |site| {
-                let (request, expect) = Codec.request(site, &route)?;
+            |site| {
+                let (request, expect) = Codec.request(site, &read.route())?;
                 *put.borrow_mut() = Some(expect);
                 Ok(request)
             },
@@ -158,8 +209,23 @@ impl Past {
         self.waits(&talk_key(&key)).then_some(key)
     }
 
-    /// Asks what the pages in view and the starred stack need and this run has not asked yet.
+    /// The earliest retry of a temporarily unavailable history page.
+    pub fn wake(&self) -> Option<u64> {
+        self.retries.iter().map(|(at, _, _)| *at).min()
+    }
+
+    /// Asks what the pages in view and the starred stack need, and retries unavailable reads when due.
     pub fn tend(&mut self, lens: &Lens, model: &Model, engine: &mut Engine, ctx: &mut Ctx<'_>) {
+        for (at, read, asked) in std::mem::take(&mut self.retries) {
+            if at <= ctx.now {
+                if let Some((id, _)) = ask(engine, ctx, &read) {
+                    self.routes.insert(id, read);
+                    self.asked.insert(id, asked);
+                    continue;
+                }
+            }
+            self.retries.push((at.max(ctx.now + 1_000), read, asked));
+        }
         if let Some((key, session)) = lens.session.as_deref().and_then(|id| self.session(model, id)) {
             let key = talk_key(&key);
             if !self.read.contains(&key) {
@@ -198,7 +264,9 @@ impl Past {
                 .collect();
             for card in starred {
                 self.versions.insert(card.clone());
-                let Some(object) = unhex(&card).and_then(|b| ObjectId::from_slice(&b).ok()) else { continue };
+                let Some(object) = unhex(&card).and_then(|b| ObjectId::from_slice(&b).ok()) else {
+                    continue;
+                };
                 if self.versions_from(card, object, 0, 0, true, engine, ctx) {
                     self.starred_flying += 1;
                 }
@@ -208,7 +276,10 @@ impl Past {
 
     /// Whether a page of the settled cards is on its way, and whether the hub holds more below the ones read.
     pub fn settled_state(&self) -> (bool, bool) {
-        (self.settled.flying || (self.settled.asked && self.heads_flying > 0), self.settled.below.is_some())
+        (
+            self.settled.flying || (self.settled.asked && self.heads_flying > 0),
+            self.settled.below.is_some(),
+        )
     }
 
     /// "Show more" on the page Off your mind, past what this device holds: the hub's next page.
@@ -219,8 +290,9 @@ impl Past {
     }
 
     fn settled_page(&mut self, before: Option<u64>, engine: &mut Engine, ctx: &mut Ctx<'_>) {
-        let route = Route::Settled { kind: Some(ObjectRoute::Cards), only: crate::hub::Only::Active, before, limit: SETTLED_PAGE };
-        if let Some((id, expect)) = ask(engine, ctx, route) {
+        let read = Read::Settled { before };
+        if let Some((id, expect)) = ask(engine, ctx, &read) {
+            self.routes.insert(id, read);
             self.settled.flying = true;
             self.asked.insert(id, Asked::Settled { expect });
         }
@@ -229,7 +301,9 @@ impl Past {
     fn tend_heads(&mut self, engine: &mut Engine, ctx: &mut Ctx<'_>) {
         while self.heads_flying < HEADS_AT_ONCE {
             let Some((object, after)) = self.heads.pop_front() else { break };
-            if let Some((id, expect)) = ask(engine, ctx, Route::Object { route: ObjectRoute::Cards, object: &object, after, limit: 20 }) {
+            let read = Read::Object { object, after, limit: 20 };
+            if let Some((id, expect)) = ask(engine, ctx, &read) {
+                self.routes.insert(id, read);
                 self.heads_flying += 1;
                 self.asked.insert(id, Asked::Head { expect });
             }
@@ -268,7 +342,12 @@ impl Past {
         if self.flying.contains(&key) {
             return;
         }
-        if let Some((id, expect)) = ask(engine, ctx, Route::Chat { timeline, before, limit: CHAT_PAGE }) {
+        let read = match timeline {
+            Timeline::Session(session) => Read::Session { session: *session, before },
+            Timeline::Card(card) => Read::Card { card: *card, before },
+        };
+        if let Some((id, expect)) = ask(engine, ctx, &read) {
+            self.routes.insert(id, read);
             self.flying.insert(key.clone());
             self.asked.insert(id, Asked::Chat { key, expect });
         }
@@ -276,8 +355,14 @@ impl Past {
 
     #[allow(clippy::too_many_arguments)]
     fn versions_from(&mut self, card: String, object: ObjectId, after: u64, read: usize, starred: bool, engine: &mut Engine, ctx: &mut Ctx<'_>) -> bool {
-        match ask(engine, ctx, Route::Object { route: ObjectRoute::Cards, object: &object, after, limit: VERSIONS_PAGE }) {
+        let route = Read::Object {
+            object,
+            after,
+            limit: VERSIONS_PAGE,
+        };
+        match ask(engine, ctx, &route) {
             Some((id, expect)) => {
+                self.routes.insert(id, route);
                 self.asked.insert(id, Asked::Versions { card, read, starred, expect });
                 true
             }
@@ -292,6 +377,19 @@ impl Past {
             Ok(response) => Codec.answer(expect, response),
             Err(failure) => Err(failure.clone()),
         };
+        let expect = match &asked {
+            Asked::Chat { expect, .. } | Asked::Settled { expect } | Asked::Head { expect } | Asked::Versions { expect, .. } => expect,
+        };
+        let read = self.routes.remove(&id);
+        let retry = match answer(expect) {
+            Err(Failure::Offline) => Some(5_000),
+            Err(Failure::NotNow { retry_after_ms, .. }) => Some(retry_after_ms.unwrap_or(5_000).max(1_000)),
+            _ => None,
+        };
+        if let (Some(delay), Some(read)) = (retry, read) {
+            self.retries.push((ctx.now.saturating_add(delay), read, asked));
+            return;
+        }
         match asked {
             Asked::Chat { key, expect } => {
                 self.flying.remove(&key);
@@ -300,10 +398,18 @@ impl Past {
                     Ok(Answer::Envelopes { items, more }) => {
                         engine.show_items(ctx, &items);
                         let down_to = items.iter().map(|i| i.change).min();
-                        self.windows.push(Window { key, down_to, more: more && !items.is_empty() });
+                        self.windows.push(Window {
+                            key,
+                            down_to,
+                            more: more && !items.is_empty(),
+                        });
                     }
                     // (refused, or not read: nothing more is asked of this Chat in this run but by the person)
-                    _ => self.windows.push(Window { key, down_to: None, more: false }),
+                    _ => self.windows.push(Window {
+                        key,
+                        down_to: None,
+                        more: false,
+                    }),
                 }
             }
             Asked::Settled { expect } => {
