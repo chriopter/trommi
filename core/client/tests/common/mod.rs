@@ -30,8 +30,18 @@ use trommi_core::recovery::RecoveryKeys;
 use trommi_core::store::{Batch, Loaded, Storage, StorageError};
 use trommi_core::Error;
 
+thread_local! {
+    /// A clock fixed for this thread's world (`fix_clock`): the recorded scenes come out the same on every run.
+    static FIXED: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
 pub fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+    FIXED.with(|f| f.get()).unwrap_or_else(|| SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64))
+}
+
+/// From now on this thread's world reads `at` as the time (a test of its own thread: Rust runs each test on one).
+pub fn fix_clock(at: u64) {
+    FIXED.with(|f| f.set(Some(at)));
 }
 
 /// A store in memory that a test can look into and copy.
@@ -330,6 +340,19 @@ impl World {
     /// The founder (the person's other device) says a line.
     pub fn founder_says(&mut self, line: &str) -> u64 {
         let draft = Draft::SessionChat { session: self.session, payload: text(&format!(r#"{{"content_type":"message","text":"{line}"}}"#)) };
+        self.write(true, &draft)
+    }
+
+    /// The person answers a card on his other device (the founder): the option `choice`.
+    pub fn founder_answers(&mut self, card: trommi_core::ids::ObjectId, choice: &str) -> u64 {
+        let payload = format!(r#"{{"answer_action":"answer","choices":["{choice}"]}}"#);
+        let draft = Draft::Answer { session: self.session, object_id: card, choices: vec![choice.into()], closes: false, payload: text(&payload) };
+        self.write(true, &draft)
+    }
+
+    /// The person's other device (the founder) sets a register of the room (`snooze/<card>`, `star/<card>`).
+    pub fn founder_sets(&mut self, name: &str, value: &str) -> u64 {
+        let draft = Draft::Register { group: self.room, name: name.into(), value: Some(text(value)) };
         self.write(true, &draft)
     }
 

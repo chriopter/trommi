@@ -6,7 +6,7 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use trommi_client_core::model::Model;
-use trommi_client_core::views::{card, demo, desk, session, sidebar, Board, Lens};
+use trommi_client_core::views::{card, demo, desk, notes, session, settings, sidebar, Board, Lens};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -93,6 +93,19 @@ fn the_demo_rooms_cards() {
     }
 }
 
+/// The notes (the corner's note and whom it goes to) and Settings (its rows' words, the person's devices), on the
+/// first desk and on All desks.
+#[test]
+fn the_demo_rooms_notes_and_settings() {
+    let (m, now) = demo_room();
+    for (file, desk) in [("demo-notes.json", None), ("demo-notes-all.json", Some("all"))] {
+        let lens = lens(desk);
+        golden(file, &notes::notes(&Board::new(&m, &lens, now)));
+    }
+    let lens = lens(None);
+    golden("demo-settings.json", &settings::settings(&Board::new(&m, &lens, now)));
+}
+
 /// A small generator for the property test below (xorshift: the same edits for the same seed).
 struct Rng(u64);
 impl Rng {
@@ -163,7 +176,16 @@ fn edit(v: &mut trommi_client_core::views::ViewModel, pool: &[trommi_client_core
                 v.files.insert(id, FileView { name: r.word(), percent: Some(r.below(100) as u8), ..Default::default() });
             }
         }
-        12 => v.toasts = (0..r.below(3)).map(|i| Toast { id: format!("t{i}"), text: Text::new("toast", &r.word()), action: None }).collect(),
+        12 => v.toasts = (0..r.below(3)).map(|i| Toast {
+                id: format!("t{i}"),
+                text: Text::new("toast", &r.word()),
+                action: None,
+                line: (r.below(2) == 0).then(|| Text::new("toast.line", &r.word())),
+                label: None,
+                alert: r.below(2) == 0,
+                ms: (r.below(2) == 0).then(|| r.below(9000) as u64),
+                go: None,
+            }).collect(),
         13 => {
             v.settings.account = (r.below(2) == 0).then(|| r.word());
             v.account.step = r.word();
