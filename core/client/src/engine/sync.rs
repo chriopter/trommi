@@ -1931,6 +1931,17 @@ impl Engine {
         }
     }
 
+    /// Envelopes the App read out of the hub's order (a page of a Scribble Board's items): each read as `show`
+    /// reads a Desk's version, and reported as `Envelope { ordered: false }`.
+    pub fn show_items(&mut self, ctx: &mut Ctx<'_>, items: &[EnvelopeItem]) {
+        for item in items {
+            if self.stopped.is_some() {
+                return;
+            }
+            self.show(ctx, item);
+        }
+    }
+
     fn on_desk(&mut self, ctx: &mut Ctx<'_>, answer: Result<Answer, Failure>, unauthorised: bool) {
         self.desk.asked = None;
         let desk = match answer {

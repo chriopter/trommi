@@ -195,10 +195,23 @@ pub enum Action {
     DeleteNote {
         note_id: String,
     },
-    /// One stroke on a board, as the pen made it (points in board units).
-    Stroke {
+    /// An item on a Scribble Board (`desk/<32 hex>`), in the model's form (board units, ids in hex):
+    /// `{content_type: "strokes", strokes: [shape, …]}`, `{content_type: "erase" | "send_away", stroke_ids: […]}` or
+    /// `{content_type: "move", stroke_ids: […], offset: [dx, dy]}`. A shape is `{tool, z?, group?}` with, by its
+    /// tool, `color, width, points` (packed, base64url; `live`: the stroke id its pieces went under), `at, text,
+    /// size, color, wrap?`, or `rect, attachment` (a picture: its file's id, or the attachment's reference) and
+    /// `nw?, nh?, mime?, name?`. Shown at once (`BoardShape.local` is `<local_id>/<index>`), taken back with a toast
+    /// if the hub refuses it. `local_id`: the shell's own, unique per item.
+    BoardItem {
         board_id: String,
-        stroke: Bytes,
+        local_id: String,
+        content: serde_json::Value,
+    },
+    /// The points of a stroke still being drawn, to the person's other devices that are connected (spec 7.2): not
+    /// stored, not shown here. `piece`: `{stroke (32 hex), number (from 1), tool, color?, width?, points}`.
+    StrokePiece {
+        board_id: String,
+        piece: serde_json::Value,
     },
     /// Bytes the person picked, to attach: `ViewModel.files[local_id]` shows it uploading, then ready with its
     /// attachment id, or failed.

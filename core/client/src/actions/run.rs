@@ -310,8 +310,34 @@ impl Doing<'_> {
             }
             Action::WriteNote { note_id, text } => self.write_note(action, note_id.as_deref(), Some(text)),
             Action::DeleteNote { note_id } => self.write_note(action, Some(note_id), None),
+            Action::BoardItem { board_id, local_id, content } => self.board_item(action, board_id, local_id, content),
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
         }
+    }
+
+    /// An item on a Scribble Board, shown at once in the board's timeline (`crate::scribble` lays it over the
+    /// board until the hub's copy comes). A picture named by its file's id gets the reference with its key.
+    fn board_item(&mut self, action: &Action, board_id: &str, local_id: &str, content: &Value) -> Result<(), NotDone> {
+        let board = crate::scribble::board_of(board_id).ok_or_else(|| not_done("action.bad", "That board is not known."))?;
+        let mut content = content.as_object().cloned().ok_or_else(|| not_done("action.bad", "That cannot be drawn."))?;
+        if let Some(Value::Array(shapes)) = content.get_mut("strokes") {
+            for shape in shapes.iter_mut() {
+                let Some(picture) = shape.get_mut("attachment") else { continue };
+                if picture.get("file_key").is_some() {
+                    continue;
+                }
+                let id = picture.as_str().or_else(|| picture.get("attachment_id").and_then(Value::as_str)).unwrap_or("").to_string();
+                let reference = (self.file)(&id).ok_or_else(|| not_done("action.file_not_ready", "A file is still uploading, or is not here."))?;
+                *picture = Value::Object(reference);
+            }
+        }
+        let payload = codec::encode_body(BodyKind::BoardItem, &content).map_err(|_| not_done("action.bad", "That cannot be drawn."))?;
+        let files = file_ids(BodyKind::BoardItem, &content);
+        let local_id = if local_id.is_empty() || self.model.echoes.contains_key(local_id) { self.sent.local_id() } else { local_id.to_string() };
+        let timeline = crate::model::timeline_key("scribble", &format!("desk/{}", crate::engine::feed::hex(board.as_bytes())));
+        self.model.echo_timeline_item(&local_id, &timeline, content, None, None, self.now, &mut self.change);
+        let draft = Draft::BoardItem { board, payload: SecretBytes::new(payload.into_bytes()) };
+        self.seal_echoed(action, &local_id, &draft, None, &files)
     }
 
     /// A new Note, a new version of one (`text`), or its closed version (none: deleted), shown at once. While a

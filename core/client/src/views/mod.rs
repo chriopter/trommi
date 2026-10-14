@@ -89,6 +89,10 @@ pub struct Focus {
     /// The desk in view: a desk's id, "all" for every desk at once, none for the first desk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desk: Option<String>,
+    /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a desk's id or "all" for that
+    /// desk's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
 }
 
 fn yes() -> bool {
@@ -144,6 +148,9 @@ pub struct ViewModel {
     /// came as `Effect::FileReady` under the same id.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub files: BTreeMap<String, FileView>,
+    /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<BoardView>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub toasts: Vec<Toast>,
 }
@@ -198,6 +205,10 @@ pub enum ViewPart {
     File {
         id: String,
         view: Option<FileView>,
+    },
+    /// The Scribble Board in view, whole; none when it is left.
+    Board {
+        view: Option<BoardView>,
     },
     Toasts {
         toasts: Vec<Toast>,
@@ -1703,6 +1714,80 @@ pub struct AskView {
     pub says: Text,
 }
 
+/// A Scribble Board (spec/v1.md 10): what its items add up to on this device, ready to draw.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoardView {
+    /// `desk/<32 hex>`.
+    pub board_id: String,
+    /// "loading" (its snapshot and the items after it are read), "ready", "newer_version" (an item needs a newer
+    /// Trommi: what it did is not shown), "withheld" (an item could not be read on this device).
+    pub state: String,
+    /// Every shape in drawing order: by layer (`z`), then as they were made; strokes others are still drawing last.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shapes: Vec<BoardShape>,
+}
+
+/// One shape of a board, in board units (a point is two numbers). The fields its tool does not use are left out.
+///
+/// - stroke (`pen`, `marker`): `pts` its points, `t` their times (ms since it began), `f` their force (0 to 1),
+///   `az` and `al` the pen's azimuth and altitude in radians (none without tilt), `sim` a force made up from the
+///   speed, `color`, `width`;
+/// - note (`text`, `sticky`, `voice`): `pts` its top left corner, `text`, `size`, `color`, `wrap` (none: no wrap);
+/// - picture (`image`): `pts` two opposite corners, `attachment` its file's id (`ViewModel.files`, `OpenFile`),
+///   `nw` and `nh` its own size in pixels (0: not known), `mime`, `name`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BoardShape {
+    /// `<sender hex>/<envelope number>/<index>`, or `live:<sender hex>/<stroke hex>` for a stroke still drawn.
+    pub id: String,
+    /// The device that drew it (hex).
+    pub by: String,
+    pub tool: String,
+    #[serde(default)]
+    pub z: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    pub pts: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub t: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub f: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub az: Option<Vec<f64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub al: Option<Vec<f64>>,
+    #[serde(default)]
+    pub sim: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrap: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nw: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nh: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// A stroke someone else is still drawing (its pieces, spec 7.2): its finished form replaces it.
+    #[serde(default)]
+    pub live: bool,
+    /// Drawn on this device and not yet back from the hub: `<local_id>/<index>` of the `BoardItem` that made it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<String>,
+}
+
+// (its numbers are never NaN: whole quanta and bytes, divided)
+impl Eq for BoardShape {}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileView {
     pub name: String,
@@ -1822,6 +1907,7 @@ impl ViewModel {
                         self.files.remove(id);
                     }
                 },
+                ViewPart::Board { view } => self.board = view.clone(),
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
         }
@@ -1914,6 +2000,11 @@ impl ViewModel {
                     view: Some(v.clone()),
                 });
             }
+        }
+        if self.board != next.board {
+            parts.push(ViewPart::Board {
+                view: next.board.clone(),
+            });
         }
         if self.toasts != next.toasts {
             parts.push(ViewPart::Toasts {

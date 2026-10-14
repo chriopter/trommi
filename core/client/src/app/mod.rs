@@ -170,6 +170,8 @@ pub struct App {
     cache: Option<crate::cache::Keeper>,
     /// The model moved: the sessions' goals are compared with their desks' once live (`Doing::sync_goals`).
     goals_check: bool,
+    /// The Scribble Boards read on this device (`crate::scribble`).
+    scribble: crate::scribble::Scribble,
 }
 
 impl Default for App {
@@ -220,6 +222,7 @@ impl App {
             sent: Sent::default(),
             cache: None,
             goals_check: false,
+            scribble: crate::scribble::Scribble::default(),
         }
     }
 
@@ -808,6 +811,11 @@ impl App {
             Event::Action { action: crate::actions::Action::Account { action } } => self.account(now_ms, action, &mut out),
             Event::Action { action } => self.action(now_ms, action, &mut out),
             Event::Focus { focus } => {
+                let board = match &focus.screen {
+                    Screen::Scribble { board_id } => Some(board_id.as_str()),
+                    _ => focus.board.as_deref(),
+                };
+                self.scribble.focus(board.and_then(crate::scribble::board_in_view));
                 // (the single desk chosen last keeps the note and the Scribble Board on All desks)
                 if let Some(desk) = focus.desk.as_deref().filter(|d| *d != crate::views::board::ALL_DESKS) {
                     self.lens.home_desk = Some(desk.to_string());
@@ -882,7 +890,7 @@ impl App {
             self.sent.toast(&mut self.next_view.toasts, text, None);
             return;
         }
-        if self.file_action(now_ms, &action, out) {
+        if self.file_action(now_ms, &action, out) || self.piece_action(now_ms, &action, out) {
             return;
         }
         if writes_room_registers(&action) && self.next_view.phase != Phase::Live {
@@ -1008,6 +1016,56 @@ impl App {
             Err(text) => self.sent.toast(&mut self.next_view.toasts, text, None),
         }
         true
+    }
+
+    /// `StrokePiece`: the points of a stroke still being drawn, relayed (7.2); true when `action` was one. A piece
+    /// that does not go is not sent again: the finished stroke carries every point (`epoch-full` is said nowhere).
+    fn piece_action(&mut self, now_ms: u64, action: &Action, out: &mut Vec<Effect>) -> bool {
+        let Action::StrokePiece { board_id, piece } = action else { return false };
+        let (Some(board), Ok(text)) = (crate::scribble::board_of(board_id), crate::codec::encode_piece(piece)) else {
+            out.push(log(LogLevel::Debug, "stroke piece: not one this core sends"));
+            return true;
+        };
+        let sent = self.with_engine(now_ms, out, |engine, ctx| engine.act(ctx, |device, _| device.send_stroke_piece(&board, text.as_bytes())));
+        if let Some(Err(e)) = sent.filter(|r| !matches!(r, Err(trommi_core::Error::EpochFull))) {
+            out.push(log(LogLevel::Debug, &format!("stroke piece: {}", e.code())));
+        }
+        true
+    }
+
+    /// Erases these shapes on a board (`desk/<32 hex>`; a desk's delete, `desk_delete::Step::EraseBoard`): erase
+    /// items of at most `scribble::ERASE_CHUNK` shapes each, shown at once as any `BoardItem`.
+    pub fn erase_board(&mut self, now_ms: u64, board_id: &str, shape_ids: &[String]) -> Vec<Effect> {
+        let mut out = Vec::new();
+        for chunk in shape_ids.chunks(crate::scribble::ERASE_CHUNK) {
+            let content = serde_json::json!({ "content_type": "erase", "stroke_ids": chunk });
+            self.action(now_ms, Action::BoardItem { board_id: board_id.into(), local_id: String::new(), content }, &mut out);
+        }
+        self.after_engine(now_ms, &mut out);
+        self.render(&mut out);
+        out
+    }
+
+    /// Reads a board that is not in view (a desk's delete, `desk_delete::Step::LoadBoard`) and, with `snapshot`,
+    /// writes its snapshot as soon as nothing of it is in flight however few items it has
+    /// (`desk_delete::Step::WriteSnapshot`: the empty board).
+    pub fn board_work(&mut self, now_ms: u64, board_id: &str, snapshot: bool) -> Vec<Effect> {
+        let mut out = Vec::new();
+        if let Some(board) = crate::scribble::board_in_view(board_id) {
+            self.scribble.read(board);
+            if snapshot {
+                self.scribble.snapshot_now(board);
+            }
+        }
+        self.after_engine(now_ms, &mut out);
+        self.render(&mut out);
+        out
+    }
+
+    /// What this device knows of a board once it was read (`desk_delete::Known::board`): its shapes, the files of
+    /// its pictures, whether its newest snapshot is of the empty board.
+    pub fn board_known(&self, board_id: &str) -> Option<crate::desk_delete::BoardKnown> {
+        self.scribble.known(&crate::scribble::board_in_view(board_id)?)
     }
 
     /// Runs `step` with what an action needs (the model, the bookkeeping, the device's seal), then shows what it
@@ -1257,6 +1315,15 @@ impl App {
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
+            match &report {
+                Report::Envelope { received, .. } => self.scribble.envelope(received, now_ms),
+                Report::Relay(received) => {
+                    if let trommi_core::device::Received::StrokePiece { from, board, piece } = &**received {
+                        self.scribble.piece(from, board, piece, now_ms);
+                    }
+                }
+                _ => {}
+            }
             match report {
                 Report::Desk { at, open, truncated: false } => {
                     if let Some(cache) = self.cache.as_mut() {
@@ -1326,6 +1393,10 @@ impl App {
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
                 Report::Answer(answered) if self.invites.owns(answered.id) => invite_answers.push(*answered),
                 Report::Answer(answered) if self.steps.asked.contains_key(&answered.id) => step_answers.push(*answered),
+                Report::Answer(answered) if self.scribble.owns(answered.id) => {
+                    let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
+                    self.scribble.answered(answered.id, &answered.result, engine, &mut ctx);
+                }
                 Report::Answer(answered) if self.files.owns(answered.id) => {
                     if let Some(text) = self.files.answered(answered.id, &answered.result, out) {
                         self.sent.toast(&mut self.next_view.toasts, text, None);
@@ -1363,8 +1434,13 @@ impl App {
                 Report::Refused { id, code, .. } if self.changes.replacing() == Some(id) => replaced = Some(Some(code)),
                 Report::Accepted { id, .. } => {
                     self.sent.take(id);
+                    let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
+                    self.scribble.accepted(id, engine, &mut ctx);
                 }
-                Report::Refused { id, code, .. } => refused.push((id, code)),
+                Report::Refused { id, code, .. } => {
+                    self.scribble.refused(id);
+                    refused.push((id, code));
+                }
                 Report::Alert(alert) => {
                     if self.alerts.len() >= ALERTS_MAX {
                         self.alerts.remove(0);
@@ -1383,6 +1459,17 @@ impl App {
             self.pending.insert(id, Pending::CacheDelete);
             out.push(Effect::Store { id, op: StoreOp::Put { put: Vec::new(), delete } });
         }
+        if !dropped {
+            let live = self.next_view.phase == Phase::Live;
+            let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
+            self.scribble.tend(now_ms, live, &self.board.model, engine, &mut ctx);
+            for note in self.scribble.notes.drain(..) {
+                out.push(log(LogLevel::Warn, &note));
+            }
+            if self.scribble.take_dirty() {
+                self.stale_views = true;
+            }
+        }
         let engine_wake = if dropped {
             // a join of the room that failed: the engine goes (what it wrote last is the wipe, still stored)
             for id in engine.forget() {
@@ -1390,6 +1477,7 @@ impl App {
             }
             self.engine = None;
             self.board = engine::feed::Board::default();
+            self.scribble = crate::scribble::Scribble::default();
             self.stale_views = true;
             self.next_view.phase = Phase::SignedOut;
             None
@@ -1446,7 +1534,9 @@ impl App {
         if self.stale_views || view_due {
             self.stale_views = false;
             self.lens.reading = self.board.model.reading;
-            let (wake, shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            let (wake, mut shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            self.next_view.board = self.scribble.view(&self.board.model);
+            shown.extend(self.scribble.pictures(&self.board.model));
             if let Some(engine) = self.engine.as_ref() {
                 self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
                 self.next_view.settings.hub = Some(engine.hub().to_string());
@@ -1458,7 +1548,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake()].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms)].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });

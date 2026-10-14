@@ -62,17 +62,22 @@ public enum CoreView {
     public var visible: Bool
     /// The desk in view: a desk's id, "all" for every desk at once, none for the first desk.
     public var desk: String?
+    /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a desk's id or "all" for that
+    /// desk's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`.
+    public var board: String?
 
-    public init(screen: Screen = .desk, visible: Bool = true, desk: String? = nil) {
+    public init(screen: Screen = .desk, visible: Bool = true, desk: String? = nil, board: String? = nil) {
       self.screen = screen
       self.visible = visible
       self.desk = desk
+      self.board = board
     }
 
     enum CodingKeys: String, CodingKey {
       case screen = "screen"
       case visible = "visible"
       case desk = "desk"
+      case board = "board"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -80,6 +85,7 @@ public enum CoreView {
       self.screen = try c.decode(Screen.self, forKey: .screen)
       self.visible = try c.decodeIfPresent(Bool.self, forKey: .visible) ?? true
       self.desk = try c.decodeIfPresent(String.self, forKey: .desk)
+      self.board = try c.decodeIfPresent(String.self, forKey: .board)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -87,6 +93,7 @@ public enum CoreView {
       try c.encode(screen, forKey: .screen)
       try c.encode(visible, forKey: .visible)
       try c.encodeIfPresent(desk, forKey: .desk)
+      try c.encodeIfPresent(board, forKey: .board)
     }
   }
 
@@ -169,9 +176,11 @@ public enum CoreView {
     /// Files the views name (attachments, pictures), by id: uploading, ready, failed. Their bytes, when loaded,
     /// came as `Effect::FileReady` under the same id.
     public var files: [String: FileView]
+    /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown.
+    public var board: BoardView?
     public var toasts: [Toast]
 
-    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], toasts: [Toast] = []) {
+    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, toasts: [Toast] = []) {
       self.rev = rev
       self.phase = phase
       self.status = status
@@ -184,6 +193,7 @@ public enum CoreView {
       self.settings = settings
       self.account = account
       self.files = files
+      self.board = board
       self.toasts = toasts
     }
 
@@ -200,6 +210,7 @@ public enum CoreView {
       case settings = "settings"
       case account = "account"
       case files = "files"
+      case board = "board"
       case toasts = "toasts"
     }
 
@@ -217,6 +228,7 @@ public enum CoreView {
       self.settings = try c.decode(SettingsView.self, forKey: .settings)
       self.account = try c.decode(AccountView.self, forKey: .account)
       self.files = try c.decodeIfPresent([String: FileView].self, forKey: .files) ?? [:]
+      self.board = try c.decodeIfPresent(BoardView.self, forKey: .board)
       self.toasts = try c.decodeIfPresent([Toast].self, forKey: .toasts) ?? []
     }
 
@@ -234,6 +246,7 @@ public enum CoreView {
       try c.encode(settings, forKey: .settings)
       try c.encode(account, forKey: .account)
       if !files.isEmpty { try c.encode(files, forKey: .files) }
+      try c.encodeIfPresent(board, forKey: .board)
       if !toasts.isEmpty { try c.encode(toasts, forKey: .toasts) }
     }
   }
@@ -280,6 +293,8 @@ public enum CoreView {
     case settings(view: SettingsView)
     case account(view: AccountView)
     case file(id: String, view: FileView?)
+    /// The Scribble Board in view, whole; none when it is left.
+    case board(view: BoardView?)
     case toasts(toasts: [Toast])
 
     enum CodingKeys: String, CodingKey {
@@ -306,6 +321,7 @@ public enum CoreView {
       case "settings": self = .settings(view: try c.decode(SettingsView.self, forKey: .view))
       case "account": self = .account(view: try c.decode(AccountView.self, forKey: .view))
       case "file": self = .file(id: try c.decode(String.self, forKey: .id), view: try c.decodeIfPresent(FileView.self, forKey: .view))
+      case "board": self = .board(view: try c.decodeIfPresent(BoardView.self, forKey: .view))
       case "toasts": self = .toasts(toasts: try c.decode([Toast].self, forKey: .toasts))
       case let other: throw DecodingError.dataCorruptedError(forKey: .part, in: c, debugDescription: "ViewPart: no variant \(other)")
       }
@@ -350,6 +366,9 @@ public enum CoreView {
       case .file(let id, let view):
         try c.encode("file", forKey: .part)
         try c.encode(id, forKey: .id)
+        try c.encode(view, forKey: .view)
+      case .board(let view):
+        try c.encode("board", forKey: .part)
         try c.encode(view, forKey: .view)
       case .toasts(let toasts):
         try c.encode("toasts", forKey: .part)
@@ -4322,6 +4341,187 @@ public enum CoreView {
       var c = encoder.container(keyedBy: CodingKeys.self)
       try c.encode(nonce, forKey: .nonce)
       try c.encode(says, forKey: .says)
+    }
+  }
+
+  /// A Scribble Board (spec/v1.md 10): what its items add up to on this device, ready to draw.
+  public struct BoardView: Codable, Hashable, Sendable {
+    /// `desk/<32 hex>`.
+    public var boardId: String
+    /// "loading" (its snapshot and the items after it are read), "ready", "newer_version" (an item needs a newer
+    /// Trommi: what it did is not shown), "withheld" (an item could not be read on this device).
+    public var state: String
+    /// Every shape in drawing order: by layer (`z`), then as they were made; strokes others are still drawing last.
+    public var shapes: [BoardShape]
+
+    public init(boardId: String = "", state: String = "", shapes: [BoardShape] = []) {
+      self.boardId = boardId
+      self.state = state
+      self.shapes = shapes
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case boardId = "board_id"
+      case state = "state"
+      case shapes = "shapes"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.boardId = try c.decode(String.self, forKey: .boardId)
+      self.state = try c.decode(String.self, forKey: .state)
+      self.shapes = try c.decodeIfPresent([BoardShape].self, forKey: .shapes) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(boardId, forKey: .boardId)
+      try c.encode(state, forKey: .state)
+      if !shapes.isEmpty { try c.encode(shapes, forKey: .shapes) }
+    }
+  }
+
+  /// One shape of a board, in board units (a point is two numbers). The fields its tool does not use are left out.
+  /// 
+  /// - stroke (`pen`, `marker`): `pts` its points, `t` their times (ms since it began), `f` their force (0 to 1),
+  ///   `az` and `al` the pen's azimuth and altitude in radians (none without tilt), `sim` a force made up from the
+  ///   speed, `color`, `width`;
+  /// - note (`text`, `sticky`, `voice`): `pts` its top left corner, `text`, `size`, `color`, `wrap` (none: no wrap);
+  /// - picture (`image`): `pts` two opposite corners, `attachment` its file's id (`ViewModel.files`, `OpenFile`),
+  ///   `nw` and `nh` its own size in pixels (0: not known), `mime`, `name`.
+  public struct BoardShape: Codable, Hashable, Sendable {
+    /// `<sender hex>/<envelope number>/<index>`, or `live:<sender hex>/<stroke hex>` for a stroke still drawn.
+    public var id: String
+    /// The device that drew it (hex).
+    public var by: String
+    public var tool: String
+    public var z: Int32
+    public var group: String?
+    public var pts: [Double]
+    public var t: [UInt64]
+    public var f: [Double]
+    public var az: [Double]?
+    public var al: [Double]?
+    public var sim: Bool
+    public var color: String?
+    public var width: Double?
+    public var text: String?
+    public var size: Double?
+    public var wrap: Double?
+    public var attachment: String?
+    public var nw: UInt32?
+    public var nh: UInt32?
+    public var mime: String?
+    public var name: String?
+    /// A stroke someone else is still drawing (its pieces, spec 7.2): its finished form replaces it.
+    public var live: Bool
+    /// Drawn on this device and not yet back from the hub: `<local_id>/<index>` of the `BoardItem` that made it.
+    public var local: String?
+
+    public init(id: String = "", by: String = "", tool: String = "", z: Int32 = 0, group: String? = nil, pts: [Double] = [], t: [UInt64] = [], f: [Double] = [], az: [Double]? = nil, al: [Double]? = nil, sim: Bool = false, color: String? = nil, width: Double? = nil, text: String? = nil, size: Double? = nil, wrap: Double? = nil, attachment: String? = nil, nw: UInt32? = nil, nh: UInt32? = nil, mime: String? = nil, name: String? = nil, live: Bool = false, local: String? = nil) {
+      self.id = id
+      self.by = by
+      self.tool = tool
+      self.z = z
+      self.group = group
+      self.pts = pts
+      self.t = t
+      self.f = f
+      self.az = az
+      self.al = al
+      self.sim = sim
+      self.color = color
+      self.width = width
+      self.text = text
+      self.size = size
+      self.wrap = wrap
+      self.attachment = attachment
+      self.nw = nw
+      self.nh = nh
+      self.mime = mime
+      self.name = name
+      self.live = live
+      self.local = local
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case by = "by"
+      case tool = "tool"
+      case z = "z"
+      case group = "group"
+      case pts = "pts"
+      case t = "t"
+      case f = "f"
+      case az = "az"
+      case al = "al"
+      case sim = "sim"
+      case color = "color"
+      case width = "width"
+      case text = "text"
+      case size = "size"
+      case wrap = "wrap"
+      case attachment = "attachment"
+      case nw = "nw"
+      case nh = "nh"
+      case mime = "mime"
+      case name = "name"
+      case live = "live"
+      case local = "local"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.by = try c.decode(String.self, forKey: .by)
+      self.tool = try c.decode(String.self, forKey: .tool)
+      self.z = try c.decodeIfPresent(Int32.self, forKey: .z) ?? 0
+      self.group = try c.decodeIfPresent(String.self, forKey: .group)
+      self.pts = try c.decode([Double].self, forKey: .pts)
+      self.t = try c.decodeIfPresent([UInt64].self, forKey: .t) ?? []
+      self.f = try c.decodeIfPresent([Double].self, forKey: .f) ?? []
+      self.az = try c.decodeIfPresent([Double].self, forKey: .az)
+      self.al = try c.decodeIfPresent([Double].self, forKey: .al)
+      self.sim = try c.decodeIfPresent(Bool.self, forKey: .sim) ?? false
+      self.color = try c.decodeIfPresent(String.self, forKey: .color)
+      self.width = try c.decodeIfPresent(Double.self, forKey: .width)
+      self.text = try c.decodeIfPresent(String.self, forKey: .text)
+      self.size = try c.decodeIfPresent(Double.self, forKey: .size)
+      self.wrap = try c.decodeIfPresent(Double.self, forKey: .wrap)
+      self.attachment = try c.decodeIfPresent(String.self, forKey: .attachment)
+      self.nw = try c.decodeIfPresent(UInt32.self, forKey: .nw)
+      self.nh = try c.decodeIfPresent(UInt32.self, forKey: .nh)
+      self.mime = try c.decodeIfPresent(String.self, forKey: .mime)
+      self.name = try c.decodeIfPresent(String.self, forKey: .name)
+      self.live = try c.decodeIfPresent(Bool.self, forKey: .live) ?? false
+      self.local = try c.decodeIfPresent(String.self, forKey: .local)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(by, forKey: .by)
+      try c.encode(tool, forKey: .tool)
+      try c.encode(z, forKey: .z)
+      try c.encodeIfPresent(group, forKey: .group)
+      try c.encode(pts, forKey: .pts)
+      if !t.isEmpty { try c.encode(t, forKey: .t) }
+      if !f.isEmpty { try c.encode(f, forKey: .f) }
+      try c.encodeIfPresent(az, forKey: .az)
+      try c.encodeIfPresent(al, forKey: .al)
+      try c.encode(sim, forKey: .sim)
+      try c.encodeIfPresent(color, forKey: .color)
+      try c.encodeIfPresent(width, forKey: .width)
+      try c.encodeIfPresent(text, forKey: .text)
+      try c.encodeIfPresent(size, forKey: .size)
+      try c.encodeIfPresent(wrap, forKey: .wrap)
+      try c.encodeIfPresent(attachment, forKey: .attachment)
+      try c.encodeIfPresent(nw, forKey: .nw)
+      try c.encodeIfPresent(nh, forKey: .nh)
+      try c.encodeIfPresent(mime, forKey: .mime)
+      try c.encodeIfPresent(name, forKey: .name)
+      try c.encode(live, forKey: .live)
+      try c.encodeIfPresent(local, forKey: .local)
     }
   }
 

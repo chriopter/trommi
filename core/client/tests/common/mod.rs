@@ -356,6 +356,19 @@ impl World {
         self.write(true, &draft)
     }
 
+    /// The person's other device (the founder) writes this draft (a board item, say). Returns its change.
+    pub fn founder_writes(&mut self, draft: &Draft) -> u64 {
+        self.write(true, draft)
+    }
+
+    /// The founder relays a piece of a stroke it is drawing (7.2).
+    pub fn founder_piece(&mut self, board: &trommi_core::ids::BoardId, piece: &[u8]) {
+        let mut hub = self.hub.borrow_mut();
+        sync(&hub, &mut self.founder);
+        self.founder.send_stroke_piece(board, piece).expect("the piece goes");
+        assert_eq!(post_all(&mut hub, &mut self.founder), Vec::<String>::new());
+    }
+
     fn write(&mut self, founder: bool, draft: &Draft) -> u64 {
         self.seal(founder, draft).1
     }

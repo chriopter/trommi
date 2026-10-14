@@ -18,6 +18,9 @@ export interface Focus {
   visible: boolean
   /** The desk in view: a desk's id, "all" for every desk at once, none for the first desk. */
   desk?: string
+  /** The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a desk's id or "all" for that
+   *  desk's board. `Screen::Scribble` shows its own. The core reads it and sends `ViewModel.board`. */
+  board?: string
 }
 
 export type Screen =
@@ -50,6 +53,8 @@ export interface ViewModel {
   /** Files the views name (attachments, pictures), by id: uploading, ready, failed. Their bytes, when loaded,
    *  came as `Effect::FileReady` under the same id. */
   files?: Record<string, FileView>
+  /** The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown. */
+  board?: BoardView
   toasts?: Toast[]
 }
 
@@ -73,6 +78,8 @@ export type ViewPart =
   | { part: 'settings'; view: SettingsView }
   | { part: 'account'; view: AccountView }
   | { part: 'file'; id: string; view: FileView | null }
+  /** The Scribble Board in view, whole; none when it is left. */
+  | { part: 'board'; view: BoardView | null }
   | { part: 'toasts'; toasts: Toast[] }
 
 /** Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come (the Desk's stack ops today). */
@@ -1204,6 +1211,55 @@ export interface AskView {
   nonce: string
   /** What the vouching agent says it is: account, name, host (its word, shown as such). */
   says: Text
+}
+
+/** A Scribble Board (spec/v1.md 10): what its items add up to on this device, ready to draw. */
+export interface BoardView {
+  /** `desk/<32 hex>`. */
+  board_id: string
+  /** "loading" (its snapshot and the items after it are read), "ready", "newer_version" (an item needs a newer
+   *  Trommi: what it did is not shown), "withheld" (an item could not be read on this device). */
+  state: string
+  /** Every shape in drawing order: by layer (`z`), then as they were made; strokes others are still drawing last. */
+  shapes?: BoardShape[]
+}
+
+/** One shape of a board, in board units (a point is two numbers). The fields its tool does not use are left out.
+ *  
+ *  - stroke (`pen`, `marker`): `pts` its points, `t` their times (ms since it began), `f` their force (0 to 1),
+ *    `az` and `al` the pen's azimuth and altitude in radians (none without tilt), `sim` a force made up from the
+ *    speed, `color`, `width`;
+ *  - note (`text`, `sticky`, `voice`): `pts` its top left corner, `text`, `size`, `color`, `wrap` (none: no wrap);
+ *  - picture (`image`): `pts` two opposite corners, `attachment` its file's id (`ViewModel.files`, `OpenFile`),
+ *    `nw` and `nh` its own size in pixels (0: not known), `mime`, `name`. */
+export interface BoardShape {
+  /** `<sender hex>/<envelope number>/<index>`, or `live:<sender hex>/<stroke hex>` for a stroke still drawn. */
+  id: string
+  /** The device that drew it (hex). */
+  by: string
+  tool: string
+  z: number
+  group?: string
+  pts: number[]
+  t?: number[]
+  f?: number[]
+  az?: number[]
+  al?: number[]
+  sim: boolean
+  color?: string
+  width?: number
+  text?: string
+  size?: number
+  wrap?: number
+  attachment?: string
+  nw?: number
+  nh?: number
+  mime?: string
+  name?: string
+  /** A stroke someone else is still drawing (its pieces, spec 7.2): its finished form replaces it. */
+  live: boolean
+  /** Drawn on this device and not yet back from the hub: `<local_id>/<index>` of the `BoardItem` that made it. */
+  local?: string
 }
 
 export interface FileView {
