@@ -1,44 +1,55 @@
-// The sidebar (#agents): one row per session, a main with its subs under it, and the floating Desk's state.
+// The frame around every page: the sidebar (#agents: one row per session, a main with its helpers under it), the
+// Desk box with the Trommi menu, the phone's bars and drawer, and the corner note. Everything it shows is the app
+// core's view model (vm.sidebar, vm.notes, vm.settings); what the person does goes to the core as an action (t.act).
 // The markup is the one app.css and sidebar.css style.
-import { BASE, crownOf, newsLatestDay, renderStreamMessage, stream } from './app.mjs'
-import { BELL, Controller, PLUS, agoSpan, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, toast, sayError } from './ui.mjs'
+import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
+import { pushObstacle } from './platform.mjs'
+import { newsLatestDay } from './app.mjs'
 const EDGES = 7   // more subs than this lie in a folded stack without an edge of their own
 
-function row(u, base, current, order = null) {
-  const a = u.agent
-  const shut = Boolean(u.subs)   // a main is rendered folded; the island "folds" opens the ones this browser unfolded
-  const shown = shut ? u.whole : u
-  const names = u.subs?.map(s => s.agent.name) ?? []
+/** The board's toolkit (register): the controllers send their actions with it. */
+let T = null
+
+/** One row of the sidebar (SessionRowView). byId: the rows by id (a main's helpers). */
+function row(r, base, byId) {
+  const subs = (r.subs ?? []).map(id => byId.get(id)).filter(Boolean)
+  const fold = subs.length ? r.folded ?? null : null   // (a main is drawn folded; the controller "folds" opens the ones this browser unfolded)
+  const shown = fold ?? r
+  const who = whoOf(r), name = r.name.en, working = Boolean(shown.online && shown.working)
+  const names = subs.map(s => s.name.en)
   // (the hint is short; the label names them all)
-  const tip = u.subs ? `Show ${names.length === 1 ? 'sub' : `${names.length} subs`}` : ''
-  const label = u.subs ? `Unfold ${a.name}'s ${names.length === 1 ? 'sub' : `${names.length} subs`}: ${names.join(', ')}` : ''
-  const lie = u.subs ? (u.subs.length > EDGES ? [...u.subs].sort((x, y) => Boolean(y.blocked) - Boolean(x.blocked)).slice(0, EDGES) : u.subs) : []
-  const cls = ['agent-row', u.parent && 'is-sub', (a.main || u.subs) && 'is-main', shown.open || shown.blocked ? 'has-badge' : '', !u.online && 'is-offline', current === u.id && 'is-active', ['asleep', 'cut', 'gone'].includes(u.parent?.link?.state) && 'is-hushed', u.subs?.some(x => x.id === current) && 'has-active'].filter(Boolean).join(' ')
-  return html`<div class="${cls}" id="agent-${a.id}" data-folds-target="row" data-unit="${a.id}" data-members="${a.id}"${u.parent ? html` data-parent="${u.parent.id}" hidden` : ''}${order && !u.parent ? html` data-order="${order}"` : ''}${u.subs ? html` data-fold="shut" style="--ghue:${a.hue};--n:${lie.length}" data-controller="lean" data-action="pointermove->lean#follow pointerleave->lean#rest"` : ''}>
-<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(a.id)}" draggable="false"${order && !u.parent ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${shown.online && shown.running ? 'Working' : ''}"${current === u.id ? raw(' aria-current="page"') : ''}>${avatar(a, { crown: !u.subs, working: Boolean(shown.online && shown.running) })}<span class="agent-text"><strong>${a.name}</strong>${shown.online && shown.running ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(shown.link, shown.unheard)}</span></a>
-${u.subs ? html`<button class="crown-fold${a.starred ? '' : ' is-plain'}" type="button" aria-expanded="false" title="${tip}" aria-label="${label}" data-action="click->folds#toggle" data-folds-id-param="${a.id}">${a.starred ? raw(crownSvg()) : ''}</button>
-<svg class="crown-bracket" aria-hidden="true" data-folds-target="bracket"><path/><path class="crown-bracket-hit" data-action="click->folds#toggle" data-folds-id-param="${a.id}"><title>Fold ${a.name}'s subs</title></path></svg>
-<span class="crown-edges" title="${tip}" data-action="click->folds#toggle" data-folds-id-param="${a.id}">${lie.map((s, i) => { const q = edgeQuirk(s.id); return html`<i${s.blocked ? raw(' class="is-knock"') : ''} style="--i:${i};--hue:${s.agent.hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</span>` : ''}
-${u.subs ? html`<button type="button" class="rail-subs" data-action="click->folds#toggle" data-folds-id-param="${a.id}" title="${tip}" aria-label="${label}">${u.subs.length}</button>` : ''}${badge(u, shown, base, true)}
+  const tip = subs.length ? `Show ${names.length === 1 ? 'sub' : `${names.length} subs`}` : ''
+  const label = subs.length ? `Unfold ${name}'s ${names.length === 1 ? 'sub' : `${names.length} subs`}: ${names.join(', ')}` : ''
+  const stopped = new Set(fold?.stopped ?? [])
+  const lie = subs.length > EDGES ? [...subs.filter(s => stopped.has(s.id)), ...subs.filter(s => !stopped.has(s.id))].slice(0, EDGES) : subs
+  const cls = ['agent-row', r.parent && 'is-sub', (r.main || subs.length) && 'is-main', shown.open || shown.hand ? 'has-badge' : '', !r.online && 'is-offline', r.hushed && 'is-hushed'].filter(Boolean).join(' ')
+  const order = !r.parent && r.group ? r.group : ''
+  return html`<div class="${cls}" id="agent-${r.id}" data-folds-target="row" data-unit="${r.id}" data-slug="${r.slug}"${r.parent ? html` data-parent="${r.parent}" hidden` : ''}${order ? html` data-order="${order}"` : ''}${subs.length ? html` data-fold="shut" style="--ghue:${who.hue};--n:${lie.length}" data-controller="lean" data-action="pointermove->lean#follow pointerleave->lean#rest"` : ''}>
+<a class="agent-entry" data-nav href="${base}/chat/${encodeURIComponent(r.slug)}" draggable="false"${order ? raw(' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"') : ''} title="${working ? 'Working' : ''}">${avatar(who, { crown: !subs.length, working })}<span class="agent-text"><strong>${name}</strong>${working ? html`<span class="sr-only"> (working)</span>` : ''}${linkCap(r.cap)}</span></a>
+${subs.length ? html`<button class="crown-fold${r.crowned ? '' : ' is-plain'}" type="button" aria-expanded="false" title="${tip}" aria-label="${label}" data-action="click->folds#toggle" data-folds-id-param="${r.id}">${r.crowned ? raw(crownSvg()) : ''}</button>
+<svg class="crown-bracket" aria-hidden="true" data-folds-target="bracket"><path/><path class="crown-bracket-hit" data-action="click->folds#toggle" data-folds-id-param="${r.id}"><title>Fold ${name}'s subs</title></path></svg>
+<span class="crown-edges" title="${tip}" data-action="click->folds#toggle" data-folds-id-param="${r.id}">${lie.map((s, i) => { const q = edgeQuirk(s.id); return html`<i${stopped.has(s.id) ? raw(' class="is-knock"') : ''} style="--i:${i};--hue:${whoOf(s).hue};--tilt:${q.tilt}deg;--dx:${q.dx}px">${raw(q.svg)}</i>` })}</span>
+<button type="button" class="rail-subs" data-action="click->folds#toggle" data-folds-id-param="${r.id}" title="${tip}" aria-label="${label}">${subs.length}</button>` : ''}${badge(r, base, true, fold)}
 </div>`
 }
 
 // ---- the session in view, marked in the sidebar ----
 // The rows are the same markup on every page (so a page change keeps the sidebar's nodes as they are, app.mjs
-// paintBody); which one is the session in view is set on them here, after every page and whenever rows are put in
-// (the live stream's replacements): .is-active and aria-current on its row, .has-active on its main's.
+// paintBody); which one is the session in view is set on them here, after every page and whenever rows are put in:
+// .is-active and aria-current on its row, .has-active on its main's. The session: its key or its slug.
 let inView = null
 function paintCurrent(root = document) {
-  for (const r of root.querySelectorAll('#agents .agent-row[data-unit]')) {
-    const on = r.dataset.unit === inView
+  const rows = [...root.querySelectorAll('#agents .agent-row[data-unit]')]
+  const here = inView == null ? null : rows.find(r => r.dataset.unit === inView || r.dataset.slug === inView) ?? null
+  for (const r of rows) {
+    const on = r === here, entry = r.querySelector(':scope > .agent-entry')
     r.classList.toggle('is-active', on)
-    r.querySelector(':scope > .agent-entry')?.toggleAttribute('aria-current', on)
-    if (on) r.querySelector(':scope > .agent-entry')?.setAttribute('aria-current', 'page')
-    r.classList.toggle('has-active', !r.dataset.parent && inView != null && !on && Boolean(document.querySelector(`#agents .agent-row[data-parent="${CSS.escape(r.dataset.unit)}"][data-unit="${CSS.escape(inView)}"]`)))
+    if (on) entry?.setAttribute('aria-current', 'page'); else entry?.removeAttribute('aria-current')
+    r.classList.toggle('has-active', Boolean(here?.dataset.parent) && r.dataset.unit === here.dataset.parent)
   }
 }
 let watching = null
-/** The session in view (null: none): marked in the sidebar now and in every row put in later. */
+/** The session in view (its key or slug; null: none): marked in the sidebar now and in every row put in later. */
 export function markCurrent(current) {
   inView = current ?? null
   paintCurrent()
@@ -47,61 +58,78 @@ export function markCurrent(current) {
   if (agents && watching.target !== agents) { watching.disconnect(); watching.observe(agents, { childList: true, subtree: true }); watching.target = agents }
 }
 
-const inviteAgentButton = () => html`<form method="post" action="/pair" class="agent-invite"><input type="hidden" name="role" value="agent"><button type="submit" class="agent-invite-go" id="sidebar-invite" title="Invite an agent" aria-label="Invite an agent">${PLUS}<span class="agent-invite-label">New Agent…</span></button></form>`
+const inviteAgentButton = () => html`<form method="post" action="/pair" class="agent-invite" id="agent-invite"><input type="hidden" name="role" value="agent"><button type="submit" class="agent-invite-go" id="sidebar-invite" title="Invite an agent" aria-label="Invite an agent">${PLUS}<span class="agent-invite-label">New Agent…</span></button></form>`
 
 // ---- the note: one only, at the bottom right ----
 // One drawn yellow sticky at the window's bottom-right, a part of the frame beside the sidebar (app.mjs bodyParts).
 // Folded it is the sticky alone, and the sticky says how it stands: lines on it when the note holds something, blank
-// when it is empty; a click unfolds it there,
-// growing upward, into a field that grows with the words (Enter: a new line, Ctrl/Cmd+Enter sends, Esc folds), with
-// the paperclip, the bin and the crown (send straight to the crown). Sent or thrown away, it is empty again. It is
-// the newest unsent note.
+// when it is empty; a click unfolds it there, growing upward, into a field that grows with the words (Enter: a new
+// line, Ctrl/Cmd+Enter sends, Esc folds), with the paperclip, the bin and the crown (send straight to the crown). Sent
+// or thrown away, it is empty again. It is the core's corner note (vm.notes.corner).
+// (The field's words and whether it is written are values of the box, not its markup: the page is morphed after every
+// render of the core, and the field under the hand that writes, or the box's open state, must not be replaced.)
 const NOTE_ICON = raw('<svg viewBox="0 0 52 52" class="corner-note-ico" aria-hidden="true"><path class="note-fill" d="M9.5 11.2 Q25 9.6 42.6 10.6 Q43.4 25 42.8 38.4 L35.4 45.4 Q21 46.6 9.8 45.8 Q8.6 28 9.5 11.2 Z"/><path class="note-ink" d="M7.6 9.4 Q24 8.2 41.4 8.8 Q42.4 23.6 41.6 37.2 L34.2 44.2 Q20.4 45.2 8.2 44.4 Q6.8 27 7.6 9.4 Z"/><path class="note-ink" d="M41.6 37.2 Q37.2 36.6 34.8 37.6 Q34.1 40.8 34.2 44.2"/><path class="note-lines" d="M14.2 19.4 Q22 18.8 30.6 19.2 M14 25.6 Q20 25.1 26.4 25.5 M14.3 31.6 Q18.6 31.2 22.4 31.5"/></svg>')
 const BIN = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M5 7.2 Q12 6.8 19 7.3"/><path d="M9.6 6.9 Q9.8 4.8 12 4.7 Q14.3 4.8 14.4 6.9"/><path d="M6.6 7.6 Q7.4 14 8.2 20.2 Q12 20.6 15.8 20.2 Q16.6 14 17.4 7.6"/></svg>')
-const isPic = a => /^image\//.test(a?.type ?? '') || /\.(png|jpe?g|gif|webp|svg)$/i.test(a?.name ?? '')
-/** The note's attachments: a picture as a small thumbnail, a file by its name; a click takes it off. */
-const noteFiles = atts => (atts ?? []).map(a => `<button type="button" class="corner-note-file${isPic(a) ? ' is-pic' : ''}" data-url="${String(a.url).replace(/"/g, '&quot;')}" data-action="corner-note#unclip" title="${String(a.name).replace(/"/g, '&quot;')}">${isPic(a) ? `<img src="${String(a.url).replace(/"/g, '&quot;')}" alt="" loading="lazy">` : `<span>${String(a.name).replace(/[<&]/g, c => (c === '<' ? '&lt;' : '&amp;'))}</span>`}<i>×</i></button>`).join('')
 const CLIP = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M15.6 7.2 Q11 12 8.4 14.8 Q7 16.6 8.6 17.8 Q10.2 18.8 11.6 17.2 Q15.6 12.8 18.2 9.8 Q20.4 7 18.2 5 Q16 3.4 13.8 5.6 Q9.4 10.4 6.4 13.8 Q3.8 17 6.4 19.6 Q9 21.8 12 19"/></svg>')
-const deskNotesOf = model => (model.state.notes ?? []).filter(m => !m.held).sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))
+const RING = raw('<i class="note-up" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2A8.8 8.8 0 1 1 3.4 10.4"/></svg></i>')
+/** Files attached on this page and not on the note yet: local id -> { file, name, preview } (vm.files[id] says how
+ *  the upload stands). This browser's own, drawn with the note. */
+const pending = new Map()
+/** One file of the note: a picture as a small thumbnail, any other file by its name. up: a file of this page on its way. */
+function noteFile({ id, name, picture, src, up = null }) {
+  const state = up?.state === 'failed' ? ' is-failed' : up && up.state !== 'ready' ? ' is-uploading' : ''
+  return html`<button type="button" class="corner-note-file${picture ? ' is-pic' : ''}${state}${up ? ' is-pending' : ''}" id="note-file-${id}" data-file="${id}"${up ? raw(' data-action="corner-note#unclip"') : ''} title="${name}">${picture ? html`<img${src ? html` src="${src}"` : ''} alt="" loading="lazy">` : html`<span>${name}</span>`}${state === ' is-uploading' ? html`${RING}<b class="note-up-word">uploading…</b>` : state ? html`<b class="note-up-word">upload failed</b><span class="note-up-again" role="button" data-action="click->corner-note#retry">retry</span>` : html`<i>×</i>`}</button>`
+}
 // Ctrl+Enter sends the note (Cmd+Enter on a Mac), anywhere on it; the keys stand small under the envelope. (The
 // envelope's hover says to whom, the app's own label (notes.css data-name), not the browser's tooltip, which would
 // stand half outside the note.)
 const MAC = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? '')
 const SEND_KEYS = MAC ? 'Meta+Enter' : 'Control+Enter', SEND_WORD = MAC ? '⌘ Enter' : 'Ctrl+Enter'
 
-export function cornerNote(model, base) {
-  const note = deskNotesOf(model)[0] ?? null
-  // On All desks the note asks which desk's crowned session gets it (the one chosen last is marked)
-  const crowns = model.all ? (model.desks ?? []).map(d => ({ desk: d, a: model.everyone.find(a => a.starred && !a.archived && model.deskOf(a) === d.id) })).filter(x => x.a) : []
-  // (All desks, and the desk last looked at has no crown: the note still goes to a crowned session, another desk's)
-  const crown = crownOf(model) ?? crowns[0]?.a ?? null, far = crown && crowns.length === 1 && crown !== crownOf(model)
-  const chooser = crowns.length > 1 ? html`<div class="note-to-pick" role="menu" aria-label="Send to" hidden>${crowns.map(x => html`<button type="button" role="menuitem" class="note-to-row" data-action="corner-note#sendTo" data-to="${x.a.id}">${raw(sketchSvg('desk'))}<span><b>${x.desk.name || 'Personal'}</b><small>${x.a.name}</small></span></button>`)}</div>` : ''
-  const text = note?.text ?? '', files = note?.attachments ?? []
-  // (whom it goes to, never an empty word: a session without a name yet is the desk's Main Session)
-  const who = crown?.name?.trim() || 'Main Session'
-  return html`<section class="corner-note-box${text || files.length ? ' has-words' : ''}" id="corner-note-box" aria-label="Your note" data-controller="corner-note" data-corner-note-id-value="${note?.id ?? ''}" data-corner-note-base-value="${base}">
-<button type="button" class="corner-note-head" data-action="corner-note#open" data-tip="${text || files.length ? 'Note (N)' : 'New note (N)'}" aria-label="${text || files.length ? 'Your note: open it' : 'New note'}" aria-expanded="false">${NOTE_ICON}</button>
-<div class="corner-note-body" hidden data-action="paste->corner-note#paste dragover->corner-note#over dragleave->corner-note#out drop->corner-note#drop keydown->corner-note#key">${crown ? html`<span class="corner-note-to">${avatar(crown, { crown: false })}<b>${who}</b></span>` : ''}<textarea class="corner-note-field" rows="2" aria-label="Your note${crown ? ` to ${who}` : ''}" aria-keyshortcuts="${SEND_KEYS}" data-action="input->corner-note#typed">${text}</textarea><div class="corner-note-files">${raw(noteFiles(files))}</div>
-<footer class="corner-note-foot"><button type="button" class="corner-note-clip" data-action="corner-note#pick" title="Attach" aria-label="Attach a picture or a file">${CLIP}</button><button type="button" class="corner-note-bin" data-action="corner-note#bin" title="Throw away" aria-label="Throw the note away">${BIN}</button><span class="corner-note-park" data-tip="To the board" aria-hidden="true">${raw(sketchSvg('go'))}<b>onto the board</b></span><i></i>${crown ? html`<span class="corner-note-sending">${chooser}<button type="button" class="note-send corner-note-send" data-action="corner-note#send"${far ? html` data-to="${crown.id}"` : ''} data-name="${who}" aria-label="Send to ${who}" aria-keyshortcuts="${SEND_KEYS}">${raw(crownSvg())}</button><kbd class="corner-note-keys" aria-hidden="true">${SEND_WORD}</kbd></span>` : html`<a class="corner-note-nocrown" data-nav href="${base}/settings/sessions">Give a session the crown to send</a>`}</footer></div>
+export function cornerNote(vm, base) {
+  const n = vm.notes ?? {}
+  const note = (n.rows ?? []).find(x => x.id === n.corner) ?? null
+  const files = [
+    ...(note?.files ?? []).map(f => noteFile({ id: f.file_id, name: f.name, picture: f.picture, src: f.picture ? fileSrc(f.file_id) : null })),
+    ...[...pending].map(([id, p]) => noteFile({ id, name: p.name, picture: Boolean(p.preview), src: p.preview, up: vm.files?.[id] ?? { state: 'uploading' } })),
+  ]
+  const to = n.to ?? null, who = to?.name || 'Main Session'
+  const chooser = n.choose?.length ? html`<div class="note-to-pick" role="menu" aria-label="Send to" hidden>${n.choose.map(x => html`<button type="button" role="menuitem" class="note-to-row" data-action="corner-note#sendTo" data-to="${x.session_id}">${raw(sketchSvg('desk'))}<span><b>${x.desk}</b><small>${x.name}</small></span></button>`)}</div>` : ''
+  const written = Boolean(n.written)
+  return html`<section class="corner-note-box" id="corner-note-box" aria-label="Your note" data-controller="corner-note" data-corner-note-id-value="${note?.id ?? ''}" data-corner-note-text-value="${note?.text ?? ''}" data-corner-note-written-value="${String(written)}">
+<button type="button" class="corner-note-head" data-action="corner-note#open" data-tip="${written ? 'Note (N)' : 'New note (N)'}" aria-label="${n.says?.en ?? 'New note'}" aria-expanded="false">${NOTE_ICON}</button>
+<div class="corner-note-body" hidden data-action="paste->corner-note#paste dragover->corner-note#over dragleave->corner-note#out drop->corner-note#drop keydown->corner-note#key">${to ? html`<span class="corner-note-to">${avatar(whoOf(to), { crown: false })}<b>${who}</b></span>` : ''}<textarea class="corner-note-field" rows="2" aria-label="Your note" aria-keyshortcuts="${SEND_KEYS}" data-action="input->corner-note#typed"></textarea><div class="corner-note-files">${files}</div>
+<footer class="corner-note-foot"><button type="button" class="corner-note-clip" data-action="corner-note#pick" title="Attach" aria-label="Attach a picture or a file">${CLIP}</button><button type="button" class="corner-note-bin" data-action="corner-note#bin" title="Throw away" aria-label="Throw the note away">${BIN}</button><span class="corner-note-park" data-tip="To the board" aria-hidden="true">${raw(sketchSvg('go'))}<b>onto the board</b></span><i></i>${to ? html`<span class="corner-note-sending">${chooser}<button type="button" class="note-send corner-note-send" data-action="corner-note#send"${n.far ? html` data-to="${to.session_id}"` : ''} data-name="${who}" aria-label="${n.send_says?.en ?? `Send to ${who}`}" aria-keyshortcuts="${SEND_KEYS}">${raw(crownSvg())}</button><kbd class="corner-note-keys" aria-hidden="true">${SEND_WORD}</kbd></span>` : html`<a class="corner-note-nocrown" data-nav href="${base}/settings/sessions">${n.no_crown?.en ?? 'Give a session the crown to send'}</a>`}</footer></div>
 </section>`
 }
+/** The notes' routes (notes.mjs), from the corner note's controller. */
+const postNote = (path, fields = {}) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) }).catch(err => console.warn('note', err))
+const forget = id => { const p = pending.get(id); if (p?.preview) URL.revokeObjectURL(p.preview); pending.delete(id) }
 controller('corner-note', class extends Controller {
-  static values = { id: String, base: String }
+  static values = { id: String, text: String, written: Boolean }
+  get field() { return this.element.querySelector('.corner-note-field') }
   connect() {
-    this.field = this.element.querySelector('.corner-note-field')
-    // (open, the note is not replaced under the hand that writes in it; its files are still taken from the new one)
-    this.guard = e => { if (e.target?.getAttribute?.('target') === 'corner-note-box' && this.element.classList.contains('is-open')) { e.preventDefault(); this.takeFiles(e.target.templateContent?.querySelector?.('#corner-note-box')) } }
-    document.addEventListener('turbo:before-stream-render', this.guard)
+    this.field.value = this.textValue
+    this.paintWords()
     this.write = () => this.open()
     document.addEventListener('trommi:note', this.write)
     this.park()
   }
+  disconnect() { document.removeEventListener('trommi:note', this.write); document.removeEventListener('pointerdown', this.away); clearTimeout(this.timer) }
+  isOpen() { return this.element.classList.contains('is-open') }
+  // (the core's words come in while the note is folded, or open with the keyboard elsewhere: another device wrote them)
+  textValueChanged(v) { const f = this.field; if (!f || (this.isOpen() && document.activeElement === f) || f.value === v) return; f.value = v; this.paintWords() }
+  writtenValueChanged() { this.paintWords() }
+  // (a note made here: its id comes with the core's next render; what was typed meanwhile is kept with it)
+  idValueChanged(v) { if (v && this.making) { this.making = false; if (this.field.value !== this.textValue) this.save() } }
+  paintWords() { if (this.field) this.element.classList.toggle('has-words', Boolean(this.field.value.trim() || this.files().length)) }
+  files() { return [...this.element.querySelectorAll('.corner-note-file:not(.is-failed)')] }
   // ---- park the note on the Scribble Board: there, the note can be dragged onto the board (mouse or finger) and
   // dropped; it stays where it was dropped as a sticky with its words, its pictures laid under it (whiteboard.mjs),
   // and the corner is empty again. Closed, the corner's sticky is what is dragged (a press without a drag opens the
   // note, as everywhere); open, the sheet is taken by its paper (its edge, its foot, the grip "onto the board"), never
   // by the words, which are selected as in any field. Files that are no pictures stay with the corner's note.
-  pictures() { return [...this.element.querySelectorAll('.corner-note-file.is-pic:not(.is-uploading):not(.is-failed)')].map(c => ({ url: c.dataset.url, name: c.title.replace(/: click to take it off$/, '') })) }
+  pictures() { return [...this.element.querySelectorAll('.corner-note-file.is-pic:not(.is-uploading):not(.is-failed)')].map(c => ({ url: c.querySelector('img')?.src ?? '', name: c.title, file_id: c.dataset.file })).filter(p => p.url) }
   park() {
     const head = this.element.querySelector('.corner-note-head'), body = this.element.querySelector('.corner-note-body')
     let drag = null
@@ -132,8 +160,7 @@ controller('corner-note', class extends Controller {
       d.ghost.remove()
       this.element.classList.remove('is-parking')
       this.skipOpen = true; setTimeout(() => { this.skipOpen = false }, 0)   // (the click that follows a drag opens nothing)
-      const far = Math.hypot(e.clientX - d.x, e.clientY - d.y) > 48
-      if (e.type === 'pointerup' && far) this.parked(e.clientX, e.clientY)
+      if (e.type === 'pointerup' && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 48) this.parked(e.clientX, e.clientY)
     }
     for (const from of [head, body]) { from.addEventListener('pointerdown', down); from.addEventListener('pointermove', move); from.addEventListener('pointerup', end); from.addEventListener('pointercancel', end) }
   }
@@ -143,18 +170,9 @@ controller('corner-note', class extends Controller {
     document.dispatchEvent(new CustomEvent('trommi:park-note', { detail }))
     if (!detail.taken) return
     this.field.value = ''
-    // (first the pictures leave the note, then its words: a note without words and files is gone)
     const placed = new Set(await detail.placed ?? [])
-    for (const chip of this.element.querySelectorAll('.corner-note-file')) if (placed.has(chip.dataset.url)) chip.remove()
-    if (placed.size && this.idValue) await fetch('/note', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: this.idValue, attachments: this.files() }) })
-    if (this.element.classList.contains('is-open')) this.close(); else { this.element.classList.toggle('has-words', this.files().length > 0); await this.save(true) }
-  }
-  disconnect() { document.removeEventListener('turbo:before-stream-render', this.guard); document.removeEventListener('trommi:note', this.write); clearTimeout(this.timer) }
-  async post(path, fields = {}) {
-    const res = await fetch(`${this.baseValue}${path}`, { method: 'POST', headers: { Accept: 'text/vnd.turbo-stream.html', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields) })
-    const text = await res.text()
-    if (text) renderStreamMessage(text)
-    return res.ok
+    for (const p of detail.pictures) if (placed.has(p.url) && pending.has(p.file_id)) forget(p.file_id)
+    if (this.isOpen()) this.close(); else { this.paintWords(); this.save() }
   }
   open() {
     if (this.skipOpen) return
@@ -165,105 +183,49 @@ controller('corner-note', class extends Controller {
     this.away = e => { if (this.element.contains(e.target)) return; if (e.target.closest?.('.tab[data-tab="note"]')) this.element.dataset.tabClosed = '1'; this.close() }
     setTimeout(() => document.addEventListener('pointerdown', this.away), 0)
   }
-  close() {
+  close(keep = true) {
     document.removeEventListener('pointerdown', this.away)
     this.element.classList.remove('is-open')
     this.element.querySelector('.corner-note-head').setAttribute('aria-expanded', 'false')
     this.element.querySelector('.corner-note-body').hidden = true
-    this.element.classList.toggle('has-words', Boolean(this.field.value.trim() || this.files().length))
-    this.save(true)
+    this.paintWords()
+    if (keep) this.save()
   }
   fit() { this.field.style.height = 'auto'; this.field.style.height = `${Math.min(this.field.scrollHeight + 2, 320)}px` }
-  typed() { this.fit(); clearTimeout(this.timer); this.timer = setTimeout(() => this.save(), 600) }
+  typed() { this.fit(); this.paintWords(); clearTimeout(this.timer); this.timer = setTimeout(() => this.save(), 600) }
   key(e) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.send() }
     else if (e.key === 'Escape') { e.preventDefault(); this.close() }
   }
   // The words are kept as they stand: the note is made the first time there are words, gone when empty.
-  async save(now = false) {
+  save() {
     clearTimeout(this.timer)
-    const text = this.field.value
-    if (this.saving) { this.again = true; return }
-    this.saving = true
-    try {
-      if (!this.idValue) {
-        if (!text.trim()) return
-        await this.post('/notes', { text })
-        const made = deskNotesOf(window.trommi?.model?.() ?? { state: {} })[0]
-        if (made) this.idValue = made.id
-      } else await this.post(`/notes/${this.idValue}/keep`, { text, files: String(this.files().length) })   // (the files this page holds: the model may not have them yet)
-      // (a note without words but with files stays: pictures alone are a note, and it is still sent by its id)
-      if (!text.trim() && !this.files().length) this.idValue = ''
-    } finally { this.saving = false; if (this.again) { this.again = false; this.save() } }
+    const text = this.field.value, files = [...pending.keys()].join(',')
+    if (!this.idValue) {
+      if (this.making || !(text.trim() || files)) return
+      this.making = true
+      setTimeout(() => { this.making = false }, 3000)
+      return postNote('/notes', { text, files })
+    }
+    if (!text.trim() && !this.files().length) return postNote(`/notes/${this.idValue}/bin`)
+    if (text !== this.textValue || files) return postNote(`/notes/${this.idValue}/keep`, { text, files })
   }
-  // ---- attachments: POST /note with { id, attachments: [kept refs..., { name, data }] } ----
-  files() { return [...this.element.querySelectorAll('.corner-note-file')].map(c => ({ url: c.dataset.url })) }
+  /** The id of a note made here, once the core drew it (null after a while). */
+  async made() {
+    for (let i = 0; i < 60 && !this.idValue; i++) await new Promise(r => setTimeout(r, 50))
+    return this.idValue || null
+  }
+  // ---- attachments: uploaded by the core (t.attach), drawn with the note while they go ----
   async attach(list) {
     const got = [...list].filter(f => f instanceof File)
-    if (!got.length) return
-    if (!this.idValue) {
-      await this.post('/notes', { text: this.field.value })
-      const made = deskNotesOf(window.trommi?.model?.() ?? { state: {} })[0]
-      if (!made) return
-      this.idValue = made.id
+    if (!got.length || !T) return
+    for (const f of got) {
+      const id = await T.attach(f)
+      pending.set(id, { file: f, name: f.name || 'file', preview: /^image\//.test(f.type) ? URL.createObjectURL(f) : null })
     }
-    const read = f => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve({ name: f.name || `pasted-${Date.now()}.png`, data: r.result }); r.onerror = () => reject(r.error); r.readAsDataURL(f) })
-    // What is on its way shows at once: the picture itself from this device, a drawn ring turning and "uploading…";
-    // done, the note's own chip takes its place with the same picture; refused, the chip says so and offers to try again.
-    const kept = this.files(), box = this.element.querySelector('.corner-note-files')
-    const previews = got.map(f => (/^image\//.test(f.type) ? URL.createObjectURL(f) : null))
-    const pending = got.map((f, i) => {
-      const chip = el('span', `corner-note-file is-uploading${previews[i] ? ' is-pic' : ''}`)
-      if (previews[i]) chip.append(Object.assign(document.createElement('img'), { src: previews[i], alt: '' })); else chip.append(el('span', '', f.name || 'file'))
-      chip.insertAdjacentHTML('beforeend', '<i class="note-up" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.2A8.8 8.8 0 1 1 3.4 10.4"/></svg></i><b class="note-up-word">uploading…</b>')
-      box.append(chip)
-      return chip
-    })
-    try {
-      const fresh = await Promise.all(got.map(read))
-      const res = await fetch('/note', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: this.idValue, attachments: [...kept, ...fresh] }) })
-      const said = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(said.error || res.statusText)
-      this.paintFiles(previews, said.note?.attachments ?? null)
-    } catch (err) {
-      console.warn('note', err)
-      for (const chip of pending) {
-        chip.classList.replace('is-uploading', 'is-failed')
-        chip.querySelector('.note-up-word').textContent = 'upload failed'
-        const again = el('button', 'note-up-again', 'retry')
-        again.type = 'button'
-        again.addEventListener('click', e => { e.stopPropagation(); for (const c of pending) c.remove(); this.attach(got) }, { once: true })
-        chip.append(again)
-      }
-    }
+    this.save()
   }
-  /** The open note's files as the note now holds them (another device attached one, or took one off): drawn in, the
-   *  words left as they are; not while a file of this device is on its way (its own answer draws them, paintFiles). */
-  takeFiles(fresh) {
-    if (!fresh || this.element.querySelector('.corner-note-file:is(.is-uploading, .is-failed)')) return
-    const id = fresh.dataset.cornerNoteIdValue ?? ''
-    if (!id || (this.idValue && id !== this.idValue)) return
-    const box = this.element.querySelector('.corner-note-files'), now = fresh.querySelector('.corner-note-files')
-    if (!box || !now) return
-    const urls = el => [...el.querySelectorAll('.corner-note-file')].map(c => c.dataset.url).join(' ')
-    if (urls(box) !== urls(now)) box.innerHTML = now.innerHTML
-  }
-  /** files: the note's attachments as the store's answer has them; previews: this device's own pictures of the newest
-   *  attachments, shown until the note's copies are drawn. */
-  paintFiles(previews = [], files = null) {
-    const m = files ? null : (window.trommi?.model?.().state.notes ?? []).find(n => n.id === this.idValue)
-    const box = this.element.querySelector('.corner-note-files')
-    box.innerHTML = noteFiles(files ?? m?.attachments ?? [])
-    const chips = [...box.querySelectorAll('.corner-note-file')].slice(-previews.length || box.children.length)
-    previews.forEach((url, i) => {
-      const img = url && chips[i]?.querySelector('img')
-      if (!img) return
-      const real = img.src, probe = new Image()
-      img.src = url
-      probe.src = real
-      ;(probe.decode ? probe.decode() : Promise.resolve()).then(() => { img.src = real; URL.revokeObjectURL(url) }, () => {})
-    })
-  }
+  retry(e) { e.stopPropagation(); const id = e.currentTarget.closest('.corner-note-file')?.dataset.file, p = pending.get(id); if (!p) return; forget(id); this.attach([p.file]) }
   pick() {
     let input = this.element.querySelector('input[type=file]')
     if (!input) {
@@ -273,11 +235,7 @@ controller('corner-note', class extends Controller {
     }
     input.click()
   }
-  async unclip(e) {
-    const chip = e.currentTarget, left = this.files().filter(f => f.url !== chip.dataset.url)
-    chip.remove()
-    if (this.idValue) await fetch('/note', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: this.idValue, attachments: left }) })
-  }
+  unclip(e) { const chip = e.currentTarget; forget(chip.dataset.file); chip.remove(); this.paintWords() }
   paste(e) { if (e.clipboardData?.files?.length) { e.preventDefault(); this.attach(e.clipboardData.files) } }
   over(e) { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); this.element.classList.add('is-drop') } }
   out() { this.element.classList.remove('is-drop') }
@@ -295,73 +253,69 @@ controller('corner-note', class extends Controller {
       to = marked?.dataset.to
     }
     to ??= this.element.querySelector('.corner-note-send')?.dataset.to || null
-    if (!this.idValue) { await this.save(); if (!this.idValue) return }
-    const id = this.idValue
-    this.idValue = ''; this.field.value = ''; this.element.querySelector('.corner-note-files').innerHTML = ''
-    this.close()
-    await this.post(`/notes/${id}/send`, to ? { text, to } : { text })
+    if (!this.idValue) this.save(); else if (text !== this.textValue || pending.size) await this.save()
+    const id = await this.made()
+    if (!id) return
+    this.field.value = ''
+    for (const k of [...pending.keys()]) forget(k)
+    this.close(false)
+    // (the core holds it a moment and says so in a toast with its Undo)
+    await postNote(`/notes/${id}/send`, to ? { to } : {})
   }
   async bin() {
     const id = this.idValue, text = this.field.value
-    this.idValue = ''; this.field.value = ''; this.element.querySelector('.corner-note-files').innerHTML = ''
-    this.close()
-    if (id) await this.post(`/notes/${id}/bin`, { text })
+    this.field.value = ''
+    for (const k of [...pending.keys()]) forget(k)
+    this.close(false)
+    if (!id) return
+    await postNote(`/notes/${id}/bin`)
+    if (text.trim()) showToast({ head: 'Note thrown away', line: text.trim().replace(/\s+/g, ' ').slice(0, 80), undo: () => postNote('/notes', { text }) })
   }
 })
 
-/** A new session of an agent's own machine that asks to join (self-join, spec/v1.md 12.4), as a row where sessions
- *  live: its folder's name, "wants to join · <host>" and "vouched by <session>", each line whole (never cut), with
- *  Allow and Deny on a line of their own under the words. Allowed, it says "joining…" until the session is founded
- *  and its own row takes the place; denied, it goes. */
-export function joinRow(j) {
-  const button = (value, label, cls) => html`<form method="post" action="/vouch/${j.nonce}" class="join-answer"><input type="hidden" name="allow" value="${value}"><button type="submit" class="${cls}">${label}</button></form>`
-  const line = j.state === 'joining' ? 'joining…' : `wants to join${j.host ? ` · ${j.host}` : ''}`
-  const tip = `New ${j.kind} session in ${j.folder || j.name}${j.host ? ` on ${j.host}` : ''}${j.by ? `, vouched for by ${j.by}` : ''}`
-  return html`<div class="agent-row join-row" id="join-${j.nonce}" data-state="${j.state}" title="${tip}"><span class="agent-entry"><span class="join-mark" aria-hidden="true">${PLUS}</span><span class="agent-text"><strong>${j.name}</strong><small class="join-line">${line}</small>${j.by ? html`<small class="join-by">vouched by ${j.by}</small>` : ''}</span></span>${j.state === 'ask' ? html`<span class="join-acts" role="group" aria-label="${`Allow new ${j.kind} session ${j.name}?`}">${button('yes', 'Allow', 'join-allow')}${button('no', 'Deny', 'join-deny')}</span>` : ''}</div>`
+/** A new session of an agent's own machine that asks to join (self-join, spec/v1.md 12.4; vm.account.asks), as a row
+ *  where sessions live: what the vouching agent says it is, with Allow and Deny on a line of their own under the words. */
+export function joinRow(ask) {
+  const button = (value, label, cls) => html`<form method="post" action="/vouch/${ask.nonce}" class="join-answer"><input type="hidden" name="allow" value="${value}"><button type="submit" class="${cls}">${label}</button></form>`
+  return html`<div class="agent-row join-row" id="join-${ask.nonce}" data-state="ask" title="${ask.says.en}"><span class="agent-entry"><span class="join-mark" aria-hidden="true">${PLUS}</span><span class="agent-text"><strong>${ask.says.en}</strong><small class="join-line">wants to join</small></span></span><span class="join-acts" role="group" aria-label="${`Allow ${ask.says.en}?`}">${button('yes', 'Allow', 'join-allow')}${button('no', 'Deny', 'join-deny')}</span></div>`
 }
 
-/** The rows of #agents: the sessions (the Scribble Board is the back of the Desk: its page corner). current: the session in view, if any. */
-export function sidebarRows(model, base, current = null) {
-  const { here, away } = sidebarParts(model, base, current)
-  return html`${here.map(r => r[1])}${(model.joins ?? []).map(joinRow)}${inviteAgentButton()}${away.length ? html`<h2 class="caps agent-heading agent-heading-away">Disconnected</h2>${away.map(r => r[1])}` : ''}${inDemo() ? raw('<span class="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
+/** The rows of #agents (vm.sidebar.sessions, in the core's order): the sessions, each heading the core puts above a
+ *  row (a desk's name on All desks, "Disconnected"), the self-join asks and New Agent… before the disconnected ones. */
+export function sidebarRows(vm, base) {
+  const rows = vm?.sidebar?.sessions ?? []
+  const byId = new Map(rows.map(r => [r.id, r]))
+  const invite = html`${(vm?.account?.asks ?? []).map(joinRow)}${inviteAgentButton()}`
+  let invited = false
+  const drawn = rows.map(r => {
+    const h = r.heading
+    const above = h?.kind === 'away' ? html`${invited ? '' : (invited = true, invite)}<h2 class="caps agent-heading agent-heading-away" id="agent-heading-away">${h.text.en}</h2>`
+      : h?.kind === 'desk' ? deskDivider(base, h) : ''
+    return html`${above}${row(r, base, byId)}`
+  })
+  return html`${drawn}${invited ? '' : invite}${inDemo() ? raw('<span class="side-demo" id="side-demo">Demo · <a href="/screens?mock=1" target="_blank" rel="noopener" title="All screens">All screens</a> · <a href="/?mock=0" data-turbo="false" title="Leave demo">leave</a></span>') : ''}`
 }
 // ---- All desks as a filter ----
 // The head says only where the user is: "All desks" or the desk's name, big, beside the desk drawing, a small chevron
 // after it (no counts, no row of names). A press opens a quiet list: All desks, each desk (its lamp lit and a
 // small orange dot while something waits there), New desk. The folded rail's tag opens the same list. On All the
 // sidebar shows every session, a hand-drawn divider over each desk's; a desk shows only its own.
-function deskSwitchList(model, base) {
+function deskSwitchList(vm, base) {
+  const s = vm.sidebar
   const item = (href, name, on, waits, all = false) => html`<a role="menuitemradio" class="desk-switch-item${all ? ' is-all' : ''}" data-nav draggable="false" href="${href}" aria-checked="${String(on)}">${all ? ALL_MARK : deskMark(waits)}<b>${name}</b>${waits ? raw('<i class="desk-switch-dot" aria-label="something waits"></i>') : ''}</a>`
-  return html`<span class="desk-switch-list" id="desk-switch-list">${item(`${base}/?desk=all`, 'All Desks', model.all, false, true)}${desksOf(model).map(d => item(`${base}/?desk=${d.id}`, d.name, !model.all && d.id === model.desk, d.open > 0))}<button type="button" role="menuitem" class="desk-switch-add desk-word-add">${PLUS}<span>New Desk…</span></button></span>`
+  return html`<span class="desk-switch-list" id="desk-switch-list">${item(`${base}/?desk=all`, s.all?.name.en ?? 'All Desks', s.desk === 'all', false, true)}${s.desks.map(d => item(`${base}/?desk=${d.id}`, d.name.en, d.selected, d.waiting > 0))}<button type="button" role="menuitem" class="desk-switch-add desk-word-add">${PLUS}<span>New Desk…</span></button></span>`
 }
 const RULE = raw('<svg class="desk-rule" viewBox="0 0 200 6" preserveAspectRatio="none" aria-hidden="true"><path d="M1 3.4 Q40 2.2 90 3.1 T199 2.6"/></svg>')
-/** On All: the divider over one desk's sessions: its drawing, its name (a press shows that desk alone), a pen rule, the count. */
-function deskDivider(model, base, d) {
-  return html`<div class="agent-row desk-divider" id="agent-desk-${d.id}"><a class="desk-divider-name" data-nav draggable="false" href="${base}/?desk=${d.id}" title="Show ${d.name} alone">${raw(sketchSvg('desk', 'desk-divider-mark'))}<span>${d.name}</span></a>${RULE}${d.open ? html`<b class="desk-divider-n">${d.open}</b>` : ''}</div>`
-}
-/** The same rows one by one, for the live stream: [id, row] of those connected (here) and those that are not (away);
- *  shape says their order, so that a change within one row replaces that row only (app.mjs, the board's live streams). */
-function sidebarParts(model, base, current = null) {
-  const top = model.units.filter(u => !u.parent)
-  const live = u => u.online || Boolean(u.subs?.some(s => s.online))
-  // (data-order: the part a main row is reordered within: its desk, connected or not; the controller "order" below)
-  const rows = u => { const g = `${model.all ? model.deskOf(u.agent) : model.desk ?? ''}:${live(u) ? 'on' : 'off'}`; return [[u.id, row(u, base, current, g)], ...(u.subs ?? []).map(s => [s.id, row(s, base, current)])] }
-  // All desks: every session, desk by desk, each desk under its divider (connected and not, the way they stand)
-  if (model.all) {
-    const groups = desksOf(model).flatMap(d => { const mine = top.filter(u => model.deskOf(u.agent) === d.id); return mine.length ? [[`desk-${d.id}`, deskDivider(model, base, d)], ...[...mine.filter(live), ...mine.filter(u => !live(u))].flatMap(rows)] : [] })
-    const here = groups
-    return { here, away: [], shape: here.map(r => r[0]).join(' ') }
-  }
-  const here = top.filter(live).flatMap(rows), away = top.filter(u => !live(u)).flatMap(rows)
-  return { here, away, shape: `${here.map(r => r[0]).join(' ')}|${away.map(r => r[0]).join(' ')}` }
+/** On All: the divider over one desk's sessions (HeadingView "desk"): its drawing, its name (a press shows that desk
+ *  alone), a pen rule, the count. */
+function deskDivider(base, h) {
+  return html`<div class="agent-row desk-divider" id="agent-desk-${h.desk_id}"><a class="desk-divider-name" data-nav draggable="false" href="${base}/?desk=${h.desk_id}" title="Show ${h.text.en} alone">${raw(sketchSvg('desk', 'desk-divider-mark'))}<span>${h.text.en}</span></a>${RULE}${h.waiting ? html`<b class="desk-divider-n">${h.waiting}</b>` : ''}</div>`
 }
 
-/** The Desk box's drawing (#desk-lamp, kept current by the live stream): the desk with its lamp lit while something
- *  waits on it (open questions of this desk's sessions), dark when it is clear. No count and no hand beside it:
- *  what waits is on the Desk, a stopped session shows its hand in its own row. */
-function deskLamp(model) {
-  return deskMark(model.fresh.length > 0)   // (model.fresh: the open questions of the sessions on this desk)
-}
+/** The Desk box's drawing: the desk with its lamp lit while something waits on it (the open questions of the desk in
+ *  view), dark when it is clear. */
+const deskLamp = vm => deskMark((vm?.sidebar?.waiting ?? 0) > 0)
+
 
 const $ = (sel, root = document) => root.querySelector(sel)
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback } }
@@ -427,7 +381,7 @@ controller('folds', class extends Controller {
 // not); its helpers go with it. A mouse lifts it as soon as it moves, a finger after a short hold (a swipe still
 // scrolls). A ghost of the row follows the pointer; where it would land the row's place stays open, outlined in
 // pencil, and the others make room. Escape puts it back. On a focused row Alt+↑/↓ moves it one place. Let go, and
-// the new place is written (POST /sessions/<id>/move { before | after }: the sessions' registers, on every device). ----
+// the new place goes to the core (PlaceSession { before | after }: the sessions' registers, on every device). ----
 controller('order', class extends Controller {
   connect() {
     this.grab = e => this.down(e)
@@ -456,11 +410,12 @@ controller('order', class extends Controller {
   }
   /** Where the row stands now among its peers: { before } the next one, or { after } the one above, or null alone. */
   spot(row) { const p = this.peers(row), i = p.indexOf(row); return p[i + 1] ? { before: p[i + 1].dataset.unit } : p[i - 1] ? { after: p[i - 1].dataset.unit } : null }
-  save(row) {
+  /** Sends the row's new place (PlaceSession) and puts the rows back as they were painted (kids): the core's next
+   *  render draws the new order, and the page's morph finds its rows where it left them. */
+  save(row, kids) {
     const at = this.spot(row), id = row.dataset.unit
-    if (!at) return
-    fetch(`${BASE}/sessions/${encodeURIComponent(id)}/move`, { method: 'POST', headers: { Accept: 'text/vnd.turbo-stream.html', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ stay: '1', ...at }) })
-      .then(r => r.text()).then(text => { if (text) renderStreamMessage(text) }).catch(err => console.warn('session order', err))
+    for (const k of kids) this.element.append(k)
+    if (at) T?.act({ do: 'place_session', session_id: id, ...at })
   }
 
   key(e) {
@@ -470,12 +425,12 @@ controller('order', class extends Controller {
     e.preventDefault()
     const peers = this.peers(row), i = peers.indexOf(row), j = e.key === 'ArrowUp' ? i - 1 : i + 1
     if (j < 0 || j >= peers.length) return
+    const kids = [...this.element.children]
     this.place(this.block(row), e.key === 'ArrowUp' ? peers[j] : peers[j + 1] ?? null, peers)
-    e.target.focus()
-    this.save(row)
-    // (the live stream draws the sidebar again when the order arrives: the keyboard stays on the row)
+    this.save(row, kids)
+    // (the core's render draws the sidebar in its new order: the keyboard stays on the row)
     const id = row.dataset.unit, until = Date.now() + 2000
-    const back = () => { if (!row.isConnected && document.activeElement === document.body) document.getElementById(`agent-${id}`)?.querySelector(':scope > .agent-entry')?.focus(); else if (Date.now() < until) requestAnimationFrame(back) }
+    const back = () => { const entry = document.getElementById(`agent-${id}`)?.querySelector(':scope > .agent-entry'); if (entry && document.activeElement !== entry) entry.focus(); if (Date.now() < until) requestAnimationFrame(back) }
     requestAnimationFrame(back)
   }
 
@@ -484,12 +439,13 @@ controller('order', class extends Controller {
     if (!row || row.parentElement !== this.element || event.button > 0 || event.target.closest('button, .agent-badge, .crown-edges, .crown-bracket')) return
     if (document.documentElement.dataset.rail === 'folded' || this.peers(row).length < 2) return
     const id = event.pointerId, touch = event.pointerType !== 'mouse', x0 = event.clientX, y0 = event.clientY
-    let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = ''
+    let live = false, timer = 0, ghost = null, grabAt = 0, home = null, start = '', kids = []
     const rows = this.block(row)
     const lift = () => {
       live = true
       try { row.setPointerCapture(id) } catch {}
       start = this.peers(row).map(r => r.dataset.unit).join()
+      kids = [...this.element.children]
       home = rows.at(-1).nextSibling
       const box = row.getBoundingClientRect()
       grabAt = y0 - box.top
@@ -536,7 +492,7 @@ controller('order', class extends Controller {
       row.classList.remove('is-carried')
       for (const r of rows.slice(1)) r.classList.remove('is-carried-sub')
       this.element.classList.remove('is-ordering')
-      if (!cancel && row.isConnected && this.peers(row).map(r => r.dataset.unit).join() !== start) this.save(row)
+      if (!cancel && row.isConnected && this.peers(row).map(r => r.dataset.unit).join() !== start) this.save(row, kids)
     }
     if (touch) timer = setTimeout(lift, 300)
     this.cancel = () => end({ pointerId: id, type: 'escape' }, true)
@@ -551,13 +507,16 @@ controller('order', class extends Controller {
 // menu; the controller "menu" adds the arrows and a new desk, the Desk's row menu (desk.mjs) the long press. Opening and closing the
 // menu and the theme: ui.mjs.
 
-const DEFAULT_DESK = 'main'
-
-/** The desks with what waits on each: [{ id, name, open, knocks }]. */
-function desksOf(model) {
-  const desks = model.state.desks?.length ? model.state.desks : [{ id: DEFAULT_DESK, name: 'Personal' }]
-  const deskOf = card => { const d = model.byAgent.get(card.agent)?.desk; return desks.some(x => x.id === d) ? d : desks[0].id }
-  return desks.map(d => { const mine = (model.allFresh ?? model.fresh).filter(c => deskOf(c) === d.id); return { id: d.id, name: d.name || 'Personal', open: mine.length, knocks: mine.some(c => ['high', 'critical'].includes(c.urgency)) } })
+/** Makes a desk (AddDesk) and gives it once the core drew it (the desk that was not there before); null after a while. */
+async function addDesk(name) {
+  const had = new Set(T.vm().sidebar.desks.map(d => d.id))
+  T.act({ do: 'add_desk', name })
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 50))
+    const made = T.vm().sidebar.desks.find(d => !had.has(d.id))
+    if (made) return made
+  }
+  return null
 }
 
 /** Whether the newest day of What's new was opened on this device (news.mjs remembers it; the row's dot until then). */
@@ -575,37 +534,35 @@ const deskMark = lit => raw(lit ? sketchSvg('desk', 'menu-lamp is-lit').replace(
 /** All Desks' own drawing: two desks, one behind the other (the parent row of the desk lists). */
 const ALL_MARK = raw(sketchSvg('desks', 'menu-lamp menu-all-mark'))
 
-/** The desk rows of the menu (#menu-desk-rows, kept current by the live stream): the desk in view checked (the marked
- *  row); a desk's lamp is lit while something waits on it. */
-function menuDeskRows(model, base) {
-  const desks = desksOf(model)
-  const here = d => (model.all ? false : model.desk ? d.id === model.desk : d === desks[0])
+/** The desk rows of the menu (vm.sidebar.desks): the desk in view checked (the marked row); a desk's lamp is lit while
+ *  something waits on it. */
+function menuDeskRows(vm, base) {
+  const { desks, all } = vm.sidebar
   // (a row: the link to the desk, and beside it the pencil that renames it: menu#rename puts a field in the name's place)
-  const allRow = desks.length > 1 ? html`<span class="menu-desk-row is-all" data-desk="all"><a role="menuitemradio" class="menu-desk is-all" data-nav draggable="false" href="${base}/?desk=all" data-desk="all" aria-checked="${String(Boolean(model.all))}">${ALL_MARK}<b>All Desks</b>${model.allFresh?.length ? html`<i class="menu-n">${model.allFresh.length}</i>` : ''}</a></span>` : ''
-  return html`<span class="menu-desk-rows${desks.length > 1 ? ' has-all' : ''}" id="menu-desk-rows">${allRow}${desks.map((d, i) => html`<span class="menu-desk-row" data-desk="${d.id}"><a role="menuitemradio" class="menu-desk" data-nav draggable="false" href="${base}/?desk=${d.id}" data-desk="${d.id}" aria-checked="${String(here(d))}">${deskMark(d.open > 0)}<b>${d.name}</b>${d.open ? html`<i class="menu-n">${d.open}</i>` : ''}</a><button type="button" class="menu-desk-pen" data-action="click->menu#rename" data-menu-id-param="${d.id}" title="Rename ${d.name}" aria-label="Rename the desk ${d.name}">${sk('pen')}</button></span>`)}</span>`
+  const allRow = all ? html`<span class="menu-desk-row is-all" data-desk="all"><a role="menuitemradio" class="menu-desk is-all" data-nav draggable="false" href="${base}/?desk=all" data-desk="all" aria-checked="${String(all.selected)}">${ALL_MARK}<b>${all.name.en}</b>${all.waiting ? html`<i class="menu-n">${all.waiting}</i>` : ''}</a></span>` : ''
+  return html`<span class="menu-desk-rows${all ? ' has-all' : ''}" id="menu-desk-rows">${allRow}${desks.map(d => html`<span class="menu-desk-row" data-desk="${d.id}"><a role="menuitemradio" class="menu-desk" data-nav draggable="false" href="${base}/?desk=${d.id}" data-desk="${d.id}" aria-checked="${String(d.selected)}">${deskMark(d.waiting > 0)}<b>${d.name.en}</b>${d.waiting ? html`<i class="menu-n">${d.waiting}</i>` : ''}</a><button type="button" class="menu-desk-pen" data-action="click->menu#rename" data-menu-id-param="${d.id}" title="Rename ${d.name.en}" aria-label="Rename the desk ${d.name.en}">${sk('pen')}</button></span>`)}</span>`
 }
 
 const NOTE_EMPTY = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M5.4 4.6Q12 4.2 18.8 4.7Q19.3 10 19.1 14.6L14.4 19.4Q9.8 19.7 5.2 19.3Q4.8 12 5.4 4.6Z"/><path d="M19.1 14.6Q15.6 14.3 14.6 15Q14.3 17 14.4 19.4"/></svg>'), NOTE_WRITTEN = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M5.4 4.6Q12 4.2 18.8 4.7Q19.3 10 19.1 14.6L14.4 19.4Q9.8 19.7 5.2 19.3Q4.8 12 5.4 4.6Z"/><path d="M19.1 14.6Q15.6 14.3 14.6 15Q14.3 17 14.4 19.4"/><path d="M8 8.6Q12 8.2 15.8 8.5"/><path d="M8 11.7Q11.6 11.4 15.6 11.6"/><path d="M8 14.8Q10 14.6 11.8 14.8"/></svg>')
-const noteGlyph = model => { const n = deskNotesOf(model)[0]; return html`<span class="tab-note-ico" id="tab-note-ico">${n && (String(n.text ?? '').trim() || n.attachments?.length) ? NOTE_WRITTEN : NOTE_EMPTY}</span>` }
+const noteGlyph = vm => html`<span class="tab-note-ico" id="tab-note-ico">${vm.notes?.written ? NOTE_WRITTEN : NOTE_EMPTY}</span>`
 /** The phone's bar ("Menu" is no tab: the menu is the pill at the top left):
  *  a small glass capsule at the foot, centred: Chat · Desk · Note. The Desk carries what waits as its number (red
  *  while something knocks); Note opens the corner note to the crowned session. On a card's own page it stands back. */
-export function tabBar(model, base, view) {
-  const fresh = model.allFresh ?? model.fresh
-  const knocks = fresh.some(c => ['high', 'critical'].includes(c.urgency))
-  const chat = lastChat(model), unread = unreadChats(model)
+export function tabBar(vm, base, view) {
+  const sb = vm.sidebar, chat = lastChat(vm)
   // (monochrome pen drawings; Chat opens the last chat, Desk carries what waits, Note opens the note; inside a chat or
   // a card the capsule stands back)
   // (in a chat the capsule stays; the composer waits folded into a round glass pen beside it)
   const pen = view === 'session' ? html`<button type="button" class="compose-fab" id="compose-fab" aria-label="Write a message" title="Write a message">${sk('pen')}</button>` : ''
   return html`${pen}<nav class="tabbar" id="tabbar" aria-label="Chat, Desk, Note"${['card', 'picture', 'whiteboard'].includes(view) ? raw(' hidden') : ''}>
-<a class="tab" data-tab="chat" data-nav draggable="false" href="${chat ? `${base}/chat/${encodeURIComponent(chat)}` : `${base}/chats`}"${view === 'chats' ? raw(' aria-current="page"') : ''}>${sk('bubble')}<span>Chat</span><i class="tab-badge" id="chat-badge"${unread ? '' : raw(' hidden')}>${unread}</i></a>
-<a class="tab" data-tab="desk" data-nav draggable="false" href="${base}/"${view === 'desk' ? raw(' aria-current="page"') : ''}>${sk('desk')}<span>Desk</span>${waitingBadge(fresh.length, knocks)}</a>
-<button type="button" class="tab" data-tab="note" aria-controls="corner-note-box" aria-expanded="false">${noteGlyph(model)}<span>Note</span></button>
+<a class="tab" data-tab="chat" data-nav draggable="false" href="${chat ? `${base}/chat/${encodeURIComponent(chat)}` : `${base}/chats`}"${view === 'chats' ? raw(' aria-current="page"') : ''}>${sk('bubble')}<span>Chat</span><i class="tab-badge" id="chat-badge" hidden></i></a>
+<a class="tab" data-tab="desk" data-nav draggable="false" href="${base}/"${view === 'desk' ? raw(' aria-current="page"') : ''}>${sk('desk')}<span>Desk</span>${waitingBadge(sb.badge, sb.knocking > 0)}</a>
+<button type="button" class="tab" data-tab="note" aria-controls="corner-note-box" aria-expanded="false">${noteGlyph(vm)}<span>Note</span></button>
 </nav>`
 }
 const waitingBadge = (n, knocks) => html`<i class="tab-badge${knocks ? ' is-knock' : ''}" id="tab-badge"${n ? '' : raw(' hidden')}>${n > 99 ? '99+' : n}</i>`
 
+const PUSH_WORDS = { all: 'Yes', knocking: 'Only knocking', off: 'No' }
 // A gear in the pen's line (Settings).
 const GEAR = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M12 3.2L13.4 5.6L16.1 4.9L16.8 7.6L19.4 8.4L18.6 11.1L20.6 13L18.5 14.8L19.1 17.5L16.4 18.1L15.4 20.7L12.9 19.6L10.6 21.1L9.3 18.6L6.5 18.8L6.4 16L4 14.6L5.5 12.2L4.4 9.6L7 8.6L7.4 5.8L10.2 6.1Z"/><path d="M12.1 9.3Q14.7 9.6 14.8 12Q14.6 14.6 12 14.7Q9.4 14.5 9.3 12Q9.5 9.4 12.1 9.3Z"/></svg>')
 /** The Trommi menu (#brand-doors): the wide screen's (from the sidebar's foot) and the phone's (from the pill), one
@@ -614,9 +571,10 @@ const GEAR = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><pa
  *  (news.mjs, a dot while its newest day is unseen here), and Log out
  *  (/logout, the same page that asks first as Settings · Account's Log Out). A phone also has its places here
  *  (Scribble, Artifacts). */
-function menuDoors(model, base) {
+function menuDoors(vm, base) {
+  const push = vm.settings?.push ?? null, level = push?.level ?? 'off'
   return html`<nav class="sidedoors" id="brand-doors" role="menu" aria-label="Desks and settings" data-controller="menu" data-menu-desk-value="${base}/" data-action="keydown->menu#walk click->menu#chosen" data-owns-keys hidden>
-<div class="menu-desks" id="menu-desks">${menuDeskRows(model, base)}
+<div class="menu-desks" id="menu-desks">${menuDeskRows(vm, base)}
 <button type="button" role="menuitem" class="menu-desk-add is-plus" id="desk-add" data-action="click->menu#newDesk" aria-label="New Desk…" title="New Desk…">${NEW_DESK}</button>
 <form class="menu-desk-form" id="desk-new" data-menu-target="deskForm" data-action="submit->menu#makeDesk" hidden><input class="menu-desk-field" data-menu-target="deskName" data-action="keydown->menu#deskKey" maxlength="40" placeholder="Name of the new desk" aria-label="Name of the new desk" autocomplete="off"><button type="submit">Add</button></form>
 <p class="menu-desk-error" data-menu-target="deskError" role="alert"></p></div>
@@ -626,7 +584,7 @@ function menuDoors(model, base) {
 <a role="menuitem" class="menu-logout-row" href="${base}/logout" data-nav draggable="false" id="menu-logout">${sk('logout')}<span>Log out</span></a>
 <div class="menu-places">${[['scribble-board', 'pen', 'Scribble'], ['artifacts', 'picture', 'Artifacts']].map(([p, icon, word]) => html`<a role="menuitem" href="${base}/${p}" data-nav draggable="false">${sk(icon)}<span>${word}</span></a>`)}</div>
 <div class="menu-icons" role="group" aria-label="This device">
-<button role="menuitem" type="button" id="push-toggle" class="menu-ico" data-level="off" aria-label="Push on this device: No" title="Push">${sk('bell')}${raw('<svg class="push-mark push-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 3.8Q12 12.2 19.9 20.4"/></svg><svg class="push-mark push-knock" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.6Q11.9 10.4 12.1 12.9"/><path d="M12 15.6Q12.1 15.8 12 16"/></svg>')}</button>
+<button role="menuitem" type="button" id="push-toggle" class="menu-ico" data-level="${level}" aria-checked="${String(level !== 'off')}"${push?.busy ? raw(' aria-busy="true"') : ''} aria-label="Push on this device: ${PUSH_WORDS[level]}" title="Push: ${PUSH_WORDS[level]}">${sk('bell')}${raw('<svg class="push-mark push-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 3.8Q12 12.2 19.9 20.4"/></svg><svg class="push-mark push-knock" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7.6Q11.9 10.4 12.1 12.9"/><path d="M12 15.6Q12.1 15.8 12 16"/></svg>')}</button>
 <button role="menuitem" type="button" id="theme-toggle" class="menu-ico menu-theme-row" aria-label="Theme: Light, Dark or System (T)" title="Theme (T)">${raw(sketchSvg('moon', 'ico-moon'))}${raw(sketchSvg('sun', 'ico-sun'))}<i class="ico-auto" aria-hidden="true">A</i></button>
 <button role="menuitem" type="button" id="keys-open" class="menu-ico" data-action="click->menu#keys" aria-haspopup="dialog" aria-keyshortcuts="?" aria-label="Keyboard Shortcuts (?)" title="Shortcuts (?)">${sk('question')}</button>
 
@@ -645,7 +603,7 @@ export const SIDE_FOOT = raw(`<div class="side-foot"><button type="button" class
 /** The desk switcher: opened by the chevron beside the desk's
  *  name at the top of the sidebar, and by the folded rail's tag; All desks first, the desks set in under it, the one in
  *  view marked. One component for both. Kept current by the live stream (#desk-switch-list). */
-const deskSwitch = (model, base) => html`<nav class="desk-switch" id="desk-switch" role="menu" aria-label="Desks" hidden>${deskSwitchList(model, base)}</nav>`
+const deskSwitch = (vm, base) => html`<nav class="desk-switch" id="desk-switch" role="menu" aria-label="Desks" hidden>${deskSwitchList(vm, base)}</nav>`
 /** The desk's name on the rail's tag: two short lines at most, whole words (a word too long is cut by its line). */
 function tagLines(name) {
   const words = String(name).trim().split(/\s+/), lines = []
@@ -655,25 +613,30 @@ function tagLines(name) {
 }
 /** How big the desk's name may stand in the Desk box: s (as "Desk"), m (a little smaller), l (two smaller lines). */
 const nameSize = name => { const n = [...String(name)].length; return n <= 6 ? 's' : n <= 11 ? 'm' : 'l' }
-/** The head's words: the place's name (never empty: "Desk" when a desk has none) and the chevron that opens the desk
- *  list (always there, so New desk is reachable with one desk too). Kept current by the live stream (#desk-place):
- *  a room's desks arrive after the page was drawn. */
-const placeName = model => String(model?.deskName ?? '').trim() || 'Personal'
-/** The pill's words (the menu's button on a wide screen): the desk's drawing and the place's name (#pill-place, live). */
-const pillPlace = (model, current = null) => { const s = current ? model.byAgent.get(current) : null; return s ? html`<span class="pill-place" id="pill-place">${avatar(s, { crown: false })}<b>${s.name}</b></span>` : html`<span class="pill-place" id="pill-place"><span class="desk-lamp">${deskLamp(model)}</span><b>${placeName(model)}</b></span>` }
-const deskPlace = model => html`<span class="desk-place" id="desk-place"><span class="desk-name" data-size="${nameSize(placeName(model))}">${placeName(model)}</span></span>`
+/** The head's words: the place's name (vm.sidebar.place: the desk's name, or "All desks") and the chevron that opens
+ *  the desk list (always there, so New desk is reachable with one desk too). */
+const placeName = vm => vm?.sidebar?.place?.en || 'Personal'
+/** A session by its key or its slug: its sidebar row, else its page (SessionView). */
+const sessionOf = (vm, id) => (id == null ? null : vm.sidebar.sessions.find(r => r.id === id || r.slug === id) ?? Object.values(vm.sessions ?? {}).find(s => s.id === id || s.slug === id) ?? null)
+/** The pill's words (the menu's button on a wide screen): the session in view with its drawing, else the desk's drawing
+ *  and the place's name. */
+const pillPlace = (vm, s = null) => (s ? html`<span class="pill-place" id="pill-place">${avatar(whoOf(s), { crown: false })}<b>${s.name.en}</b></span>` : html`<span class="pill-place" id="pill-place"><span class="desk-lamp">${deskLamp(vm)}</span><b>${placeName(vm)}</b></span>`)
+const deskPlace = vm => html`<span class="desk-place" id="desk-place"><span class="desk-name" data-size="${nameSize(placeName(vm))}">${placeName(vm)}</span></span>`
 const deskChevron = html`<button type="button" class="desk-switch-open" aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" title="Desks and settings" aria-label="Desks and settings">${sk('unfold')}</button>`
-export function topbar(model, base, current, session = null) {
-    return html`<header class="topbar"><div class="brand">
-<h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${placeName(model)}"${current ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(model)}</span>${BELL}${deskPlace(model)}</a>${deskChevron}
-<button type="button" class="brand-open" id="brand-menu"${session && model.byAgent.get(session) ? html` data-session="${session}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${placeName(model)}. Menu: desks, sessions, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<b class="open-word">Trommi</b>${pillPlace(model, session)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
-${menuDoors(model, base)}
-${deskSwitch(model, base)}
-<button type="button" class="rail-tag" aria-haspopup="menu" aria-controls="brand-doors" title="Switch desk" aria-label="Desk ${model.deskName}: switch desks"><span class="rail-tag-string" aria-hidden="true"></span><span class="rail-tag-paper"><b>${tagLines(model.deskName).map(l => html`<span>${l}</span>`)}</b></span></button>
+/** The top of the sidebar: the Desk box, the Trommi menu's button and the menu, the desk switcher, the rail's tag.
+ *  isDesk: the Desk is the page; session: the session in view (its key or slug). */
+export function topbar(vm, base, isDesk, session = null) {
+  const s = sessionOf(vm, session), place = placeName(vm)
+  return html`<header class="topbar"><div class="brand">
+<h1 class="deskpill"><a href="${base}/" data-nav draggable="false" class="desk-go" id="desk-go" title="${place}"${isDesk ? raw(' aria-current=""') : ''}><span class="desk-lamp" id="desk-lamp">${deskLamp(vm)}</span>${BELL}${deskPlace(vm)}</a>${deskChevron}
+<button type="button" class="brand-open" id="brand-menu"${s ? html` data-session="${s.id}"` : ''} aria-haspopup="menu" aria-expanded="false" aria-controls="brand-doors" aria-label="Where you are: ${place}. Menu: desks, sessions, places, settings" title="Menu (Ctrl K)">${raw(String(BELL).replace('class="brand-mark"', 'class="brand-mark open-mark"'))}<b class="open-word">Trommi</b>${pillPlace(vm, s)}<span class="conn open-conn" id="conn" data-state="connecting" role="status"><i aria-hidden="true"></i><span id="conn-text" class="tc-sr">Connecting</span></span><span class="brand-fold">${sk('unfold')}</span></button>${inDemo() ? html`<a class="pill-demo" href="${base}/screens?mock=1" target="_blank" rel="noopener" title="Demo">Demo · All screens</a>` : ''}</h1>
+${menuDoors(vm, base)}
+${deskSwitch(vm, base)}
+<button type="button" class="rail-tag" aria-haspopup="menu" aria-controls="brand-doors" title="Switch desk" aria-label="Desk ${place}: switch desks"><span class="rail-tag-string" aria-hidden="true"></span><span class="rail-tag-paper"><b>${tagLines(place).map(l => html`<span>${l}</span>`)}</b></span></button>
 </div></header>`
 }
 
-// The phone's menu: the pill opens it, a choice or a tap beside closes it; New Desk… makes a desk (POST /desk, as the
+// The phone's menu: the pill opens it, a choice or a tap beside closes it; New Desk… makes a desk (AddDesk, as the
 // wide screen's menu); All Sessions… the whole list as a sheet from below.
 controller('phone-menu', class extends Controller {
   connect() {
@@ -695,13 +658,10 @@ controller('phone-menu', class extends Controller {
     e.preventDefault()
     const f = e.currentTarget, name = f.querySelector('input').value.trim(), err = f.querySelector('.pm-error')
     if (!name) return
-    try {
-      const res = await fetch('/desk', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
-      const out = await res.json().catch(() => ({}))
-      if (!res.ok || !out.desk?.id) { err.textContent = `Not made: ${out.error || res.statusText}`; return }
-      this.close()
-      window.trommi?.router?.visit(`/?desk=${encodeURIComponent(out.desk.id)}`)
-    } catch (x) { err.textContent = `Not made: ${x.message}` }
+    const made = await addDesk(name)
+    if (!made) { err.textContent = 'Not made: the desk did not come.'; return }
+    this.close()
+    window.trommi?.router?.visit(`/?desk=${encodeURIComponent(made.id)}`)
   }
 })
 // After a desk picked in the menu the page is drawn anew: the menu opens again where it was.
@@ -750,55 +710,32 @@ if (typeof document !== 'undefined') {
 // pen lines; a red dot while a session is stopped or a card knocks) and the name of the place in view: the desk, or
 // the session with its drawing. Wide screens show neither.
 const PLACES = { off: 'Off your mind', agents: 'Settings', room: 'Settings', artifacts: 'Artifacts', whiteboard: 'Scribble Board' }
-/** The phone's menu: a glass sheet that grows out of the pill: Settings; the desks (the one in
- *  view checked, New Desk…); the sessions (the first eight by what waits and activity, then All Sessions… as a sheet
- *  from below); then Scribble, Artifacts. */
-function phoneMenu(model, base) {
-  const fresh = model.allFresh ?? model.fresh
-  const desks = desksOf(model), here = d => !model.all && (model.desk ? d.id === model.desk : d === desks[0])
-  const row = (href, icon, word, { on = false, n = 0, cls = '' } = {}) => html`<a role="menuitem" class="pm-row${cls ? ` ${cls}` : ''}" data-nav draggable="false" href="${href}"${on ? raw(' aria-current="true"') : ''}>${icon}<b>${word}</b>${n ? html`<i class="pm-n">${n}</i>` : ''}${on ? html`<span class="pm-check">${sk('tick')}</span>` : ''}</a>`
-  return html`<div class="phone-menu" id="phone-menu" role="menu" aria-label="Desks and places" data-controller="phone-menu" hidden>
-${row(`${base}/settings`, sk('key'), 'Settings', { cls: 'is-settings' })}
-<p class="pm-h">Desks</p>
-${desks.length > 1 ? row(`${base}/?desk=all`, deskMark(false), 'All Desks', { on: Boolean(model.all), n: fresh.length }) : ''}${desks.map(d => row(`${base}/?desk=${d.id}`, deskMark(false), d.name, { on: here(d) }))}
-<button type="button" class="pm-row pm-add" data-action="phone-menu#newDesk">${PLUS}<b>New Desk…</b></button>
-<form class="pm-desk-form" data-action="submit->phone-menu#makeDesk" hidden><input name="name" maxlength="40" placeholder="Name of the new desk" aria-label="Name of the new desk" autocomplete="off"><button type="submit">Add</button><p class="pm-error" role="alert"></p></form>
-<div class="pm-places">${row(`${base}/scribble-board`, sk('pen'), 'Scribble')}${row(`${base}/artifacts`, sk('picture'), 'Artifacts')}</div>
-</div>`
+/** In a chat (a phone): its title, the drawing and the name with ▾, opens the sessions of its desk to switch to. */
+function chatSwitch(vm, base, s) {
+  const mates = vm.sidebar.sessions.filter(r => r.desk_id === s.desk_id)
+  const desk = vm.sidebar.desks.find(d => d.id === s.desk_id)
+  return html`<button type="button" class="phone-pill chat-title" id="phone-pill" aria-haspopup="menu" aria-controls="phone-menu" aria-expanded="false" aria-label="${s.name.en}: switch to another agent">${avatar(whoOf(s), { crown: false })}<b>${s.name.en}</b>${sk('unfold')}</button>
+<div class="phone-menu" id="phone-menu" role="menu" aria-label="Agents of this desk" data-controller="phone-menu" hidden><p class="pm-h">${desk?.name.en ?? 'This desk'}</p>${mates.map(a => html`<a role="menuitem" class="pm-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}"${a.id === s.id ? raw(' aria-current="true"') : ''}>${avatar(whoOf(a), { crown: false })}<b>${a.name.en}</b>${a.open ? html`<i class="pm-n">${a.open}</i>` : ''}${a.id === s.id ? html`<span class="pm-check">${sk('tick')}</span>` : ''}</a>`)}</div>`
 }
 
-/** In a chat (a phone): its title, the drawing and the name with ▾, opens the agents of the desk in view to switch to. */
-function chatSwitch(model, base, current) {
-  const s = model.byAgent.get(current)
-  if (!s) return ''
-  const fresh = model.allFresh ?? model.fresh
-  const deskId = model.deskOf?.(s)
-  const mates = model.agents.filter(a => !a.archived && (model.deskOf?.(a) ?? null) === (deskId ?? null))
-  return html`<button type="button" class="phone-pill chat-title" id="phone-pill" aria-haspopup="menu" aria-controls="phone-menu" aria-expanded="false" aria-label="${s.name}: switch to another agent">${avatar(s, { crown: false })}<b>${s.name}</b>${sk('unfold')}</button>
-<div class="phone-menu" id="phone-menu" role="menu" aria-label="Agents of this desk" data-controller="phone-menu" hidden><p class="pm-h">${model.desks?.find(d => d.id === deskId)?.name ?? 'This desk'}</p>${mates.map(a => { const n = fresh.filter(c => c.agent === a.id).length; return html`<a role="menuitem" class="pm-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.id)}"${a.id === s.id ? raw(' aria-current="true"') : ''}>${avatar(a, { crown: false })}<b>${a.name}</b>${n ? html`<i class="pm-n">${n}</i>` : ''}${a.id === s.id ? html`<span class="pm-check">${sk('tick')}</span>` : ''}</a>` })}</div>`
+// The chats (a phone's Chat tab): the last chat opened (the crowned session's at first).
+const CHAT_KEY = 'trommi-last-chat'
+export function chatOpened(slug) { try { localStorage.setItem(CHAT_KEY, slug) } catch {} }
+const lastChat = vm => { let id = null; try { id = localStorage.getItem(CHAT_KEY) } catch {} ; return sessionOf(vm, id)?.slug ?? vm.sidebar.sessions.find(r => r.crowned)?.slug ?? vm.sidebar.sessions[0]?.slug ?? null }
+/** The page of chats: the sessions of the desk in view, as the sidebar has them. */
+export function chatsMain(vm, base) {
+  return html`<main id="chats" class="chats-page" aria-label="Chats"><h1 class="chats-h">Chats</h1><ul class="chats-list">${vm.sidebar.sessions.map(a => html`<li id="chat-${a.id}"><a class="chats-row" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.slug)}">${avatar(whoOf(a), { crown: false })}<span class="chats-words"><b>${a.name.en}</b><small>${a.cap?.word.en ?? ''}</small></span><span class="chats-side">${a.open ? html`<i class="pm-n">${a.open}</i>` : ''}</span></a></li>`)}</ul></main>`
 }
 
-// The chats (a phone's Chat tab): the last chat opened (the crowned session's at first); what is new since.
-const CHAT_KEY = 'trommi-last-chat', READ_KEY = 'trommi-chat-read'
-const readMap = () => { try { return JSON.parse(localStorage.getItem(READ_KEY) || '{}') } catch { return {} } }
-export function chatOpened(id) { try { localStorage.setItem(CHAT_KEY, id); const m = readMap(); m[id] = Date.now(); localStorage.setItem(READ_KEY, JSON.stringify(m)) } catch {} }
-const lastChat = model => { let id = null; try { id = localStorage.getItem(CHAT_KEY) } catch {} ; return (id && model.byAgent.get(id) && !model.byAgent.get(id).archived ? id : null) ?? crownOf(model)?.id ?? model.agents.find(a => !a.archived)?.id ?? null }
-/** Sessions with something new since their chat was last opened (their last activity after that). */
-const unreadChats = model => { const m = readMap(); return model.agents.filter(a => !a.archived && Number(a.seen) > (m[a.id] ?? 0)).length }
-export function chatsMain(model, base) {
-  const fresh = model.allFresh ?? model.fresh, m = readMap()
-  const list = [...model.agents.filter(a => !a.archived)].sort((x, y) => (Number(y.seen) || 0) - (Number(x.seen) || 0))
-  return html`<main id="chats" class="chats-page" aria-label="Chats"><h1 class="chats-h">Chats</h1><ul class="chats-list">${list.map(a => { const n = fresh.filter(c => c.agent === a.id).length, nw = Number(a.seen) > (m[a.id] ?? 0); return html`<li><a class="chats-row${nw ? ' is-new' : ''}" data-nav draggable="false" href="${base}/chat/${encodeURIComponent(a.id)}">${avatar(a, { crown: false })}<span class="chats-words"><b>${a.name}</b><small>${a.task || a.model || ''}</small></span><span class="chats-side">${a.seen ? agoSpan(Number(a.seen), 'ago') : ''}${n ? html`<i class="pm-n">${n}</i>` : ''}</span></a></li>` })}</ul></main>`
-}
-
-export function phoneBar(model, base, { view = '', current = null, title = '' } = {}) {
-  const waits = (model.blocked ?? 0) + (model.knocking ?? 0) > 0
-  // In a chat: back to the chats, its title switches the agent. Elsewhere the pill: the desk's drawing and name with
-  // ▾; it opens the phone's menu (phoneMenu).
-  if (view === 'session' && current) return html`<div class="phone-bar is-chat" id="phone-bar"><a class="phone-back" data-nav draggable="false" href="${base}/chats" aria-label="Chats">${raw('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.8 5.6Q11 9 7.6 12.1Q11 15.4 14.9 18.6"/></svg>')}</a>${chatSwitch(model, base, current)}</div>`
+/** The phone's top line: in a chat, back to the chats and its title (current: the session, its key or slug);
+ *  elsewhere the pill with the desk's drawing and name (the Trommi menu), and the place's name. */
+export function phoneBar(vm, base, { view = '', current = null, title = '' } = {}) {
+  const waits = vm.sidebar.stopped + vm.sidebar.knocking > 0
+  const s = view === 'session' ? sessionOf(vm, current) : null
+  if (s) return html`<div class="phone-bar is-chat" id="phone-bar"><a class="phone-back" data-nav draggable="false" href="${base}/chats" aria-label="Chats">${raw('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.8 5.6Q11 9 7.6 12.1Q11 15.4 14.9 18.6"/></svg>')}</a>${chatSwitch(vm, base, s)}</div>`
   const place = ['desk', 'card', 'picture', 'chats'].includes(view) ? ''
     : html`<span class="phone-place"><b>${PLACES[view] ?? String(title).replace(/^\(\d+\) /, '').replace(/ · Trommi$/, '')}</b></span>`
-  return html`<div class="phone-bar" id="phone-bar"><button type="button" class="phone-pill" id="desk-pill" data-opens="brand-doors" aria-haspopup="menu" aria-controls="brand-doors" aria-expanded="false" aria-label="${placeName(model)}: desks and places" title="Desks and places"${waits ? raw(' data-waits') : ''}><span class="desk-lamp" id="phone-lamp">${deskMark(false)}</span><b>${placeName(model)}</b>${sk('unfold')}</button>${place}</div>`
+  return html`<div class="phone-bar" id="phone-bar"><button type="button" class="phone-pill" id="desk-pill" data-opens="brand-doors" aria-haspopup="menu" aria-controls="brand-doors" aria-expanded="false" aria-label="${placeName(vm)}: desks and places" title="Desks and places"${waits ? raw(' data-waits') : ''}><span class="desk-lamp" id="phone-lamp">${deskMark(false)}</span><b>${placeName(vm)}</b>${sk('unfold')}</button>${place}</div>`
 }
 export const DRAWER_VEIL = raw('<div class="drawer-veil" id="drawer-veil" aria-hidden="true"></div>')
 
@@ -921,7 +858,7 @@ export const MenuController = class extends Controller {
     clearTimeout(this.timer)
   }
   // ---- the desks' order: a row is picked up and dragged up or down (a mouse: as soon as it moves; a finger: held a
-  // moment first, so a swipe still scrolls). The others make room; let go, the order is written (POST /desk { order }:
+  // moment first, so a swipe still scrolls). The others make room; let go, the order goes to the core (OrderDesks:
   // each desk's register holds its place, on every device) and the number keys 1…9 follow it (0 is All desks). ----
   grab(event) {
     const row = event.target.closest?.('.menu-desk-row')
@@ -930,7 +867,7 @@ export const MenuController = class extends Controller {
     if (rows().length < 2) return
     const y0 = event.clientY, x0 = event.clientX, touch = event.pointerType !== 'mouse', id = event.pointerId
     let live = false, timer = 0, grabAt = null
-    const start = rows().map(r => r.dataset.desk).join()
+    const kids = rows(), start = kids.map(r => r.dataset.desk).join()
     const lift = () => {
       live = true
       try { row.setPointerCapture(id) } catch {}
@@ -965,8 +902,10 @@ export const MenuController = class extends Controller {
       row.animate?.([{ translate: row.style.translate || '0 0' }, { translate: '0 0' }], { duration: 160, easing: 'cubic-bezier(.3, 1.4, .5, 1)' })
       row.style.translate = ''
       const order = rows().map(r => r.dataset.desk)
+      // (the rows stand as they were painted again: the core's render draws the new order)
+      for (const r of kids) list.append(r)
       if (cancel || e.type === 'pointercancel' || order.join() === start) return
-      fetch('/desk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order }) }).catch(err => console.warn('desk order', err))
+      T?.act({ do: 'order_desks', desk_ids: order.filter(d => d !== 'all') })
     }
     addEventListener('pointermove', move, { passive: false }); addEventListener('pointerup', end); addEventListener('pointercancel', end)
   }
@@ -1004,7 +943,7 @@ export const MenuController = class extends Controller {
     if (t.closest('[role="menuitem"]:not([data-menu-body-param]), [role="menuitemradio"], [role="option"]')) this.close()
   }
 
-  // ---- a new desk: "+" opens a line for its name; Enter makes it (POST /desk, the hub's desks) and goes there ----
+  // ---- a new desk: "+" opens a line for its name; Enter makes it (AddDesk) and goes there ----
   newDesk() {
     this.deskFormTarget.hidden = !this.deskFormTarget.hidden
     this.deskErrorTarget.textContent = ''
@@ -1018,25 +957,14 @@ export const MenuController = class extends Controller {
     event.preventDefault()
     const name = this.deskNameTarget.value.trim()
     if (!name) return this.deskNameTarget.focus()
-    try {
-      const res = await fetch('/desk', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
-      let out = {}
-      try { out = await res.json() } catch {}
-      if (!res.ok || !out.desk?.id) { this.deskErrorTarget.textContent = `Not made: ${out.error || res.statusText}`; return }
-      this.deskNameTarget.value = ''
-      this.deskFormTarget.hidden = true
-      this.close()
-      const made = out.desk.id, home = this.deskValue
-      go(`${home}?desk=${encodeURIComponent(made)}`)
-      // Undo takes the new desk away again and goes back to the default desk.
-      toast({ head: 'Desk added', line: out.desk.name ?? name, undo: async () => {
-        const res = await fetch('/desk', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: made, remove: true }) })
-        if (!res.ok) { toast({ head: 'Not undone', line: 'the desk could not be taken away', role: 'alert' }); return }
-        go(`${home}?desk=main`)
-      } })
-    } catch { this.deskErrorTarget.textContent = 'Not made: the board did not answer.' }
+    const made = await addDesk(name)
+    if (!made) { this.deskErrorTarget.textContent = 'Not made: the desk did not come.'; return }
+    this.deskNameTarget.value = ''
+    this.deskFormTarget.hidden = true
+    this.close()
+    go(`${this.deskValue}?desk=${encodeURIComponent(made.id)}`)
   }
-  // ---- rename a desk: the pencil puts a field where the name is; Enter saves (POST /desk { id, name }), Escape leaves it ----
+  // ---- rename a desk: the pencil puts a field where the name is; Enter saves (RenameDesk), Escape leaves it ----
   rename({ params: { id } }) {
     const row = this.element.querySelector(`.menu-desk-row[data-desk="${CSS.escape(id)}"]`), was = row?.querySelector('b')?.textContent ?? ''
     if (!row || row.querySelector('.menu-desk-rename')) return
@@ -1044,23 +972,14 @@ export const MenuController = class extends Controller {
     field.value = was
     form.append(field)
     row.classList.add('is-renaming'); row.append(form)
-    // (the live stream leaves the rows alone while a name is being written)
-    const hold = e => { if (e.target?.getAttribute?.('target') === 'menu-desk-rows') e.preventDefault() }
-    document.addEventListener('turbo:before-stream-render', hold)
-    const done = () => { document.removeEventListener('turbo:before-stream-render', hold); form.remove(); row.classList.remove('is-renaming') }
+    const done = () => { form.remove(); row.classList.remove('is-renaming') }
     field.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); done(); row.querySelector('.menu-desk-pen')?.focus() } })
     field.addEventListener('blur', () => setTimeout(() => { if (form.isConnected && !form.contains(document.activeElement)) done() }, 0))
-    form.addEventListener('submit', async e => {
+    form.addEventListener('submit', e => {
       e.preventDefault()
       const name = field.value.trim().slice(0, 40)
-      if (!name || name === was) return done()
-      try {
-        const res = await fetch('/desk', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name }) })
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText)
-        row.querySelector('b').textContent = name
-        if (row.querySelector('.menu-desk[aria-checked="true"]')) for (const n of document.querySelectorAll('.topbar .desk-name')) n.textContent = name   // (the sidebar's heading is the desk in view)
-        done()
-      } catch (err) { done(); toast({ head: 'Not renamed', line: sayError(err, 'the board did not answer'), role: 'alert' }) }
+      done()
+      if (name && name !== was) T?.act({ do: 'rename_desk', desk_id: id, name })
     })
     field.focus(); field.select()
   }
@@ -1157,10 +1076,10 @@ controller('lean', class extends Controller {
   }
 })
 
-// ---- the sidebar's live piece, on every page that has it ----
+// ---- the frame's wiring, once ----
 export function register(t) {
-  const { BASE, stream } = t
-  t.get(/^\/chats$/, ({ req, res }) => { const m = t.model(); t.page(req, res, { model: m, title: 'Chats · Trommi', view: 'chats', main: chatsMain(m, BASE) }) })
+  T = t
+  t.get(/^\/chats$/, ({ req, res }) => t.page(req, res, { title: 'Chats · Trommi', view: 'chats', main: chatsMain(t.vm(), t.BASE) }))
   document.addEventListener('turbo:load', () => { const m = /^\/chat\/([^/?#]+)$/.exec(location.pathname); if (m) chatOpened(decodeURIComponent(m[1])) })
   // The Trommi menu opens and closes (its button, a click beside it, Escape); the theme switch.
   const shut = () => { const doors = $('#brand-doors'); if (doors && !doors.hidden) { doors.hidden = true; $('#brand-menu')?.setAttribute('aria-expanded', 'false'); delete doors.dataset.from } }
@@ -1197,11 +1116,16 @@ export function register(t) {
   const rail = () => { if (narrow.matches) delete document.documentElement.dataset.rail; else { try { if (localStorage.getItem(KEY) === 'folded') document.documentElement.dataset.rail = 'folded' } catch {} } dispatchEvent(new Event('resize')) }
   narrow.addEventListener('change', rail)
   if (narrow.matches) rail()
-  t.live('', {
-    take: m => ({ waits: (m.blocked ?? 0) + (m.knocking ?? 0) > 0, sidebar: sidebarRows(m, BASE), rows: sidebarParts(m, BASE), lamp: deskLamp(m), place: deskPlace(m), pill: pillPlace(m), noteIco: noteGlyph(m), badge: waitingBadge((m.allFresh ?? m.fresh).length, (m.allFresh ?? m.fresh).some(c => ['high', 'critical'].includes(c.urgency))), sw: deskSwitchList(m, BASE), desks: menuDeskRows(m, BASE), notes: cornerNote(m, BASE) }),
-    diff: (was, now) => `${was.waits !== now.waits ? (document.getElementById('drawer-open')?.toggleAttribute('data-waits', now.waits), '') : ''}${t.differs(was.notes, now.notes) ? stream('replace', 'corner-note-box', now.notes) : ''}${t.differs(was.sw, now.sw) && now.sw ? stream('replace', 'desk-switch-list', now.sw) : ''}${t.differs(was.place, now.place) ? stream('replace', 'desk-place', now.place) : ''}${t.differs(was.pill, now.pill) && !document.getElementById('brand-menu')?.dataset.session ? stream('replace', 'pill-place', now.pill) : ''}${t.differs(was.noteIco, now.noteIco) ? stream('replace', 'tab-note-ico', now.noteIco) : ''}${t.differs(was.badge, now.badge) ? stream('replace', 'tab-badge', now.badge) : ''}${t.differs(was.lamp, now.lamp) ? stream('update', 'desk-lamp', now.lamp) + stream('update', 'phone-lamp', now.lamp) : ''}${t.differs(was.desks, now.desks) ? stream('replace', 'menu-desk-rows', now.desks) : ''}${!t.differs(was.sidebar, now.sidebar) ? ''
-      : was.rows.shape !== now.rows.shape ? stream('update', 'agents', now.sidebar)
-        : [...now.rows.here, ...now.rows.away].map(([id, row], i) => (t.differs([...was.rows.here, ...was.rows.away][i][1], row) ? stream('replace', `agent-${id}`, row) : '')).join('')}`,
-  })
+  // Push on this device (the menu's bell): Off → Only knocking → All → Off, the core registers this browser (Push).
+  document.addEventListener('click', e => {
+    const bell = e.target instanceof Element ? e.target.closest('#push-toggle') : null
+    if (!bell || bell.getAttribute('aria-busy') === 'true') return
+    e.stopPropagation()
+    const now = bell.dataset.level || 'off', level = now === 'off' ? 'knocking' : now === 'knocking' ? 'all' : 'off'
+    const why = level === 'off' ? '' : t.vm().settings?.push ? pushObstacle() : 'This browser has no push.'
+    const note = $('#menu-push-note')
+    if (note) { note.textContent = why; note.hidden = !why }
+    if (!why) t.act({ do: 'push', level })
+  }, true)
 }
 
