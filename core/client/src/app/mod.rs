@@ -78,6 +78,10 @@ enum Pending {
     Wipe,
     /// The device state read for a join by an invite link (`AccountAction::Join`).
     LinkLoad,
+    /// The challenge of a founding with a passkey: the hub, the e-mail given.
+    FoundChallenge(String, Option<String>),
+    /// The platform's new passkey for a founding: the hub, the e-mail, the account id the challenge named.
+    FoundPasskey(String, Option<String>, String),
     /// The challenge of a sign-in with a passkey, at this hub.
     PasskeyChallenge(String),
     /// The platform's passkey for a sign-in at this hub.
@@ -332,6 +336,7 @@ impl App {
             }
             AccountAction::Found { email, password, hub } => return self.found(&email, &password, hub.as_deref(), out),
             AccountAction::SignInWithPasskey { hub } => return self.passkey_sign_in(hub.as_deref(), out),
+            AccountAction::FoundWithPasskey { email, hub } => return self.found_with_passkey(email, hub.as_deref(), out),
             AccountAction::Join { link } => {
                 if self.engine.is_some() || self.founding.is_some() || self.signing_in.is_some() || self.linking.is_some() {
                     out.push(log(LogLevel::Warn, "account: a join by link on a slot that has a device or is busy"));
@@ -451,6 +456,72 @@ impl App {
                 out.push(Effect::Http { id, request });
             }
             Err(problem) => self.sign_in_failed(problem),
+        }
+    }
+
+    /// `FoundWithPasskey`: the hub's challenge (it names the new account's id), the platform's passkey, then the
+    /// founding as with a password (`found_loaded`).
+    fn found_with_passkey(&mut self, email: Option<String>, hub: Option<&str>, out: &mut Vec<Effect>) {
+        use crate::account::signin;
+        let Some(config) = self.config.as_ref() else { return };
+        if self.engine.is_some() || self.room_join_wait.is_some() || self.signing_in.is_some() || self.founding.is_some() {
+            out.push(log(LogLevel::Warn, "account: a founding on a slot that has a device or is busy"));
+            return;
+        }
+        let client = format!("{}/{}", config.platform, config.version);
+        match signin::hub_of(hub, &config.hub).and_then(|hub| signin::passkey_challenge(&hub, &client).map(|asked| (hub, asked))) {
+            Ok((hub, (request, _))) => {
+                let id = self.io(Pending::FoundChallenge(hub, email));
+                self.next_view.account = crate::views::AccountView { step: "working".into(), ..Default::default() };
+                out.push(Effect::Http { id, request });
+            }
+            Err(problem) => self.found_failed(problem.text()),
+        }
+    }
+
+    fn found_challenged(&mut self, hub: String, email: Option<String>, result: IoResult<HttpResponse>, out: &mut Vec<Effect>) {
+        use crate::account::signin::{self, Problem};
+        let Some(config) = self.config.as_ref() else { return };
+        let client = format!("{}/{}", config.platform, config.version);
+        let Ok((_, expect)) = signin::passkey_challenge(&hub, &client) else { return };
+        let answer = match result {
+            IoResult::Ok(response) => crate::hub::Codec.answer(&expect, &response),
+            IoResult::Err(error) => Err(crate::hub::classify_io(&error).unwrap_or(crate::hub::Failure::Offline)),
+        };
+        match answer {
+            Ok(crate::hub::Answer::PasskeyChallenge(challenge)) => {
+                let user_name = email.clone().filter(|e| !e.trim().is_empty()).unwrap_or_else(|| challenge.account.clone());
+                let id = self.io(Pending::FoundPasskey(hub, email, challenge.account.clone()));
+                out.push(Effect::Platform {
+                    id,
+                    op: PlatformOp::PasskeyCreate {
+                        rp_id: String::new(),
+                        challenge: challenge.challenge.to_vec().into(),
+                        user_handle: challenge.user_handle.to_vec().into(),
+                        user_name,
+                        prf_input: trommi_core::account::PASSKEY_PRF_INPUT.to_vec().into(),
+                    },
+                });
+            }
+            Err(crate::hub::Failure::NotNow { status: 429, .. }) => self.found_failed(Problem::Throttled.text()),
+            Err(crate::hub::Failure::NotNow { .. } | crate::hub::Failure::Offline) => self.found_failed(Problem::Offline.text()),
+            _ => self.found_failed(Problem::Other("bad-format").text()),
+        }
+    }
+
+    fn found_passkey_made(&mut self, hub: String, email: Option<String>, account: String, result: IoResult<PlatformAnswer>, out: &mut Vec<Effect>) {
+        let IoResult::Ok(PlatformAnswer::PasskeyCreated { credential_id, attestation_object, client_data_json, prf }) = result else {
+            self.next_view.account = crate::views::AccountView { step: "found".into(), ..Default::default() };
+            return;
+        };
+        let begun = crate::account::found::begin_with_passkey(hub, email.as_deref(), &account, credential_id.0, attestation_object.0, client_data_json.0, &prf.0, &mut trommi_core::crypto::SystemEntropy);
+        match begun {
+            Ok(founding) => {
+                let id = self.io(Pending::FoundLoad);
+                out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
+                self.founding = Some((None, founding));
+            }
+            Err(text) => self.found_failed(text),
         }
     }
 
@@ -734,7 +805,7 @@ impl App {
                         self.open(now_ms, revision, entries, &mut out);
                     }
                 }
-                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) => {
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) => {
                     if let IoResult::Err(e) = &result {
                         out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
                     }
@@ -775,6 +846,16 @@ impl App {
                     }
                 }
             },
+            Event::Http { id, result } if matches!(self.pending.get(&id), Some(Pending::FoundChallenge(..))) => {
+                if let Some(Pending::FoundChallenge(hub, email)) = self.pending.remove(&id) {
+                    self.found_challenged(hub, email, result, &mut out);
+                }
+            }
+            Event::Platform { id, result } if matches!(self.pending.get(&id), Some(Pending::FoundPasskey(..))) => {
+                if let Some(Pending::FoundPasskey(hub, email, account)) = self.pending.remove(&id) {
+                    self.found_passkey_made(hub, email, account, result, &mut out);
+                }
+            }
             Event::Http { id, result } if matches!(self.pending.get(&id), Some(Pending::PasskeyChallenge(_))) => {
                 if let Some(Pending::PasskeyChallenge(hub)) = self.pending.remove(&id) {
                     self.passkey_challenged(hub, result, &mut out);
