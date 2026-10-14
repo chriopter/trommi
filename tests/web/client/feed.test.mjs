@@ -85,10 +85,8 @@ test(`${HISTORY} changes taken in batches are the room they are taken item by it
   // what it is for: a batch is one durable step of the store, an item taken alone is one each
   t.diagnostic(`durable steps of the store for ${head} changes: the away device ${batched} in batches, ${single} item by item; the signed-in device ${codeBatched} and ${codeSingle}`)
   assert.ok(batched * 10 < single, `the away device: ${batched} durable steps in batches against ${single} item by item`)
-  // (a device that signed in with the code joins the sessions behind the sign-in, 8.5: what its catch-up meets of a
-  //  session it has not joined yet is taken alone until it has, and read again then; how much of that there is
-  //  depends on how fast the joins are, so the bound is looser than the away device's)
-  assert.ok(codeBatched * 2 < codeSingle, `the signed-in device: ${codeBatched} durable steps in batches against ${codeSingle} item by item`)
+  // (a sign-in reads no past, 9.0.6: what the signed-in devices write does not grow with the history, batched or not)
+  assert.ok(codeBatched < head / 3 && codeSingle < head / 3, `the signed-in device reads no past: ${codeBatched} and ${codeSingle} durable steps for ${head} changes`)
 })
 
 test('the store fails under a batch: nothing of the batch is taken, the device is opened again and takes it then', async t => {
