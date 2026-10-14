@@ -312,7 +312,7 @@ jobs:
       ${{ !cancelled() && needs.decide.outputs.deliver == 'true' && needs.decide.outputs.hub == 'true'
       && needs.checks.result == 'success' && needs.assemble.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 50
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -326,7 +326,10 @@ jobs:
         run: |
           set -u
           sh .github/scripts/inputs.sh > "$RUNNER_TEMP/inputs"
-          for i in $(seq 1 90); do
+          # Bounded: this run holds the workflow's one place, and a hub that is delivered late (or never, its own run replaced
+          # by a newer commit) must not keep every connector release waiting for hours. After 8 minutes the connector is
+          # released against the hub that is live (its own tests ran against this commit's hub); the warning says so.
+          for i in $(seq 1 16); do
             if [ "$(sh .github/scripts/deployed.sh "$RUNNER_TEMP/inputs" hub)" = hub=false ]; then
               echo "the server runs the hub and the updater of $GITHUB_SHA"
               exit 0
@@ -334,8 +337,7 @@ jobs:
             echo "round $i: the server does not run this commit's hub yet"
             sleep 30
           done
-          echo "::error::the server does not run the hub of $GITHUB_SHA after 45 minutes: no connector is released"
-          exit 1
+          echo "::warning::the server does not run the hub of $GITHUB_SHA after 8 minutes: the connector is released against the hub that is live"
 
   # The connector's signed release connector-v<N>: its checks (and the core's) and its four builds passed, and, when
   # this push changed the hub, the server runs it.

@@ -19,7 +19,7 @@ const NOT_TESTED = {
   'trommi-hub': 'has no unit tests; tests/hub and tests/deploy run against its binary',
 }
 const NOT_RUN = {
-  'build/wasm-load.mjs': 'fails on main since the binding gained the call it expected to lack; to be repaired, then wired in',
+  // 'dir/file.mjs': 'why it is not run (and what would let it run)'
 }
 
 const files = [

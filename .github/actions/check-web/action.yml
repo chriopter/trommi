@@ -55,7 +55,6 @@ runs:
       shell: bash
       run: node demo/check.mjs
     # The browser tests (headless Chrome of the runner), one after the other so that a failing one does not hide the others.
-    # (tests/web/build/wasm-load.mjs is not among them: it fails on main, see the pull request.)
     - name: Browser tests
       env:
         CHROMIUM: google-chrome
@@ -67,4 +66,5 @@ runs:
           node "tests/web/$t" || { echo "::error::tests/web/$t failed"; status=1; }
         done
         node --test tests/web/build/build.test.mjs || status=1
+        node tests/web/build/wasm-load.mjs || status=1
         exit "$status"
