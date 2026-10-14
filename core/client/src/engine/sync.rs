@@ -1402,7 +1402,7 @@ impl Engine {
     }
 
     /// Keys were handed over: what was chained without its body is read back, group by group.
-    fn keys_came(&mut self) {
+    pub(super) fn keys_came(&mut self) {
         let upto = self.position;
         for (group, change) in std::mem::take(&mut self.keyless) {
             self.queue(Mend::Group { group, after: change.saturating_sub(1), upto });

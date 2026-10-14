@@ -21,6 +21,8 @@ use std::collections::{BTreeMap, VecDeque};
 pub type Hub = Box<dyn FnMut(u64, &HttpRequest) -> Result<HttpResponse, IoError>>;
 /// What a stream brings the moment it is opened (its head, what the hub replays).
 pub type StreamHub = Box<dyn FnMut(u64, &HttpRequest) -> Vec<StreamItem>>;
+/// The platform's services (passkeys, push); without one every `Platform` effect is `Refused`.
+pub type Platform = Box<dyn FnMut(&super::PlatformOp) -> IoResult<super::PlatformAnswer>>;
 
 pub struct Sim {
     pub app: App,
@@ -31,6 +33,7 @@ pub struct Sim {
     pub timer: Option<u64>,
     pub hub: Option<Hub>,
     pub stream_hub: Option<StreamHub>,
+    pub platform: Option<Platform>,
     /// The streams that are open, oldest first.
     pub streams: Vec<(IoId, HttpRequest)>,
     /// Requests wait in `held` to be answered by hand.
@@ -59,6 +62,7 @@ impl Sim {
             timer: None,
             hub: None,
             stream_hub: None,
+            platform: None,
             streams: Vec::new(),
             hold: false,
             die_in: None,
@@ -205,9 +209,12 @@ impl Sim {
                     id,
                     result: IoResult::Err(IoError::new(IoErrorKind::Denied)),
                 }),
-                Effect::Platform { id, .. } => self.queue.push_back(Event::Platform {
+                Effect::Platform { id, op } => self.queue.push_back(Event::Platform {
                     id,
-                    result: IoResult::Ok(super::PlatformAnswer::Refused),
+                    result: match self.platform.as_mut() {
+                        Some(platform) => platform(&op),
+                        None => IoResult::Ok(super::PlatformAnswer::Refused),
+                    },
                 }),
                 Effect::Timer { at_ms } => self.timer = at_ms,
                 Effect::FileReady { .. }
