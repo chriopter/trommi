@@ -5,7 +5,7 @@ mod common;
 
 mod wire_tests {
     use sha2::{Digest, Sha256};
-    use trommi_hub::wire::*;
+    use trommi_wire::layout::*;
 
     fn header(kind: u8, subject: Subject) -> Header {
         Header {
@@ -421,7 +421,7 @@ mod rules_tests {
     use trommi_hub::observer::{Added, Snapshot};
     use trommi_hub::observer::{By, CommitFacts, Device};
     use trommi_hub::rules::*;
-    use trommi_hub::wire::{CommitNote, TrommiRoom};
+    use trommi_wire::layout::{CommitNote, TrommiRoom};
 
     fn d(n: u8) -> Device {
         [n; 32]
@@ -893,7 +893,7 @@ mod rules_tests {
 
     #[test]
     fn the_note_names_the_current_room_state_and_one_cut_per_removed_device() {
-        use trommi_hub::wire::{Cut, ZERO32};
+        use trommi_wire::layout::{Cut, ZERO32};
         let f = facts(By::Member(d(1)), &[1, 2, 3], &[], &[3, 2]);
         let cut = |n: u8| Cut {
             device: d(n),
@@ -923,7 +923,7 @@ mod rules_tests {
 
 mod content_tests {
     use trommi_hub::content::*;
-    use trommi_hub::wire::*;
+    use trommi_wire::layout::*;
 
     fn header(
         kind: u8,
@@ -2637,7 +2637,7 @@ mod pem_tests {
 
 mod tree_size {
     use trommi_hub::observer::{MlsObserver, Observer, MAX_LEAVES};
-    use trommi_hub::wire::Writer;
+    use trommi_wire::layout::Writer;
 
     /// A GroupInfo whose GroupInfo extensions hold a tree of each of `trees` blank nodes (one byte each), signed by
     /// nobody.

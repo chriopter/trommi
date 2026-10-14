@@ -16,7 +16,7 @@ use crate::error::{refuse, Refused};
 use crate::observer::{
     CommitFacts, Device, GroupState, KeyPackageFacts, Observer, Refusal, Snapshot,
 };
-use crate::wire::{Reader, Writer};
+use trommi_wire::layout::{Reader, Writer};
 
 pub type Key = [u8; 32];
 

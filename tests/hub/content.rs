@@ -7,7 +7,7 @@ use common::*;
 use serde_json::{json, Value};
 use std::time::Duration;
 use trommi_hub::util::{b64, hex, random, unb64};
-use trommi_hub::wire::{self, Cut, Envelope, Subject, ZERO16, ZERO32};
+use trommi_wire::layout::{self as wire, Cut, Envelope, Subject, ZERO16, ZERO32};
 
 struct Scene {
     w: World,

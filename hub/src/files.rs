@@ -14,7 +14,7 @@ use crate::error::{refuse, Res};
 use crate::observer::Device;
 use crate::store::{self, Auth, Effects, Room, Who};
 use crate::util::{b64, hex, random, same};
-use crate::wire;
+use trommi_wire::layout as wire;
 
 /// Where a file's bytes lie. Both parts of the path are hex of fixed-length ids: nothing of a request reaches a
 /// path as text.

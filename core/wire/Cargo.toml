@@ -1,0 +1,14 @@
+[package]
+name = "trommi-wire"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+description = "What the hub and the app core must read the same way, written once: refusal codes and their statuses, the limits of the hub's routes, the constants of the structs of spec/v1.md, and (feature `layout`) the hub's strict parsers of those structs. No key, no client logic, no I/O."
+
+[features]
+# The structs of spec/v1.md that the hub parses (layout.rs). The hub turns it on; the app core does not need it.
+layout = ["dep:sha2", "dep:serde"]
+
+[dependencies]
+sha2 = { version = "=0.10.9", optional = true }
+serde = { version = "=1.0.229", features = ["derive"], optional = true }

@@ -50,19 +50,16 @@ use crate::ids::{self, DeviceId, Hash32, InviteId, RoomId, SessionId};
 use crate::mls::key_package::{verify_key_package, verify_key_package_of};
 use zeroize::Zeroizing;
 
-/// How long an invite for a human device may be answered.
-pub const HUMAN_INVITE_LIFE_MS: u64 = 10 * 60 * 1000;
-/// How long an invite for an agent device, for a new session or a takeover, may be answered.
-pub const AGENT_INVITE_LIFE_MS: u64 = 15 * 60 * 1000;
-/// How far the new device's clock may stand from the inviter's, which set the deadline: the allowance the
-/// format uses for freshness (section 9.0.5).
-pub const CLOCK_TOLERANCE_MS: u64 = 2 * 60 * 1000;
+/// How long an invite for a human device may be answered; for an agent device, a new session or a takeover; how
+/// far the new device's clock may stand from the inviter's, which set the deadline (the allowance the format uses
+/// for freshness, section 9.0.5).
+pub use trommi_wire::invite::{AGENT_INVITE_LIFE_MS, CLOCK_TOLERANCE_MS, HUMAN_INVITE_LIFE_MS};
 /// How long the person has to confirm the code once a Request was accepted.
 pub const CONFIRM_MS: u64 = 5 * 60 * 1000;
 /// The longest KeyPackage a Request carries, in bytes.
 pub const MAX_KEY_PACKAGE_LEN: usize = 8192;
 /// The length of the MAC over a Request, and of the MAC over an Offer.
-pub const MAC_LEN: usize = 32;
+pub use trommi_wire::invite::MAC_LEN;
 /// The length of the inviter's signature over an Offer, as the Offer's MAC covers it.
 pub const OFFER_SIGNATURE_LEN: usize = 64;
 /// The length of the inviter's nonce.
@@ -90,13 +87,10 @@ const MAX_STORED_LEN: usize = 4 * MAX_REQUEST_LEN;
 const LABEL_INVITE_ID: &str = "trommi invite id";
 const LABEL_MAC_KEY: &str = "trommi invite mac";
 const LABEL_OFFER_MAC_KEY: &str = "trommi invite offer";
-const LABEL_COMMITMENT: &str = "Trommi Invite Commitment";
-const LABEL_OFFER_HASH: &str = "Trommi Invite Offer";
-const LABEL_REQUEST_HASH: &str = "Trommi Invite Request";
 const LABEL_CODE: &str = "Trommi Invite Code";
-const SIGN_OFFER: &str = "TrommiInviteOffer";
-const SIGN_REQUEST: &str = "TrommiInviteRequest";
-const SIGN_REVEAL: &str = "TrommiInviteReveal";
+use trommi_wire::invite::{
+    LABEL_COMMITMENT, LABEL_OFFER_HASH, LABEL_REQUEST_HASH, SIGN_OFFER, SIGN_REQUEST, SIGN_REVEAL,
+};
 
 /// What the new device is invited as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

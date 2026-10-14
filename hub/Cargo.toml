@@ -18,6 +18,8 @@ path = "src/main.rs"
 fuzz = []
 
 [dependencies]
+# What the hub and the app core read the same way: codes, limits, the structs of spec/v1.md (core/wire).
+trommi-wire = { path = "../core/wire", features = ["layout"] }
 openmls = { workspace = true }
 openmls_rust_crypto = { workspace = true }
 openmls_traits = { workspace = true }

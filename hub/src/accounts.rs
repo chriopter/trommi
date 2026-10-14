@@ -15,7 +15,10 @@ use crate::store::Room;
 use crate::util::{b64, random, same, unb64};
 use crate::webauthn;
 
-pub const SEALED_COPY_LEN: usize = 61;
+use trommi_wire::account::{
+    KDF_ALG, KDF_LANES, KDF_MEMORY_KIB, KDF_PASSES, KDF_RECORD_VERSION, MAX_CREDENTIAL_ID_LEN, MAX_EMAIL_LEN,
+    SEALED_COPY_LEN, SEALED_COPY_VERSION,
+};
 const PASSKEY_CHALLENGE_MS: u64 = 120_000;
 
 /// v1 §16.1: trim, only U+0021–U+007E, lowercase, one `@`, the lengths. Refused otherwise, never mapped.
@@ -33,7 +36,7 @@ pub fn normalise_email(input: &str) -> Res<String> {
     let Some((before, after)) = domain.rsplit_once('.') else {
         return Err(bad());
     };
-    let fits = email.len() <= 254
+    let fits = email.len() <= MAX_EMAIL_LEN
         && (1..=64).contains(&local.len())
         && (1..=190).contains(&before.len())
         && (2..=63).contains(&after.len());
@@ -101,7 +104,7 @@ impl Prehashed {
 /// v1 §16.3: a sealed copy is 61 bytes and begins with 0x02; anything else is refused, not converted.
 pub fn sealed_copy(v: &Value, key: &str) -> Res<Vec<u8>> {
     let copy = bytes(v, key, SEALED_COPY_LEN)?;
-    if copy[0] != 0x02 {
+    if copy[0] != SEALED_COPY_VERSION {
         return Err(refuse("bad-format", "a sealed copy of another format"));
     }
     Ok(copy)
@@ -110,15 +113,18 @@ pub fn sealed_copy(v: &Value, key: &str) -> Res<Vec<u8>> {
 /// v1 §16.6: the key derivation record is pinned; the hub stores and returns exactly it.
 pub fn kdf_record(v: &Value) -> Res<String> {
     let k = &v["kdf"];
-    let pinned =
-        k["alg"] == "argon2id" && k["v"] == 1 && k["m"] == 65536 && k["t"] == 3 && k["p"] == 1;
+    let pinned = k["alg"] == KDF_ALG
+        && k["v"] == KDF_RECORD_VERSION
+        && k["m"] == KDF_MEMORY_KIB
+        && k["t"] == KDF_PASSES
+        && k["p"] == KDF_LANES;
     if !pinned {
         return Err(refuse(
             "bad-format",
             "the key derivation record is pinned to argon2id v1, m 65536, t 3, p 1",
         ));
     }
-    Ok(json!({ "alg": "argon2id", "v": 1, "m": 65536, "t": 3, "p": 1 }).to_string())
+    Ok(json!({ "alg": KDF_ALG, "v": KDF_RECORD_VERSION, "m": KDF_MEMORY_KIB, "t": KDF_PASSES, "p": KDF_LANES }).to_string())
 }
 
 pub struct LoginRow {
@@ -451,7 +457,7 @@ impl Accounts {
         v: &Value,
         now: u64,
     ) -> Res<Option<(i64, Vec<u8>, Vec<u8>, u32, i64)>> {
-        let credential_id = var_bytes(v, "credential_id", 1023)?;
+        let credential_id = var_bytes(v, "credential_id", MAX_CREDENTIAL_ID_LEN)?;
         let authenticator_data = var_bytes(v, "authenticator_data", 1024)?;
         let client_data = var_bytes(v, "client_data_json", 4096)?;
         let signature = var_bytes(v, "signature", 512)?;
@@ -924,7 +930,7 @@ impl Accounts {
             }
             // the passkey used just now: a new copy under it
             (Value::Null, p) if !p.is_null() => {
-                let (id, copy) = (var_bytes(p, "credential_id", 1023)?, sealed_copy(p, "sealed_copy")?);
+                let (id, copy) = (var_bytes(p, "credential_id", MAX_CREDENTIAL_ID_LEN)?, sealed_copy(p, "sealed_copy")?);
                 let n = c
                     .prepare_cached("UPDATE passkeys SET sealed_copy = ?1 WHERE credential_id = ?2 AND account_id = ?3")?
                     .execute(params![copy, id, account])?;
@@ -978,7 +984,7 @@ impl Accounts {
             (p, Value::Null, Value::Null) if !p.is_null() => key(p, "auth_salt", "auth_hash"),
             (Value::Null, k, Value::Null) if !k.is_null() => key(k, "kit_salt", "kit_hash"),
             (Value::Null, Value::Null, p) if !p.is_null() => {
-                let credential_id = var_bytes(p, "credential_id", 1023)?;
+                let credential_id = var_bytes(p, "credential_id", MAX_CREDENTIAL_ID_LEN)?;
                 let authenticator_data = var_bytes(p, "authenticator_data", 1024)?;
                 let client_data = var_bytes(p, "client_data_json", 4096)?;
                 let signature = var_bytes(p, "signature", 512)?;

@@ -38,9 +38,9 @@ use trommi_hub::config::Config;
 use trommi_hub::observer::SUITE;
 use trommi_hub::push::Recorder;
 use trommi_hub::util::{b64, hex, random, unb64};
-use trommi_hub::wire::{
-    self, CommitNote, Cut, Header, Subject, TrommiRoom, TrommiSession, EXT_ROOM, EXT_SESSION,
-    ZERO16, ZERO32,
+use trommi_wire::layout::{
+    self as wire, CommitNote, Cut, Header, Subject, TrommiRoom, TrommiSession, EXT_ROOM,
+    EXT_SESSION, ZERO16, ZERO32,
 };
 
 // ---- the hub under test
@@ -1061,7 +1061,11 @@ impl Dev {
     pub fn link(&mut self, hub: &TestHub) -> Reply {
         self.lease = None;
         self.process = b64(&random::<16>());
-        let reply = self.post(hub, "/v1/link", &json!({ "process": self.process, "hears": true, "working": false, "last_call_at": 0 }));
+        let reply = self.post(
+            hub,
+            "/v1/link",
+            &json!({ "process": self.process, "hears": true, "working": false, "last_call_at": 0 }),
+        );
         self.lease = reply.json()["generation"].as_u64();
         reply
     }
@@ -1422,7 +1426,11 @@ impl World {
         helpers: &[&Dev],
     ) -> (Vec<u8>, Reply, Out) {
         let now = self.ada.room_now();
-        let mut adds = if humans.is_empty() { vec![] } else { self.claim(opener, humans) };
+        let mut adds = if humans.is_empty() {
+            vec![]
+        } else {
+            self.claim(opener, humans)
+        };
         adds.extend(helpers.iter().map(|h| h.key_package(false)));
         let (group, info0) = opener.create_session(&random(), session);
         let key0 = opener.sealed_key(&group, 0, &info0, now.0, &self.recovery.hpke_public, false);
