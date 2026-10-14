@@ -124,9 +124,10 @@ export function register(t) {
 
 // ---- share view ----
 // The page for people outside the room: https://app.trommi.com/artifact/<share_id>#<share_secret>.<file_key>.<sha256>
-// (the repository's README, "links for people outside the room"). Everything after # stays in this browser. The page
-// is drawn here; OPENING the link (fetch with the secret, check, decrypt) is the core's, and the app core has no way to
-// open a share link yet (a core gap): until it has, the page says so. `show` draws what it will hand over.
+// (the repository's README, "links for people outside the room"). Everything after # stays in this browser. Opening
+// the link is the core's (Action::OpenShared: the file comes as FileReady under the id "shared", or a toast says why
+// not). `core`: the page side of a core started without a device ({ act, on, fileUrl }, core.mjs); app.mjs does not
+// start one for this page yet, and then the page says it cannot open the link.
 const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n }
 function frame(text) {
   const f = el('iframe', { className: 'share-frame', src: '/frame', title: 'Shared page' })
@@ -134,17 +135,19 @@ function frame(text) {
   addEventListener('message', function ready(e) { if (e.source === f.contentWindow && e.data === 'ready') { removeEventListener('message', ready); f.contentWindow.postMessage({ html: text }, '*') } })
   return f
 }
-/** What was shared, once its bytes are here: a page in the sandboxed frame, a picture, else a download. */
-export function show(main, bytes, mediaType) {
-  if (mediaType === 'text/html') return main.replaceChildren(frame(new TextDecoder().decode(bytes)))
-  const url = URL.createObjectURL(new Blob([bytes], { type: mediaType }))
-  main.replaceChildren(mediaType.startsWith('image/') ? el('img', { className: 'share-picture', src: url, alt: 'Shared picture' }) : el('p', { className: 'room-lead' }, el('a', { href: url, download: 'trommi-file', textContent: 'Download the file' })))
-}
-export function showShare() {
+export function showShare(core = null) {
   document.title = 'Shared · Trommi'
   const main = el('main', { id: 'share', className: 'room share' })
   document.body.replaceChildren(main)
   const say = (text, cls) => main.replaceChildren(el('p', { className: cls, textContent: text }))
-  if (!location.hash.slice(1)) return say('This link is incomplete: the part after # is missing or damaged.', 'room-error')
-  say('Shared links cannot be opened in this version of Trommi yet.', 'room-error')   // CORE GAP: opening a share link
+  if (!core) return say('Shared links cannot be opened in this version of Trommi yet.', 'room-error')
+  say('Opening…', 'room-wait')
+  core.on('render', vm => { const x = vm.toasts?.find(y => y.alert); if (x) say(x.text.en, 'room-error') })
+  core.on('file', async id => {
+    if (id !== 'shared') return
+    const url = core.fileUrl(id), blob = await (await fetch(url)).blob()
+    if (blob.type === 'text/html') return main.replaceChildren(frame(await blob.text()))
+    main.replaceChildren(blob.type.startsWith('image/') ? el('img', { className: 'share-picture', src: url, alt: 'Shared picture' }) : el('p', { className: 'room-lead' }, el('a', { href: url, download: 'trommi-file', textContent: 'Download the file' })))
+  })
+  core.act({ do: 'open_shared', link: location.origin + location.pathname + location.hash })
 }
