@@ -294,10 +294,10 @@ jobs:
             '.path == ".github/workflows/ship-web.yml" and .head_branch == "main" and .event == "push" and .repository.full_name == $r and .head_repository.full_name == $r' \
             "$RUNNER_TEMP/run.json" > /dev/null || { echo "::error::run $RUN_ID is not a build of the main branch of this repository"; exit 1; }
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "success") | .name' > "$RUNNER_TEMP/jobs.txt"
-          grep -Fxq "Checks / Web app (check)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job Checks / Web app (check) of run $RUN_ID did not succeed"; exit 1; }
+          grep -Fxq "Web app (check)" "$RUNNER_TEMP/jobs.txt" || { echo "::error::the job Web app (check) of run $RUN_ID did not succeed"; exit 1; }
           # the core's check of that run passed, or was skipped (the core did not change): as for a delivery by a build
-          core=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Checks / Core (check)") | .conclusion')
-          case "$core" in success|skipped) ;; *) echo "::error::the job Checks / Core (check) of run $RUN_ID: ${core:-not there}"; exit 1 ;; esac
+          core=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --jq '.jobs[] | select(.name == "Core (check)") | .conclusion')
+          case "$core" in success|skipped) ;; *) echo "::error::the job Core (check) of run $RUN_ID: ${core:-not there}"; exit 1 ;; esac
           echo "commit=$(jq -r .head_sha "$RUNNER_TEMP/run.json")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

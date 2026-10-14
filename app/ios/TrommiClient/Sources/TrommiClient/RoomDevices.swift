@@ -132,19 +132,27 @@ extension Room {
    * still names steps for and that no other call is running is taken on where it stopped (`finishInvite`). The steps
    * live in the core's state, so they survive the app: a "They match" that could not finish (the newcomer had no
    * KeyPackage at the hub yet, the hub was away, the app was closed) goes on at the next sync or launch. While steps
-   * stay open, another round follows after a pause that grows to 30 s.
+   * stay open, another round follows after a pause that grows to 30 s. A call while a round runs (a sync that saw
+   * new members, after the round read the steps) is not lost: another round follows that one at once.
    */
   func invitesSoon(_ delay: UInt64? = nil) {
-    if invitesPlanned != nil || closed || removedAt != nil { return }
+    if closed || removedAt != nil { return }
+    if invitesPlanned != nil { if invitesRunning { invitesAgain = true }; return }
     let pause = delay ?? invitesPause
     invitesPlanned = Task { @MainActor [weak self] in
       if pause > 0 { try? await Task.sleep(nanoseconds: pause) }
       guard let self = self, !Task.isCancelled else { return }
+      self.invitesRunning = true
+      self.invitesAgain = false
       let open = await self.tendInvites()
       let seating = (try? await self.serial { await self.seatAgents() }) ?? false
+      self.invitesRunning = false
       self.invitesPlanned = nil
+      self.invitesRounds += 1
       if Task.isCancelled || self.closed { return }
-      if open || seating { self.invitesSoon(); self.invitesPause = min(self.invitesPause * 2, 30_000_000_000) } else { self.invitesPause = 2_000_000_000 }
+      if open || seating { self.invitesSoon(); self.invitesPause = min(self.invitesPause * 2, self.invitesPauseMost) }
+      else { self.invitesPause = self.invitesPauseFirst; if self.invitesAgain { self.invitesSoon(0) } }
+      self.invitesAgain = false
     }
   }
   /**

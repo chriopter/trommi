@@ -5,6 +5,10 @@
 //    its prefix by a `sed 's/^name = "\(prefix_...` selection;
 // 3. every file that the web app's test scripts (app/web/package.json, test:*) name stands in a workflow, or is in
 //    NOT_RUN (with its reason). A new crate, test target or browser test that nobody wired in fails here.
+// 4. every job name that a workflow or script looks up in a run's jobs (`select(.name == "…")`, `conclusion '…'` of
+//    ios_release_gate.sh, `grep -F… "…" …jobs.txt`, the job argument of ios_delivered.sh's `runs`) is the name of a
+//    job of that workflow (the file's own, or the one it names by `.path == ".github/workflows/…"`): a renamed job
+//    must not silently stop a delivery (issue #224: "Checks / iOS client (check)" after the checks were inlined).
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,8 +65,63 @@ for (const [key, command] of Object.entries(scripts)) {
   }
 }
 
+// 4. job names looked up in a run
+// the display names of a workflow's jobs; a name with ${{ … }} (a matrix) matches anything there; a job that calls a
+// reusable workflow of this repository has the names "<its name> / <a job name of that workflow>"
+const jobNames = (file, seen = new Set()) => {
+  if (seen.has(file) || !fs.existsSync(path.join(repo, file))) return []
+  seen.add(file)
+  const lines = read(file).split('\n')
+  const names = []
+  let inJobs = false, job = null
+  const done = () => {
+    if (!job) return
+    const own = (job.name ?? job.id).replace(/^(['"])(.*)\1$/, '$2')
+    if (job.uses) for (const inner of jobNames(job.uses.replace(/^\.\//, ''), seen)) names.push(`${own} / ${inner}`)
+    else names.push(own)
+  }
+  for (const line of lines) {
+    if (/^\S/.test(line)) { done(); job = null; inJobs = /^jobs:\s*$/.test(line); continue }
+    if (!inJobs) continue
+    const id = line.match(/^  ([\w-]+):\s*$/)
+    if (id) { done(); job = { id: id[1] }; continue }
+    const field = line.match(/^    (name|uses):\s*(.+?)\s*$/)
+    if (job && field) job[field[1]] = field[2]
+  }
+  done()
+  return names
+}
+const matches = (names, wanted) => names.some(n => n === wanted ||
+  (n.includes('${{') && new RegExp(`^${n.split(/\$\{\{.*?\}\}/).map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.+')}$`).test(wanted)))
+const lookups = [
+  /select\(\.name == "([^"$']+)"/g,
+  /\bconclusion '([^']+)'/g,
+  /grep -Fx?q "([^"$]+)" "[^"]*jobs\.txt"/g,
+]
+const sources = [
+  ...files.filter(f => f.startsWith('.github/workflows/')),
+  ...fs.readdirSync(path.join(repo, '.github/scripts')).filter(f => f !== 'ci_coverage.mjs').map(f => `.github/scripts/${f}`),
+  ...fs.readdirSync(path.join(repo, 'dev')).filter(f => fs.statSync(path.join(repo, 'dev', f)).isFile()).map(f => `dev/${f}`),
+]
+let looked = 0
+for (const file of sources) {
+  const text = read(file)
+  const own = text.match(/\.path == "\.github\/workflows\/([\w.-]+)"/)?.[1]
+  const workflow = file.startsWith('.github/workflows/') ? file : own ? `.github/workflows/${own}` : null
+  const refs = []
+  for (const re of lookups) for (const m of text.matchAll(re)) refs.push([workflow, m[1]])
+  // ios_delivered.sh: runs <workflow file> <event> '<job>' (a workflow no longer here: its old runs, not checked)
+  for (const m of text.matchAll(/\bruns ([\w.-]+\.yml) \w+ '([^']+)'/g)) refs.push([`.github/workflows/${m[1]}`, m[2], true])
+  for (const [wf, name, gone] of refs) {
+    if (gone && !fs.existsSync(path.join(repo, wf))) continue
+    looked++
+    const names = wf ? jobNames(wf) : files.filter(f => f.startsWith('.github/workflows/')).flatMap(f => jobNames(f))
+    if (!matches(names, name)) problems.push(`${file} looks for the job "${name}" in a run of ${wf ?? 'any workflow'}, which has no job of that name`)
+  }
+}
+
 if (problems.length) {
   for (const p of problems) console.log(`::error::${p}`)
   process.exit(1)
 }
-console.log(`ci_coverage: ${members.length} crates, ${targets.length} test targets, ${Object.keys(scripts).filter(k => k.startsWith('test:')).length} web test scripts: every one is run by a workflow`)
+console.log(`ci_coverage: ${members.length} crates, ${targets.length} test targets, ${Object.keys(scripts).filter(k => k.startsWith('test:')).length} web test scripts: every one is run by a workflow; ${looked} job names looked up in runs: every one exists`)
