@@ -132,6 +132,15 @@ impl Engine {
         self.send_request(ctx, request, keep, None)
     }
 
+    /// Drops a request an action no longer wants (a transfer the person cancelled): it is not sent again, and no
+    /// answer comes for it. Returns the id of its HTTP request in flight, for the shell to cancel.
+    pub fn forget_request(&mut self, id: IoId) -> Option<IoId> {
+        let out = self.requests.outs.remove(&id)?;
+        let flying = out.flying?;
+        self.pending.remove(&flying);
+        Some(flying)
+    }
+
     fn send_request(&mut self, ctx: &mut Ctx<'_>, request: HttpRequest, keep: Option<String>, then: Option<Then>) -> Result<IoId, &'static str> {
         if let Some(name) = &keep {
             let kept = Kept { request: without_token(&request), then: then.clone() };

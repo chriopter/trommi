@@ -61,6 +61,9 @@ pub struct Doing<'a> {
     pub now: u64,
     pub utc_offset_min: i32,
     pub seal: &'a mut Seal<'a>,
+    /// The reference (model spelling, with its key) of a file a line or an answer names: an upload of this device
+    /// by its local id or attachment id, or a file the views show (`crate::files`).
+    pub file: &'a dyn Fn(&str) -> Option<Map<String, Value>>,
     /// What the views must make again.
     pub change: Change,
 }
@@ -118,14 +121,12 @@ impl Doing<'_> {
     pub fn run(&mut self, action: &Action) -> Result<(), NotDone> {
         match action {
             Action::Answer { card_id, choices, note, attachments, option_notes, trusted } => {
-                if !attachments.is_empty() {
-                    return Err(not_done("action.attachments", "Attachments cannot be sent from here yet."));
-                }
-                self.answer(action, card_id, "answer", choices, note.as_deref(), option_notes, *trusted)
+                let files = self.files_of(attachments)?;
+                self.answer(action, card_id, "answer", choices, note.as_deref(), option_notes, *trusted, files)
             }
-            Action::Read { card_id } => self.answer(action, card_id, "read", &[], None, &Map::new(), false),
+            Action::Read { card_id } => self.answer(action, card_id, "read", &[], None, &Map::new(), false, Vec::new()),
             Action::Shred { card_id, note } => {
-                self.answer(action, card_id, "shred", &[], note.as_deref(), &Map::new(), false)
+                self.answer(action, card_id, "shred", &[], note.as_deref(), &Map::new(), false, Vec::new())
             }
             Action::Snooze { card_id, until_ms } => {
                 self.card_of(card_id)?;
@@ -145,11 +146,12 @@ impl Doing<'_> {
             Action::DecideAgain { card_id } => self.decide_again(action, card_id),
             Action::Verdict { request_id, allow } => self.verdict(action, request_id, *allow),
             Action::Write { session_id, card_id, text, attachments } => {
-                if !attachments.is_empty() {
-                    return Err(not_done("action.attachments", "Attachments cannot be sent from here yet."));
-                }
+                let files = self.files_of(attachments)?;
                 let mut content = Map::new();
                 content.insert("text".into(), json!(text));
+                if !files.is_empty() {
+                    content.insert("attachments".into(), Value::Array(files));
+                }
                 self.write(action, Some(session_id), card_id.as_deref(), content)
             }
             // "What??": the card goes back to its agent with the question, and comes back up awake
@@ -410,6 +412,7 @@ impl Doing<'_> {
         note: Option<&str>,
         option_notes: &Map<String, Value>,
         trusted: bool,
+        attached: Vec<Value>,
     ) -> Result<(), NotDone> {
         let card = self.card_of(card_id)?;
         if card.object_state != "open" {
@@ -458,6 +461,9 @@ impl Doing<'_> {
         if trusted {
             content.insert("trusted".into(), json!(true));
         }
+        if !attached.is_empty() {
+            content.insert("attachments".into(), Value::Array(attached.clone()));
+        }
         let payload = codec::encode_body(BodyKind::Answer, &content).map_err(|_| not_done("action.bad", "That answer cannot be sent."))?;
         let files = file_ids(BodyKind::Answer, &content);
         let draft = Draft::Answer {
@@ -471,7 +477,7 @@ impl Doing<'_> {
 
         let local_id = self.sent.local_id();
         let echo: Obj = serde_json::from_value(json!({ "answer_action": how, "choices": choices, "note": note, "option_notes": option_notes,
-            "attachments": [], "marks": [], "trusted": trusted, "bound_version_hash": version_hash, "bound_object_version": version,
+            "attachments": attached, "marks": [], "trusted": trusted, "bound_version_hash": version_hash, "bound_object_version": version,
             "envelope_number": null, "envelope_hash": null, "by_device_id": me, "answered_at": self.now, "taken_back_at": null,
             "taken_back_sent_at": null }))
         .unwrap_or_default();
@@ -480,6 +486,14 @@ impl Doing<'_> {
         // answered while put off: awake, so a reworked or reopened card is back on the Desk
         self.wake(card_id);
         Ok(())
+    }
+
+    /// The references of the files an action names, in its order; a file that is not here (not uploaded yet, or
+    /// one the person never saw) refuses the action.
+    fn files_of(&self, ids: &[String]) -> Result<Vec<Value>, NotDone> {
+        ids.iter()
+            .map(|id| (self.file)(id).map(Value::Object).ok_or_else(|| not_done("action.file_not_ready", "A file is still uploading, or is not here.")))
+            .collect()
     }
 
     /// Takes the answer in force back: the card is open again, and what was taken back becomes its draft (the ticks

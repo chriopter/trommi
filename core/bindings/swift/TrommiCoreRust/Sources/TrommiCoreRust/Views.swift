@@ -2386,8 +2386,12 @@ public enum CoreView {
     public var version: UInt32?
     /// "revised" on a card's page: it came after his hand-back ("Version 3, as you asked").
     public var asked: Bool
+    /// "decided", "trusted", "shredded": what he wrote along, one line each (“his note”, On Label: “a note”).
+    public var said: [Text]
+    /// "decided", "trusted", "shredded": the files he sent along (`ViewModel.files`), shown under the deed.
+    public var files: [String]
 
-    public init(kind: String = "", label: Text = Text(), about: String = "", text: String = "", echo: Bool = false, version: UInt32? = nil, asked: Bool = false) {
+    public init(kind: String = "", label: Text = Text(), about: String = "", text: String = "", echo: Bool = false, version: UInt32? = nil, asked: Bool = false, said: [Text] = [], files: [String] = []) {
       self.kind = kind
       self.label = label
       self.about = about
@@ -2395,6 +2399,8 @@ public enum CoreView {
       self.echo = echo
       self.version = version
       self.asked = asked
+      self.said = said
+      self.files = files
     }
 
     enum CodingKeys: String, CodingKey {
@@ -2405,6 +2411,8 @@ public enum CoreView {
       case echo = "echo"
       case version = "version"
       case asked = "asked"
+      case said = "said"
+      case files = "files"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -2416,6 +2424,8 @@ public enum CoreView {
       self.echo = try c.decodeIfPresent(Bool.self, forKey: .echo) ?? false
       self.version = try c.decodeIfPresent(UInt32.self, forKey: .version)
       self.asked = try c.decodeIfPresent(Bool.self, forKey: .asked) ?? false
+      self.said = try c.decodeIfPresent([Text].self, forKey: .said) ?? []
+      self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -2427,6 +2437,8 @@ public enum CoreView {
       try c.encode(echo, forKey: .echo)
       try c.encodeIfPresent(version, forKey: .version)
       try c.encode(asked, forKey: .asked)
+      if !said.isEmpty { try c.encode(said, forKey: .said) }
+      if !files.isEmpty { try c.encode(files, forKey: .files) }
     }
   }
 
@@ -2689,7 +2701,10 @@ public enum CoreView {
     public var versions: [VersionView]
     /// What the star says ("Star", "Starred").
     public var starSays: Text
-    /// The comments and what happened to the card, oldest first.
+    /// What the card does not hold, before the comments: the whole text or its layout, the links of its options,
+    /// that he put it off.
+    public var lead: [LeadView]
+    /// The comments and what happened to the card, oldest first: the window's rows (`earlier`).
     public var talk: [TalkRow]
     /// The hub holds older comments than `talk` has.
     public var hasMore: Bool
@@ -2699,11 +2714,15 @@ public enum CoreView {
     public var mergedInto: CardRefView?
     /// Its pictures, in order (the stage and the small ones under it), each with the option it shows.
     public var pictures: [PictureView]
+    /// The line above the comments when more stand before them ("Load earlier (N)", "Earlier comments"): `talk`
+    /// is a window of the newest [`board::COMMENTS_PAGE`] rows, a page more for each time the person asked
+    /// (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is.
+    public var earlier: MoreView?
     /// Once it is settled (not open, not catching up): the way on that the page offers right after the person
     /// answered here (the shell shows it then): the next open question of the desk in view, or that there is none.
     public var after: AfterView?
 
-    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], after: AfterView? = nil) {
+    public init(id: String = "", sessionId: String? = nil, kind: String = "", state: String = "", urgency: UInt8 = 0, title: String = "", body: String = "", options: [OptionView] = [], youChose: Text? = nil, history: UInt32 = 0, starred: Bool = false, snoozedUntil: UInt64? = nil, files: [String] = [], number: UInt32 = 0, nr: Text = Text(), status: String = "", from: FromView? = nil, knock: Text? = nil, work: CardWorkView? = nil, askedMs: UInt64 = 0, place: PlaceView? = nil, notes: [Text] = [], text: String = "", more: Bool = false, html: String = "", sections: [SectionView] = [], multiple: Bool = false, answer: AnswerView = AnswerView(), note: LinkNoteView? = nil, ask: Text = Text(), draft: String = "", versions: [VersionView] = [], starSays: Text = Text(), lead: [LeadView] = [], talk: [TalkRow] = [], hasMore: Bool = false, mergedFrom: [CardRefView] = [], mergedInto: CardRefView? = nil, pictures: [PictureView] = [], earlier: MoreView? = nil, after: AfterView? = nil) {
       self.id = id
       self.sessionId = sessionId
       self.kind = kind
@@ -2737,11 +2756,13 @@ public enum CoreView {
       self.draft = draft
       self.versions = versions
       self.starSays = starSays
+      self.lead = lead
       self.talk = talk
       self.hasMore = hasMore
       self.mergedFrom = mergedFrom
       self.mergedInto = mergedInto
       self.pictures = pictures
+      self.earlier = earlier
       self.after = after
     }
 
@@ -2779,11 +2800,13 @@ public enum CoreView {
       case draft = "draft"
       case versions = "versions"
       case starSays = "star_says"
+      case lead = "lead"
       case talk = "talk"
       case hasMore = "has_more"
       case mergedFrom = "merged_from"
       case mergedInto = "merged_into"
       case pictures = "pictures"
+      case earlier = "earlier"
       case after = "after"
     }
 
@@ -2822,11 +2845,13 @@ public enum CoreView {
       self.draft = try c.decodeIfPresent(String.self, forKey: .draft) ?? ""
       self.versions = try c.decodeIfPresent([VersionView].self, forKey: .versions) ?? []
       self.starSays = try c.decodeIfPresent(Text.self, forKey: .starSays) ?? Text()
+      self.lead = try c.decodeIfPresent([LeadView].self, forKey: .lead) ?? []
       self.talk = try c.decodeIfPresent([TalkRow].self, forKey: .talk) ?? []
       self.hasMore = try c.decodeIfPresent(Bool.self, forKey: .hasMore) ?? false
       self.mergedFrom = try c.decodeIfPresent([CardRefView].self, forKey: .mergedFrom) ?? []
       self.mergedInto = try c.decodeIfPresent(CardRefView.self, forKey: .mergedInto)
       self.pictures = try c.decodeIfPresent([PictureView].self, forKey: .pictures) ?? []
+      self.earlier = try c.decodeIfPresent(MoreView.self, forKey: .earlier)
       self.after = try c.decodeIfPresent(AfterView.self, forKey: .after)
     }
 
@@ -2865,11 +2890,13 @@ public enum CoreView {
       if !draft.isEmpty { try c.encode(draft, forKey: .draft) }
       if !versions.isEmpty { try c.encode(versions, forKey: .versions) }
       try c.encode(starSays, forKey: .starSays)
+      if !lead.isEmpty { try c.encode(lead, forKey: .lead) }
       if !talk.isEmpty { try c.encode(talk, forKey: .talk) }
       try c.encode(hasMore, forKey: .hasMore)
       if !mergedFrom.isEmpty { try c.encode(mergedFrom, forKey: .mergedFrom) }
       try c.encodeIfPresent(mergedInto, forKey: .mergedInto)
       if !pictures.isEmpty { try c.encode(pictures, forKey: .pictures) }
+      try c.encodeIfPresent(earlier, forKey: .earlier)
       try c.encodeIfPresent(after, forKey: .after)
     }
   }
@@ -3291,8 +3318,12 @@ public enum CoreView {
     public var options: [OptionView]
     /// Its body is on this device (history on demand: an old version may be read from the hub when asked for).
     public var loaded: Bool
+    /// Its pictures as they were, in order (`CardView.pictures`' rule, with that version's options).
+    public var pictures: [PictureView]
+    /// Its other files (`ViewModel.files`).
+    public var files: [String]
 
-    public init(n: UInt32 = 0, atMs: UInt64 = 0, title: String = "", note: String = "", text: String = "", options: [OptionView] = [], loaded: Bool = false) {
+    public init(n: UInt32 = 0, atMs: UInt64 = 0, title: String = "", note: String = "", text: String = "", options: [OptionView] = [], loaded: Bool = false, pictures: [PictureView] = [], files: [String] = []) {
       self.n = n
       self.atMs = atMs
       self.title = title
@@ -3300,6 +3331,8 @@ public enum CoreView {
       self.text = text
       self.options = options
       self.loaded = loaded
+      self.pictures = pictures
+      self.files = files
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3310,6 +3343,8 @@ public enum CoreView {
       case text = "text"
       case options = "options"
       case loaded = "loaded"
+      case pictures = "pictures"
+      case files = "files"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -3321,6 +3356,8 @@ public enum CoreView {
       self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
       self.options = try c.decodeIfPresent([OptionView].self, forKey: .options) ?? []
       self.loaded = try c.decodeIfPresent(Bool.self, forKey: .loaded) ?? false
+      self.pictures = try c.decodeIfPresent([PictureView].self, forKey: .pictures) ?? []
+      self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -3332,6 +3369,104 @@ public enum CoreView {
       if !text.isEmpty { try c.encode(text, forKey: .text) }
       if !options.isEmpty { try c.encode(options, forKey: .options) }
       try c.encode(loaded, forKey: .loaded)
+      if !pictures.isEmpty { try c.encode(pictures, forKey: .pictures) }
+      if !files.isEmpty { try c.encode(files, forKey: .files) }
+    }
+  }
+
+  /// What the card itself does not hold, at the head of its comments (the web's `cardThread` lead), in this order.
+  public struct LeadView: Codable, Hashable, Sendable {
+    /// "whole": the whole text, when the card holds only part of it (`CardView.more`), with the agent's layout;
+    /// "with": only the agent's layout, when the card holds all the words; "links": the links written into its
+    /// options (a tile says them in plain words); "later": he put it off and it waits on Later.
+    public var kind: String
+    /// "The whole text", "With the text", "Links of the options", "You put it off: it waits on “Later”".
+    public var label: Text
+    /// "whole": the text (markdown, Artifact links by their titles).
+    public var text: String
+    /// "whole", "with": the agent's layout (`CardView.html`).
+    public var html: String
+    /// "links": each link with the option it is in.
+    public var links: [OptionLinkView]
+    /// "later": when he put it off.
+    public var atMs: UInt64?
+
+    public init(kind: String = "", label: Text = Text(), text: String = "", html: String = "", links: [OptionLinkView] = [], atMs: UInt64? = nil) {
+      self.kind = kind
+      self.label = label
+      self.text = text
+      self.html = html
+      self.links = links
+      self.atMs = atMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case kind = "kind"
+      case label = "label"
+      case text = "text"
+      case html = "html"
+      case links = "links"
+      case atMs = "at_ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.kind = try c.decode(String.self, forKey: .kind)
+      self.label = try c.decode(Text.self, forKey: .label)
+      self.text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+      self.html = try c.decodeIfPresent(String.self, forKey: .html) ?? ""
+      self.links = try c.decodeIfPresent([OptionLinkView].self, forKey: .links) ?? []
+      self.atMs = try c.decodeIfPresent(UInt64.self, forKey: .atMs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(kind, forKey: .kind)
+      try c.encode(label, forKey: .label)
+      if !text.isEmpty { try c.encode(text, forKey: .text) }
+      if !html.isEmpty { try c.encode(html, forKey: .html) }
+      if !links.isEmpty { try c.encode(links, forKey: .links) }
+      try c.encodeIfPresent(atMs, forKey: .atMs)
+    }
+  }
+
+  /// A link an agent wrote into an option's label or detail.
+  public struct OptionLinkView: Codable, Hashable, Sendable {
+    public var key: String
+    /// The option's label without the link; its key when nothing else is left.
+    public var label: String
+    public var url: String
+    /// The address as it is shown: without "https://" and "www.".
+    public var short: String
+
+    public init(key: String = "", label: String = "", url: String = "", short: String = "") {
+      self.key = key
+      self.label = label
+      self.url = url
+      self.short = short
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+      case url = "url"
+      case short = "short"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.label = try c.decode(String.self, forKey: .label)
+      self.url = try c.decode(String.self, forKey: .url)
+      self.short = try c.decode(String.self, forKey: .short)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
+      try c.encode(url, forKey: .url)
+      try c.encode(short, forKey: .short)
     }
   }
 
@@ -3563,6 +3698,11 @@ public enum CoreView {
     public var removeUnfinished: Text?
     /// The row Agents: "2 agents · 5 sessions"; none without one.
     public var agents: Text?
+    /// The page Agents: each program on a computer with its sessions, the most sessions first (the web's
+    /// `agentsOf`, `agentsMain`).
+    public var agentList: [AgentView]
+    /// The line under the page's title: "2 agents on 1 computer · 5 sessions"; none without an agent.
+    public var agentsLead: Text?
     /// The row Desks: "3 desks"; none in a room without desks.
     public var desks: Text?
     /// The row Devices: "2 devices".
@@ -3570,13 +3710,15 @@ public enum CoreView {
     /// The room's key epoch (the version line at the list's foot).
     public var keyEpoch: UInt64
 
-    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0) {
+    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0) {
       self.account = account
       self.devices = devices
       self.removed = removed
       self.unfinished = unfinished
       self.removeUnfinished = removeUnfinished
       self.agents = agents
+      self.agentList = agentList
+      self.agentsLead = agentsLead
       self.desks = desks
       self.devicesSays = devicesSays
       self.keyEpoch = keyEpoch
@@ -3589,6 +3731,8 @@ public enum CoreView {
       case unfinished = "unfinished"
       case removeUnfinished = "remove_unfinished"
       case agents = "agents"
+      case agentList = "agent_list"
+      case agentsLead = "agents_lead"
       case desks = "desks"
       case devicesSays = "devices_says"
       case keyEpoch = "key_epoch"
@@ -3602,6 +3746,8 @@ public enum CoreView {
       self.unfinished = try c.decodeIfPresent([String].self, forKey: .unfinished) ?? []
       self.removeUnfinished = try c.decodeIfPresent(Text.self, forKey: .removeUnfinished)
       self.agents = try c.decodeIfPresent(Text.self, forKey: .agents)
+      self.agentList = try c.decodeIfPresent([AgentView].self, forKey: .agentList) ?? []
+      self.agentsLead = try c.decodeIfPresent(Text.self, forKey: .agentsLead)
       self.desks = try c.decodeIfPresent(Text.self, forKey: .desks)
       self.devicesSays = try c.decodeIfPresent(Text.self, forKey: .devicesSays)
       self.keyEpoch = try c.decodeIfPresent(UInt64.self, forKey: .keyEpoch) ?? 0
@@ -3615,9 +3761,275 @@ public enum CoreView {
       if !unfinished.isEmpty { try c.encode(unfinished, forKey: .unfinished) }
       try c.encodeIfPresent(removeUnfinished, forKey: .removeUnfinished)
       try c.encodeIfPresent(agents, forKey: .agents)
+      if !agentList.isEmpty { try c.encode(agentList, forKey: .agentList) }
+      try c.encodeIfPresent(agentsLead, forKey: .agentsLead)
       try c.encodeIfPresent(desks, forKey: .desks)
       try c.encodeIfPresent(devicesSays, forKey: .devicesSays)
       try c.encode(keyEpoch, forKey: .keyEpoch)
+    }
+  }
+
+  /// An agent: a program on one computer ("Claude Code on MacBook Pro"), with its sessions.
+  public struct AgentView: Codable, Hashable, Sendable {
+    /// "Claude Code · MacBook Pro": what Remove names (the action's `key`).
+    public var key: String
+    /// "Claude Code", "Codex", "Agent".
+    public var program: String
+    /// The computer's name; "" when it named none.
+    public var host: String
+    /// "Claude Code on MacBook Pro", "Codex on an unnamed computer".
+    public var name: Text
+    /// One of its sessions is connected.
+    public var online: Bool
+    /// "connected", or "away · last seen" (the shell writes the time of `seen_ms` after it).
+    public var state: Text
+    /// When one of its sessions last did something.
+    public var seenMs: UInt64
+    /// "2 sessions, 1 helper".
+    public var count: Text
+    /// Every session of it, its helpers too.
+    public var total: UInt32
+    /// Its main sessions (a helper whose main is its own counts under that main), in the list's order.
+    public var sessions: [AgentSessionView]
+    /// The agent devices Remove takes out of the room (never this device, never a person's).
+    public var devices: [String]
+    /// What Remove does, said before it; none when there is nothing to remove.
+    public var remove: Text?
+    /// Its account and how much of it is used (the connector's `account`); none without a plan or an e-mail.
+    public var usage: UsageView?
+
+    public init(key: String = "", program: String = "", host: String = "", name: Text = Text(), online: Bool = false, state: Text = Text(), seenMs: UInt64 = 0, count: Text = Text(), total: UInt32 = 0, sessions: [AgentSessionView] = [], devices: [String] = [], remove: Text? = nil, usage: UsageView? = nil) {
+      self.key = key
+      self.program = program
+      self.host = host
+      self.name = name
+      self.online = online
+      self.state = state
+      self.seenMs = seenMs
+      self.count = count
+      self.total = total
+      self.sessions = sessions
+      self.devices = devices
+      self.remove = remove
+      self.usage = usage
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case program = "program"
+      case host = "host"
+      case name = "name"
+      case online = "online"
+      case state = "state"
+      case seenMs = "seen_ms"
+      case count = "count"
+      case total = "total"
+      case sessions = "sessions"
+      case devices = "devices"
+      case remove = "remove"
+      case usage = "usage"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.program = try c.decode(String.self, forKey: .program)
+      self.host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
+      self.state = try c.decode(Text.self, forKey: .state)
+      self.seenMs = try c.decodeIfPresent(UInt64.self, forKey: .seenMs) ?? 0
+      self.count = try c.decode(Text.self, forKey: .count)
+      self.total = try c.decodeIfPresent(UInt32.self, forKey: .total) ?? 0
+      self.sessions = try c.decode([AgentSessionView].self, forKey: .sessions)
+      self.devices = try c.decodeIfPresent([String].self, forKey: .devices) ?? []
+      self.remove = try c.decodeIfPresent(Text.self, forKey: .remove)
+      self.usage = try c.decodeIfPresent(UsageView.self, forKey: .usage)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(program, forKey: .program)
+      try c.encode(host, forKey: .host)
+      try c.encode(name, forKey: .name)
+      try c.encode(online, forKey: .online)
+      try c.encode(state, forKey: .state)
+      try c.encode(seenMs, forKey: .seenMs)
+      try c.encode(count, forKey: .count)
+      try c.encode(total, forKey: .total)
+      try c.encode(sessions, forKey: .sessions)
+      if !devices.isEmpty { try c.encode(devices, forKey: .devices) }
+      try c.encodeIfPresent(remove, forKey: .remove)
+      try c.encodeIfPresent(usage, forKey: .usage)
+    }
+  }
+
+  /// A main session of an agent on the page Agents.
+  public struct AgentSessionView: Codable, Hashable, Sendable {
+    /// Its key (`Screen::Session`).
+    public var id: String
+    public var slug: String
+    public var name: Text
+    /// What draws it (`SessionRowView::mark`).
+    public var mark: String
+    /// "Work desk".
+    public var desk: Text
+    /// Its folder on the computer; "" when unknown.
+    public var folder: String
+    public var helpers: UInt32
+    /// "+2 helpers"; none without one.
+    public var helpersSays: Text?
+    public var online: Bool
+    /// "connected", "away".
+    public var state: Text
+
+    public init(id: String = "", slug: String = "", name: Text = Text(), mark: String = "", desk: Text = Text(), folder: String = "", helpers: UInt32 = 0, helpersSays: Text? = nil, online: Bool = false, state: Text = Text()) {
+      self.id = id
+      self.slug = slug
+      self.name = name
+      self.mark = mark
+      self.desk = desk
+      self.folder = folder
+      self.helpers = helpers
+      self.helpersSays = helpersSays
+      self.online = online
+      self.state = state
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case slug = "slug"
+      case name = "name"
+      case mark = "mark"
+      case desk = "desk"
+      case folder = "folder"
+      case helpers = "helpers"
+      case helpersSays = "helpers_says"
+      case online = "online"
+      case state = "state"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.slug = try c.decode(String.self, forKey: .slug)
+      self.name = try c.decode(Text.self, forKey: .name)
+      self.mark = try c.decodeIfPresent(String.self, forKey: .mark) ?? ""
+      self.desk = try c.decode(Text.self, forKey: .desk)
+      self.folder = try c.decodeIfPresent(String.self, forKey: .folder) ?? ""
+      self.helpers = try c.decodeIfPresent(UInt32.self, forKey: .helpers) ?? 0
+      self.helpersSays = try c.decodeIfPresent(Text.self, forKey: .helpersSays)
+      self.online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
+      self.state = try c.decode(Text.self, forKey: .state)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(slug, forKey: .slug)
+      try c.encode(name, forKey: .name)
+      try c.encode(mark, forKey: .mark)
+      try c.encode(desk, forKey: .desk)
+      if !folder.isEmpty { try c.encode(folder, forKey: .folder) }
+      try c.encode(helpers, forKey: .helpers)
+      try c.encodeIfPresent(helpersSays, forKey: .helpersSays)
+      try c.encode(online, forKey: .online)
+      try c.encode(state, forKey: .state)
+    }
+  }
+
+  /// An agent's account: its plan, e-mail and meters.
+  public struct UsageView: Codable, Hashable, Sendable {
+    /// "Claude Max", "ChatGPT Pro Lite"; "" without a plan.
+    public var plan: String
+    public var email: String
+    /// The 5-hour window and the week, those it said; a window that started again since is left out.
+    public var meters: [MeterView]
+    /// "1,200 credits", "2 full resets" (Codex).
+    public var facts: [Text]
+
+    public init(plan: String = "", email: String = "", meters: [MeterView] = [], facts: [Text] = []) {
+      self.plan = plan
+      self.email = email
+      self.meters = meters
+      self.facts = facts
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case plan = "plan"
+      case email = "email"
+      case meters = "meters"
+      case facts = "facts"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.plan = try c.decodeIfPresent(String.self, forKey: .plan) ?? ""
+      self.email = try c.decodeIfPresent(String.self, forKey: .email) ?? ""
+      self.meters = try c.decodeIfPresent([MeterView].self, forKey: .meters) ?? []
+      self.facts = try c.decodeIfPresent([Text].self, forKey: .facts) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      if !plan.isEmpty { try c.encode(plan, forKey: .plan) }
+      if !email.isEmpty { try c.encode(email, forKey: .email) }
+      if !meters.isEmpty { try c.encode(meters, forKey: .meters) }
+      if !facts.isEmpty { try c.encode(facts, forKey: .facts) }
+    }
+  }
+
+  public struct MeterView: Codable, Hashable, Sendable {
+    /// "five_hour", "weekly".
+    public var key: String
+    /// "5 h", "week".
+    public var label: String
+    /// "5-hour window", "This week".
+    public var long: String
+    /// Percent used, 0 to 100.
+    public var used: UInt32
+    /// At 80 % or more.
+    public var hot: Bool
+    /// When it starts again (the shell writes the time).
+    public var resetMs: UInt64?
+
+    public init(key: String = "", label: String = "", long: String = "", used: UInt32 = 0, hot: Bool = false, resetMs: UInt64? = nil) {
+      self.key = key
+      self.label = label
+      self.long = long
+      self.used = used
+      self.hot = hot
+      self.resetMs = resetMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case key = "key"
+      case label = "label"
+      case long = "long"
+      case used = "used"
+      case hot = "hot"
+      case resetMs = "reset_ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.key = try c.decode(String.self, forKey: .key)
+      self.label = try c.decode(String.self, forKey: .label)
+      self.long = try c.decode(String.self, forKey: .long)
+      self.used = try c.decode(UInt32.self, forKey: .used)
+      self.hot = try c.decodeIfPresent(Bool.self, forKey: .hot) ?? false
+      self.resetMs = try c.decodeIfPresent(UInt64.self, forKey: .resetMs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(key, forKey: .key)
+      try c.encode(label, forKey: .label)
+      try c.encode(long, forKey: .long)
+      try c.encode(used, forKey: .used)
+      try c.encode(hot, forKey: .hot)
+      try c.encodeIfPresent(resetMs, forKey: .resetMs)
     }
   }
 
@@ -3830,8 +4242,10 @@ public enum CoreView {
     public var percent: UInt8?
     /// Its bytes were handed over (`Effect::FileReady`).
     public var loaded: Bool
+    /// The Share links this device made for it (`Action::Share`), kept in memory only.
+    public var shares: [FileShareView]
 
-    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false) {
+    public init(name: String = "", mediaType: String = "", size: UInt64 = 0, state: String = "", attachmentId: String? = nil, percent: UInt8? = nil, loaded: Bool = false, shares: [FileShareView] = []) {
       self.name = name
       self.mediaType = mediaType
       self.size = size
@@ -3839,6 +4253,7 @@ public enum CoreView {
       self.attachmentId = attachmentId
       self.percent = percent
       self.loaded = loaded
+      self.shares = shares
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3849,6 +4264,7 @@ public enum CoreView {
       case attachmentId = "attachment_id"
       case percent = "percent"
       case loaded = "loaded"
+      case shares = "shares"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -3860,6 +4276,7 @@ public enum CoreView {
       self.attachmentId = try c.decodeIfPresent(String.self, forKey: .attachmentId)
       self.percent = try c.decodeIfPresent(UInt8.self, forKey: .percent)
       self.loaded = try c.decode(Bool.self, forKey: .loaded)
+      self.shares = try c.decodeIfPresent([FileShareView].self, forKey: .shares) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -3871,6 +4288,40 @@ public enum CoreView {
       try c.encodeIfPresent(attachmentId, forKey: .attachmentId)
       try c.encodeIfPresent(percent, forKey: .percent)
       try c.encode(loaded, forKey: .loaded)
+      if !shares.isEmpty { try c.encode(shares, forKey: .shares) }
+    }
+  }
+
+  /// A Share link of a file: the whole link (its key behind the `#`), for the person to copy.
+  public struct FileShareView: Codable, Hashable, Sendable {
+    public var shareId: String
+    public var link: String
+    public var expiresMs: UInt64
+
+    public init(shareId: String = "", link: String = "", expiresMs: UInt64 = 0) {
+      self.shareId = shareId
+      self.link = link
+      self.expiresMs = expiresMs
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case shareId = "share_id"
+      case link = "link"
+      case expiresMs = "expires_ms"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.shareId = try c.decode(String.self, forKey: .shareId)
+      self.link = try c.decode(String.self, forKey: .link)
+      self.expiresMs = try c.decode(UInt64.self, forKey: .expiresMs)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(shareId, forKey: .shareId)
+      try c.encode(link, forKey: .link)
+      try c.encode(expiresMs, forKey: .expiresMs)
     }
   }
 

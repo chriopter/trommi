@@ -242,6 +242,71 @@
           "part": "settings",
           "view": {
             "account": null,
+            "agent_list": [
+              {
+                "count": {
+                  "args": {
+                    "sessions": "1"
+                  },
+                  "en": "1 session",
+                  "key": "agents.count"
+                },
+                "devices": [
+                  "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                ],
+                "host": "",
+                "key": "Agent · ",
+                "name": {
+                  "args": {
+                    "host": "an unnamed computer",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on an unnamed computer",
+                  "key": "agents.name"
+                },
+                "online": false,
+                "program": "Agent",
+                "remove": {
+                  "args": {
+                    "host": "this computer",
+                    "n": "1",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on this computer and its 1 session can read nothing new after this. The others get a new key; the history stays.",
+                  "key": "agents.remove"
+                },
+                "seen_ms": 0,
+                "sessions": [
+                  {
+                    "desk": {
+                      "args": {
+                        "desk": "Personal"
+                      },
+                      "en": "Personal desk",
+                      "key": "agents.desk"
+                    },
+                    "helpers": 0,
+                    "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000001eeee",
+                    "name": {
+                      "en": "Loading …",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "slug": "00000001eeee",
+                    "state": {
+                      "en": "away",
+                      "key": "agents.away"
+                    }
+                  }
+                ],
+                "state": {
+                  "en": "away · last seen",
+                  "key": "agents.seen"
+                },
+                "total": 1
+              }
+            ],
             "agents": {
               "args": {
                 "agents": "1",
@@ -250,12 +315,21 @@
               "en": "1 agent · 1 session",
               "key": "settings.agents"
             },
+            "agents_lead": {
+              "args": {
+                "agents": "1",
+                "computers": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent on 1 computer · 1 session",
+              "key": "agents.lead"
+            },
             "devices": [
               {
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -270,7 +344,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -298,7 +372,7 @@
               "key": "settings.remove_unfinished.one"
             },
             "unfinished": [
-              "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -414,6 +488,144 @@
             "off_your_mind": [],
             "stack": [],
             "waiting": 0
+          }
+        },
+        {
+          "part": "settings",
+          "view": {
+            "account": null,
+            "agent_list": [
+              {
+                "count": {
+                  "args": {
+                    "sessions": "1"
+                  },
+                  "en": "1 session",
+                  "key": "agents.count"
+                },
+                "devices": [
+                  "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                ],
+                "host": "",
+                "key": "Agent · ",
+                "name": {
+                  "args": {
+                    "host": "an unnamed computer",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on an unnamed computer",
+                  "key": "agents.name"
+                },
+                "online": false,
+                "program": "Agent",
+                "remove": {
+                  "args": {
+                    "host": "this computer",
+                    "n": "1",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on this computer and its 1 session can read nothing new after this. The others get a new key; the history stays.",
+                  "key": "agents.remove"
+                },
+                "seen_ms": 0,
+                "sessions": [
+                  {
+                    "desk": {
+                      "args": {
+                        "desk": "Personal"
+                      },
+                      "en": "Personal desk",
+                      "key": "agents.desk"
+                    },
+                    "helpers": 0,
+                    "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000001eeee",
+                    "name": {
+                      "en": "00000001eeee",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "slug": "00000001eeee",
+                    "state": {
+                      "en": "away",
+                      "key": "agents.away"
+                    }
+                  }
+                ],
+                "state": {
+                  "en": "away · last seen",
+                  "key": "agents.seen"
+                },
+                "total": 1
+              }
+            ],
+            "agents": {
+              "args": {
+                "agents": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent · 1 session",
+              "key": "settings.agents"
+            },
+            "agents_lead": {
+              "args": {
+                "agents": "1",
+                "computers": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent on 1 computer · 1 session",
+              "key": "agents.lead"
+            },
+            "devices": [
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": true,
+                "role": "human",
+                "says": {
+                  "en": "this device",
+                  "key": "device.this_device"
+                },
+                "state": "this_device",
+                "this_device": true
+              },
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": false,
+                "role": "human",
+                "says": {
+                  "en": "never finished signing in",
+                  "key": "device.unfinished"
+                },
+                "state": "unfinished",
+                "this_device": false
+              }
+            ],
+            "devices_says": {
+              "args": {
+                "n": "2"
+              },
+              "en": "2 devices",
+              "key": "settings.devices"
+            },
+            "key_epoch": 2,
+            "remove_unfinished": {
+              "args": {
+                "n": "1"
+              },
+              "en": "Remove the device that never finished signing in",
+              "key": "settings.remove_unfinished.one"
+            },
+            "unfinished": [
+              "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ]
           }
         }
       ]
@@ -557,7 +769,7 @@
                   ],
                   "session_id": "00000001eeeeeeeeeeeeeeeeeeeeeeee"
                 },
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeee",
                 "kind": "decision",
                 "loading": false,
                 "newer": false,
@@ -622,9 +834,147 @@
               }
             ],
             "stack": [
-              "00000004eeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeee"
             ],
             "waiting": 1
+          }
+        },
+        {
+          "part": "settings",
+          "view": {
+            "account": null,
+            "agent_list": [
+              {
+                "count": {
+                  "args": {
+                    "sessions": "1"
+                  },
+                  "en": "1 session",
+                  "key": "agents.count"
+                },
+                "devices": [
+                  "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                ],
+                "host": "",
+                "key": "Agent · ",
+                "name": {
+                  "args": {
+                    "host": "an unnamed computer",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on an unnamed computer",
+                  "key": "agents.name"
+                },
+                "online": false,
+                "program": "Agent",
+                "remove": {
+                  "args": {
+                    "host": "this computer",
+                    "n": "1",
+                    "program": "Agent"
+                  },
+                  "en": "Agent on this computer and its 1 session can read nothing new after this. The others get a new key; the history stays.",
+                  "key": "agents.remove"
+                },
+                "seen_ms": 1791900300010,
+                "sessions": [
+                  {
+                    "desk": {
+                      "args": {
+                        "desk": "Personal"
+                      },
+                      "en": "Personal desk",
+                      "key": "agents.desk"
+                    },
+                    "helpers": 0,
+                    "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000001eeee",
+                    "name": {
+                      "en": "00000001eeee",
+                      "key": "session.name"
+                    },
+                    "online": false,
+                    "slug": "00000001eeee",
+                    "state": {
+                      "en": "away",
+                      "key": "agents.away"
+                    }
+                  }
+                ],
+                "state": {
+                  "en": "away · last seen",
+                  "key": "agents.seen"
+                },
+                "total": 1
+              }
+            ],
+            "agents": {
+              "args": {
+                "agents": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent · 1 session",
+              "key": "settings.agents"
+            },
+            "agents_lead": {
+              "args": {
+                "agents": "1",
+                "computers": "1",
+                "sessions": "1"
+              },
+              "en": "1 agent on 1 computer · 1 session",
+              "key": "agents.lead"
+            },
+            "devices": [
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": true,
+                "role": "human",
+                "says": {
+                  "en": "this device",
+                  "key": "device.this_device"
+                },
+                "state": "this_device",
+                "this_device": true
+              },
+              {
+                "active": true,
+                "fingerprint": "(fingerprint)",
+                "icon": "laptop",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "name": "Device",
+                "online": false,
+                "role": "human",
+                "says": {
+                  "en": "never finished signing in",
+                  "key": "device.unfinished"
+                },
+                "state": "unfinished",
+                "this_device": false
+              }
+            ],
+            "devices_says": {
+              "args": {
+                "n": "2"
+              },
+              "en": "2 devices",
+              "key": "settings.devices"
+            },
+            "key_epoch": 2,
+            "remove_unfinished": {
+              "args": {
+                "n": "1"
+              },
+              "en": "Remove the device that never finished signing in",
+              "key": "settings.remove_unfinished.one"
+            },
+            "unfinished": [
+              "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ]
           }
         }
       ]
@@ -668,7 +1018,7 @@
             ],
             "session_id": "00000001eeeeeeeeeeeeeeeeeeeeeeee"
           },
-          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeee",
           "kind": "decision",
           "loading": false,
           "newer": false,
@@ -733,7 +1083,7 @@
         }
       ],
       "stack": [
-        "00000004eeeeeeeeeeeeeeeeeeeeeeee"
+        "00000005eeeeeeeeeeeeeeeeeeeeeeee"
       ],
       "waiting": 1
     },
@@ -754,6 +1104,71 @@
     "rev": 6,
     "settings": {
       "account": null,
+      "agent_list": [
+        {
+          "count": {
+            "args": {
+              "sessions": "1"
+            },
+            "en": "1 session",
+            "key": "agents.count"
+          },
+          "devices": [
+            "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          ],
+          "host": "",
+          "key": "Agent · ",
+          "name": {
+            "args": {
+              "host": "an unnamed computer",
+              "program": "Agent"
+            },
+            "en": "Agent on an unnamed computer",
+            "key": "agents.name"
+          },
+          "online": false,
+          "program": "Agent",
+          "remove": {
+            "args": {
+              "host": "this computer",
+              "n": "1",
+              "program": "Agent"
+            },
+            "en": "Agent on this computer and its 1 session can read nothing new after this. The others get a new key; the history stays.",
+            "key": "agents.remove"
+          },
+          "seen_ms": 1791900300010,
+          "sessions": [
+            {
+              "desk": {
+                "args": {
+                  "desk": "Personal"
+                },
+                "en": "Personal desk",
+                "key": "agents.desk"
+              },
+              "helpers": 0,
+              "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+              "mark": "00000001eeee",
+              "name": {
+                "en": "00000001eeee",
+                "key": "session.name"
+              },
+              "online": false,
+              "slug": "00000001eeee",
+              "state": {
+                "en": "away",
+                "key": "agents.away"
+              }
+            }
+          ],
+          "state": {
+            "en": "away · last seen",
+            "key": "agents.seen"
+          },
+          "total": 1
+        }
+      ],
       "agents": {
         "args": {
           "agents": "1",
@@ -762,12 +1177,21 @@
         "en": "1 agent · 1 session",
         "key": "settings.agents"
       },
+      "agents_lead": {
+        "args": {
+          "agents": "1",
+          "computers": "1",
+          "sessions": "1"
+        },
+        "en": "1 agent on 1 computer · 1 session",
+        "key": "agents.lead"
+      },
       "devices": [
         {
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": true,
           "role": "human",
@@ -782,7 +1206,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": false,
           "role": "human",
@@ -810,7 +1234,7 @@
         "key": "settings.remove_unfinished.one"
       },
       "unfinished": [
-        "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       ]
     },
     "sidebar": {

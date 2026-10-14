@@ -214,6 +214,10 @@ pub struct Hub {
     pub head_lie: Option<u64>,
     /// The chains of these senders are served cut short before this number (a hub that withholds).
     pub withhold: BTreeMap<DeviceId, u64>,
+    /// Stored files by their id (base64url), as the bytes came.
+    pub files: BTreeMap<String, Vec<u8>>,
+    /// Share links: share id (base64url) -> (file id, expires_at).
+    pub shares: BTreeMap<String, (String, u64)>,
     /// A page of the hub's order holds at most so many items, whatever was asked.
     pub page_max: Option<usize>,
     /// Changes the pages and the stream leave out (their chain still serves them): a hub that skips.
@@ -289,6 +293,8 @@ impl Default for Hub {
             wishes: Vec::new(),
             head_lie: None,
             withhold: BTreeMap::new(),
+            files: BTreeMap::new(),
+            shares: BTreeMap::new(),
             page_max: None,
             hidden: BTreeSet::new(),
             objects: BTreeMap::new(),
@@ -674,6 +680,9 @@ impl Hub {
         }
         let path = request.url.strip_prefix(HUB_URL).unwrap_or("/nowhere").to_string();
         self.seen.push(format!("{} {path}", request.method));
+        if let Some(answer) = self.files_route(request, &path) {
+            return Ok(answer);
+        }
         Ok(match self.route(now, request, &path) {
             Ok(body) => {
                 super::shape::check(&request.method, &path, &body);
@@ -683,6 +692,40 @@ impl Hub {
                 self.refused.push(format!("{} {path}: {}", request.method, n.code));
                 answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided }))
             }
+        })
+    }
+
+    /// Files and Share links (11.3, 11.5): bytes kept as they came; a token is not checked here.
+    fn files_route(&mut self, request: &HttpRequest, path: &str) -> Option<HttpResponse> {
+        let segs: Vec<&str> = path.split('?').next().unwrap_or("").split('/').filter(|s| !s.is_empty()).collect();
+        let body = request.body.as_ref().map(|b| b.to_vec()).unwrap_or_default();
+        Some(match (request.method.as_str(), segs.as_slice()) {
+            ("PUT", ["v1", "files", id]) => {
+                let mut hasher = trommi_core::files::FileHasher::new();
+                hasher.update(&body);
+                let sha = hasher.finish().expect("a hash");
+                let size = body.len();
+                self.files.insert(id.to_string(), body);
+                answer(200, json!({ "file_id": id, "size": size, "sha256": b64(sha.as_bytes()) }))
+            }
+            ("GET", ["v1", "files", id]) => match self.files.get(*id) {
+                Some(bytes) => HttpResponse { status: 200, headers: Vec::new(), body: bytes.clone().into() },
+                None => answer(404, json!({ "error": "not-found", "message": "no such file" })),
+            },
+            ("POST", ["v1", "shares"]) => {
+                let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+                let (share, file, expires) = (v["share_id"].as_str().unwrap_or("").to_string(), v["file_id"].as_str().unwrap_or("").to_string(), v["expires_at"].as_u64().unwrap_or(0));
+                if !self.files.contains_key(&file) {
+                    return Some(answer(404, json!({ "error": "not-found", "message": "no such file" })));
+                }
+                self.shares.insert(share.clone(), (file, expires));
+                answer(200, json!({ "share_id": share, "expires_at": expires }))
+            }
+            ("DELETE", ["v1", "shares", id]) => {
+                let deleted = self.shares.remove(*id).is_some();
+                answer(200, json!({ "deleted": deleted }))
+            }
+            _ => return None,
         })
     }
 

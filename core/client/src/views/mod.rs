@@ -23,6 +23,7 @@
 pub mod board;
 pub mod card;
 pub mod demo;
+pub mod files_seen;
 pub mod desk;
 pub mod links;
 pub mod notes;
@@ -35,7 +36,7 @@ pub mod talk;
 mod testroom;
 pub mod words;
 
-pub use board::{render, Board, Lens, MoreOf};
+pub use board::{render, render_with_files, Board, Lens, MoreOf};
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -979,6 +980,12 @@ pub struct EventView {
     /// "revised" on a card's page: it came after his hand-back ("Version 3, as you asked").
     #[serde(default)]
     pub asked: bool,
+    /// "decided", "trusted", "shredded": what he wrote along, one line each (“his note”, On Label: “a note”).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub said: Vec<Text>,
+    /// "decided", "trusted", "shredded": the files he sent along (`ViewModel.files`), shown under the deed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
 }
 
 /// A turn's trail: what the agent did between his prompt and its answer, as one block.
@@ -1140,7 +1147,11 @@ pub struct CardView {
     /// What the star says ("Star", "Starred").
     #[serde(default)]
     pub star_says: Text,
-    /// The comments and what happened to the card, oldest first.
+    /// What the card does not hold, before the comments: the whole text or its layout, the links of its options,
+    /// that he put it off.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lead: Vec<LeadView>,
+    /// The comments and what happened to the card, oldest first: the window's rows (`earlier`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub talk: Vec<TalkRow>,
     /// The hub holds older comments than `talk` has.
@@ -1155,6 +1166,11 @@ pub struct CardView {
     /// Its pictures, in order (the stage and the small ones under it), each with the option it shows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pictures: Vec<PictureView>,
+    /// The line above the comments when more stand before them ("Load earlier (N)", "Earlier comments"): `talk`
+    /// is a window of the newest [`board::COMMENTS_PAGE`] rows, a page more for each time the person asked
+    /// (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub earlier: Option<MoreView>,
     /// Once it is settled (not open, not catching up): the way on that the page offers right after the person
     /// answered here (the shell shows it then): the next open question of the desk in view, or that there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1319,6 +1335,46 @@ pub struct VersionView {
     /// Its body is on this device (history on demand: an old version may be read from the hub when asked for).
     #[serde(default)]
     pub loaded: bool,
+    /// Its pictures as they were, in order (`CardView.pictures`' rule, with that version's options).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pictures: Vec<PictureView>,
+    /// Its other files (`ViewModel.files`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+}
+
+/// What the card itself does not hold, at the head of its comments (the web's `cardThread` lead), in this order.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeadView {
+    /// "whole": the whole text, when the card holds only part of it (`CardView.more`), with the agent's layout;
+    /// "with": only the agent's layout, when the card holds all the words; "links": the links written into its
+    /// options (a tile says them in plain words); "later": he put it off and it waits on Later.
+    pub kind: String,
+    /// "The whole text", "With the text", "Links of the options", "You put it off: it waits on “Later”".
+    pub label: Text,
+    /// "whole": the text (markdown, Artifact links by their titles).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    /// "whole", "with": the agent's layout (`CardView.html`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub html: String,
+    /// "links": each link with the option it is in.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<OptionLinkView>,
+    /// "later": when he put it off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_ms: Option<u64>,
+}
+
+/// A link an agent wrote into an option's label or detail.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionLinkView {
+    pub key: String,
+    /// The option's label without the link; its key when nothing else is left.
+    pub label: String,
+    pub url: String,
+    /// The address as it is shown: without "https://" and "www.".
+    pub short: String,
 }
 
 /// The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`).
@@ -1415,6 +1471,13 @@ pub struct SettingsView {
     /// The row Agents: "2 agents · 5 sessions"; none without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agents: Option<Text>,
+    /// The page Agents: each program on a computer with its sessions, the most sessions first (the web's
+    /// `agentsOf`, `agentsMain`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_list: Vec<AgentView>,
+    /// The line under the page's title: "2 agents on 1 computer · 5 sessions"; none without an agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents_lead: Option<Text>,
     /// The row Desks: "3 desks"; none in a room without desks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desks: Option<Text>,
@@ -1424,6 +1487,104 @@ pub struct SettingsView {
     /// The room's key epoch (the version line at the list's foot).
     #[serde(default)]
     pub key_epoch: u64,
+}
+
+/// An agent: a program on one computer ("Claude Code on MacBook Pro"), with its sessions.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentView {
+    /// "Claude Code · MacBook Pro": what Remove names (the action's `key`).
+    pub key: String,
+    /// "Claude Code", "Codex", "Agent".
+    pub program: String,
+    /// The computer's name; "" when it named none.
+    #[serde(default)]
+    pub host: String,
+    /// "Claude Code on MacBook Pro", "Codex on an unnamed computer".
+    pub name: Text,
+    /// One of its sessions is connected.
+    #[serde(default)]
+    pub online: bool,
+    /// "connected", or "away · last seen" (the shell writes the time of `seen_ms` after it).
+    pub state: Text,
+    /// When one of its sessions last did something.
+    #[serde(default)]
+    pub seen_ms: u64,
+    /// "2 sessions, 1 helper".
+    pub count: Text,
+    /// Every session of it, its helpers too.
+    #[serde(default)]
+    pub total: u32,
+    /// Its main sessions (a helper whose main is its own counts under that main), in the list's order.
+    pub sessions: Vec<AgentSessionView>,
+    /// The agent devices Remove takes out of the room (never this device, never a person's).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<String>,
+    /// What Remove does, said before it; none when there is nothing to remove.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remove: Option<Text>,
+    /// Its account and how much of it is used (the connector's `account`); none without a plan or an e-mail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<UsageView>,
+}
+
+/// A main session of an agent on the page Agents.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionView {
+    /// Its key (`Screen::Session`).
+    pub id: String,
+    pub slug: String,
+    pub name: Text,
+    /// What draws it (`SessionRowView::mark`).
+    #[serde(default)]
+    pub mark: String,
+    /// "Work desk".
+    pub desk: Text,
+    /// Its folder on the computer; "" when unknown.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub folder: String,
+    #[serde(default)]
+    pub helpers: u32,
+    /// "+2 helpers"; none without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub helpers_says: Option<Text>,
+    #[serde(default)]
+    pub online: bool,
+    /// "connected", "away".
+    pub state: Text,
+}
+
+/// An agent's account: its plan, e-mail and meters.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UsageView {
+    /// "Claude Max", "ChatGPT Pro Lite"; "" without a plan.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub plan: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub email: String,
+    /// The 5-hour window and the week, those it said; a window that started again since is left out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub meters: Vec<MeterView>,
+    /// "1,200 credits", "2 full resets" (Codex).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facts: Vec<Text>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeterView {
+    /// "five_hour", "weekly".
+    pub key: String,
+    /// "5 h", "week".
+    pub label: String,
+    /// "5-hour window", "This week".
+    pub long: String,
+    /// Percent used, 0 to 100.
+    pub used: u32,
+    /// At 80 % or more.
+    #[serde(default)]
+    pub hot: bool,
+    /// When it starts again (the shell writes the time).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset_ms: Option<u64>,
 }
 
 /// One device of the person.
@@ -1526,6 +1687,17 @@ pub struct FileView {
     pub percent: Option<u8>,
     /// Its bytes were handed over (`Effect::FileReady`).
     pub loaded: bool,
+    /// The Share links this device made for it (`Action::Share`), kept in memory only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shares: Vec<FileShareView>,
+}
+
+/// A Share link of a file: the whole link (its key behind the `#`), for the person to copy.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileShareView {
+    pub share_id: String,
+    pub link: String,
+    pub expires_ms: u64,
 }
 
 /// A passing line at the window's foot: what was done, and the way back. The engine and the actions make them; the
