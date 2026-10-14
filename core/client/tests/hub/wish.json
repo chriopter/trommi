@@ -7,7 +7,7 @@
   "content_range": null,
   "name": "wish",
   "request": {
-    "body": "{\"group\":\"bQaw8q0txELr_efG9GLt5bhM5CK3a35R_XfTgG1HYS3k-KibKGh-g9Goc9MM0lGw\",\"kind\":\"handover\"}",
+    "body": "{\"group\":\"BDYV2sUVj1S4v5jiiBYOmw7kBi4Pt8p2Oud5NBl74fT2NXv_18jwFF3IA8a_uCNu\",\"kind\":\"handover\"}",
     "method": "POST",
     "path": "/v1/requests"
   },
