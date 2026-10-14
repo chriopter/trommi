@@ -5,7 +5,7 @@
 #   ios_release_gate.sh wait|verify    exit 0: upload; anything else: nothing is uploaded
 # The gate:
 #   - the run RUN_ID is ship-apple.yml of this repository on main (a push), of COMMIT
-#   - its job "Checks / iOS client (check)" passed, and "Checks / Core (check)" passed or was skipped (the core did not
+#   - its job "iOS client (check)" passed, and "Core (check)" passed or was skipped (the core did not
 #     change): the apps build on the core
 #   - the iOS inputs of COMMIT (.github/scripts/inputs.sh) differ from those last delivered to TestFlight
 #     (.github/scripts/ios_delivered.sh; not known: they differ). SAME_OK=1 (a delivery by hand) skips this one.
@@ -29,7 +29,7 @@ jq -e --arg r "$GITHUB_REPOSITORY" --arg c "$COMMIT" \
 gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" \
   --jq '.jobs[] | "\(.name)\t\(.conclusion)"' > "$RUNNER_TEMP/gate-jobs.txt"
 conclusion() { awk -F'\t' -v n="$1" '$1 == n { print $2; exit }' "$RUNNER_TEMP/gate-jobs.txt"; }
-client=$(conclusion 'Checks / iOS client (check)') core=$(conclusion 'Checks / Core (check)')
+client=$(conclusion 'iOS client (check)') core=$(conclusion 'Core (check)')
 [ "$client" = success ] || { echo "::error::iOS client (check) of run $RUN_ID: ${client:-not there}: nothing is uploaded"; exit 1; }
 case "$core" in
   success|skipped) echo "the checks of run $RUN_ID: iOS client $client, core $core" >&2 ;;
