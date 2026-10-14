@@ -526,3 +526,32 @@ impl Engine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trommi_core::ids::{RoomId, SessionId};
+
+    fn join(n: u8, bytes: usize) -> OutboxEntry {
+        let group = GroupId::session(RoomId::new([1; 32]), SessionId::new([n; 16]));
+        OutboxEntry { id: u64::from(n), kind: OutboxKind::ExternalCommit, group: Some(group), epoch: 1, parts: vec![vec![0; bytes]] }
+    }
+
+    #[test]
+    fn joins_posted_together_stop_at_the_byte_cap_of_a_post() {
+        // three of 400 KiB (base64: ~533 KiB each): two would pass 1 MiB, so one goes alone
+        let big: Vec<OutboxEntry> = (1..=3).map(|n| join(n, 400 << 10)).collect();
+        assert_eq!(joins_at(&big), 1);
+        // of 200 KiB (~267 KiB each), three fit below 1 MiB and the fourth does not
+        let mid: Vec<OutboxEntry> = (1..=5).map(|n| join(n, 200 << 10)).collect();
+        assert_eq!(joins_at(&mid), 3);
+        // a first one beyond the cap still goes, alone
+        let huge = vec![join(1, 2 << 20), join(2, 10)];
+        assert_eq!(joins_at(&huge), 1);
+        // small ones stop at the count, and at a second join of the same group
+        let many: Vec<OutboxEntry> = (1..=40).map(|n| join(n, 100)).collect();
+        assert_eq!(joins_at(&many), JOINS_AT_ONCE);
+        let twice = vec![join(1, 100), join(2, 100), join(1, 100)];
+        assert_eq!(joins_at(&twice), 2);
+    }
+}

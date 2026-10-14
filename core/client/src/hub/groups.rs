@@ -594,6 +594,29 @@ pub(crate) fn reject_request(site: &Site<'_>, group: &GroupId, n: u64) -> Read<H
     )
 }
 
+// ---- POST /v1/groups/{group}/archive (5.2.10)
+
+/// Archives a session group at the hub: it takes nothing more for it. Idempotent: a second call is answered alike,
+/// or refused as `gone`.
+pub(crate) fn archive_request(site: &Site<'_>, group: &GroupId) -> Read<HttpRequest> {
+    if group.is_room() {
+        return bad("the request: the room group is never archived");
+    }
+    Ok(begin(site, "POST", &group_path(group, "archive"), true, CAP_WRITE)?
+        .json(&json!({}))
+        .done())
+}
+
+/// The answer to [`archive_request`]: `{"archived": true}`, or the failure.
+pub(crate) fn archive_answer(response: &crate::app::io::HttpResponse) -> Read<()> {
+    super::classify(response)?;
+    let body = Json::parse(&response.body.0, CAP_WRITE)?;
+    if !body.obj("an archive answer: an object")?.need("archived").bool("archived")? {
+        return bad("archived");
+    }
+    Ok(())
+}
+
 // ---- GET /v1/sealed-keys?after=&limit=
 
 pub(crate) fn sealed_keys_request(

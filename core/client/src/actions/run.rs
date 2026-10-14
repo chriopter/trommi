@@ -4,7 +4,7 @@
 //!
 //! Sources: web `app/web/core/client.ts` (`answer`, `setRegisters`, `snooze`), iOS `RoomActions.swift`.
 
-use super::sent::{Out, Sent};
+use super::sent::{NoteBusy, NoteNext, Out, Sent};
 use super::Action;
 use crate::codec::{self, BodyKind};
 use crate::model::change::Change;
@@ -55,6 +55,8 @@ pub type Seal<'a> = dyn FnMut(&Draft, Option<&DeviceId>, &[FileId]) -> Result<Se
 pub struct Doing<'a> {
     pub model: &'a mut Model,
     pub sent: &'a mut Sent,
+    /// The toasts standing.
+    pub toasts: &'a mut Vec<crate::views::Toast>,
     pub room: RoomId,
     pub now: u64,
     pub utc_offset_min: i32,
@@ -159,9 +161,27 @@ impl Doing<'_> {
                 self.wake(card_id);
                 Ok(())
             }
-            Action::Draft { place, text } => {
-                let value = if text.trim().is_empty() { Value::Null } else { json!({ "note": text, "ts": self.now }) };
-                self.registers(action, &[(format!("draft/{place}"), value)])
+            Action::Draft { place, text, keys, notes } => {
+                let key = format!("draft/{place}");
+                let mut draft = self.model.human.get(&key).and_then(|r| r.value.as_object().cloned()).unwrap_or_default();
+                draft.insert("note".into(), json!(text));
+                if let Some(keys) = keys {
+                    draft.insert("keys".into(), json!(keys));
+                }
+                if let Some(notes) = notes {
+                    draft.insert("notes".into(), Value::Object(notes.clone()));
+                }
+                let ticked = draft.get("keys").and_then(Value::as_array).is_some_and(|k| !k.is_empty());
+                let noted = draft.get("notes").and_then(Value::as_object).is_some_and(|n| n.values().any(|v| v.as_str().is_some_and(|s| !s.trim().is_empty())));
+                let value = if text.trim().is_empty() && !ticked && !noted {
+                    Value::Null
+                } else {
+                    draft.entry("keys").or_insert(json!([]));
+                    draft.entry("notes").or_insert(json!({}));
+                    draft.insert("ts".into(), json!(self.now));
+                    Value::Object(draft)
+                };
+                self.registers(action, &[(key, value)])
             }
             Action::RenameSession { session_id, name } => {
                 let name: String = name.trim().chars().take(NAME_MAX).collect();
@@ -217,7 +237,161 @@ impl Doing<'_> {
                 }
                 self.registers(action, &[(format!("desk/{id}"), Value::Object(desk))])
             }
+            Action::WriteNote { note_id, text } => self.write_note(action, note_id.as_deref(), Some(text)),
+            Action::DeleteNote { note_id } => self.write_note(action, Some(note_id), None),
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
+        }
+    }
+
+    /// A new Note, a new version of one (`text`), or its closed version (none: deleted), shown at once. While a
+    /// version of the note is on its way, the edit waits behind it ([`Sent`]).
+    fn write_note(&mut self, action: &Action, note_id: Option<&str>, text: Option<&String>) -> Result<(), NotDone> {
+        let closed = text.is_none();
+        if let Some(id) = note_id {
+            let gone = || not_done("action.note_gone", "That note is no longer there.");
+            let note = self.model.notes.get(id).ok_or_else(gone)?;
+            if note.get("unsupported").is_some_and(crate::model::apply::truthy) {
+                return Err(not_done("action.needs_update", "Update Trommi to change this note."));
+            }
+            if note.get("object_state").and_then(Value::as_str) == Some("closed") {
+                return Err(gone());
+            }
+        } else if closed {
+            return Err(not_done("action.note_gone", "That note is no longer there."));
+        }
+        let mut own = Map::new();
+        if let Some(text) = text {
+            own.insert("text".into(), json!(text));
+            if note_id.is_none() {
+                own.insert("created_at".into(), json!(self.now));
+            }
+            own.insert("updated_at".into(), json!(self.now));
+        }
+        let shown = if closed { Map::new() } else { own.clone() };
+        let local_id = self.sent.local_id();
+        // a version is on its way: this edit waits behind it, in place of one that waited before
+        if let Some(id) = note_id.filter(|id| self.sent.notes.contains_key(*id)) {
+            let before = self.sent.notes.get_mut(id).and_then(|b| b.next.take());
+            if let Some(before) = before {
+                self.model.rollback_echo(&before.local_id, &mut self.change);
+                own = before.own.into_iter().chain(own).collect();
+            }
+            self.model.echo_note(&local_id, Some(id), &shown, closed, &mut self.change);
+            if let Some(busy) = self.sent.notes.get_mut(id) {
+                busy.next = Some(NoteNext { own, closed, local_id, action: action.clone() });
+            }
+            return Ok(());
+        }
+        self.model.echo_note(&local_id, note_id, &shown, closed, &mut self.change);
+        self.seal_note(action, note_id, &own, closed, &local_id)
+    }
+
+    /// Each live main session on a desk carries that desk's goals for its agent (9.3.4, web `syncGoals`): its
+    /// group's register `goals` = `{desk_id, desk_name, goals}`, or none when the desk has none. Written where it
+    /// differs from what the group holds and was not written already; no echo, no toast (the person did not act).
+    pub fn sync_goals(&mut self) {
+        let mut writes = Vec::new();
+        for (sid, s) in &self.model.sessions {
+            let settings = s.settings.clone().or_else(|| self.model.human.get(&format!("session/{sid}")).map(|r| r.value.clone()));
+            let archived = s.group_archived || settings.as_ref().and_then(|v| v.get("archived")) == Some(&Value::Bool(true));
+            if !s.is_active || s.stale || s.parent_session_id.is_some() || s.group_id.is_none() || archived {
+                continue;
+            }
+            let desk_id = settings.as_ref().and_then(|v| v.get("desk")).and_then(Value::as_str).map(str::to_string);
+            let desk = desk_id.as_ref().and_then(|d| self.model.human.get(&format!("desk/{d}"))).map(|r| r.value.clone()).unwrap_or(Value::Null);
+            let goals = clean_goals(desk.get("goals").and_then(Value::as_str).unwrap_or(""));
+            let wanted = match desk_id {
+                Some(d) if !goals.is_empty() => {
+                    json!({ "desk_id": d, "desk_name": desk.get("name").and_then(Value::as_str).unwrap_or(""), "goals": goals })
+                }
+                _ => Value::Null,
+            };
+            let held = s.registers.get("goals").map(|r| r.value.clone()).unwrap_or(Value::Null);
+            if held == wanted {
+                continue;
+            }
+            if self.sent.goals.get(sid).is_some_and(|(w, _)| *w == wanted) {
+                continue;
+            }
+            writes.push((sid.clone(), wanted));
+        }
+        for (sid, wanted) in writes {
+            let Some(session) = id(&sid).map(SessionId::new) else { continue };
+            let Ok((name, wire)) = codec::encode_register("goals", &wanted) else { continue };
+            let draft = Draft::Register {
+                group: GroupId::session(self.room, session),
+                name,
+                value: wire.map(|w| SecretBytes::new(w.into_bytes())),
+            };
+            if let Ok(sealed) = (self.seal)(&draft, None, &[]) {
+                self.sent.goals.insert(sid, (wanted, sealed.outbox_id));
+            }
+        }
+    }
+
+    /// Seals a Note's version whose echo stands under `local_id`: the note's fields as they stand with `own` over
+    /// them, one version above it, naming it as `previous_version_hash` (zeros for a new note), with a lamport above
+    /// every one this device has seen on a note.
+    pub fn seal_note(
+        &mut self,
+        action: &Action,
+        note_id: Option<&str>,
+        own: &Map<String, Value>,
+        closed: bool,
+        local_id: &str,
+    ) -> Result<(), NotDone> {
+        let head = note_id.and_then(|id| self.model.notes.get(id)).map(|n| {
+            if n.get("pending").is_some_and(crate::model::apply::truthy) {
+                n.get("_base").and_then(Value::as_object).cloned().unwrap_or_default()
+            } else {
+                n.clone()
+            }
+        });
+        let head = head.filter(|h| !h.is_empty());
+        let mut content: Map<String, Value> = head
+            .iter()
+            .flatten()
+            .filter(|(k, _)| !NOTE_CORE_FIELDS.contains(&k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        content.extend(own.iter().map(|(k, v)| (k.clone(), v.clone())));
+        let version = head.as_ref().and_then(|h| h.get("object_version")).and_then(Value::as_u64).unwrap_or(0);
+        content.insert("object_version".into(), json!(version + 1));
+        let previous = head.as_ref().and_then(|h| h.get("version_hash")).and_then(Value::as_str).map(str::to_string);
+        content.insert("previous_version_hash".into(), json!(previous.unwrap_or_else(|| "0".repeat(64))));
+        let lamport_of = |n: &Map<String, Value>| n.get("causal").and_then(|c| c.get("lamport")).and_then(Value::as_f64).unwrap_or(0.0);
+        let seen = self
+            .model
+            .notes
+            .values()
+            .flat_map(|n| [Some(lamport_of(n)), n.get("_base").and_then(Value::as_object).map(lamport_of)])
+            .flatten()
+            .fold(0.0_f64, f64::max);
+        self.sent.lamport = self.sent.lamport.max(seen as u64) + 1;
+        content.insert("lamport".into(), json!(self.sent.lamport));
+
+        let payload = codec::encode_body(BodyKind::Note, &content).map_err(|_| not_done("action.bad", "That note cannot be saved."))?;
+        let files = file_ids(BodyKind::Note, &content);
+        let payload = SecretBytes::new(payload.into_bytes());
+        let draft = match note_id {
+            Some(id) => Draft::NoteVersion { object_id: self::id(id).map(ObjectId::new).ok_or_else(bad_id)?, closed, payload },
+            None => Draft::NoteFirst { payload },
+        };
+        match (self.seal)(&draft, None, &files) {
+            Ok(sealed) => {
+                let hash = crate::engine::feed::hex(sealed.envelope_hash.as_bytes());
+                let object = sealed.object_id.map(|o| crate::engine::feed::hex(o.as_bytes()));
+                self.model.confirm_echo(local_id, &hash, sealed.seq, object.as_deref(), &mut self.change);
+                if let Some(note) = object.or_else(|| note_id.map(str::to_string)) {
+                    self.sent.notes.insert(note, NoteBusy { hash, outbox: sealed.outbox_id, next: None });
+                }
+                self.sent.put(sealed.outbox_id, Out { local_id: Some(local_id.to_string()), action: action.clone() });
+                Ok(())
+            }
+            Err(e) => {
+                self.model.rollback_echo(local_id, &mut self.change);
+                Err(NotDone { text: refused(e.code()), again: true })
+            }
         }
     }
 
@@ -494,6 +668,12 @@ impl Doing<'_> {
         }
     }
 }
+
+/// What the model adds to a Note beside its own fields (web `noteFields`): never written into a version.
+const NOTE_CORE_FIELDS: [&str; 14] = [
+    "object_id", "by_device_id", "object_version", "version_hash", "version_hashes", "causal", "envelope_number",
+    "object_state", "pending", "unsupported", "local_id", "_base", "previous_version_hash", "lamport",
+];
 
 fn bad_id() -> NotDone {
     not_done("action.bad", "That cannot be sent.")

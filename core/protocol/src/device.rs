@@ -4293,6 +4293,12 @@ impl<S: Storage> Device<S> {
         self.join_room_from(keys, served.room, checked, served.group.current, now_ms)
     }
 
+    /// The device's source of randomness, for what the app makes beside the protocol (a file's key, a share
+    /// link's secret): the same source as the device's own, so a seeded test stays exact.
+    pub fn with_entropy<T>(&self, use_it: impl FnOnce(&mut dyn Entropy) -> T) -> T {
+        self.provider.with_entropy(use_it)
+    }
+
     /// Begins the check of the room a hub serves to a device that signs in or recovers with the code
     /// (8.5), for a caller that cannot hand a room's whole history in one call: `served` is everything but
     /// the Commits. They follow in slices ([`Device::code_check_slice`]); [`Device::join_room_checked`] or

@@ -6,9 +6,15 @@
 //! outbox although neither was said (the write that held it failed and the stored state was opened again without
 //! it: rolled back, a toast). Nothing here is stored: after a restart the outbox sends what it holds, once, and the
 //! hub's copy shows it.
+//!
+//! A Note has at most one version on its way (web `noteBusy`): the device takes a later version only on one it
+//! holds, and it holds an own version once that came back from the hub. A further edit meanwhile is shown at once and
+//! waits here, the newest only; it is sealed when the version before it is back, refused or lost. (Like the web's, a
+//! waiting edit is in memory only: it is lost if the app ends before the version before it came back.)
 
 use super::Action;
 use crate::views::{Text, Toast};
+use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// At most so many toasts stand at once; the oldest goes first.
@@ -23,6 +29,27 @@ pub struct Out {
     pub action: Action,
 }
 
+/// An edit of a Note that waits for the version before it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteNext {
+    /// The note's own fields it changes (every waiting edit's, the newest last).
+    pub own: Map<String, Value>,
+    /// It deletes the note.
+    pub closed: bool,
+    /// Its echo.
+    pub local_id: String,
+    /// The action that made it, offered again when it is refused.
+    pub action: Action,
+}
+
+/// A Note's version on its way: its hash and outbox entry, and the edit waiting behind it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteBusy {
+    pub hash: String,
+    pub outbox: u64,
+    pub next: Option<NoteNext>,
+}
+
 /// The bookkeeping of the actions in flight.
 #[derive(Debug, Default)]
 pub struct Sent {
@@ -32,6 +59,13 @@ pub struct Sent {
     next_toast: u64,
     /// By outbox entry id.
     outbox: BTreeMap<u64, Vec<Out>>,
+    /// The Notes with a version on its way, by object id.
+    pub notes: BTreeMap<String, NoteBusy>,
+    /// The goals this App wrote into a session's group (`goals`), by session: the value and its outbox entry, so the
+    /// same value is not written again while it is on its way.
+    pub goals: BTreeMap<String, (Value, u64)>,
+    /// The highest lamport this App gave a Note's version (9.3.2 chooses the current version by it).
+    pub lamport: u64,
 }
 
 impl Sent {
@@ -82,10 +116,21 @@ impl Sent {
         self.outbox.remove(&outbox_id).unwrap_or_default()
     }
 
-    /// The entries that are no longer in the device's outbox (`held`): what each carried.
-    pub fn lost(&mut self, held: &BTreeSet<u64>) -> Vec<Out> {
-        let gone: Vec<u64> = self.outbox.keys().filter(|id| !held.contains(id)).copied().collect();
-        gone.into_iter().flat_map(|id| self.take(id)).collect()
+    /// The entries that are no longer in the device's outbox (`held`).
+    pub fn gone(&self, held: &BTreeSet<u64>) -> Vec<u64> {
+        self.outbox.keys().filter(|id| !held.contains(id)).copied().collect()
+    }
+
+    /// The Note whose version on its way has this hash, or this outbox entry, is free again: its id and the edit
+    /// that waited behind it.
+    pub fn note_back(&mut self, hash: Option<&str>, outbox: Option<u64>) -> Option<(String, Option<NoteNext>)> {
+        let id = self
+            .notes
+            .iter()
+            .find(|(_, b)| hash == Some(b.hash.as_str()) || outbox == Some(b.outbox))
+            .map(|(id, _)| id.clone())?;
+        let busy = self.notes.remove(&id)?;
+        Some((id, busy.next))
     }
 
     /// A toast in `toasts`, the oldest going when there are too many. `again`: offered as its action.
@@ -126,9 +171,22 @@ mod tests {
         assert!(s.waits(&a));
         assert_eq!(s.take(4).len(), 1);
         assert!(s.take(4).is_empty() && !s.waits(&a));
-        assert_eq!(s.lost(&BTreeSet::from([5])), []);
-        assert_eq!(s.lost(&BTreeSet::new()).len(), 1);
+        assert_eq!(s.gone(&BTreeSet::from([5])), Vec::<u64>::new());
+        assert_eq!(s.gone(&BTreeSet::new()), vec![5]);
+        assert_eq!(s.take(5).len(), 1);
         assert!(s.is_empty());
+    }
+
+    #[test]
+    fn a_note_is_free_again_by_its_hash_or_its_entry() {
+        let mut s = Sent::default();
+        let next = NoteNext { own: Map::new(), closed: true, local_id: "local-9".into(), action: star("n") };
+        s.notes.insert("n1".into(), NoteBusy { hash: "aa".into(), outbox: 3, next: Some(next.clone()) });
+        s.notes.insert("n2".into(), NoteBusy { hash: "bb".into(), outbox: 4, next: None });
+        assert_eq!(s.note_back(Some("cc"), Some(9)), None);
+        assert_eq!(s.note_back(Some("aa"), None), Some(("n1".into(), Some(next))));
+        assert_eq!(s.note_back(None, Some(4)), Some(("n2".into(), None)));
+        assert!(s.notes.is_empty());
     }
 
     #[test]

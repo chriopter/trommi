@@ -192,3 +192,52 @@ fn an_invite_request_and_an_evicted_file_reach_the_app() {
     assert!(sim.log.iter().any(|e| matches!(e, Effect::Store { op: StoreOp::Put { delete, .. }, .. } if delete.contains(&key))));
     assert!(!sim.cache.contains_key(&key));
 }
+
+fn commits_of(world: &World, group: &GroupId, from: &DeviceId) -> usize {
+    world.hub.borrow().order.iter().filter(|i| matches!(i, common::hub::Item::Log { group: g, commit: true, from: f, .. } if g == group && f == from)).count()
+}
+
+#[test]
+fn a_wish_to_be_let_in_again_is_answered_once_by_one_commit() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    // the founder could not use a Welcome into the session: it asks with a fresh KeyPackage
+    let founder = world.founder.id();
+    world.founder.key_packages_to_upload(0, now()).expect("key packages");
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut world.founder).is_empty());
+    let package = world.hub.borrow_mut().claim(&[founder]).expect("a KeyPackage").remove(0);
+    let before = commits_of(&world, &world.group, &world.me);
+    let at = sim.now_ms;
+    world.hub.borrow_mut().wish_with(&founder, "readmit", Some(world.group), at, Some(&package), None, None);
+    news(&world, &mut sim);
+    for _ in 0..5 {
+        sim.advance(1_000);
+        news(&world, &mut sim);
+    }
+    assert_eq!(commits_of(&world, &world.group, &world.me), before + 1, "one readmit: {:?}", world.hub.borrow().refused);
+    // the same wish again (the hub's list, or another wish soon after): not a second Commit, which would cut it out
+    world.hub.borrow_mut().wish_with(&founder, "readmit", Some(world.group), sim.now_ms, Some(&package), None, None);
+    news(&world, &mut sim);
+    sim.advance(UPKEEP_EVERY_MS + 1);
+    news(&world, &mut sim);
+    assert_eq!(commits_of(&world, &world.group, &world.me), before + 1, "not again");
+    assert!(sim.app.engine().unwrap().device().group(&world.group).is_ok_and(|g| g.leaves.contains(&founder)));
+}
+
+#[test]
+fn a_leafs_refusal_of_a_commit_is_said_once() {
+    use trommi_client_core::engine::Alert;
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    assert_eq!(sim.view.phase, Phase::Live);
+    let (founder, agent) = (world.founder.id(), world.agent.id());
+    world.hub.borrow_mut().wish_with(&founder, "reject", Some(world.group), sim.now_ms, None, Some(3), Some(agent));
+    news(&world, &mut sim);
+    sim.advance(UPKEEP_EVERY_MS + 1);
+    news(&world, &mut sim);
+    let said: Vec<&Alert> = sim.app.alerts().iter().filter(|a| matches!(a, Alert::Rejected { .. })).collect();
+    assert_eq!(said, vec![&Alert::Rejected { group: world.group, n: 3, from: founder, committer: Some(agent) }]);
+}
