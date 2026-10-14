@@ -2,8 +2,8 @@
 //! for all files of a release, in the form of `release/manifest.sh` and `release/sign.sh`.
 use ed25519_dalek::{Signer, SigningKey};
 use trommi_connector::update::{
-    check, install, installed_release, installed_version, tag_number, tags_in_feed, verify_file,
-    wanted, Expect, Release, RELEASE_KEY,
+    candidate_tags, check, install, installed_release, installed_version, tag_number, tags_in_feed,
+    tags_in_listing, verify_file, wanted, Expect, Release, RELEASE_KEY,
 };
 
 const TARGET: &str = "x86_64-unknown-linux-musl";
@@ -427,6 +427,52 @@ fn an_unsigned_build_in_place_of_the_installed_program_is_replaced_by_the_same_r
     // A build that runs as a newer release than the newest one wants nothing.
     assert!(!wanted(278, 279, &installed_release(&public, TARGET, &dir)));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// GitHub's feed names only the ten newest releases of every part: after a day of hub, web, Mac and iPhone
+/// releases it holds no connector (2026-10-14: `update --check` found none while connector-v1042 was out). The
+/// list of releases (JSON, a hundred long) names it; the feed's tags join it, and either alone still works.
+#[test]
+fn the_connector_is_found_when_the_feed_holds_only_other_parts() {
+    let feed: String = [
+        "web-v1052", "web-v1049", "web-v1048", "web-v1047", "web-v1043", "mac-v1056", "mac-v1052",
+        "mac-v1049", "mac-v1048", "ios-v1053",
+    ]
+    .map(|tag| {
+        format!("<entry><link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/trommi/trommi/releases/tag/{tag}\"/></entry>")
+    })
+    .concat();
+    assert!(tags_in_feed(&feed).is_empty());
+    let listing = serde_json::json!([
+        { "tag_name": "mac-v1056", "draft": false },
+        { "tag_name": "connector-v1042", "draft": false },
+        { "tag_name": "hub-v1043", "draft": false },
+        { "tag_name": "connector-v1039", "draft": false },
+        { "tag_name": "connector-v1050", "draft": true },
+        { "tag_name": "v021", "draft": false },
+        { "tag_name": "nightly", "draft": false },
+        { "name": "no tag" }
+    ])
+    .to_string();
+    assert_eq!(
+        tags_in_listing(&listing),
+        ["connector-v1042", "connector-v1039"]
+    );
+    assert_eq!(
+        candidate_tags(Some(&listing), Some(&feed)),
+        ["connector-v1042", "connector-v1039"]
+    );
+    // a list GitHub refused (its limit without an account) leaves the feed; the feed's tags join the list's
+    assert!(tags_in_listing(r#"{"message":"API rate limit exceeded"}"#).is_empty());
+    let older_feed = format!(
+        "<entry><link href=\"https://github.com/trommi/trommi/releases/tag/connector-v1044\"/></entry>{feed}"
+    );
+    assert_eq!(candidate_tags(None, Some(&older_feed)), ["connector-v1044"]);
+    assert_eq!(
+        candidate_tags(Some(&listing), Some(&older_feed)),
+        ["connector-v1044", "connector-v1042", "connector-v1039"]
+    );
+    assert!(candidate_tags(None, None).is_empty());
 }
 
 /// The release tags are read from GitHub's feed of releases, highest number first, whatever the series is
