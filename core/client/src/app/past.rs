@@ -330,17 +330,14 @@ impl Past {
                 self.tend_heads(engine, ctx);
             }
             Asked::Versions { card, read, starred, expect } => {
-                match answer(&expect) {
-                    Ok(Answer::Object(got)) => {
-                        engine.show_items(ctx, &got.items);
-                        let read = read + got.items.len();
-                        if let (true, Some(last), true) = (got.more, got.items.last().map(|i| i.change), read < VERSIONS_MAX) {
-                            if self.versions_from(card, got.object, last, read, starred, engine, ctx) {
-                                return;
-                            }
+                if let Ok(Answer::Object(got)) = answer(&expect) {
+                    engine.show_items(ctx, &got.items);
+                    let read = read + got.items.len();
+                    if let (true, Some(last), true) = (got.more, got.items.last().map(|i| i.change), read < VERSIONS_MAX) {
+                        if self.versions_from(card, got.object, last, read, starred, engine, ctx) {
+                            return;
                         }
                     }
-                    _ => {}
                 }
                 if starred {
                     self.starred_flying = self.starred_flying.saturating_sub(1);

@@ -360,7 +360,7 @@ fn chat_of(item: &Item) -> Option<(bool, Vec<u8>)> {
 }
 
 fn unhex(text: &str) -> Option<Vec<u8>> {
-    (text.len() % 2 == 0).then_some(())?;
+    text.len().is_multiple_of(2).then_some(())?;
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
 }
 
@@ -1196,7 +1196,7 @@ impl Hub {
                 let before = q("before").and_then(|v| v.parse::<u64>().ok()).unwrap_or(u64::MAX);
                 let limit = num("limit").clamp(1, 500) as usize;
                 let mut rows: Vec<_> = self.objects.iter().filter(|(_, o)| o.card && !o.request && !o.open && o.head_change < before && !self.archived.contains(&o.group)).collect();
-                rows.sort_by(|a, b| b.1.head_change.cmp(&a.1.head_change));
+                rows.sort_by_key(|r| std::cmp::Reverse(r.1.head_change));
                 let more = rows.len() > limit;
                 rows.truncate(limit);
                 let last = rows.last().map_or(0, |(_, o)| o.head_change);
