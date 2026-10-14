@@ -272,7 +272,8 @@ export function cardThread(card, vm, base = '') {
     else if (r.text) items.push(did(r.text, r.time_ms, `ev-${r.id}`))
   }
   const earlier = card.earlier ? html`<form class="tc-earlier" id="card-earlier-${card.id}" method="post" action="${act(card, 'more')}"><button type="submit" class="tc-load-earlier">${card.earlier.says.en}</button></form>` : ''
-  const any = lead.length || items.length
+  // (the session's sheet that opens the comments stands only above something: a card nobody wrote under shows none)
+  const any = lead.length || card.earlier || rows.some(r => r.event?.kind !== 'asked' && r.event?.kind !== 'info')
   return html`<section class="tc-feed" id="card-thread-${card.id}" aria-label="Comments"${any ? '' : raw(' hidden')}>${earlier}${lead}${items}</section>`
 }
 
