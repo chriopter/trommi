@@ -25,6 +25,55 @@ test('the brief Desk: ids and versions of the open cards; since a change, only w
   assert.deepEqual((await hub.deskBrief(delta.change)).settled, [])
 })
 
+test('the Desk counts each group\'s objects; the settled ones come newest first, a page at a time', async t => {
+  const { fake, hub, room_id, device } = await scene(t)
+  const cards = [id(16), id(16), id(16)], request = id(16)
+  const object = (object_id, object_type, object_state) => ({ object_id, object_type, object_state, urgency: 'normal', answered_at: 0 })
+  let seq = 0
+  const post = item => hub.postEnvelope(envelope(room_id, device, ++seq, item))
+  for (const card of cards) await post({ kind: 'version', object: object(card, 'card', 'open') })
+  await post({ kind: 'request', object: object(request, 'request', 'open') })
+  await post({ kind: 'version', object: object(cards[0], 'card', 'closed') })
+  await post({ kind: 'version', object: object(cards[1], 'card', 'closed') })
+  const desk = await hub.desk()
+  assert.deepEqual(desk.counts.map(c => [c.group, c.cards, c.permission_requests, c.notes]), [
+    [room_id, { open: 1, answered: 0, closed: 2 }, { open: 1, answered: 0, closed: 0 }, { open: 0, answered: 0, closed: 0 }],
+  ])
+  // the open list carries the first change of each row
+  const brief = await hub.deskBrief()
+  assert.deepEqual(brief.cards.map(c => [c.object_id, c.first_change]), [[cards[2], 3]])
+  // newest first, one at a time: the cursor goes below the last row
+  const first = await hub.settledObjects({ kind: 'cards', limit: 1 })
+  assert.deepEqual(first.items.map(i => [i.object_id, i.kind, i.state, i.first_change, i.head_change, i.version.change]), [[cards[1], 'cards', 3, 2, 6, 6]])
+  assert.deepEqual([first.more, first.before], [true, 6])
+  const second = await hub.settledObjects({ kind: 'cards', limit: 1, before: first.before })
+  assert.deepEqual([second.items.map(i => i.object_id), second.more, second.before], [[cards[0]], false, 0])
+  assert.deepEqual((await hub.settledObjects({ group: room_id })).items.length, 2)
+  assert.deepEqual((await hub.settledObjects({ kind: 'notes' })).items, [])
+  await assert.rejects(hub.settledObjects({ before: 0 }), e => e.code === 'bad-argument')
+  await assert.rejects(hub.settledObjects({ kind: 'boards' }), e => e.code === 'bad-argument')
+  // a lying hub's counts and pages are refused whole when they break their own rules
+  const bent = async (path, read, bend) => {
+    fake.faults.add({ path, answer: bend })
+    await assert.rejects(read(), e => e.code === 'bad-answer', String(bend))
+  }
+  const desk2 = () => hub.desk()
+  await bent('/v1/desk', desk2, d => ({ ...d, counts: [] }))
+  await bent('/v1/desk', desk2, d => ({ ...d, counts: [d.counts[0], d.counts[0]] }))
+  await bent('/v1/desk', desk2, d => ({ ...d, counts: [{ ...d.counts[0], cards: { ...d.counts[0].cards, open: 2 } }] }))
+  await bent('/v1/desk', desk2, d => ({ ...d, counts: [{ ...d.counts[0], notes: { open: 0, answered: -1, closed: 0 } }] }))
+  fake.faults.add({ path: '/v1/desk', answer: d => ({ ...d, truncated: true, counts: [{ ...d.counts[0], cards: { ...d.counts[0].cards, open: 9 } }] }) })
+  assert.equal((await hub.desk()).counts[0].cards.open, 9, 'cut short, a count may exceed what is listed')
+  const page = () => hub.settledObjects({ kind: 'cards' })
+  await bent('/v1/objects', page, p => ({ ...p, items: [...p.items].reverse() }))
+  await bent('/v1/objects', page, p => ({ ...p, items: [p.items[0], p.items[0]] }))
+  await bent('/v1/objects', page, p => ({ ...p, items: [{ ...p.items[0], state: 1 }] }))
+  await bent('/v1/objects', page, p => ({ ...p, items: [{ ...p.items[0], kind: 'notes' }] }))
+  await bent('/v1/objects', page, p => ({ ...p, before: 4 }))
+  await bent('/v1/objects', page, p => ({ ...p, more: true, before: p.items[1].head_change + 1 }))
+  await bent('/v1/objects', page, p => ({ ...p, change: 1 }))
+})
+
 test('the Desk: open objects with their current version, registers, groups, the room\'s change', async t => {
   const { hub, room_id, device } = await scene(t)
   const card = id(16), note = id(16), register_id = id(16)

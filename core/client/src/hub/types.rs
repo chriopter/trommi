@@ -159,8 +159,17 @@ pub enum Route<'a> {
     /// `DELETE /v1/token`: ends the token the site carries, at once; the hub cuts the device's streams.
     SignOut,
     /// `GET /v1/desk[?active=1|?archived=1]`: the open objects with their current version, every writer's
-    /// newest value per register.
+    /// newest value per register, the counts per group.
     Desk { only: DeskOnly },
+    /// `GET /v1/objects?state=settled&limit=[&kind=][&before=][&group=|&active=1]` (hub-api.md point 47): the
+    /// objects no longer open, newest first by `head_change`, below `before`; `kind` one kind, `only` one group
+    /// or the live ones (`Only::All`: every group the asker sees).
+    Settled {
+        kind: Option<ObjectRoute>,
+        only: Only<'a>,
+        before: Option<u64>,
+        limit: u32,
+    },
     /// `GET /v1/chats/{session|card}/{id}/items?before=&limit=`: a Chat's envelopes, newest first.
     Chat {
         timeline: Timeline<'a>,
@@ -651,8 +660,47 @@ pub struct Desk {
     pub registers: Vec<EnvelopeItem>,
     /// The room's groups, from a hub that still sends them with the Desk.
     pub groups: Option<Vec<GroupRow>>,
+    /// Per group how many objects of each kind are open, answered and closed, ascending by group id; none from a
+    /// hub before these (hub-api.md point 47). The hub's word, like the list itself.
+    pub counts: Option<Vec<GroupCounts>>,
     /// The Desk was cut short: the rest comes by the catch-up.
     pub truncated: bool,
+    pub change: u64,
+}
+
+/// How many objects of one kind in one group are open, answered and closed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StateCounts {
+    pub open: u64,
+    pub answered: u64,
+    pub closed: u64,
+}
+
+/// The Desk's `counts` of one group.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GroupCounts {
+    pub group: GroupId,
+    pub cards: StateCounts,
+    pub permission_requests: StateCounts,
+    pub notes: StateCounts,
+    pub artifacts: StateCounts,
+}
+
+/// An object no longer open, as `GET /v1/objects?state=settled` lists it: a Desk row (state 2 or 3) and its kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettledObject {
+    pub kind: ObjectRoute,
+    pub row: DeskObject,
+}
+
+/// A page of the settled objects, newest first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettledPage {
+    pub items: Vec<SettledObject>,
+    /// Ask on below `before` (it can come with fewer rows than asked, even none).
+    pub more: bool,
+    /// With `more`, the next page's `before`; 0 without.
+    pub before: u64,
     pub change: u64,
 }
 
@@ -777,6 +825,8 @@ pub struct DeskEntry {
     pub object: ObjectId,
     pub version_change: u64,
     pub head_change: u64,
+    /// The object's first change (the Desk's order); none from a hub before it was sent here.
+    pub first_change: Option<u64>,
 }
 
 /// `GET /v1/desk?brief=1`: the open cards and permission requests by id and version.
@@ -946,6 +996,7 @@ pub enum Answer {
     /// A route whose answer carries nothing (`RejectCommit`, `SignOut`, a deletion).
     Done,
     Desk(Desk),
+    Settled(SettledPage),
     /// A page of a Chat (newest first) or of a board's items (oldest first).
     Envelopes {
         items: Vec<EnvelopeItem>,
@@ -1037,6 +1088,7 @@ impl std::fmt::Debug for Answer {
             Answer::Wishes(_) => "Wishes",
             Answer::Done => "Done",
             Answer::Desk(_) => "Desk",
+            Answer::Settled(_) => "Settled",
             Answer::Envelopes { .. } => "Envelopes",
             Answer::Pruned { .. } => "Pruned",
             Answer::SealedKeys(_) => "SealedKeys",

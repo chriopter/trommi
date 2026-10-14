@@ -59,7 +59,7 @@
   "app/web/core/core-wasm.ts": 70,
   "app/web/core/core-worker.ts": 140,
   "app/web/core/engine.ts": 1951,
-  "app/web/core/hub.ts": 1964,
+  "app/web/core/hub.ts": 2042,
   "app/web/core/ids.ts": 34,
   "app/web/core/index.ts": 21,
   "app/web/core/ink.ts": 161,
