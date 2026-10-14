@@ -75,7 +75,8 @@ async function cacheSpace(name: string): Promise<CacheSpace> {
 async function start(m: Extract<ToCore, { t: 'start' }>): Promise<void> {
   const core = await loadCore()
   let spaces: { device: DeviceSpace; cache: CacheSpace }
-  if (m.config['demo'] != null) spaces = memorySpaces()
+  // (the demo, and a page with no slot (a Share link's page): nothing kept, nothing owned)
+  if (m.config['demo'] != null || !m.slot) spaces = memorySpaces()
   else {
     // One owner: the lock, or `busy`. With `take` the owner is asked to give it up, and this waits for it.
     channel = new BroadcastChannel(`trommi-core:${m.slot}`)

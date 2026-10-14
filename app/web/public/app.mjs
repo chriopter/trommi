@@ -986,7 +986,7 @@ async function boot() {
   if (params.has('mock')) { params.delete('mock'); history.replaceState(history.state, '', `${location.pathname}${params.size ? `?${params}` : ''}${location.hash}`) }
   document.documentElement.classList.toggle('is-demo', Boolean(demo))
   // A link for someone outside the room (/artifact/<share_id>#…): its own small page, no room needed.
-  if (SHARE_PAGE.test(location.pathname)) return (await view('media')).showShare()
+  if (SHARE_PAGE.test(location.pathname)) { core.startCore(configOf(null), { slot: '' }); return (await view('media')).showShare({ act: core.act, on: core.on, fileUrl: core.fileUrl }) }
   // (the demo's account screens, /screens: ?mock=1&onboard=<state> draws one of them; no account, nothing sent)
   const onboard = demo && params.get('onboard')
   if (onboard) { fontsAfterPaint(); return (await view('auth')).demoScreen(onboard) }

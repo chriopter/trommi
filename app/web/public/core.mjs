@@ -68,7 +68,7 @@ function receive(m) {
  * Starts the core for this page: the worker core-start.mjs began (or a new one), `start` with the config. `take`:
  * the device is asked from the tab that has it (it gives it up). Resolves once the worker took the start.
  */
-export function startCore(config, { take = false } = {}) {
+export function startCore(config, { take = false, slot = SLOT } = {}) {
   if (!worker) {
     const early = globalThis.__trommiCore ?? null
     globalThis.__trommiCore = null
@@ -79,7 +79,7 @@ export function startCore(config, { take = false } = {}) {
     if (early?.error) emit('failed', new Error(early.error.message || 'the core worker failed'))
   }
   view = emptyView()
-  worker.postMessage({ t: 'start', slot: SLOT, config, take })
+  worker.postMessage({ t: 'start', slot, config, take })
 }
 /** Stops the core (this tab gives the device up). */
 export function stopCore() { worker?.postMessage({ t: 'close' }) }
