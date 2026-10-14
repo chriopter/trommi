@@ -1,6 +1,6 @@
 {
   "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
-  "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+  "session_id": "54ddca7af4029f0526984da1e346d833",
   "kind": "decision",
   "state": "answered",
   "urgency": 1,
@@ -45,7 +45,7 @@
   },
   "status": "decided",
   "from": {
-    "session_id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+    "session_id": "54ddca7af4029f0526984da1e346d833",
     "name": "Fernly Website",
     "mark": "draw:leaf",
     "path": [

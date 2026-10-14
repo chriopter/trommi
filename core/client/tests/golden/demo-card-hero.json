@@ -1,6 +1,6 @@
 {
   "id": "a38afef6dbdd056db8042980f2b83336",
-  "session_id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+  "session_id": "afe6ff94d965b37dccfee8d7d194f2f5",
   "kind": "decision",
   "state": "open",
   "urgency": 1,
@@ -44,7 +44,7 @@
   },
   "status": "open",
   "from": {
-    "session_id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+    "session_id": "afe6ff94d965b37dccfee8d7d194f2f5",
     "name": "Landing Page",
     "mark": "draw:brush",
     "path": [

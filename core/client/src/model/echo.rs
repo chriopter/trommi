@@ -298,6 +298,27 @@ impl Model {
     }
 
     /// Take an echo back (sealing failed, the hub refused it, its void record came): what it showed is as it was.
+    /// Takes every echo as the hub's copy (the demo room, which has no hub): nothing stays pending.
+    pub fn settle_echoes(&mut self) {
+        for r in self.human.values_mut() {
+            r.pending = false;
+        }
+        for c in self.cards.values_mut() {
+            if let Some(a) = c.answer.as_mut() {
+                a.pending = false;
+            }
+        }
+        for t in self.timelines.values_mut() {
+            for item in t.items.values_mut() {
+                item.remove("pending");
+            }
+        }
+        for n in self.notes.values_mut() {
+            n.remove("pending");
+            n.remove("_base");
+        }
+    }
+
     pub fn rollback_echo(&mut self, local_id: &str, change: &mut Change) {
         let Some(echo) = self.echoes.remove(local_id) else {
             return;

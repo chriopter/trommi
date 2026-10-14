@@ -119,6 +119,8 @@ pub enum Screen {
     Scribble {
         board_id: String,
     },
+    /// The gallery of every Artifact the agents published.
+    Artifacts,
     Settings,
 }
 
@@ -151,6 +153,9 @@ pub struct ViewModel {
     /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board: Option<BoardView>,
+    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`), the newest first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<ArtifactView>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub toasts: Vec<Toast>,
 }
@@ -209,6 +214,10 @@ pub enum ViewPart {
     /// The Scribble Board in view, whole; none when it is left.
     Board {
         view: Option<BoardView>,
+    },
+    /// The gallery of Artifacts, whole; none when it is left.
+    Artifacts {
+        view: Option<Vec<ArtifactView>>,
     },
     Toasts {
         toasts: Vec<Toast>,
@@ -790,6 +799,13 @@ pub struct SessionView {
     /// Talk rows, newest last.
     pub talk: Vec<TalkRow>,
     pub status_lines: Vec<StatusLineView>,
+    /// Every card of the session, the newest first (its page "Questions").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<CardRefView>,
+    /// Every file of the session's cards, answers, Chats and Artifacts (ids of `ViewModel.files`), the newest
+    /// first (its page "Files").
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
     /// The hub holds older messages than this device has (history on demand: asking for more reads them).
     pub has_more: bool,
     /// The line above the first row when more stands before it ("Earlier messages"): what this device holds before
@@ -1540,6 +1556,25 @@ pub struct DeskCountsView {
     pub goals: u64,
 }
 
+/// An Artifact in the gallery: what an agent published.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactView {
+    pub id: String,
+    pub title: String,
+    /// "page", "image", "document", …: what the agent named it; "" when it named nothing.
+    #[serde(default)]
+    pub kind: String,
+    /// The session that published it (its key), and its name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub session: String,
+    pub sent_at: u64,
+    /// Its files (ids of `ViewModel.files`), in its order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+}
+
 /// Push on this device.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PushView {
@@ -1958,6 +1993,7 @@ impl ViewModel {
                     }
                 },
                 ViewPart::Board { view } => self.board = view.clone(),
+                ViewPart::Artifacts { view } => self.artifacts = view.clone(),
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
         }
@@ -2054,6 +2090,11 @@ impl ViewModel {
         if self.board != next.board {
             parts.push(ViewPart::Board {
                 view: next.board.clone(),
+            });
+        }
+        if self.artifacts != next.artifacts {
+            parts.push(ViewPart::Artifacts {
+                view: next.artifacts.clone(),
             });
         }
         if self.toasts != next.toasts {

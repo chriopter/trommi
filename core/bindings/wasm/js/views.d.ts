@@ -31,6 +31,8 @@ export type Screen =
   /** The page Off your mind, the complete list, with the search's words (empty: all). */
   | { screen: 'off'; query: string }
   | { screen: 'scribble'; board_id: string }
+  /** The gallery of every Artifact the agents published. */
+  | { screen: 'artifacts' }
   | { screen: 'settings' }
 
 /** Everything the shell draws. Serialised, this is what the conformance scripts compare. */
@@ -55,6 +57,8 @@ export interface ViewModel {
   files?: Record<string, FileView>
   /** The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown. */
   board?: BoardView
+  /** The gallery of Artifacts, while it is in view (`Screen::Artifacts`), the newest first. */
+  artifacts?: ArtifactView[]
   toasts?: Toast[]
 }
 
@@ -80,6 +84,8 @@ export type ViewPart =
   | { part: 'file'; id: string; view: FileView | null }
   /** The Scribble Board in view, whole; none when it is left. */
   | { part: 'board'; view: BoardView | null }
+  /** The gallery of Artifacts, whole; none when it is left. */
+  | { part: 'artifacts'; view: ArtifactView[] | null }
   | { part: 'toasts'; toasts: Toast[] }
 
 /** Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come (the Desk's stack ops today). */
@@ -529,6 +535,11 @@ export interface SessionView {
   /** Talk rows, newest last. */
   talk: TalkRow[]
   status_lines: StatusLineView[]
+  /** Every card of the session, the newest first (its page "Questions"). */
+  questions?: CardRefView[]
+  /** Every file of the session's cards, answers, Chats and Artifacts (ids of `ViewModel.files`), the newest
+   *  first (its page "Files"). */
+  files?: string[]
   /** The hub holds older messages than this device has (history on demand: asking for more reads them). */
   has_more: boolean
   /** The line above the first row when more stands before it ("Earlier messages"): what this device holds before
@@ -1089,6 +1100,20 @@ export interface DeskCountsView {
   files: number
   artifacts: number
   goals: number
+}
+
+/** An Artifact in the gallery: what an agent published. */
+export interface ArtifactView {
+  id: string
+  title: string
+  /** "page", "image", "document", …: what the agent named it; "" when it named nothing. */
+  kind: string
+  /** The session that published it (its key), and its name. */
+  session_id?: string
+  session: string
+  sent_at: number
+  /** Its files (ids of `ViewModel.files`), in its order. */
+  files?: string[]
 }
 
 /** Push on this device. */

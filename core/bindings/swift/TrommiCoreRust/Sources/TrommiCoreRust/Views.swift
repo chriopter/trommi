@@ -105,6 +105,8 @@ public enum CoreView {
     /// The page Off your mind, the complete list, with the search's words (empty: all).
     case off(query: String)
     case scribble(boardId: String)
+    /// The gallery of every Artifact the agents published.
+    case artifacts
     case settings
 
     public init() { self = .desk }
@@ -126,6 +128,7 @@ public enum CoreView {
       case "notes": self = .notes
       case "off": self = .off(query: try c.decodeIfPresent(String.self, forKey: .query) ?? "")
       case "scribble": self = .scribble(boardId: try c.decode(String.self, forKey: .boardId))
+      case "artifacts": self = .artifacts
       case "settings": self = .settings
       case let other: throw DecodingError.dataCorruptedError(forKey: .screen, in: c, debugDescription: "Screen: no variant \(other)")
       }
@@ -150,6 +153,8 @@ public enum CoreView {
       case .scribble(let boardId):
         try c.encode("scribble", forKey: .screen)
         try c.encode(boardId, forKey: .boardId)
+      case .artifacts:
+        try c.encode("artifacts", forKey: .screen)
       case .settings:
         try c.encode("settings", forKey: .screen)
       }
@@ -178,9 +183,11 @@ public enum CoreView {
     public var files: [String: FileView]
     /// The Scribble Board in view (`Focus.board`, `Screen::Scribble`); none when no board is shown.
     public var board: BoardView?
+    /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`), the newest first.
+    public var artifacts: [ArtifactView]?
     public var toasts: [Toast]
 
-    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, toasts: [Toast] = []) {
+    public init(rev: UInt64 = 0, phase: Phase = .starting, status: Text? = nil, sidebar: SidebarView = SidebarView(), desk: DeskView = DeskView(), sessions: [String: SessionView] = [:], cards: [String: CardView] = [:], off: OffListView? = nil, notes: NotesView = NotesView(), settings: SettingsView = SettingsView(), account: AccountView = AccountView(), files: [String: FileView] = [:], board: BoardView? = nil, artifacts: [ArtifactView]? = nil, toasts: [Toast] = []) {
       self.rev = rev
       self.phase = phase
       self.status = status
@@ -194,6 +201,7 @@ public enum CoreView {
       self.account = account
       self.files = files
       self.board = board
+      self.artifacts = artifacts
       self.toasts = toasts
     }
 
@@ -211,6 +219,7 @@ public enum CoreView {
       case account = "account"
       case files = "files"
       case board = "board"
+      case artifacts = "artifacts"
       case toasts = "toasts"
     }
 
@@ -229,6 +238,7 @@ public enum CoreView {
       self.account = try c.decode(AccountView.self, forKey: .account)
       self.files = try c.decodeIfPresent([String: FileView].self, forKey: .files) ?? [:]
       self.board = try c.decodeIfPresent(BoardView.self, forKey: .board)
+      self.artifacts = try c.decodeIfPresent([ArtifactView].self, forKey: .artifacts)
       self.toasts = try c.decodeIfPresent([Toast].self, forKey: .toasts) ?? []
     }
 
@@ -247,6 +257,7 @@ public enum CoreView {
       try c.encode(account, forKey: .account)
       if !files.isEmpty { try c.encode(files, forKey: .files) }
       try c.encodeIfPresent(board, forKey: .board)
+      try c.encodeIfPresent(artifacts, forKey: .artifacts)
       if !toasts.isEmpty { try c.encode(toasts, forKey: .toasts) }
     }
   }
@@ -295,6 +306,8 @@ public enum CoreView {
     case file(id: String, view: FileView?)
     /// The Scribble Board in view, whole; none when it is left.
     case board(view: BoardView?)
+    /// The gallery of Artifacts, whole; none when it is left.
+    case artifacts(view: [ArtifactView]?)
     case toasts(toasts: [Toast])
 
     enum CodingKeys: String, CodingKey {
@@ -322,6 +335,7 @@ public enum CoreView {
       case "account": self = .account(view: try c.decode(AccountView.self, forKey: .view))
       case "file": self = .file(id: try c.decode(String.self, forKey: .id), view: try c.decodeIfPresent(FileView.self, forKey: .view))
       case "board": self = .board(view: try c.decodeIfPresent(BoardView.self, forKey: .view))
+      case "artifacts": self = .artifacts(view: try c.decodeIfPresent([ArtifactView].self, forKey: .view))
       case "toasts": self = .toasts(toasts: try c.decode([Toast].self, forKey: .toasts))
       case let other: throw DecodingError.dataCorruptedError(forKey: .part, in: c, debugDescription: "ViewPart: no variant \(other)")
       }
@@ -369,6 +383,9 @@ public enum CoreView {
         try c.encode(view, forKey: .view)
       case .board(let view):
         try c.encode("board", forKey: .part)
+        try c.encode(view, forKey: .view)
+      case .artifacts(let view):
+        try c.encode("artifacts", forKey: .part)
         try c.encode(view, forKey: .view)
       case .toasts(let toasts):
         try c.encode("toasts", forKey: .part)
@@ -1906,6 +1923,11 @@ public enum CoreView {
     /// Talk rows, newest last.
     public var talk: [TalkRow]
     public var statusLines: [StatusLineView]
+    /// Every card of the session, the newest first (its page "Questions").
+    public var questions: [CardRefView]
+    /// Every file of the session's cards, answers, Chats and Artifacts (ids of `ViewModel.files`), the newest
+    /// first (its page "Files").
+    public var files: [String]
     /// The hub holds older messages than this device has (history on demand: asking for more reads them).
     public var hasMore: Bool
     /// The line above the first row when more stands before it ("Earlier messages"): what this device holds before
@@ -1949,13 +1971,15 @@ public enum CoreView {
     /// An empty conversation: the card of the agent that joined, and three ways to start.
     public var empty: EmptyTalkView?
 
-    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", deskId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil) {
+    public init(id: String = "", name: Text = Text(), link: String = "", blocked: Bool = false, talk: [TalkRow] = [], statusLines: [StatusLineView] = [], questions: [CardRefView] = [], files: [String] = [], hasMore: Bool = false, earlier: MoreView? = nil, slug: String = "", mark: String = "", deskId: String = "", main: Bool = false, crowned: Bool = false, online: Bool = false, path: [String] = [], modelLabel: String = "", model: String = "", dot: DotView = DotView(), hand: HandView? = nil, quiet: Text? = nil, note: LinkNoteView? = nil, compose: Text = Text(), answering: Text? = nil, open: UInt32 = 0, openWord: Text? = nil, openSays: Text? = nil, firstOpen: String? = nil, empty: EmptyTalkView? = nil) {
       self.id = id
       self.name = name
       self.link = link
       self.blocked = blocked
       self.talk = talk
       self.statusLines = statusLines
+      self.questions = questions
+      self.files = files
       self.hasMore = hasMore
       self.earlier = earlier
       self.slug = slug
@@ -1987,6 +2011,8 @@ public enum CoreView {
       case blocked = "blocked"
       case talk = "talk"
       case statusLines = "status_lines"
+      case questions = "questions"
+      case files = "files"
       case hasMore = "has_more"
       case earlier = "earlier"
       case slug = "slug"
@@ -2019,6 +2045,8 @@ public enum CoreView {
       self.blocked = try c.decode(Bool.self, forKey: .blocked)
       self.talk = try c.decode([TalkRow].self, forKey: .talk)
       self.statusLines = try c.decode([StatusLineView].self, forKey: .statusLines)
+      self.questions = try c.decodeIfPresent([CardRefView].self, forKey: .questions) ?? []
+      self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
       self.hasMore = try c.decode(Bool.self, forKey: .hasMore)
       self.earlier = try c.decodeIfPresent(MoreView.self, forKey: .earlier)
       self.slug = try c.decodeIfPresent(String.self, forKey: .slug) ?? ""
@@ -2051,6 +2079,8 @@ public enum CoreView {
       try c.encode(blocked, forKey: .blocked)
       try c.encode(talk, forKey: .talk)
       try c.encode(statusLines, forKey: .statusLines)
+      if !questions.isEmpty { try c.encode(questions, forKey: .questions) }
+      if !files.isEmpty { try c.encode(files, forKey: .files) }
       try c.encode(hasMore, forKey: .hasMore)
       try c.encodeIfPresent(earlier, forKey: .earlier)
       try c.encode(slug, forKey: .slug)
@@ -3905,6 +3935,62 @@ public enum CoreView {
       try c.encode(files, forKey: .files)
       try c.encode(artifacts, forKey: .artifacts)
       try c.encode(goals, forKey: .goals)
+    }
+  }
+
+  /// An Artifact in the gallery: what an agent published.
+  public struct ArtifactView: Codable, Hashable, Sendable {
+    public var id: String
+    public var title: String
+    /// "page", "image", "document", …: what the agent named it; "" when it named nothing.
+    public var kind: String
+    /// The session that published it (its key), and its name.
+    public var sessionId: String?
+    public var session: String
+    public var sentAt: UInt64
+    /// Its files (ids of `ViewModel.files`), in its order.
+    public var files: [String]
+
+    public init(id: String = "", title: String = "", kind: String = "", sessionId: String? = nil, session: String = "", sentAt: UInt64 = 0, files: [String] = []) {
+      self.id = id
+      self.title = title
+      self.kind = kind
+      self.sessionId = sessionId
+      self.session = session
+      self.sentAt = sentAt
+      self.files = files
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case id = "id"
+      case title = "title"
+      case kind = "kind"
+      case sessionId = "session_id"
+      case session = "session"
+      case sentAt = "sent_at"
+      case files = "files"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.id = try c.decode(String.self, forKey: .id)
+      self.title = try c.decode(String.self, forKey: .title)
+      self.kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
+      self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+      self.session = try c.decodeIfPresent(String.self, forKey: .session) ?? ""
+      self.sentAt = try c.decode(UInt64.self, forKey: .sentAt)
+      self.files = try c.decodeIfPresent([String].self, forKey: .files) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(title, forKey: .title)
+      try c.encode(kind, forKey: .kind)
+      try c.encodeIfPresent(sessionId, forKey: .sessionId)
+      try c.encode(session, forKey: .session)
+      try c.encode(sentAt, forKey: .sentAt)
+      if !files.isEmpty { try c.encode(files, forKey: .files) }
     }
   }
 

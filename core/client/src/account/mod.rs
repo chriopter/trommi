@@ -42,6 +42,14 @@ pub enum AccountAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         hub: Option<String>,
     },
+    /// A new account and room with a passkey as its way in (no password): the platform makes the passkey
+    /// (`PlatformOp::PasskeyCreate`); `email` is optional (the kit is salted with the account's id without one).
+    FoundWithPasskey {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        email: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hub: Option<String>,
+    },
     /// The person has kept the Emergency Kit's words shown once after founding: they leave the view.
     KitKept,
     SignIn {

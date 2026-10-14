@@ -23,7 +23,7 @@
   ],
   "sessions": [
     {
-      "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "id": "54ddca7af4029f0526984da1e346d833",
       "name": {
         "key": "session.name",
         "en": "Fernly Website"
@@ -40,12 +40,12 @@
       "main": true,
       "crowned": true,
       "subs": [
-        "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
-        "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
-        "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
-        "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
-        "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
-        "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7"
+        "afe6ff94d965b37dccfee8d7d194f2f5",
+        "90a9167150c8487641fba3ecb3b48c67",
+        "7918819a346eb1a53310de7a32ca7467",
+        "5e635ce617a0aef933976af9fab2540a",
+        "6c26f924651b046908ab4e0f57c52876",
+        "425412ed2b37ef1052c0a8ecc47949f1"
       ],
       "open": 2,
       "knocks": false,
@@ -74,7 +74,7 @@
       }
     },
     {
-      "id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+      "id": "afe6ff94d965b37dccfee8d7d194f2f5",
       "name": {
         "key": "session.name",
         "en": "Landing Page"
@@ -90,7 +90,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -105,7 +105,7 @@
       }
     },
     {
-      "id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+      "id": "90a9167150c8487641fba3ecb3b48c67",
       "name": {
         "key": "session.name",
         "en": "Copywriting"
@@ -121,7 +121,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 2,
       "knocks": false,
       "hushed": false,
@@ -136,7 +136,7 @@
       }
     },
     {
-      "id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+      "id": "7918819a346eb1a53310de7a32ca7467",
       "name": {
         "key": "session.name",
         "en": "Onboarding"
@@ -152,7 +152,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 2,
       "knocks": false,
       "hushed": false,
@@ -167,7 +167,7 @@
       }
     },
     {
-      "id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
+      "id": "5e635ce617a0aef933976af9fab2540a",
       "name": {
         "key": "session.name",
         "en": "Page Speed"
@@ -183,7 +183,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -191,7 +191,7 @@
       "group": ""
     },
     {
-      "id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
+      "id": "6c26f924651b046908ab4e0f57c52876",
       "name": {
         "key": "session.name",
         "en": "Testing"
@@ -207,7 +207,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -222,7 +222,7 @@
       }
     },
     {
-      "id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+      "id": "425412ed2b37ef1052c0a8ecc47949f1",
       "name": {
         "key": "session.name",
         "en": "Search & Social"
@@ -238,7 +238,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -246,7 +246,7 @@
       "group": ""
     },
     {
-      "id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "id": "4abc388943bda4956b58dc2d5eb3e7e1",
       "name": {
         "key": "session.name",
         "en": "Fernly App"
@@ -263,10 +263,10 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
-        "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
-        "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
-        "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e"
+        "0a85b9f6c5537929ef7b048ddb973516",
+        "46d829ea328da3f7b5d0a9b97a644fbe",
+        "8b7221422f2856f685ea49f997e8d0f9",
+        "eed5d0d1720b7655676b19dd7b2411f6"
       ],
       "open": 1,
       "knocks": false,
@@ -295,7 +295,7 @@
       }
     },
     {
-      "id": "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
+      "id": "0a85b9f6c5537929ef7b048ddb973516",
       "name": {
         "key": "session.name",
         "en": "Widgets"
@@ -311,7 +311,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -326,7 +326,7 @@
       }
     },
     {
-      "id": "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
+      "id": "46d829ea328da3f7b5d0a9b97a644fbe",
       "name": {
         "key": "session.name",
         "en": "Push Reminders"
@@ -342,7 +342,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -350,7 +350,7 @@
       "group": ""
     },
     {
-      "id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
+      "id": "8b7221422f2856f685ea49f997e8d0f9",
       "name": {
         "key": "session.name",
         "en": "App Store"
@@ -366,7 +366,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -381,7 +381,7 @@
       }
     },
     {
-      "id": "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e",
+      "id": "eed5d0d1720b7655676b19dd7b2411f6",
       "name": {
         "key": "session.name",
         "en": "Crash Fixes"
@@ -397,7 +397,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -405,7 +405,7 @@
       "group": ""
     },
     {
-      "id": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "id": "9aa575fae2c64ece4ae4ab1b783673da",
       "name": {
         "key": "session.name",
         "en": "Design System"
@@ -422,9 +422,9 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
-        "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
-        "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc"
+        "e52ac023c086b1da68e774acc6be0a36",
+        "20d05b9d755bf0bdd5cc19e26e313c1b",
+        "8c33dad27819e29bb85644eb3f0cf7f3"
       ],
       "open": 0,
       "knocks": false,
@@ -446,7 +446,7 @@
       }
     },
     {
-      "id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+      "id": "e52ac023c086b1da68e774acc6be0a36",
       "name": {
         "key": "session.name",
         "en": "Design Tokens"
@@ -462,7 +462,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -477,7 +477,7 @@
       }
     },
     {
-      "id": "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
+      "id": "20d05b9d755bf0bdd5cc19e26e313c1b",
       "name": {
         "key": "session.name",
         "en": "Icons"
@@ -493,7 +493,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
       "open": 1,
       "knocks": true,
       "hushed": false,
@@ -508,7 +508,7 @@
       }
     },
     {
-      "id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
+      "id": "8c33dad27819e29bb85644eb3f0cf7f3",
       "name": {
         "key": "session.name",
         "en": "Dark Mode"
@@ -524,7 +524,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
       "open": 1,
       "knocks": false,
       "hushed": false,
