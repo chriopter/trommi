@@ -1,403 +1,158 @@
-// A session's page: its heading, the conversation, the composer, the filter ("Questions only"), the
-// files drawer and a picture as a page of its own. The markup is the one app.css and session.css style.
+// A session's page, drawn from the app core's view model (vm.sessions[key], SessionView): its heading, the talk, the
+// field to write, the switch "All | Questions", the files drawer and a picture as a page of its own. The markup is the
+// one app.css and session.css style.
 //
-//   GET  <base>/chat/<id>                  the conversation: the latest PAGE messages; ?before=<message> the ones before
-//                                       that one (the "Earlier" link at the top loads them into a Turbo Frame)
-//   GET  <base>/chat/<id>?only=questions   its questions only
-//   GET  <base>/chat/<id>/files            the conversation with the files drawer open; asked from the drawer's frame
-//                                       (header Turbo-Frame), only the drawer's list
-//   GET  <base>/chat/<id>/files/<n>        one picture, large (n counts the session's pictures, the oldest is 1)
-//   POST <base>/chat/<id>/message          the composer: text, files, copied cards (a FormData of this page)
+//   GET  <base>/chat/<slug>                 the talk (the core's window of the newest rows; "Earlier messages" grows it)
+//   GET  <base>/chat/<slug>/questions       its questions (SessionView.questions)
+//   GET  <base>/chat/<slug>/files           the talk with the files drawer open (SessionView.files)
+//   GET  <base>/chat/<slug>/files/<file>    one picture, large
+//   GET  <base>/chat/<slug>/artifact/<id>   what it published: the viewer at /artifacts/<id> (media.mjs)
+//   POST <base>/chat/<slug>/message         the field: text, files (t.attach), copied cards -> Action::Write
+//   POST <base>/chat/<slug>/earlier         "Earlier messages" -> Action::ShowMore
 //
-// Windowed: the conversation in memory is the newest page(s) of the session's timeline (the core loads 50 at a time)
-// and what the heads say about its questions. Only what is at least as new as the oldest loaded item of the
-// session's own chat is shown (the "floor"), so paging up never leaves holes; "Earlier" first shows what memory
-// holds, then asks the core for the next older page (t.hub.loadOlder).
-//
-// A question never unfolds here: an open one stands in the conversation as its Desk row, whose text links to the
-// card's page; every other one is a quiet line that links there too.
-import { UNHEARD_MS, blockedOf, lineCard, linkOf, quietOf, shareControl, sharesLoaded } from './app.mjs'
-import { Controller, agoShort, usageMark, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, WORDS, advisedLabels, later, agoSpan, assetGlyph, attIdOf, avatar, controller, deskRow, handSvg, html, kindOf, linkNote, mq, pageChip, raw, rich, ringSvg, runSection, sessionHeadEdit, sk, srcOf, sayError } from './ui.mjs'
-const LIVE = 80               // so many of the newest messages are kept up to date by the live stream
-const PAGE = 40               // messages of one render: the page shows the latest, "Earlier" (or scrolling up) brings as many again
-const IN_VIEW = 14            // of them, rendered with the page (a phone shows fewer); the rest of the window right after its first paint
-const GROUP_GAP = 5 * 60000          // messages of one side closer than this stand as one run
-const WORKING_WINDOW = 10 * 60000    // so long after the human's last word the session counts as answering
+// An open question stands in the talk as its Desk row (ui.mjs deskRow), whose text links to the card's page; what
+// became of a question is one quiet line that links there too.
+import { Controller, agoShort, agoSpan, avatar, controller, deskRow, fileTile, handSvg, html, linkNote, mq, raw, revokeTiles, rich, ringSvg, runSection, sessionHeadEdit, sk, whoOf, assetGlyph } from './ui.mjs'
+import { viewModule } from './app.mjs'
+// (the Artifacts' drawing, the share control and the file kinds are media.mjs's: loaded before a page is drawn)
+let media = null
+const artifactCard = (...a) => media.artifactCard(...a), sizeText = n => media.sizeText(n), typeOf = f => media.typeOf(f), until = (...a) => media.until(...a)
 const MAX_FILES = 12                 // as the hub takes them in one message
 
 // ---- small pieces ----
 const ICONS = {
-  clock: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M12 7.6V12l2.9 1.9'],
   asked: ['M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z', 'M9.6 9.7a2.5 2.5 0 1 1 3.7 2.2c-.8.45-1.3 1-1.3 1.9', 'M12 16.7v.1'],
   decided: ['M5 12.5l4.5 4.5L19 7.5'],
   done: ['M2.5 12.5l4 4 8-9', 'M12 16l.5.5 9-9.5'],
   urgency: ['M13 3 5.5 13.5H11L10 21l8.5-10.5H13L13 3z'],
   reopened: ['M9 7 4.5 11.5 9 16', 'M4.5 11.5H14a5.5 5.5 0 0 1 0 11h-2'],
-  prev: ['M14.5 5.5 8 12l6.5 6.5'],
   next: ['M9.5 5.5 16 12l-6.5 6.5'],
   file: ['M7 3.5h7l4.5 4.5V19a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z', 'M13.5 3.5V8.5H18.5'],
-  external: ['M14 5h5v5', 'M19 5l-8 8', 'M11 6.5H6.5A1.5 1.5 0 0 0 5 8v9.5A1.5 1.5 0 0 0 6.5 19H16a1.5 1.5 0 0 0 1.5-1.5V13'],
-  spark: ['M12 3.5c.7 4.5 4 7.8 8.5 8.5-4.5.7-7.8 4-8.5 8.5-.7-4.5-4-7.8-8.5-8.5 4.5-.7 7.8-4 8.5-8.5z'],
   send: ['M12 19V5M5.5 11.5 12 5l6.5 6.5'],
   down: ['M12 5v14M5.5 12.5 12 19l6.5-6.5'],
   close: ['M6 6l12 12M18 6 6 18'],
-  filter: ['M4 5.5h16l-6.2 7.3v5.4l-3.6 1.8v-7.2L4 5.5z'],
   clip: ['M8 12.5l6.2-6.2a3 3 0 0 1 4.3 4.3l-7.6 7.6a5 5 0 0 1-7.1-7.1L11 3.9'],
   copy: ['M10.5 8.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z', 'M15.5 5.5v-.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2H7'],
 }
-const made = new Map()
-const ico = (name, cls = 'ico') => raw(made.get(`${name} ${cls}`) ?? made.set(`${name} ${cls}`, `<svg viewBox="0 0 24 24" class="${cls}" aria-hidden="true">${(ICONS[name] ?? ICONS.asked).map(d => `<path d="${d}"/>`).join('')}</svg>`).get(`${name} ${cls}`))
+ICONS.took_back = ICONS.handed_back = ICONS.reopened
+const ico = (name, cls = 'ico') => raw(`<svg viewBox="0 0 24 24" class="${cls}" aria-hidden="true">${(ICONS[name] ?? ICONS.asked).map(d => `<path d="${d}"/>`).join('')}</svg>`)
 // The session's own drawing (and its crown) beside its words, as in its heading; never shown greyed when it is offline.
-const agentMark = a => avatar({ ...a, online: true })
+const agentMark = s => avatar({ ...whoOf(s), online: true })
 
 const two = n => String(n).padStart(2, '0')
-const clock = ts => { const d = new Date(ts); return `${two(d.getHours())}:${two(d.getMinutes())}` }
-// (a hover hint: short, day and time)
+const clock = ms => { const d = new Date(ms); return `${two(d.getHours())}:${two(d.getMinutes())}` }
 const FULL = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
-const dayKey = ts => { const d = new Date(ts); return d.getFullYear() * 400 + d.getMonth() * 32 + d.getDate() }
-function dayLabel(ts, now = Date.now()) {
-  if (dayKey(ts) === dayKey(now)) return 'Today'
-  if (dayKey(ts) === dayKey(now - 86400000)) return 'Yesterday'
-  return DAY.format(ts)
-}
-const timeNode = (ts, cls) => html`<time class="${cls}" datetime="${new Date(ts).toISOString()}" title="${FULL.format(ts)}">${clock(ts)}</time>`
-const sizeText = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} kB` : `${n} B`)
+const timeNode = (ms, cls) => html`<time class="${cls}" datetime="${new Date(ms).toISOString()}" title="${FULL.format(ms)}">${clock(ms)}</time>`
 
-const sessionPath = (id, base) => `${base}/chat/${encodeURIComponent(id)}`
-const questionPath = (card, base) => `${sessionPath(card.agent, base)}/card/${encodeURIComponent(card.number ?? card.id)}`
-const choiceLabel = card => { const keys = card.choices?.length ? card.choices : card.choice != null ? [card.choice] : []; return keys.map(key => (card.options ?? []).find(o => o.key === key)?.label ?? key).join(', ') }
-const isPicture = a => kindOf(a) === 'image' && a.url
+const sessionPath = (s, base) => `${base}/chat/${encodeURIComponent(s.slug)}`
+const cardPath = (card, s, base) => `${sessionPath(s, base)}/card/${encodeURIComponent(card.number || card.id)}`
 
-// ---- what a render of one session needs, worked out once ----
-/** model: app.mjs. Returns null when the session is not on the board. */
-function sessionOf(model, id, { floor = 0, more = false } = {}) {
-  const agent = model.byAgent.get(id)
-  if (!agent) return null
-  const { state } = model
-  const all = state.messagesOf ? state.messagesOf(id) : state.messages.filter(m => m.agent === id)
-  let messages = floor > 0 ? all.filter(m => m.seq >= floor) : all
-  const cards = state.cards.filter(c => c.agent === id)
-  // An approval it waits for stands at the end of the conversation, as its Desk row (it has no thread of its own).
-  const asks = model.fresh.filter(c => c.agent === id && c.kind === 'permission')
-  if (asks.length) messages = [...messages, ...asks.map(c => ({ id: `p${c.id}`, seq: Number.MAX_SAFE_INTEGER - 1, agent: id, from: 'event', kind: 'asked', card_id: c.id, text: c.title, ts: c.created }))]
-  // The session's pictures, oldest first: what it sent and was sent, then what its questions carry.
-  const pictures = [], nr = new Map()
-  const add = list => { for (const a of list ?? []) if (isPicture(a) && !nr.has(a.url)) { pictures.push(a); nr.set(a.url, pictures.length) } }
-  for (const m of messages) add(m.attachments)
-  for (const c of cards) add(c.attachments)
-  // Where a question stands in the conversation: at the last time it was put there.
-  const askAt = new Map()
-  for (const m of messages) if (m.from === 'event' && m.kind === 'asked' && m.card_id) askAt.set(m.card_id, m.id)
-  const fresh = model.open.filter(c => c.agent === id && !c.with_agent)   // (its infos too: on its own page they stand as rows)
-  return { id, agent, model, messages, cards, pictures, nr, askAt, fresh, tasks: state.tasks.filter(t => t.agent === id), floor, more }
+// ---- files of a row ----
+function attachments(ids, s, vm, t, from) {
+  const all = (ids ?? []).map(id => ({ id, f: vm.files?.[id] })).filter(x => x.f)
+  const of = k => all.filter(x => typeOf(x.f) === k)
+  const images = of('image'), rest = all.filter(x => !['image', 'video', 'audio'].includes(typeOf(x.f)))
+  return html`${all.filter(x => ['video', 'audio'].includes(typeOf(x.f))).map(({ id, f }) => { const url = t.fileUrl(id); return typeOf(f) === 'video'
+    ? html`<figure class="media media-video"><video${url ? html` src="${url}#t=0.001"` : ''} controls preload="metadata" playsinline></video><figcaption>${f.name}</figcaption></figure>`
+    : html`<figure class="media media-audio"><audio${url ? html` src="${url}"` : ''} controls preload="metadata"></audio><figcaption>${f.name}</figcaption></figure>` })}${images.length ? html`<div class="shots${images.length === 1 ? ' shots-one' : ''}">${images.map(({ id, f }) => { const url = t.fileUrl(id); return html`<a class="shot" data-nav href="${sessionPath(s, t.BASE)}/files/${id}?from=${from}" aria-label="Enlarge ${f.name}"><img${url ? html` src="${url}"` : ''} alt="${f.name}" loading="lazy" decoding="async" width="320" height="240"></a>` })}</div>` : ''}${rest.length ? html`<div class="files">${rest.map(({ id, f }) => { const url = t.fileUrl(id); return html`<a class="file-chip"${url ? html` href="${url}" download="${f.name}"` : ''}>${ico('file')}<span>${f.name}</span></a>` })}</div>` : ''}`
 }
 
-// ---- attachments ----
-function attachments(list, s, base, from) {
-  list = (list ?? []).filter(a => a?.url)
-  const media = list.filter(a => kindOf(a) === 'video' || kindOf(a) === 'audio')
-  const images = list.filter(isPicture)
-  const files = list.filter(a => kindOf(a) === 'file')
-  return html`${media.map(a => (kindOf(a) === 'video'
-    ? html`<figure class="media media-video"><video src="${a.url}#t=0.001" controls preload="metadata" playsinline></video><figcaption>${a.name}</figcaption></figure>`
-    : html`<figure class="media media-audio"><audio src="${a.url}" controls preload="metadata"></audio><figcaption>${a.name}</figcaption></figure>`))}${images.length ? html`<div class="shots${images.length === 1 ? ' shots-one' : ''}">${images.map(a => html`<a class="shot" data-nav href="${sessionPath(s.id, base)}/files/${s.nr.get(a.url) ?? 1}?from=${from}" aria-label="Enlarge ${a.name}"><img${srcOf(a, images.length === 1 ? 416 : 272)} alt="${a.name}" loading="lazy" decoding="async" width="320" height="240"></a>${pageChip(a.page)}`)}</div>` : ''}${files.length ? html`<div class="files">${files.map(a => html`<a class="file-chip" href="${a.url}" target="_blank" rel="noopener">${ico('file')}<span>${a.name}</span></a>`)}</div>` : ''}`
+// ---- one quiet line for something that happened to a question (EventView) ----
+function eventLine(id, ev, card, ms, s, base, { cont = false } = {}) {
+  const kind = /^[a-z_]+$/.test(ev.kind ?? '') ? ev.kind : 'board'
+  const cls = `event event-${kind}${cont ? ' cont' : ''}${ev.echo ? ' event-echo' : ''}`
+  const inner = html`<span class="event-ico">${ico(ICONS[kind] ? kind : 'asked')}</span><span class="event-body"><span class="event-kind">${ev.label.en}</span>${ev.about ? html`<span class="event-about">${ev.about}</span>` : ''}${ev.text ? html`<span class="event-text">${ev.text}</span>` : ''}${(ev.said ?? []).map(x => html`<span class="event-text">${x.en}</span>`)}</span>${timeNode(ms, 'event-time')}`
+  const at = id ? html` id="${id}"` : ''
+  return card ? html`<a class="${cls}"${at} data-nav href="${cardPath(card, s, base)}" title="Nr. ${card.number}">${inner}</a>` : html`<div class="${cls}"${at}>${inner}</div>`
 }
 
-// ---- one line for something that happened to a question ----
-const EVENT_LABEL = { asked: 'New question', decided: 'Answered', done: 'Done', urgency: 'Urgency', reopened: 'Taken back', revised: 'Question revised', trusted: WORDS.trust, snoozed: WORDS.later, handed: 'With the agent', shredded: 'Shredded',
-  took_back: 'You took it back', handed_back: 'You handed it back', explain: 'You asked for an explanation' }
-ICONS.took_back = ICONS.handed_back = ICONS.reopened
-/** Under a message he typed into the session's terminal (the terminal mirror): where it came from. The agent's
- *  connector sent it for him; none of his devices signed it, and the mark says so. */
-const VIA_TERMINAL = html`<span class="msg-via" title="From the terminal"><span class="msg-via-sign" aria-hidden="true">&gt;_</span>from the terminal</span>`
-// ---- a turn's trail: what the agent did between his prompt and its answer, folded away ----
-/** A time as a trail says it: "0.3 s", "12 s", "2 min", "1 h 5 min". */
-function span(ms) {
-  if (!(ms >= 0)) return ''
-  if (ms < 950) return `${(Math.max(ms, 100) / 1000).toFixed(1)} s`
-  const sec = Math.round(ms / 1000)
-  if (sec < 60) return `${sec} s`
-  const min = Math.round(sec / 60)
-  return min < 60 ? `${min} min` : `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}`
-}
-const count = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`
-const STEP_SIGN = { running: '', ok: '✓', failed: '✕', interrupted: '■' }
-const STEP_SAYS = { running: 'running', ok: 'done', failed: 'failed', interrupted: 'interrupted' }
-/** One line of a trail: a step (its state, the tool, what it is about, how long it took), a helper, or the agent's
- *  words between two steps. A step with an input or an output (the level `full`) opens to show them. */
-function workLine(x, s) {
-  if (x.kind === 'text') return html`<li class="work-say">${words(x.text ?? '', { assets: s.model.state.assets })}</li>`
-  const state = x.state ?? 'running', helper = x.kind === 'helper'
-  const what = [x.title, x.subject].filter(Boolean).join(' · ')
-  // (a shell command that ended with an exit code other than 0: Claude Code counts that as an error; the line says what it was)
-  const says = state === 'failed' && x.exit ? `exit code ${x.exit}` : STEP_SAYS[state]
-  const line = html`<span class="work-sign" title="${says}" aria-label="${says}">${state === 'running' ? html`<i class="work-run" aria-hidden="true"></i>` : STEP_SIGN[state]}</span><b class="work-tool">${helper ? `Helper ${x.tool ?? ''}`.trim() : x.tool ?? 'Step'}</b>${what ? html`<span class="work-what">${what}</span>` : ''}${helper && x.steps ? html`<span class="work-count">${count(x.steps, 'step')}</span>` : ''}${!helper && state === 'failed' && x.exit ? html`<span class="work-count">exit code ${x.exit}</span>` : ''}${x.ms != null ? html`<span class="work-ms">${span(x.ms)}</span>` : ''}`
-  const more = x.input || x.output
-  return html`<li class="work-step is-${state}${helper ? ' is-helper' : ''}">${more
-    ? html`<details class="work-more" data-keep="${x.id}"><summary class="work-line">${line}</summary>${x.input ? html`<pre class="work-io">${x.input}</pre>` : ''}${x.output ? html`<pre class="work-io work-out">${x.output}</pre>` : ''}</details>`
+// ---- a turn's trail (WorkView), folded away ----
+function workLine(x) {
+  if (x.kind === 'text') return html`<li class="work-say">${words(x.text ?? '')}</li>`
+  const state = x.state || 'running'
+  const line = html`<span class="work-sign" title="${x.says?.en ?? ''}" aria-label="${x.says?.en ?? ''}">${state === 'running' ? html`<i class="work-run" aria-hidden="true"></i>` : { ok: '✓', failed: '✕', interrupted: '■' }[state] ?? ''}</span><b class="work-tool">${x.tool ?? 'Step'}</b>${x.what ? html`<span class="work-what">${x.what}</span>` : ''}${x.count ? html`<span class="work-count">${x.count.en}</span>` : ''}${x.took ? html`<span class="work-ms">${x.took}</span>` : ''}`
+  return html`<li class="work-step is-${state}${x.kind === 'helper' ? ' is-helper' : ''}">${x.input || x.output
+    ? html`<details class="work-more"><summary class="work-line">${line}</summary>${x.input ? html`<pre class="work-io">${x.input}</pre>` : ''}${x.output ? html`<pre class="work-io work-out">${x.output}</pre>` : ''}</details>`
     : html`<div class="work-line">${line}</div>`}</li>`
 }
-/** A turn's trail as one block (README "The trail"): folded it says how the turn went ("Worked 2 min · 7 steps ·
- *  1 helper") and, while it runs, the step it is at; open it lists every line. */
-function workBlock(m, s) {
-  const w = m.work, steps = w.items.filter(x => x.kind === 'step').length + w.more, helpers = w.items.filter(x => x.kind === 'helper').length
-  const failed = w.items.filter(x => x.state === 'failed').length
-  const took = w.ended != null && w.started != null ? span(w.ended - w.started) : ''
-  const head = w.state === 'running' ? 'Working' : w.state === 'done' ? `Worked${took ? ` ${took}` : ''}` : w.state === 'interrupted' ? `Interrupted${took ? ` after ${took}` : ''}` : `Stopped by an error${took ? ` after ${took}` : ''}`
-  const sum = [steps ? count(steps, 'step') : '', helpers ? count(helpers, 'helper') : '', failed ? `${failed} with ${failed === 1 ? 'an error' : 'errors'}` : ''].filter(Boolean).join(' · ')
-  const now = w.state === 'running' ? w.items.findLast(x => x.kind !== 'text' && (x.state ?? 'running') === 'running') : null
-  return html`<article class="msg msg-work is-${w.state}" id="msg-${m.id}"><details class="work" data-keep="${w.turn}"><summary class="work-head"><span class="work-sign" aria-hidden="true">${w.state === 'running' ? html`<i class="work-run"></i>` : w.state === 'done' ? '✓' : w.state === 'failed' ? '✕' : '■'}</span><b>${head}</b>${sum ? html`<span class="work-sum">${sum}</span>` : ''}${now ? html`<span class="work-now">${[now.kind === 'helper' ? `Helper ${now.tool ?? ''}`.trim() : now.tool, now.title || now.subject].filter(Boolean).join(' · ')}</span>` : ''}${timeNode(m.ts, 'msg-time')}</summary>
-<ol class="work-list">${w.items.map(x => workLine(x, s))}</ol>${w.more ? html`<p class="work-rest">and ${count(w.more, 'more step')}, not listed</p>` : ''}</details></article>`
-}
-/** A message of his that is a deed on a card, by its marker in the content (present_card, hand_back, explain): the
- *  kind of its quiet line, in the words of the card's talk; null for a plain message. `bare`: nothing of his own in
- *  it, only the words the app sends along for the session. */
-function deedOf(m) {
-  const kind = m.present ? 'took_back' : m.handback ? 'handed_back' : m.explain ? 'explain' : null
-  if (!kind) return null
-  const t = (m.text ?? '').trim()
-  const own = t && !m.present && !(m.handback && t === HAND_BACK_TEXT) && !(m.explain && t === EXPLAIN_TEXT)
-  return { kind, bare: !own && !m.attachments?.length && !m.cards?.length }
-}
-function eventLine({ id, kind, text, ts }, card, base, { cont = false, echo = false, wrap = false } = {}) {
-  const cls = `event event-${/^[a-z_]+$/.test(kind ?? '') ? kind : 'board'}${cont ? ' cont' : ''}${echo ? ' event-echo' : ''}`
-  const inner = html`<span class="event-ico">${ico(ICONS[kind] ? kind : 'asked')}</span><span class="event-body"><span class="event-kind">${EVENT_LABEL[kind] ?? 'Board'}</span>${card && (card.title !== text || !text) ? html`<span class="event-about">${card.title}</span>` : ''}${text ? html`<span class="event-text">${text}</span>` : ''}</span>${timeNode(ts, 'event-time')}`
-  const at = wrap ? '' : html` id="msg-${id}"`
-  return card ? html`<a class="${cls}"${at} data-nav href="${questionPath(card, base)}" title="Nr. ${card.number}">${inner}</a>` : html`<div class="${cls}"${at}>${inner}</div>`
-}
-
-// A question where it was asked. Open and waiting for the human: its Desk row (the tiles answer, the text links to
-// the card's page). Anything else: one quiet line saying what became of it, a link to the card's page.
-function ask(m, s, base) {
-  const { model } = s
-  const card = model.byCard.get(m.card_id)
-  if (!card) return eventLine(m, null, base)
-  const here = s.askAt.get(card.id) === m.id
-  if (here && s.fresh.includes(card)) {
-    // (The row's own links go to <base>/card/<n>; inside a session they keep the session in the address.)
-    const row = String(deskRow(card, model, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s.id, base)}/card/`)
-    return html`<div class="ask ask-card" id="msg-${m.id}">${raw(row)}</div>`
-  }
-  const over = card.status !== 'open'
-  const [kind, text] = !here ? ['asked', '']
-    : card.status === 'decided' || card.settled ? [card.trusted ? 'trusted' : 'decided', choiceLabel(card) || (card.trusted ? advisedLabels(card) || 'your call' : '')]
-    : card.status === 'shredded' ? ['shredded', '']
-    : over ? ['done', card.summary ?? '']
-    : card.with_agent ? ['handed', ''] : ['snoozed', '']
-  return html`<div class="ask" id="msg-${m.id}">${eventLine({ kind, text: text === card.title ? '' : text, ts: m.ts }, { ...card, title: card.title || m.text }, base, { wrap: true })}</div>`
-}
-
-// Something the session published (a published object, announced in its conversation): the card shows a picture
-// of it (a picture itself; a page's first screen, drawn by controller "assetthumb" in the sandboxed frame), what it
-// is, Open (the app's own viewer, /chat/<id>/artifact/<object>) and "Copy link": that address, for the people of this room.
-// (The contents are end-to-end encrypted; a link for someone outside the room needs a release the hub does not have.)
-const ASSET_LABEL = { html: 'Page', image: 'Picture', video: 'Video', audio: 'Audio', file: 'File' }
-const assetPath = (s, id, base) => `${sessionPath(s.id, base)}/artifact/${id}`
-/** The published object a message announces, or a stand-in when it was taken back (or is not known here). */
-function assetOf(m, s) {
-  const found = s.model.state.assets.find(a => a.id === m.published)
-  if (found) return found
-  const title = String(m.text ?? '').split('\n')[0].replace(/^\*\*(.*)\*\*$/, '$1').trim()
-  return { id: m.published, gone: true, type: 'file', title }
-}
-/** A preview: a picture as itself (decrypted when it comes into view), a page by controller "assetthumb". */
-const preview = (asset, type, inner = '') => (type === 'image' && asset.att?.url
-  ? html`<img src="${asset.att.url}" alt="" loading="lazy" decoding="async">${inner}`
-  : html`${assetGlyph(type)}${inner}`)
-const thumbAttrs = (asset, type) => (type === 'html' && asset.att?.url ? html` data-controller="assetthumb" data-assetthumb-src-value="${asset.att.url}"` : '')
-function assetCard(asset, s, base) {
-  const type = ASSET_LABEL[asset.type] ? asset.type : 'file'
-  const kind = ['Artifact', ASSET_LABEL[type], !asset.gone && asset.size ? sizeText(asset.size) : ''].filter(Boolean).join(' · ')
-  if (asset.gone) return html`<div class="asset-slot"><div class="asset-card has-preview is-gone"><span class="asset-preview" data-kind="${type}">${assetGlyph(type)}</span><div class="asset-text"><span class="caps">${kind}</span><strong>${asset.title || 'Untitled'}</strong><span class="asset-note">No longer available.</span></div></div></div>`
-  const view = assetPath(s, asset.id, base), title = asset.title || 'Untitled'
-  return html`<div class="asset-slot"><div class="asset-card has-preview"><a class="asset-preview${type === 'image' ? ' is-shown' : ''}" data-kind="${type}" data-nav href="${view}" tabindex="-1" aria-hidden="true"${thumbAttrs(asset, type)}>${preview(asset, type, type === 'html' ? raw('<span class="asset-page-label">Page</span>') : '')}</a><div class="asset-text"><span class="caps">${kind}</span><strong>${title}</strong>${asset.note ? html`<span class="asset-note">${asset.note}</span>` : ''}</div><div class="asset-actions"><a class="asset-open" data-nav href="${view}">Open</a>${shareControl(attIdOf(asset.att), title)}</div></div></div>`
-}
-
-/** The viewer: the published thing at its own address, as large as the page lets it be. */
-function assetPage(s, asset, base, from = '') {
-  const type = ASSET_LABEL[asset.type] ? asset.type : 'file'
-  const back = from && s.messages.some(m => m.id === from) ? `${sessionPath(s.id, base)}#msg-${from}` : sessionPath(s.id, base)
-  const arrow = raw('<svg viewBox="0 0 24 24" class="focus-icon" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>')
-  const url = asset.att?.url ?? ''
-  const stage = asset.gone || !url ? html`<p class="as-problem">This is no longer available.</p>`
-    : type === 'html' ? html`<div class="as-frame-box" data-controller="assetthumb" data-assetthumb-src-value="${url}" data-assetthumb-full-value="true"><p class="as-wait">Opening the page…</p></div>`
-      : type === 'image' ? html`<img class="as-media" src="${url}" alt="${asset.title}" decoding="async">`
-        : type === 'video' ? html`<video class="as-media" src="${url}#t=0.001" controls playsinline preload="metadata"></video>`
-          : type === 'audio' ? html`<audio class="as-media" src="${url}" controls preload="metadata"></audio>`
-            : html`<div class="as-file"><span class="as-file-name">${asset.att?.name ?? asset.title}</span>${asset.size ? html`<span class="caps">${sizeText(asset.size)}</span>` : ''}<a class="as-btn" href="${url}" download="${asset.att?.name ?? ''}">Download</a></div>`
-  return html`<div class="t-picture as-view">
-<header class="t-picture-bar"><a class="focus-back-desk t-picture-back" data-nav href="${back}" aria-label="Back to the conversation">${arrow}<span>${s.agent.name}</span></a><span class="t-picture-where"><b>${ASSET_LABEL[type]}</b> ${asset.title || 'Untitled'}</span>${asset.gone ? '' : shareControl(attIdOf(asset.att), asset.title || 'Untitled', { cls: 'as-copy' })}</header>
-${asset.note ? html`<p class="as-note">${asset.note}</p>` : ''}<div class="as-stage" data-type="${type}">${stage}</div>
-</div>`
-}
+const workBlock = (r, w) => html`<article class="msg msg-work is-${w.state}" id="msg-${r.id}"><details class="work"><summary class="work-head"><span class="work-sign" aria-hidden="true">${w.state === 'running' ? html`<i class="work-run"></i>` : w.state === 'done' ? '✓' : w.state === 'failed' ? '✕' : '■'}</span><b>${w.head.en}</b>${w.sum ? html`<span class="work-sum">${w.sum.en}</span>` : ''}${w.now ? html`<span class="work-now">${w.now}</span>` : ''}${timeNode(r.time_ms, 'msg-time')}</summary>
+<ol class="work-list">${w.lines.map(workLine)}</ol>${w.rest ? html`<p class="work-rest">${w.rest.en}</p>` : ''}</details></article>`
 
 // The agent's words (ui.mjs rich), with its code blocks dressed: a head with the button that copies (controller "copy").
-// (What rich() returns is escaped: a literal <pre><code> in it is one this code made.)
 const CODE_HEAD = `<div class="code" data-controller="copy"><div class="code-head"><span class="code-lang">Code</span><button type="button" class="code-copy" data-action="copy#copy">${ico('copy')}<span data-copy-target="label">Copy</span></button></div><pre data-copy-target="source"><code>`
 const words = (text, opts) => raw(String(rich(text, opts)).replaceAll('<pre><code>', CODE_HEAD).replaceAll('</code></pre>', '</code></pre></div>'))
+/** Under a message he typed into the session's terminal: where it came from. */
+const VIA_TERMINAL = html`<span class="msg-via" title="From the terminal"><span class="msg-via-sign" aria-hidden="true">&gt;_</span>from the terminal</span>`
+/** The cards a row carries (copied cards): a chip each that opens the card. */
+const cardChips = (r, s, base) => (r.chips?.length ? html`<div class="cardclip-row">${r.chips.map(c => html`<a class="cardclip-chip is-link" data-nav href="${cardPath(c, s, base)}" title="Nr. ${c.number} · ${c.title}"><b>Nr. ${c.number}</b><span class="cardclip-title">${c.title}</span></a>`)}</div>` : '')
 
-// ---- one message ----
-// Messages do not change once they are sent, so what was rendered is kept by the message's id (the board state makes
-// new message objects after every change); only what can change (pending, the words once loaded) and what depends
-// on something else (a question's state, a published link that was withdrawn, the card a message is about) is in the key.
-const kept = new Map()
-const OUTCOME = new Set(['decided', 'done', 'shredded'])
-function message(m, prev, s, base) {
-  if (m.from === 'event' && m.kind === 'asked') {
-    // A question's line or row: made again only when its card changed (the board state keeps a card's object until then).
-    const card = s.model.byCard.get(m.card_id), k = `${s.id} ${m.id}`, had = kept.get(k)
-    const key = `${base}|${s.askAt.get(m.card_id) === m.id}|${s.fresh.includes(card)}|${m.ts}`
-    if (had && had.card === card && had.key === key) return had.out
-    const out = ask(m, s, base)
-    kept.set(k, { card, key, out })
-    return out
+// ---- one row of the talk (TalkRow) ----
+function talkRow(r, s, vm, t) {
+  const base = t.BASE, id = `msg-${r.id}`
+  if (r.kind === 'event') return eventLine(id, r.event, r.card, r.time_ms, s, base, { cont: r.cont })
+  if (r.kind === 'work') return workBlock(r, r.work)
+  // An open question where it was asked: its Desk row (its own links keep the session in the address).
+  if (r.kind === 'ask') return html`<div class="ask ask-card" id="${id}">${raw(String(deskRow(r.row, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s, base)}/card/`))}</div>`
+  const about = r.card ? html`<a class="msg-about" data-nav href="${cardPath(r.card, s, base)}"><span class="caps">About</span><span>${r.card.title}</span></a>` : ''
+  // A note he sent from the Notes stack: on his side, as the slip of yellow paper it was, stuck on with tape.
+  if (r.kind === 'note') return html`<article class="msg msg-user msg-note-at" id="${id}"><figure class="msg-note"><i class="msg-note-tape" aria-hidden="true"></i><figcaption class="msg-note-cap">${sk('page')}<span>Note</span>${r.written_ms ? html`<span class="msg-note-when">written ${clock(r.written_ms)}</span>` : ''}</figcaption><p>${r.text}</p>${attachments(r.files, s, vm, t, r.id)}</figure>${timeNode(r.time_ms, 'msg-time')}</article>`
+  if (r.kind === 'user') {
+    // A hand-back, a take-back, What??: a quiet line for the deed; what he wrote with it stays his bubble.
+    const deed = r.deed ? eventLine(r.text || r.files?.length || r.chips?.length ? `${id}-deed` : id, r.deed, r.card, r.time_ms, s, base, { cont: r.cont }) : ''
+    if (deed && !(r.text || r.files?.length || r.chips?.length)) return deed
+    const scribble = r.scribble && r.files?.[0] ? t.fileUrl(r.files[0]) : null
+    return html`${deed}<article class="msg msg-user${r.cont ? ' cont' : ''}${r.pending ? ' is-pending' : ''}" id="${id}">${r.scribble ? html`<a class="scribble-card"${scribble ? html` href="${scribble}"` : ''} target="_blank" rel="noopener" aria-label="Scribble sent: open the picture"><img${scribble ? html` src="${scribble}"` : ''} alt="" loading="lazy" decoding="async" width="280" height="210"><span>Scribble</span></a>` : attachments(r.files, s, vm, t, r.id)}${r.deed ? '' : about}${cardChips(r, s, base)}${r.text ? html`<div class="bubble"><p>${r.text}</p></div>` : ''}${r.terminal ? html`<span class="msg-foot">${VIA_TERMINAL}${timeNode(r.time_ms, 'msg-time')}</span>` : timeNode(r.time_ms, 'msg-time')}</article>`
   }
-  // (a line he typed in the terminal never joins a group with one he wrote on the board: its mark stays under it)
-  const cont = Boolean(prev && prev.from === m.from && (m.from !== 'user' || Boolean(prev.terminal) === Boolean(m.terminal)) && dayKey(prev.ts) === dayKey(m.ts) && (m.from === 'event' || m.ts - prev.ts < GROUP_GAP))
-  const about = m.card_id ? s.model.byCard.get(m.card_id) : null
-  const firstPic = (m.attachments ?? []).find(isPicture)
-  const key = `${m.work ? `w${m.work.seq}.${m.work.items.length}.${m.work.state}` : ''}${m.note ? 'n' : ''}${m.pending ? 'p' : ''}|${m.text?.length ?? 0}|${m.attachments?.length ?? 0}|${m.ts}|${base}|${cont}|${about?.title ?? ''}|${about?.number ?? ''}|${m.published ? Boolean(s.model.state.assets.find(a => a.id === m.published)) : ''}|${firstPic ? s.nr.get(firstPic.url) : ''}|${m.from === 'event' && s.askAt.has(m.card_id)}|${m.from === 'agent' ? `${s.agent.name}|${s.agent.mark ?? ''}|${s.agent.starred ? 1 : ''}|${s.agent.hue}` : ''}`
-  const k = `${s.id} ${m.id}`, had = kept.get(k)
-  if (had?.key === key) return had.out
-  const out = build(m, cont, about, s, base)
-  if (kept.size > 20000) kept.clear()
-  kept.set(k, { key, out })
-  return out
+  // The agent's words (light markdown; a layout as html goes into the sandboxed frame), or what it published.
+  const body = r.kind === 'artifact'
+    ? artifactCard({ id: r.published, note: r.text, from: r.id }, base)
+    : raw(String(words(r.text ?? '', { extra: r.html ?? '' })).replace(/<\/div>$/, () => `${attachments(r.files, s, vm, t, r.id)}</div>`))
+  return html`<article class="msg msg-agent${r.cont ? ' cont' : ''}" id="${id}"${r.cont ? html` title="${FULL.format(r.time_ms)}"` : ''}>${r.cont ? '' : html`<header class="msg-head">${agentMark(s)}<span class="msg-name">${s.name.en}</span>${timeNode(r.time_ms, 'msg-time')}</header>`}${about}${body}${cardChips(r, s, base)}${r.details ? html`<details class="msg-details"><summary>Details</summary>${words(r.details)}</details>` : ''}</article>`
 }
-function build(m, cont, about, s, base) {
-  const assets = s.model.state.assets
-  // What became of a question (answered, done, shredded) is said by its line where it was asked: the event is an echo.
-  if (m.from === 'event') return eventLine(m, about, base, { cont, echo: OUTCOME.has(m.kind) && s.askAt.has(m.card_id) })
-  if (m.from === 'work') return workBlock(m, s)
-  const aboutNode = about ? html`<a class="msg-about" data-nav href="${questionPath(about, base)}"><span class="caps">About</span><span>${about.title}</span></a>` : ''
-  // A note he sent from the Notes stack: in the conversation where it was sent, on his side, as the slip of yellow
-  // paper it was, stuck on with one strip of tape (the one hand-made thing in a conversation). No bubble around it.
-  if (m.from === 'user' && m.note) return html`<article class="msg msg-user msg-note-at" id="msg-${m.id}"><figure class="msg-note"><i class="msg-note-tape" aria-hidden="true"></i><figcaption class="msg-note-cap">${sk('page')}<span>Note</span>${m.note.written ? html`<span class="msg-note-when">written ${clock(m.note.written)}</span>` : ''}</figcaption><p>${m.text}</p>${attachments(m.attachments ?? [], s, base, m.id)}</figure>${timeNode(m.ts, 'msg-time')}</article>`
-  // A hand-back, a take-back, What??: what he did, not what he said. The words that went to the session with it are
-  // the machine's: a quiet line stands for them, never his bubble. What he wrote himself with it stays his bubble.
-  const deed = m.from === 'user' ? deedOf(m) : null
-  if (deed?.bare) return eventLine({ id: m.id, kind: deed.kind, text: '', ts: m.ts }, about, base, { cont })
-  const deedNode = deed ? eventLine({ kind: deed.kind, text: '', ts: m.ts }, about, base, { wrap: true }) : ''
-  if (m.from === 'user') {
-    const list = m.attachments ?? []
-    return html`${deedNode}<article class="msg msg-user${cont ? ' cont' : ''}" id="msg-${m.id}">${list.filter(a => a.kind === 'scribble' && a.url).map(a => html`<a class="scribble-card" href="${a.url}" target="_blank" rel="noopener" aria-label="Scribble sent: open the picture"><img${srcOf(a, 280)} alt="" loading="lazy" decoding="async" width="280" height="210"><span>Scribble</span></a>`)}${attachments(list.filter(a => a.kind !== 'scribble'), s, base, m.id)}${aboutNode}${cardChips(m, s, base)}${m.text ? html`<div class="bubble"><p>${m.text}</p></div>` : ''}${m.terminal ? html`<span class="msg-foot">${VIA_TERMINAL}${timeNode(m.ts, 'msg-time')}</span>` : timeNode(m.ts, 'msg-time')}</article>`
-  }
-  // The agent's words (the light markdown; a layout fenced as html goes into the sandboxed frame, ui.mjs), with what it attached.
-  const text = m.published ? assetCard(assetOf(m, s), s, base) : raw(String(words(m.text ?? '', { assets, extra: m.html ?? '' })).replace(/<\/div>$/, () => `${attachments(m.attachments, s, base, m.id)}</div>`))
-  return html`<article class="msg msg-agent${cont ? ' cont' : ''}" id="msg-${m.id}"${cont ? html` title="${FULL.format(m.ts)}"` : ''}>${cont ? '' : html`<header class="msg-head">${agentMark(s.agent)}<span class="msg-name">${s.agent.name}</span>${timeNode(m.ts, 'msg-time')}</header>`}${aboutNode}${text}${cardChips(m, s, base)}${m.details ? html`<details class="msg-details"><summary>Details</summary>${words(m.details, { assets })}</details>` : ''}</article>`
-}
-/** The cards a message carries (copied_cards): a chip each that opens the card. His copied cards, and the card an
- *  agent's answer of a turn went to (the terminal mirror's pointer line). */
-function cardChips(m, s, base) {
-  return m.cards?.length ? html`<div class="cardclip-row">${m.cards.map(c => html`<a class="cardclip-chip is-link" data-nav href="${sessionPath(s.id, base)}/card/${encodeURIComponent(c.number)}" title="Nr. ${c.number} · ${c.title}${c.choice_label ? ` → ${c.choice_label}` : ''}"><b>Nr. ${c.number}</b><span class="cardclip-title">${c.title}</span>${c.choice_label ? html`<span class="cardclip-answer">→ ${c.choice_label}</span>` : ''}</a>`)}</div>` : ''
-}
-const dayLine = ts => html`<div class="day" data-day="${ts}"><span>${dayLabel(ts)}</span></div>`
+// (every child of the log has an id: the page drawn again is morphed row by row)
+const talk = (s, vm, t) => s.talk.map(r => html`${r.day ? html`<div class="day" id="day-${r.id}"><span>${r.day.en}</span></div>` : ''}${talkRow(r, s, vm, t)}`)
 
-/** The messages from index `from` to `to` (not included) as they stand in the log: [{ id, seq, day, node }]. */
-function logItems(s, base, from = 0, to = s.messages.length) {
-  const out = []
-  for (let i = Math.max(0, from); i < to; i++) {
-    const m = s.messages[i], prev = s.messages[i - 1]
-    // (The oldest in memory while older ones exist: its day line comes with the page before it, see logWindow.)
-    const day = !prev ? (s.more ? '' : dayLine(m.ts)) : dayKey(prev.ts) !== dayKey(m.ts) ? dayLine(m.ts) : ''
-    out.push({ id: m.id, seq: m.seq ?? 0, day, node: message(m, prev, s, base) })
-  }
-  return out
-}
-
-/** A property worked out on its first read, then kept. */
-const lazy = (o, k, make) => Object.defineProperty(o, k, { configurable: true, enumerable: true, get() { const v = make(); Object.defineProperty(o, k, { value: v, enumerable: true }); return v } })
-
-// ---- the pieces of the page that change by themselves (each has an id; the live stream replaces it) ----
-/** A main session's small menu beside its name: three pen dots. "Move to Desk…" lists the
- *  other desks, a click moves the session there (the human register session/<id>, as on the Agents page; its subs go
- *  with it; only while there is more than one desk). "Copy Invite Link" makes an invite link for THIS session
- *  (auth.mjs /pair, continue=<session>): the connector that joins with it continues the session, the one that held it
- *  is retired. Not for a sub: it goes with its main. */
+// ---- the heading ----
 const DOTS = raw('<svg class="t-head-dots" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.4 11.1Q5.9 9.9 7.2 11.3Q7.9 13.2 6.2 14Q4.3 14.2 3.9 12.6Q3.8 11.7 4.4 11.1Z"/><path d="M10.7 10.9Q12.4 10 13.5 11.4Q14 13.3 12.3 14Q10.5 14 10.1 12.4Q10.1 11.5 10.7 10.9Z"/><path d="M17 11.2Q18.5 10 19.8 11.2Q20.5 13 18.9 13.9Q17 14.2 16.5 12.7Q16.4 11.8 17 11.2Z"/></svg>')
-/** Delete in the session's More menu: a small confirm in the menu itself (agents.mjs /sessions/:id/delete does it). */
-function deleteEntry(a, base, subs) {
-  const what = subs ? 'the session with its helpers moves' : 'the session moves'
-  return html`<details class="desk-move-sub desk-move-delete"><summary role="menuitem">${sk('bin')}<span>Delete…</span></summary>
-<form class="session-delete-ask" method="post" action="${base}/sessions/${encodeURIComponent(a.id)}/delete"><input type="hidden" name="stay" value="1"><p><b>Delete ${a.name}?</b> Its connector is removed from the room and ${what} to the archive. Open questions are shredded.</p>
+const forms = (s, base) => `${base}/sessions/${encodeURIComponent(s.id)}`
+/** The session's More menu: Files, Move to Desk…, Copy Invite Link, Archive (while it is away), Delete…. */
+function sessionMore(s, vm, base) {
+  const name = s.name.en, n = s.files?.length ?? 0
+  const files = n ? html`<a role="menuitem" class="desk-move-files" href="${sessionPath(s, base)}/files" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="Files">${ico('clip')}<span>Files</span><b>${n}</b></a><hr class="desk-move-rule">` : ''
+  const others = (vm.sidebar?.desks ?? []).length < 2 ? [] : vm.sidebar.desks.filter(d => d.id !== s.desk_id)
+  const move = d => html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="moved" value="1"><input type="hidden" name="leave" value="1"><button type="submit" role="menuitem" name="desk" value="${d.id}">${sk('desk')}<span>${d.name.en || 'Personal'}</span></button></form>`
+  const archive = s.online ? '' : html`<form method="post" action="${forms(s, base)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="archived" value="1"><button type="submit" role="menuitem">${sk('archive')}<span>Archive</span></button></form>`
+  const del = html`<details class="desk-move-sub desk-move-delete"><summary role="menuitem">${sk('bin')}<span>Delete…</span></summary>
+<form class="session-delete-ask" method="post" action="${forms(s, base)}/delete"><input type="hidden" name="stay" value="1"><p><b>Delete ${name}?</b> Its connector is removed from the room and the session moves to the archive with its helpers. Open questions are shredded.</p>
 <div class="desk-duck-ways"><button type="submit" class="session-delete-yes">${sk('bin')}<span>Delete</span></button><button type="button" class="desk-duck-no" data-pop-close>Cancel</button></div></form></details>`
+  return html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${name}: more">${DOTS}</summary>
+<div class="desk-move t-pop" role="menu" aria-label="More for ${name}">${files}${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Desk…</span></summary>${others.map(move)}</details>` : ''}
+<form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="continue" value="${s.id}"><button type="submit" role="menuitem">${sk('key')}<span>Copy Invite Link</span></button></form><hr class="desk-move-rule">${archive}${del}</div></details>`
 }
-/** Archive in the session's More menu: the session goes to the archive (its away helpers with it) and its device
- *  stays, with an Undo on the toast (agents.mjs /edit); only while it is away, as the route allows. An archived one
- *  comes back the same way. Delete is the step that also removes the device. */
-export function archiveEntry(a, base) {
-  if (a.online && !a.archived) return ''
-  return html`<form method="post" action="${base}/sessions/${encodeURIComponent(a.id)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="archived" value="${a.archived ? '0' : '1'}"><button type="submit" role="menuitem">${sk('archive')}<span>${a.archived ? 'Back from the Archive' : 'Archive'}</span></button></form>`
+/** The session's drawing and name (the mark opens the drawings, the crown crowns, the name renames: ui.mjs), its dot,
+ *  its model, the More menu, and the raised red hand when it is stopped (else the quiet hint). */
+function sessionWho(s, vm, base) {
+  const d = s.dot
+  return html`<div class="pane-who" id="session-who-${s.id}"${s.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${s.name.en}</h2>${sessionHeadEdit({ ...whoOf(s), starred: s.crowned }, base, { stay: true })}<span class="head-dot${d.on ? ' is-on' : ''}"${d.link ? html` data-link="${d.link}"` : ''} role="img" aria-label="${d.says.en}" title="${d.word.en}"><i></i></span>${s.model_label ? html`<span class="head-model" title="${s.model}">${s.model_label}</span>` : ''}${sessionMore(s, vm, base)}${s.hand ? html`<span class="t-blocked" data-why="${s.hand.why}" role="status">${raw(handSvg())}<span>Stopped: ${s.hand.text.en}</span></span>` : s.quiet ? html`<span class="t-quiet" title="Quiet">${s.quiet.en}</span>` : ''}</div>`
 }
-function sessionMore(s, base) {
-  const a = s.agent, desks = s.model.state.desks ?? []
-  const subs = (s.model.agents ?? []).some(x => x.parent === a.id)
-  const arch = archiveEntry(a, base), drop = a.own ? '' : deleteEntry(a, base, subs)
-  const del = arch || drop ? html`${arch}${drop}` : ''
-  const files = filesItem(s, base)
-  if (a.parent) return del || files ? html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${a.name}: more">${DOTS}</summary><div class="desk-move t-pop" role="menu" aria-label="More for ${a.name}">${files}${files && del ? raw('<hr class="desk-move-rule">') : ''}${del}</div></details>` : ''
-  const others = desks.length < 2 ? [] : desks.filter(d => d.id !== a.desk)
-  const move = d => html`<form method="post" action="${base}/sessions/${encodeURIComponent(a.id)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="moved" value="1"><input type="hidden" name="leave" value="1"><button type="submit" role="menuitem" name="desk" value="${d.id}">${sk('desk')}<span>${d.name || 'Personal'}</span></button></form>`
-  return html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${a.name}: more">${DOTS}</summary>
-<div class="desk-move t-pop" role="menu" aria-label="More for ${a.name}">${files ? html`${files}<hr class="desk-move-rule">` : ''}${others.length ? html`<details class="desk-move-sub"><summary role="menuitem">${sk('desk')}<span>Move to Desk…</span></summary>${others.map(move)}</details>` : ''}
-<form method="post" action="/pair" data-turbo-frame="_top"><input type="hidden" name="role" value="agent"><input type="hidden" name="continue" value="${a.device_id}"><button type="submit" role="menuitem">${sk('key')}<span>Copy Invite Link</span></button></form>${del ? html`<hr class="desk-move-rule">${del}` : ''}</div></details>`
-}
-/** The session's drawing and name: the page's heading, on its own line at the page's top (session.css). */
-function sessionWho(s, base) {
-  const a = s.agent
-  // The mark opens the drawings, the name renames (ui.mjs); the live stream brings what was changed.
-  // The raised red hand when the session is really stopped (app.mjs blockedOf), with the cause in words.
-  const stopped = blockedOf(a, s.model.state), quiet = stopped ? null : quietOf(a, s.model.state)
-  return html`<div class="pane-who" id="session-who-${a.id}"${a.main ? raw(' data-main') : ''}><h2 class="pane-name offscreen">${a.name}</h2>${sessionHeadEdit(a, base, { stay: true })}${sessionDot(a)}${a.model_label ? html`<span class="head-model" title="${a.model}">${a.model_label}</span>` : ''}<span class="head-use-mini">${usageMark(a.account, { mini: true })}</span>${sessionMore(s, base)}${stopped ? html`<span class="t-blocked" data-why="${stopped.why}" role="status">${raw(handSvg())}<span>Stopped: ${stopped.text}</span></span>` : quiet ? html`<span class="t-quiet" title="Quiet">${quiet.text}</span>` : ''}</div>`
-}
-/** The connection beside the name, as a dot: green while the session is connected (else grey, or how it hears when it
- *  does not hear at once). The tip is that one word; what it is at and its machine are its label; its model stands
- *  beside it (head-model). */
-function sessionDot(a) {
-  const link = linkOf(a), late = link && link.state !== 'live'
-  const words = late ? link.word : a.online ? 'connected' : 'disconnected'
-  const tip = words, said = [words, a.online && !late ? a.task : '', a.host].filter(Boolean).join(' · ')
-  return html`<span class="head-dot${a.online ? ' is-on' : ''}"${late ? html` data-link="${link.state}"` : ''} role="img" aria-label="${said}" title="${tip}"><i></i></span>`
-}
-/** The usage at the heading's right end (a wide window): one mark of two rings, the week outside, 5 h inside
- *  (ui.mjs usageMark). (always there, empty without an account: the live stream replaces it when the numbers change) */
-const sessionUsage = s => html`<div class="head-use" id="session-use-${s.agent.id}">${usageMark(s.agent.account)}</div>`
-/** What the session page shows: a quiet two-way switch "All | Questions n", in the heading's line beside the name (a
- *  phone: its own row under the top line, phone: true). Real links (the choice lives in the address,
- *  ?only=questions), so it works without scripts; the number is the questions waiting for him, replaced live. */
+/** The quiet two-way switch "All | Questions n" in the heading's line (a phone: its own row under the top line). */
 export function sessionFilters(s, base, mode = '', { phone = false } = {}) {
-  const here = sessionPath(s.id, base), on = mode === 'questions', n = s.fresh.length
-  return html`<nav class="session-mode${phone ? ' is-phone' : ''}" id="session-filters-${phone ? 'phone-' : ''}${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${here}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${here}?only=questions"${on ? raw(' aria-current="page"') : ''}${phone ? '' : raw(` data-controller="title" data-title-count-value="${n}"`)}>Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
+  const on = mode === 'questions', n = s.open
+  return html`<nav class="session-mode${phone ? ' is-phone' : ''}" id="session-filters-${phone ? 'phone-' : ''}${s.id}" aria-label="Show"><span class="session-seg"><a data-nav href="${sessionPath(s, base)}"${on ? '' : raw(' aria-current="page"')}>All</a><a data-nav href="${sessionPath(s, base)}/questions"${on ? raw(' aria-current="page"') : ''}${phone ? '' : raw(` data-controller="title" data-title-count-value="${n}"`)}>Questions${n ? html`<b aria-label="${n} waiting">${n}</b>` : ''}</a></span></nav>`
 }
-/** The lines a session's page shows (their state as the client core made it, core/client/src/status.rs line_state): the working ones, those that wait on
- *  him, those put off with their card, a done one for a while, and a stale one (nobody updated it for LINE_STALE_MS)
- *  greyed and still for a day; not those of a gone session. */
-const STALE_SHOWN_MS = 24 * 60 * 60_000
-const shownLines = (tasks, now = Date.now()) => tasks.filter(t => ['working', 'decision', 'later'].includes(t.state) || (t.state === 'done' && now - (t.updated ?? 0) < WORKING_WINDOW) || (t.state === 'stale' && now - (t.updated ?? 0) < STALE_SHOWN_MS))
-// (a stale line: a still, hollow ring, no spinning)
-const lineMark = t => html`<span class="status-mark">${t.state === 'working' ? raw(ringSvg({ drop: true })) : t.state === 'stale' ? html`<i class="status-still" aria-hidden="true"></i>` : t.state === 'decision' ? sk('knock') : t.state === 'later' ? sk('snooze') : sk('tick')}</span>`
-const STATE_WORD = { working: 'working', decision: 'waits on you', later: 'put off', done: 'done', stale: 'no news for a while' }
-/** The status lines of the session's running work, and that it is answering, at the end of the conversation: one row
- *  of small chips (mark, title, age), never two rows; what does not fit lies on a stack "+N" at its end (controller
- *  "status-lines"). A tap on a chip opens it under the row: its whole text, how it stands, and, when it stands for a
- *  card, the way to that card; a second tap closes it. */
-function sessionStatus(s, base, now = Date.now()) {
-  const last = s.messages.findLast(m => m.from !== 'event')
-  const answering = last?.from === 'user' && now - last.ts < WORKING_WINDOW
-  const lines = shownLines(s.tasks, now)
-  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || answering ? '' : raw(' hidden')}>${answering ? html`<div class="working">${agentMark(s.agent)}<span>${s.agent.name} is working</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.length ? html`<div class="status-chips" role="list">${lines.map(t => {
-    const card = lineCard(t, s.model, s.cards, s.tasks)
-    const inner = html`${lineMark(t)}<b>${t.label}</b>${t.updated ? html`<span class="status-age" aria-hidden="true" data-ts="${t.updated}">${agoShort(t.updated)}</span>${agoSpan(t.updated, 'offscreen')}` : ''}`
-    return html`<button type="button" class="status-chip" role="listitem" data-state="${t.state}" data-key="${t.agent}:${t.id}" data-label="${t.label}" data-detail="${t.detail ?? ''}" data-said="${STATE_WORD[t.state] ?? ''}"${card ? html` data-href="${questionPath(card, base)}" data-card="${card.title}"` : ''} title="${t.label}" aria-expanded="false" aria-controls="status-open-${s.id}" data-action="status-lines#toggle">${inner}</button>`
-  })}</div><div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
+
+// ---- the status lines and "N open" at the talk's end ----
+const lineMark = l => html`<span class="status-mark">${l.state === 'working' ? raw(ringSvg({ drop: true })) : l.state === 'stale' ? html`<i class="status-still" aria-hidden="true"></i>` : l.state === 'decision' ? sk('knock') : l.state === 'later' ? sk('snooze') : sk('tick')}</span>`
+/** One row of small chips (mark, title, age), never two rows; what does not fit lies on a stack "+N" (controller
+ *  "status-lines"). A tap opens a chip under the row: its whole text, how it stands, the way to its card. */
+function sessionStatus(s, base) {
+  const lines = s.status_lines ?? []
+  return html`<div class="session-status" id="session-status-${s.id}" data-controller="status-lines"${lines.length || s.answering ? '' : raw(' hidden')}>${s.answering ? html`<div class="working">${agentMark(s)}<span>${s.answering.en}</span><span class="dots"><i></i><i></i><i></i></span></div>` : ''}${lines.length ? html`<div class="status-chips" role="list">${lines.map(l => html`<button type="button" class="status-chip" role="listitem" data-state="${l.state}" data-key="${s.id}:${l.id}" data-label="${l.label}" data-detail="${l.detail}" data-said="${l.says.en}"${l.card ? html` data-href="${cardPath(l.card, s, base)}" data-card="${l.card.title}"` : ''} title="${l.label}" aria-expanded="false" aria-controls="status-open-${s.id}" data-action="status-lines#toggle">${lineMark(l)}<b>${l.label}</b>${l.updated_ms ? html`<span class="status-age" aria-hidden="true" data-ts="${l.updated_ms}">${agoShort(l.updated_ms)}</span>${agoSpan(l.updated_ms, 'offscreen')}` : ''}</button>`)}</div><div class="status-open" id="status-open-${s.id}" hidden></div>` : ''}</div>`
 }
-// A tap on a chip opens it under the row (its whole text, how it stands, the way to its card), a second tap closes it;
-// the one open stays open when the live piece is drawn anew.
+// The one chip open stays open when the page is drawn again.
 const statusOpen = new Set()
 // No sideways scroll (the owner, 13 October 2026): the chips that fit stand in the row; what does not fit lies on a
-// small stack "+N" at its end (its edges show), and a tap on the stack opens what lies on it, one under the other,
-// under the row. Measured again whenever the row's width changes.
+// small stack "+N" at its end, and a tap on the stack opens what lies on it under the row.
 controller('status-lines', class extends Controller {
   connect() {
     const chip = [...this.element.querySelectorAll('.status-chip[data-key]')].find(c => statusOpen.has(c.dataset.key)); if (chip) this.show(chip)
@@ -413,7 +168,6 @@ controller('status-lines', class extends Controller {
     this.place()
   }
   disconnect() { this.watch?.disconnect(); this.pile?.remove(); this.more?.remove() }
-  /** Which chips stand in the row and which lie on the stack. */
   place() {
     const row = this.element.querySelector('.status-chips'), chips = [...row.querySelectorAll(':scope > .status-chip')]
     for (const c of chips) c.hidden = false
@@ -455,414 +209,137 @@ controller('status-lines', class extends Controller {
   }
 })
 /** "N open": the questions of this session that wait, and the way to the first of them. */
-function sessionOpen(s, base, shown = null) {
-  const n = s.fresh.length
-  const first = s.fresh.map(c => s.askAt.get(c.id)).find(id => id && (!shown || shown.has(id)))
-  const href = first ? `#msg-${first}` : `${sessionPath(s.id, base)}?only=questions`
-  return n ? html`<a class="open-jump" id="session-open-${s.id}" data-nav href="${href}"${first ? raw(' data-turbo="false" data-log-target="open" data-action="log#toOpen"') : ''} aria-label="${n === 1 ? 'One open question: go to it' : `${n} open questions: go to the first one`}"><span data-log-target="openText">${n} open</span>${ico('down')}</a>` : html`<span id="session-open-${s.id}" hidden></span>`
-}
+const sessionOpen = (s, base) => (s.open ? html`<a class="open-jump" id="session-open-${s.id}" data-nav href="${s.first_open ? `#msg-${s.first_open}` : `${sessionPath(s, base)}/questions`}"${s.first_open ? raw(' data-turbo="false" data-log-target="open" data-action="log#toOpen"') : ''} aria-label="${s.open_says?.en ?? ''}"><span data-log-target="openText">${s.open_word?.en ?? ''}</span>${ico('down')}</a>` : html`<span id="session-open-${s.id}" hidden></span>`)
 
-// ---- the conversation ----
-/** The link that brings the messages before `first` (a Turbo Frame: only they are rendered). left: how many memory
- *  holds before them; more: the core has older ones still (loaded when the link is followed). The log controller
- *  follows it by itself when it comes near while scrolling up. */
-function earlier(s, base, first, left, more = s.more) {
-  return html`<turbo-frame class="log-earlier" id="earlier-${first}">${left || more ? html`<a class="log-earlier-link" data-nav href="${sessionPath(s.id, base)}?before=${first}" data-log-target="earlier">Earlier messages${left ? html`<b>${left}${more ? '+' : ''}</b>` : ''}</a>` : ''}</turbo-frame>`
-}
-/** A window of the log: the PAGE messages before `before` (a message id; null: the latest). */
-function logWindow(s, base, before = null) {
-  const total = s.messages.length
-  const at = before == null ? -1 : s.messages.findIndex(m => m.id === before)
-  // (An earlier window asked for a message memory no longer holds: nothing, rather than the latest a second time.)
-  const end = before != null && at < 0 ? 0 : at < 0 ? total : at, start = Math.max(0, end - PAGE)
-  // Only the window is rendered, however much memory holds; of it, the newest IN_VIEW messages now (the log's end is
-  // what is in view), the older ones right after the first paint (ui.mjs later: their markup is made then), above
-  // them, where the reversed column does not move what is in view.
-  const shown = s.messages.slice(start, end).map(m => ({ id: m.id }))
-  const cut = Math.max(start, end - IN_VIEW)
-  const item = i => html`${i.day}${i.node}`
-  const older = cut > start ? later(`log-${s.id}-${shown[0].id}`, () => html`${logItems(s, base, start, cut).map(item)}`) : ''
-  // An earlier window ends where the one below it begins: the day line between them, when the day changes there.
-  const next = before != null && at >= 0 ? s.messages[at] : null, last = s.messages[end - 1]
-  const joint = next && last && dayKey(last.ts) !== dayKey(next.ts) ? dayLine(next.ts) : ''
-  return { shown, start, end, total, body: html`${shown.length ? earlier(s, base, shown[0].id, start) : ''}${older}${logItems(s, base, cut, end).map(item)}${joint}` }
-}
-
-// (The three starters are links: each brings the page again with its words in the field, ready to send or change.)
-const STARTERS = ['Where do we stand?', 'What do you need from me?', 'Sum up what you did last.']
-const meta = a => [a.host, a.model?.replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2')].filter(Boolean).join(' · ')
-/** An empty conversation: a quiet card from the agent that joined (its own drawing, name, where it runs), and the
- *  starters as rows; a tap sends one. */
-const empty = (s, base) => {
-  const a = s.agent
-  return html`<div class="empty-card"><div class="empty-card-who">${agentMark(a)}<div><b>${a.name}</b>${meta(a) ? html`<small>${meta(a)}</small>` : ''}</div></div><p>Joined and waiting for its first task. Write below, or start with:</p><div class="empty-rows">${STARTERS.map(t => html`<a class="empty-row" data-nav href="${sessionPath(s.id, base)}?say=${encodeURIComponent(t)}"><span>${t}</span>${ico('send')}</a>`)}</div></div>`
-}
-
-/** What the field says: when the session will read it, if not at once. */
-function composeWords(s) {
-  const link = linkOf(s.agent)
-  if (link?.state === 'cut') return 'It cannot hear you right now. What you write waits for it'
-  if (link?.state === 'gone') return 'It is gone. What you write waits for it'
-  if (link?.state === 'asleep' || link?.state === 'oncall') return s.agent?.client === 'codex' ? 'Reaches the agent on its next turn' : 'Reaches the agent on its next step'
-  return 'Message to the agent'
-}
-/** Above the field: why the session does not hear (cut off, gone, not listening) and the step in its terminal, or that
- *  his last message was not picked up. Nothing for a session that hears, also on its next step. Its id stays for the stream. */
-function sessionLink(s) {
-  const a = s.agent, link = linkOf(a), id = `session-link-${s.id}`
-  const mine = s.messages?.findLast?.(m => m.from === 'user' && !m.terminal && Number.isSafeInteger(m.seq) && m.seq < Number.MAX_SAFE_INTEGER) ?? null
-  const waits = mine && a.heard_up_to != null && mine.seq > a.heard_up_to && Date.now() - (mine.ts ?? 0) >= UNHEARD_MS
-  const receipt = waits ? `${a.name} has not picked up your last message.` : ''
-  if (link && ['cut', 'gone', 'asleep'].includes(link.state)) return linkNote(link, { receipt, id })
-  if (waits) return linkNote({ state: 'unheard', fix: a.client === 'codex' ? { say: 'Look at its terminal: type anything to start a turn, or start it again with', code: 'codex resume' } : { say: 'Look at its terminal: type anything to wake it, or reconnect it with', code: '/mcp → trommi → Reconnect' } }, { receipt, sign: 'letter', tone: 'unheard', id })
-  return html`<aside class="link-note" id="${id}" hidden></aside>`
-}
-/** The composer: a plain form. The island "composer" adds Enter to send, the field that grows, the list of chosen files. */
-function composer(s, base, { text = '', focus = false } = {}) {
-  return html`<form class="composer" id="composer-${s.id}" method="post" action="${sessionPath(s.id, base)}/message" enctype="multipart/form-data" data-controller="composer" data-composer-agent-value="${s.id}"${focus ? raw(' data-composer-focus-value="true"') : ''} data-action="turbo:submit-start->composer#start turbo:submit-end->composer#sent click->composer#aim dragover@window->composer#over dragleave@window->composer#left drop@window->composer#drop">
+// ---- the field to write ----
+/** An empty talk: a quiet card from the agent that joined, and the starters as rows; a tap brings one into the field. */
+const empty = (s, base) => html`<div class="empty-card" id="talk-empty"><div class="empty-card-who">${agentMark(s)}<div><b>${s.name.en}</b>${s.empty.meta ? html`<small>${s.empty.meta}</small>` : ''}</div></div><p>${s.empty.text.en}</p><div class="empty-rows">${s.empty.starters.map(x => html`<a class="empty-row" data-nav href="${sessionPath(s, base)}?say=${encodeURIComponent(x.en)}"><span>${x.en}</span>${ico('send')}</a>`)}</div></div>`
+/** The field: a plain form. The controller "composer" adds Enter to send, the field that grows, the chosen files. */
+const composer = (s, base, { text = '', focus = false } = {}) => html`<form class="composer" id="composer-${s.id}" method="post" action="${sessionPath(s, base)}/message" enctype="multipart/form-data" data-controller="composer" data-composer-agent-value="${s.id}"${focus ? raw(' data-composer-focus-value="true"') : ''} data-action="turbo:submit-start->composer#start turbo:submit-end->composer#sent click->composer#aim dragover@window->composer#over dragleave@window->composer#left drop@window->composer#drop">
 <input type="hidden" name="stay" value="1">
 <div class="composer-files" data-composer-target="chips"></div>
 <label class="mic composer-clip" title="Attach">${sk('clip')}<input class="offscreen" type="file" name="files" multiple data-composer-target="picker" data-action="change->composer#paint" aria-label="Attach pictures or files (at most ${MAX_FILES})"></label>
-<textarea name="text" id="composer-field-${s.id}" rows="1" data-composer-target="field" data-action="input->composer#typed keydown->composer#keys paste->composer#paste focus->composer#paint" autocomplete="off" enterkeyhint="enter" placeholder="${composeWords(s)}" aria-label="Message to ${s.agent.name}">${text}</textarea>
+<textarea name="text" id="composer-field-${s.id}" rows="1" data-composer-target="field" data-action="input->composer#typed keydown->composer#keys paste->composer#paste focus->composer#paint" autocomplete="off" enterkeyhint="enter" placeholder="${s.compose.en}" aria-label="Message to ${s.name.en}">${text}</textarea>
 <button class="send" type="submit" aria-label="Send" data-composer-target="send">${ico('send')}</button>
 </form>`
-}
 const sendError = (s, text = '') => html`<p class="send-error" id="session-error-${s.id}" role="alert"${text ? '' : raw(' hidden')}>${text}</p>`
 
-// ---- the lists a filter shows in place of the conversation ----
-/** The session's questions: what waits as Desk rows, then everything else as quiet lines, the newest first. */
+// ---- the questions (SessionView.questions): what waits as Desk rows (the open ones of the talk), then every question ----
 function questionList(s, base) {
-  const { model } = s
-  const rest = s.cards.filter(c => !s.fresh.includes(c)).sort((a, b) => (b.decided ?? b.shredded ?? b.created ?? 0) - (a.decided ?? a.shredded ?? a.created ?? 0))
-  const line = card => {
-    const [kind, text] = card.status === 'decided' || card.settled ? [card.trusted ? 'trusted' : 'decided', choiceLabel(card)] : card.status === 'shredded' ? ['shredded', ''] : card.status !== 'open' ? ['done', card.summary ?? ''] : card.with_agent ? ['handed', ''] : ['snoozed', '']
-    return eventLine({ kind, text: text === card.title ? '' : text, ts: card.decided ?? card.shredded ?? card.created ?? 0 }, card, base, { wrap: true, cont: true })
-  }
-  return html`<div class="session-cards" id="session-questions-${s.id}"><header class="inbox-head"><div class="inbox-title"><h2>${s.fresh.length ? (s.fresh.length === 1 ? '1 question waits for you' : `${s.fresh.length} questions wait for you`) : 'No question waits for you.'}</h2></div></header>
-<div class="inbox-groups">${s.fresh.length ? runSection(s.agent, s.fresh.map(c => raw(String(deskRow(c, model, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s.id, base)}/card/`))), s.fresh.length) : ''}</div>
-${rest.length ? html`<h3 class="hist-heading"><span>Earlier questions</span><b>${rest.length}</b></h3><div class="session-past">${rest.map(line)}</div>` : ''}</div>`
+  const open = s.talk.filter(r => r.kind === 'ask' && r.row)
+  const line = q => html`<a class="event event-asked cont" id="q-${q.id}" data-nav href="${cardPath(q, s, base)}" title="Nr. ${q.number}"><span class="event-ico">${ico('asked')}</span><span class="event-body"><span class="event-kind">Nr. ${q.number}</span><span class="event-about">${q.title}</span></span></a>`
+  return html`<div class="session-cards" id="session-questions-${s.id}"><header class="inbox-head"><div class="inbox-title"><h2>${s.open_word?.en ?? 'No question waits for you.'}</h2></div></header>
+<div class="inbox-groups">${open.length ? runSection(whoOf(s), open.map(r => raw(String(deskRow(r.row, base)).replaceAll(`href="${base}/card/`, `href="${sessionPath(s, base)}/card/`))), open.length) : ''}</div>
+${s.questions?.length ? html`<h3 class="hist-heading"><span>All questions</span><b>${s.questions.length}</b></h3><div class="session-past">${s.questions.map(line)}</div>` : ''}</div>`
 }
 
-// ---- the files: what the session sent and was sent that no card shows (a card shows its own pictures) ----
-/** Groups, newest first: one per question its messages were about, one per message otherwise.
- *  [{ ts, card, from, msg (the newest message), next (the message after it, or null), items: [{ kind, type, name, url, n, a }] }] */
-const looseKept = new WeakMap()
-function looseFiles(s) {
-  if (looseKept.has(s)) return looseKept.get(s)
-  const onCards = new Set()
-  for (const c of s.cards) for (const a of c.attachments ?? []) if (a?.url) onCards.add(a.url)
-  const groups = new Map(), seen = new Set()
-  s.messages.forEach((m, i) => {
-    if (m.from === 'event') return
-    const items = []
-    if (m.published && !seen.has(`asset ${m.published}`)) {
-      seen.add(`asset ${m.published}`)
-      const asset = assetOf(m, s)
-      items.push({ kind: 'asset', type: ASSET_LABEL[asset.type] ? asset.type : 'file', name: asset.title || 'Untitled', url: asset.gone ? null : asset.id, asset })
-    }
-    for (const a of m.published ? [] : m.attachments ?? []) {
-      if (!a?.url || onCards.has(a.url) || seen.has(a.url)) continue
-      seen.add(a.url)
-      items.push({ kind: a.kind === 'scribble' ? 'scribble' : kindOf(a), name: a.name || 'Scribble', url: a.url, n: isPicture(a) ? s.nr.get(a.url) : null, a })
-    }
-    if (!items.length) return
-    const card = m.card_id ? s.model.byCard.get(m.card_id) ?? null : null
-    const key = card ? `card ${card.id}` : `msg ${m.id}`
-    const g = groups.get(key)
-    const next = s.messages[i + 1]?.id ?? null
-    if (g) { g.items.unshift(...items); Object.assign(g, { ts: m.ts, msg: m.id, next, from: m.from }) }
-    else groups.set(key, { ts: m.ts, card, from: m.from, msg: m.id, next, items })
-  })
-  const out = [...groups.values()].sort((x, y) => y.ts - x.ts)
-  looseKept.set(s, out)
-  return out
+// ---- the files (SessionView.files: every file of its cards, answers, chats and Artifacts, the newest first) ----
+function fileThumb(id, f, s, t) {
+  const type = typeOf(f), url = t.fileUrl(id)
+  if (type === 'image') return html`<a class="files-thumb" data-nav href="${sessionPath(s, t.BASE)}/files/${id}" title="${f.name}"><img${url ? html` src="${url}"` : ''} alt="" loading="lazy" decoding="async" width="64" height="44"></a>`
+  return html`<a class="files-thumb asset-preview" data-kind="${type}"${url ? html` href="${url}" download="${f.name}"` : ''} title="${f.name}">${assetGlyph(type)}</a>`
 }
-const fileCount = s => looseFiles(s).reduce((n, g) => n + g.items.length, 0)
-
-/** "Files" at the top of the session's More menu: opens the drawer (controller "files"); without scripts, the page with it open. */
-function filesItem(s, base) {
-  const n = fileCount(s)
-  return n ? html`<a role="menuitem" class="desk-move-files" href="${sessionPath(s.id, base)}/files" data-turbo-frame="files-frame-${s.id}" data-action="files#toggle" aria-controls="files-drawer-${s.id}" title="Files">${ico('clip')}<span>Files</span><b>${n}</b></a>` : ''
+function filesList(s, vm, t) {
+  const list = (s.files ?? []).map(id => ({ id, f: vm.files?.[id] })).filter(x => x.f)
+  return html`<div class="files-list" id="session-files-${s.id}"><p class="files-sum">${list.length === 1 ? '1 file' : `${list.length} files`}</p>${list.length ? list.map(({ id, f }) => html`<section class="files-group" id="file-${id}"><div class="files-group-head"><span class="files-where"><b>${f.name}</b><span>${f.size ? sizeText(f.size) : ''}</span></span></div><div class="files-thumbs">${fileThumb(id, f, s, t)}</div></section>`) : html`<p class="files-empty">Nothing was sent here yet.</p>`}</div>`
 }
-
-const FILE_GLYPH = { video: 'video', audio: 'audio', image: 'image', scribble: 'image' }
-function fileThumb(item, s, base, msg) {
-  if (item.kind === 'asset') {
-    if (!item.url) return html`<span class="files-thumb asset-preview is-gone" data-kind="${item.type}" title="${item.name}">${assetGlyph(item.type)}</span>`
-    return html`<a class="files-thumb asset-preview${item.type === 'image' ? ' is-shown' : ''}" data-kind="${item.type}" data-nav href="${assetPath(s, item.asset.id, base)}" title="${item.name}"${thumbAttrs(item.asset, item.type)}>${preview(item.asset, item.type)}</a>`
-  }
-  if (item.kind === 'image' || item.kind === 'scribble') {
-    const img = html`<img${srcOf(item.a, 64)} alt="" loading="lazy" decoding="async" width="64" height="44">`
-    return item.n ? html`<a class="files-thumb" data-nav href="${sessionPath(s.id, base)}/files/${item.n}?from=${msg}" title="${item.name}">${img}</a>` : html`<a class="files-thumb" href="${item.url}" target="_blank" rel="noopener" title="${item.name}">${img}</a>`
-  }
-  return html`<a class="files-thumb asset-preview" data-kind="${item.kind}" href="${item.url}" target="_blank" rel="noopener" title="${item.name}">${assetGlyph(FILE_GLYPH[item.kind] ?? 'file')}</a>`
-}
-
-/** The drawer's list: a group per question or message, its pictures and files, and "Jump to" where it stands.
- *  The jump: scrolled to by the controller when the message is on the page; otherwise the window that ends with it. */
-function filesList(s, base) {
-  const here = sessionPath(s.id, base)
-  const groups = looseFiles(s), n = fileCount(s)
-  const jump = g => (g.next ? `${here}?before=${encodeURIComponent(g.next)}#msg-${g.msg}` : `${here}#msg-${g.msg}`)
-  return html`<div class="files-list" id="session-files-${s.id}"><p class="files-sum">${n === 1 ? '1 file' : `${n} files`}<span> · the questions keep their own pictures</span></p>${groups.length ? groups.map(g => html`<section class="files-group"><div class="files-group-head">${g.card
-    ? html`<a class="files-where" data-nav href="${questionPath(g.card, base)}"><b>Nr. ${g.card.number}</b><span>${g.card.title}</span></a>`
-    : html`<span class="files-where"><b>${g.from === 'user' ? 'You' : s.agent.name} · ${timeNode(g.ts, 'files-time')}</b><span>${g.items.length === 1 ? g.items[0].name : `${g.items.length} files`}</span></span>`}<a class="files-jump" data-nav href="${jump(g)}" data-action="files#jump" data-files-msg-param="${g.msg}">Jump to${ico('next')}</a></div><div class="files-thumbs">${g.items.slice(0, 4).map(item => fileThumb(item, s, base, g.msg))}${g.items.length > 4 ? html`<span class="files-more">+${g.items.length - 4}</span>` : ''}</div></section>`) : html`<p class="files-empty">Nothing was sent here yet, besides the questions' own pictures.</p>`}</div>`
-}
-
-/** The drawer from the right (a sheet from below on a phone): its list is a lazy frame, loaded when it opens. */
-function filesDrawer(s, base, open = false) {
-  const here = sessionPath(s.id, base)
-  return html`<aside class="files-drawer" id="files-drawer-${s.id}" data-files-target="drawer" aria-label="Files of this session"${open ? '' : raw(' hidden')}><header class="files-head"><h3>Files</h3><a class="files-close" data-nav href="${here}" data-action="files#close" aria-label="Close the files">${ico('close')}</a></header><turbo-frame class="files-frame" id="files-frame-${s.id}" target="_top" data-files-target="frame">${open ? filesList(s, base) : ''}</turbo-frame></aside>`
-}
+/** The drawer from the right (a sheet from below on a phone), open at /chat/<slug>/files. */
+const filesDrawer = (s, vm, t, open) => html`<aside class="files-drawer" id="files-drawer-${s.id}" data-files-target="drawer" aria-label="Files of this session"${open ? '' : raw(' hidden')}><header class="files-head"><h3>Files</h3><a class="files-close" data-nav href="${sessionPath(s, t.BASE)}" data-action="files#close" aria-label="Close the files">${ico('close')}</a></header><div class="files-frame">${open ? filesList(s, vm, t) : ''}</div></aside>`
 
 // ---- the page ----
-/** mode: '' (the conversation) | 'questions' | 'files' (the conversation, the drawer open). before: a message id (the window before it). */
-function sessionMain(s, base, { mode = '', before = null, error = '', text = '', focus = false } = {}) {
-  let body, open = ''
-  if (mode === 'questions') body = html`<div class="pane-list pane-questions"><div class="column">${questionList(s, base)}</div></div>`
-  else {
-    const w = logWindow(s, base, before)
-    const latest = w.end === w.total
-    // An earlier window stands in the frame its link named: Turbo takes that frame out of this page and puts it where the link was.
-    const part = before != null && !latest ? html`<turbo-frame class="log-earlier" id="earlier-${before}">${w.body}</turbo-frame>` : w.body
-    open = sessionOpen(s, base, new Set(w.shown.map(i => i.id)))
-    body = html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${w.total ? part : empty(s, base)}${latest ? html`<div id="log-end-${s.id}" hidden></div>${sessionStatus(s, base)}` : html`<a class="log-earlier-link is-later" data-nav href="${sessionPath(s.id, base)}">To the latest messages</a>`}</div></div>`
-  }
-  return html`<main id="session" aria-label="Session: ${s.agent.name}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}>
-<header class="pane-title">${sessionWho(s, base)}${sessionFilters(s, base, mode)}${sessionUsage(s)}</header>${sessionFilters(s, base, mode, { phone: true })}
+/** mode: '' (the talk) | 'questions' | 'files' (the talk, the drawer open). */
+function sessionMain(s, vm, t, { mode = '', text = '', focus = false } = {}) {
+  const base = t.BASE
+  const body = mode === 'questions' ? html`<div class="pane-list pane-questions"><div class="column">${questionList(s, base)}</div></div>`
+    : html`<div class="log" tabindex="-1" data-log-target="log" data-action="scroll->log#scrolled"><div class="column log-inner" role="log" aria-live="polite" aria-relevant="additions">${s.earlier ? html`<form class="log-earlier" id="earlier-${s.id}" method="post" action="${sessionPath(s, base)}/earlier"><button type="submit" class="log-earlier-link" data-log-target="earlier">${s.earlier.says.en}${s.earlier.left ? html`<b>${s.earlier.left}${s.earlier.hub ? '+' : ''}</b>` : ''}</button></form>` : ''}${s.talk.length ? talk(s, vm, t) : s.empty ? empty(s, base) : ''}<div id="log-end-${s.id}" hidden></div>${sessionStatus(s, base)}</div></div>`
+  return html`<main id="session" aria-label="Session: ${s.name.en}" data-controller="files" data-action="keydown@document->files#key click@document->files#outside"${mode === 'files' ? raw(' data-files-open') : ''}>
+<header class="pane-title">${sessionWho(s, vm, base)}${sessionFilters(s, base, mode)}<div class="head-use" id="session-use-${s.id}"></div></header>${sessionFilters(s, base, mode, { phone: true })}
 <section id="chat" aria-label="Conversation"><div class="chat-pane" data-agent="${s.id}" data-controller="log">
 <div class="chat-body">${body}</div>
-<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${open}<div class="column session-compose">${sendError(s, error)}${sessionLink(s)}${composer(s, base, { text, focus })}</div></div>
+<div class="dock">${mode === 'questions' ? '' : html`<button type="button" class="jump" hidden data-log-target="jump" data-action="log#toEnd">${ico('down')}<span data-log-target="jumpText">To the end</span></button>`}${mode === 'questions' ? '' : sessionOpen(s, base)}<div class="column session-compose">${sendError(s)}${s.note ? linkNote(s.note, { id: `session-link-${s.id}` }) : html`<aside class="link-note" id="session-link-${s.id}" hidden></aside>`}${composer(s, base, { text, focus })}</div></div>
 </div></section>
-${filesDrawer(s, base, mode === 'files')}
+${filesDrawer(s, vm, t, mode === 'files')}
 </main>`
 }
 
-/** One picture of the session, large, at its own address. from: the message it was opened from (the way back). */
-function sessionPicture(s, base, at, from = '') {
-  const n = s.pictures.length, i = Math.min(Math.max(1, at), n), a = s.pictures[i - 1]
-  const here = sessionPath(s.id, base), q = from ? `?from=${encodeURIComponent(from)}` : ''
-  const back = from && s.messages.some(m => m.id === from) ? `${here}#msg-${from}` : `${here}/files`
+/** One picture of the session, large, at its own address; the arrows step through its pictures. */
+function sessionPicture(s, vm, t, id, from) {
+  const pics = (s.files ?? []).filter(x => typeOf(vm.files?.[x]) === 'image'), n = pics.length, i = Math.max(0, pics.indexOf(id))
+  const f = vm.files?.[id], url = t.fileUrl(id), here = sessionPath(s, t.BASE), q = from ? `?from=${encodeURIComponent(from)}` : ''
+  const back = from ? `${here}#msg-${from}` : `${here}/files`
   const arrow = d => raw(`<svg viewBox="0 0 24 24" class="focus-icon" aria-hidden="true"><path d="${d}"/></svg>`)
   return html`<div class="t-picture">
-<header class="t-picture-bar"><a class="focus-back-desk t-picture-back" data-nav href="${back}" aria-label="Back to ${from ? 'the conversation' : 'the files'}">${arrow('M19 12H5M11 6l-6 6 6 6')}<span>${s.agent.name}</span></a><span class="t-picture-where"><b>${i} / ${n}</b> ${a.title || a.name}</span>${a.page ? pageChip(a.page) : html`<a class="page-chip" target="_blank" rel="noopener noreferrer" href="${a.url}">${sk('picture')}<b>${a.name}</b><i>open</i></a>`}</header>
-<a class="t-picture-view" data-nav href="${back}" aria-label="Close the picture"><img src="${a.url}" alt="${a.name}" decoding="async"></a>
-${n > 1 ? html`<a class="focus-stage-step is-prev" data-nav href="${here}/files/${i > 1 ? i - 1 : n}${q}" data-turbo-action="replace" aria-label="The picture before">${arrow('M19 12H5M11 6l-6 6 6 6')}</a><a class="focus-stage-step is-next" data-nav href="${here}/files/${i < n ? i + 1 : 1}${q}" data-turbo-action="replace" aria-label="The next picture">${arrow('M5 12h14M13 6l6 6-6 6')}</a>` : ''}
+<header class="t-picture-bar"><a class="focus-back-desk t-picture-back" data-nav href="${back}" aria-label="Back to ${from ? 'the conversation' : 'the files'}">${arrow('M19 12H5M11 6l-6 6 6 6')}<span>${s.name.en}</span></a><span class="t-picture-where"><b>${i + 1} / ${n}</b> ${f?.name ?? ''}</span>${url ? html`<a class="page-chip" href="${url}" download="${f?.name ?? ''}">${sk('picture')}<b>${f?.name ?? ''}</b><i>open</i></a>` : ''}</header>
+<a class="t-picture-view" data-nav href="${back}" aria-label="Close the picture"><img${url ? html` src="${url}"` : ''} alt="${f?.name ?? ''}" decoding="async"></a>
+${n > 1 ? html`<a class="focus-stage-step is-prev" data-nav href="${here}/files/${pics[(i - 1 + n) % n]}${q}" data-turbo-action="replace" aria-label="The picture before">${arrow('M19 12H5M11 6l-6 6 6 6')}</a><a class="focus-stage-step is-next" data-nav href="${here}/files/${pics[(i + 1) % n]}${q}" data-turbo-action="replace" aria-label="The next picture">${arrow('M5 12h14M13 6l6 6-6 6')}</a>` : ''}
 </div>`
 }
 
-// ---- routes, the form, the live pieces ----
+// ---- routes and forms ----
 export function register(t) {
   const { BASE } = t
-  const idOf = ref => { try { return decodeURIComponent(ref) } catch { return ref } }
-  // The window of the session's own chat in memory: what is older than its oldest loaded item is not shown yet.
-  const timeline = agent => (agent?.device_id ? t.hub.client?.model?.timelines?.get(`chat:session/${agent.device_id}`) : null)
-  const windowOf = agent => {
-    const tl = timeline(agent)
-    if (!tl?.has_more) return { floor: 0, more: false }
-    return { floor: Number.isFinite(tl.loaded_down_to) ? tl.loaded_down_to : 0, more: true }
-  }
-  const current = (id, m = t.model()) => sessionOf(m, id, windowOf(m.byAgent.get(id)))
-  const find = (req, res, ref) => {
-    const s = current(idOf(ref))
+  const decode = ref => { try { return decodeURIComponent(ref) } catch { return ref } }
+  /** The session in view: by its slug (the address) or its key. */
+  const find = async (req, res, ref) => {
+    media ??= await viewModule('media')
+    const id = decode(ref), s = Object.values(t.vm().sessions ?? {}).find(x => x.slug === id || x.id === id)
     if (!s) t.notFound(req, res, 'This session is not on the board.')
     return s
   }
-  // The next older page of a timeline (a session's board id: its chat; or a timeline key), one request at a time.
-  const loading = new Map()
-  const older = ref => {
-    if (!loading.has(ref)) loading.set(ref, Promise.resolve(t.hub.loadOlder?.(ref)).catch(err => console.warn('timeline', err)).finally(() => loading.delete(ref)))
-    return loading.get(ref)
-  }
-  // Opened for the first time on this device: the newest page of its chat and of its recent questions' threads
-  // (from storage, else from the hub), waited for only briefly; what comes later arrives by the live stream.
-  const RECENT_THREADS = 20
-  const unread = tl => tl && tl.loaded_down_to === Infinity && tl.item_count > 0
-  // Its questions' threads, in the background (the live log puts late items at their places): only those with a word
-  // at or above the floor of what the conversation shows, the window in view, at most RECENT_THREADS of them. A thread
-  // whose last word is older than the window cannot show in it; "Earlier" lowers the floor and brings those (reach).
-  function threadsInWindow(agent) {
-    const model = t.hub.client?.model
-    if (!model || !agent) return
-    const tl = timeline(agent)
-    const floor = tl && Number.isFinite(tl.loaded_down_to) && tl.has_more ? tl.loaded_down_to : 0
-    const ids = (model.sessions.get(agent.device_id)?.card_ids ?? []).filter(cid => { const m = model.timelines.get(`chat:card/${cid}`); return unread(m) && (m.newest_envelope_number ?? 0) >= floor })
-    for (const cid of ids.slice(-RECENT_THREADS)) older(`chat:card/${cid}`).catch?.(() => {})
-  }
-  async function firstPage(id) {
-    const model = t.hub.client?.model, agent = t.model().byAgent.get(id)
-    if (!model || !agent) return
-    const wait = []
-    if (unread(timeline(agent))) wait.push(older(id).then(() => threadsInWindow(agent)))
-    else threadsInWindow(agent)
-    // Only the session's own chat is waited for, and only as long as reading it from this device takes: what must come
-    // from the hub follows by the live stream (an empty log is drawn whole once its page is there). A phone switching
-    // sessions must stay under ~100 ms; a hub round trip is longer than that on a phone network.
-    if (wait.length) await Promise.race([Promise.all(wait), new Promise(r => setTimeout(r, 40))])
-  }
-  // "Earlier" asked for what is before `before`: when memory holds nothing older above the floor, the next page.
-  async function reach(s, before) {
-    for (let n = 0; n < 4 && s.more; n++) {
-      if (s.messages.findIndex(m => m.id === before) > 0) break
-      await older(s.id)
-      threadsInWindow(t.model().byAgent.get(s.id))
-      s = current(s.id) ?? s
-    }
-    return s
-  }
   const send = (req, res, s, opts = {}, code = 200) => t.page(req, res, {
-    model: s.model, title: `${s.fresh.length ? `(${s.fresh.length}) ` : ''}${s.agent.name} · Trommi`, view: 'session', css: 'session', current: s.id, scope: s.id,
-    stream: `&session=${encodeURIComponent(s.id)}${opts.mode ? `&mode=${opts.mode}` : ''}`, bodyAttrs: opts.mode === 'questions' ? ` data-filter="${opts.mode}"` : '',
-    main: sessionMain(s, BASE, opts),
+    title: `${s.open ? `(${s.open}) ` : ''}${s.name.en} · Trommi`, view: 'session', current: s.id, scope: s.id,
+    bodyAttrs: opts.mode === 'questions' ? ' data-filter="questions"' : '', main: sessionMain(s, t.vm(), t, opts),
   }, code)
 
-  // (An address with a '+' in the place of the id is not a session's: not rendered here.)
   t.get(/^\/chat\/([^/+]+)$/, async ({ req, res, url, match }) => {
-    await firstPage(idOf(match[1]))
-    let s = find(req, res, match[1])
-    if (!s) return
-    // ?before=<message>: the window before that message. The "Earlier" link asks for it from inside a Turbo Frame.
-    const before = url.searchParams.get('before')
-    if (before) s = await reach(s, before)
-    send(req, res, s, { mode: url.searchParams.get('only') === 'questions' ? 'questions' : '', before, text: (url.searchParams.get('say') ?? '').slice(0, 2000), focus: url.searchParams.has('say') })
+    if (url.searchParams.get('only') === 'questions') return t.redirect(res, `${BASE}/chat/${match[1]}/questions`)
+    const s = await find(req, res, match[1])
+    if (s) send(req, res, s, { text: (url.searchParams.get('say') ?? '').slice(0, 2000), focus: url.searchParams.has('say') })
   })
-  t.get(/^\/chat\/([^/+]+)\/questions$/, ({ res, match }) => t.redirect(res, `${BASE}/chat/${match[1]}?only=questions`))
-  t.get(/^\/chat\/([^/+]+)\/files$/, async ({ req, res, match }) => {
-    await firstPage(idOf(match[1]))
-    const s = find(req, res, match[1])
-    if (!s) return
-    // Asked by the drawer's frame: only the frame with its list (Turbo takes the frame of that id out of the answer).
-    if (req.headers['turbo-frame'] === `files-frame-${s.id}`) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
-      return res.end(String(html`<turbo-frame id="files-frame-${s.id}" target="_top">${filesList(s, BASE)}</turbo-frame>`))
-    }
-    send(req, res, s, { mode: 'files' })
+  t.get(/^\/chat\/([^/+]+)\/(questions|files)$/, async ({ req, res, match }) => { const s = await find(req, res, match[1]); if (s) send(req, res, s, { mode: match[2] }) })
+  t.get(/^\/chat\/([^/+]+)\/files\/([\w-]+)$/, async ({ req, res, url, match }) => {
+    const s = await find(req, res, match[1])
+    if (s) t.page(req, res, { title: `${s.name.en} · picture`, view: 'picture', sidebar: false, bodyAttrs: ' data-focus-page="card"', main: sessionPicture(s, t.vm(), t, match[2], url.searchParams.get('from') ?? '') })
   })
-  t.get(/^\/chat\/([^/+]+)\/files\/(\d+)$/, ({ req, res, url, match }) => {
-    const s = find(req, res, match[1])
+  // Something it published: the viewer of the Artifacts (the core holds them on that screen).
+  t.get(/^\/chat\/([^/+]+)\/artifact\/([0-9a-f]{8,64})$/, ({ res, url, match }) => t.redirect(res, `${BASE}/artifacts/${match[2]}${url.search}`))
+  // "Earlier messages": the core's window of the talk grows by a page (and reads older talk from the hub).
+  t.post(/^\/chat\/([^/+]+)\/earlier$/, async ({ req, res, match }) => {
+    const s = await find(req, res, match[1])
     if (!s) return
-    if (!s.pictures.length) return t.redirect(res, `${sessionPath(s.id, BASE)}/files`)
-    t.page(req, res, { model: s.model, title: `${s.agent.name} · picture ${match[2]}`, view: 'picture', sidebar: false, css: 'card', stream: null, main: sessionPicture(s, BASE, Number(match[2]), url.searchParams.get('from') ?? ''), bodyAttrs: ' data-focus-page="card"' })
+    t.act({ do: 'show_more', of: { list: 'talk', session: s.id } })
+    t.done(res)
   })
-
-  // Something it published, in the app's viewer (?from=<message>: the way back to where it was announced).
-  t.get(/^\/chat\/([^/+]+)\/artifact\/([0-9a-f]{8,64})$/, async ({ req, res, url, match }) => {
-    await sharesLoaded()
-    const s = find(req, res, match[1])
-    if (!s) return
-    const asset = s.model.state.assets.find(a => a.id === match[2]) ?? { id: match[2], gone: true, type: 'file', title: 'Published' }
-    t.page(req, res, { model: s.model, title: `${asset.title || 'Published'} · ${s.agent.name}`, view: 'picture', sidebar: false, css: 'asset', stream: null, main: assetPage(s, asset, BASE, url.searchParams.get('from') ?? ''), bodyAttrs: ' data-focus-page="card"' })
-  })
-
-  // The composer: words, files (pictures, pasted or dropped ones) and copied cards (controller "composer"). The core
-  // shows the message at once (its optimistic echo; the composer already put its own in), then seals and sends it.
+  // The field: words, files (each attached to the core, sent once it is up) and copied cards.
   t.post(/^\/chat\/([^/+]+)\/message$/, async ({ req, res, match, form }) => {
-    const s = find(req, res, match[1])
+    const s = await find(req, res, match[1])
     if (!s) return
     const stay = form.has('stay') && t.wantsStream(req)
     const text = String(form.get('text') ?? '').replace(/\r\n/g, '\n')
     const files = form.getAll('files').filter(f => typeof f === 'object' && f && f.size > 0)
     const cards = [...new Set(form.getAll('cards').map(String).filter(id => /^[0-9a-f]{8,64}$/.test(id)))].slice(0, 5)
-    try {
-      if (files.length > MAX_FILES) throw new Error(`at most ${MAX_FILES} files at once`)
-      if (!text.trim() && !files.length && !cards.length) throw new Error('write something first')
-      await t.hub.message({ agent: s.id, text, attachments: files, cards })
-    } catch (err) {
-      const said = `Not sent: ${sayError(err, 'the board did not take it')}`
-      // 422: counted as not sent, so the composer keeps the words and files (controller "composer").
-      if (stay) return t.sendStream(req, res, t.stream('replace', `session-error-${s.id}`, sendError(s, said)), 422)
-      return send(req, res, current(s.id) ?? s, { error: said, text }, 422)
+    let error = ''
+    if (files.length > MAX_FILES) error = `at most ${MAX_FILES} files at once`
+    else if (!text.trim() && !files.length && !cards.length) error = 'write something first'
+    else {
+      const ids = await Promise.all(files.map(f => t.attach(f)))
+      const up = await until(t.vm, v => (ids.every(id => ['ready', 'failed'].includes(v.files?.[id]?.state)) ? ids.map(id => v.files[id].state) : null), 10 * 60_000)
+      if (!up || up.includes('failed')) error = 'a file did not upload'
+      else t.act({ do: 'write', session_id: s.id, text, attachments: ids, copied_cards: cards })
     }
-    // Sent: the message itself is in the log already; the composer cleared itself.
-    if (stay) return t.sendStream(req, res, t.stream('replace', `session-error-${s.id}`, sendError(s)))
-    t.redirect(res, sessionPath(s.id, BASE))
-  })
-
-  // Live: for every session that has a page open, its pieces; a page gets what differs, and a new message at the log's end.
-  t.live('session', {
-    take(m, clients) {
-      const out = new Map()
-      for (const c of clients) {
-        const id = c.params.get('session'), mode = c.params.get('mode') ?? ''
-        if (!id) continue
-        let p = out.get(id)
-        if (!p) {
-          const s = current(id, m)
-          if (!s) { out.set(id, null); continue }
-          p = { s, who: sessionWho(s, BASE), use: sessionUsage(s), link: sessionLink(s), count: `${s.fresh.length} ${fileCount(s)}`, modes: {} }
-          out.set(id, p)
-        }
-        if (p && !(mode in p.modes)) {
-          p.modes[mode] = true
-          if (mode === 'questions') p.questions = questionList(p.s, BASE)
-          // The live part of the log: its newest LIVE messages (what "Earlier" brought further up stays as it was).
-          // (made when a diff first asks for them: the take right after a page is painted then costs nothing, and the
-          //  session's state it is made from is the one of this take)
-          else {
-            const q = p
-            lazy(q, 'files', () => filesList(q.s, BASE))
-            lazy(q, 'items', () => logItems(q.s, BASE, q.s.messages.length - LIVE))
-            lazy(q, 'byId', () => new Map(q.items.map(i => [i.id, i])))
-            lazy(q, 'all', () => new Set(q.s.messages.map(m => m.id)))
-            lazy(q, 'status', () => sessionStatus(q.s, BASE))
-            lazy(q, 'open', () => sessionOpen(q.s, BASE, new Set(q.items.slice(-PAGE).map(i => i.id))))
-          }
-        }
-      }
-      return out
-    },
-    diff(was, now, client) {
-      const id = client.params.get('session'), mode = client.params.get('mode') ?? ''
-      const a = was.get(id), b = now.get(id)
-      if (!b) return a ? String(t.stream('refresh')) : ''
-      if (!a) return ''
-      const out = []
-      if (t.differs(a.who, b.who)) out.push(t.stream('replace', `session-who-${id}`, b.who))
-      if (t.differs(a.use, b.use)) out.push(t.stream('replace', `session-use-${id}`, b.use))
-      if (t.differs(a.link, b.link)) out.push(t.stream('replace', `session-link-${id}`, b.link))
-      if (a.count !== b.count) out.push(t.stream('replace', `session-filters-${id}`, sessionFilters(b.s, BASE, mode)), t.stream('replace', `session-filters-phone-${id}`, sessionFilters(b.s, BASE, mode, { phone: true })))
-      if (mode === 'questions') { if (a.questions != null && t.differs(a.questions, b.questions)) out.push(t.stream('replace', `session-questions-${id}`, b.questions)) }
-      else if (a.items && b.items) {
-        // What stood there and stands there still, changed: that element. What is new goes in before the first message
-        // after it that stood there (at the end, mostly; a question's thread loaded late lands at its places). What came
-        // in older than all that stood there is an earlier page ("Earlier" shows it).
-        // (a log that stood empty, its first page still on the way from the hub: drawn whole once it is there)
-        if (!a.items.length && b.items.length) return String(t.stream('refresh'))
-        // (where the log began: its oldest item the hub numbered. One still on its way has no number yet (seq stands
-        //  at the end): a log of only such items began nowhere, and the hub's own copy of one, numbered now, is new
-        //  there, not an earlier page; counted as earlier it was taken out and never put in, and the first message
-        //  of an empty chat showed for a moment and was gone until a reload)
-        const first = a.items.find(i => i.seq < Number.MAX_SAFE_INTEGER - 1)?.seq ?? (a.s.more ? Infinity : -Infinity)
-        const fresh = b.items.filter(i => !a.byId.has(i.id) && i.seq >= first)
-        // (More new ones than a window holds: the latest window again, rather than a log that grows without end.)
-        if (fresh.length > PAGE) return String(t.stream('refresh'))
-        for (const i of a.items) if (!b.all.has(i.id)) out.push(t.stream('remove', `msg-${i.id}`))
-        for (const i of b.items) { const old = a.byId.get(i.id); if (old && old.node !== i.node && t.differs(old.node, i.node)) out.push(t.stream('replace', `msg-${i.id}`, i.node)) }
-        let anchor = `log-end-${id}`
-        const at = []
-        for (let n = b.items.length - 1; n >= 0; n--) { const i = b.items[n]; if (a.byId.has(i.id)) anchor = `msg-${i.id}`; else if (i.seq >= first) at.push([i, anchor]) }
-        for (const [i, before] of at.reverse()) out.push(t.stream('before', before, html`${i.day}${i.node}`))
-        if (t.differs(a.status, b.status)) out.push(t.stream('replace', `session-status-${id}`, b.status))
-        if (t.differs(a.open, b.open)) out.push(t.stream('replace', `session-open-${id}`, b.open))
-        // The drawer's list (a page whose drawer was never opened has no such element: the action does nothing there).
-        if (t.differs(a.files, b.files)) out.push(t.stream('replace', `session-files-${id}`, b.files))
-      }
-      return out.join('')
-    },
+    // 422: not sent, so the composer gives the words and files back (controller "composer").
+    if (stay) return t.sendStream(req, res, t.stream('replace', `session-error-${s.id}`, sendError(s, error && `Not sent: ${error}`)), error ? 422 : 200)
+    if (error) return send(req, res, s, { text }, 422)
+    t.redirect(res, sessionPath(s, BASE))
   })
 }
 
 // ---- controller "composer" ----
-// The composer of a session's page (session.mjs): a plain form that works by itself. This adds what a form
-// cannot do alone: Enter sends (Shift+Enter is a new line; on a touch screen Enter stays a new line, and Ctrl/Cmd+Enter
-// sends everywhere), the field grows with its words, the chosen files stand as chips that can be taken off, a pasted
-// picture or a file dropped anywhere on the page is attached, a card copied elsewhere ("Copy" on a card, controller
-// "clip") is offered and goes along as a chip, and what was typed survives a reload.
-//
-// Sending shows the message at once: the moment the form is taken (turbo:submit-start, after the router read it),
-// the composer puts its own copy at the log's end and is empty again. The core's echo (the real message, pending)
-// replaces that copy when it arrives (controller "log"); a refusal takes it out and gives the words and files back.
-
+// The field of a session's page: a plain form that works by itself. This adds what a form cannot do alone: Enter
+// sends (Shift+Enter is a new line; on a touch screen Enter stays a new line, and Ctrl/Cmd+Enter sends everywhere), the
+// field grows with its words, the chosen files stand as chips that can be taken off, a pasted picture or a file dropped
+// anywhere on the page is attached, a card copied elsewhere ("Copy" on a card, controller "clip") is offered and goes
+// along as a chip, and what was typed survives a reload. What was sent shows at once: the core's echo.
 const MAX_CARDS = 5
 const CLIP_KEY = 'trommi-cardclip'   // written by controller "clip": { id, number, title, choice_label, text }
 const fine = mq('(pointer: fine)')
@@ -876,12 +353,10 @@ controller('composer', class extends Controller {
   connect() {
     this.cards = []
     if (!this.fieldTarget.value) { try { this.fieldTarget.value = localStorage.getItem(this.key) ?? '' } catch {} }
-    // (no measuring while the page is built: an empty field keeps its CSS height, a draft is fitted once it is painted)
     this.paint({ fit: false })
     if (this.fieldTarget.value) requestAnimationFrame(() => setTimeout(() => { if (this.element.isConnected) this.fit() }, 0))
     if (this.focusValue) { this.fieldTarget.focus(); this.fieldTarget.setSelectionRange(this.fieldTarget.value.length, this.fieldTarget.value.length) }
   }
-  // Gone with the page: the previews' object URLs are let go.
   disconnect() { this.revoke() }
   revoke() { if (this.hasChipsTarget) revokeTiles(this.chipsTarget) }
   get key() { return `trommi-draft:${this.agentValue}` }
@@ -890,7 +365,6 @@ controller('composer', class extends Controller {
 
   fit() {
     const field = this.fieldTarget
-    // (an empty field keeps its CSS height: nothing to measure, no layout forced after a send)
     if (!field.value) { field.style.height = ''; field.style.overflowY = ''; this.sendTarget.disabled = this.empty; return }
     field.style.height = 'auto'
     const max = Math.max(120, Math.min(260, innerHeight * 0.36))
@@ -905,57 +379,26 @@ controller('composer', class extends Controller {
     e.preventDefault()
     if (!this.sendTarget.disabled) this.element.requestSubmit(this.sendTarget)
   }
-  // A click anywhere in the box goes to the field, as in a text box.
   aim(e) { if (e.target === this.element) this.fieldTarget.focus() }
 
-  // ---- sending ----
+  // ---- sending: the field is empty at once; a refusal gives the words, files and cards back ----
   start() {
-    const files = [...this.pickerTarget.files]
-    this.sending = { text: this.fieldTarget.value, files, cards: this.cards, echo: this.echo(this.fieldTarget.value.trim(), files, this.cards) }
+    this.sending = { text: this.fieldTarget.value, files: [...this.pickerTarget.files], cards: this.cards }
     if (this.cards.length) { try { sessionStorage.removeItem(CLIP_KEY) } catch {} }
     this.fieldTarget.value = ''
     this.cards = []
     this.forget()
     this.setFiles([])
   }
-  // Sent: the core has it. Not sent (422, or an error): the copy leaves, the words and files come back.
   sent(e) {
     const was = this.sending
     this.sending = null
     if (!was || e.detail.success) return
-    was.echo?.remove()
     if (!this.fieldTarget.value) this.fieldTarget.value = was.text
     if (!this.cards.length) this.cards = was.cards
     if (!this.pickerTarget.files.length) this.setFiles(was.files)
     else this.paint()
     this.typed()
-  }
-  /** Our own copy of the message at the log's end, in the markup the session view gives a message of the human. */
-  echo(text, files, cards) {
-    const end = document.getElementById(`log-end-${this.agentValue}`)
-    if (!end || (!text && !files.length && !cards.length)) return null
-    const msg = el('article', 'msg msg-user')
-    msg.dataset.echo = ''
-    const prev = end.previousElementSibling
-    if (prev?.matches('.msg-user') && !prev.querySelector('.cardclip-row, .shots, .files')) msg.classList.add('cont')
-    const pics = files.filter(f => f.type.startsWith('image/')), rest = files.filter(f => !f.type.startsWith('image/'))
-    if (pics.length) {
-      const shots = el('div', `shots${pics.length === 1 ? ' shots-one' : ''}`)
-      for (const f of pics) { const a = el('span', 'shot'), img = el('img'); img.src = URL.createObjectURL(f); img.alt = f.name; img.onload = () => URL.revokeObjectURL(img.src); a.append(img); shots.append(a) }
-      msg.append(shots)
-    }
-    if (rest.length) { const box = el('div', 'files'); for (const f of rest) { const chip = el('span', 'file-chip'); chip.append(el('span', '', f.name)); box.append(chip) } msg.append(box) }
-    if (cards.length) {
-      const row = el('div', 'cardclip-row')
-      for (const c of cards) { const chip = el('span', 'cardclip-chip is-link'); chip.append(el('b', '', `Nr. ${c.number}`), el('span', 'cardclip-title', c.title)); row.append(chip) }
-      msg.append(row)
-    }
-    if (text) { const bubble = el('div', 'bubble'); bubble.append(el('p', '', text)); msg.append(bubble) }
-    const now = new Date(), time = el('time', 'msg-time', `${two(now.getHours())}:${two(now.getMinutes())}`)
-    time.dateTime = now.toISOString()
-    msg.append(time)
-    end.before(msg)
-    return msg
   }
 
   // ---- files ----
@@ -1021,7 +464,6 @@ controller('composer', class extends Controller {
     const files = [...(e.clipboardData?.files ?? [])].map(f => (f.name && f.name !== 'image.png' ? f : new File([f], `pasted-${Date.now()}.${(f.type.split('/')[1] ?? 'png').replace('jpeg', 'jpg')}`, { type: f.type })))
     if (files.length) { e.preventDefault(); this.add(files) }
   }
-  // A file dragged over the page: the box shows that it takes it; dropped anywhere, it is attached.
   over(e) { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); this.element.classList.add('is-drop') } }
   left(e) { if (!e.relatedTarget) this.element.classList.remove('is-drop') }
   drop(e) {
@@ -1032,49 +474,22 @@ controller('composer', class extends Controller {
 })
 
 // ---- controller "log" ----
-// A session's conversation (session.mjs), on .chat-pane. The hub rendered it and the log stands at its
-// end by itself (css: a reversed column). This adds what only the browser knows:
-//   - "To the end", with the number of messages that arrived while one was reading further up, and the view
-//     that stays where it is when they arrive;
-//   - the "N open" chip: only while an open question of the conversation is out of sight, and the way to the next;
-//   - the times in this browser's own zone (the hub wrote them in its own);
-//   - paging up by itself: the "Earlier messages" link is followed when it comes near while scrolling up;
-//   - the composer's own copy of a message (data-echo) leaves when the real one arrives.
-
-function localise(root) {
-  for (const t of root.querySelectorAll?.('time[datetime]') ?? []) {
-    const d = new Date(t.dateTime)
-    if (Number.isNaN(d.getTime())) continue
-    const full = FULL.format(d), text = t.hasAttribute('data-full') ? full : `${two(d.getHours())}:${two(d.getMinutes())}`
-    if (t.textContent !== text) t.textContent = text
-    if (!t.hasAttribute('data-full') && t.title !== full) t.title = full
-  }
-  for (const day of root.querySelectorAll?.('.day[data-day]') ?? []) {
-    const label = dayLabel(Number(day.dataset.day))
-    if (day.firstElementChild && day.firstElementChild.textContent !== label) day.firstElementChild.textContent = label
-  }
-}
-
+// A session's talk, on .chat-pane. The log stands at its end by itself (css: a reversed column). This adds what only
+// the browser knows: "To the end", with the number of rows that arrived while one was reading further up, and the
+// view that stays where it is when they arrive; the "N open" chip only while an open question of the talk is out of
+// sight, and the way to the next; "Earlier messages" pressed by itself when it comes near while scrolling up.
 controller('log', class extends Controller {
   static targets = ['log', 'jump', 'jumpText', 'open', 'openText', 'earlier']
 
   connect() {
     this.pinned = true
     this.unread = 0
-    localise(this.element)
-    if (!this.hasLogTarget) return   // a list is in view (questions, files): only the times
-    // (nothing is measured while the page is built: the log's height and the open questions out of sight are read once
-    //  the frame is painted, when the layout is there anyway; reading them here would make the browser lay the page out first)
+    if (!this.hasLogTarget) return
     this.height = null
     this.seen = new MutationObserver(list => this.arrived(list))
     this.seen.observe(this.logTarget, { childList: true, subtree: true })
-    // A trail he opened stays open while it fills: the live stream replaces its element, which comes folded.
-    this.kept = new Set()
-    this.logTarget.addEventListener('toggle', e => { const k = e.target.dataset?.keep; if (k) this.kept[e.target.open ? 'add' : 'delete'](k) }, true)
     this.sizes = new ResizeObserver(() => this.paint())
     this.sizes.observe(this.logTarget)
-    // The open questions out of sight, told by an IntersectionObserver (measuring every question on each scroll and each
-    // new message would lay the page out again and again: long tasks in a long conversation).
     this.asks = new Map()     // .ask-card -> { away, below }
     this.askSeen = new IntersectionObserver(seen => {
       for (const e of seen) this.asks.set(e.target, { away: !e.isIntersecting, below: e.boundingClientRect.top > (e.rootBounds?.top ?? 0) })
@@ -1085,17 +500,16 @@ controller('log', class extends Controller {
   }
   disconnect() { this.seen?.disconnect(); this.sizes?.disconnect(); this.near?.disconnect(); this.askSeen?.disconnect() }
 
-  // An "Earlier messages" link near the top of what is in view: followed (its frame brings the window before it).
-  earlierTargetConnected(link) {
+  // "Earlier messages" near the top of what is in view: pressed (only once the reader scrolls).
+  earlierTargetConnected(button) {
     if (!this.hasLogTarget) return
     this.near ??= new IntersectionObserver(seen => {
       for (const e of seen) if (e.isIntersecting && e.target.isConnected) { this.near.unobserve(e.target); e.target.click() }
     }, { root: this.logTarget, rootMargin: '900px 0px 0px 0px' })
-    // Only once the reader scrolls: opening a conversation does not page by itself.
-    if (this.moved) this.near.observe(link)
-    else this.waiting = link
+    if (this.moved) this.near.observe(button)
+    else this.waiting = button
   }
-  earlierTargetDisconnected(link) { this.near?.unobserve(link) }
+  earlierTargetDisconnected(button) { this.near?.unobserve(button) }
 
   // (The log is a reversed column: its end is scrollTop 0, further up is negative.)
   get atEnd() { return Math.abs(this.logTarget.scrollTop) < 72 }
@@ -1116,25 +530,13 @@ controller('log', class extends Controller {
   arrived(list) {
     const log = this.logTarget
     let fresh = 0
-    for (const change of list) for (const node of change.removedNodes) if (node.nodeType === 1 && this.asks) for (const n of node.matches('.ask-card') ? [node] : node.querySelectorAll('.ask-card')) { this.asks.delete(n); this.askSeen.unobserve(n) }
+    for (const change of list) for (const node of change.removedNodes) if (node.nodeType === 1) for (const n of node.matches('.ask-card') ? [node] : node.querySelectorAll('.ask-card')) { this.asks.delete(n); this.askSeen.unobserve(n) }
     for (const change of list) for (const node of change.addedNodes) {
       if (node.nodeType !== 1) continue
-      if (this.askSeen) for (const n of node.matches('.ask-card') ? [node] : node.querySelectorAll('.ask-card')) this.askSeen.observe(n)
-      localise(node.matches('time, .day') ? node.parentNode : node)
-      if (this.kept?.size) for (const d of node.querySelectorAll('details[data-keep]')) if (this.kept.has(d.dataset.keep)) d.open = true
-      // What is put in at the log's end (before its end mark) is new; anything else replaces what stood there, or is earlier.
-      if (change.nextSibling?.id?.startsWith?.('log-end-') && node.matches('.msg-agent, .ask, .event')) fresh++
-      else if (change.nextSibling?.id?.startsWith?.('log-end-') && node.matches('.msg-user')) {
-        this.pinned = true; this.unread = 0
-        // The core's echo of what the composer sent: the composer's copy with the same words leaves.
-        if (!node.hasAttribute('data-echo')) {
-          const words = node.querySelector('.bubble')?.textContent ?? ''
-          ;[...log.querySelectorAll('[data-echo]')].find(e => (e.querySelector('.bubble')?.textContent ?? '') === words)?.remove()
-        }
-      }
+      for (const n of node.matches('.ask-card') ? [node] : node.querySelectorAll('.ask-card')) this.askSeen.observe(n)
+      // What is put in at the log's end (before its end mark) is new; his own rows bring the view to the end.
+      if (change.nextSibling?.id?.startsWith?.('log-end-')) { if (node.matches('.msg-user')) { this.pinned = true; this.unread = 0 } else if (node.matches('.msg-agent, .ask, .event')) fresh++ }
     }
-    // (pinned to the end, the reversed column keeps the end in view by itself: nothing is measured now; reading the
-    //  log's height right after the insertion would lay out the whole conversation once more, a long task in a big room)
     if (this.pinned) { this.height = null; this.measureLater() }
     else if (fresh) {
       const grew = this.height == null ? 0 : log.scrollHeight - this.height
@@ -1143,7 +545,6 @@ controller('log', class extends Controller {
     } else { this.height = null; this.measureLater() }
     this.paint()
   }
-  // The log's height, read in the frame after the browser laid it out anyway.
   measureLater() {
     if (this.measuring) return
     this.measuring = true
@@ -1159,11 +560,9 @@ controller('log', class extends Controller {
     this.paintOpen()
   }
   openTargetConnected() { if (this.hasLogTarget) this.paintOpen() }
-
-  // The open questions of the conversation that are out of sight, and which of them comes next.
+  // The open questions of the talk that are out of sight, and which of them comes next.
   paintOpen() {
     if (!this.hasOpenTarget) return
-    // (in the order they stand in the log, as the observer last saw them)
     const away = [...(this.asks ?? [])].filter(([node, r]) => r.away && node.isConnected).map(([node, r]) => ({ node, r }))
       .sort((a, b) => (a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
     const below = away.find(({ r }) => r.below)
@@ -1185,57 +584,22 @@ controller('log', class extends Controller {
 })
 
 // ---- controller "files" ----
-// A session's files drawer (session.mjs filesDrawer): "N files" beside the quiet line
-// opens it, the chip again, Escape, a click beside it or its × close it. The list is
-// a frame: the link that opens it loads it once (data-turbo-frame); later it is kept current by the live stream.
-// "Jump to" scrolls to the message and marks it for a moment when it is on the page; otherwise its link loads the
-// window of the conversation that ends with it.
-
-const PHONE = '(max-width: 860px)'
-
+// A session's files drawer: "Files" in the More menu opens it (/chat/<slug>/files), the × again, Escape or a click
+// beside it close it (back to /chat/<slug>).
 controller('files', class extends Controller {
-  static targets = ['drawer', 'frame']
-
+  static targets = ['drawer']
   get isOpen() { return this.hasDrawerTarget && !this.drawerTarget.hidden }
-
-  toggle(event) {
-    if (this.isOpen) { event.preventDefault(); this.close() } else this.open(event)
-  }
-  open(event) {
-    if (!this.hasDrawerTarget) return
-    event?.target.closest('details')?.removeAttribute('open')
-    // Loaded before: only shown. Otherwise the link goes on and Turbo loads the list into the frame.
-    if (this.frameTarget.childElementCount) event?.preventDefault()
-    this.drawerTarget.hidden = false
-    this.element.setAttribute('data-files-open', '')
-  }
+  toggle(event) { if (this.isOpen) { event.preventDefault(); this.close() } else event?.target.closest('details')?.removeAttribute('open') }
   close(event) {
     event?.preventDefault()
-    if (!this.hasDrawerTarget) return
+    if (!this.isOpen) return
     this.drawerTarget.hidden = true
-    this.element.removeAttribute('data-files-open')
-    // Opened as its own address (/chat/<id>/files): the address becomes the conversation's again.
-    if (/\/files$/.test(location.pathname)) history.replaceState(history.state, '', location.pathname.replace(/\/files$/, '') + location.search)
+    if (/\/files$/.test(location.pathname)) window.Turbo?.visit(location.pathname.replace(/\/files$/, ''), { action: 'replace' })
   }
-  key(event) {
-    if (event.key === 'Escape' && this.isOpen && !event.defaultPrevented) { event.preventDefault(); this.close() }
-  }
+  key(event) { if (event.key === 'Escape' && this.isOpen && !event.defaultPrevented) { event.preventDefault(); this.close() } }
   outside(event) {
     if (!this.isOpen || !event.target.isConnected) return
     if (this.drawerTarget.contains(event.target) || event.target.closest('.desk-move-files, .session-mode')) return
     this.close()
   }
-  jump(event) {
-    const at = document.getElementById(`msg-${event.params.msg}`)
-    if (!at) return   // not on the page: the link loads the window that holds it
-    event.preventDefault()
-    if (matchMedia(PHONE).matches) this.close()
-    at.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
-    at.classList.remove('is-jumped')
-    void at.offsetWidth
-    at.classList.add('is-jumped')
-    clearTimeout(this.unmark)
-    this.unmark = setTimeout(() => at.classList.remove('is-jumped'), 1800)
-  }
-  disconnect() { clearTimeout(this.unmark) }
 })

@@ -17,8 +17,8 @@ const SIZES = [{ name: '1440 wide', width: 1440, height: 900, mobile: false }, {
 
 /** Stars five cards of the room, so both stacks stand (run in the page). */
 const STAR = `(async () => {
-  const cards = [...trommi.model().byCard.values()].filter(c => c.status === 'open').slice(0, 5)
-  for (const c of cards) await trommi.client.star(c.id, true)
+  const cards = trommi.vm().desk.stack.slice(0, 5)
+  for (const id of cards) trommi.act({ do: 'star', card_id: id, on: true })
   await new Promise(r => setTimeout(r, 500))
   return cards.length
 })()`

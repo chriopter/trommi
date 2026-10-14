@@ -17,7 +17,7 @@ test('a page under Settings goes back to Settings; a page under a page goes back
 
 test('every pen icon Settings asks for is drawn (none falls back to an empty picture)', () => {
   const names = [...new Set([...AUTH.matchAll(/\bsk\('([a-z-]+)'/g)].map(m => m[1]))]
-  assert.ok(names.includes('laptop') && names.includes('terminal') && names.includes('lock') && names.includes('db'), names.join())
+  assert.ok(names.includes('laptop') && names.includes('terminal') && names.includes('lock') && names.includes('key'), names.join())
   for (const name of names) assert.match(sketchSvg(name), /<path /, `sk('${name}') draws something`)
 })
 

@@ -12,7 +12,7 @@ test('the lines are one row of chips; a tap on any opens it: its whole text, how
   const src = read('session.mjs')
   assert.match(src, /<div class="status-chips" role="list">/)
   assert.doesNotMatch(src, /<a class="status-chip"/, 'a chip with a card opens too, it does not leave the page at once')
-  assert.match(src, /<button type="button" class="status-chip"[^\n]*data-href="\$\{questionPath\(card, base\)\}"[^\n]*data-action="status-lines#toggle"/)
+  assert.match(src, /<button type="button" class="status-chip"[^\n]*data-href="\$\{cardPath\(l\.card, s, base\)\}"[^\n]*data-action="status-lines#toggle"/)
   assert.match(src, /<div class="status-open" id="status-open-\$\{s\.id\}" hidden><\/div>/)
   assert.match(src, /<p class="status-open-text"><b>\$\{d\.label\}<\/b>\$\{d\.detail \? html`: \$\{d\.detail\}` : ''\}<\/p>/)
   assert.match(src, /<a class="status-open-card" data-nav href="\$\{d\.href\}">Open card/)
@@ -32,21 +32,14 @@ test('the age is short, the words kept for a screen reader', async () => {
   assert.equal(agoShort(now - 4 * 60000, now), '4m')
   assert.equal(agoShort(now - 3 * 3600000, now), '3h')
   const src = read('session.mjs')
-  assert.match(src, /<span class="status-age" aria-hidden="true" data-ts="\$\{t\.updated\}">\$\{agoShort\(t\.updated\)\}<\/span>\$\{agoSpan\(t\.updated, 'offscreen'\)\}/)
+  assert.match(src, /<span class="status-age" aria-hidden="true" data-ts="\$\{l\.updated_ms\}">\$\{agoShort\(l\.updated_ms\)\}<\/span>\$\{agoSpan\(l\.updated_ms, 'offscreen'\)\}/)
 })
 
-test('what still runs shows, a done one for a while, a stale one greyed for a day; gone lines do not', () => {
-  const src = read('session.mjs')
-  assert.match(src, /const shownLines = \(tasks, now = Date\.now\(\)\) => tasks\.filter\(t => \['working', 'decision', 'later'\]\.includes\(t\.state\) \|\| \(t\.state === 'done' && now - \(t\.updated \?\? 0\) < WORKING_WINDOW\) \|\| \(t\.state === 'stale'/)
-  assert.doesNotMatch(src, /'gone'\]\.includes|t\.state === 'gone' &&/)
-})
-
-test('a line nobody updated for two hours is stale: greyed, a still ring, shown for a day', async () => {
+test('a line nobody updated for two hours is stale (the core says which lines show): greyed, a still ring', async () => {
   // (the core decides stale, core/client/src/status.rs line_state)
   assert.match(fs.readFileSync(new URL('../../../core/client/src/status.rs', import.meta.url), 'utf8'), /pub const LINE_STALE_MS: u64 = 2 \* 60 \* 60_000;/)
   const src = read('session.mjs'), css = read('session.css')
-  assert.match(src, /\(t\.state === 'stale' && now - \(t\.updated \?\? 0\) < STALE_SHOWN_MS\)/)
-  assert.match(src, /t\.state === 'stale' \? html`<i class="status-still"/)
+  assert.match(src, /l\.state === 'stale' \? html`<i class="status-still"/)
   assert.match(css, /\.status-chip\[data-state="stale"\] \{ color: var\(--muted\); \}/)
 })
 

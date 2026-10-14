@@ -35,14 +35,9 @@ fn room(v: &Value, section: &str) -> RoomId {
     RoomId::from_slice(&hex(text(v, &[section, "roomId"]))).expect("a room id")
 }
 
-/// The words of the Emergency Kit, as the web app lists them; the module's own list is held to the same text.
+/// The words of the Emergency Kit, in their order.
 fn word_list() -> Vec<&'static str> {
-    include_str!("../../app/web/core/wordlist.ts")
-        .split('`')
-        .nth(1)
-        .expect("the list between its backticks")
-        .split(' ')
-        .collect()
+    trommi_core::account::word_list().to_vec()
 }
 
 /// The recovery code of the vectors.

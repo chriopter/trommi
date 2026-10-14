@@ -7,8 +7,8 @@ import assert from 'node:assert/strict'
 import { topbar } from '../../../app/web/public/sidebar.mjs'
 import { readFileSync } from 'node:fs'
 
-const model = { fresh: [], byAgent: new Map(), state: { desks: [] }, deskName: 'Personal', desk: null, all: false }
-const menu = () => String(topbar(model, '', null)).match(/<nav class="sidedoors" id="brand-doors"[\s\S]*?<\/nav>/)[0]
+const vm = { sidebar: { desks: [{ id: 'main', name: { en: 'Personal' }, waiting: 0, selected: true, knocks: false }], sessions: [], badge: 0, desk: 'main', place: { en: 'Personal' }, waiting: 0, knocking: 0, stopped: 0, working: 0, unheard: 0 }, settings: {}, notes: {} }
+const menu = () => String(topbar(vm, '', false)).match(/<nav class="sidedoors" id="brand-doors"[\s\S]*?<\/nav>/)[0]
 
 test('the menu has Log out, a menu entry to the /logout page', () => {
   const row = menu().match(/<a [^>]*id="menu-logout"[^>]*>[\s\S]*?<\/a>/)?.[0]

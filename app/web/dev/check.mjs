@@ -17,7 +17,7 @@ import { readDemo } from '../../../demo/check.mjs'
 
 const pub = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const VIEWS = ['auth', 'desk', 'card', 'session', 'sidebar', 'notes', 'media', 'agents', 'desks', 'whiteboard', 'proof', 'news']
-const FILES = new Set(['index.html', 'help.html', 'frame.html', 'sw.js', 'manifest.webmanifest', '_headers', 'robots.txt', 'drawings.json', 'apple-app-site-association.json', 'paths.mjs',
+const FILES = new Set(['index.html', 'help.html', 'frame.html', 'sw.js', 'manifest.webmanifest', '_headers', 'robots.txt', 'drawings.json', 'apple-app-site-association.json', 'paths.mjs', 'core.mjs', 'platform.mjs',
   ...['app', 'ui', ...VIEWS].flatMap(v => [`${v}.mjs`, `${v}.css`]).filter(f => f !== 'ui.css'), 'demo/demo.mjs', 'demo/fixture.json', 'demo/screens.css'])
 const FOLDERS = ['gen/', 'fonts/', 'icons/', 'demo/files/', 'changelog/']
 const problems = []

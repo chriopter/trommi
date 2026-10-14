@@ -537,7 +537,7 @@ pub fn generate_user_handle(entropy: &mut dyn Entropy) -> Result<[u8; 32], Error
 }
 
 /// The Emergency Kit's word list: the EFF large word list without its four hyphenated words, so that anything but
-/// a letter separates words. 7772 words, in alphabetical order; the same list as `app/web/core/wordlist.ts`.
+/// a letter separates words. 7772 words, in alphabetical order; every app has it from here.
 /// (EFF large wordlist, CC BY 3.0 US, Electronic Frontier Foundation.)
 const WORD_LIST: &str = "\
     abacus abdomen abdominal abide abiding ability ablaze able abnormal abrasion abrasive abreast abridge \
@@ -1136,7 +1136,8 @@ const WORD_LIST: &str = "\
     yogurt yonder yoyo yummy zap zealous zebra zen zeppelin zero zestfully zesty zigzagged zipfile zipping \
     zippy zips zit zodiac zombie zone zoning zookeeper zoologist zoology zoom";
 
-fn word_list() -> &'static [&'static str] {
+/// The words of the Emergency Kit, in their order.
+pub fn word_list() -> &'static [&'static str] {
     static WORDS: OnceLock<Vec<&'static str>> = OnceLock::new();
     WORDS.get_or_init(|| WORD_LIST.split(' ').collect())
 }
@@ -1419,13 +1420,7 @@ mod tests {
     }
 
     #[test]
-    fn the_word_list_is_the_web_apps() {
-        let source = include_str!("../../../app/web/core/wordlist.ts");
-        let listed = source
-            .split('`')
-            .nth(1)
-            .expect("the list between its backticks");
-        assert_eq!(WORD_LIST, listed);
+    fn the_word_list_is_sorted_and_plain() {
         let list = word_list();
         assert_eq!(list.len(), 7772);
         assert!(list.windows(2).all(|pair| pair[0] < pair[1]), "sorted");

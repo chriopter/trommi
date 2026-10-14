@@ -19,7 +19,7 @@ test('the prompt is plain words with the link in quotes; the slash command carri
 
 test('the invite page shows the prompt as the big line and the slash command as the other way', () => {
   const step = AUTH.slice(AUTH.indexOf('In your project folder, start claude'))
-  const big = step.indexOf("copyLine(connectPrompt(inv.link), 'Copy', 'connect'"), alt = step.indexOf('altLine(connectCommand(inv.link))')
+  const big = step.indexOf("copyLine(connectPrompt(av.link), 'Copy', 'connect'"), alt = step.indexOf('altLine(connectCommand(av.link))')
   assert.ok(big > 0, 'the prompt is the connect line')
   assert.ok(alt > big, 'the slash command comes after it')
   assert.ok(!AUTH.includes("copyLine(connectCommand("), 'the slash command is no big line of its own')

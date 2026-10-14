@@ -99,7 +99,7 @@ async function checkToolchain(repo) {
 // else it runs core/bindings/wasm/build.sh, with this process's environment (CARGO_TARGET_DIR).
 const CORE_SOURCES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'core/protocol/Cargo.toml', 'core/protocol/src', 'core/client/Cargo.toml', 'core/client/src', 'core/bindings/swift/Cargo.toml', 'core/bindings/swift/src', 'core/bindings/wasm/Cargo.toml', 'core/bindings/wasm/build.sh', 'core/bindings/wasm/src', 'core/bindings/wasm/js']
 const CORE_WASM = 'trommi_core_wasm_bg.wasm'
-const CORE_MODULES = ['trommi-core', 'trommi_core_wasm', 'idb-store']   // pkg/<name>.js, in gen/vendor/ as <name>.mjs
+const CORE_MODULES = ['trommi-core', 'trommi_core_wasm', 'idb-store', 'views-fold']   // pkg/<name>.js, in gen/vendor/ as <name>.mjs
 /** An import of the binding (…/core/bindings/wasm/js/<name>.js or …/pkg/<name>.js) as gen/vendor/ has it: './<name>.mjs'. */
 const fromBinding = js => js.replace(/(['"])(?:\.\.\/)+core\/bindings\/wasm\/(?:js|pkg)\/([\w-]+)\.js\1/g, '$1./$2.mjs$1')
 /** The pinned versions: Rust (rust-toolchain.toml) and wasm-bindgen (core/bindings/wasm/Cargo.toml). */
@@ -179,7 +179,7 @@ export const coreFromPkg = (repo = REPO) => ({ name: 'core-from-pkg', setup(b) {
 const NOT_VENDORED = /\.d\.m?ts$/   // declarations
 function vendorFiles(repo, { sourcemap = false } = {}) {
   const core = path.join(repo, 'app', 'web', 'core')
-  if (!['index.mjs', 'index.ts'].some(f => fs.existsSync(path.join(core, f)))) throw new Error(`build: the core is missing (${core}/index.mjs)`)
+  if (!fs.existsSync(path.join(core, 'core-worker.ts'))) throw new Error(`build: the core's worker is missing (${core}/core-worker.ts)`)
   const out = {}
   // A TypeScript module (x.ts) lands as x.mjs, its types erased (dev/ts.mjs), its imports of './y.ts' as './y.mjs'.
   for (const f of fs.readdirSync(core).sort()) {
@@ -308,11 +308,10 @@ async function bundle(pub, vendor, core) {
   const fromVendor = {
     name: 'vendor',
     setup(b) {
-      // (named core/<file>, so the core's chunk is called core-<hash>.mjs, not after its index.mjs)
-      const at = f => ({ path: f === 'index.mjs' ? 'core.mjs' : f, namespace: 'vendor' })
+      const at = f => ({ path: f, namespace: 'vendor' })
       b.onResolve({ filter: /(^|\/)gen\/vendor\/[\w.-]+\.mjs$/ }, a => at(a.path.split('/').pop()))
       b.onResolve({ filter: /^\.\/[\w.-]+\.mjs$/, namespace: 'vendor' }, a => at(a.path.slice(2)))
-      b.onLoad({ filter: /.*/, namespace: 'vendor' }, a => { const f = a.path === 'core.mjs' ? 'index.mjs' : a.path; return f in vendor ? { contents: vendor[f], loader: 'js' } : { errors: [{ text: `gen/vendor/${f} is not in the core` }] } })
+      b.onLoad({ filter: /.*/, namespace: 'vendor' }, a => { const f = a.path; return f in vendor ? { contents: vendor[f], loader: 'js' } : { errors: [{ text: `gen/vendor/${f} is not in the core` }] } })
     },
   }
   const rel = o => path.relative(pub, path.resolve(REPO, o)).split(path.sep).join('/')   // (metafile paths are relative to absWorkingDir)
@@ -321,19 +320,9 @@ async function bundle(pub, vendor, core) {
   const out = { ...core.files }
   // The core's worker (core/core-worker.ts): one file of its own, the whole core in it. The app learns its address
   // from __TROMMI_CORE_WORKER__ (without it, as on the dev server, it starts /gen/vendor/core-worker.mjs).
-  // What only the account screens need (the key derivation, the word list, founding and joining) is a file of its own,
-  // which the worker imports when one asks (core-worker-account-<hash>.mjs, with its own copy of the core it uses), so
-  // the worker of a stored room is one file and one round trip.
-  const acc = await esbuild.build({ absWorkingDir: REPO,   // (the same names and bytes from any directory: verify.mjs)
-    entryPoints: [{ in: 'gen/vendor/account.mjs', out: 'core-worker-account' }], bundle: true, format: 'esm', minify: true, write: false,
-    outdir: path.join(pub, 'gen', 'app'), entryNames: '[name]-[hash]', outExtension: { '.js': '.mjs' }, target: ['es2022'], logLevel: 'silent', plugins: [fromVendor], define: core.define,
-  })
-  const accountFile = rel(acc.outputFiles[0].path)
-  out[accountFile] = acc.outputFiles[0].text
-  const accountExternal = { name: 'account-external', setup(b) { b.onResolve({ filter: /^\.\/account\.mjs$/, namespace: 'vendor' }, a => (a.importer === 'core-worker.mjs' ? { path: `./${path.posix.basename(accountFile)}`, external: true } : undefined)) } }
   const w = await esbuild.build({ absWorkingDir: REPO,   // (the same names and bytes from any directory: verify.mjs)
     entryPoints: [{ in: 'gen/vendor/core-worker.mjs', out: 'core-worker' }], bundle: true, format: 'esm', minify: true, write: false, metafile: true,
-    outdir: path.join(pub, 'gen', 'app'), entryNames: '[name]-[hash]', outExtension: { '.js': '.mjs' }, target: ['es2022'], logLevel: 'silent', plugins: [accountExternal, fromVendor], define: core.define,
+    outdir: path.join(pub, 'gen', 'app'), entryNames: '[name]-[hash]', outExtension: { '.js': '.mjs' }, target: ['es2022'], logLevel: 'silent', plugins: [fromVendor], define: core.define,
   })
   if (w.outputFiles.length !== 1) throw new Error('build: the core worker is not one file')
   const worker = rel(w.outputFiles[0].path)
@@ -368,13 +357,10 @@ async function bundle(pub, vendor, core) {
   for (const f of r.outputFiles) out[rel(f.path)] = f.text
   const outputs = Object.entries(r.metafile.outputs)
   const entry = outputs.find(([, o]) => /(^|\/)app\.mjs$/.test(o.entryPoint ?? ''))?.[0]
-  const coreOut = outputs.find(([, o]) => o.entryPoint === 'vendor:core.mjs')?.[0]
-  const remoteOut = outputs.find(([, o]) => o.entryPoint === 'vendor:remote.mjs')?.[0]
-  if (!entry || !coreOut || !remoteOut) throw new Error('build: the bundle has no app.mjs, no core or no remote.mjs')
-  // What a cold start fetches: the entry, the page's side of the core worker (remote.mjs: boot opens the room through
-  // it at once) and every chunk they import statically (one round trip with modulepreload). The core itself runs in
-  // the worker; the page loads its chunk only when it needs it (the account screens, the demo, a page without workers).
-  const first = new Set(), queue = [entry, remoteOut]
+  if (!entry) throw new Error('build: the bundle has no app.mjs')
+  // What a cold start fetches: the entry and every chunk it imports statically (one round trip with modulepreload).
+  // The core itself runs in its worker (core/core-worker.ts).
+  const first = new Set(), queue = [entry]
   while (queue.length) { const o = queue.shift(); if (first.has(o)) continue; first.add(o); for (const i of r.metafile.outputs[o].imports) if (i.kind === 'import-statement') queue.push(i.path) }
   return { out, entry: rel(entry), first: [...first].map(rel), worker, start, workerLoadsCore }
 }
@@ -422,7 +408,7 @@ export async function generate({ pub = PUBLIC, repo = REPO, bundle: bundled = tr
     modules = js.first.map(f => `/${f}`)
   } else {
     const read = f => { const rel = f.replace(/^\//, ''); return rel in out ? out[rel] : fs.existsSync(path.join(pub, rel)) ? fs.readFileSync(path.join(pub, rel), 'utf8') : null }
-    modules = preloads(read, ['/app.mjs', '/gen/vendor/index.mjs'])
+    modules = preloads(read, ['/app.mjs'])
   }
   const block = [`<!-- preload ${version} -->`, ...modules.map(f => `<link rel="modulepreload" href="${f}">`), '<!-- /preload -->'].join('\n')
   out['index.html'] = html.replace(/<!-- preload[^>]*-->[\s\S]*?<!-- \/preload -->/, block).replace('data-build="dev"', `data-build="${version}"`)

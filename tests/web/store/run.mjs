@@ -1,5 +1,5 @@
-// run.mjs: the tests of the web app's storage (app/web/core/store-idb.ts over the binding's IdbStore) and of one owner
-// per browser profile (app/web/core/tabs.ts). They need IndexedDB, Web Locks, BroadcastChannel and WebCrypto, so they
+// run.mjs: the tests of the web app's storage (app/web/core/store-idb.ts over the binding's IdbStore). They need
+// IndexedDB, Web Locks and WebCrypto, so they
 // run in headless Chromium: this file bundles the test page (page.ts) with esbuild, serves it and the core's WASM
 // build from 127.0.0.1, drives Chromium over the DevTools protocol (app/web/dev/cdp.mjs) and prints one line per test.
 //
@@ -155,76 +155,6 @@ try {
   await page.close()
 
   // ---- real tabs of one profile ----
-  await test('tabs: two tabs: one owner; it closes: the follower takes over and loads the stored state; a call the old owner ran but never answered is refused as outcome-unknown and NOT run again', async () => {
-    const name = `tabs-${stamp}`
-    const a = await openTab('tab a'), b = await openTab('tab b')
-    same([await a.step('tabOpen', name, 'fake', true), await b.step('tabOpen', name, 'fake', true)], ['leader', 'follower'], 'roles')
-    same(await b.step('tabCall', 'seal', ['one']), 'ONE', 'a forwarded call')
-    await a.step('tabCall', 'poke', ['only in memory'])
-    await until(async () => (await b.step('tabState')).stack.length === 2, 'the patch at the follower')
-    same((await b.step('tabState')).stack, ['one', 'only in memory'], 'the follower\'s copy')
-    await b.step('callStart', 'hang', 'sealAndHang', ['two'])
-    await until(async () => (await a.step('tabState')).revision === 2, 'the owner\'s durable write')
-    same((await b.step('callState', 'hang')).done, false, 'the call is still waiting')
-    await a.close()
-    await until(async () => (await b.step('tabState')).role === 'leader', 'the takeover')
-    const call = await until(async () => { const c = await b.step('callState', 'hang'); return c.done && c }, 'the waiting call\'s answer')
-    same(call, { done: true, error: 'outcome-unknown' }, 'the call in flight')
-    const s = await b.step('tabState')
-    same([s.stack, s.revision, s.resets, s.ran], [['one', 'two'], 2, 1, {}], 'the new owner: the stored state, nothing run again')
-    await b.close()
-  })
-
-  await test('tabs: the limit without receipts, shown: the same call runs a second time after the owner changed', async () => {
-    const name = `twice-${stamp}`
-    const a = await openTab('tab a'), b = await openTab('tab b')
-    same([await a.step('tabOpen', name, 'fake', false), await b.step('tabOpen', name, 'fake', false)], ['leader', 'follower'], 'roles')
-    await b.step('callStart', 'hang', 'sealAndHang', ['dup'])
-    await until(async () => (await a.step('tabState')).revision === 1, 'the owner\'s durable write')
-    await a.close()
-    const s = await until(async () => { const x = await b.step('tabState'); return x.role === 'leader' && x.revision === 2 && x }, 'the second run')
-    same([s.stack, s.ran], [['dup', 'dup'], { sealAndHang: 1 }], 'sealed twice')
-    await b.close()
-  })
-
-  await test('tabs: three tabs: exactly one owner whenever a takeover has settled, also after two owners in a row closed', async () => {
-    const name = `three-${stamp}`
-    const tabs = [await openTab('tab 1'), await openTab('tab 2'), await openTab('tab 3')]
-    const roles = await Promise.all(tabs.map(t => t.step('tabOpen', name, 'fake', true)))
-    same(roles.filter(r => r === 'leader').length, 1, `roles ${roles}`)
-    await tabs[roles.indexOf('follower')].step('tabCall', 'seal', ['kept'])
-    let left = tabs.map((t, i) => ({ t, role: roles[i] }))
-    for (let round = 0; round < 2; round++) {
-      const owner = left.find(x => x.role === 'leader')
-      await owner.t.close()
-      left = left.filter(x => x !== owner)
-      await until(async () => {
-        for (const x of left) x.role = (await x.t.step('tabState')).role
-        return left.filter(x => x.role === 'leader').length === 1
-      }, `one new owner in round ${round + 1}`)
-      await sleep(300)
-      for (const x of left) x.role = (await x.t.step('tabState')).role
-      same(left.filter(x => x.role === 'leader').length, 1, 'owners after the takeover settled')
-      for (const x of left) same((await until(async () => { const s = await x.t.step('tabState'); return s.stack.length === 1 && s }, 'the model after the takeover')).stack, ['kept'], 'the stored state in every tab')
-    }
-    await left[0].t.close()
-  })
-
-  await test('tabs (real core): the owner creates a Device and founds a room, the follower mirrors it; the owner closes: the follower opens the SAME device and room from what is stored', async () => {
-    const name = `real-${stamp}`
-    const a = await openTab('tab a'), b = await openTab('tab b')
-    same([await a.step('tabOpen', name, 'real', false), await b.step('tabOpen', name, 'real', false)], ['leader', 'follower'], 'roles')
-    const room = await b.step('tabCall', 'foundRoom', [])   // (forwarded: it runs in the owner's Device)
-    const owner = await a.step('tabState')
-    if (!/^[0-9a-f]{64}$/.test(room) || owner.room !== room || !owner.stack.length) throw new Error(`the owner after founding: ${JSON.stringify(owner)}`)
-    const copy = await until(async () => { const s = await b.step('tabState'); return s.room === room && s }, 'the follower\'s copy')
-    same([copy.device, copy.stack], [owner.device, owner.stack], 'the follower\'s copy of device and outbox')
-    await a.close()
-    const next = await until(async () => { const s = await b.step('tabState'); return s.role === 'leader' && s }, 'the takeover')
-    same([next.device, next.room, next.stack, next.errors], [owner.device, room, owner.stack, []], 'the device the new owner opened')
-    await b.close()
-    return `core ${versions.core}, binding ${versions.binding}`
-  })
 } catch (e) {
   report(false, 'the run itself', String(e?.stack ?? e))
 } finally {
@@ -233,5 +163,5 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true })
 }
 for (const p of problems) { failed++; console.log(`FAIL an exception in a page: ${p}`) }
-console.log(`${passed} passed, ${failed} failed (the client in the tabs is the fake of tests/web/store/fake-client.ts: no engine, no hub)`)
+console.log(`${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

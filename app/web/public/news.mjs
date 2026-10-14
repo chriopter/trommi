@@ -36,7 +36,7 @@ const day = (d, i) => html`<article class="news-day${d.picture ? ' has-pic' : ''
 const newsMain = () => settingsPage(TITLE, html`<div class="news" data-controller="news"><p class="news-build" id="news-build">${runningLine()}</p>${DAYS.length ? DAYS.map(day) : html`<p class="set-note">Nothing written down yet.</p>`}</div>`, { back: false, lead: 'What changed in Trommi, newest first.' })
 
 export function register(t) {
-  t.get(/^\/whats-new$/, ({ req, res }) => t.page(req, res, { title: `${TITLE} · Trommi`, view: 'whats-new', css: 'room', main: newsMain() }))
+  t.get(/^\/whats-new$/, ({ req, res }) => t.page(req, res, { title: `${TITLE} · Trommi`, view: 'whats-new', main: newsMain() }))
 }
 
 // The page seen: the newest day is remembered on this device, and the menu's dot goes at once.

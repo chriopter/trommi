@@ -7,10 +7,12 @@ import fs from 'node:fs'
 import { goalsWords } from '../../../app/web/public/desk.mjs'
 
 const read = f => fs.readFileSync(new URL(`../../../${f}`, import.meta.url), 'utf8')
-const lines = n => Array.from({ length: n }, (_, i) => `goal ${i + 1}`).join('\n')
+/** A GoalsView of n lines, as the core makes it (views.d.ts). */
+const goals = n => ({ desk_id: 'main', lines: Array.from({ length: n }, (_, i) => `goal ${i + 1}`), foldable: n > 1, folded: false,
+  ...(n > 1 ? { show_all: { key: 'desk.goals.show_all', en: `Show all ${n} goals` }, toggle: { key: 'desk.goals.fold', en: 'Show the first goal only' } } : {}) })
 
 test('open: every line and one chevron; no "Hide goals", no "+N more"', () => {
-  const out = String(goalsWords(lines(12)))
+  const out = String(goalsWords(goals(12)))
   assert.equal(out.match(/class="dg-line"/g).length, 12, 'all twelve lines are drawn')
   assert.equal(out.match(/class="desk-goals-toggle"/g).length, 1, 'one toggle')
   assert.match(out, /data-action="goals#toggle" aria-expanded="true"/)
@@ -18,7 +20,7 @@ test('open: every line and one chevron; no "Hide goals", no "+N more"', () => {
 })
 
 test('folded: the toggle says so; the CSS shows the first line alone', () => {
-  const out = String(goalsWords(lines(3), true))
+  const out = String(goalsWords(goals(3), true))
   assert.match(out, /aria-expanded="false" aria-label="Show all 3 goals"/)
   const css = read('app/web/public/desk.css')
   assert.match(css, /\.desk-goals\.is-folded \.dg-line:nth-child\(n\+2\) \{ display: none; \}/)
@@ -26,8 +28,8 @@ test('folded: the toggle says so; the CSS shows the first line alone', () => {
 })
 
 test('one line or none: nothing to fold, no toggle', () => {
-  assert.doesNotMatch(String(goalsWords('only one')), /desk-goals-toggle/)
-  assert.doesNotMatch(String(goalsWords('')), /desk-goals-toggle/)
+  assert.doesNotMatch(String(goalsWords(goals(1))), /desk-goals-toggle/)
+  assert.doesNotMatch(String(goalsWords(goals(0))), /desk-goals-toggle/)
 })
 
 test('the iPhone: one chevron, folded the first line (goalsFold), no "Hide goals"', () => {

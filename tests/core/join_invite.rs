@@ -1684,24 +1684,6 @@ fn a_check_code_is_six_numbers_below_64() {
     );
 }
 
-#[test]
-fn the_emoji_are_those_of_the_web_app_in_its_order() {
-    let source = include_str!("../../app/web/core/check-emoji.ts");
-    let table = source
-        .split("Object.freeze([")
-        .nth(1)
-        .and_then(|rest| rest.split("].map(").next())
-        .expect("the table");
-    // Each entry is ['<emoji>', '<word>'].
-    let quoted: Vec<&str> = table.split('\'').skip(1).step_by(2).collect();
-    let entries: Vec<(&str, &str)> = quoted.chunks(2).map(|pair| (pair[0], pair[1])).collect();
-    assert_eq!(entries.len(), 64);
-    assert_eq!(CHECK_EMOJI.as_slice(), entries.as_slice());
-
-    let distinct: std::collections::BTreeSet<&str> =
-        CHECK_EMOJI.iter().map(|(emoji, _)| *emoji).collect();
-    assert_eq!(distinct.len(), 64);
-}
 
 #[test]
 fn the_vectors_read_back() {

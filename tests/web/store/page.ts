@@ -1,17 +1,15 @@
-// page.ts: the test page of the web app's storage (store-idb.ts) and of one owner per profile (tabs.ts), bundled by
+// page.ts: the test page of the web app's storage (store-idb.ts), bundled by
 // run.mjs and loaded into headless Chromium. What needs one page only runs here in one go (`T.single()`); what needs
 // several tabs, a quota or a reload is cut into steps that run.mjs calls over the DevTools protocol.
 //
 // Real here: IndexedDB, Web Locks, BroadcastChannel and WebCrypto of the browser; the binding's IdbStore; and, in the
 // tests named "core:", the Rust core's Device from the WASM build run.mjs serves under /pkg/. NOT real: the client.
-// The tabs run the fakes of fake-client.ts; there is no engine and no hub.
 import { deleteStores, dropIfEmpty, openCache, openDeviceStore } from '../../../app/web/core/store-idb.ts'
 import type { Cache, DeviceStore, IdbStoreClass } from '../../../app/web/core/store-idb.ts'
-import { adoptInTabs, callKey, forgetCalls, openRoomInTabs } from '../../../app/web/core/tabs.ts'
-import type { CallReceipt, ClientLike, TabClient } from '../../../app/web/core/tabs.ts'
 import type { StoredState, StoreEntry, StoreWrite } from '../../../app/web/core/core-api.ts'
 import type * as Binding from '../../../core/bindings/wasm/js/trommi-core.js'
-import { hex, keyOf, openFake, openReal } from './fake-client.ts'
+const hex = (b: Uint8Array): string => Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+const keyOf = (n: number): Uint8Array => new Uint8Array([n >>> 24, n >>> 16, n >>> 8, n])
 import type { FakeClient } from './fake-client.ts'
 
 interface Result { name: string; ok: boolean; detail: string }
@@ -78,17 +76,6 @@ const lockHeld = async (name: string) => (await navigator.locks.query()).held?.s
 /** The lock is free NOW: whatever closed before has resolved only once the browser let it go. */
 const freed = async (name: string) => same(await lockHeld(name), false, 'the lock')
 const databases = async (name: string) => (await indexedDB.databases()).map(d => d.name).filter(n => n?.startsWith(name)).sort()
-
-/** The options of a tab over the fake client. `Channel: null` is a browser without BroadcastChannel. */
-function fakeTab(name: string, more: { cache?: Cache; Channel?: typeof BroadcastChannel | null; count?: { opens: number } } = {}) {
-  return {
-    name,
-    store: (wait: boolean) => deviceStore(name, wait),
-    open: async (store: DeviceStore, stored: StoredState): Promise<ClientLike | null> => { if (more.count) more.count.opens++; return openFake(name, store, stored, { create: true }) },
-    ...(more.cache ? { cache: more.cache } : {}),
-    ...(more.Channel !== undefined ? { Channel: more.Channel } : {}),
-  }
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // One page
@@ -349,158 +336,6 @@ const tests: [string, () => Promise<void>][] = [
     same(room.length, 32, 'and it goes on')
     await again.close()
   }],
-
-  ['tabs: forgetCalls deletes only the receipts older than a day', async () => {
-    const cache = await openCache(fresh('forget'))
-    const old = `${(Date.now() - 3 * 86_400_000).toString(36).padStart(9, '0')}-aa`, recent = `${Date.now().toString(36).padStart(9, '0')}-bb`
-    await cache.setMany([[callKey(old), { started: 1 }], [callKey(recent), { started: 2 }], ['other', 3]])
-    await forgetCalls(cache)
-    same((await cache.range('')).map(([k]) => k), [callKey(recent), 'other'], 'what stays')
-    cache.close()
-  }],
-  ['tabs: nothing stored: openRoomInTabs gives null and leaves the lock free', async () => {
-    const name = fresh('none')
-    same(await openRoomInTabs({ name, store: wait => deviceStore(name, wait), open: async (store, stored) => openFake(name, store, stored) }), null, 'no device')
-    await freed(name)
-  }],
-  ['tabs: two in one profile: one owner, the follower gets the snapshot, the patches and the events, and its calls run in the owner', async () => {
-    const name = fresh('two')
-    const count = { opens: 0 }
-    const a = (await openRoomInTabs(fakeTab(name, { count })))!
-    await a.call('seal', ['before'])
-    const b = (await openRoomInTabs(fakeTab(name, { count })))!
-    same([a.tabRole, b.tabRole, count.opens, b.client], ['leader', 'follower', 1, null], 'roles')
-    check(b.model !== a.model, 'the follower holds the owner\'s own model object')
-    same([b.model.stack, b.model.room.last_envelope_number, b.model.room.room_id], [['before'], 1, name], 'the snapshot')
-    const changes: unknown[] = [], alerts: unknown[] = []
-    b.on('change', (c: { stack: boolean; room: boolean }) => changes.push([c.stack, c.room, [...b.model.stack]]))
-    b.on('alert', (x: unknown) => alerts.push(x))
-    await a.call('poke', ['by the owner'])
-    same(await b.call('seal', ['by the follower']), 'BY THE FOLLOWER', 'the forwarded call\'s answer')
-    await a.call('alert', ['look'])
-    await until(() => alerts.length === 1 && changes.length === 2, 'the patches at the follower')
-    same(changes, [[true, true, ['before', 'by the owner']], [true, true, ['before', 'by the owner', 'by the follower']]], 'the follower\'s change events')
-    same([alerts, b.model.room.last_envelope_number], [[{ what: 'look' }], 2], 'event and revision')
-    same((a.client as FakeClient).ran, { seal: 2, poke: 1 }, 'what ran in the owner')
-    // two calls at once keep their order and both their writes
-    same(await Promise.all([b.call('seal', ['x']), b.call('seal', ['y'])]), ['X', 'Y'], 'two forwarded calls at once')
-    // structured values travel both ways; a refusal arrives as the same error; a result that cannot travel is a refusal, once
-    same(await b.call('echo', [{ bytes: new Uint8Array([1, 2, 3]), map: new Map([[1, 'x']]) }]).then((v: any) => [v.bytes.length, v.map.get(1)]), [3, 'x'], 'echo')
-    const e = await refused(() => b.call('fail'), 'a refused call') as { code?: string; status?: number; message: string }
-    same([e.code, e.status, e.message], ['fake-refusal', 418, 'the fake refuses'], 'the refusal')
-    same((await refused(() => b.call('nothing-there'), 'an unknown call')).code, 'bad-argument', 'unknown call')
-    same((await refused(() => b.call('uncloneable'), 'a result that cannot be cloned')).name, 'DataCloneError', 'uncloneable result')
-    same((a.client as FakeClient).ran['uncloneable'], 1, 'it ran once')
-    // a device being made while another tab owns the store is refused
-    same((await refused(() => adoptInTabs({ name, store: wait => deviceStore(name, wait), make: async (store, stored) => openFake(name, store, stored, { create: true })! }), 'adopting an owned store')).code, 'owned-elsewhere', 'adopt')
-    await b.close(); await a.close()
-    const c = await opened(name)
-    same(c.entries.map(e => text.decode(e.value)).sort(), ['before', 'by the follower', 'x', 'y'], 'stored, each once')
-    await c.store.close()
-  }],
-  ['tabs: a forwarded call that is sent again (no answer for 2.5 s) runs once and is answered once', async () => {
-    const name = fresh('retry')
-    const a = (await openRoomInTabs(fakeTab(name)))!, b = (await openRoomInTabs(fakeTab(name)))!
-    let sent = 0
-    const spy = new BroadcastChannel(`trommi-tabs:${name}`)
-    spy.onmessage = ({ data }) => { if (data?.t === 'call') sent++ }
-    let answers = 0
-    const value = await b.call('slow', [3200]).then(v => { answers++; return v })
-    await sleep(300)
-    spy.close()
-    check(sent >= 2, `the call was sent ${sent} time(s): the test did not exercise a retry`)
-    same([value, (a.client as FakeClient).ran['slow'], answers], [1, 1, 1], 'ran once, answered once')
-    await b.close(); await a.close()
-  }],
-  ['tabs: the owner leaves: the follower takes over from what is stored, announces a reset, and its waiting call runs', async () => {
-    const name = fresh('leave')
-    const a = (await openRoomInTabs(fakeTab(name)))!, b = (await openRoomInTabs(fakeTab(name)))!
-    await b.call('seal', ['one'])
-    await a.call('poke', ['not stored'])
-    await until(() => b.model.stack.length === 2, 'the patch')
-    let resets = 0
-    b.on('reset', () => resets++)
-    await b.call('start', [{ kept: true }])   // (a follower's start is kept for the takeover, not forwarded)
-    const waiting = b.call('seal', ['two'])
-    await a.close()                            // (closed before the call's message is delivered: the owner never saw it)
-    same(await waiting, 'TWO', 'the call that waited through the change')
-    check(b.tabRole === 'leader' && resets === 1 && b.client !== null, `role ${b.tabRole}, resets ${resets}`)
-    same(b.model.stack, ['one', 'two'], 'the new owner\'s model: what is stored, and the call')
-    await b.close()
-    await freed(name)
-  }],
-  ['tabs: receipts: a call the old owner finished but whose answer was lost is answered from its receipt; one it only started is refused as outcome-unknown; neither runs twice', async () => {
-    const name = fresh('receipts')
-    const cache = await openCache(name)
-    // an owner whose answers never arrive
-    class Mute extends BroadcastChannel { override postMessage(m: { t?: string }) { if (m?.t !== 'result') super.postMessage(m) } }
-    const a = (await openRoomInTabs(fakeTab(name, { cache, Channel: Mute })))!, b = (await openRoomInTabs(fakeTab(name, { cache })))!
-    const finished = b.call('seal', ['finished']), started = b.call('sealAndHang', ['started'])
-    started.catch(() => {})
-    await until(async () => (await cache.range('call/')).filter(([, r]) => (r as CallReceipt).outcome).length === 1 && a.model.stack.length === 2, 'the owner ran both')
-    same((await cache.range('call/')).map(([, r]) => (r as CallReceipt).outcome?.ok ?? null).sort(), [null, true], 'the receipts: one only started, one with its outcome')
-    await a.close()
-    same(await finished, 'FINISHED', 'answered from the receipt')
-    same((await refused(() => started, 'the call that was only started')).code, 'outcome-unknown', 'the started call')
-    same([b.tabRole, b.model.stack, (b.client as FakeClient).ran], ['leader', ['finished', 'started'], {}], 'the new owner: both stored once, nothing run again')
-    await until(async () => (await cache.range('call/')).length === 0, 'the receipts to be dropped once answered')
-    // a call id older than a day is refused, not run
-    const spy = new BroadcastChannel(`trommi-tabs:${name}`)
-    const outcome = new Promise<{ ok: boolean; error?: { code?: string } }>(resolve => { spy.onmessage = ({ data }) => { if (data?.t === 'result' && data.to === 'spy') resolve(data.outcome) } })
-    spy.postMessage({ t: 'call', id: `${(Date.now() - 2 * 86_400_000).toString(36).padStart(9, '0')}-old`, from: 'spy', method: 'seal', args: ['too late'] })
-    same([(await outcome).error?.code, b.model.stack.length], ['expired', 2], 'an expired call')
-    spy.close()
-    await b.close()
-    cache.close()
-  }],
-  ['tabs: stop on the owner is leaving: it frees the lock, the follower takes over, and there are never two owners', async () => {
-    const name = fresh('stop')
-    const a = (await openRoomInTabs(fakeTab(name)))!, b = (await openRoomInTabs(fakeTab(name)))!
-    await a.call('seal', ['kept'])
-    await a.call('stop')
-    same([a.tabRole, a.client, (await refused(() => a.call('seal', ['late']), 'a call after stop')).code], ['follower', null, 'closed'], 'the stopped tab')
-    await until(() => b.tabRole === 'leader', 'the takeover')
-    same(b.model.stack, ['kept'], 'the new owner\'s model')
-    same(await b.call('seal', ['next']), 'NEXT', 'and it works')
-    await b.close()
-  }],
-  ['tabs: close() while the client is still being opened gives the lock back', async () => {
-    const name = fresh('opening')
-    let reached = () => {}
-    const atOpen = new Promise<void>(r => { reached = r })
-    const a = (await openRoomInTabs(fakeTab(name)))!
-    const b = (await openRoomInTabs({ ...fakeTab(name), open: async (store, stored) => { reached(); await sleep(1500); return openFake(name, store, stored, { create: true }) } }))!
-    await a.close()        // b is granted the lock and starts to open its client, slowly
-    await atOpen
-    await b.close()
-    await freed(name)      // (well before the slow open() returns)
-    const c = (await openRoomInTabs(fakeTab(name)))!
-    same(c.tabRole, 'leader', 'the next tab')
-    await c.close()
-  }],
-  ['tabs: the client says its Device closed: the tab drops it and stands in line for the lock again', async () => {
-    const name = fresh('lost')
-    const a = (await openRoomInTabs(fakeTab(name)))!
-    await a.call('seal', ['mine'])
-    const first = a.client
-    let resets = 0
-    a.on('reset', () => resets++)
-    await a.call('deviceClosed')
-    same([a.tabRole, a.client, a.model.stack], ['follower', null, ['mine']], 'at once: no owner, the last model still shown')
-    // (its client closed the store, so here the lock is free and this same tab is the next in line)
-    await until(() => a.tabRole === 'leader' && a.client !== first && a.client !== null, 'leading again with a new client')
-    same([resets, a.model.stack], [1, ['mine']], 'a reset, and the model from what is stored')
-    same(await a.call('seal', ['on']), 'ON', 'and it works')
-    await a.close()
-  }],
-  ['tabs: without BroadcastChannel: the first tab owns and works, a second is refused (owned-elsewhere), never a second owner', async () => {
-    const name = fresh('alone')
-    const count = { opens: 0 }
-    const a = (await openRoomInTabs(fakeTab(name, { Channel: null, count })))!
-    same([a.tabRole, await a.call('seal', ['alone'])], ['leader', 'ALONE'], 'the first tab')
-    same([(await refused(() => openRoomInTabs(fakeTab(name, { Channel: null, count })), 'a second tab')).code, count.opens], ['owned-elsewhere', 1], 'the second tab')
-    await a.close()
-  }],
 ]
 
 async function single(): Promise<Result[]> {
@@ -516,45 +351,13 @@ async function single(): Promise<Result[]> {
 // ---------------------------------------------------------------------------------------------------------------------
 // Steps run.mjs drives
 
-let tab: TabClient | null = null
 let store: DeviceStore | null = null
-const seen = { resets: 0, changes: 0, errors: [] as string[] }
-const calls = new Map<string, { done: boolean; value?: unknown; error?: string }>()
 
 const steps = {
   single,
   versions: () => core.versions(),
   /** When this document was loaded: another number after a reload. */
   born: () => performance.timeOrigin,
-
-  // ---- real tabs
-  /** kind 'fake': the fake client, with receipts in the cache if `receipts`; 'real': the real core's Device. */
-  async tabOpen(name: string, kind: 'fake' | 'real', receipts: boolean) {
-    const cache = receipts ? await openCache(name) : null
-    tab = await openRoomInTabs({
-      name,
-      store: wait => deviceStore(name, wait),
-      open: async (s, stored) => (kind === 'real' ? openReal(core, name, s, stored) : openFake(name, s, stored, { create: true })),
-      ...(cache ? { cache } : {}),
-    })
-    tab!.on('reset', () => seen.resets++)
-    tab!.on('change', () => seen.changes++)
-    tab!.on('error', (e: { code?: string }) => seen.errors.push(String(e?.code)))
-    return tab!.tabRole
-  },
-  tabState() {
-    const room = tab!.model.room
-    return { role: tab!.tabRole, stack: tab!.model.stack, revision: room.last_envelope_number, room: room.room_id, device: room.my_device_id, ...seen, ran: (tab!.client as FakeClient | null)?.ran ?? null }
-  },
-  tabCall(method: string, args: unknown[]) { return tab!.call(method, args) },
-  /** Starts a call and returns at once; `callState(key)` says how it ended. */
-  callStart(key: string, method: string, args: unknown[]) {
-    const state: { done: boolean; value?: unknown; error?: string } = { done: false }
-    calls.set(key, state)
-    tab!.call(method, args).then(v => { state.done = true; state.value = v }, e => { state.done = true; state.error = String(e?.code ?? e?.message) })
-    return null
-  },
-  callState(key: string) { return calls.get(key) ?? null },
 
   // ---- a write that fails for a real reason: the origin's quota (run.mjs sets it before the first step)
   async quotaBefore(name: string) {

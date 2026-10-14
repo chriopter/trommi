@@ -1,42 +1,135 @@
-// The Whiteboard: a place of its own in the sidebar, under the Desk's header.
-// The Desk is cards on plain paper; the drawing lives here.
+// The Scribble Board: the page /scribble-board, and the pad the Desk keeps under its turned corner (app.mjs bodyParts:
+// whiteboardMain(vm), part "pad").
 //
 //   register(t)           the page /scribble-board: the pad as large as the main area
 //
-// What is on it is the board of the desk in view (boardOf: one board per desk, and one for "All desks", the core's
-// scribble.ts deskBoard and ALL_BOARD). On "All desks" every desk's board stands at the left as a small card with a
-// live thumbnail (whiteboardDesks, controller "whiteboard" thumbs); a click opens that desk's board. The pad runs on
-// the page itself (mountPad, controller "whiteboard"); its elements live in that canvas
-// timeline, end-to-end encrypted (openCanvas, the wire format is the core's scribble.mjs).
-import { Controller, controller, html, isTyping, letterKeysOn, markArt, raw, sk, sayError } from './ui.mjs'
-import { SCRIBBLE_FILE, addressOf, attachmentBlob, scribbleWire } from './app.mjs'
-// The core's stroke format, shape and palette (scribble.mjs with ink.mjs and palette.mjs), loaded with this view.
-/** The core's scribble.mjs as this view loaded it. */
-const wire = await scribbleWire()
-const { PEN_COLORS, MARKER_COLORS, MARKER_OPACITY, colorOf, anglesOfTilt, forceFromSpeed, packPoints, sampleStroke, deskBoard, ALL_BOARD } = wire
-/** The board the page shows: All desks' own, else the board of the desk in view (a room without desks: 'main'). */
-export const boardOf = model => (model.all ? ALL_BOARD : deskBoard(model.desk))
+// It draws the board the core has in view (vm.board, BoardView: shapes in board units, others' strokes still drawn,
+// this device's items not back yet) and sends what the person does: Action::BoardItem (strokes, erase, send_away,
+// move), Action::StrokePiece (a stroke while it is drawn), t.attach (a picture's bytes). On "All desks" every desk
+// stands at the left as a small card (whiteboardDesks); a click opens that desk's board. The pad runs on the page
+// itself (mountPad, controller "whiteboard"); linkBoard ties its element records to the view model.
+import { Controller, controller, html, isTyping, letterKeysOn, markArt, raw, sk, sayError, whoOf } from './ui.mjs'
 
-/** The boards beside the one in view. On "All desks": a card per desk (its drawing and name, a thumbnail of its board
- *  and how much is on it, both filled in by the controller). On a desk: the quiet way back to All desks. A room with
- *  one desk or none has one board and nothing here. */
-function whiteboardDesks(model) {
-  const desks = model.desks ?? []
-  if (desks.length < 2) return html`<nav id="whiteboard-desks" hidden></nav>`
-  if (!model.all) return html`<nav class="board-desks is-desk" id="whiteboard-desks" aria-label="Scribble Boards"><a class="board-back" data-nav href="/scribble-board?desk=all" data-tip="All desks">${sk('back')}<span>All desks</span></a><b class="board-here">${sk('desk')}<span>${model.deskName}</span></b></nav>`
-  return html`<nav class="board-desks" id="whiteboard-desks" aria-label="The desks' Scribble Boards">${desks.map(d => html`<a class="board-card" data-nav href="/scribble-board?desk=${d.id}" data-board="${deskBoard(d.id)}" aria-label="${d.name}: open its Scribble Board"><canvas class="board-card-thumb" width="264" height="156" aria-hidden="true"></canvas><span class="board-card-name">${sk('desk')}<b>${d.name}</b><small class="board-card-n"></small></span></a>`)}</nav>`
+/** The board toolkit (app.mjs createBoard), once register(t) ran. */
+let T = null
+
+// ---- palette, ink: how a stroke looks and how its points are packed (pure drawing and encoding, no rules) ----
+// A stroke and a note carry a palette token, never a colour value: each is painted in its light or dark look.
+const PALETTE = {
+  ink: { pen: ['#1b1f23', '#e9eeea'] },
+  red: { pen: ['#e03131', '#ff6b6b'], marker: ['#ff8787', '#ff8787'] },
+  orange: { pen: ['#f08c00', '#ffa94d'], marker: ['#ffa94d', '#ffa94d'] },
+  yellow: { pen: ['#e8b400', '#ffd43b'], marker: ['#ffd43b', '#ffd43b'] },
+  green: { pen: ['#2f9e44', '#51cf66'], marker: ['#69db7c', '#69db7c'] },
+  blue: { pen: ['#1971c2', '#4dabf7'], marker: ['#66c2ff', '#66c2ff'] },
+  violet: { pen: ['#9c36b5', '#cc5de8'], marker: ['#b197fc', '#b197fc'] },
+  pink: { pen: ['#d6336c', '#f783ac'], marker: ['#ff8cc6', '#ff8cc6'] },
+}
+const PEN_COLORS = ['ink', 'red', 'orange', 'green', 'blue', 'violet']
+const MARKER_COLORS = ['yellow', 'green', 'pink', 'blue', 'orange']
+const MARKER_OPACITY = { light: 0.5, dark: 0.38 }
+/** A token's colour for a tool on light or dark paper (an unknown token: the tool's first colour). */
+function colorOf(token, tool = 'pen', dark = false) {
+  const set = tool === 'marker' ? 'marker' : 'pen'
+  return (PALETTE[token]?.[set] ?? PALETTE[set === 'marker' ? 'yellow' : 'ink'][set])[dark ? 1 : 0]
+}
+const TAU = Math.PI * 2, HALF_PI = Math.PI / 2
+const fin = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+/** The most points of one stroke (and of one piece); more is refused as a whole. */
+const MAX_POINTS = 10_000
+/** How thick the pen is at a force, as a factor of its width. */
+const thickness = f => 0.3 + 1.4 * Math.sqrt(clamp(fin(f), 0, 1))
+/** A force for an input without pressure, from its speed (px per ms); prev: the force before (null at the start). */
+function forceFromSpeed(prev, speed) {
+  const target = clamp(0.36 - 0.075 * fin(speed), 0.07, 0.36)
+  return prev == null ? 0.2 : prev + (target - prev) * 0.3
+}
+/** Pointer Events tiltX/tiltY (degrees) -> { az, al } in radians, as PencilKit measures them. */
+function anglesOfTilt(tiltX = 0, tiltY = 0) {
+  const tx = (clamp(fin(tiltX), -89, 89) * Math.PI) / 180, ty = (clamp(fin(tiltY), -89, 89) * Math.PI) / 180
+  if (!tx && !ty) return { az: 0, al: HALF_PI }
+  const X = Math.tan(tx), Y = Math.tan(ty)
+  return { az: (Math.atan2(Y, X) + TAU) % TAU, al: Math.atan(1 / Math.hypot(X, Y)) }
+}
+/** An ink -> the packed points of a BoardItem's stroke (base64url; spec/v1.md 10.6, trommi-core board_items::Ink):
+ *  flags (bit 0 tilt, bit 1 simulated force), then per point zigzag LEB128 dx, dy in 1/16 unit, LEB128 dt in ms,
+ *  force 0..255, and with tilt azimuth and altitude 0..255. */
+function packPoints(ink) {
+  const p = ink.pts, n = p.length >> 1, az = ink.az, al = ink.al
+  const tilt = Boolean(az && al && az.length >= n && al.length >= n)
+  const out = [(tilt ? 1 : 0) | (ink.sim ? 2 : 0)]
+  const put = v => { while (v >= 128) { out.push((v % 128) + 128); v = Math.floor(v / 128) } out.push(v) }
+  const zig = d => ((d << 1) ^ (d >> 31)) >>> 0
+  let lx = 0, ly = 0, lt = 0
+  for (let i = 0; i < n; i++) {
+    const x = Math.round(fin(p[2 * i]) * 16) | 0, y = Math.round(fin(p[2 * i + 1]) * 16) | 0
+    const t = Math.min(0xffffffff, Math.max(i ? lt : 0, Math.round(fin(ink.t?.[i] ?? lt))))
+    put(zig((x - lx) | 0)); put(zig((y - ly) | 0)); put(t - lt)
+    out.push(Math.round(clamp(fin(ink.f?.[i] ?? 0.5), 0, 1) * 255))
+    if (tilt) out.push(Math.round(((((fin(az[i]) % TAU) + TAU) % TAU) / TAU) * 256) % 256, Math.round((clamp(fin(al[i]), 0, HALF_PI) / HALF_PI) * 255))
+    lx = x; ly = y; lt = t
+  }
+  let s = ''
+  for (const b of out) s += String.fromCharCode(b)
+  return btoa(s).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+}
+/** The stroke's line as samples [x, y, r, …] along the clamped uniform cubic B-spline of its points (PencilKit's
+ *  shape); from, to: only those spans (a stroke being drawn is sampled piece by piece). */
+function sampleStroke(pts, f, { tool = 'pen', width = 4, step = 1, from = 0, to = Infinity } = {}) {
+  const n = pts.length >> 1
+  if (!n) return []
+  const half = width / 2
+  const rAt = i => (tool === 'marker' ? half : half * thickness(f?.[i] ?? 0.25))
+  if (n === 1) return [pts[0], pts[1], rAt(0)]
+  const P = j => Math.min(n - 1, Math.max(0, j - 2))
+  const out = [pts[0], pts[1], rAt(0)]
+  if (from > 0) {
+    const a = P(from), b = P(from + 1), c = P(from + 2)
+    out[0] = (pts[2 * a] + 4 * pts[2 * b] + pts[2 * c]) / 6; out[1] = (pts[2 * a + 1] + 4 * pts[2 * b + 1] + pts[2 * c + 1]) / 6; out[2] = (rAt(a) + 4 * rAt(b) + rAt(c)) / 6
+  }
+  for (let s = Math.max(0, from); s <= Math.min(n, to); s++) {
+    const i0 = P(s), i1 = P(s + 1), i2 = P(s + 2), i3 = P(s + 3)
+    const x0 = pts[2 * i0], y0 = pts[2 * i0 + 1], x1 = pts[2 * i1], y1 = pts[2 * i1 + 1], x2 = pts[2 * i2], y2 = pts[2 * i2 + 1], x3 = pts[2 * i3], y3 = pts[2 * i3 + 1]
+    const r0 = rAt(i0), r1 = rAt(i1), r2_ = rAt(i2), r3 = rAt(i3)
+    const len = Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2)
+    const steps = Math.max(1, Math.min(64, Math.ceil(len / 3 / step)))
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps, t2 = t * t, t3 = t2 * t, u = 1 - t
+      const b0 = (u * u * u) / 6, b1 = (3 * t3 - 6 * t2 + 4) / 6, b2 = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6, b3 = t3 / 6
+      const x = b0 * x0 + b1 * x1 + b2 * x2 + b3 * x3, y = b0 * y0 + b1 * y1 + b2 * y2 + b3 * y3
+      const m = out.length
+      if (Math.abs(x - out[m - 3]) + Math.abs(y - out[m - 2]) < step * 0.25 && !(s === n && k === steps)) continue
+      out.push(x, y, b0 * r0 + b1 * r1 + b2 * r2_ + b3 * r3)
+    }
+  }
+  return out
 }
 
-/** The sessions for the pad's "Send to…" (read by the controller whiteboard). */
-function whiteboardSessions(model) {
-  const sessions = model.agents.map(a => ({ id: a.id, device: a.device_id ?? a.id, name: a.name, online: Boolean(a.online), hue: a.hue, mark: String(markArt({ ...a, starred: false })) }))
-  return html`<div id="whiteboard-sessions" hidden data-sessions="${JSON.stringify(sessions)}"></div>`
+// ---- the page ----
+/** The desk the board belongs to, as the sidebar has it ("all" on All desks): the pad is mounted again when it changes. */
+const deskInView = vm => (vm.sidebar?.all?.selected ? 'all' : vm.sidebar?.desks?.find(d => d.selected)?.id ?? 'all')
+
+/** The boards beside the one in view. On "All desks": a card per desk. On a desk: the quiet way back to All desks.
+ *  A room with one desk has one board and nothing here. */
+function whiteboardDesks(vm) {
+  const desks = vm.sidebar?.desks ?? []
+  if (!vm.sidebar?.all) return html`<nav id="whiteboard-desks" hidden></nav>`
+  if (!vm.sidebar.all.selected) return html`<nav class="board-desks is-desk" id="whiteboard-desks" aria-label="Scribble Boards"><a class="board-back" data-nav href="/scribble-board?desk=all" data-tip="All desks">${sk('back')}<span>All desks</span></a><b class="board-here">${sk('desk')}<span>${vm.sidebar.place?.en ?? ''}</span></b></nav>`
+  return html`<nav class="board-desks" id="whiteboard-desks" aria-label="The desks' Scribble Boards">${desks.map(d => html`<a class="board-card" id="board-card-${d.id}" data-nav href="/scribble-board?desk=${d.id}" aria-label="${d.name.en}: open its Scribble Board"><canvas class="board-card-thumb" width="264" height="156" aria-hidden="true"></canvas><span class="board-card-name">${sk('desk')}<b>${d.name.en}</b><small class="board-card-n"></small></span></a>`)}</nav>`
+}
+
+/** The sessions for the pad's "Send to…" (read by the controller), and when the board last changed: the controller
+ *  draws the board again when this element is replaced (a new render, a picture's bytes came). */
+function whiteboardSessions(vm) {
+  const sessions = (vm.sidebar?.sessions ?? []).map(s => { const w = whoOf(s); return { id: s.id, name: w.name, online: w.online, hue: w.hue, mark: String(markArt({ ...w, crowned: false })) } })
+  const pictures = (vm.board?.shapes ?? []).filter(s => s.attachment && T?.fileUrl(s.attachment)).length
+  return html`<div id="whiteboard-sessions" hidden data-rev="${vm.rev}:${pictures}" data-sessions="${JSON.stringify(sessions)}"></div>`
 }
 
 /** The Scribble Board's page. It is a part of its own in the frame (app.mjs bodyParts, key "pad"): the Desk keeps the
  *  same markup under its sheet once the corner was touched, so a turn of the page mounts nothing anew. */
-export const whiteboardMain = model => raw(`<main id="whiteboard" aria-label="Scribble Board" data-controller="whiteboard" data-whiteboard-canvas-value="${boardOf(model)}">
-${whiteboardSessions(model)}${whiteboardDesks(model)}
+export const whiteboardMain = vm => raw(`<main id="whiteboard" aria-label="Scribble Board" data-controller="whiteboard" data-whiteboard-canvas-value="${deskInView(vm)}">
+${whiteboardSessions(vm)}${whiteboardDesks(vm)}
 <div class="pad" id="pad" data-tool="pen" data-place data-owns-keys>
   <canvas class="pad-canvas" id="canvas" role="img" aria-label="Scribble Board: an endless surface for notes, drawings and pictures"></canvas>
 
@@ -179,66 +272,34 @@ ${whiteboardSessions(model)}${whiteboardDesks(model)}
 </main>`)
 
 export function register(t) {
-  // The Scribble Board (one drawing on it is a scribble).
+  T = t
   t.get(/^\/scribble-board$/, ({ req, res }) => {
-    const m = t.model()
-    t.page(req, res, { model: m, title: `Scribble Board · Trommi`, view: 'whiteboard', bodyAttrs: ' data-page="whiteboard"', main: whiteboardMain(m) })
-  })
-  t.live('whiteboard', {
-    take: m => ({ sessions: String(whiteboardSessions(m)), desks: String(whiteboardDesks(m)), canvas: boardOf(m) }),
-    // (another board came into view under the page, e.g. a second desk was made and the room is on All desks now: the page is drawn again)
-    diff: (was, now) => (was.canvas !== now.canvas ? t.stream('refresh') : raw([was.sessions !== now.sessions ? t.stream('replace', 'whiteboard-sessions', raw(now.sessions)) : '', was.desks !== now.desks ? t.stream('replace', 'whiteboard-desks', raw(now.desks)) : ''].map(String).join(''))),
+    const vm = t.vm()
+    t.page(req, res, { title: 'Scribble Board · Trommi', view: 'whiteboard', bodyAttrs: ' data-page="whiteboard"', main: whiteboardMain(vm) })
   })
 }
 
 // ---- controller "whiteboard" ----
-// The Whiteboard's page: mounts the pad (below) on its markup, hands it the sessions for "Send to…" (the live stream
-// replaces #whiteboard-sessions) and puts the pen in its hand (P: "trommi:pen").
+// Mounts the pad (below) on its markup and draws the board in view again whenever #whiteboard-sessions is replaced
+// (every render of the core: app.mjs puts the new one in); puts the pen in its hand (P: "trommi:pen").
 controller('whiteboard', class extends Controller {
   static values = { canvas: String }
   connect() {
-    const client = window.trommi?.client
-    if (!client) return
-    this.client = client
-    this.pad = mountPad(this.element, { canvasId: this.canvasValue, client })
-    this.sessions = () => { try { this.pad.setSessions(JSON.parse(document.getElementById('whiteboard-sessions')?.dataset.sessions ?? '[]')) } catch {} }
-    this.sessions()
-    this.boards = new Map()   // timeline id -> { canvas: the promise of openCanvas, timer }
-    this.thumbs()
-    this.watch = new MutationObserver(() => { this.sessions(); this.thumbs() })
+    if (!T) return
+    this.pad = mountPad(this.element)
+    this.sync = () => {
+      const vm = T.vm()
+      try { this.pad.setSessions(JSON.parse(document.getElementById('whiteboard-sessions')?.dataset.sessions ?? '[]')) } catch {}
+      this.pad.sync(vm)
+    }
+    this.sync()
+    this.watch = new MutationObserver(this.sync)
     this.watch.observe(this.element, { childList: true })
-    this.themed = new MutationObserver(() => { for (const id of this.boards.keys()) this.thumb(id) })
-    this.themed.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     this.onPen = () => window.pad?.tool('pen')
     document.addEventListener('trommi:pen', this.onPen)
   }
-  // ---- the desks' boards on "All desks": each card shows its board small and says how much is on it, live ----
-  // A card's board is opened like the pad's own (openCanvas: snapshot + tail, then what the room brings); it is closed
-  // when its card goes (another page, a desk removed).
-  thumbs() {
-    const want = new Set([...this.element.querySelectorAll('.board-card[data-board]')].map(c => c.dataset.board))
-    for (const [id, b] of this.boards) if (!want.has(id)) { clearTimeout(b.timer); b.canvas.then(c => c.close(), () => {}); this.boards.delete(id) }
-    for (const id of want) {
-      if (!this.boards.has(id)) {
-        const b = { timer: 0, canvas: null }
-        b.canvas = openCanvas({ client: this.client, timeline_id: id, onRemote: () => { clearTimeout(b.timer); b.timer = setTimeout(() => this.thumb(id), 120) } })
-        this.boards.set(id, b)
-      }
-      this.thumb(id)
-    }
-  }
-  async thumb(id) {
-    let list
-    try { list = (await this.boards.get(id)?.canvas)?.records() } catch (e) { console.warn('board card', e) }
-    const card = this.element.querySelector(`.board-card[data-board="${id}"]`)
-    if (!card || !list) return
-    paintThumb(card.querySelector('canvas'), list)
-    card.querySelector('.board-card-n').textContent = list.length ? String(list.length) : 'empty'
-    card.dataset.tip = list.length ? `${list.length} element${list.length === 1 ? '' : 's'}` : 'Empty'
-  }
   disconnect() {
-    this.watch?.disconnect(); this.themed?.disconnect()
-    for (const b of this.boards?.values() ?? []) { clearTimeout(b.timer); b.canvas.then(c => c.close(), () => {}) }
+    this.watch?.disconnect()
     document.removeEventListener('trommi:pen', this.onPen)
     this.pad?.unmount()
   }
@@ -256,7 +317,7 @@ controller('whiteboard', class extends Controller {
 // keep and delete the file without reading data.
 // x, y, w, h is the box in world units (CSS pixels at 100 % zoom). data by type:
 //   stroke  { tool: 'pen' | 'marker', color (a palette token), width, box: [w0, h0], pts: [x0, y0, …],
-//             t, f, az, al, sim }   (the core's ink.mjs: time, force, azimuth, altitude per point)
+//             t, f, az, al, sim }   (time, force, azimuth, altitude per point)
 //           pts are relative to the box as it was drawn (w0 x h0); the box may since
 //           have been moved or scaled, the points never change
 //   text    { text, size, color, wrap }       wrap: the width lines break at; null = the default
@@ -266,7 +327,7 @@ controller('whiteboard', class extends Controller {
 //           wrap is the paper's width; the box is the paper
 //   image   { mime, nw, nh, name }
 
-// Colours are the core's palette tokens (palette.mjs): each is painted in its light or dark look.
+// Colours are palette tokens (PALETTE above): each is painted in its light or dark look.
 const INK = 'ink'
 const named = list => list.map(t => [t, t[0].toUpperCase() + t.slice(1)])
 const PEN_SWATCHES = named(PEN_COLORS), MARKER_SWATCHES = named(MARKER_COLORS)
@@ -294,14 +355,14 @@ function newId() {
 const resolveInk = (token, dark, tool = 'pen') => colorOf(token, tool, dark)
 
 // ── strokes ──────────────────────────────────────────────────────────────────
-// A stroke is drawn as PencilKit draws it (the core's ink.mjs): its points are the control points of a clamped
+// A stroke is drawn as PencilKit draws it (sampleStroke above): its points are the control points of a clamped
 // uniform cubic B-spline, sampled about every unit. The pen's outline is the union of discs along that line, the disc
 // at each sample as wide as the force there (thickness), joined by quads; all wound the same way, so one nonzero fill
 // is the outline (round ends and joins, never a notch, and a see-through ink is laid once). The marker is one width:
 // the line stroked with round ends, translucent. (The points are local to the element.)
 const geomCache = new WeakMap()
 const LAY = 64   // samples per piece of a pen's outline
-/** Lay samples [x, y, r, …] (ink.mjs sampleStroke) into a path. begin: the path is empty (a piece that continues a
+/** Lay samples [x, y, r, …] (sampleStroke) into a path. begin: the path is empty (a piece that continues a
  *  stroke being drawn joins what is there). The pen's discs and quads go in as pieces of LAY samples (addPath):
  *  Chromium's Path2D takes longer for every new contour the more it holds, so one path built contour by contour
  *  cost the square of the stroke's length (4,000 samples: 157 ms; in pieces: 4 ms). */
@@ -379,7 +440,7 @@ function paintStroke(c, data, dark, g = geom(data)) {
 /** Part of an ink from point i on (a piece of a stroke being drawn). */
 const inkFrom = (k, i = 0) => ({ pts: k.pts.slice(2 * i), t: k.t.slice(i), f: k.f.slice(i), az: k.az ? k.az.slice(i) : null, al: k.al ? k.al.slice(i) : null, sim: Boolean(k.sim) })
 
-/** Turn an ink drawn in world units (ink.mjs: pts, t, f, az, al, sim) into the box and data of a stroke element. */
+/** Turn an ink drawn in world units (pts, t, f, az, al, sim) into the box and data of a stroke element. */
 export function strokeFromWorld(ink, { tool, color, width }) {
   const pts = ink.pts
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
@@ -601,9 +662,10 @@ function renderRect(list, rect, env, { max = 2000 } = {}) {
   return { png: cv.toDataURL('image/png'), bbox: { x: r2(rect.x), y: r2(rect.y), w: r2(rect.w), h: r2(rect.h) }, width: cv.width, height: cv.height }
 }
 
-/** A board small, for its card on "All desks": everything on it fitted into the card's canvas, on the paper of
- *  the theme. Pictures show as their place (a card is a hint of the board, not the board). */
-export function paintThumb(cv, list) {
+/** A board small (its shapes, BoardShape[]): everything on it fitted into the canvas, on the paper of the theme.
+ *  Pictures show as their place (a card is a hint of the board, not the board). */
+export function paintThumb(cv, shapes) {
+  const list = shapes.map(s => recordOf(s))
   const c = cv.getContext('2d'), css = getComputedStyle(document.documentElement), dark = document.documentElement.dataset.theme === 'dark'
   c.setTransform(1, 0, 0, 1, 0, 0)
   c.fillStyle = css.getPropertyValue('--surface').trim() || '#fff'
@@ -616,218 +678,167 @@ export function paintThumb(cv, list) {
   for (const el of [...list].sort((p, q) => p.z - q.z || (p.id < q.id ? -1 : 1))) paintElement(c, el, env)
 }
 
-// ---- the canvas timeline ----
-// The pad's canvas, end-to-end encrypted: one canvas timeline of the room (a desk's board or All desks', boardOf; session/<session_id> for a session's),
-// carried by the client core (sendStrokes, loadTimelineAfter, uploadAttachment, registers).
-// The wire and the merge are the core's scribble.ts; this part is the glue between the pad's element records (above) and it.
+// ---- the board's link to the core ----
+// The pad works on element records (above); the core holds the board. linkBoard turns the board in view (vm.board)
+// into records and the pad's changes into actions:
 //
-//   const canvas = await openCanvas({ client, timeline_id, onRemote, onState })
-//   canvas.records()                 every element now (pad records)
-//   canvas.push(changes, how)        the pad changed: [{ id, before, after }] (after null: gone; how 'send_away' for a send)
-//   canvas.live(g) / claim(g, id) / drop(g)   a stroke being drawn goes out in pieces every ~150 ms (relayed to the
-//                                    devices that are connected, never stored); at its end it is element id
-//   await canvas.putBlob(blob, meta) the picture, encrypted and uploaded: its attachment id
-//   await canvas.getBlob(id)         { blob } of a picture on the canvas
-//   await canvas.send({ to, text, png })   the selection as a picture with its words to a session: a Chat message
-//   canvas.state()                   { mode, pending, error }
+//   const link = linkBoard({ onRemote })
+//   link.sync(vm)                    a render: the records that changed or went go to onRemote
+//   link.push(changes, how)          the pad changed: [{ id, before, after }] (after null: gone; how 'send_away' for a send)
+//   link.live(g) / claim(g, id) / drop(g)   a stroke being drawn goes out in pieces every ~150 ms (StrokePiece); at its
+//                                    end it is element id, whose shape names the pieces (`live`)
+//   link.state()                     { mode, pending, error } for the pad's status line
 //
-// Ids: the pad keeps the id an element had when it was made here (stable for undo and selection); on the wire an
-// element is its stroke id (scribble.ts, R1). A change that is not a plain move (resize, recolour, an edited note, z)
-// erases the old shape and adds the new one, and the pad's id then stands for the new stroke id. Others' shapes have
-// their stroke id as the pad id. An own item is applied to the canvas state through the same reducer as everyone
-// else's, the moment it is sealed; when the hub's copy comes back, the frontier says it is applied already.
-//
-// Fresh load: the newest snapshot (register scribble_snapshot/<timeline_id> -> encrypted gzip attachment) + the tail
-// after it. After SNAP_EVERY items applied, with the canvas idle and the outbox empty, this device writes a new one.
-// Without a core (the mock room) the canvas lives in this page only, on top of what the demo's fixture drew.
-
+// Ids: an element made here keeps the pad's id (stable for undo and selection); its shape is known by the BoardItem's
+// local_id until the core shows it (BoardShape.local), then by its shape id. Others' shapes have their shape id as the
+// pad id. A change that is not a plain move (resize, recolour, an edited note, z) erases the old shape and adds the new
+// one; the pad's id then stands for the new shape.
 const FLUSH_MS = 150
-const SNAP_EVERY = 300
-const SNAP_IDLE_MS = 4000
 const ITEM_BYTES = 48_000   // a strokes item stays under the core's 60 KB body limit
-const SLICE = 2000          // shapes per slice when a big canvas is loaded
-const breath = () => (globalThis.scheduler?.yield ? scheduler.yield() : new Promise(r => setTimeout(r)))
+const IDS = 400             // shape ids in one erase, send_away or move item
+const hex16 = () => [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('')
+const chunks = (list, n = IDS) => { const out = []; for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n)); return out }
+const isStroke = s => s.tool === 'pen' || s.tool === 'marker'
 
-export async function openCanvas({ client, timeline_id, onRemote, onState }) {
-  const { CanvasState, entryOf, inkOf, isStroke, packSnapshot, unpackSnapshot, chunks, MAX_POINTS } = await scribbleWire()
-  const key = `scribble:${timeline_id}`
-  const st = new CanvasState()
-  const real = typeof client.sendStrokes === 'function'
-  const me = client.my_device_id ?? client.model?.room?.my_device_id ?? 'this-device'
-  const refs = new Map()          // attachment id -> reference (pictures)
-  const alias = new Map()         // pad id -> version { wire: stroke id | null } of an element made or changed here
-  const padOf = new Map()         // stroke id -> pad id, for those
-  const lives = new Map()         // gesture -> { g, stroke: its id for the pieces (32 hex), number: pieces sent, sent: points sent }
-  const liveOf = new Map()        // pad id -> the stroke id under which its pieces went out while it was drawn
-  let queue = []                  // ops for the next flush: { add, ver, live? } | { move: [dx, dy], ver } | { gone, ver }
-  let flushing = null, flushTimer = 0, snapTimer = 0, snapping = false, error = null, mockSeq = 0, lastOp = 0, started = false
-  let mode = real ? 'starting' : 'local'
-  const state = () => ({ mode, pending: queue.length + lives.size + (flushing ? 1 : 0), error })
-  const report = () => onState?.(state())
-  const connection = () => (client.model?.room?.connection === 'live' ? 'online' : 'offline')
+/** A shape of the view model -> a pad record (id: the pad's id for it). */
+function recordOf(s, id = s.id) {
+  const base = { id, rotation: 0, z: s.z ?? 0, group: s.group ?? null, author: s.by, rev: 1, blob: null, sent: [] }
+  if (isStroke(s)) {
+    const k = strokeFromWorld({ pts: s.pts, t: s.t, f: s.f, az: s.az ?? null, al: s.al ?? null, sim: s.sim }, { tool: s.tool, color: s.color ?? (s.tool === 'marker' ? 'yellow' : 'ink'), width: s.width ?? (s.tool === 'marker' ? 18 : 4) })
+    return { ...base, type: 'stroke', x: k.x, y: k.y, w: k.w, h: k.h, data: k.data }
+  }
+  if (s.tool === 'image') return { ...base, type: 'image', x: s.pts[0], y: s.pts[1], w: r2(s.pts[2] - s.pts[0]), h: r2(s.pts[3] - s.pts[1]), blob: s.attachment ?? null, data: { mime: s.mime ?? '', nw: s.nw ?? 0, nh: s.nh ?? 0, name: s.name ?? '' } }
+  const data = { text: s.text ?? '', size: s.size ?? TEXT_SIZE, color: s.color ?? 'ink', wrap: s.wrap ?? null }
+  const lay = layoutText(data, s.tool)
+  return { ...base, type: s.tool, x: s.pts[0], y: s.pts[1], w: lay.w, h: lay.h, data }
+}
+/** What tells a shape's drawing apart from the one before (a shape changes only by a move, or while it is drawn). */
+const sigOf = s => `${s.pts.length},${s.pts[0]},${s.pts[1]},${s.pts.at(-1)},${s.z},${s.group ?? ''},${s.attachment ?? ''}`
+/** A pad record -> a shape of a strokes item (the BoardItem's content form, board units). */
+function entryOf(r) {
+  const d = r.data ?? {}
+  const e = { tool: r.type === 'stroke' ? d.tool : r.type }
+  if (r.type === 'stroke') {
+    const sx = r.w / d.box[0], sy = r.h / d.box[1], n = Math.min(MAX_POINTS, d.pts.length >> 1)
+    const pts = d.pts.slice(0, 2 * n).map((v, i) => (i % 2 ? r.y + v * sy : r.x + v * sx))
+    Object.assign(e, { color: d.color, width: r2(d.width * Math.sqrt(sx * sy)), points: packPoints({ pts, t: d.t?.slice(0, n), f: d.f?.slice(0, n), az: d.az?.slice(0, n), al: d.al?.slice(0, n), sim: d.sim }) })
+  } else if (r.type === 'image') Object.assign(e, { rect: [r.x, r.y, r.x + r.w, r.y + r.h].map(r2), attachment: r.blob, nw: d.nw, nh: d.nh, mime: d.mime, name: d.name })
+  else Object.assign(e, { at: [r2(r.x), r2(r.y)], text: d.text, size: d.size, color: d.color, ...(d.wrap != null ? { wrap: d.wrap } : {}) })
+  if (r.z) e.z = r.z
+  if (r.group) e.group = r.group
+  return e
+}
+const plainMove = (a, b) => a.type === b.type && a.w === b.w && a.h === b.h && a.data === b.data && a.z === b.z && (a.group ?? null) === (b.group ?? null) && a.blob === b.blob
 
-  // ---- shapes <-> pad records ----
-  const padId = id => padOf.get(id) ?? id
-  function recordOf(s) {
-    const base = { id: padId(s.id), pad: timeline_id, rotation: 0, z: s.z ?? 0, group: s.group ?? null, author: s.by, rev: 1, blob: null, sent: [] }
-    if (isStroke(s)) {
-      const k = strokeFromWorld(inkOf(s), { tool: s.tool, color: s.color ?? (s.tool === 'marker' ? 'yellow' : 'ink'), width: s.width })
-      return { ...base, type: 'stroke', x: k.x, y: k.y, w: k.w, h: k.h, data: k.data }
-    }
-    if (s.tool === 'image') {
-      refs.set(s.attachment.attachment_id, s.attachment)
-      return { ...base, type: 'image', x: s.pts[0], y: s.pts[1], w: r2(s.pts[2] - s.pts[0]), h: r2(s.pts[3] - s.pts[1]), blob: s.attachment.attachment_id, data: { mime: s.mime, nw: s.nw, nh: s.nh, name: s.name ?? '' } }
-    }
-    const data = { text: s.text, size: s.size, color: s.color ?? 'ink', wrap: s.wrap }
-    const lay = layoutText(data, s.tool)
-    return { ...base, type: s.tool, x: s.pts[0], y: s.pts[1], w: lay.w, h: lay.h, data }
-  }
-  /** A pad record -> a shape (what goes into a strokes item). */
-  function shapeOfRecord(r) {
-    const d = r.data ?? {}
-    const s = { tool: r.type === 'stroke' ? d.tool : r.type, z: r.z, group: r.group ?? null }
-    if (r.type === 'stroke') {
-      const sx = r.w / d.box[0], sy = r.h / d.box[1]
-      Object.assign(s, { pts: d.pts.map((v, i) => (i % 2 ? r.y + v * sy : r.x + v * sx)), t: d.t, f: d.f, az: d.az, al: d.al, sim: d.sim, color: d.color, width: r2(d.width * Math.sqrt(sx * sy)) })
-    } else if (r.type === 'image') {
-      Object.assign(s, { pts: [r.x, r.y, r.x + r.w, r.y + r.h], attachment: refs.get(r.blob), nw: d.nw, nh: d.nh, mime: d.mime, name: d.name })
-    } else Object.assign(s, { pts: [r.x, r.y], text: d.text, size: d.size, color: d.color, wrap: d.wrap ?? null })
-    return s
-  }
-  const plainMove = (a, b) => a.type === b.type && a.w === b.w && a.h === b.h && a.data === b.data && a.z === b.z && (a.group ?? null) === (b.group ?? null) && a.blob === b.blob
+function linkBoard({ onRemote }) {
+  let boardId = null, lastBoard, lastVm = null, flushTimer = 0
+  const seen = new Map()      // shape id -> its sig, as drawn
+  const padOf = new Map()     // shape id -> pad id, for those made here
+  const wireOf = new Map()    // pad id -> shape id, for those made here
+  const localOf = new Map()   // `<local_id>/<index>` -> pad id, until the core shows the shape
+  const lives = new Map()     // gesture -> { g, stroke (32 hex), number: pieces sent, sent: points sent }
+  const liveOf = new Map()    // pad id -> the stroke id its pieces went under while it was drawn
+  let waiting = []            // ops on shapes the core has not shown yet
+  const act = action => T?.act(action)
 
-  // ---- what comes in ----
-  // An item after the applied frontier that the hub served pruned is covered by a newer snapshot (10.3, 10.9): the
-  // board is loaded again from the newest one, after a catch-up. Once more pruned after that: it is not all of the
-  // board (`withheld`), it goes in as unreadable and no snapshot is written from it.
-  let reloading = null, reloads = 0
-  function reloadSoon() {
-    if (reloading || !real) return
-    reloading = (async () => {
-      reloads++
-      await client.catchUp?.().catch(() => {})
-      const old = new Set(st.shapes.keys())
-      const items = await loadBoard()
-      const changed = new Set(old)
-      for (const id of st.shapes.keys()) changed.add(id)
-      reloading = null
-      take(items.sort(byNumber), changed)
-    })().catch(e => { reloading = null; error = e.code ?? e.message; report() })
-  }
-  function take(items, changed = new Set()) {
-    for (const it of items) {
-      // (an item that cannot be read here goes in too: the canvas state must know that it is not all of the board)
-      if (it.pending) continue
-      if (it.item_state === 'pruned' && !st.covered(it.sender_device_id, it.sender_sequence)) {
-        if (reloads < 2) { reloadSoon(); continue }
-        error = 'withheld'
-      }
-      if (it.envelope_number > st.last_envelope_number && st.covered(it.sender_device_id, it.sender_sequence)) st.last_envelope_number = it.envelope_number   // an own item, confirmed
-      // A piece of a new stroke of a device: the stroke it drew before was dropped, or is on its way as an item.
-      if (it.content_type === 'stroke_piece') for (const id of [...st.shapes.keys()]) if (id.startsWith(`live:${it.sender_device_id}/`) && id !== `live:${it.sender_device_id}/${it.content?.stroke}`) { st.shapes.delete(id); changed.add(id) }
-      const got = st.apply(it)
-      if (got) for (const id of got) changed.add(id)
+  /** A render of the core: what changed on the board goes to the pad. */
+  function sync(vm) {
+    lastVm = vm
+    const b = vm.board
+    if (b === lastBoard) return
+    lastBoard = b
+    if (!b) return
+    const out = []
+    if (b.board_id !== boardId) {
+      for (const id of seen.keys()) out.push({ id: padOf.get(id) ?? id, deleted: true })
+      seen.clear(); padOf.clear(); wireOf.clear(); localOf.clear(); waiting = []
+      boardId = b.board_id
     }
-    if (!changed.size) return
-    onRemote?.([...changed].map(id => { const s = st.shapes.get(id); return s ? recordOf(s) : { id: padId(id), deleted: true } }))
-    if (st.applied >= SNAP_EVERY) snapSoon()
-  }
-  const byNumber = (a, b) => (a.envelope_number ?? Infinity) - (b.envelope_number ?? Infinity)
-
-  // ---- what goes out ----
-  /** Seal one canvas item and apply it here. Returns its stroke id prefix `<me>/<sender_sequence>`. */
-  async function seal(content) {
-    let seq = ++mockSeq, envelope_hash = null
-    if (real) ({ seq, envelope_hash } = await client.sendStrokes({ timeline_id, ...content }))
-    st.apply({ sender_device_id: me, sender_sequence: seq, envelope_hash, content })
-    return `${me}/${seq}`
-  }
-  /** A flush: at once for a finished change (pen up, a move, an erase), within FLUSH_MS while a stroke is drawn. */
-  function soon(now = true) {
-    lastOp = Date.now()
-    if (now && flushTimer) { clearTimeout(flushTimer); flushTimer = 0 }
-    flushTimer ||= setTimeout(flush, now ? 0 : FLUSH_MS)
-    report()
-  }
-  async function flush() {
-    clearTimeout(flushTimer); flushTimer = 0
-    while (flushing) await flushing
-    const ops = queue
-    queue = []
-    const live = [...lives.values()].filter(l => l.g.t.length > l.sent)
-    if (!ops.length && !live.length) return report()
-    flushing = send(ops, live).catch(e => { error = e.code ?? e.message; console.warn('canvas', e) })
-    await flushing
-    flushing = null
-    if (st.applied >= SNAP_EVERY) snapSoon()
-    report()
-  }
-  /** A stroke of more points than one shape may carry is cut there (the wire refuses the whole item otherwise). */
-  const cut = s => (isStroke(s) && s.t.length > MAX_POINTS ? { ...s, pts: s.pts.slice(0, 2 * MAX_POINTS), t: s.t.slice(0, MAX_POINTS), f: s.f.slice(0, MAX_POINTS), az: s.az ? s.az.slice(0, MAX_POINTS) : null, al: s.al ? s.al.slice(0, MAX_POINTS) : null } : s)
-  async function send(ops, live) {
-    // 0. the strokes being drawn: the points since the last piece, relayed to whoever is connected. Nothing of a
-    //    piece is stored, so one that does not get through is not sent again: the finished stroke carries everything.
-    for (const l of live) {
-      const ink = inkFrom(l.g, l.sent)
-      l.sent += ink.t.length
-      if (real) client.sendStrokePiece({ timeline_id, stroke: l.stroke, number: ++l.number, tool: l.g.tool, color: l.g.color, width: l.g.width, points: packPoints(ink) }).catch(() => {})
+    const now = new Set()
+    for (const s of b.shapes ?? []) {
+      now.add(s.id)
+      const mine = s.local ? localOf.get(s.local) : null
+      if (mine) { padOf.set(s.id, mine); wireOf.set(mine, s.id); localOf.delete(s.local) }
+      const sig = sigOf(s)
+      if (seen.get(s.id) === sig) continue
+      seen.set(s.id, sig)
+      out.push(recordOf(s, padOf.get(s.id) ?? s.id))
     }
-    // 1. new shapes; a finished stroke names the pieces that went out of it (`live`), and replaces them where they showed
-    const entries = []   // [entry, version]
-    for (const op of ops) if (op.add) entries.push([{ ...entryOf(cut(op.add)), ...(op.live ? { live: op.live } : {}) }, op.ver])
-    for (let at = 0; at < entries.length;) {
-      let end = at, size = 0
-      while (end < entries.length && (end === at || size + JSON.stringify(entries[end][0]).length < ITEM_BYTES)) size += JSON.stringify(entries[end++][0]).length
-      const prefix = await seal({ content_type: 'strokes', strokes: entries.slice(at, end).map(e => e[0]) })
-      for (let i = at; i < end; i++) {
-        const ver = entries[i][1]
-        if (!ver.wire) { ver.wire = `${prefix}/${i - at}`; if (ver.pad) padOf.set(ver.wire, ver.pad) }
-      }
-      at = end
+    for (const id of [...seen.keys()]) {
+      if (now.has(id)) continue
+      seen.delete(id)
+      const p = padOf.get(id) ?? id
+      padOf.delete(id)
+      // (a shape made again under the same pad id: the pad's element is the new one now)
+      if (wireOf.get(p) === id) wireOf.delete(p)
+      else if (p !== id || wireOf.has(p)) continue
+      out.push({ id: p, deleted: true })
     }
-    // 2. moves, one item per offset
-    const moves = new Map()
-    for (const op of ops) if (op.move && op.ver?.wire) {
-      const k = op.move.join(',')
-      moves.set(k, [...(moves.get(k) ?? []), op.ver.wire])
-    }
-    for (const [k, ids] of moves) for (const part of chunks(ids)) await seal({ content_type: 'move', stroke_ids: part, offset: k.split(',').map(Number) })
-    // 3. what is gone
-    for (const how of ['erase', 'send_away']) {
-      const ids = ops.filter(op => op.gone === how && op.ver?.wire).map(op => op.ver.wire)
-      for (const part of chunks(ids)) await seal({ content_type: how, stroke_ids: part })
-    }
-    error = null
-    if (real) mode = connection()
+    if (waiting.length) { const w = waiting; waiting = []; send(w) }
+    if (out.length) onRemote(out)
   }
 
-  /** The version of what the pad knows as id: made or changed here (alias), else someone's stroke id. A stroke
-   *  someone is still drawing (`live:…`) is no shape of the board yet: nothing on the wire names it. */
-  const versionOf = id => alias.get(id) ?? { wire: String(id).startsWith('live:') ? null : id, pad: id }
-  /** The pad changed. One call is one undo step of the pad; on the wire it becomes adds, moves and erasures. */
+  /** The shape a pad id stands for now: made here and shown, or someone's. */
+  const wireNow = id => wireOf.get(id) ?? (seen.has(id) && !padOf.has(id) && !String(id).startsWith('live:') ? id : null)
+  /** The pad changed. One call is one undo step of the pad; it becomes adds, moves and erasures. */
   function push(changes, how = 'erase') {
+    const ops = []
     for (const c of changes) {
-      if (c.before && !c.after) { queue.push({ gone: how, ver: versionOf(c.before.id) }); alias.delete(c.before.id); continue }
+      if (c.before && !c.after) { ops.push({ gone: how, pad: c.before.id, wire: wireNow(c.before.id) }); continue }
       if (c.before && plainMove(c.before, c.after)) {
         const dx = r2(c.after.x - c.before.x), dy = r2(c.after.y - c.before.y)
-        if (dx || dy) queue.push({ move: [dx, dy], ver: versionOf(c.before.id) })
+        if (dx || dy) ops.push({ move: [dx, dy], pad: c.before.id, wire: wireNow(c.before.id) })
         continue
       }
-      const was = c.before ? versionOf(c.before.id) : null
-      const ver = { wire: null, pad: c.after.id }
-      alias.set(c.after.id, ver)
-      const live = c.before ? null : liveOf.get(c.after.id)   // a stroke whose pieces went out while it was drawn
+      if (c.before) { ops.push({ gone: 'erase', pad: c.before.id, wire: wireNow(c.before.id) }); wireOf.delete(c.before.id) }
+      const live = c.before ? null : liveOf.get(c.after.id)
       liveOf.delete(c.after.id)
-      queue.push({ add: shapeOfRecord(c.after), ver, ...(live ? { live } : {}) })
-      if (was) queue.push({ gone: 'erase', ver: was })
+      ops.push({ add: { ...entryOf(c.after), ...(live ? { live } : {}) }, pad: c.after.id })
     }
-    soon()
+    send(ops)
+  }
+  /** Ops to the core: new shapes first (in items under ITEM_BYTES), then moves by offset, then what is gone. An op on
+   *  a shape the core has not shown yet waits for the render that shows it. */
+  function send(ops) {
+    if (!boardId) { waiting.push(...ops); return }
+    const ready = []
+    for (const op of ops) {
+      if (op.add) { ready.push(op); continue }
+      op.wire ??= wireNow(op.pad)
+      if (op.wire) ready.push(op)
+      else if (wireOf.has(op.pad) || [...localOf.values()].includes(op.pad)) waiting.push(op)
+    }
+    const adds = ready.filter(op => op.add)
+    for (let at = 0; at < adds.length;) {
+      let end = at, size = 0
+      while (end < adds.length && (end === at || size + JSON.stringify(adds[end].add).length < ITEM_BYTES)) size += JSON.stringify(adds[end++].add).length
+      const local_id = `pad-${hex16()}`
+      adds.slice(at, end).forEach((op, i) => localOf.set(`${local_id}/${i}`, op.pad))
+      act({ do: 'board_item', board_id: boardId, local_id, content: { content_type: 'strokes', strokes: adds.slice(at, end).map(op => op.add) } })
+      at = end
+    }
+    const moves = new Map()
+    for (const op of ready) if (op.move) { const k = op.move.join(','); moves.set(k, [...(moves.get(k) ?? []), op.wire]) }
+    for (const [k, ids] of moves) for (const part of chunks(ids)) act({ do: 'board_item', board_id: boardId, local_id: `pad-${hex16()}`, content: { content_type: 'move', stroke_ids: part, offset: k.split(',').map(Number) } })
+    for (const how of ['erase', 'send_away']) {
+      const ids = ready.filter(op => op.gone === how).map(op => op.wire)
+      for (const part of chunks(ids)) act({ do: 'board_item', board_id: boardId, local_id: `pad-${hex16()}`, content: { content_type: how, stroke_ids: part } })
+    }
   }
 
-  // ---- a stroke while it is drawn (g: the pad's gesture; its pts and pr grow) ----
+  // ---- a stroke while it is drawn (g: the pad's gesture; its points grow): a piece every FLUSH_MS ----
+  function pieces() {
+    flushTimer = 0
+    for (const l of lives.values()) {
+      const ink = inkFrom(l.g, l.sent)
+      if (!ink.t.length || !boardId) continue
+      l.sent += ink.t.length
+      act({ do: 'stroke_piece', board_id: boardId, piece: { stroke: l.stroke, number: ++l.number, tool: l.g.tool, color: l.g.color, width: l.g.width, points: packPoints(ink) } })
+    }
+  }
   function live(g) {
-    if (!lives.has(g)) lives.set(g, { g, stroke: [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''), number: 0, sent: 0 })
-    soon(false)
+    if (!lives.has(g)) lives.set(g, { g, stroke: hex16(), number: 0, sent: 0 })
+    flushTimer ||= setTimeout(pieces, FLUSH_MS)
   }
   /** The stroke ended and became element id: it goes out whole, as one shape that names its pieces. */
   function claim(g, id) {
@@ -835,143 +846,17 @@ export async function openCanvas({ client, timeline_id, onRemote, onState }) {
     lives.delete(g)
     if (l?.number) liveOf.set(id, l.stroke)
   }
-  /** A stroke that is not kept (a second finger came). Its pieces were never stored: where they showed, they go
-   *  with the next stroke this device draws (take above). */
+  /** A stroke that is not kept (a second finger came): its pieces fade at the others' (the core's LIVE_MS). */
   function drop(g) { lives.delete(g) }
 
-  // ---- snapshots ----
-  function snapSoon() {
-    if (!real) return
-    clearTimeout(snapTimer)
-    snapTimer = setTimeout(writeSnapshot, SNAP_IDLE_MS + Math.random() * 2000)
+  /** For the pad's status line. */
+  function state() {
+    const b = lastVm?.board, phase = lastVm?.phase
+    const pending = waiting.length + lives.size + (b?.shapes ?? []).filter(s => s.local).length
+    const error = b?.state === 'withheld' ? 'not all of it could be read here' : b?.state === 'newer_version' ? 'a part needs a newer Trommi' : null
+    return { mode: !b || b.state === 'loading' ? 'starting' : phase === 'live' ? 'online' : 'offline', pending, error }
   }
-  async function writeSnapshot() {
-    // An item of this board could not be read here: what this device holds is not all of it, so it writes no snapshot.
-    if (st.unread) return
-    if (Date.now() - lastOp < SNAP_IDLE_MS || flushing || queue.length || lives.size || client.model?.outbox?.length || connection() !== 'online') return snapSoon()
-    // (one snapshot at a time, from its declaration to its bound post: a later one never overtakes an earlier one;
-    //  across the tabs of this device too, by a lock of the browser, taken before the board is captured)
-    if (snapping) return snapSoon()
-    snapping = true
-    const locks = globalThis.navigator?.locks
-    if (!locks) return snapshotNow()
-    locks.request(`trommi-board-snapshot/${client.model?.room?.room_id ?? ''}/${timeline_id}`, { ifAvailable: true }, lock => lock ? snapshotNow() : (snapping = false, snapSoon()))
-      .catch(e => { snapping = false; console.warn('canvas snapshot lock', e) })
-  }
-  async function snapshotNow() {
-    try {
-      const snap = st.snapshot(), applied = st.applied
-      // (10.9: the hub hears first what the snapshot will cover, so that it holds pruning back for it; not heard: no snapshot)
-      if (client.declareBoardFrontier && !(await client.declareBoardFrontier(timeline_id, snap.frontier, snap.shapes))) return snapSoon()
-      const attachment = await client.uploadAttachment(await packSnapshot(snap), { file_name: 'canvas.json.gz', media_type: 'application/gzip' })
-      const sent = await client.setRegisters({ [`scribble_snapshot/${timeline_id}`]: { attachment, frontier: snap.frontier, last_envelope_number: snap.last_envelope_number, shapes: snap.shapes.length } })
-      st.applied -= applied
-      // (10.9: once the hub took the register, the declared frontier is bound to it and the hub prunes behind it)
-      if (sent && client.postBoardFrontier) await client.postBoardFrontier(timeline_id, sent, snap.frontier, snap.shapes).catch(e => console.warn('canvas frontier', e))
-    } catch (e) {
-      // (the canvas state refuses: an item without its hash yet, or one that could not be read: no snapshot now)
-      if (!['newer-version', 'no-key', 'bad-format'].includes(e?.code)) console.warn('canvas snapshot', e)
-    } finally { snapping = false }
-  }
-
-  // ---- start: snapshot + tail, then live ----
-  const off = client.on('change', ch => {
-    if (ch.room && real && started) { mode = connection(); report() }
-    const items = started && ch.items?.get?.(key)
-    if (items?.length) take([...items].sort(byNumber))
-  })
-  // The pad's page goes (the Desk was left): it stops listening to the app's client at once.
-  addEventListener('pagehide', () => off?.(), { once: true })
-  const t0 = performance.now()
-  /** The newest snapshot and the tail after it (10.3). Returns the tail's items, not yet taken. */
-  async function loadBoard() {
-    const snap = client.model.human?.scribble_snapshots?.get(timeline_id)
-    st.load(null)
-    if (snap?.attachment) {
-      try {
-        // (the file names no change number: the register's says from where the tail is read)
-        const got = await unpackSnapshot(await client.fetchAttachment(snap.attachment), snap.frontier)
-        st.load({ ...got, last_envelope_number: snap.last_envelope_number }, { shapes: false })
-        // in slices, so that a big canvas never holds the page for long (budget: no task over 200 ms on a slow phone)
-        for (let i = 0; i < (got.shapes?.length ?? 0); i += SLICE) { st.addShapes(got.shapes.slice(i, i + SLICE)); await breath() }
-      }
-      catch (e) { console.warn('scribble: the snapshot is not readable, the whole timeline is read', e); st.load(null) }
-    }
-    try { return (await client.loadTimelineAfter(key, st.last_envelope_number)).items ?? [] }
-    catch (e) { error = e.code ?? e.message; return [...(client.model.timelines.get(key)?.items.values() ?? [])] }
-  }
-  if (real) {
-    // The snapshot register and the tail need the room caught up (a fresh page paints before that).
-    for (const until = Date.now() + 8000; client.model.room.connection !== 'live' && Date.now() < until;) await new Promise(r => setTimeout(r, 100))
-    const items = await loadBoard()
-    const t1 = performance.now()
-    started = true
-    take(items.sort(byNumber))
-    mode = connection()
-    timing.snapshotMs = t1 - t0
-    timing.tail = items.length
-  } else take([...(client.store?.get(key) ?? [])].sort(byNumber))   // (the demo room: what its fixture drew on this board)
-  started = true
-  timing.loadMs = performance.now() - t0
-  report()
-
-  return {
-    state, push, live, claim, drop, timing,
-    records: () => [...st.shapes.values()].map(recordOf),
-    /** Every element, handed over in slices with a breath between (a big canvas on a slow phone). */
-    async eachSlice(fn) {
-      const all = [...st.shapes.values()]
-      for (let i = 0; i < all.length; i += SLICE) { fn(all.slice(i, i + SLICE).map(recordOf)); if (i + SLICE < all.length) await breath() }
-    },
-    async putBlob(blob, meta = {}) {
-      const ref = await client.uploadAttachment(blob, { file_name: meta.name || 'picture', media_type: blob.type, width: meta.nw, height: meta.nh })
-      refs.set(ref.attachment_id, ref)
-      return ref.attachment_id
-    },
-    async getBlob(id) {
-      const ref = refs.get(id)
-      if (!ref) return undefined
-      try { return { id, blob: await client.attachmentBlob(ref) } } catch { return undefined }
-    },
-    /** The selection to a session: a picture and its words, as a Chat message in the session's conversation (the
-     *  picture's name, SCRIBBLE_FILE, is how the conversation knows it for a scribble: app.mjs). What was sent then
-     *  leaves the board with the pad's own next change (`send_away`). to: the session. Throws a readable Error;
-     *  never pretends. */
-    async send({ to, text, png }) {
-      await flush()
-      if (error) throw new Error(`The canvas could not be saved (${error}).`)
-      const attachment = await client.uploadAttachment(dataUrlBytes(png), { file_name: SCRIBBLE_FILE, media_type: 'image/png' })
-      await client.sendMessage({ ...addressOf(client.model, to), ...(text || !real ? { text: text || '' } : {}), attachments: [attachment] })
-    },
-    settled: async () => { await flush(); return !error },
-    /** Deleting the desk (desks.mjs): every shape on the board is erased, and the erasures go out. */
-    async eraseAll() {
-      const all = [...st.shapes.values()].map(recordOf)
-      if (all.length) push(all.map(r => ({ id: r.id, before: r, after: null })))
-      await flush()
-      if (error) throw new Error(`The board could not be erased (${error}).`)
-    },
-    /** Deleting the desk: a snapshot of the board now (empty after eraseAll), at once, so that the hub prunes its
-     *  items (10.9). Whether the board's snapshot register now names no shape. */
-    async snapshotEmpty() {
-      if (!real) return true
-      await flush()
-      if (st.shapes.size) return false
-      for (let i = 0; snapping && i < 50; i++) await new Promise(r => setTimeout(r, 100))
-      snapping = true
-      await snapshotNow()
-      return client.model.human?.scribble_snapshots?.get(timeline_id)?.shapes === 0
-    },
-    close() { off?.(); clearTimeout(snapTimer); if (queue.length || lives.size) flush() },
-  }
-}
-const timing = {}
-/** A data: URL's bytes (fetch() of a data: URL is not allowed by the app's CSP). */
-function dataUrlBytes(url) {
-  const s = atob(url.slice(url.indexOf(',') + 1))
-  const out = new Uint8Array(s.length)
-  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i)
-  return out
+  return { sync, push, live, claim, drop, state, close() { clearTimeout(flushTimer); if (lives.size) pieces() } }
 }
 
 // ---- fly ----
@@ -1043,15 +928,15 @@ async function flySheet(layer, { png, rect, target }) {
 }
 
 // ---- the pad: mounted on the page /scribble-board by the controller "whiteboard" ----
-// main: the page's <main> (pad markup inside); canvasId: the canvas timeline; client: the room's core client.
-// Returns { setSessions(list), unmount() }.
-function mountPad(main, { canvasId: PAD, client }) {
+// main: the page's <main> (pad markup inside). Returns { sync(vm), setSessions(list), unmount() }.
+function mountPad(main) {
+  const PAD = main.dataset.whiteboardCanvasValue
   const listening = new AbortController()
   // (Under the Desk's sheet the pad is mounted but not the page: what the window and the document hear is not its.)
   const here = () => document.body.dataset.tView === 'whiteboard'
   const on = (target, type, fn, opts = {}) => target.addEventListener(type, target === window || target === document ? e => { if (here()) fn(e) } : fn, { ...(typeof opts === 'boolean' ? { capture: opts } : opts), signal: listening.signal })
   const board = { board: true, sessions: [] }
-  const AUTHOR = 'human'   // a record made here; on the wire the author is the signed sender (openCanvas)
+  const AUTHOR = 'human'   // a record made here; on the wire the author is the signed sender
   const MIN_Z = 0.05, MAX_Z = 8
   const UNDO_MAX = 200
   const CLICK_PX = 5        // further than this and a press is a drag
@@ -1105,10 +990,7 @@ function mountPad(main, { canvasId: PAD, client }) {
   for (const node of main.querySelectorAll('[data-icon]')) node.prepend(icon(node.dataset.icon))
 
   // ── state ───────────────────────────────────────────────────────────────────
-  let timeline = null            // the canvas timeline (openCanvas), once it is loaded
-  let canvasLoaded
-  const canvasReady = new Promise(resolve => { canvasLoaded = resolve })   // the promise of it
-  const early = []               // changes made before it was loaded: they go out once it is
+  const timeline = linkBoard({ onRemote: records => applyRemote(records) })   // the board in the core
   let els = new Map()            // id → record; tombstones are not in here
   const revs = new Map()         // id → highest revision seen, tombstones included
   let order = null               // records back to front, rebuilt when z changes
@@ -1177,7 +1059,7 @@ function mountPad(main, { canvasId: PAD, client }) {
       else { els.delete(c.id); sel.delete(c.id) }
     }
     order = null
-    if (timeline) timeline.push(changes, how); else early.push([changes, how])
+    timeline.push(changes, how)
     if (record) {
       undo.push(changes)
       if (undo.length > UNDO_MAX) undo.shift()
@@ -1209,20 +1091,41 @@ function mountPad(main, { canvasId: PAD, client }) {
     const v = name => css.getPropertyValue(name).trim()
     theme = { paper: v('--surface'), dot: v('--line-strong'), accent: v('--accent'), placeholder: v('--sunken'), handle: v('--surface') }
   }
-  function picture(id) {
+  /** A picture on the board, by its file id: drawn once the core handed its bytes over (t.fileUrl; the controller
+   *  syncs again when they come). */
+  function picture(id, src = null) {
     let p = pictures.get(id)
     if (!p) {
       const img = new Image()
-      p = { img, ok: false, ready: null }
-      p.ready = canvasReady.then(c => c.getBlob(id)).then(found => new Promise(resolve => {
-        if (!found) return resolve()
+      p = { img, ok: false, ready: null, load: null }
+      p.ready = new Promise(resolve => {
         img.onload = () => { p.ok = true; dirty(); resolve() }
         img.onerror = () => resolve()
-        img.src = URL.createObjectURL(found.blob)
-      }), () => {})
+        p.load = () => { const url = src ?? T?.fileUrl(id); if (url && !img.src) img.src = url }
+      })
       pictures.set(id, p)
     }
+    p.load()
     return p
+  }
+  /** Files this pad waits for (an upload of its own): resolved with the attachment id once ready. */
+  const uploads = new Map()   // local id -> { done, fail }
+  const uploaded = localId => new Promise((done, fail) => {
+    uploads.set(localId, { done, fail })
+    sync(T.vm())
+    // (a core that took no upload at all, e.g. the demo room: no entry comes)
+    setTimeout(() => { if (uploads.has(localId) && !T.vm().files?.[localId]) { uploads.delete(localId); fail(new Error('The picture could not be uploaded here.')) } }, 5000)
+  })
+  /** A render of the core: the board, the pictures whose bytes came, the uploads this pad waits for. */
+  function sync(vm) {
+    for (const [id, w] of uploads) {
+      const f = vm.files?.[id]
+      if (f?.state === 'ready' && f.attachment_id) { uploads.delete(id); w.done(f.attachment_id) }
+      else if (f && f.state !== 'uploading') { uploads.delete(id); w.fail(new Error('The picture could not be uploaded.')) }
+    }
+    for (const p of pictures.values()) if (!p.ok) p.load()
+    timeline.sync(vm)
+    renderStatus()
   }
   const env = () => ({ dark: dark(), accent: theme.accent, placeholder: theme.placeholder, picture })
   const invalidate = () => { if (!raf) raf = requestAnimationFrame(paint) }
@@ -1467,12 +1370,11 @@ function mountPad(main, { canvasId: PAD, client }) {
   function renderStatus() {
     const b = board
     const n = els.size
-    const s = timeline?.state() ?? { mode: 'starting', pending: 0 }
-    const where = s.error ? `not saved (${s.error})`
+    const s = timeline.state()
+    const where = s.error ? s.error
       : s.mode === 'online' ? (s.pending ? 'saving…' : 'saved, end-to-end encrypted')
       : s.mode === 'offline' ? 'no connection: kept on this device until it is back'
-      : s.mode === 'starting' ? 'loading'
-      : 'kept in this page only (mock room)'
+      : 'loading'
     const count = `${b.sessions.length} session${b.sessions.length === 1 ? '' : 's'}`
     $('status').textContent = `${n} element${n === 1 ? '' : 's'} · ${where} · ${count}`
     $('status').dataset.kind = s.error ? 'error' : s.mode === 'offline' ? 'warn' : ''
@@ -1758,8 +1660,8 @@ function mountPad(main, { canvasId: PAD, client }) {
     for (const f of list) {
       try {
         const { blob, nw, nh } = await importImage(f)
-        const id = await (await canvasReady).putBlob(blob, { nw, nh, name: f.name })
-        await picture(id).ready
+        const id = await uploaded(await T.attach(new File([blob], f.name || 'picture', { type: blob.type })))
+        await picture(id, URL.createObjectURL(blob)).ready
         const k = Math.min(1, (0.6 * W) / view.z / nw, (0.5 * Math.max(120, H - 150)) / view.z / nh)
         const w = r2(nw * k), h = r2(nh * k)
         const [cx, cy] = at ? toWorld(at[0], at[1]) : toWorld(W / 2, (H - 20) / 2)
@@ -1778,7 +1680,7 @@ function mountPad(main, { canvasId: PAD, client }) {
 
   // ── pointer input ───────────────────────────────────────────────────────────
   /** One sample of the pointer into the stroke being drawn, as PencilKit records it: where (board units), when (ms
-   *  since the stroke began), how hard (a pen's pressure; mouse and finger: a force from their speed, ink.mjs), and a
+   *  since the stroke began), how hard (a pen's pressure; mouse and finger: a force from their speed), and a
    *  pen's azimuth and altitude. Raw: the shape is smoothed when it is drawn (B-spline), never here. */
   function addPoint(g, e, last) {
     const [px, py] = local(e)
@@ -1804,7 +1706,7 @@ function mountPad(main, { canvasId: PAD, client }) {
     if (!g.t.length) return
     const s = strokeFromWorld(inkFrom(g), { tool: g.tool, color: g.color, width: g.width })
     const el = make('stroke', s, s.data, g.z)
-    timeline?.claim(g, el.id)   // its pieces went out while it was drawn: this is the rest of it
+    timeline.claim(g, el.id)   // its pieces went out while it was drawn: this is the rest of it
     add([el])
   }
   function erase(g, px, py) {
@@ -1823,7 +1725,7 @@ function mountPad(main, { canvasId: PAD, client }) {
     preview = null
     if (!g) return
     if (g.type === 'draw' && g.moved && performance.now() - g.t0 > 350 && g.t.length > 12) endDraw(g)
-    else if (g.type === 'draw') timeline?.drop(g)
+    else if (g.type === 'draw') timeline.drop(g)
     if (g.type === 'erase' && g.erased.size) remove([...g.erased].map(id => els.get(id)).filter(Boolean))
     dirty()
   }
@@ -1913,7 +1815,7 @@ function mountPad(main, { canvasId: PAD, client }) {
     if (g.type === 'draw') {
       const list = e.getCoalescedEvents?.() ?? []
       for (const c of list.length ? list : [e]) addPoint(g, c, false)
-      if (g.moved) timeline?.live(g)   // others see it while it is drawn: a piece every ~150 ms
+      if (g.moved) timeline.live(g)   // others see it while it is drawn: a piece every ~150 ms
       return invalidate()
     }
     if (g.type === 'erase') { hover = [px, py]; return erase(g, px, py) }
@@ -2238,10 +2140,12 @@ function mountPad(main, { canvasId: PAD, client }) {
     }
   })
 
-  /** The picture of the selection and its words go to the session (openCanvas send: a Chat message, end-to-end). */
+  /** The picture of the selection and its words go to the session: the picture attached (its name, selection.png,
+   *  is how the conversation knows it for a scribble: the core's talk view), then a line to the session with it. */
   async function sendTo(session, payload) {
-    if (!session.device) throw new Error('That session has no device in this room.')
-    await (await canvasReady).send({ to: session.device, text: payload.text, png: payload.png })
+    const bytes = Uint8Array.from(atob(payload.png.slice(payload.png.indexOf(',') + 1)), c => c.charCodeAt(0))
+    const id = await uploaded(await T.attach(new File([bytes], 'selection.png', { type: 'image/png' })))
+    T.act({ do: 'write', session_id: session.id, text: payload.text || '', attachments: [id] })
   }
 
   // What was sent leaves the paper: it is the agent's now. One step, so one undo brings all of it back.
@@ -2476,14 +2380,6 @@ function mountPad(main, { canvasId: PAD, client }) {
     buildSwatches()
     refresh()
     paintSendTo()
-    // The paper works at once; what is on it comes from the room (snapshot + tail), end-to-end encrypted.
-    timeline = await openCanvas({ client, timeline_id: PAD, onRemote: applyRemote, onState: renderStatus })
-    canvasLoaded(timeline)
-    await timeline.eachSlice(list => { for (const r of list) els.set(r.id, r) })
-    order = null
-    for (const [changes, how] of early.splice(0)) timeline.push(changes, how)
-    if (!saved?.z && els.size) fit(false)
-    refresh()
   }
 
   // ---- a note parked here (sidebar.mjs, the corner note dragged onto the board): a sticky, an element of its own ----
@@ -2515,10 +2411,19 @@ function mountPad(main, { canvasId: PAD, client }) {
       const done = []
       for (const p of pictures) {
         try {
-          const blob = await attachmentBlob(p.url)
-          const before = els.size
-          await addImages([new File([blob], p.name || 'picture', { type: /^image\//.test(blob.type) ? blob.type : /\.jpe?g$/i.test(p.name) ? 'image/jpeg' : /\.(gif|webp|svg)$/i.test(p.name) ? `image/${p.name.split('.').pop().toLowerCase().replace('svg', 'svg+xml')}` : 'image/png' })], [px, under], true)
-          if (els.size > before) { done.push(p.url); under += selectionBox().box.h * view.z + 16 }
+          // (the note's file is in the room already: the board names it, nothing is uploaded again)
+          const id = p.id ?? /([0-9a-f]{32})/.exec(String(p.url ?? ''))?.[1]
+          const pic = id && picture(id)
+          if (!pic) continue
+          await Promise.race([pic.ready, new Promise(r => setTimeout(r, 8000))])
+          if (!pic.ok) continue
+          const nw = pic.img.naturalWidth || 800, nh = pic.img.naturalHeight || 600
+          const k = Math.min(1, (0.6 * W) / view.z / nw, (0.5 * Math.max(120, H - 150)) / view.z / nh)
+          const w = r2(nw * k), h = r2(nh * k), [cx, cy] = toWorld(px, under)
+          const el = make('image', { x: cx - w / 2, y: cy, w, h }, { mime: '', nw, nh, name: p.name || '' }, topZ() + 1, id)
+          add([el])
+          sel.clear(); sel.add(el.id)
+          done.push(p.url ?? p.id); under += h * view.z + 16
         } catch (err) { console.warn('park picture', err) }
       }
       sel.clear(); refresh()
@@ -2531,9 +2436,7 @@ function mountPad(main, { canvasId: PAD, client }) {
     elements: () => ordered(),
     selection: () => [...sel],
     view: () => ({ ...view }),
-    state: () => ({ tool, editing: Boolean(edit), undo: undo.length, redo: redo.length, board, sync: timeline?.state(), timing: timeline?.timing }),
-    settled: () => canvasReady.then(c => c.settled()),
-    timeline: () => timeline,
+    state: () => ({ tool, editing: Boolean(edit), undo: undo.length, redo: redo.length, board, sync: timeline.state() }),
     area: () => (area ? { x: area.x, y: area.y, w: area.w, h: area.h, ids: area.list.map(e => e.id), sending: Boolean(area.sending) } : null),
     payload: async session => (await buildPayload(session ?? board.sessions[0], selected())).payload,
     tool: name => setTool(name),
@@ -2543,12 +2446,13 @@ function mountPad(main, { canvasId: PAD, client }) {
 
   start()
   return {
+    sync,
     setSessions(list) { board.sessions = list; renderStatus(); paintSendTo() },
     unmount() {
       commitEditor()
       listening.abort(); resized.disconnect(); themed.disconnect()
       cancelAnimationFrame(raf)
-      timeline?.close()
+      timeline.close()
       delete window.pad
     },
   }

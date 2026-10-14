@@ -5,7 +5,7 @@
 //
 // The self test runs in a worker of its own (core/proof-worker.ts: its last step derives password keys over 64 MiB,
 // never on the page's thread), so the screen needs no room: it also opens by its address on a device that is not logged in
-// (proofScreen, from app.mjs's boot), in the demo room, and while the room's own worker is busy. Nothing is sent and
+// (drawn alone, without the frame), in the demo room, and while the room's own worker is busy. Nothing is sent and
 // nothing stored: the only requests are for the app's own files (the worker, the core's .wasm, gen/build.txt for the
 // commit this build was made from).
 import { CLIENT } from './app.mjs'
@@ -69,19 +69,11 @@ ${alone ? html`<p class="room-meta"><a href="/">Open Trommi</a></p>` : ''}
 </div>`, { lead: 'The encryption core tests itself on this device. Nothing is sent, nothing is stored.', back: alone ? false : '/settings/security', backWord: 'Security' })
 
 export function register(t) {
-  const client = t.hub.client
-  // (the room of this device: the demo has no hub, and shows none)
-  const room = () => (client?.hub ? { room_id: client.model.room.room_id, key_epoch: client.model.room.key_epoch, hub_url: client.model.room.hub_url } : null)
-  t.get(/^\/settings\/proof$/, ({ req, res }) => t.page(req, res, { title: `${TITLE} · Settings · Trommi`, view: 'settings-proof', css: 'room', main: proofMain({ room: room() }) }))
-}
-
-/** The screen on a device without a room (app.mjs boot): a page of its own, as the account screens are. */
-export function proofScreen() {
-  document.title = `${TITLE} · Trommi`
-  const root = document.createElement('div')
-  root.id = 'room-screen'
-  root.innerHTML = String(proofMain({ alone: true }))
-  document.body.replaceChildren(root)
+  // (this device's account as the core has it; none on the demo, and none before a room: the screen stands alone then)
+  t.get(/^\/settings\/proof$/, ({ req, res }) => {
+    const vm = t.vm(), s = vm.settings ?? {}, alone = vm.phase === 'signed_out'
+    t.page(req, res, { title: `${TITLE} · Settings · Trommi`, view: 'settings-proof', sidebar: !alone, main: alone ? html`<div id="room-screen">${proofMain({ alone })}</div>` : proofMain({ room: s.room ? { room_id: s.room, key_epoch: s.key_epoch, hub_url: s.hub ?? '' } : null }) })
+  })
 }
 
 controller('proof', class extends Controller {

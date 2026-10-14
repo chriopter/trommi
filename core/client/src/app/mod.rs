@@ -92,6 +92,8 @@ enum Pending {
     Dropped,
     /// A Share link's file (`app::shared`).
     Shared,
+    /// A file of the demo room, by its address.
+    DemoFile(crate::files::DemoOpen),
 }
 
 /// The app store's key that names the room of this slot and its hub: written by a join with the code before the
@@ -778,6 +780,7 @@ impl App {
                                 self.board = engine::feed::Board::default();
                                 self.board.model = model;
                                 self.demo = true;
+                                self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
                                 self.next_view.phase = Phase::Live;
                                 self.stale_views = true;
                                 self.after_demo(now_ms, &mut out);
@@ -831,7 +834,7 @@ impl App {
                         self.open(now_ms, revision, entries, &mut out);
                     }
                 }
-                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) | Some(Pending::Shared) => {
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) | Some(Pending::Shared) | Some(Pending::DemoFile(_)) => {
                     if let IoResult::Err(e) = &result {
                         out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
                     }
@@ -892,6 +895,14 @@ impl App {
                     self.passkey_asserted(hub, result, &mut out);
                 }
             }
+            Event::Http { id, result } if matches!(self.pending.get(&id), Some(Pending::DemoFile(_))) => {
+                if let (Some(Pending::DemoFile(open)), IoResult::Ok(response)) = (self.pending.remove(&id), result) {
+                    if response.status == 200 {
+                        self.files.demo_opened(open, response.body, &mut out);
+                        self.stale_views = true;
+                    }
+                }
+            }
             Event::Http { id, result } if self.pending.get(&id) == Some(&Pending::Shared) => {
                 self.pending.remove(&id);
                 if let Some((link, expect)) = self.shared_ask.take() {
@@ -948,7 +959,8 @@ impl App {
                     self.lens.home_desk = Some(desk.to_string());
                 }
                 self.lens.desk = focus.desk;
-                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts);
+                // (the gallery, and the Desk's foot shows its newest)
+                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts | Screen::Desk);
                 let (session, card, off) = match focus.screen {
                     Screen::Session { session_id } => (Some(session_id), None, None),
                     Screen::Card { card_id } => (None, Some(card_id), None),
@@ -1011,6 +1023,11 @@ impl App {
 
     /// The person did something: the actions of `actions::run`, the toasts, a retry.
     fn action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        // a note sent without a session goes where the corner's note says it goes (the crown of the desk in view)
+        let action = match action {
+            Action::SendNote { note_id, to: None } => Action::SendNote { note_id, to: self.next_view.notes.to.as_ref().map(|t| t.session_id.clone()) },
+            other => other,
+        };
         match &action {
             Action::OpenShared { link } => {
                 self.open_shared(link, out);
@@ -1062,6 +1079,23 @@ impl App {
 
     /// An action in the demo room: done on the model as on a real one (the echo), and taken as done at once.
     fn demo_action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        // (files: the demo keeps what is attached in memory, and opens its own files from their addresses)
+        match &action {
+            Action::Attach { local_id, name, media_type, bytes } => {
+                self.files.demo_attach(local_id, name, media_type, bytes);
+                self.stale_views = true;
+                return;
+            }
+            Action::OpenFile { attachment_id, save } => {
+                if let Some((url, open)) = self.files.demo_open(attachment_id, *save, out) {
+                    let id = self.io(Pending::DemoFile(open));
+                    out.push(Effect::Http { id, request: crate::app::io::HttpRequest { method: "GET".into(), url, headers: Vec::new(), body: None, timeout_ms: 30_000, max_answer: 64 << 20, class: Default::default(), key: None } });
+                }
+                self.stale_views = true;
+                return;
+            }
+            _ => {}
+        }
         let utc_offset_min = self.lens.utc_offset_min;
         let room = trommi_core::ids::RoomId::new([7; 32]);
         let mut n = 0u64;
@@ -1091,8 +1125,14 @@ impl App {
             seal: &mut seal,
             change: Change::default(),
         };
-        if let Err(NotDone { text, .. }) = doing.run(&action) {
-            doing.sent.toast(doing.toasts, text, None);
+        match doing.run(&action) {
+            Err(NotDone { text, .. }) => doing.sent.toast(doing.toasts, text, None),
+            Ok(()) => {
+                if let Action::SendNote { note_id, .. } = &action {
+                    let text = crate::views::Text::new("notes.sent", "Note sent.");
+                    doing.sent.toast(doing.toasts, text, Some(Action::UnsendNote { note_id: note_id.clone() }));
+                }
+            }
         }
         let mut change = std::mem::take(&mut doing.change);
         self.board.model.settle_echoes();

@@ -561,12 +561,10 @@ video.as-media { background: #000; }
 #session .log { display: flex; flex-direction: column-reverse; }
 #session .log-inner { flex: none; }
 /* The frame the earlier messages are loaded into is no box: they are lines of the log like the others. */
-turbo-frame.log-earlier { display: contents; }
-.log-earlier-link { align-self: center; display: inline-flex; align-items: center; gap: var(--s-2); min-height: 32px; margin-bottom: var(--s-4); padding: 0 14px; border-radius: var(--r-pill); background: var(--sunken); color: var(--muted); font-size: var(--t-sm); font-weight: 500; }
+form.log-earlier { display: contents; }
+.log-earlier-link { align-self: center; border: 0; font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: var(--s-2); min-height: 32px; margin-bottom: var(--s-4); padding: 0 14px; border-radius: var(--r-pill); background: var(--sunken); color: var(--muted); font-size: var(--t-sm); font-weight: 500; }
 .log-earlier-link:hover { color: var(--fg); }
 .log-earlier-link b { color: var(--faint); font-weight: 600; font-variant-numeric: tabular-nums; }
-.log-earlier-link.is-later { margin: var(--s-6) 0 0; }
-turbo-frame.log-earlier[busy] > .log-earlier-link { opacity: .5; pointer-events: none; }
 #session a.shot { cursor: zoom-in; }
 #session a.event { text-align: left; user-select: text; -webkit-user-select: text; }
 #session a.msg-about { text-align: left; }

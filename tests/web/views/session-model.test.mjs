@@ -10,19 +10,8 @@ const read = p => fs.readFileSync(new URL(`../../../${p}`, import.meta.url), 'ut
 
 test('the heading draws the core\'s label beside the dot; the full id is its tip', () => {
   const src = read('app/web/public/session.mjs')
-  assert.match(src, /\$\{sessionDot\(a\)\}\$\{a\.model_label \? html`<span class="head-model" title="\$\{a\.model\}">\$\{a\.model_label\}<\/span>` : ''\}/)
-  assert.match(read('app/web/public/app.mjs'), /model_label: r\.model_label \?\? ''/, 'the label comes with the core\'s session row')
+  assert.match(src, /<i><\/i><\/span>\$\{s\.model_label \? html`<span class="head-model" title="\$\{s\.model\}">\$\{s\.model_label\}<\/span>` : ''\}/)
   assert.match(read('app/web/public/session.css'), /\.head-model \{[^}]*color: var\(--muted\)/)
-})
-
-test('the demo room makes the core\'s label', () => {
-  const src = read('app/web/public/demo/demo.mjs')
-  const fn = new Function(`${src.slice(src.indexOf('const demoModelLabel'), src.indexOf('/**', src.indexOf('const demoModelLabel')))}; return demoModelLabel`)()
-  assert.equal(fn('claude-opus-5-5'), 'Opus 5.5')
-  assert.equal(fn('claude-sonnet-4-5-20250929'), 'Sonnet 4.5')
-  assert.equal(fn('gpt-6.1'), 'GPT-6.1')
-  assert.equal(fn('gpt-5.1-codex'), 'GPT-5.1 Codex')
-  assert.equal(fn('o4-mini'), 'o4-mini')
 })
 
 test('the iPhone shows the same label beside the name', () => {

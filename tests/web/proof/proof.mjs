@@ -84,7 +84,7 @@ try {
       await toChild(sessionId, 'Network.enable')
       await toChild(sessionId, 'Log.enable')
       if (blocked.length) await toChild(sessionId, 'Network.setBlockedURLs', { urls: blocked })
-      if (hold) await hold
+      if (hold && /proof-worker/.test(targetInfo.url)) await hold
       if (waitingForDebugger) await toChild(sessionId, 'Runtime.runIfWaitingForDebugger')
     } catch (err) { failures.push(`a worker could not be attached to: ${err.message}`) }
   })
@@ -157,7 +157,9 @@ try {
   check(/^Trommi app\/\d+\.\d+\.\d+, build \w+, commit \w+$/.test(first.facts.App ?? ''), "the app's line names its version, build and commit", first.facts.App)
   check(/a worker/.test(first.facts['Ran in'] ?? '') && first.facts.Browser === (await evaluate('navigator.userAgent')), 'it says it ran in a worker, in this browser', first.facts)
   check(first.again === false && first.copy === false, 'with a result both buttons are on', first)
-  check(workers.length === 1 && workers[0].endsWith(`/gen/app/${workerFile}`), "exactly one worker ran: the build's proof worker", workers)
+  // (beside it the app core's worker runs the demo room the page is drawn from)
+  const proofWorkers = workers.filter(w => /proof-worker/.test(w))
+  check(proofWorkers.length === 1 && proofWorkers[0].endsWith(`/gen/app/${workerFile}`), "exactly one proof worker ran: the build's", workers)
   check(requests.some(r => r.from === 'worker' && r.url.endsWith(`/gen/app/${wasmFile}`)), "the worker's own requests are seen by this test (the .wasm is among them)", requests.filter(r => r.from === 'worker'))
 
   // ---- 4. Copy result (before anything else changes the result) ----
