@@ -1173,6 +1173,10 @@ impl Member {
         if crate::host::is_codex() {
             device_info["platform"] = json!("codex");
         }
+        // (who this session is across its devices: one entry and one name for it in the human's list, 9.3.3)
+        if let Some(agent) = crate::vouch::agent_identity(&self.cfg.owner()) {
+            device_info["agent"] = json!(agent);
+        }
         if let Err(e) = client.ensure_device_register(&device_info).await {
             eprintln!("[trommi] label not written: {}", e.text());
         }

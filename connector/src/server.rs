@@ -1427,20 +1427,46 @@ impl Conn {
     async fn self_join(&self) -> std::result::Result<(), String> {
         let (account, account_label) = vouch::account();
         let name = vouch::session_name(&self.cfg);
-        let ask = json!({ "op": "vouch", "owner": self.cfg.owner(), "account": account, "account_label": account_label,
-            "name": name, "folder": self.cfg.shown, "host": self.cfg.host, "pid": pid() });
+        let owner = self.cfg.owner();
+        let ask = json!({ "op": "vouch", "owner": owner, "account": account, "account_label": account_label,
+            "name": name, "folder": self.cfg.shown, "host": self.cfg.host, "pid": pid(),
+            "agent": vouch::agent_identity(&owner) });
+        let vouchers = vouch::vouchers(&self.cfg);
         let mut found = None;
-        for p in vouch::vouchers(&self.cfg) {
-            if let Ok(r) = door::knock(&p, &ask, 10_000).await {
-                if r["ok"] == Value::Bool(true) {
-                    found = Some((p, js_string(&r["nonce"]), js_string(&r["by"])));
-                    break;
+        // An ask of this session the human allowed already, whose link still holds (a try of it that stopped before
+        // it joined): that link is used, nothing is asked again.
+        if !owner.is_empty() {
+            let reuse = json!({ "op": "vouch-reuse", "owner": owner, "account": account, "pid": pid() });
+            for p in &vouchers {
+                if let Ok(r) = door::knock(p, &reuse, 10_000).await {
+                    if r["ok"] == Value::Bool(true) {
+                        found = Some((p.clone(), js_string(&r["nonce"]), js_string(&r["by"])));
+                        break;
+                    }
+                }
+            }
+        }
+        if found.is_none() {
+            for p in &vouchers {
+                if let Ok(r) = door::knock(p, &ask, 10_000).await {
+                    if r["ok"] == Value::Bool(true) {
+                        found = Some((p.clone(), js_string(&r["nonce"]), js_string(&r["by"])));
+                        break;
+                    }
                 }
             }
         }
         let Some((voucher, nonce, by)) = found else {
             return Err(format!("no running {} session of this account on this machine can vouch for this one (a session vouches only for its own program and account), so it needs an invite of its own, once per account: later sessions of it join by themselves", crate::host::name()));
         };
+        // One ask per session across every voucher: an earlier try's ask at another voucher is taken back, so the
+        // human sees one ask, not one per try and voucher.
+        if !owner.is_empty() {
+            let drop = json!({ "op": "vouch-drop", "owner": owner, "account": account });
+            for p in vouchers.iter().filter(|p| p.key_file != voucher.key_file) {
+                let _ = door::knock(p, &drop, 5000).await;
+            }
+        }
         *self.self_join_note.lock().unwrap() = Some(format!("Not on the Trommi board yet: joining by itself, vouched by the session \"{by}\"; waiting for the human to allow it with one tap in the Trommi app (open on a phone or computer). Try again in a moment."));
         eprintln!("[trommi] self-join: asked the session \"{by}\" to vouch for this one");
         self.relist().await;
@@ -1570,12 +1596,20 @@ impl Conn {
         else {
             return json!({ "ok": false, "error": self.not_ready() });
         };
+        // the same session asks again while its allowed link still holds: it gets that one
+        if let Some(r) = self.reuse_ask(&c, &owner, req).await {
+            return r;
+        }
         let clip = |v: &Value, n: usize| js_string(v).chars().take(n).collect::<String>();
         let by = vouch::session_name(&self.cfg);
         let nonce = crate::util::random_hex(16);
-        let value = json!({ "name": clip(&req["name"], 120), "folder": clip(&req["folder"], 400), "host": clip(&req["host"], 120),
+        let mut value = json!({ "name": clip(&req["name"], 120), "folder": clip(&req["folder"], 400), "host": clip(&req["host"], 120),
             "account": clip(&req["account"], 16), "account_label": clip(&req["account_label"], 120), "vouched_by": by,
             "at": now_ms(), "request_hash": Value::Null });
+        // (who the asking session is across its devices: the human's app names it as before, 12.4.2)
+        if let Some(agent) = req["agent"].as_str().filter(|a| vouch::is_identity(a)) {
+            value["agent"] = json!(agent);
+        }
         let mut values = Map::new();
         values.insert(format!("join_ask/{nonce}"), value.clone());
         // One ask per session: an earlier ask of the same session (a connector of it that started again, or asked
@@ -1621,6 +1655,113 @@ impl Conn {
             js_string(&req["pid"])
         );
         json!({ "ok": true, "nonce": nonce, "by": by })
+    }
+    /// As the voucher: an ask of session `owner` that the human allowed and whose link still holds (its link not
+    /// used yet: no Request named), handed to that session's new try instead of a new ask (`vouch-reuse`, and a
+    /// `vouch` of it). The asking process becomes the new try's.
+    async fn reuse_ask(&self, c: &Arc<crate::client::Client>, owner: &str, req: &Value) -> Option<Value> {
+        if owner.is_empty() {
+            return None;
+        }
+        let mine: Vec<String> = self
+            .vouches
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, (o, v))| o == owner && v["request_hash"].is_null())
+            .map(|(n, _)| n.clone())
+            .collect();
+        for nonce in mine {
+            let answer = c
+                .session_register(&format!("join_link/{nonce}"))
+                .await
+                .ok()
+                .flatten()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                .unwrap_or(Value::Null);
+            let Some(link) = answer["link"].as_str().filter(|l| !l.is_empty()) else {
+                continue;
+            };
+            if crate::join::check_link(link, now_ms()).is_err() {
+                continue;
+            }
+            let asker = req["pid"].as_u64().map(|p| p as u32).unwrap_or(0);
+            let started = if asker > 1 {
+                start_of(asker)
+            } else {
+                String::new()
+            };
+            if !self.vouches.lock().unwrap().contains_key(&nonce) {
+                continue;
+            }
+            self.askers
+                .lock()
+                .unwrap()
+                .insert(nonce.clone(), (asker, started));
+            // the session's other asks here go: one ask per session
+            self.drop_asks(c, owner, Some(&nonce)).await;
+            eprintln!("[trommi] a session asked again whose ask the human allowed already: it gets that link");
+            return Some(json!({ "ok": true, "nonce": nonce, "by": vouch::session_name(&self.cfg) }));
+        }
+        None
+    }
+    /// As the voucher: takes back every ask of session `owner` but `keep` (it asks at another voucher now).
+    async fn drop_asks(&self, c: &Arc<crate::client::Client>, owner: &str, keep: Option<&str>) -> usize {
+        if owner.is_empty() {
+            return 0;
+        }
+        let gone: Vec<String> = self
+            .vouches
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(n, (o, _))| o == owner && Some(n.as_str()) != keep)
+            .map(|(n, _)| n.clone())
+            .collect();
+        if gone.is_empty() {
+            return 0;
+        }
+        let mut values = Map::new();
+        for n in &gone {
+            values.insert(format!("join_ask/{n}"), Value::Null);
+        }
+        if let Err(e) = c.set_status(values, None).await {
+            eprintln!("[trommi] asks not taken back: {}", e.text());
+            return 0;
+        }
+        let mut vouches = self.vouches.lock().unwrap();
+        let mut askers = self.askers.lock().unwrap();
+        for n in &gone {
+            vouches.remove(n);
+            askers.remove(n);
+        }
+        gone.len()
+    }
+    /// `vouch-reuse` and `vouch-drop`: a session of this account asks for its allowed ask here, or takes its asks here
+    /// back. Only for the same account and another session, as `vouch`.
+    async fn vouch_own(&self, op: &str, req: &Value) -> Value {
+        let owner = js_string(&req["owner"]);
+        if owner.is_empty() || owner == self.cfg.owner() {
+            return json!({ "ok": false, "error": "the same session" });
+        }
+        if req["account"].as_str() != Some(vouch::account().0.as_str()) {
+            return json!({ "ok": false, "error": "another account" });
+        }
+        let Some(c) = self
+            .member
+            .client()
+            .filter(|_| self.member.phase() == "ready")
+        else {
+            return json!({ "ok": false, "error": self.not_ready() });
+        };
+        if op == "vouch-reuse" {
+            return match self.reuse_ask(&c, &owner, req).await {
+                Some(r) => r,
+                None => json!({ "ok": false, "error": "no allowed ask" }),
+            };
+        }
+        let n = self.drop_asks(&c, &owner, None).await;
+        json!({ "ok": true, "dropped": n })
     }
     /// The voucher's side of the later steps: `vouch-link` (the human device's answer), `vouch-hash` (the new
     /// device's Request, written beside the ask), `vouch-done` (the ask is taken back).
@@ -1781,6 +1922,7 @@ impl Conn {
             }
             "replaced" => self.replaced_key(&req).await,
             "vouch" => self.vouch_ask(&req).await,
+            "vouch-reuse" | "vouch-drop" => self.vouch_own(&op, &req).await,
             "vouch-link" | "vouch-hash" | "vouch-done" => self.vouch_step(&op, &req).await,
             "say" => {
                 // `trommi-connector say` names its session: another session's words never go into this one's
