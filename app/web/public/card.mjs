@@ -1,22 +1,19 @@
 // A card's own page: inside the board's frame, the sidebar beside it. The card is one calm
-// block of FIXED height in two columns: at the left the title, one quiet line (who, when, Nr.), the short text and a
-// low picture; at the right the options, "or" Whatever, and the field whose Send hands the card back with the words.
-// Everything else stands in the comments below the card: the whole text when it is longer than the card holds, the
-// options in detail, links of options, why it is urgent, versions and what happened to the card, the talk.
+// block in two columns: at the left the title, one quiet line (who, when, Nr.), the short text and a
+// picture; at the right the answers (or what was said), and under the card the comments and the field to write in.
+// Everything it shows is the app core's CardView (views.d.ts: vm.cards[id]); this module only draws it and turns what
+// is pressed into the core's actions (register below). The comments hold what the card does not: the whole text,
+// the links of options, versions and what happened to the card, the talk.
 // Above the card stands one row of round drawn buttons, at the card's edges: the way back, a cross, at the left; at
 // the right the question before and the next, Focus (the page alone in the window, ?focus=1; a picture opens large
 // by a click on it) and More, three dots: Wake up, Copy, Shred. Where it stands ("3 of 9") is in the card's own line.
-// A narrow window: back and More (no Focus: the page is the whole window there), before and next are a swipe and the
-// keys. Later is a pull-tag tied under the card's bottom-right corner (the Desk's Later: ui.mjs sideWays, the same
-// route): pulled, the card is put off and the next one follows.
+// Later is a pull-tag tied under the card's bottom-right corner: pulled, the card is put off and the next one follows.
 //
 // One form (#card-form-<id>) holds the field and the notes on single options; every way to answer is a button of that
-// form with its own address (formaction), so what was written goes along, with or without scripts. The controller
-// "card" adds the pencil for a note on one option, the draft kept while typing,
-// Enter that sends, files that are pasted or dropped, and the pen's arrow from the picture to its option.
-// Styles: card.css.
-import { NEEDS_NEWER, SAID, deskScope, heardOf, linkOf, runsOf, stackOf, walkOf, workLine } from './app.mjs'
-import { Controller, PLUS, avatar, fileTile, revokeTiles, EXPLAIN_TEXT, HAND_BACK_TEXT, isTyping, letterKeysOn, FINAL_TIP, LATER_TAG, SETTLED, WORDS, act, advisedKeys, advisedLabels, agoSpan, arrowStrokes, cardNote, cardNr, cardPath, controller, copyButton, deskRow, doodleSvg, el, finalSign, html, isKnock, kindOf, knockWord, linkNote, pageChip, plain, raw, rich, sideWays, sk, sketch, srcOf, thumb, sayError } from './ui.mjs'
+// form with its own address (formaction), so what was written goes along. The controller "card" adds the pencil for
+// a note on one option, the draft kept while typing, Enter that sends, files that are pasted or dropped, and the pen's
+// arrow from the picture to its option. Styles: card.css.
+import { Controller, PLUS, avatar, fileTile, isTyping, letterKeysOn, LATER_TAG, SETTLED, WORDS, agoSpan, arrowStrokes, controller, doodleSvg, el, fileSrc, finalSign, html, linkNote, raw, revokeTiles, rich, sideWays, sk, sketch, whoOf } from './ui.mjs'
 const icon = d => raw(`<svg viewBox="0 0 24 24" class="tc-icon" aria-hidden="true"><path d="${d}"/></svg>`)
 const ARROW_L = 'M19 12H5M11 6l-6 6 6 6', ARROW_R = 'M5 12h14M13 6l6 6-6 6', TICK = 'M5 12.5l4.5 4.5L19 7.5', PLAY = 'M9 6.5v11l9-5.5z', GROW = 'M14 5h5v5M19 5l-6 6M10 19H5v-5M5 19l6-6'
 // Drawn with the pen, for the round buttons above a card: an arrow to the left and one to the right, a cross, three
@@ -32,515 +29,353 @@ const LESS = pen('<path d="M4.3 9.2 Q6.8 9.5 9.3 9.2 Q9.6 6.7 9.3 4.3"/><path d=
 /** The words of the focus button, off and on (the controller "card" switches them in place). */
 const FOCUS_WORDS = { false: 'Focus', true: 'Leave focus · Esc' }
 /** An address with ?focus=1 on it or off it (the card page's focus mode lives in the address). */
-const focusAt = (href, on) => { const u = new URL(href, location.origin); if (on) u.searchParams.set('focus', '1'); else u.searchParams.delete('focus'); return u.pathname + u.search + u.hash }
+const focusAt = (href, on) => { const u = new URL(href, globalThis.location?.origin ?? 'http://x'); if (on) u.searchParams.set('focus', '1'); else u.searchParams.delete('focus'); return u.pathname + u.search + u.hash }
 const FOCUS_FIELD = '<input type="hidden" name="focus" value="1">'
 const DRAW = pen('<path d="M4.6 19.6 Q5 17.6 5.6 15.9 Q10.6 10.8 16 5.2 Q17.6 4 18.9 5.3 Q20 6.6 18.7 8 Q13.3 13.4 8.2 18.5 Q6.5 19.2 4.6 19.6"/><path d="M14.4 6.9 Q15.8 8.1 17.1 9.6"/>')
-// Send and reverse (the words go back with the card, for rework): while Shift is held, Send is the reverse card, and
-// a click sends so; Shift+Enter (and Ctrl/⌘+Enter) from the field does the same. Alt+Enter is a new line (ui.mjs
-// watchShift sets <html data-shift>, card.css turns Send; controller "card": sendClick, keys).
-const CTRL_WORD = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? '') ? '⌘' : 'Ctrl'
-const ALT_WORD = CTRL_WORD === '⌘' ? '⌥' : 'Alt'
-/** Send; where the card can go back (an open decision or info) it wears the reverse card while Shift is held. */
-function sendButton(canReverse, asker) {
-  const to = asker || 'the agent'
-  return html`<button class="tc-send" type="submit" name="stay" value="1" title="Send (Enter)" aria-label="Send to the agent" data-action="click->card#sendClick">${sk('send')}${canReverse ? html`<span class="tc-send-uno" aria-hidden="true">${sk('reverse')}</span>` : ''}</button>`
-}
-/** The "+" at the field's left: a small menu with Attach (files or pictures; also paste or drop them on the card) and,
- *  where the card can be drawn on, Draw on the card. A dot on the "+" while a drawing waits to be sent. */
-function plusMenu(canDraw) {
-  return html`<details class="tc-plus" data-controller="pops"><summary class="tc-plus-open" title="Attach or draw" aria-label="Attach or draw">${PLUS}</summary><div class="tc-plus-pop" role="menu">
-<label class="tc-plus-item tc-clip" role="menuitem" title="Attach">${sk('clip')}<span>Attach files or pictures</span><input type="file" name="files" multiple hidden data-card-target="files" data-action="change->card#files"></label>${canDraw ? html`<button type="button" role="menuitem" class="tc-plus-item tc-draw tc-draw-pen" data-action="card#trace" data-pop-close aria-pressed="false" title="Draw">${sk('pen')}<span>Draw on the card</span></button>` : ''}</div></details>`
-}
-const imagesOf = card => (card.attachments ?? []).filter(a => kindOf(a) === 'image')
-const videosOf = card => (card.attachments ?? []).filter(a => kindOf(a) === 'video')
-/** What is attached and is neither picture nor video (a table, a log, a sound): shown as files. */
-const filesOf = card => (card.attachments ?? []).filter(a => !['image', 'video'].includes(kindOf(a)))
-const sizeWord = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} kB` : `${n} B`)
-/** One attached file, to open: the clip, its name, its size. The same on the card and in the talk. */
-const fileChip = a => html`<a class="tc-file" href="${a.url}" target="_blank" rel="noopener" title="Open ${a.name}">${sk('clip')}<b>${a.name}</b>${a.size > 0 ? html`<i>${sizeWord(a.size)}</i>` : ''}</a>`
+const COPY_ICON = raw('<svg viewBox="0 0 24 24" class="sketch cardclip-ico" aria-hidden="true"><path d="M9.2 8.6C12.6 8.3 16 8.4 19.3 8.7C19.7 12.2 19.6 15.8 19.4 19.4C16 19.8 12.6 19.7 9.1 19.5C8.7 16 8.8 12.4 9 9"/><path d="M15 5.6C14.8 4.9 14.3 4.5 13.6 4.5C10.9 4.3 8.2 4.4 5.4 4.6C4.8 4.7 4.5 5.1 4.5 5.7C4.3 8.4 4.3 11.2 4.6 14C4.7 14.6 5.1 14.9 5.8 15"/></svg>')
 // The pen's circle round an answer in the talk, as wide as its tile.
 const RING = raw('<svg class="tc-deed-ring" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><path d="M9 23 C5 9 28 3.4 54 4 C80 4.6 96.4 10 94.6 21 C92.6 33 68 37 45 36.2 C21 35.4 4.6 31 8.4 17 C10 11.6 16 8 25 6.2" vector-effect="non-scaling-stroke"/></svg>')
-/** The version that stands now, as a number. */
-const liveVersion = card => card.version ?? (card.versions?.at(-1)?.n ?? 0) + 1
-/** The card as it was in version n (title, text, options, pictures), or null. */
-const versionOf = (card, n) => (n != null && n < liveVersion(card) ? card.versions?.find(v => v.n === n) ?? null : null)
+const BACK_ARROW = raw('<svg viewBox="0 0 24 24" class="sketch tc-undo-ico" aria-hidden="true"><path d="M9.8 5.6 Q6.8 8.4 4.3 11.2 Q7.1 13.8 10 16.6"/><path d="M4.9 11.1 Q10.4 10.4 14.9 11.2 Q19.8 12.5 19.5 16.4 Q19 19.5 15 19.7"/></svg>')
+// The pen line under the strip of work: a faint stroke drawn by hand, and a short darker one that runs along it.
+const PEN_RUN = raw('<svg class="tc-work-run" viewBox="0 0 200 8" preserveAspectRatio="none" aria-hidden="true"><path class="run-base" d="M2 4.6 Q30 2.4 60 4.4 T120 3.8 T198 4.2"/><path class="run-pen" d="M2 4.6 Q30 2.4 60 4.4 T120 3.8 T198 4.2" pathLength="100"/></svg>')
+const URGENCY = ['low', 'normal', 'high', 'critical']
 
-// ---- what the card holds, and what goes to the comments ----
-// The card is as long as its words: every paragraph stands on it and the page scrolls. A layout, a table or code never
-// stands on the card: those are in the comments, as "The whole text", and the card says so.
-/** -> { shown: the text for the card (markdown), more: whether the comments hold more } */
-function fitText(text) {
-  const source = String(text ?? '')
-  // (where a code block or a table stood, one quiet line says so: a sentence that ends in a colon is not left hanging)
-  const MOVED = { code: '*↓ code, in the whole text below*', table: '*↓ table, in the whole text below*' }
-  const parts = source.replace(/```[\s\S]*?```/g, `\n\n${MOVED.code}\n\n`).split(/\n{2,}/).map(p => p.trim()).filter(Boolean).map(p => (/^\s*\|.*\|\s*$/m.test(p) ? MOVED.table : p))
-  const prose = parts.filter((p, i) => !(Object.values(MOVED).includes(p) && Object.values(MOVED).includes(parts[i - 1])))
-  return { shown: prose.join('\n\n'), more: /```|^\s*\|/m.test(source) }
-}
-/** What was said about one card (its events and its comments), in order: the board state's per-card list where it
- *  has one (built from that card's thread only), else filtered from its session's or the whole board's. */
-const talkOf = (model, card) => {
-  const st = model.state
-  return st.messagesOfCard ? st.messagesOfCard(card.id) : (st.messagesOf ? st.messagesOf(card.agent) : st.messages).filter(m => m.card_id === card.id)
-}
-/** The text a card stands for: its body, or the plain blocks of its sections. */
-const textOf = card => (card.sections?.length ? card.sections.filter(s => s.key == null).map(s => s.text).filter(Boolean).join('\n\n') : card.body ?? '')
+/** A card's address (CardView, CardRefView, or an id) under base: by its number where known, else its id. */
+export const cardPath = (card, base = '') => `${base}/card/${encodeURIComponent(typeof card === 'string' ? card : card.number || card.id)}`
+/** A form's address for one way of answering: POST /cards/<id>/<what> (register below). */
+const act = (card, what) => `/cards/${card.id}/${what}`
+/** The card in view by its id or number (the address's), or null. */
+export const cardIn = (vm, ref) => vm.cards?.[ref] ?? Object.values(vm.cards ?? {}).find(c => String(c.number) === String(ref)) ?? null
 
-/** Which picture belongs to which option: picture index -> option key, where that is
- *  plain to see: a section names its picture; or every picture names one option in its file name; or there are
- *  as many pictures as options, three or more. Nothing is guessed otherwise. */
-function pictureKeys(card) {
-  const images = imagesOf(card), options = card.options ?? [], out = new Map()
-  for (const s of card.sections ?? []) {
-    const at = s.key != null && s.picture != null ? images.indexOf(card.attachments?.[s.picture]) : -1
-    if (at >= 0 && !out.has(at)) out.set(at, s.key)
-  }
-  if (out.size || images.length < 2 || options.length < 2) return out
-  const slug = text => String(text ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  let unclear = false
-  const owners = new Set()
-  images.forEach((img, i) => {
-    const name = `-${slug(String(img.name ?? '').replace(/\.[a-z0-9]+$/i, ''))}-`
-    const hits = options.filter(o => [slug(o.key), slug(o.label)].some(w => w && name.includes(`-${w}-`))).sort((x, y) => slug(y.key).length - slug(x.key).length)
-    if (!hits.length) return
-    if (hits.length > 1 && slug(hits[1].key).length === slug(hits[0].key).length) { unclear = true; return }
-    out.set(i, hits[0].key); owners.add(hits[0].key)
-  })
-  if (!unclear && owners.size >= 2) return out
-  return images.length === options.length && options.length >= 3 ? new Map(options.map((o, i) => [i, o.key])) : new Map()
+// ---- files ----
+const fileOf = (vm, id) => vm.files?.[id] ?? { name: '', media_type: '', size: 0 }
+const sizeWord = n => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} kB` : `${n} B`)
+/** The src attribute of a file's picture or video, once its bytes are here (the page is drawn again when they come). */
+const srcAt = (id, suffix = '') => { const url = fileSrc(id); return url ? raw(` src="${url}${suffix}"`) : '' }
+/** A card's (or a version's) pictures, videos and other files: { pictures, videos, others } (ids, PictureViews). */
+function mediaOf(vm, { pictures = [], files = [] }) {
+  const pics = new Set(pictures.map(p => p.file_id)), kind = id => fileOf(vm, id).media_type.split('/')[0]
+  const rest = files.filter(id => !pics.has(id))
+  return { pictures, videos: rest.filter(id => kind(id) === 'video'), others: rest.filter(id => kind(id) !== 'video' && kind(id) !== 'image') }
 }
+/** One attached file, to open: the clip, its name, its size. The same on the card and in the talk. */
+const fileChip = (vm, id) => { const f = fileOf(vm, id), url = fileSrc(id); return html`<a class="tc-file"${url ? html` href="${url}" download="${f.name}"` : ''} target="_blank" rel="noopener" title="Open ${f.name}">${sk('clip')}<b>${f.name}</b>${f.size > 0 ? html`<i>${sizeWord(f.size)}</i>` : ''}</a>` }
 
-/** What the controller "card" needs to put another picture on the stage (the pointer on an option or on a small
- *  picture): per picture its address, its size, its marks, the option it belongs to, its file name and caption, its page. */
-function picturesOf(card, base) {
-  const keys = pictureKeys(card)
-  const images = imagesOf(card)
-  // (Several options may show the same picture: a section names it for each.)
-  const shared = i => (card.sections ?? []).filter(s => s.key != null && s.picture != null && images.indexOf(card.attachments?.[s.picture]) === i).map(s => s.key)
-  return images.map((a, i) => { const all = shared(i), key = keys.get(i) ?? null; return { at: i + 1, src: thumb(a).src, width: a.width > 0 ? a.width : null, height: a.height > 0 ? a.height : null, name: a.name, title: a.title && a.title !== a.name ? a.title : '', page: a.page ? { ...a.page, view: a.page.kind === 'file' ? `${cardPath(card, base)}/picture/${i + 1}/page` : null } : null, marks: a.marks ?? [], key, keys: all.length ? all : key != null ? [key] : [], href: `${cardPath(card, base)}/picture/${i + 1}` } })
-}
+// ---- the picture stage ----
 /** Where one stands among the pictures and videos: "2 / 6", at the end of the bar of small ones. */
 const count = (i, n) => (n > 1 ? html`<b class="tc-count" data-card-target="where" aria-label="${i} of ${n}">${i} / ${n}</b>` : '')
 /** The small pictures to pick from: the one that stands is marked; the pointer on one shows it (controller "card").
- *  Each lies on a ground with a drawn picture, so one that has not come yet is not a hole. Its tooltip is the
- *  caption its agent gave it, or the file's name. */
-const strip = (images, i, to) => html`<span class="tc-strip" data-action="pointerover->card#peek focusin->card#peek pointerleave->card#unpreview focusout->card#unpreview">${images.map((p, n) => html`<a class="tc-thumb" data-nav href="${to(n + 1)}" data-turbo-action="replace" data-at="${n + 1}" title="${p.title && p.title !== p.name ? p.title : p.name}" aria-label="Show picture ${n + 1}: ${p.name}" aria-pressed="${String(n + 1 === i)}">${sk('picture')}<img${srcOf(p)} alt="" loading="lazy" decoding="async" draggable="false" width="48" height="34"></a>`)}</span>`
+ *  Each lies on a ground with a drawn picture, so one that has not come yet is not a hole. */
+const strip = (pictures, i, to) => html`<span class="tc-strip" data-action="pointerover->card#peek focusin->card#peek pointerleave->card#unpreview focusout->card#unpreview">${pictures.map((p, n) => html`<a class="tc-thumb" data-nav href="${to(n + 1)}" data-turbo-action="replace" data-at="${n + 1}" title="${p.title ?? p.name}" aria-label="Show picture ${n + 1}: ${p.name}" aria-pressed="${String(n + 1 === i)}">${sk('picture')}<img${srcAt(p.file_id)} alt="" loading="lazy" decoding="async" draggable="false" width="48" height="34"></a>`)}</span>`
 /** The videos' small tiles, after the pictures: the same tile with a play mark. */
-const clips = (videos, i, to, from) => videos.map((p, n) => html`<a class="tc-thumb tc-thumb-video" data-nav href="${to(from + n + 1)}" data-turbo-action="replace" title="${p.name}" aria-label="Show video ${n + 1}: ${p.name}" aria-pressed="${String(from + n + 1 === i)}">${icon(PLAY)}</a>`)
-/** The files that are neither picture nor video, as tiles of the same bar after them: a click opens the file in a new tab. */
-const attTile = a => html`<a class="tc-thumb tc-thumb-file" href="${a.url}" target="_blank" rel="noopener" title="${a.name}${a.size > 0 ? ` · ${sizeWord(a.size)}` : ''}" aria-label="Open ${a.name} in a new tab">${sk('clip')}<b>${a.name}</b></a>`
+const clips = (vm, videos, i, to, from) => videos.map((id, n) => html`<a class="tc-thumb tc-thumb-video" data-nav href="${to(from + n + 1)}" data-turbo-action="replace" title="${fileOf(vm, id).name}" aria-label="Show video ${n + 1}: ${fileOf(vm, id).name}" aria-pressed="${String(from + n + 1 === i)}">${icon(PLAY)}</a>`)
+/** The files that are neither picture nor video, as tiles of the same bar after them: a click opens the file. */
+const attTile = (vm, id) => { const f = fileOf(vm, id), url = fileSrc(id); return html`<a class="tc-thumb tc-thumb-file"${url ? html` href="${url}" download="${f.name}"` : ''} target="_blank" rel="noopener" title="${f.name}${f.size > 0 ? ` · ${sizeWord(f.size)}` : ''}" aria-label="Open ${f.name} in a new tab">${sk('clip')}<b>${f.name}</b></a>` }
 /** A picture's shape on the stage, from its size: one more than a quarter taller than wide (TALL) is not fitted into
  *  the stage but stands at its width and is scrolled; a phone's screenshot (SLIM) is kept narrow. */
 const TALL = 1.25, SLIM = 1.8
 const shapeOf = (w, h) => (w > 0 && h > 0 && h / w > TALL ? (h / w >= SLIM ? ['is-tall', 'is-slim'] : ['is-tall']) : [])
 /** The picture's shown width: its own, never wider than its place (a phone's screenshot is not blown up). */
-const ownWidth = a => (a.width > 0 ? raw(` style="width:${Number(a.width)}px"${a.height > 0 ? ` width="${Number(a.width)}" height="${Number(a.height)}"` : ''}`) : '')
+const ownWidth = p => (p.width > 0 ? raw(` style="width:${Number(p.width)}px"${p.height > 0 ? ` width="${Number(p.width)}" height="${Number(p.height)}"` : ''}`) : '')
+/** The page behind a picture (the HTML it was rendered from), as one thing to press; it stands hidden where the
+ *  picture has none (the controller shows it for one that has). */
+const pageChip = (vm, page, view) => html`<a class="page-chip" data-card-target="page" data-nav href="${page ? view : '#'}" title="Open page"${page ? '' : raw(' hidden')}>${sk('page')}<b>${page ? fileOf(vm, page).name : ''}</b><i>open</i></a>`
 
-/** The picture of the card: one at a time on a stage of ONE fixed size (16:10 of the column, never taller than the
- *  card allows), the same for every picture and video of the card, so no hover, pick or late picture moves anything.
- *  A picture is fitted into the stage and centred; a tall one (shapeOf) stands at its width, its top first, and is scrolled inside the stage: by the wheel,
- *  a finger, its scrollbar, and by dragging it with the mouse. A click on it opens it large on its own page. On the stage's lower edge: the caption
- *  its agent gave it, and the page behind it. Under the stage ONE bar: the pictures and videos as small ones to pick
- *  (?pic= counts on through the videos), the other files as tiles (a click opens one in a new tab), and which one
- *  stands ("2 / 6"). A frame of its own, so picking another loads only this. A video stands on the stage as a player
- *  (decrypted to a blob by att.mjs / sw.js; never autoplays): a click on it plays and pauses, so the way to the large
- *  view is a small button in the stage's corner ("Enlarge"). */
-function cardMedia(card, base, at = 1, query = '') {
-  const images = imagesOf(card), videos = videosOf(card), all = [...images, ...videos], files = filesOf(card)
-  if (!all.length) return files.length ? html`<div class="tc-media"><div class="tc-thumbs" aria-label="Attached files"><span class="tc-roll">${files.map(attTile)}</span></div></div>` : ''
-  const i = Math.min(Math.max(1, at), all.length), a = all[i - 1], video = i > images.length
-  const here = cardPath(card, base)
+/** What the controller "card" needs to put another picture on the stage (the pointer on an option or on a small
+ *  picture): per picture its address, its size, the option it belongs to, its name and caption, its page. */
+const picturesOf = (pictures, vm, here) => pictures.map((p, i) => ({ at: i + 1, src: fileSrc(p.file_id) ?? '', width: p.width ?? null, height: p.height ?? null, name: p.name, title: p.title ?? '', page: p.page ? { view: `${here}/picture/${i + 1}/page`, name: fileOf(vm, p.page).name } : null, marks: p.marks ?? [], key: p.key ?? null, keys: p.keys ?? (p.key != null ? [p.key] : []), href: `${here}/picture/${i + 1}` }))
+
+/** The picture of the card: one at a time on a stage of ONE fixed size, the same for every picture and video of the
+ *  card, so no hover, pick or late picture moves anything. A tall one (shapeOf) stands at its width and is scrolled
+ *  inside the stage. A click on it opens it large on its own page. On the stage's lower edge: its caption and the page
+ *  behind it. Under the stage ONE bar: the pictures and videos as small ones to pick (?pic= counts on through the
+ *  videos), the other files as tiles, and which one stands ("2 / 6"). A frame of its own, so picking another loads
+ *  only this. A video stands on the stage as a player (never autoplays): the way to the large view is a small button
+ *  in the stage's corner. */
+function cardMedia(id, media, vm, here, at = 1, query = '') {
+  const { pictures, videos, others } = media, all = pictures.length + videos.length
+  if (!all) return others.length ? html`<div class="tc-media"><div class="tc-thumbs" aria-label="Attached files"><span class="tc-roll">${others.map(f => attTile(vm, f))}</span></div></div>` : ''
+  const i = Math.min(Math.max(1, at), all), video = i > pictures.length
   const to = n => `${here}?pic=${n}${query}`
-  const key = video ? undefined : pictureKeys(card).get(i - 1)
-  const step = (n, cls, label, d) => (all.length > 1 ? html`<a class="tc-step ${cls}" data-nav href="${to(n)}" data-turbo-action="replace" aria-label="${label}">${icon(d)}</a>` : '')
-  const said = !video && a.title && a.title !== a.name ? a.title : ''
-  const shown = video
-    ? html`<figure class="tc-video"><video src="${a.url}#t=0.001" controls playsinline preload="metadata" aria-label="Video ${i} of ${all.length}: ${a.name}"></video></figure><a class="tc-enlarge" data-nav href="${here}/picture/${i}" data-turbo-frame="_top" title="Enlarge" aria-label="Enlarge video ${i - images.length}: ${a.name}">${icon(GROW)}</a>`
-    : html`<div class="tc-scroll"><a class="tc-figure is-wait ${shapeOf(a.width, a.height).join(' ')}" draggable="false" data-nav href="${here}/picture/${i}" data-turbo-frame="_top" data-card-target="figure" data-at="${i}" title="Open it large" aria-label="Picture ${i} of ${images.length}: ${a.name}. Open it large"${key != null ? html` data-key="${key}"` : ''} data-controller="circles" data-circles-marks-value="${JSON.stringify(a.marks ?? [])}"><img alt=""${srcOf(a)}${ownWidth(a)} decoding="async" draggable="false"></a></div>
-<span class="tc-said" data-card-target="said"${said ? '' : raw(' hidden')}>${said}</span>${pageChip(a.page, true, `${here}/picture/${i}/page`)}`
-  return html`<turbo-frame id="card-media-${card.id}" class="tc-media">
-<div class="tc-stage${video ? ' is-video' : ''}" data-at="${i}">${shown}${step(i > 1 ? i - 1 : all.length, 'is-prev', 'The one before', ARROW_L)}${step(i < all.length ? i + 1 : 1, 'is-next', 'The next one', ARROW_R)}</div>
-${all.length > 1 || files.length ? html`<div class="tc-thumbs"><span class="tc-roll">${all.length > 1 ? html`${strip(images, i, to)}${clips(videos, i, to, images.length)}` : ''}${files.map(attTile)}</span>${count(i, all.length)}</div>` : ''}
+  const step = (n, cls, label, d) => (all > 1 ? html`<a class="tc-step ${cls}" data-nav href="${to(n)}" data-turbo-action="replace" aria-label="${label}">${icon(d)}</a>` : '')
+  let shown
+  if (video) {
+    const v = videos[i - pictures.length - 1], name = fileOf(vm, v).name
+    shown = html`<figure class="tc-video"><video${srcAt(v, '#t=0.001')} controls playsinline preload="metadata" aria-label="Video ${i} of ${all}: ${name}"></video></figure><a class="tc-enlarge" data-nav href="${here}/picture/${i}" data-turbo-frame="_top" title="Enlarge" aria-label="Enlarge video ${i - pictures.length}: ${name}">${icon(GROW)}</a>`
+  } else {
+    const p = pictures[i - 1]
+    shown = html`<div class="tc-scroll"><a class="tc-figure is-wait ${shapeOf(p.width, p.height).join(' ')}" draggable="false" data-nav href="${here}/picture/${i}" data-turbo-frame="_top" data-card-target="figure" data-at="${i}" title="Open it large" aria-label="Picture ${i} of ${pictures.length}: ${p.name}. Open it large"${p.key != null ? html` data-key="${p.key}"` : ''} data-controller="circles" data-circles-marks-value="${JSON.stringify(p.marks ?? [])}"><img alt=""${srcAt(p.file_id)}${ownWidth(p)} decoding="async" draggable="false"></a></div>
+<span class="tc-said" data-card-target="said"${p.title ? '' : raw(' hidden')}>${p.title ?? ''}</span>${pageChip(vm, p.page, `${here}/picture/${i}/page`)}`
+  }
+  return html`<turbo-frame id="card-media-${id}" class="tc-media">
+<div class="tc-stage${video ? ' is-video' : ''}" data-at="${i}">${shown}${step(i > 1 ? i - 1 : all, 'is-prev', 'The one before', ARROW_L)}${step(i < all ? i + 1 : 1, 'is-next', 'The next one', ARROW_R)}</div>
+${all > 1 || others.length ? html`<div class="tc-thumbs"><span class="tc-roll">${all > 1 ? html`${strip(pictures, i, to)}${clips(vm, videos, i, to, pictures.length)}` : ''}${others.map(f => attTile(vm, f))}</span>${count(i, all)}</div>` : ''}
 </turbo-frame>`
 }
 
-/** Whether the card's session is at work on it now: { agent, line, at } or null. A card handed back is worked on while
- *  its session is connected; an answered one only while that session also has a working status line (the one naming
- *  this card, else its newest naming none: app.mjs workLine, as the Desk's "Off your mind" pairs them). */
-export function workOf(card, model) {
-  if (card.kind === 'permission' || stackOf(card, { online: runsOf(model) }) !== 'works') return null
-  const agent = model.byAgent.get(card.agent)
-  if (!agent?.online) return null
-  const line = workLine(card, (model.state.tasks ?? []).filter(t => t.state === 'working'))
-  if (!card.with_agent && !line) return null
-  return { agent, line, at: line?.updated || card.with_agent || card.decided || 0 }
+// ---- the left column: who, title, one quiet line, the text, the picture, the options explained ----
+/** Who a card comes from, above its title: the session's drawing and where it stands, desk › main session › itself,
+ *  its name in bold; a link to the session. */
+function fromLine(from, base) {
+  const who = whoOf(from), path = from.path?.length ? from.path : [from.name], name = path.at(-1)
+  return html`<a class="tc-fromline" data-nav href="${base}/chat/${encodeURIComponent(from.session_id)}" style="--hue:${who.hue}" aria-label="From ${path.join(', ')}">${raw(doodleSvg(from.mark))}${path.slice(0, -1).map(p => html`<span>${p}</span><i aria-hidden="true">›</i>`)}<b>${name}</b></a>`
 }
-// The pen line under the strip: a faint stroke drawn by hand, and a short darker one that runs along it.
-const PEN_RUN = raw('<svg class="tc-work-run" viewBox="0 0 200 8" preserveAspectRatio="none" aria-hidden="true"><path class="run-base" d="M2 4.6 Q30 2.4 60 4.4 T120 3.8 T198 4.2"/><path class="run-pen" d="M2 4.6 Q30 2.4 60 4.4 T120 3.8 T198 4.2" pathLength="100"/></svg>')
-/** The strip above the title while the card's session works on it: its drawing redrawing itself, "<session> is working
- *  on it", its status line (label · detail) and how long ago that was said, the pen line under it. */
-function workStrip(card, model) {
-  const w = workOf(card, model)
-  if (!w) return ''
-  const words = w.line ? [w.line.label, w.line.detail].filter(Boolean).join(' · ') : 'Reworking the card'
-  return html`<div class="tc-work" role="status">${avatar(w.agent, { crown: false, working: true })}<span class="tc-work-words"><b>${w.agent.name} is working on it</b><span>${words}${w.at ? html` · ${agoSpan(w.at, 'ago')}` : ''}</span></span>${PEN_RUN}</div>`
-}
-/** The card's left column (#card-left-<id>): title, one quiet line, the text that fits, the picture.
- *  version: as it was then (read-only). pic: the picture shown. self: the base its links are under (a session's page). */
-function cardLeft(card, model, base, { version = null, pic = 1, query = '' } = {}) {
-  const old = versionOf(card, version)
-  const shown = old ? { ...card, attachments: old.attachments ?? card.attachments } : card
-  return html`<div class="tc-left">${cardLead(card, model, base, { version })}
-${cardMedia(shown, base, pic, query)}
-${optionsSaid(card, model.state.assets, version)}
-</div>`
-}
-/** The words of the left column (#card-lead-<id>): what the live stream replaces (the picture keeps its place). */
-/** Who a card comes from, above its title, on its page and in Blitz (the owner, 13 October 2026): the session's drawing
- *  and where it stands, desk › main session › itself, its name in bold; a link to the session. The path is the
- *  client core's (core/client/src/sessions.rs `path`), drawn here only. */
-function fromLine(a, base) {
-  const path = a.path?.length ? a.path : [a.name], name = path.at(-1)
-  return html`<a class="tc-fromline" data-nav href="${base}/chat/${encodeURIComponent(a.id)}" style="--hue:${a.hue}" aria-label="From ${path.join(', ')}">${raw(doodleSvg(a.mark))}${path.slice(0, -1).map(p => html`<span>${p}</span><i aria-hidden="true">›</i>`)}<b>${name}</b></a>`
-}
-function cardLead(card, model, base, { version = null } = {}) {
-  const from = model.byAgent.get(card.agent)
-  const old = versionOf(card, version)
-  const place = old ? null : placeOf(card, model)
-  const shown = old ? { ...card, title: old.title ?? card.title, body: old.body ?? '', sections: old.sections } : card
-  const { shown: text, more } = fitText(textOf(shown))
-  const said = talkOf(model, card).filter(m => m.from !== 'event' && (m.text || m.attachments?.length)).length
-  const notes = [cardNote(card), old ? `version ${old.n}, as it was` : '', said ? (said === 1 ? '1 message below' : `${said} messages below`) : ''].filter(Boolean)
+/** The strip above the title while the card's session works on it (CardWorkView): its drawing redrawing itself,
+ *  "<session> is working on it", its status line and how long ago that was said, the pen line under it. */
+const workStrip = w => (w ? html`<div class="tc-work" role="status">${avatar(whoOf(w), { crown: false, working: true })}<span class="tc-work-words"><b>${w.says.en}</b><span>${w.words.en}${w.at_ms ? html` · ${agoSpan(w.at_ms, 'ago')}` : ''}</span></span>${PEN_RUN}</div>` : '')
+/** The words of the left column (#card-lead-<id>). old: a version before (VersionView), read only. */
+function cardLead(card, base, old = null) {
+  const notes = [...(card.notes ?? []).map(n => n.en), old ? `version ${old.n}, as it was` : ''].filter(Boolean)
+  const text = old ? old.text ?? '' : card.text
   return html`<div class="tc-lead focus-lead" id="card-lead-${card.id}">
-${isKnock(card) && card.status === 'open' ? html`<span class="inbox-tab tc-knock">${sk('knock')}${knockWord(card)}</span>` : ''}
-${old ? '' : workStrip(card, model)}${from ? fromLine(from, base) : ''}<h1 class="tc-title" id="card-title-${card.id}">${shown.title}</h1>
-<p class="tc-meta">${agoSpan(card.revised ?? card.created, 'tc-ago')}<span aria-hidden="true">·</span><span>${cardNr(card)}</span>${place ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Its place">${place.at} of ${place.of}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
-${text ? html`<div class="tc-text">${rich(text, { assets: model.state.assets })}</div>` : ''}${more ? html`<a class="tc-more-text" href="#card-whole-${card.id}">More in the comments ↓</a>` : ''}
+${card.knock ? html`<span class="inbox-tab tc-knock">${sk('knock')}${card.knock.en}</span>` : ''}
+${old ? '' : workStrip(card.work)}${card.from ? fromLine(card.from, base) : ''}<h1 class="tc-title" id="card-title-${card.id}">${old?.title || card.title}</h1>
+<p class="tc-meta">${agoSpan(card.asked_ms, 'tc-ago')}<span aria-hidden="true">·</span><span>${card.nr.en}</span>${card.place && !old ? html`<span aria-hidden="true">·</span><span class="tc-count" title="Its place">${card.place.says.en}</span>` : ''}${notes.length ? html`<span aria-hidden="true">·</span><a href="#card-thread-${card.id}">${notes.join(' · ')}</a>` : ''}</p>
+${text ? html`<div class="tc-text">${rich(text)}</div>` : ''}${card.more && !old ? html`<a class="tc-more-text" href="#card-whole-${card.id}">More in the comments ↓</a>` : ''}
 </div>`
 }
+/** The options' own paragraphs (SectionView: a card written as sections), at the end of the left column after the
+ *  pictures (#card-say-<id>), one block per option in the order of the tiles. The pointer on a tile (or the keyboard)
+ *  marks its block and draws the pen's arrow from the tile to it (controller "card", say). */
+export function optionsSaid(card) {
+  const secs = card.sections ?? []
+  if (!secs.length) return html`<div id="card-say-${card.id}" hidden></div>`
+  return html`<section class="tc-say" id="card-say-${card.id}" aria-label="The options explained">${secs.map(s => html`<div class="tc-say-one" data-key="${s.key}"><h3 class="tc-say-head"><span class="tc-say-label">${s.label}</span>${s.recommended ? html` <span class="tc-advised-word">recommended</span>` : ''}</h3>${s.text || s.html ? html`<div class="tc-say-text">${rich(s.text, { extra: s.html ?? '', hand: false })}</div>` : ''}</div>`)}</section>`
+}
 
-// The reverse card: one press hands the card back at once, "put this before me again". Nothing opens and nothing is
-// asked: the session reworks the card with the comments under it in mind (what should change is written there first).
-// A button of the card's form: what stands unsent in the field and what is drawn on the card go along.
-const reviseTile = (card, model, base) => { const to = model.byAgent.get(card.agent)?.name ?? 'the agent', tip = WORDS.revise; return html`<button class="tc-tile tc-reverse" type="submit" form="card-form-${card.id}" formaction="${act(card, base, 'revise')}" name="next" value="1" title="${tip} (B)" aria-label="${tip}">${sk('reverse')}</button>` }
+// ---- the right column: the answers, or what was said ----
+// The reverse card: one press hands the card back at once, "put this before me again" (HandBack rework). A button of
+// the card's form: what stands unsent in the field and what is drawn on the card go along.
+const reviseTile = card => html`<button class="tc-tile tc-reverse" type="submit" form="card-form-${card.id}" formaction="${act(card, 'revise')}" name="next" value="1" title="${WORDS.revise} (B)" aria-label="${WORDS.revise}">${sk('reverse')}</button>`
+const whatTile = (card, cls = 'tc-tile tc-wtf is-what') => html`<button class="${cls}" type="submit" form="card-form-${card.id}" formaction="${act(card, 'what')}" title="${WORDS.what} (E)" aria-label="What?? Explain this to me: the session explains it, and it comes back explained">${sk('what')}</button>`
 const still = (label, detail = '', cls = '') => html`<div class="tc-opt is-still ${cls}"><span class="tc-opt-words"><span class="tc-opt-label">${label}</span>${detail ? html`<span class="tc-opt-detail">${detail}</span>` : ''}</span></div>`
-const BACK_ARROW = raw('<svg viewBox="0 0 24 24" class="sketch tc-undo-ico" aria-hidden="true"><path d="M9.8 5.6 Q6.8 8.4 4.3 11.2 Q7.1 13.8 10 16.6"/><path d="M4.9 11.1 Q10.4 10.4 14.9 11.2 Q19.8 12.5 19.5 16.4 Q19 19.5 15 19.7"/></svg>')
-/** The way back from what was said: a quiet link with the pen's return arrow, at the end of the answer's own line. */
-const back = (card, base, way, word = WORDS.takeBack) => html`<button class="tc-undo" type="submit" form="card-form-${card.id}" formaction="${act(card, base, way)}">${BACK_ARROW}<span>${word}</span></button>`
+/** The way back from what was said (AnswerView.back): a quiet link with the pen's return arrow. */
+const backWay = (card, way) => (way ? html`<button class="tc-undo" type="submit" form="card-form-${card.id}" formaction="${act(card, way)}">${BACK_ARROW}<span>${WORDS.takeBack}</span></button>` : '')
 /** The line under what was said: who did it and when, and the way back at its right end. */
-const saidFoot = (words, ts, way = '') => html`<p class="tc-ans-foot"><span>${words}</span>${ts ? html`<i aria-hidden="true">·</i>${agoSpan(ts, 'ago')}` : ''}${way}</p>`
-/** The answer that stands: the tile in the accent, the pen's tick at its left (as "Got it": done, at a glance). */
+const saidFoot = (card, a) => (a.did ? html`<p class="tc-ans-foot"><span>${a.did.en}</span>${a.at_ms ? html`<i aria-hidden="true">·</i>${agoSpan(a.at_ms, 'ago')}` : ''}${backWay(card, a.back)}</p>` : '')
+/** The answer that stands: the tile in the accent, the pen's tick at its left. */
 const stood = (label, detail = '') => html`<div class="tc-opt is-still is-picked">${sk('tick')}<span class="tc-opt-words"><span class="tc-opt-label">${label}</span>${detail ? html`<span class="tc-opt-detail">${detail}</span>` : ''}</span></div>`
-
-/** Under the answers: whether the card's session can hear the human, whether it has the answer (the receipt), and the step in its terminal. */
-function cardLink(card, model) {
-  const agent = model.byAgent.get(card.agent), link = linkOf(agent)
-  if (!link || card.status === 'shredded' || card.status === 'done' || card.settled) return ''
-  const n = agent.name, h = heardOf(card), mins = ms => `${Math.max(1, Math.round(ms / 60000))} min`
-  const state = link.state !== 'live' ? link : null
-  // Not answered yet: only what the human should know before answering (a session that hears on its next step is nothing to warn of).
-  if (!h) return state && state.state !== 'oncall' ? linkNote(state) : ''
-  if (h.heard == null) return state ? linkNote(state, { receipt: `Your answer waits for ${n}.` }) : ''   // a connector without receipts
-  const receipt = h.heard ? `${n} has your answer.` : h.late ? `${n} has not picked up your answer, sent ${mins(h.waiting)} ago.` : `Your answer is on its way to ${n}.`
-  if (state) return linkNote(state, { receipt })
-  return linkNote(h.late ? { state: 'unheard', fix: agent?.client === 'codex' ? { say: 'Look at its terminal: type anything to start a turn, or start it again with', code: 'codex resume' } : { say: 'Look at its terminal: type anything to wake it, or reconnect it with', code: '/mcp → trommi → Reconnect' } } : null, { receipt, sign: h.heard ? 'tick' : 'letter', tone: h.heard ? 'heard' : h.late ? 'unheard' : 'sent' })
+/** Just answered on its own page (?decided=1): the card stays, answered, and offers the next open question
+ *  (CardView.after), or says there is none, and a way out. */
+function nextStep(after, { self, home, focus }) {
+  return html`<nav class="tc-next" aria-label="What next">${after.next ? html`<a class="tc-next-go" data-nav href="${focusAt(cardPath(after.next, self), focus)}" title="${after.next.title}"><span>${after.says.en}</span><small>${after.next.title}</small>${FORTH}</a>` : html`<p class="tc-next-none">${sk('tick')}<span>${after.says.en}</span></p>`}<a class="tc-next-close" data-nav href="${home}">Close</a></nav>`
 }
-/** What the field to write in says: who reads it, and when, if the session does not hear at once. */
-function askWords(card, model, asker) {
-  const link = linkOf(model.byAgent.get(card.agent))
-  if (link?.state === 'cut') return `${asker || 'The agent'} cannot hear you right now. What you write waits for it…`
-  if (link?.state === 'gone') return `${asker || 'The agent'} is gone. What you write waits for it…`
-  if (link?.state === 'asleep' || link?.state === 'oncall') return `Reaches ${asker || 'the agent'} on its next ${model.byAgent.get(card.agent)?.client === 'codex' ? 'turn' : 'step'}…`
-  return asker ? `Ask ${asker} something, or say what is missing…` : 'Ask something, or say what is missing…'
-}
-/** The options' own paragraphs (a card written as sections), folded under the options. Only when one says more than its
- *  label: an option with nothing beyond its label (a card of body and options) brings no fold. */
-const beyond = s => s.html || String(s.text ?? '').replace(/[\s*_.:,;!?\-–—]+/g, ' ').trim().toLowerCase().replace(String(s.label ?? '').replace(/[\s*_.:,;!?\-–—]+/g, ' ').trim().toLowerCase(), '').trim()
-/** The options' own paragraphs (a card written as sections), at the end of the left column after the pictures
- *  (#card-say-<id>), one block per option in the order of the tiles. The pointer on a tile (or the keyboard) marks
- *  its block and draws the pen's arrow from the tile to it (controller "card", say). Only when one says more than
- *  its label: an option with nothing beyond its label (a card of body and options) brings none. */
-export function optionsSaid(card, assets, version = null) {
-  const old = versionOf(card, version)
-  const secs = ((old ? old.sections : card.sections) ?? []).filter(s => s.key != null)
-  if (!secs.some(beyond)) return html`<div id="card-say-${card.id}" hidden></div>`
-  const advised = advisedKeys(card)
-  secs.sort((a, b) => Number(advised.includes(a.key)) - Number(advised.includes(b.key)))   // (the tiles' order)
-  return html`<section class="tc-say" id="card-say-${card.id}" aria-label="The options explained">${secs.map(s => html`<div class="tc-say-one" data-key="${s.key}"><h3 class="tc-say-head"><span class="tc-say-label">${s.label}</span>${s.recommended || advised.includes(s.key) ? html` <span class="tc-advised-word">recommended</span>` : ''}</h3>${beyond(s) ? html`<div class="tc-say-text">${rich(s.text ?? '', { assets, extra: s.html ?? '', hand: false })}</div>` : ''}</div>`)}</section>`
-}
-/** The right column's answers (#card-answer-<id>): every option a button of the card's form, with its line for a note;
- *  then "or" Whatever. Or, once answered or handed back, what was said and the way back. */
-/** Just decided on its own page: the card stays, decided (its answer and Take back above), and offers the next open
- *  question, or says there is none, and a way out. after: { next, self, home, focus } (cardPage). In Blitz (?walk=1) the
- *  answer goes straight on to the next card instead (actRoute). */
-function nextStep({ next, self, home, focus }) {
-  const go = next ? focusAt(cardPath(next, self), focus) : ''
-  return html`<nav class="tc-next" aria-label="What next">${next ? html`<a class="tc-next-go" data-nav href="${go}" title="${next.title}"><span>Next question</span><small>${next.title}</small>${FORTH}</a>` : html`<p class="tc-next-none">${sk('tick')}<span>That was the last open question.</span></p>`}<a class="tc-next-close" data-nav href="${home}">Close</a></nav>`
-}
-function cardAnswer(card, model, base, { error = '', version = null, pic = 1, after = null } = {}) {
-  const form = `card-form-${card.id}`
-  const err = html`<p class="tc-error" role="alert"${error ? '' : raw(' hidden')}>${error}</p>`
-  const old = versionOf(card, version)
-  // (The revised stamp stands with the options: a rewrite that brings new options brings its stamp along.)
-  const stamp = card.revised ? html`<input type="hidden" name="revised" value="${card.revised}" form="${form}">` : ''
-  const box = inner => html`<div class="tc-answer" id="card-answer-${card.id}">${err}${stamp}${inner}${old ? '' : cardLink(card, model)}</div>`
-  if (old) return box(html`<div class="tc-opts">${(old.options ?? []).map(o => still(o.label, plain(o.detail)))}</div><p class="tc-quiet">Version ${old.n} cannot be answered. <a data-nav href="${cardPath(card, base)}">The question as it stands now</a></p>`)
-  // Settled on another device while this one was away: its outcome is on the way, nothing to answer here meanwhile.
-  if (card.status === 'catching') return box(html`<p class="tc-quiet">Catching up: this question was settled on another device. Its outcome arrives in a moment.</p>`)
-  if (card.status !== 'open') {
-    const picked = card.choices?.length ? card.choices : [card.choice]
-    const said = card.status === 'shredded' ? 'Shredded' : card.kind === 'info' ? 'Read' : card.trusted ? `${WORDS.trust}${advisedLabels(card) ? `: ${advisedLabels(card)}` : ''}` : card.options.filter(o => picked.includes(o.key)).map(o => o.label).join(', ') || 'Withdrawn by the agent'
-    const can = card.status === 'shredded' || card.choice != null || card.trusted || (card.kind === 'info' && card.read)
-    const did = card.status === 'shredded' ? 'You shredded it' : card.kind === 'info' ? 'You read it' : card.trusted ? 'You left it to the agent' : can ? 'You chose' : ''
-    return box(html`<div class="tc-opts">${stood(said, card.note ? `Your note: ${card.note}` : '')}${did ? saidFoot(did, card.decided, can ? back(card, base, 'reopen') : '') : ''}${card.options.filter(o => card.option_notes?.[o.key]).map(o => still(o.label, `Your note: ${card.option_notes[o.key]}`))}${card.settled ? still(html`${sk('tick')}${SETTLED}`, `${model.byAgent.get(card.agent)?.name ?? 'The agent'} marked this answer as final: nothing follows from it.`, 'is-settled') : ''}${card.summary ? still('Done by the agent', card.summary) : ''}</div>${after ? nextStep(after) : ''}${card.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}`)
+/** The right column's answers (#card-answer-<id>), by AnswerView.mode. old: a version before (read only). */
+function cardAnswer(card, { old = null, pic = 1, after = null, self = '' } = {}) {
+  const form = `card-form-${card.id}`, a = card.answer
+  const box = inner => html`<div class="tc-answer" id="card-answer-${card.id}"><p class="tc-error" role="alert" hidden></p>${inner}${old ? '' : linkNote(card.note)}</div>`
+  if (old) return box(html`<div class="tc-opts">${(old.options ?? []).map(o => still(o.label, o.detail ?? ''))}</div><p class="tc-quiet">Version ${old.n} cannot be answered. <a data-nav href="${cardPath(card, self)}">The question as it stands now</a></p>`)
+  const words = x => x?.en ?? ''
+  switch (a.mode) {
+    case 'said': return box(html`<div class="tc-opts">${stood(words(a.label), words(a.detail))}${saidFoot(card, a)}${(a.option_notes ?? []).map(n => still(n.label, n.note.en))}${a.settled ? still(html`${sk('tick')}${SETTLED}`, a.settled.en, 'is-settled') : ''}${a.summary ? still('Done by the agent', a.summary) : ''}</div>${after ? nextStep(card.after ?? { says: { en: '' } }, after) : ''}${a.finished ? html`<button class="tc-tile is-what tc-done-what" type="submit" form="${form}" formaction="${act(card, 'what')}" title="${WORDS.what}">${sk('what')}</button>` : ''}`)
+    case 'revising': return box(html`<div class="tc-opts">${still(words(a.label), words(a.detail))}${saidFoot(card, a)}</div>`)
+    case 'working': return box(html`<div class="tc-opts">${still(words(a.label), words(a.detail))}</div>`)
+    // An info: Got it is its answer; at the column's foot What?? and the reverse card, as on a decision.
+    case 'read': return box(html`<div class="tc-or tc-info-ways"><button class="tc-tile is-ack" type="submit" form="${form}" formaction="${act(card, 'close')}" title="${WORDS.ack}">${sk('tick')}<span>${WORDS.ack}</span></button><div class="tc-or-pair">${whatTile(card, 'tc-tile tc-wtf is-what')}${reviseTile(card)}</div></div>`)
+    case 'options': case 'request': break
+    default: return box(html`<p class="tc-quiet">${words(a.says ?? a.detail ?? a.label)}</p>`)   // catching, loading, newer
   }
-  // Open, but not read on this device yet: what it asks follows once its keys are here.
-  if (card.loading) return box(html`<p class="tc-quiet">Loading … this question is still being decrypted on this device.</p>`)
-  // A card of a newer Trommi: nothing to answer from here; the room's notice offers the reload.
-  if (card.unsupported) return box(html`<p class="tc-quiet">${NEEDS_NEWER}</p>`)
-  if (card.working) return box(html`<div class="tc-opts">${still('Being worked on', `${model.byAgent.get(card.agent)?.name ?? 'Its session'} is on it; it comes to your Desk when it is done.`)}</div>`)
-  if (card.with_agent) return box(html`<div class="tc-opts">${still(WORDS.revising, 'It is with its session and comes back reworked.')}${saidFoot('You handed it back', card.with_agent, back(card, base, 'takeback'))}</div>`)
-  // An info: Got it is its answer; at the column's foot What?? and the reverse card, as on a decision (the reverse
-  // card hands it back for rework with the comments; Ctrl+Enter does the same from the field).
-  if (card.kind === 'info') return box(html`<div class="tc-or tc-info-ways"><button class="tc-tile is-ack" type="submit" form="${form}" formaction="${act(card, base, 'close')}" title="${WORDS.ack}">${sk('tick')}<span>${WORDS.ack}</span></button><div class="tc-or-pair"><button class="tc-tile tc-wtf is-what" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="${WORDS.what}" aria-label="What?? — explain this to me">${sk('what')}</button>${reviseTile(card, model, base)}</div></div>`)
-  const advised = advisedKeys(card)
-  const shownKey = pictureKeys(card).get(pic - 1)
-  const draft = card.draft ?? {}
+  const decision = card.kind === 'decision', shownKey = card.pictures?.[pic - 1]?.key
+  const way = a.mode === 'request' ? 'verdict' : 'decide'
   const option = o => {
-    const is = advised.includes(o.key), noted = String(draft.notes?.[o.key] ?? ''), final = o.final === true
     // (A link written into an option is not on its tile: the tile says it in plain words, the link stands in the comments.)
-    const words = html`<span class="tc-opt-words"><span class="tc-opt-label"${is ? raw(' data-controller="advice"') : ''}>${o.label}</span>${o.detail ? html`<span class="tc-opt-detail">${plain(o.detail)}</span>` : ''}${is ? raw('<span class="tc-sr">, recommended by the agent</span>') : ''}</span>${final ? finalSign(true) : ''}`
-    const pen = card.kind === 'decision' ? html`<span class="tc-opt-pen" data-key="${o.key}" data-action="click->card#note" title="Note"${noted ? raw(' data-noted') : ''}>${sk('pen')}</span>` : ''
-    const marks = html`${is || final ? html` title="${[is ? 'Recommended' : '', final ? FINAL_TIP : ''].filter(Boolean).join(' · ')}"` : ''}${shownKey === o.key ? raw(' data-match') : ''}`
+    const words = html`<span class="tc-opt-words"><span class="tc-opt-label"${o.recommended ? raw(' data-controller="advice"') : ''}>${o.label}</span>${o.detail ? html`<span class="tc-opt-detail">${o.detail}</span>` : ''}${o.recommended ? raw('<span class="tc-sr">, recommended by the agent</span>') : ''}</span>${o.settles ? finalSign(true) : ''}`
+    const pencil = decision ? html`<span class="tc-opt-pen" data-key="${o.key}" data-action="click->card#note" title="Note">${sk('pen')}</span>` : ''
+    const marks = html`${o.tip ? html` title="${o.tip.en}"` : ''}${shownKey === o.key ? raw(' data-match') : ''}`
     const tile = card.multiple
-      ? html`<label class="tc-opt${is ? ' is-advised' : ''}" data-key="${o.key}"${marks}><input type="checkbox" id="tick-${card.id}-${o.key}" name="keys" value="${o.key}" form="${form}" data-action="change->card#keep"${draft.keys?.includes(o.key) ? raw(' checked') : ''}><span class="tc-tick" aria-hidden="true">${icon(TICK)}</span>${words}${pen}</label>`
-      : html`<button class="tc-opt${is ? ' is-advised' : ''}" type="submit" form="${form}" formaction="${act(card, base, 'decide')}" name="key" value="${o.key}" data-key="${o.key}"${marks}>${words}${pen}</button>`
-    return card.kind === 'decision' ? html`${tile}<label class="tc-opt-note" data-note="${o.key}"${noted ? '' : raw(' hidden')}>${sk('pen')}<input type="text" name="note-${o.key}" form="${form}" value="${noted}" maxlength="2000" placeholder="A note on ${o.label}" aria-label="A note on ${o.label}" autocomplete="off" data-action="input->card#keep blur->card#noteLeft keydown->card#noteKey"></label>` : tile
+      ? html`<label class="tc-opt${o.recommended ? ' is-advised' : ''}" data-key="${o.key}"${marks}><input type="checkbox" id="tick-${card.id}-${o.key}" name="keys" value="${o.key}" form="${form}" data-action="change->card#keep"><span class="tc-tick" aria-hidden="true">${icon(TICK)}</span>${words}${pencil}</label>`
+      : html`<button class="tc-opt${o.recommended ? ' is-advised' : ''}" type="submit" form="${form}" formaction="${act(card, way)}" name="key" value="${o.key}" data-key="${o.key}"${marks}>${words}${pencil}</button>`
+    return decision ? html`${tile}<label class="tc-opt-note" data-note="${o.key}" hidden>${sk('pen')}<input type="text" name="note-${o.key}" form="${form}" maxlength="2000" placeholder="A note on ${o.label}" aria-label="A note on ${o.label}" autocomplete="off" data-action="input->card#keep blur->card#noteLeft keydown->card#noteKey"></label>` : tile
   }
   const trustTip = 'Duck it (R)'
-  return box(html`<div class="tc-opts" data-action="pointerover->card#preview focusin->card#preview pointerleave->card#unpreview focusout->card#unpreview" role="group" aria-label="${card.multiple ? 'Your answer. Tick what applies, then send.' : 'Your answer. One tap answers.'}">${[...card.options].sort((a, b) => Number(advised.includes(a.key)) - Number(advised.includes(b.key))).map(option)}${card.multiple ? html`<button class="tc-opt tc-send-many" type="submit" form="${form}" formaction="${act(card, base, 'decide')}"><span class="tc-opt-words"><span class="tc-opt-label">Send the answer</span></span></button>` : ''}</div>
-${card.kind === 'decision' ? html`<div class="tc-or"><i>or</i><button class="tc-opt tc-whatever" type="submit" form="${form}" formaction="${act(card, base, 'trust')}" title="${trustTip}" aria-label="${trustTip}">${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">I don’t give a duck</span></span></button><div class="tc-or-pair"><button class="tc-tile tc-wtf" type="submit" form="${form}" formaction="${act(card, base, 'what')}" title="What?? (E)" aria-label="What?? Explain this to me: the session explains it, and it comes back explained">${sk('what')}</button>${reviseTile(card, model, base)}</div></div>` : ''}`)
+  return box(html`<div class="tc-opts" data-action="pointerover->card#preview focusin->card#preview pointerleave->card#unpreview focusout->card#unpreview" role="group" aria-label="${words(a.says)}">${card.options.map(option)}${card.multiple ? html`<button class="tc-opt tc-send-many" type="submit" form="${form}" formaction="${act(card, way)}"><span class="tc-opt-words"><span class="tc-opt-label">Send the answer</span></span></button>` : ''}</div>
+${decision ? html`<div class="tc-or"><i>or</i><button class="tc-opt tc-whatever" type="submit" form="${form}" formaction="${act(card, 'trust')}" title="${trustTip}" aria-label="${trustTip}">${sk('duck')}<span class="tc-opt-words"><span class="tc-opt-label">${WORDS.trust}</span></span></button><div class="tc-or-pair">${whatTile(card)}${reviseTile(card)}</div></div>` : ''}`)
 }
 
-// Links an agent wrote into an option (its label or its line of detail): they stand here, under the card, named by their option.
-const LINK = /https?:\/\/[^\s<>)`]+|(?<![\w\/:.~\-])\/(?:[\w\-.]+\/)*[\w\-.]+\.html?(?:\?[\w\-.=&%+]*)?(?:#[\w\-.=&%+]*)?/g
-function optionLinks(card) {
-  const found = (card.options ?? []).flatMap(o => (`${o.label} ${o.detail ?? ''}`.match(LINK) ?? []).map(url => ({ o, url: url.replace(/[.,;:!?]+$/, '') })))
-  if (!found.length) return ''
-  return html`<div class="tc-did t-opt-links"><span>Links of the options</span><ul>${found.map(({ o, url }) => html`<li><b>${o.label.replace(LINK, '').trim() || o.key}</b> <a href="${url}" target="_blank" rel="noopener noreferrer">${url.replace(/^https?:\/\/(www\.)?/, '')}</a></li>`)}</ul></div>`
-}
-
-/** The comments under the card (#card-thread-<id>), the oldest first. Sober, as a conversation is: no drawings here.
- *  - What the card did not hold: the whole text, the options in detail (folded: the card shows their pictures already),
- *    links of options, why it is urgent.
- *  - The talk. "What??" and the answer that follows it stand together as one "Explained" block; a hand-back and the
- *    revision it brought stand together ("Version n, as you asked").
- *  - What was done with the card, each act as the thing itself at its moment: the session's sheet (asked), a version's
- *    sheet with its number, the reverse card (handed back), the answer's tile in the pen's circle, the duck, the tick
- *    (read), the shredder, Later's tag, the sheet with a tick (closed). A thing taken back lies there again, faded.
- *  - The history is whole: every version stands in its place with when, what changed (the agent's note) and the
- *    version before it to open; a newer version never folds away or replaces the ones before it. */
-export function cardThread(card, model, base = '', { more = false } = {}) {
-  const all = talkOf(model, card)
-  const assets = model.state.assets
-  const who = model.byAgent.get(card.agent)
-  const files = list => { const rest = (list ?? []).filter(a => kindOf(a) !== 'image' && kindOf(a) !== 'video'); return rest.length ? html`<p class="tc-files">${rest.map(fileChip)}</p>` : '' }
-  // A video in the talk (the clip an agent makes after What??) plays where it is said, never by itself.
-  const vids = list => { const v = (list ?? []).filter(a => kindOf(a) === 'video'); return v.length ? html`<div class="tc-vids">${v.map(a => html`<figure class="tc-vid"><video src="${a.url}#t=0.001" controls playsinline preload="metadata" aria-label="Video: ${a.name}"></video></figure>`)}</div>` : '' }
-  const shots = list => { const pics = (list ?? []).filter(a => kindOf(a) === 'image'); return pics.length ? html`<div class="shots">${pics.map(a => html`<a class="tc-shot" href="${a.url}" target="_blank" rel="noopener" title="Open full size" aria-label="Open ${a.name} full size"><img${srcOf(a, 320)} alt="${a.name}" loading="lazy" decoding="async" width="220" height="165"></a>`)}</div>` : '' }
-  // One column, every piece in the same two places: at the left who (the session's small drawing, the pen for you),
-  // beside it the name, when, and the words. A line that only says where things stand (waiting for the explanation)
-  // is one quiet line on the words' line, without a who.
-  const did = (text, ts) => html`<p class="tc-did"><span>${text}</span>${ts ? agoSpan(ts, 'msg-time') : ''}</p>`
-  const name = who?.name ?? card.agent
+// ---- the comments under the card (#card-thread-<id>) ----
+// Sober, as a conversation is: no drawings here. First what the card does not hold (CardView.lead: the whole text,
+// the links of the options, that he put it off), then the talk and what happened to the card (CardView.talk, the
+// window of the newest rows; "Load earlier" asks the core for a page more). What?? and the words that answer it stand
+// together as one block; each act is the thing itself at its moment: the session's sheet (asked), a version's sheet
+// with its number (and the version before it to open), the reverse card (handed back), the answer's tile in the
+// pen's circle, the duck, the tick (read), the shredder, Later's tag, the sheet with a tick (closed). Every child of
+// the feed has an id, so a new comment is added where it belongs and nothing else is drawn anew.
+export function cardThread(card, vm, base = '') {
+  const from = card.from, who = from ? whoOf(from) : null, name = from?.name ?? ''
+  const pics = files => (files ?? []).filter(id => fileOf(vm, id).media_type.startsWith('image/'))
+  const vids = files => (files ?? []).filter(id => fileOf(vm, id).media_type.startsWith('video/'))
+  const rest = files => (files ?? []).filter(id => !/^(image|video)\//.test(fileOf(vm, id).media_type))
+  const shots = files => { const p = pics(files); return p.length ? html`<div class="shots">${p.map(id => { const url = fileSrc(id), n = fileOf(vm, id).name; return html`<a class="tc-shot"${url ? html` href="${url}"` : ''} target="_blank" rel="noopener" title="Open full size" aria-label="Open ${n} full size"><img${srcAt(id)} alt="${n}" loading="lazy" decoding="async" width="220" height="165"></a>` })}</div>` : '' }
+  // (a video in the talk, the clip an agent makes after What??, plays where it is said, never by itself)
+  const clipsOf = files => { const v = vids(files); return v.length ? html`<div class="tc-vids">${v.map(id => html`<figure class="tc-vid"><video${srcAt(id, '#t=0.001')} controls playsinline preload="metadata" aria-label="Video: ${fileOf(vm, id).name}"></video></figure>`)}</div>` : '' }
+  const chips = files => { const r = rest(files); return r.length ? html`<p class="tc-files">${r.map(id => fileChip(vm, id))}</p>` : '' }
+  const along = files => html`${shots(files)}${clipsOf(files)}${chips(files)}`
+  const did = (text, ts, id = '') => html`<p class="tc-did"${id ? html` id="${id}"` : ''}><span>${text}</span>${ts ? agoSpan(ts, 'msg-time') : ''}</p>`
   // An act: where a message has its who lies the thing the app draws for it, beside it one quiet line (what, when),
   // under it what was written along. tiles: an answer's options, before the line.
-  const deed = (thing, cap, ts, { tiles = '', said = [], more = '', cls = '' } = {}) => html`<div class="tc-deed ${cls}"><span class="tc-deed-thing" aria-hidden="true">${thing}</span><div class="tc-deed-in">${tiles}<p class="tc-deed-cap"><span>${cap}</span>${ts ? agoSpan(ts, 'msg-time') : ''}</p>${said.filter(Boolean).map(t => html`<p class="tc-deed-said">${t}</p>`)}${more}</div></div>`
+  const deed = (id, thing, cap, ts, { tiles = '', said = [], more = '', cls = '' } = {}) => html`<div class="tc-deed ${cls}"${id ? html` id="${id}"` : ''}><span class="tc-deed-thing" aria-hidden="true">${thing}</span><div class="tc-deed-in">${tiles}<p class="tc-deed-cap"><span>${cap}</span>${ts ? agoSpan(ts, 'msg-time') : ''}</p>${said.filter(Boolean).map(t => html`<p class="tc-deed-said">${t}</p>`)}${more}</div></div>`
   const uno = html`<span class="tc-uno">${sk('reverse')}</span>`
   const sheet = (inner, cls = '') => html`<span class="tc-sheet ${cls}">${inner}</span>`
   const read = html`<span class="tc-read">${sk('tick')}</span>`
   const tiles = (labels, back = false) => html`<span class="tc-picked-row">${labels.map(l => html`<span class="tc-picked"><b>${l}</b>${back ? '' : RING}</span>`)}</span>`
-  const along = m => html`${shots(m.files)}${vids(m.files)}${files(m.files)}`
-  // An answer (m: the event, app.mjs eventsOf), or the same answer taken back.
-  const answered = (m, back = false) => {
-    const said = back ? [] : [m.note ? `“${m.note}”` : '', ...(m.notes ?? []).map(([label, note]) => `On ${label}: “${note}”`)]
-    const more = back ? '' : along(m), cls = back ? 'is-undone' : ''
-    if (m.trusted) return deed(sk('duck'), back ? 'You took the duck back' : html`${WORDS.trust}: ${name} decides${m.labels?.length ? html` and takes <b>${m.labels.join(', ')}</b>` : ''}`, m.ts, { said, more, cls: `is-duck ${cls}` })
-    const old = m.version && m.version < liveVersion(card) ? ` in version ${m.version}` : ''
-    const settled = m.settled && !back ? html`<span class="tc-settled">${sk('tick')}${SETTLED}</span>` : ''
-    return deed(sk(back ? 'back' : 'tick'), back ? 'You took your answer back' : `You chose${old}`, m.ts, { tiles: html`${tiles(m.labels?.length ? m.labels : [m.text], back)}${settled}`, said, more, cls: `is-chosen ${cls}` })
-  }
   const mark = who ? html`<span class="tc-c-who" style="--hue:${who.hue}" aria-hidden="true">${raw(doodleSvg(who.mark))}</span>` : html`<span class="tc-c-who" aria-hidden="true"></span>`
   const you = html`<span class="tc-c-who is-you" aria-hidden="true">${sk('pen')}</span>`
   const head = (title, ts, by = name) => html`<header class="msg-head"><span class="msg-name">${by}</span>${title ? html`<b class="tc-said">${title}</b>` : ''}${ts ? agoSpan(ts, 'msg-time') : ''}</header>`
-  const words = text => rich(text ?? '', { assets, hand: false })
-  const agentMsg = (m, cont = false) => html`<article class="msg msg-agent tc-c${cont ? ' cont' : ''}" id="msg-${m.id}">${cont ? '' : mark}<div class="tc-c-in">${cont ? '' : head('', m.ts)}${rich(m.text ?? '', { assets, extra: m.html ?? '', hand: false })}${shots(m.attachments)}${vids(m.attachments)}${files(m.attachments)}${m.details ? html`<details class="msg-details"><summary>Details</summary>${words(m.details)}</details>` : ''}</div></article>`
-  const userMsg = (m, text = m.text) => html`<article class="msg msg-user tc-c" id="msg-${m.id}">${you}<div class="tc-c-in">${head('', m.ts, 'You')}${text ? html`<div class="bubble"><p>${text}</p></div>` : ''}${shots(m.attachments)}${vids(m.attachments)}${files(m.attachments)}</div></article>`
-  const isBare = m => (m.handback && m.text?.trim() === HAND_BACK_TEXT) || (m.explain && m.text?.trim() === EXPLAIN_TEXT)
-
-  // ---- what the card did not hold ----
-  const lead = []
-  const whole = textOf(card)
-  if (fitText(whole).more) lead.push(html`<article class="msg msg-agent tc-c tc-whole" id="card-whole-${card.id}">${mark}<div class="tc-c-in">${head('The whole text')}${rich(whole, { assets, extra: card.html ?? '', hand: false })}</div></article>`)
-  else if (card.html) lead.push(html`<article class="msg msg-agent tc-c tc-whole" id="card-whole-${card.id}">${mark}<div class="tc-c-in">${head('With the text')}${rich('', { assets, extra: card.html })}</div></article>`)
-  const links = optionLinks(card)
-  if (String(links)) lead.push(links)
-  if (card.status === 'open' && card.snoozed_until) lead.push(deed(LATER_TAG, `You put it off: it waits on “${WORDS.later}”`, card.snoozed_at, { cls: 'is-later' }))
-
-  // ---- the talk, in pieces ----
-  const items = []   // { html, turn?: version, handback?, brought?: the version a hand-back brought }
-  let askedAt = -1   // the hand-back that waits for its version
-  for (let i = 0; i < all.length; i++) {
-    const m = all[i]
-    if (m.from === 'event') {
-      if (m.kind === 'revised' && m.version) {
-        const note = String(m.text ?? '').replace(/^Presented again:?\s*/i, '').trim()
-        // A hand-back before it (the session may have answered it first): "as you asked".
-        const asked = askedAt >= 0
-        if (asked) items[askedAt].brought = m.version
-        askedAt = -1
-        const before = m.version > 1 && versionOf(card, m.version - 1)
-        // The version before stays readable here, as the talk does: it opens in place (title, text, options, pictures).
-        const more = before ? html`<details class="tc-turn-before"><summary>See version ${before.n}</summary><div class="tc-was"><b class="tc-was-title">${before.title || card.title}</b>${textOf(before) ? words(fitText(textOf(before)).shown) : ''}${before.options?.length ? html`<div class="tc-opts">${before.options.map(o => still(o.label, plain(o.detail)))}</div>` : ''}${shots(before.attachments)}${files(before.attachments)}<a class="tc-was-open" data-nav href="${cardPath(card, base)}?v=${before.n}">Open version ${before.n} as it was</a></div></details>` : ''
-        items.push({ turn: m.version, html: html`<div class="tc-turn" id="turn-${m.id}" data-version="${m.version}">${deed(sheet(html`<b>${m.version}</b>`, 'is-again'), html`<b>Version ${m.version}${asked ? ', as you asked' : ''}</b>`, m.ts, { said: [note], more })}</div>` })
-      } else if (m.kind === 'handback_withdrawn') items.push({ html: deed(uno, 'You took it back', m.ts, { cls: 'is-undone' }) })
-      else if (m.kind === 'decided') items.push({ html: answered(m) })
-      else if (m.kind === 'read') items.push({ html: deed(read, 'You read it', m.ts) })
-      else if (m.kind === 'shredded') items.push({ html: deed(sk('shred'), 'You shredded it', m.ts, { said: [m.note ? `“${m.note}”` : ''], more: along(m), cls: 'is-shred' }) })
-      else if (m.kind === 'reopened') items.push({ html: m.was === 'read' ? deed(read, 'You took it back: unread again', m.ts, { cls: 'is-undone' }) : m.was === 'shredded' ? deed(sk('shred'), 'You took it out of the shredder', m.ts, { cls: 'is-shred is-undone' }) : answered(m, true) })
-      else if (m.kind === 'done') items.push({ html: deed(sheet(sk(m.withdrawn ? 'bin' : 'tick'), 'is-done'), html`<b>${name} ${m.withdrawn ? 'withdrew' : 'closed'} it</b>`, m.ts, { said: [m.withdrawn ?? m.text] }) })
-      continue
-    }
-    if (m.from === 'user' && m.present) { items.push({ html: deed(uno, 'You took it back', m.ts, { cls: 'is-undone' }) }); askedAt = -1; continue }
-    if (!m.text && !m.attachments?.length) continue
-    if (m.from === 'user' && m.explain && isBare(m)) {
-      // What?? and what the session answered to it, as one block.
-      const answers = []
-      while (all[i + 1] && all[i + 1].from === 'agent') answers.push(all[++i])
-      items.push({ html: html`<section class="tc-explained">${deed(sk('what'), 'You asked for an explanation', m.ts, { cls: 'is-what' })}${answers.length ? answers.map((a, n) => agentMsg(a, n > 0)) : did('Waiting for the explanation.')}</section>` })
-      continue
-    }
-    // (a hand-back is the reverse card itself; what was written with it stands under it)
-    if (m.from === 'user' && m.handback) { askedAt = items.length; items.push({ handback: true, html: html`<div id="msg-${m.id}">${deed(uno, 'You handed it back', m.ts, { said: [isBare(m) ? '' : m.text], more: html`${shots(m.attachments)}${vids(m.attachments)}${files(m.attachments)}` })}</div>` }); continue }
-    if (m.from === 'user') { items.push({ html: userMsg(m, m.text === EXPLAIN_TEXT ? WORDS.what : m.text) }); continue }
-    items.push({ html: agentMsg(m, items.at(-1)?.agent === true), agent: true })
-    items.at(-1).agent = true
+  const agentMsg = (r, cont = false) => html`<article class="msg msg-agent tc-c${cont ? ' cont' : ''}" id="msg-${r.id}">${cont ? '' : mark}<div class="tc-c-in">${cont ? '' : head('', r.time_ms)}${rich(r.text, { extra: r.html ?? '', hand: false })}${along(r.files)}${r.details ? html`<details class="msg-details"><summary>Details</summary>${rich(r.details, { hand: false })}</details>` : ''}</div></article>`
+  const userMsg = r => html`<article class="msg msg-user tc-c" id="msg-${r.id}">${you}<div class="tc-c-in">${head('', r.time_ms, 'You')}${r.text ? html`<div class="bubble"><p>${r.text}</p></div>` : ''}${along(r.files)}</div></article>`
+  // The version before a revision, readable in place (title, text, options, pictures), and to open as it was.
+  const before = n => {
+    const v = card.versions?.find(x => x.n === n)
+    if (!v) return ''
+    return html`<details class="tc-turn-before"><summary>See version ${v.n}</summary><div class="tc-was"><b class="tc-was-title">${v.title || card.title}</b>${v.text ? rich(v.text, { hand: false }) : ''}${v.options?.length ? html`<div class="tc-opts">${v.options.map(o => still(o.label, o.detail ?? ''))}</div>` : ''}${shots((v.pictures ?? []).map(p => p.file_id))}${chips(v.files)}<a class="tc-was-open" data-nav href="${cardPath(card, base)}?v=${v.n}">Open version ${v.n} as it was</a></div></details>`
   }
-  // ---- the whole history stands: every version in its place, the talk around it (the newest version is the card) ----
-  const now = items
-  // The talk is loaded newest page first: older comments come on request, at the top of the talk.
-  const older = more ? html`<a class="tc-older" data-nav href="${cardPath(card, base)}?older=1#card-thread-${card.id}" data-turbo-action="replace">Earlier comments</a>` : ''
-  // Between the card and the talk, one quiet centred line, only when it says something: why the card is urgent.
-  // "<session> asked" opens a talk; alone it would say what the card's own line says already, so it is left out then.
-  const why = card.urgency_reason ? html`<p class="tc-why">${sk('knock')}<span>${card.urgency_reason}</span></p>` : ''
-  const any = lead.length || items.length || more
-  // The newest ten entries stand; the ones before wait in groups of ten behind a quiet "Load earlier (N)" (card#earlier).
-  const SHOW = 10, cut = Math.max(0, now.length - SHOW)
-  const groups = []
-  for (let end = cut; end > 0; end -= SHOW) groups.unshift(now.slice(Math.max(0, end - SHOW), end))
-  const hidden = groups.map(g => html`<div class="tc-earlier-group" hidden>${g.map(x => x.html)}</div>`)
-  const loadEarlier = cut ? html`<button type="button" class="tc-load-earlier" data-action="card#earlier">Load earlier (${cut})</button>` : ''
-  return html`<section class="tc-feed" id="card-thread-${card.id}" aria-label="Comments"${why || any ? '' : raw(' hidden')}>${why}${loadEarlier}${any ? deed(sheet(who ? raw(doodleSvg(who.mark)) : ''), `${name} ${card.kind === 'info' ? 'sent this to read' : 'asked'}`, card.created, { cls: 'is-asked' }) : ''}${lead}${older}${hidden}${now.slice(cut).map(x => x.html)}</section>`
+  /** One act on the card (EventView), drawn as the thing itself. r: its row (id, time, files). */
+  const act1 = (e, r) => {
+    const id = `ev-${r.id}`, ts = r.time_ms, said = (e.said ?? []).map(t => t.en), label = e.label.en
+    switch (e.kind) {
+      case 'asked': case 'info': return deed(id, sheet(who ? raw(doodleSvg(who.mark)) : ''), label, ts, { cls: 'is-asked' })
+      case 'revised': return html`<div class="tc-turn" id="${id}" data-version="${e.version ?? ''}">${deed('', sheet(html`<b>${e.version ?? ''}</b>`, 'is-again'), html`<b>${label}${e.asked ? ', as you asked' : ''}</b>`, ts, { said: [e.text], more: e.version > 1 ? before(e.version - 1) : '' })}</div>`
+      case 'decided': return deed(id, sk('tick'), `${label}${e.version ? ` in version ${e.version}` : ''}`, ts, { tiles: e.text ? tiles([e.text]) : '', said, more: along(e.files), cls: 'is-chosen' })
+      case 'trusted': return deed(id, sk('duck'), html`${label}${e.text ? html`: <b>${e.text}</b>` : ''}`, ts, { said, more: along(e.files), cls: 'is-duck' })
+      case 'read': return deed(id, read, label, ts)
+      case 'shredded': return deed(id, sk('shred'), label, ts, { said, more: along(e.files), cls: 'is-shred' })
+      case 'reopened': return deed(id, sk('back'), label, ts, { cls: 'is-undone' })
+      case 'done': return deed(id, sheet(sk('tick'), 'is-done'), html`<b>${label}</b>`, ts, { said: [e.text] })
+      case 'snoozed': return deed(id, LATER_TAG, label, ts, { cls: 'is-later' })
+      case 'took_back': return deed(id, uno, label, ts, { cls: 'is-undone' })
+      case 'handed': case 'handed_back': return deed(id, uno, label, ts, { said: [r.text], more: along(r.files) })
+      case 'explain': return deed(id, sk('what'), label, ts, { cls: 'is-what' })
+      default: return did(label, ts, id)
+    }
+  }
+  // ---- what the card does not hold ----
+  const lead = (card.lead ?? []).map((l, i) => {
+    if (l.kind === 'whole' || l.kind === 'with') return html`<article class="msg msg-agent tc-c tc-whole" id="card-whole-${card.id}">${mark}<div class="tc-c-in">${head(l.label.en)}${rich(l.text ?? '', { extra: l.html ?? '', hand: false })}</div></article>`
+    if (l.kind === 'links') return html`<div class="tc-did t-opt-links" id="card-links-${card.id}"><span>${l.label.en}</span><ul>${(l.links ?? []).map(x => html`<li><b>${x.label}</b> <a href="${x.url}" target="_blank" rel="noopener noreferrer">${x.short}</a></li>`)}</ul></div>`
+    if (l.kind === 'later') return deed(`card-later-${card.id}`, LATER_TAG, l.label.en, l.at_ms, { cls: 'is-later' })
+    return did(l.label.en, 0, `card-lead-${i}-${card.id}`)
+  })
+  // ---- the talk ----
+  const rows = card.talk ?? []
+  const answers = new Map()   // What?? row id -> the agent's rows that answer it
+  for (const r of rows) if (r.answers) answers.set(r.answers, [...(answers.get(r.answers) ?? []), r])
+  const items = []
+  for (const r of rows) {
+    if (r.answers && rows.some(x => x.id === r.answers)) continue
+    const e = r.event ?? r.deed
+    if (e?.kind === 'explain') {
+      const got = answers.get(r.id) ?? []
+      items.push(html`<section class="tc-explained" id="explained-${r.id}">${act1(e, r)}${r.deed && r.text ? html`<p class="tc-deed-said">${r.text}</p>` : ''}${got.length ? got.map((x, n) => agentMsg(x, n > 0)) : r.waits ? did(r.waits.en) : ''}</section>`)
+    } else if (r.kind === 'event' || r.deed) items.push(e ? act1(e, r) : did(r.text, r.time_ms, `ev-${r.id}`))
+    else if (r.kind === 'user' || r.kind === 'note') items.push(userMsg(r))
+    else if (r.kind === 'agent') items.push(agentMsg(r, r.cont))
+    else if (r.text) items.push(did(r.text, r.time_ms, `ev-${r.id}`))
+  }
+  const earlier = card.earlier ? html`<form class="tc-earlier" id="card-earlier-${card.id}" method="post" action="${act(card, 'more')}"><button type="submit" class="tc-load-earlier">${card.earlier.says.en}</button></form>` : ''
+  const any = lead.length || items.length
+  return html`<section class="tc-feed" id="card-thread-${card.id}" aria-label="Comments"${any ? '' : raw(' hidden')}>${earlier}${lead}${items}</section>`
 }
 
-/** Where the card stands in the stack, for the walk: { at, of, prev, next } (cards), or null when it is not waiting. */
-function placeOf(card, model) {
-  const walk = walkOf(model), at = walk.indexOf(card)
-  return at < 0 ? null : { at: at + 1, of: walk.length, prev: walk[at - 1] ?? null, next: walk[at + 1] ?? null }
+/** The star beside the way back: his own mark on a card, to find it again in Off your mind. */
+export const starButton = card => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, card.starred ? 'unstar' : 'star')}"><input type="hidden" name="stay" value="1"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(card.starred)}" title="${card.starred ? 'Unstar' : card.star_says.en}" aria-label="${card.star_says.en}">${sk('star')}</button></form>`
+/** The small button that copies a card as one line, to paste into another agent (controller "clip"). */
+function copyButton(card) {
+  const picked = card.answer.mode === 'said' ? card.options.filter(o => o.chosen).map(o => o.label).join(', ') : ''
+  const text = `${card.nr.en} · ${card.title}${picked ? ` → ${picked}` : ''}`
+  return html`<button class="cardclip-copy" type="button" data-controller="clip" data-action="clip#copy" data-clip-text-value="${text}" data-clip-card-value="${JSON.stringify({ id: card.id, number: card.number, title: card.title, choice_label: picked })}" title="Copy" aria-label="Copy">${COPY_ICON}</button>`
 }
 
-/** The star beside the way back: his own mark on a card, to find it again in Off your mind. Live (t.live 'card'). */
-export const starButton = (card, base) => html`<form class="tc-star-form" id="card-star-${card.id}" method="post" action="${act(card, base, 'star')}"><input type="hidden" name="stay" value="1"><input type="hidden" name="on" value="${card.starred ? '' : '1'}"><button class="tc-rail tc-star${card.starred ? ' is-on' : ''}" type="submit" aria-pressed="${String(Boolean(card.starred))}" title="${card.starred ? 'Unstar' : 'Star'}" aria-label="${card.starred ? 'Starred' : 'Star'}">${sk('star')}</button></form>`
-
-/** The open question to offer after this one was decided: the client core's answer at the time (id from the answer's
- *  redirect, core/client/src/model/walk.rs `next_open_after`) while it still waits, else the first that waits on this desk
- *  in the core's order (desk_order). */
-const nextOpen = (card, model, id) => {
-  const waits = new Set(walkOf(model).map(c => c.id))
-  waits.delete(card.id)
-  const at = id && waits.has(id) ? id : (model.state.desk_order ?? []).find(x => waits.has(x))
-  return at ? model.byCard.get(at) ?? null : null
-}
-/** The answers that settle a card on its own page: after each the page offers the next question (nextStep). */
-export const ANSWERS = ['decide', 'trust', 'close', 'shred']
-/** The whole <main> of a card's page. pic: which picture stands. walk: a step of "Next, please". version: as it was
- *  then. from: the session it was opened from (/chat/<id>/card/<n>): the way back and the links lead there. */
-function cardPage(card, model, base, { pic = 1, walk = false, error = '', version = null, from = null, more: older = false, full = false, focus = false, decided = false, next = null } = {}) {
-  const old = versionOf(card, version)
-  const open = card.status === 'open' && !card.with_agent && !old
-  // The draft and the pen stay while the card is with its session too: the reworked card comes back live into a page
-  // whose form is not rendered again, and what is drawn or written meanwhile is kept for it.
-  const drafting = card.status === 'open' && card.kind === 'decision' && !old
-  const session = from ? model.byAgent.get(from) : null
-  const home = session ? `${base}/chat/${encodeURIComponent(session.id)}` : `${base}/`
-  const self = session ? home : base
-  const place = old ? null : placeOf(card, model)
+/** The whole <main> of a card's page. pic: which picture stands. walk: a step of Blitz. version: a version before, as
+ *  it was. from: the session it was opened from (/chat/<slug>/card/<n>: { slug, name }): the way back and the links
+ *  lead there. full: a picture opened large. focus: the page alone in the window. decided: just answered here. */
+export function cardPage(card, vm, { pic = 1, walk = false, version = null, from = null, full = false, focus = false, decided = false } = {}) {
+  const old = version ? card.versions?.find(v => v.n === version) ?? null : null
+  const mode = card.answer.mode, answering = !old && (mode === 'options' || mode === 'read')
+  const open = card.state === 'open' && !old
+  // The draft and the pen stay while the card is with its session too: what is drawn or written meanwhile is kept.
+  const drafting = open && card.kind === 'decision'
+  const canDraw = drafting || (answering && card.kind === 'info')
+  const home = from ? `/chat/${encodeURIComponent(from.slug)}` : '/'
+  const self = from ? home : ''
   const query = `${walk ? '&walk=1' : ''}${old ? `&v=${old.n}` : ''}`
-  const images = imagesOf(old ? { attachments: old.attachments ?? card.attachments } : card)
-  const videos = videosOf(old ? { attachments: old.attachments ?? card.attachments } : card).length
-  const media = images.length + videos
-  const large = Boolean(full && media)
+  const media = mediaOf(vm, old ?? card), shown = media.pictures.length + media.videos.length
+  const large = Boolean(full && shown)
   const keep = focus ? raw(FOCUS_FIELD) : ''
-  const shownPic = Math.min(Math.max(1, pic), Math.max(1, media))
-  const step = (to, cls, label, art) => (to ? html`<a class="tc-rail ${cls}" data-nav href="${cardPath(to, self)}${walk ? '?walk=1' : ''}" aria-label="${label}: ${to.title}" title="${to.title}">${art}</a>` : '')
+  const shownPic = Math.min(Math.max(1, pic), Math.max(1, shown))
+  const here = cardPath(card, self)
+  const step = (to, cls, label, art) => (to ? html`<a class="tc-rail ${cls}" data-nav href="${cardPath(to, self)}${walk ? '?walk=1' : ''}" aria-label="${label}">${art}</a>` : '')
   const form = `card-form-${card.id}`
-  const asker = model.byAgent.get(card.agent)?.name ?? ''
-  // The tray: card and talk lie on one drawn desk pad in the session's pale tone (four hatched corners; the round
-  // buttons stand in a row above the card, clear of them). When the card
-  // has scrolled out of view a slim strip of its paper stays under the top edge: the title, the answers as chips (the
-  // card's own buttons again: the same form, the same addresses), the duck, What??, the reverse card, Later's tag.
   const corner = cls => raw(`<svg class="tc-corner ${cls}" viewBox="0 0 64 64" aria-hidden="true"><path d="M1.5 1.5 Q30 2.4 61 1.8 Q32 31 2.2 61 Q1 30 1.5 1.5 Z"/><path d="M8 40 L40 8 M8 26 L26 8 M8 13 L13 8" class="hatch"/></svg>`)
+  // The slim strip under the top edge once the card has scrolled out of view: the title, the answers as chips (the
+  // card's own buttons again: the same form, the same addresses), the duck, What??, the reverse card, Later's tag.
   // (Reverse goes on to the next card, as the card's own reverse tile does: name="next")
-  const mini = (cls, way, tip, art) => html`<button class="tc-mini ${cls}" type="submit" form="${form}" formaction="${act(card, base, way)}"${way === 'revise' ? raw(' name="next" value="1"') : ''} title="${tip}" aria-label="${tip}">${art}</button>`
-  const jump = html`<button class="tc-chip is-jump" type="button" data-action="card#toAnswers">To the answers ↑</button>`
-  const few = open && card.kind === 'decision' && !card.multiple && card.options.length <= 4
-  const strip = html`<div class="tc-bar" aria-label="This question, in short"><div class="tc-bar-in"><b class="tc-bar-title">${card.title}</b>
-${few ? html`<span class="tc-bar-chips">${card.options.map(o => html`<button class="tc-chip" type="submit" form="${form}" formaction="${act(card, base, 'decide')}" name="key" value="${o.key}" title="${o.label}">${o.label}${o.final === true ? finalSign() : ''}</button>`)}</span>` : ''}${jump}
-${open && card.kind === 'decision' ? html`<i class="tc-bar-sep"></i>${mini('is-duck', 'trust', 'Duck it', sk('duck'))}${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}` : open && card.kind === 'info' ? html`<i class="tc-bar-sep"></i>${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}${mini('is-ack', 'close', WORDS.ack, sk('tick'))}` : ''}
-${open && card.kind !== 'permission' && !card.snoozed_until ? html`<form class="tc-bar-later" method="post" action="${base}/cards/batch"><input type="hidden" name="ids" value="${card.id}"><input type="hidden" name="from" value="${card.id}">${keep}${session ? html`<input type="hidden" name="back" value="${home}">` : ''}${sideWays({ duck: false, shred: false, word: false })}</form>` : ''}
+  const mini = (cls, way, tip, art) => html`<button class="tc-mini ${cls}" type="submit" form="${form}" formaction="${act(card, way)}"${way === 'revise' ? raw(' name="next" value="1"') : ''} title="${tip}" aria-label="${tip}">${art}</button>`
+  const few = answering && card.kind === 'decision' && !card.multiple && card.options.length <= 4
+  const laterTag = cls => (open && card.kind !== 'request' && !card.snoozed_until ? html`<form class="${cls}"${cls === 'tc-later' ? raw(' data-action="pointerdown->card#pullStart click->card#pullClick" aria-label="Put this question off"') : ''} method="post" action="${act(card, 'snooze')}"><input type="hidden" name="page" value="1">${keep}${from ? html`<input type="hidden" name="back" value="${home}">` : ''}${sideWays({ duck: false, shred: false, word: false })}</form>` : '')
+  const bar = html`<div class="tc-bar" aria-label="This question, in short"><div class="tc-bar-in"><b class="tc-bar-title">${card.title}</b>
+${few ? html`<span class="tc-bar-chips">${card.options.map(o => html`<button class="tc-chip" type="submit" form="${form}" formaction="${act(card, 'decide')}" name="key" value="${o.key}" title="${o.label}">${o.label}${o.settles ? finalSign() : ''}</button>`)}</span>` : ''}<button class="tc-chip is-jump" type="button" data-action="card#toAnswers">To the answers ↑</button>
+${answering && card.kind === 'decision' ? html`<i class="tc-bar-sep"></i>${mini('is-duck', 'trust', 'Duck it', sk('duck'))}${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}` : answering && card.kind === 'info' ? html`<i class="tc-bar-sep"></i>${mini('is-what', 'what', 'What??', sk('what'))}${mini('is-reverse', 'revise', WORDS.revise, sk('reverse'))}${mini('is-ack', 'close', WORDS.ack, sk('tick'))}` : ''}
+${laterTag('tc-bar-later')}
 </div></div>`
-  const tone = model.byAgent.get(card.agent)?.hue
-  // The tray: card, field and talk lie on one pad in the session's tone, one step deeper,
-  // with a pen outline and hatched corners; the card is white with an ink outline and a drop shadow, an object on it;
-  // the talk in time order, the field to write in at its foot (sticky at the window's foot while the talk is long).
-  const pad = html`<div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${corner('tl')}${corner('tr')}${corner('bl')}${corner('br')}${strip}`
-  const notesOpen = raw('<div class="tc-notes">')
-  const more = (cls, drawing, word, tip, action) => html`<button class="tc-more-item ${cls}" type="submit" form="${form}" formaction="${action}" title="${tip}">${sk(drawing)}<span>${word}</span></button>`
-  return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, base, 'draft') : ''}" data-card-pictures-value="${JSON.stringify(picturesOf(old ? { ...card, attachments: old.attachments ?? card.attachments } : card, self))}" data-action="turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
-${pad}<div class="tc-frame">
+  // The tray: card, field and talk lie on one pad in the session's tone, with a pen outline and hatched corners; the
+  // card is white with an ink outline and a drop shadow, an object on it; the talk in time order, the field at its foot.
+  const tone = card.from ? whoOf(card.from).hue : null
+  const more = (cls, drawing, word, tip, way) => html`<button class="tc-more-item ${cls}" type="submit" form="${form}" formaction="${act(card, way)}" title="${tip}">${sk(drawing)}<span>${word}</span></button>`
+  // What stands unsent (the draft: the field's words, the ticks, the notes on options) is given to the controller,
+  // which puts it into the fields once: the fields' markup never changes while he types.
+  const kept = drafting ? { note: card.draft ?? '', keys: card.multiple ? card.options.filter(o => o.chosen).map(o => o.key) : [], notes: Object.fromEntries(card.options.filter(o => o.note).map(o => [o.key, o.note])) } : { note: card.draft ?? '' }
+  const after = decided && !old && card.state !== 'open' ? { self, home, focus } : null
+  return html`<main id="cardpage" class="tc-page${large ? ' is-full' : focus ? ' is-focus' : ''}" aria-label="Question ${card.number}" data-id="${card.id}"${focus ? raw(' data-focus') : ''} data-controller="card" data-card-draft-value="${drafting ? act(card, 'draft') : ''}" data-card-kept-value="${JSON.stringify(kept)}" data-card-pictures-value="${JSON.stringify(picturesOf(media.pictures, vm, here))}" data-action="turbo:frame-load->card#framed circles:drawn->card#link turbo:submit-start->card#sent turbo:submit-end->card#done dragover->card#over drop->card#drop">
+<div class="tc-pad"${tone != null ? html` style="--hue:${tone}"` : ''}>${corner('tl')}${corner('tr')}${corner('bl')}${corner('br')}${bar}<div class="tc-frame">
 <nav class="tc-rails" aria-label="Around this question">
-<a class="tc-rail tc-back" data-nav href="${home}" aria-keyshortcuts="Escape" title="Back (Esc)" aria-label="Back to ${session ? session.name : WORDS.desk}">${CROSS}</a>
-${old ? '' : starButton(card, base)}
-${place ? html`${step(place.prev, 'is-prev', 'The question before', BACK)}${step(place.next, 'is-next', 'The next question', FORTH)}` : ''}
-${large ? html`<a class="tc-rail tc-full is-leave" data-nav href="${cardPath(card, self)}?pic=${shownPic}${focus ? '&focus=1' : ''}" data-card-target="gallery" data-back data-turbo-action="replace" title="Back (Esc)" aria-label="Back to the card">${CROSS}</a>`
-    : html`<a class="tc-rail tc-full${focus ? ' is-leave' : ''}" data-nav href="${focusAt(`${cardPath(card, self)}?${shownPic > 1 ? `pic=${shownPic}` : ''}${query}`, !focus)}" data-turbo-action="replace" data-action="card#focus" role="button" aria-pressed="${String(focus)}" title="${FOCUS_WORDS[focus]}" aria-label="${FOCUS_WORDS[focus]}">${FULL}${LESS}</a>`}
-${drafting || (open && card.kind === 'info') ? html`<button type="button" class="tc-rail tc-draw" data-action="card#trace" aria-pressed="false" title="Draw" aria-label="Draw on the card">${DRAW}</button>` : ''}
+<a class="tc-rail tc-back" data-nav href="${home}" aria-keyshortcuts="Escape" title="Back (Esc)" aria-label="Back to ${from ? from.name : WORDS.desk}">${CROSS}</a>
+${old ? '' : starButton(card)}
+${card.place && !old ? html`${step(card.place.prev, 'is-prev', 'The question before', BACK)}${step(card.place.next, 'is-next', 'The next question', FORTH)}` : ''}
+${large ? html`<a class="tc-rail tc-full is-leave" data-nav href="${here}?pic=${shownPic}${focus ? '&focus=1' : ''}" data-card-target="gallery" data-back data-turbo-action="replace" title="Back (Esc)" aria-label="Back to the card">${CROSS}</a>`
+    : html`<a class="tc-rail tc-full${focus ? ' is-leave' : ''}" data-nav href="${focusAt(`${here}?${shownPic > 1 ? `pic=${shownPic}` : ''}${query}`, !focus)}" data-turbo-action="replace" data-action="card#focus" role="button" aria-pressed="${String(focus)}" title="${FOCUS_WORDS[focus]}" aria-label="${FOCUS_WORDS[focus]}">${FULL}${LESS}</a>`}
+${canDraw ? html`<button type="button" class="tc-rail tc-draw" data-action="card#trace" aria-pressed="false" title="Draw" aria-label="Draw on the card">${DRAW}</button>` : ''}
 <details class="tc-more" data-controller="pops"><summary class="tc-rail tc-more-open" title="More" aria-label="More for this question">${DOTS}</summary><div class="tc-more-list" role="menu">
-${open && card.kind !== 'permission' && card.snoozed_until ? more('', 'wake', WORDS.wake, `${WORDS.wake}: back on the Desk now`, act(card, base, 'wake')) : ''}
+${open && card.kind !== 'request' && card.snoozed_until ? more('', 'wake', WORDS.wake, `${WORDS.wake}: back on the Desk now`, 'wake') : ''}
 ${copyButton(card)}
-${open && card.kind !== 'permission' ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, act(card, base, 'shred')) : ''}
+${answering ? more('is-shred', 'bin', WORDS.shred, WORDS.shred, 'shred') : ''}
 </div></details>
 </nav>
-<article class="tc-card" id="card-${card.id}" style="--hue:162" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${card.urgency}" aria-labelledby="card-title-${card.id}"${media ? raw(' data-pictures') : ''}${card.status === 'open' && !card.with_agent ? '' : raw(' data-settled')}>
-${cardLeft(card, model, self, { version, pic: shownPic, query })}
+<article class="tc-card" id="card-${card.id}" style="--hue:162" data-id="${card.id}" data-kind="${card.kind}" data-urgency="${URGENCY[card.urgency] ?? 'normal'}" aria-labelledby="card-title-${card.id}"${shown ? raw(' data-pictures') : ''}${card.state === 'open' && mode !== 'revising' ? '' : raw(' data-settled')}>
+<div class="tc-left">${cardLead(card, self, old)}
+${cardMedia(card.id, media, vm, here, shownPic, query)}
+${old ? '' : optionsSaid(card)}
+</div>
 <div class="tc-right">
-${cardAnswer(card, model, base, { error, version, pic: shownPic, after: decided && !old && card.status !== 'open' ? { next: nextOpen(card, model, next), self, home, focus } : null })}
+${cardAnswer(card, { old, pic: shownPic, after, self })}
 </div>
+<div class="tc-ink" style="display:contents"></div>
 </article>
-${open && card.kind !== 'permission' && !card.snoozed_until ? html`<form class="tc-later" data-action="pointerdown->card#pullStart click->card#pullClick" method="post" action="${base}/cards/batch" aria-label="Put this question off"><input type="hidden" name="ids" value="${card.id}"><input type="hidden" name="from" value="${card.id}">${keep}${session ? html`<input type="hidden" name="back" value="${home}">` : ''}${sideWays({ duck: false, shred: false, word: false })}</form>` : ''}
+${laterTag('tc-later')}
 </div>
-${notesOpen}${cardThread(card, model, self, { more: older })}
-<form class="tc-chat" id="${form}" aria-label="Write to the agent" method="post" action="${act(card, base, 'message')}" enctype="multipart/form-data" data-card-target="form">
-<input type="hidden" name="page" value="1">${walk ? raw('<input type="hidden" name="walk" value="1">') : ''}${keep}${session ? html`<input type="hidden" name="back" value="${home}">` : ''}
-${drafting || (open && card.kind === 'info') ? html`<input type="hidden" name="marks" value="${JSON.stringify(card.draft?.marks ?? [])}" data-card-target="marks">` : ''}
+<div class="tc-notes">${cardThread(card, vm, self)}
+<form class="tc-chat" id="${form}" aria-label="Write to the agent" method="post" action="${act(card, 'message')}" enctype="multipart/form-data" data-card-target="form">
+<input type="hidden" name="page" value="1">${walk ? raw('<input type="hidden" name="walk" value="1">') : ''}${keep}${from ? html`<input type="hidden" name="back" value="${home}">` : ''}
+${canDraw ? html`<input type="hidden" name="marks" value="[]" data-card-target="marks">` : ''}
 <span class="tc-c-who is-you" aria-hidden="true">${sk('pen')}</span>
 <div class="tc-ask"><div class="tc-chips" data-card-target="chips" hidden></div>
-${plusMenu(drafting || (open && card.kind === 'info'))}<textarea class="tc-field" id="card-field-${card.id}" data-card-target="field" data-action="input->card#typed keydown->card#keys paste->card#paste" name="note" rows="1" placeholder="${askWords(card, model, asker)}" autocomplete="off" enterkeyhint="send" aria-label="Write to the agent about this question. Send adds it to the talk; an answer takes it along as a note.">${card.draft?.note ?? ''}</textarea>
-<div class="tc-ask-row"><span class="tc-saved" role="status" data-card-target="saved" hidden></span>${sendButton(open && (card.kind === 'decision' || card.kind === 'info'), asker)}</div></div>
+${plusMenu(canDraw)}<textarea class="tc-field" id="card-field-${card.id}" data-card-target="field" data-action="input->card#typed keydown->card#keys paste->card#paste" name="note" rows="1" placeholder="${card.ask.en}" autocomplete="off" enterkeyhint="send" aria-label="Write to the agent about this question. Send adds it to the talk; an answer takes it along as a note."></textarea>
+<div class="tc-ask-row"><span class="tc-saved" role="status" data-card-target="saved" hidden></span>${sendButton(answering && (card.kind === 'decision' || card.kind === 'info'))}</div></div>
 </form>
 </div>
 </div>
 </main>`
+}
+// Send and reverse (the words go back with the card, for rework): while Shift is held, Send is the reverse card, and
+// a click sends so; Shift+Enter (and Ctrl/⌘+Enter) from the field does the same. Alt+Enter is a new line (ui.mjs
+// watchShift sets <html data-shift>, card.css turns Send; controller "card": sendClick, keys).
+function sendButton(canReverse) {
+  return html`<button class="tc-send" type="submit" name="stay" value="1" title="Send (Enter)" aria-label="Send to the agent" data-action="click->card#sendClick">${sk('send')}${canReverse ? html`<span class="tc-send-uno" aria-hidden="true">${sk('reverse')}</span>` : ''}</button>`
+}
+/** The "+" at the field's left: a small menu with Attach (files or pictures; also paste or drop them on the card) and,
+ *  where the card can be drawn on, Draw on the card. */
+function plusMenu(canDraw) {
+  return html`<details class="tc-plus" data-controller="pops"><summary class="tc-plus-open" title="Attach or draw" aria-label="Attach or draw">${PLUS}</summary><div class="tc-plus-pop" role="menu">
+<label class="tc-plus-item tc-clip" role="menuitem" title="Attach">${sk('clip')}<span>Attach files or pictures</span><input type="file" name="files" multiple hidden data-card-target="files" data-action="change->card#files"></label>${canDraw ? html`<button type="button" role="menuitem" class="tc-plus-item tc-draw tc-draw-pen" data-action="card#trace" data-pop-close aria-pressed="false" title="Draw">${sk('pen')}<span>Draw on the card</span></button>` : ''}</div></details>`
 }
 
 // ---- focus marks ----
@@ -660,6 +495,7 @@ function cardMarks({ scroll, blocks, labelOf, onChange }) {
   }
 
   return {
+    scroll,
     setPen,
     get: () => list.map(m => ({ ...m, ...(m.strokes ? { strokes: m.strokes.map(s => ({ ...s, pts: [...s.pts] })) } : {}), ...(m.words ? { words: m.words.map(w => ({ ...w })) } : {}) })),
     set(next) {
@@ -738,7 +574,7 @@ function traceSheet({ card, marks, id, anchor, left, dock, onSend, onClose }) {
   ink.setAttribute('class', 'tc-trace-ink')
   const words = el('div', 'tc-trace-words')
   sheet.append(ink, words, tape)
-  card.append(sheet)
+  ;(card.querySelector(':scope > .tc-ink') ?? card).append(sheet)
   card.closest('.tc-page')?.classList.add('is-tracing')
 
   const width = () => sheet.clientWidth || 1
@@ -1226,9 +1062,10 @@ if (typeof window !== 'undefined') window.addEventListener('click', e => {
 
 controller('card', class extends Controller {
   static targets = ['form', 'field', 'files', 'chips', 'saved', 'figure', 'marks', 'where', 'said', 'page', 'gallery']
-  static values = { draft: String, pictures: Array }
+  static values = { draft: String, kept: Object, pictures: Array }
 
   connect() {
+    this.fill()
     this.grow()
     if (this.hasMarksTarget) this.mountMarks()
     // (the card's pictures are fetched and decoded ahead, so a hover from option to option swaps at once)
@@ -1264,7 +1101,25 @@ controller('card', class extends Controller {
       if (url.origin === location.origin && /^\/(?:chat\/[^/]+\/)?card\/[\w-]+(?:\/picture\/\d+)?$/.test(url.pathname)) a.href = focusAt(url.href, this.element.hasAttribute('data-focus'))
     }, true)
     this.element.addEventListener('load', e => { if (e.target.matches?.('.tc-figure img')) this.shape(e.target) }, true)
+    // (the page is drawn again from the core's view model and morphed in place: a part that was drawn anew, as the
+    //  card's left column, takes the notes on it along)
+    this.morphed = () => { if (this.marksUi && !this.marksUi.scroll.isConnected) { const list = this.marksUi.get(); this.marksUi = null; this.mountMarks().then(() => this.marksUi?.set(list)) } this.link() }
+    document.addEventListener('trommi:morph', this.morphed)
     this.link()
+  }
+  // What stands unsent (the core's draft: the field's words, the ticks, the notes on options): put into the fields
+  // once, as the page opens (cardPage: data-card-kept-value). The fields' markup never holds it, so a draft saved
+  // while he types changes nothing under his hands.
+  fill() {
+    const kept = this.keptValue ?? {}
+    if (this.hasFieldTarget && !this.fieldTarget.value && kept.note) this.fieldTarget.value = kept.note
+    for (const key of kept.keys ?? []) { const box = this.element.querySelector(`input[name="keys"][value="${CSS.escape(key)}"]`); if (box) box.checked = true }
+    for (const [key, said] of Object.entries(kept.notes ?? {})) {
+      const row = this.element.querySelector(`.tc-opt-note[data-note="${CSS.escape(key)}"]`), field = row?.querySelector('input')
+      if (!field || field.value) continue
+      field.value = said; row.hidden = false
+      this.element.querySelector(`.tc-opt-pen[data-key="${CSS.escape(key)}"]`)?.toggleAttribute('data-noted', true)
+    }
   }
   // The shape of the picture that stands (cardMedia, shapeOf): from its known size, or from the picture once it has
   // come. The stage's size does not depend on it.
@@ -1280,6 +1135,7 @@ controller('card', class extends Controller {
     this.element.removeEventListener('scroll', this.link, { capture: true })
     this.element.removeEventListener('scroll', this.sayLink, { capture: true })
     clearTimeout(this.timer)
+    document.removeEventListener('trommi:morph', this.morphed)
     this.sheet?.close()
   }
 
@@ -1296,8 +1152,9 @@ controller('card', class extends Controller {
       labelOf: key => labels.get(key) ?? key,
       onChange: () => { this.marksTarget.value = JSON.stringify(this.marksUi.get()); this.keep(); this.keepHere(); this.inked() },
     })
-    // (a card without a draft on the hub, an info: its drawing is kept on this device)
-    if (!this.draftValue && this.marksTarget.value === '[]') try { this.marksTarget.value = localStorage.getItem(this.hereKey()) || '[]' } catch {}
+    // (what is written and drawn on the card is kept on this device; the core's draft takes it along, but its view
+    //  model does not give it back: CardView.draft is the field's words only)
+    if (this.marksTarget.value === '[]') try { this.marksTarget.value = localStorage.getItem(this.hereKey()) || '[]' } catch {}
     try { this.marksUi.set(JSON.parse(this.marksTarget.value || '[]')) } catch {}
     this.attachDrawing = this.attachDrawing.bind(this)
     this.formTarget.addEventListener('submit', this.attachDrawing)
@@ -1307,7 +1164,6 @@ controller('card', class extends Controller {
   }
   hereKey() { return `trommi-marks-${this.element.dataset.id}` }
   keepHere() {
-    if (this.draftValue) return
     try { const v = this.marksTarget.value; if (v && v !== '[]') localStorage.setItem(this.hereKey(), v); else localStorage.removeItem(this.hereKey()) } catch {}
   }
   /** The sheet of this view: over the card, or over the picture standing large in Full screen. */
@@ -1491,17 +1347,6 @@ controller('card', class extends Controller {
     this.element.classList.toggle('card-gone', r.bottom < box.top + 90)
     this.element.classList.toggle('foot-passed', r.bottom < box.bottom - 96)
   }
-  // "Load earlier (N)": the next ten entries above, the page keeps its place (what was in view stays in view)
-  earlier(event) {
-    const button = event.currentTarget, feed = button.closest('.tc-feed'), groups = [...feed.querySelectorAll('.tc-earlier-group[hidden]')]
-    const group = groups.at(-1)
-    if (!group) return button.remove()
-    const before = this.element.scrollHeight
-    group.hidden = false
-    this.element.scrollTop += this.element.scrollHeight - before
-    const left = feed.querySelectorAll('.tc-earlier-group[hidden] > *').length
-    if (left) button.textContent = `Load earlier (${left})`; else button.remove()
-  }
   toAnswers() { this.element.querySelector('.tc-card')?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }) }
   // ---- focus: the card's page alone in the window (card.css .is-focus), with the talk and the field ----
   // Switched in place, so what is written, drawn or scrolled stays; the address says it (?focus=1), so a reload and
@@ -1666,7 +1511,7 @@ controller('card', class extends Controller {
   }
   sayLink() {
     const host = this.element.querySelector('.tc-card')
-    host?.querySelector(':scope > .focus-arrow.is-say')?.remove()
+    host?.querySelector(':scope > .tc-ink > .focus-arrow.is-say')?.remove()
     const key = this.sayKey, box = host?.querySelector('.tc-say')
     const block = key != null ? box?.querySelector(`.tc-say-one[data-key="${CSS.escape(key)}"] > .tc-say-head`) : null
     const tile = key != null ? host.querySelector(`.tc-opts .tc-opt[data-key="${CSS.escape(key)}"]`) : null
@@ -1686,7 +1531,7 @@ controller('card', class extends Controller {
     svg.setAttribute('class', 'focus-arrow is-say')
     svg.setAttribute('aria-hidden', 'true')
     for (const d of arrowStrokes(points, `say:${key}:${turn++}`)) { const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); svg.append(path) }
-    host.append(svg)
+    ;(host.querySelector(':scope > .tc-ink') ?? host).append(svg)
   }
 
   // ---- the arrow: one line of the pen from the picture shown to the option it belongs to ----
@@ -1698,7 +1543,7 @@ controller('card', class extends Controller {
     const host = this.element.querySelector('.tc-card')
     if (!host) return   // (the gallery: the option is marked, no arrow)
     const tile = host.querySelector('.tc-opt[data-match]'), answer = host.querySelector('.tc-right'), scroll = host.querySelector('.tc-left')
-    const old = host.querySelector(':scope > .focus-arrow')
+    const old = host.querySelector(':scope > .tc-ink > .focus-arrow:not(.is-say)')
     const gone = () => { old?.remove(); this.arrowSig = '' }
     if (!picture || !tile || !answer || !scroll) return gone()
     const base = host.getBoundingClientRect()
@@ -1721,7 +1566,7 @@ controller('card', class extends Controller {
     svg.setAttribute('class', 'focus-arrow')
     svg.setAttribute('aria-hidden', 'true')
     for (const d of arrowStrokes(points, `${tile.dataset.key}:${turn++}`)) { const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); svg.append(path) }
-    host.append(svg)
+    ;(host.querySelector(':scope > .tc-ink') ?? host).append(svg)
   }
 })
 
@@ -1783,160 +1628,130 @@ controller('circles', class extends Controller {
   }
 })
 
-// ---- the card's routes: its page, its picture, the forms that answer it, its live pieces ----
-export function register(t) {
-  const { BASE, hub, model, stream, says, redirect } = t
-  // ---- what a card's form does ----
-  const noteOf = f => String(f.get('note') ?? '').trim()
-  const seenOf = f => (f.has('revised') ? Number(f.get('revised')) : undefined)
-  const marksIn = f => { try { const list = JSON.parse(String(f.get('marks') ?? '[]')); return Array.isArray(list) && list.length ? list : undefined } catch { return undefined } }
-  const notesOf = (card, f) => Object.fromEntries(card.options.map(o => [o.key, String(f.get(`note-${o.key}`) ?? '').trim()]).filter(([, said]) => said))
-  const forgetSent = card => {
-    if (!card.draft || card.kind !== 'decision' || card.status !== 'open') return
-    try { hub.setDraft(card.id, { keys: card.draft.keys ?? [], note: '', notes: card.draft.notes ?? {}, marks: [] }) } catch {}
-  }
-  const say = (card, text, turn, files = [], marks) => hub.message({ agent: card.agent, text, card_id: card.id, ...turn, ...(files.length ? { attachments: files } : {}), ...(marks ? { marks } : {}) })
-  const WAYS = {
-    decide(card, f, files) {
-      const keys = f.getAll('keys').map(String), key = f.get('key')
-      if (!keys.length && key == null) throw new Error('pick an option first')
-      return hub.decide(card.id, card.multiple ? (keys.length ? keys : [String(key)]) : String(key ?? keys[0]), noteOf(f), seenOf(f), card.kind === 'decision' ? notesOf(card, f) : undefined, files, card.kind === 'decision' ? marksIn(f) : undefined)
-    },
-    trust: (card, f) => hub.trust(card.id, noteOf(f), seenOf(f)),
-    close: card => hub.closeInfo(card.id),
-    snooze: card => hub.snooze(card.id, {}),
-    wake: card => hub.snooze(card.id, { clear: true }),
-    star: (card, f) => hub.star(card.id, f.get('on') === '1'),
-    shred: (card, f, files) => hub.shred(card.id, noteOf(f).slice(0, 2000), marksIn(f), files),
-    reopen: card => hub.reopen(card.id),
-    takeback: card => hub.takeBack(card.id),
-    revise: async (card, f, files) => { await say(card, noteOf(f) || HAND_BACK_TEXT, { handback: true }, files, marksIn(f)); forgetSent(card) },
-    what: card => say(card, EXPLAIN_TEXT, { explain: true }),
-    message(card, f, files) {
-      const marks = marksIn(f)
-      if (!noteOf(f) && !files.length && !marks) throw new Error('write something first')
-      return say(card, noteOf(f), {}, files, marks).then(() => forgetSent(card))
-    },
-  }
-  const filesOf = form => (form ? [...form.values()].filter(v => v instanceof File && v.size > 0) : [])
-  async function actRoute(req, res, form, id, what, cardView) {
-    const before = model(), card = before.byCard.get(id)
-    const wantsStream = t.wantsStream(req)
-    const stay = form.has('stay') && wantsStream
-    try {
-      if (!card) throw Object.assign(new Error('this question is not on the board any more'), { status: 404 })
-      await WAYS[what](card, form, filesOf(form))
-    } catch (err) {
-      const text = sayError(err, 'the board did not take it')
-      const m = model(), now = card && m.byCard.get(card.id)
-      // (Sent from the card's own page, where no Desk row stands: what went wrong comes as a note.)
-      const onCard = /^\/(?:chat\/[^/]+\/)?card\/[\w-]+$/.test(new URL(String(req.headers.referer ?? '/'), location.origin).pathname)
-      if (stay && onCard) return t.sendStream(req, res, t.toast({ head: what === 'message' ? 'Not sent' : 'Not saved', line: text, role: 'alert' }), 422)
-      if (stay) return t.sendStream(req, res, now && m.fresh.includes(now) ? stream('replace', `row-${now.id}`, deskRow(now, m, BASE, { error: `Not saved: ${text}`, slim: true })) : t.toast({ head: 'Not saved', line: text, role: 'alert' }))
-      if (!now) return t.notFound(req, res, 'This question is not on the board any more.')
-      return cardView(req, res, now, m, { walk: form.has('walk'), focus: form.has('focus'), error: `Not saved: ${text}` }, 422)
-    }
-    const quiet = form.has('quiet') || !SAID[what]
-    if (stay) {
-      const m = model()
-      // Undone from a toast: back to that card (its page, at its top, the answers in view), unless that is the page already;
-      // from a session's page, its card under the session.
-      if (form.has('undo')) {
-        const at = new URL(String(req.headers.referer ?? '/'), location.origin).pathname, s = /^\/chat\/[^/]+/.exec(at.slice(BASE.length))?.[0]
-        const to = cardPath(card, s ? `${BASE}${s}` : BASE)
-        if (at !== to) return t.sendStream(req, res, stream('visit', to))
-      }
-      return t.sendStream(req, res, html`${walkOf(m).some(c => c.id === id) ? '' : stream('remove', `row-${id}`)}${quiet ? '' : stream('prepend', 'says-host', says(m.byCard.get(id), what))}`)
-    }
-    const said = quiet ? '' : `said=${id}:${what}`
-    const home = String(form.get('back') ?? '')
-    const fromSession = home.startsWith(`${BASE}/chat/`) && /^[\w\-/%+.]+$/.test(home)
-    // (the focus mode goes along to the card that comes next: name="focus" in the card's forms)
-    const to = (c, under, ...query) => focusAt(`${cardPath(c, under)}?${query.filter(Boolean).join('&')}`, form.has('focus'))
-    if (['message', 'reopen', 'takeback', 'wake', 'star'].includes(what) && !form.has('stay')) return redirect(res, to(card, fromSession ? home : BASE, what === 'message' ? `said=${id}:message` : ''))
-    // (answered on the card's own page, not in Blitz, in any way that settles it here: the card stays, answered, and
-    //  offers the next question (the client core's, nextOpenAfter) or says there is none; decided=1 says so to the
-    //  page and its live updates)
-    if (ANSWERS.includes(what) && !form.has('walk') && form.has('page')) {
-      const next = await Promise.resolve(hub.nextOpenAfter?.(id, deskScope(model()))).catch(() => null)
-      return redirect(res, to(card, fromSession ? home : BASE, said, 'decided=1', next ? `next=${next}` : ''))
-    }
-    if (fromSession) return redirect(res, `${home}${said ? `?${said}` : ''}`)
-    // (in the walk, and after the reverse card on a card's own page: on to the next open card)
-    if (form.has('walk') || (form.has('next') && what === 'revise')) {
-      const nextId = await Promise.resolve(hub.nextOpenAfter?.(id, deskScope(model()))).catch(() => null), next = nextId ? model().byCard.get(nextId) : null
-      return redirect(res, next ? to(next, BASE, form.has('walk') ? 'walk=1' : '', said) : `${BASE}/${said ? `?${said}` : ''}`)
-    }
-    return redirect(res, `${BASE}/${said ? `?${said}` : ''}`)
-  }
 
-  // ---- a card's page ----
-    const cardView = (req, res, card, m, { said = '', ...opts } = {}, code = 200) => {
-      const [saidId, saidWhat] = said.split(':')
-      // (just answered here: the card stays and offers the next question, cardPage)
-      if (opts.decided || (saidId === card.id && ANSWERS.includes(saidWhat))) opts = { ...opts, decided: true }
-      const old = versionOf(card, opts.version)
-      const from = opts.from && m.byAgent.has(opts.from) ? opts.from : null
-      t.page(req, res, { model: m, title: `${card.title} · Trommi`, view: 'card', css: 'card', current: from, stream: `&card=${card.id}${from ? `&from=${encodeURIComponent(from)}` : ''}${old ? `&old=${old.n}` : ''}${opts.decided && !old ? `&decided=1${opts.next ? `&next=${encodeURIComponent(opts.next)}` : ''}${opts.focus ? '&focus=1' : ''}` : ''}`, main: cardPage(card, m, BASE, { ...opts, from }), says: says(m.byCard.get(saidId), saidWhat) }, code)
+// ---- the card's routes: its page, its picture, the forms that answer it ----
+// Every way of answering is POST /cards/<id>/<what> (the card's page and the Desk's rows post there): it becomes the
+// core's action. Answered from a Desk row (stay=1), the answer is a toast with Undo; from the card's own page (page=1)
+// the page goes on: an answer keeps the card in view, answered, with the next question (?decided=1, CardView.after); the
+// reverse card and Later go on to the next question (CardView.place.next); What?? goes back where the card was opened.
+/** The toasts a way of answering shows, with the way that takes it back (its Undo). */
+const SAID = {
+  decide: { head: 'Answered', back: 'reopen' }, verdict: { head: 'Answered' }, trust: { head: WORDS.trust, back: 'reopen' }, close: { head: 'Read', back: 'reopen' },
+  shred: { head: 'Shredded', back: 'reopen' }, snooze: { head: WORDS.later, back: 'wake' }, revise: { head: 'Handed back', back: 'takeback' }, what: { head: `Asked: ${WORDS.what}`, back: 'takeback' },
+}
+/** The ways that settle a card: on its own page each is followed by the next question. */
+export const ANSWERS = new Set(['decide', 'verdict', 'trust', 'close', 'shred'])
+const one = x => (x ? [x] : [])
+/** After a message or a hand-back from the card's field, its draft keeps no words and no drawing. */
+const forget = card => (card?.draft ? [{ do: 'draft', place: card.id, text: '', marks: [] }] : [])
+/** The core's actions for one way of answering (a list; an Error says what is missing). */
+const WAYS = {
+  decide({ id, card, f, note, notes, marks, attachments }) {
+    const keys = f.getAll('keys').map(String), choices = keys.length ? keys : f.has('key') ? [String(f.get('key'))] : []
+    if (!choices.length) throw new Error('Pick an option first.')
+    if (card?.kind === 'request') return [{ do: 'verdict', request_id: id, allow: choices[0] === 'allow' }]
+    return [{ do: 'answer', card_id: id, choices, ...(note ? { note } : {}), attachments, option_notes: notes, marks }]
+  },
+  verdict: ({ id, f }) => [{ do: 'verdict', request_id: id, allow: f.get('key') === 'allow' }],
+  // (the agent still chooses; its recommendation goes as the choices: the card's in view, else the Desk row's tile)
+  trust: ({ id, vm, card, note }) => [{ do: 'answer', card_id: id, choices: card ? card.options.filter(o => o.recommended).map(o => o.key) : (vm.desk.rows?.find(r => r.id === id)?.tiles.tiles ?? []).filter(x => x.advised).map(x => x.key), trusted: true, ...(note ? { note } : {}) }],
+  close: ({ id }) => [{ do: 'read', card_id: id }],
+  snooze: ({ id }) => [{ do: 'snooze', card_id: id }],
+  wake: ({ id }) => [{ do: 'unsnooze', card_id: id }],
+  star: ({ id }) => [{ do: 'star', card_id: id, on: true }],
+  unstar: ({ id }) => [{ do: 'star', card_id: id, on: false }],
+  shred: ({ id, note, marks, attachments }) => [{ do: 'shred', card_id: id, ...(note ? { note } : {}), attachments, marks }],
+  reopen: ({ id }) => [{ do: 'decide_again', card_id: id }],
+  takeback: ({ id }) => [{ do: 'take_back', card_id: id }],
+  // (HandBack carries no files: what was attached, the drawing's picture too, goes as a comment just before it)
+  revise: ({ id, card, note, marks, attachments }) => [...(attachments.length && card?.session_id ? [{ do: 'write', session_id: card.session_id, card_id: id, text: '', attachments }] : []), { do: 'hand_back', card_id: id, ...(note ? { note } : {}), rework: true, marks }, ...forget(card)],
+  what: ({ id, marks }) => [{ do: 'hand_back', card_id: id, rework: false, marks }],
+  message({ id, card, note, marks, attachments }) {
+    if (!note && !attachments.length && !marks.length) throw new Error('Write something first.')
+    if (!card?.session_id) throw new Error('This question is not on the board any more.')
+    return [{ do: 'write', session_id: card.session_id, card_id: id, text: note, attachments, marks }, ...forget(card)]
+  },
+  draft: ({ id, f, notes, marks }) => [{ do: 'draft', place: id, text: String(f.get('note') ?? ''), keys: f.getAll('keys').map(String), notes, ...(f.has('marks') ? { marks } : {}) }],
+  more: ({ id }) => [{ do: 'show_more', of: { list: 'comments', card: id } }],
+}
+
+export function register(t) {
+  const { stream } = t
+  const gone = (req, res) => t.notFound(req, res, 'This question is not on the board any more.')
+  /** The session a card was opened from (/chat/<slug>/card/<n>): its address, its key, its name. */
+  const fromOf = (vm, slug) => { if (!slug) return null; const s = vm.sidebar.sessions.find(x => x.slug === slug || x.id === slug); return { slug, id: s?.id ?? null, name: s?.name.en ?? 'the session' } }
+  const show = (req, res, ref, slug, opts) => {
+    const vm = t.vm(), card = cardIn(vm, ref)
+    if (!card) return gone(req, res)
+    const from = fromOf(vm, slug)
+    t.page(req, res, { title: `${card.title} · Trommi`, view: 'card', current: from?.id ?? null, main: cardPage(card, vm, { ...opts, from }) })
+  }
+  const dec = x => (x ? decodeURIComponent(x) : null)
+  t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)$/, ({ req, res, url, match: [, slug, ref] }) => {
+    const q = url.searchParams
+    show(req, res, dec(ref), dec(slug), { pic: Number(q.get('pic')) || 1, walk: q.has('walk'), focus: q.has('focus'), version: Number(q.get('v')) || null, decided: q.has('decided') && !q.has('walk') })
+  })
+  // A picture opened large (the card's page with the stage alone).
+  t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)\/picture\/(\d+)$/, ({ req, res, url, match: [, slug, ref, at] }) => {
+    const vm = t.vm(), card = cardIn(vm, dec(ref)), focus = url.searchParams.has('focus')
+    if (!card) return gone(req, res)
+    const m = mediaOf(vm, card)
+    if (!m.pictures.length && !m.videos.length) return t.redirect(res, focusAt(cardPath(card, slug ? `/chat/${slug}` : ''), focus))
+    show(req, res, card.id, dec(slug), { pic: Number(at) || 1, full: true, focus })
+  })
+  // The page a picture was made from (PictureView.page): shown in the sandboxed frame, never as a page of the app's own
+  // origin (controller "assetthumb": its bytes are decrypted here and handed to /frame as one message).
+  t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)\/picture\/(\d+)\/page$/, ({ req, res, match: [, slug, ref, at] }) => {
+    const vm = t.vm(), card = cardIn(vm, dec(ref))
+    if (!card) return gone(req, res)
+    const p = card.pictures?.[Number(at) - 1], here = cardPath(card, slug ? `/chat/${slug}` : '')
+    if (!p?.page) return t.redirect(res, here)
+    const url = t.fileUrl(p.page), name = fileOf(vm, p.page).name
+    const main = html`<div class="t-picture as-view"><header class="t-picture-bar"><a class="t-picture-back" data-nav href="${here}?pic=${Number(at)}" aria-label="Back to the card">${sk('back')}<h1>${card.title}</h1></a><span class="t-picture-where"><b>Page</b> ${name}</span></header>
+<div class="as-stage" data-type="html">${url ? html`<div class="as-frame-box" data-controller="assetthumb" data-assetthumb-src-value="${url}" data-assetthumb-full-value="true"><p class="as-wait">Opening the page…</p></div>` : html`<p class="as-wait">Opening the page…</p>`}</div></div>`
+    t.page(req, res, { title: `${name} · Trommi`, view: 'picture', sidebar: false, main, bodyAttrs: ' data-focus-page="card"' })
+  })
+
+  /** Files picked on the card, attached: their ids once the core has them uploaded (an answer names only those). */
+  async function attachAll(files) {
+    const ids = await Promise.all(files.map(f => t.attach(f)))
+    for (const until = Date.now() + 120_000; ;) {
+      const states = ids.map(id => t.vm().files?.[id]?.state)
+      if (states.every(s => s === 'ready')) return ids
+      if (states.includes('failed') || Date.now() > until) throw new Error('A file could not be uploaded.')
+      await new Promise(r => setTimeout(r, 150))
     }
-    // The comments are a timeline loaded newest page first; ?older=1 loads the page before, then the card is shown.
-    const threadOf = card => `chat:card/${card.id}`
-    const moreOf = card => card.kind !== 'permission' && Boolean(hub.hasMore?.(threadOf(card)))
-    t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)$/, async ({ req, res, url, match }) => {
-      let m = model(), card = m.cardByRef(match[2])
-      if (!card) return t.notFound(req, res, 'This question is not on the board any more.')
-      if (url.searchParams.has('older') && moreOf(card)) {
-        try { await hub.loadOlder(threadOf(card)) } catch (err) { console.warn('older comments', err) }
-        m = model(); card = m.byCard.get(card.id) ?? card
-      }
-      cardView(req, res, card, m, { more: moreOf(card), said: String(url.searchParams.get('said') ?? ''), next: url.searchParams.get('next'), decided: url.searchParams.has('decided') && !url.searchParams.has('walk'), pic: Number(url.searchParams.get('pic')) || 1, walk: url.searchParams.has('walk'), focus: url.searchParams.has('focus'), version: Number(url.searchParams.get('v')) || null, from: match[1] ? decodeURIComponent(match[1]) : null })
-    })
-    t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)\/picture\/(\d+)$/, ({ req, res, url, match: [, from, ref, at] }) => {
-      const m = model(), card = m.cardByRef(ref)
-      if (!card) return t.notFound(req, res, 'This question is not on the board any more.')
-      if (!imagesOf(card).length && !videosOf(card).length) return redirect(res, focusAt(cardPath(card, BASE), url.searchParams.has('focus')))
-      cardView(req, res, card, m, { more: moreOf(card), pic: Number(at) || 1, full: true, focus: url.searchParams.has('focus'), from: from ? decodeURIComponent(from) : null })
-    })
-    // The page a picture was made from (an attachment of the card): shown in the sandboxed frame, never as a page of the
-    // app's own origin (controller "assetthumb": decrypted here, handed to /frame as one message).
-    t.get(/^\/(?:chat\/([^/]+)\/)?card\/([\w-]+)\/picture\/(\d+)\/page$/, ({ req, res, match: [, from, ref, at] }) => {
-      const m = model(), card = m.cardByRef(ref)
-      if (!card) return t.notFound(req, res, 'This question is not on the board any more.')
-      const pic = imagesOf(card)[Number(at) - 1]
-      if (!pic?.page) return redirect(res, cardPath(card, BASE))
-      const back = `${cardPath(card, BASE)}?pic=${Number(at)}`
-      const main = html`<div class="t-picture as-view"><header class="t-picture-bar"><a class="t-picture-back" data-nav href="${back}" aria-label="Back to the card">${sk('back')}<h1>${card.title}</h1></a><span class="t-picture-where"><b>Page</b> ${pic.page.name}</span></header>
-<div class="as-stage" data-type="html"><div class="as-frame-box" data-controller="assetthumb" data-assetthumb-src-value="${pic.page.url}" data-assetthumb-full-value="true"><p class="as-wait">Opening the page…</p></div></div></div>`
-      t.page(req, res, { model: m, title: `${pic.page.name} · Trommi`, view: 'picture', sidebar: false, css: 'asset', stream: null, main, bodyAttrs: ' data-focus-page="card"' })
-    })
-    t.post(/^\/cards\/([0-9a-f]+)\/draft$/, ({ res, match, form }) => {
-      const card = model().byCard.get(match[1])
-      if (!card) { res.code = 404; return }
-      hub.setDraft(card.id, { keys: form.getAll('keys').map(String), note: String(form.get('note') ?? ''), notes: notesOf(card, form), marks: form.has('marks') ? marksIn(form) ?? [] : card.draft?.marks })
-      res.code = 204
-    })
-    t.post(/^\/cards\/([0-9a-f]+)\/([a-z]+)$/, async ({ req, res, match, form }) => {
-      if (!Object.hasOwn(WAYS, match[2])) return false
-      return actRoute(req, res, form, match[1], match[2], cardView)
-    })
-    // (one rendering per card, session it was opened from, and next step of a page just answered there)
-    const liveKey = c => `${c.params.get('card')}|${c.params.get('from') ?? ''}${c.params.has('decided') ? `|decided|${c.params.get('next') ?? ''}|${c.params.has('focus') ? 'f' : ''}` : ''}`
-    t.live('card', {
-      take: (m, clients) => new Map([...new Set(clients.filter(c => c.params.get('card')).map(liveKey))].map(k => {
-        const [id, from] = k.split('|'), card = m.byCard.get(id), self = from ? `${BASE}/chat/${encodeURIComponent(from)}` : BASE
-        // (a page just answered keeps its next step through every live update: decided=1, next, focus of its address)
-        const p = clients.find(c => liveKey(c) === k)?.params
-        const after = p?.has('decided') && card && card.status !== 'open' ? { next: nextOpen(card, m, p.get('next')), self, home: from ? self : `${BASE}/`, focus: p.has('focus') } : null
-        return [k, card ? { star: String(starButton(card, BASE)), face: cardLead(card, m, self), say: String(optionsSaid(card, m.state.assets)), answer: cardAnswer(card, m, BASE, { after }), answerSig: cardAnswer({ ...card, draft: undefined }, m, BASE, { after }), thread: cardThread(card, m, self, { more: moreOf(card) }) } : null]
-      })),
-      diff(was, now, client) {
-        const id = client.params.get('card'), k = liveKey(client), a = was.get(k), b = now.get(k)
-        if (!b) return a ? String(stream('refresh')) : ''
-        if (!a) return ''
-        const star = a.star !== b.star ? String(stream('replace', `card-star-${id}`, raw(b.star))) : ''
-        const face = star + (t.differs(a.face, b.face) ? String(stream('replace', `card-lead-${id}`, b.face)) : '') + (a.say !== b.say ? String(stream('replace', `card-say-${id}`, raw(b.say))) : '')
-        if (client.params.has('old')) return t.differs(a.thread, b.thread) ? String(stream('replace', `card-thread-${id}`, b.thread)) : ''
-        return face + (t.differs(a.answerSig, b.answerSig) ? stream('replace', `card-answer-${id}`, b.answer) : '') + (t.differs(a.thread, b.thread) ? stream('replace', `card-thread-${id}`, b.thread) : '')
-      },
-    })
+  }
+  t.post(/^\/cards\/([0-9a-f]+)\/([a-z]+)$/, async ({ req, res, match: [, id, what], form }) => {
+    if (!Object.hasOwn(WAYS, what)) return false
+    const f = form ?? new FormData(), vm = t.vm(), card = vm.cards?.[id] ?? null
+    const note = String(f.get('note') ?? '').trim()
+    let marks = []
+    try { const list = JSON.parse(String(f.get('marks') ?? '[]')); if (Array.isArray(list)) marks = list } catch {}
+    const notes = Object.fromEntries([...f.keys()].filter(k => k.startsWith('note-')).map(k => [k.slice(5), String(f.get(k) ?? '').trim()]).filter(([, said]) => said))
+    const next = card?.place?.next ?? null   // (the question after it, before the answer moves it)
+    try {
+      const files = what === 'draft' ? [] : f.getAll('files').filter(v => typeof v === 'object' && v?.size > 0)
+      const attachments = files.length ? await attachAll(files) : []
+      for (const a of WAYS[what]({ id, vm, card, f, note, notes, marks, attachments })) t.act(a)
+    } catch (err) {
+      return t.sendStream(req, res, t.toast({ head: what === 'message' ? 'Not sent' : 'Not saved', line: String(err?.message ?? err), role: 'alert' }), 422)
+    }
+    if (what === 'draft' || what === 'more') return t.done(res)
+    // Undone from a toast: back to that card, unless its page is in view already.
+    if (f.has('undo')) return /\/card\/[^/]+$/.test(new URL(String(req.headers?.referer ?? '/'), 'http://x').pathname) ? t.done(res) : t.sendStream(req, res, stream('visit', cardPath(card ?? id)))
+    const said = !f.has('quiet') && SAID[what]
+    const toast = said ? t.toast({ head: said.head, line: card?.title ?? vm.desk.rows?.find(r => r.id === id)?.title ?? '', undo: said.back ? { action: `/cards/${id}/${said.back}` } : null }) : ''
+    let to = null
+    if (f.has('page')) {
+      const back = String(f.get('back') ?? ''), home = /^\/chat\/[^/?#]+$/.test(back) ? back : '/', self = home === '/' ? '' : home
+      const walk = f.has('walk'), onward = ANSWERS.has(what) || what === 'snooze' || what === 'revise'
+      if (walk && onward) to = next ? `${cardPath(next, self)}?walk=1` : '/'
+      else if (ANSWERS.has(what)) to = `${cardPath(card ?? id, self)}?decided=1`
+      else if (what === 'snooze' || (what === 'revise' && f.has('next'))) to = next ? cardPath(next, self) : home
+      else if (what === 'what' || what === 'revise') to = home
+      if (to) to = focusAt(to, f.has('focus'))
+    }
+    return toast || to ? t.sendStream(req, res, html`${toast}${to ? stream('visit', to) : ''}`) : t.done(res)
+  })
 }
