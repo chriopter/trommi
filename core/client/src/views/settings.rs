@@ -127,8 +127,10 @@ pub fn agents_page(b: &Board) -> Vec<AgentView> {
     let member_of = |i: usize| b.agents[i].row.agent_device_id.as_deref().and_then(|d| m.members.get(d));
     let text = |v: &Value| v.as_str().unwrap_or("").to_string();
     let mut groups: Vec<(String, &'static str, String, Vec<usize>)> = Vec::new();
+    // (a helper whose own device the room does not list goes with its main session's program and computer)
+    let parent_of = |i: usize| b.agents[i].row.parent.as_deref().and_then(|p| b.agents.iter().position(|x| x.row.id == p));
     for (i, a) in b.agents.iter().enumerate().filter(|(_, a)| !a.row.archived && !a.row.removed && !a.row.own) {
-        let member = member_of(i);
+        let member = member_of(i).or_else(|| parent_of(i).and_then(member_of));
         let program = program_of(b, &a.row.key, member);
         let host = member.map(|d| text(&d.host)).unwrap_or_default();
         let key = format!("{program} · {host}");
@@ -260,7 +262,7 @@ pub fn usage_of(acc: &Value, now: u64) -> Option<UsageView> {
         let mut grouped = String::new();
         let digits = n.to_string();
         for (i, ch) in digits.chars().enumerate() {
-            if i > 0 && (digits.len() - i) % 3 == 0 {
+            if i > 0 && (digits.len() - i).is_multiple_of(3) {
                 grouped.push(',');
             }
             grouped.push(ch);

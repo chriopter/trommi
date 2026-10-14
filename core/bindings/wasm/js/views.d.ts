@@ -669,6 +669,10 @@ export interface EventView {
   version?: number
   /** "revised" on a card's page: it came after his hand-back ("Version 3, as you asked"). */
   asked: boolean
+  /** "decided", "trusted", "shredded": what he wrote along, one line each (“his note”, On Label: “a note”). */
+  said?: Text[]
+  /** "decided", "trusted", "shredded": the files he sent along (`ViewModel.files`), shown under the deed. */
+  files?: string[]
 }
 
 /** A turn's trail: what the agent did between his prompt and its answer, as one block. */
@@ -788,7 +792,10 @@ export interface CardView {
   versions?: VersionView[]
   /** What the star says ("Star", "Starred"). */
   star_says: Text
-  /** The comments and what happened to the card, oldest first. */
+  /** What the card does not hold, before the comments: the whole text or its layout, the links of its options,
+   *  that he put it off. */
+  lead?: LeadView[]
+  /** The comments and what happened to the card, oldest first: the window's rows (`earlier`). */
   talk?: TalkRow[]
   /** The hub holds older comments than `talk` has. */
   has_more: boolean
@@ -798,6 +805,10 @@ export interface CardView {
   merged_into?: CardRefView
   /** Its pictures, in order (the stage and the small ones under it), each with the option it shows. */
   pictures?: PictureView[]
+  /** The line above the comments when more stand before them ("Load earlier (N)", "Earlier comments"): `talk`
+   *  is a window of the newest [`board::COMMENTS_PAGE`] rows, a page more for each time the person asked
+   *  (`Lens::comments_window`, `MoreOf::Comments`); none when it shows everything there is. */
+  earlier?: MoreView
   /** Once it is settled (not open, not catching up): the way on that the page offers right after the person
    *  answered here (the shell shows it then): the next open question of the desk in view, or that there is none. */
   after?: AfterView
@@ -924,6 +935,38 @@ export interface VersionView {
   options?: OptionView[]
   /** Its body is on this device (history on demand: an old version may be read from the hub when asked for). */
   loaded: boolean
+  /** Its pictures as they were, in order (`CardView.pictures`' rule, with that version's options). */
+  pictures?: PictureView[]
+  /** Its other files (`ViewModel.files`). */
+  files?: string[]
+}
+
+/** What the card itself does not hold, at the head of its comments (the web's `cardThread` lead), in this order. */
+export interface LeadView {
+  /** "whole": the whole text, when the card holds only part of it (`CardView.more`), with the agent's layout;
+   *  "with": only the agent's layout, when the card holds all the words; "links": the links written into its
+   *  options (a tile says them in plain words); "later": he put it off and it waits on Later. */
+  kind: string
+  /** "The whole text", "With the text", "Links of the options", "You put it off: it waits on “Later”". */
+  label: Text
+  /** "whole": the text (markdown, Artifact links by their titles). */
+  text?: string
+  /** "whole", "with": the agent's layout (`CardView.html`). */
+  html?: string
+  /** "links": each link with the option it is in. */
+  links?: OptionLinkView[]
+  /** "later": when he put it off. */
+  at_ms?: number
+}
+
+/** A link an agent wrote into an option's label or detail. */
+export interface OptionLinkView {
+  key: string
+  /** The option's label without the link; its key when nothing else is left. */
+  label: string
+  url: string
+  /** The address as it is shown: without "https://" and "www.". */
+  short: string
 }
 
 /** The person's notes (the room's, the same on every desk) and the one in the corner (`notes.rs`). */
@@ -998,12 +1041,93 @@ export interface SettingsView {
   remove_unfinished?: Text
   /** The row Agents: "2 agents · 5 sessions"; none without one. */
   agents?: Text
+  /** The page Agents: each program on a computer with its sessions, the most sessions first (the web's
+   *  `agentsOf`, `agentsMain`). */
+  agent_list?: AgentView[]
+  /** The line under the page's title: "2 agents on 1 computer · 5 sessions"; none without an agent. */
+  agents_lead?: Text
   /** The row Desks: "3 desks"; none in a room without desks. */
   desks?: Text
   /** The row Devices: "2 devices". */
   devices_says?: Text
   /** The room's key epoch (the version line at the list's foot). */
   key_epoch: number
+}
+
+/** An agent: a program on one computer ("Claude Code on MacBook Pro"), with its sessions. */
+export interface AgentView {
+  /** "Claude Code · MacBook Pro": what Remove names (the action's `key`). */
+  key: string
+  /** "Claude Code", "Codex", "Agent". */
+  program: string
+  /** The computer's name; "" when it named none. */
+  host: string
+  /** "Claude Code on MacBook Pro", "Codex on an unnamed computer". */
+  name: Text
+  /** One of its sessions is connected. */
+  online: boolean
+  /** "connected", or "away · last seen" (the shell writes the time of `seen_ms` after it). */
+  state: Text
+  /** When one of its sessions last did something. */
+  seen_ms: number
+  /** "2 sessions, 1 helper". */
+  count: Text
+  /** Every session of it, its helpers too. */
+  total: number
+  /** Its main sessions (a helper whose main is its own counts under that main), in the list's order. */
+  sessions: AgentSessionView[]
+  /** The agent devices Remove takes out of the room (never this device, never a person's). */
+  devices?: string[]
+  /** What Remove does, said before it; none when there is nothing to remove. */
+  remove?: Text
+  /** Its account and how much of it is used (the connector's `account`); none without a plan or an e-mail. */
+  usage?: UsageView
+}
+
+/** A main session of an agent on the page Agents. */
+export interface AgentSessionView {
+  /** Its key (`Screen::Session`). */
+  id: string
+  slug: string
+  name: Text
+  /** What draws it (`SessionRowView::mark`). */
+  mark: string
+  /** "Work desk". */
+  desk: Text
+  /** Its folder on the computer; "" when unknown. */
+  folder?: string
+  helpers: number
+  /** "+2 helpers"; none without one. */
+  helpers_says?: Text
+  online: boolean
+  /** "connected", "away". */
+  state: Text
+}
+
+/** An agent's account: its plan, e-mail and meters. */
+export interface UsageView {
+  /** "Claude Max", "ChatGPT Pro Lite"; "" without a plan. */
+  plan?: string
+  email?: string
+  /** The 5-hour window and the week, those it said; a window that started again since is left out. */
+  meters?: MeterView[]
+  /** "1,200 credits", "2 full resets" (Codex). */
+  facts?: Text[]
+}
+
+export interface MeterView {
+  /** "five_hour", "weekly". */
+  key: string
+  /** "5 h", "week". */
+  label: string
+  /** "5-hour window", "This week". */
+  long: string
+  /** Percent used, 0 to 100. */
+  used: number
+  /** At 80 % or more. */
+  hot: boolean
+  /** When it starts again (the shell writes the time). */
+  reset_ms?: number
 }
 
 /** One device of the person. */
