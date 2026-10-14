@@ -330,6 +330,8 @@ impl App {
             }
             _ => {}
         }
+    }
+
     /// Sends a request an action built with the codec's builder for its route, through the engine, which adds the
     /// token, renews it and retries (`engine::requests`). `keep`: a name for a request with side effects at the hub,
     /// sent again after a restart (the route must be idempotent). The answer comes in [`App::take_answers`] under
