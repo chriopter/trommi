@@ -60,6 +60,8 @@ enum Pending {
     CacheDelete,
     /// The stored room's hub, read at the start when `Config.hub` names none ([`ROOM_KEY`]).
     RoomKey,
+    /// The login of a sign-in (`account::signin`).
+    Login,
     /// The stored room's hub written by a join with the code.
     RoomKeyWrite,
     /// The device state read for a join with the code ([`App::join_room`]).
@@ -101,6 +103,10 @@ pub struct App {
     room_join: Option<engine::room_join::RoomJoinStatus>,
     /// A join of the room asked for, waiting for the device state it is made on.
     room_join_wait: Option<(IoId, engine::room_join::RoomJoin)>,
+    /// A sign-in waiting for its login answer.
+    signing_in: Option<(IoId, crate::account::signin::Waiting)>,
+    /// A sign-in's join of the room runs: its end is shown on the account's screen.
+    signed_in_join: bool,
     /// The hub the stored room names ([`ROOM_KEY`]).
     stored_hub: Option<String>,
     /// The device state loaded, while the stored room's hub is read.
@@ -149,6 +155,8 @@ impl App {
             sessions_not_joined: None,
             room_join: None,
             room_join_wait: None,
+            signing_in: None,
+            signed_in_join: false,
             stored_hub: None,
             opening: None,
             board: engine::feed::Board::default(),
@@ -241,6 +249,86 @@ impl App {
         out
     }
 
+    /// An account action (`account`): the sign-ins here; the other flows are W3's.
+    fn account(&mut self, action: crate::account::AccountAction, out: &mut Vec<Effect>) {
+        use crate::account::signin::{self, By};
+        use crate::account::AccountAction;
+        let (by, account, secret, hub) = match action {
+            AccountAction::SignIn { email, password, hub } => (By::Password, email, password, hub),
+            AccountAction::SignInWithKit { email, words, hub } => (By::Kit, email, words, hub),
+            other => {
+                out.push(log(LogLevel::Debug, &format!("account: {other:?} is not handled here")));
+                return;
+            }
+        };
+        let Some(config) = self.config.as_ref() else { return };
+        if self.engine.is_some() || self.room_join_wait.is_some() || self.signing_in.is_some() {
+            out.push(log(LogLevel::Warn, "account: a sign-in on a slot that has a device or signs in already"));
+            return;
+        }
+        let client = format!("{}/{}", config.platform, config.version);
+        let begun = signin::hub_of(hub.as_deref(), &config.hub).and_then(|hub| signin::begin(hub, by, &account, &secret, &client));
+        drop(secret);
+        match begun {
+            Ok((waiting, request)) => {
+                let id = self.io(Pending::Login);
+                self.signing_in = Some((id, waiting));
+                self.next_view.account = crate::views::AccountView { step: "working".into(), ..Default::default() };
+                out.push(Effect::Http { id, request });
+            }
+            Err(problem) => self.sign_in_failed(problem),
+        }
+    }
+
+    fn sign_in_failed(&mut self, problem: crate::account::signin::Problem) {
+        self.next_view.account = crate::views::AccountView { step: "sign_in".into(), problem: Some(problem.text()), ..Default::default() };
+    }
+
+    /// The hub answered a sign-in's login: the code is opened and the room joined with it.
+    fn login_answered(&mut self, now_ms: u64, id: IoId, result: IoResult<HttpResponse>, out: &mut Vec<Effect>) {
+        use crate::account::signin;
+        let Some((_, waiting)) = self.signing_in.take_if(|(asked, _)| *asked == id) else { return };
+        let answer = match result {
+            IoResult::Ok(response) => crate::hub::Codec.answer(&waiting.expect, &response),
+            IoResult::Err(error) => Err(crate::hub::classify_io(&error).unwrap_or(crate::hub::Failure::Offline)),
+        };
+        match signin::answered(&waiting, answer) {
+            Ok((room, keys)) => {
+                self.signed_in_join = true;
+                let hub = waiting.hub.clone();
+                drop(waiting);
+                let effects = self.join_room(now_ms, engine::room_join::RoomJoin { hub, room, keys });
+                out.extend(effects.into_iter().filter(|e| !matches!(e, Effect::Render { .. })));
+            }
+            Err(problem) => self.sign_in_failed(problem),
+        }
+    }
+
+    /// A sign-in's join of the room, as the account's screen shows it.
+    fn follow_sign_in(&mut self) {
+        use engine::room_join::{RoomJoinError, RoomJoinStatus};
+        if !self.signed_in_join {
+            return;
+        }
+        match self.room_join {
+            Some(RoomJoinStatus::Joined) => {
+                self.signed_in_join = false;
+                self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
+            }
+            Some(RoomJoinStatus::Failed(error)) => {
+                self.signed_in_join = false;
+                use crate::views::words::say;
+                let problem = match error {
+                    RoomJoinError::TooMany => say("account.too_many", "This room has as many devices as it may. Remove one first.", &[]),
+                    RoomJoinError::Interrupted => say("account.interrupted", "Signing in was cut off. Sign in again to finish it.", &[]),
+                    other => say("account.join_failed", format!("Joining the room did not work ({}).", other.code()), &[("code", other.code())]),
+                };
+                self.next_view.account = crate::views::AccountView { step: "sign_in".into(), problem: Some(problem), ..Default::default() };
+            }
+            _ => {}
+        }
+    }
+
     /// How the last join of the room with the code stands; none before one.
     pub fn room_join(&self) -> Option<engine::room_join::RoomJoinStatus> {
         self.room_join
@@ -321,6 +409,7 @@ impl App {
                         self.room_join = Some(engine::room_join::RoomJoinStatus::Failed(engine::room_join::RoomJoinError::Device("storage")));
                     }
                 },
+                Some(Pending::Login) | Some(Pending::Dropped) if false => {}
                 Some(Pending::RoomKey) => {
                     if let IoResult::Ok(StoreAnswer::Values { values }) = &result {
                         let key: Option<RoomKey> = values.first().and_then(Option::as_ref).and_then(|v| serde_json::from_slice(&v.0).ok());
@@ -330,7 +419,7 @@ impl App {
                         self.open(now_ms, revision, entries, &mut out);
                     }
                 }
-                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) => {
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) => {
                     if let IoResult::Err(e) = &result {
                         out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
                     }
@@ -371,6 +460,10 @@ impl App {
                     }
                 }
             },
+            Event::Http { id, result } if self.pending.get(&id) == Some(&Pending::Login) => {
+                self.pending.remove(&id);
+                self.login_answered(now_ms, id, result, &mut out);
+            }
             Event::Http { id, result } => {
                 let mine = self.with_engine(now_ms, &mut out, |engine, ctx| {
                     engine.on_http(ctx, id, result)
@@ -394,6 +487,7 @@ impl App {
                 self.lens.utc_offset_min = utc_offset_min;
                 self.stale_views = true;
             }
+            Event::Action { action: crate::actions::Action::Account { action } } => self.account(action, &mut out),
             Event::Action { action } => self.action(now_ms, action, &mut out),
             Event::Focus { focus } => {
                 // (the single desk chosen last keeps the note and the Scribble Board on All desks)
@@ -810,6 +904,7 @@ impl App {
 
     /// Puts a `Render` first when the view changed: the shell draws before it starts the I/O.
     fn render(&mut self, out: &mut Vec<Effect>) {
+        self.follow_sign_in();
         let delta = if !self.rendered_once {
             self.rendered_once = true;
             let mut whole = self.next_view.clone();

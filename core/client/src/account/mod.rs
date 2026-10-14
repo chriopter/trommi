@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod signin;
+
 /// Text the person typed that must never reach a log: its `Debug` is redacted.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -28,11 +30,18 @@ pub enum AccountAction {
     SignIn {
         email: String,
         password: Secret,
+        /// The hub to sign in at, for a shell whose `Config.hub` is empty and that lets the person name one;
+        /// none: `Config.hub`, else the default hub.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hub: Option<String>,
     },
-    /// Sign in with the Emergency Kit words instead of the password.
+    /// Sign in with the Emergency Kit words instead of the password. `email`: the account's e-mail, or its id
+    /// (as printed on the kit) for an account without one.
     SignInWithKit {
         email: String,
         words: Secret,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hub: Option<String>,
     },
     /// Join by an invite link (this device becomes a member once the emoji match).
     Join {
