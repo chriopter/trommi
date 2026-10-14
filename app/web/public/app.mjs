@@ -168,7 +168,7 @@ function createBoard({ views }) {
     for (const [name, v] of Object.entries(LAZY)) if (!loaded[name] && v.paths.test(p)) await view(name)
     // (signed out, or an account step under way: the account's screens decide where the page is: auth.mjs gate)
     const vm = core.vm()
-    if (method === 'GET' && (vm.phase === 'signed_out' || !['none', 'invite', undefined].includes(vm.account?.step))) {
+    if (method === 'GET' && (vm.phase === 'signed_out' || !['none', 'invite', '', undefined].includes(vm.account?.step))) {
       const to = (await view('auth')).gate?.(vm, url)
       if (to && to !== url.pathname + url.search) { redirect(res, to); return res }
     }
