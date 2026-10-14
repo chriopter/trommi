@@ -158,6 +158,7 @@ pub fn config(utc_offset_min: i32) -> Config {
             notify: true,
             ..Abilities::default()
         },
+        demo: None,
     }
 }
 
