@@ -59,6 +59,9 @@ export interface ViewModel {
   board?: BoardView
   /** The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first. */
   artifacts?: ArtifactView[]
+  /** Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
+   *  desks); none else. */
+  thumbs?: ThumbView[]
   toasts?: Toast[]
 }
 
@@ -86,6 +89,8 @@ export type ViewPart =
   | { part: 'board'; view: BoardView | null }
   /** The gallery of Artifacts, whole; none when it is left. */
   | { part: 'artifacts'; view: ArtifactView[] | null }
+  /** The desks' boards small, whole; none when no page shows them. */
+  | { part: 'thumbs'; view: ThumbView[] | null }
   | { part: 'toasts'; toasts: Toast[] }
 
 /** Edits of a long list, by position: at `at`, `gone` rows leave and `rows` come (the Desk's stack ops today). */
@@ -582,6 +587,13 @@ export interface SessionView {
   first_open?: string
   /** An empty conversation: the card of the agent that joined, and three ways to start. */
   empty?: EmptyTalkView
+  /** Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window); a
+   *  helper without one of its own shows its main's. None without a plan or an e-mail. */
+  usage?: UsageView
+  /** The main session it is a helper of (its key); none for a main. */
+  parent?: string
+  /** In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`). */
+  archived: boolean
 }
 
 /** The dot beside a session's name. */
@@ -1262,9 +1274,22 @@ export interface AccountView {
   emoji?: EmojiView[]
   /** The Emergency Kit words to keep, shown once. */
   kit?: string[]
-  /** Self-join asks waiting for "Allow" or "Deny" (for `AnswerAsk`). */
+  /** Self-join asks waiting for "Allow" or "Deny" (for `AnswerAsk`), and those allowed whose session is still
+   *  joining (`joining`). */
   asks?: AskView[]
   problem?: Text
+  /** The invite this device made and shows (not a self-join's): what it is for, until when, who came; it stays
+   *  `joined` once its newcomer is in, until `DropInvite` or the next invite. */
+  invite?: InviteView
+  /** The account's Emergency Kit was never saved (downloaded, printed or shown, then `KitKept`): the screens show
+   *  the kit's page first. The room register `kit` of every human device of the person says it. */
+  kit_due: boolean
+  /** What the kit's sheet names, once the account was read: its e-mail, its id (as printed), and the address its
+   *  QR code holds (`https://<app>/#k1.<hub, base64url>.<id, 32 hex>`: the recovery screen with both filled in; no
+   *  word of the kit). */
+  kit_email?: string
+  kit_account?: string
+  kit_address?: string
 }
 
 export interface EmojiView {
@@ -1276,6 +1301,44 @@ export interface AskView {
   nonce: string
   /** What the vouching agent says it is: account, name, host (its word, shown as such). */
   says: Text
+  /** The asking session's key (its main, which vouches). */
+  session_id: string
+  /** The name the new session gets. */
+  name: string
+  /** The computer and the folder it asks from (the agent's word); "" when it named none. */
+  host: string
+  folder: string
+  /** "Claude" or "Codex". */
+  kind: string
+  /** Who vouches: the asking session's name. */
+  vouched_by: string
+  /** Allowed: its link is out and the new session is not in yet (no Allow or Deny any more). */
+  joining: boolean
+}
+
+/** An invite this device made, as its page shows it. */
+export interface InviteView {
+  invite_id: string
+  /** "human" (a device of the person) or "agent". */
+  role: string
+  /** "open" (waits for the newcomer), "confirm_code" (the emoji to compare), "adding", "joined". */
+  state: string
+  /** When the link ends unused (ms). */
+  expires_ms: number
+  /** The newcomer's name once it is known ("" before): the device's own, or the agent's session. */
+  newcomer?: string
+}
+
+/** A desk's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt. */
+export interface ThumbView {
+  desk_id: string
+  /** `desk/<32 hex>`. */
+  board_id: string
+  /** "loading" while it is read on this device, else as `BoardView.state`. */
+  state: string
+  /** How many shapes it holds (once read). */
+  count: number
+  shapes?: BoardShape[]
 }
 
 /** A Scribble Board (spec/v1.md 10): what its items add up to on this device, ready to draw. */

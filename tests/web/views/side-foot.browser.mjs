@@ -19,7 +19,7 @@ const PROBE = `(async () => {
   const { joinRow } = await import('/sidebar.mjs')
   const list = document.querySelector('#agents')
   const row = document.createElement('div')
-  row.innerHTML = String(joinRow({ nonce: 'ab12', says: { en: 'valiido on christophers-macbook-pro.local, vouched by valiido.com Article' } }))
+  row.innerHTML = String(joinRow({ nonce: 'ab12', name: 'valiido', folder: '~/git/valiido', host: 'christophers-macbook-pro.local', kind: 'Claude', vouched_by: 'valiido.com Article', joining: false, says: { en: 'New Claude session in ~/git/valiido on christophers-macbook-pro.local, vouched for by valiido.com Article' } }))
   list.append(row.firstElementChild)
   const rect = el => el.getBoundingClientRect()
   const buttons = [...document.querySelectorAll('.side-foot button')].filter(b => getComputedStyle(b).display !== 'none').map(rect)

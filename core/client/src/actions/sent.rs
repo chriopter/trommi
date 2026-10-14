@@ -151,6 +151,24 @@ impl Sent {
             toasts.remove(0);
         }
     }
+
+    /// A toast that says what was done, with Undo (`undo`, sent back as it is): no problem, the shell's own time.
+    pub fn undo_toast(&mut self, toasts: &mut Vec<Toast>, text: Text, line: Option<Text>, undo: Action) {
+        self.next_toast += 1;
+        toasts.push(Toast {
+            id: format!("toast-{}", self.next_toast),
+            text,
+            label: Some(Text::new("action.undo", "Undo")),
+            action: Some(undo),
+            line,
+            alert: false,
+            ms: None,
+            go: None,
+        });
+        if toasts.len() > TOASTS_MAX {
+            toasts.remove(0);
+        }
+    }
 }
 
 #[cfg(test)]

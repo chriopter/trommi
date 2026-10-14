@@ -233,3 +233,29 @@ fn a_desk_is_deleted_with_its_sessions_cards_and_board() {
     assert_eq!(sim.app.board_known(&board).map(|b| b.shapes.len()), Some(0), "its board is erased");
     assert!(sim.view.settings.deleting.is_empty());
 }
+
+#[test]
+fn settings_show_every_desks_board_small() {
+    let world = World::new();
+    let mut sim = world.sim();
+    sim.send(start());
+    sim.send(Event::Action { action: Action::AddDesk { name: "Work".into() } });
+    world.stream(&mut sim);
+    let main = scribble::desk_board("main");
+    sim.send(Event::Action { action: Action::BoardItem { board_id: main.clone(), local_id: "s1".into(), content: json!({ "content_type": "strokes", "strokes": [stroke(&[(0, 0), (8, 8)])] }) } });
+    world.stream(&mut sim);
+    assert_eq!(sim.view.thumbs, None, "no page shows them");
+    sim.send(Event::Focus { focus: Focus { screen: Screen::Settings, ..Default::default() } });
+    for _ in 0..4 {
+        world.stream(&mut sim);
+        sim.advance(500);
+    }
+    let thumbs = sim.view.thumbs.clone().expect("the boards small");
+    assert_eq!(thumbs.len(), 2, "{thumbs:?}");
+    assert_eq!((thumbs[0].desk_id.as_str(), thumbs[0].board_id.as_str(), thumbs[0].state.as_str(), thumbs[0].count), ("main", main.as_str(), "ready", 1));
+    assert!(thumbs[0].shapes[0].t.is_empty() && thumbs[0].shapes[0].f.is_empty(), "no times, no force");
+    assert_eq!((thumbs[1].state.as_str(), thumbs[1].count), ("ready", 0));
+    assert_eq!(sim.view.settings.desk_counts.iter().find(|c| c.desk_id == "main").and_then(|c| c.board), Some(1), "counted once read");
+    look(&mut sim, None);
+    assert_eq!(sim.view.thumbs, None, "left");
+}

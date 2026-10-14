@@ -110,8 +110,11 @@
       "event": {
         "kind": "asked",
         "label": {
-          "key": "event.asked",
-          "en": "New question"
+          "key": "event.asked_by",
+          "args": {
+            "name": "Fernly Website"
+          },
+          "en": "Fernly Website asked"
         },
         "text": "Remind in the morning or in the evening?",
         "echo": false,
@@ -138,8 +141,8 @@
       "event": {
         "kind": "decided",
         "label": {
-          "key": "event.decided",
-          "en": "Answered"
+          "key": "event.you_chose",
+          "en": "You chose"
         },
         "about": "Remind in the morning or in the evening?",
         "text": "Morning, 8:00",

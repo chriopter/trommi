@@ -24,7 +24,7 @@ const local = {
   email: '',           // the e-mail typed last, to start the next form with
   begun: false,        // this page signed in, made an account or joined: its screens lead to the Desk once in
   loggedOut: false,    // "Logged out." on the start page
-  invite: null,        // the invite asked for here: { kind: 'device' | 'agent', seen: the last step drawn }
+  invite: null,        // the invite asked for here: { kind: 'device' | 'agent' } (where it stands: vm.account.invite)
   kitFrom: 'start',    // where a new kit is shown: 'start' (/kit) or 'settings' (/settings/account/kit)
   kit: { shown: false, saved: false },
   words: null,         // the Emergency Kit's words of a recovery, held for its new passkey or password (/new-way)
@@ -43,6 +43,8 @@ export function gate(vm, url) {
   const av = vm.account ?? {}, step = stepOf(vm), p = url.pathname
   const go = to => (p === to ? null : to)
   if (step === 'keep_kit') return go(kitPath())
+  // (a kit that was never saved, on any device of the person: its page first, where a new one is made)
+  if (av.kit_due && step === 'none' && !signedOut(vm) && p !== '/logout') return go('/kit')
   // (an invite of this device: its emoji and its adding stand where it was asked for)
   if (av.invite_id && ['compare_emoji', 'working'].includes(step)) return go(local.invite?.kind === 'agent' ? '/pair/agent' : '/settings')
   if (step === 'join' || step === 'compare_emoji') return go('/join')
@@ -95,7 +97,7 @@ ${kit.account ? `Account ID: ${kit.account}\n` : ''}${kit.email ? `Email: ${kit.
 
 Lost your way in? Open https://app.trommi.com, choose "Log in", then "Forgot?".
 Enter your ${kitOpensWith(kit)} and these 12 words, then choose a new ${kit.email ? 'password or passkey' : 'passkey'}.
-
+${kit.link ? `Or open ${kit.link} (it fills in the account ID; it holds no words).\n` : ''}
 Keep this kit private and offline: with these words and your ${kitOpensWith(kit)}, anyone can get into your account.
 ${LOST(kit.has_password === false || !kit.email ? 'passkey' : 'password')}
 
@@ -108,7 +110,8 @@ function downloadKit(text) {
   document.body.append(a); a.click(); a.remove()
   setTimeout(() => URL.revokeObjectURL(a.href), 10000)
 }
-const kitIdentity = kit => (kit.account ? html`<div class="set-pair kit-id"><div class="set-text"><b>Account ID</b><small class="room-mono" id="kit-account">${kit.account}</small></div></div>` : '')
+/** The account's ID with the code that opens the recovery screen with it filled in (AccountView.kit_address). */
+const kitIdentity = kit => (kit.account ? html`<div class="set-pair kit-id">${kit.link ? html`<div class="set-qr is-real">${raw(qrSvg(kit.link, 'QR code: opens the recovery screen with this account ID'))}</div>` : ''}<div class="set-text"><b>Account ID</b><small class="room-mono" id="kit-account">${kit.account}</small>${kit.link ? html`<small>The code opens the recovery screen with this ID filled in. It holds no words.</small>` : ''}</div></div>` : '')
 /** The kit as a sheet of paper. Hidden, it holds no word at all: twelve drawn strokes. */
 const kitSheet = (kit, words) => html`<div class="kit-sheet${words ? ' is-shown' : ''}" id="kit"><p class="kit-head">${BELL}<b>Trommi Emergency Kit</b></p><p class="kit-mail">${kit.email ?? ''}</p>
 <ol class="kit-words" id="kit-words"${words ? '' : raw(' aria-hidden="true"')}>${words ? words.map(w => html`<li>${w}</li>`) : KIT_EMPTY.split(' ').map(w => html`<li><i style="--w:${3 + w.length}"></i></li>`)}</ol>
@@ -117,8 +120,9 @@ ${kitIdentity(kit)}
 /** The kit's buttons post one form (/kit/do): shown or hidden, saved as a file, printed, kept. */
 const KIT_FORM = (back) => html`<form id="kit-acts" method="post" action="/kit/do" hidden><input type="hidden" name="back" value="${back}"></form>`
 const kitButton = (what, label, cls, id, extra = '') => html`<button type="submit" form="kit-acts" name="do" value="${what}" class="${cls}" id="${id}"${raw(extra)}>${label}</button>`
-/** What a kit is of: the account as read (SettingsView.login); nothing while it is not. */
-const kitOf = login => ({ email: login?.email ?? null, account: login?.account ?? null, has_password: login?.has_password })
+/** What a kit is of: the account as the core read it (AccountView.kit_email, kit_account, kit_address; the ways in
+ *  from SettingsView.login); nothing while it is not. */
+const kitOf = m => { const av = m?.account ?? {}, login = m?.settings?.login; return { email: av.kit_email ?? login?.email ?? null, account: av.kit_account ?? login?.account ?? null, link: av.kit_address ?? null, has_password: login?.has_password } }
 
 // ---- the screens, each drawn from the core's AccountView and what this page remembers ----
 // o: { pk (passkeys offered), way, busy (the busy button's word), passkeyBusy, problem (words), email, loggedOut,
@@ -232,14 +236,14 @@ function screenOpts(name, vm, url) {
     at: local.sent?.passkey ? 'passkey' : 'form',
     problem: name === 'scan' ? local.paste || '' : problem, email: local.email, loggedOut: local.loggedOut,
     emoji: av.emoji, words: av.kit?.length ? av.kit : null, shown: local.kit.shown, saved: local.kit.saved,
-    kit: kitOf(login), ways: { password: login?.has_password !== false, passkey: Boolean(login?.passkeys?.length) },
+    kit: kitOf(vm), ways: { password: login?.has_password !== false, passkey: Boolean(login?.passkeys?.length) },
   }
 }
 
 // ---- self-join asks (vm.account.asks): a toast that asks, on any page, until it is answered ----
 const askShown = new Map()
 function syncAsks(vm) {
-  const now = new Map((vm.account?.asks ?? []).map(a => [a.nonce, a]))
+  const now = new Map((vm.account?.asks ?? []).filter(a => !a.joining).map(a => [a.nonce, a]))
   for (const [nonce, el] of askShown) if (!now.has(nonce) || !el.isConnected) { el.remove(); askShown.delete(nonce) }
   const host = document.getElementById('says-host')
   if (!host) return
@@ -338,7 +342,7 @@ export function register(t) {
     const back = field(form, 'back') || kitPath(), words = vm().account?.kit ?? []
     switch (field(form, 'do')) {
       case 'show': local.kit.shown = !local.kit.shown; if (local.kit.shown) local.kit.saved = true; break
-      case 'download': if (words.length && !isDemo()) downloadKit(kitText(kitOf(vm().settings?.login), words)); local.kit.saved = true; break
+      case 'download': if (words.length && !isDemo()) downloadKit(kitText(kitOf(vm()), words)); local.kit.saved = true; break
       case 'print': {
         const was = local.kit.shown
         local.kit.shown = local.kit.saved = true
@@ -383,24 +387,26 @@ ${note ? html`<p class="room-lead" id="logout-last">${note}</p>` : ''}<p class="
 </section>`
   const matchButtons = (inviteId, back) => html`<div class="check-answer">${['yes', 'no'].map(v => html`<form method="post" action="/pair/confirm"><input type="hidden" name="invite_id" value="${inviteId}"><input type="hidden" name="in" value="${back}"><input type="hidden" name="match" value="${v}"><button type="submit" class="${v === 'yes' ? 'room-primary check-yes' : 'check-no'}">${v === 'yes' ? 'They match' : 'They don\'t match'}</button></form>`)}</div>`
   const copyBox = (value, label) => html`<div class="room-link" data-controller="room"><input readonly value="${value}" aria-label="${label}" data-room-target="field" data-action="focus->room#select"><button type="button" data-action="room#copy" data-room-text-param="${value}"><span data-room-target="label">Copy</span></button></div>`
-  /** Where the invite asked for here stands: 'open', 'confirm_code', 'adding', 'joined', 'failed', or 'none'. */
+  /** Where this device's invite of that kind stands (vm.account.invite): 'open', 'confirm_code', 'adding', 'joined';
+   *  'failed' when the invite asked for here could not be made or ended; else 'none'. */
   const inviteState = (kind) => {
-    const m = vm(), av = m.account ?? {}, step = stepOf(m)
-    if (local.invite?.kind !== kind) return 'none'
-    const state = step === 'invite' ? (av.problem ? 'failed' : av.link ? 'open' : 'none') : step === 'compare_emoji' && av.invite_id ? 'confirm_code' : step === 'working' && av.invite_id ? 'adding'
-      : local.invite.seen === 'adding' || local.invite.seen === 'joined' ? 'joined' : 'none'
-    local.invite.seen = state
-    return state
+    const m = vm(), av = m.account ?? {}, inv = av.invite
+    if (inv && inv.role === (kind === 'agent' ? 'agent' : 'human')) return inv.state === 'open' && !av.link ? 'none' : inv.state
+    return stepOf(m) === 'invite' && av.problem && local.invite?.kind === kind ? 'failed' : 'none'
   }
+  /** What is left of an open link's time ("12 more min."). */
+  const leftWords = until => { const ms = until - Date.now(); return ms > 90_000 ? `${Math.round(ms / 60000)} more min.` : ms > 0 ? 'less than a minute.' : 'no time left.' }
+  /** "Done" (a joined invite) and "Cancel" (an open one) end the invite: it leaves the view, an open one is burned. */
+  const dropButton = (inv, word, cls, id) => html`<form method="post" action="/pair/drop" class="room-inline"><input type="hidden" name="invite_id" value="${inv.invite_id}"><button type="submit" class="${cls}" id="${id}">${word}</button></form>`
   const deviceInvite = () => {
-    const av = vm().account ?? {}, state = inviteState('device')
+    const av = vm().account ?? {}, state = inviteState('device'), inv = av.invite ?? {}
     const head = (words, line) => html`<div class="set-text"><b>${words}</b>${line ? html`<small>${line}</small>` : ''}</div>`
     const fresh = (word = 'Show Code', line = 'A phone or another computer scans the code. It is made when you ask for it and works once.') => html`<form method="post" action="/pair" class="set-pair"><input type="hidden" name="role" value="human"><button type="submit" class="set-qr" id="settings-pair" aria-label="${word}: the code to invite a device"><span class="set-qr-code">${FAKE_QR}</span><span class="set-qr-show">${word}</span></button>${head('Invite a Device', line)}</form>`
     let inner
-    if (state === 'open') inner = html`<div class="set-pair"><div class="set-qr is-real">${raw(qrSvg(av.link, 'QR code to invite a device'))}</div><div class="set-text"><b>Invite a Device</b><small>On the new device, open the camera and scan the code. Both devices then show six emoji.</small><p class="room-wait">Waiting for the new device… The code works once.</p><details class="room-more"><summary>No scanner? Send the link</summary><p class="room-meta">Send it to yourself and open it on the new device. The secret is after the #; it never reaches a server.</p>${copyBox(av.link, 'Invite link')}</details></div></div>`
+    if (state === 'open') inner = html`<div class="set-pair"><div class="set-qr is-real">${raw(qrSvg(av.link, 'QR code to invite a device'))}</div><div class="set-text"><b>Invite a Device</b><small>On the new device, open the camera and scan the code. Both devices then show six emoji.</small><p class="room-wait">Waiting for the new device… The code works once, ${leftWords(inv.expires_ms)}</p><details class="room-more"><summary>No scanner? Send the link</summary><p class="room-meta">Send it to yourself and open it on the new device. The secret is after the #; it never reaches a server.</p>${copyBox(av.link, 'Invite link')}</details></div></div>`
     else if (state === 'confirm_code') inner = html`${head('A device wants to join', 'Does it show these six emoji, in this order?')}${emojiRow(av.emoji)}${matchButtons(av.invite_id, 'settings')}<small class="set-note">"They don't match" burns the code: nobody is added.</small>`
-    else if (state === 'adding') inner = html`${head('Invite a Device')}<p class="room-wait">Adding the device…</p>`
-    else if (state === 'joined') inner = html`<div class="set-pair"><span class="set-in">${sk('tick')}</span>${head('The new device is in now.', 'It holds keys of its own; you see it under Devices.')}<a class="set-pill" href="/settings?pair=done" data-nav id="settings-pair-done">Done</a></div>`
+    else if (state === 'adding') inner = html`${head('Invite a Device')}<p class="room-wait">Adding ${inv.newcomer || 'the device'}…</p>`
+    else if (state === 'joined') inner = html`<div class="set-pair"><span class="set-in">${sk('tick')}</span>${head(`${inv.newcomer || 'The new device'} is in now.`, 'It holds keys of its own; you see it under Devices.')}${dropButton(inv, 'Done', 'set-pill', 'settings-pair-done')}</div>`
     else if (state === 'failed') inner = html`${errorLine(av.problem.en)}${fresh('Show a New Code', '')}`
     else return null
     return html`<div class="set-device" id="set-device" data-state="${state}">${inner}</div>`
@@ -425,26 +431,29 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
 `, { back: false })
   }
   t.get(/^\/settings$/, ({ req, res, url }) => {
-    if (url.searchParams.get('pair') === 'done') { local.invite = null; return t.redirect(res, '/settings') }
     readAccount()
     page(req, res, 'Settings', homeMain(), { view: 'settings' })
   })
   t.post(/^\/pair$/, ({ res, form }) => {
     if (form.get('role') === 'agent') {
       const desk = t.desk()
-      local.invite = { kind: 'agent', seen: 'none' }
+      local.invite = { kind: 'agent' }
       t.account({ step: 'invite_agent', label: field(form, 'label').trim(), ...(desk && desk !== 'all' ? { desk } : {}) })
       return t.redirect(res, '/pair/agent')
     }
-    local.invite = { kind: 'device', seen: 'none' }
+    local.invite = { kind: 'device' }
     t.account({ step: 'invite_device' })
     t.redirect(res, '/settings')
   })
   t.post(/^\/pair\/confirm$/, ({ res, form }) => {
-    // (a match being added: once the core's step is over, the newcomer is in)
-    if (local.invite && form.get('match') === 'yes') local.invite.seen = 'adding'
     t.account({ step: 'confirm_emoji', invite_id: field(form, 'invite_id'), matches: form.get('match') === 'yes' })
     t.redirect(res, form.get('in') === 'settings' ? '/settings' : '/pair/agent')
+  })
+  t.post(/^\/pair\/drop$/, ({ res, form }) => {
+    const back = vm().account?.invite?.role === 'agent' ? '/' : '/settings'
+    t.account({ step: 'drop_invite', invite_id: field(form, 'invite_id') })
+    local.invite = null
+    t.redirect(res, back)
   })
   // Self-join: the person's Allow or Deny for an agent's ask.
   t.post(/^\/vouch\/([0-9A-Za-z_-]{1,128})$/, ({ res, match, form }) => {
@@ -472,7 +481,7 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
   const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/trommi/trommi/main/install.sh | sh'
   const altLine = text => html`<button type="button" class="clip-alt" data-line="slash" data-action="invite-clip#copy" data-invite-clip-text-param="${text}" title="Copy"><code>${text.replace(/#.*'$/, "#…'")}</code><span class="clip-copy-word" data-word="Copy">Copy</span></button>`
   const clipboard = () => {
-    const av = vm().account ?? {}, state = inviteState('agent')
+    const av = vm().account ?? {}, state = inviteState('agent'), inv = av.invite ?? {}
     const open = state === 'open', joined = state === 'joined', coming = state === 'adding', ask = state === 'confirm_code', dead = state === 'failed'
     const done = open ? '' : 'done'
     const last = ask ? html`<div class="clip-ask" role="group" aria-label="Confirm the agent"><b>An agent wants to join.</b>
@@ -480,14 +489,14 @@ ${setRow({ href: '/settings/security', icon: sk('lock'), word: 'Security', detai
 ${emojiRow(av.emoji)}
 ${matchButtons(av.invite_id, 'agent')}
 <small>"They don't match" burns the link: nobody is added.</small></div>`
-      : joined ? html`<b class="clip-in"><span>The agent is in</span></b>`
-      : coming ? html`<b>Adding the agent…</b>`
+      : joined ? html`<b class="clip-in"><span>${inv.newcomer || 'The agent'} is in</span></b>`
+      : coming ? html`<b>Adding ${inv.newcomer || 'the agent'}…</b>`
       : dead ? html`<b>${av.problem.en}</b>`
       : html`<b>Compare the six emoji Claude shows with the ones here</b><small>Nobody is added before you tap "They match".</small>`
-    const foot = joined ? html`<a href="/" data-nav class="room-done clip-done">Done</a>`
+    const foot = joined ? dropButton(inv, 'Done', 'room-done clip-done', 'clip-done')
       : dead ? html`<form method="post" action="/pair" class="clip-again"><input type="hidden" name="role" value="agent"><button type="submit">New link</button></form>`
       : coming ? html`<p class="clip-note">The link is in use: this page stays until the agent is in.</p>`
-      : html`<p class="clip-note">The link works once.</p>`
+      : html`<p class="clip-note">The link works once · ${leftWords(inv.expires_ms)}</p>`
     return html`<main id="room" class="room room-clip" aria-label="Invite an agent"><div id="invite-agent" class="room-invite" data-state="${state}">
 <section class="clip" data-controller="invite-clip">${CLAMP}
 <h2>Invite an agent</h2><p class="clip-sub">On a Linux or macOS computer with Claude Code or Codex.</p>
@@ -498,7 +507,7 @@ ${step(joined ? 'done' : dead ? 'dead' : ask ? 'ask' : open ? '' : 'wait', last)
 </ol>${foot}</section></div></main>`
   }
   t.get(/^\/pair\/agent$/, ({ req, res }) => {
-    if (local.invite?.kind !== 'agent' || inviteState('agent') === 'none') return t.redirect(res, '/settings')
+    if (inviteState('agent') === 'none') return t.redirect(res, '/settings')
     page(req, res, 'Invite an agent', clipboard(), { view: 'invite' })
   })
 
@@ -579,7 +588,7 @@ ${login ? html`<section id="code-new"><h3 class="set-label">Not in your hands?</
     const top = html`${step === 'none' && av.problem ? errorLine(av.problem.en) : ''}${busy ? html`<p class="room-wait" role="status">Working…</p>` : ''}`
     const subPage = inner => settingsPage(SUBS[sub], html`${top}${inner}`, { back: '/settings/account', backWord: 'Account', lead: sublead[sub] })
     if (sub === 'kit' && step === 'keep_kit' && av.kit?.length) {
-      return subPage(html`${KIT_FORM('/settings/account/kit')}<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now. The old kit no longer works.</p>${kitBox(kitOf(st), av.kit)}`)
+      return subPage(html`${KIT_FORM('/settings/account/kit')}<p class="room-lead">Download or print it, and keep it somewhere safe. It is shown only now. The old kit no longer works.</p>${kitBox(kitOf(m), av.kit)}`)
     }
     if (!st) return roomPage('Account', html`${top}<div class="set-group"><p class="set-empty room-wait">Loading…</p></div>${storagePart()}`, 'Your login, and what this device keeps.')
     const pk = st.passkeys ?? [], noPassword = st.has_password === false

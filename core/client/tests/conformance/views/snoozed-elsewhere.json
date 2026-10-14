@@ -6,6 +6,7 @@
         {
           "model": {
             "account": {
+              "kit_due": false,
               "step": ""
             },
             "desk": {
@@ -1014,6 +1015,7 @@
   "scene": "snoozed-elsewhere",
   "view": {
     "account": {
+      "kit_due": false,
       "step": ""
     },
     "desk": {

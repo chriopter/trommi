@@ -156,6 +156,10 @@ pub struct ViewModel {
     /// The gallery of Artifacts, while it is in view (`Screen::Artifacts`, and on the Desk, whose foot shows the newest), the newest first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<Vec<ArtifactView>>,
+    /// Every desk's Scribble Board small, in the menu's order, while a page shows them (Settings, the boards of All
+    /// desks); none else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbs: Option<Vec<ThumbView>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub toasts: Vec<Toast>,
 }
@@ -218,6 +222,10 @@ pub enum ViewPart {
     /// The gallery of Artifacts, whole; none when it is left.
     Artifacts {
         view: Option<Vec<ArtifactView>>,
+    },
+    /// The desks' boards small, whole; none when no page shows them.
+    Thumbs {
+        view: Option<Vec<ThumbView>>,
     },
     Toasts {
         toasts: Vec<Toast>,
@@ -869,6 +877,16 @@ pub struct SessionView {
     /// An empty conversation: the card of the agent that joined, and three ways to start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub empty: Option<EmptyTalkView>,
+    /// Its agent's account and how much of it is used (the heading's rings: the week and the 5-hour window); a
+    /// helper without one of its own shows its main's. None without a plan or an e-mail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<UsageView>,
+    /// The main session it is a helper of (its key); none for a main.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// In the Archive: the More menu offers "Back from the Archive" (`ArchiveSession` with `on: false`).
+    #[serde(default)]
+    pub archived: bool,
 }
 
 /// The dot beside a session's name.
@@ -1765,11 +1783,29 @@ pub struct AccountView {
     /// The Emergency Kit words to keep, shown once.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kit: Vec<String>,
-    /// Self-join asks waiting for "Allow" or "Deny" (for `AnswerAsk`).
+    /// Self-join asks waiting for "Allow" or "Deny" (for `AnswerAsk`), and those allowed whose session is still
+    /// joining (`joining`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub asks: Vec<AskView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub problem: Option<Text>,
+    /// The invite this device made and shows (not a self-join's): what it is for, until when, who came; it stays
+    /// `joined` once its newcomer is in, until `DropInvite` or the next invite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite: Option<InviteView>,
+    /// The account's Emergency Kit was never saved (downloaded, printed or shown, then `KitKept`): the screens show
+    /// the kit's page first. The room register `kit` of every human device of the person says it.
+    #[serde(default)]
+    pub kit_due: bool,
+    /// What the kit's sheet names, once the account was read: its e-mail, its id (as printed), and the address its
+    /// QR code holds (`https://<app>/#k1.<hub, base64url>.<id, 32 hex>`: the recovery screen with both filled in; no
+    /// word of the kit).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kit_email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kit_account: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kit_address: Option<String>,
 }
 
 impl std::fmt::Debug for AccountView {
@@ -1782,6 +1818,8 @@ impl std::fmt::Debug for AccountView {
             .field("kit", &format_args!("<{} words redacted>", self.kit.len()))
             .field("asks", &self.asks)
             .field("problem", &self.problem)
+            .field("invite", &self.invite)
+            .field("kit_due", &self.kit_due)
             .finish()
     }
 }
@@ -1797,6 +1835,57 @@ pub struct AskView {
     pub nonce: String,
     /// What the vouching agent says it is: account, name, host (its word, shown as such).
     pub says: Text,
+    /// The asking session's key (its main, which vouches).
+    #[serde(default)]
+    pub session_id: String,
+    /// The name the new session gets.
+    #[serde(default)]
+    pub name: String,
+    /// The computer and the folder it asks from (the agent's word); "" when it named none.
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub folder: String,
+    /// "Claude" or "Codex".
+    #[serde(default)]
+    pub kind: String,
+    /// Who vouches: the asking session's name.
+    #[serde(default)]
+    pub vouched_by: String,
+    /// Allowed: its link is out and the new session is not in yet (no Allow or Deny any more).
+    #[serde(default)]
+    pub joining: bool,
+}
+
+/// An invite this device made, as its page shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InviteView {
+    pub invite_id: String,
+    /// "human" (a device of the person) or "agent".
+    pub role: String,
+    /// "open" (waits for the newcomer), "confirm_code" (the emoji to compare), "adding", "joined".
+    pub state: String,
+    /// When the link ends unused (ms).
+    #[serde(default)]
+    pub expires_ms: u64,
+    /// The newcomer's name once it is known ("" before): the device's own, or the agent's session.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub newcomer: String,
+}
+
+/// A desk's Scribble Board small: its shapes as `BoardView` has them, without a stroke's times, force and tilt.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThumbView {
+    pub desk_id: String,
+    /// `desk/<32 hex>`.
+    pub board_id: String,
+    /// "loading" while it is read on this device, else as `BoardView.state`.
+    pub state: String,
+    /// How many shapes it holds (once read).
+    #[serde(default)]
+    pub count: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shapes: Vec<BoardShape>,
 }
 
 /// A Scribble Board (spec/v1.md 10): what its items add up to on this device, ready to draw.
@@ -1994,6 +2083,7 @@ impl ViewModel {
                 },
                 ViewPart::Board { view } => self.board = view.clone(),
                 ViewPart::Artifacts { view } => self.artifacts = view.clone(),
+                ViewPart::Thumbs { view } => self.thumbs = view.clone(),
                 ViewPart::Toasts { toasts } => self.toasts = toasts.clone(),
             }
         }
@@ -2095,6 +2185,11 @@ impl ViewModel {
         if self.artifacts != next.artifacts {
             parts.push(ViewPart::Artifacts {
                 view: next.artifacts.clone(),
+            });
+        }
+        if self.thumbs != next.thumbs {
+            parts.push(ViewPart::Thumbs {
+                view: next.thumbs.clone(),
             });
         }
         if self.toasts != next.toasts {
