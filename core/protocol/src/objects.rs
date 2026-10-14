@@ -76,6 +76,35 @@ pub struct Transition {
     pub revision: u64,
 }
 
+/// What [`judge`] reads of a group's objects: the state of one object, whether a hash is a version taken of a
+/// Note, and the revision a transition is made for. [`Objects`] answers from memory; a device answers from its
+/// store, entry by entry, so that judging one envelope reads one object and not the group's every object.
+/// An error is a fault of the holder (a stored entry that does not decode), never a verdict.
+pub trait ObjectStates {
+    /// The state of `object`, if a first version of it was taken.
+    fn object(&self, object: &ObjectId) -> Result<Option<Object>, Error>;
+
+    /// Whether `hash` is a version taken of the Note `object`.
+    fn note_version(&self, object: &ObjectId, hash: &Hash32) -> Result<bool, Error>;
+
+    /// How many transitions the group's objects have taken.
+    fn revision(&self) -> Result<u64, Error>;
+}
+
+impl ObjectStates for Objects {
+    fn object(&self, object: &ObjectId) -> Result<Option<Object>, Error> {
+        Ok(self.get(object).cloned())
+    }
+
+    fn note_version(&self, object: &ObjectId, hash: &Hash32) -> Result<bool, Error> {
+        Ok(self.is_note_version(object, hash))
+    }
+
+    fn revision(&self) -> Result<u64, Error> {
+        Ok(self.revision)
+    }
+}
+
 /// The objects of one group.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Objects {
@@ -124,6 +153,16 @@ impl Objects {
     /// Whether `hash` is a version taken of the Note `object`.
     pub fn is_note_version(&self, object: &ObjectId, hash: &Hash32) -> bool {
         self.note_versions.contains(&(*object, *hash))
+    }
+
+    /// Every version taken of every Note, ascending by Note and hash.
+    pub fn note_versions(&self) -> impl Iterator<Item = &(ObjectId, Hash32)> {
+        self.note_versions.iter()
+    }
+
+    /// How many transitions this state has taken.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Takes the change of one envelope. `Error::Internal`, and no change, if the object no longer stands as
@@ -295,7 +334,7 @@ pub fn push_honoured(facts: &dyn GroupFacts, header: &Header) -> Result<bool, Er
 
 /// A first version, or a permission request: the object begins, open, owned by its sender.
 fn begin(
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     header: &Header,
     fields: &ObjectFields,
     hash: &Hash32,
@@ -305,7 +344,7 @@ fn begin(
         fields.object_id == derived
             && fields.object_ref.is_zero()
             && fields.state == ObjectState::Open
-            && objects.get(&fields.object_id).is_none(),
+            && objects.object(&fields.object_id)?.is_none(),
     )?;
     Ok(Transition {
         object_id: fields.object_id,
@@ -318,7 +357,7 @@ fn begin(
             answer: None,
         },
         note_version: (fields.object_type == ObjectType::Note).then_some(*hash),
-        revision: objects.revision,
+        revision: objects.revision()?,
     })
 }
 
@@ -327,11 +366,11 @@ fn begin(
 ///
 /// `Ok(Some(transition))` for an envelope that changes its object, `Ok(None)` for one that is allowed and
 /// changes none (an item, a register, a reserved kind), `Err(forbidden)` otherwise: such an envelope is chained
-/// and changes nothing. Any other error is a fault of `facts`. `objects` is the state of the envelope's group;
-/// `hash` its `envelope_hash`.
+/// and changes nothing. Any other error is a fault of `facts` or of `objects`. `objects` is the state of the
+/// envelope's group; `hash` its `envelope_hash`.
 pub fn judge(
     facts: &dyn GroupFacts,
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     header: &Header,
     hash: &Hash32,
 ) -> Result<Option<Transition>, Error> {
@@ -339,7 +378,7 @@ pub fn judge(
     let (group, epoch) = (&header.group, header.epoch);
     let fields = match &header.subject {
         Subject::Item(Timeline::CardChat(card)) => {
-            let known = objects.get(card);
+            let known = objects.object(card)?;
             allow(known.is_some_and(|object| object.object_type == ObjectType::Card))?;
             return Ok(None);
         }
@@ -353,7 +392,10 @@ pub fn judge(
         | Subject::TakeBack(fields)
         | Subject::Verdict(fields) => fields,
     };
-    let before = objects.get(&fields.object_id).ok_or(Error::Forbidden)?;
+    let before = objects
+        .object(&fields.object_id)?
+        .ok_or(Error::Forbidden)?;
+    let before = &before;
     allow(before.object_type == fields.object_type)?;
     let mut after = before.clone();
     after.current = *hash;
@@ -362,7 +404,7 @@ pub fn judge(
     match &header.subject {
         Subject::Version(_) if before.object_type == ObjectType::Note => {
             allow(
-                objects.is_note_version(&fields.object_id, &fields.object_ref)
+                objects.note_version(&fields.object_id, &fields.object_ref)?
                     && fields.state != ObjectState::Answered,
             )?;
             note_version = Some(*hash);
@@ -400,7 +442,7 @@ pub fn judge(
         before: Some(before.clone()),
         after,
         note_version,
-        revision: objects.revision,
+        revision: objects.revision()?,
     }))
 }
 
