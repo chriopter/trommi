@@ -200,9 +200,9 @@ async fn full_account_held() {
     let hub = start_hub().await;
     let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let keep = code.clone();
-    let mut human = Human::found_with(&hub.url, move |_, c| {
+    let mut human = Human::found_with(&hub.url, move |room, c| {
         *keep.lock().unwrap() = Some(c.expose().to_vec());
-        None
+        Some(account_body(room, c))
     })
     .await;
     let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().unwrap());
@@ -349,7 +349,7 @@ async fn full_account_held() {
     counts.insert("live_sessions".into(), live_sessions);
     counts.insert("answered".into(), answers);
     let fixture = json!({
-        "hub": hub.url, "room_id": room_hex, "code": code_hex, "counts": counts,
+        "hub": hub.url, "room_id": room_hex, "code": code_hex, "email": MEGA_EMAIL, "password": MEGA_PASSWORD, "counts": counts,
         "head": head.and_then(|h| h.get("head").cloned()), "built_s": t0.elapsed().as_secs(),
     });
     std::fs::write(out.join("fixture.json"), serde_json::to_string_pretty(&fixture).unwrap()).unwrap();

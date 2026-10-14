@@ -14,7 +14,7 @@
 //! Nothing here reads or changes what is encrypted. What a real hub never does is left out: it sends a stream's
 //! events in the order of their change numbers (they are published under the writer's lock, hub/src/app.rs
 //! `write_with`) and a page of `/v1/changes` holds each item once, ascending (spec/hub-api.md 19, 20); the clients
-//! rely on both (app/web/core/engine.ts, rule 6), so swapping events or repeating items would only find the test.
+//! rely on both (the app core's sync, core/client/src/engine), so swapping events or repeating items would only find the test.
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

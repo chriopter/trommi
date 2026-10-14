@@ -4,15 +4,16 @@
 //! In the room, per seed:
 //! - the stand-in human device (tests/connector/common) founds it and keeps the recovery code;
 //! - agents: the connector's own client, in process, each in a main session (one also opens a helper session);
-//! - the web app's client layer with the real core (tests/client/mega/web-observer.mjs), twice;
+//! - the web app: the app core in the web's executor (tests/client/mega/web-observer.mjs), twice;
 //! - the iOS app's engine with the real core (MegaObserverTests.swift, its test runner on Linux), twice.
 //!
 //! The timeline: cards (decision and info), versions, answers, answers taken back, hand backs, What??, an agent
 //! putting a card before the human again, snoozes and wake-ups, closings and withdrawals, session renames,
 //! permission requests (some that expire within seconds) and verdicts, Chat lines. The human acts from every
-//! device in turn. The web and iOS devices sign in with the code after the first part (a fresh login with
-//! history, the hub's Desk read before the history), in an order the seed picks, see faults (failed and slow
-//! requests), go away and come back while the history route is down (the Desk first, the history out of order).
+//! device in turn. The web and iOS devices sign in after the first part (a fresh login with history, the hub's Desk
+//! read before the history; the web with the account's password, iOS with the recovery code), in an order the seed
+//! picks, see faults (failed and slow requests), go away and come back while the history route is down (the Desk
+//! first, the history out of order).
 //!
 //! At every checkpoint each device shows its snapshot (Desk order, open requests, every card's state, title,
 //! answer, hand back, hold, every request's state, the sessions' names, the snoozes). The test fails on:
@@ -94,6 +95,33 @@ fn sid(h: &str) -> SessionId {
 
 fn fields(v: Value) -> Map<String, Value> {
     v.as_object().cloned().expect("an object")
+}
+
+/// The person's account, made with the room's founding: the web devices (the app core) sign in with it, as the
+/// person does; the iOS devices still join with the recovery code.
+const MEGA_EMAIL: &str = "mega@example.org";
+const MEGA_PASSWORD: &str = "mega test password 42";
+
+/// The account's body in the founding (`POST /v1/rooms` with `account`), as the apps sign up: copies of the code
+/// sealed under the password and under a kit.
+fn account_body(room: &trommi_core::ids::RoomId, code: &trommi_core::crypto::Secret<32>) -> Value {
+    use trommi_connector::hub::b64;
+    use trommi_core::account::{self, Way};
+    use trommi_core::crypto::SystemEntropy;
+    let pw = account::password_keys(MEGA_EMAIL, MEGA_PASSWORD, None).expect("the password's keys");
+    let words = account::generate_kit_words(&mut SystemEntropy).expect("words");
+    let words = String::from_utf8(words.expose().to_vec()).expect("text");
+    let kit = account::kit_keys(MEGA_EMAIL, &words).expect("the kit's keys");
+    let sealed_password = account::seal_code(&pw.wrap_key, room, Way::Password, code, &mut SystemEntropy).expect("sealed");
+    let sealed_kit = account::seal_code(&kit.wrap_key, room, Way::Kit, code, &mut SystemEntropy).expect("sealed");
+    json!({
+        "email": MEGA_EMAIL,
+        "password": {
+            "auth_key": b64(pw.auth_key.expose()), "sealed_copy": b64(&sealed_password),
+            "kdf": { "alg": "argon2id", "v": 1, "m": 65536, "t": 3, "p": 1 },
+        },
+        "kit": { "auth_key": b64(kit.auth_key.expose()), "sealed_copy": b64(&sealed_kit) },
+    })
 }
 
 // ---- a device in another process, driven by command files ---------------------------------------------------------
@@ -685,8 +713,16 @@ impl World {
         for o in self.observers.iter_mut().filter(|o| o.signed_in) {
             let _ = o.call(json!({ "op": "sync" })).await;
         }
+        // (every card and request the agents hold: the web's app core shows one card at a time, its snapshot reads
+        // each of these, beside those its Desk and sessions name)
+        let mut ids = BTreeSet::new();
+        for a in &self.agents {
+            let core = a.client.core.lock().await;
+            ids.extend(core.model.cards.keys().cloned());
+            ids.extend(core.model.permissions.keys().cloned());
+        }
         for o in self.observers.iter_mut().filter(|o| o.signed_in) {
-            match o.call(json!({ "op": "snapshot" })).await {
+            match o.call(json!({ "op": "snapshot", "ids": ids })).await {
                 Ok(v) => {
                     snaps.insert(o.name.clone(), v);
                 }
@@ -779,7 +815,8 @@ fn short(v: &Value) -> String {
 fn common_view(snap: &Value) -> Value {
     let mut cards = Map::new();
     for (id, c) in snap["cards"].as_object().into_iter().flatten() {
-        cards.insert(id.clone(), json!({ "state": c["state"], "answer": c["answer"], "in_revision": c["in_revision"], "held": c["held"], "title": c["title"] }));
+        // (`in_revision`: whether it is with its agent; the web's app core shows that, not which device handed it back)
+        cards.insert(id.clone(), json!({ "state": c["state"], "answer": c["answer"], "in_revision": !c["in_revision"].is_null(), "held": c["held"], "title": c["title"] }));
     }
     let mut perms = Map::new();
     for (id, p) in snap["permissions"].as_object().into_iter().flatten() {
@@ -986,9 +1023,9 @@ async fn run_seed(seed: u64, trees: &[(String, PathBuf)], out: &Path, report: &m
     let hub = start_hub().await;
     let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let keep = code.clone();
-    let mut human = Human::found_with(&hub.url, move |_, c| {
+    let mut human = Human::found_with(&hub.url, move |room, c| {
         *keep.lock().unwrap() = Some(c.expose().to_vec());
-        None
+        Some(account_body(room, c))
     })
     .await;
     let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().expect("the code"));
@@ -1085,7 +1122,7 @@ async fn run_seed(seed: u64, trees: &[(String, PathBuf)], out: &Path, report: &m
                 .await;
         }
         match o
-            .call(json!({ "op": "signin", "hub": hub_url, "room_id": room, "code": code }))
+            .call(json!({ "op": "signin", "hub": hub_url, "room_id": room, "code": code, "email": MEGA_EMAIL, "password": MEGA_PASSWORD }))
             .await
         {
             Ok(r) => {
@@ -1267,9 +1304,9 @@ async fn speed_of_every_client() {
     let hub = start_hub().await;
     let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let keep = code.clone();
-    let mut human = Human::found_with(&hub.url, move |_, c| {
+    let mut human = Human::found_with(&hub.url, move |room, c| {
         *keep.lock().unwrap() = Some(c.expose().to_vec());
-        None
+        Some(account_body(room, c))
     })
     .await;
     let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().unwrap());
@@ -1348,7 +1385,7 @@ async fn speed_of_every_client() {
         // (one at a time: each has the machine to itself)
         let t = std::time::Instant::now();
         let signed = o
-            .call(json!({ "op": "signin", "hub": hub.url, "room_id": room_hex, "code": code_hex }))
+            .call(json!({ "op": "signin", "hub": hub.url, "room_id": room_hex, "code": code_hex, "email": MEGA_EMAIL, "password": MEGA_PASSWORD }))
             .await;
         let fresh = ms(t);
         let s = o
@@ -1592,9 +1629,9 @@ async fn helper_names_after_a_fresh_signin() {
     let hub = start_hub().await;
     let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let keep = code.clone();
-    let mut human = Human::found_with(&hub.url, move |_, c| {
+    let mut human = Human::found_with(&hub.url, move |room, c| {
         *keep.lock().unwrap() = Some(c.expose().to_vec());
-        None
+        Some(account_body(room, c))
     })
     .await;
     let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().expect("the code"));
@@ -1668,7 +1705,7 @@ async fn helper_names_after_a_fresh_signin() {
                 .call(json!({ "op": "faults", "delay_ms": delay, "seed": 1 }))
                 .await;
         }
-        o.call(json!({ "op": "signin", "hub": hub.url, "room_id": room_hex, "code": code_hex, "stream": true }))
+        o.call(json!({ "op": "signin", "hub": hub.url, "room_id": room_hex, "code": code_hex, "email": MEGA_EMAIL, "password": MEGA_PASSWORD, "stream": true }))
             .await
             .unwrap_or_else(|e| panic!("{} signs in: {e}", o.name));
         o.signed_in = true;
