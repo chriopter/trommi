@@ -13,6 +13,8 @@ Rectangle {
     /** ViewModel.sidebar */
     required property var sidebar
     signal theme_toggled()
+    /** Another page: an `Event::Focus` screen (the Desk, a session). */
+    signal go(var screen)
     color: theme.bg
 
     /** The mains the person unfolded here (their helpers show as rows of their own). */
@@ -51,6 +53,7 @@ Rectangle {
         }
         PenMark { Layout.preferredWidth: 14; Layout.preferredHeight: 14; svg: Pen.sketchSvg("unfold"); ink: theme.muted; lineWidth: 2 }
     }
+    MouseArea { anchors.fill: head; cursorShape: Qt.PointingHandCursor; onClicked: root.go({ screen: "desk" }) }
 
     ListView {
         id: list
@@ -198,12 +201,14 @@ Rectangle {
                             ink: badge.ink; lineWidth: 1.8
                         }
                     }
-                    // a main with helpers folds and unfolds; where a row leads comes with the session's screen
+                    // a row opens its session's page; a main with helpers also folds and unfolds
                     MouseArea {
                         anchors.fill: parent
-                        enabled: !!slot.s.folded
-                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: { const u = Object.assign({}, root.unfolded); u[slot.s.id] = !u[slot.s.id]; root.unfolded = u }
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (slot.s.folded) { const u = Object.assign({}, root.unfolded); u[slot.s.id] = !u[slot.s.id]; root.unfolded = u }
+                            root.go({ screen: "session", session_id: slot.s.id })
+                        }
                     }
                 }
             }
