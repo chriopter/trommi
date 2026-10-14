@@ -3,8 +3,6 @@
 // core's view model (vm.sidebar, vm.notes, vm.settings); what the person does goes to the core as an action (t.act).
 // The markup is the one app.css and sidebar.css style.
 import { BELL, Controller, PLUS, paintTopStrip, nextThemeMode, setThemeMode, avatar, badge, controller, crownSvg, edgeQuirk, el, html, linkCap, raw, sk, sketchSvg, showToast, whoOf, fileSrc } from './ui.mjs'
-import { pushObstacle } from './platform.mjs'
-import { newsLatestDay } from './app.mjs'
 const EDGES = 7   // more subs than this lie in a folded stack without an edge of their own
 
 /** The board's toolkit (register): the controllers send their actions with it. */
@@ -99,7 +97,7 @@ export function cornerNote(vm, base) {
   return html`<section class="corner-note-box" id="corner-note-box" aria-label="Your note" data-controller="corner-note" data-corner-note-id-value="${note?.id ?? ''}" data-corner-note-text-value="${note?.text ?? ''}" data-corner-note-written-value="${String(written)}">
 <button type="button" class="corner-note-head" data-action="corner-note#open" data-tip="${written ? 'Note (N)' : 'New note (N)'}" aria-label="${n.says?.en ?? 'New note'}" aria-expanded="false">${NOTE_ICON}</button>
 <div class="corner-note-body" hidden data-action="paste->corner-note#paste dragover->corner-note#over dragleave->corner-note#out drop->corner-note#drop keydown->corner-note#key">${to ? html`<span class="corner-note-to">${avatar(whoOf(to), { crown: false })}<b>${who}</b></span>` : ''}<textarea class="corner-note-field" rows="2" aria-label="Your note" aria-keyshortcuts="${SEND_KEYS}" data-action="input->corner-note#typed"></textarea><div class="corner-note-files">${files}</div>
-<footer class="corner-note-foot"><button type="button" class="corner-note-clip" data-action="corner-note#pick" title="Attach" aria-label="Attach a picture or a file">${CLIP}</button><button type="button" class="corner-note-bin" data-action="corner-note#bin" title="Throw away" aria-label="Throw the note away">${BIN}</button><span class="corner-note-park" data-tip="To the board" aria-hidden="true">${raw(sketchSvg('go'))}<b>onto the board</b></span><i></i>${to ? html`<span class="corner-note-sending">${chooser}<button type="button" class="note-send corner-note-send" data-action="corner-note#send"${n.far ? html` data-to="${to.session_id}"` : ''} data-name="${who}" aria-label="${n.send_says?.en ?? `Send to ${who}`}" aria-keyshortcuts="${SEND_KEYS}">${raw(crownSvg())}</button><kbd class="corner-note-keys" aria-hidden="true">${SEND_WORD}</kbd></span>` : html`<a class="corner-note-nocrown" data-nav href="${base}/settings/sessions">${n.no_crown?.en ?? 'Give a session the crown to send'}</a>`}</footer></div>
+<footer class="corner-note-foot"><button type="button" class="corner-note-clip" data-action="corner-note#pick" title="Attach" aria-label="Attach a picture or a file">${CLIP}</button><button type="button" class="corner-note-bin" data-action="corner-note#bin" title="Throw away" aria-label="Throw the note away">${BIN}</button><span class="corner-note-park" data-tip="To the board" aria-hidden="true">${raw(sketchSvg('go'))}<b>onto the board</b></span><i></i>${to ? html`<span class="corner-note-sending">${chooser}<button type="button" class="note-send corner-note-send" data-action="corner-note#send" data-to="${to.session_id}" data-name="${who}" aria-label="${n.send_says?.en ?? `Send to ${who}`}" aria-keyshortcuts="${SEND_KEYS}">${raw(crownSvg())}</button><kbd class="corner-note-keys" aria-hidden="true">${SEND_WORD}</kbd></span>` : html`<a class="corner-note-nocrown" data-nav href="${base}/settings/sessions">${n.no_crown?.en ?? 'Give a session the crown to send'}</a>`}</footer></div>
 </section>`
 }
 /** The notes' routes (notes.mjs), from the corner note's controller. */
@@ -519,6 +517,9 @@ async function addDesk(name) {
   return null
 }
 
+/** The newest day of What's new (app.mjs; null until it is loaded). Taken when the frame is wired: app.mjs imports
+ *  this module, and this one draws in Node's tests without the app. */
+let newsLatestDay = () => null
 /** Whether the newest day of What's new was opened on this device (news.mjs remembers it; the row's dot until then). */
 const newsSeen = () => { const latest = newsLatestDay(); if (latest == null) return true; try { return localStorage.getItem('trommi-news-seen') === latest } catch { return true } }
 // (the newest day arrives after the first page was drawn: the dot then shows where it is unseen)
@@ -1079,6 +1080,7 @@ controller('lean', class extends Controller {
 // ---- the frame's wiring, once ----
 export function register(t) {
   T = t
+  import('./app.mjs').then(m => { newsLatestDay = m.newsLatestDay })
   t.get(/^\/chats$/, ({ req, res }) => t.page(req, res, { title: 'Chats · Trommi', view: 'chats', main: chatsMain(t.vm(), t.BASE) }))
   document.addEventListener('turbo:load', () => { const m = /^\/chat\/([^/?#]+)$/.exec(location.pathname); if (m) chatOpened(decodeURIComponent(m[1])) })
   // The Trommi menu opens and closes (its button, a click beside it, Escape); the theme switch.
@@ -1116,13 +1118,15 @@ export function register(t) {
   const rail = () => { if (narrow.matches) delete document.documentElement.dataset.rail; else { try { if (localStorage.getItem(KEY) === 'folded') document.documentElement.dataset.rail = 'folded' } catch {} } dispatchEvent(new Event('resize')) }
   narrow.addEventListener('change', rail)
   if (narrow.matches) rail()
-  // Push on this device (the menu's bell): Off → Only knocking → All → Off, the core registers this browser (Push).
+  // Push on this device (the menu's bell, vm.settings.push): Off → Only knocking → All → Off; the core registers this
+  // browser (Push).
   document.addEventListener('click', e => {
     const bell = e.target instanceof Element ? e.target.closest('#push-toggle') : null
     if (!bell || bell.getAttribute('aria-busy') === 'true') return
     e.stopPropagation()
     const now = bell.dataset.level || 'off', level = now === 'off' ? 'knocking' : now === 'knocking' ? 'all' : 'off'
-    const why = level === 'off' ? '' : t.vm().settings?.push ? pushObstacle() : 'This browser has no push.'
+    // (what stands in the way on this device is the core's to say: the platform refuses, the core tells why)
+    const why = t.vm().settings?.push ? '' : 'This browser has no push.'
     const note = $('#menu-push-note')
     if (note) { note.textContent = why; note.hidden = !why }
     if (!why) t.act({ do: 'push', level })
