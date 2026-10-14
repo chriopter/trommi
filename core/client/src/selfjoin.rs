@@ -32,6 +32,44 @@ pub struct Ask {
     pub ask: Value,
     /// Why it is refused at once (`bad-ask`, `cap`, `busy`), or None: it waits for the person's tap.
     pub refused: Option<String>,
+    /// The name the new session gets ([`ask_name`]).
+    pub name: String,
+}
+
+/// The name of the session the asking agent was before, when the ask names who it is (`agent`, spec/v1.md 12.4.2)
+/// and a main session of an agent device naming the same on the same host is known: a resumed session, or one
+/// under another account of its program, keeps its name instead of its folder's. (The agent's word, as the rest of
+/// the ask.)
+pub fn known_name(m: &Model, ask: &Value) -> Option<String> {
+    let agent = ask
+        .get("agent")
+        .and_then(Value::as_str)
+        .filter(|a| a.len() == 16 && a.bytes().all(|b| b.is_ascii_hexdigit()))?;
+    let host = ask.get("host").and_then(Value::as_str).unwrap_or("");
+    let same = |d: &str| {
+        m.device_registers.get(d).is_some_and(|r| {
+            r.get("agent").and_then(Value::as_str) == Some(agent)
+                && r.get("host").and_then(Value::as_str).unwrap_or("") == host
+        })
+    };
+    crate::sessions::session_list(m, false)
+        .into_iter()
+        .filter(|r| r.parent.is_none() && r.agent_device_id.as_deref().is_some_and(same))
+        .max_by_key(|r| (!r.archived, r.last_activity_at))
+        .map(|r| r.name)
+        .filter(|n| !n.is_empty())
+}
+
+/// The name a new session gets: the name it had before ([`known_name`]), else the one it asks under, else its
+/// folder's last part.
+pub fn ask_name(m: &Model, ask: &Value) -> String {
+    known_name(m, ask)
+        .or_else(|| ask.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).map(String::from))
+        .or_else(|| Some(folder_name(ask.get("folder").and_then(Value::as_str).unwrap_or(""))).filter(|n| !n.is_empty()).map(String::from))
+        .unwrap_or_default()
+        .chars()
+        .take(120)
+        .collect()
 }
 
 fn truthy(v: Option<&Value>) -> bool {
@@ -118,6 +156,7 @@ pub fn asks(m: &Model, answered: &BTreeSet<String>, pending: &[String]) -> Vec<A
             nonce: nonce.to_string(),
             ask: ask.clone(),
             refused: refused.map(String::from),
+            name: ask_name(m, ask),
         });
     }
     out
@@ -204,9 +243,8 @@ pub fn join_rows(m: &Model, invites: &BTreeMap<String, String>) -> Vec<JoinRow> 
                 }
             };
             let folder = ask.get("folder").and_then(Value::as_str).unwrap_or("");
-            let name = Some(folder_name(folder))
-                .filter(|n| !n.is_empty())
-                .map(String::from)
+            let name = known_name(m, ask)
+                .or_else(|| Some(folder_name(folder).to_string()).filter(|n| !n.is_empty()))
                 .or_else(|| ask.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).map(String::from))
                 .unwrap_or_else(|| "New session".into());
             let label = ask.get("account_label").and_then(Value::as_str).unwrap_or("");
@@ -333,5 +371,34 @@ mod tests {
         );
         m.sessions.get_mut(S1).unwrap().settings = Some(json!({ "archived": true, "vouched": { "account": "acct" } }));
         assert_eq!(to_retire(&m), vec![AGENT.to_string()]);
+    }
+
+    /// A session that asks again (resumed, or under another account of its program) is named as it was: by the
+    /// session of the same agent identity on the same host, not by its folder (the owner's board, 2026-10-14: the
+    /// coordinator came back as "saeckel").
+    #[test]
+    fn an_ask_of_a_known_agent_keeps_its_name() {
+        const OLD: &str = "dddddddddddddddddddddddddddddddd";
+        const OLD_DEV: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let mut m = room();
+        m.members.insert(OLD_DEV.into(), Member { device_id: OLD_DEV.into(), device_role: "agent".into(), host: json!("desktop"), folder: json!("~/git/trommi"), ..Default::default() });
+        let s = m.session_of(OLD);
+        s.group_id = Some("g-old".into());
+        s.agent_device_id = Some(OLD_DEV.into());
+        s.card_ids = vec!["c".into()];
+        m.human.insert(format!("session/{OLD}"), crate::model::types::HumanRegister { value: json!({ "name": "trommi" }), ..Default::default() });
+        m.device_registers.insert(OLD_DEV.into(), json!({ "host": "desktop", "agent": "0123456789abcdef" }).as_object().unwrap().clone());
+        let mut a = json!({ "name": "saeckel", "folder": "~/git/saeckel", "host": "desktop", "account": "acct", "agent": "0123456789abcdef" });
+        reg(&mut m, S1, "join_ask/a7", a.clone());
+        assert_eq!(asks(&m, &BTreeSet::new(), &[])[0].name, "trommi");
+        assert_eq!(join_rows(&m, &BTreeMap::new())[0].name, "trommi");
+        // another agent, or the same identity on another machine: its own name
+        a["agent"] = json!("fedcba9876543210");
+        assert_eq!(ask_name(&m, &a), "saeckel");
+        a["agent"] = json!("0123456789abcdef");
+        a["host"] = json!("laptop");
+        assert_eq!(ask_name(&m, &a), "saeckel");
+        // no name: the folder's
+        assert_eq!(ask_name(&m, &json!({ "folder": "~/git/game/" })), "game");
     }
 }

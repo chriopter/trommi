@@ -27,6 +27,7 @@ test('an ask nobody answered is a row with the folder, the host, Allow and Deny'
   assert.match(row, /class="agent-row join-row" id="join-ab12" data-state="ask"/)
   assert.match(row, /<strong>game<\/strong>/)
   assert.match(row, /wants to join · desktop/)
+  assert.match(row, /<small class="join-by">vouched by Crown<\/small>/, 'who vouched, on the row itself')
   assert.match(row, /title="New Claude session in ~\/git\/game on desktop, vouched for by Crown"/)
   assert.match(row, /action="\/vouch\/ab12"[^]*name="allow" value="yes"[^]*>Allow</)
   assert.match(row, /name="allow" value="no"[^]*>Deny</)
