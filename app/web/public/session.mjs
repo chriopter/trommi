@@ -323,10 +323,18 @@ function deleteEntry(a, base, subs) {
 <form class="session-delete-ask" method="post" action="${base}/sessions/${encodeURIComponent(a.id)}/delete"><input type="hidden" name="stay" value="1"><p><b>Delete ${a.name}?</b> Its connector is removed from the room and ${what} to the archive. Open questions are shredded.</p>
 <div class="desk-duck-ways"><button type="submit" class="session-delete-yes">${sk('bin')}<span>Delete</span></button><button type="button" class="desk-duck-no" data-pop-close>Cancel</button></div></form></details>`
 }
+/** Archive in the session's More menu: the session goes to the archive (its away helpers with it) and its device
+ *  stays, with an Undo on the toast (agents.mjs /edit); only while it is away, as the route allows. An archived one
+ *  comes back the same way. Delete is the step that also removes the device. */
+export function archiveEntry(a, base) {
+  if (a.online && !a.archived) return ''
+  return html`<form method="post" action="${base}/sessions/${encodeURIComponent(a.id)}/edit"><input type="hidden" name="stay" value="1"><input type="hidden" name="archived" value="${a.archived ? '0' : '1'}"><button type="submit" role="menuitem">${sk('archive')}<span>${a.archived ? 'Back from the Archive' : 'Archive'}</span></button></form>`
+}
 function sessionMore(s, base) {
   const a = s.agent, desks = s.model.state.desks ?? []
   const subs = (s.model.agents ?? []).some(x => x.parent === a.id)
-  const del = a.own ? '' : deleteEntry(a, base, subs)
+  const arch = archiveEntry(a, base), drop = a.own ? '' : deleteEntry(a, base, subs)
+  const del = arch || drop ? html`${arch}${drop}` : ''
   const files = filesItem(s, base)
   if (a.parent) return del || files ? html`<details class="t-pick t-pick-desk"><summary class="t-head-desk t-head-more" title="More" aria-label="${a.name}: more">${DOTS}</summary><div class="desk-move t-pop" role="menu" aria-label="More for ${a.name}">${files}${files && del ? raw('<hr class="desk-move-rule">') : ''}${del}</div></details>` : ''
   const others = desks.length < 2 ? [] : desks.filter(d => d.id !== a.desk)
