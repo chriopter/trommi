@@ -1,15 +1,15 @@
 {
   "answer": "{\"deleted\":true}",
   "asked": {
-    "credential_id": "SKAx-dIxp97y852A4J6WyCY6HmY",
+    "credential_id": "9vYarz3CS5GoRfdt9exD-v8gZsA",
     "route": "remove_passkey"
   },
   "content_range": null,
   "name": "account-passkey-remove",
   "request": {
-    "body": "{\"proof\":{\"kit\":{\"auth_key\":\"MqZDWAAYXkH4O9SFcV3cMqRzJBYfOjQQYO5K1nR0Dwg\"}}}",
+    "body": "{\"proof\":{\"kit\":{\"auth_key\":\"xICQTxJXHrzn3p7Ym_F2fv-exH798CKfu4_Set8fuGc\"}}}",
     "method": "DELETE",
-    "path": "/v1/account/passkeys/SKAx-dIxp97y852A4J6WyCY6HmY"
+    "path": "/v1/account/passkeys/9vYarz3CS5GoRfdt9exD-v8gZsA"
   },
   "status": 200
 }

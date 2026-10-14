@@ -91,8 +91,8 @@ fn id<const N: usize>(text: &str) -> Res<[u8; N]> {
         .ok_or_else(|| refuse("bad-format", "an id in the path is not what it must be"))
 }
 
-/// `POST /v1/commits`: at most so many Commits in one request, verified on so many threads at once.
-const MAX_COMMITS_AT_ONCE: usize = 64;
+// `POST /v1/commits`: at most MAX_COMMITS_AT_ONCE Commits in one request, verified on so many threads at once.
+use trommi_wire::limits::{LOG_PAGE, MAX_AT_ONCE as MAX_COMMITS_AT_ONCE, MAX_GROUPS_PAGE, MAX_LEAVES, MAX_LOG, MAX_SEALED_KEYS};
 const PREPARE_THREADS: usize = 4;
 
 fn group_id(text: &str) -> Res<Vec<u8>> {
@@ -618,7 +618,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             let invite = id::<16>(invite)?;
             let (request, mac, signature) = (rq.bytes("request")?, rq.bytes("mac")?, rq.bytes("signature")?);
             // the Request's KeyPackage is validated on the pool
-            let key_package = crate::wire::InviteRequest::parse(&request)?.key_package;
+            let key_package = trommi_wire::layout::InviteRequest::parse(&request)?.key_package;
             let (entries, ()) = app.heavy(|_, memo| crate::prepare::key_packages(memo, &[&key_package]))?;
             app.write_with(entries, None, |x, fx| invites::request(x, &invite, &request, &mac, &signature, fx))
         }
@@ -869,7 +869,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
         }
         ("GET", ["groups", group, "log"]) => {
             let group = group_id(group)?;
-            let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?.unwrap_or(200).clamp(1, 1000));
+            let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?.unwrap_or(200).clamp(1, MAX_LOG.into()));
             app.read(|x| delivery::log(x.c, &rq.auth(app, x.c)?, &group, after, limit, rq.q("kind") == Some("commit")))
         }
         ("POST", ["groups", group, "messages"]) => {
@@ -925,12 +925,12 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                                 return Err(too_large());
                             }
                             let info = delivery::info(x.c, &auth, group, None)?;
-                            if i > 0 && bytes + info.to_string().len() + delivery::read_size(x.c, group, 256)? > content::ANSWER_BYTES {
+                            if i > 0 && bytes + info.to_string().len() + delivery::read_size(x.c, group, LOG_PAGE as i64)? > content::ANSWER_BYTES {
                                 full = true;
                                 return Err(too_large());
                             }
                             let founding = if info["epoch"].as_u64() == Some(0) { Value::Null } else { delivery::info(x.c, &auth, group, Some(0))? };
-                            let log = delivery::log(x.c, &auth, group, 0, 256, true)?;
+                            let log = delivery::log(x.c, &auth, group, 0, LOG_PAGE as i64, true)?;
                             let one = json!({ "group": b64(group), "info": info, "founding": founding, "log": log });
                             let size = one.to_string().len() + 1;
                             if bytes + size > content::ANSWER_BYTES && i > 0 {
@@ -968,7 +968,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
                 own_room(&auth, room)?;
                 match rq.q_int("limit")? {
                     // the paged form; without `limit` the whole list, as before
-                    Some(limit) => delivery::group_page(x.c, &auth, rq.q_int("after")?.unwrap_or(0), limit.clamp(1, 1000), &only),
+                    Some(limit) => delivery::group_page(x.c, &auth, rq.q_int("after")?.unwrap_or(0), limit.clamp(1, MAX_GROUPS_PAGE.into()), &only),
                     None => Ok(Value::Array(delivery::group_list(x.c, &auth, &only)?)),
                 }
             })
@@ -996,7 +996,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
         }
         ("POST", ["key-packages", "claim"]) => {
             let devices: Vec<[u8; 32]> = match &rq.body["devices"] {
-                Value::Array(a) if !a.is_empty() && a.len() <= crate::observer::MAX_LEAVES => a.iter().map(|v| id::<32>(v.as_str().unwrap_or(""))).collect::<Res<_>>()?,
+                Value::Array(a) if !a.is_empty() && a.len() <= MAX_LEAVES => a.iter().map(|v| id::<32>(v.as_str().unwrap_or(""))).collect::<Res<_>>()?,
                 _ => return Err(refuse("bad-format", "devices: 1 to 1024 device ids")),
             };
             let auth = read_auth()?;
@@ -1014,7 +1014,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             app.write_as(&auth, rq.lease, |x, _| delivery::put_sealed_key(x, &auth, &key))
         }
         ("GET", ["sealed-keys"]) => {
-            let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?.unwrap_or(500).clamp(1, 2000));
+            let (after, limit) = (rq.q_int("after")?.unwrap_or(0), rq.q_int("limit")?.unwrap_or(500).clamp(1, MAX_SEALED_KEYS.into()));
             app.read(|x| delivery::sealed_keys(x.c, &rq.auth(app, x.c)?, after, limit))
         }
         ("POST", ["requests"]) => {
@@ -1093,7 +1093,7 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
         }
         ("POST", ["rooms", room, "recovery-code"]) => {
             let body = commit_body(&rq.body["commit"])?;
-            let link = crate::wire::RecoveryLink::parse(&rq.bytes("recovery_link")?)?;
+            let link = trommi_wire::layout::RecoveryLink::parse(&rq.bytes("recovery_link")?)?;
             let auth = read_auth()?;
             own_room(&auth, room)?;
             auth.human()?;
@@ -1134,6 +1134,22 @@ fn route(app: &Arc<App>, rq: &Rq) -> Res<Value> {
             (Some("1"), since, only) => app.read(|x| content::desk_brief(x.c, &rq.auth(app, x.c)?, since, &only)),
             _ => Err(refuse("bad-format", "the Desk is read whole, or with brief=1 (and since=)")),
         },
+        // point 47: the objects no longer open, newest first, a page at a time
+        ("GET", ["objects"]) => {
+            if rq.q("state") != Some("settled") {
+                return Err(refuse("bad-format", "state: settled"));
+            }
+            let kind = match rq.q("kind") {
+                None => None,
+                Some(k @ ("cards" | "notes" | "permission_requests" | "artifacts")) => Some(k),
+                Some(_) => return Err(refuse("bad-format", "kind: cards, notes, permission_requests or artifacts")),
+            };
+            // `group=` one group's rows, or `active=1` the live groups' (as on a catch-up: one of them at most)
+            let mut only = only(rq, true)?;
+            let group = only.group.take();
+            let (before, limit) = (rq.q_int("before")?, rq.q_int("limit")?);
+            app.read(|x| content::settled_objects(x.c, &rq.auth(app, x.c)?, kind, group.as_deref(), before, limit, &only))
+        }
         ("GET", ["chats", scope, timeline, "items"]) => {
             let key = content::chat_key(scope, timeline)?;
             let (before, limit) = (rq.q_int("before")?, rq.q_int("limit")?);

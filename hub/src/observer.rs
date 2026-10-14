@@ -15,7 +15,9 @@ use openmls_rust_crypto::RustCrypto;
 use openmls_traits::crypto::OpenMlsCrypto;
 use openmls_traits::types::SignatureScheme;
 
-use crate::wire::{self, Reader, TrommiRoom, TrommiSession, Writer, EXT_ROOM, EXT_SESSION};
+use trommi_wire::layout::{
+    self as wire, Reader, TrommiRoom, TrommiSession, Writer, EXT_ROOM, EXT_SESSION,
+};
 
 pub type Device = [u8; 32];
 
@@ -59,7 +61,7 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub fn room_state(&self) -> [u8; 32] {
-        wire::ref_hash("Trommi Room State", &self.context)
+        wire::ref_hash(trommi_wire::mls::ROOM_STATE_LABEL, &self.context)
     }
 }
 
@@ -200,7 +202,7 @@ fn check_capabilities(caps: &Capabilities) -> Res<()> {
 
 /// The largest tree a group of the profile can have: 1001 human devices (1000, one more while a recovery runs), an
 /// agent device and 7 helper devices fit in 1024 leaves, 2047 nodes.
-pub const MAX_LEAVES: usize = 1024;
+pub use trommi_wire::limits::MAX_LEAVES;
 
 fn snapshot_of(group: &PublicGroup) -> Res<Snapshot> {
     let ctx = group.group_context();

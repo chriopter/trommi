@@ -7,7 +7,7 @@
 mod common;
 
 use common::enc::{self, Bytes};
-use trommi_hub::wire::*;
+use trommi_wire::layout::*;
 
 /// Hex pieces, concatenated. Nothing else: every length prefix below is written by hand.
 fn hex(parts: &[&str]) -> Vec<u8> {

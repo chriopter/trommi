@@ -7,7 +7,7 @@ use common::*;
 use serde_json::{json, Value};
 use std::time::Duration;
 use trommi_hub::util::{b64, hex, random, unb64};
-use trommi_hub::wire::{self, Cut, Envelope, Subject, ZERO16, ZERO32};
+use trommi_wire::layout::{self as wire, Cut, Envelope, Subject, ZERO16, ZERO32};
 
 struct Scene {
     w: World,
@@ -829,6 +829,101 @@ fn the_brief_desk_lists_ids_and_versions_and_since_a_change_only_what_changed() 
     assert_eq!(s.bea.get(hub, "/v1/desk").ok()["cards"].as_array().unwrap().len(), 3);
     s.bea.get(hub, "/v1/desk?brief=2").refused(400, "bad-format");
     s.bea.get(hub, "/v1/desk?since=1").refused(400, "bad-format");
+}
+
+#[test]
+fn the_desk_counts_objects_per_group_and_settled_ones_come_newest_first_page_by_page() {
+    let mut s = scene();
+    let mut cards = vec![];
+    for _ in 0..5 {
+        cards.push(card(&mut s, 0, 0));
+    }
+    // two answered by him, two closed by their agent, one stays open
+    let hub = &s.w.hub;
+    for (id, v) in &cards[..2] {
+        let answer = object(wire::KIND_ANSWER, *id, wire::TYPE_CARD, wire::STATE_ANSWERED, 0, *v, s.agent.id());
+        s.bea.send(hub, &s.group, &answer).ok();
+    }
+    for (id, v) in &cards[2..4] {
+        let close = object(wire::KIND_VERSION, *id, wire::TYPE_CARD, wire::STATE_CLOSED, 0, *v, ZERO32);
+        s.agent.send(hub, &s.group, &close).ok();
+    }
+    // another agent's session with one settled card: the first agent never sees it
+    let mut other = s.w.enrol_agent();
+    let room = s.w.room;
+    s.w.catch_up(&mut s.bea, &room);
+    let (_, other_group) = s.w.found_main(&mut [&mut s.bea], Some(&mut other));
+    let hub = &s.w.hub;
+    let theirs = enc::object_id(&other_group, &other.id(), other.chain(&other_group).0 + 1);
+    other.send(hub, &other_group, &object(wire::KIND_VERSION, theirs, wire::TYPE_CARD, wire::STATE_OPEN, 0, ZERO32, ZERO32)).ok();
+    let v = other.chain(&other_group).1;
+    other.send(hub, &other_group, &object(wire::KIND_VERSION, theirs, wire::TYPE_CARD, wire::STATE_CLOSED, 0, v, ZERO32)).ok();
+
+    // the counts: per group and kind, open, answered and closed, of every group the asker sees
+    let counted = |desk: &Value, group: &[u8]| -> Value {
+        let rows = desk["counts"].as_array().unwrap();
+        rows.iter().find(|r| r["group_id"] == b64(group)).cloned().unwrap_or(Value::Null)
+    };
+    let desk = s.bea.get(hub, "/v1/desk").ok();
+    assert_eq!(counted(&desk, &s.group)["cards"], json!({ "open": 1, "answered": 2, "closed": 2 }));
+    assert_eq!(counted(&desk, &s.group)["notes"], json!({ "open": 0, "answered": 0, "closed": 0 }));
+    assert_eq!(counted(&desk, &other_group)["cards"], json!({ "open": 0, "answered": 0, "closed": 1 }));
+    let groups: Vec<&str> = desk["counts"].as_array().unwrap().iter().map(|r| r["group_id"].as_str().unwrap()).collect();
+    let mut sorted: Vec<Vec<u8>> = groups.iter().map(|g| unb64(g).unwrap()).collect();
+    sorted.sort();
+    assert_eq!(groups, sorted.iter().map(|g| b64(g)).collect::<Vec<_>>(), "ascending by group id");
+    let agents = s.agent.get(hub, "/v1/desk").ok();
+    assert_eq!(agents["counts"].as_array().unwrap().len(), 1, "an agent counts only its own groups");
+    assert_eq!(counted(&agents, &other_group), Value::Null);
+
+    // the settled objects, newest first: the human sees all five, page by page
+    let page = |dev: &Dev, query: &str| dev.get(&s.w.hub, &format!("/v1/objects?state=settled{query}")).ok();
+    let ids = |page: &Value| -> Vec<String> {
+        page["items"].as_array().unwrap().iter().map(|i| i["object_id"].as_str().unwrap().to_string()).collect()
+    };
+    let whole = page(&s.bea, "");
+    let heads: Vec<i64> = whole["items"].as_array().unwrap().iter().map(|i| i["head_change"].as_i64().unwrap()).collect();
+    assert!(heads.windows(2).all(|w| w[0] > w[1]), "newest first: {heads:?}");
+    assert_eq!(ids(&whole)[0], b64(&theirs));
+    assert_eq!(ids(&whole).len(), 5);
+    assert_eq!((whole["more"].as_bool(), whole["before"].as_i64()), (Some(false), Some(0)));
+    let first = &whole["items"][1];
+    assert_eq!((first["kind"].as_str(), first["state"].as_i64(), first["group_id"].as_str()), (Some("cards"), Some(3), Some(b64(&s.group).as_str())));
+    assert!(first["first_change"].as_i64().unwrap() < first["head_change"].as_i64().unwrap());
+    assert_eq!(envelope_of(&first["version"]).header.group_id, s.group, "the current version, whole");
+    assert_eq!(first["version"]["change"], first["head_change"]);
+    let (mut seen, mut before) = (vec![], None::<i64>);
+    loop {
+        let query = before.map_or("&limit=2".to_string(), |b| format!("&limit=2&before={b}"));
+        let p = page(&s.bea, &query);
+        assert!(p["items"].as_array().unwrap().len() <= 2);
+        seen.extend(ids(&p));
+        if !p["more"].as_bool().unwrap() {
+            break;
+        }
+        before = p["before"].as_i64();
+        assert_eq!(before, p["items"].as_array().unwrap().last().unwrap()["head_change"].as_i64());
+    }
+    assert_eq!(seen, ids(&whole), "the pages make up the whole list");
+    // one group, one kind; an agent sees its own group's only, also when it names another
+    assert_eq!(ids(&page(&s.bea, &format!("&group={}", b64(&other_group)))), vec![b64(&theirs)]);
+    assert_eq!(ids(&page(&s.bea, "&kind=notes")), Vec::<String>::new());
+    assert_eq!(ids(&page(&s.bea, "&active=1")).len(), 5);
+    assert_eq!(ids(&page(&s.agent, "")).len(), 4);
+    assert!(!ids(&page(&s.agent, "")).contains(&b64(&theirs)));
+    assert_eq!(ids(&page(&s.agent, &format!("&group={}", b64(&other_group)))), Vec::<String>::new());
+    // nor do the cursor and `more` tell of rows it may not read: the other agent's one row is its whole list
+    let theirs_only = page(&other, "&limit=1");
+    assert_eq!(ids(&theirs_only), vec![b64(&theirs)]);
+    assert_eq!((theirs_only["more"].as_bool(), theirs_only["before"].as_i64()), (Some(false), Some(0)));
+    // the open list carries each row's first change
+    let brief = s.bea.get(&s.w.hub, "/v1/desk?brief=1").ok();
+    assert_eq!(brief["cards"][0]["first_change"], desk["cards"][0]["first_change"]);
+    // wrong forms
+    for query in ["/v1/objects", "/v1/objects?state=open", "/v1/objects?state=settled&kind=boards", "/v1/objects?state=settled&before=x",
+        "/v1/objects?state=settled&archived=1", "/v1/objects?state=settled&active=1&group=AAAA"] {
+        s.bea.get(&s.w.hub, query).refused(400, "bad-format");
+    }
 }
 
 #[test]

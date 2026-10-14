@@ -56,6 +56,7 @@ pub use refusal::{refusal, status_of, Refusal};
 pub use request::TIMEOUT_MS;
 pub use stream::{Fed, StreamReader};
 pub use types::*;
+pub(crate) use groups::{archive_answer, archive_request};
 
 use crate::app::io::{HttpResponse, IoError, IoErrorKind};
 

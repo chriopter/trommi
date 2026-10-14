@@ -14,7 +14,7 @@ use crate::store::{
     self, fixed, Auth, Effects, Event, GroupKind, GroupRow, PushJob, Room, Sight, Who,
 };
 use crate::util::{b64, same};
-use crate::wire::{self, Cut, Envelope, Header, HeaderError, Subject, ZERO32};
+use trommi_wire::layout::{self as wire, Cut, Envelope, Header, HeaderError, Subject, ZERO32};
 
 /// The largest ciphertext: a padded body of 64 KiB and the AEAD tag.
 pub const MAX_CIPHERTEXT: usize = 65536 + 16;
@@ -1180,7 +1180,8 @@ fn clamp(limit: Option<i64>, default: i64, max: i64) -> i64 {
 
 /// What one answer may hold of envelopes: an answer is built in memory, and a reader that asks for much gets
 /// `more` and asks again.
-pub const ANSWER_BYTES: usize = 8 << 20;
+pub use trommi_wire::limits::ANSWER_BYTES;
+use trommi_wire::limits::{CHANGES_WINDOW, MAX_CHANGES, MAX_CHAT_PAGE, MAX_PAGE};
 
 /// Collects envelopes of a query up to `limit` items and `ANSWER_BYTES`; says whether more remain.
 fn collect(rows: &mut rusqlite::Rows, limit: i64, pruned: bool) -> Res<(Vec<Value>, bool)> {
@@ -1283,10 +1284,201 @@ pub fn desk(c: &Connection, auth: &Auth, only: &Only) -> Res<Value> {
         }
     }
     out["registers"] = Value::Array(registers);
-    out["truncated"] = json!(truncated);
+    let (counts, cut) = counts(c, &auth.room, &sees)?;
+    out["counts"] = Value::Array(counts);
+    out["truncated"] = json!(truncated || cut);
     out["groups"] = Value::Array(crate::delivery::group_list(c, auth, only)?);
     out["change"] = json!(store::room_row(c, &auth.room)?.change);
     Ok(out)
+}
+
+/// Most groups the Desk's `counts` name (a room holds up to 5 000 groups, hub-api.md point 43).
+pub const MAX_COUNTED_GROUPS: usize = 10_000;
+
+/// The Desk's `counts`: per group the asker sees, how many objects of each kind are open, answered and closed
+/// (every row of the object tables, also of objects whose bodies are pruned), ascending by group id; a group
+/// without an object is left out. Says whether it was cut short at [`MAX_COUNTED_GROUPS`].
+fn counts(c: &Connection, room: &Room, sees: &dyn Fn(&[u8]) -> bool) -> Res<(Vec<Value>, bool)> {
+    let mut by_group: std::collections::BTreeMap<Vec<u8>, Value> = std::collections::BTreeMap::new();
+    let mut cut = false;
+    for (table, _) in OBJECT_TABLES {
+        let mut s = c.prepare_cached(&format!(
+            "SELECT group_id, state, count(*) FROM {table} WHERE room_id = ?1 GROUP BY group_id, state"
+        ))?;
+        let mut rows = s.query([&room[..]])?;
+        while let Some(r) = rows.next()? {
+            let group: Vec<u8> = r.get(0)?;
+            let state = match u8::try_from(r.get::<_, i64>(1)?) {
+                Ok(wire::STATE_OPEN) => "open",
+                Ok(wire::STATE_ANSWERED) => "answered",
+                Ok(wire::STATE_CLOSED) => "closed",
+                _ => continue,
+            };
+            if !sees(&group) {
+                continue;
+            }
+            if !by_group.contains_key(&group) && by_group.len() >= MAX_COUNTED_GROUPS {
+                cut = true;
+                continue;
+            }
+            let row = by_group.entry(group.clone()).or_insert_with(|| {
+                let zero = || json!({ "open": 0, "answered": 0, "closed": 0 });
+                json!({ "group_id": b64(&group), "cards": zero(), "permission_requests": zero(), "notes": zero(), "artifacts": zero() })
+            });
+            row[table][state] = json!(r.get::<_, i64>(2)?);
+        }
+    }
+    Ok((by_group.into_values().collect(), cut))
+}
+
+/// Most rows one page of `GET /v1/objects` holds, and how many it gives when no `limit` is asked.
+pub const MAX_OBJECTS_PAGE: i64 = 500;
+pub const OBJECTS_PAGE: i64 = 100;
+/// How many settled rows one page of `GET /v1/objects` looks at, seen or not: an asker that sees little of a busy
+/// room gets what lies in this stretch and the cursor to go on from.
+pub const OBJECTS_WINDOW: usize = 10_000;
+
+/// One settled row read ahead: its `head_change`, group and owner, the row as served (without owner and version)
+/// and the change of its current version.
+type Ahead = (i64, Vec<u8>, Device, Value, i64);
+
+/// `GET /v1/objects?state=settled&kind=&group=&before=&limit=`: the objects that are no longer open (answered or
+/// closed), newest first by `head_change`, below `before`, in the groups the asker sees (the Desk's rule), each
+/// a row as on the Desk with its kind and current version (pruned form when its body is pruned). `kind` keeps one
+/// table, `group` one group. The answer's `before` is where the next page starts; `more` says whether to ask it.
+/// A page holds at most `limit` rows and the Desk's byte budget; a read over the whole room looks at
+/// [`OBJECTS_WINDOW`] rows at most (then it can come with fewer rows, even none, and `more`).
+pub fn settled_objects(
+    c: &Connection,
+    auth: &Auth,
+    kind: Option<&str>,
+    group: Option<&[u8]>,
+    before: Option<i64>,
+    limit: Option<i64>,
+    only: &Only,
+) -> Res<Value> {
+    auth.member()?;
+    let readable = store::readable_groups(c, auth)?;
+    let archived = archived_groups(c, &auth.room)?;
+    let sees = |g: &[u8]| {
+        readable.as_ref().is_none_or(|r| r.iter().any(|x| x == g))
+            && only.takes(!archived.iter().any(|x| x == g))
+            && group.is_none_or(|one| one == g)
+    };
+    // An asker that may read only some groups (an agent or helper device), or that names one, is asked in SQL for
+    // those groups alone: nothing of a group it may not read is looked at, so neither `more` nor `before` can tell
+    // of one. A human device may read every group; it is asked over the room (`active=1` skips the archived rows,
+    // which it may read as well).
+    let groups: Option<Vec<Vec<u8>>> = match (group, &readable) {
+        (Some(one), _) => Some(if sees(one) { vec![one.to_vec()] } else { vec![] }),
+        (None, Some(list)) => Some(list.iter().filter(|g| sees(g)).cloned().collect()),
+        (None, None) => None,
+    };
+    let limit = clamp(limit, OBJECTS_PAGE, MAX_OBJECTS_PAGE) as usize;
+    let before = before.unwrap_or(i64::MAX);
+    let tables: Vec<&str> = OBJECT_TABLES
+        .iter()
+        .map(|(t, _)| *t)
+        .filter(|t| kind.is_none_or(|k| k == *t))
+        .collect();
+    // Where the rows come from, each read newest first by its index: the room per table; or per table and group
+    // (each an index range in order, nothing sorted); or, for an asker of more than `BY_GROUP` groups, its groups
+    // per table in one query (sorted by SQLite, as many rows as those groups hold)
+    const BY_GROUP: usize = 64;
+    const COLUMNS: &str = "object_id, group_id, state, urgency, answered_at, owner, first_change, head_change, version_change";
+    enum From {
+        Room,
+        Group(Vec<u8>),
+        Groups(String),
+    }
+    let mut sources: Vec<(&str, From)> = vec![];
+    for table in &tables {
+        match &groups {
+            None => sources.push((table, From::Room)),
+            Some(list) if list.len() <= BY_GROUP => {
+                sources.extend(list.iter().map(|g| (*table, From::Group(g.clone()))))
+            }
+            Some(list) => {
+                let hex: Vec<String> = list.iter().map(|g| crate::util::hex(g)).collect();
+                sources.push((table, From::Groups(json!(hex).to_string())))
+            }
+        }
+    }
+    let mut statements = Vec::with_capacity(sources.len());
+    for (table, from) in &sources {
+        let (index, only_groups) = match from {
+            From::Room => ("settled", ""),
+            From::Group(_) => ("settled_by_group", " AND group_id = ?3"),
+            From::Groups(_) => ("settled_by_group", " AND group_id IN (SELECT unhex(value) FROM json_each(?3))"),
+        };
+        statements.push(c.prepare_cached(&format!(
+            "SELECT {COLUMNS} FROM {table} INDEXED BY {table}_{index}
+             WHERE room_id = ?1 AND state != 1 AND head_change < ?2{only_groups} ORDER BY head_change DESC"
+        ))?);
+    }
+    let mut cursors = Vec::with_capacity(statements.len());
+    for (s, (_, from)) in statements.iter_mut().zip(&sources) {
+        cursors.push(match from {
+            From::Room => s.query(params![&auth.room[..], before])?,
+            From::Group(group) => s.query(params![&auth.room[..], before, group])?,
+            From::Groups(hex) => s.query(params![&auth.room[..], before, hex])?,
+        });
+    }
+    let read = |rows: &mut rusqlite::Rows, table: &str| -> Res<Option<Ahead>> {
+        let Some(r) = rows.next()? else { return Ok(None) };
+        let group: Vec<u8> = r.get(1)?;
+        let head: i64 = r.get(7)?;
+        let row = json!({
+            "object_id": b64(&r.get::<_, Vec<u8>>(0)?),
+            "group_id": b64(&group),
+            "kind": table,
+            "state": r.get::<_, i64>(2)?,
+            "urgency": r.get::<_, i64>(3)?,
+            "answered_at": r.get::<_, i64>(4)?,
+            "first_change": r.get::<_, i64>(6)?,
+            "head_change": head,
+        });
+        Ok(Some((head, group, fixed(r.get(5)?)?, row, r.get(8)?)))
+    };
+    // one row read ahead per table, merged newest first (a change number is one envelope's, of one object)
+    let mut ahead: Vec<Option<Ahead>> = Vec::with_capacity(cursors.len());
+    for (rows, (table, _)) in cursors.iter_mut().zip(&sources) {
+        ahead.push(read(rows, table)?);
+    }
+    let (mut items, mut bytes, mut looked, mut next, mut more) = (Vec::new(), 0usize, 0usize, before, false);
+    while let Some(at) = (0..ahead.len())
+        .filter(|i| ahead[*i].is_some())
+        .max_by_key(|i| ahead[*i].as_ref().map(|a| a.0))
+    {
+        if items.len() == limit || looked == OBJECTS_WINDOW {
+            more = true;
+            break;
+        }
+        let (head, group, owner, mut row, version_change) = ahead[at].take().expect("a row read ahead");
+        if sees(&group) {
+            let version = envelope_at(c, &auth.room, version_change, false)?;
+            let size = version.as_ref().and_then(|v| v["envelope"].as_str()).map_or(0, str::len);
+            // the Desk's budget, checked before a row goes in; the first one always does
+            if bytes + size > ANSWER_BYTES && !items.is_empty() {
+                more = true;
+                break;
+            }
+            bytes += size;
+            row["owner"] = json!(b64(&effective_owner(c, &auth.room, &group, owner)?));
+            row["version"] = version.unwrap_or(Value::Null);
+            items.push(row);
+        }
+        looked += 1;
+        next = head;
+        ahead[at] = read(&mut cursors[at], sources[at].0)?;
+    }
+    // (with `more` the head change of the last row looked at, which lies below the one asked; else nothing to ask)
+    Ok(json!({
+        "items": items,
+        "more": more,
+        "before": if more { next } else { 0 },
+        "change": store::room_row(c, &auth.room)?.change,
+    }))
 }
 
 /// The archived groups of a room.
@@ -1297,7 +1489,7 @@ fn archived_groups(c: &Connection, room: &Room) -> Res<Vec<Vec<u8>>> {
         .collect::<rusqlite::Result<_>>()?)
 }
 
-/// `GET /v1/desk?brief=1&since=`: the Desk's open cards and permission requests as ids and version numbers only,
+/// `GET /v1/desk?brief=1&since=`: the Desk's open cards and permission requests as ids and change numbers only,
 /// no envelopes, no registers (the same rows as the full Desk, in its order; a client reads the versions it lacks
 /// by their object route). With `since`, only the rows whose `head_change` is above it: the open ones listed, the
 /// ones no longer open named in `settled`. Nothing in it that the full Desk does not show.
@@ -1318,11 +1510,11 @@ pub fn desk_brief(c: &Connection, auth: &Auth, since: Option<i64>, only: &Only) 
         let mut items = Vec::new();
         let sql = match since {
             None => format!(
-                "SELECT object_id, group_id, state, version_change, head_change FROM {table}
+                "SELECT object_id, group_id, state, version_change, head_change, first_change FROM {table}
                  WHERE room_id = ?1 AND state = 1 AND ?2 = 0 ORDER BY urgency DESC, first_change"
             ),
             Some(_) => format!(
-                "SELECT object_id, group_id, state, version_change, head_change FROM {table}
+                "SELECT object_id, group_id, state, version_change, head_change, first_change FROM {table}
                  WHERE room_id = ?1 AND head_change > ?2 ORDER BY urgency DESC, first_change"
             ),
         };
@@ -1346,6 +1538,7 @@ pub fn desk_brief(c: &Connection, auth: &Auth, since: Option<i64>, only: &Only) 
                 "object_id": id,
                 "version_change": r.get::<_, i64>(3)?,
                 "head_change": r.get::<_, i64>(4)?,
+                "first_change": r.get::<_, i64>(5)?,
             }));
         }
         out[table] = Value::Array(items);
@@ -1396,7 +1589,7 @@ pub fn chat_items(
     limit: Option<i64>,
 ) -> Res<Value> {
     auth.member()?;
-    let limit = clamp(limit, 50, 200);
+    let limit = clamp(limit, 50, MAX_CHAT_PAGE.into());
     let Some(group) = timeline_group(c, auth, "chats", key)? else {
         return Ok(json!({ "items": [], "more": false }));
     };
@@ -1426,7 +1619,7 @@ pub fn board_items(
 ) -> Res<Value> {
     auth.member()?;
     let key = [&[wire::TIMELINE_BOARD, wire::SCOPE_DESK][..], &board[..]].concat();
-    let limit = clamp(limit, 500, 2000);
+    let limit = clamp(limit, 500, MAX_PAGE.into());
     let Some(group) = timeline_group(c, auth, "boards", &key)? else {
         return Ok(json!({ "items": [], "more": false }));
     };
@@ -1466,7 +1659,7 @@ pub fn object_envelopes(
     if store::sight(c, auth, &row)? != Sight::Leaf {
         return Err(missing());
     }
-    let limit = clamp(limit, 500, 2000);
+    let limit = clamp(limit, 500, MAX_PAGE.into());
     let mut s = c.prepare_cached(&format!(
         "SELECT {ENVELOPE_COLUMNS} FROM envelopes WHERE room_id = ?1 AND object_id = ?2 AND cut = 0 AND group_id = ?3 AND change > ?4
          ORDER BY change LIMIT ?5"
@@ -1505,7 +1698,7 @@ pub fn chain(
     if !allowed {
         return Err(refuse("not-found", "no such group"));
     }
-    let limit = clamp(limit, 500, 2000);
+    let limit = clamp(limit, 500, MAX_PAGE.into());
     let mut s = c.prepare_cached(&format!(
         "SELECT {ENVELOPE_COLUMNS} FROM envelopes WHERE group_id = ?1 AND sender = ?2 AND seq > ?3 ORDER BY seq LIMIT ?4"
     ))?;
@@ -1523,10 +1716,6 @@ pub fn chain(
     items.truncate(limit as usize);
     Ok(json!({ "items": items, "more": more }))
 }
-
-/// How far one catch-up request looks: an asker that sees little of a busy room gets what lies in this stretch
-/// and the cursor to go on from.
-pub const CHANGES_WINDOW: i64 = 20_000;
 
 /// `GET /v1/changes?after=&limit=`: everything the asker may see with a change number above `after`, in the
 /// hub's one order across groups (5.4.1): log entries and envelopes. First the numbers and sizes of what is
@@ -1572,14 +1761,16 @@ pub fn changes_upto(
     ceiling: Option<i64>,
     only: &Only,
 ) -> Res<Value> {
-    let limit = clamp(limit, 200, 1000);
+    let limit = clamp(limit, 200, MAX_CHANGES.into());
     // `active=1`: no envelope of an archived group (its Commits and MLS messages still come: a leaf keeps its
     // group state whole); `group=`: that group's envelopes alone, nothing of the log
     let skipped = if only.active { archived_hex(c, &auth.room)? } else { "[]".to_string() };
     let one = only.group.as_ref().map(|g| crate::util::hex(g).to_uppercase());
     let room_head = store::room_row(c, &auth.room)?.change;
     let head = ceiling.map_or(room_head, |top| top.min(room_head));
-    let upto = after.saturating_add(CHANGES_WINDOW).min(head);
+    // (how far one catch-up request looks: an asker that sees little of a busy room gets what lies in this stretch
+    // and the cursor to go on from)
+    let upto = after.saturating_add(CHANGES_WINDOW as i64).min(head);
     let (human, recovery) = (auth.who == Who::Human, auth.who == Who::Recovery);
     // an agent or helper device: the groups it is a leaf of, and those whose Commits it follows
     let (mut leaf, mut public) = (Vec::new(), Vec::new());

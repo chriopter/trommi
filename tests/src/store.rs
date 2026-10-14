@@ -13,6 +13,8 @@ struct Content {
     /// How many more calls of `apply` pass before one fails; none when no failure is planned.
     passes_before_failure: Option<u64>,
     applied: u64,
+    /// The bytes of every key and value put, and of every key deleted, by the batches accepted.
+    written: u64,
 }
 
 /// A store in memory, for tests: durable is what `apply` accepted. A crash is played by dropping the device and
@@ -49,6 +51,7 @@ impl MemoryStorage {
                 entries: content.entries.clone(),
                 passes_before_failure: None,
                 applied: 0,
+                written: 0,
             })),
         }
     }
@@ -68,6 +71,12 @@ impl MemoryStorage {
         self.content().applied
     }
 
+    /// How many bytes the accepted batches carried: every key and value put, every key deleted. What a store
+    /// that keeps a journal appends, and what one that wraps its values encrypts.
+    pub fn written(&self) -> u64 {
+        self.content().written
+    }
+
     /// Every entry, ascending by key.
     pub fn entries(&self) -> Vec<Entry> {
         let content = self.content();
@@ -76,6 +85,12 @@ impl MemoryStorage {
             .iter()
             .map(|(key, value)| Entry::new(key.clone(), value.clone()))
             .collect()
+    }
+
+    /// Changes what is stored behind the device's back, without a batch and without a new revision: what a
+    /// build before this one left there, or damage.
+    pub fn rewrite(&self, change: impl FnOnce(&mut BTreeMap<Vec<u8>, Vec<u8>>)) {
+        change(&mut self.content().entries);
     }
 
     /// The value under `key`.
@@ -120,6 +135,13 @@ impl Storage for MemoryStorage {
         let next = expected_revision
             .checked_add(1)
             .ok_or_else(|| StorageError::Failed("the revision is at its maximum".into()))?;
+        let carried: usize = batch.delete.iter().map(Vec::len).sum::<usize>()
+            + batch
+                .put
+                .iter()
+                .map(|entry| entry.key.len() + entry.value.len())
+                .sum::<usize>();
+        content.written = content.written.saturating_add(carried as u64);
         for key in batch.delete.drain(..) {
             content.entries.remove(&key);
         }

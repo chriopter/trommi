@@ -20,6 +20,8 @@ pub mod record;
 pub mod events;
 #[path = "room_join.rs"]
 pub mod room_join;
+#[path = "requests.rs"]
+pub mod requests;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -148,6 +150,9 @@ pub enum Alert {
     NotMember,
     /// The hub needs a newer Trommi.
     ClientTooOld,
+    /// A leaf could not merge an accepted Commit (14.7): `from` refused the Commit numbered `n` in `group`, made by
+    /// `committer` as the hub says. The person decides; remove the device that made it.
+    Rejected { group: GroupId, n: u64, from: DeviceId, committer: Option<DeviceId> },
     /// The room was joined with the code, but the hub did not serve the link from an older code to this one: what
     /// was sealed under the older codes stays closed to this device.
     MissingLink,
@@ -192,6 +197,8 @@ pub enum Report {
     SessionsJoined { joined: u32, not_joined: Vec<(GroupId, &'static str)> },
     /// How the join of the room with the code stands (`room_join`).
     RoomJoin(room_join::RoomJoinStatus),
+    /// An action's request was answered, or given up (`requests`).
+    Answer(Box<requests::Answered>),
     /// A piece the hub only passed on, as the protocol core opened it (a stroke still being drawn, 7.2).
     Relay(Box<Received>),
     /// A newcomer sent its Request for an invite of this room (12.1): the invite flow reads it.
@@ -256,6 +263,11 @@ enum Asked {
     Wishes(Expect),
     /// A read of the join of the room with the code (`room_join`).
     RoomRead { expect: Expect, what: room_join::Read },
+    /// An action's request, by the id the action holds (`requests`).
+    Request { id: IoId },
+    /// The kept requests read at the start, and one written or deleted.
+    KeptScan,
+    KeptWrite,
     /// The engine's record, read at the start and written when it changed (`record`).
     Record,
     RecordWrite,
@@ -266,7 +278,7 @@ impl Asked {
     /// How the answer is to be read; none for a write to the store.
     fn expect(&self) -> Option<&Expect> {
         match self {
-            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite => None,
+            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => None,
             Asked::Challenge(e) | Asked::Token(e) | Asked::Page(e) | Asked::Welcomes(e) | Asked::Told(e) | Asked::KeyPackagesHeld(e) | Asked::Desk(e) | Asked::Wishes(e) => Some(e),
             Asked::Post { expect, .. }
             | Asked::GroupLog { expect, .. }
@@ -447,6 +459,8 @@ pub struct Engine {
     wishes: events::Wishes,
     /// The join of the room with the code, while it runs (`room_join`): nothing else is done before it ends.
     room_join: Option<room_join::Joiner>,
+    /// The actions' requests (`requests`).
+    requests: requests::Requests,
 }
 
 /// Why a stored device does not open as an engine.
@@ -552,6 +566,7 @@ impl Engine {
             written: None,
             wishes: events::Wishes::default(),
             room_join: None,
+            requests: requests::Requests::default(),
         }
     }
 
@@ -559,6 +574,11 @@ impl Engine {
 
     pub fn device(&self) -> &Device<memstore::MemStore> {
         &self.device
+    }
+    /// The device's source of randomness, for what an action makes beside the protocol (a file's key, a share
+    /// link's secret): a seeded App stays exact.
+    pub fn with_entropy<T>(&self, use_it: impl FnOnce(&mut dyn Entropy) -> T) -> T {
+        self.device.with_entropy(use_it)
     }
     pub fn room(&self) -> RoomId {
         self.room
@@ -635,6 +655,10 @@ impl Engine {
             if let Some(j) = &self.room_join {
                 want(j.retry.at);
             }
+            want(self.requests.wake());
+            if self.caught_up {
+                want(self.readmit_wake());
+            }
             want(self.tending.wake());
             if self.caught_up && self.upkeep_asked.is_none() {
                 want(Some(self.upkeep_at.max(self.upkeep_retry.at.unwrap_or(0))).filter(|at| *at != 0));
@@ -650,6 +674,7 @@ impl Engine {
         self.report(Report::Groups);
         // what the engine kept across the restart comes first: where it stands, and what it owes
         self.restore(ctx);
+        self.scan_kept(ctx);
         self.drive(ctx);
     }
 
@@ -698,6 +723,7 @@ impl Engine {
         if let Some(j) = &mut self.room_join {
             j.retry.hurry();
         }
+        self.requests.hurry();
         self.tending.retry.hurry();
     }
 
@@ -716,6 +742,17 @@ impl Engine {
                 if self.stopped.is_none() {
                     self.restored(ctx, result);
                     self.drive(ctx);
+                }
+                true
+            }
+            Some(Asked::KeptScan) => {
+                self.on_kept(ctx, result);
+                self.drive(ctx);
+                true
+            }
+            Some(Asked::KeptWrite) => {
+                if let IoResult::Err(e) = result {
+                    ctx.log(LogLevel::Warn, format!("a kept request was not written: {:?}", e.kind));
                 }
                 true
             }
@@ -743,7 +780,12 @@ impl Engine {
         if self.stopped.is_some() {
             return true;
         }
-        if matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite) {
+        if let Asked::Request { id } = asked {
+            self.on_request(ctx, id, result);
+            self.drive(ctx);
+            return true;
+        }
+        if matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::KeptScan | Asked::KeptWrite) {
             return true;
         }
         let (expect, response) = match &result {
@@ -774,7 +816,7 @@ impl Engine {
             self.unauthorised = 0;
         }
         match asked {
-            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite => {}
+            Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::Request { .. } | Asked::KeptScan | Asked::KeptWrite => {}
             Asked::Challenge(_) => self.on_challenge(ctx, answer),
             Asked::Token(_) => self.on_token(ctx, answer),
             Asked::Page(_) => self.on_page(ctx, answer, unauthorised, refusal),
@@ -888,7 +930,7 @@ impl Engine {
             }
             StreamEvent::Here => self.report(Report::Here),
             StreamEvent::Relay { group, sender, message, .. } => self.on_relay(ctx, group, sender, &message),
-            StreamEvent::Wish(row) => self.on_wish(row),
+            StreamEvent::Wish(row) => self.on_wish(ctx, row),
             StreamEvent::InviteRequest { invite } => self.report(Report::InviteRequest { invite }),
             StreamEvent::Archived { group } => self.on_archived(ctx, group),
             StreamEvent::FileEvicted { file } => self.report(Report::FileEvicted { file }),
@@ -929,6 +971,8 @@ impl Engine {
                 return;
             }
         }
+        // the actions' requests: the person may be waiting for one
+        self.drive_requests(ctx);
         // the Desk before the order: what is open now is asked for before the first page
         self.drive_desk(ctx);
         self.drive_order(ctx);
@@ -995,7 +1039,7 @@ impl Engine {
         self.joining = None;
         self.writes.lose();
         for (id, asked) in std::mem::take(&mut self.pending) {
-            if !matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite) {
+            if !matches!(asked, Asked::DeviceWrite | Asked::Record | Asked::RecordWrite | Asked::KeptScan | Asked::KeptWrite) {
                 ctx.out.push(Effect::Cancel { id });
             }
         }
@@ -1619,8 +1663,12 @@ impl Engine {
 
     fn processed(&mut self, ctx: &mut Ctx<'_>, change: u64, group: GroupId, processed: Processed, groups_changed: &mut bool) {
         match &processed {
-            Processed::Commit { removed, .. } => {
+            Processed::Commit { removed, facts, .. } => {
                 *groups_changed = true;
+                if !group.is_room() {
+                    let (adds, removes) = (facts.adds.clone(), facts.removes.clone());
+                    self.note_readmit(ctx, &group, &adds, &removes);
+                }
                 if *removed && group.is_room() {
                     self.report(Report::Log { change, group, processed: Box::new(processed) });
                     self.stop(ctx, Stopped::Removed);
@@ -1796,6 +1844,10 @@ impl Engine {
             let void = Self::void_code(&link.item);
             match self.device.receive_envelope(&link.item.envelope, link.item.change, true, void.as_ref(), ctx.now) {
                 Ok(received) if received.outcome != EnvelopeOutcome::Refused => {
+                    if received.code == Some(Error::NoKey) {
+                        // (chained without its body, as on the order: read back once the key was handed over)
+                        self.note_keyless(received.header.group, link.item.change);
+                    }
                     self.report(Report::Envelope { received: Box::new(received), ordered: false })
                 }
                 Ok(_) => {}

@@ -41,8 +41,9 @@ leaves a body or a rule open, "Decided for the first hub" at the end says what t
 | `POST /v1/requests` · `GET /v1/requests` | `{ kind: readmit \| handover \| session, group?, key_package? }` | an unsigned wish of the signed-in device to the human devices (5.2.7, 5.3.5, 7.1, 13.4); nothing follows from it without a Commit |
 | **Content** | | |
 | `POST /v1/envelopes` | `{ envelope }` → `{ change }` or a refusal with `voided` | every stored item (9); the hub files it by its header |
-| `GET /v1/desk` | → `{ cards, permission_requests, notes, artifacts, registers, groups, change }` | open objects' newest envelopes, every writer's newest value per register, in the asker's groups |
-| `GET /v1/desk?brief=1&since=` | → `{ cards: [ { object_id, version_change, head_change } ], permission_requests, settled?, truncated, change }` | the same open cards and permission requests in the same order, as ids and version numbers only (no envelopes, no registers, no notes or artifacts); with `since`, only rows whose `head_change` is above it, those no longer open named in `settled`. A row rebuilt to an earlier state (a cut) shows in the next list without `since` |
+| `GET /v1/desk` | → `{ cards, permission_requests, notes, artifacts, registers, counts, groups, truncated, change }` | open objects' newest envelopes, every writer's newest value per register, in the asker's groups; `counts`: per group how many objects of each kind are open, answered and closed (point 47) |
+| `GET /v1/desk?brief=1&since=` | → `{ cards: [ { object_id, version_change, head_change, first_change } ], permission_requests, settled?, truncated, change }` | the same open cards and permission requests in the same order, as ids and version numbers only (no envelopes, no registers, no notes or artifacts); with `since`, only rows whose `head_change` is above it, those no longer open named in `settled`. A row rebuilt to an earlier state (a cut) shows in the next list without `since` |
+| `GET /v1/objects?state=settled&kind=&group=&before=&limit=[&active=1]` | → `{ items: [ { object_id, group_id, kind, state, urgency, answered_at, owner, first_change, head_change, version } ], more, before, change }` | the objects no longer open (answered or closed), newest first by `head_change`, each below `before`, in the asker's groups as on the Desk (point 47) |
 | `GET /v1/chats/{timeline}/items?before=&limit=` | → envelopes, newest first | `timeline` = `session/<hex>` or `card/<hex>` |
 | `GET /v1/boards/{board}?after_change=` | → `{ items, more }` | the board's items after the given change (10.3) |
 | `POST /v1/boards/{board}/frontier` | `{ frontier: { <writer>: [seq, hash] }, files: [file_id], snapshot?: [seq, hash] }` → `{ pruned }` | human devices: without `snapshot` before writing `board_snapshot/<board>`, with it once the value is taken (v1.md 10.9); `pruned`: item bodies pruned now |
@@ -76,7 +77,7 @@ written. Catch-up is "everything above N".
 | `welcome_bytes` | `group_id`, `epoch` | `bytes`: a Welcome once for all the devices it adds | by group and epoch; gone when no `welcomes` row points to it |
 | `sealed_keys`, `recovery_links` | `group_id`, `epoch`, `writer`, `recovery_hpke_key` | `sealed` | (`room_id`, `change`) |
 | `envelopes` | `change`, `group_id`, `epoch`, `sender`, `seq`, `prev`, `hash`, `recipient`, `kind`, `flags`, `time`, `received_at`, `timeline` (kind, scope, ref), `object_id`, `object_type`, `object_state`, `urgency` (the knock bit; the level in headers of before 11 October 2026), `answered_at` (0; set only in headers of before), `object_ref`, `register_id`, `file_ids`, `padded_size`, `header`, `nonce`, `body_hash`, `signature`, `void_code` | `body` (null once pruned) | truth for all stored content. **Chain**: unique (`group_id`, `sender`, `seq`). **Catch-up**: (`room_id`, `change`). **Page a chat, load a board**: (`timeline`, `change`) |
-| `cards`, `notes`, `permission_requests`, `artifacts` | `object_id`, `group_id`, `state`, `urgency`, `answered_at`, `owner`, `first_change`, `head_change`, `closed_at` | | **the Desk**: partial index on `state = open` by (`urgency` desc, `first_change`): knocking first, which is all the hub orders by (clients order by the level in the body). Derived from `envelopes`, rebuildable |
+| `cards`, `notes`, `permission_requests`, `artifacts` | `object_id`, `group_id`, `state`, `urgency`, `answered_at`, `owner`, `first_change`, `head_change`, `closed_at` | | **the Desk**: partial index on `state = open` by (`urgency` desc, `first_change`): knocking first, which is all the hub orders by (clients order by the level in the body); the settled ones by (`room_id`, `head_change`) and by (`room_id`, `group_id`, `head_change`) where `state` is not open, and (`room_id`, `group_id`, `state`) for the counts (point 47). Derived from `envelopes`, rebuildable |
 | `chats`, `boards` | `timeline`, `group_id`, `item_count`, `last_change` | | derived |
 | `registers` | `group_id`, `writer`, `register_id`, `head_change` | | **all current values**: (`group_id`); derived |
 | `board_frontiers` | `room_id`, `board`, `device`, `bound`, `frontier` (writer → `seq`), `files`, `at`, `snapshot_seq`, `register_id`, `counts` | | per human device and board its declarations and its bound post (v1.md 10.9) |
@@ -525,12 +526,38 @@ encrypted.
     and `GET /v1/rooms/{room}/groups` it leaves out every row of an archived group. `archived=1` on the Desk and
     the list of groups gives the archived ones alone, and `group=<id>` on `GET /v1/changes` that group's
     envelopes alone (nothing of the log), in the hub's order: how a client loads an archived session when it is
-    opened. One of the three at most (`bad-format`); `group=` only on a catch-up, and the asker sees only what it
+    opened. One of the three at most (`bad-format`); `group=` only on a catch-up (and the settled objects, point 47), and the asker sees only what it
     may see without them. Web, iPhone and the connector read with `active=1` from 12 October 2026; a client that
     does not ask gets everything, as before. A client keeps the archived sessions it opened (the newest 20, with
     the device's state) and loads them again after reading the room from the start. Measured on a room of 40 helper sessions with 10 envelopes each, 36 archived
     (`tests/hub/active.rs`): a catch-up from the start 3 requests and 497 kB → 1 request and 86 kB; the Desk
     190 kB → 20 kB; the list of groups 10 kB → 2 kB; one archived session opened, 1 request of 11 kB.
+47. **Counts and the settled objects from the hub** (owner, 13 October 2026: a device loads the open cards and
+    what is new; older history is fetched when it is needed). The hub already sees every object's kind, group and
+    state; these give a device what it can no longer count from the history it does not read.
+    `GET /v1/desk` carries `counts`: one row per group the asker sees (the Desk's rule, `active=1` and
+    `archived=1` too) that holds an object, ascending by group id,
+    `{ group_id, cards, permission_requests, notes, artifacts }`, each kind `{ open, answered, closed }`: every
+    row of the object tables, also of objects whose bodies are pruned. At most 10 000 rows (more: `truncated`).
+    What the apps show from them is the app core's: "done" is a session's cards that are answered or closed,
+    less the ones it still shows with their agent; "put off" is not the hub's to count (a snooze is an encrypted
+    register): the core counts it from the Desk's open cards and their `snooze/<card>` registers, which the Desk brings.
+    `GET /v1/objects?state=settled` lists the objects that are answered or closed, newest first by `head_change`
+    (a change number is one envelope's, of one object, so the order is total), each row as the Desk's with its
+    `kind` (`cards`, `notes`, `permission_requests`, `artifacts`) and its current version (pruned form when its
+    body is pruned). `before=` (a change number) takes only rows below it; `kind=` one table; `group=` one group,
+    or `active=1` the live groups only (one of the two at most; no `archived=1`: an archived session's list is
+    asked by its `group=`). `limit` 1 to 500, 100 when not given. A page holds the Desk's 8 MiB of envelopes
+    (the first row always goes in). An agent or helper device, and any asker with `group=`, is answered from its
+    groups' rows alone (looked up by group): a group it may not read gives no row and no count, and changes
+    neither `more` nor `before`, the same as a group without objects. A human device's read over the room looks
+    at 10 000 settled rows at most (with `active=1` archived ones too, which it skips): it can come with fewer rows
+    than `limit`, even none, and `more`. With `more`, `before` is the `head_change` of the last row looked at and
+    the next page is asked below it; without, `before` is 0. `state` other than `settled` is `bad-format` (no list of the
+    open ones here: that is the Desk). The brief Desk's rows carry `first_change` too.
+    A client takes the counts and the rows as the hub's word, as it takes the Desk: a lying hub can show a wrong
+    number or leave a row out, never make up a card (each row's version is an envelope the core checks). A
+    client written before these answers ignores the new member and route.
 
 ## Known limits
 

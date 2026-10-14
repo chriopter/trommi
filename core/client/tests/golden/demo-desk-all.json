@@ -237,6 +237,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -445,6 +448,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -521,6 +527,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -564,6 +573,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -611,6 +623,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -785,6 +800,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -1352,6 +1370,9 @@
       "notes": [
         {
           "key": "row.replaces.one",
+          "args": {
+            "n": "1"
+          },
           "en": "replaces 1 question"
         }
       ],
@@ -1378,6 +1399,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -1546,6 +1570,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -1724,6 +1751,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -1978,6 +2008,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {

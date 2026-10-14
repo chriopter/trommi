@@ -195,6 +195,7 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                         assert_eq!(raw["object_id"], b64(row.object.as_bytes()));
                         assert_eq!(raw["version_change"], row.version_change);
                         assert_eq!(raw["head_change"], row.head_change);
+                        assert_eq!(raw["first_change"].as_u64(), row.first_change);
                     }
                 }
                 let settled = raw.get("settled").map(|s| s.as_array().unwrap().clone());
@@ -790,9 +791,80 @@ fn what_the_real_hub_answered_is_read_without_loss() {
                     raw["groups"].as_array().map(Vec::len),
                     desk.groups.as_ref().map(Vec::len)
                 );
+                let counts = raw["counts"].as_array().expect("the Desk's counts");
+                let got = desk.counts.as_ref().expect("the counts read");
+                assert_eq!(counts.len(), got.len(), "{name}");
+                for (raw, row) in counts.iter().zip(got) {
+                    assert_eq!(raw["group_id"], b64(row.group.as_bytes()));
+                    for (kind, n) in [
+                        ("cards", row.cards),
+                        ("permission_requests", row.permission_requests),
+                        ("notes", row.notes),
+                        ("artifacts", row.artifacts),
+                    ] {
+                        assert_eq!(
+                            raw[kind],
+                            serde_json::json!({ "open": n.open, "answered": n.answered, "closed": n.closed }),
+                            "{name}"
+                        );
+                    }
+                }
                 assert_eq!(
                     (&raw["truncated"], &raw["change"]),
                     (&desk.truncated.into(), &desk.change.into())
+                );
+            }
+            "settled" => {
+                let one;
+                let only = match &asked["only"] {
+                    Value::String(word) if word == "active" => Only::Active,
+                    Value::String(_) => Only::All,
+                    with_group => {
+                        one = group(&with_group["group"]);
+                        Only::Group(&one)
+                    }
+                };
+                let kind = asked["kind"].as_str().map(|k| match k {
+                    "cards" => ObjectRoute::Cards,
+                    "notes" => ObjectRoute::Notes,
+                    "permission_requests" => ObjectRoute::PermissionRequests,
+                    _ => ObjectRoute::Artifacts,
+                });
+                let route = Route::Settled {
+                    kind,
+                    only,
+                    before: asked["before"].as_u64(),
+                    limit: asked["limit"].as_u64().unwrap() as u32,
+                };
+                let Ok(Answer::Settled(page)) = read(&route) else {
+                    panic!("{name} is not read")
+                };
+                let items = raw["items"].as_array().unwrap();
+                assert_eq!(items.len(), page.items.len(), "{name}");
+                for (raw, item) in items.iter().zip(&page.items) {
+                    let row = &item.row;
+                    assert_eq!(raw["object_id"], b64(row.object.as_bytes()));
+                    assert_eq!(raw["group_id"], b64(row.group.as_bytes()));
+                    assert_eq!(raw["owner"], b64(row.owner.as_bytes()));
+                    assert_eq!(
+                        (&raw["state"], &raw["urgency"], &raw["answered_at"]),
+                        (
+                            &row.state.into(),
+                            &row.urgency.into(),
+                            &row.answered_at.into()
+                        )
+                    );
+                    assert_eq!(
+                        (&raw["first_change"], &raw["head_change"]),
+                        (&row.first_change.into(), &row.head_change.into())
+                    );
+                    assert_eq!(raw["kind"], "cards");
+                    assert_eq!(item.kind, ObjectRoute::Cards);
+                    same_envelope(&raw["version"], row.version.as_ref().expect("a version"));
+                }
+                assert_eq!(
+                    (&raw["more"], &raw["before"], &raw["change"]),
+                    (&page.more.into(), &page.before.into(), &page.change.into())
                 );
             }
             "chat" | "board" => {
@@ -1486,6 +1558,7 @@ fn what_the_real_hub_answered_is_read_without_loss() {
         "remove_passkey",
         "room_groups",
         "sealed_keys",
+        "settled",
         "sign_out",
         "stream",
         "token",

@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use serde_json::json;
 use trommi_hub::util::{b64, random, unb64};
-use trommi_hub::wire::Cut;
+use trommi_wire::layout::Cut;
 
 const DAY: i64 = 86_400_000;
 

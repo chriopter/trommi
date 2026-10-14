@@ -20,6 +20,8 @@ pub struct Room {
     pub stars: Value,
     pub timelines: serde_json::Map<String, Value>,
     pub members: Vec<Value>,
+    pub notes: Vec<Value>,
+    pub published: Vec<Value>,
 }
 
 /// A session's device id: its name, padded to an id.
@@ -77,7 +79,7 @@ impl Room {
     pub fn model(&self, now: u64) -> Model {
         let fixture = json!({
             "made_at": now, "room": { "my_device_id": "me" }, "members": self.members, "sessions": self.sessions, "cards": self.cards,
-            "permissions": self.permissions, "timelines": self.timelines,
+            "permissions": self.permissions, "timelines": self.timelines, "notes": self.notes, "published": self.published,
             "human": { "desks": self.desks, "session_settings": self.settings, "crown": self.crown, "snoozes": self.snoozes, "stars": self.stars },
         });
         demo::model_of(&fixture, now).unwrap()

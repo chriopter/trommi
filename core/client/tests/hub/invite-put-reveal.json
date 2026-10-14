@@ -1,15 +1,15 @@
 {
   "answer": "{\"revealed\":true}",
   "asked": {
-    "invite": "5XADjlVFxB-DDOVQOPfvmg",
+    "invite": "Gm82QkjnPJvgxxN6kDSbzw",
     "route": "put_reveal"
   },
   "content_range": null,
   "name": "invite-put-reveal",
   "request": {
-    "body": "{\"reveal\":\"5XADjlVFxB-DDOVQOPfvmsaCLBVTpBz80zjsktvR_JKGvvv3SbW9ZHaGL2JZ_68HQfJEasWCu1w5wg2RZ2KzABJUSXOhfayljGbQqTRbgLs\",\"signature\":\"Rrx19jDllWSr254EC0OVdec7IubqSqivE1994X5WI_U_yzKUdwWl3nUa-fDdZuojdTgbTGg7gkCP5J8DI_kWCQ\"}",
+    "body": "{\"reveal\":\"Gm82QkjnPJvgxxN6kDSbz898m4Kfv31IT3z6kOJRdQn7h3sjzjlvCUb8hFuvWahOJy5Gyd3vQu0iAh74VwgNl7YZC6n_UUiuLziTn_kJ6hg\",\"signature\":\"-qdl5nXg9GGZ1_WfLyycqe0plqe-9rkmCP6LV9eBrOY3FjRR6HTvllz2FMXT783PTZsoCjUetq4VjWCir27gCQ\"}",
     "method": "PUT",
-    "path": "/v1/invites/5XADjlVFxB-DDOVQOPfvmg/reveal"
+    "path": "/v1/invites/Gm82QkjnPJvgxxN6kDSbzw/reveal"
   },
   "status": 200
 }

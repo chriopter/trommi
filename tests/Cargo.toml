@@ -21,7 +21,8 @@ tls_codec = "=0.5.0"
 trommi-core-swift = { path = "../core/bindings/swift" }
 # The app core's hub codec, read against what the real hub answers (hub/codec.rs).
 trommi-client-core = { path = "../core/client" }
-# the hub and what its test clients need (tests/hub/…)
+# the hub and what its test clients need (tests/hub/…), and the structs the hub parses (core/wire)
+trommi-wire = { path = "../core/wire", features = ["layout"] }
 trommi-hub = { path = "../hub", features = ["fuzz"] }
 # the hub's updater and what its tests sign with (tests/deploy/…); ed25519-dalek also makes the throwaway release
 # key of tests/connector/update.rs
@@ -108,6 +109,14 @@ path = "core/groups_storage.rs"
 [[test]]
 name = "core_groups_lifetimes"
 path = "core/groups_lifetimes.rs"
+
+[[test]]
+name = "core_device_objects"
+path = "core/device_objects.rs"
+
+[[test]]
+name = "core_device_cost"
+path = "core/device_cost.rs"
 
 [[test]]
 name = "core_groups_cost"
@@ -431,3 +440,8 @@ path = "connector/paths.rs"
 [[test]]
 name = "hub_codec"
 path = "hub/codec.rs"
+
+# The hub and the app core read the wire the same way: refusals, routes, the specification's vectors (core/wire).
+[[test]]
+name = "hub_wire"
+path = "hub/wire.rs"

@@ -9,14 +9,12 @@ use serde_json::{json, Value};
 use crate::error::{refuse, Res};
 use crate::store::{Auth, Effects, Room};
 use crate::util::{same, unb64};
-use crate::wire;
+use trommi_wire::layout as wire;
 
 /// 10.9: a post that is more than this older than the newest post of a board no longer counts.
 pub const FRONTIER_WINDOW_MS: u64 = 30 * 86_400_000;
-/// 10.9: the most file ids one post keeps.
-pub const MAX_FRONTIER_FILES: usize = 20_000;
-/// The most writers one frontier names (the most human devices of a room).
-pub const MAX_FRONTIER_WRITERS: usize = 1_000;
+// 10.9: the most file ids one post keeps; the most writers one frontier names (the most human devices of a room).
+pub use trommi_wire::limits::{MAX_FRONTIER_FILES, MAX_FRONTIER_WRITERS};
 /// 10.9: the most declarations of one device and board that wait for their bound post; a further one folds them.
 pub const MAX_DECLARED: i64 = 8;
 

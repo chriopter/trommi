@@ -6,6 +6,8 @@ publish.workspace = true
 description = "The client core: the board and Desk model, its settle and hand-back rules, the catch-up plan and the store interface, shared by the web app (wasm), the iOS app (UniFFI) and the Linux app. No IO: hosts fetch, the core decides."
 
 [dependencies]
+# What the hub reads the same way: the refusal codes and their statuses, the limits of its routes (core/wire).
+trommi-wire = { path = "../wire" }
 # The protocol core: ids, and the board items and stroke pieces as it reads them (the codec reuses its rules).
 trommi-core = { path = "../protocol" }
 serde = { version = "=1.0.229", features = ["derive"] }

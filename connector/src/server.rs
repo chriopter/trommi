@@ -30,6 +30,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// How long a self-join knocks at a voucher whose door does not answer before it takes it as gone.
 const VOUCHER_AWAY_MS: u64 = 15_000;
+/// Why a self-join stopped: this session has a key of its own on this machine (it takes that one).
+const OWN_KEY: &str = "this session has a key of its own on this machine: it goes on with that one";
 use std::sync::{Arc, Mutex, Weak};
 
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -330,6 +332,9 @@ pub struct Conn {
     /// Self-join (12.4), as the voucher: the asks this connector wrote for new sessions, nonce → (their owner,
     /// the ask's value).
     vouches: Mutex<HashMap<String, (String, Value)>>,
+    /// The connector process that asked each of them: nonce → (pid, its start). An ask whose asker ended is
+    /// taken back (12.4.6): it never stays on the human's screen for a session that is gone.
+    askers: Mutex<HashMap<String, (u32, String)>>,
     /// Self-join as the new session: whether one runs, and what the tools say about it meanwhile or after it failed.
     self_joining: AtomicBool,
     self_join_note: Mutex<Option<String>>,
@@ -942,9 +947,57 @@ impl Conn {
             tokio::spawn(async move { m.claim(false).await });
         }
         self.lapse_claims().await;
+        self.sweep_asks().await;
         self.look_around();
         self.sync_link().await;
         self.present();
+    }
+
+    /// As the voucher: takes back the asks whose asking connector ended (its session closed, or its connector
+    /// started again and asks anew): an ask stays only while a session waits for it (12.4.6).
+    async fn sweep_asks(&self) {
+        let Some(c) = self
+            .member
+            .client()
+            .filter(|_| self.member.phase() == "ready")
+        else {
+            return;
+        };
+        let gone: Vec<String> = self
+            .askers
+            .lock()
+            .unwrap()
+            .iter()
+            // (an ask that named no process is left to its asker's vouch-done)
+            .filter(|(_, (pid, start))| {
+                *pid > 1 && (!alive(*pid) || (!start.is_empty() && start_of(*pid) != *start))
+            })
+            .map(|(n, _)| n.clone())
+            .collect();
+        if gone.is_empty() {
+            return;
+        }
+        let mut values = Map::new();
+        for n in &gone {
+            values.insert(format!("join_ask/{n}"), Value::Null);
+        }
+        match c.set_status(values, None).await {
+            Ok(_) => {
+                let mut vouches = self.vouches.lock().unwrap();
+                let mut askers = self.askers.lock().unwrap();
+                for n in &gone {
+                    vouches.remove(n);
+                    askers.remove(n);
+                }
+                eprintln!(
+                    "[trommi] took back {} ask{} to let a session in: no session waits for {}",
+                    gone.len(),
+                    if gone.len() == 1 { "" } else { "s" },
+                    if gone.len() == 1 { "it" } else { "them" }
+                );
+            }
+            Err(e) => eprintln!("[trommi] asks not taken back: {}", e.text()),
+        }
     }
 
     async fn bye(&self, why: &str, reason: &str) {
@@ -1093,6 +1146,17 @@ impl Conn {
             }
             return format!("This session is not in the Trommi room: the key of this folder ({}) is held by {who}{why}. This session asks again on every Trommi tool call: it takes the key as soon as it is free, and a holder of this same session that does not use Trommi hands it over (never used: after {}, a Claude Code spare at once; used: after {} without a Trommi call). If the human just pressed Reconnect in /mcp and the holder is the old connector of this same session: tell the human to run `kill {}` in a terminal, then call any Trommi tool again (no restart needed). If a second Claude Code session in this folder is at work, this one needs an invite of its own (two sessions are two members): in the Trommi app \"invite an agent\", then in this folder {}. Do not join yourself.",
                 kf.display(), secs(self.unused_ms), secs(self.idle_ms), if pid_list.is_empty() { "<pid>".to_string() } else { pid_list }, join_hint());
+        }
+        // this session's own key, in another folder's slots, held by another connector of it for now
+        if phase == "needs-invite" {
+            if let Some((p, pids)) = member::own_keys_held(&self.cfg).into_iter().next() {
+                let list = pids
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                return format!("This session is not in the Trommi room yet: its own key ({}) is held by connector process pid {list}, an earlier connector of this same session (its program's earlier process, still ending). This session takes that key as soon as it is free, on every Trommi tool call and by itself; no invite is needed. If that process hangs: tell the human to run `kill {list}` in a terminal, then call any Trommi tool again.", p.key_file.display());
+            }
         }
         let foreign = me
             .paths
@@ -1304,6 +1368,16 @@ impl Conn {
                 };
                 c.self_join_after.store(after, Ordering::SeqCst);
             }
+            let outcome = match outcome {
+                Err(why) if why == OWN_KEY => {
+                    eprintln!("[trommi] self-join: {why}");
+                    c.self_join_after.store(0, Ordering::SeqCst);
+                    let m = c.member.clone();
+                    tokio::spawn(async move { m.claim(true).await });
+                    Ok(())
+                }
+                other => other,
+            };
             *c.self_join_note.lock().unwrap() = outcome.err();
             if let Some(why) = c.self_join_note.lock().unwrap().as_ref() {
                 eprintln!("[trommi] self-join: {why}");
@@ -1319,7 +1393,27 @@ impl Conn {
             && now_ms() >= self.self_join_after.load(Ordering::SeqCst)
             // (a Codex that has not named its thread yet does not know who it is: it asks once it has)
             && !(crate::host::is_codex() && self.cfg.owner().is_empty())
+            && !self.own_key()
             && !vouch::vouchers(&self.cfg).is_empty()
+    }
+    /// Whether this session (by its id) has a key of its own on this machine, in any folder's slots, other than one
+    /// the hub refused to this process: it is that member, held or free, and never joins anew by itself (a second
+    /// device, a new agent on the board, for a session that is on it already).
+    fn own_key(&self) -> bool {
+        if self.cfg.owner().is_empty() {
+            return false;
+        }
+        let refused = self
+            .member
+            .me
+            .lock()
+            .unwrap()
+            .out
+            .as_ref()
+            .and_then(|o| o["key_file"].as_str().map(String::from));
+        member::own_slots(&self.cfg, &self.cfg.owner())
+            .iter()
+            .any(|(_, p)| refused.as_deref() != Some(p.key_file.display().to_string().as_str()))
     }
     /// A client that was offered the tools of a session off the board lists them again (their notes changed).
     async fn relist(&self) {
@@ -1361,6 +1455,12 @@ impl Conn {
                 let _ = done().await;
                 return Err("the human gave an invite link: this session joins with it".into());
             }
+            // a key of this session appeared meanwhile (a `trommi-connector connect` in a terminal, its earlier
+            // connector let go of it): it goes on with that one, and the ask is taken back
+            if self.own_key() {
+                let _ = done().await;
+                return Err(OWN_KEY.into());
+            }
             if now_ms() > until {
                 let _ = done().await;
                 return Err("the human's Trommi app did not answer the self-join in time (no app open?): the next Trommi tool call asks again".into());
@@ -1391,10 +1491,11 @@ impl Conn {
                     }
                 }
                 Ok(r) => {
+                    let _ = done().await;
                     return Err(format!(
                         "the vouching session stopped: {}",
                         js_string(&r["error"])
-                    ))
+                    ));
                 }
                 Err(e) => {
                     let since = *away_since.get_or_insert_with(now_ms);
@@ -1477,13 +1578,44 @@ impl Conn {
             "at": now_ms(), "request_hash": Value::Null });
         let mut values = Map::new();
         values.insert(format!("join_ask/{nonce}"), value.clone());
+        // One ask per session: an earlier ask of the same session (a connector of it that started again, or asked
+        // again after a try that failed) is taken back with this one, so the human sees one ask, not one per try.
+        let earlier: Vec<String> = if owner.is_empty() {
+            vec![]
+        } else {
+            self.vouches
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, (o, _))| *o == owner)
+                .map(|(n, _)| n.clone())
+                .collect()
+        };
+        for n in &earlier {
+            values.insert(format!("join_ask/{n}"), Value::Null);
+        }
+        // (held before it is written: the asker asks for its link right after this answer)
+        let asker = req["pid"].as_u64().map(|p| p as u32).unwrap_or(0);
+        let started = if asker > 1 {
+            start_of(asker)
+        } else {
+            String::new()
+        };
+        {
+            let mut vouches = self.vouches.lock().unwrap();
+            let mut askers = self.askers.lock().unwrap();
+            for n in &earlier {
+                vouches.remove(n);
+                askers.remove(n);
+            }
+            vouches.insert(nonce.clone(), (owner, value));
+            askers.insert(nonce.clone(), (asker, started));
+        }
         if let Err(e) = c.set_status(values, None).await {
+            self.vouches.lock().unwrap().remove(&nonce);
+            self.askers.lock().unwrap().remove(&nonce);
             return json!({ "ok": false, "error": e.text() });
         }
-        self.vouches
-            .lock()
-            .unwrap()
-            .insert(nonce.clone(), (owner, value));
         eprintln!(
             "[trommi] vouching for a new session of this account (pid {})",
             js_string(&req["pid"])
@@ -1530,6 +1662,7 @@ impl Conn {
             }
             _ => {
                 self.vouches.lock().unwrap().remove(&nonce);
+                self.askers.lock().unwrap().remove(&nonce);
                 let mut values = Map::new();
                 values.insert(name, Value::Null);
                 let _ = c.set_status(values, None).await;
@@ -2558,6 +2691,7 @@ pub async fn main_server() {
         initialized: AtomicBool::new(false),
         connecting: Mutex::new(None),
         vouches: Mutex::new(HashMap::new()),
+        askers: Mutex::new(HashMap::new()),
         self_joining: AtomicBool::new(false),
         self_join_note: Mutex::new(None),
         self_join_after: std::sync::atomic::AtomicU64::new(0),
@@ -2773,6 +2907,12 @@ impl Conn {
         // hub was set up again): the session is off the board, and a new invite link is the way back.
         if self.member.phase() == "retired" {
             return true;
+        }
+        // A session whose own key lies on this machine (in any folder; held by an earlier connector of it, or by
+        // the terminal `connect` that made it, for a moment): it is that member and takes the key, no link is
+        // needed.
+        if self.own_key() {
+            return false;
         }
         // A second session in a folder whose keys all belong to other sessions (none free, none held for a
         // hand-over): it is a member of its own, and its invite link is the way in.

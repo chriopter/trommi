@@ -3,7 +3,21 @@
 //! every struct re-encodes to the bytes it was read from. The hub reads headers and public fields only; nothing
 //! here can open a body.
 //!
-//! Seam for the merge with `trommi-core`: once the core exports these encodings, this module is replaced by it.
+//! The devices read and write the same structs with the protocol core's own typed codec (`core/protocol`), which
+//! also seals, opens and signs; both take their constants from this crate, and `tests/hub/wire.rs` holds the two
+//! to the same bytes.
+
+use crate::envelope::{
+    FIRST_RESERVED_KIND, FORM_FULL, FORM_PRUNED, LABEL_HASH, LABEL_OBJECT, MAX_FILE_IDS,
+    SIGNATURE_LEN, VERSION,
+};
+pub use crate::envelope::{
+    FLAG_PUSH, KIND_ANSWER, KIND_ITEM, KIND_REGISTER, KIND_REQUEST, KIND_TAKE_BACK, KIND_VERDICT,
+    KIND_VERSION, SCOPE_CARD, SCOPE_DESK, SCOPE_SESSION, STATE_ANSWERED, STATE_CLOSED, STATE_OPEN,
+    TIMELINE_BOARD, TIMELINE_CHAT, TYPE_ARTIFACT, TYPE_CARD, TYPE_NOTE, TYPE_REQUEST,
+};
+use crate::mls::{CUT_LEN, NOTE_VERSION};
+pub use crate::mls::{EXT_ROOM, EXT_SESSION};
 
 use sha2::{Digest, Sha256};
 
@@ -145,9 +159,6 @@ pub fn sign_content(label: &str, content: &[u8]) -> Vec<u8> {
 
 // ---- group context extensions (section 3) ----
 
-pub const EXT_ROOM: u16 = 0xF001;
-pub const EXT_SESSION: u16 = 0xF002;
-
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TrommiRoom {
     pub recovery_signature_key: Vec<u8>,
@@ -233,7 +244,7 @@ pub struct CommitNote {
 impl CommitNote {
     pub fn parse(bytes: &[u8]) -> Parse<Self> {
         let mut r = Reader::new(bytes);
-        if r.u8()? != 2 {
+        if r.u8()? != NOTE_VERSION {
             return Err(Malformed("note version"));
         }
         let room_epoch = r.u64()?;
@@ -246,7 +257,7 @@ impl CommitNote {
             _ => return Err(Malformed("join")),
         };
         r.end()?;
-        if list.len() % 72 != 0 {
+        if list.len() % CUT_LEN != 0 {
             return Err(Malformed("cuts length"));
         }
         let mut cuts = Vec::new();
@@ -275,7 +286,7 @@ impl CommitNote {
             list.raw(&c.device).u64(c.seq).raw(&c.hash);
         }
         let mut w = Writer::default();
-        w.u8(2)
+        w.u8(NOTE_VERSION)
             .u64(self.room_epoch)
             .raw(&self.room_state)
             .u64(self.time)
@@ -380,7 +391,7 @@ impl RecoveryAuth {
             signature: r.vec()?.to_vec(),
         };
         r.end()?;
-        if out.signature.len() != 64 {
+        if out.signature.len() != SIGNATURE_LEN {
             return Err(Malformed("signature length"));
         }
         Ok(out)
@@ -445,31 +456,6 @@ impl RecoveryLink {
 
 // ---- envelopes (section 9) ----
 
-pub const KIND_ITEM: u8 = 1;
-pub const KIND_VERSION: u8 = 2;
-pub const KIND_ANSWER: u8 = 3;
-pub const KIND_REQUEST: u8 = 4;
-pub const KIND_VERDICT: u8 = 5;
-pub const KIND_REGISTER: u8 = 6;
-pub const KIND_TAKE_BACK: u8 = 7;
-
-pub const TYPE_CARD: u8 = 1;
-pub const TYPE_NOTE: u8 = 2;
-pub const TYPE_REQUEST: u8 = 3;
-pub const TYPE_ARTIFACT: u8 = 4;
-
-pub const STATE_OPEN: u8 = 1;
-pub const STATE_ANSWERED: u8 = 2;
-pub const STATE_CLOSED: u8 = 3;
-
-pub const TIMELINE_CHAT: u8 = 1;
-pub const TIMELINE_BOARD: u8 = 2;
-pub const SCOPE_CARD: u8 = 1;
-pub const SCOPE_SESSION: u8 = 2;
-pub const SCOPE_DESK: u8 = 3;
-
-pub const FLAG_PUSH: u8 = 1;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Subject {
     Item {
@@ -520,10 +506,10 @@ impl From<Malformed> for HeaderError {
 impl Header {
     fn read(r: &mut Reader) -> Result<Self, HeaderError> {
         let version = r.u8()?;
-        if version > 2 {
+        if version > VERSION {
             return Err(HeaderError::NewerVersion);
         }
-        if version != 2 {
+        if version != VERSION {
             return Err(HeaderError::Malformed("version"));
         }
         let kind = r.u8()?;
@@ -588,10 +574,13 @@ impl Header {
                 s
             }
             // 9.0.4: kinds 8 to 255 are reserved, writers and the hub refuse them.
-            _ => return Err(HeaderError::Malformed("kind")),
+            _ => {
+                debug_assert!(kind == 0 || kind >= FIRST_RESERVED_KIND);
+                return Err(HeaderError::Malformed("kind"));
+            }
         };
         let files = r.vec()?;
-        if files.len() % 16 != 0 || files.len() / 16 > 255 {
+        if files.len() % 16 != 0 || files.len() / 16 > MAX_FILE_IDS {
             return Err(HeaderError::Malformed("file ids"));
         }
         let file_ids: Vec<[u8; 16]> = files
@@ -625,7 +614,7 @@ impl Header {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut w = Writer::default();
-        w.u8(2)
+        w.u8(VERSION)
             .u8(self.kind)
             .u8(self.flags)
             .vec(&self.group_id)
@@ -692,16 +681,16 @@ impl Envelope {
         let header_bytes = bytes[start..r.position()].to_vec();
         let nonce = r.fixed()?;
         let (body, body_hash) = match form {
-            1 => {
+            FORM_FULL => {
                 let c = r.vec()?;
                 (Some(c.to_vec()), Sha256::digest(c).into())
             }
-            2 => (None, r.fixed()?),
+            FORM_PRUNED => (None, r.fixed()?),
             _ => return Err(HeaderError::Malformed("form")),
         };
         let signature = r.vec()?.to_vec();
         r.end()?;
-        if signature.len() != 64 {
+        if signature.len() != SIGNATURE_LEN {
             return Err(HeaderError::Malformed("signature length"));
         }
         Ok(Envelope {
@@ -724,7 +713,7 @@ pub fn envelope_hash(header: &[u8], nonce: &[u8], body_hash: &[u8]) -> [u8; 32] 
     v.extend_from_slice(header);
     v.extend_from_slice(nonce);
     v.extend_from_slice(body_hash);
-    ref_hash("Trommi Envelope", &v)
+    ref_hash(LABEL_HASH, &v)
 }
 
 /// The bytes of an envelope from its stored parts; pruned when there is no body.
@@ -736,9 +725,13 @@ pub fn encode_envelope(
     signature: &[u8],
 ) -> Vec<u8> {
     let mut w = Writer::default();
-    w.u8(if body.is_some() { 1 } else { 2 })
-        .raw(header)
-        .raw(nonce);
+    w.u8(if body.is_some() {
+        FORM_FULL
+    } else {
+        FORM_PRUNED
+    })
+    .raw(header)
+    .raw(nonce);
     match body {
         Some(b) => w.vec(b),
         None => w.raw(body_hash),
@@ -753,7 +746,7 @@ pub fn object_id(group_id: &[u8], sender: &[u8; 32], seq: u64) -> [u8; 16] {
     let mut v = group_id.to_vec();
     v.extend_from_slice(sender);
     v.extend_from_slice(&seq.to_be_bytes());
-    ref_hash("Trommi Object", &v)[..16].try_into().expect("16")
+    ref_hash(LABEL_OBJECT, &v)[..16].try_into().expect("16")
 }
 
 // ---- sign-in and invites (section 12) ----

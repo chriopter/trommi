@@ -45,6 +45,7 @@ use crate::mls::profile::{
     MAX_COMMIT_REQUEST_LEN, MAX_HELPER_DEVICES, MAX_HUMAN_DEVICES, RECOVERY_KEY_LEN,
 };
 use crate::mls::provider::{self, DeviceSigner, MlsEntries, Provider};
+use crate::objects::Objects;
 use crate::mls::rules::{
     self, CommitFacts, Judged, Parent, RoomHistory, RoomState, SessionBefore, SessionFacts,
     Staleness, Verifier,
@@ -1447,6 +1448,8 @@ impl<S: Storage> Device<S> {
     ///   reached; where the epoch a group stands in is recorded, the device's own chain in it exists.
     /// - The records of a group's epochs run without a hole; those before the epoch the device's own
     ///   knowledge of the group begins at are the learned ones, reach back to epoch 0, and no other is.
+    /// - A group's objects are held as one entry per object or as the one record of the form before, not
+    ///   both; a version of a Note is of a Note the group holds.
     /// - No group's place in the hub's order, and no cursor it was joined at, lies beyond the cursor. The
     ///   place of a room epoch is the place of an epoch the roles hold.
     fn cross_check(&self) -> Result<(), Error> {
@@ -1625,6 +1628,8 @@ impl<S: Storage> Device<S> {
         {
             return Err(contradicts("an owed handover"));
         }
+        // A group's objects are held in one form, and every Note version is of a Note.
+        self.check_objects()?;
         // The records of every group's epochs, learned ones included, against the group's origin.
         self.check_past()
     }
@@ -1673,18 +1678,22 @@ impl<S: Storage> Device<S> {
     }
 
     /// Adds to `batch` what OpenMLS and the observers changed since the last write.
+    ///
+    /// OpenMLS's entries are compared with the stored ones only when OpenMLS was at them since the store
+    /// last held them all ([`Provider::touched`]): the comparison reads every entry of every group, and an
+    /// envelope received or an item sealed changes none. Only [`Device::write`] says that the store holds
+    /// them, once its batch was applied.
     fn fold(&mut self, batch: &mut Batch) -> Result<(), Error> {
-        let stored: MlsEntries = self
-            .mirror
-            .range(vec![table::MLS]..vec![table::MLS.saturating_add(1)])
-            .filter_map(|(key, value)| Some((key.get(1..)?.to_vec(), value.clone())))
-            .collect();
-        let (put, delete) = self.provider.changes(&stored);
-        for (key, value) in put {
-            batch.put(mls_key(&key), value);
-        }
-        for key in delete {
-            batch.delete(mls_key(&key));
+        if self.provider.touched() {
+            let (put, delete) = self.provider.changes(&self.stored_mls());
+            for (key, value) in put {
+                batch.put(mls_key(&key), value);
+            }
+            for key in delete {
+                batch.delete(mls_key(&key));
+            }
+        } else {
+            debug_assert!(self.provider.changes(&self.stored_mls()) == (Vec::new(), Vec::new()));
         }
         for (group, observer) in &mut self.memory.observers {
             let prefix = observer_prefix(group);
@@ -1697,6 +1706,14 @@ impl<S: Storage> Device<S> {
             }
         }
         Ok(())
+    }
+
+    /// OpenMLS's entries as the store holds them.
+    fn stored_mls(&self) -> MlsEntries {
+        self.mirror
+            .range(vec![table::MLS]..vec![table::MLS.saturating_add(1)])
+            .filter_map(|(key, value)| Some((key.get(1..)?.to_vec(), value.clone())))
+            .collect()
     }
 
     /// Runs one operation on a copy: memory is put back to what is stored, and what the operation would have
@@ -1717,8 +1734,19 @@ impl<S: Storage> Device<S> {
     }
 
     fn write(&mut self, mut batch: Batch) -> Result<(), Error> {
+        // An operation that writes entries of OpenMLS itself (a staged copy that becomes the real state)
+        // leaves OpenMLS's memory apart from the store until memory is rebuilt: the next write compares
+        // them all again, as every write did before.
+        let beside_openmls = batch
+            .put
+            .iter()
+            .map(|entry| &entry.key)
+            .chain(&batch.delete)
+            .any(|key| key.first() == Some(&table::MLS));
         self.fold(&mut batch)?;
         if batch.is_empty() {
+            // Nothing differs from what is stored, OpenMLS's entries included.
+            self.provider.settled();
             return Ok(());
         }
         if let Err(error) = self.store.apply(self.revision, batch.clone()) {
@@ -1731,6 +1759,12 @@ impl<S: Storage> Device<S> {
         }
         for entry in &batch.put {
             self.mirror.put(entry.key.clone(), entry.value.clone());
+        }
+        // The store holds OpenMLS's entries as they stand: until OpenMLS is at them again, none differs.
+        if beside_openmls {
+            self.provider.touch();
+        } else {
+            self.provider.settled();
         }
         Ok(())
     }
@@ -2777,6 +2811,13 @@ impl<S: Storage> Device<S> {
         batch.delete(device_key(SUB_STAGED, &id.to_be_bytes()));
         let record = device_key(SUB_RECORD, &[]);
         for (key, value) in std::mem::take(&mut staged.put) {
+            // A copy staged by a build before this one may hold a group's objects in the record of the form
+            // before, while the device holds them as entries by now: they become the group's entries.
+            if let Some(group) = facts::whole_objects_of(&key) {
+                let objects = Objects::from_bytes(&value)?;
+                self.put_objects(batch, &group, &objects)?;
+                continue;
+            }
             if key == record {
                 // The copy's record names the room; cursor and outbox counter are the real ones.
                 let copy: Record =
@@ -4291,6 +4332,12 @@ impl<S: Storage> Device<S> {
         }
         let checked = recovery::check_room(keys, served)?;
         self.join_room_from(keys, served.room, checked, served.group.current, now_ms)
+    }
+
+    /// The device's source of randomness, for what the app makes beside the protocol (a file's key, a share
+    /// link's secret): the same source as the device's own, so a seeded test stays exact.
+    pub fn with_entropy<T>(&self, use_it: impl FnOnce(&mut dyn Entropy) -> T) -> T {
+        self.provider.with_entropy(use_it)
     }
 
     /// Begins the check of the room a hub serves to a device that signs in or recovers with the code

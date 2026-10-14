@@ -17,7 +17,7 @@ runs:
         tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
     - name: Clippy
       shell: bash
-      run: cargo clippy --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io --all-targets -- -D warnings
+      run: cargo clippy --locked -p trommi-wire -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io --all-targets -- -D warnings
     - name: THIRD-PARTY.md is current
       shell: bash
       run: node .github/scripts/third_party.mjs --check
@@ -27,7 +27,7 @@ runs:
       run: node tests/bindings/manifest.mjs
     - name: The crates' own tests
       shell: bash
-      run: cargo test --locked -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped
+      run: cargo test --locked -p trommi-wire -p trommi-core -p trommi-client-core -p trommi-core-wasm -p trommi-core-swift -p trommi-io -p trommi-tests-shipped
     # One test that fails must not hide the others: every target runs, the step fails at the end.
     - name: The scenario tests (tests/core, tests/bindings) and the test library
       shell: bash

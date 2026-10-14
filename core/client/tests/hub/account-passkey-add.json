@@ -1,12 +1,12 @@
 {
-  "answer": "{\"created_at\":1791905316736,\"credential_id\":\"SKAx-dIxp97y852A4J6WyCY6HmY\"}",
+  "answer": "{\"created_at\":1791907034698,\"credential_id\":\"9vYarz3CS5GoRfdt9exD-v8gZsA\"}",
   "asked": {
     "route": "add_passkey"
   },
   "content_range": null,
   "name": "account-passkey-add",
   "request": {
-    "body": "{\"attestation_object\":\"o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVkAmEvij8Jqo2-AOajYttE_O7F1v0fzpgIxPP59-7ZnIEfQRQAAAAcAAAAAAAAAAAAAAAAAAAAAABRIoDH50jGn3vLznYDgnpbIJjoeZqUBAgMmIAEhWCD1WvATUOB00LKX5Xb15EAel6agXwDag6rGR0VKjfV7UCJYIB8O1-nK1eossP2xDHeivoo9dCn4NfgXmDtolMx1BvqF\",\"client_data_json\":\"eyJjaGFsbGVuZ2UiOiJGcU10eHhSTVBJbS11WGNmaWNfRWdlX1FQSlZUdlp1UF9SRjE5UUJEOGlZIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC50cm9tbWkuY29tIiwidHlwZSI6IndlYmF1dGhuLmNyZWF0ZSJ9\",\"proof\":{\"kit\":{\"auth_key\":\"MqZDWAAYXkH4O9SFcV3cMqRzJBYfOjQQYO5K1nR0Dwg\"}},\"sealed_copy\":\"AgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBg\",\"transports\":[\"internal\"]}",
+    "body": "{\"attestation_object\":\"o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVkAmEvij8Jqo2-AOajYttE_O7F1v0fzpgIxPP59-7ZnIEfQRQAAAAcAAAAAAAAAAAAAAAAAAAAAABT29hqvPcJLkahF92317EP6_yBmwKUBAgMmIAEhWCB-1qJhqZ61mK5KaYFlPE6SRp5XXe2Ofe9o-A1RsoGeViJYIE_DFAs6z4CJlu_dVMZlm1zplCjnuQZ9i7uGRgI7S2AE\",\"client_data_json\":\"eyJjaGFsbGVuZ2UiOiJVWnFSdXUya05jUGREZGpvUHVacktPTjJTSUJHdnlhVkNuakVPNU1WWE9VIiwiY3Jvc3NPcmlnaW4iOmZhbHNlLCJvcmlnaW4iOiJodHRwczovL2FwcC50cm9tbWkuY29tIiwidHlwZSI6IndlYmF1dGhuLmNyZWF0ZSJ9\",\"proof\":{\"kit\":{\"auth_key\":\"xICQTxJXHrzn3p7Ym_F2fv-exH798CKfu4_Set8fuGc\"}},\"sealed_copy\":\"AgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBg\",\"transports\":[\"internal\"]}",
     "method": "POST",
     "path": "/v1/account/passkeys"
   },

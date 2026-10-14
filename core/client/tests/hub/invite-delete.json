@@ -1,7 +1,7 @@
 {
   "answer": "{\"burned\":true}",
   "asked": {
-    "invite": "j0X0omZr3pbUz8xcKTzjZg",
+    "invite": "wWp3tEBlFvgmJ8J8J3D-fw",
     "route": "delete_invite"
   },
   "content_range": null,
@@ -9,7 +9,7 @@
   "request": {
     "body": null,
     "method": "DELETE",
-    "path": "/v1/invites/j0X0omZr3pbUz8xcKTzjZg"
+    "path": "/v1/invites/wWp3tEBlFvgmJ8J8J3D-fw"
   },
   "status": 200
 }

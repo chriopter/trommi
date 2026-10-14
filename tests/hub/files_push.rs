@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::{BufReader, Read, Write};
 use trommi_hub::util::{b64, hex, random, unb64};
-use trommi_hub::wire::{self, ZERO32};
+use trommi_wire::layout::{self as wire, ZERO32};
 
 struct Scene {
     w: World,

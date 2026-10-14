@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use serde_json::{json, Value};
 use trommi_hub::util::{b64, random, unb64};
-use trommi_hub::wire::{self, CommitNote, Cut, ZERO16, ZERO32};
+use trommi_wire::layout::{self as wire, CommitNote, Cut, ZERO16, ZERO32};
 
 fn groups(w: &World, dev: &Dev) -> Vec<Value> {
     dev.get(&w.hub, &format!("/v1/rooms/{}/groups", b64(&w.room)))

@@ -21,7 +21,7 @@ use trommi_client_core::hub::{
 use trommi_core::ids::{GroupId, RoomId};
 use trommi_core::store::{OutboxEntry, OutboxKind};
 use trommi_hub::util::{b64, random};
-use trommi_hub::wire::{self, ZERO16, ZERO32};
+use trommi_wire::layout::{self as wire, ZERO16, ZERO32};
 
 struct Recorder {
     port: u16,
@@ -324,6 +324,7 @@ fn the_codec_and_the_real_hub_agree() {
     assert_eq!(brief.cards.len(), 2);
     // (knocking first)
     assert_eq!(brief.cards[0].object.as_bytes(), &cards[1]);
+    assert!(brief.cards.iter().all(|c| c.first_change.is_some_and(|f| f <= c.version_change)));
     assert!(brief.settled.is_none() && !brief.truncated);
     let since = brief.cards[1].head_change;
     let Ok(Answer::DeskBrief(newer)) = rec.ask(
@@ -450,6 +451,14 @@ fn signing_in_and_joining_through_the_codec() {
     let (session, group) = w.found_main(&mut [], Some(&mut agent));
     let (helper, founded, _) = w.found_helper(&mut agent, &session, &[w.ada.id()], &[]);
     founded.ok();
+    // (32 more, for a post of 32 joins at once)
+    let many_helpers: Vec<Vec<u8>> = (0..32)
+        .map(|_| {
+            let (group, founded, _) = w.found_helper(&mut agent, &session, &[w.ada.id()], &[]);
+            founded.ok();
+            group
+        })
+        .collect();
     let mut other = w.enrol_agent();
     let (_, group2) = w.found_main(&mut [], Some(&mut other));
     for text in ["one", "two", "three", "four"] {
@@ -497,9 +506,9 @@ fn signing_in_and_joining_through_the_codec() {
     dana.token = Some(token);
     let (mut after, mut pages, mut rows) = (0, 0, Vec::new());
     loop {
-        let asked = json!({ "route": "room_groups", "room": b64(&w.room), "after": after, "limit": 2 });
+        let asked = json!({ "route": "room_groups", "room": b64(&w.room), "after": after, "limit": 20 });
         let name = format!("room-groups-{pages}");
-        let Ok(Answer::RoomGroups { items, more, after: next }) = rec.ask(&name, &Route::RoomGroups { room: &room, after, limit: 2 }, asked) else {
+        let Ok(Answer::RoomGroups { items, more, after: next }) = rec.ask(&name, &Route::RoomGroups { room: &room, after, limit: 20 }, asked) else {
             panic!("{name} is read")
         };
         rows.extend(items);
@@ -508,14 +517,16 @@ fn signing_in_and_joining_through_the_codec() {
             break;
         }
     }
-    assert_eq!(rows.len(), 4);
+    assert_eq!((rows.len(), pages), (36, 2));
     assert_eq!(rows[0].kind, GroupRowKind::Room);
     assert_eq!(rows[0].leaves.len(), 2, "the founder and the device that joined");
     let mains: Vec<_> = rows.iter().filter(|r| r.kind == GroupRowKind::Main).collect();
     assert!(mains.len() == 2 && mains.iter().all(|r| r.live && r.parent.is_none()));
     // the helper session names the session it was opened under
     let helpers: Vec<_> = rows.iter().filter(|r| r.kind == GroupRowKind::Helper).collect();
-    assert!(matches!(&helpers[..], [h] if h.group == group_id(&helper) && h.parent.is_some_and(|p| p.as_bytes() == &session)), "{helpers:?}");
+    assert_eq!(helpers.len(), 33);
+    assert!(helpers.iter().all(|h| h.parent.is_some_and(|p| p.as_bytes() == &session)), "{helpers:?}");
+    assert!(helpers.iter().any(|h| h.group == group_id(&helper)));
 
     let nowhere: [u8; 48] = [&w.room[..], &random::<16>()[..]].concat().try_into().unwrap();
     let sessions = [group_id(&group), group_id(&group2), group_id(&nowhere)];
@@ -558,6 +569,26 @@ fn signing_in_and_joining_through_the_codec() {
         panic!("a refusal in its place")
     };
     assert!(matches!(&answers[..], [Err(Failure::Refused { code: Some(_), .. })]), "{answers:?}");
+
+    // ---- 32 joins in one post: the helper sessions, read in one request
+    let helpers: Vec<GroupId> = many_helpers.iter().map(|g| group_id(g)).collect();
+    let Ok(Answer::GroupsRead(read)) = rec.ask("", &Route::GroupsRead { groups: &helpers }, json!({})) else {
+        panic!("32 helper sessions are read in one request")
+    };
+    let now = dana.room_now();
+    let mut joins = Vec::new();
+    for (bytes, one) in many_helpers.iter().zip(&read) {
+        let one = one.as_ref().expect("a helper session the new device may read");
+        let out = dana.external_join(&one.info, now);
+        let auth = recovery_auth(&w.recovery.sign, &out, &one.info, now, &dana.id());
+        let key = dana.sealed_key(bytes, out.epoch + 1, &out.group_info, now.0, &w.recovery.hpke_public, true);
+        joins.push(entry(OutboxKind::ExternalCommit, Some(bytes), out.epoch, vec![out.commit, out.group_info, key, auth]));
+    }
+    let Ok(Answer::Joins(answers)) = rec.ask("joins-32", &Route::Joins { entries: &joins }, asked_joins(&joins)) else {
+        panic!("32 joins are answered in their places")
+    };
+    assert_eq!(answers.len(), 32);
+    assert!(answers.iter().all(|a| matches!(a, Ok(a) if a.epoch == Some(2))), "{answers:?}");
 
     // ---- the log with a message, a sender's chain, an object's envelopes
     let session_group = group_id(&group);
@@ -623,7 +654,7 @@ fn signing_in_and_joining_through_the_codec() {
 #[test]
 fn the_desk_files_and_the_rest_through_the_codec() {
     use sha2::{Digest, Sha256};
-    use trommi_client_core::hub::{ByteRange, DeskOnly, Role, Timeline};
+    use trommi_client_core::hub::{ByteRange, DeskOnly, ObjectRoute, Role, Timeline};
     use trommi_core::ids::{BoardId, DeviceId, FileId, Hash32, ObjectId, SessionId, ShareId};
 
     let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
@@ -639,11 +670,12 @@ fn the_desk_files_and_the_rest_through_the_codec() {
     for text in ["one", "two", "three", "four", "five"] {
         agent.send(&w.hub, &group, &chat(&session, w.ada.id(), text)).ok();
     }
-    let mut cards = vec![];
+    let (mut cards, mut versions) = (vec![], vec![]);
     for urgency in [0, 3] {
         let id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
         agent.send(&w.hub, &group, &object(wire::KIND_VERSION, id, wire::TYPE_CARD, wire::STATE_OPEN, urgency, ZERO32, ZERO32)).ok();
         cards.push(id);
+        versions.push(agent.chain(&group).1);
     }
     let register_id: [u8; 16] = random();
     agent.send(&w.hub, &group, &register(&register_id, "an older value")).ok();
@@ -718,6 +750,33 @@ fn the_desk_files_and_the_rest_through_the_codec() {
         panic!("the Desk of the archived sessions is read")
     };
     assert!(archived.cards.is_empty() && archived.registers.is_empty());
+    let counts = desk.counts.as_ref().expect("the Desk counts");
+    assert_eq!(counts.len(), 1);
+    assert_eq!((counts[0].group, counts[0].cards.open, counts[0].artifacts.open), (group_id(&group), 2, 1));
+
+    // ---- the settled objects, newest first, a page at a time: a card he answered, one its agent closed
+    let answer = object(wire::KIND_ANSWER, cards[0], wire::TYPE_CARD, wire::STATE_ANSWERED, 0, versions[0], agent.id());
+    w.ada.send(&w.hub, &group, &answer).ok();
+    let close = object(wire::KIND_VERSION, cards[1], wire::TYPE_CARD, wire::STATE_CLOSED, 3, versions[1], ZERO32);
+    agent.send(&w.hub, &group, &close).ok();
+    let (mut before, mut settled) = (None, vec![]);
+    for page in 0..3 {
+        let name = format!("objects-settled-{page}");
+        let asked = json!({ "route": "settled", "kind": "cards", "only": "all", "before": before, "limit": 1 });
+        let route = Route::Settled { kind: Some(ObjectRoute::Cards), only: Only::All, before, limit: 1 };
+        let Ok(Answer::Settled(got)) = rec.ask(&name, &route, asked) else { panic!("{name} is read") };
+        settled.extend(got.items.iter().map(|i| (i.row.object, i.row.state)));
+        if !got.more {
+            break;
+        }
+        before = Some(got.before);
+    }
+    assert_eq!(settled.iter().map(|(o, s)| (*o.as_bytes(), *s)).collect::<Vec<_>>(), vec![(cards[1], 3), (cards[0], 2)], "newest first");
+    let one = group_id(&group);
+    let asked = json!({ "route": "settled", "kind": null, "only": { "group": b64(&group) }, "before": null, "limit": 10 });
+    let route = Route::Settled { kind: None, only: Only::Group(&one), before: None, limit: 10 };
+    let Ok(Answer::Settled(got)) = rec.ask("objects-settled-group", &route, asked) else { panic!("one group's settled objects are read") };
+    assert!(got.items.len() == 2 && !got.more && got.items.iter().all(|i| i.kind == ObjectRoute::Cards && i.row.version.is_some()));
 
     // ---- a Chat, newest first, page by page; a board's items; a frontier that covers nothing yet
     let timeline = SessionId::new(session);

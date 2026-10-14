@@ -1,4 +1,4 @@
-//! Refusals: the stable codes of spec/v1.md section 16 and their statuses.
+//! Refusals: the stable codes of spec/v1.md section 16, under the statuses of `trommi_wire::codes`.
 
 use serde_json::{json, Value};
 
@@ -22,25 +22,10 @@ pub fn refuse(code: &'static str, message: impl Into<String>) -> Refused {
     }
 }
 
+/// The status of a code (core/wire's table, which the clients read refusals by); a code outside it is a fault of
+/// this hub, answered 500.
 pub fn status_of(code: &str) -> u16 {
-    match code {
-        "bad-format" | "newer-version" | "bad-commit" | "bad-signature" | "bad-invite"
-        | "bad-key-package" | "wrong-room" | "incomplete" | "chain-break" | "bad-email"
-        | "bad-passkey" => 400,
-        "unauthorised" | "bad-challenge" | "wrong-login" | "wrong-recovery" => 401,
-        "forbidden" | "not-member" | "removed-sender" | "wrong-sender" => 403,
-        "not-found" | "no-room" => 404,
-        "gone" | "invite-expired" | "invite-burned" => 410,
-        "epoch-taken" | "wrong-epoch" | "room-behind" | "group-behind" | "stale-session"
-        | "epoch-full" | "replay" | "gap" | "equivocation" | "room-exists" | "invite-used"
-        | "lease-lost" | "account-exists" | "last-way-in" | "account-changed" => 409,
-        "too-large" | "quota-exceeded" => 413,
-        "range" => 416,
-        "client-too-old" => 426,
-        "too-many" | "rate-limited" => 429,
-        "overloaded" => 503,
-        _ => 500,
-    }
+    trommi_wire::codes::status_of(code).unwrap_or(500)
 }
 
 impl Refused {
@@ -102,8 +87,8 @@ impl From<crate::observer::Refusal> for Refused {
     }
 }
 
-impl From<crate::wire::Malformed> for Refused {
-    fn from(m: crate::wire::Malformed) -> Self {
+impl From<trommi_wire::layout::Malformed> for Refused {
+    fn from(m: trommi_wire::layout::Malformed) -> Self {
         refuse("bad-format", m.0)
     }
 }

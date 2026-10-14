@@ -94,7 +94,7 @@ async function startRealHub() {
 /** What differs between the two hubs here: how HubAuth is written, and which check refuses first where the real hub
  *  verifies cryptography that the fake hub does not have. */
 const REAL = {
-  /** HubAuth in the real wire form (hub/src/wire.rs): room_id[32] ‖ hub<V> ‖ device[32] ‖ challenge[32]. */
+  /** HubAuth in the real wire form (core/wire/src/layout.rs): room_id[32] ‖ hub<V> ‖ device[32] ‖ challenge[32]. */
   hubAuth(room_id, hub, device, challenge) {
     const address = utf8(hub)
     assert.ok(address.length < 64)
