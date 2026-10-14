@@ -944,6 +944,7 @@ impl Model {
             let v_at = match card.versions.iter().position(|v| v.version_hash == r.hash) {
                 Some(at) => {
                     let v = &mut card.versions[at];
+                    v.object_state = o.object_state.clone();
                     if let (Some(c), None) = (&content, &v.content) {
                         v.content = Some(RawObj::of(c));
                         v.urgency = level_of(Some(c), &v.urgency.clone());
@@ -963,7 +964,7 @@ impl Model {
                             .filter(|h| !is_zero_hash(Some(h))),
                         envelope_number: n,
                         sent_at: r.time,
-                        object_state: state.clone(),
+                        object_state: o.object_state.clone(),
                         urgency: level_of(content.as_ref(), &o.urgency),
                         content: content.as_ref().map(RawObj::of),
                     };
@@ -1238,6 +1239,20 @@ impl Model {
                     {
                         card.in_revision = None;
                     }
+                } else if card.answer.is_none()
+                    && card.object_state == "closed"
+                    && a.taken_back_at.is_none()
+                    && card.versions.last().is_some_and(|v| {
+                        v.object_state == "closed"
+                            && v.previous_version_hash.is_some()
+                            && v.previous_version_hash == a.bound_version_hash
+                            && n < v.envelope_number
+                    })
+                    && card.answers.iter().all(|other| other.envelope_number <= a.envelope_number)
+                {
+                    // A settled card's closing version may be read before its answer. Restore the answer
+                    // bound to the version it closed, without moving the newer state backwards.
+                    card.answer = Some(a);
                 } else if card
                     .answer
                     .as_ref()

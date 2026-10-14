@@ -340,6 +340,13 @@ impl World {
         (trommi_core::ids::base64url_encode(sealed.envelope_hash.as_bytes()), change)
     }
 
+    /// The agent closes a card, retaining the preceding answer.
+    pub fn agent_closes(&mut self, card: trommi_core::ids::ObjectId, previous: &str, title: &str, version: u32) {
+        let payload = format!(r#"{{"card_type":"decision","title":"{title}","object_version":{version},"previous_version_hash":"{previous}","close_summary":"Done"}}"#);
+        let draft = Draft::CardVersion { session: self.session, object_id: card, closed: true, urgency: Urgency::Normal, push: false, payload: text(&payload) };
+        self.seal(false, &draft);
+    }
+
     /// The agent writes a register of its session.
     pub fn agent_register(&mut self, name: &str, value: &str) -> u64 {
         let draft = Draft::Register { group: self.group, name: name.into(), value: Some(text(value)) };
