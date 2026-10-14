@@ -17,7 +17,7 @@ use super::{DeskRowView, DeskView, FromView, GoalsView, MediaView, SlipView, Tex
 use crate::model::types::{Card, PermissionRequest};
 use serde_json::Value;
 
-pub const NEEDS_NEWER: &str = "This needs a newer version of Trommi. Reload to update.";
+pub const NEEDS_NEWER: &str = "This needs a newer version of Trommi. Update Trommi to see it.";
 
 pub fn desk(b: &Board) -> DeskView {
     desk_with(b, &super::off::of_board(b))
@@ -118,7 +118,9 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         } else if let Some(u) = unquiet.filter(|_| questions == 0) {
             u
         } else {
-            greeting(walk_len == 0, b.lens.dice)
+            // (calm while no question waits, with only something to read open too: the owner, 13 October 2026,
+            // card b4a26358 item 3, the iPhone's rule; the web greeted as for a question)
+            greeting(questions == 0, b.lens.dice)
         };
         ("desk", Some(hello))
     };
@@ -178,7 +180,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     view
 }
 
-/// One of the greetings, the same for a whole run of the app; a calm one when nothing waits.
+/// One of the greetings, the same for a whole run of the app; a calm one when no question waits.
 pub fn greeting(calm: bool, dice: u32) -> Text {
     let set: &[&str] = if calm { &CALM } else { &GREETINGS };
     let at = ((dice as u64 * set.len() as u64) >> 32) as usize;
@@ -760,10 +762,15 @@ mod tests {
         let v = view(&r, None);
         assert_eq!(en(&v.hello), "One can’t hear you.");
         assert_eq!(v.slip.iter().map(|s| (s.session_id.clone(), s.text.en.as_str(), s.fix.say.en.as_str(), s.fix.code.as_str())).collect::<Vec<_>>(), [(dev("b"), "b is cut off since 13:27: it cannot hear you and cannot write to you.", "In its terminal:", "/mcp → trommi → Reconnect")]);
-        // something to read is no question, but it is greeted and Blitz walks it
+        // something to read is no question: Blitz walks it, the greeting stays calm
         r.card("q-read", "a", "info", "normal");
         let v = view(&r, None);
         assert_eq!((en(&v.hello), v.waiting, en(&v.blitz), v.empty.is_none()), ("One can’t hear you.", 0, "Blitz: 1 open card", true));
+        let mut calm_room = Room::default();
+        calm_room.session("a", None, true);
+        calm_room.card("q-read", "a", "info", "normal");
+        let v = view(&calm_room, None);
+        assert_eq!((en(&v.hello), en(&v.blitz)), ("All quiet.", "Blitz: 1 open card"));
         // a question waits: one of the greetings
         r.card("q1", "a", "decision", "normal");
         assert_eq!(en(&view(&r, None).hello), "Welcome back.");

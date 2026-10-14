@@ -109,6 +109,8 @@ pub struct App {
     signed_in_join: bool,
     /// The actions' requests answered since they were last taken.
     answers: Vec<engine::requests::Answered>,
+    /// Files attached, opened, saved and shared (`crate::files`).
+    files: crate::files::Files,
     /// The hub the stored room names ([`ROOM_KEY`]).
     stored_hub: Option<String>,
     /// The device state loaded, while the stored room's hub is read.
@@ -163,6 +165,7 @@ impl App {
             signed_in_join: false,
             stored_hub: None,
             answers: Vec::new(),
+            files: crate::files::Files::default(),
             opening: None,
             board: engine::feed::Board::default(),
             lens: Lens::default(),
@@ -524,7 +527,11 @@ impl App {
                 // (an item of a stream the engine closed is dropped: the id is forgotten)
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_stream(ctx, id, item));
             }
-            Event::Progress { .. } | Event::Finished { .. } => {}
+            Event::Progress { id, done, total } => {
+                self.files.progress(id, done, total.unwrap_or(0));
+                self.stale_views = true;
+            }
+            Event::Finished { .. } => {}
             Event::PushToken { .. } => {}
             Event::Zone { utc_offset_min } => {
                 self.lens.utc_offset_min = utc_offset_min;
@@ -601,11 +608,57 @@ impl App {
             self.sent.toast(&mut self.next_view.toasts, text, None);
             return;
         }
+        if self.file_action(now_ms, &action, out) {
+            return;
+        }
         self.doing(now_ms, out, |doing| {
             if let Err(NotDone { text, again }) = doing.run(&action) {
                 doing.sent.toast(doing.toasts, text, again.then_some(action));
             }
         });
+    }
+
+    /// The file actions (`crate::files`): true when `action` was one.
+    fn file_action(&mut self, now_ms: u64, action: &Action, out: &mut Vec<Effect>) -> bool {
+        let Some(engine) = self.engine.as_mut() else { return false };
+        let send = match action {
+            Action::Attach { local_id, name, media_type, bytes } => {
+                engine.with_entropy(|entropy| self.files.attach(local_id, name, media_type, bytes, entropy)).map(Some)
+            }
+            Action::OpenFile { attachment_id, save } => self.files.open(attachment_id, *save, out),
+            Action::Share { attachment_id, expires_ms } => {
+                engine.with_entropy(|entropy| self.files.share(attachment_id, *expires_ms, now_ms, entropy)).map(Some)
+            }
+            Action::RevokeShare { share_id } => self.files.unshare(share_id).map(Some),
+            Action::CancelFile { file_id } => {
+                for id in self.files.cancel(file_id) {
+                    if let Some(flying) = engine.forget_request(id) {
+                        out.push(Effect::Cancel { id: flying });
+                    }
+                }
+                Ok(None)
+            }
+            _ => return false,
+        };
+        self.stale_views = true;
+        match send {
+            Ok(Some(send)) => {
+                let (build, keep, pending, expect) = send.split();
+                let sent = self.with_engine(now_ms, out, |engine, ctx| engine.request(ctx, build, keep));
+                let expect = expect.borrow_mut().take();
+                match (sent, expect) {
+                    (Some(Ok(id)), Some(expect)) => self.files.sent(id, pending, expect),
+                    _ => {
+                        self.files.not_sent(pending);
+                        let text = crate::views::Text::new("file.not_sent", "That could not be sent. Try again.");
+                        self.sent.toast(&mut self.next_view.toasts, text, None);
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(text) => self.sent.toast(&mut self.next_view.toasts, text, None),
+        }
+        true
     }
 
     /// Runs `step` with what an action needs (the model, the bookkeeping, the device's seal), then shows what it
@@ -626,7 +679,10 @@ impl App {
                         files: &[trommi_core::ids::FileId]| {
             engine.act(&mut ctx, |device, now| device.seal(draft, to, files, now))
         };
+        let files = &self.files;
+        let file = |id: &str| files.reference(id).cloned();
         let mut doing = Doing {
+            file: &file,
             model: &mut self.board.model,
             sent: &mut self.sent,
             toasts: &mut self.next_view.toasts,
@@ -883,7 +939,20 @@ impl App {
                     }
                 }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
-                Report::Answer(answered) => self.answers.push(*answered),
+                Report::Answer(answered) if self.files.owns(answered.id) => {
+                    if let Some(text) = self.files.answered(answered.id, &answered.result, out) {
+                        self.sent.toast(&mut self.next_view.toasts, text, None);
+                    }
+                    self.stale_views = true;
+                }
+                Report::Answer(answered) => {
+                    if let Some(keep) = answered.keep.as_deref().filter(|k| k.starts_with("unshare/")) {
+                        self.files.kept_answered(keep);
+                        self.stale_views = true;
+                    } else {
+                        self.answers.push(*answered);
+                    }
+                }
                 Report::RoomJoin(status) => {
                     use engine::room_join::RoomJoinStatus;
                     match status {
@@ -966,7 +1035,9 @@ impl App {
         if self.stale_views || view_due {
             self.stale_views = false;
             self.lens.reading = self.board.model.reading;
-            self.view_wake = crate::views::render(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            let (wake, shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            self.view_wake = wake;
+            self.files.shown(shown, &mut self.next_view.files);
         }
         if stopped {
             self.closed(now_ms, out);

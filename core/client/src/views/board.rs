@@ -51,12 +51,16 @@ pub struct Lens {
     pub talk_window: Option<(String, u32)>,
     /// How many pages of the complete list Off your mind show ([`OFF_PAGE`] rows each), for that search's words.
     pub off_window: Option<(String, u32)>,
+    /// How many pages of a card's comments show ([`COMMENTS_PAGE`] rows each), for that card (its id).
+    pub comments_window: Option<(String, u32)>,
 }
 
 /// Rows of a session's talk in one page of its window (the web's PAGE).
 pub const TALK_PAGE: usize = 40;
 /// Rows of the complete list Off your mind in one page of its window.
 pub const OFF_PAGE: usize = 100;
+/// Rows of a card's comments in one page of its window (the web's newest ten, "Load earlier (N)" ten more each).
+pub const COMMENTS_PAGE: usize = 10;
 
 /// What the person asks to see more of.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -65,6 +69,8 @@ pub enum MoreOf {
     Talk { session: String },
     /// The complete list Off your mind, under these search words.
     Off { query: String },
+    /// The comments under a card (its id).
+    Comments { card: String },
 }
 
 impl Lens {
@@ -82,6 +88,7 @@ impl Lens {
         match of {
             MoreOf::Talk { session } => grow(&mut self.talk_window, session),
             MoreOf::Off { query } => grow(&mut self.off_window, query),
+            MoreOf::Comments { card } => grow(&mut self.comments_window, card),
         }
     }
     /// How many pages of this list show.
@@ -457,6 +464,18 @@ pub fn clean_goals(text: &str) -> String {
 /// when to call again by the clock alone (a count of minutes, an answer that turns late), if ever. The App calls
 /// this after each batch and at that moment, and sends what `ViewModel::diff` finds.
 pub fn render(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
+    render_with_files(model, lens, now, view).0
+}
+
+/// [`render`], and the files the units show with their references (`views::files_seen`): what the App lets the
+/// person open and share. `view.files` is the App's to fill from them.
+pub fn render_with_files(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> (Option<u64>, std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>) {
+    super::files_seen::begin();
+    let wake = render_units(model, lens, now, view);
+    (wake, super::files_seen::take())
+}
+
+fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewModel) -> Option<u64> {
     let b = Board::new(model, lens, now);
     view.sidebar = super::sidebar::sidebar(&b);
     let off = super::off::of_board(&b);

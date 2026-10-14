@@ -35,6 +35,7 @@ fn shows(n: &Note) -> bool {
 
 /// A file of a note: a picture shows as a small thumbnail, any other file by its name.
 fn file_of(a: &Value) -> NoteFileView {
+    super::files_seen::saw(a);
     let s = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     let name = a.get("file_name").and_then(Value::as_str).unwrap_or("file").to_string();
     let media_type = s("media_type");

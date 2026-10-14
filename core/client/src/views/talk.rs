@@ -104,6 +104,26 @@ fn labels(options: &Value, keys: &[&str]) -> String {
     keys.iter().map(|k| name(k)).collect::<Vec<_>>().join(", ")
 }
 
+/// What he wrote along with an answer, a line each: his note in quotes, then a note on an option ("On Label: “…”"),
+/// in the options' order.
+fn said_along(note: &str, option_notes: &Value, options: &Value) -> Vec<Text> {
+    let mut out = Vec::new();
+    if !note.trim().is_empty() {
+        out.push(say("deed.note", format!("“{note}”"), &[("note", note)]));
+    }
+    let Some(notes) = option_notes.as_object() else { return out };
+    let mut keys: Vec<&str> = options.as_array().into_iter().flatten().map(|o| str_of(o, "key")).filter(|k| notes.contains_key(*k)).collect();
+    let mut rest: Vec<&str> = notes.keys().map(String::as_str).filter(|k| !keys.contains(k)).collect();
+    rest.sort_unstable();
+    keys.extend(rest);
+    for k in keys {
+        let Some(text) = notes.get(k).and_then(Value::as_str).filter(|t| !t.trim().is_empty()) else { continue };
+        let label = labels(options, &[k]);
+        out.push(say("deed.option_note", format!("On {label}: “{text}”"), &[("label", &label), ("note", text)]));
+    }
+    out
+}
+
 /// The keys of an answer.
 pub fn choices_of(v: &Value) -> Vec<&str> {
     v.as_array().into_iter().flatten().filter_map(Value::as_str).collect()
@@ -152,6 +172,15 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
         let n = a.envelope_number.unwrap_or(UNSENT);
         let keys = choices_of(&a.choices);
         let note = a.note.as_str().unwrap_or("");
+        // (the labels as they stood in the version he answered, while this device holds its body)
+        let bound = c
+            .versions
+            .iter()
+            .find(|v| v.object_version == a.bound_object_version && a.bound_object_version > 0)
+            .and_then(|v| v.content.as_ref())
+            .map(|r| r.obj().get("options").cloned().unwrap_or(Value::Null))
+            .filter(|o| !info && o.is_array());
+        let options = bound.as_ref().unwrap_or(&options);
         let what = match a.answer_action.as_str() {
             "read" => "read",
             "shred" => "shredded",
@@ -168,12 +197,19 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
                     if keys.is_empty() {
                         "Duck: your call".to_string()
                     } else {
-                        format!("Duck: your call · {}", labels(&options, &keys))
+                        format!("Duck: your call · {}", labels(options, &keys))
                     }
                 } else {
-                    labels(&options, &keys)
+                    labels(options, &keys)
                 };
                 out.push(ev(n, false, "decided", said, a.answered_at));
+            }
+        }
+        // (what he wrote and sent along stands under the deed)
+        if matches!(what, "decided" | "shredded") {
+            if let Some(last) = out.last_mut().and_then(|e| e.row.event.as_mut()) {
+                last.said = said_along(note, &a.option_notes, options);
+                last.files = file_ids(&a.attachments);
             }
         }
         // (taken back: the same thing again, with the time of the taking back)
@@ -193,6 +229,9 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
 /// The files of a content's attachments: a page that belongs to a picture is no file of its own.
 pub fn file_ids(attachments: &Value) -> Vec<String> {
     let list: Vec<&Value> = attachments.as_array().into_iter().flatten().collect();
+    for a in &list {
+        super::files_seen::saw(a);
+    }
     let pages: Vec<&str> = list.iter().filter_map(|a| a.get("page").and_then(Value::as_str)).filter_map(|p| p.strip_prefix("attachment:")).collect();
     list.iter().map(|a| str_of(a, "attachment_id")).filter(|id| !id.is_empty() && !pages.contains(id)).map(String::from).collect()
 }

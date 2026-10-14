@@ -143,7 +143,16 @@
         "about": "Remind in the morning or in the evening?",
         "text": "Morning, 8:00",
         "echo": false,
-        "asked": false
+        "asked": false,
+        "said": [
+          {
+            "key": "deed.note",
+            "args": {
+              "note": "I water before work."
+            },
+            "en": "“I water before work.”"
+          }
+        ]
       },
       "scribble": false
     }
