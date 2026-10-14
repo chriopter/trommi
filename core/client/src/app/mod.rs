@@ -778,6 +778,7 @@ impl App {
                                 self.board = engine::feed::Board::default();
                                 self.board.model = model;
                                 self.demo = true;
+                                self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
                                 self.next_view.phase = Phase::Live;
                                 self.stale_views = true;
                                 self.after_demo(now_ms, &mut out);
@@ -1011,6 +1012,11 @@ impl App {
 
     /// The person did something: the actions of `actions::run`, the toasts, a retry.
     fn action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        // a note sent without a session goes where the corner's note says it goes (the crown of the desk in view)
+        let action = match action {
+            Action::SendNote { note_id, to: None } => Action::SendNote { note_id, to: self.next_view.notes.to.as_ref().map(|t| t.session_id.clone()) },
+            other => other,
+        };
         match &action {
             Action::OpenShared { link } => {
                 self.open_shared(link, out);
@@ -1091,8 +1097,14 @@ impl App {
             seal: &mut seal,
             change: Change::default(),
         };
-        if let Err(NotDone { text, .. }) = doing.run(&action) {
-            doing.sent.toast(doing.toasts, text, None);
+        match doing.run(&action) {
+            Err(NotDone { text, .. }) => doing.sent.toast(doing.toasts, text, None),
+            Ok(()) => {
+                if let Action::SendNote { note_id, .. } = &action {
+                    let text = crate::views::Text::new("notes.sent", "Note sent.");
+                    doing.sent.toast(doing.toasts, text, Some(Action::UnsendNote { note_id: note_id.clone() }));
+                }
+            }
         }
         let mut change = std::mem::take(&mut doing.change);
         self.board.model.settle_echoes();
