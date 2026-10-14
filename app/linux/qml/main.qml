@@ -208,9 +208,17 @@ ApplicationWindow {
         color: theme.bg
 
         // ---- signing in --------------------------------------------------------------------------------------------
+        ViewSignIn {
+            anchors.fill: parent
+            visible: window.core && window.view.phase === "signed_out"
+            theme: theme
+            account: window.view.account || ({})
+            status: window.view.status || null
+            onAct: (action) => window.act(action)
+        }
         SignIn {
             anchors.fill: parent
-            visible: !window.signedIn && !window.starting
+            visible: !window.core && !window.signedIn && !window.starting
             trommi: trommi
             theme: theme
         }

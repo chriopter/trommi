@@ -170,3 +170,11 @@ fn a_picked_file_is_read_for_the_core() {
     assert!(trommi_linux::platform::read_picked(&std::env::temp_dir().display().to_string()).is_err());
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn the_sign_in_goes_to_the_core_as_an_account_action() {
+    let event = shell::person_event(r#"{"type":"action","action":{"do":"account","action":{"step":"sign_in","email":"a@b.c","password":"pw"}}}"#).unwrap();
+    // (the password never shows in a log line)
+    assert!(!format!("{event:?}").contains("pw"));
+    assert!(shell::person_event(r#"{"type":"action","action":{"do":"account","action":{"step":"sign_in_with_kit","email":"a@b.c","words":"w"}}}"#).is_ok());
+}

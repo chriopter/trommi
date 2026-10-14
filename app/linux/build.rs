@@ -34,6 +34,7 @@ fn main() {
         "qml/ViewSession.qml",
         "qml/ViewCard.qml",
         "qml/ViewTalkRow.qml",
+        "qml/ViewSignIn.qml",
         "qml/pen.mjs",
     ]))
     .qt_module("Quick")
