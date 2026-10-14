@@ -34,6 +34,10 @@ export interface ShellHost {
   openUrl?(url: string): void
   notify?(notice: unknown): void
   log?(level: string, text: string): void
+  /** A platform service only the page has (passkeys, push): `op` as the contract spells it, its bytes by index in
+   *  `blobs`. Resolves with the answer (bytes by index in its own `blobs`); `{ answer: 'refused' }` when the person
+   *  said no or the browser cannot. Without it every op is refused. */
+  platform?(op: Json, blobs: Uint8Array[]): Promise<{ answer: Json; blobs: Uint8Array[] }>
 }
 
 type Json = Record<string, unknown>
@@ -132,7 +136,7 @@ export class CoreShell {
       }
       case 'store': return this.store(id, effect['op'] as Json, blobs)
       case 'secret': return this.result({ type: 'secret', id, result: failure('denied') })
-      case 'platform': return this.result({ type: 'platform', id, result: { ok: { answer: 'refused' } } })
+      case 'platform': return void this.platform(id, effect['op'] as Json, blobs)
       case 'timer': {
         if (this.timer) clearTimeout(this.timer)
         this.timer = null
@@ -148,6 +152,16 @@ export class CoreShell {
       case 'snapshot': return
       case 'log': return this.host.log?.(effect['level'] as string, effect['text'] as string)
       default: return this.host.log?.('warn', `an effect this shell does not know: ${String(effect['type'])}`)
+    }
+  }
+
+  private async platform(id: number, op: Json, blobs: Uint8Array[]): Promise<void> {
+    if (!this.host.platform) return this.result({ type: 'platform', id, result: { ok: { answer: 'refused' } } })
+    try {
+      const { answer, blobs: out } = await this.host.platform(op, blobs)
+      this.resultWith({ type: 'platform', id, result: { ok: answer } }, out)
+    } catch (e) {
+      this.result({ type: 'platform', id, result: failure('failed', String((e as Error)?.message ?? e)) })
     }
   }
 
