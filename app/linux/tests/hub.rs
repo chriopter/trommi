@@ -19,6 +19,9 @@ use trommi_connector::join::join_room;
 use trommi_connector::store::Journal;
 use trommi_linux::shell;
 
+/// The tests set `TROMMI_LINUX_DIR` for the process: one at a time.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The hub's binary: `TROMMI_HUB_BIN`, else the main workspace's, built once here.
 fn hub_binary() -> PathBuf {
     if let Some(path) = std::env::var_os("TROMMI_HUB_BIN") {
@@ -157,7 +160,7 @@ fn wait_for(drawn: &mpsc::Receiver<String>, what: &str, want: impl Fn(&Value) ->
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
-    panic!("no view with {what}; the last: phase {} desk {}", last["phase"], last["desk"]);
+    panic!("no view with {what}; the last: phase {} account {} desk {}", last["phase"], last["account"], last["desk"]);
 }
 
 /// The titles of the Desk's rows, in the order given.
@@ -186,6 +189,7 @@ fn start(runtime: &tokio::runtime::Runtime, hub: &str) -> (trommi_io::Handle, mp
 
 #[test]
 fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("trommi-linux-hub-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::env::set_var("TROMMI_LINUX_DIR", &dir);
@@ -202,7 +206,9 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     assert_eq!(sessions.len(), 1, "one session: {sessions:?}");
     let row = &view["desk"]["rows"][0];
     assert_eq!(row["from"]["session_id"], sessions[0]["id"], "{row}");
-    wait_for(&drawn, "the phase live", |v| v["phase"] == "live");
+    if view["phase"] != "live" {
+        wait_for(&drawn, "the phase live", |v| v["phase"] == "live");
+    }
 
     // the window's pages, as the window asks for them (`shell::person_event`): the card's, then the session's
     let card = row["id"].as_str().unwrap().to_string();
@@ -274,6 +280,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
 /// slot: the core opens the code, joins the room and its session, and the Desk shows the agent's card.
 #[test]
 fn signing_in_with_the_password_brings_the_desk() {
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let dir = std::env::temp_dir().join(format!("trommi-linux-signin-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::env::set_var("TROMMI_LINUX_DIR", &dir);
@@ -288,13 +295,27 @@ fn signing_in_with_the_password_brings_the_desk() {
     send(json!({ "type": "action", "action": { "do": "account", "action": { "step": "sign_in", "email": EMAIL, "password": "wrong" } } }));
     let view = wait_for(&drawn, "the problem of a wrong password", |v| v["account"]["problem"].is_object());
     assert_eq!(view["phase"], "signed_out", "{}", view["account"]);
-    // the right one, as ViewSignIn sends it
+    // the right one, as ViewSignIn sends it; the hub makes the next try from here wait a second after a wrong one,
+    // which the core says as such (not as offline), and the person tries again
     let started = Instant::now();
-    send(json!({ "type": "action", "action": { "do": "account", "action": { "step": "sign_in", "email": EMAIL, "password": PASSWORD } } }));
-    let view = wait_for(&drawn, "the card after the sign-in", |v| desk_titles(v).iter().any(|t| t == "Blue or green?"));
+    let mut view = Value::Null;
+    for _ in 0..3 {
+        send(json!({ "type": "action", "action": { "do": "account", "action": { "step": "sign_in", "email": EMAIL, "password": PASSWORD } } }));
+        view = wait_for(&drawn, "the card after the sign-in, or the throttle", |v| {
+            desk_titles(v).iter().any(|t| t == "Blue or green?") || v["account"]["problem"].is_object()
+        });
+        match view["account"]["problem"]["key"].as_str() {
+            None => break,
+            Some("account.throttled") => std::thread::sleep(Duration::from_millis(2_100)),
+            Some(other) => panic!("the sign-in failed: {other}"),
+        }
+    }
+    assert!(desk_titles(&view).iter().any(|t| t == "Blue or green?"), "{}", view["account"]);
     eprintln!("signed in, the Desk after {} ms", started.elapsed().as_millis());
     assert!(view["account"]["problem"].is_null(), "{}", view["account"]);
-    wait_for(&drawn, "the phase live", |v| v["phase"] == "live");
+    if view["phase"] != "live" {
+        wait_for(&drawn, "the phase live", |v| v["phase"] == "live");
+    }
 
     // the app starts again: the device it joined with is stored, the Desk comes without a sign-in
     drop(handle);
@@ -322,7 +343,6 @@ fn pictures_of_the_window_over_the_real_hub() {
     for theme in ["light", "dark"] {
         let name = if scene.is_empty() { format!("desk-{theme}.png") } else { format!("{scene}-{theme}.png") };
         let status = std::process::Command::new(env!("CARGO_BIN_EXE_trommi-linux"))
-            .env("TROMMI_LINUX_APP_CORE", "1")
             .env("QT_QPA_PLATFORM", "offscreen")
             .env("TROMMI_LINUX_DIR", &dir)
             .env("TROMMI_HUB", &room.hub.url)
