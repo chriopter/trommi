@@ -599,6 +599,18 @@ impl Doing<'_> {
         self.registers(action, &[(format!("session/{session_id}"), Value::Object(settings))])
     }
 
+    /// A session's settings with these fields set and every other kept, for a step of the App (an invited agent's
+    /// session named and placed as the invite said); a toast if it cannot be saved.
+    pub fn session_settings(&mut self, session_id: &str, fields: Map<String, Value>) {
+        let action = Action::RenameSession { session_id: session_id.into(), name: String::new() };
+        for (field, value) in fields {
+            if let Err(NotDone { text, .. }) = self.edit_session(&action, session_id, &field, value) {
+                self.sent.toast(self.toasts, text, None);
+                return;
+            }
+        }
+    }
+
     /// The desks that are there, by id.
     fn desks(&self) -> Vec<String> {
         self.model
