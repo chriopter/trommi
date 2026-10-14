@@ -65,23 +65,54 @@ struct Room {
     hub: HubProc,
     /// The agent's connector, kept so its session stays served.
     _agent: std::sync::Arc<Client>,
-    _events: tokio::sync::mpsc::UnboundedReceiver<trommi_connector::client::ClientEvent>,
+    events: tokio::sync::mpsc::UnboundedReceiver<trommi_connector::client::ClientEvent>,
     _agent_dir: TempDir,
 }
 
-/// A hub, a human's room with a second human device (this app's: its state copied to `slot_device`), an agent in
-/// a main session of its own, and one card of the agent waiting.
-fn room(runtime: &tokio::runtime::Runtime, slot_device: &Path) -> Room {
+/// The account the room is founded with: the e-mail and the password a sign-in types.
+const EMAIL: &str = "ada@example.org";
+const PASSWORD: &str = "correct horse battery staple";
+
+/// The body of an account made with the room's founding (`POST /v1/rooms` with `account`), as the apps sign up:
+/// copies of the code sealed under the password and under a kit.
+fn account_body(room: &trommi_core::ids::RoomId, code: &trommi_core::crypto::Secret<32>) -> Value {
+    use trommi_connector::hub::b64;
+    use trommi_core::account::{self, Way};
+    use trommi_core::crypto::SystemEntropy;
+    let pw = account::password_keys(EMAIL, PASSWORD, None).expect("the password's keys");
+    let words = account::generate_kit_words(&mut SystemEntropy).expect("words");
+    let words = String::from_utf8(words.expose().to_vec()).expect("text");
+    let kit = account::kit_keys(EMAIL, &words).expect("the kit's keys");
+    let sealed_password = account::seal_code(&pw.wrap_key, room, Way::Password, code, &mut SystemEntropy).expect("sealed");
+    let sealed_kit = account::seal_code(&kit.wrap_key, room, Way::Kit, code, &mut SystemEntropy).expect("sealed");
+    json!({
+        "email": EMAIL,
+        "password": {
+            "auth_key": b64(pw.auth_key.expose()), "sealed_copy": b64(&sealed_password),
+            "kdf": { "alg": "argon2id", "v": 1, "m": 65536, "t": 3, "p": 1 },
+        },
+        "kit": { "auth_key": b64(kit.auth_key.expose()), "sealed_copy": b64(&sealed_kit) },
+    })
+}
+
+/// A hub, a human's room with an account (`EMAIL`, `PASSWORD`), an agent in a main session of its own, and one
+/// card of the agent waiting. With `slot_device`: a second human device, let in by link before the session was
+/// founded, its state copied there (this app's, as a sign-in would leave it).
+fn room(runtime: &tokio::runtime::Runtime, slot_device: Option<&Path>) -> Room {
     std::env::set_var("TROMMI_HUB_BIN", hub_binary());
     runtime.block_on(async {
         let hub = HubProc::start().await;
-        let mut human = Human::found(&hub.url).await;
+        let mut human = Human::found_with(&hub.url, |room, code| Some(account_body(room, code))).await;
         // this app's device: let in by link, with KeyPackages, so the agent's session takes it in at its founding
-        let before = human_dirs();
-        let mut me = human.add_human().await;
-        let me_dir = human_dirs().into_iter().find(|d| !before.contains(d)).expect("the new device's folder");
-        human.follow_invites().await;
-        me.publish_key_packages().await;
+        let mut me = None;
+        if slot_device.is_some() {
+            let before = human_dirs();
+            let mut device = human.add_human().await;
+            let dir = human_dirs().into_iter().find(|d| !before.contains(d)).expect("the new device's folder");
+            human.follow_invites().await;
+            device.publish_key_packages().await;
+            me = Some((device, dir));
+        }
         // the agent, by link, and its session
         let agent_dir = TempDir::new("agent");
         let journal = Journal::open(agent_dir.path()).expect("a journal");
@@ -102,10 +133,11 @@ fn room(runtime: &tokio::runtime::Runtime, slot_device: &Path) -> Room {
         });
         agent.send_card(fields.as_object().cloned().unwrap(), None).await.expect("a card");
         // this device takes its Welcome to the session, then its state goes to the app
-        me.sync().await;
-        copy_state(&me_dir, slot_device);
-        drop(me);
-        Room { hub, _agent: agent, _events: events, _agent_dir: agent_dir }
+        if let (Some((mut device, dir)), Some(slot_device)) = (me, slot_device) {
+            device.sync().await;
+            copy_state(&dir, slot_device);
+        }
+        Room { hub, _agent: agent, events, _agent_dir: agent_dir }
     })
 }
 
@@ -158,7 +190,7 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     let _ = std::fs::remove_dir_all(&dir);
     std::env::set_var("TROMMI_LINUX_DIR", &dir);
     let scenario = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
-    let room = room(&scenario, &dir.join(shell::SLOT).join("device"));
+    let mut room = room(&scenario, Some(&dir.join(shell::SLOT).join("device")));
     let app = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
 
     let started = Instant::now();
@@ -196,6 +228,78 @@ fn the_desk_comes_from_the_real_hub_and_again_after_a_restart() {
     let (handle, drawn) = start(&app, &room.hub.url);
     let view = wait_for(&drawn, "the card after the restart", |v| v["phase"] == "live" && desk_titles(v).iter().any(|t| t == "Blue or green?"));
     assert_eq!(desk_titles(&view), vec!["Blue or green?".to_string()]);
+
+    // a tile on the Desk: the answer leaves the Desk at once, and reaches the agent as the person's answer
+    let send = |json: Value| assert!(handle.send(shell::person_event(&json.to_string()).expect("the person's event")));
+    send(json!({ "type": "action", "action": { "do": "answer", "card_id": card, "choices": ["green"] } }));
+    wait_for(&drawn, "the Desk without the answered card", |v| !desk_titles(v).iter().any(|t| t == "Blue or green?"));
+    let command = scenario.block_on(async {
+        loop {
+            let event = tokio::time::timeout(Duration::from_secs(90), room.events.recv()).await.expect("the agent hears in time").expect("the agent lives");
+            if let trommi_connector::client::ClientEvent::Command(command) = event {
+                if command.command == "answer" {
+                    return command;
+                }
+            }
+        }
+    });
+    assert_eq!(command.object_id.as_deref(), Some(card.as_str()), "the answer is to the card");
+    assert_eq!(command.choices, vec!["green".to_string()], "the answer chose green");
+
+    // and again after a restart: the card stays answered, nothing is sent twice
+    drop(handle);
+    let (handle, drawn) = start(&app, &room.hub.url);
+    let view = wait_for(&drawn, "the Desk after the second restart", |v| v["phase"] == "live");
+    assert!(!desk_titles(&view).iter().any(|t| t == "Blue or green?"), "the answered card stays off the Desk: {}", view["desk"]);
+    std::thread::sleep(Duration::from_secs(2));
+    let again = scenario.block_on(async {
+        while let Ok(event) = room.events.try_recv() {
+            if let trommi_connector::client::ClientEvent::Command(command) = event {
+                if command.command == "answer" {
+                    return true;
+                }
+            }
+        }
+        false
+    });
+    assert!(!again, "the answer was sent once");
+    drop(handle);
+    drop(app);
+    drop(room);
+    drop(scenario);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Signing in as the window does it (ViewSignIn: `Action::Account` with the e-mail and the password) on an empty
+/// slot: the core opens the code, joins the room and its session, and the Desk shows the agent's card.
+#[test]
+fn signing_in_with_the_password_brings_the_desk() {
+    let dir = std::env::temp_dir().join(format!("trommi-linux-signin-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::env::set_var("TROMMI_LINUX_DIR", &dir);
+    let scenario = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let room = room(&scenario, None);
+    let app = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+
+    let (handle, drawn) = start(&app, &room.hub.url);
+    wait_for(&drawn, "the sign-in", |v| v["phase"] == "signed_out");
+    let send = |json: Value| assert!(handle.send(shell::person_event(&json.to_string()).expect("the person's event")));
+    // a wrong password: the core says so on the sign-in, nothing is joined
+    send(json!({ "type": "action", "action": { "do": "account", "action": { "step": "sign_in", "email": EMAIL, "password": "wrong" } } }));
+    let view = wait_for(&drawn, "the problem of a wrong password", |v| v["account"]["problem"].is_object());
+    assert_eq!(view["phase"], "signed_out", "{}", view["account"]);
+    // the right one, as ViewSignIn sends it
+    let started = Instant::now();
+    send(json!({ "type": "action", "action": { "do": "account", "action": { "step": "sign_in", "email": EMAIL, "password": PASSWORD } } }));
+    let view = wait_for(&drawn, "the card after the sign-in", |v| desk_titles(v).iter().any(|t| t == "Blue or green?"));
+    eprintln!("signed in, the Desk after {} ms", started.elapsed().as_millis());
+    assert!(view["account"]["problem"].is_null(), "{}", view["account"]);
+    wait_for(&drawn, "the phase live", |v| v["phase"] == "live");
+
+    // the app starts again: the device it joined with is stored, the Desk comes without a sign-in
+    drop(handle);
+    let (handle, drawn) = start(&app, &room.hub.url);
+    wait_for(&drawn, "the card after the restart", |v| v["phase"] == "live" && desk_titles(v).iter().any(|t| t == "Blue or green?"));
     drop(handle);
     drop(app);
     drop(room);
@@ -213,7 +317,7 @@ fn pictures_of_the_window_over_the_real_hub() {
     let dir = std::env::temp_dir().join(format!("trommi-linux-pictures-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let scenario = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
-    let room = room(&scenario, &dir.join(shell::SLOT).join("device"));
+    let room = room(&scenario, Some(&dir.join(shell::SLOT).join("device")));
     let scene = std::env::var("TROMMI_LINUX_SCENE").unwrap_or_default();
     for theme in ["light", "dark"] {
         let name = if scene.is_empty() { format!("desk-{theme}.png") } else { format!("{scene}-{theme}.png") };
