@@ -718,6 +718,40 @@ impl Human {
         None
     }
 
+    /// How many asks in the session of `voucher` are open (not taken back) and not answered: what the person sees.
+    pub async fn open_asks(&mut self, voucher: &GroupId) -> usize {
+        let session = hex(voucher.session_id().expect("a session group").as_bytes());
+        self.sync().await;
+        let mut nonces: Vec<String> = self
+            .items
+            .iter()
+            .filter(|(s, _, payload)| *s == session && !payload["value"].is_null())
+            .filter_map(|(_, _, payload)| {
+                payload["name"]
+                    .as_str()?
+                    .strip_prefix("join_ask/")
+                    .map(String::from)
+            })
+            .collect();
+        nonces.sort();
+        nonces.dedup();
+        let mut open = 0;
+        for nonce in nonces {
+            let asked = self
+                .register(voucher, &format!("join_ask/{nonce}"))
+                .await
+                .is_some_and(|v| !v.is_null());
+            let answered = self
+                .register(voucher, &format!("join_link/{nonce}"))
+                .await
+                .is_some_and(|v| !v.is_null());
+            if asked && !answered {
+                open += 1;
+            }
+        }
+        open
+    }
+
     /// The person taps Deny on the next ask of the agent of `voucher` (12.4): `join_link/<nonce>` = `{ refused: denied }`.
     pub async fn deny_self_join(&mut self, voucher: &GroupId) {
         self.refuse_self_join(voucher, "denied").await

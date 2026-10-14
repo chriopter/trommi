@@ -846,6 +846,152 @@ async fn a_session_resumed_in_another_folder_finds_its_key() {
     all_on_board(&mut m, &mut [&mut s1]).await;
 }
 
+/// The asks the person sees in the session of `voucher` settle at `n` within `ms`; Err with what they were.
+async fn asks_settle(m: &mut Machine, voucher: &GroupId, n: usize, ms: u64) -> Result<(), usize> {
+    let end = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    loop {
+        let open = m.a.open_asks(voucher).await;
+        if open == n {
+            return Ok(());
+        }
+        if std::time::Instant::now() > end {
+            return Err(open);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// The coordinator's session resumed under another account of its program and in another folder, beside another
+/// session's key there, while its earlier process's connector still holds its key (2026-10-14): it is that member
+/// and waits for its key, says so, never asks a session of the new account to let it in as a new agent, and is
+/// back with its own device in its own board session once the earlier connector is gone.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_resumed_session_waits_for_its_own_key_and_never_joins_anew() {
+    let mut m = Machine::new().await;
+    let mut s1 = Session::new(&m, "s1", Client::Claude, "trommi", "first");
+    s1.start(&m).await;
+    s1.connect(&mut m, 'A').await;
+    // a session of the second account, which could vouch for that account's sessions
+    let mut v = Session::new(&m, "v", Client::Claude, "pspkit", "second");
+    v.start(&m).await;
+    v.connect(&mut m, 'A').await;
+    // another session's key in the folder the coordinator goes on in
+    let mut o = Session::new(&m, "o", Client::Claude, "saeckel", "third");
+    o.start(&m).await;
+    o.connect(&mut m, 'A').await;
+    let was = s1.on;
+
+    let old_parent = s1.parent.clone();
+    let old = s1.mcp.take().expect("the earlier connector");
+    s1.parent = std::sync::Arc::new(program_process());
+    s1.folder = m.folder("saeckel");
+    s1.config = "second".into();
+    s1.start(&m).await;
+    let said = s1.refused("inbox").await;
+    assert!(
+        said.contains("its own key") && said.contains("held by connector process"),
+        "{said}"
+    );
+    let (_, _, vg) = v.on.unwrap();
+    assert_eq!(asks_settle(&mut m, &vg, 1, 3000).await, Err(0), "no ask to let it in anew");
+
+    // the earlier process ends: its key is free
+    old.close().await;
+    drop(old_parent);
+    all_on_board(&mut m, &mut [&mut s1, &mut v, &mut o]).await;
+    assert_eq!(s1.on, was, "the same device in the same board session");
+    assert_eq!(m.a.open_asks(&vg).await, 0);
+    assert_eq!(owner_files(&m, &s1.owner()).len(), 1, "one key for the session");
+}
+
+/// One session is one ask (12.4.6): a connector that asks again after it started again replaces its earlier ask,
+/// and the ask of a session that ended is taken back; the person never sees an ask per try.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_session_is_one_ask() {
+    let mut m = Machine::new().await;
+    let mut v = Session::new(&m, "v", Client::Claude, "one", "cfg");
+    v.start(&m).await;
+    v.connect(&mut m, 'A').await;
+    let (_, _, vg) = v.on.unwrap();
+
+    // a session that asks and ends before the person answers
+    let mut gone = Session::new(&m, "gone", Client::Claude, "two", "cfg");
+    gone.start(&m).await;
+    let _ = gone.refused("inbox").await;
+    asks_settle(&mut m, &vg, 1, 15_000).await.expect("its ask");
+    gone.close().await;
+    asks_settle(&mut m, &vg, 0, 20_000)
+        .await
+        .expect("the ask of a session that ended is taken back");
+
+    // a session whose connector starts again (an /mcp Reconnect) while its ask waits, and asks again
+    let mut s2 = Session::new(&m, "s2", Client::Claude, "three", "cfg");
+    s2.start(&m).await;
+    let _ = s2.refused("inbox").await;
+    asks_settle(&mut m, &vg, 1, 15_000).await.expect("its ask");
+    s2.close().await;
+    s2.start(&m).await;
+    let _ = s2.refused("inbox").await;
+    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+    asks_settle(&mut m, &vg, 1, 20_000)
+        .await
+        .expect("one ask for the session");
+    let (device, group) = m.admit_any('A').await;
+    s2.on = Some(('A', device, group));
+    s2.mcp().ready().await;
+    all_on_board(&mut m, &mut [&mut v, &mut s2]).await;
+    asks_settle(&mut m, &vg, 0, 15_000).await.expect("no ask left");
+}
+
+/// The link of an invite for the coordinator's own session, given to `trommi-connector connect` in a terminal of
+/// another folder (its first one) while the resumed session waits for its key: the running session takes the new
+/// key at once, without a restart, and is back in its own board session.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_joined_in_a_terminal_of_another_folder_reaches_the_waiting_session() {
+    let mut m = Machine::new().await;
+    let mut s1 = Session::new(&m, "s1", Client::Claude, "trommi", "first");
+    s1.start(&m).await;
+    s1.connect(&mut m, 'A').await;
+    let (_, old_device, group) = s1.on.unwrap();
+    let first = s1.folder.clone();
+
+    // resumed elsewhere, its key held by its earlier connector, which does not let go (hung, say)
+    let old_parent = s1.parent.clone();
+    let old = s1.mcp.take().expect("the earlier connector");
+    s1.parent = std::sync::Arc::new(program_process());
+    s1.folder = m.folder("saeckel");
+    s1.config = "second".into();
+    s1.start(&m).await;
+    let _ = s1.refused("inbox").await;
+
+    // the human makes an invite for that session; the agent runs connect in a terminal in its first folder
+    let mut invite = m.a.invite(group.session_id()).await;
+    let mut cmd = s1.command(&m);
+    cmd.env("TROMMI_FOLDER", &first)
+        .current_dir(&first)
+        .args(["connect", invite.link.as_str()]);
+    let join = cmd.output();
+    let human = &mut m.a;
+    let admit = async {
+        let admitted = human.admit(&mut invite).await;
+        human.take_over(&group, old_device, &admitted).await;
+        admitted
+    };
+    let (out, admitted) = tokio::join!(join, admit);
+    let out = out.expect("connect runs");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // the earlier process ends (its connector, retired by the takeover, would else look for the session's key too)
+    old.close().await;
+    drop(old_parent);
+    s1.on = Some(('A', admitted.device, group));
+    all_on_board(&mut m, &mut [&mut s1]).await;
+    assert_eq!(owner_files(&m, &s1.owner()).len(), 1, "one key for the session");
+}
+
 /// Keys of one session in two rooms (copied by hand, say): refused by name, never one picked by directory order.
 #[tokio::test(flavor = "multi_thread")]
 async fn keys_of_one_session_in_two_rooms_are_refused_by_name() {

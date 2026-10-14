@@ -238,6 +238,10 @@ pub async fn claim_slot(p: &SlotPaths, session: &str, wait_ms: u64) -> Claim {
         }
     }
 }
+/// Whether this process holds the slot.
+pub fn held_here(p: &SlotPaths) -> bool {
+    claim_file(p, pid()).exists()
+}
 pub fn unlock_slot(p: &SlotPaths) {
     let _ = fs::remove_file(claim_file(p, pid()));
 }
