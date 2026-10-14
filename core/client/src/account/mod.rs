@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod found;
 pub mod signin;
 
 /// Text the person typed that must never reach a log: its `Debug` is redacted.
@@ -26,7 +27,12 @@ pub enum AccountAction {
     Found {
         email: String,
         password: Secret,
+        /// The hub to found the room on; none: `Config.hub`, else the default hub.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hub: Option<String>,
     },
+    /// The person has kept the Emergency Kit's words shown once after founding: they leave the view.
+    KitKept,
     SignIn {
         email: String,
         password: Secret,
@@ -54,6 +60,13 @@ pub enum AccountAction {
     },
     /// Make an invite link for a new device of the person.
     InviteDevice,
+    /// Make an invite link for an agent, which founds its main session; `label` names that session, `desk` places it.
+    InviteAgent {
+        #[serde(default)]
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        desk: Option<String>,
+    },
     RemoveDevices {
         device_ids: Vec<String>,
     },
