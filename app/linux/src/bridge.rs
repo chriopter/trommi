@@ -1,5 +1,6 @@
-//! The one object the QML window holds: state as properties (the views as JSON text), actions as invokables. The
-//! engine runs on a tokio runtime of its own; what it learns comes back to Qt's thread through cxx-qt's queue.
+//! The one object the QML window holds: the app core's view as JSON text (`view_json`), the files the core handed
+//! over for drawing (`files_json`), and the window's own settings; the person's events go in through `send_event`.
+//! The app core runs in its loop (shell.rs, trommi-io); its renders come back to Qt's thread through cxx-qt's queue.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -11,277 +12,99 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        #[qproperty(QString, status)]
-        #[qproperty(bool, signed_in)]
-        #[qproperty(bool, starting)]
-        #[qproperty(bool, busy)]
-        #[qproperty(bool, live)]
-        #[qproperty(QString, title)]
-        #[qproperty(QString, desk_json)]
-        #[qproperty(QString, sessions_json)]
-        #[qproperty(QString, chat_json)]
-        #[qproperty(QString, selected)]
-        #[qproperty(QString, hub_url)]
+        #[qproperty(QString, view_json)]
+        #[qproperty(QString, files_json)]
         #[qproperty(QString, error)]
+        #[qproperty(QString, theme_mode)]
+        #[qproperty(QString, open_request)]
         #[qproperty(QString, shot_path)]
         #[qproperty(i32, shot_after_ms)]
         #[qproperty(QString, scene)]
-        #[qproperty(QString, scene_session)]
-        #[qproperty(QString, scene_file)]
-        #[qproperty(QString, theme_mode)]
-        #[qproperty(QString, files_json)]
-        #[qproperty(QString, saved_json)]
-        #[qproperty(QString, open_request)]
-        #[qproperty(QString, greeting)]
-        #[qproperty(QString, view_json)]
         type Trommi = super::TrommiRust;
 
-        /// Opens the room this machine holds, if any, from its cache, and starts catching up and listening.
+        /// Opens the slot and starts the app core's loop.
         #[qinvokable]
         fn start(self: Pin<&mut Trommi>);
-        /// Signs in with the account's e-mail and password.
+        /// The person's event for the app core, as JSON (`shell::person_event`).
         #[qinvokable]
-        fn sign_in_password(self: Pin<&mut Trommi>, hub: &QString, email: &QString, password: &QString);
-        /// Signs in with the Emergency Kit: the account (e-mail or id) and its words.
+        fn send_event(self: Pin<&mut Trommi>, json: &QString);
+        /// A file the person picked: read here, sent as `Action::Attach` under the window's id for it.
         #[qinvokable]
-        fn sign_in_kit(self: Pin<&mut Trommi>, hub: &QString, account: &QString, words: &QString);
-        /// Answers a card with one option, or a permission request (`allow` / `deny`).
-        #[qinvokable]
-        fn answer(self: Pin<&mut Trommi>, id: &QString, key: &QString);
-        /// Answers a card that allows several options: the keys as a JSON list.
-        #[qinvokable]
-        fn answer_many(self: Pin<&mut Trommi>, id: &QString, keys_json: &QString);
-        /// Marks an info card read.
-        #[qinvokable]
-        fn mark_read(self: Pin<&mut Trommi>, id: &QString);
-        /// Shows a session's Chat; empty: the Desk.
-        #[qinvokable]
-        fn select_session(self: Pin<&mut Trommi>, id: &QString);
-        /// Writes to the selected session's agent.
-        #[qinvokable]
-        fn send(self: Pin<&mut Trommi>, text: &QString);
-        /// Fetches and opens a file a card or a line names (its reference, JSON); `files_json` says where it lies.
-        #[qinvokable]
-        fn fetch_file(self: Pin<&mut Trommi>, reference: &QString);
-        /// Puts a file a card or a line names (its reference, JSON) into Downloads; `saved_json` says where.
-        #[qinvokable]
-        fn save_file(self: Pin<&mut Trommi>, reference: &QString);
-        /// Answers a card with options (a JSON list) and files of this machine (a JSON list of file URLs).
-        #[qinvokable]
-        fn answer_with_files(self: Pin<&mut Trommi>, id: &QString, keys_json: &QString, files_json: &QString);
-        /// Writes to the selected session's agent, with files of this machine (a JSON list of file URLs).
-        #[qinvokable]
-        fn send_with_files(self: Pin<&mut Trommi>, text: &QString, files_json: &QString);
-        /// The window has the focus (no notifications then) or not.
-        #[qinvokable]
-        fn set_focused(self: Pin<&mut Trommi>, focused: bool);
+        fn attach_file(self: Pin<&mut Trommi>, url: &QString, local_id: &QString);
         /// Light or dark, kept for the next start (the web's rule: light unless the person picks dark).
         #[qinvokable]
         fn set_theme(self: Pin<&mut Trommi>, mode: &QString);
-        /// Writes a picture of the window to `shot_path` was done (QML): ends a scene run.
+        /// A picture of the window was written to `shot_path` (QML): ends a scene run.
         #[qinvokable]
         fn shot_taken(self: Pin<&mut Trommi>);
-
-        #[qinvokable]
-        fn send_event(self: Pin<&mut Trommi>, json: &QString);
-
-        #[qinvokable]
-        fn attach_file(self: Pin<&mut Trommi>, url: &QString, local_id: &QString);
     }
 
     impl cxx_qt::Threading for Trommi {}
 }
 
-use crate::engine::{signin, Engine, Sink, Update};
 use core::pin::Pin;
-use cxx_qt::{CxxQtType, Threading};
+use cxx_qt::Threading;
 use cxx_qt_lib::QString;
 use std::sync::{Arc, Mutex, OnceLock};
 
+type Thread = cxx_qt::CxxQtThread<qobject::Trommi>;
+
 pub struct TrommiRust {
-    status: QString,
-    signed_in: bool,
-    starting: bool,
-    busy: bool,
-    live: bool,
-    title: QString,
-    desk_json: QString,
-    sessions_json: QString,
-    chat_json: QString,
-    selected: QString,
-    hub_url: QString,
+    view_json: QString,
+    files_json: QString,
     error: QString,
+    theme_mode: QString,
+    open_request: QString,
     shot_path: QString,
     shot_after_ms: i32,
     scene: QString,
-    scene_session: QString,
-    scene_file: QString,
-    theme_mode: QString,
-    greeting: QString,
-    /// The app core's view model, as folded by `shell::View` (set only when the app core runs).
-    view_json: QString,
-    files_json: QString,
-    saved_json: QString,
-    open_request: QString,
 }
 
 impl Default for TrommiRust {
     fn default() -> Self {
         let env = |k: &str| std::env::var(k).unwrap_or_default();
-        let hub = std::env::var("TROMMI_HUB").unwrap_or_else(|_| "https://hub.trommi.com".into());
         Self {
-            status: QString::from("Starting …"),
-            signed_in: false,
-            starting: true,
-            busy: false,
-            live: false,
-            title: QString::default(),
-            desk_json: QString::from("[]"),
-            sessions_json: QString::from("[]"),
-            chat_json: QString::from("[]"),
-            selected: QString::default(),
-            hub_url: QString::from(hub.as_str()),
+            view_json: QString::from("{}"),
+            files_json: QString::from("{}"),
             error: QString::default(),
-            shot_path: QString::from(env("TROMMI_LINUX_SHOT").as_str()),
-            shot_after_ms: env("TROMMI_LINUX_SHOT_AFTER_MS").parse().unwrap_or(1500),
-            scene: QString::from(env("TROMMI_LINUX_SCENE").as_str()),
-            scene_session: QString::from(env("TROMMI_LINUX_SESSION").as_str()),
-            scene_file: QString::from(env("TROMMI_LINUX_FILE").as_str()),
             theme_mode: QString::from(
                 Some(env("TROMMI_LINUX_THEME"))
                     .filter(|t| !t.is_empty())
-                    .or_else(|| std::fs::read_to_string(crate::store::base_dir().join("theme")).ok())
+                    .or_else(|| std::fs::read_to_string(crate::shell::base_dir().join("theme")).ok())
                     .unwrap_or_default()
                     .trim(),
             ),
-            greeting: QString::from(env("TROMMI_LINUX_GREETING").as_str()),
-            view_json: QString::from("{}"),
-            files_json: QString::from("{}"),
-            saved_json: QString::from("{}"),
             open_request: QString::default(),
+            shot_path: QString::from(env("TROMMI_LINUX_SHOT").as_str()),
+            shot_after_ms: env("TROMMI_LINUX_SHOT_AFTER_MS").parse().unwrap_or(1500),
+            scene: QString::from(env("TROMMI_LINUX_SCENE").as_str()),
         }
     }
 }
 
 fn runtime() -> &'static tokio::runtime::Runtime {
-    static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RT.get_or_init(|| {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(3)
+            .worker_threads(2)
             .enable_all()
             .build()
-            .expect("a runtime")
+            .expect("a tokio runtime")
     })
 }
 
-fn engine_slot() -> &'static Mutex<Option<Arc<Engine>>> {
-    static SLOT: OnceLock<Mutex<Option<Arc<Engine>>>> = OnceLock::new();
-    SLOT.get_or_init(|| Mutex::new(None))
-}
-
-fn engine() -> Option<Arc<Engine>> {
-    engine_slot().lock().unwrap_or_else(|e| e.into_inner()).clone()
-}
-
-/// The loop of the app core, while it runs: the window's end of its queue.
+/// The app core's loop, while it runs.
 fn core_slot() -> &'static Mutex<Option<trommi_io::Handle>> {
-    static SLOT: OnceLock<Mutex<Option<trommi_io::Handle>>> = OnceLock::new();
-    SLOT.get_or_init(|| Mutex::new(None))
+    static CORE: OnceLock<Mutex<Option<trommi_io::Handle>>> = OnceLock::new();
+    CORE.get_or_init(Mutex::default)
 }
 
-type Thread = cxx_qt::CxxQtThread<qobject::Trommi>;
-
-/// The files fetched in this run: attachment id to the file URL of its plain bytes ("" while it comes).
-fn fetched() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
-    static FILES: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
-    FILES.get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
+fn tell_error(thread: &Thread, text: String) {
+    let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| o.as_mut().set_error(QString::from(text.as_str())));
 }
 
-/// The files put into Downloads in this run: attachment id to the file URL of the copy ("" while it comes).
-fn saved() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
-    static FILES: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
-    FILES.get_or_init(|| Mutex::new(std::collections::BTreeMap::new()))
-}
-
-/// The local files a JSON list of file URLs (a file dialog's) names.
-fn local_paths(json: &str) -> Vec<std::path::PathBuf> {
-    serde_json::from_str::<Vec<String>>(json)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|u| u.strip_prefix("file://").map(|p| std::path::PathBuf::from(percent_decode(p))))
-        .collect()
-}
-
-/// A file URL's path with its %XX escapes undone.
-fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// The window has the focus: nothing is announced then.
-static FOCUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// What the Desk held so far, for the notifications.
-fn watch() -> &'static Mutex<crate::notify::Watch> {
-    static WATCH: OnceLock<Mutex<crate::notify::Watch>> = OnceLock::new();
-    WATCH.get_or_init(Mutex::default)
-}
-
-/// Announces new questions, urgent cards and requests on the desktop; a click opens the card in the window.
-fn announce(thread: &Thread, desk: &str) {
-    let mut notes = watch().lock().unwrap_or_else(|e| e.into_inner()).fresh(desk);
-    // (TROMMI_LINUX_NOTIFY: "0" none, "always" also with the focus, for the tests' window that always has it)
-    let setting = std::env::var("TROMMI_LINUX_NOTIFY").unwrap_or_default();
-    if notes.is_empty() || setting == "0" || (setting != "always" && FOCUSED.load(std::sync::atomic::Ordering::Relaxed)) {
-        return;
-    }
-    // (many at once, after a while away: one notification says how many, and opens the Desk)
-    if notes.len() > 3 {
-        let urgent = notes.iter().any(|n| n.urgent);
-        notes = vec![crate::notify::Note {
-            card: String::new(),
-            summary: format!("{} new on your Desk", notes.len()),
-            body: notes.iter().take(3).map(|n| n.summary.as_str()).collect::<Vec<_>>().join("\n"),
-            urgent,
-        }];
-    }
-    static NOTIFIER: tokio::sync::OnceCell<Option<crate::notify::Notifier>> = tokio::sync::OnceCell::const_new();
-    let thread = thread.clone();
-    runtime().spawn(async move {
-        let notifier = NOTIFIER
-            .get_or_init(|| async move {
-                let open: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |card: String| {
-                    let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
-                        // (set twice, so that the same card asked for again still changes the property)
-                        o.as_mut().set_open_request(QString::default());
-                        o.as_mut().set_open_request(QString::from(if card.is_empty() { "desk" } else { card.as_str() }));
-                    });
-                });
-                crate::notify::Notifier::connect(open).await.ok()
-            })
-            .await;
-        let Some(n) = notifier else { return };
-        for note in &notes {
-            let _ = n.show(note).await;
-        }
-    });
-}
-
-/// The desktop's services of the app core's window: the files' map and a saved file's place to the window, the
-/// notifications to the session bus (a click opens what it names).
+/// The desktop's services of the window: the files' map and a saved file's place to the window, the notifications
+/// to the session bus (a click opens what it names).
 fn desktop_for(thread: Thread) -> crate::platform::Desktop {
     let mut desktop = crate::platform::Desktop::new();
     let on = thread.clone();
@@ -291,7 +114,7 @@ fn desktop_for(thread: Thread) -> crate::platform::Desktop {
     let on = thread.clone();
     desktop.on_saved = Box::new(move |path| {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let _ = on.queue(move |mut o: Pin<&mut qobject::Trommi>| o.as_mut().set_error(QString::from(format!("Saved to Downloads: {name}").as_str())));
+        tell_error(&on, format!("Saved to Downloads: {name}"));
     });
     desktop.on_notice = Box::new(move |notice| {
         if std::env::var("TROMMI_LINUX_NOTIFY").is_ok_and(|v| v == "0") {
@@ -310,6 +133,7 @@ fn desktop_for(thread: Thread) -> crate::platform::Desktop {
                 .get_or_init(|| async move {
                     let open: Arc<dyn Fn(String) + Send + Sync> = Arc::new(move |target: String| {
                         let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
+                            // (set twice, so that the same card asked for again still changes the property)
                             o.as_mut().set_open_request(QString::default());
                             o.as_mut().set_open_request(QString::from(if target.is_empty() { "desk" } else { target.as_str() }));
                         });
@@ -325,337 +149,27 @@ fn desktop_for(thread: Thread) -> crate::platform::Desktop {
     desktop
 }
 
-/// The engine's updates, onto Qt's thread.
-fn sink_for(thread: Thread) -> Sink {
-    Arc::new(move |u: Update| {
-        if u.live == Some(true) {
-            watch().lock().unwrap_or_else(|e| e.into_inner()).go_live();
-        }
-        if let Some(d) = &u.desk {
-            announce(&thread, d);
-        }
-        let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
-            if let Some(s) = u.status {
-                o.as_mut().set_status(QString::from(s.as_str()));
-            }
-            if let Some(d) = u.desk {
-                o.as_mut().set_desk_json(QString::from(d.as_str()));
-            }
-            if let Some(s) = u.sessions {
-                o.as_mut().set_sessions_json(QString::from(s.as_str()));
-            }
-            if let Some(c) = u.chat {
-                o.as_mut().set_chat_json(QString::from(c.as_str()));
-            }
-            if let Some(l) = u.live {
-                o.as_mut().set_live(l);
-            }
-            if let Some(t) = u.title {
-                o.as_mut().set_title(QString::from(t.as_str()));
-            }
-            if let Some(s) = u.signed_in {
-                o.as_mut().set_signed_in(s);
-                o.as_mut().set_starting(false);
-            }
-        });
-    })
-}
-
-fn tell_error(thread: &Thread, text: String) {
-    let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
-        o.as_mut().set_error(QString::from(text.as_str()));
-        o.as_mut().set_busy(false);
-    });
-}
-
-/// The engine is in: kept, followed live.
-fn run(engine: Arc<Engine>) {
-    *engine_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(engine.clone());
-    runtime().spawn(engine.run_live());
-}
-
 impl qobject::Trommi {
-    fn start(mut self: Pin<&mut Self>) {
+    fn start(self: Pin<&mut Self>) {
         let thread = self.qt_thread();
-        // The app core (core/client) behind this window instead of `engine/`: the switch of the series that moves
-        // this app onto it, gone with `engine/` at its end.
-        if std::env::var("TROMMI_LINUX_APP_CORE").is_ok_and(|v| v == "1") {
-            // (TROMMI_LINUX_GOLDEN=<sidebar.json>,<desk.json>: the drawing alone, from the core's golden views)
-            if let Ok(files) = std::env::var("TROMMI_LINUX_GOLDEN") {
-                let read = |name: Option<&str>| name.and_then(|n| std::fs::read_to_string(n).ok()).unwrap_or_default();
-                let mut names = files.split(',');
-                let (sidebar, desk) = (read(names.next()), read(names.next()));
-                match crate::shell::golden(&sidebar, &desk) {
-                    Ok(json) => self.set_view_json(QString::from(json.as_str())),
-                    Err(why) => eprintln!("[trommi] TROMMI_LINUX_GOLDEN: {why}"),
-                }
-                return;
-            }
-            let offset = cxx_qt_lib::QDateTime::current_date_time().offset_from_utc() / 60;
-            let draw_on = thread.clone();
-            let started = crate::shell::start_with(runtime(), crate::shell::config(offset), move |json| {
+        let offset = cxx_qt_lib::QDateTime::current_date_time().offset_from_utc() / 60;
+        let draw_on = thread.clone();
+        let started = crate::shell::start_with(
+            runtime(),
+            crate::shell::config(offset),
+            move |json| {
                 let _ = draw_on.queue(move |mut o: Pin<&mut qobject::Trommi>| {
                     o.as_mut().set_view_json(QString::from(json.as_str()));
                 });
-            }, desktop_for(thread.clone()));
-            match started {
-                Ok(handle) => *core_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(handle),
-                Err(why) => tell_error(&thread, format!("Could not open: {why}")),
-            }
-            return;
+            },
+            desktop_for(thread.clone()),
+        );
+        match started {
+            Ok(handle) => *core_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(handle),
+            Err(why) => tell_error(&thread, format!("Could not open: {why}")),
         }
-        let sink = sink_for(thread.clone());
-        runtime().spawn(async move {
-            match Engine::open_newest(sink) {
-                Ok(Some(engine)) => run(engine),
-                Ok(None) => {
-                    let _ = thread.queue(|mut o: Pin<&mut qobject::Trommi>| {
-                        o.as_mut().set_starting(false);
-                        o.as_mut().set_status(QString::from("Not signed in"));
-                    });
-                    // (a scene signs in on its own: TROMMI_LINUX_EMAIL and TROMMI_LINUX_PASSWORD, at TROMMI_HUB)
-                    // (or with the Emergency Kit: TROMMI_LINUX_KIT_ACCOUNT and TROMMI_LINUX_KIT_WORDS)
-                    if let (Ok(account), Ok(words)) = (std::env::var("TROMMI_LINUX_KIT_ACCOUNT"), std::env::var("TROMMI_LINUX_KIT_WORDS")) {
-                        let hub = std::env::var("TROMMI_HUB").unwrap_or_default();
-                        match signin::with_kit(&hub, &account, &words, sink_for(thread.clone())).await {
-                            Ok(engine) => run(engine),
-                            Err(f) => tell_error(&thread, f.text()),
-                        }
-                    } else if let (Ok(email), Ok(password)) = (std::env::var("TROMMI_LINUX_EMAIL"), std::env::var("TROMMI_LINUX_PASSWORD")) {
-                        let hub = std::env::var("TROMMI_HUB").unwrap_or_default();
-                        let sink = sink_for(thread.clone());
-                        match signin::with_password(&hub, &email, &password, sink).await {
-                            Ok(engine) => run(engine),
-                            Err(f) => tell_error(&thread, f.text()),
-                        }
-                    }
-                }
-                Err(f) => {
-                    let text = f.text();
-                    let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
-                        o.as_mut().set_starting(false);
-                        o.as_mut().set_status(QString::from(format!("Could not open: {text}").as_str()));
-                    });
-                }
-            }
-        });
     }
 
-    fn sign_in_password(mut self: Pin<&mut Self>, hub: &QString, email: &QString, password: &QString) {
-        self.as_mut().set_busy(true);
-        self.as_mut().set_error(QString::default());
-        let thread = self.qt_thread();
-        let (hub, email, password) = (hub.to_string(), email.to_string(), password.to_string());
-        runtime().spawn(async move {
-            match signin::with_password(&hub, &email, &password, sink_for(thread.clone())).await {
-                Ok(engine) => run(engine),
-                Err(f) => tell_error(&thread, f.text()),
-            }
-        });
-    }
-
-    fn sign_in_kit(mut self: Pin<&mut Self>, hub: &QString, account: &QString, words: &QString) {
-        self.as_mut().set_busy(true);
-        self.as_mut().set_error(QString::default());
-        let thread = self.qt_thread();
-        let (hub, account, words) = (hub.to_string(), account.to_string(), words.to_string());
-        runtime().spawn(async move {
-            match signin::with_kit(&hub, &account, &words, sink_for(thread.clone())).await {
-                Ok(engine) => run(engine),
-                Err(f) => tell_error(&thread, f.text()),
-            }
-        });
-    }
-
-    fn answer(self: Pin<&mut Self>, id: &QString, key: &QString) {
-        let thread = self.qt_thread();
-        let (id, key) = (id.to_string(), key.to_string());
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            let is_request = engine
-                .mirror
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .permission(&id)
-                .is_some();
-            let done = if is_request {
-                engine.verdict(&id, key == "allow").await
-            } else {
-                engine.answer(&id, vec![key]).await
-            };
-            if let Err(f) = done {
-                tell_error(&thread, format!("Not sent: {}", f.text()));
-            }
-        });
-    }
-
-    fn answer_many(self: Pin<&mut Self>, id: &QString, keys_json: &QString) {
-        let thread = self.qt_thread();
-        let id = id.to_string();
-        let keys: Vec<String> = serde_json::from_str(&keys_json.to_string()).unwrap_or_default();
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            if let Err(f) = engine.answer(&id, keys).await {
-                tell_error(&thread, format!("Not sent: {}", f.text()));
-            }
-        });
-    }
-
-    fn mark_read(self: Pin<&mut Self>, id: &QString) {
-        let thread = self.qt_thread();
-        let id = id.to_string();
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            if let Err(f) = engine.answer(&id, Vec::new()).await {
-                tell_error(&thread, format!("Not sent: {}", f.text()));
-            }
-        });
-    }
-
-    fn select_session(mut self: Pin<&mut Self>, id: &QString) {
-        self.as_mut().set_selected(id.clone());
-        let id = id.to_string();
-        if id.is_empty() {
-            self.as_mut().set_chat_json(QString::from("[]"));
-        }
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            engine.select((!id.is_empty()).then_some(id));
-        });
-    }
-
-    fn send(self: Pin<&mut Self>, text: &QString) {
-        let thread = self.qt_thread();
-        let session = self.rust().selected.to_string();
-        let text = text.to_string();
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            if let Err(f) = engine.say_to(&session, &text).await {
-                tell_error(&thread, format!("Not sent: {}", f.text()));
-            }
-        });
-    }
-
-    fn fetch_file(self: Pin<&mut Self>, reference: &QString) {
-        let thread = self.qt_thread();
-        let Ok(r) = serde_json::from_str::<serde_json::Value>(&reference.to_string()) else { return };
-        let Some(id) = r["attachment_id"].as_str().map(str::to_string) else { return };
-        {
-            let mut asked = fetched().lock().unwrap_or_else(|e| e.into_inner());
-            if asked.contains_key(&id) {
-                return;
-            }
-            asked.insert(id.clone(), String::new());
-        }
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            let url = match engine.fetch_file(&r).await {
-                Ok(path) => format!("file://{}", path.display()),
-                Err(f) => {
-                    // (a file that did not come is asked for again on the next look)
-                    fetched().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-                    tell_error(&thread, format!("A file did not open: {}", f.text()));
-                    return;
-                }
-            };
-            let all = {
-                let mut m = fetched().lock().unwrap_or_else(|e| e.into_inner());
-                m.insert(id, url);
-                serde_json::to_string(&*m).unwrap_or_default()
-            };
-            let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
-                o.as_mut().set_files_json(QString::from(all.as_str()));
-            });
-        });
-    }
-
-    fn save_file(self: Pin<&mut Self>, reference: &QString) {
-        let thread = self.qt_thread();
-        let Ok(r) = serde_json::from_str::<serde_json::Value>(&reference.to_string()) else { return };
-        let Some(id) = r["attachment_id"].as_str().map(str::to_string) else { return };
-        {
-            let mut asked = saved().lock().unwrap_or_else(|e| e.into_inner());
-            if asked.get(&id).is_some_and(|u| u.is_empty()) {
-                return;
-            }
-            asked.insert(id.clone(), String::new());
-        }
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            let url = match engine.save_file(&r).await {
-                Ok(path) => format!("file://{}", path.display()),
-                Err(f) => {
-                    saved().lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-                    tell_error(&thread, format!("Not saved: {}", f.text()));
-                    return;
-                }
-            };
-            let all = {
-                let mut m = saved().lock().unwrap_or_else(|e| e.into_inner());
-                m.insert(id, url);
-                serde_json::to_string(&*m).unwrap_or_default()
-            };
-            let _ = thread.queue(move |mut o: Pin<&mut qobject::Trommi>| {
-                o.as_mut().set_saved_json(QString::from(all.as_str()));
-            });
-        });
-    }
-
-    fn answer_with_files(self: Pin<&mut Self>, id: &QString, keys_json: &QString, files_json: &QString) {
-        let thread = self.qt_thread();
-        let id = id.to_string();
-        let keys: Vec<String> = serde_json::from_str(&keys_json.to_string()).unwrap_or_default();
-        let paths = local_paths(&files_json.to_string());
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            let done = async {
-                let mut refs = Vec::new();
-                for p in &paths {
-                    refs.push(engine.upload_file(p).await?);
-                }
-                engine.answer_with(&id, keys, refs).await
-            }
-            .await;
-            if let Err(f) = done {
-                tell_error(&thread, format!("Not sent: {}", f.text()));
-            }
-        });
-    }
-
-    fn send_with_files(self: Pin<&mut Self>, text: &QString, files_json: &QString) {
-        let thread = self.qt_thread();
-        let session = self.rust().selected.to_string();
-        let text = text.to_string();
-        let paths = local_paths(&files_json.to_string());
-        let Some(engine) = engine() else { return };
-        runtime().spawn(async move {
-            let done = async {
-                let mut refs = Vec::new();
-                for p in &paths {
-                    refs.push(engine.upload_file(p).await?);
-                }
-                engine.say_with(&session, &text, refs).await
-            }
-            .await;
-            if let Err(f) = done {
-                tell_error(&thread, format!("Not sent: {}", f.text()));
-            }
-        });
-    }
-
-    fn set_focused(self: Pin<&mut Self>, focused: bool) {
-        FOCUSED.store(focused, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn set_theme(mut self: Pin<&mut Self>, mode: &QString) {
-        let mode = if mode.to_string() == "dark" { "dark" } else { "light" };
-        let _ = crate::store::private_dir(&crate::store::base_dir());
-        let _ = std::fs::write(crate::store::base_dir().join("theme"), mode);
-        self.as_mut().set_theme_mode(QString::from(mode));
-    }
-
-    /// The window's word for the app core (`shell::person_event`): a tap as an `Event::Action`, a page as an
-    /// `Event::Focus`. Only while the app core runs.
     fn send_event(self: Pin<&mut Self>, json: &QString) {
         match crate::shell::person_event(&json.to_string()) {
             Ok(event) => {
@@ -667,8 +181,6 @@ impl qobject::Trommi {
         }
     }
 
-    /// A file the person picked (the file dialog): read here, handed to the core as `Action::Attach` under the
-    /// window's own id for it.
     fn attach_file(self: Pin<&mut Self>, url: &QString, local_id: &QString) {
         let thread = self.qt_thread();
         let (url, local_id) = (url.to_string(), local_id.to_string());
@@ -683,11 +195,17 @@ impl qobject::Trommi {
         });
     }
 
-    fn shot_taken(self: Pin<&mut Self>) {
-        // (the app core's loop ends with its handle; the slot is free for the next run)
-        core_slot().lock().unwrap_or_else(|e| e.into_inner()).take();
-        if let Some(engine) = engine() {
-            engine.close();
+    fn set_theme(mut self: Pin<&mut Self>, mode: &QString) {
+        let mode = if mode.to_string() == "dark" { "dark" } else { "light" };
+        let base = crate::shell::base_dir();
+        if std::fs::DirBuilder::new().recursive(true).create(&base).is_ok() {
+            let _ = std::fs::write(base.join("theme"), mode);
         }
+        self.as_mut().set_theme_mode(QString::from(mode));
+    }
+
+    fn shot_taken(self: Pin<&mut Self>) {
+        // (the loop ends with its handle; the slot is free for the next run)
+        core_slot().lock().unwrap_or_else(|e| e.into_inner()).take();
     }
 }

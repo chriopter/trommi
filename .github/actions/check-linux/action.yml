@@ -49,24 +49,12 @@ runs:
         test -s smoke.png || { echo "the window drew nothing"; exit 1; }
         # (a QML error would leave the window empty: the picture must not be one plain colour)
         test "$(stat -c %s smoke.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
-    - name: Smoke test (Qt offscreen), on the app core
-      working-directory: app/linux
-      shell: bash
-      run: |
-        data=$(mktemp -d)
-        TROMMI_LINUX_APP_CORE=1 QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 TROMMI_LINUX_DIR="$data" \
-          TROMMI_LINUX_SHOT="$PWD/smoke-core.png" TROMMI_LINUX_SHOT_AFTER_MS=500 \
-          timeout 60 target/debug/trommi-linux 2>&1 | grep -v '^qt\.' || true
-        test -s smoke-core.png || { echo "the window drew nothing"; exit 1; }
-        # (a QML error would leave the window empty: the picture must not be one plain colour)
-        test "$(stat -c %s smoke-core.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: linux-smoke
         path: |
           app/linux/smoke.png
-          app/linux/smoke-core.png
         if-no-files-found: ignore
         retention-days: 7
 

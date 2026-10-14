@@ -1,4 +1,4 @@
-# Trommi for Linux: a Qt/QML window over the shared Rust client core, bound by cxx-qt. A workspace of its own, so that
+# Trommi for Linux: a Qt/QML window drawing the app core (core/client), bound by cxx-qt. A workspace of its own, so that
 # the main workspace's `cargo test --workspace` needs no Qt; its versions follow the main Cargo.lock (copied, then
 # extended by the Qt crates only).
 [workspace]
@@ -9,7 +9,7 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 license-file = "../../LICENSE.md"
-description = "Trommi for Linux: sign in, the Desk, answer cards, the sessions and their Chats, live."
+description = "Trommi for Linux: a window that draws the app core: sign in, the Desk, sessions and cards, live."
 
 [[bin]]
 name = "trommi-linux"
@@ -20,19 +20,11 @@ name = "trommi_linux"
 path = "src/lib.rs"
 
 [dependencies]
-# The protocol core, the client core, and the facade over both that the iOS and web apps use (here as a Rust library,
-# without UniFFI or wasm-bindgen): the same records and the same calls.
-trommi-core = { path = "../../core/protocol" }
+# The app core, which decides every screen, and its native executor: HTTP, the event stream, the stores, the loop.
 trommi-client-core = { path = "../../core/client" }
-trommi-core-swift = { path = "../../core/bindings/swift", default-features = false }
-# The native executor of the app core: HTTP, the event stream, the stores, the loop (shell.rs).
 trommi-io = { path = "../../core/io" }
-# The hub client (routes, sign-in, the live stream) and the journal on disk, as the connector has them.
-trommi-connector = { path = "../../connector" }
 tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "sync", "time"] }
-reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls"] }
 serde_json = "=1.0.151"
-zeroize = "=1.9.1"
 # Desktop notifications over the session D-Bus (notify.rs).
 zbus = { version = "4.4", default-features = false, features = ["tokio"] }
 futures-util = { version = "0.3", default-features = false }
@@ -42,6 +34,9 @@ cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
 
 [dev-dependencies]
 # the real hub's tests drive the room through the connector's stand-ins (tests/hub.rs, tests/connector/common)
+trommi-core = { path = "../../core/protocol" }
+trommi-connector = { path = "../../connector" }
+reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "=1.53.2", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
 
 [build-dependencies]

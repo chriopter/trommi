@@ -344,36 +344,28 @@ No update feed yet: the app does not update itself (no Sparkle); a new version i
 </details>
 
 <details>
-<summary><b>Linux app</b> · Qt/QML over the shared Rust client core (early)</summary>
+<summary><b>Linux app</b> · Qt/QML drawing the app core (early)</summary>
 
-[`app/linux`](app/linux) is a native Linux client: a Qt Quick window (`qml/`) over the same Rust the iOS and web
-apps use. It is a Cargo workspace of its own, so the main workspace's builds and tests need no Qt.
+[`app/linux`](app/linux) is a native Linux client: a Qt Quick window (`qml/`) that draws the app core's view model
+and does the desktop's services. It is a Cargo workspace of its own, so the main workspace's builds and tests need
+no Qt.
 
 ```text
-qml/            the window: sign-in, sidebar (Desk + sessions), the Desk's cards, a session's Chat
-src/bridge.rs   cxx-qt: one QObject, the views as properties (JSON text), the actions as invokables
-src/engine/     a human device: sign-in with the code (8.4, 8.5), the catch-up in the hub's order, the live
-                stream, the outbox (the iOS app's Room, in Rust)
-src/view.rs     the app's copy of the board model, kept by the client core's patches
-src/store.rs    ~/.local/share/trommi-linux/<room>/: the device (the connector's journal) and the model cache
+qml/              the window: View*.qml draw ViewModel (sign-in, sidebar, Desk, a session, a card); a tap is an
+                  Event::Action, a page an Event::Focus
+src/shell.rs      the shell over the app core: the fold of every Render, the person's events, the slot's folders
+src/platform.rs   what the core asks of the desktop: files for drawing, saving, links, notifications
+src/notify.rs     desktop notifications over the session D-Bus
+src/bridge.rs     cxx-qt: one QObject; the view as JSON text, the person's events in
+core/io           the executor (trommi-io): HTTP, the event stream, the device journal, the cache folder, the timer
 ```
 
-**Binding.** The engine is Rust and calls the facade crate `core/bindings/swift` (`trommi-core-swift`, without its UniFFI
-and wasm features) directly: `CoreDevice` and `ClientModel`, the records iOS gets, with no foreign-function layer.
-Only the window crosses into C++, through [cxx-qt](https://github.com/KDAB/cxx-qt): one object, plain properties.
-The hub client and the journal on disk are the connector's (`trommi-connector`). Nothing is decided in the app:
-the Desk's order, the session list with its links and red hands, presence and every card's state come from the
-client core.
+**Binding.** The App (`core/client`) runs in trommi-io's loop on tokio; each `Effect::Render` is folded with the
+core's own rule and handed to the window as JSON. Only the window crosses into C++, through
+[cxx-qt](https://github.com/KDAB/cxx-qt): one object, plain properties. Nothing is decided in the app: what every
+screen shows, its order and its words come from the core.
 
-**What it does.** Sign in with the account's e-mail and password, or with the Emergency Kit (account + words): both
-open the room's recovery code on the device, and the device joins the room group and then each live session group
-from outside, every step checked by the core from the room's founding. The Desk with its cards (decisions with
-option tiles, multiple choice, infos, permission requests), answered from here; the sidebar with every session and
-its helpers, online or not, waiting or stopped; a session's Chat, read and written; live updates and presence over
-the hub's stream; the model kept on disk, so the next start shows the board at once and reads only what is new.
-
-**Not yet.** Files and pictures (a card says how many it has), the Scribble Board, notes, notifications, pairing by
-invite link, settings, packaging (Flatpak/AppImage).
+**Not yet.** The Scribble Board, notes, settings, pairing by invite link, packaging (Flatpak/AppImage).
 
 **Run it** (Qt 6 with Qt Quick Controls, e.g. `qt6-declarative`; the Rust toolchain of `rust-toolchain.toml`):
 
@@ -381,13 +373,13 @@ invite link, settings, packaging (Flatpak/AppImage).
 cd app/linux && cargo run --release
 ```
 
-`TROMMI_HUB` sets the hub the sign-in screen offers (default `https://hub.trommi.com`), `TROMMI_LINUX_DIR` the data
-folder. A local hub with a filled demo room: `cargo run -p trommi-hub` (`HUB_HOST=127.0.0.1 HUB_PORT=47600
-HUB_DATA=<dir> HUB_URL=http://127.0.0.1:47600`), then `cargo run -p trommi-tests --bin seed-account -- --hub
-http://127.0.0.1:47600 --email demo@example.org --env-out <file>` (the password is in that file), then sign in.
+`TROMMI_HUB` sets the hub (default `https://hub.trommi.com`), `TROMMI_LINUX_DIR` the data folder
+(`<dir>/default/device` the device's journal, `<dir>/default/cache` the cache). `cargo test` runs the conformance
+scripts through the app's fold, and the app against the real hub (`tests/hub.rs`, which builds `trommi-hub`).
 `TROMMI_LINUX_SHOT=<file.png>` (with `QT_QPA_PLATFORM=offscreen`) draws the window once, writes the picture and
 quits: CI's smoke test (`.github/workflows/pr-check.yml` on a pull request, `ship-linux.yml` on main, only when the
-app or what it is built from changed).
+app or what it is built from changed). Pictures over the real hub: `TROMMI_LINUX_SHOTS=<dir> cargo test --test hub
+-- --ignored pictures` (`TROMMI_LINUX_SCENE=card|session`).
 
 </details>
 
