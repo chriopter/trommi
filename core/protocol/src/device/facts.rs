@@ -64,6 +64,8 @@ pub(super) const SUB_NOTE_VERSION: u8 = 2;
 pub(super) const SUB_OBJECTS_REVISION: u8 = 3;
 /// An object taken from a signed header, not read from its first version (9.2.1).
 pub(super) const SUB_ADOPTED: u8 = 4;
+/// A version an object taken from a signed header held here (9.2.1): what names it is judged by the rules.
+pub(super) const SUB_SEEN: u8 = 5;
 /// The value of an entry whose key says everything.
 const PRESENT: [u8; 1] = [1];
 /// The parts of the table of registers.
@@ -490,6 +492,16 @@ fn check_object(mut rest: Reader<'_>, value: &[u8]) -> Result<(), Error> {
                 .map(|_| ())
                 .map_err(|_| Error::BadFormat)
         }
+        SUB_SEEN => {
+            rest.value::<ObjectId>()?;
+            rest.value::<Hash32>()?;
+            rest.finish()?;
+            if value == PRESENT {
+                Ok(())
+            } else {
+                Err(Error::BadFormat)
+            }
+        }
         SUB_ADOPTED => {
             rest.value::<ObjectId>()?;
             rest.finish()?;
@@ -521,6 +533,15 @@ fn note_version_key(group: &GroupId, object: &ObjectId, version: &Hash32) -> Vec
     group_key(
         table::OBJECT,
         SUB_NOTE_VERSION,
+        group,
+        &[&object.as_bytes()[..], version.as_bytes()].concat(),
+    )
+}
+
+fn seen_key(group: &GroupId, object: &ObjectId, version: &Hash32) -> Vec<u8> {
+    group_key(
+        table::OBJECT,
+        SUB_SEEN,
         group,
         &[&object.as_bytes()[..], version.as_bytes()].concat(),
     )
@@ -617,6 +638,14 @@ impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
                 .is_some())
     }
 
+    fn seen(&self, object: &ObjectId, hash: &Hash32) -> Result<bool, Error> {
+        Ok(self.listed
+            && self
+                .device
+                .stored(&seen_key(&self.group, object, hash))
+                .is_some())
+    }
+
     fn covered(&self, object: &ObjectId) -> Result<bool, Error> {
         let Some(at) = self.at.filter(|_| self.listed) else {
             return Ok(false);
@@ -626,7 +655,7 @@ impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
         };
         let (record, _) = super::listed::read_listed(value)
             .map_err(|_| damaged("an object taken from the list"))?;
-        Ok(record.change > at)
+        Ok(record.change >= at)
     }
 }
 
@@ -1041,6 +1070,7 @@ impl<S: Storage> Device<S> {
     ) -> Result<(), Error> {
         self.split_objects(batch, group)?;
         let held = self.held_objects(group)?;
+        let held_adopted = held.adopted(&transition.object_id)?;
         let revision = held.revision()?;
         if revision != transition.revision
             || held.object(&transition.object_id)? != transition.before
@@ -1071,6 +1101,13 @@ impl<S: Storage> Device<S> {
                 PRESENT.to_vec(),
             );
         }
+        if transition.adopted || held_adopted {
+            self.put_stored(
+                batch,
+                seen_key(group, &transition.object_id, &transition.after.current),
+                PRESENT.to_vec(),
+            );
+        }
         Ok(())
     }
 
@@ -1089,14 +1126,21 @@ impl<S: Storage> Device<S> {
     /// The objects a group's state is built again from: none, or of a group started from the hub's list the
     /// objects taken from that list, each as it was taken.
     pub(super) fn seed_objects(&self, group: &GroupId) -> Result<Objects, Error> {
-        if self.listed_at(group)?.is_none() {
+        // (an agent or helper device never adopts, whatever its store says)
+        if self.listed_at(group)?.is_none() || !self.is_human() {
             return Ok(Objects::new());
         }
         let mut objects = Objects::adopting();
         for (object_id, record, after) in self.listed_sources(group)? {
             // (what a Cut ended is not taken, as anything its sender signed beyond it)
             let header = &record.header;
-            if self.beyond_cut(group, &header.sender, header.seq, header.epoch)? {
+            if self.beyond_cut(
+                group,
+                &header.sender,
+                header.seq,
+                header.epoch,
+                Some(record.hash),
+            )? {
                 continue;
             }
             objects.apply(&Transition {
@@ -1134,6 +1178,9 @@ impl<S: Storage> Device<S> {
         for id in objects.adopted_ids() {
             wanted.insert(adopted_key(group, id), PRESENT.to_vec());
         }
+        for (id, version) in objects.seen_versions() {
+            wanted.insert(seen_key(group, id, version), PRESENT.to_vec());
+        }
         wanted.insert(
             objects_revision_key(group),
             objects.revision().to_be_bytes().to_vec(),
@@ -1143,6 +1190,7 @@ impl<S: Storage> Device<S> {
             SUB_NOTE_VERSION,
             SUB_OBJECTS_REVISION,
             SUB_ADOPTED,
+            SUB_SEEN,
         ] {
             for (key, value) in self.stored_under(&group_key(table::OBJECT, sub, group, &[])) {
                 match wanted.get(&key) {

@@ -547,3 +547,92 @@ fn what_was_served_before_the_listed_version_changes_nothing() {
     let object = w.late.object(&group, &object_id).unwrap().unwrap();
     assert_eq!(object.current, w.revised.envelope_hash);
 }
+
+/// A version the device held before is no missing one: an answer that names it, served after the next version
+/// was taken, is judged by the rules and forbidden; nothing rolls back.
+#[test]
+fn an_answer_to_a_version_held_before_rolls_nothing_back() {
+    let mut w = world();
+    let group = w.group;
+    w.late.start_from_list(&group, w.at).unwrap();
+    let object_id = w.revised.object_id.unwrap();
+    let first = w
+        .hub
+        .chain_of(&group, &w.agent.id(), 0)
+        .into_iter()
+        .find(|stored| {
+            stored
+                .header
+                .subject
+                .object()
+                .is_some_and(|f| f.object_id == object_id)
+        })
+        .expect("the first version");
+    w.late
+        .adopt_listed(&group, &object_id, &first.bytes, first.change)
+        .unwrap();
+    // the late device answers the first version; its answer stays in the outbox
+    let own = w
+        .late
+        .seal(
+            &Draft::Answer {
+                session: w.session,
+                object_id,
+                choices: vec!["yes".into()],
+                closes: false,
+                payload: json(r#"{"answer_action":"answer","choices":["yes"]}"#),
+            },
+            None,
+            &[],
+            trommi_tests::now(),
+        )
+        .expect("the answer seals");
+    let bytes = w
+        .late
+        .outbox()
+        .into_iter()
+        .find(|entry| entry.group == Some(group))
+        .expect("the answer waits")
+        .parts[0]
+        .clone();
+    // the next version comes in the hub's order
+    let mut second = w.stored(&w.revised.clone());
+    second.change = w.late.cursor() + 1;
+    take_envelope(&mut w.late, &second);
+    assert_eq!(
+        w.late.object(&group, &object_id).unwrap().unwrap().current,
+        w.revised.envelope_hash
+    );
+    // the answer to the version before, served as stored after it
+    let mut stale = w.stored(&w.revised.clone());
+    stale.bytes = bytes;
+    stale.hash = own.envelope_hash;
+    stale.change = w.late.cursor() + 1;
+    let r = take_envelope(&mut w.late, &stale);
+    assert_eq!(r.code, Some(Error::Forbidden), "{r:?}");
+    let object = w.late.object(&group, &object_id).unwrap().unwrap();
+    assert_eq!(object.current, w.revised.envelope_hash);
+    assert_eq!(object.state, ObjectState::Open);
+}
+
+/// The very envelope the list gave, met again in the hub's order under its own change number: it changes
+/// nothing and is not refused.
+#[test]
+fn the_listed_envelope_met_in_order_changes_nothing() {
+    let mut w = world();
+    let group = w.group;
+    w.late.start_from_list(&group, 0).unwrap();
+    let object_id = w.plain.object_id.unwrap();
+    let mut listed = w.stored(&w.plain.clone());
+    listed.change = w.late.cursor() + 1;
+    w.late
+        .adopt_listed(&group, &object_id, &listed.bytes, listed.change)
+        .unwrap();
+    let r = take_envelope(&mut w.late, &listed);
+    assert_ne!(r.outcome, EnvelopeOutcome::Refused, "{r:?}");
+    assert_ne!(r.code, Some(Error::Forbidden), "{r:?}");
+    assert_eq!(
+        w.late.object(&group, &object_id).unwrap().unwrap().current,
+        w.plain.envelope_hash
+    );
+}

@@ -167,6 +167,21 @@ impl<S: Storage> Device<S> {
             };
             drop(held);
             let Some(transition) = transition else {
+                // the very envelope the object was taken from, its body opening now (its key came, or it is
+                // served in full): what later steps need of it is kept with it
+                if let Ok(body) = &body {
+                    let key = listed_object_key(group, object_id);
+                    if let Some(value) = this.stored(&key) {
+                        let (mut record, object) = read_listed(value).map_err(|_| damaged())?;
+                        if record.hash == hash && record.extra.is_empty() {
+                            record.extra = extra_of(&header, body, false);
+                            let mut value = Writer::new();
+                            value.value(&record)?;
+                            value.value(&object)?;
+                            this.put_stored(batch, key, value.into_bytes());
+                        }
+                    }
+                }
                 let mut shown =
                     ReceivedEnvelope::of(change, hash, header, EnvelopeOutcome::Provisional);
                 match body {
@@ -245,12 +260,19 @@ impl<S: Storage> Device<S> {
         if let Some(stored) = self.stored(&key) {
             let held = read_floor(stored).map_err(|_| damaged())?;
             // (a floor its writer signed beyond its own Cut is void, and its numbers are used anew)
-            let void = self.beyond_cut(&header.group, &header.sender, held.seq, held.epoch)?;
+            let void =
+                self.beyond_cut(&header.group, &header.sender, held.seq, held.epoch, None)?;
             if held.seq >= header.seq && !void {
                 return Ok(());
             }
         }
-        if self.beyond_cut(&header.group, &header.sender, header.seq, header.epoch)? {
+        if self.beyond_cut(
+            &header.group,
+            &header.sender,
+            header.seq,
+            header.epoch,
+            None,
+        )? {
             return Ok(());
         }
         let mut writer = Writer::new();
@@ -313,12 +335,12 @@ impl<S: Storage> Device<S> {
     ) -> Result<Option<Error>, Error> {
         let prefix = group_key(table::CHAIN, SUB_FLOOR, group, &[]);
         let mut finding = None;
-        let cut = self.removal(group, sender)?.map(|removal| removal.cut);
+        let removal = self.removal(group, sender)?;
         for (key, value) in self.stored_under(&prefix) {
             let floor = read_floor(&value).map_err(|_| damaged())?;
             let writer = DeviceId::from_slice(key.get(prefix.len()..).unwrap_or_default())
                 .map_err(|_| damaged())?;
-            if self.beyond_cut(group, &writer, floor.seq, floor.epoch)? {
+            if self.beyond_cut(group, &writer, floor.seq, floor.epoch, None)? {
                 continue;
             }
             for (named, head) in floor.heads {
@@ -326,8 +348,14 @@ impl<S: Storage> Device<S> {
                     continue;
                 }
                 // What a Cut ended is not a bound: the sender's chain stands at the Cut at most.
-                let head = match cut {
-                    Some(cut) if head.seq > cut.seq => cut,
+                // (a head named before the sender came back, beyond its Cut, stands for the Cut)
+                let head = match &removal {
+                    Some(removal)
+                        if head.seq > removal.cut.seq
+                            && !removal.again.is_some_and(|again| floor.epoch >= again) =>
+                    {
+                        removal.cut
+                    }
                     _ => head,
                 };
                 if start.seq < head.seq {
@@ -379,9 +407,10 @@ impl<S: Storage> Device<S> {
         group: &GroupId,
         hash: &Hash32,
     ) -> Result<Option<Record>, Error> {
+        // (a chain record that took the envelope without its body says less than the list's, which kept it)
         match self.record_by_hash(group, hash)? {
-            Some(record) => Ok(Some(record)),
-            None => self.listed_record(group, hash),
+            Some(record) if !record.extra.is_empty() => Ok(Some(record)),
+            held => Ok(self.listed_record(group, hash)?.or(held)),
         }
     }
 
@@ -393,9 +422,13 @@ impl<S: Storage> Device<S> {
         device: &DeviceId,
         seq: u64,
         epoch: u64,
+        hash: Option<Hash32>,
     ) -> Result<bool, Error> {
         Ok(self.removal(group, device)?.is_some_and(|removal| {
-            seq > removal.cut.seq && !removal.again.is_some_and(|again| epoch >= again)
+            let again = removal.again.is_some_and(|again| epoch >= again);
+            // (another envelope under the Cut's own number is no part of the chain either: `equivocation`)
+            let other = seq == removal.cut.seq && hash.is_some_and(|hash| hash != removal.cut.hash);
+            (seq > removal.cut.seq && !again) || other
         }))
     }
 
@@ -411,10 +444,17 @@ impl<S: Storage> Device<S> {
         for (id, record, _) in self.listed_sources(group)? {
             let header = &record.header;
             if header.sender == *device
-                && self.beyond_cut(group, device, header.seq, header.epoch)?
+                && self.beyond_cut(group, device, header.seq, header.epoch, Some(record.hash))?
             {
                 self.delete_stored(batch, listed_object_key(group, &id));
                 dropped = true;
+                // another envelope under the Cut's own number than the one it names: the list served a fork
+                if self
+                    .removal(group, device)?
+                    .is_some_and(|removal| removal.cut.seq == header.seq)
+                {
+                    self.put_finding(batch, group, device, &Error::Equivocation);
+                }
             }
         }
         Ok(dropped)

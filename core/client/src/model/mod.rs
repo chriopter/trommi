@@ -171,6 +171,18 @@ impl Model {
         source: &str,
         at: u64,
     ) -> Alert {
+        // The same finding about the same envelope, met again (a catch-up or a reading of the past that hands it
+        // once more), is one alert, not another.
+        if envelope_number.is_some() {
+            if let Some(held) = self.alerts.iter().find(|held| {
+                held.code == code
+                    && held.envelope_number == envelope_number
+                    && held.sender_device_id == sender
+                    && held.source == source
+            }) {
+                return held.clone();
+            }
+        }
         let alert = Alert {
             alert_id: format!("{}-{}", radix36(at), radix36(self.alert_seq)),
             code: code.to_string(),

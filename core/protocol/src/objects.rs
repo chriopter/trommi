@@ -109,6 +109,11 @@ pub trait ObjectStates {
     fn covered(&self, _object: &ObjectId) -> Result<bool, Error> {
         Ok(false)
     }
+
+    /// Whether `hash` was ever the current version of the object `object` taken from a signed header here.
+    fn seen(&self, _object: &ObjectId, _hash: &Hash32) -> Result<bool, Error> {
+        Ok(false)
+    }
 }
 
 impl ObjectStates for Objects {
@@ -137,7 +142,11 @@ impl ObjectStates for Objects {
             && self
                 .listed
                 .get(object)
-                .is_some_and(|listed| *listed > self.at))
+                .is_some_and(|listed| *listed >= self.at))
+    }
+
+    fn seen(&self, object: &ObjectId, hash: &Hash32) -> Result<bool, Error> {
+        Ok(self.seen.contains(&(*object, *hash)))
     }
 }
 
@@ -158,6 +167,8 @@ pub struct Objects {
     listed: BTreeMap<ObjectId, u64>,
     /// The change number of the envelope being judged ([`Objects::judging_at`]).
     at: u64,
+    /// Every version an object taken from a signed header held here.
+    seen: BTreeSet<(ObjectId, Hash32)>,
 }
 
 struct ObjectEntry(ObjectId, Object);
@@ -210,6 +221,11 @@ impl Objects {
         self.adopted.contains(object)
     }
 
+    /// Every version an object taken from a signed header held, ascending.
+    pub fn seen_versions(&self) -> impl Iterator<Item = &(ObjectId, Hash32)> {
+        self.seen.iter()
+    }
+
     /// Every object taken from a signed header, ascending by id.
     pub fn adopted_ids(&self) -> impl Iterator<Item = &ObjectId> {
         self.adopted.iter()
@@ -257,6 +273,10 @@ impl Objects {
         }
         if transition.adopted {
             self.adopted.insert(transition.object_id);
+        }
+        if self.adopted.contains(&transition.object_id) {
+            self.seen
+                .insert((transition.object_id, transition.after.current));
         }
         Ok(())
     }
@@ -598,7 +618,9 @@ pub fn judge(
         let names_known = if before.object_type == ObjectType::Note {
             objects.note_version(&fields.object_id, &fields.object_ref)?
         } else {
+            // (a version it held before is no missing one: what names it is judged by the rules as they are)
             fields.object_ref == before.current
+                || objects.seen(&fields.object_id, &fields.object_ref)?
         };
         if !names_known {
             let rightful = match &header.subject {
