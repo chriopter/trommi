@@ -2675,60 +2675,37 @@ const tab = (cls, drawing, word, label, action, hidden = false) => (hidden
 
 const tile = (cls, drawing, label, { name = 'key', value = '', action = null, title = '', aria = '', short = false, final = false } = {}) => html`<button class="inbox-answer ${cls}"${/\bis-advised\b/.test(cls) ? raw(' data-controller="advice"') : ''} type="submit"${value ? html` name="${name}" value="${value}"` : ''}${action ? html` formaction="${action}"` : ''}${title ? html` title="${title}"` : ''}${aria ? html` aria-label="${aria}"` : ''}>${final ? finalSign() : ''}<span class="inbox-disc">${sk(drawing)}</span>${label ? html`<span${short ? raw(' class="inbox-short"') : ''}>${label}</span>` : ''}</button>`
 
-/** While Shift is held (a keyboard and a mouse; watchShift), an open row's tiles are two:
- *  What?? at the left, the row's own What?? (it comes back explained), and
- *  the duck at the right: one press leaves a decision to its agent, and closes what is only to read as read (the
- *  row's own duck and "Got it": the same answer, toast and Undo). The pair lies over the row's tiles in their room
- *  (two tiles' footprint), always rendered, shown by desk.css (the row's tiles say has-shift). inForm: inside the
- *  row's form of answers (buttons with their own addresses), else a small form of its own. Never on a permission
- *  request. */
-const shiftPair = (card, base, inForm) => {
-  const info = card.kind === 'info', way = act(card, base, info ? 'close' : 'trust')
-  const tip = info ? WORDS.duck : 'Duck it', label = info ? `${WORDS.duck}: read, close it` : `${WORDS.trust}: leave it to the agent`
-  const pair = html`<button class="inbox-answer is-thumb is-what" type="submit" tabindex="-1" formaction="${act(card, base, 'what')}" title="${WORDS.what}" aria-label="What?? — explain this to me"><span class="inbox-disc">${sk('what')}</span></button><button class="inbox-answer is-thumb inbox-shift-duck" type="submit" tabindex="-1" formaction="${way}" title="${tip}" aria-label="${label}">${sk('duck')}<span>${WORDS.duck}</span></button>`
-  return inForm ? html`<span class="inbox-shift">${pair}</span>` : html`<form class="inbox-shift" method="post" action="${way}"><input type="hidden" name="stay" value="1">${pair}</form>`
-}
-function tiles(card, base) {
+/** The answers a row offers (TilesView). */
+function tiles(row, base) {
+  const act = what => `${base}/cards/${row.id}/${what}`
   const stay = raw('<input type="hidden" name="stay" value="1">')
-  const seen = card.revised ? html`<input type="hidden" name="revised" value="${card.revised}">` : ''
-  if (card.kind === 'info') {
-    return html`<form class="inbox-actions has-shift" method="post" action="${act(card, base, 'close')}">${stay}
-${tile('is-thumb is-what', 'what', '', { action: act(card, base, 'what'), title: WORDS.what, aria: 'What?? — explain this to me' })}
-${tile('is-thumb is-lead is-ack', 'tick', WORDS.ack, { title: WORDS.ack })}${shiftPair(card, base, true)}</form>`
+  const t = row.tiles
+  const decision = row.kind === 'decision', info = row.kind === 'info'
+  const shift = decision || info
+  const shiftPair = inForm => {
+    const way = act(info ? 'close' : 'trust')
+    const tip = info ? WORDS.duck : 'Duck it', label = info ? `${WORDS.duck}: read, close it` : `${WORDS.trust}: leave it to the agent`
+    const pair = html`<button class="inbox-answer is-thumb is-what" type="submit" tabindex="-1" formaction="${act('what')}" title="${WORDS.what}" aria-label="What?? — explain this to me"><span class="inbox-disc">${sk('what')}</span></button><button class="inbox-answer is-thumb inbox-shift-duck" type="submit" tabindex="-1" formaction="${way}" title="${tip}" aria-label="${label}">${sk('duck')}<span>${WORDS.duck}</span></button>`
+    return inForm ? html`<span class="inbox-shift">${pair}</span>` : html`<form class="inbox-shift" method="post" action="${way}"><input type="hidden" name="stay" value="1">${pair}</form>`
   }
-  const bare = card.options.every(o => BARE.test(o.label.trim()))
-  const size = bare ? 'none' : labelSize(card.options)
-  const short = card.options.every(shortOf)
-  if (quick(card) && (bare || size !== 'none' || short)) {
-    // Thumbs only for a real yes or no (bare words, or a permission): down on the left, up on the right; the option
-    // the agent leads with (its first, or "allow") is the up. Two named options are two plain tiles with their words,
-    // in the order given, no thumbs; the one the agent advises is the filled one (and carries the pen's mark).
-    const thumbs = bare || card.kind === 'permission'
-    const advice = advisedKeys(card)
-    const isYes = o => (card.kind === 'permission' ? o.key === 'allow' : thumbs ? o === card.options[0] : advice.includes(o.key))
-    const worded = !bare && size === 'none'
-    return html`<form class="inbox-actions${card.kind === 'decision' ? ' has-shift' : ''}" method="post" action="${act(card, base, 'decide')}">${stay}${seen}
-${[...card.options].sort((a, b) => isYes(a) - isYes(b)).map(o => {   // (the lead, the advised one, always at the right: Apple's alert order)
-      const lead = isYes(o), advised = advisedKeys(card).includes(o.key)
-      const cls = `is-thumb${thumbs ? '' : ' is-named'}${lead ? ' is-lead' : ''}${size === 'small' ? ' is-small' : ''}${worded ? ' is-short' : ''}${advised ? ' is-advised' : ''}`
-      const final = o.final === true
-      const title = advised ? 'Recommended' : final ? FINAL_TIP : size === 'none' && !bare ? o.label : ''
-      return tile(cls, lead ? 'yes' : 'no', worded ? shortOf(o) : size === 'none' && !bare ? '' : o.label, { value: o.key, title, aria: final ? `${o.label} (settles it)` : o.label, short: worded, final })
-    })}${card.kind === 'decision' ? shiftPair(card, base, true) : ''}</form>`
+  switch (t.kind) {
+    case 'none': return html`<div class="inbox-actions is-none"></div>`
+    case 'read': return html`<form class="inbox-actions has-shift" method="post" action="${act('close')}">${stay}
+${tile('is-thumb is-what', 'what', '', { action: act('what'), title: WORDS.what, aria: 'What?? — explain this to me' })}
+${tile('is-thumb is-lead is-ack', 'tick', WORDS.ack, { title: WORDS.ack })}${shiftPair(true)}</form>`
+    case 'pair': {
+      const verdict = row.kind === 'request'
+      return html`<form class="inbox-actions${shift ? ' has-shift' : ''}" method="post" action="${act(verdict ? 'verdict' : 'decide')}">${stay}
+${(t.tiles ?? []).map(x => tile(`is-thumb${x.thumbs ? '' : ' is-named'}${x.lead ? ' is-lead' : ''}${x.small ? ' is-small' : ''}${x.short ? ' is-short' : ''}${x.advised ? ' is-advised' : ''}`, x.thumb, x.label, { value: x.key, title: x.tip?.en ?? '', aria: x.says.en, short: x.short, final: x.settles }))}${shift ? shiftPair(true) : ''}</form>`
+    }
+    case 'advised': {
+      const x = t.tiles?.[0]
+      return html`<form class="inbox-actions is-advised-pair has-shift" method="post" action="${act('decide')}">${stay}<a class="inbox-answer is-thumb is-others" data-nav href="${base}/card/${encodeURIComponent(row.id)}" title="${t.says?.en ?? ''}" aria-label="${t.says?.en ?? ''}"><b>+${t.others}</b><span>other ways</span></a>${x ? html`<button class="inbox-answer is-thumb is-lead is-take is-advised" type="submit" name="key" value="${x.key}" title="${x.label}" aria-label="${x.says.en}">${sk('yes')}<strong>${x.label}</strong></button>` : ''}${shiftPair(true)}</form>`
+    }
+    default: return html`<div class="inbox-actions${decision ? ' has-shift' : ''}"><a class="inbox-answer is-wide is-lead" data-nav href="${base}/card/${encodeURIComponent(row.id)}" title="${t.says?.en ?? ''}" aria-label="${t.says?.en ?? 'Choose'}"><span class="inbox-disc">${sk('choose')}</span><span>Choose</span></a>${decision ? shiftPair(false) : ''}</div>`
   }
-  // More than two ways, one of them advised by its agent: that option is the lead tile,
-  // one press takes it (the same answer as on the card); beside it "+N other ways" opens the card.
-  const advisedOne = card.kind === 'decision' && !card.multiple ? card.options.find(o => advisedKeys(card)[0] === o.key && advisedKeys(card).length === 1) : null
-  if (advisedOne) {
-    const others = card.options.length - 1, final = advisedOne.final === true
-    return html`<form class="inbox-actions is-advised-pair has-shift" method="post" action="${act(card, base, 'decide')}">${stay}${seen}<a class="inbox-answer is-thumb is-others" data-nav href="${cardPath(card, base)}" title="${others} other ways" aria-label="${others} other ways: open the card"><b>+${others}</b><span>other ways</span></a><button class="inbox-answer is-thumb is-lead is-take is-advised" type="submit" name="key" value="${advisedOne.key}" title="${advisedOne.label}" aria-label="${advisedOne.label}, advised${final ? ' (settles it)' : ''}">${sk('yes')}<strong>${advisedOne.label}</strong></button>${shiftPair(card, base, true)}</form>`
-  }
-  // More than two ways: one tile, "Choose". It is a link to the card's own page, where every option stands.
-  const count = card.multiple ? `${card.options.length} options, several` : `${card.options.length} options`
-  return html`<div class="inbox-actions${card.kind === 'decision' ? ' has-shift' : ''}"><a class="inbox-answer is-wide is-lead" data-nav href="${cardPath(card, base)}" title="${count}" aria-label="Choose: ${count}"><span class="inbox-disc">${sk('choose')}</span><span>Choose</span></a>${card.kind === 'decision' ? shiftPair(card, base, false) : ''}</div>`
 }
 
-const knockAttr = card => (isKnock(card) ? raw(' data-knock') : '')
 // The pull-tag of Later: a paper tag on its string, the three Zs of sleep drawn down it (small at the hole, growing; a clear gap under the hole, as much under the last Z). The drawing of Later in sideWays
 // below (the Desk's selection bar, with the word; under a card and beside a large picture, the tag alone).
 export const LATER_TAG = raw('<svg viewBox="0 0 44 92" aria-hidden="true"><path d="M22 0 C23 8 21 14 22 22" class="tag-string"/><path d="M6 28 L38 27 L40 84 C40 88 37 90 34 90 L10 90.5 C7 90.5 4.6 88 4.8 85 Z" class="tag-paper"/><circle cx="22" cy="34.5" r="3"/><g class="tag-z"><path d="M21.6 48.4 L26.9 48.2 L21.8 54.1 L27.3 53.9" stroke-width="2.1"/><path d="M15.4 57.2 L22.6 56.9 L15.7 64.9 L23.2 64.6" stroke-width="2.4"/><path d="M18.8 68.2 L29.5 67.8 L19.2 79.2 L30 78.7" stroke-width="2.9"/></g></svg>')
@@ -2740,59 +2717,63 @@ export const sideWays = ({ later = true, duck = true, shred = true, many = false
   const it = many ? 'them' : 'it'
   return html`${later ? html`<button type="submit" name="way" value="later" class="sel-later" title="${WORDS.later}" aria-label="${WORDS.later}">${LATER_TAG}${word ? html`<span>${WORDS.later}</span>` : ''}</button>` : ''}${duck ? html`<button type="submit" name="way" value="duck" class="sel-duck" title="${WORDS.duck}" aria-label="${WORDS.duck}">${sk('duck')}<span>${WORDS.duck}</span></button>` : ''}${between}${shred ? html`<button type="submit" name="way" value="shred" class="sel-shred" title="${WORDS.shred}" aria-label="${WORDS.shred}">${sk('bin')}<span>${WORDS.shred}</span></button>` : ''}`
 }
-const deskNameOf = (model, agent) => model.desks.find(d => d.id === model.deskOf?.(agent))?.name || 'Personal'
-/** One open question as a row. from: the session that asked. error: what went wrong with the last answer.
- *  slim: the Desk's own row (the title, the answers and the pictures' fan): no
- *  session mark, name line or byline in the markup at all (a big room has hundreds of rows; every drawing is dozens of nodes to style). */
-export function deskRow(card, model, base, { error = '', slim = false } = {}) {
-  const from = model.byAgent.get(card.agent)
-  const assets = model.state.assets
-  // (with the card's own teaser, the urgency's reason stays on the card's page: the teaser says what matters)
-  const about = [cardNote(card), card.unsnoozed && !card.snoozed_until ? 'Back from Later' : '', card.teaser ? '' : card.urgency_reason].filter(Boolean).join(' · ')
-  // (the card's own teaser, two lines for the Desk; without one, the first lines of its body)
-  const words = card.teaser || plain(card.body, assets)
-  const images = (card.attachments ?? []).filter(a => kindOf(a) === 'image')
-  // (the pictures and videos as a small fan beside the title; no "2 pictures" line)
-  const media = [...images, ...(card.attachments ?? []).filter(a => kindOf(a) === 'video')]
-  const knock = isKnock(card)
-  const quiet = knock ? '' : card.kind === 'info' ? html`<span class="inbox-whenever inbox-toread" title="To read" role="img" aria-label="To read">${sk('page')}</span>`
-    : card.urgency === 'low' ? html`<span class="inbox-whenever" title="Whenever" role="img" aria-label="Whenever">${sk('whenever')}</span>` : ''
-  const trustTip = 'Duck it (R)'
-  const href = cardPath(card, base)
-  return html`<article class="inbox-row" id="row-${card.id}"${knockAttr(card)} tabindex="-1" data-id="${card.id}" data-urgency="${card.urgency}"${card.kind === 'info' ? raw(' data-kind="info"') : ''}${from ? html` data-from="${from.id}" style="--hue:${from.hue}"` : ''}>
+/** The look of a session for its marks: { id, mark, crowned, online, working } from a row of the sidebar
+ *  (SessionRowView), a card's sender (FromView: session_id) or a session's page (SessionView). */
+export const whoOf = s => (s ? { id: s.id ?? s.session_id, mark: s.mark, name: s.name?.en ?? s.name ?? '', crowned: Boolean(s.crowned), online: s.online !== false, working: Boolean(s.working), hue: hueFor({ mark: s.mark, id: s.id ?? s.session_id }) } : null)
+/** One row of the Desk as the core made it (views.d.ts DeskRowView): a question, a request, something to read.
+ *  error: what went wrong with the last answer. slim: the Desk's own row (no session mark, name line or byline:
+ *  a big room has hundreds of rows). */
+export function deskRow(row, base, { error = '', slim = false } = {}) {
+  const from = whoOf(row.from)
+  const about = (row.notes ?? []).map(n => n.en).join(' · ')
+  const words = row.words
+  const media = row.media ?? []
+  const knock = row.sign === 'knock' || row.sign === 'block'
+  const info = row.kind === 'info'
+  const quiet = knock ? '' : info ? html`<span class="inbox-whenever inbox-toread" title="To read" role="img" aria-label="To read">${sk('page')}</span>`
+    : row.sign === 'whenever' ? html`<span class="inbox-whenever" title="Whenever" role="img" aria-label="Whenever">${sk('whenever')}</span>` : ''
+  const href = `${base}/card/${encodeURIComponent(row.id)}`
+  const act = what => `${base}/cards/${row.id}/${what}`
+  const ways = new Set(row.ways)
+  return html`<article class="inbox-row" id="row-${row.id}"${knock ? raw(' data-knock') : ''} tabindex="-1" data-id="${row.id}" data-urgency="${row.urgency}"${info ? raw(' data-kind="info"') : ''}${row.loading ? raw(' data-loading') : ''}${from ? html` data-from="${from.id}" style="--hue:${from.hue}"` : ''}>
 ${from && !slim ? html`<a class="inbox-gutter" data-nav href="${base}/chat/${encodeURIComponent(from.id)}" aria-label="From ${from.name}: open the session" data-name="${from.name}" style="--hue:${from.hue}">${smallMark(from)}<span class="inbox-gutter-name" aria-hidden="true">${from.name}</span></a>` : ''}
 <div class="inbox-content">
 <header class="inbox-row-head"></header>
-${media.length ? html`<a class="inbox-fan" data-nav href="${href}${images.length ? '/picture/1' : ''}" aria-label="${media.length === 1 ? 'Look at the picture' : `Look at ${media.length} pictures and videos`}">${media.slice(0, 3).map(a => kindOf(a) === 'image' ? html`<img${srcOf(a, 56)} alt="" loading="lazy" decoding="async" width="56" height="42">` : html`<video src="${a.url}#t=0.001" muted playsinline preload="metadata"></video>`)}</a>` : ''}
-${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${card.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${card.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, starred: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${card.urgency === 'critical' ? 'block' : 'knock'}" role="img" title="${knockWord(card)}" aria-label="${knockWord(card)}">${card.urgency === 'critical' ? raw(handSvg()) : sk('knock')}</span>` : card.kind !== 'info' && card.urgency === 'low' ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${card.starred ? starMark() : ''}${card.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span><span class="row-meta-dot">·</span>${agoSpan(card.created, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${model.all && from ? html`<span class="row-desk" title="Desk ${deskNameOf(model, from)}">${deskNameOf(model, from)}</span>` : ''}${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
-<span class="inbox-when" title="${ago(card.created)}"><form class="inbox-tabs" method="post" action="${act(card, base, 'snooze')}"><input type="hidden" name="stay" value="1">
-<button class="inbox-tab-act inbox-later is-tag" type="submit" formaction="${act(card, base, 'snooze')}" aria-label="${WORDS.later}: put this question off; it waits for you below" title="${WORDS.later}">${LATER_TAG}</button>
-${card.kind !== 'permission' ? tab('inbox-revise', 'reverse', WORDS.revise, WORDS.revise, act(card, base, 'revise'), true) : ''}
-${card.kind === 'decision' ? tab('inbox-trust', 'duck', WORDS.trust, trustTip, act(card, base, 'trust'), true) : ''}
-${card.kind !== 'permission' ? tab('inbox-shred', 'bin', WORDS.shred, WORDS.shred, act(card, base, 'shred')) : ''}
-</form>${agoSpan(card.created, 'inbox-ago')}</span>
+${media.length ? html`<a class="inbox-fan" data-nav href="${href}${media.some(m => m.kind === 'image') ? '/picture/1' : ''}" aria-label="${row.media_says?.en ?? 'Look at the pictures'}">${media.slice(0, 3).map(m => { const url = fileSrc(m.file_id); return m.kind === 'image' ? html`<img${url ? html` src="${url}"` : ''} alt="" loading="lazy" decoding="async" width="56" height="42">` : html`<video${url ? html` src="${url}#t=0.001"` : ''} muted playsinline preload="metadata"></video>` })}</a>` : ''}
+${from ? html`<button class="row-mark" type="button" style="--hue:${from.hue}" data-tip="Select" aria-label="Select: ${row.title}" aria-pressed="false" data-select>${markArt(from)}<span class="row-check" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.4 12.6Q8.8 15.1 10.4 17Q14 11.4 18.2 7.2"/></svg></span></button>` : ''}<a class="inbox-text${from ? ' has-sender' : ''}" data-nav href="${href}" data-tip="${row.title}">${from && !slim ? html`<span class="inbox-from-mark inbox-who" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt(from)}</span>` : ''}<strong class="inbox-question" data-controller="fit">${slim && from ? html`<span class="row-stamp" style="--hue:${from.hue}" title="${from.name}" role="img" aria-label="From ${from.name}">${markArt({ ...from, crowned: false })}</span>` : ''}${knock ? html`<span class="row-urg is-${row.sign}" role="img" title="${row.sign_says?.en ?? ''}" aria-label="${row.sign_says?.en ?? ''}">${row.sign === 'block' ? raw(handSvg()) : sk('knock')}</span>` : row.sign === 'whenever' && !info ? html`<span class="row-urg is-whenever" role="img" title="Whenever" aria-label="Whenever">${sk('whenever')}</span>` : ''}${row.starred ? starMark() : ''}${row.title}</strong>${from && !slim ? html`<span class="row-meta"><span class="row-meta-mark">${raw(doodleSvg(from.mark))}</span><span class="row-meta-who">${from.name}</span><span class="row-meta-dot">·</span>${agoSpan(row.created_ms, 'row-meta-ago')}</span>` : ''}${about || words ? html`<span class="inbox-body">${row.from?.desk ? html`<span class="row-desk" title="Desk ${row.from.desk}">${row.from.desk}</span>` : ''}${about ? html`<span class="inbox-body-about">${about}</span>` : ''}${words ? html`<span class="inbox-body-text">${about ? ` · ${words}` : words}</span>` : ''}</span>` : ''}</a>
+<span class="inbox-when" title="${ago(row.created_ms)}"><form class="inbox-tabs" method="post" action="${act('snooze')}"><input type="hidden" name="stay" value="1">
+${ways.has('later') ? html`<button class="inbox-tab-act inbox-later is-tag" type="submit" formaction="${act('snooze')}" aria-label="${WORDS.later}: put this question off; it waits for you below" title="${WORDS.later}">${LATER_TAG}</button>` : ''}
+${ways.has('reverse') ? tab('inbox-revise', 'reverse', WORDS.revise, WORDS.revise, act('revise'), true) : ''}
+${ways.has('duck') ? tab('inbox-trust', 'duck', WORDS.trust, 'Duck it (R)', act('trust'), true) : ''}
+${ways.has('shred') ? tab('inbox-shred', 'bin', WORDS.shred, WORDS.shred, act('shred')) : ''}
+</form>${agoSpan(row.created_ms, 'inbox-ago')}</span>
 ${slim ? '' : html`<p class="inbox-byline">${quiet}${from ? html`<span class="inbox-from">${smallMark(from)}<span>${from.name}</span></span><span class="inbox-sep"> · </span>` : ''}</p>`}
 </div>
-${tiles(card, base)}
+${tiles(row, base)}
 <p class="inbox-error inbox-row-error" role="alert"${error ? '' : raw(' hidden')}>${error}</p>
 </article>`
 }
+/** A file's object URL for a picture's src (core.mjs; asked for once when it is not here). */
+let fileSrcOf = () => null
+export const fileSrc = id => fileSrcOf(id)
+export const useFiles = fn => { fileSrcOf = fn }
 
-export const runSection = (sender, rows, n) => html`<section class="inbox-group" data-sender="${sender.id}" data-run="${n > 1 ? 'many' : 'single'}" aria-label="${sender.name}: ${n === 1 ? '1 question' : `${n} questions`}"${sender.starred ? raw(' data-vip') : ''} style="--hue:${sender.hue}">${rows}</section>`
+/** A run of rows of one session (sender: whoOf). */
+export const runSection = (sender, rows, n) => html`<section class="inbox-group" data-sender="${sender.id}" data-run="${n > 1 ? 'many' : 'single'}" aria-label="${sender.name}: ${n === 1 ? '1 question' : `${n} questions`}"${sender.crowned ? raw(' data-vip') : ''} style="--hue:${sender.hue}">${rows}</section>`
 
 // ---- a session's mark, its badge ----
 const questions = n => (n === 1 ? '1 question' : `${n} questions`)
 /** A session's mark: its scribble in its colour; with the crown when it is the desk's crowned session (`starred`, one per desk).
  *  working: the session is at work. Its drawing then fills itself in, stroke by stroke, over a faint trace of itself
  *  (sidebar.css .is-drawing: a CSS animation of the strokes' dash, nothing runs per frame; still under reduced motion). */
-export const avatar = (agent, { crown = true, working = false } = {}) => html`<span class="agent-avatar${agent.online ? '' : ' is-offline'}${working ? ' is-drawing' : ''}" aria-hidden="true" style="--hue:${agent.hue}"${crown && agent.starred ? raw(' data-vip') : ''}>${raw(working ? drawing(doodleSvg(agent.mark)) : doodleSvg(agent.mark))}${crown && agent.starred ? raw(crownSvg()) : ''}</span>`
+export const avatar = (agent, { crown = true, working = false } = {}) => html`<span class="agent-avatar${agent.online ? '' : ' is-offline'}${working ? ' is-drawing' : ''}" aria-hidden="true" style="--hue:${agent.hue ?? hueFor(agent)}"${crown && agent.crowned ? raw(' data-vip') : ''}>${raw(working ? drawing(doodleSvg(agent.mark)) : doodleSvg(agent.mark))}${crown && agent.crowned ? raw(crownSvg()) : ''}</span>`
 // The drawing at work: a faint trace, and the same strokes over it that draw themselves (each path measured as 100).
 const drawing = svg => svg.replace('class="doodle"', 'class="doodle mark-trace"') + svg.replace('class="doodle"', 'class="doodle mark-live"').replaceAll('<path ', '<path pathLength="100" ')
 
 /** A session's drawing, with the crown when it is the desk's crowned session. */
-export const markArt = agent => raw(doodleSvg(agent.mark) + (agent.starred ? crownSvg() : ''))
+export const markArt = agent => raw(doodleSvg(agent.mark) + (agent.crowned ? crownSvg() : ''))
 /** The small mark on a line that names who asked. */
-export const smallMark = agent => html`<span class="inbox-from-mark" style="--hue:${agent.hue}">${markArt(agent)}</span>`
+export const smallMark = agent => html`<span class="inbox-from-mark" style="--hue:${agent.hue ?? hueFor(agent)}">${markArt(agent)}</span>`
 
 // The badge at the end of a row: the open questions, as a number in a ring; the raised red hand when the session is
 // really stopped (blocked: disconnected while working, an error, waiting for permission; being quiet is no stop, app.mjs quietOf).
@@ -2803,30 +2784,27 @@ export const smallMark = agent => html`<span class="inbox-from-mark" style="--hu
 // drawn across them, and a figure above five. The number is said by the link's label either way.
 const TALLY = ['M3.9 2.2Q2.6 7.6 2.5 13.9', 'M8.6 1.6Q8.4 8.4 7.3 13.2', 'M13.7 2.6Q12.5 7.2 12.6 14.2', 'M18.6 1.9Q18.3 8.6 17.2 13.5']
 const tallySvg = n => { const w = n > 4 ? 22 : n * 5 + 1; return `<svg class="agent-tally" viewBox="0 0 ${w} 16" width="${w}" height="16" aria-hidden="true">${TALLY.slice(0, Math.min(n, 4)).map(d => `<path d="${d}"/>`).join('')}${n > 4 ? '<path d="M.9 11.8Q10.5 7.6 21.1 3.5"/>' : ''}</svg>` }
-export function badge(u, shown, base, tally = false) {
-  const { open, online, running, blocked } = shown
-  if (!open && !blocked) return ''
-  const busy = Boolean(online && running)
-  const state = blocked ? `Stopped: ${blocked.text}${open ? `, ${questions(open)} open` : ''}`
-    : online ? (running ? `Working, ${questions(open)} open` : `${questions(open)} open`) : `Disconnected, ${questions(open)} open`
-  const inner = blocked ? raw(handSvg()) : !tally ? html`${raw(ringSvg())}<b>${open}</b>` : open > 5 ? html`<b>${open}</b>` : raw(tallySvg(open))
-  const data = html` data-state="${blocked ? 'blocked' : 'open'}"${blocked ? html` data-why="${blocked.why}"` : ''}${!online ? raw(' data-offline') : ''}${busy ? raw(' data-working') : ''}`
-  return html`<a class="agent-badge" data-nav href="${base}/chat/${encodeURIComponent(u.id)}"${data} title="${blocked ? 'Stopped' : `${open} open`}" aria-label="${u.agent.name}: ${state}">${inner}</a>`
+/** A sidebar row's badge (SessionRowView, or its FoldView with the row's id). */
+export function badge(row, base, tally = false, fold = null) {
+  const open = (fold ?? row).open, hand = (fold ?? row).hand ?? null, online = (fold ?? row).online, working = (fold ?? row).working
+  if (!open && !hand) return ''
+  const inner = hand ? raw(handSvg()) : !tally ? html`${raw(ringSvg())}<b>${open}</b>` : open > 5 ? html`<b>${open}</b>` : raw(tallySvg(open))
+  const data = html` data-state="${hand ? 'blocked' : 'open'}"${hand ? html` data-why="${hand.why}"` : ''}${!online ? raw(' data-offline') : ''}${online && working ? raw(' data-working') : ''}`
+  const name = row.name?.en ?? row.name
+  return html`<a class="agent-badge" data-nav href="${base}/chat/${encodeURIComponent(row.slug ?? row.id)}"${data} title="${hand ? 'Stopped' : `${open} open`}" aria-label="${name}: ${(fold ?? row).says?.en ?? `${open} open`}">${inner}</a>`
 }
 
 // ---- a session's link: whether it hears the human (app.mjs linkOf, heardOf) ----
 // Nothing is drawn for a session that hears at once: the plain row IS "connected and listening". The sign is drawn with
 // the pen; urgency is the sign and its ink, never a stripe (app.css .link-cap, .link-note, .link-slip).
 /** The small line under a session's name in the sidebar: the sign and two or three words. unheard: answers it has not picked up. */
-export const linkCap = (link, unheard = 0) => {
-  if (link && link.state !== 'live') return html`<small class="link-cap" data-link="${link.state}" title="${link.short || link.word}" aria-description="${link.line}">${sk(link.sign)}<span>${link.word}</span></small>`
-  if (!unheard) return ''
-  return html`<small class="link-cap" data-link="unheard" title="${unheard === 1 ? 'Not heard yet' : `${unheard} not heard`}">${sk('letter')}<span>${unheard === 1 ? '1 answer waits' : `${unheard} answers wait`}</span></small>`
-}
-/** The note on a card's page and in a session: the receipt, the sentence about the session, and the way out as a line to type. */
-export const linkNote = (link, { receipt = '', sign = null, tone = null, id = '' } = {}) => html`<aside class="link-note"${id ? html` id="${id}"` : ''} data-link="${tone ?? link?.state ?? 'live'}" role="status">${sk(sign ?? link?.sign ?? 'ear')}<div>${receipt ? html`<p class="link-receipt">${receipt}</p>` : ''}${link?.line && link.state !== 'live' ? html`<p>${link.line}</p>` : ''}${link?.fix ? html`<p class="link-fix">${link.fix.say}${link.fix.code ? html` <code>${link.fix.code}</code>` : ''}</p>` : ''}</div></aside>`
-/** The slip above the Desk's questions: one line per session that is cut off, with the step in its terminal. cut: [{ agent, link }]. */
-export const linkSlip = (cut, base) => html`<section class="link-slip" id="link-slip" role="alert" aria-label="Sessions that are cut off"${cut.length ? '' : raw(' hidden')}>${cut.map(({ agent, link }) => html`<p><a data-nav href="${base}/chat/${encodeURIComponent(agent.id)}">${sk('ear-off')}<span><b>${agent.name}</b> is cut off${link.since ? ` since ${link.word.split(' · ')[1]}` : ''}: it cannot hear you and cannot write to you.</span></a><span class="link-fix">${link.fix.say} <code>${link.fix.code}</code></span></p>`)}</section>`
+export const LINK_SIGNS = { oncall: 'ear-later', asleep: 'ear-later', cut: 'ear-off', gone: 'plug', unheard: 'letter', live: 'ear', sent: 'letter', heard: 'tick' }
+/** The small line under a session's name in the sidebar (CapView). */
+export const linkCap = cap => (cap ? html`<small class="link-cap" data-link="${cap.kind}" title="${cap.short.en}"${cap.line ? html` aria-description="${cap.line.en}"` : ''}>${sk(LINK_SIGNS[cap.kind] ?? 'ear')}<span>${cap.word.en}</span></small>` : '')
+/** The note on a card's page and in a session (LinkNoteView): the receipt, the sentence about the session, and the way out as a line to type. */
+export const linkNote = (note, { id = '' } = {}) => (note ? html`<aside class="link-note"${id ? html` id="${id}"` : ''} data-link="${note.tone}" role="status">${sk(LINK_SIGNS[note.tone] ?? 'ear')}<div>${note.receipt ? html`<p class="link-receipt">${note.receipt.en}</p>` : ''}${note.line ? html`<p>${note.line.en}</p>` : ''}${note.fix ? html`<p class="link-fix">${note.fix.say.en}${note.fix.code ? html` <code>${note.fix.code}</code>` : ''}</p>` : ''}</div></aside>` : '')
+/** The slip above the Desk's questions (SlipView[]): one line per session that is cut off, with the step in its terminal. */
+export const linkSlip = (slips, base) => html`<section class="link-slip" id="link-slip" role="alert" aria-label="Sessions that are cut off"${slips?.length ? '' : raw(' hidden')}>${(slips ?? []).map(x => html`<p><a data-nav href="${base}/chat/${encodeURIComponent(x.session_id)}">${sk('ear-off')}<span>${x.text.en}</span></a><span class="link-fix">${x.fix.say.en} <code>${x.fix.code}</code></span></p>`)}</section>`
 
 // The plus of the rows that add something (invite an agent: POST /pair, role agent; a new desk).
 export const PLUS = raw('<svg viewBox="0 0 24 24" class="sketch" aria-hidden="true"><path d="M12.3 5.2C11.9 9.7 12 14.2 12.1 18.9"/><path d="M5.3 12.4C9.8 11.8 14.3 11.9 18.8 12.2"/></svg>')
