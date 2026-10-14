@@ -120,13 +120,14 @@ impl Doing<'_> {
     /// Does `action`; `Ok` also when nothing was to do.
     pub fn run(&mut self, action: &Action) -> Result<(), NotDone> {
         match action {
-            Action::Answer { card_id, choices, note, attachments, option_notes, trusted } => {
+            Action::Answer { card_id, choices, note, attachments, option_notes, trusted, marks } => {
                 let files = self.files_of(attachments)?;
-                self.answer(action, card_id, "answer", choices, note.as_deref(), option_notes, *trusted, files)
+                self.answer(action, card_id, "answer", choices, note.as_deref(), option_notes, *trusted, files, marks)
             }
-            Action::Read { card_id } => self.answer(action, card_id, "read", &[], None, &Map::new(), false, Vec::new()),
-            Action::Shred { card_id, note } => {
-                self.answer(action, card_id, "shred", &[], note.as_deref(), &Map::new(), false, Vec::new())
+            Action::Read { card_id } => self.answer(action, card_id, "read", &[], None, &Map::new(), false, Vec::new(), &[]),
+            Action::Shred { card_id, note, attachments, marks } => {
+                let files = self.files_of(attachments)?;
+                self.answer(action, card_id, "shred", &[], note.as_deref(), &Map::new(), false, files, marks)
             }
             Action::Snooze { card_id, until_ms } => {
                 self.card_of(card_id)?;
@@ -145,25 +146,45 @@ impl Doing<'_> {
             }
             Action::DecideAgain { card_id } => self.decide_again(action, card_id),
             Action::Verdict { request_id, allow } => self.verdict(action, request_id, *allow),
-            Action::Write { session_id, card_id, text, attachments } => {
+            Action::Write { session_id, card_id, text, attachments, marks, copied_cards } => {
                 let files = self.files_of(attachments)?;
                 let mut content = Map::new();
                 content.insert("text".into(), json!(text));
                 if !files.is_empty() {
                     content.insert("attachments".into(), Value::Array(files));
                 }
+                if !marks.is_empty() {
+                    content.insert("marks".into(), Value::Array(marks.clone()));
+                }
+                if !copied_cards.is_empty() {
+                    content.insert("copied_cards".into(), json!(copied_cards));
+                }
                 self.write(action, Some(session_id), card_id.as_deref(), content)
             }
-            // "What??": the card goes back to its agent with the question, and comes back up awake
-            Action::HandBack { card_id, note } => {
+            // "What??" or "Revise": the card goes back to its agent with the question, and comes back up awake
+            Action::HandBack { card_id, note, rework, marks } => {
                 let mut content = Map::new();
                 content.insert("text".into(), json!(note.clone().unwrap_or_default()));
-                content.insert("explain".into(), json!(true));
+                content.insert(if *rework { "hand_back" } else { "explain" }.into(), json!(true));
+                if !marks.is_empty() {
+                    content.insert("marks".into(), Value::Array(marks.clone()));
+                }
                 self.write(action, None, Some(card_id), content)?;
                 self.wake(card_id);
                 Ok(())
             }
-            Action::Draft { place, text, keys, notes } => {
+            // the card is the person's again: the agent need not rework or explain it
+            Action::TakeBack { card_id } => {
+                let card = self.card_of(card_id)?;
+                if card.object_state != "open" {
+                    return Err(not_done("action.card_closed", "That card is no longer open."));
+                }
+                let mut content = Map::new();
+                content.insert("text".into(), json!("The human took the card back; no need to rework or explain it."));
+                content.insert("present_card".into(), json!(true));
+                self.write(action, None, Some(card_id), content)
+            }
+            Action::Draft { place, text, keys, notes, marks } => {
                 let key = format!("draft/{place}");
                 let mut draft = self.model.human.get(&key).and_then(|r| r.value.as_object().cloned()).unwrap_or_default();
                 draft.insert("note".into(), json!(text));
@@ -173,9 +194,19 @@ impl Doing<'_> {
                 if let Some(notes) = notes {
                     draft.insert("notes".into(), Value::Object(notes.clone()));
                 }
+                match marks {
+                    Some(m) if !m.is_empty() => {
+                        draft.insert("marks".into(), Value::Array(m.clone()));
+                    }
+                    Some(_) => {
+                        draft.remove("marks");
+                    }
+                    None => {}
+                }
+                let marked = draft.get("marks").and_then(Value::as_array).is_some_and(|m| !m.is_empty());
                 let ticked = draft.get("keys").and_then(Value::as_array).is_some_and(|k| !k.is_empty());
                 let noted = draft.get("notes").and_then(Value::as_object).is_some_and(|n| n.values().any(|v| v.as_str().is_some_and(|s| !s.trim().is_empty())));
-                let value = if text.trim().is_empty() && !ticked && !noted {
+                let value = if text.trim().is_empty() && !ticked && !noted && !marked {
                     Value::Null
                 } else {
                     draft.entry("keys").or_insert(json!([]));
@@ -211,16 +242,7 @@ impl Doing<'_> {
                 desk.insert("name".into(), json!(desk_name(name)));
                 self.registers(action, &[(format!("desk/{desk_id}"), Value::Object(desk))])
             }
-            Action::RemoveDesk { desk_id } => {
-                let live = self.desks();
-                if !live.contains(desk_id) {
-                    return Err(not_done("action.no_desk", "That desk is no longer there."));
-                }
-                if live.len() <= 1 {
-                    return Err(not_done("action.last_desk", "The last desk stays."));
-                }
-                self.registers(action, &[(format!("desk/{desk_id}"), Value::Null)])
-            }
+            Action::DeskRegister { key, value } if key.starts_with("desk/") => self.registers(action, &[(key.clone(), value.clone())]),
             // a field of the desk's register like its name; with no desk yet the first one is made for them
             Action::SetGoal { desk_id, text } => {
                 let live = self.desks();
@@ -239,10 +261,74 @@ impl Doing<'_> {
                 }
                 self.registers(action, &[(format!("desk/{id}"), Value::Object(desk))])
             }
+            Action::SessionIcon { session_id, icon } => {
+                let icon: Option<String> = icon.as_deref().map(str::trim).filter(|i| !i.is_empty()).map(|i| i.chars().take(NAME_MAX).collect());
+                self.edit_session(action, session_id, "icon", json!(icon))
+            }
+            Action::SessionGroup { session_id, group } => {
+                let group: Option<String> = group.as_deref().map(str::trim).filter(|g| !g.is_empty()).map(|g| g.chars().take(40).collect());
+                self.edit_session(action, session_id, "group", json!(group))
+            }
+            Action::SessionParent { session_id, parent } => {
+                if parent.as_deref().is_some_and(|p| p == session_id || !self.model.sessions.contains_key(p)) {
+                    return Err(not_done("action.not_found", "That session is no longer there."));
+                }
+                self.edit_session(action, session_id, "parent", json!(parent))
+            }
+            Action::PlaceSession { session_id, before, after } => self.place_session(action, session_id, before.as_deref(), after.as_deref()),
+            Action::CrownSession { session_id, on } => self.crown_session(action, session_id, *on),
+            Action::OrderDesks { desk_ids } => {
+                let live = self.desks();
+                let ids: Vec<&String> = desk_ids.iter().filter(|d| live.contains(*d)).collect();
+                if ids.is_empty() {
+                    return Err(not_done("action.no_desk", "That desk is no longer there."));
+                }
+                let mut values = Vec::new();
+                for (i, d) in ids.into_iter().enumerate() {
+                    let mut desk = self.desk(d)?;
+                    desk.insert("order".into(), json!(i));
+                    values.push((format!("desk/{d}"), Value::Object(desk)));
+                }
+                self.registers(action, &values)
+            }
+            Action::RenameDevice { name } => {
+                let Some(me) = self.model.my_device_id.clone() else { return Err(bad_id()) };
+                let key = format!("device/{me}");
+                let mut value = self.model.human.get(&key).and_then(|r| r.value.as_object().cloned()).unwrap_or_default();
+                let name: String = name.trim().chars().take(NAME_MAX).collect();
+                value.insert("device_name".into(), json!(name));
+                self.registers(action, &[(key, Value::Object(value))])
+            }
             Action::WriteNote { note_id, text } => self.write_note(action, note_id.as_deref(), Some(text)),
             Action::DeleteNote { note_id } => self.write_note(action, Some(note_id), None),
+            Action::BoardItem { board_id, local_id, content } => self.board_item(action, board_id, local_id, content),
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
         }
+    }
+
+    /// An item on a Scribble Board, shown at once in the board's timeline (`crate::scribble` lays it over the
+    /// board until the hub's copy comes). A picture named by its file's id gets the reference with its key.
+    fn board_item(&mut self, action: &Action, board_id: &str, local_id: &str, content: &Value) -> Result<(), NotDone> {
+        let board = crate::scribble::board_of(board_id).ok_or_else(|| not_done("action.bad", "That board is not known."))?;
+        let mut content = content.as_object().cloned().ok_or_else(|| not_done("action.bad", "That cannot be drawn."))?;
+        if let Some(Value::Array(shapes)) = content.get_mut("strokes") {
+            for shape in shapes.iter_mut() {
+                let Some(picture) = shape.get_mut("attachment") else { continue };
+                if picture.get("file_key").is_some() {
+                    continue;
+                }
+                let id = picture.as_str().or_else(|| picture.get("attachment_id").and_then(Value::as_str)).unwrap_or("").to_string();
+                let reference = (self.file)(&id).ok_or_else(|| not_done("action.file_not_ready", "A file is still uploading, or is not here."))?;
+                *picture = Value::Object(reference);
+            }
+        }
+        let payload = codec::encode_body(BodyKind::BoardItem, &content).map_err(|_| not_done("action.bad", "That cannot be drawn."))?;
+        let files = file_ids(BodyKind::BoardItem, &content);
+        let local_id = if local_id.is_empty() || self.model.echoes.contains_key(local_id) { self.sent.local_id() } else { local_id.to_string() };
+        let timeline = crate::model::timeline_key("scribble", &format!("desk/{}", crate::engine::feed::hex(board.as_bytes())));
+        self.model.echo_timeline_item(&local_id, &timeline, content, None, None, self.now, &mut self.change);
+        let draft = Draft::BoardItem { board, payload: SecretBytes::new(payload.into_bytes()) };
+        self.seal_echoed(action, &local_id, &draft, None, &files)
     }
 
     /// A new Note, a new version of one (`text`), or its closed version (none: deleted), shown at once. While a
@@ -413,6 +499,7 @@ impl Doing<'_> {
         option_notes: &Map<String, Value>,
         trusted: bool,
         attached: Vec<Value>,
+        marks: &[Value],
     ) -> Result<(), NotDone> {
         let card = self.card_of(card_id)?;
         if card.object_state != "open" {
@@ -464,6 +551,9 @@ impl Doing<'_> {
         if !attached.is_empty() {
             content.insert("attachments".into(), Value::Array(attached.clone()));
         }
+        if !marks.is_empty() {
+            content.insert("marks".into(), Value::Array(marks.to_vec()));
+        }
         let payload = codec::encode_body(BodyKind::Answer, &content).map_err(|_| not_done("action.bad", "That answer cannot be sent."))?;
         let files = file_ids(BodyKind::Answer, &content);
         let draft = Draft::Answer {
@@ -477,7 +567,7 @@ impl Doing<'_> {
 
         let local_id = self.sent.local_id();
         let echo: Obj = serde_json::from_value(json!({ "answer_action": how, "choices": choices, "note": note, "option_notes": option_notes,
-            "attachments": attached, "marks": [], "trusted": trusted, "bound_version_hash": version_hash, "bound_object_version": version,
+            "attachments": attached, "marks": marks, "trusted": trusted, "bound_version_hash": version_hash, "bound_object_version": version,
             "envelope_number": null, "envelope_hash": null, "by_device_id": me, "answered_at": self.now, "taken_back_at": null,
             "taken_back_sent_at": null }))
         .unwrap_or_default();
@@ -584,6 +674,74 @@ impl Doing<'_> {
 
     /// A session's settings (its register `session/<id>`: name, icon, desk, archived), one field changed and every
     /// other kept.
+    /// A new place in the session list (the web's `orderWrites`): every session whose place changes, or that had
+    /// none, gets its number.
+    fn place_session(&mut self, action: &Action, session_id: &str, before: Option<&str>, after: Option<&str>) -> Result<(), NotDone> {
+        let rows = crate::sessions::session_list(self.model, false);
+        let Some(me) = rows.iter().position(|r| r.key == session_id) else {
+            return Err(not_done("action.not_found", "That session is no longer there."));
+        };
+        if before == Some(session_id) || after == Some(session_id) {
+            return Ok(());
+        }
+        let mut order: Vec<&crate::sessions::SessionRow> = rows.iter().filter(|r| r.key != session_id).collect();
+        let target = before.or(after);
+        let at = match target {
+            None => order.len(),
+            Some(t) => match order.iter().position(|r| r.key == t) {
+                Some(i) => i,
+                None => return Err(not_done("action.not_found", "That session is no longer there.")),
+            },
+        };
+        order.insert(if after.is_some() { at + 1 } else { at }, &rows[me]);
+        if order.iter().zip(&rows).all(|(a, b)| a.key == b.key) {
+            return Ok(());
+        }
+        let moves: Vec<(String, usize)> = order
+            .iter()
+            .enumerate()
+            .filter(|(i, r)| r.position != *i as f64 || (!r.placed && r.parent.is_none() && !r.archived))
+            .map(|(i, r)| (r.key.clone(), i))
+            .collect();
+        let mut values = Vec::new();
+        for (key, i) in moves {
+            let mut settings = self.settings_of(&key);
+            settings.insert("position".into(), json!(i));
+            self.change.sessions.insert(key.clone());
+            values.push((format!("session/{key}"), Value::Object(settings)));
+        }
+        self.registers(action, &values)
+    }
+
+    /// The crown of the session's desk (in the desk's register), or of the room where it has no desk.
+    fn crown_session(&mut self, action: &Action, session_id: &str, on: bool) -> Result<(), NotDone> {
+        let Some(s) = self.model.sessions.get(session_id) else {
+            return Err(not_done("action.not_found", "That session is no longer there."));
+        };
+        let crown = if on { json!({ "session_id": session_id, "agent_device_id": s.agent_device_id }) } else { Value::Null };
+        let desk = self.settings_of(session_id).get("desk").and_then(Value::as_str).map(str::to_string);
+        let live = self.desks();
+        let desk = desk.filter(|d| live.contains(d)).or_else(|| live.first().cloned());
+        match desk {
+            Some(d) => {
+                let mut value = self.desk(&d)?;
+                value.insert("crown".into(), crown);
+                self.registers(action, &[(format!("desk/{d}"), Value::Object(value))])
+            }
+            None => self.registers(action, &[("crown".to_string(), crown)]),
+        }
+    }
+
+    fn settings_of(&self, session_id: &str) -> Map<String, Value> {
+        self.model
+            .sessions
+            .get(session_id)
+            .and_then(|s| s.settings.clone())
+            .or_else(|| self.model.human.get(&format!("session/{session_id}")).map(|r| r.value.clone()))
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default()
+    }
+
     fn edit_session(&mut self, action: &Action, session_id: &str, field: &str, value: Value) -> Result<(), NotDone> {
         let Some(s) = self.model.sessions.get(session_id) else {
             return Err(not_done("action.not_found", "That session is no longer there."));

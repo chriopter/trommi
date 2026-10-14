@@ -41,6 +41,7 @@ pub mod off_mind;
 pub mod plan;
 pub mod presence;
 pub mod registers;
+pub mod scribble;
 pub mod seats;
 pub mod selfjoin;
 pub mod sessions;

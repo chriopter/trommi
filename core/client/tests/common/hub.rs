@@ -25,6 +25,8 @@
 //! - the recovery key's token (a join with the code): it reads only `GET /v1/sealed-keys` (each row numbered by its
 //!   place, no RecoveryLinks), the room group's GroupInfos and log and the room's groups, and posts the join of the
 //!   room group; any other route is `forbidden`;
+//! - a board's items (`GET /v1/boards/{board}`): every board item of the order after the change; the frontier of a
+//!   snapshot (`POST /v1/boards/{board}/frontier`) is kept as it came and nothing is ever pruned;
 //! - files, pushes, accounts, invites, a recovery of the room (8.7): not there.
 
 #![allow(dead_code)]
@@ -255,6 +257,10 @@ pub struct Hub {
     pub accounts: Vec<Account>,
     /// A wish's Commit number and committer (`reject`).
     pub wish_extras: BTreeMap<u64, (Option<u64>, Option<DeviceId>)>,
+    /// Every `POST /v1/boards/{board}/frontier`: the board (base64url) and the body as it came.
+    pub frontiers: Vec<(String, Value)>,
+    /// The board route serves no item at or below this change (a hub that pruned them behind a snapshot).
+    pub board_pruned: u64,
 }
 
 #[derive(Clone)]
@@ -290,6 +296,8 @@ impl Default for Hub {
             recovery: None,
             accounts: Vec::new(),
             wish_extras: BTreeMap::new(),
+            frontiers: Vec::new(),
+            board_pruned: 0,
             streaming: Vec::new(),
             notes: Vec::new(),
             wishes: Vec::new(),
@@ -313,6 +321,15 @@ impl Default for Hub {
             desk_bytes_max: DESK_BYTES,
             desk_registers_max: DESK_REGISTERS,
         }
+    }
+}
+
+/// The board an item of the order belongs to, if it is a board item.
+fn board_of(item: &Item) -> Option<trommi_core::ids::BoardId> {
+    let Item::Envelope { bytes, .. } = item else { return None };
+    match Envelope::decode(bytes).ok()?.header.subject {
+        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::Board(board)) => Some(board),
+        _ => None,
     }
 }
 
@@ -983,6 +1000,20 @@ impl Hub {
                 let more = items.len() > limit;
                 items.truncate(limit);
                 Ok(json!({ "items": items, "more": more }))
+            }
+            // a board's items after a change, oldest first; nothing is pruned here
+            ("GET", ["v1", "boards", board]) => {
+                let board = trommi_core::ids::BoardId::from_base64url(board).map_err(no)?;
+                let (after, limit) = (num("after_change"), num("limit").clamp(1, 500) as usize);
+                let mut items: Vec<Value> = self.order.iter().filter(|i| i.change() > after.max(self.board_pruned) && board_of(i) == Some(board)).map(Item::served).collect();
+                let more = items.len() > limit;
+                items.truncate(limit);
+                Ok(json!({ "items": items, "more": more }))
+            }
+            // (10.9) kept as it came: the declarations and the bindings a test looks at; nothing is pruned
+            ("POST", ["v1", "boards", board, "frontier"]) => {
+                self.frontiers.push((board.to_string(), body.clone()));
+                Ok(json!({ "pruned": 0 }))
             }
             ("GET", ["v1", "desk"]) => {
                 let item = |change: u64| self.order.iter().find(|i| i.change() == change).map(Item::served);

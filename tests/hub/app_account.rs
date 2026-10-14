@@ -75,9 +75,18 @@ fn slot(hub: &TestHub, key: std::rc::Rc<Authenticator>) -> Sim {
                 prf: Bytes(prf.to_vec()),
             })
         }
-        _ => IoResult::Ok(PlatformAnswer::Refused),
+        PlatformOp::PushRegister { server_key } => {
+            assert_eq!(server_key.as_ref().map(|k| k.0.len()), Some(65), "the hub's VAPID key");
+            let key = p256::SecretKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+            let point = p256::elliptic_curve::sec1::ToEncodedPoint::to_encoded_point(&key.public_key(), false);
+            let b64 = trommi_core::ids::base64url_encode;
+            let sub = serde_json::json!({ "endpoint": "http://127.0.0.1:9/push/1", "keys": { "p256dh": b64(point.as_bytes()), "auth": b64(&[1u8; 16]) } });
+            IoResult::Ok(PlatformAnswer::Push { kind: "web_push".into(), token: Bytes(sub.to_string().into_bytes()) })
+        }
+        PlatformOp::PushUnregister => IoResult::Ok(PlatformAnswer::Done),
     }));
-    sim.send(Event::Start { config: Config { platform: "test".into(), version: "0".into(), hub: hub.url.clone(), seed: 7, ..Default::default() } });
+    let can = trommi_client_core::app::Abilities { push: "web_push".into(), passkeys: true, ..Default::default() };
+    sim.send(Event::Start { config: Config { platform: "test".into(), version: "0".into(), hub: hub.url.clone(), seed: 7, can, ..Default::default() } });
     sim
 }
 
@@ -212,4 +221,19 @@ fn the_room_is_recovered_with_the_kit() {
     let mut old = slot(&hub, std::rc::Rc::new(Authenticator::new()));
     account(&mut old, AccountAction::SignIn { email: EMAIL.into(), password: secret("first password here"), hub: None });
     until(&mut old, "refused", |s| s.view.account.problem.is_some());
+}
+
+#[test]
+fn push_is_turned_on_and_off_for_this_device() {
+    let hub = TestHub::start();
+    let mut sim = slot(&hub, std::rc::Rc::new(Authenticator::new()));
+    account(&mut sim, AccountAction::Found { email: EMAIL.into(), password: secret("first password here"), hub: None });
+    kit(&mut sim);
+    until(&mut sim, "live", |s| s.view.phase == Phase::Live);
+    until(&mut sim, "push read", |s| s.view.settings.push.as_ref().is_some_and(|p| p.level == "off"));
+    sim.send(Event::Action { action: Action::Push { level: trommi_client_core::app::push::PushChoice::Knocking } });
+    until(&mut sim, "push on", |s| s.view.settings.push.as_ref().is_some_and(|p| p.level == "knocking" && !p.busy));
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+    sim.send(Event::Action { action: Action::Push { level: trommi_client_core::app::push::PushChoice::Off } });
+    until(&mut sim, "push off", |s| s.view.settings.push.as_ref().is_some_and(|p| p.level == "off"));
 }

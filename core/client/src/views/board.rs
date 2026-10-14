@@ -63,7 +63,8 @@ pub const OFF_PAGE: usize = 100;
 pub const COMMENTS_PAGE: usize = 10;
 
 /// What the person asks to see more of.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "list", rename_all = "snake_case")]
 pub enum MoreOf {
     /// The talk of a session (its key, or its short id).
     Talk { session: String },
@@ -483,10 +484,16 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
-    let (account, login) = (view.settings.account.take(), view.settings.login.take());
+    // (what the App adds beside the model: the account read, the room, the desks' deletes)
+    let mut kept = std::mem::take(&mut view.settings);
     view.settings = super::settings::settings(&b);
-    view.settings.account = account;
-    view.settings.login = login;
+    view.settings.account = kept.account.take();
+    view.settings.login = kept.login.take();
+    view.settings.room = kept.room.take();
+    view.settings.hub = kept.hub.take();
+    view.settings.desk_counts = std::mem::take(&mut kept.desk_counts);
+    view.settings.deleting = std::mem::take(&mut kept.deleting);
+    view.settings.push = kept.push.take();
     // The pages in view: one session, one card. A page that is left is taken away.
     view.sessions.clear();
     if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {

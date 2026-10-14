@@ -99,6 +99,10 @@ pub enum AccountAction {
     },
     /// Reads the account (`GET /v1/account`) into `view.settings.login`: its e-mail, password, kit and passkeys.
     ReadAccount,
+    /// Whether this way in opens the account, changing nothing: `step: "unlocked"`, or the problem.
+    CheckUnlock {
+        unlock: Unlock,
+    },
     /// A new Emergency Kit for the same recovery code; its words are shown once (`step: "keep_kit"`).
     NewKit {
         unlock: Unlock,
