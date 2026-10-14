@@ -30,6 +30,7 @@ mod outside;
 mod past;
 pub mod push;
 mod selfjoin;
+mod kit;
 mod shared;
 pub use shared::SHARED_FILE;
 pub mod script;
@@ -166,6 +167,8 @@ pub struct App {
     recovered_kit: Option<Vec<String>>,
     /// Agents' asks to let in a new session of their machine (`app::selfjoin`).
     selfjoin: selfjoin::SelfJoin,
+    /// The Emergency Kit's flag and sheet (`app::kit`).
+    kit: kit::Kit,
     /// Actions that write the room's registers, held while the device catches up: a register written before the
     /// device read the newest value would lose to an older one read later (its write counter is too low).
     held_actions: Vec<Action>,
@@ -242,6 +245,7 @@ impl App {
             recover_with: None,
             recovered_kit: None,
             selfjoin: selfjoin::SelfJoin::default(),
+            kit: kit::Kit::default(),
             held_actions: Vec::new(),
             opening: None,
             board: engine::feed::Board::default(),
@@ -349,12 +353,7 @@ impl App {
             return;
         }
         match action {
-            AccountAction::KitKept => {
-                if self.next_view.account.step == "keep_kit" {
-                    self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
-                }
-                return;
-            }
+            AccountAction::KitKept => return self.kit_kept(now_ms, out),
             AccountAction::Found { email, password, hub } => return self.found(&email, &password, hub.as_deref(), out),
             AccountAction::SignInWithPasskey { hub } => return self.passkey_sign_in(hub.as_deref(), out),
             AccountAction::FoundWithPasskey { email, hub } => return self.found_with_passkey(email, hub.as_deref(), out),
@@ -977,6 +976,17 @@ impl App {
                 if let Some(desk) = focus.desk.as_deref().filter(|d| *d != crate::views::board::ALL_DESKS) {
                     self.lens.home_desk = Some(desk.to_string());
                 }
+                // (every desk's board small: Settings, and the boards of All desks)
+                let all = focus.desk.as_deref() == Some(crate::views::board::ALL_DESKS);
+                self.lens.thumbs = matches!(focus.screen, Screen::Settings) || (all && board.is_some());
+                self.scribble.thumbs = self.lens.thumbs;
+                if self.lens.thumbs && !self.demo {
+                    for (desk, _) in crate::sessions::desks_in_order(&self.board.model) {
+                        if let Some(b) = crate::scribble::board_of(&crate::scribble::desk_board(&desk)) {
+                            self.scribble.read(b);
+                        }
+                    }
+                }
                 self.lens.desk = focus.desk;
                 // (the gallery, and the Desk's foot shows its newest)
                 self.lens.artifacts = matches!(focus.screen, Screen::Artifacts | Screen::Desk);
@@ -1074,6 +1084,14 @@ impl App {
                 }
                 return;
             }
+            Action::FoldGoals { desk_id, folded } => {
+                self.lens.goals_folded.retain(|d| d != desk_id);
+                if *folded {
+                    self.lens.goals_folded.push(desk_id.clone());
+                }
+                self.stale_views = true;
+                return;
+            }
             _ => {}
         }
         if self.demo {
@@ -1158,7 +1176,7 @@ impl App {
             Ok(()) => {
                 if let Action::SendNote { note_id, .. } = &action {
                     let text = crate::views::Text::new("notes.sent", "Note sent.");
-                    doing.sent.toast(doing.toasts, text, Some(Action::UnsendNote { note_id: note_id.clone() }));
+                    doing.sent.undo_toast(doing.toasts, text, None, Action::UnsendNote { note_id: note_id.clone() });
                 }
             }
         }
@@ -1169,16 +1187,44 @@ impl App {
         self.after_demo(now_ms, out);
     }
 
-    /// The demo's views, made again when they went stale.
+    /// The demo's views, made again when they went stale. Its boards are in the model alone.
     fn after_demo(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
         if self.stale_views {
             self.outside.due = true;
             self.stale_views = false;
-            let (wake, shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            let (wake, mut shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            self.next_view.board = self.scribble.focused().map(|b| {
+                let (view, refs) = crate::scribble::model_board(&self.board.model, &b);
+                shown.extend(refs);
+                view
+            });
+            self.next_view.thumbs = self.thumbs();
             self.view_wake = wake;
             self.files.shown(shown, &mut self.next_view.files);
         }
         self.outside(now_ms, out);
+    }
+
+    /// Every desk's board small while a page shows them (`Lens::thumbs`): each is read on this device (the demo's
+    /// are in the model).
+    fn thumbs(&mut self) -> Option<Vec<crate::views::ThumbView>> {
+        if !self.lens.thumbs {
+            return None;
+        }
+        let desks = crate::sessions::desks_in_order(&self.board.model);
+        let mut out = Vec::with_capacity(desks.len());
+        for (desk, _) in desks {
+            let id = crate::scribble::desk_board(&desk);
+            let Some(board) = crate::scribble::board_of(&id) else { continue };
+            let (state, shapes) = if self.demo {
+                ("ready", crate::scribble::thumb_shapes(crate::scribble::model_board(&self.board.model, &board).0.shapes))
+            } else {
+                self.scribble.read(board);
+                self.scribble.thumb(&self.board.model, &board).unwrap_or(("loading", Vec::new()))
+            };
+            out.push(crate::views::ThumbView { desk_id: desk, board_id: id, state: state.into(), count: shapes.len() as u64, shapes });
+        }
+        Some(out)
     }
 
     /// The notes this device sent whose hold (the toast's Undo) ran out: delivered, once each.
@@ -1274,7 +1320,7 @@ impl App {
         // a sent note's toast offers Undo while it is held
         if let (true, Action::SendNote { note_id, .. }) = (done, &action) {
             let text = crate::views::Text::new("notes.sent", "Note sent.");
-            self.sent.toast(&mut self.next_view.toasts, text, Some(Action::UnsendNote { note_id: note_id.clone() }));
+            self.sent.undo_toast(&mut self.next_view.toasts, text, None, Action::UnsendNote { note_id: note_id.clone() });
         }
         if let (true, Action::ArchiveSession { session_id, on: true }) = (done, &action) {
             self.archive_group(now_ms, session_id, out);
@@ -1698,6 +1744,7 @@ impl App {
                 }
                 Report::Founded(None) => {
                     if let Some((_, founding)) = self.founding.take() {
+                        self.kit.mark = true;
                         self.next_view.account = crate::views::AccountView { step: "keep_kit".into(), kit: founding.kit_words(), ..Default::default() };
                     }
                 }
@@ -1865,6 +1912,7 @@ impl App {
         if fed {
             self.selfjoin_tend(now_ms, out);
         }
+        self.kit_tend(now_ms, out);
         self.notes_free(now_ms, notes_back, out);
         self.goals_check |= fed;
         if !self.held_actions.is_empty() && self.next_view.phase == Phase::Live {
@@ -1893,6 +1941,7 @@ impl App {
             let (wake, mut shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
             self.next_view.board = self.scribble.view(&self.board.model);
             shown.extend(self.scribble.pictures(&self.board.model));
+            self.next_view.thumbs = self.thumbs();
             if let Some(engine) = self.engine.as_ref() {
                 self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
                 self.next_view.settings.hub = Some(engine.hub().to_string());
@@ -1925,6 +1974,7 @@ impl App {
     /// Puts a `Render` first when the view changed: the shell draws before it starts the I/O.
     fn render(&mut self, out: &mut Vec<Effect>) {
         self.follow_sign_in();
+        self.account_extras();
         let delta = if !self.rendered_once {
             self.rendered_once = true;
             let mut whole = self.next_view.clone();

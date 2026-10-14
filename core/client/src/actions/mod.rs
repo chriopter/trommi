@@ -52,6 +52,8 @@ pub enum Action {
     },
     /// Hand the card back to its agent: "What??" (`rework` false: explain it) or "Revise" (`rework` true: make it
     /// again). The card comes back up awake.
+    /// Without a note (or a blank one) the agent reads the core's words for it (`views::talk::HAND_BACK_TEXT`,
+    /// `EXPLAIN_TEXT`), and the conversation shows a quiet line. `attachments`: files attached (`ViewModel.files`).
     HandBack {
         card_id: String,
         #[serde(default)]
@@ -60,6 +62,8 @@ pub enum Action {
         rework: bool,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         marks: Vec<serde_json::Value>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        attachments: Vec<String>,
     },
     /// Take a card back from its agent while it reworks or explains it: no need any more.
     TakeBack {
@@ -177,9 +181,10 @@ pub enum Action {
     RemoveDesk {
         desk_id: String,
     },
-    /// A step of a desk's deletion (`app::desks`): a desk's register written. Not the shell's to send.
+    /// A room register the App writes on its own: a step of a desk's deletion (`app::desks`), the kit's flag
+    /// (`app::kit`). Not the shell's to send.
     #[serde(skip)]
-    DeskRegister {
+    RoomRegister {
         key: String,
         value: serde_json::Value,
     },
@@ -190,6 +195,12 @@ pub enum Action {
     SetGoal {
         desk_id: String,
         text: String,
+    },
+    /// A desk's goals folded to their first line, or open again (`GoalsView.folded`). This device's alone: the shell
+    /// keeps the folded desks and sends them again after a start.
+    FoldGoals {
+        desk_id: String,
+        folded: bool,
     },
 
     // ---- notes, scribble, files ----

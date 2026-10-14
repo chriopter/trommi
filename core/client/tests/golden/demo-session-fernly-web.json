@@ -56,8 +56,8 @@
       "event": {
         "kind": "decided",
         "label": {
-          "key": "event.decided",
-          "en": "Answered"
+          "key": "event.you_chose",
+          "en": "You chose"
         },
         "about": "Remind in the morning or in the evening?",
         "text": "Morning, 8:00",
@@ -98,8 +98,8 @@
       "event": {
         "kind": "decided",
         "label": {
-          "key": "event.decided",
-          "en": "Answered"
+          "key": "event.you_chose",
+          "en": "You chose"
         },
         "about": "Remind in the morning or in the evening?",
         "text": "Morning, 8:00",
@@ -183,8 +183,11 @@
       "event": {
         "kind": "info",
         "label": {
-          "key": "event.board",
-          "en": "Board"
+          "key": "event.info_by",
+          "args": {
+            "name": "Fernly Website"
+          },
+          "en": "Fernly Website wrote"
         },
         "text": "Done: onboarding in three steps is on staging",
         "echo": false,
@@ -861,5 +864,28 @@
     },
     "en": "3 open questions: go to the first one"
   },
-  "first_open": "v875200a"
+  "first_open": "v875200a",
+  "usage": {
+    "plan": "Claude Max",
+    "email": "ada@example.org",
+    "meters": [
+      {
+        "key": "five_hour",
+        "label": "5 h",
+        "long": "5-hour window",
+        "used": 62,
+        "hot": false,
+        "reset_ms": 1791477600000
+      },
+      {
+        "key": "weekly",
+        "label": "week",
+        "long": "This week",
+        "used": 84,
+        "hot": true,
+        "reset_ms": 1791741000000
+      }
+    ]
+  },
+  "archived": false
 }

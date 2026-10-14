@@ -141,8 +141,11 @@
       "event": {
         "kind": "asked",
         "label": {
-          "key": "event.asked",
-          "en": "New question"
+          "key": "event.asked_by",
+          "args": {
+            "name": "Search & Social"
+          },
+          "en": "Search & Social asked"
         },
         "text": "Social card for the launch: photo or illustration?",
         "echo": false,

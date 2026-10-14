@@ -56,7 +56,27 @@ pub struct Entry {
     pub row: TalkRow,
 }
 
-/// The label of an event's line.
+/// The label of an event's line, with who did it: `who` is the agent's name ("" names it "The agent"); what the
+/// person did is "You …".
+pub fn event_label_by(kind: &str, who: &str) -> Text {
+    let who = if who.is_empty() { "The agent" } else { who };
+    let by = |key: &str, en: String| say(key, en, &[("name", who)]);
+    match kind {
+        "asked" => by("event.asked_by", format!("{who} asked")),
+        "info" => by("event.info_by", format!("{who} wrote")),
+        "revised" => by("event.revised_by", format!("{who} revised it")),
+        "done" => by("event.done_by", format!("{who} closed it")),
+        "withdrawn" => by("event.withdrawn_by", format!("{who} withdrew it")),
+        "decided" => say("event.you_chose", "You chose", &[]),
+        "trusted" => say("event.you_trusted", "You left it to the agent", &[]),
+        "read" => say("event.you_read", "You read it", &[]),
+        "shredded" => say("event.you_shredded", "You shredded it", &[]),
+        "reopened" => say("event.you_reopened", "You took it back", &[]),
+        other => event_label(other),
+    }
+}
+
+/// The label of an event's line, without who did it.
 pub fn event_label(kind: &str) -> Text {
     let (key, en) = match kind {
         "asked" => ("event.asked", "New question"),
@@ -133,6 +153,8 @@ pub fn choices_of(v: &Value) -> Vec<&str> {
 /// (read, shredded, decided), each taking back, and its end when its agent closed or withdrew it with a word.
 pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
     let title = shown_title(c);
+    let who = b.by_key.get(super::board::key_of(&c.session_id, &c.agent_device_id)).map(|i| b.agents[*i].row.name.clone()).unwrap_or_default();
+    let withdrawn_card = c.object_state == "closed" && !c.field("withdraw_reason").as_str().unwrap_or("").is_empty();
     let info = super::board::reads_as_info(c);
     let options = if info { Value::Null } else { c.field("options") };
     let ev = |n: u64, half: bool, kind: &str, text: String, ts: u64| Entry {
@@ -148,7 +170,7 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
             card: Some(card_ref(b, c)),
             event: Some(EventView {
                 kind: kind.into(),
-                label: event_label(kind),
+                label: event_label_by(if kind == "done" && withdrawn_card { "withdrawn" } else { kind }, &who),
                 // (the card's title, when the words do not say it already)
                 about: if text.is_empty() || text != title { title.clone() } else { String::new() },
                 text,
@@ -220,7 +242,8 @@ pub fn events_of(b: &Board, c: &Card) -> Vec<Entry> {
     let summary = c.field("close_summary").as_str().unwrap_or("").to_string();
     let withdrawn = c.field("withdraw_reason").as_str().unwrap_or("").to_string();
     if c.object_state == "closed" && !(summary.is_empty() && withdrawn.is_empty()) {
-        let said = if withdrawn.is_empty() { summary } else { format!("Withdrawn: {withdrawn}") };
+        // (withdrawn: its label says so, "X withdrew it"; the words are its reason)
+        let said = if withdrawn.is_empty() { summary } else { withdrawn };
         out.push(ev(c.envelope_number, true, "done", said, c.updated_at));
     }
     out

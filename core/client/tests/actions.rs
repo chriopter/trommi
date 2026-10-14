@@ -254,7 +254,7 @@ fn a_line_and_a_hand_back_show_at_once_in_their_chats() {
     let session = sim.view.sidebar.sessions[0].id.clone();
     sim.hold = true;
     act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "hello agent".into(), attachments: vec![], marks: vec![], copied_cards: vec![] });
-    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("what do you mean?".into()), rework: false, marks: vec![] });
+    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("what do you mean?".into()), rework: false, marks: vec![], attachments: vec![] });
     let model = &sim.app.board().model;
     let pending = |key: &str| model.timelines.get(key).map(|t| t.items.values().filter(|i| i.get("pending") == Some(&json!(true))).count());
     assert_eq!(pending(&format!("chat:session/{session}")), Some(1));
@@ -605,11 +605,30 @@ fn sessions_get_marks_groups_places_and_the_crown_and_desks_their_order() {
     assert_eq!(human(&sim, &format!("device/{me}")).unwrap().0["device_name"], json!("Laptop"));
     // "Revise" and "take back" go to the card's chat
     sim.hold = true;
-    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("again".into()), rework: true, marks: vec![json!({ "picture": 0, "x": 1, "y": 2, "w": 3, "h": 4 })] });
+    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("again".into()), rework: true, marks: vec![json!({ "picture": 0, "x": 1, "y": 2, "w": 3, "h": 4 })], attachments: vec![] });
     act(&mut sim, Action::TakeBack { card_id: card.clone() });
     let items: Vec<serde_json::Value> = sim.app.board().model.timelines[&format!("chat:card/{card}")].items.values().cloned().map(serde_json::Value::Object).collect();
     assert!(items.iter().any(|i| i["content"]["hand_back"] == json!(true) && i["content"]["marks"].as_array().is_some_and(|m| m.len() == 1)), "{items:?}");
     assert!(items.iter().any(|i| i["content"]["present_card"] == json!(true)), "{items:?}");
+    assert!(sim.view.toasts.iter().all(|t| !t.alert && t.text.key == "desk.added"), "only \"Desk added\" with its Undo: {:?}", sim.view.toasts);
+}
+
+#[test]
+fn a_bare_hand_back_says_the_cores_words_and_takes_files_along() {
+    use trommi_client_core::views::talk::{EXPLAIN_TEXT, HAND_BACK_TEXT};
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    act(&mut sim, Action::Attach { local_id: "hb-1".into(), name: "why.png".into(), media_type: "image/png".into(), bytes: trommi_client_core::app::Bytes(b"png".to_vec()) });
+    serve(&world, &mut sim);
+    assert_eq!(sim.view.files["hb-1"].state, "ready");
+    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("  ".into()), rework: false, marks: vec![], attachments: vec![] });
+    act(&mut sim, Action::HandBack { card_id: card.clone(), note: None, rework: true, marks: vec![], attachments: vec!["hb-1".into()] });
+    let items: Vec<serde_json::Value> = sim.app.board().model.timelines[&format!("chat:card/{card}")].items.values().cloned().map(serde_json::Value::Object).collect();
+    assert!(items.iter().any(|i| i["content"]["explain"] == json!(true) && i["content"]["text"] == json!(EXPLAIN_TEXT)), "{items:?}");
+    let back = items.iter().find(|i| i["content"]["hand_back"] == json!(true)).expect("the hand-back");
+    assert_eq!(back["content"]["text"], json!(HAND_BACK_TEXT));
+    assert_eq!(back["content"]["attachments"].as_array().map(Vec::len), Some(1), "{back}");
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
 }
 

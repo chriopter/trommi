@@ -111,8 +111,8 @@ impl App {
 
     fn desk_step(&mut self, now_ms: u64, desk_id: &str, board_id: &str, step: Step, out: &mut Vec<Effect>) {
         match step {
-            Step::Mark { register, value } => self.run_action(now_ms, Action::DeskRegister { key: register, value }, out),
-            Step::RemoveDesk { register } => self.run_action(now_ms, Action::DeskRegister { key: register, value: serde_json::Value::Null }, out),
+            Step::Mark { register, value } => self.run_action(now_ms, Action::RoomRegister { key: register, value }, out),
+            Step::RemoveDesk { register } => self.run_action(now_ms, Action::RoomRegister { key: register, value: serde_json::Value::Null }, out),
             Step::Shred { object_ids } => {
                 for card_id in object_ids {
                     self.run_action(now_ms, Action::Shred { card_id, note: None, attachments: Vec::new(), marks: Vec::new() }, out);

@@ -60,16 +60,25 @@ fn an_account_is_made_with_its_room_and_signs_in_again() {
     for effect in &sim.log {
         assert!(!format!("{effect:?}").contains(PASSWORD));
     }
-    account(&mut sim, AccountAction::KitKept);
-    assert_eq!(sim.view.account.step, "none");
-    assert!(sim.view.account.kit.is_empty());
+    assert!(sim.view.account.kit_due, "the kit waits to be saved");
+    sim.advance(100);
+    let pending = |sim: &Sim| sim.app.board().model.human.get("kit").map(|r| r.value.clone());
+    assert_eq!(pending(&sim), Some(serde_json::json!({ "pending": true })), "the room register says it");
 
-    // another slot signs in to it with the password
+    // another slot signs in to it with the password: the kit waits there too
     let mut other = blank(&hub);
     account(&mut other, AccountAction::SignIn { email: "ada@example.org".into(), password: Secret(PASSWORD.into()), hub: None });
     settle(&hub, &mut other);
     assert_eq!(other.view.phase, Phase::Live, "{:?}", other.view.account.problem);
     assert_eq!(other.app.engine().map(|e| e.room()), sim.app.engine().map(|e| e.room()));
+    assert!(other.view.account.kit_due, "every device of the person sees the kit is not saved");
+
+    account(&mut sim, AccountAction::KitKept);
+    assert_eq!(sim.view.account.step, "none");
+    assert!(sim.view.account.kit.is_empty());
+    assert!(!sim.view.account.kit_due, "kept");
+    sim.advance(100);
+    assert_eq!(pending(&sim), Some(serde_json::Value::Null));
 }
 
 #[test]
