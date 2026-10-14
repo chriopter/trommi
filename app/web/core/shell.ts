@@ -165,17 +165,19 @@ export class CoreShell {
     }
   }
 
-  /** The request as fetch takes it: no redirects, the shell's own abort and timeout. */
-  private requestOf(id: number, r: Json, blobs: Uint8Array[]): { url: string; init: RequestInit; controller: AbortController; max: number; timedOut: () => boolean } {
+  /** The request as fetch takes it: no redirects, the shell's own abort and timeout. `settled` ends the timeout:
+   *  an answer read whole, or a stream's head (`timeout_ms` bounds the wait for the head; an open stream has no
+   *  time limit, as trommi-io's executor). */
+  private requestOf(id: number, r: Json, blobs: Uint8Array[]): { url: string; init: RequestInit; controller: AbortController; max: number; timedOut: () => boolean; settled: () => void } {
     const controller = new AbortController()
     this.flying.set(id, controller)
     const headers: [string, string][] = ((r['headers'] as { name: string; value: string }[] | undefined) ?? []).map(h => [h.name, h.value])
     const body = typeof r['body'] === 'number' ? blobs[r['body'] as number] : undefined
     let timedOut = false
     const ms = r['timeout_ms'] as number | undefined
-    if (ms) setTimeout(() => { timedOut = true; controller.abort() }, ms)
+    const timer = ms ? setTimeout(() => { timedOut = true; controller.abort() }, ms) : null
     const init: RequestInit = { method: r['method'] as string, headers, signal: controller.signal, redirect: 'manual', ...(body ? { body: body as BodyInit } : {}) }
-    return { url: r['url'] as string, init, controller, max: (r['max_answer'] as number | undefined) ?? 64 << 10, timedOut: () => timedOut }
+    return { url: r['url'] as string, init, controller, max: (r['max_answer'] as number | undefined) ?? 64 << 10, timedOut: () => timedOut, settled: () => { if (timer) clearTimeout(timer) } }
   }
 
   private errorOf(e: unknown, timedOut: boolean, id: number): IoError {
@@ -186,17 +188,19 @@ export class CoreShell {
   }
 
   private async http(id: number, r: Json, blobs: Uint8Array[]): Promise<void> {
-    const { url, init, max, timedOut } = this.requestOf(id, r, blobs)
+    const { url, init, max, timedOut, settled } = this.requestOf(id, r, blobs)
     try {
       const response = await this.fetcher(url, init)
       if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) throw new Error('a redirect')
       const length = Number(response.headers.get('content-length') ?? NaN)
       if (length > max) throw Object.assign(new Error('too large'), { kind: 'too_large' })
       const body = await readCapped(response, max)
+      settled()
       if (!this.flying.delete(id)) return
       const headers = [...response.headers].map(([name, value]) => ({ name, value }))
       this.resultWith({ type: 'http', id, result: { ok: { status: response.status, headers, body: 0 } } }, [body])
     } catch (e) {
+      settled()
       const error = this.errorOf(e, timedOut(), id)
       if (!this.flying.delete(id) && error.kind === 'cancelled') return
       this.result({ type: 'http', id, result: { err: error } })
@@ -204,7 +208,7 @@ export class CoreShell {
   }
 
   private async stream(id: number, r: Json, blobs: Uint8Array[]): Promise<void> {
-    const { url, init, max } = this.requestOf(id, r, blobs)
+    const { url, init, max, settled } = this.requestOf(id, r, blobs)
     const item = (it: Json, bytes?: Uint8Array): void => {
       if (!this.flying.has(id)) return
       if (bytes) this.resultWith({ type: 'stream', id, item: { ...it, bytes: 0 } }, [bytes])
@@ -212,6 +216,8 @@ export class CoreShell {
     }
     try {
       const response = await this.fetcher(url, init)
+      // (the head came: the stream stays open for as long as it lasts)
+      settled()
       item({ item: 'opened', status: response.status, headers: [...response.headers].map(([name, value]) => ({ name, value })) })
       if (!response.body) { item({ item: 'ended' }); this.flying.delete(id); return }
       const reader = response.body.getReader()
@@ -227,6 +233,7 @@ export class CoreShell {
       item({ item: 'ended' })
       this.flying.delete(id)
     } catch (e) {
+      settled()
       if (!this.flying.has(id)) return
       const kind = (e as { kind?: string })?.kind === 'too_large' ? 'too_large' : 'offline'
       item({ item: 'failed', error: { kind, detail: '' } })

@@ -1,17 +1,30 @@
 {
   "stack": [
+    "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
     "0bfe44d41f866466dc1f6246fabac244",
     "185b315a758472a6fc1faed37e49f875",
     "e77e5a529e1d3a4bd3046ce602a34c1e",
+    "6deb90374cb873045fe03e39c3ab0348",
+    "a67da9b30d2f07d256c6b646e8c34f36",
+    "0d9331a1172e43e9157fbd722d87bf1a",
     "8b91e8761d15b3933a6412af44da7851",
+    "41bc4fad4b14457d7f16a660d518d474",
     "de6f89dc61b5db9b5ad8cd2eaf14abce",
+    "a2706545530be0dce3b13417c2728966",
     "177482f5593de33230dfeb8e72506993",
+    "cf5922f1d3baa4cf7dd0d9b573716bfb",
     "7e86fa6e752b2ff5cf636658aa14f1f0",
+    "d50337f0e7318660c4d9a0062426dea5",
+    "e842d16a6c7d9a0075b0a77b5932f3bb",
     "637adcc6eae4b4ac30b47509a3071884",
+    "9abad6a52b4b6dc3d096f87bff346aa9",
     "daa202f98097523fa1f1fe18068f8322",
+    "43a72b8f7d9de1aac4aeeae1367076c0",
     "a38afef6dbdd056db8042980f2b83336",
     "29e26860adecd0578df14c491915b27a",
+    "992640bed603743781e3241f6a2de105",
     "95a7444523d097bff745b891bc2166cf",
+    "8b26d4c112fa4617ad968fe6f311704e",
     "9c9f4031e513b80e68c67139a12e408b",
     "e3eb869558332fec907b2752f54a608a",
     "58f19345f724a39460db70a4377995c8",
@@ -19,30 +32,40 @@
   ],
   "off_your_mind": [
     "d86df7a1fc5ebcd07e11d5e7693160eb",
-    "0b48fb2a02a4fcc2a22da6f5a3b7bb49"
+    "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
+    "f35bf13aea8cdbfd193cfddc38f543fb"
   ],
   "later": [],
   "done": [
     "97e50f22901b42df1695b8b83fe0b69f",
+    "8547d0c56048b3ffa6fba14aafcf43a1",
+    "accb659455b97459f9fd89621496696a",
+    "a7043d48862eac8c164c419182dbd0c7",
     "b4df3dafbbefb36d523cf4e80f9f5402",
+    "d1f39fc0c47d8d8e8bbfa0a34c41269d",
     "cac2dd6c8c804cbff53f50e0bf8c239e",
+    "5c8d5717eb0331231e72aa5220774ead",
+    "aaef4af6b38e79001f510e100a5a67da",
     "b03faad45844fc7f92107d3ae1e5b9c3",
     "fa55e71001ede5adfb858626449dd757",
     "e43f3b8e342d703dba381ecb7317e670",
+    "13552895ad6558b518427f8b32606e9a",
     "e3245eb6a15862875ad911755de9e171",
     "ecf4dce02716faba82fe8b6d05c7ecf2",
     "80365f43d5c42ae69a91233c0c7e345d",
-    "006373ba27def50d7e29577e42cdac36"
+    "006373ba27def50d7e29577e42cdac36",
+    "246ebea0994ccda03d8cc8bbf724b2ff",
+    "ec2f5263fac9174007a1f17b148b8314"
   ],
   "running": {
     "key": "run",
-    "count": 2,
+    "count": 3,
     "says": {
       "key": "dock.run.says",
       "args": {
-        "n": "2"
+        "n": "3"
       },
-      "en": "2 running"
+      "en": "3 running"
     },
     "rows": [
       {
@@ -56,7 +79,8 @@
             "Fernly",
             "Design System",
             "Design Tokens"
-          ]
+          ],
+          "desk": "Fernly"
         },
         "line": {
           "key": "dock.line.label",
@@ -80,7 +104,8 @@
             "Fernly",
             "Fernly Website",
             "Search & Social"
-          ]
+          ],
+          "desk": "Fernly"
         },
         "line": {
           "key": "dock.line.label",
@@ -92,6 +117,30 @@
         },
         "running": true,
         "at_ms": 1791468000000
+      },
+      {
+        "id": "f35bf13aea8cdbfd193cfddc38f543fb",
+        "title": "Promote the replica in a failover drill on Friday?",
+        "from": {
+          "session_id": "1f4ee7520853d151015e6105ba5a9794",
+          "name": "Database Replica",
+          "mark": "draw:database",
+          "path": [
+            "Platform",
+            "Infrastructure",
+            "Database Replica"
+          ],
+          "desk": "Platform"
+        },
+        "line": {
+          "key": "dock.line.on_it",
+          "args": {
+            "name": "Database Replica"
+          },
+          "en": "Database Replica · on it"
+        },
+        "running": true,
+        "at_ms": 1791460200000
       }
     ],
     "all": {
@@ -114,24 +163,24 @@
         }
       },
       {
-        "id": "b4df3dafbbefb36d523cf4e80f9f5402",
-        "place": "done",
-        "mark": "tick",
-        "title": "One tokens file for web and iOS?",
+        "id": "8547d0c56048b3ffa6fba14aafcf43a1",
+        "place": "trash",
+        "mark": "withdraw",
+        "title": "Keep the CDC sync on its old schedule?",
         "starred": false,
-        "at_ms": 1791392400000,
+        "at_ms": 1791433800000,
         "says": {
-          "key": "off.place.tick",
-          "en": "Done"
+          "key": "off.place.withdraw",
+          "en": "Withdrawn"
         }
       },
       {
-        "id": "cac2dd6c8c804cbff53f50e0bf8c239e",
+        "id": "accb659455b97459f9fd89621496696a",
         "place": "done",
         "mark": "tick",
-        "title": "Remind in the morning or in the evening?",
+        "title": "Search: a hosted service or an index built at deploy?",
         "starred": false,
-        "at_ms": 1791380400000,
+        "at_ms": 1791425400000,
         "says": {
           "key": "off.place.tick",
           "en": "Done"
@@ -141,41 +190,111 @@
     "says": {
       "key": "off.hint.done",
       "args": {
-        "done": "10"
+        "done": "19"
       },
-      "en": "10 done"
+      "en": "19 done"
     },
     "put_off": 0,
-    "closed": 10
+    "closed": 19
   },
   "mode": "desk",
   "hello": {
     "key": "desk.hello.greeting.0",
     "en": "Welcome back."
   },
-  "goals": {
-    "desk_id": "main",
-    "lines": [
-      "Web app live on Monday, 09:00 CET",
-      "iOS 1.2 in App Store review by Friday",
-      "One set of design tokens for web and iOS",
-      "No new features after Thursday noon"
-    ],
-    "foldable": true,
-    "show_all": {
-      "key": "desk.goals.show_all",
-      "args": {
-        "n": "4"
-      },
-      "en": "Show all 4 goals"
-    },
-    "folded": false,
-    "toggle": {
-      "key": "desk.goals.fold",
-      "en": "Show the first goal only"
-    }
-  },
   "rows": [
+    {
+      "id": "cc29fc8ae7fedb4d24f25fe7cd7d80d6",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Postgres primary disk at 91%: add 200 GB now?",
+      "words": "The backfill for the dashboard wrote 140 GB of WAL today. Growing the disk takes no downtime.",
+      "urgency": "critical",
+      "sign": "block",
+      "sign_says": {
+        "key": "row.knock.blocking",
+        "en": "Knock! Blocking"
+      },
+      "starred": false,
+      "created_ms": 1791469680000,
+      "from": {
+        "session_id": "5ef619647e0e8185fef0e3be40ff4809",
+        "name": "Infrastructure",
+        "mark": "draw:mountain",
+        "path": [
+          "Platform",
+          "Infrastructure"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "4fb6d89d3c1a4cfa56a6636af32f3490",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "clean",
+            "label": "Clean WAL first",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Clean WAL first"
+              },
+              "en": "Clean WAL first"
+            }
+          },
+          {
+            "key": "grow",
+            "label": "Add 200 GB now",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Add 200 GB now"
+              },
+              "en": "Add 200 GB now"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
     {
       "id": "0bfe44d41f866466dc1f6246fabac244",
       "kind": "decision",
@@ -199,7 +318,8 @@
           "Fernly",
           "Design System",
           "Icons"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -284,7 +404,8 @@
           "Fernly",
           "Fernly Website",
           "Page Speed"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "tiles": {
@@ -315,12 +436,138 @@
         "path": [
           "Fernly",
           "Fernly Website"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
         {
           "file_id": "c11ba9616d097302b2a8b1c9b19b3e4b",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    },
+    {
+      "id": "6deb90374cb873045fe03e39c3ab0348",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "Load test: checkout holds 400 requests a second",
+      "words": "p95 under 180 ms up to 400 rps; at 520 rps the database pool runs out.",
+      "urgency": "low",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791458400000,
+      "from": {
+        "session_id": "9c85d0efb2d287a50dc2229f9feca1b7",
+        "name": "Load Testing",
+        "mark": "draw:burst",
+        "path": [
+          "Platform",
+          "Payments",
+          "Load Testing"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    },
+    {
+      "id": "a67da9b30d2f07d256c6b646e8c34f36",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "API p95 latency down to 138 ms after the Postgres upgrade",
+      "words": "Was 210 ms. The 13:40 spike was the backfill job, not users.",
+      "urgency": "low",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791457800000,
+      "from": {
+        "session_id": "0b966a14a8c6ed46dd4ecc1ecfa50ad3",
+        "name": "Monitoring",
+        "mark": "draw:eye",
+        "path": [
+          "Platform",
+          "Infrastructure",
+          "Monitoring"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "61f9ea1d8c58b7bce8ca8f54b4ef2db2",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "read",
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "shred"
+      ]
+    },
+    {
+      "id": "0d9331a1172e43e9157fbd722d87bf1a",
+      "kind": "info",
+      "loading": false,
+      "newer": false,
+      "title": "Cloud bill: €2,380 a month less from December",
+      "words": "Reserved instances, one NAT per region, plant photos through the CDN.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791451800000,
+      "from": {
+        "session_id": "8693f72066947d694979af982d64ae9a",
+        "name": "Cloud Costs",
+        "mark": "draw:comb",
+        "path": [
+          "Platform",
+          "Infrastructure",
+          "Cloud Costs"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "b9d7464f359973927b3dcbe4e28b9141",
           "kind": "image"
         }
       ],
@@ -364,7 +611,8 @@
           "Fernly",
           "Design System",
           "Dark Mode"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -434,6 +682,90 @@
       ]
     },
     {
+      "id": "41bc4fad4b14457d7f16a660d518d474",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Generate the API reference from the OpenAPI file?",
+      "words": "Always matches the code. The examples are written by hand next to it.",
+      "urgency": "low",
+      "sign": "whenever",
+      "sign_says": {
+        "key": "row.whenever",
+        "en": "Whenever"
+      },
+      "starred": false,
+      "created_ms": 1791468360000,
+      "from": {
+        "session_id": "5d7a2ba080769d76d188155abcdb8d06",
+        "name": "API Reference",
+        "mark": "draw:terminal",
+        "path": [
+          "Platform",
+          "Docs",
+          "API Reference"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "no",
+            "label": "No",
+            "thumb": "no",
+            "thumbs": true,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
+            "says": {
+              "key": "tile.says.settles",
+              "args": {
+                "label": "No"
+              },
+              "en": "No (settles it)"
+            }
+          },
+          {
+            "key": "yes",
+            "label": "Yes",
+            "thumb": "yes",
+            "thumbs": true,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Yes"
+              },
+              "en": "Yes"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "de6f89dc61b5db9b5ad8cd2eaf14abce",
       "kind": "decision",
       "loading": false,
@@ -456,7 +788,8 @@
           "Fernly",
           "Fernly App",
           "App Store"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -491,6 +824,82 @@
       ]
     },
     {
+      "id": "a2706545530be0dce3b13417c2728966",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Show prices with VAT included everywhere?",
+      "words": "Required in the EU. In the US prices are usually shown without tax.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466560000,
+      "from": {
+        "session_id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc",
+        "name": "Tax & VAT",
+        "mark": "draw:key",
+        "path": [
+          "Platform",
+          "Payments",
+          "Tax & VAT"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "eu-only",
+            "label": "Only in the EU",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Only in the EU"
+              },
+              "en": "Only in the EU"
+            }
+          },
+          {
+            "key": "everywhere",
+            "label": "Included everywhere",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Included everywhere"
+              },
+              "en": "Included everywhere"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "177482f5593de33230dfeb8e72506993",
       "kind": "decision",
       "loading": false,
@@ -509,7 +918,8 @@
           "Fernly",
           "Fernly App",
           "Widgets"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -583,6 +993,47 @@
       ]
     },
     {
+      "id": "cf5922f1d3baa4cf7dd0d9b573716bfb",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Which invoice details can people change themselves?",
+      "words": "Tick everything they may change in Settings. The rest goes through support.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466920000,
+      "from": {
+        "session_id": "a7b41f11fd76b678e5918ee35812d2a9",
+        "name": "Invoices",
+        "mark": "draw:book",
+        "path": [
+          "Platform",
+          "Payments",
+          "Invoices"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "choose",
+        "others": 0,
+        "says": {
+          "key": "tile.choose.several",
+          "args": {
+            "n": "4"
+          },
+          "en": "Choose: 4 options, several"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "7e86fa6e752b2ff5cf636658aa14f1f0",
       "kind": "decision",
       "loading": false,
@@ -601,7 +1052,8 @@
           "Fernly",
           "Fernly Website",
           "Onboarding"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "tiles": {
@@ -658,24 +1110,26 @@
       ]
     },
     {
-      "id": "637adcc6eae4b4ac30b47509a3071884",
+      "id": "d50337f0e7318660c4d9a0062426dea5",
       "kind": "decision",
       "loading": false,
       "newer": false,
-      "title": "Send a weekly summary e-mail on Sundays?",
-      "words": "Which plants did well, which are due next week. People asked for it in the beta.",
+      "title": "Upgrade production to Kubernetes 1.33 on Wednesday night?",
+      "words": "Staging runs 1.33 since Tuesday without a problem. Nodes roll one at a time.",
       "urgency": "normal",
       "sign": "",
       "starred": false,
-      "created_ms": 1791466200000,
+      "created_ms": 1791468000000,
       "from": {
-        "session_id": "54ddca7af4029f0526984da1e346d833",
-        "name": "Fernly Website",
-        "mark": "draw:leaf",
+        "session_id": "1e7c3773ece2ab64dba5343140e7c0b0",
+        "name": "Kubernetes",
+        "mark": "draw:boat",
         "path": [
-          "Fernly",
-          "Fernly Website"
-        ]
+          "Platform",
+          "Infrastructure",
+          "Kubernetes"
+        ],
+        "desk": "Platform"
       },
       "run": 1,
       "tiles": {
@@ -736,6 +1190,263 @@
       ]
     },
     {
+      "id": "e842d16a6c7d9a0075b0a77b5932f3bb",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Docs layout: a sidebar, or tabs on top?",
+      "words": "The sidebar shows every page; tabs keep guides and the API apart.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791462960000,
+      "from": {
+        "session_id": "eeb9fe76ad84d2405625d15419ce6083",
+        "name": "Docs",
+        "mark": "draw:book",
+        "path": [
+          "Platform",
+          "Docs"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "98a54f675570449c8836f202ae2a3b80",
+          "kind": "image"
+        },
+        {
+          "file_id": "66e0a82f2a0f3b117446faeb1238d2cc",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "tabs",
+            "label": "Tabs on top",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Tabs on top"
+              },
+              "en": "Tabs on top"
+            }
+          },
+          {
+            "key": "sidebar",
+            "label": "Sidebar",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Sidebar"
+              },
+              "en": "Sidebar"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "637adcc6eae4b4ac30b47509a3071884",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Send a weekly summary e-mail on Sundays?",
+      "words": "Which plants did well, which are due next week. People asked for it in the beta.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791466200000,
+      "from": {
+        "session_id": "54ddca7af4029f0526984da1e346d833",
+        "name": "Fernly Website",
+        "mark": "draw:leaf",
+        "path": [
+          "Fernly",
+          "Fernly Website"
+        ],
+        "desk": "Fernly"
+      },
+      "run": 1,
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "no",
+            "label": "No",
+            "thumb": "no",
+            "thumbs": true,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": true,
+            "tip": {
+              "key": "tile.settles",
+              "en": "Settles it"
+            },
+            "says": {
+              "key": "tile.says.settles",
+              "args": {
+                "label": "No"
+              },
+              "en": "No (settles it)"
+            }
+          },
+          {
+            "key": "yes",
+            "label": "Yes",
+            "thumb": "yes",
+            "thumbs": true,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Yes"
+              },
+              "en": "Yes"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
+      "id": "9abad6a52b4b6dc3d096f87bff346aa9",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "How long do we keep the raw events?",
+      "words": "The models need 90 days. Longer costs storage and means more personal data kept.",
+      "notes": [
+        {
+          "key": "row.replaces.one",
+          "args": {
+            "n": "1"
+          },
+          "en": "replaces 1 question"
+        }
+      ],
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465840000,
+      "from": {
+        "session_id": "f14180d4caac441522269c631a745866",
+        "name": "Data Pipeline",
+        "mark": "draw:database",
+        "path": [
+          "Platform",
+          "Data Pipeline"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "70d771d464c0d437ecab1f509b47e5e5",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "advised",
+        "tiles": [
+          {
+            "key": "90",
+            "label": "90 days",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.label",
+              "en": "90 days"
+            },
+            "says": {
+              "key": "tile.says.advised",
+              "args": {
+                "label": "90 days"
+              },
+              "en": "90 days, advised"
+            }
+          }
+        ],
+        "others": 2,
+        "says": {
+          "key": "tile.others",
+          "args": {
+            "n": "2"
+          },
+          "en": "2 other ways: open the card"
+        }
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "daa202f98097523fa1f1fe18068f8322",
       "kind": "decision",
       "loading": false,
@@ -754,7 +1465,8 @@
           "Fernly",
           "Fernly Website",
           "Copywriting"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -828,6 +1540,95 @@
       ]
     },
     {
+      "id": "43a72b8f7d9de1aac4aeeae1367076c0",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Who counts as an active user?",
+      "words": "Opening the app, or watering a plant. Watering is what we care about; opening is what others report.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791465480000,
+      "from": {
+        "session_id": "36f6070677c607aa723892800065eca5",
+        "name": "Dashboards",
+        "mark": "draw:eye",
+        "path": [
+          "Platform",
+          "Data Pipeline",
+          "Dashboards"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "3d154a92f7b328d07c3d88cc578abd5c",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "opened",
+            "label": "Opened the app",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Opened the app"
+              },
+              "en": "Opened the app"
+            }
+          },
+          {
+            "key": "watered",
+            "label": "Watered a plant",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Watered a plant"
+              },
+              "en": "Watered a plant"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "a38afef6dbdd056db8042980f2b83336",
       "kind": "decision",
       "loading": false,
@@ -846,7 +1647,8 @@
           "Fernly",
           "Fernly Website",
           "Landing Page"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -937,7 +1739,8 @@
         "path": [
           "Fernly",
           "Fernly App"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -1007,6 +1810,99 @@
       ]
     },
     {
+      "id": "992640bed603743781e3241f6a2de105",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Checkout: a sheet over the app, or its own page?",
+      "words": "Both are built with Stripe Elements. The sheet keeps people where they were.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791463320000,
+      "from": {
+        "session_id": "814719292f007b90bc4649fb09f25cb2",
+        "name": "Checkout",
+        "mark": "draw:cup",
+        "path": [
+          "Platform",
+          "Payments",
+          "Checkout"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "4d062f8ab1e0e84eef827262aa82a3bd",
+          "kind": "image"
+        },
+        {
+          "file_id": "2b2a46347d88b1572eb48367c50a40a6",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media",
+        "args": {
+          "n": "2"
+        },
+        "en": "Look at 2 pictures and videos"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "page",
+            "label": "Its own page",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Its own page"
+              },
+              "en": "Its own page"
+            }
+          },
+          {
+            "key": "sheet",
+            "label": "Sheet over the app",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Sheet over the app"
+              },
+              "en": "Sheet over the app"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "95a7444523d097bff745b891bc2166cf",
       "kind": "decision",
       "loading": false,
@@ -1024,7 +1920,8 @@
         "path": [
           "Fernly",
           "Fernly Website"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "tiles": {
@@ -1081,6 +1978,95 @@
       ]
     },
     {
+      "id": "8b26d4c112fa4617ad968fe6f311704e",
+      "kind": "decision",
+      "loading": false,
+      "newer": false,
+      "title": "Apply the us-east plan? 23 to add, 2 to change, 1 to destroy",
+      "words": "The one destroyed is the second NAT gateway in eu-west, which we planned to drop.",
+      "urgency": "normal",
+      "sign": "",
+      "starred": false,
+      "created_ms": 1791467640000,
+      "from": {
+        "session_id": "200ea427ff43dfe6b1e6771fbc19f91e",
+        "name": "Terraform",
+        "mark": "draw:house",
+        "path": [
+          "Platform",
+          "Infrastructure",
+          "Terraform"
+        ],
+        "desk": "Platform"
+      },
+      "run": 1,
+      "media": [
+        {
+          "file_id": "14ee0604905a1e2a022f2b67708f8abd",
+          "kind": "image"
+        }
+      ],
+      "media_says": {
+        "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
+        "en": "Look at the picture"
+      },
+      "tiles": {
+        "kind": "pair",
+        "tiles": [
+          {
+            "key": "wait",
+            "label": "Wait until Monday",
+            "thumb": "no",
+            "thumbs": false,
+            "lead": false,
+            "advised": false,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Wait until Monday"
+              },
+              "en": "Wait until Monday"
+            }
+          },
+          {
+            "key": "apply",
+            "label": "Apply",
+            "thumb": "yes",
+            "thumbs": false,
+            "lead": true,
+            "advised": true,
+            "small": false,
+            "short": false,
+            "settles": false,
+            "tip": {
+              "key": "tile.recommended",
+              "en": "Recommended"
+            },
+            "says": {
+              "key": "tile.says",
+              "args": {
+                "label": "Apply"
+              },
+              "en": "Apply"
+            }
+          }
+        ],
+        "others": 0
+      },
+      "ways": [
+        "later",
+        "reverse",
+        "duck",
+        "shred"
+      ]
+    },
+    {
       "id": "9c9f4031e513b80e68c67139a12e408b",
       "kind": "decision",
       "loading": false,
@@ -1099,7 +2085,8 @@
           "Fernly",
           "Fernly Website",
           "Testing"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "tiles": {
@@ -1174,7 +2161,8 @@
           "Fernly",
           "Design System",
           "Design Tokens"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -1259,7 +2247,8 @@
           "Fernly",
           "Fernly Website",
           "Onboarding"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -1351,7 +2340,8 @@
           "Fernly",
           "Fernly Website",
           "Copywriting"
-        ]
+        ],
+        "desk": "Fernly"
       },
       "run": 1,
       "media": [
@@ -1425,12 +2415,12 @@
       ]
     }
   ],
-  "waiting": 14,
+  "waiting": 24,
   "blitz": {
     "key": "desk.blitz",
     "args": {
-      "n": "16"
+      "n": "29"
     },
-    "en": "Blitz: 16 open cards"
+    "en": "Blitz: 29 open cards"
   }
 }

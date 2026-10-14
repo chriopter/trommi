@@ -208,7 +208,8 @@ pub fn off_list(b: &Board, off: &OffMind, query: &str) -> OffListView {
         .filter(|(r, name)| has(&format!("{} {name}", r.title)))
         .map(|(r, _)| r)
         .collect();
-    let none = (works.is_empty() && rest.is_empty()).then(|| {
+    let reading = b.lens.off_reading;
+    let none = (works.is_empty() && rest.is_empty() && !reading).then(|| {
         if terms.is_empty() {
             say("off.none", "Nothing yet.", &[])
         } else {
@@ -220,11 +221,14 @@ pub fn off_list(b: &Board, off: &OffMind, query: &str) -> OffListView {
     let mut rest = rest;
     let left = rest.len().saturating_sub(OFF_PAGE * pages as usize);
     rest.truncate(OFF_PAGE * pages as usize);
-    let more = (left > 0).then(|| {
+    // (past what this device holds, the hub's next page of settled cards: "Show more" reads it)
+    let more = if left > 0 {
         let n = left.to_string();
-        MoreView { left: left as u32, hub: false, says: say("off.more", format!("Show more ({n})"), &[("left", &n)]), pages: pages + 1 }
-    });
-    OffListView { query: query.into(), works, rest, none, more, older: None, loading: false }
+        Some(MoreView { left: left as u32, hub: b.lens.off_hub_more, says: say("off.more", format!("Show more ({n})"), &[("left", &n)]), pages: pages + 1 })
+    } else {
+        (b.lens.off_hub_more && !reading).then(|| MoreView { left: 0, hub: true, says: say("off.more.hub", "Show more", &[]), pages: pages + 1 })
+    };
+    OffListView { query: query.into(), works, rest, none, more, older: None, loading: reading }
 }
 
 #[cfg(test)]
@@ -277,7 +281,8 @@ mod tests {
 
     #[test]
     fn the_two_stacks_of_the_desk_in_view_a_starred_card_in_one_only() {
-        let (d, _) = render(&room(), &Lens::default());
+        let main = Lens { desk: Some("main".into()), ..Default::default() };
+        let (d, _) = render(&room(), &main);
         let star = d.starred.as_ref().unwrap();
         assert_eq!((star.key.as_str(), star.count, star.says.en.as_str()), ("star", 2, "2 starred"));
         assert_eq!(ids(&star.rows, |r| &r.id), ["run-star", "on-desk-star"], "the last starred on top");
@@ -313,7 +318,7 @@ mod tests {
 
     #[test]
     fn the_complete_list_and_its_search() {
-        let lens = |q: &str| Lens { off: Some(q.into()), ..Default::default() };
+        let lens = |q: &str| Lens { off: Some(q.into()), desk: Some("main".into()), ..Default::default() };
         let (_, l) = render(&room(), &lens(""));
         let l = l.unwrap();
         assert_eq!(ids(&l.works, |w| &w.id), ["run-new", "run-star", "run-old"]);

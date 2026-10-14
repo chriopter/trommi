@@ -25,6 +25,22 @@
     "desk": "Fernly"
   },
   "far": false,
+  "choose": [
+    {
+      "session_id": "54ddca7af4029f0526984da1e346d833",
+      "name": "Fernly Website",
+      "mark": "draw:leaf",
+      "desk_id": "main",
+      "desk": "Fernly"
+    },
+    {
+      "session_id": "9ace71aadae23ea1f467d62b83b1d604",
+      "name": "Payments",
+      "mark": "draw:lock",
+      "desk_id": "platform",
+      "desk": "Platform"
+    }
+  ],
   "send_says": {
     "key": "note.send_to",
     "args": {

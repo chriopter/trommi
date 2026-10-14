@@ -221,6 +221,10 @@ impl Board {
                     m.set_desk_hold(false);
                 }
             }
+            Report::Counts { at, settled } => {
+                let settled = settled.iter().filter_map(|(group, n)| group.session_id().map(|s| (hex(s.as_bytes()), *n))).collect();
+                m.set_hub_settled(*at, settled);
+            }
             Report::DeskComplete => {
                 self.desk_complete = true;
                 m.reading = false;
@@ -246,6 +250,12 @@ impl Board {
             }
             Report::Founded(_) | Report::LinkJoin(_) | Report::InviteRequest { .. } | Report::FileEvicted { .. } | Report::Alert(_) | Report::Connection(_) | Report::Accepted { .. } | Report::Refused { .. } | Report::Blocked(_) | Report::SessionsJoined { .. } | Report::RoomJoin(_) | Report::Answer(_) | Report::Stopped(_) | Report::Command(_) | Report::Lease(_) => {}
         }
+    }
+
+    /// A timeline's window as a page read from the hub left it (`app::past`): the oldest change read, and whether
+    /// the hub holds more before it.
+    pub fn window(&mut self, key: &str, down_to: Option<u64>, more: bool) {
+        self.model.put_items(key, Vec::new(), down_to, Some(more), &mut self.change);
     }
 
     /// Projects the Desk from what the reports touched and hands back what changed; the model's next wake by the

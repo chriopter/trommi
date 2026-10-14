@@ -1,14 +1,14 @@
 //! The sidebar: the desks, and the sessions of the desk in view as rows, in the order they are drawn. A shell draws
-//! the rows one after the other and decides nothing: which sessions show, under which main, connected or under
-//! "Disconnected", what waits, who is stopped and why, the small line under a name.
+//! the rows one after the other and decides nothing: which sessions show, under which main, connected or away,
+//! what waits, who is stopped and why, the small line under a name.
 //!
 //! The rules are the web's of before (`app.mjs` `boardModel` units, `sidebar.mjs` `sidebarParts` and `desksOf`,
 //! `ui.mjs` `badge` and `linkCap`):
 //! - a row per session that is not archived and stands on the desk in view;
 //! - a helper lies under its main when that main has a row here and is no helper itself, one level deep; else it
 //!   has a row of its own;
-//! - a row is "away" when neither it nor one of its helpers is connected: the connected rows first, then
-//!   "Disconnected" and the rest; on All desks desk by desk, each under its name, connected first;
+//! - a row is "away" when neither it nor one of its helpers is connected: the connected rows first, then the rest,
+//!   with no line between them (the web's All desks of before); on All desks desk by desk, each under its name;
 //! - a row's open questions are those of its session on the Desk now; a main drawn folded shows its helpers'
 //!   with its own ([`FoldView`]);
 //! - a helper has no link of its own (its main's says it for both); what a helper's session has not picked up is
@@ -183,16 +183,9 @@ pub fn sidebar(b: &Board) -> SidebarView {
             desk_id: Some(t.id.clone()),
             waiting: t.waiting,
         });
+        // (one rule on a desk and on All desks, as the web's All desks drew it: the connected rows first, then those
+        //  that are away, with no line between them; a row that is away says so itself, greyed, with its cap)
         for (away, list) in [(false, on), (true, off)] {
-            // ("Disconnected" stands over the rows that are away; on All desks the desk's name is the only line)
-            if away && desk.is_none() && !list.is_empty() {
-                heading = Some(HeadingView {
-                    kind: "away".into(),
-                    text: say("sidebar.away", "Disconnected", &[]),
-                    desk_id: None,
-                    waiting: 0,
-                });
-            }
             for u in list {
                 let group = format!("{}:{}", b.agents[units[u].agent].desk.as_deref().unwrap_or(""), if away { "off" } else { "on" });
                 rows.push(row(b, &units, u, away, group, heading.take()));
@@ -351,8 +344,8 @@ mod tests {
         r.session("e-off", None, false);
         let v = view(&r, None);
         assert_eq!(slugs(&v), ["b-on", "c-off", "  d-help", "a-off", "e-off"]);
-        let heads: Vec<(&str, &str)> = v.sessions.iter().filter_map(|x| x.heading.as_ref().map(|h| (x.slug.as_str(), h.text.en.as_str()))).collect();
-        assert_eq!(heads, [("a-off", "Disconnected")]);
+        // (no line over the rows that are away: one rule on a desk and on All desks)
+        assert!(v.sessions.iter().all(|x| x.heading.is_none()));
         assert_eq!(v.sessions.iter().map(|x| x.away).collect::<Vec<_>>(), [false, false, false, true, true]);
         assert_eq!(row(&v, "a-off").group, ":off");
         // (gone since 13:27, said under its name)
@@ -392,7 +385,8 @@ mod tests {
         assert_eq!(v.desks.iter().map(|d| (d.id.as_str(), d.waiting, d.selected)).collect::<Vec<_>>(), [("main", 0, true), ("lab", 1, false), ("empty", 0, false)]);
         // a desk that is not there: the first
         assert_eq!(view(&r, Some("nowhere")).desk, "main");
-        assert_eq!(view(&r, None).desk, "main");
+        // none chosen yet (a fresh sign-in): every desk at once, as the web opened
+        assert_eq!(view(&r, None).desk, "all");
     }
 
     #[test]

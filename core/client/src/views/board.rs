@@ -25,7 +25,8 @@ pub const UNHEARD_MS: u64 = 2 * 60_000;
 /// What this device alone chooses and knows: none of it is the room's.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Lens {
-    /// The desk in view: a desk's id, [`ALL_DESKS`], or none (the first desk).
+    /// The desk in view: a desk's id, [`ALL_DESKS`], or none (none chosen: every desk at once where there are two
+    /// or more, else the one).
     pub desk: Option<String>,
     /// The single desk chosen last: on All desks the note and the Scribble Board belong to it.
     pub home_desk: Option<String>,
@@ -37,6 +38,13 @@ pub struct Lens {
     pub reading_progress: Option<(u64, u64)>,
     /// Picks the Desk's greeting, once per run of the app (from `Config.seed`).
     pub dice: u32,
+    /// The page Off your mind: a page of settled cards is being read from the hub, and the hub holds more below
+    /// the ones read (`app::past`).
+    pub off_reading: bool,
+    pub off_hub_more: bool,
+    /// The session in view (its key) whose newest page of history has not come from the hub yet (`app::past`):
+    /// its page shows no welcome meanwhile.
+    pub talk_waits: Option<String>,
     /// The session whose page is in view (its key, or its short id of the address): its unit is made.
     pub session: Option<String>,
     /// The card whose page is in view: its unit is made.
@@ -203,7 +211,8 @@ impl<'a> Board<'a> {
             })
             .collect();
         let has = |id: &str| desks.iter().any(|d| d.id == id);
-        let all = desks.len() > 1 && lens.desk.as_deref() == Some(ALL_DESKS);
+        // (none chosen yet, as on a fresh sign-in: every desk at once, as the web opened before)
+        let all = desks.len() > 1 && matches!(lens.desk.as_deref(), None | Some(ALL_DESKS));
         let desk: Option<String> = if all {
             Some(ALL_DESKS.into())
         } else {

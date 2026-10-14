@@ -86,7 +86,7 @@ pub struct Focus {
     /// The window (or app) is in front and visible.
     #[serde(default = "yes")]
     pub visible: bool,
-    /// The desk in view: a desk's id, "all" for every desk at once, none for the first desk.
+    /// The desk in view: a desk's id, "all" for every desk at once, none when none was chosen (every desk at once where there are two or more).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub desk: Option<String>,
     /// The Scribble Board shown beside the screen (the Desk's): `desk/<32 hex>`, or a desk's id or "all" for that
