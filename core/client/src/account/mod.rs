@@ -54,6 +54,13 @@ pub enum AccountAction {
     },
     /// Make an invite link for a new device of the person.
     InviteDevice,
+    /// Make an invite link for an agent, which founds its main session; `label` names that session, `desk` places it.
+    InviteAgent {
+        #[serde(default)]
+        label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        desk: Option<String>,
+    },
     RemoveDevices {
         device_ids: Vec<String>,
     },

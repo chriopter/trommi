@@ -216,6 +216,8 @@ pub struct Hub {
     pub withhold: BTreeMap<DeviceId, u64>,
     /// Stored files by their id (base64url), as the bytes came.
     pub files: BTreeMap<String, Vec<u8>>,
+    /// Invites by id (base64url): the Offer's three parts, its deadline, the Requests, the Reveal.
+    pub invites: BTreeMap<String, StandInInvite>,
     /// Share links: share id (base64url) -> (file id, expires_at).
     pub shares: BTreeMap<String, (String, u64)>,
     /// A page of the hub's order holds at most so many items, whatever was asked.
@@ -294,6 +296,7 @@ impl Default for Hub {
             head_lie: None,
             withhold: BTreeMap::new(),
             files: BTreeMap::new(),
+            invites: BTreeMap::new(),
             shares: BTreeMap::new(),
             page_max: None,
             hidden: BTreeSet::new(),
@@ -680,6 +683,9 @@ impl Hub {
         }
         let path = request.url.strip_prefix(HUB_URL).unwrap_or("/nowhere").to_string();
         self.seen.push(format!("{} {path}", request.method));
+        if let Some(answer) = self.invites_route(request, &path) {
+            return Ok(answer);
+        }
         if let Some(answer) = self.files_route(request, &path) {
             return Ok(answer);
         }
@@ -692,6 +698,41 @@ impl Hub {
                 self.refused.push(format!("{} {path}: {}", request.method, n.code));
                 answer(n.status, json!({ "error": n.code, "message": "refused", "voided": n.voided }))
             }
+        })
+    }
+
+    /// Invites (12.1): kept as they came; a token is not checked here.
+    fn invites_route(&mut self, request: &HttpRequest, path: &str) -> Option<HttpResponse> {
+        let segs: Vec<&str> = path.split('?').next().unwrap_or("").split('/').filter(|s| !s.is_empty()).collect();
+        let body: Value = request.body.as_ref().and_then(|b| serde_json::from_slice(b).ok()).unwrap_or(Value::Null);
+        let field = |name: &str| body[name].as_str().and_then(|s| base64url_decode(s).ok()).unwrap_or_default();
+        let missing = || answer(404, json!({ "error": "not-found", "message": "no such invite" }));
+        Some(match (request.method.as_str(), segs.as_slice()) {
+            ("POST", ["v1", "invites"]) => {
+                let offer = field("offer");
+                let decoded = trommi_core::invite::Offer::decode(&offer).ok()?;
+                let id = b64(decoded.invite_id.as_bytes());
+                let expires_at = decoded.expires_at;
+                self.invites.insert(id.clone(), StandInInvite { offer, signature: field("signature"), mac: field("mac"), expires_at, requests: Vec::new(), reveal: None });
+                answer(200, json!({ "invite_id": id }))
+            }
+            ("GET", ["v1", "invites", id]) => match self.invites.get(*id) {
+                Some(i) => answer(200, json!({ "offer": b64(&i.offer), "signature": b64(&i.signature), "mac": b64(&i.mac), "expires_at": i.expires_at,
+                    "requests": i.requests.iter().map(|r| json!({ "request": b64(&r.request), "mac": b64(&r.mac), "signature": b64(&r.signature) })).collect::<Vec<_>>() })),
+                None => missing(),
+            },
+            ("PUT", ["v1", "invites", id, "reveal"]) => match self.invites.get_mut(*id) {
+                Some(i) => {
+                    i.reveal = Some(trommi_core::invite::SignedReveal { reveal: field("reveal"), signature: field("signature") });
+                    answer(200, json!({ "revealed": true }))
+                }
+                None => missing(),
+            },
+            ("DELETE", ["v1", "invites", id]) => {
+                self.invites.remove(*id);
+                answer(200, json!({ "burned": true }))
+            }
+            _ => return None,
         })
     }
 
@@ -1121,6 +1162,16 @@ impl Hub {
         self.streaming[at] = (*device, self.change.max(sent), self.notes.len());
         (!bytes.is_empty()).then_some(bytes)
     }
+}
+
+/// An invite as the stand-in keeps it.
+pub struct StandInInvite {
+    pub offer: Vec<u8>,
+    pub signature: Vec<u8>,
+    pub mac: Vec<u8>,
+    pub expires_at: u64,
+    pub requests: Vec<trommi_core::invite::SignedRequest>,
+    pub reveal: Option<trommi_core::invite::SignedReveal>,
 }
 
 pub fn answer(status: u16, body: Value) -> HttpResponse {

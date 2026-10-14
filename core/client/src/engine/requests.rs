@@ -132,6 +132,22 @@ impl Engine {
         self.send_request(ctx, request, keep, None)
     }
 
+    /// The invites of this device that still have steps to take (12.1.5): an invite being added is through once
+    /// it is not listed here.
+    pub fn device_mut_steps(&mut self) -> Vec<trommi_core::ids::InviteId> {
+        let mut ids: Vec<_> = self.device.invite_steps().map(|s| s.into_iter().map(|(i, _)| i).collect()).unwrap_or_default();
+        ids.dedup();
+        ids
+    }
+
+    /// The room's human devices and agent devices as this device holds the room now.
+    pub fn roles(&self) -> (Vec<DeviceId>, Vec<DeviceId>) {
+        self.device.room_history().map_or_else(Default::default, |h| {
+            let s = h.newest();
+            (s.humans.iter().copied().collect(), s.room.agents.to_vec())
+        })
+    }
+
     /// Drops a request an action no longer wants (a transfer the person cancelled): it is not sent again, and no
     /// answer comes for it. Returns the id of its HTTP request in flight, for the shell to cancel.
     pub fn forget_request(&mut self, id: IoId) -> Option<IoId> {

@@ -22,6 +22,7 @@ pub mod edge;
 pub mod effect;
 pub mod event;
 pub mod io;
+mod invites;
 pub mod script;
 pub mod sim;
 
@@ -111,6 +112,8 @@ pub struct App {
     answers: Vec<engine::requests::Answered>,
     /// Files attached, opened, saved and shared (`crate::files`).
     files: crate::files::Files,
+    /// Invites this device opened (`app::invites`).
+    invites: invites::Invites,
     /// The hub the stored room names ([`ROOM_KEY`]).
     stored_hub: Option<String>,
     /// The device state loaded, while the stored room's hub is read.
@@ -166,6 +169,7 @@ impl App {
             stored_hub: None,
             answers: Vec::new(),
             files: crate::files::Files::default(),
+            invites: invites::Invites::default(),
             opening: None,
             board: engine::feed::Board::default(),
             lens: Lens::default(),
@@ -259,9 +263,12 @@ impl App {
     }
 
     /// An account action (`account`): the sign-ins here; the other flows are W3's.
-    fn account(&mut self, action: crate::account::AccountAction, out: &mut Vec<Effect>) {
+    fn account(&mut self, now_ms: u64, action: crate::account::AccountAction, out: &mut Vec<Effect>) {
         use crate::account::signin::{self, By};
         use crate::account::AccountAction;
+        if self.invite_action(now_ms, &action, out) {
+            return;
+        }
         let (by, account, secret, hub) = match action {
             AccountAction::SignIn { email, password, hub } => (By::Password, email, password, hub),
             AccountAction::SignInWithKit { email, words, hub } => (By::Kit, email, words, hub),
@@ -537,7 +544,7 @@ impl App {
                 self.lens.utc_offset_min = utc_offset_min;
                 self.stale_views = true;
             }
-            Event::Action { action: crate::actions::Action::Account { action } } => self.account(action, &mut out),
+            Event::Action { action: crate::actions::Action::Account { action } } => self.account(now_ms, action, &mut out),
             Event::Action { action } => self.action(now_ms, action, &mut out),
             Event::Focus { focus } => {
                 // (the single desk chosen last keeps the note and the Scribble Board on All desks)
@@ -564,6 +571,7 @@ impl App {
             }
             Event::Wake => {
                 self.timer = None;
+                self.invites_look(now_ms, None, &mut out);
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_wake(ctx));
                 if self.reopen_at.is_some_and(|at| now_ms >= at) {
                     self.reopen(&mut out);
@@ -901,6 +909,8 @@ impl App {
         let mut dropped = false;
         let joining_room = engine.joining_room();
         let mut notes_back = Vec::new();
+        let mut invite_news = Vec::new();
+        let mut invite_answers = Vec::new();
         while let Some(report) = engine.next_report() {
             self.board.take(&report, engine.device(), now_ms);
             fed = true;
@@ -939,6 +949,7 @@ impl App {
                     }
                 }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
+                Report::Answer(answered) if self.invites.owns(answered.id) => invite_answers.push(*answered),
                 Report::Answer(answered) if self.files.owns(answered.id) => {
                     if let Some(text) = self.files.answered(answered.id, &answered.result, out) {
                         self.sent.toast(&mut self.next_view.toasts, text, None);
@@ -963,6 +974,7 @@ impl App {
                     self.room_join = Some(status);
                 }
                 Report::InviteRequest { invite } => {
+                    invite_news.push(invite);
                     if !self.invite_requests.contains(&invite) {
                         if self.invite_requests.len() >= INVITE_REQUESTS_MAX {
                             self.invite_requests.remove(0);
@@ -1024,6 +1036,13 @@ impl App {
             cache_wake = cache.next_wake();
         }
         self.settle_actions(now_ms, refused, out);
+        for answered in invite_answers {
+            self.invite_answered(now_ms, answered.id, &answered.result, out);
+        }
+        for invite in invite_news {
+            self.invites_look(now_ms, Some(invite), out);
+        }
+        self.invites_settle(now_ms, out);
         self.notes_free(now_ms, notes_back, out);
         self.goals_check |= fed;
         if self.goals_check && self.next_view.phase == Phase::Live {
@@ -1043,7 +1062,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake()].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });
