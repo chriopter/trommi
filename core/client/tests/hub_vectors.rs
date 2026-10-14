@@ -25,6 +25,7 @@ const SITE: Site<'static> = Site {
     url: "http://127.0.0.1:1",
     token: Some("abcdefghijklmnop_-0123"),
     client: "test/1.0.0",
+    lease: None,
 };
 
 fn vectors() -> Vec<(String, Value)> {
