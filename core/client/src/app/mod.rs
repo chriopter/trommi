@@ -28,6 +28,8 @@ mod account_change;
 mod desks;
 pub mod push;
 mod selfjoin;
+mod shared;
+pub use shared::SHARED_FILE;
 pub mod script;
 pub mod sim;
 
@@ -88,6 +90,8 @@ enum Pending {
     PasskeyGet(String),
     /// I/O of an engine that was dropped (a join of the room that failed): its answer is only logged.
     Dropped,
+    /// A Share link's file (`app::shared`).
+    Shared,
 }
 
 /// The app store's key that names the room of this slot and its hub: written by a join with the code before the
@@ -130,6 +134,8 @@ pub struct App {
     linking: Option<crate::account::Secret>,
     /// A sign-in waiting for its login answer.
     signing_in: Option<(IoId, crate::account::signin::Waiting)>,
+    /// The Share link being opened (`app::shared`).
+    shared_ask: Option<(trommi_core::files::ShareLink, crate::hub::Expect)>,
     /// A sign-in's join of the room runs: its end is shown on the account's screen.
     signed_in_join: bool,
     /// The actions' requests answered since they were last taken.
@@ -209,6 +215,7 @@ impl App {
             room_join: None,
             room_join_wait: None,
             signing_in: None,
+            shared_ask: None,
             founding: None,
             linking: None,
             signed_in_join: false,
@@ -824,7 +831,7 @@ impl App {
                         self.open(now_ms, revision, entries, &mut out);
                     }
                 }
-                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) => {
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) | Some(Pending::Shared) => {
                     if let IoResult::Err(e) = &result {
                         out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
                     }
@@ -883,6 +890,12 @@ impl App {
             Event::Platform { id, result } if matches!(self.pending.get(&id), Some(Pending::PasskeyGet(_))) => {
                 if let Some(Pending::PasskeyGet(hub)) = self.pending.remove(&id) {
                     self.passkey_asserted(hub, result, &mut out);
+                }
+            }
+            Event::Http { id, result } if self.pending.get(&id) == Some(&Pending::Shared) => {
+                self.pending.remove(&id);
+                if let Some((link, expect)) = self.shared_ask.take() {
+                    self.shared_answered(link, expect, result, &mut out);
                 }
             }
             Event::Http { id, result } if self.pending.get(&id) == Some(&Pending::Login) => {
@@ -999,6 +1012,10 @@ impl App {
     /// The person did something: the actions of `actions::run`, the toasts, a retry.
     fn action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
         match &action {
+            Action::OpenShared { link } => {
+                self.open_shared(link, out);
+                return;
+            }
             Action::Dismiss { toast_id } => {
                 self.next_view.toasts.retain(|t| &t.id != toast_id);
                 return;
