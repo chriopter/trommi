@@ -99,7 +99,7 @@ async function checkToolchain(repo) {
 // else it runs core/bindings/wasm/build.sh, with this process's environment (CARGO_TARGET_DIR).
 const CORE_SOURCES = ['Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'core/protocol/Cargo.toml', 'core/protocol/src', 'core/client/Cargo.toml', 'core/client/src', 'core/bindings/swift/Cargo.toml', 'core/bindings/swift/src', 'core/bindings/wasm/Cargo.toml', 'core/bindings/wasm/build.sh', 'core/bindings/wasm/src', 'core/bindings/wasm/js']
 const CORE_WASM = 'trommi_core_wasm_bg.wasm'
-const CORE_MODULES = ['trommi-core', 'trommi_core_wasm', 'idb-store']   // pkg/<name>.js, in gen/vendor/ as <name>.mjs
+const CORE_MODULES = ['trommi-core', 'trommi_core_wasm', 'idb-store', 'views-fold']   // pkg/<name>.js, in gen/vendor/ as <name>.mjs
 /** An import of the binding (…/core/bindings/wasm/js/<name>.js or …/pkg/<name>.js) as gen/vendor/ has it: './<name>.mjs'. */
 const fromBinding = js => js.replace(/(['"])(?:\.\.\/)+core\/bindings\/wasm\/(?:js|pkg)\/([\w-]+)\.js\1/g, '$1./$2.mjs$1')
 /** The pinned versions: Rust (rust-toolchain.toml) and wasm-bindgen (core/bindings/wasm/Cargo.toml). */

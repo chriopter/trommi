@@ -1,140 +1,147 @@
-// core-worker.ts: the client core in a dedicated Web Worker, so the page's thread never verifies, decrypts, reduces
-// or reads storage. The page talks to it through remote.ts (RemoteClient); the protocol is worker-protocol.ts.
+// core-worker.ts: the app core (core/client, through the WASM binding) in a dedicated Web Worker, with its executor
+// (shell.ts). The page (public/core.mjs) sends events and gets renders; nothing of the room is decided on the page.
 //
-// The worker opens the stored device through tabs.ts: one tab's worker owns the device (the store's Web Lock), the
-// others follow its model and forward their calls. After every change it posts the records the change names
-// (mirror.ts patchOf). Calls come in by name and run on the owner's client; what they return goes back (structured
-// clone). Nothing here knows the app's views.
+// One slot (`trommi`): the device's state in IndexedDB (store-idb.ts, a Web Lock held for as long as this worker
+// owns it), the core's cache in a database of its own (`trommi:app:cache`). One tab owns the slot: another tab that
+// starts says `busy`, and with `take` asks the owner (over a BroadcastChannel) to give it up; the owner stops its
+// core, frees the lock and tells its page `taken`. The demo (`config.demo`) keeps nothing and owns nothing.
 //
-// The account screens run here too (account.ts, room.ts joinRoom): the slow key derivation and the making of a room
-// never hold the page up, and the room they make is this worker's from the start (tabs.ts adoptInTabs: the store's
-// lock is held before the device is made).
-//
-// The core is loaded through core-wasm.ts only. A device that closed itself (a failed write, another owner) is
-// tabs.ts's to open again: the client says `device-closed`, this tab stands in line for the lock.
-//
-//   new Worker('/gen/vendor/core-worker.mjs', { type: 'module' })   (the app's build names the bundled one)
-import { closeAllStreams, freshenStreams } from './hub.ts'
-import type { Client } from './client.ts'
-import { IdbStore } from './core-wasm.ts'
-import type { Store } from './core-api.ts'
-import { b64u } from './ids.ts'
-import { patchOf, snapshotOf } from './mirror.ts'
-import { joinRoom, openRoomOver } from './room.ts'
-import { dropIfEmpty, openCache, openDeviceStore } from './store-idb.ts'
-import type { Cache } from './store-idb.ts'
-import { adoptInTabs, openRoomInTabs } from './tabs.ts'
-import type { ClientLike, TabClient } from './tabs.ts'
-import type { Change } from './types.ts'
-import type { FromWorker, StorageName, ToWorker, WireError } from './worker-protocol.ts'
-import { ACCOUNT_CALLS, ACCOUNT_OPENS, CALLS, HOST_CALLS } from './worker-protocol.ts'
+// Passkeys and push are the page's (WebAuthn and the push manager live there): such a platform op goes to the page
+// and its answer comes back. What the core hands out (renders, files, links, logs) goes to the page as it comes.
+import { CoreShell, memorySpaces } from './shell.ts'
+import type { CacheSpace, DeviceSpace } from './shell.ts'
+import { IdbStore, loadCore } from './core-wasm.ts'
+import { openCache, openDeviceStore } from './store-idb.ts'
+import type { DeviceStore } from './store-idb.ts'
 
-// (account.ts, with the key derivation and the word list, is loaded only when an account screen asks: a stored room
-// never needs it)
-const accountModule = () => import('./account.ts')
+type Json = Record<string, unknown>
+/** What the page sends. */
+export type ToCore =
+  | { t: 'start'; slot: string; config: Json; take?: boolean }
+  | { t: 'event'; event: Json; blobs?: Uint8Array[] }
+  | { t: 'platform'; id: number; answer?: Json; blobs?: Uint8Array[]; error?: string }
+  | { t: 'close' }
+/** What the worker sends. */
+export type FromCore =
+  | { t: 'ready' }
+  | { t: 'busy' }
+  | { t: 'taken' }
+  | { t: 'started' }
+  | { t: 'failed'; error: string }
+  | { t: 'render'; delta: unknown }
+  | { t: 'file'; id: string; media_type: string; bytes: Uint8Array }
+  | { t: 'file_gone'; id: string }
+  | { t: 'save'; name: string; media_type: string; bytes: Uint8Array }
+  | { t: 'open_url'; url: string }
+  | { t: 'notify'; notice: unknown }
+  | { t: 'log'; level: string; text: string }
+  | { t: 'platform'; id: number; op: Json; blobs: Uint8Array[] }
 
-const port = globalThis as unknown as { postMessage(m: FromWorker): void; onmessage: ((e: MessageEvent<ToWorker>) => void) | null }
-const post = (m: FromWorker): void => port.postMessage(m)
+const port = globalThis as unknown as { postMessage(m: FromCore): void; onmessage: ((e: MessageEvent<ToCore>) => void) | null }
+const post = (m: FromCore): void => port.postMessage(m)
 
-let tab: TabClient | null = null
-let clientName: string | null = null
-let joining: { cancel(): void } | null = null
+let shell: CoreShell | null = null
+let store: DeviceStore | null = null
+let channel: BroadcastChannel | null = null
+let stopped = false
+const asked = new Map<number, { ok: (r: { answer: Json; blobs: Uint8Array[] }) => void; bad: (e: Error) => void }>()
+let asks = 0
 
-/** An error as it travels: its message and every own field (code, status, …), so the page throws the same. */
-function wireError(e: unknown): WireError {
-  const err = (e ?? {}) as Record<string, unknown> & { message?: string; name?: string }
-  const out: WireError = { name: String(err.name ?? 'Error'), message: String(err.message ?? e) }
-  for (const [k, v] of Object.entries(err)) { try { structuredClone(v); out[k] = v } catch { /* a field that does not travel */ } }
-  return out
-}
-const extra = () => ({ stats: null, tabRole: tab?.tabRole ?? null })
-
-/** The client as tabs.ts runs it: its own methods the page may call, and what the worker adds for the page. */
-function host(client: Client): ClientLike {
-  const methods = client as unknown as Record<string, (...args: unknown[]) => unknown>
-  const out: Record<string, unknown> = {
-    on: (event: string, fn: (data: unknown) => void) => client.on(event, fn),
-    // the account's routes of a signed-in device (a new kit, a new password, …): the slow key derivation runs here
-    account: async (name: string, args: unknown) => {
-      if (!ACCOUNT_CALLS.includes(name)) throw Object.assign(new Error(`not an account call: ${name}`), { code: 'bad-argument' })
-      return ((await accountModule()) as unknown as Record<string, (c: Client, a: unknown) => unknown>)[name]!(client, args)
-    },
-    pushKey: async () => ({ vapid_public_key: b64u((await client.hub.pushState()).vapid_public_key) }),
-    // the app's name for the hub (Trommi-Client), for a room core-start.ts opened before the app knew it
-    configure: ({ client: name }: { client?: string | null } = {}) => { client.hub.client_name = name ?? null; return null },
-  }
-  for (const name of CALLS) out[name] = (...args: unknown[]) => methods[name]!.apply(client, args)
-  Object.defineProperty(out, 'model', { get: () => client.model, enumerable: true })
-  return out as unknown as ClientLike
-}
-const store = (storage: StorageName) => (wait: boolean) => openDeviceStore({ name: storage.name, wait, IdbStore })
-const calls = [...CALLS, ...HOST_CALLS]
-
-function attach(t: TabClient): void {
-  tab = t
-  t.on('change', (change: Change) => post({ t: 'change', patch: patchOf(t.model, change, extra()) }))
-  t.on('alert', (a: unknown) => post({ t: 'event', event: 'alert', data: a }))
-  t.on('error', (e: unknown) => post({ t: 'event', event: 'error', data: wireError(e) }))
-  // the owner changed (this tab took over, or follows a new one): the page takes the whole model again
-  t.on('reset', () => {
-    if (clientName && t.client) void t.call('configure', [{ client: clientName }]).catch(() => {})
-    post({ t: 'snapshot', model: snapshotOf(t.model), extra: extra() })
-    post({ t: 'event', event: 'reset', data: null })
-  })
-}
-
-/** A room made here (an account created, a login, a device joined): this tab owns its device from the first byte. */
-async function make(m: Extract<ToWorker, { t: 'account' | 'join' }>, cache: Cache): Promise<unknown> {
-  let value: unknown = null
-  const made = await adoptInTabs({
-    name: m.storage.name, store: store(m.storage), cache, calls,
-    make: async (held: Store) => {
-      // (a sign-in with the code says how far it is: the page shows it on the button and gives up when it stops)
-      const progress = (step: unknown): void => post({ t: 'event', event: 'signin-progress', data: step })
-      const opts = { ...m.args, storage: m.storage, store: held, client: m.client, progress }
-      if (m.t === 'join') {
-        const j = joinRoom(opts as unknown as Parameters<typeof joinRoom>[0])
-        joining = j
-        j.check_code.then(code => post({ t: 'event', event: 'join-code', data: code }), () => {})
-        try { return host(await j.client) } finally { joining = null }
+/** The slot's device state as the shell takes it: the binding's store, its values wrapped at rest. */
+function deviceSpace(s: DeviceStore): DeviceSpace {
+  return {
+    load: () => s.load(),
+    apply: async (expectedRevision, put, remove) => {
+      try { await s.apply({ expectedRevision, put, delete: remove }) } catch (e) {
+        const name = (e as { name?: string })?.name
+        throw Object.assign(new Error('the device store refused a write'), { kind: name === 'StoreConflict' ? 'conflict' : name === 'QuotaExceededError' ? 'full' : 'failed' })
       }
-      if (!ACCOUNT_OPENS.includes(m.fn)) throw Object.assign(new Error(`not an account call: ${m.fn}`), { code: 'bad-argument' })
-      const { client, ...rest } = await ((await accountModule()) as unknown as Record<string, (o: unknown) => Promise<{ client: Client } & Record<string, unknown>>>)[m.fn]!(opts)
-      value = rest
-      return host(client)
     },
-  })
-  attach(made)
-  return value
+  }
+}
+/** The core's cache: string keys, bytes. */
+async function cacheSpace(name: string): Promise<CacheSpace> {
+  const c = await openCache(name)
+  const bytes = (v: unknown): Uint8Array | null => (v instanceof Uint8Array ? v : null)
+  return {
+    get: keys => Promise.all(keys.map(k => c.get(k).then(bytes))),
+    scan: async prefix => (await c.range(prefix)).flatMap(([key, value]) => { const v = bytes(value); return v ? [{ key, value: v }] : [] }),
+    put: (put, remove) => c.setMany([...remove.map((k): [string, undefined] => [k, undefined]), ...put.map((e): [string, Uint8Array] => [e.key, e.value])]),
+  }
 }
 
-port.onmessage = async ({ data: m }) => {
-  if (m.t === 'pagehide') { closeAllStreams(); return }
-  if (m.t === 'freshen') { freshenStreams(m.silent_ms); return }
-  if (m.t === 'call' && m.method === 'join.cancel') { joining?.cancel(); post({ t: 'result', id: m.id, ok: true, value: null }); return }
-  if (m.t === 'open' || m.t === 'account' || m.t === 'join') {
-    try {
-      clientName = m.client
-      const cache = await openCache(m.storage.name)
-      let value: unknown
-      if (m.t === 'open') {
-        const opened = await openRoomInTabs({ name: m.storage.name, store: store(m.storage), cache, calls, open: async held => { const c = await openRoomOver({ storage: m.storage, client: m.client }, held); return c ? host(c) : null } })
-        // (nothing stored: what the look made, empty, goes again; dropIfEmpty)
-        if (opened) attach(opened); else { cache.close(); await dropIfEmpty(m.storage.name).catch(() => {}) }
-      } else value = await make(m, cache)
-      post({ t: 'opened', id: m.id, model: tab ? snapshotOf(tab.model) : null, extra: extra(), ...(value !== undefined ? { value } : {}) })
-    } catch (e) { post({ t: 'opened', id: m.id, model: null, error: wireError(e), extra: extra() }) }
-    return
+async function start(m: Extract<ToCore, { t: 'start' }>): Promise<void> {
+  const core = await loadCore()
+  let spaces: { device: DeviceSpace; cache: CacheSpace }
+  if (m.config['demo'] != null) spaces = memorySpaces()
+  else {
+    // One owner: the lock, or `busy`. With `take` the owner is asked to give it up, and this waits for it.
+    channel = new BroadcastChannel(`trommi-core:${m.slot}`)
+    if (m.take) channel.postMessage({ give: true })
+    store = openDeviceStore({ name: m.slot, wait: Boolean(m.take), IdbStore })
+    try { await store.load() } catch (e) {
+      store = null
+      if ((e as { name?: string })?.name === 'StoreConflict') { channel.close(); channel = null; post({ t: 'busy' }); return }
+      throw e
+    }
+    channel.onmessage = ({ data }) => { if (data?.give) void giveUp() }
+    spaces = { device: deviceSpace(store), cache: await cacheSpace(`${m.slot}:app`) }
   }
-  if (m.t === 'call') {
-    try {
-      if (!tab) throw Object.assign(new Error('no room is open in the worker'), { code: 'no-room' })
-      // closing the storage (log out deletes the database next) and stopping are the same here: the tab leaves
-      const value = m.method === 'stop' || m.method === 'storage.close' ? (await tab.close(), null) : await tab.call(m.method, m.args)
-      post({ t: 'result', id: m.id, ok: true, value })
-    } catch (e) { post({ t: 'result', id: m.id, ok: false, error: wireError(e) }) }
+  shell = new CoreShell({
+    core: new core.AppCore(), ...spaces,
+    host: {
+      render: delta => post({ t: 'render', delta }),
+      fileReady: (id, media_type, bytes) => post({ t: 'file', id, media_type, bytes }),
+      fileGone: id => post({ t: 'file_gone', id }),
+      saveFile: (name, media_type, bytes) => post({ t: 'save', name, media_type, bytes }),
+      openUrl: url => post({ t: 'open_url', url }),
+      notify: notice => post({ t: 'notify', notice }),
+      log: (level, text) => post({ t: 'log', level, text }),
+      platform: (op, blobs) => new Promise((ok, bad) => {
+        const id = ++asks
+        asked.set(id, { ok, bad })
+        post({ t: 'platform', id, op, blobs })
+      }),
+    },
+  })
+  shell.send({ type: 'start', config: { ...m.config, slot: m.slot } })
+  post({ t: 'started' })
+}
+
+/** Another tab takes the slot (or the page closes it): this core stops, the lock is freed, the page hears `taken`. */
+async function giveUp(): Promise<void> {
+  if (stopped) return
+  stopped = true
+  shell?.send({ type: 'background' })
+  shell?.close()
+  shell = null
+  channel?.close()
+  await store?.close().catch(() => {})
+  store = null
+  post({ t: 'taken' })
+}
+
+port.onmessage = ({ data: m }) => {
+  switch (m.t) {
+    case 'start':
+      start(m).catch(e => post({ t: 'failed', error: String((e as Error)?.message ?? e) }))
+      return
+    case 'event':
+      shell?.send(m.event, m.blobs ?? [])
+      return
+    case 'platform': {
+      const a = asked.get(m.id)
+      asked.delete(m.id)
+      if (m.error != null) a?.bad(new Error(m.error))
+      else a?.ok({ answer: m.answer ?? { answer: 'refused' }, blobs: m.blobs ?? [] })
+      return
+    }
+    case 'close':
+      void giveUp()
+      return
   }
 }
-// nothing a promise rejects with may end the worker without a word
-addEventListener('unhandledrejection', event => { event.preventDefault(); post({ t: 'event', event: 'error', data: wireError(event.reason) }) })
+addEventListener('unhandledrejection', event => { event.preventDefault(); post({ t: 'log', level: 'error', text: String(event.reason?.message ?? event.reason) }) })
+// (the core's module is fetched and compiled at once, while the page still sets itself up)
+loadCore().catch(() => {})
 post({ t: 'ready' })
