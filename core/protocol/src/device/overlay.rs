@@ -99,42 +99,42 @@ fn name_of(header: &Header, payload: &[u8]) -> Option<Name> {
 }
 
 /// Checks a stored overlay entry when the device is opened: `rest` is its key after the table and part. A
-/// record must be a register value of the group, sender and number its key names; an index entry is empty and
-/// names a name, a sender and a number.
+/// record must be a register value of the group, sender and number its key names; an index entry names a name, a
+/// sender and a number, and holds the lamport the value was counted with when it came (empty before that).
 pub(super) fn check_entry(rest: &[u8], value: &[u8]) -> Result<(), Error> {
     let mut reader = Reader::new(rest);
     let len = reader.u8()? as usize;
     let group = reader.take(len)?.to_vec();
     let fits = GroupId::from_bytes(&group).is_ok()
         && match reader.u8()? {
-        AT => {
-            let record = codec::decode::<Record>(value, value.len())?;
-            let sender = reader.take(DeviceId::LEN)?;
-            let seq = reader.u64()?;
-            group == record.header.group.as_bytes()
-                && sender == record.header.sender.as_bytes()
-                && seq == record.header.seq
-                && record.status == Status::Taken
-                && record.code.is_none()
-                && matches!(record.header.subject, Subject::Register(_))
-                && name_of(&record.header, &record.extra).is_some()
-        }
-        BY_NAME => {
-            let len = reader.u8()? as usize;
-            let name_fits = std::str::from_utf8(reader.take(len)?).is_ok();
-            let of_fits = match reader.u8()? {
-                0 => true,
-                1 => reader.take(DeviceId::LEN).is_ok(),
-                _ => false,
-            };
-            name_fits
-                && of_fits
-                && reader.take(DeviceId::LEN).is_ok()
-                && reader.u64().is_ok()
-                && value.is_empty()
-        }
-        _ => false,
-    };
+            AT => {
+                let record = codec::decode::<Record>(value, value.len())?;
+                let sender = reader.take(DeviceId::LEN)?;
+                let seq = reader.u64()?;
+                group == record.header.group.as_bytes()
+                    && sender == record.header.sender.as_bytes()
+                    && seq == record.header.seq
+                    && record.status == Status::Taken
+                    && record.code.is_none()
+                    && matches!(record.header.subject, Subject::Register(_))
+                    && name_of(&record.header, &record.extra).is_some()
+            }
+            BY_NAME => {
+                let len = reader.u8()? as usize;
+                let name_fits = std::str::from_utf8(reader.take(len)?).is_ok();
+                let of_fits = match reader.u8()? {
+                    0 => true,
+                    1 => reader.take(DeviceId::LEN).is_ok(),
+                    _ => false,
+                };
+                name_fits
+                    && of_fits
+                    && reader.take(DeviceId::LEN).is_ok()
+                    && reader.u64().is_ok()
+                    && (value.is_empty() || value.len() == 8)
+            }
+            _ => false,
+        };
     if fits && reader.is_empty() {
         Ok(())
     } else {
@@ -184,11 +184,18 @@ impl<S: Storage> Device<S> {
         !self.stored_under(&name_prefix(group, name)).is_empty()
     }
 
-    /// The overlay values of one name.
-    fn overlay_named(&self, group: &GroupId, name: &Name) -> Result<Vec<Record>, Error> {
+    /// The overlay values of one name, each with the lamport it was counted with when it came.
+    fn overlay_named(
+        &self,
+        group: &GroupId,
+        name: &Name,
+    ) -> Result<Vec<(Record, Option<u64>)>, Error> {
         let prefix = name_prefix(group, name);
         let mut found = Vec::new();
-        for (key, _) in self.stored_under(&prefix) {
+        for (key, value) in self.stored_under(&prefix) {
+            let counted = <[u8; 8]>::try_from(value.as_slice())
+                .ok()
+                .map(u64::from_be_bytes);
             let rest = key.get(prefix.len()..).unwrap_or_default();
             let (Some(sender), Some(seq)) = (rest.get(..DeviceId::LEN), rest.get(DeviceId::LEN..))
             else {
@@ -200,7 +207,10 @@ impl<S: Storage> Device<S> {
                 seq.try_into()
                     .map_err(|_| damaged("an overlay index entry"))?,
             );
-            found.extend(self.overlay_record(group, &sender, seq)?);
+            found.extend(
+                self.overlay_record(group, &sender, seq)?
+                    .map(|record| (record, counted)),
+            );
         }
         Ok(found)
     }
@@ -210,10 +220,15 @@ impl<S: Storage> Device<S> {
         batch: &mut Batch,
         record: &Record,
         name: &Name,
+        counted: u64,
     ) -> Result<(), Error> {
         let (group, sender, seq) = (record.header.group, record.header.sender, record.header.seq);
         self.put_stored(batch, at_key(&group, &sender, seq), codec::encode(record)?);
-        self.put_stored(batch, name_key(&group, name, &sender, seq), Vec::new());
+        self.put_stored(
+            batch,
+            name_key(&group, name, &sender, seq),
+            counted.to_be_bytes().to_vec(),
+        );
         Ok(())
     }
 
@@ -248,10 +263,15 @@ impl<S: Storage> Device<S> {
     ) -> Result<Option<(Record, Stamp)>, Error> {
         let held = registers.held(&name.0, name.1);
         let mut best: Option<(Record, Stamp)> = None;
-        for record in self.overlay_named(group, name)? {
-            let Some(judged) = self.judged(registers, &record)? else {
+        for (record, counted) in self.overlay_named(group, name)? {
+            let Some(mut judged) = self.judged(registers, &record)? else {
                 continue;
             };
+            // (counted as it came, not against the clock of now: a value's standing among the overlay's does not
+            //  move when the chains' largest lamport does)
+            if let Some(counted) = counted {
+                judged.stamp.lamport = counted;
+            }
             if judged.name != *name || held.is_some_and(|held| held >= judged.stamp) {
                 continue;
             }
@@ -285,11 +305,24 @@ impl<S: Storage> Device<S> {
         let Some(judged) = self.judged(&registers, &record)? else {
             return Ok(None);
         };
-        let newer = registers
-            .held(&judged.name.0, judged.name.1)
-            .is_none_or(|held| held < judged.stamp);
+        // (a writer's later value of a name always follows its earlier one: of each writer the overlay keeps the
+        //  newest number alone)
+        let mine: Vec<Record> = self
+            .overlay_named(&group, &judged.name)?
+            .into_iter()
+            .map(|(held, _)| held)
+            .filter(|held| held.header.sender == sender)
+            .collect();
+        let superseded = mine.iter().any(|held| held.header.seq > seq);
+        let newer = !superseded
+            && registers
+                .held(&judged.name.0, judged.name.1)
+                .is_none_or(|held| held < judged.stamp);
         if newer {
-            self.put_overlay(batch, &record, &judged.name)?;
+            for held in mine.iter().filter(|held| held.header.seq < seq) {
+                self.delete_overlay(batch, held);
+            }
+            self.put_overlay(batch, &record, &judged.name, judged.stamp.lamport)?;
         }
         let current = newer
             && self
@@ -388,9 +421,7 @@ impl<S: Storage> Device<S> {
         let name = (change.name.clone(), change.of);
         if change.current && self.is_human() && self.overlay_has(group, &name) {
             let registers = self.registers(group)?;
-            change.current = self
-                .overlay_standing(group, &registers, &name)?
-                .is_none();
+            change.current = self.overlay_standing(group, &registers, &name)?.is_none();
         }
         Ok(Some(change))
     }

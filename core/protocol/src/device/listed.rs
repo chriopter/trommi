@@ -42,6 +42,7 @@ fn is_fault(error: &Error) -> bool {
 struct Floor {
     seq: u64,
     epoch: u64,
+    hash: Hash32,
     heads: Vec<(DeviceId, Head)>,
 }
 
@@ -49,12 +50,14 @@ fn read_floor(value: &[u8]) -> Result<Floor, Error> {
     let mut reader = Reader::new(value);
     let seq = reader.u64()?;
     let epoch = reader.u64()?;
+    let hash = reader.value()?;
     let text = reader.opaque()?.to_vec();
     reader.finish()?;
     let text = std::str::from_utf8(&text).map_err(|_| Error::BadFormat)?;
     Ok(Floor {
         seq,
         epoch,
+        hash,
         heads: chain::parse_heads(text)?,
     })
 }
@@ -238,6 +241,7 @@ impl<S: Storage> Device<S> {
         &mut self,
         batch: &mut Batch,
         header: &Header,
+        hash: &Hash32,
         body: &Body,
     ) -> Result<(), Error> {
         if !matches!(header.subject, Subject::Register(_)) || !self.is_human() {
@@ -260,8 +264,13 @@ impl<S: Storage> Device<S> {
         if let Some(stored) = self.stored(&key) {
             let held = read_floor(stored).map_err(|_| damaged())?;
             // (a floor its writer signed beyond its own Cut is void, and its numbers are used anew)
-            let void =
-                self.beyond_cut(&header.group, &header.sender, held.seq, held.epoch, None)?;
+            let void = self.beyond_cut(
+                &header.group,
+                &header.sender,
+                held.seq,
+                held.epoch,
+                Some(held.hash),
+            )?;
             if held.seq >= header.seq && !void {
                 return Ok(());
             }
@@ -271,13 +280,14 @@ impl<S: Storage> Device<S> {
             &header.sender,
             header.seq,
             header.epoch,
-            None,
+            Some(*hash),
         )? {
             return Ok(());
         }
         let mut writer = Writer::new();
         writer.u64(header.seq);
         writer.u64(header.epoch);
+        writer.value(hash)?;
         writer.opaque(text.as_bytes())?;
         self.put_stored(batch, key, writer.into_bytes());
         Ok(())
@@ -340,7 +350,7 @@ impl<S: Storage> Device<S> {
             let floor = read_floor(&value).map_err(|_| damaged())?;
             let writer = DeviceId::from_slice(key.get(prefix.len()..).unwrap_or_default())
                 .map_err(|_| damaged())?;
-            if self.beyond_cut(group, &writer, floor.seq, floor.epoch, None)? {
+            if self.beyond_cut(group, &writer, floor.seq, floor.epoch, Some(floor.hash))? {
                 continue;
             }
             for (named, head) in floor.heads {
@@ -440,6 +450,14 @@ impl<S: Storage> Device<S> {
         group: &GroupId,
         device: &DeviceId,
     ) -> Result<bool, Error> {
+        // (a `heads` the removed device signed beyond its Cut is void for good: its numbers are used anew)
+        let floor = floor_key(group, device);
+        if let Some(value) = self.stored(&floor) {
+            let held = read_floor(value).map_err(|_| damaged())?;
+            if self.beyond_cut(group, device, held.seq, held.epoch, Some(held.hash))? {
+                self.delete_stored(batch, floor);
+            }
+        }
         let mut dropped = false;
         for (id, record, _) in self.listed_sources(group)? {
             let header = &record.header;

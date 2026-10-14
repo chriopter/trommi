@@ -1617,7 +1617,7 @@ impl<S: Storage> Device<S> {
         let (sender, seq) = (received.header.sender, received.header.seq);
         // A `heads` of the person's own human devices bounds where a chain of a group started from the
         // hub's list may begin (9.0.6).
-        self.keep_floor(batch, &received.header, &body)?;
+        self.keep_floor(batch, &received.header, &hash, &body)?;
         if standing == Standing::Provisional {
             self.put_stored(
                 batch,
