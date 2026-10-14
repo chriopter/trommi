@@ -191,14 +191,14 @@ ${obError(o.problem)}${obSubmit(ways.password ? 'Make kit' : 'Use passkey', o.bu
   // link" is the quiet way under it (open by itself when there is no camera). `still`: drawn without a camera.
   scan: o => {
     const state = o.still || 'asking'
-    return obShell('Scan a code', html`<div class="scan" id="scan" data-state="${state}"${o.still ? '' : raw(' data-controller="scan"')}><video id="scan-video" muted playsinline aria-label="Camera" data-scan-target="video"></video>${o.still ? html`<span class="scan-still">${FAKE_QR}</span>` : ''}${SCAN_CORNERS}
+    return obShell('Scan a code', html`<div class="scan" id="scan" data-state="${state === 'wrong' ? 'scanning' : state}"${o.still ? '' : raw(' data-controller="scan"')}><video id="scan-video" muted playsinline aria-label="Camera" data-scan-target="video"></video>${o.still ? html`<span class="scan-still">${FAKE_QR}</span>` : ''}${SCAN_CORNERS}
 <button type="button" class="ob-chip scan-start" id="scan-start" data-action="scan#begin">Start camera</button></div>
-<p class="scan-say" id="scan-say" role="status">${SCAN_SAYS[state === 'wrong' ? 'scanning' : state]}</p>
+<p class="scan-say" id="scan-say" role="status">${SCAN_SAYS[state]}</p>
 <p class="scan-where">On the other device: Settings → Invite a Device</p>
 <details class="ob-paste" id="scan-paste"${o.paste || state === 'denied' || state === 'none' ? raw(' open') : ''}><summary>Paste the link</summary>
 <form id="paste-form" class="ob-form" method="post" action="/join" novalidate><input name="link" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="The link" placeholder="https://app.trommi.com/join#v1…">
 ${obError(o.problem)}${obSubmit('Next')}</form></details>
-<p class="ob-alt"><a class="ob-link" id="alt-login" href="/login" data-nav>Back to log in</a><span${state === 'denied' ? '' : raw(' hidden')}> · <button type="button" class="ob-link" id="scan-again">Try the camera</button></span></p>`, { cls: 'ob-scan', focus: '' })
+<p class="ob-alt"><a class="ob-link" id="alt-login" href="/login" data-nav>Back to log in</a><span${state === 'denied' ? '' : raw(' hidden')}> · <button type="button" class="ob-link" id="scan-again">Try the camera</button></span></p>`, { cls: 'ob-scan', focus: o.paste || state === 'denied' || state === 'none' ? '#scan-paste input' : '' })
   },
 
   // Joining with a link: asking, then the six emoji to compare with the other device; or what went wrong.
