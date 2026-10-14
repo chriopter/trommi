@@ -32,7 +32,7 @@ fn act(sim: &mut Sim, action: Action) -> Vec<Effect> {
 }
 
 fn yes(card: &str) -> Action {
-    Action::Answer { card_id: card.into(), choices: vec!["yes".into()], note: None, attachments: vec![], option_notes: Default::default(), trusted: false }
+    Action::Answer { card_id: card.into(), choices: vec!["yes".into()], note: None, attachments: vec![], option_notes: Default::default(), trusted: false, marks: vec![] }
 }
 
 fn answer_of(sim: &Sim, card: &str) -> Option<(String, bool)> {
@@ -82,7 +82,7 @@ fn reading_and_shredding_close_the_card_at_once() {
     let mut sim = world.sim();
     let card = with_card(&mut world, &mut sim);
     // read and shred close it at once
-    act(&mut sim, Action::Shred { card_id: card.clone(), note: None });
+    act(&mut sim, Action::Shred { card_id: card.clone(), note: None, attachments: vec![], marks: vec![] });
     assert_eq!(answer_of(&sim, &card).map(|a| a.0), Some("closed".into()));
     assert_eq!(sim.app.board().model.cards[&card].answer.as_ref().unwrap().answer_action, "shred");
 }
@@ -93,7 +93,7 @@ fn what_cannot_be_done_is_said_and_changes_nothing() {
     let mut sim = world.sim();
     let card = with_card(&mut world, &mut sim);
     let posts = envelope_posts(&world);
-    let wrong = Action::Answer { card_id: card.clone(), choices: vec!["maybe".into()], note: None, attachments: vec![], option_notes: Default::default(), trusted: false };
+    let wrong = Action::Answer { card_id: card.clone(), choices: vec!["maybe".into()], note: None, attachments: vec![], option_notes: Default::default(), trusted: false, marks: vec![] };
     act(&mut sim, wrong);
     assert_eq!(sim.view.toasts.len(), 1);
     assert_eq!(sim.view.toasts[0].text.key, "action.bad_choice");
@@ -253,8 +253,8 @@ fn a_line_and_a_hand_back_show_at_once_in_their_chats() {
     let card = with_card(&mut world, &mut sim);
     let session = sim.view.sidebar.sessions[0].id.clone();
     sim.hold = true;
-    act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "hello agent".into(), attachments: vec![] });
-    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("what do you mean?".into()) });
+    act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "hello agent".into(), attachments: vec![], marks: vec![], copied_cards: vec![] });
+    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("what do you mean?".into()), rework: false, marks: vec![] });
     let model = &sim.app.board().model;
     let pending = |key: &str| model.timelines.get(key).map(|t| t.items.values().filter(|i| i.get("pending") == Some(&json!(true))).count());
     assert_eq!(pending(&format!("chat:session/{session}")), Some(1));
@@ -292,8 +292,18 @@ fn desks_are_made_renamed_given_goals_and_the_last_one_stays() {
     let s = human(&sim, &format!("session/{session}")).unwrap().0;
     assert_eq!((s["desk"].clone(), s["name"].clone()), (json!(work.clone()), json!("Builder")));
     world.stream(&mut sim);
+    // the delete runs in steps (mark, board read, empty snapshot, register gone), each once the last shows
     act(&mut sim, Action::RemoveDesk { desk_id: "main".into() });
-    assert_eq!(desks(&sim).len(), 1);
+    assert!(!sim.view.settings.deleting.is_empty() || desks(&sim).len() == 1);
+    for _ in 0..40 {
+        if desks(&sim).len() == 1 {
+            break;
+        }
+        world.stream(&mut sim);
+        sim.advance(5_000);
+    }
+    assert_eq!(desks(&sim).len(), 1, "{:?} {:?}", sim.view.settings.deleting, sim.view.toasts);
+    assert!(sim.view.settings.deleting.is_empty());
     act(&mut sim, Action::RemoveDesk { desk_id: work.clone() });
     assert_eq!(sim.view.toasts.last().map(|t| t.text.key.as_str()), Some("action.last_desk"));
     assert_eq!(desks(&sim).len(), 1);
@@ -482,7 +492,7 @@ fn a_draft_keeps_the_shape_both_apps_read_and_what_it_does_not_name() {
     let mut sim = world.sim();
     let card = with_card(&mut world, &mut sim);
     let key = format!("draft/{card}");
-    let draft = |text: &str, keys: Option<Vec<String>>| Action::Draft { place: card.clone(), text: text.into(), keys, notes: None };
+    let draft = |text: &str, keys: Option<Vec<String>>| Action::Draft { place: card.clone(), text: text.into(), keys, notes: None, marks: None };
     act(&mut sim, draft("", Some(vec!["yes".into()])));
     let v = human(&sim, &key).unwrap().0;
     assert_eq!((v["keys"].clone(), v["note"].clone(), v["notes"].clone()), (json!(["yes"]), json!(""), json!({})));
@@ -559,4 +569,57 @@ fn archiving_a_session_archives_its_group_at_the_hub() {
     serve(&world, &mut sim);
     world.stream(&mut sim);
     assert!(world.hub.borrow().seen.iter().any(|s| s.starts_with("POST /v1/groups/") && s.ends_with("/archive")), "{:?}", world.hub.borrow().refused);
+}
+
+#[test]
+fn sessions_get_marks_groups_places_and_the_crown_and_desks_their_order() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    let key = format!("session/{session}");
+    act(&mut sim, Action::SessionIcon { session_id: session.clone(), icon: Some("rocket".into()) });
+    act(&mut sim, Action::SessionGroup { session_id: session.clone(), group: Some(" Build ".into()) });
+    // (one session: its place is already the last, nothing is written)
+    act(&mut sim, Action::PlaceSession { session_id: session.clone(), before: None, after: None });
+    let s = human(&sim, &key).unwrap().0;
+    assert_eq!((s["icon"].clone(), s["group"].clone()), (json!("rocket"), json!("Build")));
+    assert!(s.get("position").is_none());
+    act(&mut sim, Action::SessionGroup { session_id: session.clone(), group: None });
+    assert_eq!(human(&sim, &key).unwrap().0["group"], json!(null));
+    world.stream(&mut sim);
+    act(&mut sim, Action::CrownSession { session_id: session.clone(), on: true });
+    // (a room without desks keeps its one crown)
+    let crown = human(&sim, "crown").map(|v| v.0).unwrap_or_default();
+    assert_eq!(crown["session_id"], json!(session), "{crown}");
+    act(&mut sim, Action::AddDesk { name: "Work".into() });
+    world.stream(&mut sim);
+    let ids: Vec<String> = sim.app.board().model.human.keys().filter_map(|k| k.strip_prefix("desk/").map(String::from)).collect();
+    let reversed: Vec<String> = ids.iter().rev().cloned().collect();
+    act(&mut sim, Action::OrderDesks { desk_ids: reversed.clone() });
+    for (i, d) in reversed.iter().enumerate() {
+        assert_eq!(human(&sim, &format!("desk/{d}")).unwrap().0["order"], json!(i));
+    }
+    act(&mut sim, Action::RenameDevice { name: "  Laptop ".into() });
+    let me = sim.app.board().model.my_device_id.clone().unwrap();
+    assert_eq!(human(&sim, &format!("device/{me}")).unwrap().0["device_name"], json!("Laptop"));
+    // "Revise" and "take back" go to the card's chat
+    sim.hold = true;
+    act(&mut sim, Action::HandBack { card_id: card.clone(), note: Some("again".into()), rework: true, marks: vec![json!({ "picture": 0, "x": 1, "y": 2, "w": 3, "h": 4 })] });
+    act(&mut sim, Action::TakeBack { card_id: card.clone() });
+    let items: Vec<serde_json::Value> = sim.app.board().model.timelines[&format!("chat:card/{card}")].items.values().cloned().map(serde_json::Value::Object).collect();
+    assert!(items.iter().any(|i| i["content"]["hand_back"] == json!(true) && i["content"]["marks"].as_array().is_some_and(|m| m.len() == 1)), "{items:?}");
+    assert!(items.iter().any(|i| i["content"]["present_card"] == json!(true)), "{items:?}");
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+}
+
+#[test]
+fn deleting_a_session_shreds_its_cards_and_archives_it() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    act(&mut sim, Action::DeleteSession { session_id: session.clone() });
+    assert_eq!(answer_of(&sim, &card).map(|a| a.0), Some("closed".into()));
+    assert_eq!(human(&sim, &format!("session/{session}")).unwrap().0["archived"], json!(true));
 }

@@ -35,7 +35,7 @@ fn a_file_is_attached_sent_opened_and_shared() {
     let f = &sim.view.files["pick-1"];
     assert_eq!((f.state.as_str(), f.name.as_str(), f.size), ("uploading", "plan.png", PICTURE.len() as u64));
     // a line cannot name it before it is stored
-    act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "see".into(), attachments: vec!["pick-1".into()] });
+    act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "see".into(), attachments: vec!["pick-1".into()], marks: vec![], copied_cards: vec![] });
     assert!(sim.view.toasts.iter().any(|t| t.text.key == "action.file_not_ready"), "{:?}", sim.view.toasts);
     sim.hold = false;
     while let Some((id, request)) = sim.held.pop_front() {
@@ -49,7 +49,7 @@ fn a_file_is_attached_sent_opened_and_shared() {
     assert!(!world.hub.borrow().files.values().next().unwrap().windows(PICTURE.len()).any(|w| w == PICTURE), "the hub holds ciphertext");
 
     // named in a line: the timeline shows it, its reference with the line
-    act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "the plan".into(), attachments: vec!["pick-1".into()] });
+    act(&mut sim, Action::Write { session_id: session.clone(), card_id: None, text: "the plan".into(), attachments: vec!["pick-1".into()], marks: vec![], copied_cards: vec![] });
     world.stream(&mut sim);
     sim.send(Event::Focus { focus: trommi_client_core::views::Focus { screen: trommi_client_core::views::Screen::Session { session_id: session.clone() }, ..Default::default() } });
     let page = &sim.view.sessions[&session];

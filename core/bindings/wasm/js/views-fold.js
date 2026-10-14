@@ -31,6 +31,7 @@ export function foldView(view, delta) {
       case 'account': v.account = p.view; break
       case 'file': keyed('files', p.id, p.view); break
       case 'toasts': if (p.toasts.length) v.toasts = p.toasts; else delete v.toasts; break
+      case 'board': if (p.view == null) delete v.board; else v.board = p.view; break
       default: throw new Error(`a view part this fold does not know: ${p.part}`)
     }
   }
