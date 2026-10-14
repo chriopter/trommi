@@ -250,6 +250,10 @@ pub enum Action {
     RenameDevice {
         name: String,
     },
+    /// Push on this device: off, every card, or only what knocks.
+    Push {
+        level: crate::app::push::PushChoice,
+    },
     /// More of a list in view: the older talk of a session, the comments of a card, the rest of Off your mind.
     ShowMore {
         of: crate::views::board::MoreOf,

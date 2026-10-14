@@ -26,6 +26,7 @@ mod invites;
 mod account_steps;
 mod account_change;
 mod desks;
+pub mod push;
 mod selfjoin;
 pub mod script;
 pub mod sim;
@@ -137,6 +138,7 @@ pub struct App {
     steps: account_steps::Steps,
     changes: account_change::Changes,
     desks: desks::DeskDeletes,
+    push: push::Push,
     /// A recovery (`AccountAction::Recover`) waiting for its login: the new kit's words and the sealer of the
     /// account's new copies; then the words, shown once the room is recovered.
     recover_with: Option<(Vec<String>, engine::recover::Copies)>,
@@ -209,6 +211,7 @@ impl App {
             steps: account_steps::Steps::default(),
             changes: account_change::Changes::default(),
             desks: desks::DeskDeletes::default(),
+            push: push::Push::default(),
             recover_with: None,
             recovered_kit: None,
             selfjoin: selfjoin::SelfJoin::default(),
@@ -792,6 +795,7 @@ impl App {
                 }
             }
             Event::Platform { id, result } if self.changes.owns_platform(id) => self.change_platform(now_ms, id, result, &mut out),
+            Event::Platform { id, result } if self.push.owns_platform(id) => self.push_platform_answered(now_ms, id, result, &mut out),
             Event::Secret { id, .. } | Event::Platform { id, .. } => {
                 if self.pending.remove(&id).is_none() {
                     out.push(log(LogLevel::Warn, "an answer to nothing asked"));
@@ -806,7 +810,11 @@ impl App {
                 self.stale_views = true;
             }
             Event::Finished { .. } => {}
-            Event::PushToken { .. } => {}
+            Event::PushToken { kind, token } => {
+                if self.engine.is_some() {
+                    self.push_token(now_ms, kind, token.map(|t| t.0), &mut out);
+                }
+            }
             Event::Zone { utc_offset_min } => {
                 self.lens.utc_offset_min = utc_offset_min;
                 self.stale_views = true;
@@ -863,7 +871,10 @@ impl App {
             Event::Net { online } => {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_net(ctx, online));
             }
-            Event::Push { .. } => {}
+            // (a push that reached the app: what it rang for is read, as when the app comes to the front)
+            Event::Push { .. } => {
+                self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
+            }
         }
         self.after_engine(now_ms, &mut out);
         self.render(&mut out);
@@ -907,6 +918,9 @@ impl App {
         }
         if let Action::RemoveDesk { desk_id } = &action {
             return self.delete_desk(now_ms, desk_id, out);
+        }
+        if let Action::Push { level } = &action {
+            return self.push_action(now_ms, *level, out);
         }
         self.run_action(now_ms, action, out);
     }
@@ -1534,6 +1548,10 @@ impl App {
         if self.goals_check && self.next_view.phase == Phase::Live {
             self.doing(now_ms, out, |doing| doing.sync_goals());
             self.goals_check = false;
+        }
+        // this device's push, as the hub has it
+        if self.next_view.phase == Phase::Live {
+            self.push_look(now_ms, out);
         }
         // a desk's delete: its next step once the last one shows
         if fed || !self.desks.running.is_empty() {

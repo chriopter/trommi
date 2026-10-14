@@ -1066,6 +1066,8 @@ export interface SettingsView {
   desk_counts?: DeskCountsView[]
   /** The desks being deleted, with how far. */
   deleting?: DeskDeleteView[]
+  /** Push on this device, where the platform has push. */
+  push?: PushView
   /** The account's ways in, once read (`AccountAction::ReadAccount`). */
   login?: LoginView
 }
@@ -1087,6 +1089,14 @@ export interface DeskCountsView {
   files: number
   artifacts: number
   goals: number
+}
+
+/** Push on this device. */
+export interface PushView {
+  /** "off", "all", "knocking". */
+  level: string
+  /** A change of the level is on its way. */
+  busy: boolean
 }
 
 /** A desk's delete in progress: units done of the total. */

@@ -1509,6 +1509,9 @@ pub struct SettingsView {
     /// The desks being deleted, with how far.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deleting: Vec<DeskDeleteView>,
+    /// Push on this device, where the platform has push.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<PushView>,
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<LoginView>,
@@ -1535,6 +1538,16 @@ pub struct DeskCountsView {
     pub files: u64,
     pub artifacts: u64,
     pub goals: u64,
+}
+
+/// Push on this device.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PushView {
+    /// "off", "all", "knocking".
+    pub level: String,
+    /// A change of the level is on its way.
+    #[serde(default)]
+    pub busy: bool,
 }
 
 /// A desk's delete in progress: units done of the total.

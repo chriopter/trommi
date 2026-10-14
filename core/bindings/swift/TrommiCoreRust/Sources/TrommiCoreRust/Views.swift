@@ -3735,10 +3735,12 @@ public enum CoreView {
     public var deskCounts: [DeskCountsView]
     /// The desks being deleted, with how far.
     public var deleting: [DeskDeleteView]
+    /// Push on this device, where the platform has push.
+    public var push: PushView?
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     public var login: LoginView?
 
-    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, deskCounts: [DeskCountsView] = [], deleting: [DeskDeleteView] = [], login: LoginView? = nil) {
+    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, deskCounts: [DeskCountsView] = [], deleting: [DeskDeleteView] = [], push: PushView? = nil, login: LoginView? = nil) {
       self.account = account
       self.devices = devices
       self.removed = removed
@@ -3754,6 +3756,7 @@ public enum CoreView {
       self.hub = hub
       self.deskCounts = deskCounts
       self.deleting = deleting
+      self.push = push
       self.login = login
     }
 
@@ -3773,6 +3776,7 @@ public enum CoreView {
       case hub = "hub"
       case deskCounts = "desk_counts"
       case deleting = "deleting"
+      case push = "push"
       case login = "login"
     }
 
@@ -3793,6 +3797,7 @@ public enum CoreView {
       self.hub = try c.decodeIfPresent(String.self, forKey: .hub)
       self.deskCounts = try c.decodeIfPresent([DeskCountsView].self, forKey: .deskCounts) ?? []
       self.deleting = try c.decodeIfPresent([DeskDeleteView].self, forKey: .deleting) ?? []
+      self.push = try c.decodeIfPresent(PushView.self, forKey: .push)
       self.login = try c.decodeIfPresent(LoginView.self, forKey: .login)
     }
 
@@ -3813,6 +3818,7 @@ public enum CoreView {
       try c.encodeIfPresent(hub, forKey: .hub)
       if !deskCounts.isEmpty { try c.encode(deskCounts, forKey: .deskCounts) }
       if !deleting.isEmpty { try c.encode(deleting, forKey: .deleting) }
+      try c.encodeIfPresent(push, forKey: .push)
       try c.encodeIfPresent(login, forKey: .login)
     }
   }
@@ -3899,6 +3905,36 @@ public enum CoreView {
       try c.encode(files, forKey: .files)
       try c.encode(artifacts, forKey: .artifacts)
       try c.encode(goals, forKey: .goals)
+    }
+  }
+
+  /// Push on this device.
+  public struct PushView: Codable, Hashable, Sendable {
+    /// "off", "all", "knocking".
+    public var level: String
+    /// A change of the level is on its way.
+    public var busy: Bool
+
+    public init(level: String = "", busy: Bool = false) {
+      self.level = level
+      self.busy = busy
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case level = "level"
+      case busy = "busy"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.level = try c.decode(String.self, forKey: .level)
+      self.busy = try c.decodeIfPresent(Bool.self, forKey: .busy) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(level, forKey: .level)
+      try c.encode(busy, forKey: .busy)
     }
   }
 

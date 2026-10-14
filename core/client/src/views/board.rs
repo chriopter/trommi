@@ -493,6 +493,7 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.settings.hub = kept.hub.take();
     view.settings.desk_counts = std::mem::take(&mut kept.desk_counts);
     view.settings.deleting = std::mem::take(&mut kept.deleting);
+    view.settings.push = kept.push.take();
     // The pages in view: one session, one card. A page that is left is taken away.
     view.sessions.clear();
     if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {

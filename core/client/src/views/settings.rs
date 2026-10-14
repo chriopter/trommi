@@ -325,6 +325,7 @@ pub fn settings(b: &Board) -> SettingsView {
         hub: None,
         desk_counts: Vec::new(),
         deleting: Vec::new(),
+        push: None,
         agent_list,
         agents_lead,
         agents,
