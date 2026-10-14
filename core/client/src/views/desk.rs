@@ -380,7 +380,7 @@ pub struct Opt {
     pub settles: bool,
 }
 
-pub(super) fn options_of(v: &Value) -> Vec<Opt> {
+pub(crate) fn options_of(v: &Value) -> Vec<Opt> {
     v.as_array()
         .into_iter()
         .flatten()

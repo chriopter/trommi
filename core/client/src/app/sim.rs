@@ -34,6 +34,8 @@ pub struct Sim {
     pub hub: Option<Hub>,
     pub stream_hub: Option<StreamHub>,
     pub platform: Option<Platform>,
+    /// The platform's secret store; without one every `Secret` effect is `denied`.
+    pub secrets: Option<BTreeMap<String, Vec<u8>>>,
     /// The streams that are open, oldest first.
     pub streams: Vec<(IoId, HttpRequest)>,
     /// Requests wait in `held` to be answered by hand.
@@ -63,6 +65,7 @@ impl Sim {
             hub: None,
             stream_hub: None,
             platform: None,
+            secrets: None,
             streams: Vec::new(),
             hold: false,
             die_in: None,
@@ -205,9 +208,20 @@ impl Sim {
                     self.streams.retain(|(open, _)| *open != id);
                     self.held.retain(|(held, _)| *held != id);
                 }
-                Effect::Secret { id, .. } => self.queue.push_back(Event::Secret {
+                Effect::Secret { id, op } => self.queue.push_back(Event::Secret {
                     id,
-                    result: IoResult::Err(IoError::new(IoErrorKind::Denied)),
+                    result: match (self.secrets.as_mut(), op) {
+                        (None, _) => IoResult::Err(IoError::new(IoErrorKind::Denied)),
+                        (Some(s), super::SecretOp::Get { name }) => IoResult::Ok(s.get(&name).cloned().map(Into::into)),
+                        (Some(s), super::SecretOp::Put { name, value }) => {
+                            s.insert(name, value.0);
+                            IoResult::Ok(None)
+                        }
+                        (Some(s), super::SecretOp::Delete { name }) => {
+                            s.remove(&name);
+                            IoResult::Ok(None)
+                        }
+                    },
                 }),
                 Effect::Platform { id, op } => self.queue.push_back(Event::Platform {
                     id,
@@ -221,6 +235,7 @@ impl Sim {
                 | Effect::FileGone { .. }
                 | Effect::Notify { .. }
                 | Effect::Snapshot { .. }
+                | Effect::NotifyContext { .. }
                 | Effect::SaveFile { .. }
                 | Effect::OpenUrl { .. }
                 | Effect::Log { .. } => {}

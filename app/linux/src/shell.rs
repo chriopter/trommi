@@ -94,8 +94,8 @@ impl<F: FnMut(String) + Send + 'static> Shell for Window<F> {
                     eprintln!("[trommi] a link of another kind was not opened");
                 }
             }
-            // (no widgets on this desktop)
-            Effect::Snapshot { .. } => {}
+            // (no widgets on this desktop, no notification extension)
+            Effect::Snapshot { .. } | Effect::NotifyContext { .. } => {}
             // (I/O: never handed to the window)
             Effect::Http { .. }
             | Effect::OpenStream { .. }
