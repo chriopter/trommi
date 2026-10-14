@@ -92,6 +92,8 @@ enum Pending {
     Dropped,
     /// A Share link's file (`app::shared`).
     Shared,
+    /// A file of the demo room, by its address.
+    DemoFile(crate::files::DemoOpen),
 }
 
 /// The app store's key that names the room of this slot and its hub: written by a join with the code before the
@@ -832,7 +834,7 @@ impl App {
                         self.open(now_ms, revision, entries, &mut out);
                     }
                 }
-                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) | Some(Pending::Shared) => {
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) | Some(Pending::Shared) | Some(Pending::DemoFile(_)) => {
                     if let IoResult::Err(e) = &result {
                         out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
                     }
@@ -891,6 +893,14 @@ impl App {
             Event::Platform { id, result } if matches!(self.pending.get(&id), Some(Pending::PasskeyGet(_))) => {
                 if let Some(Pending::PasskeyGet(hub)) = self.pending.remove(&id) {
                     self.passkey_asserted(hub, result, &mut out);
+                }
+            }
+            Event::Http { id, result } if matches!(self.pending.get(&id), Some(Pending::DemoFile(_))) => {
+                if let (Some(Pending::DemoFile(open)), IoResult::Ok(response)) = (self.pending.remove(&id), result) {
+                    if response.status == 200 {
+                        self.files.demo_opened(open, response.body, &mut out);
+                        self.stale_views = true;
+                    }
                 }
             }
             Event::Http { id, result } if self.pending.get(&id) == Some(&Pending::Shared) => {
@@ -1068,6 +1078,23 @@ impl App {
 
     /// An action in the demo room: done on the model as on a real one (the echo), and taken as done at once.
     fn demo_action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        // (files: the demo keeps what is attached in memory, and opens its own files from their addresses)
+        match &action {
+            Action::Attach { local_id, name, media_type, bytes } => {
+                self.files.demo_attach(local_id, name, media_type, bytes);
+                self.stale_views = true;
+                return;
+            }
+            Action::OpenFile { attachment_id, save } => {
+                if let Some((url, open)) = self.files.demo_open(attachment_id, *save, out) {
+                    let id = self.io(Pending::DemoFile(open));
+                    out.push(Effect::Http { id, request: crate::app::io::HttpRequest { method: "GET".into(), url, headers: Vec::new(), body: None, timeout_ms: 30_000, max_answer: 64 << 20, class: Default::default(), key: None } });
+                }
+                self.stale_views = true;
+                return;
+            }
+            _ => {}
+        }
         let utc_offset_min = self.lens.utc_offset_min;
         let room = trommi_core::ids::RoomId::new([7; 32]);
         let mut n = 0u64;
