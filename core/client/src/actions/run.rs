@@ -23,6 +23,8 @@ pub const SNOOZE_HOUR: u64 = 7;
 const DAY_MS: u64 = 86_400_000;
 /// A name of a desk or a session: at most so many characters.
 pub const NAME_MAX: usize = 40;
+/// A note sent to a session waits so long for the toast's Undo before it goes.
+pub const NOTE_HOLD_MS: u64 = 3_000;
 /// A desk's goals: at most so many lines of at most `GOAL_LINE_MAX` characters, no blank lines.
 pub const GOAL_LINES: usize = 20;
 pub const GOAL_LINE_MAX: usize = 200;
@@ -300,6 +302,14 @@ impl Doing<'_> {
                 self.registers(action, &[(key, Value::Object(value))])
             }
             Action::WriteNote { note_id, text } => self.write_note(action, note_id.as_deref(), Some(text)),
+            Action::SendNote { note_id, to } => self.send_note(action, note_id, to.as_deref()),
+            Action::UnsendNote { note_id } => {
+                let held = self.model.notes.get(note_id).and_then(|n| n.get("held")).is_some_and(|h| !h.is_null());
+                if !held {
+                    return Err(not_done("notes.too_late", "Too late: the note already went."));
+                }
+                self.note_version(action, Some(note_id), Some(Map::from_iter([("held".to_string(), Value::Null)])))
+            }
             Action::DeleteNote { note_id } => self.write_note(action, Some(note_id), None),
             Action::BoardItem { board_id, local_id, content } => self.board_item(action, board_id, local_id, content),
             _ => Err(not_done("action.unknown", "This cannot be done here yet.")),
@@ -334,7 +344,45 @@ impl Doing<'_> {
     /// A new Note, a new version of one (`text`), or its closed version (none: deleted), shown at once. While a
     /// version of the note is on its way, the edit waits behind it ([`Sent`]).
     fn write_note(&mut self, action: &Action, note_id: Option<&str>, text: Option<&String>) -> Result<(), NotDone> {
-        let closed = text.is_none();
+        let own = text.map(|t| Map::from_iter([("text".to_string(), json!(t))]));
+        self.note_version(action, note_id, own)
+    }
+
+    /// A note sent to a session (`SendNote`): held for [`NOTE_HOLD_MS`] (the toast's Undo), then delivered by the
+    /// App ([`Doing::deliver_note`]). `to`: a session, else the crown's.
+    fn send_note(&mut self, action: &Action, note_id: &str, to: Option<&str>) -> Result<(), NotDone> {
+        let crown = self.model.human.get("crown").and_then(|r| r.value.get("session_id").and_then(Value::as_str).map(str::to_string));
+        let Some(to) = to.map(str::to_string).or(crown).filter(|s| self.model.sessions.contains_key(s)) else {
+            return Err(not_done("notes.no_session", "This note has no session to go to."));
+        };
+        let note = self.model.notes.get(note_id).ok_or_else(|| not_done("action.note_gone", "That note is no longer there."))?;
+        let empty = note.get("text").and_then(Value::as_str).is_none_or(|t| t.trim().is_empty()) && note.get("attachments").and_then(Value::as_array).is_none_or(Vec::is_empty);
+        if empty {
+            return Err(not_done("notes.empty", "An empty note is not sent."));
+        }
+        let held = json!({ "to": to, "until": self.now + NOTE_HOLD_MS });
+        self.note_version(action, Some(note_id), Some(Map::from_iter([("held".to_string(), held)])))
+    }
+
+    /// Delivers a note whose hold ran out: a line to its session that names the note, then the note closed.
+    pub fn deliver_note(&mut self, note_id: &str) -> Result<(), NotDone> {
+        let Some(note) = self.model.notes.get(note_id).cloned() else { return Ok(()) };
+        let Some(to) = note.get("held").and_then(|h| h.get("to")).and_then(Value::as_str).map(str::to_string) else { return Ok(()) };
+        let action = Action::SendNote { note_id: note_id.to_string(), to: Some(to.clone()) };
+        let mut content = Map::new();
+        content.insert("text".into(), note.get("text").cloned().unwrap_or(json!("")));
+        if let Some(a) = note.get("attachments").filter(|a| a.as_array().is_some_and(|a| !a.is_empty())) {
+            content.insert("attachments".into(), a.clone());
+        }
+        let written = note.get("created_at").and_then(Value::as_u64);
+        content.insert("note".into(), json!({ "object_id": note_id, "written_at": written }));
+        self.write(&action, Some(&to), None, content)?;
+        self.note_version(&action, Some(note_id), None)
+    }
+
+    /// A new version of a note with these fields set (none: closed).
+    fn note_version(&mut self, action: &Action, note_id: Option<&str>, own_fields: Option<Map<String, Value>>) -> Result<(), NotDone> {
+        let closed = own_fields.is_none();
         if let Some(id) = note_id {
             let gone = || not_done("action.note_gone", "That note is no longer there.");
             let note = self.model.notes.get(id).ok_or_else(gone)?;
@@ -348,8 +396,8 @@ impl Doing<'_> {
             return Err(not_done("action.note_gone", "That note is no longer there."));
         }
         let mut own = Map::new();
-        if let Some(text) = text {
-            own.insert("text".into(), json!(text));
+        if let Some(fields) = own_fields {
+            own.extend(fields);
             if note_id.is_none() {
                 own.insert("created_at".into(), json!(self.now));
             }
