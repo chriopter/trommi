@@ -244,6 +244,19 @@ pub struct Hub {
     /// The room's recovery key as the id it signs in under (8.4): its token reads only what a join with the code
     /// needs (the sealed keys, the room group's GroupInfos and log, the room's groups) and posts that join.
     pub recovery: Option<DeviceId>,
+    /// Accounts for a sign-in (`POST /v1/account/login` and `/recover`): the name (normalised e-mail or the id's
+    /// text), the auth keys of the password and of the kit, and the room's copies of the code under each.
+    pub accounts: Vec<Account>,
+}
+
+#[derive(Clone)]
+pub struct Account {
+    pub name: String,
+    pub id: String,
+    pub password_auth: [u8; 32],
+    pub kit_auth: [u8; 32],
+    pub sealed_password: Vec<u8>,
+    pub sealed_kit: Vec<u8>,
 }
 
 impl Default for Hub {
@@ -267,6 +280,7 @@ impl Default for Hub {
             seen: Vec::new(),
             fault: None,
             recovery: None,
+            accounts: Vec::new(),
             streaming: Vec::new(),
             notes: Vec::new(),
             wishes: Vec::new(),
@@ -665,6 +679,15 @@ impl Hub {
                 challenge[..8].copy_from_slice(&self.counter.to_be_bytes());
                 self.challenges.push(challenge);
                 return Ok(json!({ "challenge": b64(&challenge) }));
+            }
+            ("POST", ["v1", "account", way @ ("login" | "recover")]) => {
+                let (name, auth) = (body["account"].as_str().unwrap_or_default().to_string(), bytes("auth_key"));
+                let kit = *way == "recover";
+                let account = self.accounts.iter().find(|a| (a.name == name || a.id == name) && auth == if kit { a.kit_auth } else { a.password_auth }).cloned();
+                let Some(account) = account else { return Err(no(if kit { Error::WrongRecovery } else { Error::WrongLogin })) };
+                let sealed = if kit { &account.sealed_kit } else { &account.sealed_password };
+                return Ok(json!({ "account": account.id, "email": account.name, "kdf": { "alg": "argon2id", "m": 65536, "p": 1, "t": 3, "v": 1 },
+                    "rooms": [{ "room_id": b64(self.room_id().as_bytes()), "sealed_copy": b64(sealed), "challenge": b64(&[7u8; 32]) }] }));
             }
             ("POST", ["v1", "rooms", _, "tokens"]) => {
                 let signed = SignedHubAuth { auth: bytes("auth"), signature: bytes("signature") };
