@@ -224,6 +224,7 @@
             "goals": {
               "desk_id": "main",
               "foldable": false,
+              "folded": false,
               "lines": []
             },
             "hello": {
@@ -290,6 +291,9 @@
             },
             "key_epoch": 2,
             "remove_unfinished": {
+              "args": {
+                "n": "1"
+              },
               "en": "Remove the device that never finished signing in",
               "key": "settings.remove_unfinished.one"
             },
@@ -398,6 +402,9 @@
           "part": "desk",
           "view": {
             "blitz": {
+              "args": {
+                "n": "1"
+              },
               "en": "Blitz: 1 open card",
               "key": "desk.blitz.one"
             },
@@ -405,6 +412,7 @@
             "goals": {
               "desk_id": "main",
               "foldable": false,
+              "folded": false,
               "lines": []
             },
             "hello": {
@@ -605,6 +613,7 @@
             "goals": {
               "desk_id": "main",
               "foldable": false,
+              "folded": false,
               "lines": []
             },
             "hello": {
@@ -669,6 +678,7 @@
       "goals": {
         "desk_id": "main",
         "foldable": false,
+        "folded": false,
         "lines": []
       },
       "hello": {
@@ -781,6 +791,9 @@
       },
       "key_epoch": 2,
       "remove_unfinished": {
+        "args": {
+          "n": "1"
+        },
         "en": "Remove the device that never finished signing in",
         "key": "settings.remove_unfinished.one"
       },

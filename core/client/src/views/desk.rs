@@ -11,6 +11,7 @@
 
 use super::board::{is_loading, key_of, reads_as_info, Board, DEFAULT_DESK};
 use super::sidebar::units_of;
+use super::links::plain;
 use super::words::{say, GREETINGS, CALM};
 use super::{DeskRowView, DeskView, FromView, GoalsView, MediaView, SlipView, Text, TileView, TilesView};
 use crate::model::types::{Card, PermissionRequest};
@@ -106,9 +107,9 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
     } else {
         // (still reading the room: no "all quiet" while questions may yet come in)
         let unquiet = match (cut.len(), unheard) {
-            (1, _) => Some(say("desk.hello.cut_one", "One can’t hear you.", &[])),
+            (1, _) => Some(say("desk.hello.cut_one", "One can’t hear you.", &[("n", "1")])),
             (n, _) if n > 1 => Some(say("desk.hello.cut_some", "Some can’t hear you.", &[])),
-            (_, 1) => Some(say("desk.hello.unheard_one", "An answer waits.", &[])),
+            (_, 1) => Some(say("desk.hello.unheard_one", "An answer waits.", &[("n", "1")])),
             (_, n) if n > 1 => Some(say("desk.hello.unheard_some", "Answers wait.", &[])),
             _ => None,
         };
@@ -126,10 +127,15 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         let text = b.desks.iter().find(|d| d.id == desk).map(|d| d.goals.as_str()).unwrap_or("");
         let lines: Vec<String> = if text.is_empty() { Vec::new() } else { text.split('\n').map(String::from).collect() };
         let n = lines.len().to_string();
+        let foldable = lines.len() > 1;
+        let folded = foldable && b.lens.goals_folded.contains(&desk);
+        let show_all = foldable.then(|| say("desk.goals.show_all", format!("Show all {n} goals"), &[("n", &n)]));
         GoalsView {
+            toggle: if folded { show_all.clone() } else { foldable.then(|| say("desk.goals.fold", "Show the first goal only", &[])) },
             desk_id: desk,
-            foldable: lines.len() > 1,
-            show_all: (lines.len() > 1).then(|| say("desk.goals.show_all", format!("Show all {n} goals"), &[("n", &n)])),
+            foldable,
+            show_all,
+            folded,
             lines,
         }
     });
@@ -160,7 +166,7 @@ pub fn desk_with(b: &Board, off: &crate::off_mind::OffMind) -> DeskView {
         waiting: questions,
         blitz: (walk_len > 0 && !units.is_empty()).then(|| {
             if walk_len == 1 {
-                say("desk.blitz.one", "Blitz: 1 open card", &[])
+                say("desk.blitz.one", "Blitz: 1 open card", &[("n", "1")])
             } else {
                 say("desk.blitz", format!("Blitz: {n} open cards"), &[("n", &n)])
             }
@@ -208,31 +214,6 @@ pub(super) fn text_of(v: &Value) -> String {
     v.as_str().unwrap_or("").to_string()
 }
 
-/// A text as one line of plain words: no fenced blocks, no markup signs.
-pub fn plain(text: &str) -> String {
-    // (fenced blocks out)
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(open) = rest.find("```") {
-        out.push_str(&rest[..open]);
-        match rest[open + 3..].find("```") {
-            Some(close) => {
-                out.push(' ');
-                rest = &rest[open + 3 + close + 3..];
-            }
-            None => {
-                rest = &rest[open..];
-                break;
-            }
-        }
-    }
-    out.push_str(rest);
-    // (__underlined__ words keep their words: the signs go with the others below, and a lone _ stays)
-    let out = out.replace("__", "");
-    let out: String = out.chars().filter(|c| !matches!(c, '*' | '`' | '#')).collect();
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 /// The sign before a title and its words: what knocks, and what may wait.
 fn sign_of(permission: bool, info: bool, urgency: &str) -> (String, Option<Text>) {
     if permission {
@@ -274,12 +255,12 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
     } else {
         text_of(&c.field("teaser"))
     };
-    let words = if teaser.is_empty() { plain(&text_of(&c.field("body"))) } else { teaser.clone() };
+    let words = if teaser.is_empty() { plain(&text_of(&c.field("body")), b.assets()) } else { teaser.clone() };
     let mut notes = Vec::new();
     if !loading {
         let merged = c.field("merged_from_object_ids").as_array().map_or(0, Vec::len);
         if merged == 1 {
-            notes.push(say("row.replaces.one", "replaces 1 question", &[]));
+            notes.push(say("row.replaces.one", "replaces 1 question", &[("n", "1")]));
         } else if merged > 1 {
             let n = merged.to_string();
             notes.push(say("row.replaces", format!("replaces {n} questions"), &[("n", &n)]));
@@ -313,7 +294,7 @@ pub(super) fn card_row(b: &Board, c: &Card, agent: Option<usize>) -> DeskRowView
         .collect();
     let media_says = match media.len() {
         0 => None,
-        1 => Some(say("row.media.one", "Look at the picture", &[])),
+        1 => Some(say("row.media.one", "Look at the picture", &[("n", "1")])),
         n => Some(say("row.media", format!("Look at {n} pictures and videos"), &[("n", &n.to_string())])),
     };
     let starred = b.model.human.get(&format!("star/{}", c.object_id)).is_some_and(|r| !r.value.is_null() && r.value != Value::Bool(false));
@@ -371,7 +352,7 @@ pub(super) fn request_row(b: &Board, p: &PermissionRequest, agent: Option<usize>
         id: p.object_id.clone(),
         kind: "request".into(),
         title: format!("Approval: {}", p.tool_name),
-        words: plain(&format!("{}\n\n{}", p.description, p.input_preview)),
+        words: plain(&format!("{}\n\n{}", p.description, p.input_preview), b.assets()),
         urgency: "critical".into(),
         sign,
         sign_says,
@@ -581,6 +562,23 @@ mod tests {
     }
     fn en(t: &Option<Text>) -> &str {
         t.as_ref().map(|t| t.en.as_str()).unwrap_or("")
+    }
+
+    /// A card that arrives in an archived session stays off the Desk (web and iPhone: the core's stack); a main whose
+    /// agent connects again is no longer archived, and its card stands there.
+    #[test]
+    fn a_card_of_an_archived_session_stays_off_the_desk() {
+        let mut r = Room::default();
+        r.session("main", None, false);
+        r.session("helper", Some("main"), false);
+        r.settings.insert(dev("main"), json!({ "archived": true }));
+        r.settings.insert(dev("helper"), json!({ "archived": true }));
+        r.card("m1", "main", "decision", "normal")["session_id"] = json!(dev("main"));
+        r.card("h1", "helper", "decision", "normal")["session_id"] = json!(dev("helper"));
+        assert!(view(&r, None).stack.is_empty());
+        r.sessions[0]["is_online"] = json!(true);
+        r.sessions[0]["offline_since"] = Value::Null;
+        assert_eq!(view(&r, None).stack, ["m1"]);
     }
 
     /// The web's `tiles` (app/web/public/ui.mjs), case by case.
@@ -793,15 +791,30 @@ mod tests {
         assert_eq!(en(&view(&r, None).empty), "Questions land here.");
     }
 
+    /// A count of one is a count too: the shell draws the number from `args.n` (the Linux shell's empty bubble).
+    #[test]
+    fn a_count_of_one_names_its_number() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.card("q", "a", "decision", "normal");
+        let blitz = view(&r, None).blitz.unwrap();
+        assert_eq!((blitz.key.as_str(), blitz.args.get("n").map(String::as_str)), ("desk.blitz.one", Some("1")));
+    }
+
     #[test]
     fn the_goals_fold_with_two_lines_or_more() {
         let mut r = Room { desks: json!({ "main": { "name": "Work", "goals": "  \nShip it   \r\nTest it\n\n" } }), ..Default::default() };
         r.session("a", None, true);
         let g = view(&r, None).goals.unwrap();
         assert_eq!((g.desk_id.as_str(), g.lines.clone(), g.foldable, en(&g.show_all)), ("main", vec!["Ship it".to_string(), "Test it".into()], true, "Show all 2 goals"));
+        assert_eq!((g.folded, en(&g.toggle)), (false, "Show the first goal only"));
+        // folded on this device: the toggle shows them all again
+        let lens = Lens { goals_folded: vec!["main".into()], ..Default::default() };
+        let g = view_with(&r, &lens).goals.unwrap();
+        assert_eq!((g.folded, en(&g.toggle)), (true, "Show all 2 goals"));
         r.desks = json!({ "main": { "name": "Work", "goals": "One goal" } });
-        let g = view(&r, None).goals.unwrap();
-        assert_eq!((g.lines.len(), g.foldable, g.show_all), (1, false, None));
+        let g = view_with(&r, &lens).goals.unwrap();
+        assert_eq!((g.lines.len(), g.foldable, g.show_all, g.folded, g.toggle), (1, false, None, false, None));
         r.desks = json!({ "main": { "name": "Work" } });
         assert_eq!(view(&r, None).goals.unwrap().lines.len(), 0);
         // (a room without desks keeps its goals on the first desk it will have)

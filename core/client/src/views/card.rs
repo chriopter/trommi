@@ -15,12 +15,13 @@
 //!   the receipt of his answer: on its way, with the session, or not picked up for two minutes.
 
 use super::board::{is_loading, key_of, reads_as_info, Board};
-use super::desk::{from_of, plain, shown_title, NEEDS_NEWER};
+use super::desk::{from_of, shown_title, NEEDS_NEWER};
+use super::links::{plain, titled};
 use super::session::{link_note, unheard_fix};
 use super::sidebar::link_of;
 use super::talk::{card_ref, choices_of, events_of, file_ids, in_order, items_of, Entry, Side};
 use super::words::{minutes, minutes_tick, say};
-use super::{AnswerView, CardView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, Text, VersionView};
+use super::{AfterView, AnswerView, CardRefView, CardView, PictureView, CardWorkView, LinkNoteView, NotedView, OptionView, PlaceView, SectionView, TalkRow, Text, VersionView};
 use crate::model::types::{Card, PermissionRequest, StatusLine};
 use crate::off_mind::went_at;
 use crate::status::card_place;
@@ -213,9 +214,199 @@ fn place_of(id: &str, walk: &[String]) -> Option<PlaceView> {
     })
 }
 
+fn slug(text: &str) -> String {
+    let lower = text.to_lowercase();
+    let mut out = String::new();
+    let mut dash = false;
+    for ch in lower.chars() {
+        if ch.is_ascii_lowercase() || ch.is_ascii_digit() {
+            if dash && !out.is_empty() {
+                out.push('-');
+            }
+            dash = false;
+            out.push(ch);
+        } else {
+            dash = true;
+        }
+    }
+    out
+}
+
+/// A card's pictures and the option each shows (the web's `pictureKeys`).
+pub fn pictures_of(attachments: &[Value], sections: &[Value], options: &[super::desk::Opt]) -> Vec<PictureView> {
+    let s = |a: &Value, k: &str| a.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let images: Vec<(usize, &Value)> = attachments
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.get("media_type").and_then(Value::as_str).unwrap_or("").starts_with("image/"))
+        .collect();
+    let index_of = |raw: usize| images.iter().position(|(i, _)| *i == raw);
+    // (a section names its picture by its place among the attachments)
+    let section_pics: Vec<(usize, String)> = sections
+        .iter()
+        .filter_map(|x| {
+            let key = x.get("key").and_then(Value::as_str)?;
+            let raw = x.get("picture").and_then(Value::as_u64)? as usize;
+            Some((index_of(raw)?, key.to_string()))
+        })
+        .collect();
+    let mut keys: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    for (at, key) in &section_pics {
+        keys.entry(*at).or_insert_with(|| key.clone());
+    }
+    if keys.is_empty() && images.len() >= 2 && options.len() >= 2 {
+        let mut unclear = false;
+        let mut owners = std::collections::BTreeSet::new();
+        for (i, (_, img)) in images.iter().enumerate() {
+            let file = s(img, "file_name");
+            let stem = match file.rfind('.') {
+                Some(dot) if dot + 1 < file.len() && file[dot + 1..].chars().all(|c| c.is_ascii_alphanumeric()) => &file[..dot],
+                _ => file.as_str(),
+            };
+            let name = format!("-{}-", slug(stem));
+            let mut hits: Vec<&super::desk::Opt> = options
+                .iter()
+                .filter(|o| [slug(&o.key), slug(&o.label)].iter().any(|w| !w.is_empty() && name.contains(&format!("-{w}-"))))
+                .collect();
+            hits.sort_by_key(|o| std::cmp::Reverse(slug(&o.key).len()));
+            let Some(first) = hits.first() else { continue };
+            if hits.len() > 1 && slug(&hits[1].key).len() == slug(&first.key).len() {
+                unclear = true;
+                continue;
+            }
+            keys.insert(i, first.key.clone());
+            owners.insert(first.key.clone());
+        }
+        if unclear || owners.len() < 2 {
+            keys = if images.len() == options.len() && options.len() >= 3 {
+                options.iter().enumerate().map(|(i, o)| (i, o.key.clone())).collect()
+            } else {
+                Default::default()
+            };
+        }
+    }
+    images
+        .iter()
+        .enumerate()
+        .map(|(i, (_, a))| {
+            let name = s(a, "file_name");
+            let title = s(a, "title");
+            let key = keys.get(&i).cloned();
+            let shared: Vec<String> = section_pics.iter().filter(|(at, _)| *at == i).map(|(_, k)| k.clone()).collect();
+            PictureView {
+                file_id: s(a, "attachment_id"),
+                title: if title != name { title } else { String::new() },
+                name,
+                width: a.get("width").and_then(Value::as_u64).filter(|w| *w > 0),
+                height: a.get("height").and_then(Value::as_u64).filter(|h| *h > 0),
+                page: a.get("page").and_then(Value::as_str).and_then(|p| p.strip_prefix("attachment:")).map(String::from),
+                keys: if shared.is_empty() { key.iter().cloned().collect() } else { shared },
+                key,
+            }
+        })
+        .collect()
+}
+
+/// A card's comments as its page groups them (the web's `cardThread`): a new version says its number, and "as you
+/// asked" when his hand-back came before it; an answer to an older version says which; the agent's words after a bare
+/// What?? answer it (one block), or the What?? waits for them.
+fn thread(c: &Card, mut talk: Vec<TalkRow>) -> Vec<TalkRow> {
+    let version_at = |n: u64| c.history.iter().find(|h| h.envelope_number == n).map(|h| h.object_version.max(0) as u32);
+    let current = c.history.last().map(|h| h.object_version.max(0) as u32).unwrap_or(0);
+    let mut asked = false;
+    let mut explain: Option<usize> = None;
+    for i in 0..talk.len() {
+        let kind = talk[i].event.as_ref().or(talk[i].deed.as_ref()).map(|e| e.kind.clone()).unwrap_or_default();
+        // (the agent's words right after a bare What?? answer it)
+        if let Some(at) = explain {
+            if talk[i].kind == "agent" {
+                talk[i].answers = Some(talk[at].id.clone());
+                continue;
+            }
+            explain = None;
+        }
+        match kind.as_str() {
+            "handed_back" => asked = true,
+            "took_back" => asked = false,
+            "explain" if talk[i].kind == "event" => explain = Some(i),
+            "revised" => {
+                let n = version_at(talk[i].number).unwrap_or(0);
+                if let Some(ev) = talk[i].event.as_mut() {
+                    ev.version = (n > 0).then_some(n);
+                    ev.asked = asked;
+                    let ns = n.to_string();
+                    ev.label = if asked {
+                        say("event.version.asked", format!("Version {n}, as you asked"), &[("n", &ns)])
+                    } else {
+                        say("event.version", format!("Version {n}"), &[("n", &ns)])
+                    };
+                }
+                asked = false;
+            }
+            "decided" => {
+                let bound = c.answers.iter().find(|a| a.envelope_number == Some(talk[i].number)).map(|a| a.bound_object_version.max(0) as u32).unwrap_or(0);
+                if bound > 0 && bound < current {
+                    if let Some(ev) = talk[i].event.as_mut() {
+                        ev.version = Some(bound);
+                        let ns = bound.to_string();
+                        ev.label = say("event.decided.version", format!("You chose in version {bound}"), &[("n", &ns)]);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    // (a What?? that nothing answered yet)
+    for i in 0..talk.len() {
+        let bare = talk[i].kind == "event" && talk[i].event.as_ref().is_some_and(|e| e.kind == "explain");
+        if bare && !talk.iter().any(|r| r.answers.as_deref() == Some(talk[i].id.as_str())) {
+            talk[i].waits = Some(say("card.explain.waits", "Waiting for the explanation.", &[]));
+        }
+    }
+    talk
+}
+
+/// The way on once a card is settled: the next open question in the Desk's order after the place it had (the core's
+/// walk, `next_open_after`, kept to the desk in view), else the first that waits (the web's `nextOpen`).
+fn after_of(b: &Board, v: &CardView, walk: &[String]) -> Option<AfterView> {
+    if v.status == "open" || v.status == "catching" || v.status.is_empty() {
+        return None;
+    }
+    let here: Vec<String> = b.agents.iter().filter(|a| a.on_desk).map(|a| a.row.key.clone()).collect();
+    let next = b
+        .model
+        .next_open_after(&v.id, Some(&here))
+        .filter(|n| walk.contains(n))
+        .or_else(|| walk.iter().find(|x| **x != v.id).cloned())
+        .filter(|n| *n != v.id);
+    let next = next.map(|id| {
+        let title = match (b.model.cards.get(&id), b.model.permissions.get(&id)) {
+            (Some(c), _) => shown_title(c),
+            (None, Some(p)) => format!("Approval: {}", p.tool_name),
+            _ => String::new(),
+        };
+        CardRefView { number: b.number_of(&id), id, title }
+    });
+    let says = if next.is_some() { say("card.next", "Next question", &[]) } else { say("card.next.none", "That was the last open question.", &[]) };
+    Some(AfterView { next, says })
+}
+
 /// The page of the card or request `id` (its id, or its number of the address); none when this device does not
 /// hold it. `walk`: what waits on the Desk in view, in its order (`DeskView::stack`).
 pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
+    let mut v = page(b, id, walk)?;
+    // (the words as the page draws them: an Artifact link by its title)
+    let assets = b.assets();
+    v.body = titled(&v.body, assets);
+    v.text = titled(&v.text, assets);
+    for x in &mut v.sections {
+        x.text = titled(&x.text, assets);
+    }
+    v.after = after_of(b, &v, walk);
+    Some(v)
+}
+
+fn page(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
     let m = b.model;
     let by_number = || {
         let n: u32 = id.parse().ok().filter(|n| *n > 0)?;
@@ -290,7 +481,7 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
                 label: s(o, "label").into(),
                 recommended: is,
                 chosen: if status == "open" { ticked.contains(&key) } else { chosen.contains(&key) },
-                detail: plain(s(o, "detail")),
+                detail: plain(s(o, "detail"), b.assets()),
                 settles,
                 note: noted.into(),
                 tip: match (is, settles) {
@@ -413,7 +604,7 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
     let mut notes = Vec::new();
     if !loading {
         if merged.len() == 1 {
-            notes.push(say("row.replaces.one", "replaces 1 question", &[]));
+            notes.push(say("row.replaces.one", "replaces 1 question", &[("n", "1")]));
         } else if merged.len() > 1 {
             let n = merged.len().to_string();
             notes.push(say("row.replaces", format!("replaces {n} questions"), &[("n", &n)]));
@@ -423,7 +614,7 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         }
     }
     if below == 1 {
-        notes.push(say("card.below.one", "1 message below", &[]));
+        notes.push(say("card.below.one", "1 message below", &[("n", "1")]));
     } else if below > 1 {
         let n = below.to_string();
         notes.push(say("card.below", format!("{n} messages below"), &[("n", &n)]));
@@ -437,7 +628,40 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         Vec::new()
     } else {
         // (each version with what its agent said changed when the next one came)
-        c.history.windows(2).map(|w| VersionView { n: w[0].object_version.max(0) as u32, at_ms: w[0].sent_at, title: w[0].title.clone(), note: w[1].note.clone() }).collect()
+        c.history
+            .windows(2)
+            .map(|w| {
+                let n = w[0].object_version.max(0);
+                // (the version as it was: its body, when this device holds it)
+                let body = c.versions.iter().find(|v| v.object_version == n).and_then(|v| v.content.as_ref()).map(|r| r.obj());
+                let text = body.as_ref().map(|o| {
+                    let get = |k: &str| o.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                    let sections = o.get("sections").and_then(Value::as_array).cloned().unwrap_or_default();
+                    let whole = if sections.is_empty() {
+                        get("body")
+                    } else {
+                        sections.iter().filter(|x| x.get("key").is_none_or(Value::is_null)).filter_map(|x| x.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join("\n\n")
+                    };
+                    titled(&fit_text(&whole).0, b.assets())
+                });
+                let options = body
+                    .as_ref()
+                    .and_then(|o| o.get("options"))
+                    .and_then(Value::as_array)
+                    .map(|l| {
+                        l.iter()
+                            .map(|o| OptionView {
+                                key: o.get("key").and_then(Value::as_str).unwrap_or("").into(),
+                                label: o.get("label").and_then(Value::as_str).unwrap_or("").into(),
+                                detail: plain(o.get("detail").and_then(Value::as_str).unwrap_or(""), b.assets()),
+                                ..Default::default()
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                VersionView { n: n as u32, at_ms: w[0].sent_at, title: w[0].title.clone(), note: w[1].note.clone(), loaded: body.is_some(), text: text.unwrap_or_default(), options }
+            })
+            .collect()
     };
     let starred = m.human.get(&format!("star/{id}")).is_some_and(|r| !r.value.is_null() && r.value != Value::Bool(false));
     let other = |id: &str| match m.cards.get(id) {
@@ -458,6 +682,7 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         starred,
         snoozed_until: c.snoozed_until.filter(|_| status == "open"),
         files: if loading || newer { Vec::new() } else { file_ids(&c.field("attachments")) },
+        pictures: if loading || newer { Vec::new() } else { pictures_of(c.field("attachments").as_array().map(Vec::as_slice).unwrap_or(&[]), &sections, &super::desk::options_of(&c.field("options"))) },
         number,
         nr,
         status: status.into(),
@@ -478,10 +703,11 @@ pub fn card(b: &Board, id: &str, walk: &[String]) -> Option<CardView> {
         draft: draft.map(|d| s(d, "note").to_string()).unwrap_or_default(),
         versions,
         star_says: if starred { say("card.star.on", "Starred", &[]) } else { say("card.star", "Star", &[]) },
-        talk: entries.into_iter().map(|e| e.row).collect(),
+        talk: thread(c, entries.into_iter().map(|e| e.row).collect()),
         has_more: chat.is_some_and(|t| t.has_more),
         merged_from: merged.iter().map(|x| other(x)).collect(),
         merged_into: (!into.is_empty()).then(|| other(&into)),
+        after: None,
         id,
     })
 }
@@ -572,6 +798,97 @@ mod tests {
     }
     fn notes(v: &CardView) -> Vec<&str> {
         v.notes.iter().map(|n| n.en.as_str()).collect()
+    }
+
+    /// The web's `pictureKeys`, case by case.
+    #[test]
+    fn pictures_find_their_options() {
+        let opt = |k: &str, l: &str| crate::views::desk::Opt { key: k.into(), label: l.into(), ..Default::default() };
+        let img = |id: &str, name: &str| json!({ "attachment_id": id, "file_name": name, "media_type": "image/png" });
+        let keys = |p: &[PictureView]| p.iter().map(|x| x.key.clone().unwrap_or_default()).collect::<Vec<_>>();
+        let two = [opt("centered", "Centered"), opt("split", "Split view")];
+        // by file name: the option's key or label in it
+        let atts = [img("a", "hero-split-view.png"), img("b", "Hero_Centered.PNG"), json!({ "attachment_id": "d", "file_name": "notes.pdf", "media_type": "application/pdf" })];
+        assert_eq!(keys(&pictures_of(&atts, &[], &two)), ["split", "centered"]);
+        // one owner only: none
+        let atts = [img("a", "split.png"), img("b", "other.png")];
+        assert_eq!(keys(&pictures_of(&atts, &[], &two)), ["", ""]);
+        // as many as options, three or more: in order
+        let three = [opt("a", "One"), opt("b", "Two"), opt("c", "Three")];
+        let atts = [img("1", "x.png"), img("2", "y.png"), img("3", "z.png")];
+        assert_eq!(keys(&pictures_of(&atts, &[], &three)), ["a", "b", "c"]);
+        // two options of the same key length in one name: unclear, then in order only with three
+        let atts = [img("1", "a-b.png"), img("2", "c.png"), img("3", "z.png")];
+        assert_eq!(keys(&pictures_of(&atts, &[], &three)), ["a", "b", "c"]);
+        // a section decides, by its place among the attachments; two sections may share one picture
+        let atts = [json!({ "attachment_id": "doc", "media_type": "text/html" }), img("p", "anything.png")];
+        let sections = [json!({ "key": "centered", "picture": 1 }), json!({ "key": "split", "picture": 1 })];
+        let p = pictures_of(&atts, &sections, &two);
+        assert_eq!((p[0].key.as_deref(), p[0].keys.clone()), (Some("centered"), vec!["centered".to_string(), "split".into()]));
+    }
+
+    /// The comments grouped as the page draws them: "Version 2, as you asked" after a hand-back, the agent's words
+    /// answering a bare What??, an old version as it was.
+    #[test]
+    fn the_thread_says_versions_and_explanations() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let c = r.card("q", "a", "decision", "normal");
+        c["versions"] = json!([
+            { "object_version": 1, "envelope_number": 101, "sent_at": NOW - 9 * MIN, "object_state": "open",
+              "content": { "title": "First", "body": "Old words.\n\n```\ncode\n```", "options": [{ "key": "y", "label": "Yes", "detail": "**now**" }] } },
+            { "object_version": 2, "envelope_number": 120, "sent_at": NOW - 4 * MIN, "object_state": "open", "content": { "title": "q", "change_note": "Shorter." } },
+        ]);
+        r.say("a", Some("q"), 110, "me", 8 * MIN, json!({ "text": crate::views::talk::HAND_BACK_TEXT, "hand_back": true }));
+        r.say("a", Some("q"), 130, "me", 3 * MIN, json!({ "text": crate::views::talk::EXPLAIN_TEXT, "explain": true }));
+        r.say("a", Some("q"), 131, "a", 2 * MIN, json!({ "text": "It means this." }));
+        r.say("a", Some("q"), 140, "me", MIN, json!({ "text": crate::views::talk::EXPLAIN_TEXT, "explain": true }));
+        let v = view(&r, "q");
+        let rev = v.talk.iter().find(|x| x.id == "v120r").unwrap().event.clone().unwrap();
+        assert_eq!((rev.version, rev.asked, rev.label.en.as_str()), (Some(2), true, "Version 2, as you asked"));
+        let answer = v.talk.iter().find(|x| x.text == "It means this.").unwrap();
+        assert_eq!(answer.answers.as_deref(), Some("e130"));
+        let last = v.talk.iter().find(|x| x.id == "e140").unwrap();
+        assert_eq!(last.waits.as_ref().map(|t| t.en.as_str()), Some("Waiting for the explanation."));
+        assert!(v.talk.iter().find(|x| x.id == "e130").unwrap().waits.is_none());
+        let old = &v.versions[0];
+        assert_eq!((old.n, old.loaded, old.text.as_str()), (1, true, "Old words.\n\n*↓ code, in the whole text below*"));
+        assert_eq!(old.options.iter().map(|o| (o.key.as_str(), o.detail.as_str())).collect::<Vec<_>>(), [("y", "now")]);
+    }
+
+    /// Settled, a card's page offers the next open question of the desk in view, else says none is left.
+    #[test]
+    fn after_an_answer_the_next_question() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        r.answered("done", "a", NOW - MIN, 300);
+        r.card("q1", "a", "decision", "normal");
+        r.card("q2", "a", "decision", "normal");
+        let v = view(&r, "done");
+        let after = v.after.unwrap();
+        assert_eq!((after.next.as_ref().map(|n| n.id.as_str()), after.says.en.as_str()), (Some("q1"), "Next question"));
+        // an open card offers none: the shell shows it right after an answer only
+        assert!(view(&r, "q1").after.is_none());
+        r.cards.retain(|c| c["object_id"] == "done");
+        let after = view(&r, "done").after.unwrap();
+        assert_eq!((after.next, after.says.en.as_str()), (None, "That was the last open question."));
+    }
+
+    /// An Artifact link on the card's page is named by its title (markdown the shell draws); on the Desk's row too,
+    /// where the agent's layout and a table stand in no line.
+    #[test]
+    fn artifact_links_are_named_by_their_titles() {
+        let mut r = Room::default();
+        r.session("a", None, true);
+        let url = format!("https://app.trommi.com/artifact/0123456789abcdef#{}", "k".repeat(43));
+        r.published.push(json!({ "object_id": "0123456789abcdef", "title": "Launch plan", "object_state": "open", "attachments": [{ "media_type": "text/html" }] }));
+        r.card("q", "a", "decision", "normal")["body"] = json!(format!("The plan: {url}\n```html\n<b>tiles</b>\n```\n| a | b |\n|---|---|"));
+        let v = view(&r, "q");
+        assert!(v.body.starts_with(&format!("The plan: [Launch plan]({url})")), "{}", v.body);
+        let m = r.model(NOW);
+        let lens = Lens::default();
+        let row = desk::desk(&Board::new(&m, &lens, NOW)).rows.into_iter().find(|x| x.id == "q").unwrap();
+        assert_eq!(row.words, "The plan: [Launch plan]");
     }
 
     /// The web's `fitText` (app/web/public/card.mjs).

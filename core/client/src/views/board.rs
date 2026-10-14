@@ -43,6 +43,54 @@ pub struct Lens {
     pub card: Option<String>,
     /// The page Off your mind is in view, with the search's words: its unit is made.
     pub off: Option<String>,
+    /// The desks whose goals are folded to their first line on this device (web localStorage
+    /// `trommi-goals-folded`, iOS @AppStorage of the same name). The shell keeps it until the cache does (W3/W5).
+    pub goals_folded: Vec<String>,
+    /// How many pages of a session's talk show ([`TALK_PAGE`] rows each), for that session (its key or short id);
+    /// none, or another session: one page.
+    pub talk_window: Option<(String, u32)>,
+    /// How many pages of the complete list Off your mind show ([`OFF_PAGE`] rows each), for that search's words.
+    pub off_window: Option<(String, u32)>,
+}
+
+/// Rows of a session's talk in one page of its window (the web's PAGE).
+pub const TALK_PAGE: usize = 40;
+/// Rows of the complete list Off your mind in one page of its window.
+pub const OFF_PAGE: usize = 100;
+
+/// What the person asks to see more of.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MoreOf {
+    /// The talk of a session (its key, or its short id).
+    Talk { session: String },
+    /// The complete list Off your mind, under these search words.
+    Off { query: String },
+}
+
+impl Lens {
+    /// THE HOOK for the action "show more" (W3 wires it; where the older part is not on this device, the engine's
+    /// past reading follows the same action): the window of that list grows by one page. The page a `MoreView`
+    /// names (`pages`) is what this sets.
+    pub fn show_more(&mut self, of: MoreOf) {
+        let grow = |w: &mut Option<(String, u32)>, key: String| {
+            let now = match w {
+                Some((k, n)) if *k == key => *n,
+                _ => 1,
+            };
+            *w = Some((key, now.max(1) + 1));
+        };
+        match of {
+            MoreOf::Talk { session } => grow(&mut self.talk_window, session),
+            MoreOf::Off { query } => grow(&mut self.off_window, query),
+        }
+    }
+    /// How many pages of this list show.
+    pub fn pages(window: &Option<(String, u32)>, key: &str) -> u32 {
+        match window {
+            Some((k, n)) if k == key => (*n).max(1),
+            _ => 1,
+        }
+    }
 }
 
 /// A desk of the room.
@@ -105,6 +153,7 @@ pub struct Board<'a> {
     pub unheard: HashMap<usize, u32>,
     wake: Cell<Option<u64>>,
     numbers: OnceCell<HashMap<String, u32>>,
+    assets: OnceCell<super::links::Assets>,
 }
 
 /// A card that reads as an info: one that is, one of a newer Trommi, and one whose body is not read here yet (a
@@ -227,6 +276,7 @@ impl<'a> Board<'a> {
             unheard: HashMap::new(),
             wake: Cell::new(None),
             numbers: OnceCell::new(),
+            assets: OnceCell::new(),
         };
         board.unheard = board.count_unheard();
         board
@@ -261,6 +311,11 @@ impl<'a> Board<'a> {
             filed.into_iter().enumerate().map(|(i, (_, id))| (id.to_string(), i as u32 + 1)).collect()
         });
         all.get(id).copied().unwrap_or(0)
+    }
+
+    /// The board's Artifacts, for naming the links to them.
+    pub fn assets(&self) -> &super::links::Assets {
+        self.assets.get_or_init(|| super::links::Assets::of(self.model))
     }
 
     /// Where a card stands: "catching" (settled elsewhere, its outcome on the way), "open", "shredded", "decided"
@@ -345,6 +400,12 @@ impl<'a> Board<'a> {
     fn count_unheard(&self) -> HashMap<usize, u32> {
         let mut out: HashMap<usize, u32> = HashMap::new();
         for c in self.model.cards.values() {
+            // (only a card with his word on it can wait to be heard: one handed back, or decided; the rest, most of a
+            //  large room, are passed over before any lookup)
+            let decided = c.object_state == "answered" && c.closed_how.as_deref() == Some("answered");
+            if c.catching_up || !(decided || (c.object_state == "open" && c.in_revision.is_some())) {
+                continue;
+            }
             let agent = self.by_key.get(key_of(&c.session_id, &c.agent_device_id)).copied();
             if !self.in_view(agent) {
                 continue;

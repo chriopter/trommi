@@ -137,7 +137,9 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
     let mut out = OffMind::default();
     let mut running_ids: HashSet<&str> = HashSet::new();
     let mut put_off: Vec<(u64, &str)> = vec![];
-    let mut recent: Vec<Closed> = vec![];
+    // (a large room is mostly closed cards: counted by reference and named only for the newest RECENT)
+    let mut closed: HashMap<&str, u64> = HashMap::new();
+    let mut recent: Vec<(u64, &str, &'static str)> = vec![];
     for c in m.cards.values() {
         let Some(row) = row_of(c) else { continue };
         let s = session_of(row);
@@ -172,8 +174,8 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
                 });
             }
             Some(p @ ("done" | "trash")) => {
-                *out.closed.entry(row.key.clone()).or_default() += 1;
-                recent.push(Closed { object_id: c.object_id.clone(), place: p.into(), at: closed_at(c, p) });
+                *closed.entry(row.key.as_str()).or_default() += 1;
+                recent.push((closed_at(c, p), c.object_id.as_str(), if p == "done" { "done" } else { "trash" }));
             }
             _ => {}
         }
@@ -183,9 +185,14 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
     out.running = out.with_agents.iter().filter(|r| !stars.contains_key(r.object_id.as_str())).cloned().collect();
     put_off.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
     out.put_off = put_off.into_iter().map(|(_, id)| id.to_string()).collect();
-    recent.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.object_id.cmp(&b.object_id)));
-    recent.truncate(RECENT);
-    out.recent = recent;
+    out.closed = closed.into_iter().map(|(k, n)| (k.to_string(), n)).collect();
+    let newest = |a: &(u64, &str, &str), b: &(u64, &str, &str)| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1));
+    if recent.len() > RECENT {
+        recent.select_nth_unstable_by(RECENT, newest);
+        recent.truncate(RECENT);
+    }
+    recent.sort_by(newest);
+    out.recent = recent.into_iter().map(|(at, id, place)| Closed { object_id: id.to_string(), place: place.into(), at }).collect();
     out.starred = stars
         .iter()
         .filter(|(id, _)| m.cards.contains_key(**id))

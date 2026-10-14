@@ -255,6 +255,13 @@ final class BoardModel: ObservableObject {
       if let t = env["TROMMI_THEME"].flatMap(ThemeMode.init(rawValue:)) { _theme = Published(initialValue: t) }
       _deskId = Published(initialValue: nil)
       startDemo(keep: false)
+      // TROMMI_SCREEN=chats (chats-all: on All desks): the Chats tab of the demo room itself, for a picture beside
+      // the web's sidebar of the same room (demo only)
+      if screen == "chats" || screen == "chats-all" {
+        if screen == "chats-all" { deskId = ALL_DESKS }
+        tab = .chat; chatPath = []
+        return
+      }
       openDemoScreen(screen)
       // TROMMI_PAGE=<settings page>: that page of Settings over it (screenshots of a page the web has no state for)
       if let page = env["TROMMI_PAGE"], !page.isEmpty { deskPath.append(.settings(page)) }

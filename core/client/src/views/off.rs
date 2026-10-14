@@ -12,10 +12,10 @@
 //!   every closed card (done and thrown away merged, the newest first); a search keeps the cards whose title, session
 //!   name (and, for one with its agent, status line) hold every word.
 
-use super::board::{key_of, Board};
+use super::board::{key_of, Board, Lens, OFF_PAGE};
 use super::desk::{from_of, shown_title};
 use super::words::{local, say};
-use super::{DeskView, DockRowView, DockView, FromView, OffHintView, OffListView, OffRowView, OffWorkView, Text};
+use super::{DeskView, DockRowView, DockView, FromView, MoreView, OffHintView, OffListView, OffRowView, OffWorkView, Text};
 use crate::model::types::Card;
 use crate::off_mind::{closed_at, off_mind, OffMind, Running};
 use crate::status::card_place;
@@ -215,7 +215,16 @@ pub fn off_list(b: &Board, off: &OffMind, query: &str) -> OffListView {
             say("off.none.search", "Nothing here has these words.", &[])
         }
     });
-    OffListView { query: query.into(), works, rest, none, older: None, loading: false }
+    // (the window: the first pages of what is put off and closed; what runs shows whole, it is short)
+    let pages = Lens::pages(&b.lens.off_window, query);
+    let mut rest = rest;
+    let left = rest.len().saturating_sub(OFF_PAGE * pages as usize);
+    rest.truncate(OFF_PAGE * pages as usize);
+    let more = (left > 0).then(|| {
+        let n = left.to_string();
+        MoreView { left: left as u32, hub: false, says: say("off.more", format!("Show more ({n})"), &[("left", &n)]), pages: pages + 1 }
+    });
+    OffListView { query: query.into(), works, rest, none, more, older: None, loading: false }
 }
 
 #[cfg(test)]
@@ -334,6 +343,32 @@ mod tests {
         let (d, l) = render(&r, &Lens { off: Some(String::new()), ..Default::default() });
         assert_eq!(d.done.len(), crate::off_mind::RECENT);
         assert_eq!(d.off.unwrap().closed as usize, crate::off_mind::RECENT + 30);
-        assert_eq!(l.unwrap().rest.len(), crate::off_mind::RECENT + 30);
+        // (all of them, through the window's pages)
+        let l = l.unwrap();
+        assert_eq!(l.rest.len() + l.more.map_or(0, |m| m.left as usize), crate::off_mind::RECENT + 30);
+    }
+
+    /// The complete list shows its first page of what is put off and closed; each "more" adds one.
+    #[test]
+    fn the_complete_list_shows_a_window() {
+        let mut r = Room::default();
+        r.session("a", None, false);
+        for n in 0..(OFF_PAGE as u64 + 30) {
+            r.answered(&format!("d{n:03}"), "a", NOW - 7 * 60 * MIN - n, 1000 + n);
+        }
+        let mut lens = Lens { off: Some(String::new()), ..Default::default() };
+        let (_, list) = render(&r, &lens);
+        let list = list.unwrap();
+        assert_eq!(list.rest.len(), OFF_PAGE);
+        assert_eq!(list.rest[0].id, "d000");
+        let more = list.more.unwrap();
+        assert_eq!((more.left, more.says.en.as_str(), more.pages), (30, "Show more (30)", 2));
+        lens.show_more(crate::views::MoreOf::Off { query: String::new() });
+        let (_, list) = render(&r, &lens);
+        let list = list.unwrap();
+        assert_eq!((list.rest.len(), list.more), (OFF_PAGE + 30, None));
+        // a search has its own window
+        lens.off = Some("d0".into());
+        assert!(render(&r, &lens).1.unwrap().rest.len() <= OFF_PAGE);
     }
 }

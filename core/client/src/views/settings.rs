@@ -144,7 +144,7 @@ pub fn settings(b: &Board) -> SettingsView {
         devices_says: (!devices.is_empty()).then(|| counted("settings.devices", devices.len(), "device", "devices")),
         remove_unfinished: (!stuck.is_empty()).then(|| {
             if stuck.len() == 1 {
-                say("settings.remove_unfinished.one", "Remove the device that never finished signing in", &[])
+                say("settings.remove_unfinished.one", "Remove the device that never finished signing in", &[("n", "1")])
             } else {
                 let n = stuck.len().to_string();
                 say("settings.remove_unfinished", format!("Remove the {n} devices that never finished signing in"), &[("n", &n)])

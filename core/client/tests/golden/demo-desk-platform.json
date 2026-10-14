@@ -138,6 +138,11 @@
         "n": "4"
       },
       "en": "Show all 4 goals"
+    },
+    "folded": false,
+    "toggle": {
+      "key": "desk.goals.fold",
+      "en": "Show the first goal only"
     }
   },
   "rows": [
@@ -174,6 +179,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -291,6 +299,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -333,6 +344,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -723,6 +737,9 @@
       "notes": [
         {
           "key": "row.replaces.one",
+          "args": {
+            "n": "1"
+          },
           "en": "replaces 1 question"
         }
       ],
@@ -748,6 +765,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -822,6 +842,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
@@ -999,6 +1022,9 @@
       ],
       "media_says": {
         "key": "row.media.one",
+        "args": {
+          "n": "1"
+        },
         "en": "Look at the picture"
       },
       "tiles": {
