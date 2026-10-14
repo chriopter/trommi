@@ -94,7 +94,13 @@ impl Sent {
         toasts.push(Toast {
             id: format!("toast-{}", self.next_toast),
             text,
+            // (every toast of the actions says a refusal or a loss: a problem, and its action is the same again)
+            label: again.as_ref().map(|_| Text::new("action.retry", "Retry")),
             action: again,
+            line: None,
+            alert: true,
+            ms: None,
+            go: None,
         });
         if toasts.len() > TOASTS_MAX {
             toasts.remove(0);
