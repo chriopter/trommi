@@ -56,6 +56,18 @@ shell                                       App (core/client, no I/O, no clock, 
   Event::Action { action }           ──▶   …   (a tap, a typed line)
 ```
 
+With `Config.hub` empty, a start that loaded a stored device reads the app store's key `room` (`Store{Get}`) before it opens it: the hub of the room this
+slot holds, written by a join with the code before the device's first write.
+
+**Signing in with the recovery code.** `App::join_room(now, RoomJoin { hub, room, keys })` on a slot without a device
+in a room (`Phase::SignedOut`) makes the device, reads and checks the room (its sealed keys, the room group's
+GroupInfos, live sessions and Commits; no content), posts the join, and then joins the live session groups with the
+same keys (`App::sessions_not_joined`). `App::room_join()` says where it stands: `Step(Reading | Checking | Joining)`,
+`Waiting { retry_at }`, `Joined`, `Failed(error)` with `error.code()` one of `wrong-recovery`, `not-found`,
+`too-many`, `room-exists`, `interrupted` (a join was posted and its answer never read: the code is asked for again,
+and the join goes on from it), `busy`, the core's code of a room that does not verify, or the hub's refusal. A join
+that fails before it was posted leaves nothing stored; the keys of the code are never stored.
+
 `App::handle(now_ms, Event) -> Vec<Effect>` is the only entry. Time comes in beside each event (`now_ms`, the
 shell's clock); the core never reads a clock. The protocol's randomness is the system's, read inside
 `core/protocol`; the core's own jitter comes from `Config.seed`, so a seeded test repeats exactly. Local-time rules
@@ -180,6 +192,16 @@ Two spaces of one key-value store, each app on its own platform store (IndexedDB
 - **cache** (`Get`, `Scan`, `Put`): string keys `c1/<room hex>/<part>[/<id>]` (`src/cache/`), values the serde JSON
   of the core's own types, files as the hub stores them (encrypted). Last write wins; a lost write costs a
   catch-up, never data. A new format counts `c1` up and starts empty.
+  One key per board record (`c1/<room>/model/card/<id>`, `…/model/item/<timeline>/n<number>`, …), so a live line
+  writes its few records and not the board. The App reads `meta`, the Desk's last list and one `Scan` of
+  `c1/<room>/model/` after `DeviceLoad` and before the engine asks the hub anything, so the last board is drawn
+  first. Writes follow the board in three `Put`s (`meta` says `writing`; the records; `meta` names the device's
+  store revision), each behind the device's own writes (the barrier), so the cache never holds what the device
+  did not store. A shell's `Put` needs to be atomic per key only. At the start a cache at the device's revision is
+  the board; one behind it keeps its records but drops the timelines' items (the device will not hand lines it took
+  over again; a timeline is read when opened); any other (`writing`, another device, a newer revision, another
+  layout, a value that does not read) is deleted and built anew. It holds decrypted content (titles, lines,
+  answers), never keys, tokens or the recovery code, and is never sent anywhere.
 
 Secrets the platform guards (a passkey's wrapped key, the iPhone's read-ahead copy for the notification
 extension) go through `Secret`, never the cache.
@@ -197,7 +219,7 @@ The App holds the parts this crate already has and stops each app from holding i
 | `seats.rs`, `selfjoin.rs` | upkeep steps of the engine (W1), their asks as sidebar rows and actions (W3) |
 | `plan.rs`, `board.rs`, `registers.rs` | the catch-up order and the board facts the engine follows |
 | `codec.rs` | every body in and out, as now |
-| `store.rs` (`Store`) | replaced by `cache/` over the `Store` effect (W5) |
+| `cache/` | the board kept between runs, over the `Store` effect's cache space (W5) |
 
 ### What a shell may do
 

@@ -13,8 +13,9 @@ Rectangle {
     required property var row
     /** The sender's short id, for its hue. */
     property string slug: ""
-    /** A tile was chosen: the option's key, or "" for a tile that opens the card. */
-    signal chosen(string key)
+    /** A tile was chosen: the option's key ("" for a tile of no option), and the tile's shape ("got", "what",
+     *  "choose", "others", or the option's). */
+    signal chosen(string key, string shape)
 
     readonly property var from: row.from || null
     readonly property real hue: from ? Pen.hueFor({ id: slug || from.session_id, mark: from.mark }) : 162
@@ -174,7 +175,7 @@ Rectangle {
                         ink: tile.ink; lineWidth: 1.6
                     }
                 }
-                MouseArea { anchors.fill: parent; onClicked: root.chosen(tile.t ? tile.t.key : "") }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.chosen(tile.t ? tile.t.key : "", tile.shape) }
             }
         }
     }
