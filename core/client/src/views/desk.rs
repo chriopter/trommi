@@ -660,7 +660,7 @@ mod tests {
         r.card("q-back", "a", "decision", "normal")["in_revision"] = json!({ "by": "me", "envelope_number": 500 });
         r.card("q-lab", "b-lab", "decision", "high");
         r.request("p1", "a", "ok");
-        let v = view(&r, None);
+        let v = view(&r, Some("main"));
         // (what blocks first, then what is to read, then the questions, the oldest first: the core's order)
         assert_eq!(v.stack, ["q-block", "p1", "q-read", "q-old", "q-new"]);
         assert_eq!(v.rows.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), v.stack);

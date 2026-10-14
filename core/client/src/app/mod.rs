@@ -27,6 +27,7 @@ mod account_steps;
 mod account_change;
 mod desks;
 mod outside;
+mod past;
 pub mod push;
 mod selfjoin;
 mod shared;
@@ -196,6 +197,8 @@ pub struct App {
     goals_check: bool,
     /// The Scribble Boards read on this device (`crate::scribble`).
     scribble: crate::scribble::Scribble,
+    /// The past read on demand: a session's or a card's history, the starred cards (`app::past`).
+    past: past::Past,
 }
 
 impl Default for App {
@@ -253,6 +256,7 @@ impl App {
             cache: None,
             goals_check: false,
             scribble: crate::scribble::Scribble::default(),
+            past: past::Past::default(),
         }
     }
 
@@ -596,6 +600,7 @@ impl App {
         let id = self.io(Pending::RoomKeyWrite);
         out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: ROOM_KEY.into(), value: serde_json::to_vec(&key).unwrap_or_default().into() }], delete: Vec::new() } });
         self.board = engine::feed::Board::new(engine.device());
+        self.past = Default::default();
         self.stored_hub = Some(engine.hub().to_string());
         self.engine = Some(engine);
         self.next_view.phase = Phase::Opening;
@@ -614,6 +619,7 @@ impl App {
                 let id = self.io(Pending::RoomKeyWrite);
                 out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: ROOM_KEY.into(), value: serde_json::to_vec(&key).unwrap_or_default().into() }], delete: Vec::new() } });
                 self.board = engine::feed::Board::new(engine.device());
+                self.past = Default::default();
                 self.stored_hub = Some(engine.hub().to_string());
                 self.engine = Some(engine);
                 self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
@@ -735,6 +741,7 @@ impl App {
         match Engine::join_room(&client, config.seed, revision, entries, join, entropy) {
             Ok(engine) => {
                 self.board = engine::feed::Board::new(engine.device());
+                self.past = Default::default();
                 self.stored_hub = Some(engine.hub().to_string());
                 self.engine = Some(engine);
                 self.sessions_not_joined = None;
@@ -783,6 +790,7 @@ impl App {
                         match crate::views::demo::model_of(&fixture, now_ms) {
                             Ok(model) => {
                                 self.board = engine::feed::Board::default();
+                                self.past = Default::default();
                                 self.board.model = model;
                                 self.demo = true;
                                 self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
@@ -978,12 +986,8 @@ impl App {
                     Screen::Off { query } => (None, None, Some(query)),
                     _ => (None, None, None),
                 };
-                // The seam to the reading of the past: a card or a session opened is where old history is read
-                // (after a sign-in only the open cards and what is new are loaded). `Engine::read_past` is to be
-                // called here, once it exists, for a page whose past this device has not read.
-                if session != self.lens.session || card != self.lens.card {
-                    self.opened(session.as_deref(), card.as_deref());
-                }
+                // (a card or a session opened is where old history is read: after a sign-in only the open cards
+                //  and what is new are loaded; `app::past` asks for it behind this event, in `after_engine`)
                 self.lens.session = session;
                 self.lens.card = card;
                 self.lens.off = off;
@@ -1059,6 +1063,15 @@ impl App {
             Action::ShowMore { of } => {
                 self.lens.show_more(of.clone());
                 self.stale_views = true;
+                // (what this device does not hold yet is read from the hub: the page before the oldest one read)
+                if let Some(engine) = self.engine.as_mut() {
+                    let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
+                    match of {
+                        crate::views::MoreOf::Talk { session } => self.past.earlier(session, &self.board.model, engine, &mut ctx),
+                        crate::views::MoreOf::Comments { card } => self.past.earlier_comments(card, &self.board.model, engine, &mut ctx),
+                        crate::views::MoreOf::Off { .. } => self.past.more_settled(engine, &mut ctx),
+                    }
+                }
                 return;
             }
             _ => {}
@@ -1426,9 +1439,6 @@ impl App {
         }
     }
 
-    /// A card or a session came into view (or left it): the hook for reading its past.
-    fn opened(&mut self, _session: Option<&str>, _card: Option<&str>) {}
-
     /// What the hub said of the actions in flight, and the ones whose entry is gone without a word: each echo of
     /// a refused or lost entry is rolled back, with a toast that offers the action again.
     fn settle_actions(&mut self, now_ms: u64, refused: Vec<(u64, &'static str)>, out: &mut Vec<Effect>) {
@@ -1491,6 +1501,7 @@ impl App {
             Ok(engine) => {
                 if !again {
                     self.board = engine::feed::Board::new(engine.device());
+                    self.past = Default::default();
                 }
                 self.stale_views = true;
                 // the cache first: the board it holds is drawn before the engine asks the hub anything
@@ -1580,6 +1591,7 @@ impl App {
             crate::cache::Read::Dropped => {
                 if let Some(engine) = self.engine.as_ref() {
                     self.board = engine::feed::Board::new(engine.device());
+                    self.past = Default::default();
                 }
                 out.push(log(LogLevel::Warn, "the cache was not whole or not this device's: dropped"));
             }
@@ -1706,6 +1718,10 @@ impl App {
                     let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
                     self.scribble.answered(answered.id, &answered.result, engine, &mut ctx);
                 }
+                Report::Answer(answered) if self.past.owns(answered.id) => {
+                    let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
+                    self.past.answered(answered.id, &answered.result, engine, &mut ctx);
+                }
                 Report::Answer(answered) if self.files.owns(answered.id) => {
                     if let Some(text) = self.files.answered(answered.id, &answered.result, out) {
                         self.sent.toast(&mut self.next_view.toasts, text, None);
@@ -1760,6 +1776,26 @@ impl App {
                 _ => {}
             }
         }
+        // the windows the past's pages left (their envelopes came as reports above), and what the pages in view
+        // and the starred stack still need of it
+        for w in self.past.take_windows() {
+            self.board.window(&w.key, w.down_to, w.more);
+            fed = true;
+        }
+        if !dropped {
+            let mut ctx = engine::Ctx { now: now_ms, next_id: &mut self.next_id, out };
+            self.past.tend(&self.lens, &self.board.model, engine, &mut ctx);
+            let (off_reading, off_hub_more) = self.past.settled_state();
+            if (off_reading, off_hub_more) != (self.lens.off_reading, self.lens.off_hub_more) {
+                (self.lens.off_reading, self.lens.off_hub_more) = (off_reading, off_hub_more);
+                self.stale_views = true;
+            }
+            let waits = self.past.talk_waits(&self.lens, &self.board.model);
+            if waits != self.lens.talk_waits {
+                self.lens.talk_waits = waits;
+                self.stale_views = true;
+            }
+        }
         if !evicted.is_empty() {
             // the cached bytes of a file the hub deleted (11.3) go
             let room = crate::engine::feed::hex(engine.room().as_bytes());
@@ -1787,6 +1823,7 @@ impl App {
             }
             self.engine = None;
             self.board = engine::feed::Board::default();
+            self.past = Default::default();
             self.scribble = crate::scribble::Scribble::default();
             self.stale_views = true;
             self.next_view.phase = Phase::SignedOut;

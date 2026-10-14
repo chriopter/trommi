@@ -139,12 +139,24 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
     let mut put_off: Vec<(u64, &str)> = vec![];
     // (a large room is mostly closed cards: counted by reference and named only for the newest RECENT)
     let mut closed: HashMap<&str, u64> = HashMap::new();
+    // (beside the hub's counts: per session, the cards it counted as settled that run with their agent here, and
+    //  those that closed after it counted)
+    let hub_at = m.hub_settled.as_ref().map(|(at, _)| *at);
+    let mut works_settled: HashMap<&str, u64> = HashMap::new();
+    let mut closed_since: HashMap<&str, u64> = HashMap::new();
     let mut recent: Vec<(u64, &str, &'static str)> = vec![];
     for c in m.cards.values() {
         let Some(row) = row_of(c) else { continue };
         let s = session_of(row);
         let runs = row.online || row.link.as_ref().is_some_and(|l| l.state == "cut");
         let (place, until) = card_place(c, runs, s.and_then(|s| s.heard_up_to), now);
+        if let Some(at) = hub_at {
+            match place {
+                Some("works") if c.object_state != "open" && c.state_envelope_number <= at => *works_settled.entry(row.key.as_str()).or_default() += 1,
+                Some("done" | "trash") if c.state_envelope_number > at => *closed_since.entry(row.key.as_str()).or_default() += 1,
+                _ => {}
+            }
+        }
         match place {
             Some("later") => put_off.push((c.snoozed_at.unwrap_or(0), c.object_id.as_str())),
             Some("works") => {
@@ -185,6 +197,23 @@ pub fn off_mind<'r>(m: &Model, rows: impl IntoIterator<Item = &'r SessionRow>, n
     out.running = out.with_agents.iter().filter(|r| !stars.contains_key(r.object_id.as_str())).cloned().collect();
     put_off.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
     out.put_off = put_off.into_iter().map(|(_, id)| id.to_string()).collect();
+    // The hub counts every settled card of a session (point 47), also those this device never read (a sign-in reads
+    // no past): "done" is its count less the ones still shown with their agent, and what closed after it counted.
+    // What this device counts itself stands where it is more.
+    if let Some((_, hub)) = &m.hub_settled {
+        let mut seen: HashSet<&str> = HashSet::new();
+        for row in by_session.values().filter(|r| !r.archived) {
+            if !seen.insert(row.key.as_str()) {
+                continue;
+            }
+            let Some(n) = row.session_id.as_deref().and_then(|s| hub.get(s)).or_else(|| hub.get(&row.key)) else { continue };
+            let key = row.key.as_str();
+            let n = n.saturating_sub(works_settled.get(key).copied().unwrap_or(0)) + closed_since.get(key).copied().unwrap_or(0);
+            let have = closed.entry(key).or_default();
+            *have = (*have).max(n);
+        }
+        closed.retain(|_, n| *n > 0);
+    }
     out.closed = closed.into_iter().map(|(k, n)| (k.to_string(), n)).collect();
     let newest = |a: &(u64, &str, &str), b: &(u64, &str, &str)| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1));
     if recent.len() > RECENT {

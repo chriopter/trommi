@@ -259,6 +259,10 @@ pub struct Hub {
     pub wish_extras: BTreeMap<u64, (Option<u64>, Option<DeviceId>)>,
     /// Every `POST /v1/boards/{board}/frontier`: the board (base64url) and the body as it came.
     pub frontiers: Vec<(String, Value)>,
+    /// Every page of a Chat asked (`GET /v1/chats/{scope}/{id}/items`): the scope, the id, `before`.
+    pub chat_reads: Vec<(String, String, Option<u64>)>,
+    /// Every page of the settled objects asked (`GET /v1/objects`): its `before`.
+    pub settled_reads: Vec<Option<u64>>,
     /// The board route serves no item at or below this change (a hub that pruned them behind a snapshot).
     pub board_pruned: u64,
     /// Agent leases (13.7): per device the process that holds it and its generation.
@@ -304,6 +308,8 @@ impl Default for Hub {
             accounts: Vec::new(),
             wish_extras: BTreeMap::new(),
             frontiers: Vec::new(),
+            chat_reads: Vec::new(),
+            settled_reads: Vec::new(),
             board_pruned: 0,
             leases: BTreeMap::new(),
             links: Vec::new(),
@@ -341,6 +347,21 @@ fn board_of(item: &Item) -> Option<trommi_core::ids::BoardId> {
         trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::Board(board)) => Some(board),
         _ => None,
     }
+}
+
+/// The Chat an item is of: (a session's, its id or the card's id as bytes).
+fn chat_of(item: &Item) -> Option<(bool, Vec<u8>)> {
+    let Item::Envelope { bytes, .. } = item else { return None };
+    match Envelope::decode(bytes).ok()?.header.subject {
+        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::SessionChat(s)) => Some((true, s.as_bytes().to_vec())),
+        trommi_core::envelope::Subject::Item(trommi_core::envelope::Timeline::CardChat(c)) => Some((false, c.as_bytes().to_vec())),
+        _ => None,
+    }
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    (text.len() % 2 == 0).then_some(())?;
+    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok()).collect()
 }
 
 fn part(entry: &OutboxEntry, at: usize) -> &[u8] {
@@ -1064,6 +1085,17 @@ impl Hub {
                 items.truncate(limit);
                 Ok(json!({ "items": items, "more": more }))
             }
+            // a Chat's items before a change, newest first; nothing is pruned here
+            ("GET", ["v1", "chats", scope @ ("session" | "card"), id, "items"]) => {
+                self.chat_reads.push((scope.to_string(), id.to_string(), q("before").and_then(|v| v.parse().ok())));
+                let want = (*scope == "session", unhex(id).ok_or(no(Error::BadFormat))?);
+                let before = q("before").and_then(|v| v.parse::<u64>().ok()).unwrap_or(u64::MAX);
+                let limit = num("limit").clamp(1, 500) as usize;
+                let mut items: Vec<Value> = self.order.iter().rev().filter(|i| i.change() < before && chat_of(i).as_ref() == Some(&want)).map(Item::served).collect();
+                let more = items.len() > limit;
+                items.truncate(limit);
+                Ok(json!({ "items": items, "more": more }))
+            }
             // a board's items after a change, oldest first; nothing is pruned here
             ("GET", ["v1", "boards", board]) => {
                 let board = trommi_core::ids::BoardId::from_base64url(board).map_err(no)?;
@@ -1134,8 +1166,47 @@ impl Hub {
                     }
                     registers.push(served);
                 }
+                // (point 47: per group how many objects of each kind are open, answered and closed; a card no longer
+                //  open counts as closed here)
+                let mut counts: BTreeMap<GroupId, (u64, u64, u64)> = BTreeMap::new();
+                for o in self.objects.values().filter(|o| sees(&o.group)) {
+                    let row = counts.entry(o.group).or_default();
+                    match (o.request, o.card, o.open) {
+                        (true, _, true) => row.2 += 1,
+                        (false, true, true) => row.0 += 1,
+                        (false, true, false) => row.1 += 1,
+                        _ => {}
+                    }
+                }
+                let zero = json!({ "open": 0, "answered": 0, "closed": 0 });
+                let mut counts: Vec<_> = counts.into_iter().collect();
+                counts.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+                let counts: Vec<Value> = counts
+                    .iter()
+                    .map(|(group, (open, closed, requests))| json!({ "group_id": b64(group.as_bytes()), "cards": { "open": open, "answered": 0, "closed": closed },
+                        "permission_requests": { "open": requests, "answered": 0, "closed": 0 }, "notes": zero, "artifacts": zero }))
+                    .collect();
                 Ok(json!({ "cards": cards, "permission_requests": requests, "notes": [], "artifacts": [], "registers": registers, "groups": [],
-                    "truncated": self.desk_truncated || cut, "change": self.change }))
+                    "counts": counts, "truncated": self.desk_truncated || cut, "change": self.change }))
+            }
+            // (point 47) the cards no longer open, newest first by head_change, below `before`; answered is not
+            // told from closed here (state 3)
+            ("GET", ["v1", "objects"]) => {
+                self.settled_reads.push(q("before").and_then(|v| v.parse().ok()));
+                let before = q("before").and_then(|v| v.parse::<u64>().ok()).unwrap_or(u64::MAX);
+                let limit = num("limit").clamp(1, 500) as usize;
+                let mut rows: Vec<_> = self.objects.iter().filter(|(_, o)| o.card && !o.request && !o.open && o.head_change < before && !self.archived.contains(&o.group)).collect();
+                rows.sort_by(|a, b| b.1.head_change.cmp(&a.1.head_change));
+                let more = rows.len() > limit;
+                rows.truncate(limit);
+                let last = rows.last().map_or(0, |(_, o)| o.head_change);
+                let items: Vec<Value> = rows
+                    .iter()
+                    .map(|(id, o)| json!({ "kind": "cards", "object_id": id.to_base64url(), "group_id": b64(o.group.as_bytes()), "state": 3, "urgency": 1, "answered_at": 0,
+                        "owner": DeviceId::new([0; 32]).to_base64url(), "first_change": o.first_change, "head_change": o.head_change,
+                        "version": self.order.iter().find(|i| i.change() == o.version).map(Item::served) }))
+                    .collect();
+                Ok(json!({ "items": items, "more": more, "before": if more { last } else { 0 }, "change": self.change }))
             }
             ("GET", ["v1", kind @ ("cards" | "permission-requests"), object]) => {
                 let _ = kind;

@@ -207,6 +207,9 @@ pub enum Report {
     /// The Desk is complete: every listed card's version, and the first version of each card revised since it was
     /// asked, was read.
     DeskComplete,
+    /// The hub's counts of the Desk (hub-api.md point 47), at the Desk's change: per group how many of its cards
+    /// are no longer open (answered or closed). Only of a Desk not cut short.
+    Counts { at: u64, settled: Vec<(GroupId, u64)> },
     Presence(Presence),
     /// The stream opened (again): the hub's list of who is here comes first, ended by `Here`.
     StreamOpened,
@@ -2047,6 +2050,10 @@ impl Engine {
                     return;
                 }
             }
+        }
+        if let (Some(counts), false) = (&desk.counts, desk.truncated) {
+            let settled = counts.iter().map(|c| (c.group, c.cards.answered.saturating_add(c.cards.closed))).collect();
+            self.report(Report::Counts { at: desk.change, settled });
         }
         self.report(Report::Desk { at: desk.change, open, truncated: desk.truncated });
         self.desk_through();

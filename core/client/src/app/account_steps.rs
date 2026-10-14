@@ -145,6 +145,7 @@ impl App {
         self.push = Default::default();
         self.outside_signed_out(out);
         self.board = crate::engine::feed::Board::default();
+        self.past = Default::default();
         self.stale_views = true;
         self.next_view.phase = Phase::SignedOut;
         self.next_view.account = AccountView { step: "sign_in".into(), ..Default::default() };
