@@ -2518,6 +2518,40 @@
         ],
         "returns": "ReceivedEnvelope"
       },
+      "startFromList": {
+        "arguments": [
+          {
+            "name": "group",
+            "type": "bytes"
+          },
+          {
+            "name": "atChange",
+            "type": "number"
+          }
+        ],
+        "returns": "void"
+      },
+      "adoptListed": {
+        "arguments": [
+          {
+            "name": "group",
+            "type": "bytes"
+          },
+          {
+            "name": "objectId",
+            "type": "bytes"
+          },
+          {
+            "name": "envelope",
+            "type": "bytes"
+          },
+          {
+            "name": "change",
+            "type": "number"
+          }
+        ],
+        "returns": "ReceivedEnvelope"
+      },
       "receiveRelay": {
         "arguments": [
           {
@@ -3116,6 +3150,18 @@
       "of": "optional<bytes>",
       "current": "bool"
     },
+    "ShownValue": {
+      "change": "number",
+      "envelopeHash": "bytes",
+      "header": "EnvelopeHeader",
+      "provisional": "bool",
+      "payload": "bytes"
+    },
+    "RegisterShown": {
+      "name": "text",
+      "of": "optional<bytes>",
+      "now": "optional<ShownValue>"
+    },
     "ReceivedEnvelope": {
       "change": "number",
       "envelopeHash": "bytes",
@@ -3130,6 +3176,7 @@
       "confirmed": "optional<bool>",
       "dropped": "optional<ErrorCode>",
       "replayed": "bool",
+      "shown": "list<RegisterShown>",
       "command": "bool"
     },
     "ChainHead": {

@@ -593,8 +593,29 @@ export interface ReceivedEnvelope {
   dropped: ErrorCode | null
   /** The group's objects and registers were built again in the hub's order: read them again. */
   replayed: boolean
+  /** On a human device: register names whose value read out of the hub's order stood and is dropped with this
+   *  envelope, with what stands for each now (spec 9.3.6); the board model applies them with the envelope. */
+  shown: RegisterShown[]
   /** On an agent or helper device: `command` decides whether to act on it. */
   command: boolean
+}
+
+export interface RegisterShown {
+  name: string
+  of: Uint8Array | null
+  /** The envelope whose value stands for the name now; null: the name has no value. */
+  now: ShownValue | null
+}
+
+/** The envelope whose register value stands for a name again (spec 9.3.6). */
+export interface ShownValue {
+  change: number
+  envelopeHash: Uint8Array
+  header: EnvelopeHeader
+  /** A value read out of the hub's order, not yet confirmed by its chain. */
+  provisional: boolean
+  /** The register's payload, as JSON. */
+  payload: Uint8Array
 }
 
 export interface ChainHead {
@@ -907,6 +928,12 @@ export class Device {
    * envelope at all reject; every other finding is an outcome.
    */
   receiveEnvelope(envelope: Uint8Array, change: number, ordered: boolean, voidCode: ErrorCode | null | undefined, nowMs: number): Promise<ReceivedEnvelope>
+  /** Starts `group` from the hub's list at change `atChange` (9.0.6): chains begin at the first envelope served after
+   *  it, open objects are taken from their signed headers. Human devices only, for a group with no other sender's chain. */
+  startFromList(group: Uint8Array, atChange: number): Promise<void>
+  /** The newest version the hub lists of an open object of a group started from the list, served under `change`:
+   *  taken from its header (`object_after`) when unknown here, else shown as it stands (`provisional`). */
+  adoptListed(group: Uint8Array, objectId: Uint8Array, envelope: Uint8Array, change: number): Promise<ReceivedEnvelope>
   /** A relayed stroke piece: no cursor movement. Null for one that does not open; `bad-format` for anything else. */
   receiveRelay(group: Uint8Array, message: Uint8Array, nowMs: number): Promise<ReceivedMessage | null>
   /** The `heads` value (JSON) to write in `group` now as a register named `heads`, or null when nothing is due. */

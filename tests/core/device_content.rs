@@ -1466,3 +1466,582 @@ fn the_heads_envelope_itself_calls_for_no_other_heads() {
     write(&mut hub, &mut human, &note);
     assert!(heads_of(&mut human, start + 3 * HEADS_EVERY_MS).is_some());
 }
+
+// ---- register values read out of the hub's order: the overlay of a human device (9.3.6) ----
+
+use trommi_client_core::engine::feed::received_of;
+use trommi_client_core::model::change::Change as ModelChange;
+use trommi_client_core::model::Model;
+use trommi_core::ids::RegisterId;
+
+const NAME: &str = "desk/AAAAAAAAAAAAAAAAAAAAAA";
+const OTHER: &str = "desk/BBBBBBBBBBBBBBBBBBBBBB";
+const J: u64 = 1 << 24;
+
+/// What a human device shows: the board model, fed with every envelope the device reports, as the apps feed it.
+struct Shown(Model, ModelChange, Vec<(String, Option<String>)>);
+
+impl Shown {
+    fn new() -> Self {
+        Self(Model::new(), ModelChange::new(), Vec::new())
+    }
+
+    fn take(&mut self, received: &ReceivedEnvelope) {
+        self.0
+            .apply_envelope(&received_of(received), &mut self.1, now());
+        for name in [NAME, OTHER] {
+            let now = self.get(name);
+            if self.2.iter().rev().find(|(n, _)| n == name).map(|(_, v)| v) != Some(&now) {
+                self.2.push((name.into(), now));
+            }
+        }
+    }
+
+    /// The `name` field of the value shown for a room register.
+    fn get(&self, name: &str) -> Option<String> {
+        self.0
+            .human
+            .get(&trommi_client_core::codec::register_key_of(name))
+            .and_then(|held| held.value.get("name"))
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+    }
+
+    /// Every value `name` showed, in turn.
+    fn history(&self, name: &str) -> Vec<Option<String>> {
+        self.2
+            .iter()
+            .filter(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+            .collect()
+    }
+}
+
+/// The `name` field of the value the device's chains hold for a room register.
+fn held(device: &TestDevice, room: &GroupId, name: &str) -> Option<String> {
+    let value = device.register(room, name).unwrap()?;
+    let value: serde_json::Value = serde_json::from_slice(value.expose()).unwrap();
+    value
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+}
+
+/// A register envelope with a lamport of the test's choice, under the register id `id` of its writer.
+fn register_draft(id: u8, name: &str, value: Option<&str>, lamport: u64) -> envelope::Draft {
+    let value = value.map_or(
+        serde_json::Value::Null,
+        |v| serde_json::json!({ "name": v }),
+    );
+    let payload = serde_json::json!({ "name": name, "value": value, "lamport": lamport });
+    envelope::Draft::register(RegisterId::new([id; 16]), payload.to_string().as_bytes())
+}
+
+impl Forged {
+    fn register(&mut self, id: u8, name: &str, value: Option<&str>, lamport: u64) -> Envelope {
+        let claim = self.claim();
+        self.pen.sign(
+            &claim,
+            &register_draft(id, name, value, lamport),
+            &Objects::new(),
+            now(),
+        )
+    }
+
+    /// The reader fetches an envelope out of the hub's order (the Desk's registers).
+    fn fetch(&mut self, stored: &StoredEnvelope) -> ReceivedEnvelope {
+        self.reader
+            .receive_envelope(&stored.bytes, stored.change, false, None, now())
+            .unwrap()
+    }
+
+    /// The reader takes an envelope in the hub's order.
+    fn read(&mut self, bytes: &[u8], change: u64, void: Option<&Error>) -> ReceivedEnvelope {
+        self.reader
+            .receive_envelope(bytes, change, true, void, now())
+            .unwrap()
+    }
+}
+
+/// Every kind of register the Desk serves stands on a human device before its chain is read: a desk, a session's
+/// name (the person's settings of it), a star, a snooze (the card off the Desk), a device's name; and an agent's
+/// profile in its session.
+#[test]
+fn every_kind_of_register_read_out_of_the_order_stands_on_a_human_device() {
+    let mut f = forged();
+    let room = f.room;
+    let pen_id = f.pen.id().to_base64url();
+    let card = "CCCCCCCCCCCCCCCCCCCCCA";
+    let kinds = [
+        (NAME.to_string(), r#"{"name":"Lab"}"#),
+        (
+            "session/SSSSSSSSSSSSSSSSSSSSSA".to_string(),
+            r#"{"name":"Named"}"#,
+        ),
+        (format!("star/{card}"), r#"{"at":5}"#),
+        (format!("snooze/{card}"), r#"{"until":99999999999999}"#),
+        (format!("device/{pen_id}"), r#"{"device_name":"pen"}"#),
+    ];
+    let mut shown = Shown::new();
+    for (i, (name, value)) in kinds.iter().enumerate() {
+        let claim = f.claim();
+        let payload = format!(r#"{{"name":"{name}","value":{value},"lamport":{}}}"#, i + 1);
+        let draft =
+            envelope::Draft::register(RegisterId::new([i as u8 + 1; 16]), payload.as_bytes());
+        let envelope = f.pen.sign(&claim, &draft, &Objects::new(), now());
+        let stored = f.post(&envelope);
+        let got = f.fetch(&stored);
+        assert_eq!(got.outcome, EnvelopeOutcome::Provisional, "{name}");
+        let change = got.register.clone().expect("a register change");
+        assert!(change.current, "{name}");
+        // the chains hold nothing of it
+        assert_eq!(f.reader.register(&room, name).unwrap(), None, "{name}");
+        shown.take(&got);
+    }
+    let model = &shown.0;
+    assert_eq!(shown.get(NAME).as_deref(), Some("Lab"));
+    let key = trommi_client_core::codec::register_key_of;
+    assert!(model
+        .human
+        .contains_key(&key("session/SSSSSSSSSSSSSSSSSSSSSA")));
+    assert!(model.human.contains_key(&key(&format!("star/{card}"))));
+    assert!(model.human.contains_key(&key(&format!("snooze/{card}"))));
+    assert_eq!(
+        model
+            .device_registers
+            .get(&hex(f.pen.id().as_bytes()))
+            .and_then(|d| d.get("device_name"))
+            .and_then(|v| v.as_str()),
+        Some("pen")
+    );
+
+    // An agent's profile in its session, on a human device that has not read the session yet.
+    let (mut w, mut other) = world_of_two();
+    sync_all(&w.hub, &mut w.agent);
+    sync_all(&w.hub, &mut other);
+    write(
+        &mut w.hub,
+        &mut w.agent,
+        &Draft::Register {
+            group: w.group,
+            name: "profile".into(),
+            value: Some(json(r#"{"agent_name":"Probe"}"#)),
+        },
+    );
+    let profile = w.hub.chain_of(&w.group, &w.agent.id(), 0).pop().unwrap();
+    let got = other
+        .receive_envelope(&profile.bytes, profile.change, false, None, now())
+        .unwrap();
+    assert_eq!(got.outcome, EnvelopeOutcome::Provisional);
+    assert!(got.register.as_ref().expect("a register change").current);
+    let mut shown = Shown::new();
+    shown.take(&got);
+    let session = hex(w.session.as_bytes());
+    assert!(shown
+        .0
+        .sessions
+        .get(&session)
+        .is_some_and(|s| s.registers.contains_key("profile")));
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// A device that holds a value never shows an older one: an older value read out of the order is not current,
+/// and a value of the chain older than the one shown from the overlay does not replace it.
+#[test]
+fn an_overlay_value_never_rolls_back_what_a_device_holds() {
+    let mut f = forged();
+    let room = f.room;
+    let old = f.register(1, NAME, Some("old"), 1);
+    let mid = f.register(1, NAME, Some("mid"), 2);
+    let new = f.register(1, NAME, Some("new"), 3);
+    let (old, mid, new) = (f.post(&old), f.post(&mid), f.post(&new));
+    let mut shown = Shown::new();
+    // the newest first, out of the order: it stands
+    let got = f.fetch(&new);
+    assert!(got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    // an older one out of the order after it: not current
+    let got = f.fetch(&mid);
+    assert!(!got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    // the chain brings the oldest and the middle one: they count there, but are not shown over the newer one
+    for stored in [&old, &mid] {
+        let got = f.read(&stored.bytes, stored.change, None);
+        assert_eq!(got.outcome, EnvelopeOutcome::Applied);
+        assert!(
+            !got.register.as_ref().unwrap().current,
+            "masked by the newer value read out of the order"
+        );
+        shown.take(&got);
+    }
+    assert_eq!(held(&f.reader, &room, NAME).as_deref(), Some("mid"));
+    // the chain reaches the newest: it stands there too
+    let got = f.read(&new.bytes, new.change, None);
+    assert!(got.register.as_ref().unwrap().current);
+    assert!(got.shown.is_empty());
+    shown.take(&got);
+    assert_eq!(held(&f.reader, &room, NAME).as_deref(), Some("new"));
+    assert_eq!(shown.history(NAME), vec![Some("new".into())]);
+    // a value the chains hold is never shown over by an older one read out of the order
+    let older = f.register(1, NAME, Some("older"), 2);
+    let older = f.post(&older);
+    let got = f.fetch(&older);
+    assert!(!got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    assert_eq!(shown.get(NAME).as_deref(), Some("new"));
+}
+
+/// Codex finding 1: the chain reaches a value of the overlay without its body (pruned as served): it takes the
+/// overlay's body, and a rebuild of the group's registers keeps the newer value.
+#[test]
+fn a_bodiless_chain_record_takes_the_overlays_body_and_a_rebuild_keeps_it() {
+    let mut f = forged();
+    let room = f.room;
+    let old = f.register(1, NAME, Some("old"), 1);
+    let new = f.register(1, NAME, Some("new"), 2);
+    let (old, new_stored) = (f.post(&old), f.post(&new));
+    let mut shown = Shown::new();
+    shown.take(&f.fetch(&new_stored));
+    shown.take(&f.read(&old.bytes, old.change, None));
+    let pruned = new.prune().unwrap().encode().unwrap();
+    let got = f.read(&pruned, new_stored.change, None);
+    assert_eq!(
+        got.outcome,
+        EnvelopeOutcome::Applied,
+        "the overlay's body: the very envelope"
+    );
+    assert!(got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    // an envelope behind later ones builds the group's registers again
+    let late = f.register(2, OTHER, Some("late"), 3);
+    let got = f.read(&late.encode().unwrap(), 1, None);
+    assert!(got.replayed);
+    shown.take(&got);
+    assert_eq!(held(&f.reader, &room, NAME).as_deref(), Some("new"));
+    assert_eq!(shown.get(NAME).as_deref(), Some("new"));
+    assert_eq!(shown.history(NAME), vec![Some("new".into())]);
+}
+
+/// Codex finding 2: a Cut drops what the overlay holds of its sender beyond it; nothing of it stays current or
+/// keeps a later value of the chains from standing.
+#[test]
+fn a_cut_drops_the_overlay_values_beyond_it() {
+    let mut a = new_device();
+    let mut b = new_device();
+    let (mut hub, room) = found_room(&mut a);
+    add_human(&mut hub, &mut a, &mut b);
+    let forger = Forger::new();
+    add_forger(&mut hub, &mut a, &forger);
+    sync_all(&hub, &mut a);
+    sync_all(&hub, &mut b);
+    let mut pen = Pen::new(&forger.key);
+    let epoch = a.group(&room).unwrap().epoch;
+    let claim = Claim {
+        group: room,
+        epoch,
+        role: Role::Human,
+        seat: None,
+        key: a.content_key(&room, epoch).unwrap(),
+    };
+    let envelope = pen.sign(
+        &claim,
+        &register_draft(1, NAME, Some("cut"), 5),
+        &Objects::new(),
+        now(),
+    );
+    hub.post(&pen.id(), &posting(&envelope)).unwrap();
+    let stored = hub.content.envelopes.last().unwrap().clone();
+    let mut shown = Shown::new();
+    let got = a
+        .receive_envelope(&stored.bytes, stored.change, false, None, now())
+        .unwrap();
+    assert!(got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    // a removes the pen's device with its Cut at 0: nothing of it was accepted
+    let cut = a.cut_of(&room, &pen.id()).unwrap();
+    assert_eq!(cut.seq, 0);
+    a.remove_human_devices(&[cut], now()).unwrap();
+    post_ok(&mut hub, &mut a);
+    sync_all(&hub, &mut a);
+    assert_eq!(held(&a, &room, NAME), None);
+    // b writes the name with a lower lamport than the dropped value: it stands, nothing masks it
+    write(
+        &mut hub,
+        &mut b,
+        &Draft::Register {
+            group: room,
+            name: NAME.into(),
+            value: Some(json(r#"{"name":"b"}"#)),
+        },
+    );
+    for got in sync_all(&hub, &mut a) {
+        if got.register.as_ref().is_some_and(|r| r.name == NAME) {
+            assert!(
+                got.register.as_ref().unwrap().current,
+                "no overlay value of the cut sender stands above it"
+            );
+        }
+        shown.take(&got);
+    }
+    assert_eq!(held(&a, &room, NAME).as_deref(), Some("b"));
+    assert_eq!(shown.get(NAME).as_deref(), Some("b"));
+}
+
+/// Codex finding 3: an overlay value whose number the chain fills otherwise (another envelope there, or a void
+/// record) is dropped, and what stands for the name then is shown again.
+#[test]
+fn a_dropped_overlay_value_gives_way_to_what_stands() {
+    // another envelope under its number
+    let mut f = forged();
+    let room = f.room;
+    let mut fork = f.pen.fork();
+    let shown_value = f.register(1, NAME, Some("shown"), 5);
+    let stored = f.post(&shown_value);
+    let mut shown = Shown::new();
+    shown.take(&f.fetch(&stored));
+    assert_eq!(shown.get(NAME).as_deref(), Some("shown"));
+    let other = fork.sign(&f.claim(), &board_item(), &Objects::new(), now());
+    let got = f.slip(&other);
+    assert_eq!(
+        got.provisional,
+        Some(Confirmation::Dropped(Error::HashMismatch))
+    );
+    assert_eq!(got.shown.len(), 1);
+    assert!(got.shown[0].now.is_none());
+    shown.take(&got);
+    assert_eq!(shown.get(NAME), None);
+    assert_eq!(held(&f.reader, &room, NAME), None);
+
+    // a void record under its number, with an older value of the chain to fall back to
+    let mut f = forged();
+    let room = f.room;
+    let old = f.register(1, NAME, Some("old"), 1);
+    let voided = f.register(1, NAME, Some("voided"), 5);
+    let (old, voided_stored) = (f.post(&old), f.post(&voided));
+    let mut shown = Shown::new();
+    shown.take(&f.fetch(&voided_stored));
+    let got = f.read(&old.bytes, old.change, None);
+    assert!(!got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    assert_eq!(shown.get(NAME).as_deref(), Some("voided"));
+    let pruned = voided.prune().unwrap().encode().unwrap();
+    let got = f.read(&pruned, voided_stored.change, Some(&Error::TooLarge));
+    assert_eq!(got.outcome, EnvelopeOutcome::Void);
+    assert!(matches!(got.provisional, Some(Confirmation::Dropped(_))));
+    assert_eq!(got.shown.len(), 1);
+    assert!(got.shown[0].now.is_some());
+    shown.take(&got);
+    assert_eq!(shown.get(NAME).as_deref(), Some("old"));
+    assert_eq!(held(&f.reader, &room, NAME).as_deref(), Some("old"));
+}
+
+/// Codex finding 4: an overlay value counts its lamport against the chains' largest one, never against values
+/// of the overlay; what it shows is what the chain then decides, and nothing shown is rolled back.
+#[test]
+fn an_overlay_value_counts_its_lamport_against_the_chains() {
+    let mut f = forged();
+    let room = f.room;
+    let old = f.register(1, NAME, Some("old"), 1);
+    let high = f.register(1, NAME, Some("high"), 2 * J);
+    let booster = f.register(2, OTHER, Some("booster"), J);
+    let (old, high, booster) = (f.post(&old), f.post(&high), f.post(&booster));
+    let mut shown = Shown::new();
+    shown.take(&f.read(&old.bytes, old.change, None));
+    // the booster first, then the high one, out of the order: the high one counts as 0 against the chains
+    shown.take(&f.fetch(&booster));
+    let got = f.fetch(&high);
+    assert!(!got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    // the chain: the high one counts 0 at its place, the booster after it
+    for stored in [&high, &booster] {
+        let got = f.read(&stored.bytes, stored.change, None);
+        shown.take(&got);
+    }
+    // an envelope behind later ones builds the registers again
+    let late = f.register(3, "desk/DDDDDDDDDDDDDDDDDDDDDA", Some("late"), 4);
+    let got = f.read(&late.encode().unwrap(), 1, None);
+    assert!(got.replayed);
+    shown.take(&got);
+    assert_eq!(held(&f.reader, &room, NAME).as_deref(), Some("old"));
+    assert_eq!(
+        shown.history(NAME),
+        vec![Some("old".into())],
+        "never high, never back"
+    );
+}
+
+/// Codex finding 5: an overlay value binds no register id of its writer: a writer's id used for two names out of
+/// the order does not make its chain's value bad-format.
+#[test]
+fn an_overlay_value_binds_no_register_id() {
+    let mut f = forged();
+    let room = f.room;
+    let first = f.register(1, NAME, Some("first"), 1);
+    let clash = f.register(1, OTHER, Some("clash"), 2);
+    let (first, clash) = (f.post(&first), f.post(&clash));
+    let mut shown = Shown::new();
+    let got = f.fetch(&clash);
+    assert!(got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    assert_eq!(shown.get(OTHER).as_deref(), Some("clash"));
+    let got = f.read(&first.bytes, first.change, None);
+    assert_eq!(got.outcome, EnvelopeOutcome::Applied);
+    assert!(got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    // the chain refuses the second use of the id: the clash goes from what is shown
+    let got = f.read(&clash.bytes, clash.change, None);
+    assert_eq!(got.code, Some(Error::BadFormat));
+    shown.take(&got);
+    assert_eq!(held(&f.reader, &room, NAME).as_deref(), Some("first"));
+    assert_eq!(held(&f.reader, &room, OTHER), None);
+    assert_eq!(shown.get(NAME).as_deref(), Some("first"));
+    assert_eq!(shown.get(OTHER), None);
+}
+
+/// An agent device keeps no overlay: a register of its session read out of the order is shown provisional
+/// without a register change, and counts only when its chain reaches it.
+#[test]
+fn an_agent_device_takes_a_register_only_from_its_chain() {
+    let mut w = world();
+    let session = w.group;
+    sync_all(&w.hub, &mut w.agent);
+    let cursor = w.agent.cursor();
+    write(
+        &mut w.hub,
+        &mut w.human,
+        &Draft::Register {
+            group: session,
+            name: "goals".into(),
+            value: Some(json(r#"{"goals":"ship"}"#)),
+        },
+    );
+    let stored = w
+        .hub
+        .changes_after(cursor)
+        .into_iter()
+        .find_map(|c| match c {
+            Change::Envelope(stored) => Some(stored),
+            _ => None,
+        })
+        .unwrap();
+    let got = w
+        .agent
+        .receive_envelope(&stored.bytes, stored.change, false, None, now())
+        .unwrap();
+    assert_eq!(got.outcome, EnvelopeOutcome::Provisional);
+    assert_eq!(got.register, None);
+    assert!(got.shown.is_empty());
+    assert_eq!(w.agent.register(&session, "goals").unwrap(), None);
+    for got in sync_all(&w.hub, &mut w.agent) {
+        assert!(got.shown.is_empty());
+    }
+    assert!(w.agent.register(&session, "goals").unwrap().is_some());
+}
+
+/// Codex review, round 1: a Cut drops an overlay value under its own number that is another envelope than the one
+/// the Cut names.
+#[test]
+fn a_cut_drops_another_envelope_under_its_own_number() {
+    let mut a = new_device();
+    let mut b = new_device();
+    let (mut hub, room) = found_room(&mut a);
+    add_human(&mut hub, &mut a, &mut b);
+    let forger = Forger::new();
+    add_forger(&mut hub, &mut a, &forger);
+    sync_all(&hub, &mut a);
+    sync_all(&hub, &mut b);
+    let mut pen = Pen::new(&forger.key);
+    let mut fork = pen.fork();
+    let epoch = a.group(&room).unwrap().epoch;
+    let claim = Claim {
+        group: room,
+        epoch,
+        role: Role::Human,
+        seat: None,
+        key: a.content_key(&room, epoch).unwrap(),
+    };
+    // a accepts one envelope at number 1; b is shown another one there, out of the order
+    let accepted = pen.sign(&claim, &board_item(), &Objects::new(), now());
+    hub.post(&pen.id(), &posting(&accepted)).unwrap();
+    let accepted = hub.content.envelopes.last().unwrap().clone();
+    take_envelope(&mut a, &accepted);
+    let forked = fork.sign(&claim, &register_draft(1, NAME, Some("fork"), 5), &Objects::new(), now());
+    let got = b
+        .receive_envelope(&forked.encode().unwrap(), accepted.change, false, None, now())
+        .unwrap();
+    assert!(got.register.as_ref().unwrap().current);
+    // a removes the pen's device with its Cut at 1, naming the envelope it accepted
+    let cut = a.cut_of(&room, &pen.id()).unwrap();
+    assert_eq!(cut.seq, 1);
+    a.remove_human_devices(&[cut], now()).unwrap();
+    post_ok(&mut hub, &mut a);
+    // b merges the removal without having read number 1 in the order
+    for change in hub.changes_after(b.cursor()) {
+        match change {
+            Change::Log(item) => {
+                trommi_tests::process(&mut b, &item).unwrap();
+                trommi_tests::take_welcomes(&hub, &mut b, item.change);
+            }
+            Change::Envelope(stored) if stored.hash != accepted.hash => {
+                take_envelope(&mut b, &stored);
+            }
+            Change::Envelope(_) => {}
+        }
+    }
+    // a writes the name with a lower lamport than the fork's: it stands on b, nothing masks it
+    write(
+        &mut hub,
+        &mut a,
+        &Draft::Register {
+            group: room,
+            name: NAME.into(),
+            value: Some(json(r#"{"name":"a"}"#)),
+        },
+    );
+    let mut seen = false;
+    for got in sync_all(&hub, &mut b) {
+        if let Some(r) = got.register.as_ref().filter(|r| r.name == NAME) {
+            assert!(r.current, "the fork under the Cut's number is gone from the overlay");
+            seen = true;
+        }
+    }
+    assert!(seen);
+}
+
+/// Codex review, round 1: a receipt (`heard`) read out of the order that is dropped takes its mark back.
+#[test]
+fn a_dropped_receipt_takes_its_mark_back() {
+    let (mut w, mut other) = world_of_two();
+    sync_all(&w.hub, &mut w.agent);
+    sync_all(&w.hub, &mut other);
+    write(
+        &mut w.hub,
+        &mut w.agent,
+        &Draft::Register {
+            group: w.group,
+            name: "heard".into(),
+            value: Some(json(r#"{"up_to":100,"at":123}"#)),
+        },
+    );
+    let heard = w.hub.chain_of(&w.group, &w.agent.id(), 0).pop().unwrap();
+    let mut shown = Shown::new();
+    let got = other
+        .receive_envelope(&heard.bytes, heard.change, false, None, now())
+        .unwrap();
+    assert!(got.register.as_ref().unwrap().current);
+    shown.take(&got);
+    let session = hex(w.session.as_bytes());
+    assert_eq!(shown.0.sessions.get(&session).and_then(|s| s.heard_up_to), Some(100));
+    // the chain reaches its number as a void record
+    let pruned = Envelope::decode(&heard.bytes).unwrap().prune().unwrap().encode().unwrap();
+    let got = other
+        .receive_envelope(&pruned, heard.change, true, Some(&Error::TooLarge), now())
+        .unwrap();
+    assert_eq!(got.outcome, EnvelopeOutcome::Void);
+    assert_eq!(got.shown.len(), 1);
+    shown.take(&got);
+    assert_eq!(shown.0.sessions.get(&session).and_then(|s| s.heard_up_to), None);
+}

@@ -93,6 +93,41 @@ pub(crate) fn received_of(r: &ReceivedEnvelope) -> rx::Received {
             .payload
             .as_ref()
             .map(|p| String::from_utf8_lossy(p).into_owned()),
+        shown: r
+            .shown
+            .iter()
+            .map(|shown| rx::Shown {
+                name: shown.name.clone(),
+                now: shown.now.as_ref().map(|now| {
+                    let as_received = ReceivedEnvelope {
+                        change: now.change,
+                        envelope_hash: now.envelope_hash.clone(),
+                        header: now.header.clone(),
+                        outcome: if now.provisional {
+                            EnvelopeOutcome::Provisional
+                        } else {
+                            EnvelopeOutcome::Applied
+                        },
+                        code: None,
+                        finding: None,
+                        payload: Some(now.payload.clone()),
+                        bind: None,
+                        object_after: None,
+                        register: Some(crate::RegisterChange {
+                            name: shown.name.clone(),
+                            of: shown.of.clone(),
+                            current: true,
+                        }),
+                        confirmed: None,
+                        dropped: None,
+                        replayed: false,
+                        shown: Vec::new(),
+                        command: false,
+                    };
+                    Box::new(received_of(&as_received))
+                }),
+            })
+            .collect(),
     }
 }
 

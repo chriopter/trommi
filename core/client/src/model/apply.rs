@@ -122,8 +122,46 @@ impl Model {
         }
     }
 
-    /// One envelope as the core took it. `now`: the clock, for alerts.
+    /// One envelope as the core took it, and what stands again for register names whose value read out of the
+    /// hub's order it dropped (spec 9.3.6). `now`: the clock, for alerts.
     pub fn apply_envelope(&mut self, r: &Received, change: &mut Change, now: u64) -> Applied {
+        let applied = self.apply_one(r, change, now);
+        for shown in &r.shown {
+            // (a receipt's mark only rises as it comes; one that stood out of the hub's order and went is taken
+            //  back, and the value that stands now sets it again)
+            if let (Some(sid), "heard") = (&r.session_id, shown.name.as_str()) {
+                let s = self.session_of(sid);
+                s.heard_up_to = None;
+                s.heard_at = None;
+            }
+            match &shown.now {
+                Some(now_r) => {
+                    self.apply_one(now_r, change, now);
+                }
+                None => {
+                    // (the name has no value now: as if it were deleted, under the dropped envelope's place)
+                    let payload =
+                        serde_json::json!({ "name": shown.name, "value": null, "lamport": 0 });
+                    let cleared = Received {
+                        outcome: Outcome::Applied,
+                        code: None,
+                        kind: EnvelopeKind::Register,
+                        register: Some(super::received::RegisterTaken {
+                            name: shown.name.clone(),
+                            current: true,
+                        }),
+                        payload: Some(payload.to_string()),
+                        shown: Vec::new(),
+                        ..r.clone()
+                    };
+                    self.apply_one(&cleared, change, now);
+                }
+            }
+        }
+        applied
+    }
+
+    fn apply_one(&mut self, r: &Received, change: &mut Change, now: u64) -> Applied {
         let local_id = self.by_hash.get(&r.hash).cloned();
         if r.outcome == Outcome::Refused {
             // (an epoch before this device came into the group, or an item that waits for a key: nothing it could

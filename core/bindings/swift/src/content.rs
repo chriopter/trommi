@@ -618,6 +618,35 @@ record! {
     }
 }
 
+record! {
+    /// The envelope whose register value stands for a name again (spec 9.3.6). `payload` is decrypted content.
+    secret pub struct ShownValue {
+        /// The hub's change number it came under.
+        pub change: u64,
+        /// Its hash, 32 bytes.
+        pub envelope_hash: Vec<u8>,
+        /// Its header.
+        pub header: EnvelopeHeader,
+        /// Whether it is a value read out of the hub's order, not yet confirmed by its chain.
+        pub provisional: bool,
+        /// The register's payload, as JSON.
+        pub payload: Vec<u8>,
+    }
+}
+
+record! {
+    /// A register name whose value read out of the hub's order stood and was dropped (spec 9.3.6): what stands
+    /// for it now; `now` none when the name has no value.
+    secret pub struct RegisterShown {
+        /// The name.
+        pub name: String,
+        /// The sender, for a name of which each device holds its own value.
+        pub of: Option<Vec<u8>>,
+        /// The value that stands now.
+        pub now: Option<ShownValue>,
+    }
+}
+
 choice! {
     /// What became of a received envelope.
     pub enum EnvelopeOutcome {
@@ -668,6 +697,9 @@ record! {
         /// The envelope was accepted behind later ones of its group, and the group's object states and
         /// registers were built again in the hub's order: what was read from them before is read again.
         pub replayed: bool,
+        /// On a human device: register names whose value read out of the hub's order stood and is dropped with
+        /// this envelope, with what stands for each now (spec 9.3.6).
+        pub shown: Vec<RegisterShown>,
         /// On an agent or helper device: the envelope is addressed to this device and is of a kind the command
         /// gate knows. `command` decides whether to act on it.
         pub command: bool,
@@ -715,6 +747,25 @@ impl From<core::ReceivedEnvelope> for ReceivedEnvelope {
             confirmed,
             dropped,
             replayed: received.replayed,
+            shown: received
+                .shown
+                .into_iter()
+                .map(|shown| RegisterShown {
+                    name: shown.name,
+                    of: shown.of.map(|device| device.as_bytes().to_vec()),
+                    now: shown.now.map(|now| ShownValue {
+                        change: now.change,
+                        envelope_hash: now.envelope_hash.as_bytes().to_vec(),
+                        header: EnvelopeHeader::from(&now.header),
+                        provisional: now.outcome == core::EnvelopeOutcome::Provisional,
+                        payload: now
+                            .body
+                            .as_ref()
+                            .map(|body| body.payload().to_vec())
+                            .unwrap_or_default(),
+                    }),
+                })
+                .collect(),
             command: received.command,
         }
     }

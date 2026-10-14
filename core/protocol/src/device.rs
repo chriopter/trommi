@@ -92,6 +92,8 @@ mod facts;
 mod history;
 mod invite;
 mod key_requests;
+mod listed;
+mod overlay;
 
 pub use content::{
     board_reduce, BoardItem, BoardSnapshot, Confirmation, Draft, EnvelopeOutcome, ReceivedEnvelope,
@@ -107,6 +109,7 @@ pub use key_requests::{
     KeyRequest, KEY_ANSWER_PAUSE_MS, KEY_REQUEST_FIRST_PAUSE_MS, KEY_REQUEST_GRACE_MS,
     KEY_REQUEST_MAX_PAUSE_MS, MAX_KEY_REQUESTS,
 };
+pub use overlay::RegisterShown;
 
 const SUB_OWN_HISTORY: u8 = 0;
 const SUB_OBSERVER: u8 = 1;

@@ -30,7 +30,7 @@ import type { ClientModel, Core, Device, Draft, FileRef, OutboxEntry, ReceivedEn
 import { Engine } from './engine.ts'
 import type { EngineEvents, EngineMeta } from './engine.ts'
 import { accountCopiesBytes, HubError } from './hub.ts'
-import type { AccountCopies, DeskBrief, DeskEntry, DeskObject, EnvelopeItem, Hub, StreamEvent } from './hub.ts'
+import type { AccountCopies, Desk, DeskBrief, DeskEntry, DeskObject, EnvelopeItem, Hub, StreamEvent } from './hub.ts'
 import { b64u, hex, unb64u, unhex } from './ids.ts'
 import { applyPatch } from './mirror.ts'
 import * as M from './model.ts'
@@ -77,6 +77,10 @@ const DESK_HOLD_MAX_MS = 5000
 const ARCHIVED_RETRY_MS = 3000
 /** Where the hub's Desk as last read is kept between runs. */
 const DESK_KEY = 'client/desk'
+/** An open object's newest version as the hub lists it: what `adoptListed` takes it as. */
+type ListedRow = { group: Uint8Array; object_id: Uint8Array }
+/** At most this many envelopes of one card are read when it is opened (`cardVersions`). */
+const CARD_VERSIONS_MAX = 1000
 /** How many answered cards a reading of the Desk asks the hub about (`readDesk`). */
 const ANSWERED_ASKED = 20
 const CHUNK = 65_536
@@ -258,7 +262,7 @@ export class Client {
   private removed = false
   /** Not null: the model is not all the device holds; everything after this change is being read back. */
   private rebuild: number | null = null
-  /** The cursor up to which everything the core took is in the model and handed to the cache; -1 while rebuilding. */
+  /** The cursor up to which everything the core took is in the model and handed to the cache; while rebuilding, where the rebuild began. */
   private stamped = -1
   private rebuilding = false
   /** The hub's Desk as last read (`readDesk`): what it lists as open, and its cursor. The hub's list decides what
@@ -270,6 +274,7 @@ export class Client {
   private deskReading: Promise<void> | null = null
   /** A reading of this run read the versions it lacked (`readDeskNow`). */
   private deskVersionsRead = false
+  private deskRegistersRead = false // (the Desk's registers got to the core in this run; until then each reading takes the full Desk, 9.3.6)
   /** A session group was joined: the next reading takes the hub's full Desk (its open objects' newest versions and
    *  every register of the groups: the sessions' names and status lines), not only the list. */
   private deskFullDue = false
@@ -323,7 +328,7 @@ export class Client {
     const kept = (await this.cache.get('client/at').catch(() => null)) as { cursor: number; device: string } | null
     // The cache belongs to the cursor it was written at. At the device's cursor: it is the model. Behind it (the
     // page went away between "the core took an item" and "the cache was written", or a rebuild was cut short,
-    // which is written as -1): what it holds is still true, and everything after its cursor is read back from
+    // which is written as where it began): what it holds is still true, and everything after its cursor is read back from
     // the hub through the core before the cache counts as whole again. Ahead of the device, or another device's:
     // dropped.
     // A cache the core does not take (too large for one call, or of a shape it refuses) is dropped like one of
@@ -456,8 +461,10 @@ export class Client {
   flush(): Promise<void> {
     if (this.flushTimer !== null) { clearTimeout(this.flushTimer); this.flushTimer = null }
     return this.flushing = this.flushing.catch(() => {}).then(async () => {
-      if (!this.dirty.size && this.written === (this.rebuild === null ? this.stamped : -1)) return
-      const taken = [...this.dirty], stamp = this.rebuild === null ? this.stamped : -1
+      // (while a rebuild runs, the cache is stamped with where it began: a run cut short goes on from there, not
+      //  from the start)
+      if (!this.dirty.size && this.written === (this.rebuild === null ? this.stamped : this.rebuild)) return
+      const taken = [...this.dirty], stamp = this.rebuild === null ? this.stamped : this.rebuild
       this.dirty.clear()
       const entries: [string, unknown | undefined][] = [...taken, ['client/at', { cursor: stamp, device: this.my_device_id }]]
       try { await this.cache.setMany(entries); this.written = stamp; this.noteWritten(taken) } catch (e) {
@@ -528,6 +535,8 @@ export class Client {
     on('stream', event => this.onStream(event))
     on('opened', () => this.board.streamOpened())
     on('invites', ({ open }) => this.invitesDone(open))
+    // keys handed over, a group's past learned: what the Desk lists is read again, in one full Desk
+    on('desk', () => { if (this.is_human && this.started) { this.deskFullDue = true; this.deskTaken.clear(); void this.readDesk().catch(() => {}) } })
     on('rescanned', () => { if (this.rebuilding) { this.rebuilding = false; this.rebuild = null; this.touched() }; void this.reloadArchived().catch(() => {}) })
     on('batch', () => this.publish())
     on('reopened', () => { void this.reconcile().catch(() => {}) })
@@ -664,7 +673,10 @@ export class Client {
     if (!this.started) return
     await this.engine.start({ stream })
     if (!this.started) return     // stopped meanwhile: no timer is left behind
-    if (this.rebuild !== null) { this.rebuilding = true; await this.engine.wantRescan(this.rebuild) }
+    // A model without a cache on a human device stands on the hub's Desk and what is new (9.0.6): no past is read.
+    // A cache behind the device is filled from its own cursor on, never from the start.
+    if (this.rebuild !== null && (this.rebuild > 0 || !this.is_human)) { this.rebuilding = true; await this.engine.wantRescan(this.rebuild) }
+    else if (this.rebuild !== null) { this.rebuild = null; this.touched(); void this.reloadArchived().catch(() => {}) }
     this.inviteTimer = setInterval(() => this.watchInvites(), 1000)
     void this.nameDevice().catch(() => {})
     void this.ensureDesk().catch(() => {})
@@ -771,7 +783,7 @@ export class Client {
     const items: EnvelopeItem[] = [...desk.registers]
     for (const list of [desk.cards, desk.notes, desk.permission_requests, desk.artifacts]) for (const o of list) if (o.version) items.push(o.version)
     items.sort((a, b) => a.change - b.change)
-    const received = await this.engine.receivePage(items)
+    const received = await this.receiveListed(items, desk)
     this.tell(() => { this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now()) })
     if (!desk.truncated) this.knowDesk()
   }
@@ -899,7 +911,8 @@ export class Client {
     // the newest versions this device lacks, read through the core
     const lacking = listed.filter(o => {
       const id = hex(o.object_id), c = this.model.cards.get(id) ?? this.model.permissions.get(id)
-      return !c || (c.envelope_number ?? 0) < o.version_change
+      // (also one held without its body, its key not handed over when it was read: keys may have come since)
+      return !c || (c.envelope_number ?? 0) < o.version_change || c.content_state === 'undecryptable'
     })
     // (many lacking, as on a new device that has not read the room yet: the full Desk, which holds them all, in one
     //  answer, so that a sign-in shows the true Desk at once; later readings while the room is still being read (its
@@ -908,6 +921,9 @@ export class Client {
     this.deskVersionsRead = true
     const reading = this.engine.position < brief.change || this.engine.rescanPending || this.readingHolds > 0
     const fromFull = full && !full.truncated ? full : null
+    // (the newest versions read below by their change number, with their object and group: taken from the list)
+    const listedRows = new Map<number, ListedRow>()
+    const registersDue = !fromFull && !this.deskRegistersRead; let withRegisters = !!fromFull
     const versions = fromFull
       ? (() => {
           const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`))
@@ -918,12 +934,12 @@ export class Client {
           const all = [...objects, ...fromFull.registers, ...[...fromFull.notes, ...fromFull.artifacts].flatMap(o => (o.version ? [o.version] : []))]
           return all.filter(i => !this.deskTaken.has(i.change))
         })()
-      : lacking.length > DESK_ONE_BY_ONE && !first && reading ? []
-      : lacking.length > DESK_ONE_BY_ONE
-      ? await this.hub.desk({ active: true }).then(full => { for (const o of [...full.cards, ...full.permission_requests]) d.firsts.set(hex(o.object_id), o.first_change); const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])) }).catch(() => [])
+      : lacking.length > DESK_ONE_BY_ONE && !first && reading && !registersDue ? []
+      : lacking.length > DESK_ONE_BY_ONE || registersDue
+      ? await this.hub.desk({ active: true }).then(full => { for (const o of [...full.cards, ...full.permission_requests]) { d.firsts.set(hex(o.object_id), o.first_change); if (o.version) listedRows.set(o.version.change, o) } const want = new Set(lacking.map(o => `${hex(o.object_id)}/${o.version_change}`)); withRegisters = registersDue && !full.truncated; return [...full.cards, ...full.permission_requests].flatMap(o => (o.version && want.has(`${hex(o.object_id)}/${o.version.change}`) ? [o.version] : [])).concat(withRegisters ? full.registers.filter(i => !this.deskTaken.has(i.change)) : []) }).catch(() => [])
       : (await inParallel(lacking, async o => {
           const got = await this.hub.objectEnvelopes(o.route, o.object_id, { after: o.version_change - 1, limit: 1 }).catch(() => null)
-          if (got) d.firsts.set(hex(o.object_id), got.first_change)
+          if (got) { d.firsts.set(hex(o.object_id), got.first_change); listedRows.set(o.version_change, { group: got.group, object_id: o.object_id }) }
           return got?.items.filter(i => i.change === o.version_change) ?? []
         })).flat()
     const missing: EnvelopeItem[] = [...versions]
@@ -935,9 +951,9 @@ export class Client {
     for (const got of await inParallel(answered, c => this.hub.objectEnvelopes('cards', unhex(c.object_id), { after: c.state_envelope_number, limit: 20 }).then(got => ({ got, c })).catch(() => null))) {
       if (got && got.got.head_change > got.c.state_envelope_number) missing.push(...got.got.items)
     }
-    const received = missing.length ? await this.engine.receivePage(missing.sort((x, y) => x.change - y.change)).catch(() => []) : []
+    const received = missing.length ? await this.receiveListed(missing.sort((x, y) => x.change - y.change), fromFull, listedRows).catch(() => { withRegisters = false; return [] }) : []
     // (what opened is not handed again by the next full reading; what did not, its group not joined yet, is)
-    if (fromFull) for (const r of received) if (r.outcome !== 'refused') this.deskTaken.add(r.change)
+    if (withRegisters) { this.deskRegistersRead = true; for (const r of received) if (r.outcome !== 'refused') this.deskTaken.add(r.change) }
     // a card the hub lists as open that this device holds as handed back: the newest page of its Chat says whether
     // the agent put it before the human again since (a present this device missed, or one an older app read before
     // the hand back it answered); once per hand back and run, the few there are
@@ -984,6 +1000,16 @@ export class Client {
   /** An own send was sealed: the core's model learns its hash (the hub's copy will name it), number and object id. */
   private confirmEcho(local_id: string, sealed: Sealed): void {
     this.board.confirmEcho(local_id, hex(sealed.envelopeHash), sealed.seq, sealed.objectId ? hex(sealed.objectId) : null)
+  }
+  /** Envelopes read from the hub's Desk: the newest version of each open object it lists is taken from its signed
+   *  header (the core's `adoptListed`, 9.0.6: a device that started its groups from the list reads no past), the
+   *  rest (registers, what came after an answer) out of the hub's order as before. */
+  private async receiveListed(items: EnvelopeItem[], desk: Desk | null, more?: Map<number, ListedRow>): Promise<ReceivedEnvelope[]> {
+    const rows = new Map<number, ListedRow>(more ?? [])
+    if (desk) for (const o of [...desk.cards, ...desk.permission_requests, ...desk.notes, ...desk.artifacts]) if (o.version) rows.set(o.version.change, o)
+    const listed = items.flatMap(item => { const o = rows.get(item.change); return o ? [{ group: o.group, object_id: o.object_id, item }] : [] })
+    const rest = items.filter(item => !rows.has(item.change))
+    return [...(listed.length ? await this.engine.adoptListed(listed) : []), ...(rest.length ? await this.engine.receivePage(rest) : [])]
   }
   private deskToModel(): void {
     const d = this.desk
@@ -1356,6 +1382,9 @@ export class Client {
       while (got.has_more && got.loaded > 0 && loaded < KEEP_PER_CHAT && oldest() > from) { got = await this.loadTimeline(timeline_key, { limit: Math.min(200, KEEP_PER_CHAT - loaded) }); loaded += got.loaded }
       return { loaded, has_more: got.has_more }
     }
+    // a card opened: its older versions, which a device that started from the hub's list never read (9.0.6), by
+    // its object route, once a run
+    if (timeline_key.startsWith('chat:card/')) await this.cardVersions(timeline_key.slice('chat:card/'.length)).catch(() => {})
     // a board has no pages towards the past (its route reads forwards from a change): all of it, once
     if (timeline_key.startsWith('scribble:')) return { loaded: (await this.loadTimelineAfter(timeline_key, 0)).loaded, has_more: false }
     const down = this.model.timelines.get(timeline_key)?.loaded_down_to ?? Infinity
@@ -1363,6 +1392,23 @@ export class Client {
     const has_more = more && items.length > 0
     this.tell(() => { this.board.putItems(timeline_key, JSON.stringify(items), items.length ? items.at(-1)!.envelope_number! : null, has_more) })
     return { loaded: items.length, has_more }
+  }
+  /** The cards whose versions this run read (`cardVersions`). */
+  private versionsRead = new Set<string>()
+  /** Every version of a card the hub still holds, read through the core out of the hub's order (`GET /v1/cards/{id}`),
+   *  once a run: the card's page shows its history. */
+  private async cardVersions(card: string): Promise<void> {
+    if (this.versionsRead.has(card)) return
+    this.versionsRead.add(card)
+    const items: EnvelopeItem[] = []
+    for (let after = 0, more = true; more && items.length < CARD_VERSIONS_MAX;) {
+      const got = await this.hub.objectEnvelopes('cards', unhex(card), { after, limit: 100 })
+      items.push(...got.items)
+      more = got.more && got.items.length > 0
+      after = got.items.at(-1)?.change ?? after
+    }
+    const received = items.length ? await this.engine.receivePage(items) : []
+    this.tell(() => { this.board.applyEnvelopes(received.filter(r => r.outcome !== 'refused'), this.now()) })
   }
   /** A windowed read for scrolling: items before an envelope number, oldest first. Does not grow the window. */
   async timelineWindow(timeline_key: string, { before_envelope_number = Infinity, limit = 50 }: { before_envelope_number?: number; limit?: number } = {}): Promise<TimelineItem[]> {
