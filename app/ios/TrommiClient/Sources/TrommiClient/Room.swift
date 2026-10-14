@@ -241,15 +241,9 @@ public struct Store {
   /** The invites whose steps run now (hex invite ids): `finishInvite` from "They match", or the upkeep's round
    *  (`invitesSoon`). One runner per invite: two would claim two KeyPackages and make two Commits for one step. */
   var invitesAtWork = Set<String>()
-  /** The upkeep's next round of invite steps, while one is planned; its pause grows while steps stay open, from
-   *  `invitesPauseFirst` up to `invitesPauseMost` (tests make both short). `invitesRounds` counts the rounds done. */
-  var invitesPlanned: Task<Void, Never>?
-  var invitesPauseFirst: UInt64 = 2_000_000_000
-  var invitesPauseMost: UInt64 = 30_000_000_000
-  lazy var invitesPause: UInt64 = invitesPauseFirst
-  var invitesRounds = 0
-  /** A round runs now (past its pause); `invitesSoon` was called meanwhile: another round follows it. */
-  var invitesRunning = false, invitesAgain = false
+  /** The upkeep's next round of invite steps, while one is planned; its pause grows (first to most) while steps stay open. */
+  var invitesPlanned: Task<Void, Never>?, invitesRounds = 0, invitesAgain = false
+  var invitesPause: UInt64 = 2_000_000_000, invitesPauseFirst: UInt64 = 2_000_000_000, invitesPauseMost: UInt64 = 30_000_000_000
   /** How long an agent without a session waits for its inviter before any human device founds its session (the
    *  web's heal_delay * 10). */
   var seatGraceMs: UInt64 = 30_000

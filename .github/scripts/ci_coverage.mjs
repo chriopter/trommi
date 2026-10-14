@@ -9,6 +9,8 @@
 //    ios_release_gate.sh, `grep -F… "…" …jobs.txt`, the job argument of ios_delivered.sh's `runs`) is the name of a
 //    job of that workflow (the file's own, or the one it names by `.path == ".github/workflows/…"`): a renamed job
 //    must not silently stop a delivery (issue #224: "Checks / iOS client (check)" after the checks were inlined).
+// 5. the shells' freeze (core/client/tests/shells.rs) here too: the Core check that runs it is skipped when only a
+//    shell changed, so a grown or new file in a frozen folder reached main unseen (#224's fix itself).
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -120,8 +122,23 @@ for (const file of sources) {
   }
 }
 
+// 5. the shells' freeze: the same rule as core/client/tests/shells.rs (its FROZEN folders; lines as Rust's lines())
+const frozen = JSON.parse(read('core/client/tests/shells.json'))
+const FROZEN = [...read('core/client/tests/shells.rs').matchAll(/^\s*\("([^"]+)", "([^"]+)"\),$/gm)].map(m => [m[1], m[2]])
+if (!FROZEN.length) problems.push('core/client/tests/shells.rs: its FROZEN folders could not be read')
+for (const [folder, kind] of FROZEN) {
+  if (!fs.existsSync(path.join(repo, folder))) continue
+  for (const name of fs.readdirSync(path.join(repo, folder))) {
+    if (!name.endsWith(kind) || name.endsWith('.d.ts') || !fs.statSync(path.join(repo, folder, name)).isFile()) continue
+    const text = read(`${folder}/${name}`), file = `${folder}/${name}`
+    const lines = text === '' ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
+    if (!(file in frozen)) problems.push(`${file} is new: app logic belongs in core/client (core/client/tests/shells.rs)`)
+    else if (lines > frozen[file]) problems.push(`${file} grew from ${frozen[file]} to ${lines} lines: app logic belongs in core/client (core/client/tests/shells.rs)`)
+  }
+}
+
 if (problems.length) {
   for (const p of problems) console.log(`::error::${p}`)
   process.exit(1)
 }
-console.log(`ci_coverage: ${members.length} crates, ${targets.length} test targets, ${Object.keys(scripts).filter(k => k.startsWith('test:')).length} web test scripts: every one is run by a workflow; ${looked} job names looked up in runs: every one exists`)
+console.log(`ci_coverage: ${members.length} crates, ${targets.length} test targets, ${Object.keys(scripts).filter(k => k.startsWith('test:')).length} web test scripts: every one is run by a workflow; ${looked} job names looked up in runs: every one exists; ${FROZEN.length} frozen shell folders: none grew`)
