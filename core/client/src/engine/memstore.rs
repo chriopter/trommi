@@ -40,7 +40,10 @@ pub struct Writes {
 
 /// A store over what the shell loaded, and the engine's end of it.
 pub fn store(revision: u64, entries: Vec<(Vec<u8>, Vec<u8>)>) -> (MemStore, Writes) {
+    // (every key is followed, so a sign-out can take the whole state away in one write)
+    let keys: BTreeSet<Vec<u8>> = entries.iter().map(|(k, _)| k.clone()).collect();
     let inner = Arc::new(Mutex::new(Inner {
+        keys: Some(keys),
         loaded: Some(Loaded {
             revision,
             entries: entries.into_iter().map(|(k, v)| Entry::new(k, v)).collect(),
@@ -155,7 +158,7 @@ impl Writes {
     }
 
     /// Everything the store holds taken away, in one write, and the device may write no more: a join with the
-    /// code that failed leaves no half device. None for a store that is not wipeable, or holds nothing.
+    /// code that failed or a sign-out leaves no half device. None when it holds nothing.
     pub fn wipe(&mut self) -> Option<Write> {
         let mut inner = lock(&self.inner);
         inner.lost = true;
@@ -230,7 +233,8 @@ mod tests {
         assert_eq!(w.delete, vec![vec![1], vec![2], vec![3]]);
         assert!(w.put.is_empty());
         assert!(matches!(store.apply(2, Batch::new()), Err(StorageError::Conflict)));
+        // (a store opened as it was stored wipes whole too: a sign-out takes everything)
         let (_, mut plain) = super::store(1, vec![(vec![1], vec![1])]);
-        assert!(plain.wipe().is_none(), "only a store made to be wiped is");
+        assert_eq!(plain.wipe().map(|w| w.delete), Some(vec![vec![1]]));
     }
 }
