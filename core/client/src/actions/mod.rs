@@ -246,6 +246,11 @@ pub enum Action {
         #[serde(default)]
         expires_ms: Option<u64>,
     },
+    /// Open a Share link (spec/v1.md 11.5) for someone outside the room (the web's page `/artifact/<share id>`):
+    /// no device, no sign-in. The file comes as `Effect::FileReady` under the id `shared`, or a toast says why not.
+    OpenShared {
+        link: String,
+    },
     RevokeShare {
         share_id: String,
     },
