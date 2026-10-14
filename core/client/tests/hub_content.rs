@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use trommi_client_core::app::{Header, HttpClass, HttpRequest, HttpResponse};
 use trommi_client_core::hub::limits::CAP_FILE;
 use trommi_client_core::hub::{
-    Answer, ByteRange, Codec, DeskOnly, Expect, Failure, Route, Site, Timeline,
+    Answer, ByteRange, Codec, DeskOnly, Expect, Failure, ObjectRoute, Only, Route, Site, Timeline,
 };
 use trommi_core::ids::{
     base64url_encode as b64, BoardId, DeviceId, FileId, GroupId, Hash32, ObjectId, RoomId,
@@ -57,6 +57,203 @@ fn group() -> GroupId {
 
 fn envelope(change: u64) -> String {
     format!(r#"{{"change":{change},"envelope":"AAEC","received_at":5}}"#)
+}
+
+// ---- the Desk's counts and the settled objects (hub-api.md point 47)
+
+fn vector_answer(name: &str) -> Value {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/hub/{name}.json"));
+    let vector: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    serde_json::from_str(vector["answer"].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn the_desks_counts() {
+    let (_, x) = ask(&Route::Desk {
+        only: DeskOnly::Active,
+    });
+    let good = real_desk();
+    let Answer::Desk(desk) = taken(&x, &good.to_string()) else {
+        panic!()
+    };
+    let counts = desk.counts.expect("counts");
+    assert_eq!(
+        (counts.len(), counts[0].cards.open, counts[0].artifacts.open),
+        (1, 2, 1)
+    );
+    // a hub before them sends none; cut short, the open numbers may exceed what is listed
+    let mut before = good.clone();
+    before.as_object_mut().unwrap().remove("counts");
+    let Answer::Desk(desk) = taken(&x, &before.to_string()) else {
+        panic!()
+    };
+    assert!(desk.counts.is_none());
+    let mut cut = good.clone();
+    cut["truncated"] = json!(true);
+    cut["counts"][0]["cards"]["open"] = json!(5);
+    taken(&x, &cut.to_string());
+    let bend = |change: &dyn Fn(&mut Value)| {
+        let mut desk = good.clone();
+        change(&mut desk);
+        refused(&x, &desk.to_string());
+    };
+    // not the open objects listed: more, fewer, a group listed but not counted, a group counted twice
+    bend(&|d| d["counts"][0]["cards"]["open"] = json!(3));
+    bend(&|d| d["counts"][0]["artifacts"]["open"] = json!(0));
+    bend(&|d| d["counts"] = json!([]));
+    bend(&|d| {
+        let again = d["counts"][0].clone();
+        d["counts"].as_array_mut().unwrap().push(again);
+    });
+    // a group of another room counted with nothing open in it, after the first: fine; before it: out of order
+    let other = |first: u8| {
+        json!({ "group_id": b64(&[first; 48]), "cards": { "open": 0, "answered": 4, "closed": 1 },
+            "permission_requests": { "open": 0, "answered": 0, "closed": 0 }, "notes": { "open": 0, "answered": 0, "closed": 0 },
+            "artifacts": { "open": 0, "answered": 0, "closed": 0 } })
+    };
+    let mut more = good.clone();
+    more["counts"].as_array_mut().unwrap().push(other(255));
+    taken(&x, &more.to_string());
+    bend(&|d| d["counts"].as_array_mut().unwrap().insert(1, other(0)));
+    // types: a kind left out, a count not a whole number, a group id of the wrong length
+    bend(&|d| {
+        d["counts"][0].as_object_mut().unwrap().remove("notes");
+    });
+    bend(&|d| d["counts"][0]["cards"]["answered"] = json!(-1));
+    bend(&|d| d["counts"][0]["cards"]["closed"] = json!("4"));
+    bend(&|d| d["counts"][0]["group_id"] = json!(b64(&[1; 20])));
+    bend(&|d| d["counts"] = json!({}));
+}
+
+#[test]
+fn the_settled_objects() {
+    let g = group();
+    for (route, url) in [
+        (
+            Route::Settled { kind: None, only: Only::All, before: None, limit: 0 },
+            "https://hub.example/v1/objects?state=settled&limit=1",
+        ),
+        (
+            Route::Settled { kind: Some(ObjectRoute::PermissionRequests), only: Only::Active, before: Some(40), limit: 9000 },
+            "https://hub.example/v1/objects?state=settled&limit=500&kind=permission_requests&before=40&active=1",
+        ),
+    ] {
+        let (r, _) = ask(&route);
+        assert_eq!((r.url.as_str(), r.max_answer, r.class), (url, 16 << 20, HttpClass::Background));
+    }
+    let (r, _) = ask(&Route::Settled {
+        kind: Some(ObjectRoute::Cards),
+        only: Only::Group(&g),
+        before: None,
+        limit: 10,
+    });
+    assert_eq!(
+        r.url,
+        format!(
+            "https://hub.example/v1/objects?state=settled&limit=10&kind=cards&group={}",
+            b64(g.as_bytes())
+        )
+    );
+    assert!(Codec
+        .request(
+            &SITE,
+            &Route::Settled {
+                kind: None,
+                only: Only::All,
+                before: Some(0),
+                limit: 1
+            }
+        )
+        .is_err());
+
+    // the real hub's page of one group: newest first, each with its version
+    let good = vector_answer("objects-settled-group");
+    let real = group_of(&good);
+    let (_, x) = ask(&Route::Settled {
+        kind: None,
+        only: Only::Group(&real),
+        before: None,
+        limit: 10,
+    });
+    let Answer::Settled(page) = taken(&x, &good.to_string()) else {
+        panic!()
+    };
+    assert_eq!((page.items.len(), page.more, page.before), (2, false, 0));
+    assert!(page.items[0].row.head_change > page.items[1].row.head_change);
+    assert_eq!((page.items[0].row.state, page.items[1].row.state), (3, 2));
+    // a page with more: the next one is asked below where it ended
+    let mut more = good.clone();
+    more["more"] = json!(true);
+    more["before"] = more["items"][1]["head_change"].clone();
+    taken(&x, &more.to_string());
+    let bend_on = |x: &Expect, change: &dyn Fn(&mut Value)| {
+        let mut page = good.clone();
+        change(&mut page);
+        refused(x, &page.to_string());
+    };
+    let bend = |change: &dyn Fn(&mut Value)| bend_on(&x, change);
+    // out of order, twice, open, of another group, of no kind this protocol has
+    bend(&|p| p["items"].as_array_mut().unwrap().reverse());
+    bend(&|p| {
+        let again = p["items"][0].clone();
+        p["items"].as_array_mut().unwrap().push(again);
+    });
+    bend(&|p| p["items"][0]["state"] = json!(1));
+    bend(&|p| p["items"][0]["group_id"] = json!(b64(&[9; 48])));
+    bend(&|p| p["items"][0]["kind"] = json!("boards"));
+    // a version that is another object's; change numbers out of their order or above the answer's
+    bend(&|p| {
+        let other = p["items"][1]["version"].clone();
+        p["items"][0]["version"] = other;
+    });
+    bend(&|p| {
+        p["items"][0]["first_change"] = json!(p["items"][0]["head_change"].as_u64().unwrap() + 1)
+    });
+    bend(&|p| p["change"] = json!(p["items"][0]["head_change"].as_u64().unwrap() - 1));
+    // the cursor: without more, not 0; with more, 0 or above where the page ended
+    bend(&|p| p["before"] = json!(5));
+    bend(&|p| p["more"] = json!(true));
+    bend(&|p| {
+        p["more"] = json!(true);
+        p["before"] = json!(p["items"][1]["head_change"].as_u64().unwrap() + 1);
+    });
+    // more rows than asked; another kind than asked
+    let (_, one) = ask(&Route::Settled {
+        kind: None,
+        only: Only::Group(&real),
+        before: None,
+        limit: 1,
+    });
+    refused(&one, &good.to_string());
+    let (_, notes) = ask(&Route::Settled {
+        kind: Some(ObjectRoute::Notes),
+        only: Only::All,
+        before: None,
+        limit: 10,
+    });
+    refused(&notes, &good.to_string());
+    // asked below a change: every row lies below it, and so does the next cursor
+    let below = good["items"][0]["head_change"].as_u64().unwrap();
+    let (_, under) = ask(&Route::Settled {
+        kind: None,
+        only: Only::All,
+        before: Some(below),
+        limit: 10,
+    });
+    refused(&under, &good.to_string());
+    let mut rest = good.clone();
+    rest["items"].as_array_mut().unwrap().remove(0);
+    taken(&under, &rest.to_string());
+    rest["more"] = json!(true);
+    rest["before"] = json!(below);
+    refused(&under, &rest.to_string());
+}
+
+fn group_of(page: &Value) -> GroupId {
+    let bytes =
+        trommi_core::ids::base64url_decode(page["items"][0]["group_id"].as_str().unwrap()).unwrap();
+    GroupId::from_bytes(&bytes).unwrap()
 }
 
 // ---- the Desk

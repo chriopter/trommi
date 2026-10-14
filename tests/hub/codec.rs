@@ -324,6 +324,7 @@ fn the_codec_and_the_real_hub_agree() {
     assert_eq!(brief.cards.len(), 2);
     // (knocking first)
     assert_eq!(brief.cards[0].object.as_bytes(), &cards[1]);
+    assert!(brief.cards.iter().all(|c| c.first_change.is_some_and(|f| f <= c.version_change)));
     assert!(brief.settled.is_none() && !brief.truncated);
     let since = brief.cards[1].head_change;
     let Ok(Answer::DeskBrief(newer)) = rec.ask(
@@ -653,7 +654,7 @@ fn signing_in_and_joining_through_the_codec() {
 #[test]
 fn the_desk_files_and_the_rest_through_the_codec() {
     use sha2::{Digest, Sha256};
-    use trommi_client_core::hub::{ByteRange, DeskOnly, Role, Timeline};
+    use trommi_client_core::hub::{ByteRange, DeskOnly, ObjectRoute, Role, Timeline};
     use trommi_core::ids::{BoardId, DeviceId, FileId, Hash32, ObjectId, SessionId, ShareId};
 
     let mut w = World::on(TestHub::start_with(&[("HUB_LIMIT_ENVELOPES_PER_SECOND", "100000")]));
@@ -669,11 +670,12 @@ fn the_desk_files_and_the_rest_through_the_codec() {
     for text in ["one", "two", "three", "four", "five"] {
         agent.send(&w.hub, &group, &chat(&session, w.ada.id(), text)).ok();
     }
-    let mut cards = vec![];
+    let (mut cards, mut versions) = (vec![], vec![]);
     for urgency in [0, 3] {
         let id = enc::object_id(&group, &agent.id(), agent.chain(&group).0 + 1);
         agent.send(&w.hub, &group, &object(wire::KIND_VERSION, id, wire::TYPE_CARD, wire::STATE_OPEN, urgency, ZERO32, ZERO32)).ok();
         cards.push(id);
+        versions.push(agent.chain(&group).1);
     }
     let register_id: [u8; 16] = random();
     agent.send(&w.hub, &group, &register(&register_id, "an older value")).ok();
@@ -748,6 +750,33 @@ fn the_desk_files_and_the_rest_through_the_codec() {
         panic!("the Desk of the archived sessions is read")
     };
     assert!(archived.cards.is_empty() && archived.registers.is_empty());
+    let counts = desk.counts.as_ref().expect("the Desk counts");
+    assert_eq!(counts.len(), 1);
+    assert_eq!((counts[0].group, counts[0].cards.open, counts[0].artifacts.open), (group_id(&group), 2, 1));
+
+    // ---- the settled objects, newest first, a page at a time: a card he answered, one its agent closed
+    let answer = object(wire::KIND_ANSWER, cards[0], wire::TYPE_CARD, wire::STATE_ANSWERED, 0, versions[0], agent.id());
+    w.ada.send(&w.hub, &group, &answer).ok();
+    let close = object(wire::KIND_VERSION, cards[1], wire::TYPE_CARD, wire::STATE_CLOSED, 3, versions[1], ZERO32);
+    agent.send(&w.hub, &group, &close).ok();
+    let (mut before, mut settled) = (None, vec![]);
+    for page in 0..3 {
+        let name = format!("objects-settled-{page}");
+        let asked = json!({ "route": "settled", "kind": "cards", "only": "all", "before": before, "limit": 1 });
+        let route = Route::Settled { kind: Some(ObjectRoute::Cards), only: Only::All, before, limit: 1 };
+        let Ok(Answer::Settled(got)) = rec.ask(&name, &route, asked) else { panic!("{name} is read") };
+        settled.extend(got.items.iter().map(|i| (i.row.object, i.row.state)));
+        if !got.more {
+            break;
+        }
+        before = Some(got.before);
+    }
+    assert_eq!(settled.iter().map(|(o, s)| (*o.as_bytes(), *s)).collect::<Vec<_>>(), vec![(cards[1], 3), (cards[0], 2)], "newest first");
+    let one = group_id(&group);
+    let asked = json!({ "route": "settled", "kind": null, "only": { "group": b64(&group) }, "before": null, "limit": 10 });
+    let route = Route::Settled { kind: None, only: Only::Group(&one), before: None, limit: 10 };
+    let Ok(Answer::Settled(got)) = rec.ask("objects-settled-group", &route, asked) else { panic!("one group's settled objects are read") };
+    assert!(got.items.len() == 2 && !got.more && got.items.iter().all(|i| i.kind == ObjectRoute::Cards && i.row.version.is_some()));
 
     // ---- a Chat, newest first, page by page; a board's items; a frontier that covers nothing yet
     let timeline = SessionId::new(session);

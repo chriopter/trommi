@@ -1,5 +1,5 @@
 {
-  "answer": "{\"artifacts\":[],\"cards\":[],\"change\":20,\"groups\":[],\"notes\":[],\"permission_requests\":[],\"registers\":[],\"truncated\":false}",
+  "answer": "{\"artifacts\":[],\"cards\":[],\"change\":20,\"counts\":[],\"groups\":[],\"notes\":[],\"permission_requests\":[],\"registers\":[],\"truncated\":false}",
   "asked": {
     "only": "archived",
     "route": "desk"

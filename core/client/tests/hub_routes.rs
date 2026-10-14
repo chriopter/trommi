@@ -421,6 +421,21 @@ fn desk_brief_a_good_list_parses() {
         (got.cards[0].version_change, got.cards[0].head_change),
         (5, 9)
     );
+    // a hub before it gives no first change; with it, the row's first change
+    assert_eq!(got.cards[0].first_change, None);
+    let with_first = brief(
+        &[listed(1, 5, 9).replace(
+            "\"version_change\"",
+            "\"first_change\":3,\"version_change\"",
+        )],
+        &[],
+        None,
+        9,
+    );
+    let Ok(Answer::DeskBrief(first)) = Codec.answer(&whole, &ok(&with_first)) else {
+        panic!("a good list with first changes")
+    };
+    assert_eq!(first.cards[0].first_change, Some(3));
     assert_eq!(
         (
             got.permission_requests.len(),
@@ -468,6 +483,35 @@ fn desk_brief_every_malformation_refuses_the_whole_list() {
         brief(&[listed(1, 0, 9)], &[], None, 9),
         brief(&[listed(1, 5, 10)], &[], None, 9),
         brief(&[listed(1, 10, 9)], &[], None, 9),
+        // a version above the head; a first change above the version, or 0, or no number
+        brief(&[listed(1, 8, 7)], &[], None, 9),
+        brief(
+            &[listed(1, 5, 9).replace(
+                "\"version_change\"",
+                "\"first_change\":6,\"version_change\"",
+            )],
+            &[],
+            None,
+            9,
+        ),
+        brief(
+            &[listed(1, 5, 9).replace(
+                "\"version_change\"",
+                "\"first_change\":0,\"version_change\"",
+            )],
+            &[],
+            None,
+            9,
+        ),
+        brief(
+            &[listed(1, 5, 9).replace(
+                "\"version_change\"",
+                "\"first_change\":\"3\",\"version_change\"",
+            )],
+            &[],
+            None,
+            9,
+        ),
         // types
         r#"{"cards":{},"permission_requests":[],"truncated":false,"change":9}"#.to_owned(),
         r#"{"cards":[],"truncated":false,"change":9}"#.to_owned(),

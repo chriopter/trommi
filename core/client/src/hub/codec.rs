@@ -49,6 +49,7 @@ enum Kind {
     /// An answer that carries nothing but an object.
     Empty,
     Desk,
+    Settled(desk::SettledAsked),
     Envelopes(content::EnvelopesAsked),
     Pruned,
     SealedKeys {
@@ -187,6 +188,15 @@ impl Codec {
             }
             Route::SignOut => (signin::sign_out_request(site)?, Kind::Empty),
             Route::Desk { only } => (desk::whole_request(site, only)?, Kind::Desk),
+            Route::Settled {
+                kind,
+                only,
+                before,
+                limit,
+            } => {
+                let (request, asked) = desk::settled_request(site, kind, only, before, limit)?;
+                (request, Kind::Settled(asked))
+            }
             Route::Chat {
                 timeline,
                 before,
@@ -412,6 +422,9 @@ impl Codec {
                 Answer::Done
             }
             Kind::Desk => Answer::Desk(desk::whole(&answer(response, CAP_DESK)?)?),
+            Kind::Settled(asked) => {
+                Answer::Settled(desk::settled(asked, &answer(response, CAP_LIST)?)?)
+            }
             Kind::Envelopes(asked) => content::envelopes(asked, &answer(response, CAP_LIST)?)?,
             Kind::Pruned => content::pruned(&answer(response, CAP_WRITE)?)?,
             Kind::SealedKeys { after, limit } => {
