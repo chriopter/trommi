@@ -554,8 +554,8 @@ self-join beside a link join. Each case ends with every session on its account's
 requests run its fast cases, `TROMMI_TESTS_FULL=1` (nightly) all; `TROMMI_MATRIX_LOGS=<folder>` keeps each
 connector's log.
 
-All clients against each other (nightly in CI, `.github/workflows/nightly.yml`): the web app's client layer,
-the iOS app's engine (both with the real core) and the connector, each twice, in one room on a real hub, through one
+All clients against each other (nightly in CI, `.github/workflows/nightly.yml`): the web app (the app core in its
+executor), the iOS app's engine (both with the real core) and the connector, each twice, in one room on a real hub, through one
 long seeded random timeline; it fails where two devices show anything different. Then their speed with 1,000 cards.
 
 ```sh

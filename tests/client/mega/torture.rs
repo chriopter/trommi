@@ -4,7 +4,8 @@
 //!
 //! In the room, per seed:
 //! - the stand-in human device (tests/connector/common) founds it and invites;
-//! - the web app's client layer with the real core (web-observer.mjs), several devices, following the live stream;
+//! - the web app: the app core in the web's executor (web-observer.mjs), several devices, signed in with the
+//!   account's password, following the live stream;
 //! - a fleet of iPhones: the iOS app's engine with the real core, N devices in one process (MegaFleetTests.swift),
 //!   joined one by one through "Pair a device" (link and six emoji), the first with the recovery code;
 //! - agents: the REAL connector binary, each an MCP server on stdio in a folder of its own, joined every way there is.
@@ -24,7 +25,7 @@
 //!
 //! At every checkpoint it fails on:
 //! - SESSIONS: two human devices show another session list (which sessions, their names, online or gone, their
-//!   parent, their order: the sidebar's own projection, web `BoardState.agents`, iOS `DeskModel.agents`);
+//!   parent, their order: the sidebar's own projection, web `view.sidebar.sessions` of the app core, iOS `DeskModel.agents`);
 //! - TRUTH: a live agent is missing from that list, shown under another name, or shown gone; a dead one shown
 //!   online; a denied one shown at all;
 //! - PRESENCE: a web device saw a live agent go offline outside the moments it was really away (a flicker);
@@ -194,13 +195,13 @@ impl Torture {
         let mut o = Observer::spawn("web", &tree, &self.root, &self.out, self.seed);
         let t = now();
         let r = o
-            .call(json!({ "op": "signin", "hub": self.proxy.url, "room_id": self.room_hex, "code": self.code_hex, "stream": true }))
+            .call(json!({ "op": "signin", "hub": self.proxy.url, "room_id": self.room_hex, "code": self.code_hex, "email": MEGA_EMAIL, "password": MEGA_PASSWORD, "stream": true }))
             .await;
         match r {
             Ok(_) => {
                 o.signed_in = true;
                 let ms = now() - t;
-                self.say(format!("{} signed in with the code in {ms} ms", o.name));
+                self.say(format!("{} signed in in {ms} ms", o.name));
                 self.metric("web_signin_ms", ms, Some(30_000));
                 self.web.push(o);
             }
@@ -538,6 +539,12 @@ impl Torture {
     /// A new session asks to join on its own: a folder without a key on the machine of a running agent, or the same
     /// folder as that agent (a second Claude Code session there). A human device allows or denies.
     async fn self_join(&mut self, same_folder: bool) {
+        // (only an iPhone answers the ask: the app core the web runs on shows no self-join asks yet, its
+        // `view.account.asks` is never filled, so a web device cannot Allow or Deny)
+        if !self.phones.iter().any(|p| p.0) {
+            self.say("a self-join is left out: no iPhone runs to answer the ask (the web shows no asks)".into());
+            return;
+        }
         let Some(v) = self.pick_alive_agent() else { return };
         let k = self.agents.len();
         let host = self.agents[v].host;
@@ -574,13 +581,10 @@ impl Torture {
         }
         self.agents[k].mcp = Some(mcp);
         let mut by = self.pick_human();
-        if matches!(by, HumanDev::StandIn) {
-            by = if !self.web.is_empty() {
-                HumanDev::Web(0)
-            } else if let Some(i) = self.phones.iter().position(|p| p.0) {
-                HumanDev::Phone(i)
-            } else {
-                return;
+        if matches!(by, HumanDev::StandIn | HumanDev::Web(_)) {
+            by = match self.phones.iter().position(|p| p.0) {
+                Some(i) => HumanDev::Phone(i),
+                None => return,
             };
         }
         let by_name = self.dev_name(&by);
@@ -922,8 +926,26 @@ impl Torture {
         // what every device shows
         let mut snaps = BTreeMap::new();
         let mut shown: Vec<(String, Value)> = Vec::new();
+        // (the iPhones first: the cards and requests they hold are what each web device reads one by one, as its app
+        // core shows one card at a time; the lists stay in the order web, iPhones)
+        let mut phone_shown: Vec<(String, Value)> = Vec::new();
+        for &i in &alive {
+            let name = if i == 0 { "ios@fleet".to_string() } else { format!("ios@fleet{i}") };
+            if let Ok(v) = self.phone(json!({ "op": "snapshot", "dev": i })).await {
+                snaps.insert(name.clone(), v);
+            }
+            match self.phone(json!({ "op": "shown", "dev": i })).await {
+                Ok(v) => phone_shown.push((name, v)),
+                Err(e) => phone_shown.push((name, json!({ "failed": e }))),
+            }
+        }
+        let ids: BTreeSet<String> = snaps
+            .values()
+            .flat_map(|v| ["cards", "permissions"].map(|k| v[k].as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()))
+            .flatten()
+            .collect();
         for o in self.web.iter_mut() {
-            if let Ok(v) = o.call(json!({ "op": "snapshot" })).await {
+            if let Ok(v) = o.call(json!({ "op": "snapshot", "ids": ids })).await {
                 snaps.insert(o.name.clone(), v);
             }
             match o.call(json!({ "op": "shown" })).await {
@@ -931,16 +953,7 @@ impl Torture {
                 Err(e) => shown.push((o.name.clone(), json!({ "failed": e }))),
             }
         }
-        for &i in &alive {
-            let name = if i == 0 { "ios@fleet".to_string() } else { format!("ios@fleet{i}") };
-            if let Ok(v) = self.phone(json!({ "op": "snapshot", "dev": i })).await {
-                snaps.insert(name.clone(), v);
-            }
-            match self.phone(json!({ "op": "shown", "dev": i })).await {
-                Ok(v) => shown.push((name, v)),
-                Err(e) => shown.push((name, json!({ "failed": e }))),
-            }
-        }
+        shown.extend(phone_shown);
         let dir = self.out.join(label);
         std::fs::create_dir_all(&dir).unwrap();
         for (k, v) in &snaps {
@@ -950,8 +963,18 @@ impl Torture {
 
         // SESSIONS: every device the same list
         if let Some((first, reference)) = shown.first().cloned() {
+            // (`agent`, the session's agent device, is left out: the web's app core does not show it)
+            let unagented = |v: &Value| -> Value {
+                let mut v = v.clone();
+                for e in v.as_array_mut().into_iter().flatten() {
+                    if let Some(o) = e.as_object_mut() {
+                        o.remove("agent");
+                    }
+                }
+                v
+            };
             for (name, list) in &shown[1..] {
-                if *list != reference {
+                if unagented(list) != unagented(&reference) {
                     self.fail(format!("{label} SESSIONS {first} vs {name}: {}", sessions_differ(&reference, list)));
                 }
             }
@@ -1012,7 +1035,7 @@ impl Torture {
                 if on {
                     continue;
                 }
-                let Some(a) = self.agents.iter().find(|a| a.device.as_deref() == Some(dev)) else { continue };
+                let Some(a) = self.agents.iter().find(|a| a.device.as_deref() == Some(dev) || a.session.as_deref() == Some(dev)) else { continue };
                 let really_away = !a.alive && a.killed_at.is_some_and(|k| t >= k) || a.away.iter().any(|(f, to)| t >= *f && t <= *to);
                 if a.alive && !really_away && a.session.is_some() {
                     flickers.push(format!("{} saw {} go offline at +{} ms while it ran", o.name, a.name, t.saturating_sub(t0)));
@@ -1147,7 +1170,7 @@ fn sessions_differ(a: &Value, b: &Value) -> String {
         match rb.iter().find(|x| id(x) == id(e)) {
             None => out.push(format!("only first shows {}", label(e))),
             Some(x) => {
-                for k in ["name", "online", "parent", "agent"] {
+                for k in ["name", "online", "parent"] {
                     if e[k] != x[k] {
                         out.push(format!("{} {k}: {} vs {}", label(e), short(&e[k]), short(&x[k])));
                     }
@@ -1192,9 +1215,9 @@ async fn run_torture(seed: u64, root: &Path, out: &Path, report: &mut Report) {
     proxy.set_upstream(hub.port);
     let code: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
     let keep = code.clone();
-    let human = Human::found_with(&proxy.url, move |_, c| {
+    let human = Human::found_with(&proxy.url, move |room, c| {
         *keep.lock().unwrap() = Some(c.expose().to_vec());
-        None
+        Some(account_body(room, c))
     })
     .await;
     let code_hex = trommi_connector::util::hex(&code.lock().unwrap().clone().expect("the code"));

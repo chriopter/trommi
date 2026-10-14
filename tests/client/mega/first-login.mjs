@@ -1,12 +1,12 @@
-// A traced first login into a full account (tests/client/mega/full.rs holds one open): a new device of the web app's
-// client layer (web-observer.mjs) or of the iOS app's engine (MegaObserverTests.swift, its test runner on Linux)
-// signs in with the recovery code, follows the live stream, and keeps every request, every call into the core,
-// every timed step and samples of what the person would see. Written as JSON; trace-view.mjs draws it.
+// A traced first login into a full account (tests/client/mega/full.rs holds one open): a new device of the web app
+// (the app core in its executor, web-observer.mjs: it signs in with the account's e-mail and password) or of the iOS
+// app's engine (MegaObserverTests.swift, its test runner on Linux: with the recovery code) follows the live stream and
+// keeps every request, every event the core handled (web) or every call into the core (iOS), every timed step and
+// samples of what the person would see. Written as JSON; trace-view.mjs draws it.
 //
 //   node tests/client/mega/first-login.mjs <MEGA_OUT>/full/fixture.json web|ios <out.json> [<tree>]
 //
-// TRACE_RTT_MS=40: every request of the web client waits so long first, as over a real network. A traced web login
-// runs with the product's own timing (heal delay, backoff), not the tests' short waits.
+// TRACE_RTT_MS=40: every request of the web client waits so long first, as over a real network.
 //
 // <tree>: the checkout whose clients sign in (default: this one; it must have been prepared, prepare.sh).
 import { spawn } from 'node:child_process'
@@ -40,7 +40,7 @@ async function call(cmd, limitS = 1800) {
 }
 const t = Date.now()
 let signin = null, error = null
-try { signin = await call({ op: 'signin', hub: fixture.hub, room_id: fixture.room_id, code: fixture.code, stream: true, trace: true }) } catch (e) { error = String(e.message ?? e) }
+try { signin = await call({ op: 'signin', hub: fixture.hub, room_id: fixture.room_id, code: fixture.code, email: fixture.email, password: fixture.password, stream: true, trace: true }) } catch (e) { error = String(e.message ?? e) }
 const wall = Date.now() - t
 // (a few seconds more: the presence of the live agents on the stream, and what the engine does after its settle)
 const trace = await call({ op: 'trace', linger_ms: Number(process.env.TRACE_LINGER_MS ?? 4000) })
