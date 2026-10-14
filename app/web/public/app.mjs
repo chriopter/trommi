@@ -914,9 +914,12 @@ const configOf = fixture => ({
 })
 
 async function start({ take = false } = {}) {
-  const b = createBoard({ views: [appView, ...VIEWS] })
+  // (the demo only: the review page of all screens, and ?state= clicks: demo/demo.mjs)
+  const demoPages = demo ? await import('./demo/demo.mjs') : null
+  if (demoPages) { demoPages.screensController({ Controller, controller }); const state = new URLSearchParams(location.search).get('state'); if (state) document.addEventListener('turbo:load', () => demoPages.demoState(state), { once: true }) }
+  const b = createBoard({ views: [appView, ...(demoPages ? [demoPages.screensView] : []), ...VIEWS] })
   const router = createRouter({ board: b })
-  window.trommi = { board: b, router, vm: core.vm, act: core.act, demo: Boolean(demo), view }
+  window.trommi = { board: b, router, vm: core.vm, act: core.act, demo: Boolean(demo), view, ...(demoPages ? { demoState: demoPages.demoState } : {}) }
   let frame = 0, painted = false
   const repaint = () => { frame ||= requestAnimationFrame(() => { frame = 0; if (painted) router.refresh(); conn(core.vm()) }) }
   core.on('render', vm => { syncToasts(vm); repaint() })
