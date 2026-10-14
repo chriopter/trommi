@@ -175,39 +175,12 @@ fn hkdf(ikm: &[u8], salt: &[u8], info: &[u8]) -> Result<Secret<32>, Error> {
     Secret::from_slice(okm.as_slice()).map_err(|_| Error::Internal("hkdf length"))
 }
 
-/// An e-mail address as the account keeps it; its bytes are the input of the account's salt. The rule is spelled
-/// out over single characters and uses no Unicode table:
-///
-/// 1. Leading and trailing space, tab, line feed, vertical tab, form feed and carriage return are dropped.
-/// 2. Every character left is printable ASCII, U+0021 to U+007E. Anything else is refused, never mapped.
-/// 3. `A` to `Z` become `a` to `z`.
-/// 4. At most 254 characters; exactly one `@`; 1 to 64 characters before it; after it a `.` with 1 to 190
-///    characters before and 2 to 63 after.
-///
-/// Anything else is `bad-email`.
+/// An e-mail address as the account keeps it; its bytes are the input of the account's salt. The rule is the
+/// hub's, written once in `trommi_wire::account::normalise_email` (spec/v1.md 8.9.1): trim, printable ASCII only,
+/// lowercase, one `@` with 1 to 64 characters before it, the last `.` of the domain with 1 to 190 characters before
+/// and 2 to 63 after, at most 254 characters. Anything else is `bad-email`.
 pub fn normalise_email(email: &str) -> Result<String, AccountError> {
-    let blank = |c: char| c == ' ' || ('\t'..='\r').contains(&c);
-    let trimmed = email.trim_matches(blank);
-    if trimmed.len() > 254 || !trimmed.bytes().all(|b| (0x21..=0x7e).contains(&b)) {
-        return Err(AccountError::BadEmail);
-    }
-    let normalised = trimmed.to_ascii_lowercase();
-    let (local, domain) = normalised.split_once('@').ok_or(AccountError::BadEmail)?;
-    if domain.contains('@') || !(1..=64).contains(&local.len()) {
-        return Err(AccountError::BadEmail);
-    }
-    let dot_fits = |(before, _): (usize, char)| {
-        let after = domain.len().saturating_sub(before).saturating_sub(1);
-        (1..=190).contains(&before) && (2..=63).contains(&after)
-    };
-    if !domain
-        .char_indices()
-        .filter(|(_, c)| *c == '.')
-        .any(dot_fits)
-    {
-        return Err(AccountError::BadEmail);
-    }
-    Ok(normalised)
+    trommi_wire::account::normalise_email(email).ok_or(AccountError::BadEmail)
 }
 
 /// The password in the form everything is derived from: NFC.

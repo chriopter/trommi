@@ -16,34 +16,14 @@ use crate::util::{b64, random, same, unb64};
 use crate::webauthn;
 
 use trommi_wire::account::{
-    KDF_ALG, KDF_LANES, KDF_MEMORY_KIB, KDF_PASSES, KDF_RECORD_VERSION, MAX_CREDENTIAL_ID_LEN, MAX_EMAIL_LEN,
+    KDF_ALG, KDF_LANES, KDF_MEMORY_KIB, KDF_PASSES, KDF_RECORD_VERSION, MAX_CREDENTIAL_ID_LEN,
     SEALED_COPY_LEN, SEALED_COPY_VERSION,
 };
 const PASSKEY_CHALLENGE_MS: u64 = 120_000;
 
-/// v1 §16.1: trim, only U+0021–U+007E, lowercase, one `@`, the lengths. Refused otherwise, never mapped.
+/// spec/v1.md 8.9.1: the one rule of `trommi_wire::account::normalise_email`, which the app core checks too.
 pub fn normalise_email(input: &str) -> Res<String> {
-    let bad = || refuse("bad-email", "not an e-mail address this hub takes");
-    let trimmed = input.trim_matches(|c: char| c == ' ' || ('\u{9}'..='\u{d}').contains(&c));
-    if !trimmed.chars().all(|c| ('\u{21}'..='\u{7e}').contains(&c)) {
-        return Err(bad());
-    }
-    let email = trimmed.to_ascii_lowercase();
-    let mut parts = email.split('@');
-    let (Some(local), Some(domain), None) = (parts.next(), parts.next(), parts.next()) else {
-        return Err(bad());
-    };
-    let Some((before, after)) = domain.rsplit_once('.') else {
-        return Err(bad());
-    };
-    let fits = email.len() <= MAX_EMAIL_LEN
-        && (1..=64).contains(&local.len())
-        && (1..=190).contains(&before.len())
-        && (2..=63).contains(&after.len());
-    if !fits {
-        return Err(bad());
-    }
-    Ok(email)
+    trommi_wire::account::normalise_email(input).ok_or_else(|| refuse("bad-email", "not an e-mail address this hub takes"))
 }
 
 /// A slow hash of a login key the device derived. The key is 32 bytes out of the device's own Argon2id over the

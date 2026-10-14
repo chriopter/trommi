@@ -54,7 +54,7 @@
     "keyWrappedB64u": "AsPDw8PDw8PDw8PDw159aENJ-xDbBNKxETCkx7rNFaL37rWsiNDUkkV0t3Jg3eml6oNKOIKHRYmb3qY6-g"
   },
   "email": {
-    "rule": "1. drop leading and trailing U+0020 and U+0009..U+000D. 2. every character left is U+0021..U+007E, else bad-email (nothing is mapped or normalised). 3. A-Z become a-z. 4. at most 254 characters; exactly one \"@\"; 1 to 64 characters before it; after it a \".\" with 1 to 190 characters before and 2 to 63 after.",
+    "rule": "1. drop leading and trailing U+0020 and U+0009..U+000D. 2. every character left is U+0021..U+007E, else bad-email (nothing is mapped or normalised). 3. A-Z become a-z. 4. at most 254 characters; exactly one \"@\"; 1 to 64 characters before it; after it the last \".\" with 1 to 190 characters before and 2 to 63 after.",
     "cases": [
       {
         "input": "owner@example.com",
@@ -86,11 +86,7 @@
         "normalised": "a@example..com",
         "why": "two dots: the rule asks for one dot with enough on both sides"
       },
-      {
-        "input": "a@example.com.",
-        "normalised": "a@example.com.",
-        "why": "a dot at the end: the dot before \"com.\" counts"
-      },
+
       {
         "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.org",
         "normalised": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.org",
@@ -102,9 +98,9 @@
         "why": "254 characters"
       },
       {
-        "input": "x@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com",
-        "normalised": "x@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com",
-        "why": "190 characters before the first dot"
+        "input": "x@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com",
+        "normalised": "x@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com",
+        "why": "190 characters before the last dot"
       },
       {
         "input": "x@a.777777777777777777777777777777777777777777777777777777777777777",
@@ -135,6 +131,16 @@
         "input": "owner@example",
         "error": "bad-email",
         "why": "no dot after the @"
+      },
+      {
+        "input": "a@b.example.c",
+        "error": "bad-email",
+        "why": "only the last dot counts: one character after it, though \"example\" fits after the first"
+      },
+      {
+        "input": "a@example.com.",
+        "error": "bad-email",
+        "why": "a dot at the end: nothing after the last dot"
       },
       {
         "input": "@example.com",
@@ -192,9 +198,9 @@
         "why": "255 characters"
       },
       {
-        "input": "x@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example.com",
+        "input": "x@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com",
         "error": "bad-email",
-        "why": "191 characters and more before every dot"
+        "why": "191 characters before the last dot"
       },
       {
         "input": "x@a.7777777777777777777777777777777777777777777777777777777777777777",

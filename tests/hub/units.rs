@@ -1942,8 +1942,13 @@ mod accounts_tests {
             "@example.org",
             &format!("{}@example.org", "x".repeat(65)),
             "a@.org",
+            "a@b.example.c",
+            "a@example.com.",
         ] {
             assert_eq!(normalise_email(bad).unwrap_err().code, "bad-email", "{bad}");
+        }
+        for good in ["owner@example.com", "a@example..com", "ada.lovelace+notes@sub.example.org"] {
+            assert_eq!(normalise_email(good).unwrap(), good);
         }
     }
 
