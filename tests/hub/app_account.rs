@@ -237,3 +237,20 @@ fn push_is_turned_on_and_off_for_this_device() {
     sim.send(Event::Action { action: Action::Push { level: trommi_client_core::app::push::PushChoice::Off } });
     until(&mut sim, "push off", |s| s.view.settings.push.as_ref().is_some_and(|p| p.level == "off"));
 }
+
+#[test]
+fn an_account_is_made_with_a_passkey_alone() {
+    let hub = TestHub::start();
+    let key = std::rc::Rc::new(Authenticator::new());
+    let mut sim = slot(&hub, key.clone());
+    account(&mut sim, AccountAction::FoundWithPasskey { email: None, hub: None });
+    let words = kit(&mut sim);
+    until(&mut sim, "live", |s| s.view.phase == Phase::Live);
+    account(&mut sim, AccountAction::ReadAccount);
+    until(&mut sim, "read", |s| s.view.settings.login.is_some());
+    let login = sim.view.settings.login.clone().unwrap();
+    assert!(!login.has_password && login.email.is_none() && login.passkeys.len() == 1 && login.kit_form == "id", "{login:?}");
+    // the passkey signs in on a new device, and the kit under the account's id
+    signs_in_with(&hub, key, AccountAction::SignInWithPasskey { hub: None });
+    signs_in(&hub, AccountAction::SignInWithKit { email: login.account.clone(), words: secret(&words), hub: None });
+}

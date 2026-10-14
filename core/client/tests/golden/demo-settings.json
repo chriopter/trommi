@@ -88,7 +88,7 @@
       "total": 12,
       "sessions": [
         {
-          "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+          "id": "54ddca7af4029f0526984da1e346d833",
           "slug": "fernly-web",
           "name": {
             "key": "session.name",
@@ -118,7 +118,7 @@
           }
         },
         {
-          "id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+          "id": "4abc388943bda4956b58dc2d5eb3e7e1",
           "slug": "fernly-ios",
           "name": {
             "key": "session.name",
@@ -223,7 +223,7 @@
       "total": 9,
       "sessions": [
         {
-          "id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+          "id": "9ace71aadae23ea1f467d62b83b1d604",
           "slug": "payments-service",
           "name": {
             "key": "session.name",
@@ -253,7 +253,7 @@
           }
         },
         {
-          "id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+          "id": "eeb9fe76ad84d2405625d15419ce6083",
           "slug": "docs-site",
           "name": {
             "key": "session.name",
@@ -355,7 +355,7 @@
       "total": 8,
       "sessions": [
         {
-          "id": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+          "id": "5ef619647e0e8185fef0e3be40ff4809",
           "slug": "infra",
           "name": {
             "key": "session.name",
@@ -464,7 +464,7 @@
       "total": 4,
       "sessions": [
         {
-          "id": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+          "id": "9aa575fae2c64ece4ae4ab1b783673da",
           "slug": "design-system",
           "name": {
             "key": "session.name",
@@ -561,7 +561,7 @@
       "total": 4,
       "sessions": [
         {
-          "id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+          "id": "f14180d4caac441522269c631a745866",
           "slug": "data-pipeline",
           "name": {
             "key": "session.name",

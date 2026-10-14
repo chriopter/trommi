@@ -34,6 +34,10 @@ pub struct Config {
     /// What this platform can do: decides which effects the core uses.
     #[serde(default)]
     pub can: Abilities,
+    /// The demo room (`demo/data/fixture.json`): the App runs it with no hub and no store; what the person does
+    /// shows and stays (until the App ends).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub demo: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

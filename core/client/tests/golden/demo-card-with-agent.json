@@ -1,6 +1,6 @@
 {
   "id": "0b48fb2a02a4fcc2a22da6f5a3b7bb49",
-  "session_id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+  "session_id": "425412ed2b37ef1052c0a8ecc47949f1",
   "kind": "decision",
   "state": "open",
   "urgency": 1,
@@ -43,7 +43,7 @@
   },
   "status": "open",
   "from": {
-    "session_id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+    "session_id": "425412ed2b37ef1052c0a8ecc47949f1",
     "name": "Search & Social",
     "mark": "draw:eye",
     "path": [

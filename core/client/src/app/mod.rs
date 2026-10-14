@@ -78,6 +78,10 @@ enum Pending {
     Wipe,
     /// The device state read for a join by an invite link (`AccountAction::Join`).
     LinkLoad,
+    /// The challenge of a founding with a passkey: the hub, the e-mail given.
+    FoundChallenge(String, Option<String>),
+    /// The platform's new passkey for a founding: the hub, the e-mail, the account id the challenge named.
+    FoundPasskey(String, Option<String>, String),
     /// The challenge of a sign-in with a passkey, at this hub.
     PasskeyChallenge(String),
     /// The platform's passkey for a sign-in at this hub.
@@ -139,6 +143,10 @@ pub struct App {
     changes: account_change::Changes,
     desks: desks::DeskDeletes,
     push: push::Push,
+    /// The demo room runs (`Config.demo`): no hub, no store.
+    demo: bool,
+    /// Notes this run delivered (their closing version is on its way).
+    notes_went: std::collections::BTreeSet<String>,
     /// A recovery (`AccountAction::Recover`) waiting for its login: the new kit's words and the sealer of the
     /// account's new copies; then the words, shown once the room is recovered.
     recover_with: Option<(Vec<String>, engine::recover::Copies)>,
@@ -212,6 +220,8 @@ impl App {
             changes: account_change::Changes::default(),
             desks: desks::DeskDeletes::default(),
             push: push::Push::default(),
+            demo: false,
+            notes_went: Default::default(),
             recover_with: None,
             recovered_kit: None,
             selfjoin: selfjoin::SelfJoin::default(),
@@ -329,6 +339,7 @@ impl App {
             }
             AccountAction::Found { email, password, hub } => return self.found(&email, &password, hub.as_deref(), out),
             AccountAction::SignInWithPasskey { hub } => return self.passkey_sign_in(hub.as_deref(), out),
+            AccountAction::FoundWithPasskey { email, hub } => return self.found_with_passkey(email, hub.as_deref(), out),
             AccountAction::Join { link } => {
                 if self.engine.is_some() || self.founding.is_some() || self.signing_in.is_some() || self.linking.is_some() {
                     out.push(log(LogLevel::Warn, "account: a join by link on a slot that has a device or is busy"));
@@ -448,6 +459,72 @@ impl App {
                 out.push(Effect::Http { id, request });
             }
             Err(problem) => self.sign_in_failed(problem),
+        }
+    }
+
+    /// `FoundWithPasskey`: the hub's challenge (it names the new account's id), the platform's passkey, then the
+    /// founding as with a password (`found_loaded`).
+    fn found_with_passkey(&mut self, email: Option<String>, hub: Option<&str>, out: &mut Vec<Effect>) {
+        use crate::account::signin;
+        let Some(config) = self.config.as_ref() else { return };
+        if self.engine.is_some() || self.room_join_wait.is_some() || self.signing_in.is_some() || self.founding.is_some() {
+            out.push(log(LogLevel::Warn, "account: a founding on a slot that has a device or is busy"));
+            return;
+        }
+        let client = format!("{}/{}", config.platform, config.version);
+        match signin::hub_of(hub, &config.hub).and_then(|hub| signin::passkey_challenge(&hub, &client).map(|asked| (hub, asked))) {
+            Ok((hub, (request, _))) => {
+                let id = self.io(Pending::FoundChallenge(hub, email));
+                self.next_view.account = crate::views::AccountView { step: "working".into(), ..Default::default() };
+                out.push(Effect::Http { id, request });
+            }
+            Err(problem) => self.found_failed(problem.text()),
+        }
+    }
+
+    fn found_challenged(&mut self, hub: String, email: Option<String>, result: IoResult<HttpResponse>, out: &mut Vec<Effect>) {
+        use crate::account::signin::{self, Problem};
+        let Some(config) = self.config.as_ref() else { return };
+        let client = format!("{}/{}", config.platform, config.version);
+        let Ok((_, expect)) = signin::passkey_challenge(&hub, &client) else { return };
+        let answer = match result {
+            IoResult::Ok(response) => crate::hub::Codec.answer(&expect, &response),
+            IoResult::Err(error) => Err(crate::hub::classify_io(&error).unwrap_or(crate::hub::Failure::Offline)),
+        };
+        match answer {
+            Ok(crate::hub::Answer::PasskeyChallenge(challenge)) => {
+                let user_name = email.clone().filter(|e| !e.trim().is_empty()).unwrap_or_else(|| challenge.account.clone());
+                let id = self.io(Pending::FoundPasskey(hub, email, challenge.account.clone()));
+                out.push(Effect::Platform {
+                    id,
+                    op: PlatformOp::PasskeyCreate {
+                        rp_id: String::new(),
+                        challenge: challenge.challenge.to_vec().into(),
+                        user_handle: challenge.user_handle.to_vec().into(),
+                        user_name,
+                        prf_input: trommi_core::account::PASSKEY_PRF_INPUT.to_vec().into(),
+                    },
+                });
+            }
+            Err(crate::hub::Failure::NotNow { status: 429, .. }) => self.found_failed(Problem::Throttled.text()),
+            Err(crate::hub::Failure::NotNow { .. } | crate::hub::Failure::Offline) => self.found_failed(Problem::Offline.text()),
+            _ => self.found_failed(Problem::Other("bad-format").text()),
+        }
+    }
+
+    fn found_passkey_made(&mut self, hub: String, email: Option<String>, account: String, result: IoResult<PlatformAnswer>, out: &mut Vec<Effect>) {
+        let IoResult::Ok(PlatformAnswer::PasskeyCreated { credential_id, attestation_object, client_data_json, prf }) = result else {
+            self.next_view.account = crate::views::AccountView { step: "found".into(), ..Default::default() };
+            return;
+        };
+        let begun = crate::account::found::begin_with_passkey(hub, email.as_deref(), &account, credential_id.0, attestation_object.0, client_data_json.0, &prf.0, &mut trommi_core::crypto::SystemEntropy);
+        match begun {
+            Ok(founding) => {
+                let id = self.io(Pending::FoundLoad);
+                out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
+                self.founding = Some((None, founding));
+            }
+            Err(text) => self.found_failed(text),
         }
     }
 
@@ -686,7 +763,23 @@ impl App {
                     self.lens.utc_offset_min = config.utc_offset_min;
                     // (the Desk's greeting: one for the whole run)
                     self.lens.dice = (config.seed ^ (config.seed >> 32)) as u32;
+                    let demo = config.demo.clone();
                     self.config = Some(config);
+                    if let Some(fixture) = demo {
+                        match crate::views::demo::model_of(&fixture, now_ms) {
+                            Ok(model) => {
+                                self.board = engine::feed::Board::default();
+                                self.board.model = model;
+                                self.demo = true;
+                                self.next_view.phase = Phase::Live;
+                                self.stale_views = true;
+                                self.after_demo(now_ms, &mut out);
+                            }
+                            Err(why) => out.push(log(LogLevel::Error, &format!("demo: {why}"))),
+                        }
+                        self.render(&mut out);
+                        return out;
+                    }
                     self.next_view.phase = Phase::Starting;
                     let id = self.io(Pending::DeviceLoad);
                     out.push(Effect::Store {
@@ -731,7 +824,7 @@ impl App {
                         self.open(now_ms, revision, entries, &mut out);
                     }
                 }
-                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) => {
+                Some(Pending::RoomKeyWrite) | Some(Pending::Dropped) | Some(Pending::Login) | Some(Pending::PasskeyChallenge(_)) | Some(Pending::PasskeyGet(_)) | Some(Pending::FoundChallenge(..)) | Some(Pending::FoundPasskey(..)) => {
                     if let IoResult::Err(e) = &result {
                         out.push(log(LogLevel::Warn, &format!("store: {:?}", e.kind)));
                     }
@@ -772,6 +865,16 @@ impl App {
                     }
                 }
             },
+            Event::Http { id, result } if matches!(self.pending.get(&id), Some(Pending::FoundChallenge(..))) => {
+                if let Some(Pending::FoundChallenge(hub, email)) = self.pending.remove(&id) {
+                    self.found_challenged(hub, email, result, &mut out);
+                }
+            }
+            Event::Platform { id, result } if matches!(self.pending.get(&id), Some(Pending::FoundPasskey(..))) => {
+                if let Some(Pending::FoundPasskey(hub, email, account)) = self.pending.remove(&id) {
+                    self.found_passkey_made(hub, email, account, result, &mut out);
+                }
+            }
             Event::Http { id, result } if matches!(self.pending.get(&id), Some(Pending::PasskeyChallenge(_))) => {
                 if let Some(Pending::PasskeyChallenge(hub)) = self.pending.remove(&id) {
                     self.passkey_challenged(hub, result, &mut out);
@@ -832,6 +935,7 @@ impl App {
                     self.lens.home_desk = Some(desk.to_string());
                 }
                 self.lens.desk = focus.desk;
+                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts);
                 let (session, card, off) = match focus.screen {
                     Screen::Session { session_id } => (Some(session_id), None, None),
                     Screen::Card { card_id } => (None, Some(card_id), None),
@@ -876,7 +980,18 @@ impl App {
                 self.with_engine(now_ms, &mut out, |engine, ctx| engine.on_foreground(ctx));
             }
         }
-        self.after_engine(now_ms, &mut out);
+        if self.demo {
+            if self.view_wake.is_some_and(|at| now_ms >= at) {
+                self.stale_views = true;
+            }
+            self.after_demo(now_ms, &mut out);
+            if self.view_wake != self.timer {
+                self.timer = self.view_wake;
+                out.push(Effect::Timer { at_ms: self.view_wake });
+            }
+        } else {
+            self.after_engine(now_ms, &mut out);
+        }
         self.render(&mut out);
         out
     }
@@ -898,6 +1013,9 @@ impl App {
                 return;
             }
             _ => {}
+        }
+        if self.demo {
+            return self.demo_action(now_ms, action, out);
         }
         if self.engine.is_none() {
             let text = crate::views::Text::new("action.no_room", "Sign in first.");
@@ -923,6 +1041,97 @@ impl App {
             return self.push_action(now_ms, *level, out);
         }
         self.run_action(now_ms, action, out);
+    }
+
+    /// An action in the demo room: done on the model as on a real one (the echo), and taken as done at once.
+    fn demo_action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        let utc_offset_min = self.lens.utc_offset_min;
+        let room = trommi_core::ids::RoomId::new([7; 32]);
+        let mut n = 0u64;
+        let mut seal = |_: &trommi_core::device::Draft, _: Option<&trommi_core::ids::DeviceId>, _: &[trommi_core::ids::FileId]| {
+            n += 1;
+            let mut hash = [0u8; 32];
+            hash[..8].copy_from_slice(&(now_ms ^ (n << 48)).to_be_bytes());
+            Ok(trommi_core::device::Sealed {
+                outbox_id: n,
+                envelope_hash: trommi_core::ids::Hash32::new(hash),
+                seq: n,
+                group: trommi_core::ids::GroupId::room(room),
+                object_id: None,
+                time: now_ms,
+            })
+        };
+        let files = &self.files;
+        let file = |id: &str| files.reference(id).cloned();
+        let mut doing = Doing {
+            file: &file,
+            model: &mut self.board.model,
+            sent: &mut self.sent,
+            toasts: &mut self.next_view.toasts,
+            room,
+            now: now_ms,
+            utc_offset_min,
+            seal: &mut seal,
+            change: Change::default(),
+        };
+        if let Err(NotDone { text, .. }) = doing.run(&action) {
+            doing.sent.toast(doing.toasts, text, None);
+        }
+        let mut change = std::mem::take(&mut doing.change);
+        self.board.model.settle_echoes();
+        self.board.model.project(&mut change, now_ms);
+        self.stale_views = true;
+        self.after_demo(now_ms, out);
+    }
+
+    /// The demo's views, made again when they went stale.
+    fn after_demo(&mut self, now_ms: u64, _out: &mut Vec<Effect>) {
+        if self.stale_views {
+            self.stale_views = false;
+            let (wake, shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            self.view_wake = wake;
+            self.files.shown(shown, &mut self.next_view.files);
+        }
+    }
+
+    /// The notes this device sent whose hold (the toast's Undo) ran out: delivered, once each.
+    fn deliver_notes(&mut self, now_ms: u64, out: &mut Vec<Effect>) {
+        let me = self.board.model.my_device_id.clone();
+        let due: Vec<String> = self
+            .board
+            .model
+            .notes
+            .iter()
+            .filter(|(id, n)| {
+                let held = n.get("held").and_then(|h| h.get("until")).and_then(serde_json::Value::as_u64);
+                held.is_some_and(|u| u <= now_ms)
+                    && n.get("by_device_id").and_then(serde_json::Value::as_str) == me.as_deref()
+                    && n.get("object_state").and_then(serde_json::Value::as_str) != Some("closed")
+                    && !n.get("pending").is_some_and(crate::model::apply::truthy)
+                    && !self.notes_went.contains(*id)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in due {
+            self.notes_went.insert(id.clone());
+            self.doing(now_ms, out, |doing| {
+                if let Err(NotDone { text, .. }) = doing.deliver_note(&id) {
+                    doing.sent.toast(doing.toasts, text, None);
+                }
+            });
+        }
+    }
+
+    /// When the next held note is due.
+    fn notes_wake(&self) -> Option<u64> {
+        let me = self.board.model.my_device_id.as_deref();
+        self.board
+            .model
+            .notes
+            .iter()
+            .filter(|(id, n)| !self.notes_went.contains(*id) && n.get("by_device_id").and_then(serde_json::Value::as_str) == me)
+            .filter_map(|(_, n)| n.get("held").and_then(|h| h.get("until")).and_then(serde_json::Value::as_u64))
+            .min()
     }
 
     /// Deletes a session (the web's `deletionOf`): its open cards and those of its helpers are shredded, they are
@@ -975,6 +1184,11 @@ impl App {
         });
         // an archived session is over for good (5.2.10): the hub takes nothing more for its group, and the agent
         // device a self-joined session brought along goes with it
+        // a sent note's toast offers Undo while it is held
+        if let (true, Action::SendNote { note_id, .. }) = (done, &action) {
+            let text = crate::views::Text::new("notes.sent", "Note sent.");
+            self.sent.toast(&mut self.next_view.toasts, text, Some(Action::UnsendNote { note_id: note_id.clone() }));
+        }
         if let (true, Action::ArchiveSession { session_id, on: true }) = (done, &action) {
             self.archive_group(now_ms, session_id, out);
         }
@@ -1549,9 +1763,10 @@ impl App {
             self.doing(now_ms, out, |doing| doing.sync_goals());
             self.goals_check = false;
         }
-        // this device's push, as the hub has it
+        // this device's push, as the hub has it; its notes whose hold ran out go to their session
         if self.next_view.phase == Phase::Live {
             self.push_look(now_ms, out);
+            self.deliver_notes(now_ms, out);
         }
         // a desk's delete: its next step once the last one shows
         if fed || !self.desks.running.is_empty() {
@@ -1578,7 +1793,7 @@ impl App {
             self.closed(now_ms, out);
         }
         let model_wake = Some(self.board.model.desk_wake).filter(|at| *at != 0);
-        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms)].into_iter().flatten().min();
+        let wake = [engine_wake, model_wake, self.view_wake, cache_wake, self.reopen_at, self.invites.wake(), self.scribble.wake(now_ms), self.desks.wake(now_ms), self.notes_wake().map(|at| at.max(now_ms + 1))].into_iter().flatten().min();
         if wake != self.timer {
             self.timer = wake;
             out.push(Effect::Timer { at_ms: wake });

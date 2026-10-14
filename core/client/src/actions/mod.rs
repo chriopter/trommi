@@ -201,6 +201,15 @@ pub enum Action {
     DeleteNote {
         note_id: String,
     },
+    /// Send a note to a session (none: the crown's), after a short hold for Undo (`UnsendNote`).
+    SendNote {
+        note_id: String,
+        #[serde(default)]
+        to: Option<String>,
+    },
+    UnsendNote {
+        note_id: String,
+    },
     /// An item on a Scribble Board (`desk/<32 hex>`), in the model's form (board units, ids in hex):
     /// `{content_type: "strokes", strokes: [shape, …]}`, `{content_type: "erase" | "send_away", stroke_ids: […]}` or
     /// `{content_type: "move", stroke_ids: […], offset: [dx, dy]}`. A shape is `{tool, z?, group?}` with, by its

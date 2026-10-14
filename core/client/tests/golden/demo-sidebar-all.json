@@ -23,7 +23,7 @@
   ],
   "sessions": [
     {
-      "id": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "id": "54ddca7af4029f0526984da1e346d833",
       "name": {
         "key": "session.name",
         "en": "Fernly Website"
@@ -40,12 +40,12 @@
       "main": true,
       "crowned": true,
       "subs": [
-        "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
-        "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
-        "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
-        "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
-        "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
-        "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7"
+        "afe6ff94d965b37dccfee8d7d194f2f5",
+        "90a9167150c8487641fba3ecb3b48c67",
+        "7918819a346eb1a53310de7a32ca7467",
+        "5e635ce617a0aef933976af9fab2540a",
+        "6c26f924651b046908ab4e0f57c52876",
+        "425412ed2b37ef1052c0a8ecc47949f1"
       ],
       "open": 2,
       "knocks": false,
@@ -83,7 +83,7 @@
       }
     },
     {
-      "id": "afe6ff94d965b37dccfee8d7d194f2f5708e6d03529b0bcf6c700975b3229ce1",
+      "id": "afe6ff94d965b37dccfee8d7d194f2f5",
       "name": {
         "key": "session.name",
         "en": "Landing Page"
@@ -99,7 +99,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -114,7 +114,7 @@
       }
     },
     {
-      "id": "90a9167150c8487641fba3ecb3b48c67d76543230a624029614b9779638269ea",
+      "id": "90a9167150c8487641fba3ecb3b48c67",
       "name": {
         "key": "session.name",
         "en": "Copywriting"
@@ -130,7 +130,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 2,
       "knocks": false,
       "hushed": false,
@@ -145,7 +145,7 @@
       }
     },
     {
-      "id": "7918819a346eb1a53310de7a32ca7467b6f5b8633443e8b9a1c07a5194d02ec3",
+      "id": "7918819a346eb1a53310de7a32ca7467",
       "name": {
         "key": "session.name",
         "en": "Onboarding"
@@ -161,7 +161,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 2,
       "knocks": false,
       "hushed": false,
@@ -176,7 +176,7 @@
       }
     },
     {
-      "id": "5e635ce617a0aef933976af9fab2540ad8e61e87bbed1792728f9e181d45162a",
+      "id": "5e635ce617a0aef933976af9fab2540a",
       "name": {
         "key": "session.name",
         "en": "Page Speed"
@@ -192,7 +192,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -200,7 +200,7 @@
       "group": ""
     },
     {
-      "id": "6c26f924651b046908ab4e0f57c52876e66d0cd6b0baadfe469f55c61501f605",
+      "id": "6c26f924651b046908ab4e0f57c52876",
       "name": {
         "key": "session.name",
         "en": "Testing"
@@ -216,7 +216,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -231,7 +231,7 @@
       }
     },
     {
-      "id": "425412ed2b37ef1052c0a8ecc47949f19470859c364bbb9966d6fb2fa2bbc7f7",
+      "id": "425412ed2b37ef1052c0a8ecc47949f1",
       "name": {
         "key": "session.name",
         "en": "Search & Social"
@@ -247,7 +247,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "54ddca7af4029f0526984da1e346d8331b288c038a7dadd153fa3079f750d8e8",
+      "parent": "54ddca7af4029f0526984da1e346d833",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -255,7 +255,7 @@
       "group": ""
     },
     {
-      "id": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "id": "4abc388943bda4956b58dc2d5eb3e7e1",
       "name": {
         "key": "session.name",
         "en": "Fernly App"
@@ -272,10 +272,10 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
-        "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
-        "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
-        "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e"
+        "0a85b9f6c5537929ef7b048ddb973516",
+        "46d829ea328da3f7b5d0a9b97a644fbe",
+        "8b7221422f2856f685ea49f997e8d0f9",
+        "eed5d0d1720b7655676b19dd7b2411f6"
       ],
       "open": 1,
       "knocks": false,
@@ -304,7 +304,7 @@
       }
     },
     {
-      "id": "0a85b9f6c5537929ef7b048ddb9735161f22fb71d69f8c234cf9b8e1fabababc",
+      "id": "0a85b9f6c5537929ef7b048ddb973516",
       "name": {
         "key": "session.name",
         "en": "Widgets"
@@ -320,7 +320,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -335,7 +335,7 @@
       }
     },
     {
-      "id": "46d829ea328da3f7b5d0a9b97a644fbeecec96dfd9be23f1754c1646ba8ff03f",
+      "id": "46d829ea328da3f7b5d0a9b97a644fbe",
       "name": {
         "key": "session.name",
         "en": "Push Reminders"
@@ -351,7 +351,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -359,7 +359,7 @@
       "group": ""
     },
     {
-      "id": "8b7221422f2856f685ea49f997e8d0f9c4dcbe44f6483df39bef9ee0f77c9623",
+      "id": "8b7221422f2856f685ea49f997e8d0f9",
       "name": {
         "key": "session.name",
         "en": "App Store"
@@ -375,7 +375,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -390,7 +390,7 @@
       }
     },
     {
-      "id": "eed5d0d1720b7655676b19dd7b2411f60e6378f5a52c2e27beeb7540785c9d2e",
+      "id": "eed5d0d1720b7655676b19dd7b2411f6",
       "name": {
         "key": "session.name",
         "en": "Crash Fixes"
@@ -406,7 +406,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "4abc388943bda4956b58dc2d5eb3e7e1ff08271c8d624c628467087d2d012425",
+      "parent": "4abc388943bda4956b58dc2d5eb3e7e1",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -414,7 +414,7 @@
       "group": ""
     },
     {
-      "id": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "id": "9aa575fae2c64ece4ae4ab1b783673da",
       "name": {
         "key": "session.name",
         "en": "Design System"
@@ -431,9 +431,9 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
-        "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
-        "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc"
+        "e52ac023c086b1da68e774acc6be0a36",
+        "20d05b9d755bf0bdd5cc19e26e313c1b",
+        "8c33dad27819e29bb85644eb3f0cf7f3"
       ],
       "open": 0,
       "knocks": false,
@@ -455,7 +455,7 @@
       }
     },
     {
-      "id": "e52ac023c086b1da68e774acc6be0a36ba5adf546efb7f3ac3ba5358b611c4ad",
+      "id": "e52ac023c086b1da68e774acc6be0a36",
       "name": {
         "key": "session.name",
         "en": "Design Tokens"
@@ -471,7 +471,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -486,7 +486,7 @@
       }
     },
     {
-      "id": "20d05b9d755bf0bdd5cc19e26e313c1b0ba1e1f93c27ece870370eb712e95f54",
+      "id": "20d05b9d755bf0bdd5cc19e26e313c1b",
       "name": {
         "key": "session.name",
         "en": "Icons"
@@ -502,7 +502,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
       "open": 1,
       "knocks": true,
       "hushed": false,
@@ -517,7 +517,7 @@
       }
     },
     {
-      "id": "8c33dad27819e29bb85644eb3f0cf7f3e7680fe60067f60d90d0ed52d7929cfc",
+      "id": "8c33dad27819e29bb85644eb3f0cf7f3",
       "name": {
         "key": "session.name",
         "en": "Dark Mode"
@@ -533,7 +533,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9aa575fae2c64ece4ae4ab1b783673da7c6f94671e975b7b6fb004e85f84c77d",
+      "parent": "9aa575fae2c64ece4ae4ab1b783673da",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -548,7 +548,7 @@
       }
     },
     {
-      "id": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "id": "9ace71aadae23ea1f467d62b83b1d604",
       "name": {
         "key": "session.name",
         "en": "Payments"
@@ -565,11 +565,11 @@
       "main": true,
       "crowned": true,
       "subs": [
-        "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
-        "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
-        "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
-        "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
-        "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8"
+        "abd7fe86006071776f1a614589e82f00",
+        "814719292f007b90bc4649fb09f25cb2",
+        "a7b41f11fd76b678e5918ee35812d2a9",
+        "3bd3ace8b6de2ee5cb6d3b12fa402bbc",
+        "9c85d0efb2d287a50dc2229f9feca1b7"
       ],
       "open": 0,
       "knocks": false,
@@ -600,7 +600,7 @@
       }
     },
     {
-      "id": "abd7fe86006071776f1a614589e82f00152d5919d44bb9a8043dfccd84c3cd55",
+      "id": "abd7fe86006071776f1a614589e82f00",
       "name": {
         "key": "session.name",
         "en": "Webhooks"
@@ -616,7 +616,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "parent": "9ace71aadae23ea1f467d62b83b1d604",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -624,7 +624,7 @@
       "group": ""
     },
     {
-      "id": "814719292f007b90bc4649fb09f25cb2ad195ea0a7d3064e165e86593530731b",
+      "id": "814719292f007b90bc4649fb09f25cb2",
       "name": {
         "key": "session.name",
         "en": "Checkout"
@@ -640,7 +640,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "parent": "9ace71aadae23ea1f467d62b83b1d604",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -655,7 +655,7 @@
       }
     },
     {
-      "id": "a7b41f11fd76b678e5918ee35812d2a989a05554993fc2f0f6307f2ac0f1b507",
+      "id": "a7b41f11fd76b678e5918ee35812d2a9",
       "name": {
         "key": "session.name",
         "en": "Invoices"
@@ -671,7 +671,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "parent": "9ace71aadae23ea1f467d62b83b1d604",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -686,7 +686,7 @@
       }
     },
     {
-      "id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc40f4333059bb030bf6a9c90a7a47bd2e",
+      "id": "3bd3ace8b6de2ee5cb6d3b12fa402bbc",
       "name": {
         "key": "session.name",
         "en": "Tax & VAT"
@@ -702,7 +702,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "parent": "9ace71aadae23ea1f467d62b83b1d604",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -717,7 +717,7 @@
       }
     },
     {
-      "id": "9c85d0efb2d287a50dc2229f9feca1b76afa920e45c9015645e3b20dec140da8",
+      "id": "9c85d0efb2d287a50dc2229f9feca1b7",
       "name": {
         "key": "session.name",
         "en": "Load Testing"
@@ -733,7 +733,7 @@
       "working": true,
       "main": false,
       "crowned": false,
-      "parent": "9ace71aadae23ea1f467d62b83b1d60408e4c3ba8e4a409f4668d9031c2a38b3",
+      "parent": "9ace71aadae23ea1f467d62b83b1d604",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -741,7 +741,7 @@
       "group": ""
     },
     {
-      "id": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "id": "f14180d4caac441522269c631a745866",
       "name": {
         "key": "session.name",
         "en": "Data Pipeline"
@@ -758,9 +758,9 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
-        "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
-        "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374"
+        "6d0f80f37efa69182ed78ec23e418847",
+        "f503d3b7ab487a30735894fc52ccdb31",
+        "36f6070677c607aa723892800065eca5"
       ],
       "open": 1,
       "knocks": false,
@@ -789,7 +789,7 @@
       }
     },
     {
-      "id": "6d0f80f37efa69182ed78ec23e41884748b396ac9ac425db97e66c216f58f58b",
+      "id": "6d0f80f37efa69182ed78ec23e418847",
       "name": {
         "key": "session.name",
         "en": "Event Intake"
@@ -805,7 +805,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "parent": "f14180d4caac441522269c631a745866",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -813,7 +813,7 @@
       "group": ""
     },
     {
-      "id": "f503d3b7ab487a30735894fc52ccdb31dcbfc95c59697c2386d12a7deb512802",
+      "id": "f503d3b7ab487a30735894fc52ccdb31",
       "name": {
         "key": "session.name",
         "en": "Data Models"
@@ -829,7 +829,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "parent": "f14180d4caac441522269c631a745866",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -837,7 +837,7 @@
       "group": ""
     },
     {
-      "id": "36f6070677c607aa723892800065eca56aea352708f7f58a7ed117990c0f9374",
+      "id": "36f6070677c607aa723892800065eca5",
       "name": {
         "key": "session.name",
         "en": "Dashboards"
@@ -853,7 +853,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "f14180d4caac441522269c631a745866fac8033aff2754218e85d83ef6bdc59e",
+      "parent": "f14180d4caac441522269c631a745866",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -868,7 +868,7 @@
       }
     },
     {
-      "id": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "id": "5ef619647e0e8185fef0e3be40ff4809",
       "name": {
         "key": "session.name",
         "en": "Infrastructure"
@@ -885,13 +885,13 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
-        "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
-        "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
-        "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
-        "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26",
-        "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
-        "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa"
+        "200ea427ff43dfe6b1e6771fbc19f91e",
+        "1e7c3773ece2ab64dba5343140e7c0b0",
+        "1f4ee7520853d151015e6105ba5a9794",
+        "35228108ffe60cf6c012ee2780f3aeca",
+        "a2d31bdc652e59b7c91dee15d1ef5cfc",
+        "0b966a14a8c6ed46dd4ecc1ecfa50ad3",
+        "8693f72066947d694979af982d64ae9a"
       ],
       "open": 1,
       "knocks": true,
@@ -936,7 +936,7 @@
       }
     },
     {
-      "id": "200ea427ff43dfe6b1e6771fbc19f91e1201bd4d3bc16b6445e08c21872ff6bd",
+      "id": "200ea427ff43dfe6b1e6771fbc19f91e",
       "name": {
         "key": "session.name",
         "en": "Terraform"
@@ -952,7 +952,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "parent": "5ef619647e0e8185fef0e3be40ff4809",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -967,7 +967,7 @@
       }
     },
     {
-      "id": "1e7c3773ece2ab64dba5343140e7c0b03828d0c8019de1cba39aecdc53b6aaa2",
+      "id": "1e7c3773ece2ab64dba5343140e7c0b0",
       "name": {
         "key": "session.name",
         "en": "Kubernetes"
@@ -983,7 +983,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "parent": "5ef619647e0e8185fef0e3be40ff4809",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -998,7 +998,7 @@
       }
     },
     {
-      "id": "1f4ee7520853d151015e6105ba5a979449fc38fbaf03d16a2e7a379c2a97f2e6",
+      "id": "1f4ee7520853d151015e6105ba5a9794",
       "name": {
         "key": "session.name",
         "en": "Database Replica"
@@ -1014,7 +1014,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "parent": "5ef619647e0e8185fef0e3be40ff4809",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -1022,7 +1022,7 @@
       "group": ""
     },
     {
-      "id": "35228108ffe60cf6c012ee2780f3aeca1ca7cbd1ff6428887b47bd490a93472b",
+      "id": "35228108ffe60cf6c012ee2780f3aeca",
       "name": {
         "key": "session.name",
         "en": "CDN"
@@ -1038,7 +1038,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "parent": "5ef619647e0e8185fef0e3be40ff4809",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -1046,7 +1046,7 @@
       "group": ""
     },
     {
-      "id": "a2d31bdc652e59b7c91dee15d1ef5cfc830ac8863c9d64b9cae02d54f81c5b26",
+      "id": "a2d31bdc652e59b7c91dee15d1ef5cfc",
       "name": {
         "key": "session.name",
         "en": "Backups"
@@ -1062,7 +1062,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "parent": "5ef619647e0e8185fef0e3be40ff4809",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -1070,7 +1070,7 @@
       "group": ""
     },
     {
-      "id": "0b966a14a8c6ed46dd4ecc1ecfa50ad31241fecbc84d4ca8aab55570cc1b2449",
+      "id": "0b966a14a8c6ed46dd4ecc1ecfa50ad3",
       "name": {
         "key": "session.name",
         "en": "Monitoring"
@@ -1086,7 +1086,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "parent": "5ef619647e0e8185fef0e3be40ff4809",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -1094,7 +1094,7 @@
       "group": ""
     },
     {
-      "id": "8693f72066947d694979af982d64ae9ab56c5e4adda90dec83440051668b09fa",
+      "id": "8693f72066947d694979af982d64ae9a",
       "name": {
         "key": "session.name",
         "en": "Cloud Costs"
@@ -1110,7 +1110,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "5ef619647e0e8185fef0e3be40ff480916ad977b658aaf2a78771cf363d43c1a",
+      "parent": "5ef619647e0e8185fef0e3be40ff4809",
       "open": 0,
       "knocks": false,
       "hushed": false,
@@ -1118,7 +1118,7 @@
       "group": ""
     },
     {
-      "id": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+      "id": "eeb9fe76ad84d2405625d15419ce6083",
       "name": {
         "key": "session.name",
         "en": "Docs"
@@ -1135,8 +1135,8 @@
       "main": true,
       "crowned": false,
       "subs": [
-        "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
-        "761b525b4045435aea626e866242d436daf6cf2a22ea2b4ec7e20431376cbe9b"
+        "5d7a2ba080769d76d188155abcdb8d06",
+        "761b525b4045435aea626e866242d436"
       ],
       "open": 1,
       "knocks": false,
@@ -1165,7 +1165,7 @@
       }
     },
     {
-      "id": "5d7a2ba080769d76d188155abcdb8d067351ebc4a0d0e947415fa6be03e734cb",
+      "id": "5d7a2ba080769d76d188155abcdb8d06",
       "name": {
         "key": "session.name",
         "en": "API Reference"
@@ -1181,7 +1181,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+      "parent": "eeb9fe76ad84d2405625d15419ce6083",
       "open": 1,
       "knocks": false,
       "hushed": false,
@@ -1196,7 +1196,7 @@
       }
     },
     {
-      "id": "761b525b4045435aea626e866242d436daf6cf2a22ea2b4ec7e20431376cbe9b",
+      "id": "761b525b4045435aea626e866242d436",
       "name": {
         "key": "session.name",
         "en": "Docs Search"
@@ -1212,7 +1212,7 @@
       "working": false,
       "main": false,
       "crowned": false,
-      "parent": "eeb9fe76ad84d2405625d15419ce6083c70f76a40f400ce82c497f6a013f69bc",
+      "parent": "eeb9fe76ad84d2405625d15419ce6083",
       "open": 0,
       "knocks": false,
       "hushed": false,
