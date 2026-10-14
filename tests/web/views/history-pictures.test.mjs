@@ -9,8 +9,8 @@ const read = f => fs.readFileSync(new URL(`../../../app/web/public/${f}`, import
 
 test('a history picture is a tile that opens full size', () => {
   const src = read('card.mjs')
-  assert.match(src, /<a class="tc-shot" href="\$\{a\.url\}" target="_blank" rel="noopener" title="Open full size"/)
-  assert.match(src, /<img\$\{srcOf\(a, 320\)\} alt="\$\{a\.name\}" loading="lazy" decoding="async" width="220" height="165">/)
+  assert.match(src, /<a class="tc-shot"\$\{url \? html` href="\$\{url\}"` : ''\} target="_blank" rel="noopener" title="Open full size"/)
+  assert.match(src, /<img\$\{srcAt\(id\)\} alt="\$\{n\}" loading="lazy" decoding="async" width="220" height="165">/)
 })
 
 test('it never grows past the column, and stands at most 240 px high', () => {
