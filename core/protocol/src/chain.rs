@@ -14,7 +14,7 @@ use crate::crypto::{Entropy, Secret, SigningKey};
 use crate::envelope::{self, Body, Draft, Envelope, Header, Slot};
 use crate::error::Error;
 use crate::ids::{base64url_decode, DeviceId, GroupId, Hash32, RoomId};
-use crate::objects::{self, Objects, Opened, Transition};
+use crate::objects::{self, ObjectStates, Opened, Transition};
 use serde::de::{Deserialize, Deserializer, MapAccess, Visitor};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -570,7 +570,7 @@ pub struct Outgoing {
 pub fn seal_next(
     facts: &dyn GroupFacts,
     chains: &Chains,
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     own: &mut OwnChain,
     draft: &Draft,
     group: GroupId,
@@ -873,7 +873,7 @@ fn fresh(
 fn judge_chained(
     facts: &dyn GroupFacts,
     chains: &Chains,
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     verified: &Verified,
     mode: Mode,
     now_ms: u64,
@@ -910,7 +910,7 @@ fn judge_chained(
 fn recheck_void(
     facts: &dyn GroupFacts,
     chains: &Chains,
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     verified: &Verified,
     code: &Error,
     mode: Mode,
@@ -939,7 +939,7 @@ fn take(
     facts: &dyn GroupFacts,
     records: &dyn ChainRecords,
     chains: &Chains,
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     me: Option<&DeviceId>,
     verified: Verified,
     served: &Served,
@@ -1031,7 +1031,7 @@ pub fn receive(
     facts: &dyn GroupFacts,
     records: &dyn ChainRecords,
     chains: &Chains,
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     me: &DeviceId,
     bytes: &[u8],
     served: &Served,
@@ -1067,7 +1067,7 @@ pub fn hub_take(
     facts: &dyn GroupFacts,
     records: &dyn ChainRecords,
     chains: &Chains,
-    objects: &Objects,
+    objects: &dyn ObjectStates,
     signed_in: &DeviceId,
     bytes: &[u8],
     now_ms: u64,

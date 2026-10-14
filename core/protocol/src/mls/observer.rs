@@ -504,14 +504,20 @@ impl Observer {
     /// What changed since the last call, for the holder to store in one write.
     pub fn take_changes(&mut self) -> Result<Batch, Error> {
         let mut batch = Batch::new();
-        let (put, delete) = self.provider.changes(&self.taken);
-        for (key, value) in put {
-            batch.put([&[KEY_MLS][..], &key].concat(), value);
+        // OpenMLS's entries are compared with what was last taken only when OpenMLS was at them since.
+        if self.provider.touched() {
+            self.provider.settled();
+            let (put, delete) = self.provider.changes(&self.taken);
+            for (key, value) in put {
+                batch.put([&[KEY_MLS][..], &key].concat(), value);
+            }
+            for key in delete {
+                batch.delete([&[KEY_MLS][..], &key].concat());
+            }
+            self.taken = self.provider.entries();
+        } else {
+            debug_assert!(self.provider.changes(&self.taken) == (Vec::new(), Vec::new()));
         }
-        for key in delete {
-            batch.delete([&[KEY_MLS][..], &key].concat());
-        }
-        self.taken = self.provider.entries();
         if let Followed::Room(history) = &self.followed {
             for state in history
                 .states()

@@ -275,6 +275,15 @@ fn an_agent_device_joins_by_link_into_a_new_main_session() {
         a.invite_steps().unwrap(),
         vec![(opened.invite_id, InviteStep::Wait)]
     );
+    // The hub takes the founding; until its Commit comes by in the log the agent's leaf does not show, and
+    // the session is not founded a second time meanwhile.
+    let founding = a.outbox().remove(0);
+    let taken = hub.post(&a.id(), &founding).unwrap();
+    a.outbox_accepted(founding.id, taken).unwrap();
+    assert_eq!(
+        a.invite_steps().unwrap(),
+        vec![(opened.invite_id, InviteStep::Wait)]
+    );
     post_ok(&mut hub, &mut a);
     sync_all(&hub, &mut a);
     assert!(a.invite_steps().unwrap().is_empty());

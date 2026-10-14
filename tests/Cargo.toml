@@ -110,6 +110,14 @@ name = "core_groups_lifetimes"
 path = "core/groups_lifetimes.rs"
 
 [[test]]
+name = "core_device_objects"
+path = "core/device_objects.rs"
+
+[[test]]
+name = "core_device_cost"
+path = "core/device_cost.rs"
+
+[[test]]
 name = "core_groups_cost"
 path = "core/groups_cost.rs"
 

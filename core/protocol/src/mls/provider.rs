@@ -23,6 +23,7 @@ use openmls_traits::types::SignatureScheme;
 use openmls_traits::OpenMlsProvider;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use zeroize::Zeroize;
 
@@ -124,6 +125,12 @@ pub(crate) struct Provider {
     crypto: Crypto,
     rand: Rand,
     storage: MemoryStorage,
+    /// Whether the storage was handed out or put back since the owner last held every entry
+    /// ([`Provider::settled`]).
+    /// OpenMLS reaches its entries through [`OpenMlsProvider::storage`] alone, so while this is unset no entry
+    /// has changed, and the owner need not compare them all with what it stored: most operations of a device
+    /// (an envelope received, an item sealed) never come near OpenMLS.
+    touched: AtomicBool,
 }
 
 impl OpenMlsProvider for Provider {
@@ -132,6 +139,7 @@ impl OpenMlsProvider for Provider {
     type StorageProvider = MemoryStorage;
 
     fn storage(&self) -> &MemoryStorage {
+        self.touched.store(true, Ordering::Relaxed);
         &self.storage
     }
 
@@ -171,6 +179,7 @@ impl Provider {
             crypto,
             rand: Rand(Mutex::new(entropy)),
             storage,
+            touched: AtomicBool::new(true),
         })
     }
 
@@ -196,6 +205,7 @@ impl Provider {
             crypto,
             rand: Rand(Mutex::new(Box::new(Dry))),
             storage,
+            touched: AtomicBool::new(true),
         })
     }
 
@@ -230,6 +240,25 @@ impl Provider {
             .unwrap_or_else(PoisonError::into_inner);
         // What OpenMLS held goes into `entries`, which wipes it when it is dropped here.
         std::mem::swap(&mut *held, &mut entries.0);
+        self.touched.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether the entries may have changed since they were last [`Provider::settled`]: the storage was
+    /// handed out (to OpenMLS, or to this crate's own calls on it) or put back. It starts set. An owner
+    /// that reads unset knows that [`Provider::changes`] against what it stored would be empty.
+    pub(crate) fn touched(&self) -> bool {
+        self.touched.load(Ordering::Relaxed)
+    }
+
+    /// The owner's store and these entries may differ for another reason than OpenMLS: the next owner's
+    /// write compares them all.
+    pub(crate) fn touch(&self) {
+        self.touched.store(true, Ordering::Relaxed);
+    }
+
+    /// The owner holds every entry as it stands now: it stored them, or found nothing changed.
+    pub(crate) fn settled(&self) {
+        self.touched.store(false, Ordering::Relaxed);
     }
 
     /// What changed against `stored`: the entries to write and the keys to remove, both ascending by key.

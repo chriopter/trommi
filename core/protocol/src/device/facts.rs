@@ -18,11 +18,11 @@ use crate::codec::{self, Decode, Encode, Reader, Writer};
 use crate::crypto::Secret;
 use crate::envelope::{Header, ObjectType, Subject};
 use crate::error::Error;
-use crate::ids::{DeviceId, GroupId, Hash32, RoomId};
+use crate::ids::{DeviceId, GroupId, Hash32, ObjectId, RoomId};
 use crate::mls::observer;
 use crate::mls::profile::Cut;
 use crate::mls::rules::Parent;
-use crate::objects::{self, Objects};
+use crate::objects::{self, Object, ObjectStates, Objects, Transition};
 use crate::recovery::SessionsAt;
 use crate::registers::Registers;
 use crate::store::{self, table, Batch, Storage};
@@ -42,6 +42,20 @@ pub(super) const SUB_OWN_CUTS: u8 = 7;
 pub(super) const SUB_PROVISIONAL: u8 = 8;
 pub(super) const SUB_BY_HASH: u8 = 9;
 pub(super) const SUB_ORIGIN: u8 = 10;
+/// The parts of the table of objects: one entry per object, one per version taken of a Note, and the count of
+/// the transitions a group's objects have taken. An envelope reads and writes the one object it is about, so
+/// what it costs does not grow with what its group holds.
+///
+/// [`SUB_GROUP_OBJECTS`] is the form before: every object of a group in one record, read and written whole for
+/// each envelope. A device that still holds one reads it, and the first write to the group's objects, or the
+/// next envelope the device receives in the group, replaces it by the entries in that same write. A group has
+/// one form or the other, never both.
+pub(super) const SUB_GROUP_OBJECTS: u8 = 0;
+pub(super) const SUB_OBJECT: u8 = 1;
+pub(super) const SUB_NOTE_VERSION: u8 = 2;
+pub(super) const SUB_OBJECTS_REVISION: u8 = 3;
+/// The value of an entry whose key says everything.
+const PRESENT: [u8; 1] = [1];
 /// The parts of the table of registers.
 pub(super) const SUB_REGISTERS: u8 = 0;
 pub(super) const SUB_OWN_IDS: u8 = 1;
@@ -414,7 +428,7 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
                 _ => Err(Error::BadFormat),
             }
         }
-        table::OBJECT => Objects::from_bytes(value).map(|_| ()),
+        table::OBJECT => check_object(rest, value),
         table::BOARD => super::content::check_board(value),
         table::INVITE => super::invite::check_entry(key.get(1..).unwrap_or_default(), value),
         table::COMMAND => super::content::check_command(key.get(1..).unwrap_or_default(), value),
@@ -426,6 +440,116 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
         _ => Ok(()),
     };
     checked.map_err(|_| damaged("a stored content entry"))
+}
+
+/// Checks one stored entry of the table of objects: its key is of one of the four shapes, and its value is
+/// what that shape holds.
+fn check_object(mut rest: Reader<'_>, value: &[u8]) -> Result<(), Error> {
+    let sub = rest.u8()?;
+    super::group_after(&mut rest)?;
+    match sub {
+        SUB_GROUP_OBJECTS => {
+            rest.finish()?;
+            Objects::from_bytes(value).map(|_| ())
+        }
+        SUB_OBJECT => {
+            rest.value::<ObjectId>()?;
+            rest.finish()?;
+            codec::decode::<Object>(value, value.len()).map(|_| ())
+        }
+        SUB_NOTE_VERSION => {
+            rest.value::<ObjectId>()?;
+            rest.value::<Hash32>()?;
+            rest.finish()?;
+            if value == PRESENT {
+                Ok(())
+            } else {
+                Err(Error::BadFormat)
+            }
+        }
+        SUB_OBJECTS_REVISION => {
+            rest.finish()?;
+            <[u8; 8]>::try_from(value)
+                .map(|_| ())
+                .map_err(|_| Error::BadFormat)
+        }
+        _ => Err(Error::BadFormat),
+    }
+}
+
+/// The group whose record of the form before `key` names, if it names one.
+pub(super) fn whole_objects_of(key: &[u8]) -> Option<GroupId> {
+    let mut rest = Reader::new(key);
+    if rest.u8().ok()? != table::OBJECT || rest.u8().ok()? != SUB_GROUP_OBJECTS {
+        return None;
+    }
+    let group = super::group_after(&mut rest).ok()?;
+    rest.finish().ok().map(|()| group)
+}
+
+fn object_key(group: &GroupId, object: &ObjectId) -> Vec<u8> {
+    group_key(table::OBJECT, SUB_OBJECT, group, object.as_bytes())
+}
+
+fn note_version_key(group: &GroupId, object: &ObjectId, version: &Hash32) -> Vec<u8> {
+    group_key(
+        table::OBJECT,
+        SUB_NOTE_VERSION,
+        group,
+        &[&object.as_bytes()[..], version.as_bytes()].concat(),
+    )
+}
+
+fn objects_revision_key(group: &GroupId) -> Vec<u8> {
+    group_key(table::OBJECT, SUB_OBJECTS_REVISION, group, &[])
+}
+
+fn read_object(value: &[u8]) -> Result<Object, Error> {
+    codec::decode(value, value.len()).map_err(|_| damaged("an object's state"))
+}
+
+/// The objects of one group as the device holds them, read entry by entry through what the running operation
+/// wrote: what an envelope of the group is judged against.
+pub(super) struct HeldObjects<'a, S: Storage> {
+    device: &'a Device<S>,
+    group: GroupId,
+    /// The group's record of the form before, while the device still holds that.
+    whole: Option<Objects>,
+}
+
+impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
+    fn object(&self, object: &ObjectId) -> Result<Option<Object>, Error> {
+        if let Some(whole) = &self.whole {
+            return Ok(whole.get(object).cloned());
+        }
+        self.device
+            .stored(&object_key(&self.group, object))
+            .map(read_object)
+            .transpose()
+    }
+
+    fn note_version(&self, object: &ObjectId, hash: &Hash32) -> Result<bool, Error> {
+        if let Some(whole) = &self.whole {
+            return Ok(whole.is_note_version(object, hash));
+        }
+        Ok(self
+            .device
+            .stored(&note_version_key(&self.group, object, hash))
+            .is_some())
+    }
+
+    fn revision(&self) -> Result<u64, Error> {
+        if let Some(whole) = &self.whole {
+            return Ok(whole.revision());
+        }
+        self.device
+            .stored(&objects_revision_key(&self.group))
+            .map_or(Ok(0), |value| {
+                <[u8; 8]>::try_from(value)
+                    .map(u64::from_be_bytes)
+                    .map_err(|_| damaged("the count of a group's transitions"))
+            })
+    }
 }
 
 impl<S: Storage> Device<S> {
@@ -771,22 +895,165 @@ impl<S: Storage> Device<S> {
         Ok(())
     }
 
-    pub(super) fn object_states(&self, group: &GroupId) -> Result<Objects, Error> {
-        self.stored(&group_key(table::OBJECT, 0, group, &[]))
-            .map_or(Ok(Objects::new()), Objects::from_bytes)
+    /// The objects of `group`, to read one at a time.
+    pub(super) fn held_objects(&self, group: &GroupId) -> Result<HeldObjects<'_, S>, Error> {
+        let whole = self
+            .stored(&group_key(table::OBJECT, SUB_GROUP_OBJECTS, group, &[]))
+            .map(Objects::from_bytes)
+            .transpose()?;
+        Ok(HeldObjects {
+            device: self,
+            group: *group,
+            whole,
+        })
     }
 
+    /// The state of one object of `group`.
+    pub(super) fn object_state(
+        &self,
+        group: &GroupId,
+        object: &ObjectId,
+    ) -> Result<Option<Object>, Error> {
+        self.held_objects(group)?.object(object)
+    }
+
+    /// Every object of `group` with its state, ascending by id.
+    pub(super) fn every_object(&self, group: &GroupId) -> Result<Vec<(ObjectId, Object)>, Error> {
+        if let Some(whole) = self.held_objects(group)?.whole {
+            return Ok(whole.iter().map(|(id, object)| (*id, object.clone())).collect());
+        }
+        let prefix = group_key(table::OBJECT, SUB_OBJECT, group, &[]);
+        self.stored_under(&prefix)
+            .into_iter()
+            .map(|(key, value)| {
+                let id = ObjectId::from_slice(key.get(prefix.len()..).unwrap_or_default())
+                    .map_err(|_| damaged("an object's key"))?;
+                Ok((id, read_object(&value)?))
+            })
+            .collect()
+    }
+
+    /// Replaces a record of the form before, if the device holds one for `group`, by one entry per object, in
+    /// `batch`: nothing of it is lost, and the group has one form at every moment the store can be read.
+    pub(super) fn split_objects(&mut self, batch: &mut Batch, group: &GroupId) -> Result<(), Error> {
+        match self.held_objects(group)?.whole {
+            Some(whole) => self.put_objects(batch, group, &whole),
+            None => Ok(()),
+        }
+    }
+
+    /// Takes the change of one envelope into the objects of `group`: the one object, its Note version, the
+    /// count. `Error::Internal`, and no change, if the object no longer stands as the envelope was judged: a
+    /// transition is applied once, before the next envelope of the group is judged.
+    pub(super) fn apply_transition(
+        &mut self,
+        batch: &mut Batch,
+        group: &GroupId,
+        transition: &Transition,
+    ) -> Result<(), Error> {
+        self.split_objects(batch, group)?;
+        let held = self.held_objects(group)?;
+        let revision = held.revision()?;
+        if revision != transition.revision
+            || held.object(&transition.object_id)? != transition.before
+        {
+            return Err(Error::Internal("a transition applied out of turn"));
+        }
+        self.put_stored(
+            batch,
+            objects_revision_key(group),
+            revision.saturating_add(1).to_be_bytes().to_vec(),
+        );
+        self.put_stored(
+            batch,
+            object_key(group, &transition.object_id),
+            codec::encode(&transition.after)?,
+        );
+        if let Some(version) = &transition.note_version {
+            self.put_stored(
+                batch,
+                note_version_key(group, &transition.object_id, version),
+                PRESENT.to_vec(),
+            );
+        }
+        Ok(())
+    }
+
+    /// Makes the stored objects of `group` exactly `objects`, in `batch`: what differs is written, what is no
+    /// longer there is removed, and a record of the form before goes.
     pub(super) fn put_objects(
         &mut self,
         batch: &mut Batch,
         group: &GroupId,
         objects: &Objects,
     ) -> Result<(), Error> {
-        self.put_stored(
-            batch,
-            group_key(table::OBJECT, 0, group, &[]),
-            objects.to_bytes()?,
+        let whole = group_key(table::OBJECT, SUB_GROUP_OBJECTS, group, &[]);
+        if self.stored(&whole).is_some() {
+            self.delete_stored(batch, whole);
+        }
+        let mut wanted = BTreeMap::new();
+        for (id, object) in objects.iter() {
+            wanted.insert(object_key(group, id), codec::encode(object)?);
+        }
+        for (id, version) in objects.note_versions() {
+            wanted.insert(note_version_key(group, id, version), PRESENT.to_vec());
+        }
+        wanted.insert(
+            objects_revision_key(group),
+            objects.revision().to_be_bytes().to_vec(),
         );
+        for sub in [SUB_OBJECT, SUB_NOTE_VERSION, SUB_OBJECTS_REVISION] {
+            for (key, value) in self.stored_under(&group_key(table::OBJECT, sub, group, &[])) {
+                match wanted.get(&key) {
+                    Some(same) if *same == value => {
+                        wanted.remove(&key);
+                    }
+                    Some(_) => {}
+                    None => self.delete_stored(batch, key),
+                }
+            }
+        }
+        for (key, value) in wanted {
+            self.put_stored(batch, key, value);
+        }
+        Ok(())
+    }
+
+    /// What the stored objects must say of each other, checked whenever memory is built from the store: a
+    /// group's objects are in one form, and a Note's version is of a Note the group holds.
+    pub(super) fn check_objects(&self) -> Result<(), Error> {
+        let contradicts = || Error::Storage("a group's objects contradict each other".into());
+        let table = [table::OBJECT];
+        let (mut whole, mut split) = (BTreeSet::new(), BTreeSet::new());
+        for (key, _) in self
+            .mirror
+            .range(table.to_vec()..)
+            .take_while(|(key, _)| key.starts_with(&table))
+        {
+            let mut rest = Reader::new(key.get(1..).unwrap_or_default());
+            let sub = rest.u8().map_err(|_| damaged("an object's key"))?;
+            let group = super::group_after(&mut rest).map_err(|_| damaged("an object's key"))?;
+            if sub == SUB_GROUP_OBJECTS {
+                whole.insert(group);
+                continue;
+            }
+            split.insert(group);
+            if sub == SUB_NOTE_VERSION {
+                let note: ObjectId = rest.value().map_err(|_| damaged("an object's key"))?;
+                let of_a_note = self
+                    .mirror
+                    .get(&object_key(&group, &note))
+                    .map(|value| read_object(value))
+                    .transpose()?
+                    .is_some_and(|object| object.object_type == ObjectType::Note);
+                if !of_a_note {
+                    return Err(contradicts());
+                }
+            }
+        }
+        if whole.intersection(&split).next().is_some() {
+            return Err(contradicts());
+        }
         Ok(())
     }
 

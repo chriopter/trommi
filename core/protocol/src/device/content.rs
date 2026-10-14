@@ -39,7 +39,7 @@ use crate::ids::{
     base64url_decode, BoardId, DeviceId, FileId, GroupId, Hash32, ObjectId, SessionId,
 };
 use crate::mls::profile::Cut;
-use crate::objects::{self, Decision, GateLog, Object, Opened, OwnRecord};
+use crate::objects::{self, Decision, GateLog, Object, ObjectStates, Opened, OwnRecord};
 use crate::registers::{self, OwnIds};
 use crate::store::{self, table, Batch, OutboxKind, Storage};
 use serde::Deserialize;
@@ -616,7 +616,7 @@ impl<S: Storage> Device<S> {
                 .leaf_role(&group, epoch, &this.id)?
                 .ok_or(Error::NotMember)?;
             let chains = this.chains(&group)?;
-            let objects = this.object_states(&group)?;
+            let objects = this.held_objects(&group)?;
             let mut own = this.own_chain(&group)?;
             // The own chain never stands behind what this device accepted of itself or still has to send.
             let queued = this
@@ -724,11 +724,11 @@ impl<S: Storage> Device<S> {
         group: &GroupId,
         epoch: u64,
         role: Role,
-        objects: &objects::Objects,
+        objects: &dyn ObjectStates,
         recipient: Option<&DeviceId>,
     ) -> Result<envelope::Draft, Error> {
         let facts = Facts(self);
-        let known = |object_id: &ObjectId| objects.get(object_id).ok_or(Error::NotFound);
+        let known = |object_id: &ObjectId| objects.object(object_id)?.ok_or(Error::NotFound);
         // A human's Chat message goes to the session's agent device, in a helper session to its opener.
         let chat_to = || -> Result<DeviceId, Error> {
             Ok(match recipient {
@@ -781,7 +781,7 @@ impl<S: Storage> Device<S> {
                 payload,
                 ..
             } => {
-                let card = known(object_id)?;
+                let card = &known(object_id)?;
                 let bind = AnswerBind {
                     object_id: *object_id,
                     version_hash: card.current,
@@ -801,7 +801,7 @@ impl<S: Storage> Device<S> {
             Draft::TakeBack {
                 object_id, payload, ..
             } => {
-                let card = known(object_id)?;
+                let card = &known(object_id)?;
                 let bind = TakeBackBind {
                     object_id: *object_id,
                     previous_hash: card.answer.ok_or(Error::Forbidden)?,
@@ -820,7 +820,7 @@ impl<S: Storage> Device<S> {
                 payload,
                 ..
             } => {
-                let request = known(request_id)?;
+                let request = &known(request_id)?;
                 // The request's own expiry, from its body as this device opened it.
                 let expires_at = self
                     .record_by_hash(group, &request.current)?
@@ -971,17 +971,13 @@ impl<S: Storage> Device<S> {
     /// The state of the object `object_id` of `group`, as the envelopes accepted so far leave it (9.2.1).
     pub fn object(&self, group: &GroupId, object_id: &ObjectId) -> Result<Option<Object>, Error> {
         self.owner()?;
-        Ok(self.object_states(group)?.get(object_id).cloned())
+        self.object_state(group, object_id)
     }
 
     /// Every object of `group` with its state, ascending by id.
     pub fn objects(&self, group: &GroupId) -> Result<Vec<(ObjectId, Object)>, Error> {
         self.owner()?;
-        Ok(self
-            .object_states(group)?
-            .iter()
-            .map(|(id, object)| (*id, object.clone()))
-            .collect())
+        self.every_object(group)
     }
 
     /// The device that owns `object_id` now (9.2): the writer of its newest version while it is a leaf, then
@@ -996,8 +992,8 @@ impl<S: Storage> Device<S> {
         let Some(epoch) = facts.processed_epoch(group)? else {
             return Ok(None);
         };
-        match self.object_states(group)?.get(object_id) {
-            Some(object) => objects::owner(&facts, group, epoch, object),
+        match self.object_state(group, object_id)? {
+            Some(object) => objects::owner(&facts, group, epoch, &object),
             None => Ok(None),
         }
     }
@@ -1298,17 +1294,22 @@ impl<S: Storage> Device<S> {
                 Mode::ReadingBack
             };
             let served = void_code.map_or(Served::Stored, |code| Served::Void(code.clone()));
+            // A group whose objects are still held in one record gets one entry per object here, once.
+            this.split_objects(batch, &group)?;
             // An envelope that comes behind later ones of its group is judged at its own place.
-            let objects = if change < this.group_state(&group)?.max_change {
-                this.objects_before(&group, change)?
+            let (at_its_place, held);
+            let objects: &dyn ObjectStates = if change < this.group_state(&group)?.max_change {
+                at_its_place = this.objects_before(&group, change)?;
+                &at_its_place
             } else {
-                this.object_states(&group)?
+                held = this.held_objects(&group)?;
+                &held
             };
             let received = chain::receive(
                 &Facts(this),
                 &Facts(this),
                 &this.chains(&group)?,
-                &objects,
+                objects,
                 &this.id,
                 bytes,
                 &served,
@@ -1385,9 +1386,7 @@ impl<S: Storage> Device<S> {
                 if let Some(transition) = transition {
                     // Behind later envelopes the whole state is built again below.
                     if !behind {
-                        let mut objects = self.object_states(&group)?;
-                        objects.apply(&transition)?;
-                        self.put_objects(batch, &group, &objects)?;
+                        self.apply_transition(batch, &group, &transition)?;
                     }
                     received.object_after = Some((transition.object_id, transition.after));
                     before = transition.before;
@@ -1422,8 +1421,14 @@ impl<S: Storage> Device<S> {
         }
         record.code = received.code.clone();
 
-        // A register's value and a Note version's lamport, for an envelope whose body opened.
-        if received.outcome == EnvelopeOutcome::Applied {
+        // A register's value and a Note version's lamport, for an envelope whose body opened. Nothing else
+        // says anything to the registers: they are read and written for those two alone.
+        let for_registers = match &header.subject {
+            Subject::Register(_) => true,
+            Subject::Version(fields) => fields.object_type == ObjectType::Note,
+            _ => false,
+        };
+        if received.outcome == EnvelopeOutcome::Applied && for_registers {
             let mut registers = self.registers(&group)?;
             if matches!(header.subject, Subject::Register(_)) {
                 let judged = registers.judge(&Facts(self), &header, &record.extra);
@@ -1457,9 +1462,8 @@ impl<S: Storage> Device<S> {
             received.replayed = true;
             if let Some((object_id, _)) = received.object_after {
                 received.object_after = self
-                    .object_states(&group)?
-                    .get(&object_id)
-                    .map(|object| (object_id, object.clone()));
+                    .object_state(&group, &object_id)?
+                    .map(|object| (object_id, object));
             }
         }
 
@@ -1602,9 +1606,8 @@ impl<S: Storage> Device<S> {
             }
             if let Some(fields) = received.header.subject.object() {
                 received.object_after = self
-                    .object_states(&group)?
-                    .get(&fields.object_id)
-                    .map(|object| (fields.object_id, object.clone()));
+                    .object_state(&group, &fields.object_id)?
+                    .map(|object| (fields.object_id, object));
             }
         } else {
             received.outcome = if record.status == Status::Void {

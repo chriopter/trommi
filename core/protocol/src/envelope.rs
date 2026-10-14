@@ -396,9 +396,15 @@ impl Decode for Header {
                 block: reader.fixed()?,
             },
         };
-        let file_ids: Vec<FileId> = reader.vector()?;
-        if file_ids.len() > MAX_FILE_IDS {
+        // At most MAX_FILE_IDS ids of a fixed length: the count is checked before any id is built.
+        let listed = reader.opaque()?;
+        if listed.len() > MAX_FILE_IDS * FileId::LEN {
             return Err(Error::BadFormat);
+        }
+        let mut listed = Reader::new(listed);
+        let mut file_ids: Vec<FileId> = Vec::new();
+        while !listed.is_empty() {
+            file_ids.push(listed.value()?);
         }
         Ok(Self {
             push: flags & FLAG_PUSH != 0,

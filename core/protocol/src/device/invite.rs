@@ -715,7 +715,9 @@ impl<S: Storage> Device<S> {
                     if !main || meta.removed || meta.archived {
                         continue;
                     }
-                    if meta.founding {
+                    // A founding the hub took is still under way until its Commit comes by in the log: the
+                    // agent's leaf shows only then.
+                    if waits(group) {
                         waiting = true;
                     } else if self.leaves_now(group)?.contains(&device) {
                         seated = true;
