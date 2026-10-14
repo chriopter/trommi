@@ -124,6 +124,9 @@ pub struct App {
     invites: invites::Invites,
     /// The account's steps in flight (`app::account_steps`).
     steps: account_steps::Steps,
+    /// Actions that write the room's registers, held while the device catches up: a register written before the
+    /// device read the newest value would lose to an older one read later (its write counter is too low).
+    held_actions: Vec<Action>,
     /// The hub the stored room names ([`ROOM_KEY`]).
     stored_hub: Option<String>,
     /// The device state loaded, while the stored room's hub is read.
@@ -182,6 +185,7 @@ impl App {
             files: crate::files::Files::default(),
             invites: invites::Invites::default(),
             steps: account_steps::Steps::default(),
+            held_actions: Vec::new(),
             opening: None,
             board: engine::feed::Board::default(),
             lens: Lens::default(),
@@ -710,6 +714,12 @@ impl App {
         if self.file_action(now_ms, &action, out) {
             return;
         }
+        if writes_room_registers(&action) && self.next_view.phase != Phase::Live {
+            if self.held_actions.len() < 64 {
+                self.held_actions.push(action);
+            }
+            return;
+        }
         self.doing(now_ms, out, |doing| {
             if let Err(NotDone { text, again }) = doing.run(&action) {
                 doing.sent.toast(doing.toasts, text, again.then_some(action));
@@ -1156,6 +1166,15 @@ impl App {
         self.invites_settle(now_ms, out);
         self.notes_free(now_ms, notes_back, out);
         self.goals_check |= fed;
+        if !self.held_actions.is_empty() && self.next_view.phase == Phase::Live {
+            for action in std::mem::take(&mut self.held_actions) {
+                self.doing(now_ms, out, |doing| {
+                    if let Err(NotDone { text, again }) = doing.run(&action) {
+                        doing.sent.toast(doing.toasts, text, again.then_some(action.clone()));
+                    }
+                });
+            }
+        }
         if self.goals_check && self.next_view.phase == Phase::Live {
             self.doing(now_ms, out, |doing| doing.sync_goals());
             self.goals_check = false;
@@ -1211,6 +1230,24 @@ impl App {
             }
         }
     }
+}
+
+/// Whether an action writes a register of the room group (stars, snoozes, drafts, sessions' settings, desks).
+fn writes_room_registers(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::Star { .. }
+            | Action::Snooze { .. }
+            | Action::Unsnooze { .. }
+            | Action::Draft { .. }
+            | Action::RenameSession { .. }
+            | Action::ArchiveSession { .. }
+            | Action::MoveSession { .. }
+            | Action::AddDesk { .. }
+            | Action::RenameDesk { .. }
+            | Action::RemoveDesk { .. }
+            | Action::SetGoal { .. }
+    )
 }
 
 fn log(level: LogLevel, text: &str) -> Effect {
