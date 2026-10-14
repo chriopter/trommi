@@ -1104,7 +1104,7 @@ controller('card', class extends Controller {
     this.element.addEventListener('load', e => { if (e.target.matches?.('.tc-figure img')) this.shape(e.target) }, true)
     // (the page is drawn again from the core's view model and morphed in place: a part that was drawn anew, as the
     //  card's left column, takes the notes on it along)
-    this.morphed = () => { if (this.marksUi && !this.marksUi.scroll.isConnected) { const list = this.marksUi.get(); this.marksUi = null; this.mountMarks().then(() => this.marksUi?.set(list)) } this.link() }
+    this.morphed = () => { if (this.marksUi && !this.marksUi.scroll.isConnected && this.hasMarksTarget) { const list = this.marksUi.get(); this.marksUi = null; this.mountMarks().then(() => this.marksUi?.set(list)) } this.link() }
     document.addEventListener('trommi:morph', this.morphed)
     this.link()
   }
@@ -1145,13 +1145,13 @@ controller('card', class extends Controller {
   // was drawn on also goes as a picture of the card with the drawing (attached as the form is sent).
   async mountMarks() {
     const left = this.element.querySelector('.tc-left')
-    if (!left || !this.element.isConnected || this.marksUi) return
+    if (!left || !this.element.isConnected || this.marksUi || !this.hasMarksTarget) return
     const labels = new Map([...this.element.querySelectorAll('.tc-opt[data-key]')].map(b => [b.dataset.key, b.querySelector('.tc-opt-label')?.textContent ?? b.dataset.key]))
     this.marksUi = cardMarks({
       scroll: left,
       blocks: () => [...left.querySelectorAll('.tc-title, .tc-text .rich > *, .focus-mark')],
       labelOf: key => labels.get(key) ?? key,
-      onChange: () => { this.marksTarget.value = JSON.stringify(this.marksUi.get()); this.keep(); this.keepHere(); this.inked() },
+      onChange: () => { if (!this.hasMarksTarget) return; this.marksTarget.value = JSON.stringify(this.marksUi.get()); this.keep(); this.keepHere(); this.inked() },
     })
     // (what is written and drawn on the card is kept on this device; the core's draft takes it along, but its view
     //  model does not give it back: CardView.draft is the field's words only)
@@ -1165,6 +1165,7 @@ controller('card', class extends Controller {
   }
   hereKey() { return `trommi-marks-${this.element.dataset.id}` }
   keepHere() {
+    if (!this.hasMarksTarget) return
     try { const v = this.marksTarget.value; if (v && v !== '[]') localStorage.setItem(this.hereKey(), v); else localStorage.removeItem(this.hereKey()) } catch {}
   }
   /** The sheet of this view: over the card, or over the picture standing large in Full screen. */
