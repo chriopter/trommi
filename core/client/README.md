@@ -78,6 +78,24 @@ hub answers with, and joins the room with it as `App::join_room` does. The hub i
 `account.join_failed`, `account.refused`) when not. Password, words, keys and code are in no `Debug`, log, view or
 stored entry.
 
+**The actions' hub requests.** The App sends no request with a token on its own: an action builds its request with
+the codec's builder for the route (which sets `max_answer`) and hands it to `App::request(now, build, keep)`; the
+engine adds the token, renews it on a `401` and sends the same request again, retries by `Backoff::HUB` (an
+`Interactive` request at most twice, then it is reported as failed; `Background`, `Upload`, `Download` until
+answered), and reports the raw response (2xx or the hub's refusal) or the failure in `App::take_answers()` under the
+id it returned. `keep: Some(name)` keeps a request with side effects across a restart: written to the app store
+(`engine/req/<name>`, without its token) before it is sent, deleted when answered, sent again after a restart and
+answered under the same name. **A kept request must be idempotent at the hub**: it may arrive twice. The routes an
+action may send with `keep`: `POST /v1/groups/{group}/archive`, `DELETE /v1/files/{file}`, `PUT /v1/files/{file}`
+(the same bytes), `DELETE /v1/shares/{share}`, `DELETE /v1/invites/{invite}`, `DELETE /v1/push`, and
+`POST /v1/groups/{group}/reject`. Never with `keep`: a route that makes something new on each arrival
+(`POST /v1/shares`, `POST /v1/invites`, a Request), the account routes, or anything the device's outbox carries
+(Commits, messages, envelopes: those go through `App::act`). Archiving a session is one call, `App::archive_session(now, group, retire)`: the
+archive goes to the hub as a kept request, and once the hub took it the engine archives the group on the device and
+removes the vouched agent devices `retire` from the room's agents by one room Commit, also after a restart. Randomness for what an action makes beside the protocol
+(a file's key, a share link's secret) comes from the device's own source, `Engine::with_entropy`, so a seeded App
+stays exact.
+
 `App::handle(now_ms, Event) -> Vec<Effect>` is the only entry. Time comes in beside each event (`now_ms`, the
 shell's clock); the core never reads a clock. The protocol's randomness is the system's, read inside
 `core/protocol`; the core's own jitter comes from `Config.seed`, so a seeded test repeats exactly. Local-time rules

@@ -325,3 +325,90 @@ fn killed_in_the_middle_of_a_sign_ins_joins_the_app_says_which_are_left_and_the_
     }
     assert!(kills > 5 && asked_again > 0 && unknown <= 3, "{kills} kills, {asked_again} named as left, {unknown} not known, effects {before}..{effects}");
 }
+
+/// A human device added late to a session whose epoch before its join it has no key for: the line of that epoch
+/// is chained without its body (`no-key`), the engine asks for the keys, the person's other device hands them over,
+/// and the line is read back. Returns the world, the newcomer's store and id.
+fn keyless_scene() -> (World, common::TestStore, DeviceId) {
+    let mut world = World::new();
+    let (store, id, _) = world.newcomer();
+    let mut newcomer = Device::open(store.clone(), Box::new(SystemEntropy)).expect("opens");
+    newcomer.key_packages_to_upload(0, now()).expect("key packages");
+    assert!(post_all(&mut world.hub.borrow_mut(), &mut newcomer).is_empty());
+    drop(newcomer);
+    {
+        let hub = &mut *world.hub.borrow_mut();
+        sync(hub, &mut world.founder);
+        // an epoch whose key the code did not open for the newcomer (it began after its join)
+        world.founder.update(&world.group, true, now()).expect("an update").expect("a Commit");
+        assert!(post_all(hub, &mut world.founder).is_empty());
+    }
+    world.founder_says("before the newcomer");
+    {
+        let hub = &mut *world.hub.borrow_mut();
+        sync(hub, &mut world.founder);
+        let package = hub.claim(&[id]).expect("a KeyPackage").remove(0);
+        world.founder.add_to_session(&world.group, &id, &package, now()).expect("added");
+        assert!(post_all(hub, &mut world.founder).is_empty());
+    }
+    world.founder_says("after it");
+    (world, store, id)
+}
+
+/// The founder answers the newcomer's wishes for keys, as the person's other device does.
+fn hand_over(world: &mut World, id: &DeviceId) {
+    let hub = &mut *world.hub.borrow_mut();
+    if !hub.wishes.iter().any(|(_, d, kind, ..)| d == id && kind == "handover") {
+        return;
+    }
+    sync(hub, &mut world.founder);
+    let _ = world.founder.answer_key_request(Some(&world.group), id, now());
+    let _ = world.founder.answer_key_request(None, id, now());
+    post_all(hub, &mut world.founder);
+}
+
+fn run_keyless(die_in: Option<usize>) -> (World, Sim, bool) {
+    let (mut world, store, id) = keyless_scene();
+    let mut sim = world.sim_of(&store);
+    sim.die_in = die_in;
+    sim.send(start());
+    let mut died = false;
+    for _ in 0..30 {
+        while sim.dead {
+            died = true;
+            sim.restart();
+            sim.send(start());
+        }
+        news(&world, &mut sim, &id);
+        hand_over(&mut world, &id);
+        sim.advance(5_000);
+    }
+    (world, sim, died)
+}
+
+fn lines(sim: &Sim) -> Vec<String> {
+    let mut lines: Vec<String> = sim.app.board().model.timelines.values().flat_map(|t| t.items.values()).filter_map(|i| i.get("content").and_then(|c| c.get("text")).and_then(|t| t.as_str()).map(str::to_string)).collect();
+    lines.sort();
+    lines
+}
+
+#[test]
+#[ignore = "a finding: a human device added late to a session takes no envelope of an epoch before its join; the core refuses the chain's first link as group-behind, so the sender's later lines stay a withheld gap and no keys are asked for (to be settled with history on demand, start_from_list)"]
+fn a_line_without_its_key_is_read_back_once_the_keys_come_also_across_a_restart() {
+    let (world, sim, died) = run_keyless(None);
+    assert!(!died);
+    let whole = end(&world, &sim);
+    assert!(lines(&sim).iter().any(|l| l == "before the newcomer"), "read back with the keys: {:?} {whole:?} {:?} {:?}", lines(&sim), sim.app.alerts(), world.hub.borrow().seen.iter().filter(|r| !r.contains("changes") && !r.contains("stream")).collect::<Vec<_>>());
+    assert_eq!(whole.owes, (0, 0, 0, 0), "{whole:?}");
+    assert!(world.hub.borrow().seen.iter().any(|r| r.starts_with("POST /v1/requests")), "the keys were asked for");
+    let effects = sim.log.len();
+    let mut kills = 0;
+    for at in (1..effects).step_by(3) {
+        let (world, sim, died) = run_keyless(Some(at));
+        kills += usize::from(died);
+        let got = end(&world, &sim);
+        assert_eq!(lines(&sim), lines(&run_keyless(None).1), "killed before effect {at} of {effects}");
+        assert_eq!(got.owes, (0, 0, 0, 0), "killed before effect {at} of {effects}: {got:?}");
+    }
+    assert!(kills > 10, "the kills fell inside the run: {kills}");
+}

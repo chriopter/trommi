@@ -1,7 +1,7 @@
 //! The person's actions through the App (`Event::Action`), against the stand-in hub (tests/common): the echo in the
 //! very next `Render`, replaced by the hub's copy, rolled back with a toast that offers the action again when the hub
-//! refuses it, and sent once across a restart. (A write lost before it was stored is rolled back when the engine
-//! opens the stored state again in place: that test comes with the engine's reopening.)
+//! refuses it, and sent once across a restart; a write lost before it was stored is rolled back when the engine
+//! opens the stored state again in place.
 
 mod common;
 
@@ -320,5 +320,203 @@ fn a_verdict_closes_the_request() {
     assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
     world.stream(&mut sim);
     assert!(sim.app.engine().unwrap().device().outbox().is_empty());
-    assert_ne!(sim.app.board().model.permissions.get(&request).map(|p| p.envelope_number), None);
+    let p = &sim.app.board().model.permissions[&request];
+    assert_eq!(p.permission_state, "allowed", "closed by the verdict");
+    assert_eq!(p.verdict.as_ref().map(|v| v.allow), Some(true));
+}
+
+fn note(sim: &Sim, id: &str) -> serde_json::Map<String, serde_json::Value> {
+    sim.app.board().model.notes.get(id).cloned().unwrap_or_default()
+}
+
+/// The ids of the notes the model holds that are not closed.
+fn open_notes(sim: &Sim) -> Vec<String> {
+    sim.app.board().model.notes.iter().filter(|(_, n)| n["object_state"] != json!("closed")).map(|(k, _)| k.clone()).collect()
+}
+
+fn write_note(sim: &mut Sim, id: Option<&str>, text: &str) {
+    act(sim, Action::WriteNote { note_id: id.map(str::to_string), text: text.into() });
+}
+
+#[test]
+fn a_new_note_shows_at_once_under_its_object_id_and_the_hubs_copy_replaces_it() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    sim.hold = true;
+    write_note(&mut sim, None, "buy milk");
+    let ids = open_notes(&sim);
+    assert_eq!(ids.len(), 1);
+    let id = ids[0].clone();
+    assert_eq!(id.len(), 32, "the object id of its first envelope, at once");
+    let n = note(&sim, &id);
+    assert_eq!((n["text"].clone(), n["pending"].clone()), (json!("buy milk"), json!(true)));
+    assert_eq!(n["created_at"], json!(sim.now_ms));
+    sim.hold = false;
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    let n = note(&sim, &id);
+    assert_eq!((n["text"].clone(), n["pending"].clone(), n["object_version"].clone()), (json!("buy milk"), json!(false), json!(1)));
+    assert_eq!(n["causal"]["lamport"], json!(1.0));
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+}
+
+#[test]
+fn a_notes_edits_wait_for_the_version_on_its_way_and_the_newest_follows_it() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    write_note(&mut sim, None, "one");
+    world.stream(&mut sim);
+    let id = open_notes(&sim)[0].clone();
+    let first = note(&sim, &id)["version_hash"].clone();
+    sim.hold = true;
+    write_note(&mut sim, Some(&id), "two");
+    let posts = envelope_posts(&world);
+    // two more edits while "two" is on its way: shown at once, sealed not yet; only the newest will follow
+    write_note(&mut sim, Some(&id), "three");
+    write_note(&mut sim, Some(&id), "four");
+    assert_eq!(note(&sim, &id)["text"], json!("four"), "at once");
+    assert_eq!(sim.app.engine().unwrap().device().outbox().len(), 1, "one version on its way");
+    sim.hold = false;
+    serve(&world, &mut sim);
+    assert_eq!(envelope_posts(&world), posts + 1);
+    // "two" is back: "four" is sealed on it
+    world.stream(&mut sim);
+    let n = note(&sim, &id);
+    assert_eq!((n["text"].clone(), n["pending"].clone(), n["_base"]["object_version"].clone()), (json!("four"), json!(true), json!(2)), "the echo in front of version two");
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    let n = note(&sim, &id);
+    assert_eq!((n["text"].clone(), n["object_version"].clone(), n["pending"].clone()), (json!("four"), json!(3), json!(false)));
+    assert_eq!(n["version_hashes"].as_array().map(Vec::len), Some(3), "three versions, each on the one before");
+    assert_ne!(n["version_hash"], first);
+    assert_eq!(n["causal"]["lamport"], json!(3.0));
+    assert_eq!(envelope_posts(&world), posts + 2, "three was never sent");
+    assert!(sim.app.engine().unwrap().device().outbox().is_empty());
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
+}
+
+#[test]
+fn a_note_deleted_is_gone_at_once_and_a_gone_note_is_said() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    write_note(&mut sim, None, "old");
+    world.stream(&mut sim);
+    let id = open_notes(&sim)[0].clone();
+    sim.hold = true;
+    act(&mut sim, Action::DeleteNote { note_id: id.clone() });
+    assert!(open_notes(&sim).is_empty(), "at once");
+    sim.hold = false;
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    assert_eq!(note(&sim, &id)["object_state"], json!("closed"));
+    assert_eq!(note(&sim, &id)["pending"], json!(false));
+    act(&mut sim, Action::DeleteNote { note_id: id.clone() });
+    assert_eq!(sim.view.toasts.last().map(|t| t.text.key.as_str()), Some("action.note_gone"));
+    write_note(&mut sim, Some("00112233445566778899aabbccddeeff"), "x");
+    assert_eq!(sim.view.toasts.len(), 2);
+    assert_eq!(sim.view.toasts[1].text.key, "action.note_gone");
+}
+
+#[test]
+fn an_edit_waiting_behind_a_refused_version_is_sealed_on_what_stands() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    write_note(&mut sim, None, "one");
+    world.stream(&mut sim);
+    let id = open_notes(&sim)[0].clone();
+    sim.hold = true;
+    write_note(&mut sim, Some(&id), "two");
+    write_note(&mut sim, Some(&id), "three");
+    let mut once = Some(answer(403, json!({ "error": "forbidden", "message": "refused", "voided": true })));
+    world.hub.borrow_mut().fault = Some(Box::new(move |_, request: &HttpRequest| if request.url.ends_with("/v1/envelopes") { once.take().map(Ok) } else { None }));
+    // the post of "two" is refused; the hub keeps the void record under its number
+    let (req, request) = sim.held.pop_front().expect("the post of two");
+    let got = world.hub.borrow_mut().http(sim.now_ms, &request);
+    world.hub.borrow_mut().void_next(world.room, world.me);
+    sim.hold = false;
+    sim.answer(req, got);
+    serve(&world, &mut sim);
+    // "two" refused, with a toast that offers it again; "three" went out on version one
+    assert_eq!(sim.view.toasts.len(), 1);
+    assert_eq!(sim.view.toasts[0].action, Some(Action::WriteNote { note_id: Some(id.clone()), text: "two".into() }));
+    assert_eq!(note(&sim, &id)["text"], json!("three"), "the waiting edit stays in front");
+    assert!(sim.app.engine().unwrap().device().outbox().is_empty(), "three taken");
+}
+
+#[test]
+fn a_write_lost_before_it_was_stored_is_rolled_back_with_a_toast_that_does_it_again() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    // the store is full once: the device's write of the sealed star fails and it closes itself
+    sim.device_full = 1;
+    act(&mut sim, Action::Star { card_id: card.clone(), on: true });
+    assert_eq!(sim.view.phase, Phase::Opening);
+    for _ in 0..10 {
+        if sim.view.phase == Phase::Live {
+            break;
+        }
+        sim.advance(1_000);
+        world.stream(&mut sim);
+    }
+    assert_eq!(sim.view.phase, Phase::Live, "opened again in place");
+    assert!(human(&sim, &format!("star/{card}")).is_none_or(|h| h.0.is_null()), "the echo is rolled back");
+    assert_eq!(sim.view.toasts.len(), 1);
+    let toast = sim.view.toasts[0].clone();
+    assert_eq!(toast.text.key, "action.lost");
+    assert_eq!(toast.action, Some(Action::Star { card_id: card.clone(), on: true }));
+    // "Try again": now stored and taken
+    act(&mut sim, toast.action.unwrap());
+    world.stream(&mut sim);
+    assert_eq!(human(&sim, &format!("star/{card}")).map(|h| h.1), Some(false), "the hub's copy");
+    assert_eq!(sim.view.toasts.len(), 1, "no new toast");
+}
+
+#[test]
+fn a_draft_keeps_the_shape_both_apps_read_and_what_it_does_not_name() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let card = with_card(&mut world, &mut sim);
+    let key = format!("draft/{card}");
+    let draft = |text: &str, keys: Option<Vec<String>>| Action::Draft { place: card.clone(), text: text.into(), keys, notes: None };
+    act(&mut sim, draft("", Some(vec!["yes".into()])));
+    let v = human(&sim, &key).unwrap().0;
+    assert_eq!((v["keys"].clone(), v["note"].clone(), v["notes"].clone()), (json!(["yes"]), json!(""), json!({})));
+    assert_eq!(v["ts"], json!(sim.now_ms));
+    // words typed: the ticks stand
+    act(&mut sim, draft("because", None));
+    let v = human(&sim, &key).unwrap().0;
+    assert_eq!((v["keys"].clone(), v["note"].clone()), (json!(["yes"]), json!("because")));
+    // nothing left: the draft goes
+    act(&mut sim, draft(" ", Some(vec![])));
+    assert!(human(&sim, &key).unwrap().0.is_null());
+}
+
+#[test]
+fn a_sessions_group_carries_its_desks_goals_and_is_written_once() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    let held = |sim: &Sim| sim.app.board().model.sessions[&session].registers.get("goals").map(|r| r.value.clone()).unwrap_or_default();
+    act(&mut sim, Action::SetGoal { desk_id: "main".into(), text: "ship it\nwrite the docs".into() });
+    world.stream(&mut sim);
+    assert!(held(&sim).is_null(), "the session is on no desk yet");
+    act(&mut sim, Action::MoveSession { session_id: session.clone(), desk_id: "main".into() });
+    world.stream(&mut sim);
+    assert_eq!(held(&sim), json!({ "desk_id": "main", "desk_name": "Personal", "goals": "ship it\nwrite the docs" }));
+    // nothing changed: nothing more is written
+    let posts = envelope_posts(&world);
+    world.agent_says("still here");
+    world.stream(&mut sim);
+    assert_eq!(envelope_posts(&world), posts);
+    // the goals cleared: the session's copy goes
+    act(&mut sim, Action::SetGoal { desk_id: "main".into(), text: "  ".into() });
+    world.stream(&mut sim);
+    assert!(held(&sim).is_null());
+    assert!(sim.view.toasts.is_empty(), "{:?}", sim.view.toasts);
 }

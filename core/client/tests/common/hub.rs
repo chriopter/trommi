@@ -247,6 +247,8 @@ pub struct Hub {
     /// Accounts for a sign-in (`POST /v1/account/login` and `/recover`): the name (normalised e-mail or the id's
     /// text), the auth keys of the password and of the kit, and the room's copies of the code under each.
     pub accounts: Vec<Account>,
+    /// A wish's Commit number and committer (`reject`).
+    pub wish_extras: BTreeMap<u64, (Option<u64>, Option<DeviceId>)>,
 }
 
 #[derive(Clone)]
@@ -281,6 +283,7 @@ impl Default for Hub {
             fault: None,
             recovery: None,
             accounts: Vec::new(),
+            wish_extras: BTreeMap::new(),
             streaming: Vec::new(),
             notes: Vec::new(),
             wishes: Vec::new(),
@@ -604,6 +607,15 @@ impl Hub {
     }
 
     /// The human devices of the room's newest state.
+    /// Whether the room's newest state names `device` among its agents.
+    pub fn is_agent(&self, device: &DeviceId) -> bool {
+        self.room.as_ref().and_then(Observer::history).is_some_and(|h| h.newest().is_agent(device))
+    }
+
+    pub fn is_archived(&self, group: &GroupId) -> bool {
+        self.archived.contains(group)
+    }
+
     pub fn humans(&self) -> Vec<DeviceId> {
         self.room.as_ref().and_then(Observer::history).map(|h| h.newest().humans.iter().copied().collect()).unwrap_or_default()
     }
@@ -615,11 +627,23 @@ impl Hub {
 
     /// A device's wish to the human devices (`POST /v1/requests`), at the hub's clock `at`. Returns its id.
     pub fn wish(&mut self, device: &DeviceId, kind: &str, group: Option<GroupId>, at: u64) -> u64 {
+        self.wish_with(device, kind, group, at, None, None, None)
+    }
+
+    /// A wish with what a `readmit` (its KeyPackage) or a `reject` (the Commit's number and its committer)
+    /// carries. The stream tells the KeyPackage; the list never does (the real hub's recorded list has none).
+    #[allow(clippy::too_many_arguments)]
+    pub fn wish_with(&mut self, device: &DeviceId, kind: &str, group: Option<GroupId>, at: u64, key_package: Option<&[u8]>, n: Option<u64>, committer: Option<DeviceId>) -> u64 {
         self.counter += 1;
         let id = self.counter;
         self.wishes.push((id, *device, kind.to_string(), group, at));
+        self.wish_extras.insert(id, (n, committer));
         let to = self.humans();
-        self.note(to, "request", json!({ "id": id, "kind": kind, "device": device.to_base64url(), "group_id": group.map(|g| b64(g.as_bytes())), "n": null }));
+        let mut event = json!({ "id": id, "kind": kind, "device": device.to_base64url(), "group_id": group.map(|g| b64(g.as_bytes())), "n": n, "committer": committer.map(|c| c.to_base64url()) });
+        if let Some(kp) = key_package {
+            event["key_package"] = json!(b64(kp));
+        }
+        self.note(to, "request", event);
         id
     }
 
@@ -997,7 +1021,10 @@ impl Hub {
                     self.wishes
                         .iter()
                         .filter(|(_, d, ..)| human || *d == device)
-                        .map(|(id, d, kind, group, at)| json!({ "id": id, "device": d.to_base64url(), "kind": kind, "group_id": group.map(|g| b64(g.as_bytes())), "key_package": null, "n": null, "at": at, "committer": null }))
+                        .map(|(id, d, kind, group, at)| {
+                            let (n, committer) = self.wish_extras.get(id).copied().unwrap_or_default();
+                            json!({ "id": id, "device": d.to_base64url(), "kind": kind, "group_id": group.map(|g| b64(g.as_bytes())), "key_package": null, "n": n, "at": at, "committer": committer.map(|c| c.to_base64url()) })
+                        })
                         .collect(),
                 ))
             }

@@ -101,8 +101,7 @@
 //! # Not here yet
 //!
 //! The Desk as a delta on a warm start, the reading of the room's past (one
-//! module, one entry point, behind [`Engine::reread_from`]), wishes to be let in again
-//! (`readmit`) and a leaf's refusal of a Commit (`reject`).
+//! module, one entry point, behind [`Engine::reread_from`]).
 //!
 //! # Beside the order
 //!
@@ -115,7 +114,7 @@ pub mod feed;
 pub mod memstore;
 pub mod sync;
 
-pub use sync::{room_join, Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
+pub use sync::{requests, room_join, Alert, Connection, Ctx, Engine, OpenError, Report, Stopped};
 
 /// The device inside the engine: the protocol core's, over the store whose writes become barrier effects.
 pub type Device = trommi_core::device::Device<memstore::MemStore>;
