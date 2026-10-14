@@ -2700,9 +2700,9 @@ ${(t.tiles ?? []).map(x => tile(`is-thumb${x.thumbs ? '' : ' is-named'}${x.lead 
     }
     case 'advised': {
       const x = t.tiles?.[0]
-      return html`<form class="inbox-actions is-advised-pair has-shift" method="post" action="${act('decide')}">${stay}<a class="inbox-answer is-thumb is-others" data-nav href="${base}/card/${encodeURIComponent(row.id)}" title="${t.says?.en ?? ''}" aria-label="${t.says?.en ?? ''}"><b>+${t.others}</b><span>other ways</span></a>${x ? html`<button class="inbox-answer is-thumb is-lead is-take is-advised" type="submit" name="key" value="${x.key}" title="${x.label}" aria-label="${x.says.en}">${sk('yes')}<strong>${x.label}</strong></button>` : ''}${shiftPair(true)}</form>`
+      return html`<form class="inbox-actions is-advised-pair has-shift" method="post" action="${act('decide')}">${stay}<a class="inbox-answer is-thumb is-others" data-nav href="${base}/card/${encodeURIComponent(row.id)}" title="${t.others} other ways" aria-label="${t.says?.en ?? ''}"><b>+${t.others}</b><span>other ways</span></a>${x ? html`<button class="inbox-answer is-thumb is-lead is-take is-advised" type="submit" name="key" value="${x.key}" title="${x.label}" aria-label="${x.says.en}">${sk('yes')}<strong>${x.label}</strong></button>` : ''}${shiftPair(true)}</form>`
     }
-    default: return html`<div class="inbox-actions${decision ? ' has-shift' : ''}"><a class="inbox-answer is-wide is-lead" data-nav href="${base}/card/${encodeURIComponent(row.id)}" title="${t.says?.en ?? ''}" aria-label="${t.says?.en ?? 'Choose'}"><span class="inbox-disc">${sk('choose')}</span><span>Choose</span></a>${decision ? shiftPair(false) : ''}</div>`
+    default: return html`<div class="inbox-actions${decision ? ' has-shift' : ''}"><a class="inbox-answer is-wide is-lead" data-nav href="${base}/card/${encodeURIComponent(row.id)}" title="${(t.says?.en ?? '').replace(/^Choose: /, '')}" aria-label="${t.says?.en ?? 'Choose'}"><span class="inbox-disc">${sk('choose')}</span><span>Choose</span></a>${decision ? shiftPair(false) : ''}</div>`
   }
 }
 

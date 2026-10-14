@@ -959,7 +959,8 @@ impl App {
                     self.lens.home_desk = Some(desk.to_string());
                 }
                 self.lens.desk = focus.desk;
-                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts);
+                // (the gallery, and the Desk's foot shows its newest)
+                self.lens.artifacts = matches!(focus.screen, Screen::Artifacts | Screen::Desk);
                 let (session, card, off) = match focus.screen {
                     Screen::Session { session_id } => (Some(session_id), None, None),
                     Screen::Card { card_id } => (None, Some(card_id), None),

@@ -368,13 +368,11 @@ async function bundle(pub, vendor, core) {
   for (const f of r.outputFiles) out[rel(f.path)] = f.text
   const outputs = Object.entries(r.metafile.outputs)
   const entry = outputs.find(([, o]) => /(^|\/)app\.mjs$/.test(o.entryPoint ?? ''))?.[0]
-  const coreOut = outputs.find(([, o]) => o.entryPoint === 'vendor:core.mjs')?.[0]
-  const remoteOut = outputs.find(([, o]) => o.entryPoint === 'vendor:remote.mjs')?.[0]
-  if (!entry || !coreOut || !remoteOut) throw new Error('build: the bundle has no app.mjs, no core or no remote.mjs')
+  if (!entry) throw new Error('build: the bundle has no app.mjs')
   // What a cold start fetches: the entry, the page's side of the core worker (remote.mjs: boot opens the room through
   // it at once) and every chunk they import statically (one round trip with modulepreload). The core itself runs in
   // the worker; the page loads its chunk only when it needs it (the account screens, the demo, a page without workers).
-  const first = new Set(), queue = [entry, remoteOut]
+  const first = new Set(), queue = [entry]
   while (queue.length) { const o = queue.shift(); if (first.has(o)) continue; first.add(o); for (const i of r.metafile.outputs[o].imports) if (i.kind === 'import-statement') queue.push(i.path) }
   return { out, entry: rel(entry), first: [...first].map(rel), worker, start, workerLoadsCore }
 }

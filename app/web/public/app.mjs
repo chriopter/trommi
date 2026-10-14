@@ -9,7 +9,7 @@ import * as desk from './desk.mjs'
 import * as sidebar from './sidebar.mjs'
 import * as notes from './notes.mjs'
 import { DRAWER_VEIL, SIDE_FOOT, cornerNote, markCurrent, phoneBar, sidebarRows, tabBar, topbar } from './sidebar.mjs'
-import { Controller, calm, controller, curlHTML, html, keySheet, raw, startUi, toast } from './ui.mjs'
+import { Controller, attGone, calm, controller, curlHTML, html, keySheet, raw, startUi, toast } from './ui.mjs'
 import { movedPath } from './paths.mjs'
 import { rowSheet } from './desk.mjs'
 import * as core from './core.mjs'
@@ -982,6 +982,8 @@ async function boot() {
   startUi()
   defineTurbo()
   watchPwa()
+  // A picture that does not come (gone from the hub, a file that does not open) leaves its place as it was: a tile.
+  addEventListener('error', e => { const el = e.target; if (el instanceof HTMLImageElement && el.closest('main, .pad') && !el.closest('[data-keep-broken]')) el.replaceWith(attGone(el)) }, true)
   // The demo room: ?mock=1 (the fixture); remembered for this tab; ?mock=0 ends it.
   const params = new URLSearchParams(location.search)
   if (params.has('mock')) { if (params.get('mock') === '0') sessionStorage.removeItem('trommi-mock'); else sessionStorage.setItem('trommi-mock', params.get('mock') || '1') }

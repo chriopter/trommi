@@ -3,7 +3,7 @@
 // style. A row never unfolds: its text is a link to the card's own page, its tiles are forms that answer with one tap
 // (the card's routes, card.mjs). Nothing here decides what stands where: the core does; the page draws and acts.
 import { flipOut } from './app.mjs'
-import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, html, lastUndo, linkSlip, mq, raw, ringSvg, runSection, sideWays, sk, starMark, undoLast, whoOf } from './ui.mjs'
+import { Controller, PLUS, WORDS, agoSpan, avatar, controller, deskRow, fileSrc, html, lastUndo, linkSlip, mq, raw, ringSvg, runSection, sideWays, sk, starMark, undoLast, whoOf } from './ui.mjs'
 
 // ---- the head: the big line, the goals, Blitz and the duck ----
 function deskHead(d, base) {
@@ -87,7 +87,24 @@ function deskList(d, base) {
   rows.forEach((r, i) => { if (r.run || i === 0) out.push({ first: r, rows: [] }); out.at(-1).rows.push(i < WINDOW || filled.has(r.id) ? deskRow(r, base, { slim: true }) : emptyRow(r)) })
   return html`${linkSlip(d.slip ?? [], base)}${out.map(x => (x.first.from ? run(x.first, x.rows, x.rows.length) : x.rows))}
 ${d.empty ? html`<div class="inbox-empty${d.mode === 'reading' ? ' is-reading' : ''}" id="desk-empty"${d.mode === 'reading' ? raw(' role="status"') : ''}>${sk('desk')}<p>${d.empty.en}</p></div>` : ''}
-${offHint(d.off, base)}<div class="inbox-stacks stack-tabs is-straight is-two" id="desk-stacks"></div>`
+<section id="desk-ip" class="tail" hidden></section>
+${offHint(d.off, base)}<div class="inbox-stacks stack-tabs is-straight is-two" id="desk-stacks">${artifactsPile(base)}</div>`
+}
+
+/** "Artifacts N" at the foot of the Desk: what the agents published (vm.artifacts, the newest first), the last four
+ *  as small cards, picture or page, each with its title; the heading opens /artifacts. Without any it is not there. */
+let deskVm = null
+function artifactsPile(base) {
+  const vm = deskVm?.() ?? {}, all = vm.artifacts ?? []
+  if (!all.length) return ''
+  const thumb = a => {
+    const id = a.files?.[0], f = id ? vm.files?.[id] : null, type = f?.media_type ?? ''
+    const url = id && /^(image|video)\//.test(type) ? fileSrc(id) : null
+    if (type.startsWith('image/') && url) return html`<span class="asset-preview is-shown" data-kind="image"><img src="${url}" alt="" loading="lazy" decoding="async"></span>`
+    return html`<span class="df-page"><b>${a.title}</b><i></i><i></i><i></i></span>`
+  }
+  return html`<section class="df-cards" id="desk-artifacts" aria-label="Artifacts, ${all.length}"><div class="end-divider"><svg viewBox="0 0 300 8" preserveAspectRatio="none" aria-hidden="true"><path d="M2 4.6 Q60 2.6 120 4.2 T238 3.6 T298 4.4"/></svg><a class="end-head" data-nav href="${base}/artifacts" aria-label="All Artifacts, ${all.length}"><span class="end-head-words">Artifacts</span> <span class="off-count">${all.length}</span>${sk('go')}</a></div>
+<div class="df-row">${all.slice(0, 4).map(a => html`<a class="df-card" id="art-${a.id}" data-nav href="${base}/artifacts/${encodeURIComponent(a.id)}" title="${a.title}"><span class="df-thumb">${thumb(a)}</span><span class="df-title">${a.title}</span></a>`)}</div></section>`
 }
 
 /** The Desk's <main>, and beside it its layer: the docked stacks, the selection bar, the knock strips (fixed things
@@ -554,6 +571,7 @@ const BACK = { later: 'wake', duck: 'reopen', shred: 'reopen', read: 'reopen', s
 const SAID = { later: WORDS.later, duck: 'Left to the agents', shred: 'Shredded', read: 'Read', sweep: 'Left to the agents' }
 
 export function register(t) {
+  deskVm = t.vm
   const desk = () => t.vm().desk
   const place = () => t.vm().sidebar?.place?.en ?? 'Desk'
   t.get(/^\/$/, ({ req, res }) => {
