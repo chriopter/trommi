@@ -17,13 +17,9 @@ use crate::error::Error;
 use crate::ids::{DeviceId, RoomId};
 
 /// The label of the signature.
-const LABEL: &str = "TrommiHubAuth";
-/// The length of a challenge.
-pub const CHALLENGE_LEN: usize = 32;
-/// How long a challenge may be answered.
-pub const CHALLENGE_LIFE_MS: u64 = 2 * 60 * 1000;
-/// How long the token lasts that a sign-in gives.
-pub const TOKEN_LIFE_MS: u64 = 10 * 60 * 1000;
+use trommi_wire::signin::LABEL_HUB_AUTH as LABEL;
+/// The length of a challenge, how long it may be answered, how long the token lasts that a sign-in gives.
+pub use trommi_wire::signin::{CHALLENGE_LEN, CHALLENGE_LIFE_MS, TOKEN_LIFE_MS};
 /// The longest address, in bytes.
 pub const MAX_ADDRESS_LEN: usize = 512;
 /// The longest encoded [`HubAuth`]: the three fixed fields, and the address behind its two-byte length.

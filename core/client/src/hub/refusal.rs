@@ -14,84 +14,9 @@ pub(crate) const CAP_REFUSAL: usize = 64 << 10;
 /// The longest wait a hub may ask for: a day.
 const MAX_RETRY_AFTER_S: u64 = 86_400;
 
-/// The codes a hub refuses with and the status each comes with (spec/v1.md 16; hub-api.md "Decided" 28).
-const CODES: &[(u16, &[&str])] = &[
-    (
-        400,
-        &[
-            "bad-format",
-            "newer-version",
-            "bad-commit",
-            "bad-signature",
-            "bad-invite",
-            "bad-key-package",
-            "wrong-room",
-            "incomplete",
-            "chain-break",
-            "bad-email",
-            "bad-passkey",
-        ],
-    ),
-    (
-        401,
-        &[
-            "unauthorised",
-            "bad-challenge",
-            "wrong-login",
-            "wrong-recovery",
-        ],
-    ),
-    (
-        403,
-        &["forbidden", "not-member", "removed-sender", "wrong-sender"],
-    ),
-    (404, &["not-found", "no-room"]),
-    (405, &["method-not-allowed"]),
-    (
-        409,
-        &[
-            "epoch-taken",
-            "wrong-epoch",
-            "room-behind",
-            "group-behind",
-            "stale-session",
-            "epoch-full",
-            "replay",
-            "gap",
-            "equivocation",
-            "room-exists",
-            "invite-used",
-            "lease-lost",
-            "account-exists",
-            "last-way-in",
-            "account-changed",
-        ],
-    ),
-    (410, &["gone", "invite-expired", "invite-burned"]),
-    (413, &["too-large", "quota-exceeded"]),
-    (416, &["range"]),
-    (426, &["client-too-old"]),
-    (429, &["too-many", "rate-limited"]),
-    (500, &["internal"]),
-    (503, &["overloaded"]),
-];
-
-/// The status a code of section 16 comes with; `None` for a text that is no code of this protocol.
-pub fn status_of(code: &str) -> Option<u16> {
-    CODES
-        .iter()
-        .find(|(_, codes)| codes.contains(&code))
-        .map(|(status, _)| *status)
-}
-
-/// The code as the protocol's own text, when `code` is one.
-fn known(code: &str) -> Option<&'static str> {
-    CODES
-        .iter()
-        .flat_map(|(_, codes)| codes.iter())
-        .find(|c| **c == code)
-        .copied()
-}
+use trommi_wire::codes::known;
+/// The codes a hub refuses with and the status each comes with: one table with the hub's (core/wire).
+pub use trommi_wire::codes::status_of;
 
 /// A refusal of this protocol, with the members the hub adds to some of them.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -242,17 +167,5 @@ mod tests {
             ),
             None
         );
-    }
-
-    #[test]
-    fn every_code_has_one_status() {
-        let mut seen = std::collections::HashSet::new();
-        for (_, codes) in CODES {
-            for code in *codes {
-                assert!(seen.insert(*code), "{code} twice");
-            }
-        }
-        assert_eq!(status_of("overloaded"), Some(503));
-        assert_eq!(status_of("nope"), None);
     }
 }

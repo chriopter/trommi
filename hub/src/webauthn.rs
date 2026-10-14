@@ -207,7 +207,7 @@ pub fn auth_data(b: &[u8]) -> Result<AuthData, Bad> {
                 .try_into()
                 .map_err(|_| bad.clone())?,
         ));
-        if len == 0 || len > 1023 {
+        if len == 0 || len > trommi_wire::account::MAX_CREDENTIAL_ID_LEN {
             return Err(bad);
         }
         let id = b.get(55..55 + len).ok_or(bad.clone())?.to_vec();

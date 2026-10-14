@@ -3057,6 +3057,7 @@ dependencies = [
  "serde",
  "serde_json",
  "trommi-core",
+ "trommi-wire",
 ]
 
 [[package]]
@@ -3101,6 +3102,7 @@ dependencies = [
  "sha2 0.11.0",
  "subtle",
  "tls_codec",
+ "trommi-wire",
  "unicode-normalization",
  "zeroize",
 ]
@@ -3157,6 +3159,7 @@ dependencies = [
  "subtle",
  "tls_codec",
  "tokio",
+ "trommi-wire",
 ]
 
 [[package]]
@@ -3213,6 +3216,7 @@ dependencies = [
  "trommi-core-swift",
  "trommi-hub",
  "trommi-hub-updater",
+ "trommi-wire",
 ]
 
 [[package]]
@@ -3232,6 +3236,14 @@ name = "trommi-uniffi-bindgen"
 version = "0.0.0"
 dependencies = [
  "uniffi",
+]
+
+[[package]]
+name = "trommi-wire"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "sha2 0.10.9",
 ]
 
 [[package]]

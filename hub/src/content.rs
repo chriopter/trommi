@@ -14,7 +14,7 @@ use crate::store::{
     self, fixed, Auth, Effects, Event, GroupKind, GroupRow, PushJob, Room, Sight, Who,
 };
 use crate::util::{b64, same};
-use crate::wire::{self, Cut, Envelope, Header, HeaderError, Subject, ZERO32};
+use trommi_wire::layout::{self as wire, Cut, Envelope, Header, HeaderError, Subject, ZERO32};
 
 /// The largest ciphertext: a padded body of 64 KiB and the AEAD tag.
 pub const MAX_CIPHERTEXT: usize = 65536 + 16;
@@ -1180,7 +1180,8 @@ fn clamp(limit: Option<i64>, default: i64, max: i64) -> i64 {
 
 /// What one answer may hold of envelopes: an answer is built in memory, and a reader that asks for much gets
 /// `more` and asks again.
-pub const ANSWER_BYTES: usize = 8 << 20;
+pub use trommi_wire::limits::ANSWER_BYTES;
+use trommi_wire::limits::{CHANGES_WINDOW, MAX_CHANGES, MAX_CHAT_PAGE, MAX_PAGE};
 
 /// Collects envelopes of a query up to `limit` items and `ANSWER_BYTES`; says whether more remain.
 fn collect(rows: &mut rusqlite::Rows, limit: i64, pruned: bool) -> Res<(Vec<Value>, bool)> {
@@ -1588,7 +1589,7 @@ pub fn chat_items(
     limit: Option<i64>,
 ) -> Res<Value> {
     auth.member()?;
-    let limit = clamp(limit, 50, 200);
+    let limit = clamp(limit, 50, MAX_CHAT_PAGE.into());
     let Some(group) = timeline_group(c, auth, "chats", key)? else {
         return Ok(json!({ "items": [], "more": false }));
     };
@@ -1618,7 +1619,7 @@ pub fn board_items(
 ) -> Res<Value> {
     auth.member()?;
     let key = [&[wire::TIMELINE_BOARD, wire::SCOPE_DESK][..], &board[..]].concat();
-    let limit = clamp(limit, 500, 2000);
+    let limit = clamp(limit, 500, MAX_PAGE.into());
     let Some(group) = timeline_group(c, auth, "boards", &key)? else {
         return Ok(json!({ "items": [], "more": false }));
     };
@@ -1658,7 +1659,7 @@ pub fn object_envelopes(
     if store::sight(c, auth, &row)? != Sight::Leaf {
         return Err(missing());
     }
-    let limit = clamp(limit, 500, 2000);
+    let limit = clamp(limit, 500, MAX_PAGE.into());
     let mut s = c.prepare_cached(&format!(
         "SELECT {ENVELOPE_COLUMNS} FROM envelopes WHERE room_id = ?1 AND object_id = ?2 AND cut = 0 AND group_id = ?3 AND change > ?4
          ORDER BY change LIMIT ?5"
@@ -1697,7 +1698,7 @@ pub fn chain(
     if !allowed {
         return Err(refuse("not-found", "no such group"));
     }
-    let limit = clamp(limit, 500, 2000);
+    let limit = clamp(limit, 500, MAX_PAGE.into());
     let mut s = c.prepare_cached(&format!(
         "SELECT {ENVELOPE_COLUMNS} FROM envelopes WHERE group_id = ?1 AND sender = ?2 AND seq > ?3 ORDER BY seq LIMIT ?4"
     ))?;
@@ -1715,10 +1716,6 @@ pub fn chain(
     items.truncate(limit as usize);
     Ok(json!({ "items": items, "more": more }))
 }
-
-/// How far one catch-up request looks: an asker that sees little of a busy room gets what lies in this stretch
-/// and the cursor to go on from.
-pub const CHANGES_WINDOW: i64 = 20_000;
 
 /// `GET /v1/changes?after=&limit=`: everything the asker may see with a change number above `after`, in the
 /// hub's one order across groups (5.4.1): log entries and envelopes. First the numbers and sizes of what is
@@ -1764,14 +1761,16 @@ pub fn changes_upto(
     ceiling: Option<i64>,
     only: &Only,
 ) -> Res<Value> {
-    let limit = clamp(limit, 200, 1000);
+    let limit = clamp(limit, 200, MAX_CHANGES.into());
     // `active=1`: no envelope of an archived group (its Commits and MLS messages still come: a leaf keeps its
     // group state whole); `group=`: that group's envelopes alone, nothing of the log
     let skipped = if only.active { archived_hex(c, &auth.room)? } else { "[]".to_string() };
     let one = only.group.as_ref().map(|g| crate::util::hex(g).to_uppercase());
     let room_head = store::room_row(c, &auth.room)?.change;
     let head = ceiling.map_or(room_head, |top| top.min(room_head));
-    let upto = after.saturating_add(CHANGES_WINDOW).min(head);
+    // (how far one catch-up request looks: an asker that sees little of a busy room gets what lies in this stretch
+    // and the cursor to go on from)
+    let upto = after.saturating_add(CHANGES_WINDOW as i64).min(head);
     let (human, recovery) = (auth.who == Who::Human, auth.who == Who::Recovery);
     // an agent or helper device: the groups it is a leaf of, and those whose Commits it follows
     let (mut leaf, mut public) = (Vec::new(), Vec::new());

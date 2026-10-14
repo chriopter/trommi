@@ -38,4 +38,3 @@ pub mod store;
 pub mod throttle;
 pub mod util;
 pub mod webauthn;
-pub mod wire;

@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 use crate::error::{refuse, Res};
 use crate::observer::{By, CommitFacts, Device};
-use crate::wire::{CommitNote, TrommiRoom};
+use trommi_wire::layout::{CommitNote, TrommiRoom};
 
 /// What a signature key is to the room now (4.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +54,7 @@ pub enum SessionKind {
     },
 }
 
-pub const MAX_HELPER_DEVICES: usize = 7;
+use trommi_wire::mls::MAX_HELPER_DEVICES;
 
 fn bad(message: impl Into<String>) -> crate::error::Refused {
     refuse("bad-commit", message)

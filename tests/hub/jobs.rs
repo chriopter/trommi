@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use serde_json::{json, Value};
 use trommi_hub::util::{b64, hex, random, unb64};
-use trommi_hub::wire::{self, Envelope, ZERO32};
+use trommi_wire::layout::{self as wire, Envelope, ZERO32};
 
 const MINUTE: i64 = 60_000;
 const DAY: i64 = 86_400_000;

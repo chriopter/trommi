@@ -7,7 +7,7 @@ use common::passkey::{Authenticator, ORIGIN, RP, UP_UV};
 use common::*;
 use serde_json::{json, Value};
 use trommi_hub::util::{b64, hex, random, unb64};
-use trommi_hub::wire;
+use trommi_wire::layout as wire;
 
 fn copy(mark: u8) -> String {
     let mut c = vec![mark; 61];
