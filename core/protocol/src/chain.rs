@@ -1187,6 +1187,32 @@ pub fn provisional(
     })
 }
 
+/// An envelope the hub lists as the newest of an open object (section 9.0.6, a group started from the hub's
+/// list): checks 1 to 5, the sender's right to write such an item as far as it follows from its role and the
+/// header ([`objects::sender_may`]), freshness as when reading back (check 8), and the body (check 9), which
+/// need not open: the object is taken from the header. Each failure of the first is its check's code; the
+/// chain is not touched. Returns the envelope, its hash and its body or why there is none.
+pub fn listed(
+    facts: &dyn GroupFacts,
+    bytes: &[u8],
+    now_ms: u64,
+) -> Result<(Envelope, Hash32, Result<Body, Error>), Error> {
+    let verified = first_five(facts, Envelope::decode(bytes)?)?;
+    let header = &verified.envelope.header;
+    if header.subject.is_reserved() {
+        return Err(Error::NewerVersion);
+    }
+    objects::sender_may(facts, header)?;
+    if !fresh(facts, header, verified.current, Mode::ReadingBack, now_ms)? {
+        return Err(Error::WrongEpoch);
+    }
+    let body = open(facts, &verified.envelope);
+    if let Err(fault @ (Error::Storage(_) | Error::Internal(_) | Error::Entropy)) = body {
+        return Err(fault);
+    }
+    Ok((verified.envelope, verified.hash, body))
+}
+
 /// What a Cut does to a receiver that had accepted envelopes of the removed sender.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CutEffect {

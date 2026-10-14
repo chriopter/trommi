@@ -568,6 +568,7 @@ pub fn core_seal(
             before: None,
             after: object,
             revision: 0,
+            adopted: false,
         })
     };
     let object = |object_type, owner, state, current| Object {

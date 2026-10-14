@@ -1247,6 +1247,31 @@ impl CoreDevice {
         })
     }
 
+    /// Starts `group` from the hub's list of what is open at change `at_change` (9.0.6): chains begin at the
+    /// first envelope served after it and open objects are taken from their signed headers. Human devices only
+    /// (`forbidden` otherwise), and only for a group of which this device holds no other sender's chain.
+    pub fn start_from_list(&self, group: Vec<u8>, at_change: u64) -> Result<(), CoreError> {
+        self.write(|device| Ok(device.start_from_list(&group_id(&group)?, at_change)?))
+    }
+
+    /// Takes the newest version the hub lists of the open object `object_id` of a group started from the
+    /// list, served under `change`: an object this device does not know is taken from its signed header
+    /// (`object_after`); one it knows stays as it stands (provisional).
+    pub fn adopt_listed(
+        &self,
+        group: Vec<u8>,
+        object_id: Vec<u8>,
+        envelope: Vec<u8>,
+        change: u64,
+    ) -> Result<ReceivedEnvelope, CoreError> {
+        self.write(|device| {
+            let id = trommi_core::ids::ObjectId::from_slice(&object_id)?;
+            Ok(device
+                .adopt_listed(&group_id(&group)?, &id, &envelope, change)?
+                .into())
+        })
+    }
+
     /// Takes a stroke piece the hub only passed on: it is in no log and has no change number, so the cursor
     /// stays. None for a message this device cannot open, or of a group it is no leaf of. `bad-format`, with
     /// nothing consumed, for a message that opens to anything but a stroke piece; `group-behind` for a message

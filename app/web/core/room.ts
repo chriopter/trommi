@@ -368,10 +368,13 @@ export function roomsOn(env: RoomEnv): Rooms {
       // once those joins are through (engine `holdKeyPackages`); without, at once. Upkeep: the engine's timed run
       // tries again.
       if (o.recover || !later?.later.length) { if (await held.keyPackagesToUpload(0, Date.now()).catch(() => null) !== null) await postAll(engine).catch(() => {}) }
-      // What the room holds from before is read once the hub's order was taken: a recovery took the removed
-      // devices' chains already, and their envelopes are then read back. A sign-in reads it once its sessions are
-      // joined (`joinSessions`): read before, it would be read once more for each session joined meanwhile.
-      if (!later || !later.later.length) await engine.wantRescan()
+      // A recovery took the removed devices' chains already, and their envelopes are then read back. A sign-in reads
+      // no past (9.0.6): the room group starts from the hub's list, and what is new is read from the join on.
+      if (o.recover) await engine.wantRescan()
+      else if (joinedAt !== null) {
+        const room = await held.room()
+        if (room) await held.startFromList(core.roomGroupId(room), Math.max(0, joinedAt - 1)).catch(() => {})
+      }
       const client = await clientOf(o, core, hub, engine, cache)
       // The live session groups are joined behind the sign-in: a big account has many, each read and checked from
       // its founding, and the person waits for none of them. A session that is not joined here (the page went,
@@ -413,7 +416,10 @@ export function roomsOn(env: RoomEnv): Rooms {
       for (let i = 0; i < commits.length; i += SLICE.commits) {
         await halving(async (slice: ServedCommit[]) => { await d.sessionCheckSlice(checked, slice); return false }, e => engine.core.errorCode(e) === 'too-large')(commits.slice(i, i + SLICE.commits))
       }
-      return await d.joinSessionCheckedKeys(code, checked, current, steps.end.rows, steps.end.links, Date.now())
+      const joined = await d.joinSessionCheckedKeys(code, checked, current, steps.end.rows, steps.end.links, Date.now())
+      // its past is not read (9.0.6): the session starts from the hub's list, what is new is read from here
+      await d.startFromList(group, await d.cursor()).catch(() => {})
+      return joined
     }
     /** One session alone, after its first try failed (`first`): tried again while that means "not now". */
     const again = async (group: Uint8Array, input: Input, first: unknown, welcomed: { yes: boolean }): Promise<void> => {
@@ -475,9 +481,6 @@ export function roomsOn(env: RoomEnv): Rooms {
     // (the Desk of every session joined is read and stands before the past is read behind it: the reading of the
     //  past fills the engine's queue for as long as it takes, and a Desk handed over behind it showed late)
     await afterWave().catch(() => {})
-    // the room's past, with every session's keys at hand now: read once (also when no session was joined: the
-    // room group's own past)
-    await engine.wantRescan().catch(() => {})
     return out
   }
 

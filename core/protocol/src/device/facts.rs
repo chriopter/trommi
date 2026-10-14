@@ -42,6 +42,14 @@ pub(super) const SUB_OWN_CUTS: u8 = 7;
 pub(super) const SUB_PROVISIONAL: u8 = 8;
 pub(super) const SUB_BY_HASH: u8 = 9;
 pub(super) const SUB_ORIGIN: u8 = 10;
+/// A group this human device started from the hub's list (9.0.6): the change number of that list.
+pub(super) const SUB_LISTED: u8 = 11;
+/// An object taken from the hub's list of a listed group, as it was taken: built again first when the
+/// group's objects are built again.
+pub(super) const SUB_LISTED_OBJECT: u8 = 12;
+/// Of a listed group, the newest `heads` each human device of the person signed that this device read out
+/// of order: its number in that device's chain and the value. A lower bound for where a chain may start.
+pub(super) const SUB_FLOOR: u8 = 13;
 /// The parts of the table of objects: one entry per object, one per version taken of a Note, and the count of
 /// the transitions a group's objects have taken. An envelope reads and writes the one object it is about, so
 /// what it costs does not grow with what its group holds.
@@ -54,11 +62,18 @@ pub(super) const SUB_GROUP_OBJECTS: u8 = 0;
 pub(super) const SUB_OBJECT: u8 = 1;
 pub(super) const SUB_NOTE_VERSION: u8 = 2;
 pub(super) const SUB_OBJECTS_REVISION: u8 = 3;
+/// An object taken from a signed header, not read from its first version (9.2.1).
+pub(super) const SUB_ADOPTED: u8 = 4;
+/// A version an object taken from a signed header held here (9.2.1): what names it is judged by the rules.
+pub(super) const SUB_SEEN: u8 = 5;
 /// The value of an entry whose key says everything.
 const PRESENT: [u8; 1] = [1];
 /// The parts of the table of registers.
 pub(super) const SUB_REGISTERS: u8 = 0;
 pub(super) const SUB_OWN_IDS: u8 = 1;
+/// A human device's register values read out of the hub's order (9.3.6), by sender and number: kept apart
+/// from the registers its chains build.
+pub(super) const SUB_OVERLAY: u8 = 2;
 
 const ROLE_NONE: u8 = 0;
 
@@ -418,6 +433,9 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
                 SUB_ORIGIN => {
                     codec::decode::<super::history::Origin>(value, value.len()).map(|_| ())
                 }
+                SUB_LISTED | SUB_LISTED_OBJECT | SUB_FLOOR => {
+                    super::listed::check_entry(sub, rest, value)
+                }
                 SUB_BY_HASH => {
                     if value.len() == 40 {
                         Ok(())
@@ -435,6 +453,7 @@ pub(super) fn check_entry(key: &[u8], value: &[u8]) -> Result<(), Error> {
         table::REGISTER => match rest.u8().map_err(|_| damaged("a key"))? {
             SUB_REGISTERS => Registers::from_bytes(value).map(|_| ()),
             SUB_OWN_IDS => crate::registers::OwnIds::from_bytes(value).map(|_| ()),
+            SUB_OVERLAY => super::overlay::check_entry(key.get(2..).unwrap_or_default(), value),
             _ => Err(Error::BadFormat),
         },
         _ => Ok(()),
@@ -473,6 +492,25 @@ fn check_object(mut rest: Reader<'_>, value: &[u8]) -> Result<(), Error> {
                 .map(|_| ())
                 .map_err(|_| Error::BadFormat)
         }
+        SUB_SEEN => {
+            rest.value::<ObjectId>()?;
+            rest.value::<Hash32>()?;
+            rest.finish()?;
+            if value == PRESENT {
+                Ok(())
+            } else {
+                Err(Error::BadFormat)
+            }
+        }
+        SUB_ADOPTED => {
+            rest.value::<ObjectId>()?;
+            rest.finish()?;
+            if value == PRESENT {
+                Ok(())
+            } else {
+                Err(Error::BadFormat)
+            }
+        }
         _ => Err(Error::BadFormat),
     }
 }
@@ -500,6 +538,31 @@ fn note_version_key(group: &GroupId, object: &ObjectId, version: &Hash32) -> Vec
     )
 }
 
+fn seen_key(group: &GroupId, object: &ObjectId, version: &Hash32) -> Vec<u8> {
+    group_key(
+        table::OBJECT,
+        SUB_SEEN,
+        group,
+        &[&object.as_bytes()[..], version.as_bytes()].concat(),
+    )
+}
+
+fn adopted_key(group: &GroupId, object: &ObjectId) -> Vec<u8> {
+    group_key(table::OBJECT, SUB_ADOPTED, group, object.as_bytes())
+}
+
+pub(super) fn listed_key(group: &GroupId) -> Vec<u8> {
+    group_key(table::CHAIN, SUB_LISTED, group, &[])
+}
+
+pub(super) fn listed_object_key(group: &GroupId, object: &ObjectId) -> Vec<u8> {
+    group_key(table::CHAIN, SUB_LISTED_OBJECT, group, object.as_bytes())
+}
+
+pub(super) fn floor_key(group: &GroupId, writer: &DeviceId) -> Vec<u8> {
+    group_key(table::CHAIN, SUB_FLOOR, group, writer.as_bytes())
+}
+
 fn objects_revision_key(group: &GroupId) -> Vec<u8> {
     group_key(table::OBJECT, SUB_OBJECTS_REVISION, group, &[])
 }
@@ -515,6 +578,18 @@ pub(super) struct HeldObjects<'a, S: Storage> {
     group: GroupId,
     /// The group's record of the form before, while the device still holds that.
     whole: Option<Objects>,
+    /// The group was started from the hub's list.
+    listed: bool,
+    /// The change number of the envelope judged against these objects, when it came in the hub's order.
+    at: Option<u64>,
+}
+
+impl<S: Storage> HeldObjects<'_, S> {
+    /// These objects for judging the envelope served under `change`.
+    pub(super) fn at(mut self, change: u64) -> Self {
+        self.at = Some(change);
+        self
+    }
 }
 
 impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
@@ -549,6 +624,38 @@ impl<S: Storage> ObjectStates for HeldObjects<'_, S> {
                     .map(u64::from_be_bytes)
                     .map_err(|_| damaged("the count of a group's transitions"))
             })
+    }
+
+    fn adopts(&self) -> Result<bool, Error> {
+        Ok(self.listed)
+    }
+
+    fn adopted(&self, object: &ObjectId) -> Result<bool, Error> {
+        Ok(self.listed
+            && self
+                .device
+                .stored(&adopted_key(&self.group, object))
+                .is_some())
+    }
+
+    fn seen(&self, object: &ObjectId, hash: &Hash32) -> Result<bool, Error> {
+        Ok(self.listed
+            && self
+                .device
+                .stored(&seen_key(&self.group, object, hash))
+                .is_some())
+    }
+
+    fn covered(&self, object: &ObjectId) -> Result<bool, Error> {
+        let Some(at) = self.at.filter(|_| self.listed) else {
+            return Ok(false);
+        };
+        let Some(value) = self.device.stored(&listed_object_key(&self.group, object)) else {
+            return Ok(false);
+        };
+        let (record, _) = super::listed::read_listed(value)
+            .map_err(|_| damaged("an object taken from the list"))?;
+        Ok(record.change >= at)
     }
 }
 
@@ -905,6 +1012,9 @@ impl<S: Storage> Device<S> {
             device: self,
             group: *group,
             whole,
+            // (an agent or helper device never adopts, whatever its store says)
+            listed: self.listed_at(group)?.is_some() && self.is_human(),
+            at: None,
         })
     }
 
@@ -920,7 +1030,10 @@ impl<S: Storage> Device<S> {
     /// Every object of `group` with its state, ascending by id.
     pub(super) fn every_object(&self, group: &GroupId) -> Result<Vec<(ObjectId, Object)>, Error> {
         if let Some(whole) = self.held_objects(group)?.whole {
-            return Ok(whole.iter().map(|(id, object)| (*id, object.clone())).collect());
+            return Ok(whole
+                .iter()
+                .map(|(id, object)| (*id, object.clone()))
+                .collect());
         }
         let prefix = group_key(table::OBJECT, SUB_OBJECT, group, &[]);
         self.stored_under(&prefix)
@@ -935,7 +1048,11 @@ impl<S: Storage> Device<S> {
 
     /// Replaces a record of the form before, if the device holds one for `group`, by one entry per object, in
     /// `batch`: nothing of it is lost, and the group has one form at every moment the store can be read.
-    pub(super) fn split_objects(&mut self, batch: &mut Batch, group: &GroupId) -> Result<(), Error> {
+    pub(super) fn split_objects(
+        &mut self,
+        batch: &mut Batch,
+        group: &GroupId,
+    ) -> Result<(), Error> {
         match self.held_objects(group)?.whole {
             Some(whole) => self.put_objects(batch, group, &whole),
             None => Ok(()),
@@ -953,6 +1070,7 @@ impl<S: Storage> Device<S> {
     ) -> Result<(), Error> {
         self.split_objects(batch, group)?;
         let held = self.held_objects(group)?;
+        let held_adopted = held.adopted(&transition.object_id)?;
         let revision = held.revision()?;
         if revision != transition.revision
             || held.object(&transition.object_id)? != transition.before
@@ -976,7 +1094,66 @@ impl<S: Storage> Device<S> {
                 PRESENT.to_vec(),
             );
         }
+        if transition.adopted {
+            self.put_stored(
+                batch,
+                adopted_key(group, &transition.object_id),
+                PRESENT.to_vec(),
+            );
+        }
+        if transition.adopted || held_adopted {
+            self.put_stored(
+                batch,
+                seen_key(group, &transition.object_id, &transition.after.current),
+                PRESENT.to_vec(),
+            );
+        }
         Ok(())
+    }
+
+    /// The change number of the hub's list `group` was started from (9.0.6); none for a group read from its
+    /// start.
+    pub(super) fn listed_at(&self, group: &GroupId) -> Result<Option<u64>, Error> {
+        self.stored(&listed_key(group))
+            .map(|value| {
+                <[u8; 8]>::try_from(value)
+                    .map(u64::from_be_bytes)
+                    .map_err(|_| damaged("a listed group's change"))
+            })
+            .transpose()
+    }
+
+    /// The objects a group's state is built again from: none, or of a group started from the hub's list the
+    /// objects taken from that list, each as it was taken.
+    pub(super) fn seed_objects(&self, group: &GroupId) -> Result<Objects, Error> {
+        // (an agent or helper device never adopts, whatever its store says)
+        if self.listed_at(group)?.is_none() || !self.is_human() {
+            return Ok(Objects::new());
+        }
+        let mut objects = Objects::adopting();
+        for (object_id, record, after) in self.listed_sources(group)? {
+            // (what a Cut ended is not taken, as anything its sender signed beyond it)
+            let header = &record.header;
+            if self.beyond_cut(
+                group,
+                &header.sender,
+                header.seq,
+                header.epoch,
+                Some(record.hash),
+            )? {
+                continue;
+            }
+            objects.apply(&Transition {
+                object_id,
+                before: None,
+                note_version: (after.object_type == ObjectType::Note).then_some(after.current),
+                after,
+                revision: objects.revision(),
+                adopted: true,
+            })?;
+            objects.listed_at(object_id, record.change);
+        }
+        Ok(objects)
     }
 
     /// Makes the stored objects of `group` exactly `objects`, in `batch`: what differs is written, what is no
@@ -998,11 +1175,23 @@ impl<S: Storage> Device<S> {
         for (id, version) in objects.note_versions() {
             wanted.insert(note_version_key(group, id, version), PRESENT.to_vec());
         }
+        for id in objects.adopted_ids() {
+            wanted.insert(adopted_key(group, id), PRESENT.to_vec());
+        }
+        for (id, version) in objects.seen_versions() {
+            wanted.insert(seen_key(group, id, version), PRESENT.to_vec());
+        }
         wanted.insert(
             objects_revision_key(group),
             objects.revision().to_be_bytes().to_vec(),
         );
-        for sub in [SUB_OBJECT, SUB_NOTE_VERSION, SUB_OBJECTS_REVISION] {
+        for sub in [
+            SUB_OBJECT,
+            SUB_NOTE_VERSION,
+            SUB_OBJECTS_REVISION,
+            SUB_ADOPTED,
+            SUB_SEEN,
+        ] {
             for (key, value) in self.stored_under(&group_key(table::OBJECT, sub, group, &[])) {
                 match wanted.get(&key) {
                     Some(same) if *same == value => {
@@ -1179,11 +1368,12 @@ impl<S: Storage> Device<S> {
     /// that comes behind later ones of its group, which is judged at its own place (9.2.1).
     pub(super) fn objects_before(&self, group: &GroupId, change: u64) -> Result<Objects, Error> {
         let facts = Facts(self);
-        let mut objects = Objects::new();
+        let mut objects = self.seed_objects(group)?;
         for record in self.records(group)? {
             if record.change >= change || record.status != Status::Taken {
                 continue;
             }
+            objects.judging_at(record.change);
             match objects::judge(&facts, &objects, &record.header, &record.hash) {
                 Ok(Some(transition)) => objects.apply(&transition)?,
                 Ok(None) | Err(Error::Forbidden) => {}
@@ -1200,7 +1390,7 @@ impl<S: Storage> Device<S> {
     /// records and what was refused for another reason stay out.
     pub(super) fn replay_group(&mut self, batch: &mut Batch, group: &GroupId) -> Result<(), Error> {
         let records = self.records(group)?;
-        let mut objects = Objects::new();
+        let mut objects = self.seed_objects(group)?;
         let mut registers = Registers::new();
         let mut changed = Vec::new();
         {
@@ -1209,6 +1399,7 @@ impl<S: Storage> Device<S> {
                 if !matches!(record.status, Status::Taken | Status::Forbidden) {
                     continue;
                 }
+                objects.judging_at(record.change);
                 let status = match objects::judge(&facts, &objects, &record.header, &record.hash) {
                     // What check 7 refused where it came and that was of an ended epoch stays refused:
                     // it never met check 8.
@@ -1274,6 +1465,7 @@ impl<S: Storage> Device<S> {
             return Ok(());
         }
         self.end_chain(batch, group, cut, epoch, epoch)?;
+        self.overlay_cut(batch, group, &cut.device, cut.seq, &cut.hash)?;
         // This device's own chain ends there too: whatever it signed beyond the Cut is void, and if its key
         // is added again, its next envelope is the one after the Cut (3.7).
         if cut.device == self.id {
@@ -1411,7 +1603,12 @@ impl<S: Storage> Device<S> {
                 code.code().as_bytes().to_vec(),
             );
         }
+        // Of a group started from the hub's list, an object taken from an envelope beyond the Cut goes too.
+        let listed = self.drop_listed_beyond(batch, group, &cut.device)?;
         if effect.drop_from.is_none() || stays {
+            if listed {
+                self.replay_group(batch, group)?;
+            }
             return Ok(());
         }
         for (key, hash) in beyond {

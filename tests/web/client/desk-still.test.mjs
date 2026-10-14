@@ -9,7 +9,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { rooms, scene, sleep, storage, until } from './helpers.mjs'
 
-test('a sign-in shows the open cards in their final order at once: no card moves while the room\'s past is read', async t => {
+test('a sign-in shows the open cards in their final order at once: no card moves, and no past is read', async t => {
   const { fake, a, agent, recovery_code } = await scene(t, { agent: true })
   const options = [{ key: 'yes', label: 'Yes' }, { key: 'no', label: 'No' }]
   const open = []
@@ -49,15 +49,20 @@ test('a sign-in shows the open cards in their final order at once: no card moves
   })
   await c.start()
   assert.equal((await sessions).joined, 1)
-  await until(() => c.model.room.connection === 'live' && !c.engine.rescanPending && !c.model.room.reading, 'the room\'s past read', 30_000)
-  assert.ok(read > 0, 'the past was read behind the Desk')
+  await until(() => c.model.room.connection === 'live' && !c.engine.rescanPending && !c.model.room.reading, 'the sign-in is through', 30_000)
+  // (9.0.6: the Desk and what is new, never the room's past)
+  assert.equal(read, 0, 'no past was read')
   assert.deepEqual([...c.model.stack], final, 'both devices show the same Desk in the end')
   assert.deepEqual(seen, [final.join(' ')], `the whole Desk stood in one order from its first showing on (${seen.length} orders seen)`)
   for (const part of parts) { const ids = part.split(' '); assert.deepEqual(ids, final.filter(id => ids.includes(id)), 'a Desk that shows some of the cards shows them in the order they keep') }
   assert.deepEqual(walks, [a.model.desk_order.join(' ')], `the Desk's rows stood in one order, the first device's (${walks.length} orders seen)`)
-  // the change each card stands by is the same on both devices, and the time shown with it is its signed first version's
-  for (const id of open) {
-    assert.equal(c.model.cards.get(id).first_envelope_number, a.model.cards.get(id).first_envelope_number)
-    assert.equal(c.model.cards.get(id).created_at, a.model.cards.get(id).created_at)
-  }
+  // the change each card stands by is the same on both devices; the time shown with it is its signed first version's
+  // once the card is opened, which reads its versions by the card's own route and nothing else
+  for (const id of open) assert.equal(c.model.cards.get(id).first_envelope_number, a.model.cards.get(id).first_envelope_number)
+  const asked = fake.requests.length
+  await c.loadTimeline(`chat:card/${open[0]}`, { limit: 50 })
+  const paths = fake.requests.slice(asked).map(r => r.path)
+  assert.equal(paths.filter(p => p.startsWith('/v1/cards/')).length, 1, `the card's versions are read when it is opened (${paths.join(', ')})`)
+  assert.ok(!paths.some(p => p === '/v1/changes' || p.includes('/chains/')), 'and no history beside them')
+  await until(() => c.model.cards.get(open[0]).created_at === a.model.cards.get(open[0]).created_at, 'the time of its first version')
 })

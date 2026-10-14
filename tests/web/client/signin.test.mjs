@@ -11,36 +11,35 @@ const headOf = fake => [...fake.state.rooms.values()][0].change
  *  one below `headOf` while a Commit is the room's last word, until the next envelope or catch-up passes it. */
 const servedOf = fake => [...fake.state.rooms.values()][0].changes.at(-1)?.change ?? 0
 
-test('a sign-in takes the hub\'s order from its own join and reads the room\'s past from the start in the background; on a slow disk that reading is told batch by batch', async t => {
+test('a sign-in takes the hub\'s order from its own join and reads no past: the Desk and what is new (9.0.6)', async t => {
   const { fake, a, agent, recovery_code } = await scene(t, { agent: true })
   for (let i = 0; i < 150; i++) { await a.saveNote({ text: `note ${i}` }); await agent.say({ text: `said ${i}` }); await a.sendMessage({ session_id: agent.session_id, text: `asked ${i}` }) }
+  const card = await agent.askCard({ title: 'Open at the sign-in', options: [{ key: 'ok', label: 'OK' }] })
   await a.settle(); await agent.settle()
   const head = headOf(fake)
-  assert.ok(head >= 450, `the room holds ${head} changes: one page, more than two batches of it`)
-  // every durable step of the new device's store takes 40 ms (in a browser it is one strict transaction: 10 ms
-  // on a quiet disk, far more on a loaded one), and what is read is reported at least every 20 ms
-  const R = await rooms({ slow_store_ms: 40, timing: { progress: 20 } })
+  assert.ok(head >= 450, `the room holds ${head} changes`)
+  const R = await rooms({})
   const before = fake.requests.length
   const { client: c, sessions } = await R.joinWithCode({ storage: storage('c'), hub_url: fake.url, room_id: a.model.room.room_id, code: recovery_code, device_name: 'c' })
   t.after(() => c.stop().catch(() => {}))
-  const seen = []
-  // (the first reading: one asked for meanwhile, as keys that came, reads again from where it was asked)
-  let first = null
-  const counted = []
-  c.on('change', () => { const r = c.model.room.reading_progress; if (r) counted.push([r.done, r.total]) })
-  c.on('change', () => { const p = c.engine.past; if (!p) { if (first) first.done = true; return } first ??= p; if (p === first && !first.done) seen.push(p.at) })
+  let pastSeen = false
+  c.on('change', () => { if (c.engine.past) pastSeen = true })
   await c.start()
   await until(() => c.model.room.connection === 'live', 'the new device live')
   assert.equal((await sessions).joined, 1)
-  await until(() => !c.engine.rescanPending, 'the room\'s past read', 30_000)
-  const asked = fake.requests.slice(before).filter(r => r.method === 'GET' && r.path === '/v1/changes' && !r.query.group).map(r => Number(r.query.after))
-  assert.ok(asked[0] >= head, `the hub's order is taken from the device's own join (${asked[0]}), not from the start of the room (head ${head})`)
-  assert.ok(asked.filter(n => n === 0).length >= 1, `the room's past is read from the start (${asked.join(', ')})`)
-  const steps = [...new Set(seen)]
-  assert.deepEqual(steps, [...steps].sort((x, y) => x - y), 'the reading only moves forward')
-  assert.ok(steps.filter(n => n > 0 && n < head).length >= 2, `the reading was told at ${steps.length} places (${steps.join(', ')}): a page of ${head} changes must not stand at its start until it is through`)
-  assert.ok(counted.some(([done, total]) => done > 0 && done < total), `the model counts the reading: ${JSON.stringify(counted.slice(0, 5))}`)
-  assert.equal(c.model.room.reading_progress ?? null, null, 'and no count once it is through')
+  await until(() => c.model.cards.get(card)?.title === 'Open at the sign-in', 'the open card, from the Desk')
+  await c.settle(); await a.settle(); await c.settle()
+  const made = fake.requests.slice(before)
+  const asked = made.filter(r => r.method === 'GET' && r.path === '/v1/changes' && !r.query.group).map(r => Number(r.query.after))
+  assert.ok(asked.length && asked[0] >= head - 10, `the hub's order is taken from the device's own join (${asked[0]}), not from the start of the room (head ${head})`)
+  assert.ok(asked.every(n => n >= head - 10), `no past is read (${asked.join(', ')})`)
+  assert.equal(made.filter(r => r.path.includes('/chains/')).length, 0, 'no chain is read from its start')
+  assert.equal(pastSeen, false, 'no reading of the past ran')
+  assert.ok(!c.engine.rescanPending)
+  // the card stands taken from its signed header: it can be answered
+  await c.answer({ object_id: card, choices: ['ok'] })
+  await c.settle(); await agent.settle()
+  await until(() => a.model.cards.get(card)?.object_state !== 'open', 'the answer reached the agent')
   assert.ok(c.engine.position >= head)
 })
 

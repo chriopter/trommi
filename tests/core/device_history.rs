@@ -1142,13 +1142,16 @@ fn a_chain_that_begins_at_a_snapshots_frontier_goes_on_and_is_verified_from_numb
 
     // Later the chain is read from number 1: in its order, up to the frontier's envelope.
     assert_eq!(take(&mut c, &of_drawer[1]).code, Some(Error::Gap));
-    for stored in &of_drawer[..4] {
+    for stored in &of_drawer[..3] {
         let got = take(&mut c, stored);
         assert_eq!(
             (got.outcome, got.code),
             (EnvelopeOutcome::Chained, Some(Error::Pruned))
         );
     }
+    // (the register value at the frontier came out of order before: its body is that very envelope's, 9.3.6)
+    let got = take(&mut c, &of_drawer[3]);
+    assert_eq!((got.outcome, got.code), (EnvelopeOutcome::Applied, None));
     assert_eq!(take(&mut c, &of_drawer[3]).code, Some(Error::Replay));
     assert_eq!(
         c.chain_head(&room, &a.id()).unwrap().hash,

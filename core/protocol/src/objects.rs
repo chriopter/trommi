@@ -74,6 +74,9 @@ pub struct Transition {
     pub note_version: Option<Hash32>,
     /// The revision of the [`Objects`] the envelope was judged against.
     pub revision: u64,
+    /// The object was taken from this envelope's own signed header (9.2.1, a group started from the hub's
+    /// list): what came before it was not read here. It stays marked so.
+    pub adopted: bool,
 }
 
 /// What [`judge`] reads of a group's objects: the state of one object, whether a hash is a version taken of a
@@ -89,6 +92,28 @@ pub trait ObjectStates {
 
     /// How many transitions the group's objects have taken.
     fn revision(&self) -> Result<u64, Error>;
+
+    /// Whether this holder started the group from the hub's list (9.0.6, a human device only): an object it
+    /// does not know is taken from the signed header of the envelope that names it.
+    fn adopts(&self) -> Result<bool, Error> {
+        Ok(false)
+    }
+
+    /// Whether `object` was taken from a signed header and not read from its first version.
+    fn adopted(&self, _object: &ObjectId) -> Result<bool, Error> {
+        Ok(false)
+    }
+
+    /// Whether the hub's list this holder started from holds a version of `object` served after the envelope
+    /// being judged: such an envelope changes nothing of the object (9.2.1).
+    fn covered(&self, _object: &ObjectId) -> Result<bool, Error> {
+        Ok(false)
+    }
+
+    /// Whether `hash` was ever the current version of the object `object` taken from a signed header here.
+    fn seen(&self, _object: &ObjectId, _hash: &Hash32) -> Result<bool, Error> {
+        Ok(false)
+    }
 }
 
 impl ObjectStates for Objects {
@@ -103,6 +128,26 @@ impl ObjectStates for Objects {
     fn revision(&self) -> Result<u64, Error> {
         Ok(self.revision)
     }
+
+    fn adopts(&self) -> Result<bool, Error> {
+        Ok(self.adopts)
+    }
+
+    fn adopted(&self, object: &ObjectId) -> Result<bool, Error> {
+        Ok(self.adopted.contains(object))
+    }
+
+    fn covered(&self, object: &ObjectId) -> Result<bool, Error> {
+        Ok(self.adopts
+            && self
+                .listed
+                .get(object)
+                .is_some_and(|listed| *listed >= self.at))
+    }
+
+    fn seen(&self, object: &ObjectId, hash: &Hash32) -> Result<bool, Error> {
+        Ok(self.seen.contains(&(*object, *hash)))
+    }
 }
 
 /// The objects of one group.
@@ -113,6 +158,17 @@ pub struct Objects {
     objects: BTreeMap<ObjectId, Object>,
     /// Every version taken of every Note: a Note's version may follow any other.
     note_versions: BTreeSet<(ObjectId, Hash32)>,
+    /// The group was started from the hub's list (9.0.6): unknown objects are taken from signed headers.
+    /// Never in the stored form of [`Objects::to_bytes`], which only the hub and agents write.
+    adopts: bool,
+    /// The objects taken from a signed header.
+    adopted: BTreeSet<ObjectId>,
+    /// Of the objects taken from the hub's list, the change number of the version listed.
+    listed: BTreeMap<ObjectId, u64>,
+    /// The change number of the envelope being judged ([`Objects::judging_at`]).
+    at: u64,
+    /// Every version an object taken from a signed header held here.
+    seen: BTreeSet<(ObjectId, Hash32)>,
 }
 
 struct ObjectEntry(ObjectId, Object);
@@ -138,6 +194,41 @@ impl Objects {
     /// No object yet.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// No object yet, in a group a human device started from the hub's list (9.0.6): an object it does not
+    /// know is taken from the signed header of the envelope that names it ([`judge`]).
+    pub fn adopting() -> Self {
+        Self {
+            adopts: true,
+            ..Self::default()
+        }
+    }
+
+    /// Notes that `object` was taken from the hub's list at the version served under `change`.
+    pub fn listed_at(&mut self, object: ObjectId, change: u64) {
+        self.listed.insert(object, change);
+    }
+
+    /// The change number of the envelope judged next: one served before the list's version of its object
+    /// changes nothing of it.
+    pub fn judging_at(&mut self, change: u64) {
+        self.at = change;
+    }
+
+    /// Whether `object` was taken from a signed header and not read from its first version.
+    pub fn is_adopted(&self, object: &ObjectId) -> bool {
+        self.adopted.contains(object)
+    }
+
+    /// Every version an object taken from a signed header held, ascending.
+    pub fn seen_versions(&self) -> impl Iterator<Item = &(ObjectId, Hash32)> {
+        self.seen.iter()
+    }
+
+    /// Every object taken from a signed header, ascending by id.
+    pub fn adopted_ids(&self) -> impl Iterator<Item = &ObjectId> {
+        self.adopted.iter()
     }
 
     /// The state of `object`, if a first version of it was taken.
@@ -179,6 +270,13 @@ impl Objects {
             .insert(transition.object_id, transition.after.clone());
         if let Some(version) = transition.note_version {
             self.note_versions.insert((transition.object_id, version));
+        }
+        if transition.adopted {
+            self.adopted.insert(transition.object_id);
+        }
+        if self.adopted.contains(&transition.object_id) {
+            self.seen
+                .insert((transition.object_id, transition.after.current));
         }
         Ok(())
     }
@@ -358,6 +456,102 @@ fn begin(
         },
         note_version: (fields.object_type == ObjectType::Note).then_some(*hash),
         revision: objects.revision()?,
+        adopted: false,
+    })
+}
+
+/// Whether the sender of `header` made the object `object_id`: its id is the one section 9 derives from one of
+/// the sender's numbers before this envelope's. Looked for at most [`MAX_MADE_BY`] numbers back.
+fn made_by(header: &Header, object_id: &ObjectId) -> Result<bool, Error> {
+    let lowest = header.seq.saturating_sub(MAX_MADE_BY).max(1);
+    for seq in (lowest..header.seq).rev() {
+        if envelope::object_id(&header.group, &header.sender, seq)? == *object_id {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// How many numbers of its sender [`made_by`] looks back for an object's first version.
+const MAX_MADE_BY: u64 = 1 << 16;
+
+/// An object this holder does not know, or knows only from a signed header, taken from the signed header of
+/// a later version, an answer, a take back or a verdict (9.2.1, a group started from the hub's list): its
+/// owner is the version's sender, or the device an answer, take back or verdict is addressed to; its current
+/// version is the version itself, or the one the answer names; its state is the header's. The rules of 9.2
+/// that follow from the sender's role and the header alone ([`sender_may`]) were met; what follows from the
+/// object's history before cannot be checked here and is not.
+fn adopt(
+    objects: &dyn ObjectStates,
+    header: &Header,
+    fields: &ObjectFields,
+    hash: &Hash32,
+    before: Option<Object>,
+) -> Result<Transition, Error> {
+    allow(
+        before
+            .as_ref()
+            .is_none_or(|before| before.object_type == fields.object_type),
+    )?;
+    // A card or an Artifact unknown here is taken from a version only of the device that made it: its id is
+    // derived from that device's first version (9). Another device's version of it is not taken, also when
+    // it might own it now: the object then stands as the list showed it.
+    if before.is_none()
+        && matches!(header.subject, Subject::Version(_))
+        && fields.object_type != ObjectType::Note
+    {
+        allow(made_by(header, &fields.object_id)?)?;
+    }
+    let after = match &header.subject {
+        Subject::Version(_) => {
+            allow(fields.state != ObjectState::Answered)?;
+            Object {
+                object_type: fields.object_type,
+                owner: header.sender,
+                state: fields.state,
+                current: *hash,
+                answer: None,
+            }
+        }
+        Subject::Answer(_) => {
+            allow(fields.state != ObjectState::Open)?;
+            Object {
+                object_type: fields.object_type,
+                owner: header.recipient,
+                state: fields.state,
+                current: fields.object_ref,
+                answer: Some(*hash),
+            }
+        }
+        Subject::TakeBack(_) | Subject::Verdict(_) => {
+            let reaches = if matches!(header.subject, Subject::TakeBack(_)) {
+                ObjectState::Open
+            } else {
+                ObjectState::Closed
+            };
+            allow(fields.state == reaches)?;
+            Object {
+                object_type: fields.object_type,
+                owner: header.recipient,
+                state: fields.state,
+                current: fields.object_ref,
+                answer: None,
+            }
+        }
+        _ => return Err(Error::Forbidden),
+    };
+    // A version builds on another, and an answer, take back or verdict names a version and its owner.
+    allow(
+        !fields.object_ref.is_zero()
+            && (matches!(header.subject, Subject::Version(_)) || !header.recipient.is_zero()),
+    )?;
+    Ok(Transition {
+        object_id: fields.object_id,
+        before,
+        note_version: (fields.object_type == ObjectType::Note).then_some(*hash),
+        after,
+        revision: objects.revision()?,
+        adopted: true,
     })
 }
 
@@ -376,10 +570,25 @@ pub fn judge(
 ) -> Result<Option<Transition>, Error> {
     sender_may(facts, header)?;
     let (group, epoch) = (&header.group, header.epoch);
+    // What was served before the version the hub's list showed of its object is older than what is held: it
+    // is allowed as far as the sender's role says, and changes nothing (9.2.1).
+    let named = match &header.subject {
+        Subject::Item(Timeline::CardChat(card)) => Some(*card),
+        subject => subject.object().map(|fields| fields.object_id),
+    };
+    if let Some(named) = named {
+        if objects.covered(&named)? {
+            return Ok(None);
+        }
+    }
     let fields = match &header.subject {
         Subject::Item(Timeline::CardChat(card)) => {
             let known = objects.object(card)?;
-            allow(known.is_some_and(|object| object.object_type == ObjectType::Card))?;
+            // Of a group started from the hub's list, a card unknown here may be one written before.
+            let unknown_here = known.is_none() && objects.adopts()?;
+            allow(
+                unknown_here || known.is_some_and(|object| object.object_type == ObjectType::Card),
+            )?;
             return Ok(None);
         }
         Subject::Item(_) | Subject::Register(_) | Subject::Reserved { .. } => return Ok(None),
@@ -392,11 +601,37 @@ pub fn judge(
         | Subject::TakeBack(fields)
         | Subject::Verdict(fields) => fields,
     };
-    let before = objects
-        .object(&fields.object_id)?
-        .ok_or(Error::Forbidden)?;
+    let Some(before) = objects.object(&fields.object_id)? else {
+        // A group started from the hub's list: an object unknown here is taken from this signed header.
+        if objects.adopts()? {
+            return adopt(objects, header, fields, hash, None).map(Some);
+        }
+        return Err(Error::Forbidden);
+    };
     let before = &before;
     allow(before.object_type == fields.object_type)?;
+    // An object taken from a signed header follows the next signed header that does not build on the
+    // version it holds: the version between them was not read here (9.2.1).
+    if objects.adopts()? && objects.adopted(&fields.object_id)? {
+        // Only a version this holder never read stands between them: an envelope that names the version it
+        // holds is judged by the rules as they are, whatever state it finds.
+        let names_known = if before.object_type == ObjectType::Note {
+            objects.note_version(&fields.object_id, &fields.object_ref)?
+        } else {
+            // (a version it held before is no missing one: what names it is judged by the rules as they are)
+            fields.object_ref == before.current
+                || objects.seen(&fields.object_id, &fields.object_ref)?
+        };
+        if !names_known {
+            let rightful = match &header.subject {
+                Subject::Version(_) if before.object_type == ObjectType::Note => true,
+                Subject::Version(_) => owner(facts, group, epoch, before)? == Some(header.sender),
+                _ => owner(facts, group, epoch, before)? == Some(header.recipient),
+            };
+            allow(rightful)?;
+            return adopt(objects, header, fields, hash, Some(before.clone())).map(Some);
+        }
+    }
     let mut after = before.clone();
     after.current = *hash;
     after.state = fields.state;
@@ -443,6 +678,7 @@ pub fn judge(
         after,
         note_version,
         revision: objects.revision()?,
+        adopted: false,
     }))
 }
 

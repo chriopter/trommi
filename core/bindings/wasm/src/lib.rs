@@ -284,6 +284,8 @@ methods!(RawDevice {
     outbox_voided(id);
     envelope_abandon(id);
     receive_envelope(envelope, change, ordered, void_code, now_ms);
+    start_from_list(group, at_change);
+    adopt_listed(group, object_id, envelope, change);
     receive_relay(group, message, now_ms);
     heads_due(group, now_ms);
     compare_heads(group, writer);

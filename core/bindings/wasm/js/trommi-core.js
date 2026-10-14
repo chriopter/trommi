@@ -90,11 +90,11 @@ const fill = Uint8Array.prototype.fill
 const MAX_BYTES = 256 * 1024 * 1024 // all bytes of one call together: above the largest stored file, and room for a long room history
 const MAX_VALUES = 4 * 1024 * 1024 // every value of one call together: a room's whole log served for a join is far below
 const MAX_TEXT = 128 * 1024 * 1024 // no call takes longer text: the model of a large account, read back from the cache, is one text of tens of megabytes
-// How deep the deepest argument of any call is nested: a ServedRoom holds a list of groups, each a list of
-// Commits, each with its bytes. tests/bindings/manifest.mjs works this out from the facade's declarations and
+// How deep the deepest argument of any call is nested: a received envelope handed to the model holds a list of
+// register names shown again, each with the envelope that stands, its header, and that header's ids. tests/bindings/manifest.mjs works this out from the facade's declarations and
 // fails when this number is another. It keeps a cyclic object from being walked for ever; the budgets above are
 // what bounds the work.
-const MAX_DEPTH = 5
+const MAX_DEPTH = 7
 
 /** Copies one argument. `copies` collects the byte arrays made, so that they can be overwritten after the call. */
 function snapshot(value, copies, depth = 0) {
@@ -181,7 +181,7 @@ const DEVICE_CALLS = [
   'recovery_plan_start', 'recovery_plan_slice', 'recovery_plan_finish',
   'invite_open', 'invite_accept', 'invite_confirm', 'invite_recommit', 'invite_steps', 'invite_handover', 'invite_checked', 'invite_forget',
   'join_link', 'join_request', 'join_reveal', 'join_observe', 'join_invited',
-  'seal', 'outbox_voided', 'envelope_abandon', 'receive_envelope', 'receive_relay', 'heads_due', 'compare_heads',
+  'seal', 'outbox_voided', 'envelope_abandon', 'receive_envelope', 'start_from_list', 'adopt_listed', 'receive_relay', 'heads_due', 'compare_heads',
   'cut_of', 'chain_head', 'chain_cut', 'object', 'objects', 'object_owner', 'register', 'register_of', 'board_load',
   'command', 'command_finished', 'commands_pending', 'commands_uncertain', 'findings', 'findings_read',
 ]
