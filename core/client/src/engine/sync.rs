@@ -22,6 +22,8 @@ pub mod events;
 pub mod room_join;
 #[path = "requests.rs"]
 pub mod requests;
+#[path = "found.rs"]
+pub mod found;
 use std::collections::{BTreeMap, VecDeque};
 use trommi_core::crypto::{Entropy, SecretBytes, SystemEntropy};
 use trommi_core::device::{
@@ -168,6 +170,9 @@ pub enum Alert {
 /// What the engine tells the App, in order. The App feeds the model from it (`Envelope`, `Log`, `Groups`).
 #[derive(Debug)]
 pub enum Report {
+    /// The founding of the room (`Engine::found_room`) ended: taken (none), or refused with this code (the device's
+    /// state is gone).
+    Founded(Option<&'static str>),
     /// An envelope as the protocol core took it. `ordered`: in the hub's order; else read again (a repair).
     Envelope { received: Box<ReceivedEnvelope>, ordered: bool },
     /// A log entry the device processed.
@@ -459,6 +464,8 @@ pub struct Engine {
     wishes: events::Wishes,
     /// The join of the room with the code, while it runs (`room_join`): nothing else is done before it ends.
     room_join: Option<room_join::Joiner>,
+    /// A room this device founds, until the hub took the founding (`found`).
+    founding: Option<found::Founding>,
     /// The actions' requests (`requests`).
     requests: requests::Requests,
 }
@@ -566,6 +573,7 @@ impl Engine {
             written: None,
             wishes: events::Wishes::default(),
             room_join: None,
+            founding: None,
             requests: requests::Requests::default(),
         }
     }
@@ -943,6 +951,9 @@ impl Engine {
         if self.stopped.is_some() || self.restoring.is_some() {
             self.flush(ctx);
             return;
+        }
+        if self.founding.is_some() {
+            return self.drive_founding(ctx);
         }
         self.drive_all(ctx);
         if self.room_join.is_none() {
@@ -2130,6 +2141,9 @@ impl Engine {
         self.posting = None;
         if self.room_join.is_some() {
             return self.on_room_posted(ctx, entry, answer, unauthorised, refusal);
+        }
+        if self.founding.is_some() && kind == OutboxKind::RoomFounding {
+            return self.on_founding_posted(ctx, entry, kind, group, answer, refusal);
         }
         let failure = match answer {
             Ok(Answer::Outbox(taken)) => {

@@ -67,6 +67,8 @@ enum Pending {
     RoomKeyWrite,
     /// The device state read for a join with the code ([`App::join_room`]).
     JoinLoad,
+    /// The device state read for a founding (`AccountAction::Found`).
+    FoundLoad,
     /// I/O of an engine that was dropped (a join of the room that failed): its answer is only logged.
     Dropped,
 }
@@ -104,6 +106,9 @@ pub struct App {
     room_join: Option<engine::room_join::RoomJoinStatus>,
     /// A join of the room asked for, waiting for the device state it is made on.
     room_join_wait: Option<(IoId, engine::room_join::RoomJoin)>,
+    /// A founding waiting for the device state, then for the hub (`account::found`); its kit's words are shown once
+    /// the hub took it.
+    founding: Option<(Option<IoId>, crate::account::found::Founding)>,
     /// A sign-in waiting for its login answer.
     signing_in: Option<(IoId, crate::account::signin::Waiting)>,
     /// A sign-in's join of the room runs: its end is shown on the account's screen.
@@ -165,6 +170,7 @@ impl App {
             room_join: None,
             room_join_wait: None,
             signing_in: None,
+            founding: None,
             signed_in_join: false,
             stored_hub: None,
             answers: Vec::new(),
@@ -269,6 +275,16 @@ impl App {
         if self.invite_action(now_ms, &action, out) {
             return;
         }
+        match action {
+            AccountAction::KitKept => {
+                if self.next_view.account.step == "keep_kit" {
+                    self.next_view.account = crate::views::AccountView { step: "none".into(), ..Default::default() };
+                }
+                return;
+            }
+            AccountAction::Found { email, password, hub } => return self.found(&email, &password, hub.as_deref(), out),
+            _ => {}
+        }
         let (by, account, secret, hub) = match action {
             AccountAction::SignIn { email, password, hub } => (By::Password, email, password, hub),
             AccountAction::SignInWithKit { email, words, hub } => (By::Kit, email, words, hub),
@@ -294,6 +310,66 @@ impl App {
             }
             Err(problem) => self.sign_in_failed(problem),
         }
+    }
+
+    /// `Found`: keys derived and the code made here; the room is founded once the slot's device state is read.
+    fn found(&mut self, email: &str, password: &crate::account::Secret, hub: Option<&str>, out: &mut Vec<Effect>) {
+        let Some(config) = self.config.as_ref() else { return };
+        if self.engine.is_some() || self.room_join_wait.is_some() || self.signing_in.is_some() || self.founding.is_some() {
+            out.push(log(LogLevel::Warn, "account: a founding on a slot that has a device or is busy"));
+            return;
+        }
+        let hub = match crate::account::signin::hub_of(hub, &config.hub) {
+            Ok(hub) => hub,
+            Err(problem) => return self.found_failed(problem.text()),
+        };
+        match crate::account::found::begin(hub, email, password, &mut trommi_core::crypto::SystemEntropy) {
+            Ok(founding) => {
+                let id = self.io(Pending::FoundLoad);
+                out.push(Effect::Store { id, op: StoreOp::DeviceLoad });
+                self.founding = Some((None, founding));
+                self.next_view.account = crate::views::AccountView { step: "working".into(), ..Default::default() };
+            }
+            Err(text) => self.found_failed(text),
+        }
+    }
+
+    fn found_failed(&mut self, text: crate::views::Text) {
+        self.founding = None;
+        self.next_view.account = crate::views::AccountView { step: "found".into(), problem: Some(text), ..Default::default() };
+    }
+
+    /// The slot's device state for a founding: the device and its room are made, and the founding goes out.
+    fn found_loaded(&mut self, now_ms: u64, revision: u64, entries: Vec<DeviceEntry>, out: &mut Vec<Effect>) {
+        let Some(config) = self.config.as_ref() else { return };
+        let Some((_, founding)) = self.founding.as_ref() else { return };
+        let client = format!("{}/{}", config.platform, config.version);
+        let entropy = self.entropy.take().unwrap_or_else(|| Box::new(trommi_core::crypto::SystemEntropy));
+        let engine = Engine::found_room(&client, config.seed, revision, entries, &founding.hub, &founding.keys, now_ms, entropy);
+        let mut engine = match engine {
+            Ok(engine) => engine,
+            Err(code) => {
+                let text = crate::views::Text::new("account.found_failed", &format!("The room was not made ({code})."));
+                return self.found_failed(text);
+            }
+        };
+        let body = match founding.account_body(&engine.room(), &mut trommi_core::crypto::SystemEntropy) {
+            Ok(body) => body,
+            Err(code) => {
+                let text = crate::views::Text::new("account.found_failed", &format!("The room was not made ({code})."));
+                return self.found_failed(text);
+            }
+        };
+        engine.set_founding(crate::hub::OutboxExtra { account: Some(body), ..Default::default() });
+        // the room's hub first, as a join with the code writes it
+        let key = RoomKey { v: 1, hub: founding.hub.clone(), room: engine.room().to_base64url() };
+        let id = self.io(Pending::RoomKeyWrite);
+        out.push(Effect::Store { id, op: StoreOp::Put { put: vec![Entry { key: ROOM_KEY.into(), value: serde_json::to_vec(&key).unwrap_or_default().into() }], delete: Vec::new() } });
+        self.board = engine::feed::Board::new(engine.device());
+        self.stored_hub = Some(engine.hub().to_string());
+        self.engine = Some(engine);
+        self.next_view.phase = Phase::Opening;
+        self.with_engine(now_ms, out, |engine, ctx| engine.start(ctx));
     }
 
     fn sign_in_failed(&mut self, problem: crate::account::signin::Problem) {
@@ -454,6 +530,10 @@ impl App {
             }
             _ if self.config.is_none() => out.push(log(LogLevel::Warn, "an event before start")),
             Event::Store { id, result } => match self.pending.remove(&id) {
+                Some(Pending::FoundLoad) => match result {
+                    IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.found_loaded(now_ms, revision, entries, &mut out),
+                    _ => self.found_failed(crate::views::Text::new("account.found_failed", "The room was not made (storage).")),
+                },
                 Some(Pending::JoinLoad) => match result {
                     IoResult::Ok(StoreAnswer::Device { revision, entries }) => self.join_loaded(now_ms, id, revision, entries, &mut out),
                     _ => {
@@ -947,6 +1027,21 @@ impl App {
                     if let Some(cache) = self.cache.as_mut() {
                         cache.stop();
                     }
+                }
+                Report::Founded(None) => {
+                    if let Some((_, founding)) = self.founding.take() {
+                        self.next_view.account = crate::views::AccountView { step: "keep_kit".into(), kit: founding.kit_words(), ..Default::default() };
+                    }
+                }
+                Report::Founded(Some(code)) => {
+                    dropped = true;
+                    self.founding = None;
+                    let text = match code {
+                        "account-exists" => crate::views::Text::new("account.exists", "An account with this e-mail exists. Sign in instead."),
+                        "rate-limited" | "throttled" => crate::views::Text::new("account.throttled", "Too many tries. Wait a moment, then try again."),
+                        code => crate::views::Text::new("account.found_failed", &format!("The room was not made ({code}).")),
+                    };
+                    self.next_view.account = crate::views::AccountView { step: "found".into(), problem: Some(text), ..Default::default() };
                 }
                 Report::SessionsJoined { not_joined, .. } => self.sessions_not_joined = Some(not_joined),
                 Report::Answer(answered) if self.invites.owns(answered.id) => invite_answers.push(*answered),

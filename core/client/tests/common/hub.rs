@@ -797,6 +797,35 @@ impl Hub {
                 return Ok(json!({ "account": account.id, "email": account.name, "kdf": { "alg": "argon2id", "m": 65536, "p": 1, "t": 3, "v": 1 },
                     "rooms": [{ "room_id": b64(self.room_id().as_bytes()), "sealed_copy": b64(sealed), "challenge": b64(&[7u8; 32]) }] }));
             }
+            // a founding with its account (8.1, 8.9): no token; the founder is the GroupInfo's signer
+            ("POST", ["v1", "rooms"]) => {
+                let account = body.get("account").cloned();
+                let email = account.as_ref().and_then(|a| a["email"].as_str()).map(|e| e.to_string());
+                if let Some(email) = &email {
+                    if self.accounts.iter().any(|a| &a.name == email) {
+                        return Err(no(Error::from_code("account-exists").unwrap_or(Error::BadFormat)));
+                    }
+                }
+                let (info, sealed) = (bytes("group_info"), bytes("sealed_key"));
+                let (observer, founder) = Observer::found_room(&info, &sealed, &PublicRules).map_err(no)?;
+                let group = observer.group();
+                // (the room's recovery key signs in as the recovery device, as World sets it)
+                self.recovery = observer.history().map(|h| DeviceId::new(h.newest().room.recovery_signature_key));
+                let answer = self.post(&founder, &OutboxEntry { id: 0, kind: OutboxKind::RoomFounding, group: Some(group), epoch: 0, parts: vec![info, sealed] })?;
+                if let (Some(a), Some(email)) = (account, email) {
+                    let key = |way: &str, f: &str| a[way][f].as_str().and_then(|t| base64url_decode(t).ok()).unwrap_or_default();
+                    let fixed = |v: Vec<u8>| <[u8; 32]>::try_from(v).unwrap_or([0; 32]);
+                    self.accounts.push(Account {
+                        name: email,
+                        id: "00000000-0000-4000-8000-000000000001".into(),
+                        password_auth: fixed(key("password", "auth_key")),
+                        kit_auth: fixed(key("kit", "auth_key")),
+                        sealed_password: key("password", "sealed_copy"),
+                        sealed_kit: key("kit", "sealed_copy"),
+                    });
+                }
+                return Ok(answer);
+            }
             ("POST", ["v1", "rooms", _, "tokens"]) => {
                 let signed = SignedHubAuth { auth: bytes("auth"), signature: bytes("signature") };
                 let auth = hub_auth::HubAuth::decode(&signed.auth).map_err(no)?;
