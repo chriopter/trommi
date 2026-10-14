@@ -548,3 +548,15 @@ fn a_register_written_while_catching_up_waits_until_live() {
     serve(&world, &mut sim);
     assert!(human(&sim, &format!("star/{card}")).is_some_and(|(v, _)| !v.is_null()), "written once live");
 }
+
+#[test]
+fn archiving_a_session_archives_its_group_at_the_hub() {
+    let mut world = World::new();
+    let mut sim = world.sim();
+    let _ = with_card(&mut world, &mut sim);
+    let session = sim.view.sidebar.sessions[0].id.clone();
+    sim.send(Event::Action { action: Action::ArchiveSession { session_id: session, on: true } });
+    serve(&world, &mut sim);
+    world.stream(&mut sim);
+    assert!(world.hub.borrow().seen.iter().any(|s| s.starts_with("POST /v1/groups/") && s.ends_with("/archive")), "{:?}", world.hub.borrow().refused);
+}

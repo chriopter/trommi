@@ -767,11 +767,36 @@ impl App {
             }
             return;
         }
-        self.doing(now_ms, out, |doing| {
-            if let Err(NotDone { text, again }) = doing.run(&action) {
-                doing.sent.toast(doing.toasts, text, again.then_some(action));
-            }
+        self.run_action(now_ms, action, out);
+    }
+
+    /// An action of `actions::run`, done; an archived session's group is archived at the hub too.
+    fn run_action(&mut self, now_ms: u64, action: Action, out: &mut Vec<Effect>) {
+        let mut done = false;
+        self.doing(now_ms, out, |doing| match doing.run(&action) {
+            Ok(()) => done = true,
+            Err(NotDone { text, again }) => doing.sent.toast(doing.toasts, text, again.then_some(action.clone())),
         });
+        // an archived session is over for good (5.2.10): the hub takes nothing more for its group, and the agent
+        // device a self-joined session brought along goes with it
+        if let (true, Action::ArchiveSession { session_id, on: true }) = (done, &action) {
+            self.archive_group(now_ms, session_id, out);
+        }
+    }
+
+    fn archive_group(&mut self, now_ms: u64, session_id: &str, out: &mut Vec<Effect>) {
+        let Some(s) = self.board.model.sessions.get(session_id) else { return };
+        let unhex = |h: &str| (0..h.len() / 2).map(|i| u8::from_str_radix(h.get(i * 2..i * 2 + 2).unwrap_or(""), 16).ok()).collect::<Option<Vec<u8>>>();
+        let Some(group) = s.group_id.as_deref().and_then(unhex).and_then(|b| trommi_core::ids::GroupId::from_bytes(&b).ok()) else { return };
+        let vouched = s.settings.as_ref().and_then(|v| v.get("vouched")).is_some_and(|v| v.is_object());
+        let retire: Vec<trommi_core::ids::DeviceId> = if vouched {
+            s.agent_device_id.as_deref().and_then(unhex).and_then(|b| <[u8; 32]>::try_from(b).ok()).map(trommi_core::ids::DeviceId::new).into_iter().collect()
+        } else {
+            Vec::new()
+        };
+        if let Some(Err(why)) = self.with_engine(now_ms, out, |engine, ctx| engine.archive_session(ctx, group, retire)) {
+            out.push(log(LogLevel::Warn, &format!("archive: {why}")));
+        }
     }
 
     /// The file actions (`crate::files`): true when `action` was one.
@@ -1235,11 +1260,7 @@ impl App {
         self.goals_check |= fed;
         if !self.held_actions.is_empty() && self.next_view.phase == Phase::Live {
             for action in std::mem::take(&mut self.held_actions) {
-                self.doing(now_ms, out, |doing| {
-                    if let Err(NotDone { text, again }) = doing.run(&action) {
-                        doing.sent.toast(doing.toasts, text, again.then_some(action.clone()));
-                    }
-                });
+                self.run_action(now_ms, action, out);
             }
         }
         if self.goals_check && self.next_view.phase == Phase::Live {
