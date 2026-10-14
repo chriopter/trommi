@@ -24,7 +24,7 @@ impl App {
         let (Ok(hub), Ok(share)) = (hub, parsed) else {
             return self.shared_failed(Text::new("share.bad_link", "This link is incomplete: the part after # is missing or damaged."));
         };
-        let site = Site { url: &hub, token: None, client: &client };
+        let site = Site { url: &hub, token: None, client: &client, lease: None };
         match Codec.request(&site, &Route::GetShared { share: &share.share_id, secret: share.secret.expose(), range: None }) {
             Ok((request, expect)) => {
                 let id = self.io(Pending::Shared);

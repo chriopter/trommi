@@ -27,9 +27,10 @@
 //!   "the request:"; nothing is sent.
 //!
 //! Every route a human device's app uses is a [`Route`]: sign-in, catch-up, the live stream, the Desk, the
-//! outbox, the delivery service's reads and joins, content, files and Share links, invites, the account, push.
-//! Not here, because the app core never asks them: an agent's lease (`POST /v1/link`) and the two routes of the
-//! notification extension that go by a push ticket (`GET /v1/push-envelope`, `GET /v1/push-changes`).
+//! outbox, the delivery service's reads and joins, content, files and Share links, invites, the account, push;
+//! and an agent device's lease (`POST /v1/link`, with `Trommi-Lease` on its writes and stream: [`Site::lease`]).
+//! Not here, because the app core never asks them: the two routes of the notification extension that go by a
+//! push ticket (`GET /v1/push-envelope`, `GET /v1/push-changes`).
 
 mod account;
 mod changes;
@@ -40,6 +41,7 @@ mod files;
 mod groups;
 mod invites;
 mod items;
+mod link;
 mod json;
 pub mod limits;
 mod outbox;
