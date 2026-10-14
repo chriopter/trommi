@@ -483,9 +483,10 @@ fn render_units(model: &Model, lens: &Lens, now: u64, view: &mut super::ViewMode
     view.off = lens.off.as_deref().map(|q| super::off::off_list(&b, &off, q));
     view.notes = super::notes::notes(&b);
     // (what the account read keeps: the e-mail is the account's, W3)
-    let account = view.settings.account.take();
+    let (account, login) = (view.settings.account.take(), view.settings.login.take());
     view.settings = super::settings::settings(&b);
     view.settings.account = account;
+    view.settings.login = login;
     // The pages in view: one session, one card. A page that is left is taken away.
     view.sessions.clear();
     if let Some(s) = lens.session.as_deref().and_then(|id| super::session::session(&b, id)) {

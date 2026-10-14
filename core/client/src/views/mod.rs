@@ -1487,6 +1487,32 @@ pub struct SettingsView {
     /// The room's key epoch (the version line at the list's foot).
     #[serde(default)]
     pub key_epoch: u64,
+    /// The account's ways in, once read (`AccountAction::ReadAccount`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login: Option<LoginView>,
+}
+
+/// The account's ways in, for the page Account: what can be changed and how it is proved.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoginView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    /// The account's id as printed on the kit (a UUID).
+    pub account: String,
+    pub has_password: bool,
+    /// The kit is salted with the e-mail ("email") or with the id ("id").
+    pub kit_form: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub passkeys: Vec<PasskeyView>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasskeyView {
+    /// base64url: what `RemovePasskey` names.
+    pub credential_id: String,
+    pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<u64>,
 }
 
 /// An agent: a program on one computer ("Claude Code on MacBook Pro"), with its sessions.

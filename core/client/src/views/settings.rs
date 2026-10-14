@@ -320,6 +320,7 @@ pub fn settings(b: &Board) -> SettingsView {
 
     SettingsView {
         account: None,
+        login: None,
         agent_list,
         agents_lead,
         agents,

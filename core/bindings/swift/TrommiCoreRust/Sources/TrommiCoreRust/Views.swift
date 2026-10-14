@@ -3709,8 +3709,10 @@ public enum CoreView {
     public var devicesSays: Text?
     /// The room's key epoch (the version line at the list's foot).
     public var keyEpoch: UInt64
+    /// The account's ways in, once read (`AccountAction::ReadAccount`).
+    public var login: LoginView?
 
-    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0) {
+    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, login: LoginView? = nil) {
       self.account = account
       self.devices = devices
       self.removed = removed
@@ -3722,6 +3724,7 @@ public enum CoreView {
       self.desks = desks
       self.devicesSays = devicesSays
       self.keyEpoch = keyEpoch
+      self.login = login
     }
 
     enum CodingKeys: String, CodingKey {
@@ -3736,6 +3739,7 @@ public enum CoreView {
       case desks = "desks"
       case devicesSays = "devices_says"
       case keyEpoch = "key_epoch"
+      case login = "login"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -3751,6 +3755,7 @@ public enum CoreView {
       self.desks = try c.decodeIfPresent(Text.self, forKey: .desks)
       self.devicesSays = try c.decodeIfPresent(Text.self, forKey: .devicesSays)
       self.keyEpoch = try c.decodeIfPresent(UInt64.self, forKey: .keyEpoch) ?? 0
+      self.login = try c.decodeIfPresent(LoginView.self, forKey: .login)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -3766,6 +3771,85 @@ public enum CoreView {
       try c.encodeIfPresent(desks, forKey: .desks)
       try c.encodeIfPresent(devicesSays, forKey: .devicesSays)
       try c.encode(keyEpoch, forKey: .keyEpoch)
+      try c.encodeIfPresent(login, forKey: .login)
+    }
+  }
+
+  /// The account's ways in, for the page Account: what can be changed and how it is proved.
+  public struct LoginView: Codable, Hashable, Sendable {
+    public var email: String?
+    /// The account's id as printed on the kit (a UUID).
+    public var account: String
+    public var hasPassword: Bool
+    /// The kit is salted with the e-mail ("email") or with the id ("id").
+    public var kitForm: String
+    public var passkeys: [PasskeyView]
+
+    public init(email: String? = nil, account: String = "", hasPassword: Bool = false, kitForm: String = "", passkeys: [PasskeyView] = []) {
+      self.email = email
+      self.account = account
+      self.hasPassword = hasPassword
+      self.kitForm = kitForm
+      self.passkeys = passkeys
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case email = "email"
+      case account = "account"
+      case hasPassword = "has_password"
+      case kitForm = "kit_form"
+      case passkeys = "passkeys"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.email = try c.decodeIfPresent(String.self, forKey: .email)
+      self.account = try c.decode(String.self, forKey: .account)
+      self.hasPassword = try c.decode(Bool.self, forKey: .hasPassword)
+      self.kitForm = try c.decode(String.self, forKey: .kitForm)
+      self.passkeys = try c.decodeIfPresent([PasskeyView].self, forKey: .passkeys) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encodeIfPresent(email, forKey: .email)
+      try c.encode(account, forKey: .account)
+      try c.encode(hasPassword, forKey: .hasPassword)
+      try c.encode(kitForm, forKey: .kitForm)
+      if !passkeys.isEmpty { try c.encode(passkeys, forKey: .passkeys) }
+    }
+  }
+
+  public struct PasskeyView: Codable, Hashable, Sendable {
+    /// base64url: what `RemovePasskey` names.
+    public var credentialId: String
+    public var createdAt: UInt64
+    public var lastUsedAt: UInt64?
+
+    public init(credentialId: String = "", createdAt: UInt64 = 0, lastUsedAt: UInt64? = nil) {
+      self.credentialId = credentialId
+      self.createdAt = createdAt
+      self.lastUsedAt = lastUsedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case credentialId = "credential_id"
+      case createdAt = "created_at"
+      case lastUsedAt = "last_used_at"
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let c = try decoder.container(keyedBy: CodingKeys.self)
+      self.credentialId = try c.decode(String.self, forKey: .credentialId)
+      self.createdAt = try c.decode(UInt64.self, forKey: .createdAt)
+      self.lastUsedAt = try c.decodeIfPresent(UInt64.self, forKey: .lastUsedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(credentialId, forKey: .credentialId)
+      try c.encode(createdAt, forKey: .createdAt)
+      try c.encodeIfPresent(lastUsedAt, forKey: .lastUsedAt)
     }
   }
 

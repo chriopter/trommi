@@ -226,10 +226,12 @@ impl Engine {
         }
         let through = j.asked.is_none() && j.one.is_none() && j.rows.is_empty() && j.together.is_empty() && j.alone.is_empty() && j.posted.is_empty();
         if through {
-            // every session's keys are at hand now: the Desk of the joined groups, and the room's past once more
+            // every session's keys are at hand now: the Desk of the joined groups, and what came without its key
+            // since the sign-in is read back group by group, from the first such envelope. The room's order is
+            // not read again: the past comes on demand (history), and catch-up resumes at the position.
             self.desk.want = true;
             self.tending.look_for_archived();
-            self.want_reread(0);
+            self.keys_came();
             self.report(Report::Groups);
             self.report(Report::SessionsJoined { joined: j.joined, not_joined: j.not_joined });
             return self.drive_all(ctx);
