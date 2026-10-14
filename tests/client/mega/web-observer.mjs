@@ -30,9 +30,7 @@
 //   { op: "invite_agent", label }             an agent invite: { invite_id, link }
 //   { op: "confirm_invite", invite_id, die }  waits for the newcomer's Request and taps "They match"; die: the device
 //                                             stops right after the Commit went out (a closed tab)
-//   { op: "allow_join", allow, folder? }      REFUSED: the core shows no self-join asks (`view.account.asks` is never
-//                                             filled), so a person on the web cannot Allow or Deny; the torture run
-//                                             lets an iPhone answer
+//   { op: "allow_join", allow, folder? }      Allow or Deny an ask from `view.account.asks`
 //   { op: "say", session, text }              a Chat message to a session
 //   { op: "archive", session }                the person archives a session
 import fs from 'node:fs'
@@ -225,14 +223,22 @@ function requestState(c) {
   return 'expired'
 }
 
-function snapshot(given) {
+async function snapshot(given) {
   const d = view.desk ?? {}
   const rowKind = new Map((d.rows ?? []).map(r => [r.id, r.kind]))
   const ids = new Set([...(d.stack ?? []), ...(d.off_your_mind ?? []), ...(d.later ?? []), ...(d.done ?? []), ...(d.starred?.rows ?? []).map(r => r.id), ...(d.running?.rows ?? []).map(r => r.id), ...given])
-  for (const r of view.sidebar?.sessions ?? []) for (const q of ofSession(r.id)?.questions ?? []) ids.add(q.id)
+  for (const r of view.sidebar?.sessions ?? []) {
+    ofSession(r.id)
+    await until(() => flying === 0 && Date.now() - lastNet >= 100, 'the session page read')
+    for (const q of view.sessions?.[r.id]?.questions ?? []) ids.add(q.id)
+  }
   const cards = {}, perms = {}, snooze_values = {}
   for (const id of [...ids].sort()) {
-    const c = page(id)
+    page(id)
+    // Opening a page asks for its past. Read the resulting view after those requests, as a person sees it;
+    // taking the synchronous render instead compared devices before their card versions and answers arrived.
+    await until(() => flying === 0 && Date.now() - lastNet >= 100, 'the card page read')
+    const c = view.cards?.[id] ?? null
     if (!c) continue
     const held = c.status === 'catching'
     if (c.kind === 'request' || rowKind.get(id) === 'request') {
@@ -383,7 +389,15 @@ async function run(cmd) {
       await settle()
       return { agent: null, state: view.account?.step ?? null }
     }
-    case 'allow_join': throw Object.assign(new Error('the app core shows no self-join asks (view.account.asks is never filled): nothing to Allow or Deny on the web'), { code: 'unsupported' })
+    case 'allow_join': {
+      let ask
+      await until(() => {
+        ask = (view.account?.asks ?? []).find(a => !a.joining && (!cmd.folder || a.folder === cmd.folder || a.folder?.endsWith(`/${cmd.folder}`)))
+        return !!ask
+      }, 'the self-join ask', cmd.timeout_ms ?? 60_000)
+      await deed({ do: 'account', action: { step: 'answer_ask', nonce: ask.nonce, allow: cmd.allow !== false } })
+      return { nonce: ask.nonce }
+    }
     case 'say': return deed({ do: 'write', session_id: cmd.session, text: cmd.text })
     case 'archive': return deed({ do: 'archive_session', session_id: cmd.session, on: true })
     case 'quit': close(); return {}

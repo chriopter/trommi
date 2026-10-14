@@ -539,10 +539,8 @@ impl Torture {
     /// A new session asks to join on its own: a folder without a key on the machine of a running agent, or the same
     /// folder as that agent (a second Claude Code session there). A human device allows or denies.
     async fn self_join(&mut self, same_folder: bool) {
-        // (only an iPhone answers the ask: the app core the web runs on shows no self-join asks yet, its
-        // `view.account.asks` is never filled, so a web device cannot Allow or Deny)
-        if !self.phones.iter().any(|p| p.0) {
-            self.say("a self-join is left out: no iPhone runs to answer the ask (the web shows no asks)".into());
+        if self.web.is_empty() && !self.phones.iter().any(|p| p.0) {
+            self.say("a self-join is left out: no human app runs to answer the ask".into());
             return;
         }
         let Some(v) = self.pick_alive_agent() else { return };
@@ -581,10 +579,10 @@ impl Torture {
         }
         self.agents[k].mcp = Some(mcp);
         let mut by = self.pick_human();
-        if matches!(by, HumanDev::StandIn | HumanDev::Web(_)) {
+        if matches!(by, HumanDev::StandIn) {
             by = match self.phones.iter().position(|p| p.0) {
                 Some(i) => HumanDev::Phone(i),
-                None => return,
+                None => HumanDev::Web(0),
             };
         }
         let by_name = self.dev_name(&by);
