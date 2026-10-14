@@ -870,6 +870,11 @@ impl App {
                 self.with_engine(now_ms, out, |engine, ctx| engine.on_net(ctx, true));
                 return;
             }
+            Action::ShowMore { of } => {
+                self.lens.show_more(of.clone());
+                self.stale_views = true;
+                return;
+            }
             _ => {}
         }
         if self.engine.is_none() {
@@ -886,7 +891,51 @@ impl App {
             }
             return;
         }
+        if let Action::DeleteSession { session_id } = &action {
+            return self.delete_session(now_ms, session_id, out);
+        }
         self.run_action(now_ms, action, out);
+    }
+
+    /// Deletes a session (the web's `deletionOf`): its open cards and those of its helpers are shredded, they are
+    /// archived, and the agent devices that carry no other session (not archived, or connected) leave the room.
+    fn delete_session(&mut self, now_ms: u64, session_id: &str, out: &mut Vec<Effect>) {
+        let model = &self.board.model;
+        let rows = crate::sessions::session_list(model, true);
+        let Some(main) = rows.iter().find(|r| r.key == session_id) else {
+            let text = crate::views::Text::new("action.not_found", "That session is no longer there.");
+            self.sent.toast(&mut self.next_view.toasts, text, None);
+            return;
+        };
+        let device_of = |key: &str| model.sessions.get(key).and_then(|s| s.agent_device_id.clone());
+        let mut all = vec![main.key.clone()];
+        for r in &rows {
+            if r.key != main.key && r.parent_key.as_deref() == Some(&main.key) && (r.parent.is_some() || device_of(&r.key) == device_of(&main.key)) {
+                all.push(r.key.clone());
+            }
+        }
+        let me = model.my_device_id.clone();
+        let humans: Vec<String> = self.engine.as_ref().map(|e| e.roles().0.iter().map(|d| crate::engine::feed::hex(d.as_bytes())).collect()).unwrap_or_default();
+        let stays = |dev: &str| rows.iter().any(|r| !all.contains(&r.key) && (!r.archived || r.online) && device_of(&r.key).as_deref() == Some(dev));
+        let mut devices: Vec<String> = all.iter().filter_map(|k| device_of(k)).collect();
+        devices.sort();
+        devices.dedup();
+        devices.retain(|d| Some(d) != me.as_ref() && !humans.contains(d) && !stays(d));
+        let cards: Vec<String> = model
+            .cards
+            .iter()
+            .filter(|(_, c)| c.object_state == "open" && c.session_id.as_ref().is_some_and(|s| all.contains(s)))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for card_id in cards {
+            self.run_action(now_ms, Action::Shred { card_id, note: None, attachments: Vec::new(), marks: Vec::new() }, out);
+        }
+        for key in &all {
+            self.run_action(now_ms, Action::ArchiveSession { session_id: key.clone(), on: true }, out);
+        }
+        if !devices.is_empty() {
+            self.account(now_ms, crate::account::AccountAction::RemoveDevices { device_ids: devices }, out);
+        }
     }
 
     /// An action of `actions::run`, done; an archived session's group is archived at the hub too.
@@ -1398,6 +1447,10 @@ impl App {
             self.stale_views = false;
             self.lens.reading = self.board.model.reading;
             let (wake, shown) = crate::views::render_with_files(&self.board.model, &self.lens, now_ms, &mut self.next_view);
+            if let Some(engine) = self.engine.as_ref() {
+                self.next_view.settings.room = Some(engine::feed::hex(engine.room().as_bytes()));
+                self.next_view.settings.hub = Some(engine.hub().to_string());
+            }
             self.view_wake = wake;
             self.files.shown(shown, &mut self.next_view.files);
         }
@@ -1473,6 +1526,14 @@ fn writes_room_registers(action: &Action) -> bool {
             | Action::RenameDesk { .. }
             | Action::RemoveDesk { .. }
             | Action::SetGoal { .. }
+            | Action::SessionIcon { .. }
+            | Action::SessionGroup { .. }
+            | Action::SessionParent { .. }
+            | Action::PlaceSession { .. }
+            | Action::CrownSession { .. }
+            | Action::OrderDesks { .. }
+            | Action::RenameDevice { .. }
+            | Action::DeleteSession { .. }
     )
 }
 

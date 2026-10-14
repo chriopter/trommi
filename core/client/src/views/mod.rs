@@ -1487,6 +1487,11 @@ pub struct SettingsView {
     /// The room's key epoch (the version line at the list's foot).
     #[serde(default)]
     pub key_epoch: u64,
+    /// The room's id (hex) and its hub, for the page that proves the room.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hub: Option<String>,
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<LoginView>,

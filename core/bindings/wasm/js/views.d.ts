@@ -1052,6 +1052,9 @@ export interface SettingsView {
   devices_says?: Text
   /** The room's key epoch (the version line at the list's foot). */
   key_epoch: number
+  /** The room's id (hex) and its hub, for the page that proves the room. */
+  room?: string
+  hub?: string
   /** The account's ways in, once read (`AccountAction::ReadAccount`). */
   login?: LoginView
 }

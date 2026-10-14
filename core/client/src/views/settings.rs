@@ -321,6 +321,8 @@ pub fn settings(b: &Board) -> SettingsView {
     SettingsView {
         account: None,
         login: None,
+        room: None,
+        hub: None,
         agent_list,
         agents_lead,
         agents,

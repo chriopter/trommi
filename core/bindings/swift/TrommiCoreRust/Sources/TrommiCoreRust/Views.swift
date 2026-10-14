@@ -3709,10 +3709,13 @@ public enum CoreView {
     public var devicesSays: Text?
     /// The room's key epoch (the version line at the list's foot).
     public var keyEpoch: UInt64
+    /// The room's id (hex) and its hub, for the page that proves the room.
+    public var room: String?
+    public var hub: String?
     /// The account's ways in, once read (`AccountAction::ReadAccount`).
     public var login: LoginView?
 
-    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, login: LoginView? = nil) {
+    public init(account: String? = nil, devices: [DeviceRow] = [], removed: [DeviceRow] = [], unfinished: [String] = [], removeUnfinished: Text? = nil, agents: Text? = nil, agentList: [AgentView] = [], agentsLead: Text? = nil, desks: Text? = nil, devicesSays: Text? = nil, keyEpoch: UInt64 = 0, room: String? = nil, hub: String? = nil, login: LoginView? = nil) {
       self.account = account
       self.devices = devices
       self.removed = removed
@@ -3724,6 +3727,8 @@ public enum CoreView {
       self.desks = desks
       self.devicesSays = devicesSays
       self.keyEpoch = keyEpoch
+      self.room = room
+      self.hub = hub
       self.login = login
     }
 
@@ -3739,6 +3744,8 @@ public enum CoreView {
       case desks = "desks"
       case devicesSays = "devices_says"
       case keyEpoch = "key_epoch"
+      case room = "room"
+      case hub = "hub"
       case login = "login"
     }
 
@@ -3755,6 +3762,8 @@ public enum CoreView {
       self.desks = try c.decodeIfPresent(Text.self, forKey: .desks)
       self.devicesSays = try c.decodeIfPresent(Text.self, forKey: .devicesSays)
       self.keyEpoch = try c.decodeIfPresent(UInt64.self, forKey: .keyEpoch) ?? 0
+      self.room = try c.decodeIfPresent(String.self, forKey: .room)
+      self.hub = try c.decodeIfPresent(String.self, forKey: .hub)
       self.login = try c.decodeIfPresent(LoginView.self, forKey: .login)
     }
 
@@ -3771,6 +3780,8 @@ public enum CoreView {
       try c.encodeIfPresent(desks, forKey: .desks)
       try c.encodeIfPresent(devicesSays, forKey: .devicesSays)
       try c.encode(keyEpoch, forKey: .keyEpoch)
+      try c.encodeIfPresent(room, forKey: .room)
+      try c.encodeIfPresent(hub, forKey: .hub)
       try c.encodeIfPresent(login, forKey: .login)
     }
   }

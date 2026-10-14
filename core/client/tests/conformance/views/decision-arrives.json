@@ -123,6 +123,16 @@
             },
             "written": false
           }
+        },
+        {
+          "part": "settings",
+          "view": {
+            "account": null,
+            "devices": [],
+            "hub": "https://hub.example",
+            "key_epoch": 0,
+            "room": "00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
         }
       ]
     },
@@ -191,18 +201,18 @@
                   "waiting": 0
                 },
                 "hushed": false,
-                "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "link": "gone",
                 "main": true,
-                "mark": "00000001eeee",
+                "mark": "00000002eeee",
                 "name": {
                   "en": "Loading …",
                   "key": "session.name"
                 },
                 "online": false,
                 "open": 0,
-                "slug": "00000001eeee",
+                "slug": "00000002eeee",
                 "unheard": 0,
                 "working": false
               }
@@ -252,7 +262,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -286,14 +296,14 @@
                       "key": "agents.desk"
                     },
                     "helpers": 0,
-                    "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000001eeee",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000002eeee",
                     "name": {
                       "en": "Loading …",
                       "key": "session.name"
                     },
                     "online": false,
-                    "slug": "00000001eeee",
+                    "slug": "00000002eeee",
                     "state": {
                       "en": "away",
                       "key": "agents.away"
@@ -329,7 +339,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -344,7 +354,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -363,6 +373,7 @@
               "en": "2 devices",
               "key": "settings.devices"
             },
+            "hub": "https://hub.example",
             "key_epoch": 2,
             "remove_unfinished": {
               "args": {
@@ -371,8 +382,9 @@
               "en": "Remove the device that never finished signing in",
               "key": "settings.remove_unfinished.one"
             },
+            "room": "00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
             "unfinished": [
-              "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -412,10 +424,10 @@
                   "line": {
                     "args": {
                       "at": "",
-                      "name": "00000001eeee",
+                      "name": "00000002eeee",
                       "program": "Claude Code"
                     },
-                    "en": "00000001eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                    "en": "00000002eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
                     "key": "link.gone.line_silent"
                   },
                   "short": {
@@ -443,18 +455,18 @@
                   "waiting": 0
                 },
                 "hushed": false,
-                "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "link": "gone",
                 "main": true,
-                "mark": "00000001eeee",
+                "mark": "00000002eeee",
                 "name": {
-                  "en": "00000001eeee",
+                  "en": "00000002eeee",
                   "key": "session.name"
                 },
                 "online": false,
                 "open": 0,
-                "slug": "00000001eeee",
+                "slug": "00000002eeee",
                 "unheard": 0,
                 "working": false
               }
@@ -504,7 +516,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -538,14 +550,14 @@
                       "key": "agents.desk"
                     },
                     "helpers": 0,
-                    "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000001eeee",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000002eeee",
                     "name": {
-                      "en": "00000001eeee",
+                      "en": "00000002eeee",
                       "key": "session.name"
                     },
                     "online": false,
-                    "slug": "00000001eeee",
+                    "slug": "00000002eeee",
                     "state": {
                       "en": "away",
                       "key": "agents.away"
@@ -581,7 +593,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -596,7 +608,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -615,6 +627,7 @@
               "en": "2 devices",
               "key": "settings.devices"
             },
+            "hub": "https://hub.example",
             "key_epoch": 2,
             "remove_unfinished": {
               "args": {
@@ -623,8 +636,9 @@
               "en": "Remove the device that never finished signing in",
               "key": "settings.remove_unfinished.one"
             },
+            "room": "00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
             "unfinished": [
-              "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -674,10 +688,10 @@
                   "line": {
                     "args": {
                       "at": "",
-                      "name": "00000001eeee",
+                      "name": "00000002eeee",
                       "program": "Claude Code"
                     },
-                    "en": "00000001eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+                    "en": "00000002eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
                     "key": "link.gone.line_silent"
                   },
                   "short": {
@@ -705,13 +719,13 @@
                   "waiting": 0
                 },
                 "hushed": false,
-                "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
                 "knocks": false,
                 "link": "gone",
                 "main": true,
-                "mark": "00000001eeee",
+                "mark": "00000002eeee",
                 "name": {
-                  "en": "00000001eeee",
+                  "en": "00000002eeee",
                   "key": "session.name"
                 },
                 "online": false,
@@ -723,7 +737,7 @@
                   "en": "Disconnected, 1 question open",
                   "key": "badge.offline_open"
                 },
-                "slug": "00000001eeee",
+                "slug": "00000002eeee",
                 "unheard": 0,
                 "working": false
               }
@@ -762,14 +776,14 @@
               {
                 "created_ms": 1791900300010,
                 "from": {
-                  "mark": "00000001eeee",
-                  "name": "00000001eeee",
+                  "mark": "00000002eeee",
+                  "name": "00000002eeee",
                   "path": [
-                    "00000001eeee"
+                    "00000002eeee"
                   ],
-                  "session_id": "00000001eeeeeeeeeeeeeeeeeeeeeeee"
+                  "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
                 },
-                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
                 "kind": "decision",
                 "loading": false,
                 "newer": false,
@@ -834,7 +848,7 @@
               }
             ],
             "stack": [
-              "00000005eeeeeeeeeeeeeeeeeeeeeeee"
+              "00000006eeeeeeeeeeeeeeeeeeeeeeee"
             ],
             "waiting": 1
           }
@@ -853,7 +867,7 @@
                   "key": "agents.count"
                 },
                 "devices": [
-                  "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ],
                 "host": "",
                 "key": "Agent · ",
@@ -887,14 +901,14 @@
                       "key": "agents.desk"
                     },
                     "helpers": 0,
-                    "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
-                    "mark": "00000001eeee",
+                    "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+                    "mark": "00000002eeee",
                     "name": {
-                      "en": "00000001eeee",
+                      "en": "00000002eeee",
                       "key": "session.name"
                     },
                     "online": false,
-                    "slug": "00000001eeee",
+                    "slug": "00000002eeee",
                     "state": {
                       "en": "away",
                       "key": "agents.away"
@@ -930,7 +944,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": true,
                 "role": "human",
@@ -945,7 +959,7 @@
                 "active": true,
                 "fingerprint": "(fingerprint)",
                 "icon": "laptop",
-                "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
                 "name": "Device",
                 "online": false,
                 "role": "human",
@@ -964,6 +978,7 @@
               "en": "2 devices",
               "key": "settings.devices"
             },
+            "hub": "https://hub.example",
             "key_epoch": 2,
             "remove_unfinished": {
               "args": {
@@ -972,8 +987,9 @@
               "en": "Remove the device that never finished signing in",
               "key": "settings.remove_unfinished.one"
             },
+            "room": "00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
             "unfinished": [
-              "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+              "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
             ]
           }
         }
@@ -1011,14 +1027,14 @@
         {
           "created_ms": 1791900300010,
           "from": {
-            "mark": "00000001eeee",
-            "name": "00000001eeee",
+            "mark": "00000002eeee",
+            "name": "00000002eeee",
             "path": [
-              "00000001eeee"
+              "00000002eeee"
             ],
-            "session_id": "00000001eeeeeeeeeeeeeeeeeeeeeeee"
+            "session_id": "00000002eeeeeeeeeeeeeeeeeeeeeeee"
           },
-          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000006eeeeeeeeeeeeeeeeeeeeeeee",
           "kind": "decision",
           "loading": false,
           "newer": false,
@@ -1083,7 +1099,7 @@
         }
       ],
       "stack": [
-        "00000005eeeeeeeeeeeeeeeeeeeeeeee"
+        "00000006eeeeeeeeeeeeeeeeeeeeeeee"
       ],
       "waiting": 1
     },
@@ -1114,7 +1130,7 @@
             "key": "agents.count"
           },
           "devices": [
-            "00000002eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
           ],
           "host": "",
           "key": "Agent · ",
@@ -1148,14 +1164,14 @@
                 "key": "agents.desk"
               },
               "helpers": 0,
-              "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
-              "mark": "00000001eeee",
+              "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
+              "mark": "00000002eeee",
               "name": {
-                "en": "00000001eeee",
+                "en": "00000002eeee",
                 "key": "session.name"
               },
               "online": false,
-              "slug": "00000001eeee",
+              "slug": "00000002eeee",
               "state": {
                 "en": "away",
                 "key": "agents.away"
@@ -1191,7 +1207,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000003eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": true,
           "role": "human",
@@ -1206,7 +1222,7 @@
           "active": true,
           "fingerprint": "(fingerprint)",
           "icon": "laptop",
-          "id": "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
           "name": "Device",
           "online": false,
           "role": "human",
@@ -1225,6 +1241,7 @@
         "en": "2 devices",
         "key": "settings.devices"
       },
+      "hub": "https://hub.example",
       "key_epoch": 2,
       "remove_unfinished": {
         "args": {
@@ -1233,8 +1250,9 @@
         "en": "Remove the device that never finished signing in",
         "key": "settings.remove_unfinished.one"
       },
+      "room": "00000001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "unfinished": [
-        "00000004eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        "00000005eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       ]
     },
     "sidebar": {
@@ -1266,10 +1284,10 @@
             "line": {
               "args": {
                 "at": "",
-                "name": "00000001eeee",
+                "name": "00000002eeee",
                 "program": "Claude Code"
               },
-              "en": "00000001eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
+              "en": "00000002eeee is gone: it stopped without a word: its session ended, was killed, or its machine is off the network.",
               "key": "link.gone.line_silent"
             },
             "short": {
@@ -1297,13 +1315,13 @@
             "waiting": 0
           },
           "hushed": false,
-          "id": "00000001eeeeeeeeeeeeeeeeeeeeeeee",
+          "id": "00000002eeeeeeeeeeeeeeeeeeeeeeee",
           "knocks": false,
           "link": "gone",
           "main": true,
-          "mark": "00000001eeee",
+          "mark": "00000002eeee",
           "name": {
-            "en": "00000001eeee",
+            "en": "00000002eeee",
             "key": "session.name"
           },
           "online": false,
@@ -1315,7 +1333,7 @@
             "en": "Disconnected, 1 question open",
             "key": "badge.offline_open"
           },
-          "slug": "00000001eeee",
+          "slug": "00000002eeee",
           "unheard": 0,
           "working": false
         }

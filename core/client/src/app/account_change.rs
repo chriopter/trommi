@@ -34,6 +34,7 @@ use trommi_core::recovery::RecoveryKeys;
 /// What a change does once the way in of now is proved.
 enum Change {
     Read,
+    Check,
     NewKit,
     Password { next: Secret },
     Email { email: String, words: Secret },
@@ -211,6 +212,7 @@ impl App {
     pub(super) fn change_action(&mut self, now_ms: u64, action: &AccountAction, out: &mut Vec<Effect>) -> bool {
         let (change, unlock) = match action {
             AccountAction::ReadAccount => (Change::Read, None),
+            AccountAction::CheckUnlock { unlock } => (Change::Check, Some(unlock.clone())),
             AccountAction::NewKit { unlock } => (Change::NewKit, Some(unlock.clone())),
             AccountAction::SetPassword { unlock, next } => (Change::Password { next: next.clone() }, Some(unlock.clone())),
             AccountAction::SetEmail { email, words } => (
@@ -423,6 +425,11 @@ impl App {
             }
         }
         let flow = self.changes.flow.as_mut().expect("a change");
+        if matches!(flow.change, Change::Check) {
+            self.changes.flow = None;
+            self.next_view.account = AccountView { step: "unlocked".into(), ..Default::default() };
+            return;
+        }
         if flow.sent {
             return;
         }
@@ -485,7 +492,7 @@ impl App {
         let revision = held.revision;
         let proof = opened.proof.clone();
         Ok(Some(match &flow.change {
-            Change::Read => return Ok(None),
+            Change::Read | Change::Check => return Ok(None),
             Change::ReplaceCode => {
                 flow.replace_at = Some(revision);
                 return Ok(None);
