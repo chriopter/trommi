@@ -1,0 +1,73 @@
+# The steps of the job "Linux app (check)" (pr-check.yml on a pull request; the part's ship-*.yml on main). The caller checks out the repository first.
+name: Linux app (check)
+description: The steps of the check Linux app (check)
+runs:
+  using: composite
+  steps:
+    - name: Qt 6 and the build tools
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y -q --no-install-recommends \
+          qt6-base-dev qt6-declarative-dev qt6-declarative-private-dev \
+          qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+          qml6-module-qtquick-window qml6-module-qtquick-templates qml6-module-qtqml-workerscript qml6-module-qtquick-dialogs \
+          libgl-dev lld
+        qmake6 -query QT_VERSION
+    # the window draws with the web app's pen: qml/pen.mjs is made from app/web/public/ui.mjs and must be current
+    - name: The pen is the web's
+      shell: bash
+      run: node app/linux/dev/pen.mjs --check
+    - name: Compiler (rust-toolchain.toml)
+      shell: bash
+      run: sh .github/scripts/rust_toolchain.sh
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        prefix-key: v2-rust-linux
+        workspaces: app/linux -> target
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - name: Build
+      working-directory: app/linux
+      env:
+        QMAKE: qmake6
+      shell: bash
+      run: cargo build --locked -j 4
+    - name: Tests
+      working-directory: app/linux
+      env:
+        QMAKE: qmake6
+      shell: bash
+      run: cargo test --locked -j 4
+    - name: Smoke test (Qt offscreen)
+      working-directory: app/linux
+      shell: bash
+      run: |
+        data=$(mktemp -d)
+        QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 TROMMI_LINUX_DIR="$data" \
+          TROMMI_LINUX_SHOT="$PWD/smoke.png" TROMMI_LINUX_SHOT_AFTER_MS=500 \
+          timeout 60 target/debug/trommi-linux 2>&1 | grep -v '^qt\.' || true
+        test -s smoke.png || { echo "the window drew nothing"; exit 1; }
+        # (a QML error would leave the window empty: the picture must not be one plain colour)
+        test "$(stat -c %s smoke.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
+    - name: Smoke test (Qt offscreen), on the app core
+      working-directory: app/linux
+      shell: bash
+      run: |
+        data=$(mktemp -d)
+        TROMMI_LINUX_APP_CORE=1 QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 TROMMI_LINUX_DIR="$data" \
+          TROMMI_LINUX_SHOT="$PWD/smoke-core.png" TROMMI_LINUX_SHOT_AFTER_MS=500 \
+          timeout 60 target/debug/trommi-linux 2>&1 | grep -v '^qt\.' || true
+        test -s smoke-core.png || { echo "the window drew nothing"; exit 1; }
+        # (a QML error would leave the window empty: the picture must not be one plain colour)
+        test "$(stat -c %s smoke-core.png)" -gt 8000 || { echo "the picture is empty"; exit 1; }
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      if: always()
+      with:
+        name: linux-smoke
+        path: |
+          app/linux/smoke.png
+          app/linux/smoke-core.png
+        if-no-files-found: ignore
+        retention-days: 7
+
+# The website trommi.com (site/), checked as files (tests/site/check.mjs).

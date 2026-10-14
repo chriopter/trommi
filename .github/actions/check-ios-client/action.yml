@@ -1,0 +1,56 @@
+# The steps of the job "iOS client (check)" (pr-check.yml on a pull request; the part's ship-*.yml on main). The caller checks out the repository first.
+name: iOS client (check)
+description: The steps of the check iOS client (check)
+runs:
+  using: composite
+  steps:
+    # the core for Swift on this machine, taken from an earlier run of main when built from the same paths
+    - name: What the core for Swift is built from
+      id: core_inputs
+      shell: bash
+      run: |
+        set -eu
+        sum=$(git ls-tree -r HEAD -- core/ Cargo.toml Cargo.lock rust-toolchain.toml | sha256sum | cut -c1-64)
+        echo "key=ios-core-host-$RUNNER_OS-$RUNNER_ARCH-$sum" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: core_cache
+      with:
+        key: ${{ steps.core_inputs.outputs.key }}
+        path: |
+          core/bindings/swift/TrommiCoreRust/lib
+          core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+          core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+    - name: Compiler (rust-toolchain.toml), Swift
+      env:
+        HIT: ${{ steps.core_cache.outputs.cache-hit }}
+      shell: bash
+      run: |
+        if [ "$HIT" != true ]; then sh .github/scripts/rust_toolchain.sh; fi
+        swift --version
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      if: steps.core_cache.outputs.cache-hit != 'true'
+      with:
+        prefix-key: v2-rust
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - name: The Rust core for Swift on this machine
+      if: steps.core_cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: sh core/bindings/swift/build.sh host
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.core_cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      with:
+        key: ${{ steps.core_inputs.outputs.key }}
+        path: |
+          core/bindings/swift/TrommiCoreRust/lib
+          core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreFFI/include/TrommiCoreFFI.h
+          core/bindings/swift/TrommiCoreRust/Sources/TrommiCoreRust/TrommiCoreRust.swift
+    - name: Test
+      env:
+        FAST: ${{ github.event_name == 'pull_request' }}
+      shell: bash
+      run: |
+        if [ "$FAST" = true ]; then swift build --build-tests --package-path tests/ios; else swift test --package-path tests/ios; fi
+
+# The app itself (the Xcode project from AppStore/project.yml) compiled for iOS and for the Mac, on a pull request:
+# what the Linux check of the client package cannot see. Not signed, not archived, no secret. (On main the archive
+# of ship-apple.yml builds it.) A stable name a ruleset can require.

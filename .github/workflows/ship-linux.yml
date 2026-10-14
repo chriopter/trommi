@@ -1,4 +1,4 @@
-# The Linux app (app/linux) on main: its build, its tests and the smoke test of the window (pr-check.yml, called), when
+# The Linux app (app/linux) on main: its build, its tests and the smoke test of the window (.github/actions/check-*), when
 # the app or what it is built from changed. Nothing is released or delivered yet: its release series linux-v<N> comes
 # with the AppImage. It reads no secret.
 name: ship-linux
@@ -12,10 +12,14 @@ on:
       - app/web/public/fonts/**
       - core/**
       - connector/**
+      - hub/**
+      - tests/connector/common/**
       - Cargo.toml
       - Cargo.lock
       - rust-toolchain.toml
       - .github/workflows/ship-linux.yml
+      - .github/actions/**
+      - .github/scripts/changed_parts.sh
       - .github/workflows/pr-check.yml
   workflow_dispatch:
 
@@ -26,12 +30,79 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  checks:
-    name: Checks
+  # Which parts changed (since this workflow's newest green run on main), the core's checks when it did, and the part's
+  # own checks: the steps are the composite actions of .github/actions, the ones a pull request runs as well
+  changed:
+    name: Which parts changed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/pr-check.yml
-    with:
-      parts: linux
-      workflow: ship-linux.yml
+    outputs:
+      core: ${{ steps.find.outputs.core }}
+      part: ${{ steps.find.outputs.linux }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find the changed parts
+        id: find
+        env:
+          EVENT: ${{ github.event_name }}
+          PARTS: linux
+          WORKFLOW: ship-linux.yml
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/changed_parts.sh
+
+  core:
+    name: Core (check)
+    needs: changed
+    if: needs.changed.outputs.core == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-core
+
+  linux_check:
+    name: Linux app (check)
+    needs: changed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-linux
+
+  # The result of the checks, for the jobs that need them: the part's passed, the core's passed or was not asked for
+  checks:
+    name: Checks
+    needs: [changed, core, linux_check]
+    if: ${{ !cancelled() && needs.changed.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Both passed
+        env:
+          PART: ${{ needs.linux_check.result }}
+          CORE: ${{ needs.core.result }}
+        run: |
+          echo "Linux app (check): $PART, Core (check): $CORE"
+          [ "$PART" = success ] && { [ "$CORE" = success ] || [ "$CORE" = skipped ]; }

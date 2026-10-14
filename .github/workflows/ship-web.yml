@@ -4,7 +4,7 @@
 #   decide    whether the web app must be delivered: what app.trommi.com serves was built from other inputs than this
 #             commit's (.github/scripts/deployed.sh; a delivery that failed is made again by the next run); its
 #             number N (this workflow's run number plus RELEASE_BASE)
-#   checks    the web app's checks and, when the core changed, the core's, every test (pr-check.yml, called)
+#   checks    the web app's checks and, when the core changed, the core's, every test (.github/actions/check-*)
 #   build     beside the checks: the files the worker serves, the worker, its settings and the manifest that names every
 #             file (.github/scripts/web_release.mjs), and web.tar.gz with its manifest for the release
 #   attest    every file checked against checksums.txt and the manifest against the run, then attested (GitHub's build
@@ -46,6 +46,8 @@ on:
       - .github/scripts/release_notes.mjs
       - .github/tools/wrangler/**
       - .github/workflows/ship-web.yml
+      - .github/actions/**
+      - .github/scripts/changed_parts.sh
       - .github/workflows/pr-check.yml
       - .github/workflows/sign-release.yml
   workflow_dispatch:
@@ -97,17 +99,85 @@ jobs:
           flag=$(sed -n 's/^web=//p' "$RUNNER_TEMP/deliver")
           { echo "parts<<PARTS_END"; sed -n "s/^\(web [0-9a-f]\{64\}\)\$/\1 $flag/p" "$RUNNER_TEMP/inputs"; echo "PARTS_END"; } >> "$GITHUB_OUTPUT"
 
-  checks:
-    name: Checks
+  # Which parts changed (since this workflow's newest green run on main), the core's checks when it did, and the part's
+  # own checks: the steps are the composite actions of .github/actions, the ones a pull request runs as well
+  changed:
+    name: Which parts changed
     needs: decide
     if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/pr-check.yml
-    with:
-      parts: web
-      workflow: ship-web.yml
+    outputs:
+      core: ${{ steps.find.outputs.core }}
+      part: ${{ steps.find.outputs.web }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find the changed parts
+        id: find
+        env:
+          EVENT: ${{ github.event_name }}
+          PARTS: web
+          WORKFLOW: ship-web.yml
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/changed_parts.sh
+
+  core:
+    name: Core (check)
+    needs: changed
+    if: needs.changed.outputs.core == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-core
+
+  web_check:
+    name: Web app (check)
+    needs: changed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+      WEB_HUB_URL: https://hub.trommi.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-web
+
+  # The result of the checks, for the jobs that need them: the part's passed, the core's passed or was not asked for
+  checks:
+    name: Checks
+    needs: [changed, core, web_check]
+    if: ${{ !cancelled() && needs.changed.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Both passed
+        env:
+          PART: ${{ needs.web_check.result }}
+          CORE: ${{ needs.core.result }}
+        run: |
+          echo "Web app (check): $PART, Core (check): $CORE"
+          [ "$PART" = success ] && { [ "$CORE" = success ] || [ "$CORE" = skipped ]; }
 
   build:
     name: Build

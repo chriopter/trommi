@@ -5,7 +5,7 @@
 #                those last delivered to TestFlight (.github/scripts/ios_release_gate.sh decide), and whether the Mac app
 #                for direct download is built (its inputs differ from the newest mac-v<N>'s; mac_release.sh check);
 #                the number N (this workflow's run number plus RELEASE_BASE)
-#   checks       the iOS client's checks with its tests and, when the core changed, the core's (pr-check.yml, called)
+#   checks       the iOS client's checks with its tests and, when the core changed, the core's (.github/actions/check-*)
 #   ios          on a Mac: the Rust core for iOS devices and the Mac, the core's Swift binding tests, the App Store
 #                Connect steps against fixtures; its artifact is what the archives are made with
 #   testflight   the iPhone app archived, signed and uploaded (.github/scripts/ios_testflight.sh; the upload checks the
@@ -45,6 +45,8 @@ on:
       - .github/scripts/inputs.sh
       - .github/scripts/release_notes.mjs
       - .github/workflows/ship-apple.yml
+      - .github/actions/**
+      - .github/scripts/changed_parts.sh
       - .github/workflows/pr-check.yml
   workflow_dispatch:
     inputs:
@@ -124,17 +126,84 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: bash .github/scripts/mac_release.sh check
 
-  checks:
-    name: Checks
+  # Which parts changed (since this workflow's newest green run on main), the core's checks when it did, and the part's
+  # own checks: the steps are the composite actions of .github/actions, the ones a pull request runs as well
+  changed:
+    name: Which parts changed
     needs: decide
     if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/pr-check.yml
-    with:
-      parts: apple
-      workflow: ship-apple.yml
+    outputs:
+      core: ${{ steps.find.outputs.core }}
+      part: ${{ steps.find.outputs.apple }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find the changed parts
+        id: find
+        env:
+          EVENT: ${{ github.event_name }}
+          PARTS: apple
+          WORKFLOW: ship-apple.yml
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/changed_parts.sh
+
+  core:
+    name: Core (check)
+    needs: changed
+    if: needs.changed.outputs.core == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-core
+
+  apple_check:
+    name: iOS client (check)
+    needs: changed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      NEXTEST_PROFILE: ci
+      NEXTEST_VERSION: 0.9.148
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/check-ios-client
+
+  # The result of the checks, for the jobs that need them: the part's passed, the core's passed or was not asked for
+  checks:
+    name: Checks
+    needs: [changed, core, apple_check]
+    if: ${{ !cancelled() && needs.changed.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Both passed
+        env:
+          PART: ${{ needs.apple_check.result }}
+          CORE: ${{ needs.core.result }}
+        run: |
+          echo "iOS client (check): $PART, Core (check): $CORE"
+          [ "$PART" = success ] && { [ "$CORE" = success ] || [ "$CORE" = skipped ]; }
 
   ios:
     name: iOS core for devices (main)

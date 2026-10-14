@@ -1,0 +1,70 @@
+# The steps of the job "Web app (check)" (pr-check.yml on a pull request; the part's ship-*.yml on main). The caller checks out the repository first.
+name: Web app (check)
+description: The steps of the check Web app (check)
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+        cache: npm
+        cache-dependency-path: app/web/package-lock.json
+    # the Rust core for the browser: core/bindings/wasm/build.sh, or the same bytes from main's cache (.github/scripts/wasm_core.sh)
+    - name: Compiler (rust-toolchain.toml)
+      shell: bash
+      run: sh .github/scripts/rust_toolchain.sh wasm32-unknown-unknown
+    - name: The core's inputs
+      id: core
+      shell: bash
+      run: echo "key=$(sh .github/scripts/wasm_core.sh key)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: pkg
+      with:
+        path: core/bindings/wasm/pkg
+        key: ${{ steps.core.outputs.key }}
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      if: steps.pkg.outputs.cache-hit != 'true'
+      with:
+        prefix-key: v2-rust
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - name: The Rust core for the browser
+      env:
+        HIT: ${{ steps.pkg.outputs.cache-hit }}
+      shell: bash
+      run: sh .github/scripts/wasm_core.sh build
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: steps.pkg.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+      with:
+        path: core/bindings/wasm/pkg
+        key: ${{ steps.core.outputs.key }}
+    - name: Packages
+      working-directory: app/web
+      shell: bash
+      run: npm ci --no-audit --no-fund
+    # type check, the app's own checks (layout, lint), the tests without a browser: six files at once on four cores
+    - name: Test
+      working-directory: app/web
+      env:
+        WEB_TEST_CONCURRENCY: '6'
+      shell: bash
+      run: npm test
+    - name: Build
+      shell: bash
+      run: node app/web/dev/build.mjs --write
+    - name: The demo data
+      shell: bash
+      run: node demo/check.mjs
+    # The browser tests (headless Chrome of the runner), one after the other so that a failing one does not hide the others.
+    - name: Browser tests
+      env:
+        CHROMIUM: google-chrome
+      shell: bash
+      run: |
+        status=0
+        for t in store/run.mjs proof/proof.mjs views/overflow.browser.mjs views/att-gone.browser.mjs views/foot-level.browser.mjs views/dock.browser.mjs views/security.browser.mjs views/news.browser.mjs views/tips.browser.mjs; do
+          echo "== $t"
+          node "tests/web/$t" || { echo "::error::tests/web/$t failed"; status=1; }
+        done
+        node --test tests/web/build/build.test.mjs || status=1
+        node tests/web/build/wasm-load.mjs || status=1
+        exit "$status"
